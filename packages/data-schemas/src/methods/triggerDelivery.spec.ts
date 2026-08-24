@@ -103,6 +103,78 @@ describe('agent trigger delivery methods', () => {
     expect(await Delivery.countDocuments()).toBe(1);
   });
 
+  it('projects public status while enforcing API key, owner, and tenant in the query', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        tenantId: 'tenant-1',
+        envelope: {
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+          privatePayload: 'x'.repeat(1024),
+        },
+      }),
+    );
+
+    const status = await methods.getAgentTriggerDeliveryStatus(
+      queued.delivery.deliveryKey,
+      user,
+      'source-key-1',
+      'tenant-1',
+    );
+
+    expect(status).toEqual({
+      deliveryKey: queued.delivery.deliveryKey,
+      status: 'pending',
+      attempts: 0,
+      availableAt: START,
+      createdAt: expect.any(Date),
+    });
+    expect(status).not.toHaveProperty('envelope');
+    expect(status).not.toHaveProperty('orderingKey');
+    expect(status).not.toHaveProperty('history');
+    await expect(
+      methods.getAgentTriggerDeliveryStatus(
+        queued.delivery.deliveryKey,
+        new mongoose.Types.ObjectId(),
+        'source-key-1',
+        'tenant-1',
+      ),
+    ).resolves.toBeNull();
+
+    const internal = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        tenantId: 'tenant-1',
+        envelope: { event: { source: { id: 'source-key-1', type: 'schedule' } } },
+      }),
+    );
+    await expect(
+      methods.getAgentTriggerDeliveryStatus(
+        internal.delivery.deliveryKey,
+        user,
+        'source-key-1',
+        'tenant-1',
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      methods.getAgentTriggerDeliveryStatus(
+        queued.delivery.deliveryKey,
+        user,
+        'source-key-1',
+        'tenant-2',
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      methods.getAgentTriggerDeliveryStatus(
+        queued.delivery.deliveryKey,
+        user,
+        'source-key-2',
+        'tenant-1',
+      ),
+    ).resolves.toBeNull();
+  });
+
   it('grants one atomic winner across concurrent claims', async () => {
     await methods.enqueueAgentTriggerDelivery(enqueueInput());
     const claims = await Promise.all(

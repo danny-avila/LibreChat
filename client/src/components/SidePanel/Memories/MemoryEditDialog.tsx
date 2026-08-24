@@ -14,7 +14,8 @@ import {
 import type { TUserMemory } from 'librechat-data-provider';
 import { getMemoryKeyError, getMemoryValueError, getMemoryApiErrorMessage } from '~/utils/memory';
 import { useUpdateMemoryMutation, useMemoriesQuery } from '~/data-provider';
-import { useLocalize, useHasAccess } from '~/hooks';
+import { getMemoryAddress, getMemoryUpdateAddress } from './address';
+import { useLocalize, useHasAccess, useClockFormat } from '~/hooks';
 import MemoryUsageBadge from './MemoryUsageBadge';
 
 interface MemoryEditDialogProps {
@@ -25,13 +26,14 @@ interface MemoryEditDialogProps {
   triggerRef?: React.MutableRefObject<HTMLButtonElement | null>;
 }
 
-const formatDateTime = (dateString: string): string => {
+const formatDateTime = (dateString: string, hour12?: boolean): string => {
   return new Date(dateString).toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    hour12,
   });
 };
 
@@ -45,6 +47,7 @@ export default function MemoryEditDialog({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { data: memData } = useMemoriesQuery();
+  const hour12 = useClockFormat();
 
   const hasUpdateAccess = useHasAccess({
     permissionType: PermissionTypes.MEMORIES,
@@ -75,6 +78,9 @@ export default function MemoryEditDialog({
   const [originalKey, setOriginalKey] = useState('');
   const [touched, setTouched] = useState({ key: false, value: false });
   const [prevMemory, setPrevMemory] = useState<TUserMemory | null>(null);
+  const memoryAddress = memory ? getMemoryAddress(memory) : null;
+  const requiresKey =
+    memoryAddress == null || !('id' in memoryAddress) || memory?.key.trim() !== '';
 
   if (memory !== prevMemory) {
     setPrevMemory(memory);
@@ -86,12 +92,15 @@ export default function MemoryEditDialog({
     }
   }
 
-  const keyError = getMemoryKeyError({
-    key,
-    memories: memData?.memories,
-    agentId: memory?.agentId,
-    originalKey,
-  });
+  const keyError =
+    requiresKey || key.trim() !== ''
+      ? getMemoryKeyError({
+          key,
+          memories: memData?.memories,
+          agentId: memory?.agentId,
+          originalKey,
+        })
+      : null;
   const valueError = getMemoryValueError(value);
   const hasErrors = keyError != null || valueError != null;
   /** Stay quiet on a pristine empty field; validate live once there is something to judge. */
@@ -99,20 +108,25 @@ export default function MemoryEditDialog({
   const showValueError = hasUpdateAccess && (touched.value || value !== '');
 
   const handleSave = () => {
-    if (!hasUpdateAccess || !memory) {
+    if (!hasUpdateAccess || !memory || !memoryAddress) {
       return;
     }
 
+    const trimmedKey = key.trim();
     if (keyError || valueError) {
       setTouched({ key: true, value: true });
       return;
     }
 
+    const updateAddress = getMemoryUpdateAddress(memory, trimmedKey);
+    if (!updateAddress) {
+      return;
+    }
+
     updateMemory({
-      key: key.trim(),
+      ...updateAddress,
       value: value.trim(),
       agentId: memory.agentId,
-      ...(originalKey !== key.trim() && { originalKey }),
     });
   };
 
@@ -156,7 +170,7 @@ export default function MemoryEditDialog({
 
                 {/* Date - Center */}
                 <span className="text-xs text-text-secondary">
-                  {formatDateTime(memory.updated_at)}
+                  {formatDateTime(memory.updated_at, hour12)}
                 </span>
 
                 {/* Usage badge - Right (memory-specific) */}
@@ -230,7 +244,7 @@ export default function MemoryEditDialog({
               variant="submit"
               onClick={handleSave}
               aria-label={localize('com_ui_save')}
-              disabled={isLoading || hasErrors}
+              disabled={isLoading || !memoryAddress || hasErrors}
             >
               {isLoading ? <Spinner className="size-4" /> : localize('com_ui_save')}
             </Button>

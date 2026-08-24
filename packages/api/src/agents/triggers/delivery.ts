@@ -75,7 +75,7 @@ function orderingIdentity(
       envelope.event.source.id,
       envelope.mode,
       envelope.target.agentId,
-      envelope.mode === 'steer' ? envelope.target.conversationId : '',
+      envelope.mode === 'fire' ? '' : envelope.target.conversationId,
     ];
   }
   return `trigger_lane_${digest([

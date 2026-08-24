@@ -7,6 +7,7 @@ import {
   aggregateEmittedUsage,
   createDetachedSubagentUsageRecorder,
   createSubagentUsageSink,
+  aggregateCollectedUsage,
   recordCollectedUsage,
   resolveAgentTokenConfig,
   buildPersistedContextUsage,
@@ -15,6 +16,105 @@ import {
   priorRunOutputTokens,
 } from './usage';
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
+
+describe('aggregateCollectedUsage', () => {
+  it('preserves the no-child baseline and ignores absent entries', () => {
+    expect(
+      aggregateCollectedUsage([{ input_tokens: 100, output_tokens: 40, provider: 'openai' }, null]),
+    ).toEqual({
+      total: {
+        inputTokens: 100,
+        outputTokens: 40,
+        totalTokens: 140,
+        cacheReadTokens: 0,
+        reasoningTokens: 0,
+      },
+      primary: {
+        inputTokens: 100,
+        outputTokens: 40,
+        totalTokens: 140,
+        cacheReadTokens: 0,
+        reasoningTokens: 0,
+      },
+      subagent: {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        cacheReadTokens: 0,
+        reasoningTokens: 0,
+      },
+    });
+  });
+
+  it('includes multiple child calls once in the combined and subagent totals', () => {
+    const result = aggregateCollectedUsage([
+      { input_tokens: 100, output_tokens: 40, provider: 'openai' },
+      {
+        input_tokens: 25,
+        output_tokens: 10,
+        provider: 'openai',
+        usage_type: 'subagent',
+      },
+      {
+        input_tokens: 35,
+        output_tokens: 15,
+        provider: 'openai',
+        usage_type: 'subagent',
+      },
+    ]);
+
+    expect(result.total).toEqual(
+      expect.objectContaining({ inputTokens: 160, outputTokens: 65, totalTokens: 225 }),
+    );
+    expect(result.subagent).toEqual(
+      expect.objectContaining({ inputTokens: 60, outputTokens: 25, totalTokens: 85 }),
+    );
+  });
+
+  it('uses provider-aware cache normalization for primary and child calls', () => {
+    const result = aggregateCollectedUsage([
+      {
+        input_tokens: 200,
+        output_tokens: 80,
+        provider: 'anthropic',
+        input_token_details: { cache_creation: 60, cache_read: 30 },
+      },
+      {
+        input_tokens: 100,
+        output_tokens: 50,
+        provider: 'bedrock',
+        usage_type: 'subagent',
+        input_token_details: { cache_creation: 20, cache_read: 10 },
+      },
+    ]);
+
+    expect(result.primary.inputTokens).toBe(200);
+    expect(result.subagent.inputTokens).toBe(130);
+    expect(result.total.cacheReadTokens).toBe(40);
+  });
+
+  it('repairs provider output undercounts and aggregates reasoning details', () => {
+    const result = aggregateCollectedUsage([
+      {
+        input_tokens: 64,
+        output_tokens: 2674,
+        total_tokens: 3379,
+        provider: 'vertexai',
+        output_token_details: { reasoning: 641 },
+      },
+      {
+        input_tokens: 20,
+        output_tokens: 10,
+        provider: 'openai',
+        usage_type: 'subagent',
+        output_token_details: { reasoning_tokens: 3 },
+      },
+    ]);
+
+    expect(result.total.outputTokens).toBe(3325);
+    expect(result.total.reasoningTokens).toBe(644);
+  });
+});
 
 describe('recordCollectedUsage', () => {
   let mockSpendTokens: jest.Mock;

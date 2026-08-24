@@ -2,13 +2,13 @@ import { useMemo, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { ChevronLeft, Check, Copy } from 'lucide-react';
 import { AgentCapabilities } from 'librechat-data-provider';
-import { Button, TooltipAnchor, useToastContext } from '@librechat/client';
+import { Button, TooltipAnchor, labelVariants, useToastContext } from '@librechat/client';
 import type { AgentForm } from '~/common';
-import { sectionLabelClass, groupHeadingClass } from './ui';
 import { useAgentPanelContext } from '~/Providers';
 import StatefulSessions from './StatefulSessions';
 import OrchestrationHub from './OrchestrationHub';
 import MaxAgentSteps from './MaxAgentSteps';
+import { groupHeadingClass } from './ui';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 
@@ -66,7 +66,9 @@ export default function AdvancedPanel() {
 
         {currentAgentId && (
           <div className="flex items-center justify-between gap-2 border-t border-border-light pt-3">
-            <span className={sectionLabelClass}>{localize('com_ui_agent_id')}</span>
+            <span className={labelVariants({ variant: 'section' })}>
+              {localize('com_ui_agent_id')}
+            </span>
             <TooltipAnchor
               description={currentAgentId}
               render={

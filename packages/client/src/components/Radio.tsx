@@ -1,6 +1,9 @@
 import React, { useState, useRef, useLayoutEffect, useCallback, memo } from 'react';
 import { useLocalize } from '~/hooks';
 
+/** Matches the `inset-y-1` the single-row indicator uses. */
+const INDICATOR_INSET = 4;
+
 interface Option {
   value: string;
   label: string;
@@ -15,6 +18,12 @@ interface RadioProps {
   className?: string;
   buttonClassName?: string;
   fullWidth?: boolean;
+  /** Lets the segments flow onto a second row instead of overflowing their
+   *  container. A `whitespace-nowrap` label plus `px-4` gives every segment a hard
+   *  minimum width, so five of them (translated labels are longer still) push past a
+   *  dialog's width on a phone and the choices past the edge become unreachable.
+   *  The moving indicator follows across rows; the single-row default is untouched. */
+  wrap?: boolean;
   'aria-labelledby'?: string;
 }
 
@@ -26,6 +35,7 @@ const Radio: React.NamedExoticComponent<RadioProps> = memo(function Radio({
   className = '',
   buttonClassName = '',
   fullWidth = false,
+  wrap = false,
   'aria-labelledby': ariaLabelledBy,
 }: RadioProps) {
   const localize = useLocalize();
@@ -49,11 +59,25 @@ const Radio: React.NamedExoticComponent<RadioProps> = memo(function Radio({
     // offsetWidth/offsetLeft are layout metrics: unlike getBoundingClientRect they
     // are not distorted by the dialog's open transform (scale), and they resolve to
     // whole pixels, so the indicator matches its segment and keeps crisp borders.
+    if (!wrap) {
+      setBackgroundStyle({
+        width: `${selectedButton.offsetWidth}px`,
+        transform: `translateX(${selectedButton.offsetLeft}px)`,
+      });
+      return;
+    }
+    // Wrapped, the indicator also has to move vertically, so it carries its own
+    // height rather than stretching between the container's insets. INDICATOR_INSET
+    // reproduces the `inset-y-1` of the single-row default exactly, so switching a
+    // group to `wrap` does not change how it looks on a row that still fits.
     setBackgroundStyle({
       width: `${selectedButton.offsetWidth}px`,
-      transform: `translateX(${selectedButton.offsetLeft}px)`,
+      height: `${selectedButton.offsetHeight - INDICATOR_INSET * 2}px`,
+      transform: `translate(${selectedButton.offsetLeft}px, ${
+        selectedButton.offsetTop + INDICATOR_INSET
+      }px)`,
     });
-  }, [currentValue, options]);
+  }, [currentValue, options, wrap]);
 
   // Measure before paint and re-measure on any later layout change (the dialog's
   // open animation settling, a window resize). A fixed timeout previously raced
@@ -95,13 +119,17 @@ const Radio: React.NamedExoticComponent<RadioProps> = memo(function Radio({
   return (
     <div
       ref={containerRef}
-      className={`relative ${fullWidth ? 'flex' : 'inline-flex'} items-center rounded-lg bg-surface-tertiary px-1 ${className}`}
+      className={`relative ${fullWidth ? 'flex' : 'inline-flex'} ${
+        wrap ? 'flex-wrap' : ''
+      } items-center rounded-lg bg-surface-tertiary px-1 ${className}`}
       role="radiogroup"
       aria-labelledby={ariaLabelledBy}
     >
       {selectedIndex >= 0 && isMounted && (
         <div
-          className="pointer-events-none absolute inset-y-1 left-0 rounded-md border border-border-light bg-surface-primary shadow-sm transition-all duration-300 ease-out"
+          className={`pointer-events-none absolute left-0 rounded-md border border-border-light bg-surface-primary shadow-sm transition-all duration-300 ease-out ${
+            wrap ? 'top-0' : 'inset-y-1'
+          }`}
           style={backgroundStyle}
         />
       )}

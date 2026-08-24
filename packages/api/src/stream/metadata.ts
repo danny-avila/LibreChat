@@ -6,6 +6,12 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   if (metadata.responseMessageId) {
     patch.responseMessageId = metadata.responseMessageId;
   }
+  if (metadata.isRegenerate !== undefined) {
+    patch.isRegenerate = metadata.isRegenerate;
+  }
+  if (metadata.mcpRequestBody) {
+    patch.mcpRequestBody = metadata.mcpRequestBody;
+  }
   if (metadata.sender) {
     patch.sender = metadata.sender;
   }
@@ -29,6 +35,27 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   }
   if (metadata.isTemporary !== undefined) {
     patch.isTemporary = metadata.isTemporary;
+  }
+  if (metadata.scheduleId) {
+    patch.scheduleId = metadata.scheduleId;
+  }
+  if (metadata.scheduledFor) {
+    patch.scheduledFor = metadata.scheduledFor;
+  }
+  if (metadata.scheduleConfigRevision !== undefined) {
+    patch.scheduleConfigRevision = metadata.scheduleConfigRevision;
+  }
+  if (metadata.scheduleManual !== undefined) {
+    patch.scheduleManual = metadata.scheduleManual;
+  }
+  if (metadata.scheduleOutcome !== undefined) {
+    patch.scheduleOutcome = metadata.scheduleOutcome;
+  }
+  if (metadata.scheduleOutcomeError !== undefined) {
+    patch.scheduleOutcomeError = metadata.scheduleOutcomeError;
+  }
+  if (metadata.preserveForScheduleReconcile !== undefined) {
+    patch.preserveForScheduleReconcile = metadata.preserveForScheduleReconcile;
   }
   if (metadata.promptTokens !== undefined) {
     patch.promptTokens = metadata.promptTokens;

@@ -17,7 +17,7 @@ const {
   omitTitleOptions,
   getProviderConfig,
   memoryInstructions,
-  createTokenCounter,
+  createCachedTokenCounter,
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
@@ -41,8 +41,10 @@ const {
   captureResumeModelParameters,
   pickResumeContext,
   getApprovalTtlMs,
+  getAgentCheckpointer,
   isHITLEnabled,
   captureAgentCheckpointGeneration,
+  isContentFilterError,
   deleteAgentCheckpoint,
   LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
   agentRequestsAskUserQuestion,
@@ -60,6 +62,7 @@ const {
   createActivityLabelWiring,
   createActivityPhaseWiring,
   createReasoningLabelHostWiring,
+  createMCPRuntimeRequestBody,
   generateReasoningLabelRevision,
   getLabelUsageSequenceSeed,
   createAssistantPhaseStampingHandlers,
@@ -102,6 +105,14 @@ const {
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
+  assertModelBoundContent,
+  createModelBoundChatModelCallback: createModelBoundContentCallback,
+  createInitialModelBoundAdmissionCallback,
+  hasModelBoundContentProtection,
+  assertResumeRuntimeContentAllowed,
+  collectReachableAgents,
+  getDynamicToolContexts,
+  getSafeErrorMetadata,
 } = require('@librechat/api');
 const {
   Run,
@@ -124,6 +135,7 @@ const {
   EModelEndpoint,
   PermissionTypes,
   AgentCapabilities,
+  hasActivePiiPatterns,
   isAgentsEndpoint,
   isEphemeralAgentId,
   removeNullishValues,
@@ -140,9 +152,57 @@ const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
+function getInterruptTtlMs(checkpointerCfg, req) {
+  const configuredTtlMs = getApprovalTtlMs(checkpointerCfg);
+  const retention = req?._agentEventBindingRetention;
+  if (retention?.expiredAt == null) {
+    return configuredTtlMs;
+  }
+  const bindingDeadline = new Date(retention.expiredAt).getTime();
+  if (!Number.isFinite(bindingDeadline)) {
+    return configuredTtlMs;
+  }
+  return Math.min(configuredTtlMs, Math.max(0, bindingDeadline - Date.now()));
+}
+
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 
+function getUserFacingRequestError(baseMessage, error, appConfig) {
+  const protectionEnabled = hasModelBoundContentProtection(
+    appConfig?.filters,
+    appConfig?.messageFilter?.pii,
+  );
+  if (protectionEnabled || !error?.message) {
+    return baseMessage;
+  }
+  return `${baseMessage}: ${error.message}`;
+}
+
 class AgentClient extends BaseClient {
+  /** Mirrors the SDK's `MultiAgentGraph.analyzeGraph`: every loaded agent
+   * without an incoming edge starts in the first graph wave, falling back to
+   * the first agent for a cycle. */
+  static getStartingAgentIds(agents) {
+    const agentIds = [
+      ...new Set(
+        (agents ?? [])
+          .map((agent) => agent?.id)
+          .filter((agentId) => typeof agentId === 'string' && agentId.length > 0),
+      ),
+    ];
+    const incomingAgentIds = new Set();
+    for (const edge of agents?.[0]?.edges ?? []) {
+      const destinations = Array.isArray(edge?.to) ? edge.to : [edge?.to];
+      for (const destination of destinations) {
+        if (typeof destination === 'string' && destination.length > 0) {
+          incomingAgentIds.add(destination);
+        }
+      }
+    }
+    const startingAgentIds = agentIds.filter((agentId) => !incomingAgentIds.has(agentId));
+    return startingAgentIds.length > 0 ? startingAgentIds : agentIds.slice(0, 1);
+  }
+
   constructor(options = {}) {
     super(null, options);
     /** The current client class
@@ -252,7 +312,7 @@ class AgentClient extends BaseClient {
      *  SDK-emitted indices that arrive after an injection land past it.
      *  @type {import('@librechat/api').SteerOffsetState} */
     this.steerOffsetState = { offset: 0 };
-    /** @type {(messages: BaseMessage[]) => Promise<void>} */
+    /** @type {(messages: BaseMessage[], inspectionMessages?: BaseMessage[]) => Promise<void>} */
     this.processMemory;
   }
 
@@ -295,7 +355,8 @@ class AgentClient extends BaseClient {
         }
       } catch (err) {
         logger.warn(
-          `[AgentClient] Failed to attach subagent content for tool_call ${toolCall.id}: ${err?.message ?? err}`,
+          `[AgentClient] Failed to attach subagent content for tool_call ${toolCall.id}`,
+          getSafeErrorMetadata(err),
         );
       }
     }
@@ -392,6 +453,11 @@ class AgentClient extends BaseClient {
           user: this.options.req?.user,
           item,
           getFiles: db.getFiles,
+          assertFilesAllowed: (files) =>
+            assertModelBoundContent({
+              filters: this.options.req?.config?.filters,
+              files,
+            }),
         }),
     };
     return {
@@ -1373,7 +1439,7 @@ class AgentClient extends BaseClient {
     } catch (error) {
       logger.error(
         '[api/server/controllers/agents/client.js #getSaveOptions] Error parsing options',
-        error,
+        getSafeErrorMetadata(error),
       );
     }
 
@@ -1403,6 +1469,63 @@ class AgentClient extends BaseClient {
    */
   getBuildMessagesOptions() {
     return {};
+  }
+
+  shouldDeferUserMessagePersistence() {
+    return hasModelBoundContentProtection(
+      this.options.req?.config?.filters,
+      this.options.req?.config?.messageFilter?.pii,
+    );
+  }
+
+  /** Legacy `messageFilter.pii` historically covered the restored branch
+   * before model-input construction and persistence. Retain that contract
+   * without scanning new source-aware filters before SDK pruning. */
+  assertStoredModelBoundContent() {
+    const legacyPii = this.options.req?.config?.messageFilter?.pii;
+    if (!hasModelBoundContentProtection(undefined, legacyPii)) {
+      return;
+    }
+    assertModelBoundContent({
+      legacyPii,
+      storedMessages: this.modelBoundStoredMessages,
+    });
+  }
+
+  /** Agent pruning and summarization happen inside the SDK after
+   * `buildMessages`, so BaseClient's post-build payload is not yet the final
+   * model selection. The fail-closed callback below enforces the exact payload
+   * at every chat-model call instead. */
+  assertBuiltModelBoundContent() {}
+
+  createModelBoundChatModelCallback() {
+    const fileProjection = BaseClient.prototype.getModelBoundFileProjection.call(this);
+    const persistence = BaseClient.prototype.getModelBoundUserMessagePersistence.call(this);
+    return createModelBoundContentCallback(
+      {
+        filters: this.options.req?.config?.filters,
+        legacyPii: this.options.req?.config?.messageFilter?.pii,
+        storedMessages: this.modelBoundStoredMessages,
+        fileIdsBySourceMessageId: fileProjection.fileIdsBySourceMessageId,
+        resolvedFiles: fileProjection.resolvedFiles,
+        sourceFileProjectionOverflowed: fileProjection.overflowed,
+      },
+      {
+        onContentRejected: persistence?.cancel,
+      },
+    );
+  }
+
+  createInitialModelBoundAdmissionCallback(startingAgentIds) {
+    const persistence = BaseClient.prototype.getModelBoundUserMessagePersistence.call(this);
+    if (persistence == null || !persistence.isPending() || startingAgentIds.length === 0) {
+      return undefined;
+    }
+    return createInitialModelBoundAdmissionCallback({
+      agentIds: startingAgentIds,
+      isActive: persistence.isPending,
+      onAllowed: persistence.start,
+    });
   }
 
   /**
@@ -1438,6 +1561,8 @@ class AgentClient extends BaseClient {
     let payload;
     /** @type {number | undefined} */
     let promptTokens;
+    const modelBoundMemoryContexts = new Set();
+    const modelBoundFileContexts = new Set();
 
     /** Normalize instruction fields before applying per-run context. */
     const normalizeInstructions = (agent) => {
@@ -1463,7 +1588,21 @@ class AgentClient extends BaseClient {
       }
     }
     const allAgents = [...agentsById].map(([agentId, agent]) => ({ agent, agentId }));
-
+    const dynamicToolContexts = getDynamicToolContexts(allAgents.map(({ agent }) => agent));
+    for (const context of dynamicToolContexts) {
+      modelBoundFileContexts.add(context);
+    }
+    for (const { agent } of allAgents) {
+      for (const attachment of [
+        ...(agent.attachments ?? []),
+        ...(agent.requestAttachments ?? []),
+        ...(agent.agentContextAttachments ?? []),
+      ]) {
+        if (attachment) {
+          modelBoundFileContexts.add(attachment);
+        }
+      }
+    }
     /**
      * Memory authorization/loading and MCP config resolution do not depend on
      * attachment hydration or prompt formatting. Start them before that work,
@@ -1478,7 +1617,12 @@ class AgentClient extends BaseClient {
       resolveConfigServers(this.options.req),
     ]);
     void earlySharedContextPromise.catch(() => {});
-
+    assertModelBoundContent({
+      filters: this.options.req.config?.filters,
+      legacyPii: this.options.req.config?.messageFilter?.pii,
+      agents: allAgents.map(({ agent }) => agent),
+      files: [...modelBoundFileContexts],
+    });
     const sharedRunAttachmentIds = new Set();
     /** @type {ReturnType<typeof buildAgentScopedContext>} */
     let agentScopedContextPromise;
@@ -1497,7 +1641,17 @@ class AgentClient extends BaseClient {
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
       const latestMessage = orderedMessages[orderedMessages.length - 1];
+      this.modelBoundCurrentFiles = [...attachments];
 
+      assertModelBoundContent({
+        filters: this.options.req.config?.filters,
+        files: attachments,
+      });
+      for (const attachment of attachments) {
+        if (attachment) {
+          modelBoundFileContexts.add(attachment);
+        }
+      }
       for (const fileId of collectFileIds(attachments)) {
         sharedRunAttachmentIds.add(fileId);
       }
@@ -1550,6 +1704,11 @@ class AgentClient extends BaseClient {
         userName: this.options?.name,
         assistantName: this.options?.modelLabel,
       });
+      const sourceMessageId = message.messageId ?? message.id;
+      if (typeof sourceMessageId === 'string' && sourceMessageId.length > 0) {
+        formattedMessage.messageId = sourceMessageId;
+        memoryFormattedMessage.messageId = sourceMessageId;
+      }
 
       /**
        * Bind file context to the message it belongs to. Historical attachments
@@ -1557,6 +1716,10 @@ class AgentClient extends BaseClient {
        * too instead of living only in the dynamic system tail.
        */
       if (message.fileContext) {
+        /** Historical file context is deliberately not added to the run-wide
+         * preflight set. The provider callback selects its owner-resolved file
+         * only when this source row survives SDK pruning. Current-turn files
+         * were already added and inspected from `this.options.attachments`. */
         hasFileContext = true;
         prependFileContext(formattedMessage, message.fileContext);
       }
@@ -1614,6 +1777,7 @@ class AgentClient extends BaseClient {
       if (this.message_file_map && this.message_file_map[message.messageId]) {
         const attachments = this.message_file_map[message.messageId];
         for (const file of attachments) {
+          /** See the source-selected historical-file enforcement above. */
           if (file.embedded) {
             this.contextHandlers?.processFile(file);
             continue;
@@ -1686,12 +1850,22 @@ class AgentClient extends BaseClient {
         max,
         mimeType,
       });
+      /** The provider-native `fileData.fileUri` parts are injected after the
+       * earlier canonical-message preflight. Reinspect the exact transformed
+       * user payload so strict file policy cannot be skipped by a late media
+       * adapter. */
+      assertModelBoundContent({
+        filters: this.options.req.config?.filters,
+        legacyPii: this.options.req.config?.messageFilter?.pii,
+        submittedMessages: [{ role: 'user', content: latestFormatted.content }],
+      });
       /** Google rejects an unusable video with a generic `INVALID_ARGUMENT` that names no cause,
        *  so `#sendCompletion` can only attribute one by knowing this turn carried a video. */
       this.injectedYouTubeVideo = hasYouTubeVideoParts(latestFormatted.content);
     }
 
     payload = formattedMessages;
+    this.modelBoundSteerFileIdsBySourceMessageId = new Map();
     if (this.options.resendFiles) {
       /** Persisted steer parts of past turns replay with their attachments:
        *  one batched owner-scoped fetch, re-encoded per turn and stamped as a
@@ -1709,6 +1883,21 @@ class AgentClient extends BaseClient {
         docsById: this.authorizedHistoricalFiles,
         getFiles: db.getFiles,
       });
+      for (const { sourceMessageId, fileIds } of stamped) {
+        if (typeof sourceMessageId !== 'string' || sourceMessageId.length === 0) {
+          continue;
+        }
+        const boundFileIds =
+          this.modelBoundSteerFileIdsBySourceMessageId.get(sourceMessageId) ?? new Set();
+        for (const fileId of fileIds ?? []) {
+          if (typeof fileId === 'string' && fileId.length > 0) {
+            boundFileIds.add(fileId);
+          }
+        }
+        if (boundFileIds.size > 0) {
+          this.modelBoundSteerFileIdsBySourceMessageId.set(sourceMessageId, boundFileIds);
+        }
+      }
       for (const { index, media, steerText } of stamped) {
         /** Count the FULL stamped content and subtract only the steer body
          *  (already counted inside the assistant message): extracted file
@@ -1748,6 +1937,7 @@ class AgentClient extends BaseClient {
     /** Augmented prompt from RAG/context handlers */
     this.augmentedPrompt = augmentedPrompt;
     if (this.augmentedPrompt) {
+      modelBoundFileContexts.add(this.augmentedPrompt);
       sharedRunContextParts.push(this.augmentedPrompt);
     }
 
@@ -1778,14 +1968,58 @@ class AgentClient extends BaseClient {
           getFormattedMemories: db.getFormattedMemories,
         });
       } catch (error) {
-        logger.error('[AgentClient] Error loading partition memories', error);
+        logger.error('[AgentClient] Error loading partition memories', getSafeErrorMetadata(error));
         return undefined;
       }
+    };
+    const canonicalMemoryCache = new Map();
+    const getCanonicalAgentMemories = async (agent) => {
+      if (!hasActivePiiPatterns(this.options.req.config?.filters?.memories?.pii)) {
+        return undefined;
+      }
+      if (typeof db.getUserMemories !== 'function') {
+        throw new Error('Canonical memory inspection is unavailable');
+      }
+      const agentId = getMemoryAgentId(agent);
+      const cacheKey = agentId ?? '__shared__';
+      if (!canonicalMemoryCache.has(cacheKey)) {
+        canonicalMemoryCache.set(
+          cacheKey,
+          db.getUserMemories({
+            userId: this.options.req.user.id + '',
+            agentId,
+          }),
+        );
+      }
+      return canonicalMemoryCache.get(cacheKey);
     };
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
 
+    const configuredContextAttachments = this.options.agentContextAttachmentsByAgentId;
+    const contextAttachments =
+      configuredContextAttachments instanceof Map
+        ? new Map(configuredContextAttachments)
+        : new Map(Object.entries(configuredContextAttachments ?? {}));
+    for (const { agent, agentId } of allAgents) {
+      if (
+        !contextAttachments.has(agentId) &&
+        Array.isArray(agent.agentContextAttachments) &&
+        agent.agentContextAttachments.length > 0
+      ) {
+        contextAttachments.set(agentId, agent.agentContextAttachments);
+      }
+    }
+    const attachmentLists =
+      contextAttachments instanceof Map ? [...contextAttachments.values()] : [];
+    for (const attachments of attachmentLists) {
+      for (const attachment of attachments ?? []) {
+        if (attachment) {
+          modelBoundFileContexts.add(attachment);
+        }
+      }
+    }
     /** Preserve prompt token counts for graph formatting and pruning. */
     this.indexTokenCountMap = indexTokenCountMap;
 
@@ -1819,11 +2053,32 @@ class AgentClient extends BaseClient {
     const ephemeralAgent = this.options.req.body.ephemeralAgent;
     const mcpManager = getMCPManager();
 
-    const prepareRuntimeAgent = async ({ agent, agentId }, scopedContext) => {
+    const prepareRuntimeAgent = async (
+      { agent, agentId },
+      scopedContext,
+      assertLateBoundContent = false,
+    ) => {
+      normalizeInstructions(agent);
       const agentRunContextParts = [sharedRunContext];
+      const agentMemoryContexts = [];
       const agentHasMemory = agentHasInlineMemoryTools(agent);
       if (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory) {
         const partitionMemories = await getAgentPartitionMemories(agent);
+        const canonicalMemories =
+          partitionMemories != null ? await getCanonicalAgentMemories(agent) : undefined;
+        if (canonicalMemories != null) {
+          for (const memory of canonicalMemories) {
+            modelBoundMemoryContexts.add(memory);
+            agentMemoryContexts.push(memory);
+          }
+        }
+        if (partitionMemories?.withoutKeys) {
+          /** Inspect the exact formatted value text that will be model-bound as
+           *  well as canonical rows. This also covers custom embedders, read
+           *  failures, and an unexpectedly empty canonical result. */
+          modelBoundMemoryContexts.add(partitionMemories.withoutKeys);
+          agentMemoryContexts.push(partitionMemories.withoutKeys);
+        }
         const agentMemoryContext = buildMemoryContext(
           agentHasMemory ? partitionMemories?.withKeys : partitionMemories?.withoutKeys,
         );
@@ -1832,10 +2087,11 @@ class AgentClient extends BaseClient {
         }
       }
       if (scopedContext) {
+        modelBoundFileContexts.add(scopedContext);
         agentRunContextParts.push(scopedContext);
       }
 
-      return applyContextToAgent({
+      await applyContextToAgent({
         agent,
         agentId,
         logger,
@@ -1844,6 +2100,16 @@ class AgentClient extends BaseClient {
         sharedRunContext: agentRunContextParts.filter(Boolean).join('\n\n'),
         ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
       });
+      if (assertLateBoundContent) {
+        assertModelBoundContent({
+          filters: this.options.req.config?.filters,
+          legacyPii: this.options.req.config?.messageFilter?.pii,
+          agents: [agent],
+          memories: agentMemoryContexts,
+          files: scopedContext ? [scopedContext] : [],
+        });
+      }
+      return agent;
     };
 
     const runtimeAgentPreparations = new WeakMap();
@@ -1861,6 +2127,15 @@ class AgentClient extends BaseClient {
         prepareRuntimeAgentOnce(agent, agentScopedContext.get(agentId)),
       ),
     );
+    this.modelBoundMemoryContexts = [...modelBoundMemoryContexts];
+    this.modelBoundFileContexts = [...modelBoundFileContexts];
+    assertModelBoundContent({
+      filters: this.options.req.config?.filters,
+      legacyPii: this.options.req.config?.messageFilter?.pii,
+      agents: allAgents.map(({ agent }) => agent),
+      memories: this.modelBoundMemoryContexts,
+      files: this.modelBoundFileContexts,
+    });
 
     const wrappedLazyDescriptors = new WeakSet();
     const wrapLazyResolvers = (configs) => {
@@ -1916,6 +2191,7 @@ class AgentClient extends BaseClient {
                     prepareRuntimeAgent(
                       { agent, agentId: agent.id },
                       lateScopedContext.get(agent.id),
+                      true,
                     ),
                   ),
                 ),
@@ -1958,7 +2234,7 @@ class AgentClient extends BaseClient {
       if (error.message === 'Memory processing timeout') {
         logger.warn('[AgentClient] Memory processing timed out after 3 seconds');
       } else {
-        logger.error('[AgentClient] Error processing memory:', error);
+        logger.error('[AgentClient] Error processing memory:', getSafeErrorMetadata(error));
       }
       return;
     }
@@ -2008,7 +2284,7 @@ class AgentClient extends BaseClient {
       } catch (error) {
         logger.error(
           '[api/server/controllers/agents/client.js #useMemory] Error loading memories',
-          error,
+          getSafeErrorMetadata(error),
         );
         return;
       }
@@ -2038,7 +2314,7 @@ class AgentClient extends BaseClient {
     } catch (error) {
       logger.error(
         '[api/server/controllers/agents/client.js #useMemory] Error loading agent for memory',
-        error,
+        getSafeErrorMetadata(error),
       );
     }
 
@@ -2111,6 +2387,7 @@ class AgentClient extends BaseClient {
       userId,
       agentId: memoryAgentId,
       config,
+      filters: this.options.req.config?.filters,
       messageId,
       streamId,
       jobCreatedAt: this.jobCreatedAt,
@@ -2118,6 +2395,7 @@ class AgentClient extends BaseClient {
       memoryMethods: {
         setMemory: db.setMemory,
         deleteMemory: db.deleteMemory,
+        getUserMemories: db.getUserMemories,
         getFormattedMemories: db.getFormattedMemories,
       },
       res: this.options.res,
@@ -2136,7 +2414,7 @@ class AgentClient extends BaseClient {
     } catch (error) {
       logger.error(
         '[api/server/controllers/agents/client.js #useMemory] Error loading keyed memories',
-        error,
+        getSafeErrorMetadata(error),
       );
     }
     return { withKeys, withoutKeys };
@@ -2252,9 +2530,9 @@ class AgentClient extends BaseClient {
         });
       }
       const bufferMessage = new HumanMessage(limitedMemoryInput);
-      return await this.processMemory([bufferMessage]);
+      return await this.processMemory([bufferMessage], filteredMessages);
     } catch (error) {
-      logger.error('Memory Agent failed to process memory', error);
+      logger.error('Memory Agent failed to process memory', getSafeErrorMetadata(error));
     }
   }
 
@@ -2542,7 +2820,7 @@ class AgentClient extends BaseClient {
             sendEvent(res, { event: UsageEvents.ON_TOKEN_USAGE, data });
           }
         } catch (err) {
-          logger.warn('[AgentClient] Failed to emit subagent usage', err);
+          logger.warn('[AgentClient] Failed to emit subagent usage', getSafeErrorMetadata(err));
         }
       })();
       pendingSubagentEmits.push(emit);
@@ -2823,7 +3101,7 @@ class AgentClient extends BaseClient {
       // thread_id was bound to conversationId at run config (config.configurable);
       // fall back to it when the SDK doesn't echo threadId on the interrupt.
       threadId: interrupt.threadId ?? this.conversationId,
-      ttlMs: getApprovalTtlMs(checkpointerCfg),
+      ttlMs: getInterruptTtlMs(checkpointerCfg, this.options.req),
       // Pin the graph-determining request fields so resume can't rebuild this paused
       // run on a different agent/tool set (esp. ephemeral agents, whose agent_id is
       // undefined so the id guard can't tell two configs apart).
@@ -2856,7 +3134,7 @@ class AgentClient extends BaseClient {
     } catch (err) {
       logger.warn(
         `[AgentClient] Failed to capture discovered tools for resume on ${streamId}`,
-        err?.message ?? err,
+        getSafeErrorMetadata(err),
       );
     }
 
@@ -2884,10 +3162,15 @@ class AgentClient extends BaseClient {
     // the flag; if it fails here, the teardown still releases (it checks the flag).
     if (!this.pendingRequestReleased) {
       try {
-        await decrementPendingRequest(this.options.req?.user?.id);
+        if (this.options.req?._scheduleConcurrencyExempt !== true) {
+          await decrementPendingRequest(this.options.req?.user?.id);
+        }
         this.pendingRequestReleased = true;
       } catch (err) {
-        logger.error(`[AgentClient] Failed to release request slot on pause ${streamId}`, err);
+        logger.error(
+          `[AgentClient] Failed to release request slot on pause ${streamId}`,
+          getSafeErrorMetadata(err),
+        );
       }
     }
     await GenerationJobManager.emitChunk(
@@ -2950,11 +3233,13 @@ class AgentClient extends BaseClient {
           last_agent_index: this.agentConfigs?.size ?? 0,
           user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
-          requestBody: {
-            messageId: this.responseMessageId,
-            conversationId: this.conversationId,
-            parentMessageId: this.parentMessageId,
-          },
+          requestBody:
+            this.options.mcpRequestBody ??
+            createMCPRuntimeRequestBody({
+              messageId: this.responseMessageId,
+              conversationId: this.conversationId,
+              parentMessageId: this.parentMessageId,
+            }),
           user: createSafeUser(this.options.req.user),
         },
         recursionLimit: resolveRecursionLimit(agentsEConfig, this.options.agent),
@@ -2964,7 +3249,7 @@ class AgentClient extends BaseClient {
       };
 
       const toolSet = buildToolSet(this.options.agent);
-      const tokenCounter = createTokenCounter(this.getEncoding());
+      const tokenCounter = await createCachedTokenCounter(this.getEncoding());
 
       /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
       const skillPrimeResult = this.options.primeInvokedSkills
@@ -3059,10 +3344,9 @@ class AgentClient extends BaseClient {
         });
         indexTokenCountMap = primeResult.indexTokenCountMap;
         if (primeResult.inserted > 0) {
-          const manualNames = (manualSkillPrimes ?? []).map((p) => p.name);
-          const alwaysApplyNames = (alwaysApplySkillPrimes ?? []).map((p) => p.name);
           logger.debug(
-            `[AgentClient] Primed ${primeResult.inserted} skill(s) at message index ${primeResult.insertIdx} — manual: [${manualNames.join(', ')}], always-apply: [${alwaysApplyNames.join(', ')}]`,
+            `[AgentClient] Primed ${primeResult.inserted} skill(s) at message index ${primeResult.insertIdx} ` +
+              `(${manualSkillPrimes?.length ?? 0} manual, ${alwaysApplySkillPrimes?.length ?? 0} always-apply)`,
           );
         }
         if (primeResult.alwaysApplyDropped > 0) {
@@ -3071,6 +3355,18 @@ class AgentClient extends BaseClient {
           );
         }
       }
+
+      assertModelBoundContent({
+        filters: appConfig?.filters,
+        legacyPii: appConfig?.messageFilter?.pii,
+        agents: collectReachableAgents([
+          this.options.agent,
+          ...(this.agentConfigs?.values() ?? []),
+        ]),
+        skills: [...(manualSkillPrimes ?? []), ...(alwaysApplySkillPrimes ?? [])],
+        memories: this.modelBoundMemoryContexts,
+        files: this.modelBoundFileContexts,
+      });
 
       if (indexTokenCountMap && isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
         const entries = Object.entries(indexTokenCountMap);
@@ -3110,6 +3406,16 @@ class AgentClient extends BaseClient {
         // - Agents without incoming edges become start nodes and run in parallel automatically
         if (this.agentConfigs && this.agentConfigs.size > 0) {
           agents.push(...this.agentConfigs.values());
+        }
+        const modelBoundCallback =
+          AgentClient.prototype.createModelBoundChatModelCallback.call(this);
+        const initialModelBoundAdmission =
+          AgentClient.prototype.createInitialModelBoundAdmissionCallback.call(
+            this,
+            AgentClient.getStartingAgentIds(agents),
+          );
+        if (initialModelBoundAdmission != null) {
+          config.callbacks = [initialModelBoundAdmission];
         }
 
         // TODO: needs to be added as part of AgentContext initialization
@@ -3226,6 +3532,7 @@ class AgentClient extends BaseClient {
         const createRunPromise = createRun({
           agents,
           messages,
+          modelCallbacks: [modelBoundCallback],
           // This controller implements the full HITL pause/resume lifecycle (handleRunInterrupt
           // persists the pending action; the /resume route rebuilds + continues the run), so it
           // opts into the tool-approval wiring. Non-resumable callers (OpenAI-compat, Responses)
@@ -3385,15 +3692,26 @@ class AgentClient extends BaseClient {
       this.applyHideSequentialOutputsFilter();
       this.rebaseActivityPhaseBounds(contentBeforeReshape);
     } catch (err) {
+      if (isContentFilterError(err)) {
+        logger.warn(
+          '[api/server/controllers/agents/client.js #sendCompletion] Blocked by content policy',
+          {
+            source: err?.body?.source,
+            field: err?.body?.field,
+            code: err?.code,
+          },
+        );
+        throw err;
+      }
       if (abortController.signal.aborted) {
         logger.debug(
           '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted by user',
-          { conversationId: this.conversationId, name: err?.name, code: err?.code },
+          { conversationId: this.conversationId, ...getSafeErrorMetadata(err) },
         );
       } else {
         logger.error(
           '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
-          err,
+          getSafeErrorMetadata(err),
         );
         const videoError = resolveGoogleVideoError({
           error: err,
@@ -3404,7 +3722,11 @@ class AgentClient extends BaseClient {
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]:
             videoError ??
-            `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
+            getUserFacingRequestError(
+              'An error occurred while processing the request',
+              err,
+              this.options.req.config,
+            ),
         });
       }
     } finally {
@@ -3454,7 +3776,7 @@ class AgentClient extends BaseClient {
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error in cleanup phase',
-          err,
+          getSafeErrorMetadata(err),
         );
       }
       if (this._resolveRun) {
@@ -3502,6 +3824,7 @@ class AgentClient extends BaseClient {
    * @param {Array} [params.seedContent] - content aggregated before the pause
    * @param {Array<import('@librechat/agents').RunStep>} [params.runSteps] - run steps emitted before the pause
    * @param {import('@librechat/api').ActivityPhaseSnapshot} [params.activityPhaseSnapshot]
+   * @param {Array} [params.storedMessages] - persisted user messages restored for the resume
    * @param {AbortController} [params.abortController]
    * @param {Pick<import('@langchain/langgraph').Command, 'update' | 'goto'>} [params.commandOptions]
    */
@@ -3509,6 +3832,7 @@ class AgentClient extends BaseClient {
     resumeValue,
     seedContent = [],
     runSteps = [],
+    storedMessages = [],
     abortController = null,
     commandOptions,
     userMCPAuthMap,
@@ -3530,6 +3854,11 @@ class AgentClient extends BaseClient {
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
+      BaseClient.prototype.setModelBoundStoredMessages.call(
+        this,
+        BaseClient.prototype.getModelBoundStoredMessages.call(this, storedMessages),
+      );
+
       config = {
         runName: 'AgentRun',
         configurable: {
@@ -3539,11 +3868,13 @@ class AgentClient extends BaseClient {
           last_agent_index: this.agentConfigs?.size ?? 0,
           user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
-          requestBody: {
-            messageId: this.responseMessageId,
-            conversationId: this.conversationId,
-            parentMessageId: this.parentMessageId,
-          },
+          requestBody:
+            this.options.mcpRequestBody ??
+            createMCPRuntimeRequestBody({
+              messageId: this.responseMessageId,
+              conversationId: this.conversationId,
+              parentMessageId: this.parentMessageId,
+            }),
           user: createSafeUser(this.options.req.user),
         },
         recursionLimit: resolveRecursionLimit(agentsEConfig, this.options.agent),
@@ -3558,11 +3889,66 @@ class AgentClient extends BaseClient {
         this.contentParts.push(...seedContent);
       }
 
-      const tokenCounter = createTokenCounter(this.getEncoding());
-      const agents = [this.options.agent];
-      if (this.agentConfigs && this.agentConfigs.size > 0) {
-        agents.push(...this.agentConfigs.values());
+      const tokenCounter = await createCachedTokenCounter(this.getEncoding());
+      const agents = collectReachableAgents([
+        this.options.agent,
+        ...(this.agentConfigs?.size > 0 ? this.agentConfigs.values() : []),
+      ]);
+      const dynamicToolContexts = getDynamicToolContexts(agents);
+      const liveFiles = Array.isArray(this.options.attachments)
+        ? [...this.options.attachments]
+        : [];
+      const modelBoundAgentFiles = [];
+      const contextAttachmentLists =
+        this.options.agentContextAttachmentsByAgentId instanceof Map
+          ? this.options.agentContextAttachmentsByAgentId.values()
+          : Object.values(this.options.agentContextAttachmentsByAgentId ?? {});
+      for (const attachments of contextAttachmentLists) {
+        if (Array.isArray(attachments)) {
+          liveFiles.push(...attachments);
+          modelBoundAgentFiles.push(...attachments);
+        }
       }
+      for (const agent of agents) {
+        if (Array.isArray(agent?.attachments)) {
+          liveFiles.push(...agent.attachments);
+          modelBoundAgentFiles.push(...agent.attachments);
+        }
+        if (Array.isArray(agent?.requestAttachments)) {
+          liveFiles.push(...agent.requestAttachments);
+          modelBoundAgentFiles.push(...agent.requestAttachments);
+        }
+        if (Array.isArray(agent?.agentContextAttachments)) {
+          liveFiles.push(...agent.agentContextAttachments);
+          modelBoundAgentFiles.push(...agent.agentContextAttachments);
+        }
+      }
+      const resumeContentProjection = await assertResumeRuntimeContentAllowed(
+        {
+          appConfig,
+          conversationId: this.conversationId,
+          targetMessageId: this.parentMessageId,
+          user: this.options.req.user,
+          storedMessages,
+          seedContent,
+          resumeValue,
+          liveFiles,
+          isTemporary: this.options.req.body?.isTemporary === true,
+          checkpointNamespace: this.checkpointNamespace,
+          agents,
+          files: [...modelBoundAgentFiles, ...dynamicToolContexts],
+        },
+        {
+          getAgentCheckpointer,
+          getMessages: db.getMessages,
+          getFiles: db.getFiles,
+        },
+      );
+      this.modelBoundCurrentFiles = [
+        ...(Array.isArray(this.modelBoundCurrentFiles) ? this.modelBoundCurrentFiles : []),
+        ...resumeContentProjection.resolvedFiles,
+      ];
+      const modelBoundCallback = AgentClient.prototype.createModelBoundChatModelCallback.call(this);
 
       // Re-prime skill files invoked in the pre-pause segment (mirrors the normal path's
       // `primeInvokedSkills(payload)`), so an approved code/file-backed tool keeps the
@@ -3580,9 +3966,12 @@ class AgentClient extends BaseClient {
           ]);
           skillSessions = primed?.initialSessions;
         } catch (err) {
+          if (isContentFilterError(err)) {
+            throw err;
+          }
           logger.warn(
             '[api/server/controllers/agents/client.js #resumeCompletion] Failed to re-prime skill sessions',
-            err?.message ?? err,
+            getSafeErrorMetadata(err),
           );
         }
       }
@@ -3612,6 +4001,7 @@ class AgentClient extends BaseClient {
         (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers);
       run = await createRun({
         agents,
+        modelCallbacks: [modelBoundCallback],
         // State (messages, tool calls) is rehydrated from the checkpoint by
         // run.resume; createRun only needs the agents to rebuild the graph.
         messages: [],
@@ -3722,23 +4112,37 @@ class AgentClient extends BaseClient {
       this.applyHideSequentialOutputsFilter();
       this.rebaseActivityPhaseBounds(contentBeforeReshape);
     } catch (err) {
+      if (isContentFilterError(err)) {
+        logger.warn(
+          '[api/server/controllers/agents/client.js #resumeCompletion] Blocked by content policy',
+          {
+            source: err?.body?.source,
+            field: err?.body?.field,
+            code: err?.code,
+          },
+        );
+        throw err;
+      }
       if (abortController.signal.aborted) {
         logger.debug(
           '[api/server/controllers/agents/client.js #resumeCompletion] Aborted by user',
           {
             conversationId: this.conversationId,
-            name: err?.name,
-            code: err?.code,
+            ...getSafeErrorMetadata(err),
           },
         );
       } else {
         logger.error(
           '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
-          err,
+          getSafeErrorMetadata(err),
         );
         this.contentParts.push({
           type: ContentTypes.ERROR,
-          [ContentTypes.ERROR]: `An error occurred while resuming the request${err?.message ? `: ${err.message}` : ''}`,
+          [ContentTypes.ERROR]: getUserFacingRequestError(
+            'An error occurred while resuming the request',
+            err,
+            appConfig,
+          ),
         });
       }
     } finally {
@@ -3772,7 +4176,7 @@ class AgentClient extends BaseClient {
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #resumeCompletion] Error in cleanup phase',
-          err,
+          getSafeErrorMetadata(err),
         );
       }
       if (this._resolveRun) {
@@ -3886,7 +4290,7 @@ class AgentClient extends BaseClient {
       } catch (error) {
         logger.warn(
           `[api/server/controllers/agents/client.js #titleConvo] Error getting title endpoint config for "${endpointConfig.titleEndpoint}", falling back to default`,
-          error,
+          getSafeErrorMetadata(error),
         );
         // Fall back to original provider config
         endpoint = agent.endpoint;
@@ -4043,13 +4447,16 @@ class AgentClient extends BaseClient {
       }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #titleConvo] Error recording collected usage',
-          err,
+          getSafeErrorMetadata(err),
         );
       });
 
       return sanitizeTitle(titleResult.title);
     } catch (err) {
-      logger.error('[api/server/controllers/agents/client.js #titleConvo] Error', err);
+      logger.error(
+        '[api/server/controllers/agents/client.js #titleConvo] Error',
+        getSafeErrorMetadata(err),
+      );
       return;
     }
   }
@@ -4112,7 +4519,7 @@ class AgentClient extends BaseClient {
     } catch (error) {
       logger.error(
         '[api/server/controllers/agents/client.js #recordTokenUsage] Error recording token usage',
-        error,
+        getSafeErrorMetadata(error),
       );
     }
   }

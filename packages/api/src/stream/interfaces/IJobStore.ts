@@ -1,8 +1,14 @@
-import type { Agents, TFile, TPendingSteer } from 'librechat-data-provider';
+import type {
+  Agents,
+  TFile,
+  TPendingSteer,
+  UserSubmittedMessageFieldPath,
+} from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '../SteerRecovery';
+import type { MCPRuntimeRequestBody } from '~/mcp/types';
 
 /**
  * A pause owner has this long to durably persist the interrupted turn before
@@ -75,6 +81,15 @@ export interface SerializableJobData {
   /** Response message ID for reconnection */
   responseMessageId?: string;
 
+  /** Whether this generation replaces an existing assistant branch. */
+  isRegenerate?: boolean;
+  /** Exact normalized MCP placeholder identity for this turn. */
+  mcpRequestBody?: MCPRuntimeRequestBody;
+  /** Exact assistant-message fields authored by the user during this running job. */
+  userSubmittedPaths?: string[];
+  /** Exact request-only message fields embedded at caller-authored paths. */
+  userSubmittedMessageFieldPaths?: UserSubmittedMessageFieldPath[];
+
   /**
    * Whether this run has activity labels enabled (per-endpoint
    * `activityLabel: true`). Set once at run start so the resume path can
@@ -122,6 +137,31 @@ export interface SerializableJobData {
 
   /** Whether sync has been sent to a client */
   syncSent: boolean;
+
+  /** Trusted schedule identity copied atomically into the generation job. */
+  scheduleId?: string;
+  scheduledFor?: string;
+  scheduleConfigRevision?: number;
+  scheduleManual?: boolean;
+  /** Terminal outcome evidence retained when the schedule row could not be updated. */
+  scheduleOutcome?: 'success' | 'error' | 'interrupted' | 'skipped_balance';
+  scheduleOutcomeError?: string;
+  preserveForScheduleReconcile?: boolean;
+  /**
+   * A terminal transition (currently approval expiry) still owes a durable host
+   * lifecycle hook. Set atomically with that transition and cleared only once the host
+   * adapter acknowledges success, so the job is retained (not reaped) and enumerable by
+   * cleanup across restarts and replicas until the hook completes. Generic: a host with
+   * no action clears it immediately on its no-op success, so nothing accumulates.
+   */
+  terminalHostActionPending?: boolean;
+  /**
+   * Last time a cleanup pass enumerated this pending host action for retry. Retention is
+   * measured from this rather than `completedAt`, so evidence survives as long as some
+   * replica is still actively retrying the hook (e.g. Mongo unreachable for days), while a
+   * deployment that stops retrying entirely still lets it age out instead of leaking.
+   */
+  terminalHostActionRefreshedAt?: number;
 
   /** Serialized final event for replay */
   finalEvent?: string;
@@ -269,6 +309,10 @@ export type JobMetadataPatch = Partial<
   Pick<
     SerializableJobData,
     | 'responseMessageId'
+    | 'isRegenerate'
+    | 'mcpRequestBody'
+    | 'userSubmittedPaths'
+    | 'userSubmittedMessageFieldPaths'
     | 'sender'
     | 'conversationId'
     | 'userMessage'
@@ -277,6 +321,13 @@ export type JobMetadataPatch = Partial<
     | 'model'
     | 'agent_id'
     | 'isTemporary'
+    | 'scheduleId'
+    | 'scheduledFor'
+    | 'scheduleConfigRevision'
+    | 'scheduleManual'
+    | 'scheduleOutcome'
+    | 'scheduleOutcomeError'
+    | 'preserveForScheduleReconcile'
     | 'promptTokens'
     | 'discoveredTools'
     | 'activityPhaseSnapshot'
@@ -565,6 +616,8 @@ export interface UsageMetadata {
   output_token_details?: {
     /** Reasoning/thinking tokens generated as chain-of-thought (o1, Gemini thinking, etc.) */
     reasoning?: number;
+    /** Alternate provider/runtime alias for reasoning tokens. */
+    reasoning_tokens?: number;
     audio?: number;
   };
 }
@@ -576,10 +629,13 @@ export interface UsageMetadata {
 export interface AbortResult {
   /** Whether the abort was successful */
   success: boolean;
-  /** Distinguishes an epoch-fenced abort from ordinary not-found/terminal
-   * failures so an HTTP caller can return RUN_REPLACED instead of silently
-   * reporting success for a newer generation it deliberately did not stop. */
-  failureReason?: 'generation_replaced' | 'job_still_active';
+  /** Why the abort did not land. EVERY `success: false` return carries one, so a
+   * caller can separate a generation it must not settle (`generation_replaced`,
+   * `job_not_found`) from one that is still live (`job_still_active`) and from one
+   * that had already reached a terminal state (`already_settled` — the provider has
+   * also drained when `awaitProviderDrain` was requested). The ABSENCE of this field
+   * is not a stop confirmation; use `isStopConfirmed`. */
+  failureReason?: 'generation_replaced' | 'job_still_active' | 'job_not_found' | 'already_settled';
   /** The generation was stopped, but the caller's required durable side
    * effects failed before normal FINAL publication. The manager emitted a
    * conservative reconciliation frame instead. */
@@ -596,6 +652,22 @@ export interface AbortResult {
   collectedUsage: UsageMetadata[];
   /** Steers drained at abort time (never injected); surfaced to the client for restore */
   pendingSteers?: TPendingSteer[];
+}
+
+/**
+ * Canonical "did this generation actually stop?" predicate — one definition shared by
+ * every caller that settles durable state on the answer (schedule outcomes, checkpoint
+ * pruning, capacity release).
+ *
+ * A landed abort confirms the stop. So does `already_settled`: the generation reached a
+ * terminal state on its own and, when the caller asked for `awaitProviderDrain`, its
+ * provider segment has drained, so nothing can still write. Every OTHER failure leaves a
+ * generation that is either still live (`job_still_active`), owned by someone else
+ * (`generation_replaced`), or unobservable from here without a drain (`job_not_found`) —
+ * none of which may be settled on.
+ */
+export function isStopConfirmed(result: AbortResult | null | undefined): boolean {
+  return result != null && (result.success === true || result.failureReason === 'already_settled');
 }
 
 /**
@@ -661,6 +733,18 @@ export interface IJobStore {
   deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean>;
   hasJob(streamId: string): Promise<boolean>;
   getRunningJobs(): Promise<SerializableJobData[]>;
+  /** Optional durable paused-job enumeration. Built-in stores implement it so
+   * the manager can own approval expiry even after the original runtime died. */
+  getRequiresActionJobs?(): Promise<SerializableJobData[]>;
+  /** Optional durable enumeration of terminal jobs that still owe a host lifecycle
+   * hook (see `terminalHostActionPending`). Built-in stores implement it so cleanup can
+   * retry the host adapter after a restart / on another replica, even though the job is
+   * no longer in the requires_action index. */
+  getTerminalHostActionJobs?(): Promise<SerializableJobData[]>;
+  /** Clears the pending-host-action marker once the adapter acknowledges success.
+   * Identity-fenced on `expectedCreatedAt` so a replacement generation at the same
+   * streamId is never cleared through its predecessor. */
+  clearTerminalHostAction?(streamId: string, expectedCreatedAt?: number): Promise<void>;
   cleanup(): Promise<number>;
   recordActivity?(streamId: string, expectedCreatedAt?: number): void;
   getJobCount(): Promise<number>;
@@ -741,6 +825,7 @@ export interface IJobStoreV2 extends IJobStore {
     recoveredSteerPayload?: RecoveredSteerPayload,
     creationAttemptId?: string,
     expectedPredecessorCreatedAt?: number,
+    rejectActivePredecessor?: boolean,
   ): Promise<CreatedJobData>;
 
   /** Remove transaction-time predecessor receipts after their handoff was
@@ -900,6 +985,9 @@ export interface IJobStoreV2 extends IJobStore {
 
   /** Get all running jobs (for cleanup) */
   getRunningJobs(): Promise<SerializableJobData[]>;
+
+  /** Get durable paused jobs so approval expiry is not process-runtime-dependent. */
+  getRequiresActionJobs?(): Promise<SerializableJobData[]>;
 
   /** Cleanup expired jobs */
   cleanup(): Promise<number>;
@@ -1271,8 +1359,16 @@ export interface IEventTransport {
     options?: {
       /** Hold sequenced events until syncReorderBuffer establishes the replay frontier. */
       deferSequenceDelivery?: boolean;
+      /** After opening a fresh Pub/Sub channel, atomically capture its sequence frontier
+       * and fence delivery so synchronization cannot lose an attachment-time frame. */
+      captureSequenceFrontier?: boolean;
     },
-  ): { unsubscribe: () => void; ready?: Promise<void> };
+  ): {
+    unsubscribe: () => void;
+    ready?: Promise<void>;
+    /** Synchronize only the transport state captured by this concrete subscription. */
+    syncReorderBuffer?: () => void | Promise<void>;
+  };
 
   /**
    * Publish a chunk event.
@@ -1292,6 +1388,12 @@ export interface IEventTransport {
    * `generationId` is optional for compatibility with legacy, untagged publishers.
    */
   emitError(streamId: string, error: string, generationId?: number): void | Promise<void>;
+
+  /** Optional live-view demand marker used by observational streams that do not replay. */
+  renewDemand?(streamId: string, ttlMs: number): void | Promise<void>;
+
+  /** Returns whether at least one live viewer recently renewed demand for this stream. */
+  hasDemand?(streamId: string): boolean | Promise<boolean>;
 
   /**
    * Publish an abort signal to all replicas (Redis mode).

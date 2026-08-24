@@ -71,6 +71,8 @@ export interface IMongoFile extends Omit<Document, 'model'> {
      */
     codeEnvRef?: CodeEnvRef;
     codeEnvRefs?: CodeEnvRefMap;
+    /** Dispatch-order stamp for the current source artifact generation. */
+    sourceDispatchedAt?: number;
   };
   expiresAt?: Date;
   expiredAt?: Date | null;

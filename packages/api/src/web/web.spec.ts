@@ -958,6 +958,87 @@ describe('web.ts', () => {
       }
     });
 
+    it('should authenticate SearXNG as a search provider and pass search options through', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        searchProvider: 'searxng' as SearchProviders,
+        scraperProvider: 'firecrawl' as ScraperProviders,
+        rerankerType: 'none' as RerankerTypes,
+        searxngSearchOptions: {
+          engines: 'google,bing,startpage,qwant',
+          language: 'en',
+          timeRange: 'month',
+          timeout: 15000,
+        },
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'SEARXNG_INSTANCE_URL') {
+            result[field] = 'https://search.example';
+          } else if (field === 'SEARXNG_API_KEY') {
+            result[field] = 'searxng-api-key';
+          } else if (field === 'FIRECRAWL_API_URL') {
+            result[field] = 'https://api.firecrawl.dev';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.searchProvider).toBe('searxng');
+      expect(result.authResult.searxngInstanceUrl).toBe('https://search.example');
+      expect(result.authResult.searxngSearchOptions).toEqual(webSearchConfig.searxngSearchOptions);
+    });
+
+    it('should leave searxngSearchOptions undefined when not configured', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        searchProvider: 'searxng' as SearchProviders,
+        scraperProvider: 'firecrawl' as ScraperProviders,
+        rerankerType: 'none' as RerankerTypes,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'SEARXNG_INSTANCE_URL') {
+            result[field] = 'https://search.example';
+          } else if (field === 'FIRECRAWL_API_URL') {
+            result[field] = 'https://api.firecrawl.dev';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.searxngSearchOptions).toBeUndefined();
+    });
+
     it('should fail authentication when Tavily search API key is missing', async () => {
       const webSearchConfig: TCustomConfig['webSearch'] = {
         tavilyApiKey: '${TAVILY_API_KEY}',

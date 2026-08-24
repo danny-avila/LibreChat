@@ -10,9 +10,12 @@ const {
   splitMCPToolKey,
   normalizeServerName,
   normalizeMCPToolKey,
+  stripServerNamePrefix,
+  stripServerNamePrefixes,
   buildServerNameAliases,
   findShadowedServerNames,
   getAssistantToolDefinitions: loadAssistantToolDefinitions,
+  toProviderToolDefinition,
   resolveMCPServerContext,
   normalizeJsonSchema,
   GenerationJobManager,
@@ -26,6 +29,7 @@ const {
   buildMCPAuthRunStepDeltaEvent,
   buildMCPAuthRunStepEndDeltaEvent,
   isUserSourced,
+  hasCustomUserVars,
   checkAccessWithRequestCache,
   getMissingCustomUserVars,
   getUserMCPAuthMap,
@@ -35,6 +39,7 @@ const {
   hasRuntimeUrlPlaceholders,
   containsGraphTokenPlaceholder,
   isOAuthServer,
+  OpenIDReauthRequiredError,
 } = require('@librechat/api');
 const {
   Time,
@@ -84,8 +89,8 @@ async function userCanUseMCPServers(user, req) {
       permissions: [Permissions.USE],
       getRoleByName: db.getRoleByName,
     });
-  } catch (error) {
-    logger.error(`[MCP][User: ${user.id}] Failed MCP permission check`, error);
+  } catch {
+    logger.error(`[MCP][User: ${user.id}] Failed MCP permission check`);
     return false;
   }
 }
@@ -141,11 +146,8 @@ async function resolveConfigServers(req) {
     const registry = getMCPServersRegistry();
     const appConfig = await getAppConfigForRequest(req);
     return await registry.ensureConfigServers(appConfig?.mcpConfig || {});
-  } catch (error) {
-    logger.warn(
-      '[resolveConfigServers] Failed to resolve config servers, degrading to empty:',
-      error,
-    );
+  } catch {
+    logger.warn('[resolveConfigServers] Failed to resolve config servers; degrading to empty');
     return {};
   }
 }
@@ -215,8 +217,10 @@ async function resolveMcpServerContext(req) {
  */
 /**
  * Names of every MCP server the user can reach (operator config + user DB),
- * for the legacy-key heal's collision detection in `initializeAgent`. Only
- * consulted when a configured server name needs normalization.
+ * for legacy-key healing: collision detection in `initializeAgent` (consulted
+ * when a configured server name needs normalization) and the assistants heal
+ * in `healMcpToolNames` (always, since assistants reference user-owned
+ * servers too).
  * @param {string} [userId]
  * @param {string} [role]
  * @returns {Promise<string[]>}
@@ -250,7 +254,7 @@ async function getAccessibleMcpServerNames(userId, role) {
  * @param {Record<string, unknown>} params.toolDefinitions
  * @returns {Promise<Array<string | object>>}
  */
-async function healMcpToolNames({ req, tools, toolDefinitions }) {
+async function healMcpToolNames({ req, tools, toolDefinitions, accessibleServerNames }) {
   const list = tools ?? [];
   const needsHeal = list.some(
     (tool) =>
@@ -261,21 +265,36 @@ async function healMcpToolNames({ req, tools, toolDefinitions }) {
   if (!needsHeal) {
     return list;
   }
-  const rawServerNames = await resolveMcpConfigNames(req);
   /** Cross-tier shadowing (DB `foo` vs operator `foo!`) is invisible to
    *  operator names alone — the shadow set must come from the FULL
-   *  accessible audit. Every rewrite candidate here is normalization-
-   *  sensitive by construction, so an incomplete audit skips healing
-   *  entirely (the raw key stays raw and fails closed). */
-  const audit = await resolveCollisionAuditNames({
-    rawServerNames,
-    userId: req.user?.id,
-    role: req.user?.role,
-  });
-  if (!audit.complete) {
-    return list;
+   *  accessible audit: assistants reference user-owned servers too (the
+   *  definitions loader resolves them), so their pre-strip keys must heal
+   *  against the same catalog. Callers holding the loader's snapshot pass
+   *  it to avoid repeating the app-config and registry reads on the write
+   *  path; without one, the audit is fetched here, and when it cannot
+   *  complete healing is skipped entirely (the raw key stays raw and fails
+   *  closed). */
+  let auditNames = accessibleServerNames;
+  if (auditNames == null) {
+    const rawServerNames = await resolveMcpConfigNames(req);
+    try {
+      const accessible = await getAccessibleMcpServerNames(req.user?.id, req.user?.role);
+      auditNames = [...new Set([...accessible, ...rawServerNames])];
+    } catch (error) {
+      logger.warn(
+        '[healMcpToolNames] Accessible-server audit unavailable; skipping legacy-key healing:',
+        error,
+      );
+      return list;
+    }
   }
-  const shadowed = findShadowedServerNames(audit.names);
+  const shadowed = findShadowedServerNames(auditNames);
+  /** A pre-strip key persisted AFTER server-name normalization carries the
+   *  NORMALIZED suffix, which the raw config names cannot match — the
+   *  boundary must resolve against both spellings and map back to the raw
+   *  name for the shadow and membership guards. */
+  const serverNameAliases = buildServerNameAliases(auditNames);
+  const boundaryNames = [...new Set([...auditNames, ...serverNameAliases.keys()])];
   const seen = new Set();
   const healedList = [];
   for (const tool of list) {
@@ -285,15 +304,47 @@ async function healMcpToolNames({ req, tools, toolDefinitions }) {
       tool.includes(Constants.mcp_delimiter) &&
       toolDefinitions[tool] == null
     ) {
-      const [, parsedServerName] = splitMCPToolKey(tool, rawServerNames);
-      if (
-        parsedServerName != null &&
-        rawServerNames.includes(parsedServerName) &&
-        !shadowed.has(parsedServerName)
-      ) {
-        const healed = normalizeMCPToolKey(tool, rawServerNames);
+      const [, parsedServerName] = splitMCPToolKey(tool, boundaryNames);
+      let rawServerName;
+      if (parsedServerName != null && auditNames.includes(parsedServerName)) {
+        rawServerName = parsedServerName;
+      } else if (parsedServerName != null) {
+        const aliased = serverNameAliases.get(parsedServerName);
+        /** A normalized spelling on a CONTESTED slot is ambiguous between the
+         *  tie-break winner and its shadowed rivals — rewriting persisted
+         *  data must fail closed here, mirroring the raw-spelling shadow
+         *  guard, rather than bind the reference to the winner. */
+        const contested =
+          aliased != null &&
+          auditNames.some(
+            (name) => name !== aliased && normalizeServerName(name) === parsedServerName,
+          );
+        rawServerName = contested ? undefined : aliased;
+      }
+      if (rawServerName != null && !shadowed.has(rawServerName)) {
+        const healed = normalizeMCPToolKey(tool, auditNames);
         if (toolDefinitions[healed] != null) {
           healedTool = healed;
+        } else {
+          /** Catalog keys built after redundant-prefix stripping no longer
+           *  match a pre-strip persisted key — without this second candidate
+           *  the exact-lookup below silently drops the tool from the
+           *  assistant. The rewrite only lands when the stripped key actually
+           *  exists in the loaded definitions, so an unstripped catalog
+           *  (collision guard kept the raw name) never heals into a phantom. */
+          const keyServerName = normalizeServerName(rawServerName);
+          const [healedToolName] = splitMCPToolKey(healed, [keyServerName]);
+          const strippedName = stripServerNamePrefix(healedToolName, keyServerName);
+          const strippedKey = `${strippedName}${Constants.mcp_delimiter}${keyServerName}`;
+          /** Rewrite only when the stripped entry PROVES the same upstream
+           *  identity — a stale key for a removed tool must not be healed
+           *  onto a different sibling that kept its raw name. */
+          if (
+            strippedName !== healedToolName &&
+            toolDefinitions[strippedKey]?.serverToolName === healedToolName
+          ) {
+            healedTool = strippedKey;
+          }
         }
       }
     }
@@ -405,11 +456,8 @@ async function resolveAllMcpConfigs(userId, user) {
   let configServers = {};
   try {
     configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
-  } catch (error) {
-    logger.warn(
-      '[resolveAllMcpConfigs] Config server resolution failed, continuing without:',
-      error,
-    );
+  } catch {
+    logger.warn('[resolveAllMcpConfigs] Config server resolution failed; continuing without');
   }
   if (user?.role) {
     return await registry.getAllServerConfigs(userId, configServers, user.role);
@@ -650,9 +698,10 @@ async function reconnectServer({
   streamId = null,
   jobCreatedAt,
 }) {
-  logger.debug(
-    `[MCP][reconnectServer] serverName: ${serverName}, user: ${user?.id}, hasUserMCPAuthMap: ${!!userMCPAuthMap}`,
-  );
+  logger.debug('[MCP][reconnectServer] Starting reconnect', {
+    userId: user?.id,
+    hasUserMCPAuthMap: Boolean(userMCPAuthMap),
+  });
 
   // Request-scoped servers reconnect on every message by design; throttling them
   // would stub out healthy tools for messages sent within the throttle window.
@@ -662,7 +711,7 @@ async function reconnectServer({
     const now = Date.now();
     const lastAttempt = lastReconnectAttempts.get(throttleKey) ?? 0;
     if (now - lastAttempt < RECONNECT_THROTTLE_MS) {
-      logger.debug(`[MCP][reconnectServer] Throttled reconnect for ${serverName}`);
+      logger.debug('[MCP][reconnectServer] Throttled reconnect');
       return null;
     }
     lastReconnectAttempts.set(throttleKey, now);
@@ -777,7 +826,7 @@ async function createMCPTools({
       allowedAddresses,
     });
     if (!isDomainAllowed) {
-      logger.warn(`[MCP][${serverName}] Domain not allowed, skipping all tools`);
+      logger.warn('[MCP] Domain not allowed; skipping all server tools');
       return [];
     }
   }
@@ -797,15 +846,20 @@ async function createMCPTools({
     jobCreatedAt,
   });
   if (result === null) {
-    logger.debug(`[MCP][${serverName}] Reconnect throttled, skipping tool creation.`);
+    logger.debug('[MCP] Reconnect throttled; skipping tool creation');
     return [];
   }
   if (!result || !result.tools) {
-    logger.warn(`[MCP][${serverName}] Failed to reinitialize MCP server.`);
+    logger.warn('[MCP] Failed to reinitialize server');
     return [];
   }
 
   const serverTools = [];
+  const keyServerName = normalizeServerName(serverName);
+  const keyToolNames = stripServerNamePrefixes(
+    result.tools.map((tool) => tool.name),
+    keyServerName,
+  );
   for (const tool of result.tools) {
     const toolInstance = await createMCPTool({
       res,
@@ -820,7 +874,7 @@ async function createMCPTools({
       serverName,
       /** Model-facing key: matches the normalized `availableTools` keys and
        *  the instance name `createToolInstance` will assign. */
-      toolKey: `${tool.name}${Constants.mcp_delimiter}${normalizeServerName(serverName)}`,
+      toolKey: `${keyToolNames.get(tool.name) ?? tool.name}${Constants.mcp_delimiter}${keyServerName}`,
       requestBody,
       requestScopedConnections,
       config: serverConfig,
@@ -928,36 +982,63 @@ async function createMCPTool({
       allowedAddresses,
     });
     if (!isDomainAllowed) {
-      logger.warn(`[MCP][${serverName}] Domain no longer allowed, skipping tool: ${toolName}`);
+      logger.warn('[MCP] Domain no longer allowed; skipping tool creation');
       return undefined;
     }
   }
 
   /** Legacy keys persisted pre-normalization (assistants, direct tool
    *  calls) carry the RAW server name, while `availableTools` is keyed by
-   *  the canonical normalized key — look up both spellings. */
+   *  the canonical normalized key — look up both spellings. Keys are also
+   *  built after redundant server-name-prefix stripping now, so a persisted
+   *  pre-strip key (`acme_foo_mcp_acme`) must additionally try
+   *  its stripped spelling or the tool degrades to an unavailable stub. */
+  const keyServerName = serverName != null ? normalizeServerName(serverName) : undefined;
   const canonicalToolKey =
-    serverName != null
-      ? `${toolName}${Constants.mcp_delimiter}${normalizeServerName(serverName)}`
-      : toolKey;
-  const findToolDefinition = (tools) =>
-    tools?.[toolKey]?.function ??
-    (canonicalToolKey !== toolKey ? tools?.[canonicalToolKey]?.function : undefined);
+    keyServerName != null ? `${toolName}${Constants.mcp_delimiter}${keyServerName}` : toolKey;
+  const strippedToolName =
+    keyServerName != null ? stripServerNamePrefix(toolName, keyServerName) : toolName;
+  const strippedToolKey =
+    strippedToolName !== toolName
+      ? `${strippedToolName}${Constants.mcp_delimiter}${keyServerName}`
+      : null;
+  const candidateToolKeys = [toolKey];
+  if (canonicalToolKey !== toolKey) {
+    candidateToolKeys.push(canonicalToolKey);
+  }
+  if (strippedToolKey != null && !candidateToolKeys.includes(strippedToolKey)) {
+    candidateToolKeys.push(strippedToolKey);
+  }
+  let matchedToolKey = toolKey;
+  const findToolEntry = (tools) => {
+    for (const key of candidateToolKeys) {
+      const entry = tools?.[key];
+      if (!entry?.function) {
+        continue;
+      }
+      /** The stripped-spelling candidate is only a legacy match when the
+       *  entry PROVES the same upstream identity — without this, a stale
+       *  reference to a removed tool could strip onto a DIFFERENT sibling
+       *  that kept its raw name and silently call the wrong tool. */
+      if (key === strippedToolKey && entry.serverToolName !== toolName) {
+        continue;
+      }
+      matchedToolKey = key;
+      return entry;
+    }
+    return undefined;
+  };
 
-  /** @type {LCTool | undefined} */
-  let toolDefinition = findToolDefinition(availableTools);
-  if (!toolDefinition) {
+  /** @type {LCFunctionTool | undefined} */
+  let toolEntry = findToolEntry(availableTools);
+  if (!toolEntry) {
     const cachedAt = useMissingToolCache ? missingToolCache.get(toolKey) : undefined;
     if (cachedAt && Date.now() - cachedAt < MISSING_TOOL_TTL_MS) {
-      logger.debug(
-        `[MCP][${serverName}][${toolName}] Tool in negative cache, returning unavailable stub.`,
-      );
+      logger.debug('[MCP] Tool is in negative cache; returning unavailable stub');
       return createUnavailableToolStub(toolName, serverName);
     }
 
-    logger.warn(
-      `[MCP][${serverName}][${toolName}] Requested tool not found in available tools, re-initializing MCP server.`,
-    );
+    logger.warn('[MCP] Requested tool not found in available tools; reinitializing server');
     const result = await reconnectServer({
       res,
       user,
@@ -975,15 +1056,15 @@ async function createMCPTool({
     if (result?.availableTools) {
       onAvailableTools?.(result.availableTools);
     }
-    toolDefinition = findToolDefinition(result?.availableTools);
+    toolEntry = findToolEntry(result?.availableTools);
 
-    if (!toolDefinition && useMissingToolCache) {
+    if (!toolEntry && useMissingToolCache) {
       missingToolCache.set(toolKey, Date.now());
       evictStale(missingToolCache, MISSING_TOOL_TTL_MS);
     }
   }
 
-  if (!toolDefinition) {
+  if (!toolEntry) {
     logger.warn(
       `[MCP][${serverName}][${toolName}] Tool definition not found, returning unavailable stub.`,
     );
@@ -997,10 +1078,20 @@ async function createMCPTool({
     requestBody,
     requestScopedConnections,
     provider,
+    /** A legacy pre-strip key that resolves to the stripped entry KEEPS its
+     *  persisted spelling as the instance name: `agent.tools` entries and
+     *  `tool_options` keys reference that spelling, and renaming the instance
+     *  would silently detach those per-tool settings. The upstream call name
+     *  still comes from the MATCHED entry — its recorded raw name, or the
+     *  matched key's own tool half when the entry was never stripped. */
     toolName,
+    serverToolName:
+      toolEntry.serverToolName ??
+      (matchedToolKey === strippedToolKey ? strippedToolName : toolName),
+    currentToolName: matchedToolKey === strippedToolKey ? strippedToolName : undefined,
     serverName,
     serverConfig,
-    toolDefinition,
+    toolDefinition: toolEntry['function'],
     streamId,
     jobCreatedAt,
   });
@@ -1013,6 +1104,8 @@ function createToolInstance({
   requestBody: capturedRequestBody,
   requestScopedConnections: capturedRequestScopedConnections,
   toolName,
+  serverToolName = toolName,
+  currentToolName,
   serverName,
   serverConfig: capturedServerConfig,
   toolDefinition,
@@ -1090,7 +1183,9 @@ function createToolInstance({
       const result = await mcpManager.callTool({
         serverName,
         serverConfig: capturedServerConfig,
-        toolName,
+        /** The upstream server never sees stripped names — a key that dropped
+         *  a redundant server-name prefix calls the ORIGINAL tool. */
+        toolName: serverToolName,
         provider,
         toolArguments,
         options: {
@@ -1124,6 +1219,11 @@ function createToolInstance({
         `[MCP][${serverName}][${toolName}][User: ${userId}] Error calling MCP tool:`,
         error,
       );
+
+      /** Carries the actionable re-auth message; the substring heuristic below would misreport it as an OAuth configuration problem */
+      if (error instanceof OpenIDReauthRequiredError) {
+        throw error;
+      }
 
       /** OAuth error, provide a helpful message */
       const isOAuthError =
@@ -1164,6 +1264,17 @@ function createToolInstance({
   });
   toolInstance.mcp = true;
   toolInstance.mcpRawServerName = serverName;
+  if (serverToolName !== toolName) {
+    /** Upstream identity for stripped keys — lets the options aliasing in
+     *  `buildToolClassification` heal legacy `tool_options` spellings. */
+    toolInstance.mcpServerToolName = serverToolName;
+  }
+  if (currentToolName != null && currentToolName !== toolName) {
+    /** Current catalog spelling for a LEGACY-named instance, so approval
+     *  policies and hook matchers written against the current name still
+     *  reach it (see `collectMCPToolAliases`). */
+    toolInstance.mcpCurrentToolName = currentToolName;
+  }
   // Ephemeral request-scoped servers (runtime body placeholders) tear their
   // connection down at request end, so they must never be backgrounded. A
   // missing/stale config means the server's lifetime is unknowable, so fail
@@ -1342,6 +1453,19 @@ async function hasDurableMCPAuthorization(userId, serverName, config, runtimeCon
   });
 }
 
+async function getMCPUserConfigurationState(serverName, config, runtimeContext = {}) {
+  if (!hasCustomUserVars(config)) {
+    return undefined;
+  }
+
+  const userMCPAuthMap =
+    runtimeContext.userMCPAuthMap ?? (await runtimeContext.loadUserMCPAuthMap?.());
+  const customUserVars = getServerCustomUserVars(userMCPAuthMap, serverName);
+  return getMissingCustomUserVars(config, customUserVars).length > 0
+    ? 'needs_configuration'
+    : 'configured';
+}
+
 function canDetectMCPRuntimeOAuth(config) {
   return config.requiresOAuth == null && config.apiKey == null && hasRuntimeUrlPlaceholders(config);
 }
@@ -1355,7 +1479,7 @@ function canDetectMCPRuntimeOAuth(config) {
  * @param {Map<string, import('@librechat/api').MCPConnection>} userConnections - User-level connections
  * @param {Set} oauthServers - Set of OAuth servers
  * @param {{ user?: Partial<IUser>, userMCPAuthMap?: Record<string, Record<string, string>>, loadUserMCPAuthMap?: () => Promise<Record<string, Record<string, string>> | undefined>, loadMCPAllowlists?: () => Promise<{ allowedDomains?: string[] | null, allowedAddresses?: string[] | null }> }} [runtimeContext]
- * @returns {Object} Object containing requiresOAuth and connectionState
+ * @returns {Object} Object containing requiresOAuth, requestScoped, connectionState, and authorizationState
  */
 async function getServerConnectionStatus(
   userId,
@@ -1372,6 +1496,10 @@ async function getServerConnectionStatus(
   const liveConnectionOAuth = connection?.usesOAuth?.() === true;
   const runtimeOAuthCandidate = canDetectMCPRuntimeOAuth(config);
   const effectiveOAuth = configuredOAuth || liveConnectionOAuth;
+  const requestScoped = requiresEphemeralUserConnection(config);
+  const configurationState = requestScoped
+    ? await getMCPUserConfigurationState(serverName, config, runtimeContext)
+    : undefined;
 
   const baseConnectionState = isStaleOrDoNotExist
     ? 'disconnected'
@@ -1416,6 +1544,8 @@ async function getServerConnectionStatus(
 
   return {
     requiresOAuth,
+    ...(requestScoped && { requestScoped: true }),
+    ...(configurationState && { configurationState }),
     connectionState: finalConnectionState,
     authorizationState,
   };
@@ -1424,6 +1554,7 @@ async function getServerConnectionStatus(
 module.exports = {
   createMCPTool,
   createMCPTools,
+  toProviderToolDefinition,
   createMCPPermissionContext,
   userCanUseMCPServers,
   getMCPSetupData,

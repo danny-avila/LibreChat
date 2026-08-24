@@ -54,6 +54,18 @@ jest.mock('../Parts/PendingSkillCall', () => ({
   ),
 }));
 
+jest.mock('../Parts/WorkspaceChanges', () => ({
+  __esModule: true,
+  default: ({ attachments }: { attachments: TAttachment[] }) =>
+    attachments.length > 0 ? (
+      <div data-testid="workspace-changes" data-count={attachments.length} />
+    ) : null,
+  partitionWorkspaceChanges: (attachments?: TAttachment[]) => ({
+    inlineAttachments: (attachments ?? []).filter((attachment) => !attachment.workspaceChange),
+    workspaceChanges: (attachments ?? []).filter((attachment) => attachment.workspaceChange),
+  }),
+}));
+
 jest.mock('../ToolCallGroup', () => ({
   __esModule: true,
   default: ({
@@ -144,6 +156,48 @@ beforeEach(() => {
 });
 
 describe('ContentParts — interim skill cards', () => {
+  it('renders stateful workspace changes once at message level', () => {
+    const content: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'done' } as TMessageContentParts,
+    ];
+    const attachment = {
+      filename: 'report.csv',
+      filepath: '/uploads/report.csv',
+      conversationId: 'conversation-1',
+      messageId: 'msg-1',
+      toolCallId: 'tool-1',
+      workspaceChange: {
+        profile: 'stateful',
+        operation: 'created',
+        path: 'report.csv',
+      },
+    } as TAttachment;
+
+    render(<ContentParts {...baseProps} content={content} attachments={[attachment]} />);
+
+    expect(screen.getAllByTestId('workspace-changes')).toHaveLength(1);
+    expect(screen.getByTestId('workspace-changes')).toHaveAttribute('data-count', '1');
+  });
+
+  it('renders stateful workspace changes when the assistant message has no content yet', () => {
+    const attachment = {
+      filename: 'report.csv',
+      filepath: '/uploads/report.csv',
+      conversationId: 'conversation-1',
+      messageId: 'msg-1',
+      toolCallId: 'tool-1',
+      workspaceChange: {
+        profile: 'stateful',
+        operation: 'created',
+        path: 'report.csv',
+      },
+    } as TAttachment;
+
+    render(<ContentParts {...baseProps} content={undefined} attachments={[attachment]} />);
+
+    expect(screen.getByTestId('workspace-changes')).toHaveAttribute('data-count', '1');
+  });
+
   it('renders a PendingSkillCall per manual skill on assistant messages', () => {
     render(<ContentParts {...baseProps} manualSkills={['brand-guidelines', 'pptx']} />);
     const cards = screen.getAllByTestId('pending-skill-call');

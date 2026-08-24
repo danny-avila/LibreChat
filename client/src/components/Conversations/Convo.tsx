@@ -222,17 +222,6 @@ function Conversation({
           ? 'bg-surface-active-alt before:absolute before:bottom-1 before:left-0 before:top-1 before:w-0.5 before:rounded-full before:bg-text-primary'
           : 'hover:bg-surface-active-alt',
       )}
-      role="button"
-      tabIndex={renaming ? -1 : 0}
-      aria-label={
-        isSharedBadgeVisible
-          ? localize('com_ui_conversation_label_shared', {
-              title: title || localize('com_ui_untitled'),
-            })
-          : localize('com_ui_conversation_label', {
-              title: title || localize('com_ui_untitled'),
-            })
-      }
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onFocus={handleMouseEnter}
@@ -243,18 +232,6 @@ function Conversation({
         }
         if (e.button === 0) {
           handleNavigation(e.ctrlKey || e.metaKey);
-        }
-      }}
-      onKeyDown={(e) => {
-        if (renaming) {
-          return;
-        }
-        if (e.target !== e.currentTarget) {
-          return;
-        }
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          handleNavigation(false);
         }
       }}
       style={{ cursor: renaming ? 'default' : 'pointer' }}
@@ -272,6 +249,7 @@ function Conversation({
         <ConvoLink
           isActiveConvo={isActiveConvo}
           isPopoverActive={isPopoverActive}
+          isSharedBadgeVisible={isSharedBadgeVisible}
           title={title}
           onRename={handleRename}
           isSmallScreen={isSmallScreen}

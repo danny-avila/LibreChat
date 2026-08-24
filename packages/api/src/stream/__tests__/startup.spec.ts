@@ -99,6 +99,12 @@ describe('GenerationJobManager startup telemetry', () => {
           parentMessageId: 'parent-1',
         },
         responseMessageId: 'response-1',
+        isRegenerate: true,
+        mcpRequestBody: {
+          messageId: 'response-1',
+          conversationId: 'overridden-conversation',
+          parentMessageId: 'response-1',
+        },
         sender: 'Agent',
         endpoint: 'agents',
         iconURL: 'https://example.com/icon.png',
@@ -129,6 +135,12 @@ describe('GenerationJobManager startup telemetry', () => {
         parentMessageId: 'parent-1',
       },
       responseMessageId: 'response-1',
+      isRegenerate: true,
+      mcpRequestBody: {
+        messageId: 'response-1',
+        conversationId: 'overridden-conversation',
+        parentMessageId: 'response-1',
+      },
       sender: 'Agent',
       endpoint: 'agents',
       iconURL: 'https://example.com/icon.png',
@@ -2278,7 +2290,9 @@ describe('GenerationJobManager startup telemetry', () => {
 
       const result = await aborting;
       expect(result).toMatchObject({ success: false, finalEvent: null });
-      expect(result.failureReason).toBeUndefined();
+      // Deletion is named for what it is. The point of this test is that it is NOT
+      // reported as a replacement — nothing took the conversation over.
+      expect(result.failureReason).toBe('job_not_found');
       expect(job.abortController.signal.aborted).toBe(true);
     } finally {
       releaseTransition?.();

@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Search } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
+import { AgentCapabilities, removeCodeExecutionCaller } from 'librechat-data-provider';
 import {
   Input,
   OGDialog,
@@ -109,6 +110,11 @@ export default function ToolsMarketplaceDialog({
       switch (patch.type) {
         case 'builtin':
           setValue(patch.field as keyof AgentForm, patch.value as never, { shouldDirty: true });
+          if (patch.field === AgentCapabilities.execute_code && patch.value === false) {
+            setValue('tool_options', removeCodeExecutionCaller(getValues('tool_options')), {
+              shouldDirty: true,
+            });
+          }
           break;
         case 'tool-add': {
           const current = (getValues('tools') ?? []) as string[];
@@ -170,13 +176,13 @@ export default function ToolsMarketplaceDialog({
       }
       const wasSelected = selectedIds.has(itemKey(item));
       /** An unselected, toolless MCP server normally needs its setup dialog.
-       *  A connected request-scoped server is already ready and attaches via
+       *  An authorized request-scoped server is already ready and attaches via
        *  its runtime wildcard; a selected toolless server must remain removable. */
       if (
         item.kind === 'mcp' &&
         item.toolCount === 0 &&
         !wasSelected &&
-        !(item.server.requestScoped === true && item.server.isConnected === true)
+        !(item.server.requestScoped === true && item.server.isReadyForAgent === true)
       ) {
         setDetailItem(item);
         return;

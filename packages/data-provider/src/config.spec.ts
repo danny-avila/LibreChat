@@ -21,9 +21,12 @@ const endpointsConfig: TEndpointsConfig = {
 };
 
 describe('excludedKeys', () => {
-  it.each(['_id', 'user', 'conversationId', '__v'])('excludes system field "%s"', (field) => {
-    expect(excludedKeys.has(field)).toBe(true);
-  });
+  it.each(['_id', 'user', 'conversationId', 'agentEventBinding', '__v'])(
+    'excludes system field "%s"',
+    (field) => {
+      expect(excludedKeys.has(field)).toBe(true);
+    },
+  );
 
   it('does not exclude tenantId (plugin-level guard owns this)', () => {
     expect(excludedKeys.has('tenantId')).toBe(false);
@@ -55,6 +58,40 @@ describe('bedrockEndpointSchema', () => {
       return;
     }
     expect(result.data.endpoints?.bedrock?.guardrailConfig).toEqual(guardrailConfig);
+  });
+});
+
+describe('agent event runtime config', () => {
+  it('accepts rollout flags and agent-event admission limits', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          eventDriven: {
+            childTurns: true,
+            completionWakeups: false,
+            selfUrl: 'https://triggers.internal',
+          },
+        },
+      },
+      rateLimits: {
+        agentEvents: { userMax: 80, userWindowInMinutes: 2 },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.eventDriven).toEqual({
+      childTurns: true,
+      completionWakeups: false,
+      selfUrl: 'https://triggers.internal',
+    });
+    expect(result.data.rateLimits?.agentEvents).toEqual({
+      userMax: 80,
+      userWindowInMinutes: 2,
+    });
   });
 });
 
@@ -661,6 +698,88 @@ describe('webSearchSchema', () => {
       webSearchSchema.parse({
         tavilyScraperOptions: {
           timeout: 120001,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts SearXNG search options', () => {
+    const result = webSearchSchema.parse({
+      searxngSearchOptions: {
+        engines: 'google,bing,startpage,qwant',
+        language: 'en',
+        timeRange: 'month',
+        timeout: 15000,
+      },
+    });
+
+    expect(result.searxngSearchOptions?.engines).toBe('google,bing,startpage,qwant');
+    expect(result.searxngSearchOptions?.language).toBe('en');
+    expect(result.searxngSearchOptions?.timeRange).toBe('month');
+    expect(result.searxngSearchOptions?.timeout).toBe(15000);
+  });
+
+  it('normalizes a SearXNG engine list into a comma-separated string', () => {
+    const result = webSearchSchema.parse({
+      searxngSearchOptions: {
+        engines: ['google', 'bing', 'startpage', 'qwant'],
+      },
+    });
+
+    expect(result.searxngSearchOptions?.engines).toBe('google,bing,startpage,qwant');
+  });
+
+  it('trims whitespace and empty entries from SearXNG engines', () => {
+    const result = webSearchSchema.parse({
+      searxngSearchOptions: {
+        engines: 'google, bing , , startpage',
+      },
+    });
+
+    expect(result.searxngSearchOptions?.engines).toBe('google,bing,startpage');
+  });
+
+  it('treats a blank SearXNG engines value as unset', () => {
+    const result = webSearchSchema.parse({
+      searxngSearchOptions: {
+        engines: '  ,  ',
+      },
+    });
+
+    expect(result.searxngSearchOptions?.engines).toBeUndefined();
+  });
+
+  it('rejects invalid SearXNG search options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        searxngSearchOptions: {
+          timeRange: 'week',
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        searxngSearchOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        searxngSearchOptions: {
+          engines: 42,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a zero SearXNG timeout, which axios reads as no timeout at all', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        searxngSearchOptions: {
+          timeout: 0,
         },
       }),
     ).toThrow();

@@ -44,8 +44,18 @@ export const useUploadFileMutation = (
     },
     ...options,
     onSuccess: (data, formData, context) => {
+      /** `temp_file_id` is the server's echo of the `file_id` the request was sent
+       * with, and that request id is what every client-side handle for the upload
+       * is keyed by — the composer's file map, the draft it saves, the delayed
+       * toast timer. A record cached under an echo that disagrees cannot be
+       * correlated back to the draft, so the attachment is silently dropped on the
+       * next conversation switch or reload. Normalize once, on the way in. */
+      const requestFileId = (formData.get('file_id') as string | null) ?? data.temp_file_id;
+      const file =
+        data.temp_file_id === requestFileId ? data : { ...data, temp_file_id: requestFileId };
+
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (_files) => [
-        data,
+        file,
         ...(_files ?? []),
       ]);
 
@@ -56,7 +66,7 @@ export const useUploadFileMutation = (
       const tool_resource = (formData.get('tool_resource') as string | undefined) ?? '';
 
       if (message_file === 'true') {
-        onSuccess?.(data, formData, context);
+        onSuccess?.(file, formData, context);
         return;
       }
 
@@ -92,7 +102,7 @@ export const useUploadFileMutation = (
       }
 
       if (!assistant_id) {
-        onSuccess?.(data, formData, context);
+        onSuccess?.(file, formData, context);
         return;
       }
 
@@ -136,7 +146,7 @@ export const useUploadFileMutation = (
           };
         },
       );
-      onSuccess?.(data, formData, context);
+      onSuccess?.(file, formData, context);
     },
   });
 };

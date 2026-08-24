@@ -41,6 +41,8 @@ interface SteerPart {
  *  caller can fold the re-encoded media into its token accounting. */
 export interface StampedSteerMedia {
   index: number;
+  sourceMessageId?: string;
+  fileIds: string[];
   media: Array<Record<string, unknown>>;
   /** The bare steer body, so token accounting can subtract what the
    *  assistant message already counted (file context must still count). */
@@ -103,11 +105,13 @@ export async function buildSteerMedia({
   user,
   item,
   getFiles,
+  assertFilesAllowed,
 }: {
   client: SteerMediaClient;
   user: SteerRequestUser | undefined;
   item: SteerQueueItem;
   getFiles: SteerFileFetcher;
+  assertFilesAllowed?: (files: IMongoFile[]) => void;
 }): Promise<SteerMediaResult | undefined> {
   const ids = collectFileIds(item.files);
   const filter = buildOwnerFilter(ids, user);
@@ -123,6 +127,7 @@ export async function buildSteerMedia({
   const fileDocs = ids
     .map((id) => docsById.get(id))
     .filter((doc): doc is IMongoFile => doc != null);
+  assertFilesAllowed?.(fileDocs);
   return encodeSteerContent({ client, text: item.text, steerId: item.steerId, fileDocs });
 }
 
@@ -149,12 +154,12 @@ export async function stampSteerPartMedia({
 }: {
   client: SteerMediaClient;
   user: SteerRequestUser | undefined;
-  payload: Array<{ role?: string; content?: unknown }>;
+  payload: Array<{ id?: string; messageId?: string; role?: string; content?: unknown }>;
   docsById?: Map<string, IMongoFile>;
   getFiles: SteerFileFetcher;
 }): Promise<StampedSteerMedia[]> {
   const stampTargets: Array<{
-    message: { content?: unknown };
+    message: { id?: string; messageId?: string; content?: unknown };
     part: SteerPart;
     index: number;
   }> = [];
@@ -188,8 +193,8 @@ export async function stampSteerPartMedia({
   }
   const docs = resolvedDocsById;
 
-  const stamped = await Promise.all(
-    stampTargets.map(async ({ message, part, index }) => {
+  const stamped: Array<StampedSteerMedia | null> = await Promise.all(
+    stampTargets.map(async ({ message, part, index }): Promise<StampedSteerMedia | null> => {
       const partDocs = (part.files ?? [])
         .map((file) => (file?.file_id != null ? docs.get(file.file_id) : undefined))
         .filter((doc): doc is IMongoFile => doc != null);
@@ -197,7 +202,7 @@ export async function stampSteerPartMedia({
         return null;
       }
       try {
-        const { content } = await encodeSteerContent({
+        const { content, files } = await encodeSteerContent({
           client,
           text: (part[ContentTypes.STEER] as string | undefined) ?? '',
           steerId: part.steerId ?? 'replay',
@@ -208,6 +213,10 @@ export async function stampSteerPartMedia({
         );
         return {
           index,
+          sourceMessageId: message.messageId ?? message.id,
+          fileIds: (files ?? [])
+            .map((file) => file.file_id)
+            .filter((fileId): fileId is string => typeof fileId === 'string' && fileId.length > 0),
           media: content,
           steerText: (part[ContentTypes.STEER] as string | undefined) ?? '',
         };

@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react';
 import type { TConversation } from 'librechat-data-provider';
 import { useLocalize, useLocalStorage } from '~/hooks';
 import { useActiveJobs } from '~/data-provider';
+import { Collapse } from '~/components/ui';
 import { cn } from '~/utils';
 import Convo from './Convo';
 
@@ -50,7 +51,7 @@ const PinnedSection = ({ conversations, toggleNav }: PinnedSectionProps) => {
         </button>
       </div>
 
-      {isExpanded && (
+      <Collapse open={isExpanded}>
         <div className="scrollbar-gutter-stable max-h-[30vh] overflow-y-auto">
           <ul className="m-0 list-none p-0">
             {conversations.map((convo) => (
@@ -65,7 +66,7 @@ const PinnedSection = ({ conversations, toggleNav }: PinnedSectionProps) => {
             ))}
           </ul>
         </div>
-      )}
+      </Collapse>
     </div>
   );
 };

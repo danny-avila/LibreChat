@@ -164,6 +164,7 @@ describe('createEndpointsConfigService', () => {
               [EModelEndpoint.agents]: {
                 allowedProviders: ['openAI', 'anthropic'],
                 capabilities: [AgentCapabilities.execute_code],
+                maxSubagents: 20,
               },
             },
           }),
@@ -173,6 +174,7 @@ describe('createEndpointsConfigService', () => {
       const result = await getEndpointsConfig(fakeReq());
 
       expect(result?.[EModelEndpoint.agents]?.allowedProviders).toEqual(['openAI', 'anthropic']);
+      expect(result?.[EModelEndpoint.agents]?.maxSubagents).toBe(20);
     });
 
     it('exposes the deployment stateful environment allowlist', async () => {

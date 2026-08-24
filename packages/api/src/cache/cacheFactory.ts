@@ -98,7 +98,12 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
   if (existing) {
     return existing;
   }
-  const cache = new Keyv({ namespace, ttl });
+  /** The default serializer's Buffer-aware reviver costs ~8x a plain JSON round trip on
+   *  every read, and an instrumented sweep of the e2e suite found no namespace ever caching
+   *  a Buffer. Plain JSON keeps today's copy semantics (readers never share references with
+   *  the store, dates still come back as ISO strings); a Buffer would now round-trip as its
+   *  `{ type: 'Buffer', data }` JSON form instead of reviving. */
+  const cache = new Keyv({ namespace, ttl, serialize: JSON.stringify, deserialize: JSON.parse });
   inMemoryCacheMap.set(namespace, cache);
   return cache;
 };

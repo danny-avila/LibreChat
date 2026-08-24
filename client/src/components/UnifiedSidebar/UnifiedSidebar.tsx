@@ -1,5 +1,6 @@
 import { useCallback, useState, useEffect, useRef, memo } from 'react';
 import { useForm } from 'react-hook-form';
+import { useMediaQuery } from '@librechat/client';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import type { ChatFormValues } from '~/common';
@@ -8,9 +9,10 @@ import {
   EXPANDED_MIN,
   TRANSITION_MS,
   EASING,
-  SIDEBAR_TRANSITION,
+  MOBILE_DRAWER_TRANSITION,
   DRAWER_Z_INDEX,
   MOBILE_DRAWER_ID,
+  MOBILE_DRAWER_WIDTH,
 } from './constants';
 import { ChatContext, ChatFormProvider, ActivePanelProvider } from '~/Providers';
 import { MobileHeader, MobileBottomBar, MobileShortcutTargets } from './mobile';
@@ -49,13 +51,31 @@ function UnifiedSidebar() {
   const navigate = useNavigate();
   const { isSmallScreen, expanded } = useSidebarState();
   const { setSidebarOpen } = useSidebarToggle();
+  const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const [sidebarWidth, setSidebarWidth] = useState(getInitialWidth);
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [isResizing, setIsResizing] = useState(false);
   const resizeHandlers = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);
 
   const links = useUnifiedSidebarLinks();
   const isInsightsRoute = location.pathname.startsWith('/insights');
   const panelExpanded = expanded && !isInsightsRoute;
+
+  /** The aside's max width is a viewport percentage, so the announced range has to track
+   *  the viewport rather than a render-time snapshot of it. */
+  useEffect(() => {
+    const handleViewportResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', handleViewportResize);
+    return () => window.removeEventListener('resize', handleViewportResize);
+  }, []);
+
+  /** Mirrors the bounds the aside is rendered with, so the handle never announces a value
+   *  outside its own range. CSS resolves a 40% that falls under `min-width` in favor of the
+   *  minimum, and the resize handlers clamp the same way, so the floor belongs here too. */
+  const resizeMax = Math.max(EXPANDED_MIN, Math.round(viewportWidth * 0.4));
+  const resizeNow = panelExpanded
+    ? Math.min(Math.max(sidebarWidth, EXPANDED_MIN), resizeMax)
+    : COLLAPSED_WIDTH;
 
   const handleCollapse = useCallback(
     (afterSlide?: () => void) => {
@@ -171,10 +191,17 @@ function UnifiedSidebar() {
           /** The close swipe reads horizontal touches here (the drawer holds no
            * horizontal scrollers), while pinch-zoom stays with the browser —
            * this full-viewport surface must not disable zooming entirely. */
-          'fixed inset-y-0 left-0 flex w-full touch-pan-y touch-pinch-zoom flex-col bg-surface-primary-alt',
+          'fixed inset-y-0 left-0 flex touch-pan-y touch-pinch-zoom flex-col bg-surface-primary-alt',
           expanded ? 'translate-x-0' : '-translate-x-full',
         )}
-        style={{ transition: SIDEBAR_TRANSITION, zIndex: DRAWER_Z_INDEX }}
+        style={{
+          width: MOBILE_DRAWER_WIDTH,
+          /** The strip setting changes the width without passing through the
+           *  snap path, so the preference has to reach the declarative style
+           *  too or that one change still animates. */
+          transition: prefersReducedMotion ? undefined : MOBILE_DRAWER_TRANSITION,
+          zIndex: DRAWER_Z_INDEX,
+        }}
         inert={!expanded ? '' : undefined}
       >
         <SidebarChatProvider>
@@ -222,6 +249,9 @@ function UnifiedSidebar() {
           <Sidebar
             links={links}
             expanded={panelExpanded}
+            width={resizeNow}
+            minWidth={panelExpanded ? EXPANDED_MIN : COLLAPSED_WIDTH}
+            maxWidth={panelExpanded ? resizeMax : COLLAPSED_WIDTH}
             onCollapse={handleCollapse}
             onExpand={handlePanelExpand}
             onLeaveInsights={handleLeaveInsights}

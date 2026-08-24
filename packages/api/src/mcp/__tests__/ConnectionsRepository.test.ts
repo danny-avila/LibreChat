@@ -516,10 +516,9 @@ describe('ConnectionsRepository', () => {
       expect(result.has('server1')).toBe(false);
       expect(result.get('server2')).toBe(mockConnection);
       expect(result.get('server3')).toBe(mockConnection);
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        '[MCP][server1] Failed to establish connection',
-        expect.any(Error),
-      );
+      expect(mockLogger.warn).toHaveBeenCalledWith('[MCP] Failed to establish connection');
+      expect(JSON.stringify(mockLogger.warn.mock.calls)).not.toContain('server1');
+      expect(JSON.stringify(mockLogger.warn.mock.calls)).not.toContain('server unavailable');
     });
   });
 
@@ -542,10 +541,9 @@ describe('ConnectionsRepository', () => {
 
       expect(mockConnection.dispose).toHaveBeenCalled();
       expect(repository['connections'].has('server1')).toBe(false);
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        '[MCP][server1] Error disposing',
-        disconnectError,
-      );
+      expect(mockLogger.error).toHaveBeenCalledWith('[MCP] Error disposing');
+      expect(JSON.stringify(mockLogger.error.mock.calls)).not.toContain(disconnectError.message);
+      expect(JSON.stringify(mockLogger.error.mock.calls)).not.toContain('server1');
     });
   });
 

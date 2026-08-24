@@ -129,6 +129,206 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     );
   });
 
+  it('propagates a blocked historical bundle before reconstructing invoked skills', async () => {
+    const protectedValue = 'sk-historical-prime-secret';
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            skills: {
+              pii: {
+                fields: ['file_text'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+          },
+        },
+      } as PrimeInvokedSkillsDeps['req'],
+      listSkillFiles: jest.fn().mockResolvedValue([
+        {
+          relativePath: 'references/private.md',
+          filename: 'private.md',
+          filepath: '/storage/brand-guidelines/references/private.md',
+          source: 's3',
+          bytes: protectedValue.length,
+        },
+      ]),
+      getStrategyFunctions: jest.fn().mockReturnValue({
+        getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from(protectedValue))),
+      }),
+      batchUploadCodeEnvFiles,
+    });
+
+    await expect(primeInvokedSkills(deps)).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: { source: 'skill', field: 'file_text' },
+    });
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+  });
+
+  it('re-inspects active cached file references after a policy is enabled', async () => {
+    const protectedValue = 'sk-active-cached-secret';
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            skills: {
+              pii: {
+                fields: ['file_text'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+          },
+        },
+      } as PrimeInvokedSkillsDeps['req'],
+      listSkillFiles: jest.fn().mockResolvedValue([
+        {
+          relativePath: 'references/private.md',
+          filename: 'private.md',
+          filepath: '/storage/brand-guidelines/references/private.md',
+          source: 's3',
+          bytes: protectedValue.length,
+          codeEnvRef: {
+            kind: 'skill',
+            id: SKILL_ID.toString(),
+            storage_session_id: 'session-active',
+            file_id: 'file-active',
+            version: SKILL_VERSION,
+          },
+        },
+      ]),
+      getStrategyFunctions: jest.fn().mockReturnValue({
+        getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from(protectedValue))),
+      }),
+      batchUploadCodeEnvFiles,
+      getSessionInfo: jest.fn().mockResolvedValue('2026-05-06T00:00:00Z'),
+      checkIfActive: jest.fn().mockReturnValue(true),
+    });
+
+    await expect(primeInvokedSkills(deps)).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: { source: 'skill', field: 'file_text' },
+    });
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+  });
+
+  it('reuses the aggregate active-session cache for metadata-only filters', async () => {
+    const getStrategyFunctions = jest.fn();
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['name'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+          },
+        },
+      } as PrimeInvokedSkillsDeps['req'],
+      listSkillFiles: jest.fn().mockResolvedValue([
+        {
+          relativePath: 'references/style.md',
+          filename: 'style.md',
+          filepath: '/storage/brand-guidelines/references/style.md',
+          source: 's3',
+          bytes: 256,
+          codeEnvRef: {
+            kind: 'skill',
+            id: SKILL_ID.toString(),
+            storage_session_id: 'session-active',
+            file_id: 'file-active',
+            version: SKILL_VERSION,
+          },
+        },
+      ]),
+      getStrategyFunctions,
+      batchUploadCodeEnvFiles,
+      getSessionInfo: jest.fn().mockResolvedValue('2026-05-06T00:00:00Z'),
+      checkIfActive: jest.fn().mockReturnValue(true),
+    });
+
+    const result = await primeInvokedSkills(deps);
+
+    expect(getStrategyFunctions).not.toHaveBeenCalled();
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+    expect(result.initialSessions?.get('execute_code')?.files).toEqual([
+      expect.objectContaining({
+        id: 'file-active',
+        name: 'skills/brand-guidelines/references/style.md',
+      }),
+    ]);
+  });
+
+  it('re-inspects invoked skill bodies that have no bundled files', async () => {
+    const deps = makeDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            skills: {
+              pii: {
+                fields: ['instructions'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+          },
+        },
+      } as PrimeInvokedSkillsDeps['req'],
+      codeEnvAvailable: false,
+      getSkillByName: jest.fn().mockResolvedValue({
+        _id: SKILL_ID,
+        name: 'brand-guidelines',
+        body: 'historical sk-body-secret',
+        version: SKILL_VERSION,
+        fileCount: 0,
+      }),
+    });
+
+    await expect(primeInvokedSkills(deps)).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: { source: 'skill', field: 'instructions' },
+    });
+  });
+
+  it('classifies the stored SKILL.md body as extracted file text', async () => {
+    const deps = makeDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['extracted_text'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+          },
+        },
+      } as PrimeInvokedSkillsDeps['req'],
+      codeEnvAvailable: false,
+      getSkillByName: jest.fn().mockResolvedValue({
+        _id: SKILL_ID,
+        name: 'brand-guidelines',
+        body: 'historical sk-body-secret',
+        version: SKILL_VERSION,
+        fileCount: 0,
+      }),
+    });
+
+    await expect(primeInvokedSkills(deps)).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: { source: 'file', field: 'extracted_text' },
+    });
+  });
+
   it('returns {} early when no skills were invoked, regardless of capability', async () => {
     mockExtract.mockReturnValue(new Set());
     const deps = makeDeps({ codeEnvAvailable: true });
@@ -573,6 +773,583 @@ describe('primeSkillFiles — resource identity propagation', () => {
       expect.objectContaining({ executionProfile: 'stateful' }),
     );
     expect(result?.files[0].id).toBe('stateful-file');
+  });
+
+  it('does not download active cached bundles for metadata-only filters', async () => {
+    const getDownloadStream = jest.fn();
+    const getStrategyFunctions = jest.fn().mockReturnValue({ getDownloadStream });
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeSkillFilesDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            skills: {
+              pii: {
+                fields: ['file_name'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+          },
+        },
+      } as PrimeSkillFilesParams['req'],
+      skillFiles: [
+        {
+          relativePath: 'references/style.md',
+          filename: 'style.md',
+          filepath: '/storage/brand-guidelines/references/style.md',
+          source: 's3',
+          bytes: 256,
+          codeEnvRef: {
+            kind: 'skill',
+            id: SKILL_ID.toString(),
+            storage_session_id: 'session-cached',
+            file_id: 'file-cached',
+            version: SKILL_VERSION,
+          },
+        },
+      ],
+      getStrategyFunctions,
+      batchUploadCodeEnvFiles,
+      getSessionInfo: jest.fn().mockResolvedValue('2026-05-06T00:00:00Z'),
+      checkIfActive: jest.fn().mockReturnValue(true),
+    });
+
+    await expect(primeSkillFiles(deps)).resolves.toMatchObject({
+      storage_session_id: 'session-cached',
+      files: [{ id: 'file-cached' }],
+    });
+    expect(getStrategyFunctions).not.toHaveBeenCalled();
+    expect(getDownloadStream).not.toHaveBeenCalled();
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+  });
+
+  it('treats omitted fields as requiring bundled content inspection', async () => {
+    const getDownloadStream = jest
+      .fn()
+      .mockResolvedValue(Readable.from(Buffer.from('historical sk-private-value')));
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeSkillFilesDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+          },
+        },
+      } as PrimeSkillFilesParams['req'],
+      skillFiles: [
+        {
+          relativePath: 'references/style.md',
+          filename: 'style.md',
+          filepath: '/storage/brand-guidelines/references/style.md',
+          source: 's3',
+          bytes: 24,
+          codeEnvRef: {
+            kind: 'skill',
+            id: SKILL_ID.toString(),
+            storage_session_id: 'session-cached',
+            file_id: 'file-cached',
+            version: SKILL_VERSION,
+          },
+        },
+      ],
+      getStrategyFunctions: jest.fn().mockReturnValue({ getDownloadStream }),
+      batchUploadCodeEnvFiles,
+      getSessionInfo: jest.fn().mockResolvedValue('2026-05-06T00:00:00Z'),
+      checkIfActive: jest.fn().mockReturnValue(true),
+    });
+
+    await expect(primeSkillFiles(deps)).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: { source: 'file', field: 'content' },
+    });
+    expect(getDownloadStream).toHaveBeenCalledTimes(1);
+    expect(deps.getSessionInfo).not.toHaveBeenCalled();
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+  });
+
+  it('still blocks bundled file names before metadata-only cache reuse', async () => {
+    const getStrategyFunctions = jest.fn();
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeSkillFilesDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['name'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+          },
+        },
+      } as PrimeSkillFilesParams['req'],
+      skillFiles: [
+        {
+          relativePath: 'references/sk-private-name.md',
+          filename: 'sk-private-name.md',
+          filepath: '/storage/brand-guidelines/references/sk-private-name.md',
+          source: 's3',
+          bytes: 256,
+          codeEnvRef: {
+            kind: 'skill',
+            id: SKILL_ID.toString(),
+            storage_session_id: 'session-cached',
+            file_id: 'file-cached',
+            version: SKILL_VERSION,
+          },
+        },
+      ],
+      getStrategyFunctions,
+      batchUploadCodeEnvFiles,
+      getSessionInfo: jest.fn().mockResolvedValue('2026-05-06T00:00:00Z'),
+      checkIfActive: jest.fn().mockReturnValue(true),
+    });
+
+    await expect(primeSkillFiles(deps)).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: { source: 'file', field: 'name' },
+    });
+    expect(getStrategyFunctions).not.toHaveBeenCalled();
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+  });
+
+  it('re-inspects bundled text created before a skills policy is enabled', async () => {
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeSkillFilesDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            skills: {
+              pii: {
+                fields: ['file_text'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+          },
+        },
+      } as PrimeSkillFilesParams['req'],
+      skillFiles: [
+        {
+          relativePath: 'references/style.md',
+          filename: 'style.md',
+          filepath: '/storage/brand-guidelines/references/style.md',
+          source: 's3',
+          bytes: 24,
+          codeEnvRef: {
+            kind: 'skill',
+            id: SKILL_ID.toString(),
+            storage_session_id: 'session-cached',
+            file_id: 'file-cached',
+            version: SKILL_VERSION,
+          },
+        },
+      ],
+      getStrategyFunctions: jest.fn().mockReturnValue({
+        getDownloadStream: jest
+          .fn()
+          .mockResolvedValue(Readable.from(Buffer.from('historical sk-private-value'))),
+      }),
+      batchUploadCodeEnvFiles,
+      getSessionInfo: jest.fn().mockResolvedValue('2026-05-06T00:00:00Z'),
+      checkIfActive: jest.fn().mockReturnValue(true),
+    });
+
+    await expect(primeSkillFiles(deps)).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: { source: 'skill', field: 'file_text' },
+    });
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+  });
+
+  it('classifies decoded bundled text as extracted file text', async () => {
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeSkillFilesDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['extracted_text'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+          },
+        },
+      } as PrimeSkillFilesParams['req'],
+      skillFiles: [
+        {
+          relativePath: 'references/style.md',
+          filename: 'style.md',
+          filepath: '/storage/brand-guidelines/references/style.md',
+          source: 's3',
+          bytes: 24,
+        },
+      ],
+      getStrategyFunctions: jest.fn().mockReturnValue({
+        getDownloadStream: jest
+          .fn()
+          .mockResolvedValue(Readable.from(Buffer.from('historical sk-private-value'))),
+      }),
+      batchUploadCodeEnvFiles,
+    });
+
+    await expect(primeSkillFiles(deps)).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: { source: 'file', field: 'extracted_text' },
+    });
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+  });
+
+  it('blocks opaque bundled files before upload when fail-close is enabled', async () => {
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeSkillFilesDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['content'],
+                starterPatterns: ['sk_prefix'],
+                uninspectable: 'block',
+              },
+            },
+          },
+        },
+      } as PrimeSkillFilesParams['req'],
+      skillFiles: [
+        {
+          relativePath: 'references/archive.bin',
+          filename: 'archive.bin',
+          filepath: '/storage/brand-guidelines/references/archive.bin',
+          source: 's3',
+          bytes: 3,
+        },
+      ],
+      getStrategyFunctions: jest.fn().mockReturnValue({
+        getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from([0, 255, 1]))),
+      }),
+      batchUploadCodeEnvFiles,
+    });
+
+    await expect(primeSkillFiles(deps)).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: { source: 'file', field: 'content' },
+    });
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for binary bundles when extracted text must be inspectable', async () => {
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeSkillFilesDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['extracted_text'],
+                starterPatterns: ['sk_prefix'],
+                uninspectable: 'block',
+              },
+            },
+          },
+        },
+      } as PrimeSkillFilesParams['req'],
+      skillFiles: [
+        {
+          relativePath: 'references/archive.bin',
+          filename: 'archive.bin',
+          filepath: '/storage/brand-guidelines/references/archive.bin',
+          source: 's3',
+          bytes: 3,
+        },
+      ],
+      getStrategyFunctions: jest.fn().mockReturnValue({
+        getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from([0, 255, 1]))),
+      }),
+      batchUploadCodeEnvFiles,
+    });
+
+    await expect(primeSkillFiles(deps)).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: { source: 'file', field: 'extracted_text' },
+    });
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for oversized bundles when extracted text must be inspectable', async () => {
+    const getStrategyFunctions = jest.fn();
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeSkillFilesDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['extracted_text'],
+                starterPatterns: ['sk_prefix'],
+                uninspectable: 'block',
+              },
+            },
+          },
+        },
+      } as PrimeSkillFilesParams['req'],
+      skillFiles: [
+        {
+          relativePath: 'references/archive.txt',
+          filename: 'archive.txt',
+          filepath: '/storage/brand-guidelines/references/archive.txt',
+          source: 's3',
+          bytes: 10 * 1024 * 1024 + 1,
+        },
+      ],
+      getStrategyFunctions,
+      batchUploadCodeEnvFiles,
+    });
+
+    await expect(primeSkillFiles(deps)).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: { source: 'file', field: 'extracted_text' },
+    });
+    expect(getStrategyFunctions).not.toHaveBeenCalled();
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for oversized bundles selected by the skill file_text policy', async () => {
+    const getStrategyFunctions = jest.fn();
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeSkillFilesDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            skills: {
+              pii: {
+                fields: ['file_text'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+          },
+        },
+      } as PrimeSkillFilesParams['req'],
+      skillFiles: [
+        {
+          relativePath: 'references/oversized.txt',
+          filename: 'oversized.txt',
+          filepath: '/storage/brand-guidelines/references/oversized.txt',
+          source: 's3',
+          bytes: 10 * 1024 * 1024 + 1,
+        },
+      ],
+      getStrategyFunctions,
+      batchUploadCodeEnvFiles,
+    });
+
+    await expect(primeSkillFiles(deps)).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: { source: 'file', field: 'content' },
+    });
+    expect(getStrategyFunctions).not.toHaveBeenCalled();
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a selected skill file_text bundle cannot be downloaded', async () => {
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeSkillFilesDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            skills: {
+              pii: {
+                fields: ['file_text'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+            files: {
+              pii: {
+                fields: ['content'],
+                starterPatterns: ['sk_prefix'],
+                uninspectable: 'allow',
+              },
+            },
+          },
+        },
+      } as PrimeSkillFilesParams['req'],
+      skillFiles: [
+        {
+          relativePath: 'references/unavailable.txt',
+          filename: 'unavailable.txt',
+          filepath: '/storage/brand-guidelines/references/unavailable.txt',
+          source: 's3',
+          bytes: 256,
+        },
+      ],
+      getStrategyFunctions: jest.fn().mockReturnValue({
+        getDownloadStream: jest.fn().mockRejectedValue(new Error('storage unavailable')),
+      }),
+      batchUploadCodeEnvFiles,
+    });
+
+    await expect(primeSkillFiles(deps)).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: { source: 'file', field: 'content' },
+    });
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for binary bundles selected by the skill file_text policy', async () => {
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeSkillFilesDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            skills: {
+              pii: {
+                fields: ['file_text'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+            files: {
+              pii: {
+                fields: ['content'],
+                starterPatterns: ['sk_prefix'],
+                uninspectable: 'allow',
+              },
+            },
+          },
+        },
+      } as PrimeSkillFilesParams['req'],
+      skillFiles: [
+        {
+          relativePath: 'references/archive.bin',
+          filename: 'archive.bin',
+          filepath: '/storage/brand-guidelines/references/archive.bin',
+          source: 's3',
+          bytes: 3,
+        },
+      ],
+      getStrategyFunctions: jest.fn().mockReturnValue({
+        getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from([0, 255, 1]))),
+      }),
+      batchUploadCodeEnvFiles,
+    });
+
+    await expect(primeSkillFiles(deps)).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: { source: 'file', field: 'content' },
+    });
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+  });
+
+  it('does not reuse an active cached ref when selected skill file_text is unavailable', async () => {
+    const getSessionInfo = jest.fn().mockResolvedValue('2026-05-06T00:00:00Z');
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeSkillFilesDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            skills: {
+              pii: {
+                fields: ['file_text'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+          },
+        },
+      } as PrimeSkillFilesParams['req'],
+      skillFiles: [
+        {
+          relativePath: 'references/unavailable.txt',
+          filename: 'unavailable.txt',
+          filepath: '/storage/brand-guidelines/references/unavailable.txt',
+          source: 's3',
+          bytes: 256,
+          codeEnvRef: {
+            kind: 'skill',
+            id: SKILL_ID.toString(),
+            storage_session_id: 'session-cached',
+            file_id: 'file-cached',
+            version: SKILL_VERSION,
+          },
+        },
+      ],
+      getStrategyFunctions: jest.fn().mockReturnValue({}),
+      batchUploadCodeEnvFiles,
+      getSessionInfo,
+      checkIfActive: jest.fn().mockReturnValue(true),
+    });
+
+    await expect(primeSkillFiles(deps)).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: { source: 'file', field: 'content' },
+    });
+    expect(getSessionInfo).not.toHaveBeenCalled();
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+  });
+
+  it('retains explicit allow behavior for opaque bundled files', async () => {
+    const batchUploadCodeEnvFiles = jest.fn().mockResolvedValue({
+      storage_session_id: 'session-allowed',
+      files: [
+        {
+          fileId: 'file-allowed',
+          filename: 'skills/brand-guidelines/references/archive.bin',
+        },
+        {
+          fileId: 'file-skillmd',
+          filename: 'skills/brand-guidelines/SKILL.md',
+        },
+      ],
+    });
+    const deps = makeSkillFilesDeps({
+      req: {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['content'],
+                starterPatterns: ['sk_prefix'],
+                uninspectable: 'allow',
+              },
+            },
+          },
+        },
+      } as PrimeSkillFilesParams['req'],
+      skillFiles: [
+        {
+          relativePath: 'references/archive.bin',
+          filename: 'archive.bin',
+          filepath: '/storage/brand-guidelines/references/archive.bin',
+          source: 's3',
+          bytes: 3,
+        },
+      ],
+      getStrategyFunctions: jest.fn().mockReturnValue({
+        getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from([0, 255, 1]))),
+      }),
+      batchUploadCodeEnvFiles,
+    });
+
+    await expect(primeSkillFiles(deps)).resolves.toMatchObject({
+      storage_session_id: 'session-allowed',
+      files: [{ id: 'file-allowed' }],
+    });
+    expect(batchUploadCodeEnvFiles).toHaveBeenCalledTimes(1);
   });
 });
 

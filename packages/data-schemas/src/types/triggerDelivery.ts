@@ -60,6 +60,19 @@ export interface AgentTriggerDeliveryRecord
   createdAt: Date;
 }
 
+/** Owner-scoped projection safe for public delivery-status reads. */
+export type AgentTriggerDeliveryStatusRecord = Pick<
+  AgentTriggerDeliveryRecord,
+  | 'deliveryKey'
+  | 'status'
+  | 'attempts'
+  | 'availableAt'
+  | 'createdAt'
+  | 'settledAt'
+  | 'result'
+  | 'lastError'
+>;
+
 export interface IAgentTriggerLaneSequence {
   _id: string;
   value: number;

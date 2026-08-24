@@ -9,6 +9,7 @@ type CloudFrontRetryOptions = { getAuthorizationHeader: () => string | undefined
 const mockUseHasAccess = jest.fn();
 const mockUseMCPServersQuery = jest.fn();
 const mockUseMCPToolsQuery = jest.fn();
+const mockUseCatalogReady = jest.fn();
 const mockInstallCloudFrontImageRetry = jest.fn(
   (_startupConfig: unknown, _options: CloudFrontRetryOptions): (() => void) =>
     () =>
@@ -31,6 +32,7 @@ jest.mock('librechat-data-provider', () => {
 
 jest.mock('~/hooks', () => ({
   useHasAccess: (args: unknown) => mockUseHasAccess(args),
+  useCatalogReady: (id: unknown) => mockUseCatalogReady(id),
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -71,11 +73,12 @@ const wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <RecoilRoot>{children}</RecoilRoot>
 );
 
-describe('useAppStartup — MCP permission gating', () => {
+describe('useAppStartup: MCP permission gating', () => {
   beforeEach(() => {
     mockInstallCloudFrontImageRetry.mockClear();
     mockUseMCPServersQuery.mockReturnValue({ data: undefined, isLoading: false });
     mockUseMCPToolsQuery.mockReturnValue({ data: undefined, isLoading: false });
+    mockUseCatalogReady.mockReturnValue(true);
   });
 
   it('checks the MCP_SERVERS.USE permission via useHasAccess', () => {
@@ -94,6 +97,18 @@ describe('useAppStartup — MCP permission gating', () => {
 
     renderHook(() => useAppStartup({ startupConfig: undefined, user: mockUser }), { wrapper });
 
+    expect(mockUseMCPServersQuery).toHaveBeenCalledWith({ enabled: false });
+    expect(mockUseMCPToolsQuery).toHaveBeenCalledWith({ enabled: false });
+  });
+
+  it('suppresses MCP queries while background catalog warmup has not released them', () => {
+    mockUseHasAccess.mockReturnValue(true);
+    mockUseCatalogReady.mockReturnValue(false);
+
+    renderHook(() => useAppStartup({ startupConfig: undefined, user: mockUser }), { wrapper });
+
+    expect(mockUseCatalogReady).toHaveBeenCalledWith('mcpServers');
+    expect(mockUseCatalogReady).toHaveBeenCalledWith('mcpTools');
     expect(mockUseMCPServersQuery).toHaveBeenCalledWith({ enabled: false });
     expect(mockUseMCPToolsQuery).toHaveBeenCalledWith({ enabled: false });
   });
