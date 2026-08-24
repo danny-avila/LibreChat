@@ -2311,6 +2311,39 @@ describe('useSteering', () => {
       });
     });
 
+    it("re-stages a queued item's quotes when Send now hits an old server", () => {
+      // The queue row is consumed and the words will inject bare, so the
+      // composer is the excerpts' only remaining home. The chip's captured
+      // origin copy is stripped too — a reclaim or terminal conversion must
+      // not duplicate what was just re-staged.
+      mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
+        onSuccess({
+          steerId: 'srv-q-old',
+          status: 'queued',
+          position: 1,
+          conversationId: CONVO_ID,
+        });
+      });
+      const item: QueuedMessage = {
+        id: 'q-old-server',
+        text: 'queued quoted words',
+        createdAt: 1_000,
+        quotes: ['queued excerpt'],
+      };
+      const { result } = setupWithContext({}, ({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [item]);
+      });
+      act(() => {
+        result.current.steering.sendQueuedNow(item);
+      });
+      expect(result.current.queue).toEqual([]);
+      expect(result.current.pendingQuotes).toEqual(['queued excerpt']);
+      const chip = result.current.chips[0];
+      expect(chip).toMatchObject({ steerId: 'srv-q-old', status: 'pending' });
+      expect(chip.quotes).toBeUndefined();
+      expect(chip.queuedOrigin?.item.quotes).toBeUndefined();
+    });
+
     it('re-stages quotes on a settled receipt replay that never carried them', () => {
       // Lost first ACK against an old replica; the retry's receipt replay
       // (settled, already injected) proves the excerpts never attached.

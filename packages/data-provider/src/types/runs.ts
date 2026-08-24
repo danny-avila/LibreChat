@@ -225,6 +225,9 @@ export type TSteerAppliedEvent = {
     clientSteerId?: string;
     createdAt?: number;
     files?: Partial<TFile>[];
+    /** Quoted excerpts steered with the message (mirrors `SteerContentPart`,
+     *  which cannot be imported here without a module cycle). */
+    quotes?: string[];
   };
   responseMessageId?: string;
   conversationId?: string;

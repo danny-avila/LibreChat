@@ -432,6 +432,14 @@ async function handleSteerRequestInternal(
   const streamId = conversationId;
   const wantsPreempt = body.preempt === true;
   const fingerprint = steerFingerprint(text, files, wantsPreempt, quotes);
+  /** A receipt written by a pre-quotes replica hashed only text/files/preempt.
+   * A retry of the SAME words that now carries quotes must replay that receipt
+   * rather than 409 as a conflict: the words are already durably accepted, and
+   * the replayed 202's missing `quotesAccepted` echo tells the client to
+   * re-stage the dropped excerpts instead of exposing duplicate-send controls. */
+  const acceptsStoredFingerprint = (stored: string): boolean =>
+    stored === fingerprint ||
+    (quotes != null && stored === steerFingerprint(text, files, wantsPreempt));
 
   /** A durable receipt is authoritative even after its accepting job was
    * deleted or replaced. Read it before capping to the current job marker:
@@ -457,7 +465,7 @@ async function handleSteerRequestInternal(
       ) {
         return { status: 409, body: { code: 'RUN_REPLACED' } };
       }
-      if (receipt.fingerprint !== fingerprint) {
+      if (!acceptsStoredFingerprint(receipt.fingerprint)) {
         return { status: 409, body: { code: 'STEER_IDEMPOTENCY_CONFLICT' } };
       }
       if (
@@ -628,7 +636,7 @@ async function handleSteerRequestInternal(
     if (typeof result === 'number') {
       depth = result;
     } else {
-      if (!('fingerprint' in result) || result.fingerprint !== fingerprint) {
+      if (!('fingerprint' in result) || !acceptsStoredFingerprint(result.fingerprint)) {
         return { status: 409, body: { code: 'STEER_IDEMPOTENCY_CONFLICT' } };
       }
       if (result.userId !== (user.id ?? '') || hasTenantMismatch(result, user)) {

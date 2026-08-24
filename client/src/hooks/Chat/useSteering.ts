@@ -658,20 +658,27 @@ export default function useSteering({
   );
 
   /** Drops the carried excerpts from a surviving chip whose server rejected
-   *  them, so the restaged composer chips are their single representation —
-   *  a later terminal conversion of that chip must not duplicate them. */
+   *  them — including the copy inside its captured queue-origin item — so the
+   *  restaged composer chips are their single representation: neither a later
+   *  terminal conversion of the chip nor a reclaim's origin restore may
+   *  duplicate them. */
   const stripSteerChipQuotes = useRecoilCallback(
     ({ set }) =>
       (convoId: string, steerIds: string[]) => {
         set(store.pendingSteersByConvoId(convoId), (prev) => {
           let changed = false;
           const next = prev.map((steer) => {
-            if (!steerIds.includes(steer.steerId) || steer.quotes == null) {
+            const originHasQuotes = steer.queuedOrigin?.item.quotes != null;
+            if (!steerIds.includes(steer.steerId) || (steer.quotes == null && !originHasQuotes)) {
               return steer;
             }
             changed = true;
             const { quotes: _quotes, ...rest } = steer;
-            return rest;
+            if (!originHasQuotes || rest.queuedOrigin == null) {
+              return rest;
+            }
+            const { quotes: _originQuotes, ...originItem } = rest.queuedOrigin.item;
+            return { ...rest, queuedOrigin: { ...rest.queuedOrigin, item: originItem } };
           });
           return changed ? next : prev;
         });
@@ -1019,14 +1026,14 @@ export default function useSteering({
             onSuccess: (response) => {
               try {
                 /** A 202 without the echo means a pre-quotes replica accepted
-                 *  the words but dropped the excerpts. Composer-origin quotes
-                 *  are re-staged as chips (their only remaining home); a
-                 *  queued-origin item keeps them — its restore paths return
-                 *  the exact item, and re-staging would duplicate them. */
+                 *  the words but dropped the excerpts. Both origins re-stage
+                 *  them as composer chips — a queued-origin item is already
+                 *  consumed and its text will inject bare, so the composer is
+                 *  the excerpts' only remaining home. The strip below also
+                 *  clears the chip's captured origin copy, keeping the
+                 *  restaged chips their single representation. */
                 const rejectedQuotes =
-                  opts?.queuedOrigin == null && response.quotesAccepted !== true
-                    ? carried.quotes
-                    : undefined;
+                  response.quotesAccepted !== true ? carried.quotes : undefined;
                 const canUseV2Receipt =
                   targetGenerationProtocolVersion === 2 && supportsGenerationProtocolV2(response);
                 if (canUseV2Receipt && response.settled === true) {

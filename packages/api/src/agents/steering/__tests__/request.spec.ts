@@ -874,6 +874,38 @@ describe('generation protocol bridge for steering mutations', () => {
     expect(conflicting.body.code).toBe('STEER_IDEMPOTENCY_CONFLICT');
   });
 
+  it('replays a legacy quote-less receipt for a quoted retry of the same words', async () => {
+    // Cross-version lost ACK: a pre-quotes replica accepted the words and its
+    // receipt hashes only text/files/preempt. The retry now carries quotes —
+    // it must replay that receipt (the words are already durable) and OMIT the
+    // quotesAccepted echo so the client re-stages the dropped excerpts.
+    const streamId = 'steer-protocol-v2-legacy-fingerprint';
+    await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { generationProtocolVersion: 2 },
+    });
+    const requestBody = {
+      conversationId: streamId,
+      clientSteerId: 'client-v2-legacy-quoted',
+      text: 'same accepted words',
+    };
+    const receiptEnqueue = jest.spyOn(GenerationJobManager.steering, 'enqueueWithReceipt');
+
+    const accepted = await handleSteerRequest(user, requestBody, {
+      generationProtocolVersion: 2,
+    });
+    const quotedRetry = await handleSteerRequest(
+      user,
+      { ...requestBody, quotes: ['the excerpt'] },
+      { generationProtocolVersion: 2 },
+    );
+
+    expect(accepted.status).toBe(202);
+    expect(quotedRetry.status).toBe(202);
+    expect(quotedRetry.body).toMatchObject({ steerId: accepted.body.steerId, replayed: true });
+    expect(quotedRetry.body).not.toHaveProperty('quotesAccepted');
+    expect(receiptEnqueue).toHaveBeenCalledTimes(1);
+  });
+
   it('replays a v2 receipt after terminal cleanup deletes the accepting job', async () => {
     const streamId = 'steer-protocol-v2-replay-after-delete';
     const job = await GenerationJobManager.createJob(streamId, user.id, undefined, {
