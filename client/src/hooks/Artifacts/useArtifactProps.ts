@@ -1,5 +1,5 @@
 import { useContext, useMemo } from 'react';
-import { ThemeContext, isDark, resolvesToHighContrast } from '@librechat/client';
+import { ThemeContext, isDark } from '@librechat/client';
 import { removeNullishValues } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 import {
@@ -15,9 +15,8 @@ import { getMarkdownFiles } from '~/utils/markdown';
 import { getMermaidFiles } from '~/utils/mermaid';
 
 export default function useArtifactProps({ artifact }: { artifact: Artifact }) {
-  const { theme } = useContext(ThemeContext);
+  const { theme, highContrast } = useContext(ThemeContext);
   const isDarkMode = isDark(theme);
-  const highContrast = resolvesToHighContrast(theme);
 
   const [fileKey, files] = useMemo(() => {
     const key = getKey(artifact.type ?? '', artifact.language);

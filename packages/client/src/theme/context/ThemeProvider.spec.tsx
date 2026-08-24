@@ -22,11 +22,19 @@ const matchMedia = (matches: boolean): MediaQueryList =>
   }) as MediaQueryList;
 
 function Controls() {
-  const { resetTheme, setTheme, setThemeDefinition, setThemeName, setThemeRGB, themeName } =
-    useTheme();
+  const {
+    resetTheme,
+    setTheme,
+    setThemeDefinition,
+    setThemeName,
+    setThemeRGB,
+    themeName,
+    highContrast,
+  } = useTheme();
   return (
     <>
       <output>{themeName}</output>
+      <output data-testid="high-contrast">{String(highContrast)}</output>
       <button onClick={() => setTheme('dark')}>Dark</button>
       <button onClick={() => setTheme('light')}>Light</button>
       <button onClick={() => setTheme('high-contrast-light')}>HC light</button>
@@ -896,6 +904,7 @@ describe('ThemeProvider', () => {
       </ThemeProvider>,
     );
     expect(document.documentElement).not.toHaveClass('high-contrast');
+    expect(screen.getByTestId('high-contrast')).toHaveTextContent('false');
 
     prefersContrast = true;
     act(() => listeners.forEach((listener) => listener()));
@@ -904,5 +913,8 @@ describe('ThemeProvider', () => {
       expect(document.documentElement).toHaveClass('high-contrast');
     });
     expect(document.documentElement.dataset.theme).toBe('high-contrast');
+    /** The DOM alone is not enough: a consumer keying off the resolved contrast,
+     *  such as the Mermaid cache, only recomputes if the context value moves. */
+    expect(screen.getByTestId('high-contrast')).toHaveTextContent('true');
   });
 });

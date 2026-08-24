@@ -1,7 +1,7 @@
 import { useContext, useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { Md5 } from 'ts-md5';
-import { ThemeContext, isDark, resolvesToHighContrast } from '@librechat/client';
+import { ThemeContext, isDark } from '@librechat/client';
 import type { MermaidConfig } from 'mermaid';
 import {
   contrastMermaidVariables,
@@ -59,11 +59,10 @@ export const useMermaid = ({
   config,
   enabled = true,
 }: UseMermaidOptions): UseMermaidReturn => {
-  const { theme } = useContext(ThemeContext);
+  /** Read from context rather than derived here: under `system` the contrast
+   *  comes from a media query, so deriving it locally would never rerender. */
+  const { theme, highContrast } = useContext(ThemeContext);
   const isDarkMode = isDark(theme);
-  /** A contrast mode changes the diagram palette, so it has to change the cache
-   *  key too, or an already-rendered SVG survives the switch untouched. */
-  const highContrast = resolvesToHighContrast(theme);
 
   // Store last valid SVG for fallback on errors
   const [validContent, setValidContent] = useState<string>('');

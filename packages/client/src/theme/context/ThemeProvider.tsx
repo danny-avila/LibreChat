@@ -57,6 +57,13 @@ type ThemePropSnapshot = Pick<
 type ThemeContextType = {
   theme: AppearanceMode;
   setTheme: (theme: string) => void;
+  /**
+   * Whether the contrast palette is in effect. Published as state rather than
+   * derived by consumers, because under `system` it depends on a media query
+   * that React cannot observe: `theme` stays `'system'` when the OS preference
+   * flips, so anything deriving it from `theme` alone would never rerender.
+   */
+  highContrast: boolean;
   themeRGB?: IThemeRGB;
   setThemeRGB: (colors?: IThemeRGB) => void;
   themeDefinition?: ThemeDefinition;
@@ -69,6 +76,7 @@ type ThemeContextType = {
 export const ThemeContext: React.Context<ThemeContextType> = createContext<ThemeContextType>({
   theme: 'system',
   setTheme: () => undefined,
+  highContrast: false,
   setThemeRGB: () => undefined,
   setThemeDefinition: () => undefined,
   setThemeName: () => undefined,
@@ -288,6 +296,11 @@ export function ThemeProvider({
 
   const [theme, setThemeState] = useState<AppearanceMode>(() =>
     initialTheme && isAppearanceMode(initialTheme) ? initialTheme : getInitialTheme(),
+  );
+  const [highContrast, setHighContrast] = useState<boolean>(() =>
+    resolvesToHighContrast(
+      initialTheme && isAppearanceMode(initialTheme) ? initialTheme : getInitialTheme(),
+    ),
   );
   const [themeDefinition, setThemeDefinitionState] = useState<ThemeDefinition | undefined>(
     initialThemeState.current.definition,
@@ -532,6 +545,9 @@ export function ThemeProvider({
       const root = window.document.documentElement;
       const mode: ThemeMode = isDark(currentTheme) ? 'dark' : 'light';
       const highContrast = resolvesToHighContrast(currentTheme);
+      /** Publish it so consumers rerender when the OS preference flips under
+       *  `system`, where `theme` itself never changes. */
+      setHighContrast(highContrast);
 
       if (!themeClassSnapshot.current) {
         themeClassSnapshot.current = {
@@ -617,6 +633,7 @@ export function ThemeProvider({
     () => ({
       theme,
       setTheme,
+      highContrast,
       themeRGB,
       setThemeRGB,
       themeDefinition,
@@ -631,6 +648,7 @@ export function ThemeProvider({
       setThemeDefinition,
       setThemeName,
       setThemeRGB,
+      highContrast,
       theme,
       themeDefinition,
       themeName,
