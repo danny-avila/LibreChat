@@ -200,7 +200,7 @@ function MultiMessage({
   const isEditingActivityAnchor =
     typeof currentEditId === 'string' && activityParentMessageIds.includes(currentEditId);
   const hasParallelContent =
-    !message.isCreatedByUser && message.content?.some((part) => part.groupId != null) === true;
+    !message.isCreatedByUser && message.content?.some((part) => part?.groupId != null) === true;
 
   /**
    * The child recursion is a sibling of the row (not rendered inside it), so a

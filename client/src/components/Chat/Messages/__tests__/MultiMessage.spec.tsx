@@ -190,6 +190,30 @@ describe('MultiMessage sibling selection', () => {
     );
   });
 
+  it('renders assistant content containing an undefined streaming placeholder', () => {
+    const assistant = {
+      ...msg('assistant'),
+      content: [undefined, { type: 'text', text: 'answer' }],
+    } as unknown as TMessage;
+
+    render(
+      <RecoilRoot>
+        <MultiMessage
+          messageId="parent-1"
+          messagesTree={[assistant]}
+          currentEditId={null}
+          setCurrentEditId={jest.fn()}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByTestId('row')).toHaveTextContent('assistant');
+    expect(screen.getByTestId('event-subagent-activity')).toHaveAttribute(
+      'data-has-parallel-content',
+      'false',
+    );
+  });
+
   it('shows the newest sibling by default and follows a newly appended one', () => {
     const view = render(treeElement(['a', 'b']));
     expect(displayed()).toBe('b');
