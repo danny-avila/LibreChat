@@ -2270,7 +2270,11 @@ describe('SubagentThreadTaskStore', () => {
       'generation-race-invocation',
     );
     await sawAccepted;
-    const controlId = store.get(config.scopeId, taskId)?.controlReceipts?.[0]?.controlId;
+    const controlId = (
+      store.get(config.scopeId, taskId) as
+        | (SubagentTaskSnapshot & { controlReceipts?: Array<{ controlId: string }> })
+        | undefined
+    )?.controlReceipts?.[0]?.controlId;
     expect(controlId).toBeDefined();
     store.emitControlReceiptForTest(config.scopeId, taskId, {
       controlId: controlId as string,
