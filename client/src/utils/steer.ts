@@ -143,9 +143,11 @@ export function appendAppliedSteerIds(prev: string[], steerIds: string[]): strin
 
 export type SteerCarriedContext = { quotes?: string[]; manualSkills?: string[] };
 
-/** Quotes/skill picks are client-only (a steer never sends them to the
- *  server); chip mints, reseeds, and queued conversions carry them from the
- *  local source so the context survives a steer that never injects. */
+/** Quotes ride the steer POST (the server merges them into the injected
+ *  turn) but chips, reseeds, and queued conversions still carry them locally
+ *  so a steer that never injects restores with its excerpts intact. Skill
+ *  picks are client-only — they configure a NEW turn's run, so only the
+ *  restore paths carry them. */
 export function carriedSteerContext(source?: SteerCarriedContext): SteerCarriedContext {
   const quotes = source?.quotes;
   const manualSkills = source?.manualSkills;

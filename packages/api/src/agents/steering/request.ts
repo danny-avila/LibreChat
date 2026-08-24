@@ -17,6 +17,7 @@ import {
 import { toSteerFileRef, collectFileIds, buildOwnerFilter } from './refs';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import { isSteeringSupported } from './runtime';
+import { getReferencedQuotes } from '~/utils';
 
 /** Attachment cap per steer, mirroring the composer's practical limits. */
 export const STEER_MAX_FILES = 10;
@@ -48,6 +49,10 @@ export interface SteerRequestBody {
   text?: unknown;
   clientSteerId?: unknown;
   files?: unknown;
+  /** Quoted excerpts steered with the message ("Add to chat" selections);
+   *  normalized like the chat route's quotes and merged into the model-bound
+   *  turn at the injection boundary. */
+  quotes?: unknown;
   /** Ask the generating replica to seal the live model stream at the next
    *  provider-safe boundary instead of waiting for a tool step. NEVER a
    *  rejection reason: on an SDK without the capability the steer still
@@ -230,13 +235,24 @@ function hasTenantMismatch(
   return metadata?.tenantId != null && metadata.tenantId !== user.tenantId;
 }
 
+/** Quotes join the hash only when present so quote-less steers keep the exact
+ *  pre-quotes fingerprint — durable receipts written before this field shipped
+ *  must still replay for their retries instead of 409ing as conflicts. */
 function steerFingerprint(
   text: string,
   files: Partial<TFile>[] | undefined,
   preempt: boolean,
+  quotes?: string[] | null,
 ): string {
   return createHash('sha256')
-    .update(JSON.stringify({ text, files: files ?? [], preempt }))
+    .update(
+      JSON.stringify({
+        text,
+        files: files ?? [],
+        preempt,
+        ...(quotes != null && quotes.length > 0 && { quotes }),
+      }),
+    )
     .digest('base64url');
 }
 
@@ -401,10 +417,14 @@ async function handleSteerRequestInternal(
     return { status: 400, body: { code: filesError } };
   }
 
+  /** Same normalization as the chat route (trim, drop empties, cap count and
+   *  excerpt length) so a steer's quotes obey the caps a normal send does. */
+  const quotes = getReferencedQuotes(body.quotes);
+
   /** streamId === conversationId for resumable agent jobs */
   const streamId = conversationId;
   const wantsPreempt = body.preempt === true;
-  const fingerprint = steerFingerprint(text, files, wantsPreempt);
+  const fingerprint = steerFingerprint(text, files, wantsPreempt, quotes);
 
   /** A durable receipt is authoritative even after its accepting job was
    * deleted or replaced. Read it before capping to the current job marker:
@@ -567,6 +587,7 @@ async function handleSteerRequestInternal(
     userId: user.id ?? '',
     createdAt: Date.now(),
     ...(queuedFiles && { files: queuedFiles }),
+    ...(quotes != null && { quotes }),
   };
   /**
    * Fenced to the generation the capability decision was made against. The

@@ -427,6 +427,10 @@ export interface SteerQueueItem {
    *  drain re-fetches each file by id scoped to the run's user and encodes
    *  fresh, so nothing here is trusted beyond identifying the file. */
   files?: Partial<TFile>[];
+  /** Quoted excerpts steered with the message, normalized at admission
+   *  (`getReferencedQuotes`). Kept separate from `text` so the persisted
+   *  steer part stays clean; merged into the model-bound turn at injection. */
+  quotes?: string[];
   /** The steer asked to seal the live model stream at the next provider-safe
    *  boundary instead of waiting for a tool step. Durable so a parked,
    *  claimed, or replayed chip keeps its "interrupting" label. */

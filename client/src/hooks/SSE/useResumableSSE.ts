@@ -960,7 +960,8 @@ export default function useResumableSSE(
 
   /** Replaces the chip list with the server's still-queued steers (reconnect).
    *  Local `failed` entries are kept so their text stays recoverable, and a
-   *  reseeded chip keeps its client-only quotes/skill picks. */
+   *  reseeded chip keeps its quotes/skill picks (from the local chip, or the
+   *  server item's persisted quotes when no chip survives). */
   const seedSteerChips = useRecoilCallback(
     ({ set }) =>
       (
@@ -1013,7 +1014,10 @@ export default function useResumableSSE(
                   generationCreatedAt: chipGenerationCreatedAt,
                 }),
                 generationProtocolVersion,
-                ...carriedSteerContext(localChip),
+                // The local chip carries skill picks the server never sees; a
+                // fresh tab has no chip, so fall back to the server item's
+                // persisted quotes rather than reseeding the chip without them.
+                ...carriedSteerContext(localChip ?? steer),
               };
             }),
             ...prev.filter((steer) => steer.status === 'failed' && !claimedIds.has(steer.steerId)),

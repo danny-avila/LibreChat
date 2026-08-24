@@ -1780,6 +1780,7 @@
   "com_ui_queue_send": "Queue message for after the response",
   "com_ui_queued_attachment_count": "{{0}} attachments queued with this message",
   "com_ui_queued_messages": "Queued messages",
+  "com_ui_queued_quote_count": "{{0}} quoted excerpts included with this message",
   "com_ui_quote_selections": "{{0}} selections",
   "com_ui_quotes_queued": "Quotes added for your next message",
   "com_ui_ran_n_agents": "Ran {{0}} agents",

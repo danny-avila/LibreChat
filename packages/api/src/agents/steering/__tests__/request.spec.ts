@@ -296,6 +296,36 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
     ]);
   });
 
+  it('normalizes quoted excerpts into the queue item like the chat route', async () => {
+    const streamId = 'steer-req-quotes';
+    await GenerationJobManager.createJob(streamId, user.id);
+
+    const result = await handleSteerRequest(user, {
+      conversationId: streamId,
+      text: 'about the selection',
+      quotes: ['  kept excerpt  ', '', 42, 'second'],
+    });
+
+    expect(result.status).toBe(202);
+    const queued = await GenerationJobManager.steering.peek(streamId);
+    expect(queued[0].quotes).toEqual(['kept excerpt', 'second']);
+  });
+
+  it('omits quotes from the queue item when nothing usable was sent', async () => {
+    const streamId = 'steer-req-no-quotes';
+    await GenerationJobManager.createJob(streamId, user.id);
+
+    const result = await handleSteerRequest(user, {
+      conversationId: streamId,
+      text: 'plain steer',
+      quotes: 'not-an-array',
+    });
+
+    expect(result.status).toBe(202);
+    const queued = await GenerationJobManager.steering.peek(streamId);
+    expect(queued[0]).not.toHaveProperty('quotes');
+  });
+
   describe('injected getFiles (owner-scoped resolve at enqueue)', () => {
     const dbDoc = {
       file_id: 'f1',
@@ -803,6 +833,36 @@ describe('generation protocol bridge for steering mutations', () => {
     });
     expect(receiptEnqueue).toHaveBeenCalledTimes(1);
     expect(publishUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats quotes as part of the idempotency fingerprint', async () => {
+    const streamId = 'steer-protocol-v2-quote-fingerprint';
+    await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { generationProtocolVersion: 2 },
+    });
+    const requestBody = {
+      conversationId: streamId,
+      clientSteerId: 'client-v2-quoted',
+      text: 'about this excerpt',
+      quotes: ['the excerpt'],
+    };
+
+    const accepted = await handleSteerRequest(user, requestBody, {
+      generationProtocolVersion: 2,
+    });
+    const replayed = await handleSteerRequest(user, requestBody, {
+      generationProtocolVersion: 2,
+    });
+    const conflicting = await handleSteerRequest(
+      user,
+      { ...requestBody, quotes: ['a different excerpt'] },
+      { generationProtocolVersion: 2 },
+    );
+
+    expect(accepted.status).toBe(202);
+    expect(replayed.body).toMatchObject({ steerId: accepted.body.steerId, replayed: true });
+    expect(conflicting.status).toBe(409);
+    expect(conflicting.body.code).toBe('STEER_IDEMPOTENCY_CONFLICT');
   });
 
   it('replays a v2 receipt after terminal cleanup deletes the accepting job', async () => {

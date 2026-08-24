@@ -2100,14 +2100,53 @@ describe('useSteering', () => {
       expect(result.current.pendingSkills).toEqual([]);
     });
 
-    it('leaves staged context untouched on the steer path (steers do not carry it)', () => {
+    it('steerFromComposer drains the quote chips into the POST, leaving skill picks staged', () => {
       const { result } = setupWithContext({}, stageContext);
       act(() => {
         result.current.steering.steerFromComposer('steer text');
       });
-      expect(mockMutate).toHaveBeenCalledTimes(1);
-      expect(result.current.pendingQuotes).toEqual(['quoted excerpt']);
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'steer text', quotes: ['quoted excerpt'] }),
+        expect.anything(),
+      );
+      expect(mockMutate.mock.calls[0][0]).not.toHaveProperty('manualSkills');
+      // Consumed like a normal send's quotes; the excerpts now ride the steer.
+      expect(result.current.pendingQuotes).toEqual([]);
+      expect(result.current.chips[0]).toMatchObject({ quotes: ['quoted excerpt'] });
+      // A skill pick configures a NEW turn's run — it keeps waiting for one.
       expect(result.current.pendingSkills).toEqual(['skill-1']);
+    });
+
+    it('interruptSteer carries the staged quotes the same way', () => {
+      const { result } = setupWithContext({}, stageContext);
+      act(() => {
+        result.current.steering.interruptSteer('stop and use this');
+      });
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ quotes: ['quoted excerpt'], preempt: true }),
+        expect.anything(),
+      );
+      expect(result.current.pendingQuotes).toEqual([]);
+      expect(result.current.pendingSkills).toEqual(['skill-1']);
+    });
+
+    it("sendQueuedNow posts a queued item's quotes when steering it into the live run", () => {
+      const item: QueuedMessage = {
+        id: 'q-live',
+        text: 'queued with quotes',
+        createdAt: 1_000,
+        quotes: ['queued excerpt'],
+      };
+      const { result } = setupWithContext({}, ({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [item]);
+      });
+      act(() => {
+        result.current.steering.sendQueuedNow(item);
+      });
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'queued with quotes', quotes: ['queued excerpt'] }),
+        expect.anything(),
+      );
     });
 
     it('queues without quotes/skills fields when nothing is staged', () => {
@@ -2346,7 +2385,7 @@ describe('useSteering', () => {
       ]);
     });
 
-    it('leaves composer atoms staged when a composer-origin steer degrades', () => {
+    it('requeues a degraded composer-origin steer with its drained quotes', () => {
       mockMutate.mockImplementationOnce((_params, { onError }) => {
         onError({ response: { data: { code: 'RUN_PAUSED' } } });
       });
@@ -2354,12 +2393,14 @@ describe('useSteering', () => {
       act(() => {
         result.current.steering.steerFromComposer('degraded steer');
       });
-      // Degrades to a text-only queued item; the staged chips stay put for
-      // the user's next composer send.
-      expect(result.current.queue).toEqual([expect.objectContaining({ text: 'degraded steer' })]);
-      expect(result.current.queue[0].quotes).toBeUndefined();
+      // The quotes were consumed into the steer, so its queued fallback must
+      // carry them — dropping them here would lose the user's references.
+      expect(result.current.queue).toEqual([
+        expect.objectContaining({ text: 'degraded steer', quotes: ['quoted excerpt'] }),
+      ]);
       expect(result.current.queue[0].manualSkills).toBeUndefined();
-      expect(result.current.pendingQuotes).toEqual(['quoted excerpt']);
+      expect(result.current.pendingQuotes).toEqual([]);
+      // Skill picks were never consumed and stay staged for the next send.
       expect(result.current.pendingSkills).toEqual(['skill-1']);
     });
   });

@@ -354,7 +354,10 @@ export default function useResumeOnLoad(
                   generationCreatedAt: chipGenerationCreatedAt,
                 }),
                 generationProtocolVersion,
-                ...carriedSteerContext(localChip),
+                // The local chip carries skill picks the server never sees; a
+                // fresh tab has no chip, so fall back to the server item's
+                // persisted quotes rather than reseeding the chip without them.
+                ...carriedSteerContext(localChip ?? steer),
               };
             }),
             ...prev.filter((steer) => steer.status === 'failed' && !claimedIds.has(steer.steerId)),

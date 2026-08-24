@@ -201,6 +201,9 @@ export type TPendingSteer = {
   text: string;
   createdAt?: number;
   files?: Partial<TFile>[];
+  /** Quoted excerpts steered with the message ("Add to chat" selections);
+   *  merged into the model-bound text at the injection boundary. */
+  quotes?: string[];
   /** The steer asked to interrupt generation at the next safe boundary —
    *  kept on parked/replayed chips so the "interrupting" label survives. */
   preempt?: boolean;

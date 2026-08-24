@@ -622,6 +622,25 @@ export default function useSteering({
     [conversationId],
   );
 
+  /** Quotes-only drain for composer-origin steers: the excerpts ride the steer
+   *  POST into the live run, while manual skill picks stay staged — a skill
+   *  pick configures a NEW turn's agent run and cannot apply to a mid-run
+   *  injection, so it keeps waiting for the next full submission. */
+  const takeComposerQuotes = useRecoilCallback(
+    ({ snapshot, reset }) =>
+      (): QueuedMessageContext => {
+        const quotes = snapshot
+          .getLoadable(store.pendingQuotesByConvoId(conversationId))
+          .getValue();
+        if (quotes.length === 0) {
+          return {};
+        }
+        reset(store.pendingQuotesByConvoId(conversationId));
+        return { quotes };
+      },
+    [conversationId],
+  );
+
   /** Consumes the composer's autosaved draft once its text has been taken into
    *  a steer or queued item. The composer clears via the form's `reset()`,
    *  which is programmatic and never fires the `input` event `useAutoSave`
@@ -853,11 +872,12 @@ export default function useSteering({
     [index, queueKey, activeGenerationCreatedAt],
   );
 
-  /** POSTs a steer (text + files only; the server never carries quotes or
-   *  skill picks). `context` is the RESTORE payload for a queued-origin steer:
-   *  every degradation path threads it back into the requeue/send fallback so
-   *  the item's quotes and manual skills survive. Composer-origin steers pass
-   *  nothing, leaving their context staged in the composer atoms. */
+  /** POSTs a steer (text + files + quotes; the server merges the quotes into
+   *  the model-bound turn at the injection boundary). `context` doubles as the
+   *  RESTORE payload: every degradation path threads it back into the
+   *  requeue/send fallback so the item's quotes and manual skills survive.
+   *  Skill picks never ride the POST — they configure a NEW turn's run, so a
+   *  queued-origin steer only carries them for restoration. */
   const submitSteer = useCallback(
     (
       text: string,
@@ -951,6 +971,7 @@ export default function useSteering({
             clientSteerId: localId,
             text: trimmed,
             ...(files && { files }),
+            ...(carried.quotes && { quotes: carried.quotes }),
             ...(preempt && { preempt }),
             ...(targetGenerationCreatedAt != null && {
               generationCreatedAt: targetGenerationCreatedAt,
@@ -1143,22 +1164,26 @@ export default function useSteering({
     ],
   );
 
-  /** Composer-originated steer: consumes the composer's attachments so they
-   *  ride the steer as one unit (the server re-fetches + encodes them at the
-   *  injection boundary). Files are taken only after the guards pass. */
+  /** Composer-originated steer: consumes the composer's attachments and quote
+   *  chips so they ride the steer as one unit (the server re-fetches + encodes
+   *  files and merges quotes at the injection boundary). Both are taken only
+   *  after the guards pass — with `canSteer` true, `submitSteer` cannot
+   *  refuse, so the drained context can never be stranded. */
   const steerFromComposer = useCallback(
     (text: string, preempt = false): boolean => {
       const trimmed = text.trim();
       if (trimmed.length === 0 || filesLoading || !canSteer) {
         return false;
       }
-      const consumed = submitSteer(trimmed, takeComposerFiles(), undefined, { preempt });
+      const consumed = submitSteer(trimmed, takeComposerFiles(), takeComposerQuotes(), {
+        preempt,
+      });
       if (consumed) {
         takeComposerDraft();
       }
       return consumed;
     },
-    [filesLoading, canSteer, takeComposerFiles, takeComposerDraft, submitSteer],
+    [filesLoading, canSteer, takeComposerFiles, takeComposerQuotes, takeComposerDraft, submitSteer],
   );
 
   /** Composer-originated queue: carries the composer's attachments, quote
@@ -1398,7 +1423,9 @@ export default function useSteering({
       if (!hasRealConvoId) {
         return interruptAndSend(trimmed);
       }
-      const consumed = submitSteer(trimmed, takeComposerFiles(), undefined, { preempt: true });
+      const consumed = submitSteer(trimmed, takeComposerFiles(), takeComposerQuotes(), {
+        preempt: true,
+      });
       if (consumed) {
         takeComposerDraft();
       }
@@ -1411,6 +1438,7 @@ export default function useSteering({
       hasRealConvoId,
       interruptAndSend,
       takeComposerFiles,
+      takeComposerQuotes,
       takeComposerDraft,
       submitSteer,
     ],

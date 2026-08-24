@@ -21,7 +21,7 @@ export type {
   SteerFileFetcher,
   SteerRequestResult,
 } from './request';
-export { buildSteerMedia, stampSteerPartMedia } from './media';
+export { buildSteerMedia, hasSteerStampTargets, stampSteerPartMedia } from './media';
 export type { SteerMediaClient, StampedSteerMedia } from './media';
 export { createSteerIndexOffsetHandlers } from './offset';
 export type { SteerOffsetState } from './offset';

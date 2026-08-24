@@ -171,6 +171,10 @@ export interface SteerMessageParams {
   text: string;
   /** Attachment refs steered with the message (already uploaded). */
   files?: TMessage['files'];
+  /** Quoted excerpts steered with the message ("Add to chat" selections). The
+   *  server normalizes them like a normal send's quotes and merges them into
+   *  the model-bound turn at the injection boundary. */
+  quotes?: string[];
   /**
    * Ask the server to seal the live model stream at the next provider-safe
    * boundary rather than waiting for a tool step. Never a rejection reason:

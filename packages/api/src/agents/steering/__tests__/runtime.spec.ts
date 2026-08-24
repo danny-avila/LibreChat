@@ -204,6 +204,50 @@ describe('createSteerDrainHook', () => {
     ]);
   });
 
+  it('merges quoted excerpts into text-only injections (media path merges its own)', async () => {
+    const streamId = `drain-quotes-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    await GenerationJobManager.steering.enqueue(streamId, {
+      ...buildSteer('s1', 'what does this mean?'),
+      quotes: ['selected passage'],
+    });
+
+    const hook = createSteerDrainHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer: jest.fn(),
+    });
+
+    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    expect(output.injectedMessages).toEqual([
+      { role: 'user', content: '> selected passage\n\nwhat does this mean?', source: 'steer' },
+    ]);
+  });
+
+  it('keeps quotes in the injection when media encoding degrades to text', async () => {
+    const streamId = `drain-quotes-degrade-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    await GenerationJobManager.steering.enqueue(streamId, {
+      ...buildSteer('s1', 'and the doc?'),
+      files: [{ file_id: 'f1', type: 'image/png' }],
+      quotes: ['quoted context'],
+    });
+
+    const hook = createSteerDrainHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer: jest.fn(),
+      buildMedia: jest.fn(async () => {
+        throw new Error('encode failed');
+      }),
+    });
+
+    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    expect(output.injectedMessages).toEqual([
+      { role: 'user', content: '> quoted context\n\nand the doc?', source: 'steer' },
+    ]);
+  });
+
   it('persists the steer part BEFORE media encoding (abort-safe ordering)', async () => {
     const streamId = `drain-apply-first-${Date.now()}`;
     const job = await GenerationJobManager.createJob(streamId, 'user-1');
