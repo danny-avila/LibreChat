@@ -18,6 +18,7 @@ const {
   isContentFilterError,
   contentFilterBlockResponse,
   extractConversationTitleContent,
+  extractStoredMessageContent,
   GenerationJobManager,
   isStopConfirmed,
 } = require('@librechat/api');
@@ -28,6 +29,7 @@ const {
   validateConvoAccess,
   createForkLimiters,
   configMiddleware,
+  moderateText,
 } = require('~/server/middleware');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
@@ -58,6 +60,37 @@ const filterConversationTitle = createContentFilter({
   getFilters: (req) => req.config?.filters,
   extract: (req) => extractConversationTitleContent(req.body),
 });
+const filterSubagentControlMessage = createContentFilter({
+  getFilters: (req) => req.config?.filters,
+  getLegacyPii: (req) => req.config?.messageFilter?.pii,
+  extract: (req) => extractStoredMessageContent({ text: req.body?.message }),
+});
+
+/** Present guidance to the existing moderation middleware as ordinary user text.
+ * The controller continues to consume `message`; `text` is restored before it runs. */
+async function moderateSubagentControlMessage(req, res, next) {
+  const body = (req.body ??= {});
+  const hadText = Object.prototype.hasOwnProperty.call(body, 'text');
+  const originalText = body.text;
+  if (typeof body.message === 'string') {
+    body.text = body.message;
+  }
+  const restore = () => {
+    if (hadText) {
+      body.text = originalText;
+    } else {
+      delete body.text;
+    }
+  };
+  try {
+    await moderateText(req, res, (error) => {
+      restore();
+      next(error);
+    });
+  } finally {
+    restore();
+  }
+}
 const subagentActivityStreamHandler = createSubagentActivityStreamHandler(
   {
     getConvoOwnership: db.getConvoOwnership,
@@ -125,7 +158,13 @@ router.get(
   '/:parentConversationId/subagents/:threadId/tasks/:taskId/activity',
   subagentActivityStreamHandler,
 );
-router.post('/:parentConversationId/subagents/:threadId/control', subagentControlHandler);
+router.post(
+  '/:parentConversationId/subagents/:threadId/control',
+  configMiddleware,
+  filterSubagentControlMessage,
+  moderateSubagentControlMessage,
+  subagentControlHandler,
+);
 router.get('/:parentConversationId/subagents', parentSubagentIndexHandler);
 router.get('/:parentConversationId/subagents/:threadId', subagentThreadViewHandler);
 

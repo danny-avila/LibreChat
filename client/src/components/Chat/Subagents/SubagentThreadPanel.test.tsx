@@ -391,6 +391,46 @@ describe('SubagentThreadPanel', () => {
     expect(mockControlMutate.mock.calls[1][0].command).toEqual(firstCommand);
   });
 
+  it('keeps an unavailable-owner retry visible if the child settles before the receipt appears', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const { rerender } = render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+      target: { value: 'Use the primary source.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer' }));
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
+    });
+
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    rerender(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(
+      screen.getByText('com_ui_subagent_control_reason_owner_unavailable'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('com_ui_subagent_control_message')).not.toBeInTheDocument();
+  });
+
   it('preserves drafted guidance when withdrawing an accepted control', () => {
     mockUseSubagentThreadQuery.mockReturnValue({
       data: {

@@ -432,7 +432,8 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     !controlsClosed;
   const controlPending =
     controlTask.isLoading || transientControl?.status === 'submitted' || retryControl != null;
-  const showControlFooter = controlAvailable || transientControl?.reason === 'task_inaccessible';
+  const showControlFooter =
+    controlAvailable || retryControl != null || transientControl?.reason === 'task_inaccessible';
   const canContinueAsChat =
     selection.host === 'conversation' &&
     selection.durable != null &&

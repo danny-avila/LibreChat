@@ -15,7 +15,7 @@ import type { ServerRequest } from '~/types';
 import { controlFingerprint, SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { createSubagentThreadScopeId } from './subagentThreads';
 
-const MAX_ID_BYTES = 512;
+const MAX_THREAD_ID_BYTES = 256;
 const MAX_TASK_ID_BYTES = 256;
 const MAX_INVOCATION_ID_BYTES = 128;
 const MAX_CONTROL_MESSAGE_CHARS = 4 * 1024;
@@ -39,7 +39,7 @@ type Params = {
   threadId?: string;
 };
 
-const validId = (value: unknown, byteLimit = MAX_ID_BYTES): value is string =>
+const validId = (value: unknown, byteLimit = MAX_THREAD_ID_BYTES): value is string =>
   typeof value === 'string' && value.trim() !== '' && Buffer.byteLength(value, 'utf8') <= byteLimit;
 
 const validAction = (value: unknown): value is SubagentControlAction =>
@@ -129,8 +129,8 @@ export function createSubagentControlHandler(deps: Dependencies) {
     const command = commandFromRequest(body as SubagentControlRequest);
     if (
       !userId ||
-      !validId(parentConversationId) ||
-      !validId(threadId) ||
+      !validId(parentConversationId, MAX_THREAD_ID_BYTES) ||
+      !validId(threadId, MAX_THREAD_ID_BYTES) ||
       parentConversationId === threadId ||
       !validId(body.taskId, MAX_TASK_ID_BYTES) ||
       !validId(body.invocationId, MAX_INVOCATION_ID_BYTES) ||
@@ -179,7 +179,12 @@ export function createSubagentControlHandler(deps: Dependencies) {
         return;
       }
       const [taskInput] = await deps.getMessages(
-        { user: userId, conversationId: threadId, messageId: `${body.taskId}:user` },
+        {
+          user: userId,
+          conversationId: threadId,
+          messageId: `${body.taskId}:user`,
+          ...(tenantId == null ? {} : { tenantId }),
+        },
         '+subagentTask',
       );
       if (taskInput?.subagentTask == null) {

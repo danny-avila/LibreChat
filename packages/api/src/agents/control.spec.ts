@@ -99,6 +99,15 @@ describe('subagent control handler', () => {
       }),
     });
     expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('task');
+    expect(deps.getMessages).toHaveBeenCalledWith(
+      {
+        user: 'user-1',
+        tenantId: 'tenant-1',
+        conversationId: threadId,
+        messageId: `${taskId}:user`,
+      },
+      '+subagentTask',
+    );
   });
 
   it('fails parent authorization closed without contacting a task owner', async () => {
@@ -394,6 +403,26 @@ describe('subagent control handler', () => {
     expect(deps.getConvoOwnership).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(400);
   });
+
+  it.each(['parentConversationId', 'threadId'] as const)(
+    'rejects %s beyond the downstream storage bound before authorization',
+    async (field) => {
+      const deps = dependencies();
+      const handler = createSubagentControlHandler(deps);
+      const req = request({
+        taskId,
+        invocationId: 'invocation-1',
+        action: 'cancel',
+      });
+      (req.params as Record<string, string>)[field] = 'c'.repeat(257);
+      const res = response();
+
+      await handler(req, res.value);
+
+      expect(deps.getConvoOwnership).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(400);
+    },
+  );
 
   it('rejects control ids beyond the durable receipt bound before authorization', async () => {
     const deps = dependencies();

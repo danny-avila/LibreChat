@@ -4,11 +4,18 @@ const generationJobManager = {
   abortJob: jest.fn().mockResolvedValue({ success: true }),
 };
 const subagentActivityHandlerInputs = [];
+const moderatedTexts = [];
+const moderateText = jest.fn((req, _res, next) => {
+  moderatedTexts.push(req.body?.text);
+  next();
+});
 
 module.exports = {
   archiveAllHandler,
   generationJobManager,
   subagentActivityHandlerInputs,
+  moderateText,
+  moderatedTexts,
 
   agents: () => ({ sleep: jest.fn() }),
 
@@ -117,6 +124,7 @@ module.exports = {
       forkUserLimiter: (req, res, next) => next(),
     })),
     configMiddleware: (req, res, next) => next(),
+    moderateText,
     validateConvoAccess: (req, res, next) => next(),
   }),
 
