@@ -61,7 +61,7 @@ export const defaultAppearance: IThemeAppearance = Object.freeze({
   motionNormal: '200ms',
 });
 
-export const themeBrandTokens = [
+export const themeBrandTokens: readonly (keyof IThemeBrands)[] = Object.freeze([
   'provider-openai',
   'provider-openai-gpt4',
   'provider-openai-reasoning',
@@ -69,7 +69,7 @@ export const themeBrandTokens = [
   'provider-azure',
   'provider-bedrock',
   'provider-foreground',
-] as const satisfies readonly (keyof IThemeBrands)[];
+]);
 
 export const defaultBrands: IThemeBrands = Object.freeze({
   'provider-openai': '#19C37D',
