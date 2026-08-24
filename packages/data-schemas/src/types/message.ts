@@ -5,6 +5,30 @@ import type {
 } from 'librechat-data-provider';
 import type { Document } from 'mongoose';
 
+export type SubagentTaskControlAction =
+  | 'steer'
+  | 'queue'
+  | 'interrupt'
+  | 'cancel'
+  | 'cancel_message';
+
+export type SubagentTaskControlReceiptStatus = 'accepted' | 'applied' | 'rejected' | 'failed';
+
+/** Server-private durable receipt for one parent-to-child control invocation. */
+export interface ISubagentTaskControlReceipt {
+  invocationId: string;
+  fingerprint: string;
+  controlId?: string;
+  action: SubagentTaskControlAction;
+  status: SubagentTaskControlReceiptStatus;
+  createdAt: Date;
+  updatedAt: Date;
+  boundary?: 'preempt' | 'tool' | 'turn';
+  reason?: string;
+  message?: string;
+  messageTruncated?: boolean;
+}
+
 // @ts-ignore
 export interface IMessage extends Document {
   messageId: string;
@@ -70,6 +94,7 @@ export interface IMessage extends Document {
       claimId: string;
       claimedAt: Date;
     };
+    controlReceipts?: ISubagentTaskControlReceipt[];
   };
   contextMeta?: {
     calibrationRatio?: number;

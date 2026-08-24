@@ -172,7 +172,7 @@ export interface SubagentTaskControlHandler {
     taskId: string,
     command: SubagentTaskControlCommand,
     invocationId: string,
-  ): SubagentTaskControlResult;
+  ): Promise<SubagentTaskControlResult> | SubagentTaskControlResult;
   list(scopeId: string): SubagentTaskSnapshot[];
   cancelScope(scopeId: string, threadIds: string[] | null): number;
 }
@@ -1021,7 +1021,12 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
         result = claim;
       } else {
         result = boundedControlResult(
-          handler.control(request.scopeId, request.taskId, request.command, request.invocationId),
+          await handler.control(
+            request.scopeId,
+            request.taskId,
+            request.command,
+            request.invocationId,
+          ),
         );
       }
       const serializedResult = JSON.stringify(result);

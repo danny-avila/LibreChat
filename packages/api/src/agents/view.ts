@@ -3,6 +3,7 @@ import type {
   ParentSubagentIndex,
   ParentSubagentSummary,
   ParentSubagentTaskSummary,
+  SubagentControlReceipt,
   SubagentThreadMessage,
   SubagentThreadStatus,
   SubagentThreadView,
@@ -30,6 +31,8 @@ const MAX_TITLE_BYTES = 1024;
 const MAX_PARENT_CHILDREN = 64;
 const MAX_PARENT_TASKS_PER_CHILD = 20;
 const MAX_PARENT_INDEX_BYTES = 96 * 1024;
+const MAX_PUBLIC_CONTROL_RECEIPTS = 32;
+const MAX_PUBLIC_CONTROL_MESSAGE_BYTES = 512;
 type SubagentThreadViewDependencies = Pick<
   ConversationMethods,
   'getConvoOwnership' | 'getSubagentThreadForParent'
@@ -114,6 +117,44 @@ const publicMessage = (
     },
     bytes: projected.bytes,
   };
+};
+
+const publicControlReceipts = (
+  messages: SubagentThreadViewMessageRecord[],
+  taskId: string,
+): { receipts: SubagentControlReceipt[]; truncated: boolean } => {
+  const input = messages.find((message) => message.messageId === `${taskId}:user`);
+  const stored = input?.subagentTask?.controlReceipts ?? [];
+  const accepted = stored.filter((receipt) => receipt.status === 'accepted');
+  const terminal = stored.filter((receipt) => receipt.status !== 'accepted');
+  const terminalLimit = Math.max(0, MAX_PUBLIC_CONTROL_RECEIPTS - accepted.length);
+  const retained = [...accepted, ...(terminalLimit === 0 ? [] : terminal.slice(-terminalLimit))]
+    .slice(0, MAX_PUBLIC_CONTROL_RECEIPTS)
+    .map((receipt) => {
+      const message =
+        receipt.message == null
+          ? undefined
+          : truncateUtf8(receipt.message, MAX_PUBLIC_CONTROL_MESSAGE_BYTES);
+      return {
+        invocationId: truncateUtf8(receipt.invocationId, MAX_PUBLIC_ID_BYTES).text,
+        ...(receipt.controlId == null
+          ? {}
+          : { controlId: truncateUtf8(receipt.controlId, MAX_PUBLIC_ID_BYTES).text }),
+        action: receipt.action,
+        status: receipt.status,
+        createdAt: isoDate(receipt.createdAt) ?? new Date(0).toISOString(),
+        updatedAt: isoDate(receipt.updatedAt) ?? new Date(0).toISOString(),
+        ...(receipt.boundary == null ? {} : { boundary: receipt.boundary }),
+        ...(receipt.reason == null
+          ? {}
+          : { reason: truncateUtf8(receipt.reason, MAX_PUBLIC_ID_BYTES).text }),
+        ...(message == null ? {} : { message: message.text }),
+        ...(receipt.messageTruncated === true || message?.truncated === true
+          ? { messageTruncated: true }
+          : {}),
+      };
+    });
+  return { receipts: retained, truncated: retained.length < stored.length };
 };
 
 const publicStatus = (
@@ -444,6 +485,10 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         projectedNewestFirst.push(projected.message);
         remainingTextBytes -= projected.bytes;
       }
+      const projectedControls =
+        requestedTaskId == null
+          ? { receipts: [], truncated: false }
+          : publicControlReceipts(newestFirst, requestedTaskId);
       const view: SubagentThreadView = {
         threadId,
         parentConversationId,
@@ -461,6 +506,8 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         status: publicStatus(newestFirst, activeLeaseTaskId, requestedTaskId),
         activity: projectedActivity.activity,
         activityTruncated: projectedActivity.truncated,
+        controlReceipts: projectedControls.receipts,
+        ...(projectedControls.truncated ? { controlReceiptsTruncated: true } : {}),
         messages: projectedNewestFirst.reverse(),
         historyTruncated: historyTruncated || projectedNewestFirst.length < newestFirst.length,
         ...(isoDate(child.updatedAt) == null ? {} : { updatedAt: isoDate(child.updatedAt) }),

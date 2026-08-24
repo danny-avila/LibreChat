@@ -127,6 +127,7 @@ describe('subagent thread parent-scoped view', () => {
       status: 'completed',
       activity: [],
       activityTruncated: false,
+      controlReceipts: [],
       messages: [
         expect.objectContaining({ messageId: 'task-1:user', role: 'user' }),
         expect.objectContaining({
@@ -201,6 +202,63 @@ describe('subagent thread parent-scoped view', () => {
     expect(JSON.stringify(view)).not.toContain('private thought');
     expect(JSON.stringify(view)).not.toContain('response_metadata');
     expect(view.messages[0]).not.toHaveProperty('subagentTranscript');
+  });
+
+  it('returns bounded authoritative control receipts without private fingerprints', async () => {
+    const input = message('task-1:user', 'running', true);
+    input.subagentTask!.controlReceipts = [
+      ...Array.from({ length: 32 }, (_, index) => ({
+        invocationId: `earlier-${index}`,
+        fingerprint: `private-${index}`,
+        action: 'queue' as const,
+        status: 'applied' as const,
+        createdAt: new Date(`2026-08-21T10:00:${String(index).padStart(2, '0')}.000Z`),
+        updatedAt: new Date(`2026-08-21T10:00:${String(index).padStart(2, '0')}.000Z`),
+      })),
+      {
+        invocationId: 'invocation-1',
+        fingerprint: 'private-fingerprint',
+        controlId: 'control-1',
+        action: 'steer',
+        status: 'applied',
+        createdAt: new Date('2026-08-21T11:00:01.000Z'),
+        updatedAt: new Date('2026-08-21T11:00:02.000Z'),
+        boundary: 'tool',
+        message: 'x'.repeat(1_000),
+      },
+    ];
+    const handler = createSubagentThreadViewHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
+      getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+      getMessagesForSubagentThreadView: jest
+        .fn()
+        .mockResolvedValue([message('task-1:assistant', 'completed'), input]),
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest({}, { taskId: 'task-1' }), response);
+
+    const view = json.mock.calls[0][0];
+    expect(view.controlReceipts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          invocationId: 'invocation-1',
+          controlId: 'control-1',
+          action: 'steer',
+          status: 'applied',
+          boundary: 'tool',
+          messageTruncated: true,
+        }),
+      ]),
+    );
+    const projected = view.controlReceipts.find(
+      (receipt: { invocationId: string }) => receipt.invocationId === 'invocation-1',
+    );
+    expect(projected).toBeDefined();
+    expect(Buffer.byteLength(projected?.message ?? '', 'utf8')).toBeLessThanOrEqual(512);
+    expect(view.controlReceipts).toHaveLength(32);
+    expect(view.controlReceiptsTruncated).toBe(true);
+    expect(JSON.stringify(view)).not.toContain('private-fingerprint');
   });
 
   it('fences replacement activity to the exact selected task input', async () => {

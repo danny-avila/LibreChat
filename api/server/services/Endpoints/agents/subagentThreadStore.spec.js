@@ -30,6 +30,7 @@ jest.mock('~/models', () => ({
   getConvo: jest.fn(),
   getMessages: jest.fn(),
   listActiveSubagentThreadLeases: jest.fn(),
+  recordSubagentTaskControlReceipt: jest.fn(),
   releaseSubagentThreadLease: jest.fn(),
   reserveSubagentThread: jest.fn(),
   renewSubagentThreadLease: jest.fn(),
@@ -55,11 +56,19 @@ const {
 const subagentThreadTaskStore = require('./subagentThreadStore');
 const { configureSubagentTaskRouting } = subagentThreadTaskStore;
 const taskStoreOptions = createSubagentThreadTaskStore.mock.calls[0][1];
+const taskStoreMethods = createSubagentThreadTaskStore.mock.calls[0][0];
+const db = require('~/models');
 const activityPrepareRegistration = registerShutdownTask.mock.calls.find(
   ([name]) => name === 'subagent activity streams prepare',
 );
 
 describe('subagent thread Redis lifecycle', () => {
+  it('wires durable control receipt persistence into the host store', () => {
+    expect(taskStoreMethods.recordSubagentTaskControlReceipt).toBe(
+      db.recordSubagentTaskControlReceipt,
+    );
+  });
+
   it('reads completion wakeup rollout state at task preparation time', async () => {
     isEnabled.mockReturnValueOnce(false);
 

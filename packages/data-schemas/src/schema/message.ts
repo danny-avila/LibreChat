@@ -175,6 +175,33 @@ const messageSchema: Schema<IMessage> = new Schema(
           _id: false,
           default: undefined,
         },
+        controlReceipts: {
+          type: [
+            {
+              invocationId: { type: String, required: true },
+              fingerprint: { type: String, required: true },
+              controlId: { type: String },
+              action: {
+                type: String,
+                enum: ['steer', 'queue', 'interrupt', 'cancel', 'cancel_message'],
+                required: true,
+              },
+              status: {
+                type: String,
+                enum: ['accepted', 'applied', 'rejected', 'failed'],
+                required: true,
+              },
+              createdAt: { type: Date, required: true },
+              updatedAt: { type: Date, required: true },
+              boundary: { type: String, enum: ['preempt', 'tool', 'turn'] },
+              reason: { type: String },
+              message: { type: String },
+              messageTruncated: { type: Boolean },
+              _id: false,
+            },
+          ],
+          default: undefined,
+        },
       },
       _id: false,
       select: false,

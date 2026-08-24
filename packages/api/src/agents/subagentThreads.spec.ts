@@ -53,6 +53,24 @@ class TestTaskRoutingHub {
   }
 }
 
+class ReceiptTestSubagentThreadTaskStore extends SubagentThreadTaskStore {
+  emitControlReceiptForTest(
+    scopeId: string,
+    taskId: string,
+    receipt: {
+      controlId: string;
+      action: 'steer' | 'queue' | 'interrupt';
+      status: 'accepted' | 'applied' | 'rejected' | 'failed';
+      createdAt: number;
+      updatedAt: number;
+      boundary?: 'preempt' | 'tool' | 'turn';
+      reason?: 'withdrawn' | 'task_completed' | 'task_cancelled' | 'task_failed';
+    },
+  ): void {
+    this.onControlReceipt(scopeId, taskId, receipt);
+  }
+}
+
 class TestTaskControlTransport implements SubagentTaskControlTransport {
   private handler?: SubagentTaskControlHandler;
   readonly registrations: Array<{ scopeId: string; taskId: string; ttlMs: number }> = [];
@@ -187,9 +205,12 @@ async function waitForSettled(
   throw new Error('Timed out waiting for the subagent task.');
 }
 
-async function waitUntil(condition: () => boolean, description: string): Promise<void> {
+async function waitUntil(
+  condition: () => boolean | Promise<boolean>,
+  description: string,
+): Promise<void> {
   for (let attempt = 0; attempt < 400; attempt += 1) {
-    if (condition()) {
+    if (await condition()) {
       return;
     }
     await new Promise<void>((resolve) => setTimeout(resolve, 10));
@@ -1964,6 +1985,20 @@ describe('SubagentThreadTaskStore', () => {
     await expect(requesterStore.listTasks(config.scopeId)).resolves.toEqual([
       expect.objectContaining({ taskId, status: 'running' }),
     ]);
+    await waitUntil(
+      async () =>
+        (
+          await methods.getMessages(
+            {
+              user: userId,
+              conversationId: requireThreadId(started),
+              messageId: `${taskId}:user`,
+            },
+            '+subagentTask',
+          )
+        ).length === 1,
+      'the durable control receipt target',
+    );
     await expect(
       requesterStore.controlTask(config.scopeId, taskId, {
         action: 'queue',
@@ -1991,7 +2026,7 @@ describe('SubagentThreadTaskStore', () => {
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
     const hub = new TestTaskRoutingHub();
-    const ownerStore = new SubagentThreadTaskStore(methods);
+    const ownerStore = new ReceiptTestSubagentThreadTaskStore(methods);
     const requesterStore = new SubagentThreadTaskStore(methods);
     await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
     await requesterStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
@@ -2006,11 +2041,34 @@ describe('SubagentThreadTaskStore', () => {
       }),
     );
     const taskId = requireAccepted(started).task.taskId;
-    await Promise.resolve();
+    const threadId = requireThreadId(started);
+    let durableInput: IMessage | undefined;
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      [durableInput] = await methods.getMessages(
+        { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+        '+subagentTask',
+      );
+      if (durableInput != null) break;
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+    expect(durableInput).toBeDefined();
 
     const steer = { action: 'queue' as const, message: 'Verify the primary source too.' };
     const routed = await requesterStore.controlTask(config.scopeId, taskId, steer, 'invocation-1');
     expect(routed).toMatchObject({ status: 'accepted' });
+
+    [durableInput] = await methods.getMessages(
+      { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+      '+subagentTask',
+    );
+    expect(durableInput?.subagentTask?.controlReceipts).toEqual([
+      expect.objectContaining({
+        invocationId: 'invocation-1',
+        action: 'queue',
+        status: 'accepted',
+        message: steer.message,
+      }),
+    ]);
 
     /** The same invocation reaching the owner directly replays that result rather than
      * queueing a second steer, so local and routed callers agree. */
@@ -2018,6 +2076,49 @@ describe('SubagentThreadTaskStore', () => {
       ownerStore.controlTask(config.scopeId, taskId, steer, 'invocation-1'),
     ).resolves.toEqual(routed);
     expect(ownerStore.get(config.scopeId, taskId)?.pendingControls).toBe(1);
+
+    const acceptedControlId =
+      routed.status === 'accepted' && routed.controlId != null ? routed.controlId : undefined;
+    expect(acceptedControlId).toBeDefined();
+    const transitionTime = Date.now();
+    ownerStore.emitControlReceiptForTest(config.scopeId, taskId, {
+      controlId: acceptedControlId as string,
+      action: 'queue',
+      status: 'applied',
+      createdAt: transitionTime - 1,
+      updatedAt: transitionTime,
+      boundary: 'turn',
+    });
+    await waitUntil(
+      () => ownerStore.get(config.scopeId, taskId) != null,
+      'the owner task to remain available',
+    );
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      [durableInput] = await methods.getMessages(
+        { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+        '+subagentTask',
+      );
+      if (durableInput?.subagentTask?.controlReceipts?.[0]?.status === 'applied') break;
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+    expect(durableInput?.subagentTask?.controlReceipts).toEqual([
+      expect.objectContaining({
+        invocationId: 'invocation-1',
+        status: 'applied',
+        boundary: 'turn',
+      }),
+    ]);
+
+    /** A delayed retry can replay accepted in memory but cannot downgrade the
+     * already-applied durable receipt. */
+    await expect(
+      ownerStore.controlTask(config.scopeId, taskId, steer, 'invocation-1'),
+    ).resolves.toEqual(routed);
+    [durableInput] = await methods.getMessages(
+      { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+      '+subagentTask',
+    );
+    expect(durableInput?.subagentTask?.controlReceipts?.[0]?.status).toBe('applied');
 
     /** Reusing one invocation id for different content is a caller error, not a retry. */
     await expect(
@@ -2036,6 +2137,406 @@ describe('SubagentThreadTaskStore', () => {
       ownerStore.destroyTaskControlTransport(),
       requesterStore.destroyTaskControlTransport(),
     ]);
+  });
+
+  it('fails acceptance closed when the durable receipt target is not ready', async () => {
+    const userId = 'receipt-target-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods, { controlReceiptRetryMs: 10 });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let finish = (_value: { content: string }): void => undefined;
+    const result = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = store.start(taskRequest(config.scopeId, { run: async () => result }));
+    const taskId = requireAccepted(started).task.taskId;
+    const threadId = requireThreadId(started);
+    await waitUntil(
+      async () =>
+        (
+          await methods.getMessages(
+            { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+            '+subagentTask',
+          )
+        ).length === 1,
+      'the durable task input',
+    );
+
+    const persistReceipt = methods.recordSubagentTaskControlReceipt;
+    const persistence = jest
+      .spyOn(methods, 'recordSubagentTaskControlReceipt')
+      .mockResolvedValueOnce(false)
+      .mockImplementation(persistReceipt);
+    const command = { action: 'queue' as const, message: 'Check the source.' };
+    try {
+      await expect(
+        store.controlTask(config.scopeId, taskId, command, 'not-ready-invocation'),
+      ).rejects.toBeInstanceOf(SubagentTaskOwnerUnavailableError);
+      expect(store.get(config.scopeId, taskId)?.pendingControls).toBe(1);
+
+      await expect(
+        store.controlTask(config.scopeId, taskId, command, 'not-ready-invocation'),
+      ).resolves.toMatchObject({ status: 'accepted' });
+      expect(store.get(config.scopeId, taskId)?.pendingControls).toBe(1);
+    } finally {
+      persistence.mockRestore();
+      finish({ content: 'Done.' });
+      await waitForSettled(store, config.scopeId, started);
+      await store.destroyTaskControlTransport();
+    }
+  });
+
+  it('retains only the bounded public projection of a control payload', async () => {
+    const userId = 'bounded-control-payload-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let finish = (_value: { content: string }): void => undefined;
+    const result = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = store.start(taskRequest(config.scopeId, { run: async () => result }));
+    const taskId = requireAccepted(started).task.taskId;
+    const threadId = requireThreadId(started);
+    await waitUntil(
+      async () =>
+        (
+          await methods.getMessages(
+            { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+            '+subagentTask',
+          )
+        ).length === 1,
+      'the durable task input',
+    );
+
+    await expect(
+      store.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'queue', message: 'x'.repeat(64 * 1024) },
+        'bounded-payload-invocation',
+      ),
+    ).resolves.toMatchObject({ status: 'accepted' });
+    const invocations = (
+      store as unknown as {
+        controlInvocations: Map<string, { command: SubagentTaskControlCommand }>;
+      }
+    ).controlInvocations;
+    expect(invocations.values().next().value?.command).toEqual({
+      action: 'queue',
+      message: 'x'.repeat(4 * 1024),
+    });
+    await expect(
+      store.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'queue', message: `${'x'.repeat(64 * 1024 - 1)}y` },
+        'bounded-payload-invocation',
+      ),
+    ).resolves.toMatchObject({ status: 'invalid' });
+
+    finish({ content: 'Done.' });
+    await waitForSettled(store, config.scopeId, started);
+    await store.destroyTaskControlTransport();
+  });
+
+  it('restores tenant context for a routed control receipt write', async () => {
+    const userId = 'routed-receipt-tenant-user';
+    const tenantId = 'routed-receipt-tenant';
+    const parentConversationId = randomUUID();
+    await tenantStorage.run({ tenantId, userId }, async () =>
+      saveParent(userId, parentConversationId, { tenantId }),
+    );
+    const hub = new TestTaskRoutingHub();
+    const ownerStore = new SubagentThreadTaskStore(methods);
+    const requesterStore = new SubagentThreadTaskStore(methods);
+    await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    await requesterStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const config = buildSubagentThreadTaskConfig(ownerStore, {
+      userId,
+      tenantId,
+      parentConversationId,
+    });
+    let finish = (_value: { content: string }): void => undefined;
+    const result = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = ownerStore.start(taskRequest(config.scopeId, { run: async () => result }));
+    const taskId = requireAccepted(started).task.taskId;
+    const threadId = requireThreadId(started);
+    await waitUntil(
+      () =>
+        tenantStorage.run({ tenantId, userId }, async () =>
+          Boolean(
+            (
+              await methods.getMessages(
+                { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+                '+subagentTask',
+              )
+            )[0],
+          ),
+        ),
+      'the tenant-scoped task input',
+    );
+
+    const contexts: Array<{ tenantId?: string; userId?: string }> = [];
+    const persistReceipt = methods.recordSubagentTaskControlReceipt;
+    const persistence = jest
+      .spyOn(methods, 'recordSubagentTaskControlReceipt')
+      .mockImplementation((input) => {
+        contexts.push({ tenantId: getTenantId(), userId: getUserId() });
+        return persistReceipt(input);
+      });
+    try {
+      await expect(
+        requesterStore.controlTask(
+          config.scopeId,
+          taskId,
+          { action: 'queue', message: 'Check the tenant source.' },
+          'tenant-invocation',
+        ),
+      ).resolves.toMatchObject({ status: 'accepted' });
+      expect(contexts).toEqual([{ tenantId, userId }]);
+    } finally {
+      persistence.mockRestore();
+      finish({ content: 'Done.' });
+      await waitForSettled(ownerStore, config.scopeId, started);
+      await Promise.all([
+        ownerStore.destroyTaskControlTransport(),
+        requesterStore.destroyTaskControlTransport(),
+      ]);
+    }
+  });
+
+  it('persists the target control id for cancel_message receipts', async () => {
+    const userId = 'cancel-message-receipt-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let finish = (_value: { content: string }): void => undefined;
+    const result = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = store.start(taskRequest(config.scopeId, { run: async () => result }));
+    const taskId = requireAccepted(started).task.taskId;
+    const threadId = requireThreadId(started);
+    await waitUntil(
+      async () =>
+        (
+          await methods.getMessages(
+            { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+            '+subagentTask',
+          )
+        ).length === 1,
+      'the durable task input',
+    );
+
+    const queued = await store.controlTask(
+      config.scopeId,
+      taskId,
+      { action: 'queue', message: 'Withdraw me.' },
+      'queued-invocation',
+    );
+    expect(queued).toMatchObject({ status: 'accepted' });
+    const targetControlId = queued.status === 'accepted' ? queued.controlId : undefined;
+    expect(targetControlId).toBeDefined();
+    await expect(
+      store.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'cancel_message', controlId: targetControlId as string },
+        'cancel-message-invocation',
+      ),
+    ).resolves.toMatchObject({ status: 'accepted' });
+    await expect(
+      store.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'cancel_message', controlId: 'missing-control' },
+        'missing-cancel-message-invocation',
+      ),
+    ).resolves.toMatchObject({ status: 'control_not_found' });
+
+    await waitUntil(async () => {
+      const [input] = await methods.getMessages(
+        { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+        '+subagentTask',
+      );
+      return (
+        input?.subagentTask?.controlReceipts?.some(
+          (receipt) => receipt.invocationId === 'cancel-message-invocation',
+        ) === true
+      );
+    }, 'the cancel_message receipt');
+    const [input] = await methods.getMessages(
+      { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+      '+subagentTask',
+    );
+    expect(input?.subagentTask?.controlReceipts).toContainEqual(
+      expect.objectContaining({
+        invocationId: 'cancel-message-invocation',
+        controlId: targetControlId,
+        action: 'cancel_message',
+        status: 'applied',
+      }),
+    );
+    expect(input?.subagentTask?.controlReceipts).toContainEqual(
+      expect.objectContaining({
+        invocationId: 'missing-cancel-message-invocation',
+        controlId: 'missing-control',
+        action: 'cancel_message',
+        status: 'rejected',
+        reason: 'control_not_found',
+      }),
+    );
+
+    finish({ content: 'Done.' });
+    await waitForSettled(store, config.scopeId, started);
+    await store.destroyTaskControlTransport();
+  });
+
+  it('retries a terminal control receipt after settlement when storage recovers', async () => {
+    const userId = 'receipt-retry-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new ReceiptTestSubagentThreadTaskStore(methods, {
+      controlReceiptRetryMs: 10,
+    });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let finish = (_value: { content: string }): void => undefined;
+    const result = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async () => result,
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    const threadId = requireThreadId(started);
+    await waitUntil(
+      async () =>
+        (
+          await methods.getMessages(
+            { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+            '+subagentTask',
+          )
+        ).length === 1,
+      'the durable task input',
+    );
+    const command = { action: 'queue' as const, message: 'Verify the source.' };
+    const accepted = await store.controlTask(config.scopeId, taskId, command, 'retry-invocation');
+    expect(accepted).toMatchObject({ status: 'accepted' });
+    const controlId = accepted.status === 'accepted' ? accepted.controlId : undefined;
+    expect(controlId).toBeDefined();
+
+    const persistReceipt = methods.recordSubagentTaskControlReceipt;
+    const persistence = jest
+      .spyOn(methods, 'recordSubagentTaskControlReceipt')
+      .mockRejectedValueOnce(new Error('database temporarily unavailable'))
+      .mockResolvedValueOnce(false)
+      .mockImplementation(persistReceipt);
+    try {
+      const appliedAt = Date.now();
+      store.emitControlReceiptForTest(config.scopeId, taskId, {
+        controlId: controlId as string,
+        action: 'queue',
+        status: 'applied',
+        createdAt: appliedAt - 1,
+        updatedAt: appliedAt,
+        boundary: 'turn',
+      });
+      await waitUntil(
+        () => persistence.mock.calls.length >= 1,
+        'the applied transition persistence attempt',
+      );
+      finish({ content: 'Done.' });
+      await waitForSettled(store, config.scopeId, started);
+
+      await waitUntil(
+        () => persistence.mock.calls.length >= 3,
+        'the post-settlement receipt retry',
+      );
+      await waitUntil(async () => {
+        const [input] = await methods.getMessages(
+          { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+          '+subagentTask',
+        );
+        return input?.subagentTask?.controlReceipts?.[0]?.status === 'applied';
+      }, 'the receipt retry to converge after terminal settlement');
+      expect(persistence.mock.calls.length).toBeGreaterThanOrEqual(3);
+    } finally {
+      persistence.mockRestore();
+      finish({ content: 'Done.' });
+      await store.destroyTaskControlTransport();
+    }
+  });
+
+  it('flushes a pending control receipt once during graceful shutdown', async () => {
+    const userId = 'receipt-shutdown-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new ReceiptTestSubagentThreadTaskStore(methods, {
+      controlReceiptRetryMs: 60_000,
+    });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let runtime: SubagentTaskRuntime | undefined;
+    let finish = (_value: { content: string }): void => undefined;
+    const result = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async (taskRuntime) => {
+          runtime = taskRuntime;
+          return result;
+        },
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    const threadId = requireThreadId(started);
+    await waitUntil(() => runtime != null, 'the child runtime to start');
+    const accepted = await store.controlTask(
+      config.scopeId,
+      taskId,
+      { action: 'queue', message: 'Persist before shutdown.' },
+      'shutdown-invocation',
+    );
+    expect(accepted).toMatchObject({ status: 'accepted' });
+
+    const persistReceipt = methods.recordSubagentTaskControlReceipt;
+    const persistence = jest
+      .spyOn(methods, 'recordSubagentTaskControlReceipt')
+      .mockRejectedValueOnce(new Error('database temporarily unavailable'))
+      .mockImplementation(persistReceipt);
+    const controlId = accepted.status === 'accepted' ? accepted.controlId : undefined;
+    expect(controlId).toBeDefined();
+    store.emitControlReceiptForTest(config.scopeId, taskId, {
+      controlId: controlId as string,
+      action: 'queue',
+      status: 'applied',
+      createdAt: Date.now() - 1,
+      updatedAt: Date.now(),
+      boundary: 'turn',
+    });
+    await waitUntil(() => persistence.mock.calls.length === 1, 'the failed receipt write');
+
+    await store.destroyTaskControlTransport();
+    const [input] = await methods.getMessages(
+      { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+      '+subagentTask',
+    );
+    expect(input?.subagentTask?.controlReceipts).toContainEqual(
+      expect.objectContaining({ invocationId: 'shutdown-invocation', status: 'applied' }),
+    );
+    expect(persistence).toHaveBeenCalledTimes(2);
+
+    persistence.mockRestore();
+    finish({ content: 'Done.' });
+    await waitForSettled(store, config.scopeId, started);
   });
 
   it('fails a child closed when its owner address cannot be published', async () => {

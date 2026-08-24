@@ -13,6 +13,8 @@ const MAX_STORED_USER_SUBMITTED_PATHS = 256;
 const MAX_NORMALIZED_USER_SUBMITTED_PATHS = MAX_STORED_USER_SUBMITTED_PATHS + 1;
 const MAX_STORED_USER_SUBMITTED_FIELD_PATHS = MAX_NORMALIZED_USER_SUBMITTED_PATHS;
 const MAX_USER_SUBMITTED_PATH_LENGTH = 2048;
+const MAX_SUBAGENT_CONTROL_RECEIPTS = 64;
+const MAX_SUBAGENT_CONTROL_MESSAGE_LENGTH = 4 * 1024;
 const PROVENANCE_PATHS_UNION_FIELD = '__lcProvenancePathsUnion';
 const PROVENANCE_FIELD_PATHS_UNION_FIELD = '__lcProvenanceFieldPathsUnion';
 const HITL_MESSAGE_FILTER_FIELD_SET = new Set<string>(HITL_MESSAGE_FILTER_FIELDS);
@@ -283,6 +285,13 @@ export interface MessageMethods {
     params: Partial<IMessage> & { newMessageId?: string },
     metadata?: { context?: string },
   ): Promise<IMessage | null | undefined>;
+  recordSubagentTaskControlReceipt(input: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    tenantId?: string;
+    receipt: NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number];
+  }): Promise<boolean>;
   bulkSaveMessages(
     messages: Array<Partial<IMessage>>,
     overrideTimestamp?: boolean,
@@ -864,6 +873,275 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       }
       throw err;
     }
+  }
+
+  /**
+   * Atomically records one bounded parent-to-child control receipt on the
+   * durable task input. Terminal receipt states are monotonic, and accepted
+   * receipts are retained ahead of older terminal history when the bound fills.
+   */
+  async function recordSubagentTaskControlReceipt({
+    userId,
+    conversationId,
+    taskId,
+    tenantId,
+    receipt,
+  }: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    tenantId?: string;
+    receipt: NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number];
+  }): Promise<boolean> {
+    const validActions = new Set(['steer', 'queue', 'interrupt', 'cancel', 'cancel_message']);
+    const validStatuses = new Set(['accepted', 'applied', 'rejected', 'failed']);
+    if (
+      userId.length === 0 ||
+      conversationId.length === 0 ||
+      conversationId.length > 256 ||
+      taskId.length === 0 ||
+      taskId.length > 256 ||
+      receipt.invocationId.length === 0 ||
+      receipt.invocationId.length > 128 ||
+      receipt.fingerprint.length === 0 ||
+      receipt.fingerprint.length > 128 ||
+      !validActions.has(receipt.action) ||
+      !validStatuses.has(receipt.status) ||
+      (receipt.controlId != null && receipt.controlId.length > 256) ||
+      (receipt.message != null && receipt.message.length > MAX_SUBAGENT_CONTROL_MESSAGE_LENGTH) ||
+      !Number.isFinite(receipt.createdAt.getTime()) ||
+      !Number.isFinite(receipt.updatedAt.getTime())
+    ) {
+      throw new TypeError('Invalid subagent task control receipt');
+    }
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const terminalStatuses = ['applied', 'rejected', 'failed'];
+    const updated = await Message.findOneAndUpdate(
+      {
+        user: userId,
+        conversationId,
+        ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+        messageId: `${taskId}:user`,
+        'subagentTask.status': 'running',
+      },
+      [
+        {
+          $set: {
+            'subagentTask.controlReceipts': {
+              $let: {
+                vars: {
+                  current: {
+                    $cond: [
+                      { $isArray: '$subagentTask.controlReceipts' },
+                      '$subagentTask.controlReceipts',
+                      [],
+                    ],
+                  },
+                },
+                in: {
+                  $let: {
+                    vars: {
+                      existing: {
+                        $arrayElemAt: [
+                          {
+                            $filter: {
+                              input: '$$current',
+                              as: 'candidate',
+                              cond: { $eq: ['$$candidate.invocationId', receipt.invocationId] },
+                            },
+                          },
+                          0,
+                        ],
+                      },
+                    },
+                    in: {
+                      $let: {
+                        vars: {
+                          next: {
+                            $cond: [
+                              {
+                                $or: [
+                                  {
+                                    $in: [{ $ifNull: ['$$existing.status', ''] }, terminalStatuses],
+                                  },
+                                  {
+                                    $and: [
+                                      { $ne: [{ $ifNull: ['$$existing', null] }, null] },
+                                      { $ne: ['$$existing.fingerprint', receipt.fingerprint] },
+                                    ],
+                                  },
+                                ],
+                              },
+                              '$$existing',
+                              { $literal: receipt },
+                            ],
+                          },
+                        },
+                        in: {
+                          $let: {
+                            vars: {
+                              merged: {
+                                $concatArrays: [
+                                  {
+                                    $filter: {
+                                      input: '$$current',
+                                      as: 'candidate',
+                                      cond: {
+                                        $ne: ['$$candidate.invocationId', receipt.invocationId],
+                                      },
+                                    },
+                                  },
+                                  ['$$next'],
+                                ],
+                              },
+                            },
+                            in: {
+                              $let: {
+                                vars: {
+                                  accepted: {
+                                    /** The supported task store admits at most 32 live
+                                     * controls. Keep a defensive storage bound here so
+                                     * custom callers cannot grow the private projection. */
+                                    $slice: [
+                                      {
+                                        $filter: {
+                                          input: '$$merged',
+                                          as: 'candidate',
+                                          cond: { $eq: ['$$candidate.status', 'accepted'] },
+                                        },
+                                      },
+                                      -MAX_SUBAGENT_CONTROL_RECEIPTS,
+                                    ],
+                                  },
+                                },
+                                in: {
+                                  $concatArrays: [
+                                    '$$accepted',
+                                    {
+                                      $slice: [
+                                        {
+                                          /** DocumentDB 5 does not support $sortArray.
+                                           * Insert each bounded receipt into a stable
+                                           * createdAt/invocationId order using baseline
+                                           * aggregation expressions instead. */
+                                          $reduce: {
+                                            input: {
+                                              $filter: {
+                                                input: '$$merged',
+                                                as: 'candidate',
+                                                cond: {
+                                                  $ne: ['$$candidate.status', 'accepted'],
+                                                },
+                                              },
+                                            },
+                                            initialValue: [],
+                                            in: {
+                                              $concatArrays: [
+                                                {
+                                                  $filter: {
+                                                    input: '$$value',
+                                                    as: 'ordered',
+                                                    cond: {
+                                                      $or: [
+                                                        {
+                                                          $lt: [
+                                                            '$$ordered.createdAt',
+                                                            '$$this.createdAt',
+                                                          ],
+                                                        },
+                                                        {
+                                                          $and: [
+                                                            {
+                                                              $eq: [
+                                                                '$$ordered.createdAt',
+                                                                '$$this.createdAt',
+                                                              ],
+                                                            },
+                                                            {
+                                                              $lte: [
+                                                                '$$ordered.invocationId',
+                                                                '$$this.invocationId',
+                                                              ],
+                                                            },
+                                                          ],
+                                                        },
+                                                      ],
+                                                    },
+                                                  },
+                                                },
+                                                ['$$this'],
+                                                {
+                                                  $filter: {
+                                                    input: '$$value',
+                                                    as: 'ordered',
+                                                    cond: {
+                                                      $or: [
+                                                        {
+                                                          $gt: [
+                                                            '$$ordered.createdAt',
+                                                            '$$this.createdAt',
+                                                          ],
+                                                        },
+                                                        {
+                                                          $and: [
+                                                            {
+                                                              $eq: [
+                                                                '$$ordered.createdAt',
+                                                                '$$this.createdAt',
+                                                              ],
+                                                            },
+                                                            {
+                                                              $gt: [
+                                                                '$$ordered.invocationId',
+                                                                '$$this.invocationId',
+                                                              ],
+                                                            },
+                                                          ],
+                                                        },
+                                                      ],
+                                                    },
+                                                  },
+                                                },
+                                              ],
+                                            },
+                                          },
+                                        },
+                                        {
+                                          $multiply: [
+                                            -1,
+                                            {
+                                              $max: [
+                                                0,
+                                                {
+                                                  $subtract: [
+                                                    MAX_SUBAGENT_CONTROL_RECEIPTS,
+                                                    { $size: '$$accepted' },
+                                                  ],
+                                                },
+                                              ],
+                                            },
+                                          ],
+                                        },
+                                      ],
+                                    },
+                                  ],
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      ],
+      { new: true, projection: { messageId: 1 } },
+    ).lean<{ messageId: string } | null>();
+    return updated != null;
   }
 
   /** Atomically assigns one durable terminal child result to either its
@@ -1470,6 +1748,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     updateMessageText,
     updateToolCallResult,
     updateMessage,
+    recordSubagentTaskControlReceipt,
     claimSubagentTaskResult,
     releaseSubagentTaskResultClaim,
     deleteMessagesSince,
