@@ -27,6 +27,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   # PR pushes supersede each other (per-PR canceling group). Push events get a PER-COMMIT group:
@@ -340,7 +341,7 @@ jobs:
   test-api:
     name: 'Tests: api (shard ${{ matrix.shard }}/3)'
     needs: [build, codegraph_select]
-    if: always() && needs.build.result == 'success' && needs.codegraph_select.outputs.api_run != 'false'
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.codegraph_select.outputs.api_run != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -434,7 +435,7 @@ jobs:
   test-data-provider:
     name: 'Tests: data-provider'
     needs: [build, codegraph_select]
-    if: always() && needs.build.result == 'success' && needs.codegraph_select.outputs.dataprovider_run != 'false'
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.codegraph_select.outputs.dataprovider_run != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -495,7 +496,7 @@ jobs:
   test-data-schemas:
     name: 'Tests: data-schemas'
     needs: [build, codegraph_select]
-    if: always() && needs.build.result == 'success' && needs.codegraph_select.outputs.dataschemas_run != 'false'
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.codegraph_select.outputs.dataschemas_run != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -562,7 +563,7 @@ jobs:
   test-packages-api:
     name: 'Tests: @librechat/api (shard ${{ matrix.shard }}/4)'
     needs: [build, codegraph_select]
-    if: always() && needs.build.result == 'success' && needs.codegraph_select.outputs.pkgapi_run != 'false'
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.codegraph_select.outputs.pkgapi_run != 'false' }}
     runs-on: ubuntu-latest
     # Suite typically completes in ~5 min on a warm runner, but tail-latency
     # cancellations have started showing up: tests are actively passing right

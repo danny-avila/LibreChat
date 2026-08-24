@@ -21,9 +21,11 @@ on:
       - 'packages/data-provider/**'
       - 'package.json'
       - 'package-lock.json'
+      - '.github/workflows/frontend-review.yml'
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   # PR pushes supersede each other (per-PR canceling group). Push events get a PER-COMMIT group:
@@ -244,7 +246,7 @@ jobs:
     name: 'Tests: @librechat/client'
     needs: [build, codegraph_select]
     if: >-
-      always() && needs.build.result == 'success' &&
+      !cancelled() && needs.build.result == 'success' &&
       needs.codegraph_select.outputs.clientpkg_run != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -292,7 +294,7 @@ jobs:
     name: 'Tests: Ubuntu (shard ${{ matrix.shard }}/2)'
     needs: [build, codegraph_select]
     if: >-
-      always() && needs.build.result == 'success' &&
+      !cancelled() && needs.build.result == 'success' &&
       needs.codegraph_select.outputs.client_run != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 15
