@@ -44,7 +44,7 @@ claudeRoutes.post('/claude/:projectId/link', requireUser, sameOrigin, async (req
     `/internal/projects/${encodeURIComponent(req.params.projectId)}/credential/link`,
   );
   if (!ok) {
-    const message = json.error || 'Не удалось начать привязку. Попробуйте ещё раз.';
+    const message = json.error || json.message || 'Не удалось начать привязку. Попробуйте ещё раз.';
     return res.redirect(`${config.basePath}/claude?error=${encodeURIComponent(message)}`);
   }
   res.render('claude-link', {
@@ -62,7 +62,7 @@ claudeRoutes.post('/claude/:projectId/code', requireUser, sameOrigin, async (req
     { code: String(req.body.code || '') },
   );
   if (!ok) {
-    const message = json.error || 'Код не принят. Начните привязку заново.';
+    const message = json.error || json.message || 'Код не принят. Начните привязку заново.';
     return res.redirect(`${config.basePath}/claude?error=${encodeURIComponent(message)}`);
   }
   res.redirect(`${config.basePath}/claude?linked=1`);
