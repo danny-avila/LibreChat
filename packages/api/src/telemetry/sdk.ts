@@ -382,10 +382,14 @@ function ensureShutdownTaskRegistered(): void {
   // by Node, so a separate signal handler can let the coordinator
   // exit before the async OpenTelemetry flush completes, dropping
   // final spans during pod shutdowns.
-  registerShutdownTask('telemetry', () =>
-    withTimeout(shutdownTelemetry(), SIGNAL_SHUTDOWN_TIMEOUT_MS).catch((error) => {
-      emitWarning(`OpenTelemetry shutdown failed: ${getErrorMessage(error)}`);
-    }),
+  registerShutdownTask(
+    'telemetry',
+    () =>
+      withTimeout(shutdownTelemetry(), SIGNAL_SHUTDOWN_TIMEOUT_MS).catch((error) => {
+        emitWarning(`OpenTelemetry shutdown failed: ${getErrorMessage(error)}`);
+      }),
+    // Exporters close after instrumented modules have emitted their final shutdown spans.
+    { priority: -100 },
   );
 }
 

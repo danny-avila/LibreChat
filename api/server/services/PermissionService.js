@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 const { isEnabled } = require('@librechat/api');
-const { getTransactionSupport, logger } = require('@librechat/data-schemas');
+const {
+  getTransactionSupport,
+  tenantStorage,
+  getTenantId,
+  logger,
+} = require('@librechat/data-schemas');
 const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
 const {
   entraIdPrincipalFeatureEnabled,
@@ -233,11 +238,19 @@ const getResourcePermissionsMap = async ({ userId, role, resourceType, resourceI
  * @param {Object} params - Parameters for finding accessible resources
  * @param {string|mongoose.Types.ObjectId} params.userId - The ID of the user
  * @param {string} [params.role] - Optional user role (if not provided, will query from DB)
+ * @param {string|null} [params.idOnTheSource] - Optional external member id. `null` means "known to
+ * be absent" (local user); only `undefined` makes `getUserPrincipals` read the user document.
  * @param {string} params.resourceType - Type of resource (e.g., 'agent')
  * @param {number} params.requiredPermissions - The minimum permission bits required (e.g., 1 for VIEW, 3 for VIEW+EDIT)
  * @returns {Promise<Array>} Array of resource IDs
  */
-const findAccessibleResources = async ({ userId, role, resourceType, requiredPermissions }) => {
+const findAccessibleResources = async ({
+  userId,
+  role,
+  idOnTheSource,
+  resourceType,
+  requiredPermissions,
+}) => {
   try {
     if (typeof requiredPermissions !== 'number' || requiredPermissions < 1) {
       throw new Error('requiredPermissions must be a positive number');
@@ -246,7 +259,7 @@ const findAccessibleResources = async ({ userId, role, resourceType, requiredPer
     validateResourceType(resourceType);
 
     // Get all principals for the user (user + groups + public)
-    const principalsList = await db.getUserPrincipals({ userId, role });
+    const principalsList = await db.getUserPrincipals({ userId, role, idOnTheSource });
 
     if (principalsList.length === 0) {
       return [];
@@ -501,6 +514,21 @@ const ensureGroupPrincipalExists = async function (principal, authContext = null
  * @returns {Promise<void>}
  */
 const syncUserEntraGroupMemberships = async (user, accessToken, session = null) => {
+  const tenantId = user?.tenantId ? String(user.tenantId) : undefined;
+  if (!tenantId || getTenantId() != null) {
+    return performEntraGroupMembershipSync(user, accessToken, session);
+  }
+  /**
+   * The OAuth callback runs before `tenantContextMiddleware`, so establish the
+   * user's tenant context here: group queries, created groups, and principal
+   * cache invalidation are then scoped exactly like authenticated reads.
+   */
+  return tenantStorage.run({ tenantId, userId: user._id?.toString() }, async () =>
+    performEntraGroupMembershipSync(user, accessToken, session),
+  );
+};
+
+const performEntraGroupMembershipSync = async (user, accessToken, session = null) => {
   try {
     if (!entraIdPrincipalFeatureEnabled(user) || !accessToken || !user.idOnTheSource) {
       return;
@@ -738,6 +766,20 @@ const bulkUpdateResourcePermissions = async ({
 
     const bulkWrites = [];
 
+    /**
+     * Tracks non-public principals granted in this same request so their revoke is skipped below.
+     * Grants are flushed before deletes, so a principal present in both `updatedPrincipals` and
+     * `revokedPrincipals` would be upserted and then deleted, stripping access the caller just set
+     * (e.g. a resource owner landing in both lists from a client `id`/`idOnTheSource` mismatch).
+     * Granting wins to make owner lockout impossible regardless of the client-side diff (#14316).
+     *
+     * PUBLIC is deliberately excluded: an explicit `public: false` disable adds the public principal
+     * to the revoke list, and disabling public access must always win over a stale/contradictory
+     * grant so a resource is never left public when the caller asked to make it private.
+     */
+    const grantedPrincipalKeys = new Set();
+    const principalKey = (principal) => `${principal.type}:${principal.id}`;
+
     for (const principal of updatedPrincipals) {
       try {
         if (!principal.accessRoleId) {
@@ -818,6 +860,9 @@ const bulkUpdateResourcePermissions = async ({
           memberCount: principal.memberCount,
           memberIds: principal.memberIds,
         });
+        if (principal.type !== PrincipalType.PUBLIC) {
+          grantedPrincipalKeys.add(principalKey(principal));
+        }
       } catch (error) {
         results.errors.push({
           principal,
@@ -833,6 +878,14 @@ const bulkUpdateResourcePermissions = async ({
     const deleteQueries = [];
     for (const principal of revokedPrincipals) {
       try {
+        // Inside the try so a malformed revoke entry (e.g. a nullish principal) is recorded in
+        // results.errors and skipped, rather than throwing out after grants were already flushed.
+        if (
+          principal.type !== PrincipalType.PUBLIC &&
+          grantedPrincipalKeys.has(principalKey(principal))
+        ) {
+          continue;
+        }
         const query = {
           principalType: principal.type,
           resourceType,

@@ -5,6 +5,25 @@ import type { IMongoFile, AppConfig, IUser } from '@librechat/data-schemas';
 import type { FilterQuery, QueryOptions, ProjectionType } from 'mongoose';
 import type { Request as ServerRequest } from 'express';
 
+import { TOOL_RESOURCE_KEYS } from './orphans';
+
+/** Removes runtime-only file records before persisted Agent resources enter tool initialization. */
+const sanitizePersistedToolResources = (
+  tool_resources: AgentToolResources | undefined,
+): AgentToolResources => {
+  const sanitized: AgentToolResources = {};
+  for (const key of TOOL_RESOURCE_KEYS) {
+    const resource = tool_resources?.[key];
+    if (!resource) {
+      continue;
+    }
+    const persistedResource = { ...resource };
+    delete persistedResource.files;
+    sanitized[key] = persistedResource;
+  }
+  return sanitized;
+};
+
 /**
  * Function type for retrieving files from the database
  * @param filter - MongoDB filter query for files
@@ -100,7 +119,7 @@ const categorizeFileForToolResources = ({
   requestFileSet: Set<string>;
   processedResourceFiles: Set<string>;
 }): void => {
-  if (file.metadata?.codeEnvRef) {
+  if (file.metadata?.codeEnvRef || file.metadata?.codeEnvRefs) {
     addFileToResource({
       file,
       resourceType: EToolResources.execute_code,
@@ -180,6 +199,7 @@ export const primeResources = async ({
 }> => {
   const requestAttachments: Array<TFile> = [];
   const agentContextAttachments: Array<TFile> = [];
+  const persistedToolResources = sanitizePersistedToolResources(_tool_resources);
   try {
     /**
      * Array to collect all unique files that will be returned as attachments
@@ -202,7 +222,7 @@ export const primeResources = async ({
      * The agent's tool resources object that will be updated with categorized files
      * Create a shallow copy first to avoid mutating the original
      */
-    const tool_resources: AgentToolResources = { ...(_tool_resources ?? {}) };
+    const tool_resources: AgentToolResources = { ...persistedToolResources };
 
     // Deep copy each resource to avoid mutating nested objects/arrays
     for (const [resourceType, resource] of Object.entries(tool_resources)) {
@@ -244,30 +264,45 @@ export const primeResources = async ({
       delete tool_resources[EToolResources.ocr];
     }
 
-    if (fileIds.length > 0 && isContextEnabled) {
+    const shouldLoadContext = fileIds.length > 0 && isContextEnabled;
+    const contextFileIds = new Set(shouldLoadContext ? fileIds : []);
+    const imageEditFileIds = tool_resources[EToolResources.image_edit]?.file_ids ?? [];
+    const imageEditFileIdSet = new Set(imageEditFileIds);
+    const persistedResourceFileIds = new Set(contextFileIds);
+    for (const fileId of imageEditFileIds) {
+      persistedResourceFileIds.add(fileId);
+    }
+
+    if (shouldLoadContext) {
       delete tool_resources[EToolResources.context];
-      let context = await getFiles(
+    }
+
+    let persistedResourceFiles: Array<TFile> = [];
+    if (persistedResourceFileIds.size > 0) {
+      persistedResourceFiles = await getFiles(
         {
-          file_id: { $in: fileIds },
+          file_id: { $in: Array.from(persistedResourceFileIds) },
         },
         {},
         {},
       );
 
       if (filterFiles && req.user?.id && agentId) {
-        context = await filterFiles({
-          files: context,
+        persistedResourceFiles = await filterFiles({
+          files: persistedResourceFiles,
           userId: req.user.id,
           role: req.user.role,
           agentId,
         });
       }
+    }
 
-      for (const file of context) {
-        if (!file?.file_id) {
-          continue;
-        }
+    for (const file of persistedResourceFiles) {
+      if (!file?.file_id) {
+        continue;
+      }
 
+      if (contextFileIds.has(file.file_id)) {
         // Clear from attachmentFileIds if it was pre-added
         attachmentFileIds.delete(file.file_id);
 
@@ -283,6 +318,16 @@ export const primeResources = async ({
           requestFileSet,
           processedResourceFiles,
         });
+      }
+
+      if (imageEditFileIdSet.has(file.file_id)) {
+        addFileToResource({
+          file,
+          resourceType: EToolResources.image_edit,
+          tool_resources,
+          processedResourceFiles,
+        });
+        attachmentFileIds.add(file.file_id);
       }
     }
 
@@ -357,7 +402,7 @@ export const primeResources = async ({
       requestAttachments: safeAttachments,
       agentContextAttachments:
         agentContextAttachments.length > 0 ? agentContextAttachments : undefined,
-      tool_resources: _tool_resources,
+      tool_resources: persistedToolResources,
     };
   }
 };

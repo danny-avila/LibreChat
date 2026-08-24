@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('../config/credentials');
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
@@ -20,8 +20,16 @@ const {
   performStartupChecks,
   handleJsonParseError,
   initializeFileStorage,
+  loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
+  requestContextMiddleware,
+  configureServerTimeouts,
+  setupGracefulShutdown,
+  configureMessageFilterRegexValidator,
+  configureFileConfigRegexEngine,
+  GenerationJobManager,
+  waitForKeyvRedisClient,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -29,6 +37,12 @@ const { capabilityContextMiddleware } = require('./middleware/roles/capabilities
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
+const { initializeAgentTriggerService } = require('./services/Agents/triggers');
+const {
+  recordExpiredScheduleApproval,
+  initializeScheduleErasureSweep,
+} = require('./services/Schedules');
+const { configureSubagentTaskRouting } = require('./services/Endpoints/agents/subagentThreadStore');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { updateInterfacePermissions: updateInterfacePerms } = require('@librechat/api');
 const {
@@ -46,6 +60,12 @@ const staticCache = require('./utils/staticCache');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+
+/** Route admin file-config MIME patterns through a linear-time engine (ReDoS-safe) on upload. */
+configureFileConfigRegexEngine();
+
+/** Reject messageFilter PII patterns the RE2 runtime engine cannot compile, at config load. */
+configureMessageFilterRegexValidator();
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
@@ -148,6 +168,8 @@ if (cluster.isMaster) {
   const listeningWorkers = new Set();
   let retentionSweepWorkerId = null;
   const startTime = Date.now();
+  let shuttingDown = false;
+  let remainingShutdownWorkers = 0;
 
   const assignRetentionSweepWorker = () => {
     if (retentionSweepWorkerId && cluster.workers[retentionSweepWorkerId]) {
@@ -218,15 +240,32 @@ if (cluster.isMaster) {
     logger.error(
       `Worker ${worker.process.pid} died (${activeWorkers}/${workers}). Code: ${code}, Signal: ${signal}`,
     );
+    if (shuttingDown) {
+      remainingShutdownWorkers = Math.max(0, remainingShutdownWorkers - 1);
+      if (remainingShutdownWorkers === 0) {
+        process.exit(0);
+      }
+      return;
+    }
     logger.info('Starting a new worker to replace it...');
     cluster.fork();
   });
 
   /** Graceful shutdown on SIGTERM/SIGINT */
   const shutdown = () => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
     logger.info('Master received shutdown signal, terminating workers...');
-    for (const id in cluster.workers) {
-      cluster.workers[id].kill();
+    const liveWorkers = Object.values(cluster.workers).filter(Boolean);
+    remainingShutdownWorkers = liveWorkers.length;
+    if (remainingShutdownWorkers === 0) {
+      process.exit(0);
+      return;
+    }
+    for (const worker of liveWorkers) {
+      worker.kill();
     }
     setTimeout(() => {
       logger.info('Forcing shutdown after timeout');
@@ -242,6 +281,11 @@ if (cluster.isMaster) {
    * Each worker runs a full Express server instance
    */
   const app = express();
+  // The clustered entrypoint deliberately does not arm the v1 schedule engine,
+  // but an already-fired scheduled generation can still reach HITL here. Settle
+  // its durable run when the generic approval runtime expires it.
+  GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);
+  GenerationJobManager.initialize();
   /**
    * The master may assign the sweep worker before or after this worker has
    * loaded app config. These flags join the IPC assignment with config
@@ -250,6 +294,17 @@ if (cluster.isMaster) {
   let shouldStartExpiredFileSweep = false;
   let expiredFileSweepOptions = null;
   let expiredFileSweepStarted = false;
+  const SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'DELETE']);
+
+  const rejectScheduleWritesUntilReady = (req, res, next) => {
+    if (SCHEDULE_ENGINE_OPTIONAL_METHODS.has(req.method)) {
+      return next();
+    }
+    return res.status(501).json({
+      code: 'SCHEDULES_NOT_SUPPORTED',
+      error: 'Scheduled chats are not available in clustered mode.',
+    });
+  };
 
   const startExpiredFileSweepOnce = () => {
     if (!shouldStartExpiredFileSweep || expiredFileSweepStarted || !expiredFileSweepOptions) {
@@ -272,6 +327,9 @@ if (cluster.isMaster) {
   const startServer = async () => {
     logger.info(`Worker ${process.pid} initializing...`);
 
+    await waitForKeyvRedisClient();
+    await configureSubagentTaskRouting();
+
     if (typeof Bun !== 'undefined') {
       axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
     }
@@ -285,11 +343,30 @@ if (cluster.isMaster) {
       logger.error(`[Worker ${process.pid}][indexSync] Background sync failed:`, err);
     });
 
+    // This entrypoint deliberately does not arm the schedule engine, but DELETE stays
+    // open — so soft-deleted rows still accrue with no reconciler to erase them. Start
+    // the erasure-ONLY sweep (Mongo is up, GenerationJobManager was initialized above):
+    // it never claims, fires, advances, or infers owner death from a process-local
+    // missing job, and its idempotent guard makes this safe once per worker.
+    initializeScheduleErasureSweep();
+
     app.disable('x-powered-by');
     app.set('trust proxy', trusted_proxy);
 
+    if (isEnabled(process.env.TRUST_TENANT_HEADER)) {
+      logger.warn(
+        '[Security] TRUST_TENANT_HEADER is active. Ensure your reverse proxy strips and sets ' +
+          'X-Tenant-Id — untrusted clients must not be able to supply it directly.',
+      );
+    } else if (isEnabled(process.env.TENANT_ISOLATION_STRICT)) {
+      logger.warn(
+        '[Security] TENANT_ISOLATION_STRICT is active while TRUST_TENANT_HEADER is disabled. ' +
+          'Pre-authentication tenant headers will be ignored.',
+      );
+    }
+
     /** Seed database (idempotent) */
-    await seedDatabase();
+    await runAsSystem(seedDatabase);
 
     /* Mirrors `server/index.js`; `runAsSystem` for tenant-isolated File. */
     runAsSystem(sweepOrphanedPreviews).catch((err) => {
@@ -300,10 +377,22 @@ if (cluster.isMaster) {
     const appConfig = await getAppConfig();
     initializeFileStorage(appConfig);
     initializeGitHubSkillSync(appConfig);
+    // Register configured tool-approval policy hooks (mirrors the standard startup path).
+    // Honors the `enabled` kill switch; hooks are base-config-only, registered process-wide.
+    // Read from the BASE config specifically — `appConfig` above (getAppConfig() with no
+    // principal) still merges DB `__base__` overrides, which must not drive which hook
+    // modules load in every worker (matches api/server/index.js's baseOnly usage).
+    const baseAppConfig = await getAppConfig({ baseOnly: true });
+    const toolApproval = baseAppConfig?.endpoints?.agents?.toolApproval;
+    await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
+      basePath: path.resolve(__dirname, '../..'),
+    });
     expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
     startExpiredFileSweepOnce();
-    await performStartupChecks(appConfig);
-    await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
+    await runAsSystem(async () => {
+      await performStartupChecks(appConfig);
+      await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
+    });
 
     /** Load index.html for SPA serving */
     const indexPath = path.join(appConfig.paths.dist, 'index.html');
@@ -342,6 +431,7 @@ if (cluster.isMaster) {
     app.get('/health', (_req, res) => res.status(200).send('OK'));
 
     /** Middleware */
+    app.use(requestContextMiddleware);
     app.use(noIndex);
     app.use(express.json({ limit: '3mb' }));
     app.use(express.urlencoded({ extended: true, limit: '3mb' }));
@@ -397,8 +487,9 @@ if (cluster.isMaster) {
     app.use(capabilityContextMiddleware);
 
     /** Routes */
-    app.use('/oauth', routes.oauth);
-    app.use('/api/auth', routes.auth);
+    app.use('/oauth', preAuthTenantMiddleware, routes.oauth);
+    app.use('/api/auth', preAuthTenantMiddleware, routes.auth);
+    app.use('/api/admin/insights', routes.insights);
     app.use('/api/admin', routes.adminAuth);
     app.use('/api/admin/skills', routes.adminSkills);
     app.use('/api/actions', routes.actions);
@@ -420,11 +511,12 @@ if (cluster.isMaster) {
     app.use('/api/assistants', routes.assistants);
     app.use('/api/files', await routes.files.initialize());
     app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
-    app.use('/api/share', routes.share);
+    app.use('/api/share', preAuthTenantMiddleware, routes.share);
     app.use('/api/roles', routes.roles);
     app.use('/api/agents', routes.agents);
     app.use('/api/banner', routes.banner);
     app.use('/api/memories', routes.memories);
+    app.use('/api/schedules', rejectScheduleWritesUntilReady, routes.schedules);
     app.use('/api/permissions', routes.accessPermissions);
     app.use('/api/tags', routes.tags);
     app.use('/api/mcp', routes.mcp);
@@ -439,7 +531,7 @@ if (cluster.isMaster) {
     app.use(ErrorController);
 
     /** Start listening on shared port (cluster will distribute connections) */
-    app.listen(port, host, async (err) => {
+    const server = app.listen(port, host, async (err) => {
       if (err) {
         logger.error(`Worker ${process.pid} failed to start server:`, err);
         process.exit(1);
@@ -463,11 +555,21 @@ if (cluster.isMaster) {
         await initializeMCPs();
         await initializeOAuthReconnectManager();
         await checkMigrations();
+        await initializeAgentTriggerService({ address: server.address() });
       } catch (initErr) {
         logger.error(`Worker ${process.pid} post-listen initialization failed:`, initErr);
         process.exit(1);
       }
     });
+
+    configureServerTimeouts(server);
+    logger.info(`Worker ${process.pid} HTTP server timeout configuration`, {
+      keepAliveTimeout: server.keepAliveTimeout,
+      keepAliveTimeoutBuffer: server.keepAliveTimeoutBuffer,
+      headersTimeout: server.headersTimeout,
+      requestTimeout: server.requestTimeout,
+    });
+    setupGracefulShutdown(server);
   };
 
   startServer().catch((err) => {

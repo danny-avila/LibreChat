@@ -211,6 +211,10 @@ export interface MCPServerInfo {
   tools: t.AgentToolType[];
   isConfigured: boolean;
   isConnected: boolean;
+  /** True when the server can be attached to an agent, even if its transport is request-scoped. */
+  isReadyForAgent?: boolean;
+  /** True when tools can only be discovered with live chat request fields. */
+  requestScoped?: boolean;
   consumeOnly?: boolean;
   metadata: t.TPlugin;
 }
@@ -233,6 +237,9 @@ export type AgentPanelContextType = {
   endpointsConfig?: t.TEndpointsConfig | null;
   /** Pre-computed MCP server information indexed by server key */
   mcpServersMap: Map<string, MCPServerInfo>;
+  /** True while the MCP tools list is being fetched and no data has arrived yet,
+   * so consumers can show a skeleton instead of an empty "no tools" state. */
+  mcpToolsLoading: boolean;
   availableMCPServers: MCPServerDefinition[];
   availableMCPServersMap: t.MCPServersListResponse | undefined;
 };
@@ -347,7 +354,7 @@ export type TOptions = {
   isContinued?: boolean;
   isEdited?: boolean;
   overrideMessages?: t.TMessage[];
-  /** This value is only true when the user submits a message with "Save & Submit" for a user-created message */
+  /** This value is only true when the user submits a message with "Update & rerun" for a user-created message */
   isResubmission?: boolean;
   /** Currently only utilized when `isResubmission === true`, uses that message's currently attached files */
   overrideFiles?: t.TMessage['files'];
@@ -374,6 +381,14 @@ export type TOptions = {
   overrideQuotes?: string[];
   /** Added conversation for multi-convo feature - sent to server as part of submission payload */
   addedConvo?: t.TConversation;
+  /** Reuse a durable submission identity (terminal steer recovery). */
+  overrideClientRequestId?: string;
+  /** Exact parked steer source for a recovery attempt. */
+  overrideRecoverySteerId?: string;
+  /** Exact terminal generation observed before an automatic queued start. */
+  overrideExpectedPredecessorCreatedAt?: number;
+  /** Client-only exact queue position restored if admission is rejected. */
+  overrideQueuedMessageOrigin?: unknown;
 };
 
 export type TAskFunction = (props: TAskProps, options?: TOptions) => false | void;
@@ -389,13 +404,15 @@ export type TAskFunction = (props: TAskProps, options?: TOptions) => false | voi
  * value at call-time (for callback guards) without being a reactive dependency.
  */
 export type TMessageChatContext = {
-  ask: (...args: Parameters<TAskFunction>) => void;
+  ask: TAskFunction;
   index: number;
   regenerate: (message: t.TMessage, options?: { addedConvo?: t.TConversation | null }) => void;
   conversation: t.TConversation | null;
   latestMessageId: string | undefined;
   latestMessageDepth: number | undefined;
   handleContinue: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  /** Resolved once per chat from `interface.feedback`; false until the config loads */
+  feedbackEnabled: boolean;
   /** Should be a getter backed by a ref — reads current value without triggering re-renders */
   readonly isSubmitting: boolean;
 };

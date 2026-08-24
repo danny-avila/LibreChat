@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import * as s from './schemas';
 
-const DEFAULT_ENABLED_MAX_TOKENS = 8192;
 const DEFAULT_THINKING_BUDGET = 2000;
+const BEDROCK_CLAUDE_SONNET_4_6_MAX_OUTPUT = 64000;
 export const BEDROCK_OUTPUT_128K_BETA = 'output-128k-2025-02-19';
 export const BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA = 'fine-grained-tool-streaming-2025-05-14';
 
@@ -94,16 +94,16 @@ function parseOpusVersion(model: string): { major: number; minor: number } | nul
 }
 
 /** Extracts sonnet major/minor version from both naming formats.
- *  Uses single-digit minor capture to avoid matching date suffixes (e.g., -20250514). */
+ *  Uses bounded minor capture to avoid matching date suffixes (e.g., -20250514). */
 function parseSonnetVersion(model: string): { major: number; minor: number } | null {
-  const nameFirst = model.match(/claude-sonnet[-.]?(\d+)(?:[-.](\d)(?!\d))?/);
+  const nameFirst = model.match(/claude-sonnet[-.]?(\d+)(?:[-.](\d{1,2})(?!\d))?/);
   if (nameFirst) {
     return {
       major: parseInt(nameFirst[1], 10),
       minor: nameFirst[2] != null ? parseInt(nameFirst[2], 10) : 0,
     };
   }
-  const numFirst = model.match(/claude-(\d+)(?:[-.](\d)(?!\d))?-sonnet/);
+  const numFirst = model.match(/claude-(\d+)(?:[-.](\d{1,2})(?!\d))?-sonnet/);
   if (numFirst) {
     return {
       major: parseInt(numFirst[1], 10),
@@ -179,17 +179,84 @@ export function omitsSamplingParameters(model: string): boolean {
  * Whether disabling thinking requires sending an explicit `{ type: 'disabled' }`
  * config rather than simply omitting the `thinking` field.
  *
- * Sonnet 5 treats an omitted `thinking` field as adaptive thinking ON by
- * default, so honoring a user who turns thinking off means sending the disabled
- * config explicitly. Opus 4.7+ run without thinking when the field is omitted,
- * and Fable/Mythos reject an explicit disabled config (400, thinking always
- * on), so both are excluded.
+ * Sonnet 5 and Opus 5 treat an omitted `thinking` field as adaptive thinking ON
+ * by default, so honoring a user who turns thinking off means sending the
+ * disabled config explicitly. Opus 4.7/4.8 run without thinking when the field
+ * is omitted, and Fable/Mythos reject an explicit disabled config (400,
+ * thinking always on), so both are excluded.
  *
  * See https://platform.claude.com/docs/en/about-claude/models/migration-guide#migrating-to-claude-sonnet-5
  */
 export function requiresExplicitThinkingDisabled(model: string): boolean {
   const sonnet = parseSonnetVersion(model);
-  return sonnet != null && sonnet.major >= 5;
+  if (sonnet != null && sonnet.major >= 5) {
+    return true;
+  }
+  const opus = parseOpusVersion(model);
+  return opus != null && opus.major >= 5;
+}
+
+/** Effort levels Opus 5 rejects while thinking is explicitly disabled. */
+const EFFORTS_REJECTED_WHEN_THINKING_DISABLED = new Set<string>([
+  s.AnthropicEffort.xhigh,
+  s.AnthropicEffort.max,
+]);
+
+/**
+ * Whether the model caps `output_config.effort` while thinking is disabled.
+ *
+ * Opus 5 rejects `xhigh`/`max` in that combination with a 400: "output_config
+ * .effort 'xhigh' is not supported when thinking is disabled on this model. Use
+ * effort 'high' or below, or enable thinking." Opus 4.7/4.8, Sonnet 5, and
+ * Sonnet 4.6 accept every effort level they otherwise support with thinking
+ * off, so the cap is Opus 5+ only.
+ */
+export function capsEffortWhenThinkingDisabled(model: string): boolean {
+  const opus = parseOpusVersion(model);
+  return opus != null && opus.major >= 5;
+}
+
+/**
+ * Lowers an effort level the model would reject while thinking is disabled to
+ * the highest accepted value (`high`, which is also the API default). Returns
+ * the effort unchanged when the combination is valid.
+ */
+export function clampEffortForDisabledThinking(model: string, effort: string): string {
+  if (
+    capsEffortWhenThinkingDisabled(model) &&
+    EFFORTS_REJECTED_WHEN_THINKING_DISABLED.has(effort)
+  ) {
+    return s.AnthropicEffort.high;
+  }
+  return effort;
+}
+
+/** An `output_config` container carrying a usable effort level. */
+function hasStringEffort(value: unknown): value is { effort: string } {
+  if (typeof value !== 'object' || value === null || !('effort' in value)) {
+    return false;
+  }
+  return typeof value.effort === 'string';
+}
+
+/**
+ * Clamps an `output_config.effort` in place when the model would reject it
+ * while thinking is disabled. No-op when the container carries no string
+ * effort, so callers can pass a possibly-absent config directly.
+ */
+export function clampOutputConfigEffort(model: string, outputConfig: unknown): void {
+  if (!hasStringEffort(outputConfig)) {
+    return;
+  }
+  outputConfig.effort = clampEffortForDisabledThinking(model, outputConfig.effort);
+}
+
+/** Whether a resolved thinking config is an explicit `{ type: 'disabled' }`. */
+export function isThinkingDisabled(thinking: unknown): boolean {
+  if (typeof thinking !== 'object' || thinking === null || !('type' in thinking)) {
+    return false;
+  }
+  return thinking.type === 'disabled';
 }
 
 /** Checks if a model has a 1M context window (Sonnet 4.6+, Opus 4.6+, Opus 5+, Fable/Mythos) */
@@ -206,6 +273,28 @@ export function supportsContext1m(model: string): boolean {
     return true;
   }
   return false;
+}
+
+/**
+ * Checks whether a native Anthropic Claude model supports prompt caching.
+ *
+ * This uses the configured model ID directly. Resolving it through a token
+ * map first can collapse a newly released Claude model to the generic
+ * `claude-` fallback and incorrectly disable cache control.
+ */
+export function supportsPromptCache(model: string): boolean {
+  if (model.includes('claude-3-5-sonnet-latest') || model.includes('claude-3.5-sonnet-latest')) {
+    return false;
+  }
+
+  return (
+    /claude-3[-.]7/.test(model) ||
+    /claude-3[-.]5-(?:sonnet|haiku)/.test(model) ||
+    /claude-3-(?:sonnet|haiku|opus)?/.test(model) ||
+    /claude-(?:sonnet|opus|haiku)[-.]?(?:[4-9]|\d{2,})/.test(model) ||
+    /claude-(?:[4-9]|\d{2,})(?:[-.](?:sonnet|opus|haiku))?/.test(model) ||
+    s.isMythosClassModel(model)
+  );
 }
 
 /**
@@ -458,6 +547,7 @@ export const bedrockInputParser = s.tConversationSchema
         const persistedAmrf = typedData.additionalModelRequestFields as
           | Record<string, unknown>
           | undefined;
+        const thinkingDisabled = additionalFields.thinking === false;
         const effort = additionalFields.effort;
         if (typeof effort === 'string' && effort !== '') {
           additionalFields.output_config = { effort };
@@ -468,6 +558,18 @@ export const bedrockInputParser = s.tConversationSchema
           delete persistedAmrf.output_config;
         }
         delete additionalFields.effort;
+
+        /**
+         * Opus 5 rejects `xhigh`/`max` effort while thinking is disabled, so
+         * clamp both the effort derived above and any effort still carried in
+         * persisted AMRF (agent resume sends `output_config` with no top-level
+         * `effort`, so the branch above leaves it untouched).
+         */
+        if (thinkingDisabled) {
+          [additionalFields, persistedAmrf].forEach((target) =>
+            clampOutputConfigEffort(typedData.model as string, target?.output_config),
+          );
+        }
 
         if (additionalFields.thinking === false) {
           delete additionalFields.thinkingBudget;
@@ -673,13 +775,45 @@ export const bedrockInputParser = s.tConversationSchema
  * @param data - The parsed Bedrock request options object
  * @returns The object with thinking configured appropriately
  */
+/**
+ * `anthropicSettings.maxOutputTokens.reset` only matches the canonical
+ * family-first id (`claude-sonnet-5`); Bedrock also accepts number-first
+ * aliases (`claude-5-sonnet`, `claude-4-7-sonnet`) that this file gates as
+ * thinking models. Canonicalize to family-first so those aliases resolve to the
+ * real ceiling instead of the 8192 fallback.
+ */
+function toFamilyFirstClaudeId(model: string): string {
+  return model.replace(/claude-(\d+(?:[-.]\d+)?)-(sonnet|opus|haiku)/, 'claude-$2-$1');
+}
+
+function isBedrockClaudeSonnet46(model: string): boolean {
+  return /claude-sonnet[-.]?4[-.]?6(?=$|[^0-9])/.test(toFamilyFirstClaudeId(model));
+}
+
+/**
+ * Thinking tokens share the `maxTokens` output budget with tool-call arguments
+ * (e.g. a `create_file` `content`), so a low default truncates large authored
+ * files mid-argument. Mirror the direct-Anthropic path and default to the
+ * model's full max output when the request does not set one explicitly.
+ */
+function resolveThinkingMaxTokens(data: AnthropicInput): number {
+  const explicit = data.maxTokens ?? data.maxOutputTokens;
+  if (typeof explicit === 'number' && explicit > 0) {
+    return explicit;
+  }
+  const model = typeof data.model === 'string' ? data.model : '';
+  if (isBedrockClaudeSonnet46(model)) {
+    return BEDROCK_CLAUDE_SONNET_4_6_MAX_OUTPUT;
+  }
+  return s.anthropicSettings.maxOutputTokens.reset(toFamilyFirstClaudeId(model));
+}
+
 function configureThinking(data: AnthropicInput): AnthropicInput {
   const updatedData = { ...data };
   const thinking = updatedData.additionalModelRequestFields?.thinking;
 
   if (thinking === true) {
-    updatedData.maxTokens =
-      updatedData.maxTokens ?? updatedData.maxOutputTokens ?? DEFAULT_ENABLED_MAX_TOKENS;
+    updatedData.maxTokens = resolveThinkingMaxTokens(updatedData);
     delete updatedData.maxOutputTokens;
     const thinkingConfig: ThinkingConfig = {
       type: 'enabled',
@@ -697,15 +831,32 @@ function configureThinking(data: AnthropicInput): AnthropicInput {
     thinking != null &&
     (thinking as { type: string }).type === 'adaptive'
   ) {
-    if (updatedData.maxTokens == null && updatedData.maxOutputTokens != null) {
-      updatedData.maxTokens = updatedData.maxOutputTokens;
-    }
+    updatedData.maxTokens = resolveThinkingMaxTokens(updatedData);
     delete updatedData.maxOutputTokens;
     delete updatedData.additionalModelRequestFields!.thinkingBudget;
   }
 
   return updatedData;
 }
+
+/** Top-level Converse request fields (issue #14029: `system` from a preset).
+ *  The input parser's catch-all routes unknown keys into
+ *  additionalModelRequestFields, and Bedrock rejects any that collide with a
+ *  field the request already sends (`messages`/`modelId` always,
+ *  `inferenceConfig` whenever maxTokens is set, `toolConfig` for agents). */
+const RESERVED_CONVERSE_FIELDS = [
+  'system',
+  'messages',
+  'modelId',
+  'toolConfig',
+  'inferenceConfig',
+  'guardrailConfig',
+  'promptVariables',
+  'requestMetadata',
+  'performanceConfig',
+  'additionalModelRequestFields',
+  'additionalModelResponseFieldPaths',
+];
 
 export const bedrockOutputParser = (data: Record<string, unknown>) => {
   const knownKeys = [...Object.keys(s.tConversationSchema.shape), 'topK', 'top_k'];
@@ -746,7 +897,21 @@ export const bedrockOutputParser = (data: Record<string, unknown>) => {
   }
 
   result = configureThinking(result as AnthropicInput);
-  const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+  let amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+  // Reserved top-level Converse request fields; a copy inside
+  // additionalModelRequestFields makes Bedrock reject the request
+  // ("The additional field <name> conflicts with an existing field").
+  // Guard against non-object values, which the schema's DocumentType permits.
+  if (amrf && typeof amrf === 'object') {
+    const reserved = RESERVED_CONVERSE_FIELDS.filter((key) => key in (amrf ?? {}));
+    if (reserved.length > 0) {
+      amrf = { ...amrf };
+      for (const key of reserved) {
+        delete amrf[key];
+      }
+      result.additionalModelRequestFields = amrf;
+    }
+  }
   if (!amrf || Object.keys(amrf).length === 0) {
     delete result.additionalModelRequestFields;
   }

@@ -19,6 +19,7 @@ import type {
   OAuthClientInformation,
   OAuthProtectedResourceMetadata,
   OAuthStoredClientMetadata,
+  OAuthClientSource,
   MCPOAuthFlowMetadata,
   MCPOAuthTokens,
   OAuthMetadata,
@@ -39,6 +40,24 @@ import { getOAuthUrlPort } from './url';
 
 /** Type for the OAuth metadata from the SDK */
 type SDKOAuthMetadata = Parameters<typeof registerClient>[1]['metadata'];
+
+type OAuthDiscoveryResult = {
+  metadata: OAuthMetadata;
+  resourceMetadata?: OAuthProtectedResourceMetadata;
+  authServerUrl: URL;
+};
+
+type OAuthResourceDiscoveryResult = {
+  resourceMetadata?: OAuthProtectedResourceMetadata;
+  authServerUrl?: URL;
+};
+
+type PreconfiguredOAuthDiscoveryResult = {
+  metadata?: OAuthMetadata;
+  resourceMetadata?: OAuthProtectedResourceMetadata;
+};
+
+const PRECONFIGURED_DISCOVERY_TIMEOUT_MS = 5_000;
 
 export class MCPOAuthHandler {
   private static readonly FLOW_TYPE = 'mcp_oauth';
@@ -141,24 +160,75 @@ export class MCPOAuthHandler {
     oauthHeaders: Record<string, string>,
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
-  ): Promise<{
-    metadata: OAuthMetadata;
-    resourceMetadata?: OAuthProtectedResourceMetadata;
-    authServerUrl: URL;
-  }> {
+    signal?: AbortSignal,
+  ): Promise<OAuthDiscoveryResult> {
     logger.debug(
       `[MCPOAuth] discoverMetadata called with serverUrl: ${sanitizeUrlForLogging(serverUrl)}`,
     );
-
-    let authServerUrl = new URL(serverUrl);
-    let resourceMetadata: OAuthProtectedResourceMetadata | undefined;
 
     const fetchFn = this.createOAuthFetch(
       oauthHeaders,
       undefined,
       allowedDomains,
       allowedAddresses,
+      signal,
     );
+
+    const resourceDiscovery = await this.discoverResourceMetadata(
+      serverUrl,
+      fetchFn,
+      allowedDomains,
+      allowedAddresses,
+    );
+    const resourceMetadata = resourceDiscovery.resourceMetadata;
+    const authServerUrl = resourceDiscovery.authServerUrl ?? new URL(serverUrl);
+    const metadata = await this.discoverAuthorizationMetadata(
+      authServerUrl,
+      fetchFn,
+      allowedDomains,
+      allowedAddresses,
+    );
+
+    if (metadata) {
+      return { metadata, resourceMetadata, authServerUrl };
+    }
+
+    /**
+     * No metadata discovered - create fallback metadata using default OAuth endpoint paths.
+     * This mirrors the MCP SDK's behavior where it falls back to /authorize, /token, /register
+     * when metadata discovery fails (e.g., servers without .well-known endpoints).
+     * See: https://github.com/modelcontextprotocol/sdk/blob/main/src/client/auth.ts
+     */
+    logger.warn(
+      `[MCPOAuth] No OAuth metadata discovered from ${sanitizeUrlForLogging(authServerUrl)}, using legacy fallback endpoints`,
+    );
+
+    const fallbackMetadata: OAuthMetadata = {
+      issuer: authServerUrl.toString(),
+      authorization_endpoint: new URL('/authorize', authServerUrl).toString(),
+      token_endpoint: new URL('/token', authServerUrl).toString(),
+      registration_endpoint: new URL('/register', authServerUrl).toString(),
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code', 'refresh_token'],
+      code_challenge_methods_supported: ['S256', 'plain'],
+      token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
+    };
+
+    logger.debug(`[MCPOAuth] Using fallback metadata:`, fallbackMetadata);
+    return {
+      metadata: fallbackMetadata,
+      resourceMetadata,
+      authServerUrl,
+    };
+  }
+
+  private static async discoverResourceMetadata(
+    serverUrl: string,
+    fetchFn: FetchLike,
+    allowedDomains?: string[] | null,
+    allowedAddresses?: string[] | null,
+  ): Promise<OAuthResourceDiscoveryResult> {
+    let resourceMetadata: OAuthProtectedResourceMetadata | undefined;
 
     /**
      * RFC 9728 §5.1: when the server's 401 `WWW-Authenticate` header advertises a
@@ -167,9 +237,9 @@ export class MCPOAuthHandler {
      * other way round — or a split deployment can serve stale/wrong metadata at the
      * path-aware endpoint and strand the flow at a defunct authorization server.
      *
-     * Reuse `fetchFn` so admin-configured `oauthHeaders` (e.g. a gateway API key
-     * required to reach the MCP endpoint at all) are attached to the probe — without
-     * them, the probe would 401 for the wrong reason and never see the real challenge.
+     * Reuse the caller's `fetchFn` so discovery shares its hardened transport and timeout.
+     * Auto-discovery callers may attach gateway headers, while pre-configured discovery
+     * deliberately uses a headerless fetch because these URLs are not trusted yet.
      */
     const hint = await probeResourceMetadataHint(serverUrl, fetchFn);
     /**
@@ -235,53 +305,32 @@ export class MCPOAuthHandler {
           allowedDomains,
           allowedAddresses,
         );
-        authServerUrl = new URL(discoveredAuthServer);
+        const authServerUrl = new URL(discoveredAuthServer);
         logger.debug(
           `[MCPOAuth] Found authorization server from resource metadata: ${authServerUrl}`,
         );
+        return { resourceMetadata, authServerUrl };
       } else {
         logger.debug(`[MCPOAuth] No authorization servers found in resource metadata`);
       }
     }
 
-    // Discover OAuth metadata
+    return { resourceMetadata };
+  }
+
+  private static async discoverAuthorizationMetadata(
+    authServerUrl: URL,
+    fetchFn: FetchLike,
+    allowedDomains?: string[] | null,
+    allowedAddresses?: string[] | null,
+  ): Promise<OAuthMetadata | undefined> {
     logger.debug(
       `[MCPOAuth] Discovering OAuth metadata from ${sanitizeUrlForLogging(authServerUrl)}`,
     );
     const rawMetadata = await this.discoverWithOriginFallback(authServerUrl, fetchFn);
 
     if (!rawMetadata) {
-      /**
-       * No metadata discovered - create fallback metadata using default OAuth endpoint paths.
-       * This mirrors the MCP SDK's behavior where it falls back to /authorize, /token, /register
-       * when metadata discovery fails (e.g., servers without .well-known endpoints).
-       * See: https://github.com/modelcontextprotocol/sdk/blob/main/src/client/auth.ts
-       */
-      logger.warn(
-        `[MCPOAuth] No OAuth metadata discovered from ${sanitizeUrlForLogging(authServerUrl)}, using legacy fallback endpoints`,
-      );
-
-      const fallbackMetadata: OAuthMetadata = {
-        issuer: authServerUrl.toString(),
-        authorization_endpoint: new URL('/authorize', authServerUrl).toString(),
-        token_endpoint: new URL('/token', authServerUrl).toString(),
-        registration_endpoint: new URL('/register', authServerUrl).toString(),
-        response_types_supported: ['code'],
-        grant_types_supported: ['authorization_code', 'refresh_token'],
-        code_challenge_methods_supported: ['S256', 'plain'],
-        token_endpoint_auth_methods_supported: [
-          'client_secret_basic',
-          'client_secret_post',
-          'none',
-        ],
-      };
-
-      logger.debug(`[MCPOAuth] Using fallback metadata:`, fallbackMetadata);
-      return {
-        metadata: fallbackMetadata,
-        resourceMetadata,
-        authServerUrl,
-      };
+      return undefined;
     }
 
     logger.debug(`[MCPOAuth] OAuth metadata discovered successfully`);
@@ -313,11 +362,72 @@ export class MCPOAuthHandler {
     }
 
     logger.debug(`[MCPOAuth] OAuth metadata parsed successfully`);
-    return {
-      metadata: metadata as unknown as OAuthMetadata,
-      resourceMetadata,
-      authServerUrl,
-    };
+    return metadata as unknown as OAuthMetadata;
+  }
+
+  private static discoverPreconfiguredMetadataWithTimeout(
+    serverUrl: string,
+    authorizationUrl: string,
+    discoverCapabilities: boolean,
+    allowedDomains?: string[] | null,
+    allowedAddresses?: string[] | null,
+  ): Promise<PreconfiguredOAuthDiscoveryResult> {
+    const controller = new AbortController();
+    let partialResult: PreconfiguredOAuthDiscoveryResult = {};
+
+    return new Promise<PreconfiguredOAuthDiscoveryResult>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        controller.abort();
+        logger.warn(
+          `[MCPOAuth] Pre-configured OAuth metadata discovery timed out after ${PRECONFIGURED_DISCOVERY_TIMEOUT_MS}ms; using available metadata and configured defaults.`,
+        );
+        resolve(partialResult);
+      }, PRECONFIGURED_DISCOVERY_TIMEOUT_MS);
+
+      const fetchFn = this.createOAuthFetch(
+        {},
+        undefined,
+        allowedDomains,
+        allowedAddresses,
+        controller.signal,
+      );
+
+      void this.discoverResourceMetadata(serverUrl, fetchFn, allowedDomains, allowedAddresses)
+        .then(async (resourceDiscovery) => {
+          partialResult = { resourceMetadata: resourceDiscovery.resourceMetadata };
+          if (!discoverCapabilities) {
+            return partialResult;
+          }
+
+          const authServerUrl =
+            resourceDiscovery.authServerUrl ?? new URL(new URL(authorizationUrl).origin);
+          try {
+            const metadata = await this.discoverAuthorizationMetadata(
+              authServerUrl,
+              fetchFn,
+              allowedDomains,
+              allowedAddresses,
+            );
+            return { ...partialResult, metadata };
+          } catch (error) {
+            logger.warn(
+              `[MCPOAuth] Authorization server metadata discovery failed for pre-configured client; using configured endpoints and defaults`,
+              { error },
+            );
+            return partialResult;
+          }
+        })
+        .then(
+          (result) => {
+            clearTimeout(timeout);
+            resolve(result);
+          },
+          (error) => {
+            clearTimeout(timeout);
+            reject(error);
+          },
+        );
+    });
   }
 
   /**
@@ -361,18 +471,120 @@ export class MCPOAuthHandler {
     );
   }
 
+  private static oauthUrlsMatch(left: string, right: string): boolean {
+    try {
+      return new URL(left).href === new URL(right).href;
+    } catch {
+      return false;
+    }
+  }
+
   public static buildStoredClientMetadata(
     metadata?: OAuthMetadata,
     resourceMetadata?: OAuthProtectedResourceMetadata,
+    serverUrl?: string,
+    clientSource?: OAuthClientSource,
   ): OAuthStoredClientMetadata | undefined {
-    if (!metadata) {
+    if (!metadata || !serverUrl || !clientSource) {
       return undefined;
     }
-    const storedMetadata: OAuthStoredClientMetadata = { ...metadata };
+    const storedMetadata: OAuthStoredClientMetadata = {
+      ...metadata,
+      server_url: new URL(serverUrl).href,
+      client_source: clientSource,
+    };
     if (resourceMetadata?.resource) {
       storedMetadata.resource = new URL(resourceMetadata.resource).href;
     }
     return storedMetadata;
+  }
+
+  /**
+   * Ensures stored tokens and client credentials are only reused with the MCP resource and
+   * configured-client provenance captured by the authorization flow that created them.
+   */
+  public static assertStoredClientBinding(
+    serverName: string,
+    serverUrl: string | undefined,
+    clientInfo: OAuthClientInformation | undefined,
+    storedMetadata: Partial<OAuthStoredClientMetadata> | undefined,
+    config?: MCPOptions['oauth'],
+  ): void {
+    const reauthenticate = (reason: string): never => {
+      throw new Error(
+        `[MCPOAuth] Stored OAuth binding for ${serverName} ${reason}; re-authentication is required.`,
+      );
+    };
+
+    if (!serverUrl || !clientInfo?.client_id || !storedMetadata) {
+      reauthenticate('is incomplete');
+    }
+    const currentServerUrl = serverUrl!;
+    const stored = storedMetadata!;
+    const client = clientInfo!;
+    if (
+      !stored.server_url ||
+      !stored.token_endpoint ||
+      (stored.client_source !== 'configured' && stored.client_source !== 'dynamic')
+    ) {
+      reauthenticate('is missing its server URL, token endpoint, or client provenance');
+    }
+    if (!this.oauthUrlsMatch(stored.server_url!, currentServerUrl)) {
+      reauthenticate('no longer matches the current MCP server URL');
+    }
+
+    if (stored.resource) {
+      this.assertResourceBoundToServer(stored.server_url!, {
+        resource: stored.resource,
+      });
+    }
+
+    if (stored.client_source === 'dynamic') {
+      if (config?.client_id) {
+        reauthenticate('was dynamically registered but the server now uses a configured client');
+      }
+      return;
+    }
+
+    if (
+      !config?.client_id ||
+      config.client_id !== client.client_id ||
+      config.client_secret !== client.client_secret
+    ) {
+      reauthenticate('no longer matches the current configured client');
+    }
+    const configured = config!;
+    if (
+      configured.token_url &&
+      !this.oauthUrlsMatch(stored.token_endpoint!, configured.token_url)
+    ) {
+      reauthenticate('no longer matches the current configured token endpoint');
+    }
+
+    const storedAuthMethod = client.client_secret
+      ? (resolveTokenEndpointAuthMethod({
+          tokenAuthMethods: stored.token_endpoint_auth_methods_supported ?? ['client_secret_basic'],
+          preferredMethod: client.token_endpoint_auth_method,
+        }) ?? 'client_secret_basic')
+      : 'none';
+    const hasConfiguredAuthPolicy =
+      configured.token_exchange_method !== undefined ||
+      configured.token_endpoint_auth_methods_supported !== undefined;
+    let configuredAuthMethod: ReturnType<typeof inferClientAuthMethod> = client.client_secret
+      ? storedAuthMethod
+      : 'none';
+    if (client.client_secret && hasConfiguredAuthPolicy) {
+      configuredAuthMethod =
+        resolveTokenEndpointAuthMethod({
+          tokenExchangeMethod: configured.token_exchange_method,
+          tokenAuthMethods: configured.token_endpoint_auth_methods_supported ?? [
+            'client_secret_basic',
+          ],
+        }) ?? 'client_secret_basic';
+    }
+    if (storedAuthMethod !== configuredAuthMethod) {
+      reauthenticate('no longer matches the current configured token authentication method');
+    }
   }
 
   private static appendResourceParameter(body: URLSearchParams, resource?: string): void {
@@ -530,6 +742,60 @@ export class MCPOAuthHandler {
           this.validateOAuthUrl(config.token_url, 'token_url', allowedDomains, allowedAddresses),
         ]);
 
+        let discoveredMetadata: OAuthMetadata | undefined;
+        let resourceMetadata: OAuthProtectedResourceMetadata | undefined;
+        const shouldDiscoverCapabilities =
+          !!config.client_secret &&
+          config.token_exchange_method === undefined &&
+          config.token_endpoint_auth_methods_supported === undefined;
+
+        try {
+          const discovery = await this.discoverPreconfiguredMetadataWithTimeout(
+            serverUrl,
+            config.authorization_url,
+            shouldDiscoverCapabilities,
+            allowedDomains,
+            allowedAddresses,
+          );
+          resourceMetadata = discovery.resourceMetadata;
+
+          if (shouldDiscoverCapabilities && discovery.metadata) {
+            const discoveredTokenEndpoint = discovery.metadata.token_endpoint;
+            const configuredTokenEndpoint = new URL(config.token_url).href;
+
+            /**
+             * Pre-registered credentials are bound to the configured token endpoint. Metadata
+             * discovery may supply capabilities for that endpoint, but must never redirect the
+             * client secret to a different endpoint.
+             */
+            if (
+              discoveredTokenEndpoint &&
+              new URL(discoveredTokenEndpoint).href === configuredTokenEndpoint
+            ) {
+              discoveredMetadata = discovery.metadata;
+              logger.debug(
+                `[MCPOAuth] Using discovered OAuth capabilities with pre-configured endpoints for ${serverName}`,
+              );
+            } else {
+              logger.warn(
+                `[MCPOAuth] Ignoring discovered OAuth capabilities for ${serverName} because the token endpoint does not match the configured endpoint`,
+                {
+                  configuredTokenEndpoint: sanitizeUrlForLogging(configuredTokenEndpoint),
+                  discoveredTokenEndpoint: discoveredTokenEndpoint
+                    ? sanitizeUrlForLogging(discoveredTokenEndpoint)
+                    : undefined,
+                },
+              );
+            }
+          }
+        } catch (error) {
+          /** Preserve compatibility with OAuth providers that do not publish metadata. */
+          logger.warn(
+            `[MCPOAuth] OAuth metadata discovery failed for pre-configured client ${serverName}; using configured endpoints and defaults`,
+            { error },
+          );
+        }
+
         const skipCodeChallengeCheck =
           config?.skip_code_challenge_check === true ||
           process.env.MCP_SKIP_CODE_CHALLENGE_CHECK === 'true';
@@ -543,7 +809,10 @@ export class MCPOAuthHandler {
             `[MCPOAuth] Code challenge check skip enabled, forcing S256 support for ${serverName}`,
           );
         } else {
-          codeChallengeMethodsSupported = ['S256', 'plain'];
+          codeChallengeMethodsSupported = discoveredMetadata?.code_challenge_methods_supported ?? [
+            'S256',
+            'plain',
+          ];
         }
 
         /** Metadata based on pre-configured settings */
@@ -551,10 +820,14 @@ export class MCPOAuthHandler {
         if (!config.client_secret) {
           tokenEndpointAuthMethod = 'none';
         } else {
-          // When token_exchange_method is undefined or not DefaultPost, default to using
-          // client_secret_basic (Basic Auth header) for token endpoint authentication.
           tokenEndpointAuthMethod =
-            getForcedTokenEndpointAuthMethod(config.token_exchange_method) ?? 'client_secret_basic';
+            resolveTokenEndpointAuthMethod({
+              tokenExchangeMethod: config.token_exchange_method,
+              tokenAuthMethods:
+                config.token_endpoint_auth_methods_supported ??
+                discoveredMetadata?.token_endpoint_auth_methods_supported ??
+                [],
+            }) ?? 'client_secret_basic';
         }
 
         let defaultTokenAuthMethods: string[];
@@ -569,16 +842,22 @@ export class MCPOAuthHandler {
         const metadata: OAuthMetadata = {
           authorization_endpoint: config.authorization_url,
           token_endpoint: config.token_url,
-          issuer: serverUrl,
-          scopes_supported: config.scope?.split(' ') ?? [],
-          grant_types_supported: config?.grant_types_supported ?? [
-            'authorization_code',
-            'refresh_token',
-          ],
+          issuer: discoveredMetadata?.issuer ?? serverUrl,
+          scopes_supported: config.scope?.split(' ') ?? discoveredMetadata?.scopes_supported ?? [],
+          grant_types_supported: config?.grant_types_supported ??
+            discoveredMetadata?.grant_types_supported ?? ['authorization_code', 'refresh_token'],
           token_endpoint_auth_methods_supported:
-            config?.token_endpoint_auth_methods_supported ?? defaultTokenAuthMethods,
-          response_types_supported: config?.response_types_supported ?? ['code'],
+            config?.token_endpoint_auth_methods_supported ??
+            discoveredMetadata?.token_endpoint_auth_methods_supported ??
+            defaultTokenAuthMethods,
+          response_types_supported: config?.response_types_supported ??
+            discoveredMetadata?.response_types_supported ?? ['code'],
           code_challenge_methods_supported: codeChallengeMethodsSupported,
+          revocation_endpoint:
+            config.revocation_endpoint ?? discoveredMetadata?.revocation_endpoint,
+          revocation_endpoint_auth_methods_supported:
+            config.revocation_endpoint_auth_methods_supported ??
+            discoveredMetadata?.revocation_endpoint_auth_methods_supported,
         };
         logger.debug(`[MCPOAuth] metadata for "${serverName}": ${JSON.stringify(metadata)}`);
         const redirectUri = this.getDefaultRedirectUri(serverName);
@@ -602,6 +881,14 @@ export class MCPOAuthHandler {
         authorizationUrl.searchParams.set('state', state);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
+        if (resourceMetadata?.resource) {
+          const canonicalResource = new URL(resourceMetadata.resource).href;
+          authorizationUrl.searchParams.set('resource', canonicalResource);
+          logger.debug(
+            `[MCPOAuth] Added resource parameter to pre-configured authorization URL: ${canonicalResource}`,
+          );
+        }
+
         /**
          * Auth0/Cognito-style `audience` parameter. Forwarded as-is; the provider
          * decides whether it accepts RFC 8707 `resource`, the legacy `audience`,
@@ -619,7 +906,9 @@ export class MCPOAuthHandler {
           state,
           codeVerifier,
           clientInfo,
+          clientSource: 'configured',
           metadata,
+          resourceMetadata,
           ...(allowedDomains !== undefined && { allowedDomains }),
           ...(allowedAddresses !== undefined && { allowedAddresses }),
           ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
@@ -655,6 +944,8 @@ export class MCPOAuthHandler {
 
       let clientInfo: OAuthClientInformation | undefined;
       let reusedStoredClient = false;
+      let reusedClientCredentialSetId: string | undefined;
+      let clientSource: OAuthClientSource = config?.client_id ? 'configured' : 'dynamic';
 
       if (config?.client_id) {
         logger.debug(`[MCPOAuth] Using predefined public client_id for ${serverName}`);
@@ -680,6 +971,13 @@ export class MCPOAuthHandler {
                 ? existing.clientMetadata.issuer.replace(/\/+$/, '')
                 : null;
             const currentIssuer = (metadata.issuer ?? authServerUrl.toString()).replace(/\/+$/, '');
+            const storedServerUrl = existing.clientMetadata?.server_url;
+            const storedTokenEndpoint = existing.clientMetadata?.token_endpoint;
+            const storedResource = existing.clientMetadata?.resource;
+            const storedCredentialSetId = existing.clientMetadata?.credential_set_id;
+            const currentResource = resourceMetadata?.resource
+              ? new URL(resourceMetadata.resource).href
+              : undefined;
 
             if (!storedRedirectUri || storedRedirectUri !== redirectUri) {
               logger.debug(
@@ -689,12 +987,27 @@ export class MCPOAuthHandler {
               logger.debug(
                 `[MCPOAuth] Issuer mismatch (stored: ${storedIssuer ?? 'none'}, current: ${currentIssuer}), will re-register`,
               );
+            } else if (
+              existing.clientMetadata?.client_source !== 'dynamic' ||
+              typeof storedCredentialSetId !== 'string' ||
+              storedCredentialSetId.length === 0 ||
+              typeof storedServerUrl !== 'string' ||
+              !this.oauthUrlsMatch(storedServerUrl, serverUrl) ||
+              typeof storedTokenEndpoint !== 'string' ||
+              !this.oauthUrlsMatch(storedTokenEndpoint, metadata.token_endpoint) ||
+              storedResource !== currentResource
+            ) {
+              logger.debug(
+                `[MCPOAuth] Stored client registration binding does not match the current MCP resource, will re-register`,
+              );
             } else {
               logger.debug(
                 `[MCPOAuth] Reusing existing client registration: ${existing.clientInfo.client_id}`,
               );
               clientInfo = existing.clientInfo;
               reusedStoredClient = true;
+              reusedClientCredentialSetId = storedCredentialSetId;
+              clientSource = 'dynamic';
             }
           }
         } catch (error) {
@@ -799,12 +1112,14 @@ export class MCPOAuthHandler {
         state,
         codeVerifier,
         clientInfo,
+        clientSource,
         metadata,
         resourceMetadata,
         ...(allowedDomains !== undefined && { allowedDomains }),
         ...(allowedAddresses !== undefined && { allowedAddresses }),
         ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
         ...(reusedStoredClient && { reusedStoredClient }),
+        ...(reusedClientCredentialSetId && { reusedClientCredentialSetId }),
         ...(tenantId && { tenantId }),
       };
 
@@ -841,6 +1156,7 @@ export class MCPOAuthHandler {
     authorizationCode: string,
     flowManager: FlowStateManager<MCPOAuthTokens>,
     oauthHeaders: Record<string, string>,
+    persistBeforeComplete?: (tokens: MCPOAuthTokens) => Promise<MCPOAuthTokens>,
   ): Promise<MCPOAuthTokens> {
     try {
       /** Flow state which contains our metadata */
@@ -899,13 +1215,22 @@ export class MCPOAuthHandler {
         scope: tokens.scope,
       });
 
-      const mcpTokens: MCPOAuthTokens = {
+      let mcpTokens: MCPOAuthTokens = {
         ...tokens,
+        credential_set_id: randomBytes(16).toString('hex'),
         obtained_at: Date.now(),
         expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
       };
 
-      /** Now complete the flow with the tokens */
+      /**
+       * Persist before completing the flow so waiting connection factories cannot race the
+       * callback route to write the same credential generation.
+       */
+      if (persistBeforeComplete) {
+        mcpTokens = await persistBeforeComplete(mcpTokens);
+      }
+
+      /** Now wake flow waiters with the persisted token snapshot. */
       await flowManager.completeFlow(flowId, this.FLOW_TYPE, mcpTokens);
 
       return mcpTokens;
@@ -1110,12 +1435,51 @@ export class MCPOAuthHandler {
   /**
    * Deletes an orphaned state mapping when a flow is replaced.
    * Prevents old authorization URLs from resolving after a flow restart.
+   * Returns `false` when the underlying store rejected the delete.
    */
   static async deleteStateMapping(
     state: string,
     flowManager: FlowStateManager<MCPOAuthTokens | null>,
+  ): Promise<boolean> {
+    return flowManager.deleteFlow(state, this.STATE_MAP_TYPE);
+  }
+
+  /**
+   * Deletes an OAuth flow together with its state mapping, for teardown paths
+   * that don't already hold the flow (e.g. server uninstall). The flow is
+   * deleted first on purpose: it is what makes a provider callback
+   * completable, and teardown runs after the server's tokens were removed, so
+   * a surviving callback-capable flow could recreate credentials the user
+   * just revoked. A failure between the two deletes leaves at worst an
+   * orphaned mapping, which the callback's stored-state equality gates reduce
+   * to a clean invalid_state. Both deletes are attempted regardless of the
+   * other's outcome; any reported storage failure is surfaced as a rejection
+   * for the caller's best-effort logging.
+   */
+  static async deleteFlowAndStateMapping(
+    flowId: string,
+    flowManager: FlowStateManager<MCPOAuthTokens | null>,
   ): Promise<void> {
-    await flowManager.deleteFlow(state, this.STATE_MAP_TYPE);
+    /** A failed metadata read must not abort teardown: the flow is deleted
+     *  blindly and the unidentifiable mapping is left to the callback gates */
+    let state: string | null = null;
+    let metadataReadFailed = false;
+    try {
+      const flowState = await flowManager.getFlowState(flowId, this.FLOW_TYPE);
+      const metadata = flowState?.metadata as MCPOAuthFlowMetadata | undefined;
+      state = typeof metadata?.state === 'string' ? metadata.state : null;
+    } catch {
+      metadataReadFailed = true;
+    }
+
+    const flowDeleted = await flowManager.deleteFlow(flowId, this.FLOW_TYPE);
+    const mappingDeleted = state ? await this.deleteStateMapping(state, flowManager) : true;
+
+    if (metadataReadFailed || !flowDeleted || !mappingDeleted) {
+      throw new Error(
+        `Failed to fully delete OAuth flow ${flowId} (metadata read ok: ${!metadataReadFailed}, flow deleted: ${flowDeleted}, state mapping deleted: ${mappingDeleted})`,
+      );
+    }
   }
 
   /**
@@ -1234,6 +1598,8 @@ export class MCPOAuthHandler {
       clientInfo?: OAuthClientInformation;
       storedTokenEndpoint?: string;
       storedAuthMethods?: string[];
+      storedServerUrl?: string;
+      clientSource?: OAuthClientSource;
       resource?: string;
     },
     oauthHeaders: Record<string, string>,
@@ -1265,7 +1631,61 @@ export class MCPOAuthHandler {
 
         let tokenUrl: string;
         let authMethods: string[] | undefined;
-        if (config?.token_url) {
+        const hasStoredClientSecret = !!metadata.clientInfo.client_secret;
+        const hasStoredBinding =
+          metadata.storedServerUrl !== undefined || metadata.clientSource !== undefined;
+        if (hasStoredBinding) {
+          this.assertStoredClientBinding(
+            metadata.serverName,
+            metadata.serverUrl,
+            metadata.clientInfo,
+            {
+              token_endpoint: metadata.storedTokenEndpoint ?? '',
+              token_endpoint_auth_methods_supported: metadata.storedAuthMethods,
+              server_url: metadata.storedServerUrl ?? '',
+              client_source: metadata.clientSource,
+              resource: metadata.resource,
+            },
+            config,
+          );
+          await this.validateOAuthUrl(
+            metadata.storedTokenEndpoint!,
+            'token_url',
+            allowedDomains,
+            allowedAddresses,
+          );
+          tokenUrl = metadata.storedTokenEndpoint!;
+          authMethods = metadata.storedAuthMethods;
+        } else if (metadata.storedTokenEndpoint) {
+          /**
+           * Keep direct, non-storage callers compatible while still pinning every supplied
+           * token endpoint. MCPTokenStorage requires the full binding before invoking this path.
+           */
+          if (
+            hasStoredClientSecret &&
+            config?.client_id &&
+            (metadata.clientInfo.client_id !== config.client_id ||
+              metadata.clientInfo.client_secret !== config.client_secret ||
+              (config.token_url &&
+                !this.oauthUrlsMatch(metadata.storedTokenEndpoint, config.token_url)))
+          ) {
+            throw new Error(
+              '[MCPOAuth] Stored OAuth client binding no longer matches current OAuth client configuration; re-authentication is required.',
+            );
+          }
+          await this.validateOAuthUrl(
+            metadata.storedTokenEndpoint,
+            'token_url',
+            allowedDomains,
+            allowedAddresses,
+          );
+          tokenUrl = metadata.storedTokenEndpoint;
+          authMethods = metadata.storedAuthMethods;
+        } else if (hasStoredClientSecret) {
+          throw new Error(
+            '[MCPOAuth] Stored OAuth client_secret is missing its bound token endpoint; re-authentication is required.',
+          );
+        } else if (config?.token_url) {
           await this.validateOAuthUrl(
             config.token_url,
             'token_url',
@@ -1361,7 +1781,7 @@ export class MCPOAuthHandler {
           /** Default to client_secret_basic if no methods specified (per RFC 8414) */
           const tokenAuthMethods = authMethods ?? ['client_secret_basic'];
           const authMethod = resolveTokenEndpointAuthMethod({
-            tokenExchangeMethod: config?.token_exchange_method,
+            tokenExchangeMethod: hasStoredClientSecret ? undefined : config?.token_exchange_method,
             tokenAuthMethods,
             preferredMethod: metadata.clientInfo.token_endpoint_auth_method,
           });

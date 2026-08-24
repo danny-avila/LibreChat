@@ -1,33 +1,49 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import type { RunConfig } from '@librechat/agents';
+import {
+  hasLangfuseEnvCredentials,
+  isLangfuseCentralMediaUploadDisabled,
+  isLangfuseFanoutEnabled,
+  isLangfuseTenantExportEnabled,
+  isLangfuseTraceSampled,
+  isLangfuseTracingEnabled,
+  usesLangfuseMultiTenantRouting,
+} from './policy';
+import { normalizeBoolean, resolveLangfuseHeaders, resolveTenantCredentials } from './utils';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
-import { isTrueEnv, normalizeBoolean } from './utils';
+import { scopeHeadersToDestination } from './destinations';
 import { normalizeString } from '~/utils/text';
+import { traceIdForMessage } from './trace';
 
 type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
-type LangfuseAppConfig = NonNullable<AppConfig['langfuse']>;
-export type LangfuseFanoutConfig = LangfuseAppConfig['fanout'] & {
-  collectorUrl?: string;
-};
 type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
   librechatTraceAttributes?: Record<string, string | number | boolean | null | undefined>;
+  mediaUploadEnabled?: boolean;
+  additionalHeaders?: Record<string, string>;
 };
+type LangfuseTenantDestination = NonNullable<ReturnType<typeof resolveLangfuseTenantDestination>>;
+type LangfuseExportPlan =
+  | { type: 'directCentral' }
+  | { type: 'disabled' }
+  | { type: 'fanoutCollector'; collectorUrl: string }
+  | {
+      type: 'tenantFanout';
+      collectorUrl: string;
+      destination: LangfuseTenantDestination;
+      publicKey: string;
+      secretKey: string;
+    };
 const TENANT_EXPORT_ATTRIBUTE = 'librechat.langfuse.tenant_export.enabled';
 const TENANT_DESTINATION_ATTRIBUTE = 'librechat.langfuse.destination';
+const CENTRAL_EXPORT_ATTRIBUTE = 'librechat.langfuse.central_export.enabled';
+const CENTRAL_MEDIA_DISABLED_SEGMENT = 'central-media-disabled';
 const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
 
 function appendPath(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/, '')}${path}`;
 }
 
-export function isLangfuseTenantExportEnabled(): boolean {
-  return !isTrueEnv(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED);
-}
-
-export function isLangfuseFanoutEnabled(fanout?: LangfuseFanoutConfig): boolean {
-  const enabled = normalizeBoolean(fanout?.enabled);
-  return enabled !== false && (enabled === true || isTrueEnv(process.env.LANGFUSE_FANOUT_ENABLED));
-}
+export { isLangfuseFanoutEnabled, isLangfuseTenantExportEnabled } from './policy';
 
 function mergeTraceMetadata(
   base: LangfuseRunConfig['metadata'],
@@ -63,12 +79,93 @@ function applyCentralEnvConfig(langfuse: LangfuseRunConfigWithTraceAttributes): 
   }
 }
 
+/**
+ * Attaches the deployment's headers only once the export branch has settled on
+ * a `baseUrl`, and only when that origin is one the operator configured.
+ *
+ * A run resolves to a single destination, but which one depends on the branch —
+ * attaching earlier would send a gateway credential to whatever endpoint the
+ * config happened to fall through to, including Langfuse Cloud.
+ */
+function applyCustomHeaders(
+  langfuse: LangfuseRunConfigWithTraceAttributes,
+  additionalHeaders?: Record<string, string>,
+): LangfuseRunConfigWithTraceAttributes {
+  if (langfuse.enabled === false || langfuse.baseUrl == null) {
+    return langfuse;
+  }
+  const scoped = scopeHeadersToDestination(additionalHeaders, langfuse.baseUrl);
+  if (scoped) {
+    langfuse.additionalHeaders = scoped;
+  }
+  return langfuse;
+}
+
+function disableCentralExport(langfuse: LangfuseRunConfigWithTraceAttributes): void {
+  langfuse.librechatTraceAttributes = {
+    ...(langfuse.librechatTraceAttributes ?? {}),
+    [CENTRAL_EXPORT_ATTRIBUTE]: 'false',
+  };
+}
+
+function resolveLangfuseExportPlan({
+  centralTraceExportEnabled,
+  fanoutEnabled,
+  fanoutCollectorUrl,
+  tenantExportEnabled,
+  publicKey,
+  secretKey,
+  tenantDestination,
+}: {
+  centralTraceExportEnabled: boolean;
+  fanoutEnabled: boolean;
+  fanoutCollectorUrl?: string;
+  tenantExportEnabled: boolean;
+  publicKey?: string;
+  secretKey?: string;
+  tenantDestination?: LangfuseTenantDestination;
+}): LangfuseExportPlan {
+  if (!fanoutEnabled || fanoutCollectorUrl == null) {
+    return centralTraceExportEnabled ? { type: 'directCentral' } : { type: 'disabled' };
+  }
+
+  const canRouteTenantFanout =
+    tenantExportEnabled && publicKey != null && secretKey != null && tenantDestination != null;
+
+  if (canRouteTenantFanout) {
+    return {
+      type: 'tenantFanout',
+      collectorUrl: fanoutCollectorUrl,
+      destination: tenantDestination,
+      publicKey,
+      secretKey,
+    };
+  }
+
+  // Direct central export can use the collector normally. Central-suppressed
+  // runs only reach the collector through a concrete tenant fanout route.
+  if (centralTraceExportEnabled) {
+    return { type: 'fanoutCollector', collectorUrl: fanoutCollectorUrl };
+  }
+
+  return { type: 'disabled' };
+}
+
 export function buildLangfuseConfig({
   appConfig,
+  runId,
   tenantId,
+  centralTraceExportEnabled = true,
 }: {
   appConfig?: AppConfig;
+  runId?: string;
   tenantId?: string;
+  /**
+   * Defaults to true. Set false to suppress central Langfuse export for this
+   * run. Fanout deployments stamp a routing attribute that the collector uses
+   * to drop the central pipeline while preserving tenant fanout when available.
+   */
+  centralTraceExportEnabled?: boolean;
 } = {}): LangfuseRunConfig {
   const normalizedTenantId = normalizeString(tenantId);
   const config = appConfig?.langfuse;
@@ -85,51 +182,91 @@ export function buildLangfuseConfig({
     langfuse.tags = tags;
   }
 
-  if (normalizeBoolean(config?.enabled) === false) {
-    return {
-      ...langfuse,
-      enabled: false,
-    };
+  if (
+    !isLangfuseTracingEnabled() ||
+    (runId != null && !isLangfuseTraceSampled(traceIdForMessage(runId)))
+  ) {
+    langfuse.enabled = false;
+    return langfuse;
   }
 
-  const publicKey = normalizeString(config?.publicKey);
-  const secretKey = normalizeString(config?.secretKey);
-  const hasTenantCredentials = Boolean(publicKey && secretKey);
-  const fanout = config?.fanout as LangfuseFanoutConfig | undefined;
-  const fanoutEnabled = isLangfuseFanoutEnabled(fanout);
-  const fanoutCollectorUrl =
-    normalizeString(fanout?.collectorUrl) ??
-    normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
-  const tenantDestination = resolveLangfuseTenantDestination(config?.baseUrl);
-  const tenantExportDestination = hasTenantCredentials ? tenantDestination : undefined;
-  const tenantExportCollectorUrl = fanoutCollectorUrl;
-  const tenantExportEnabled =
-    hasTenantCredentials &&
-    fanoutEnabled &&
-    isLangfuseTenantExportEnabled() &&
-    tenantExportDestination != null &&
-    tenantExportCollectorUrl != null;
+  const additionalHeaders = resolveLangfuseHeaders(config?.headers);
 
-  if (tenantExportEnabled && tenantExportDestination && tenantExportCollectorUrl) {
-    langfuse.publicKey = publicKey;
-    langfuse.secretKey = secretKey;
-    langfuse.baseUrl = appendPath(
-      tenantExportCollectorUrl,
-      `/tenant/${tenantExportDestination.key}`,
-    );
-    // TODO: Add support in @librechat/agents for Langfuse additionalHeaders and
-    // route by headers if we need multiple tenant Langfuse exports for one run.
-    // The destination-scoped URL is the current app-to-gateway routing contract.
-    langfuse.librechatTraceAttributes = {
-      ...(langfuse.librechatTraceAttributes ?? {}),
-      [TENANT_EXPORT_ATTRIBUTE]: 'true',
-      [TENANT_DESTINATION_ATTRIBUTE]: tenantExportDestination.key,
-    };
-  } else if (fanoutEnabled && fanoutCollectorUrl) {
-    langfuse.baseUrl = fanoutCollectorUrl;
-  } else {
-    applyCentralEnvConfig(langfuse);
+  const tenantLangfuseEnabled = normalizeBoolean(config?.enabled) === true;
+  if (!centralTraceExportEnabled) {
+    disableCentralExport(langfuse);
   }
 
-  return langfuse;
+  const tenantCredentials = resolveTenantCredentials(config);
+  const hasTenantCredentials = Boolean(tenantCredentials);
+  const fanoutEnabled = isLangfuseFanoutEnabled();
+  const fanoutCollectorUrl = normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
+  const tenantDestination = resolveLangfuseTenantDestination(config?.destination);
+  const tenantExportEmergencyEnabled = isLangfuseTenantExportEnabled();
+
+  if (!usesLangfuseMultiTenantRouting()) {
+    if (!centralTraceExportEnabled) {
+      langfuse.enabled = false;
+    } else if (hasLangfuseEnvCredentials()) {
+      applyCentralEnvConfig(langfuse);
+    } else if (tenantLangfuseEnabled && tenantCredentials != null && tenantDestination != null) {
+      langfuse.publicKey = tenantCredentials.publicKey;
+      langfuse.secretKey = tenantCredentials.secretKey;
+      langfuse.baseUrl = tenantDestination.baseUrl;
+    } else if (config != null) {
+      langfuse.enabled = false;
+    }
+    return applyCustomHeaders(langfuse, additionalHeaders);
+  }
+
+  const exportPlan = resolveLangfuseExportPlan({
+    centralTraceExportEnabled,
+    fanoutEnabled,
+    fanoutCollectorUrl,
+    tenantExportEnabled:
+      tenantLangfuseEnabled && hasTenantCredentials && tenantExportEmergencyEnabled,
+    publicKey: tenantCredentials?.publicKey,
+    secretKey: tenantCredentials?.secretKey,
+    tenantDestination,
+  });
+
+  switch (exportPlan.type) {
+    case 'tenantFanout':
+      langfuse.publicKey = exportPlan.publicKey;
+      langfuse.secretKey = exportPlan.secretKey;
+      langfuse.baseUrl = appendPath(
+        exportPlan.collectorUrl,
+        [
+          '',
+          'tenant',
+          exportPlan.destination.key,
+          ...(!centralTraceExportEnabled ? [CENTRAL_MEDIA_DISABLED_SEGMENT] : []),
+        ].join('/'),
+      );
+      // Fanout routing stays destination-scoped by URL. `additionalHeaders` is
+      // now available (and carries the deployment's proxy headers), but routing
+      // multiple tenant Langfuse exports for one run by header would need the
+      // collector to demultiplex them — the URL remains the app-to-gateway
+      // routing contract until that is required.
+      langfuse.librechatTraceAttributes = {
+        ...(langfuse.librechatTraceAttributes ?? {}),
+        [TENANT_EXPORT_ATTRIBUTE]: 'true',
+        [TENANT_DESTINATION_ATTRIBUTE]: exportPlan.destination.key,
+      };
+      break;
+    case 'fanoutCollector':
+      langfuse.baseUrl = exportPlan.collectorUrl;
+      if (isLangfuseCentralMediaUploadDisabled()) {
+        langfuse.mediaUploadEnabled = false;
+      }
+      break;
+    case 'disabled':
+      langfuse.enabled = false;
+      break;
+    case 'directCentral':
+      applyCentralEnvConfig(langfuse);
+      break;
+  }
+
+  return applyCustomHeaders(langfuse, additionalHeaders);
 }

@@ -2,7 +2,13 @@ const validatePasswordReset = require('./validatePasswordReset');
 const setTwoFactorTempUser = require('./setTwoFactorTempUser');
 const validateRegistration = require('./validateRegistration');
 const buildEndpointOption = require('./buildEndpointOption');
+const validateEmailLogin = require('./validateEmailLogin');
 const validateMessageReq = require('./validateMessageReq');
+const {
+  canReadActiveJobConversation,
+  prepareMessageRequestValidation,
+  sendValidationResponse,
+} = require('./messageValidation');
 const checkDomainAllowed = require('./checkDomainAllowed');
 const requireLocalAuth = require('./requireLocalAuth');
 const canDeleteAccount = require('./canDeleteAccount');
@@ -47,7 +53,11 @@ module.exports = {
   configMiddleware,
   checkDomainAllowed,
   validateMessageReq,
+  canReadActiveJobConversation,
+  sendValidationResponse,
+  prepareMessageRequestValidation,
   buildEndpointOption,
   validateRegistration,
   validatePasswordReset,
+  validateEmailLogin,
 };

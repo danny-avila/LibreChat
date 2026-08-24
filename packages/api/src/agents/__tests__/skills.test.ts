@@ -33,6 +33,7 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Types } from 'mongoose';
+import { logger } from '@librechat/data-schemas';
 import { HumanMessage, AIMessage } from '@librechat/agents/langchain/messages';
 import {
   scopeSkillIds,
@@ -45,6 +46,7 @@ import {
   resolveAlwaysApplySkills,
   injectManualSkillPrimes,
   injectSkillPrimes,
+  selectSkillPrimesForTurn,
   collectFreshSkillPrimeNames,
   extractManualSkills,
   isSkillPrimeMessage,
@@ -897,6 +899,38 @@ describe('injectSkillCatalog', () => {
     expect(agent.additional_instructions).toContain('desc-my-skill');
   });
 
+  it('warns when a skill description exceeds the catalog entry cap', async () => {
+    const { logger } = await import('@librechat/data-schemas');
+    const warnSpy = jest.spyOn(logger, 'warn');
+    const longDesc = 'x'.repeat(400);
+    const longSkill: PageSkill = {
+      ...makeSkill('long-skill', userObjectId),
+      description: longDesc,
+    };
+    const shortSkill = makeSkill('short-skill', userObjectId);
+    const listSkillsByAccess = buildPager([[longSkill, shortSkill]]);
+    const agent = makeAgent();
+    await injectSkillCatalog(baseParams({ listSkillsByAccess, agent }));
+
+    const truncWarns = warnSpy.mock.calls
+      .map((call) => String(call[0]))
+      .filter((msg) => msg.includes('truncated to'));
+    expect(truncWarns).toHaveLength(1);
+    expect(truncWarns[0]).toContain('"long-skill"');
+    expect(truncWarns[0]).toContain('was 400');
+    /* Short description is not flagged. */
+    expect(
+      warnSpy.mock.calls
+        .map((call) => String(call[0]))
+        .filter((msg) => msg.includes('"short-skill"') && msg.includes('truncated')),
+    ).toHaveLength(0);
+
+    /* The catalog still reaches the model — the warning is additive. */
+    expect(agent.additional_instructions).toContain('long-skill');
+    expect(agent.additional_instructions).toContain('short-skill');
+    warnSpy.mockRestore();
+  });
+
   it('honors a configured maxCatalogSkills below the default hard limit', async () => {
     const first = makeSkill('first-skill', userObjectId);
     const second = makeSkill('second-skill', userObjectId);
@@ -1267,6 +1301,25 @@ describe('resolveManualSkills', () => {
       userId,
     });
     expect(result).toEqual([{ _id: real._id, name: 'real', body: 'body of real' }]);
+  });
+
+  it('does not log a raw submitted name when the requested skill cannot be resolved', async () => {
+    const submittedName = 'PRIVATE-SKILL-NAME';
+    const warn = jest.spyOn(logger, 'warn');
+
+    const result = await resolveManualSkills({
+      names: [submittedName],
+      getSkillByName: buildGetSkillByName({}),
+      accessibleSkillIds: [new Types.ObjectId()],
+      userId,
+    });
+
+    expect(result).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(
+      '[resolveManualSkills] Requested skill not found or not accessible',
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(submittedName);
+    warn.mockRestore();
   });
 
   it('silently skips skills with userInvocable: false, preserving the rest of the batch', async () => {
@@ -2090,6 +2143,23 @@ describe('resolveAlwaysApplySkills', () => {
 describe('injectSkillPrimes', () => {
   const manual = (name: string, body: string) => ({ name, body });
   const always = (name: string, body: string) => ({ name, body });
+
+  it('selects the shared model-bound prime set before downstream consumers run', () => {
+    const selected = selectSkillPrimesForTurn({
+      manualSkillPrimes: [manual('shared', 'manual'), manual('explicit', 'explicit')],
+      alwaysApplySkillPrimes: [
+        always('shared', 'discarded'),
+        always('ambient-1', 'ambient-1'),
+        always('ambient-2', 'ambient-2'),
+      ],
+      maxPrimesPerTurn: 3,
+    });
+
+    expect(selected.manualSkillPrimes.map(({ name }) => name)).toEqual(['shared', 'explicit']);
+    expect(selected.alwaysApplySkillPrimes.map(({ name }) => name)).toEqual(['ambient-1']);
+    expect(selected.alwaysApplyDedupedFromManual).toBe(1);
+    expect(selected.alwaysApplyDropped).toBe(1);
+  });
 
   it('splices both lists with always-apply first, manual last (closer to user msg)', () => {
     const userMsg = new HumanMessage('what next?');

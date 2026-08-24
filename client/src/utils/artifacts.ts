@@ -6,6 +6,7 @@ import type {
 } from '@codesandbox/sandpack-react';
 import type { TStartupConfig, TAttachment, TFile } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
+import { MERMAID_ARTIFACT_TYPE } from '~/common/artifacts';
 
 const artifactFilename = {
   'application/vnd.react': 'App.tsx',
@@ -284,7 +285,7 @@ export const TOOL_ARTIFACT_TYPES = {
   HTML: 'text/html',
   REACT: 'application/vnd.react',
   MARKDOWN: 'text/markdown',
-  MERMAID: 'application/vnd.mermaid',
+  MERMAID: MERMAID_ARTIFACT_TYPE,
   PLAIN_TEXT: 'text/plain',
   CODE: 'application/vnd.code',
   /* Office-format rich previews. The backend renders the binary file as a
@@ -589,6 +590,7 @@ const EXTENSION_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
   xls: TOOL_ARTIFACT_TYPES.SPREADSHEET,
   ods: TOOL_ARTIFACT_TYPES.SPREADSHEET,
   pptx: TOOL_ARTIFACT_TYPES.PRESENTATION,
+  potx: TOOL_ARTIFACT_TYPES.PRESENTATION,
 };
 
 /* Append every entry in `CODE_EXTENSION_TO_LANGUAGE` to the routing map
@@ -665,6 +667,8 @@ const MIME_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
    * backend has already produced full HTML for it. */
   'text/comma-separated-values': TOOL_ARTIFACT_TYPES.SPREADSHEET,
   'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+    TOOL_ARTIFACT_TYPES.PRESENTATION,
+  'application/vnd.openxmlformats-officedocument.presentationml.template':
     TOOL_ARTIFACT_TYPES.PRESENTATION,
   // Note: bare `text/plain` is NOT mapped here. The extension map handles
   // `.txt` explicitly; routing every unrecognized-extension `text/plain`

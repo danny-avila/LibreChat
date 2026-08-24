@@ -2,9 +2,9 @@ import React, { useRef, useCallback, useMemo, useEffect, memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { LayoutGrid } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
-import { Skeleton } from '@librechat/client';
 import { useNavigate } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
+import { Skeleton, useMediaQuery } from '@librechat/client';
 import { QueryKeys, EModelEndpoint, dataService } from 'librechat-data-provider';
 import type { Agent, TEndpointsConfig, TModelSpec } from 'librechat-data-provider';
 import {
@@ -17,6 +17,7 @@ import {
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import useSelectMention from '~/hooks/Input/useSelectMention';
+import { getSpecAgentAvatarURL } from '~/utils';
 import FavoriteItem from './FavoriteItem';
 import store from '~/store';
 
@@ -63,6 +64,13 @@ const DraggableFavoriteItem = ({
   children,
 }: DraggableFavoriteItemProps) => {
   const ref = useRef<HTMLDivElement>(null);
+  /**
+   * HTML5 drag needs a hover-capable pointer. Connecting the drag source on touch would
+   * stamp `draggable="true"` on this wrapper, and iOS Safari hands a touch on a draggable
+   * element to the drag recognizer instead of synthesizing a click, so the row underneath
+   * only selects on the second tap.
+   */
+  const canDrag = useMediaQuery('(hover: hover)');
   const [{ handlerId }, drop] = useDrop<{ index: number; id: string }, unknown, { handlerId: any }>(
     {
       accept: 'favorite-item',
@@ -118,7 +126,8 @@ const DraggableFavoriteItem = ({
   });
 
   const opacity = isDragging ? 0 : 1;
-  drag(drop(ref));
+  drop(ref);
+  drag(canDrag ? ref : null);
 
   return (
     <div ref={ref} style={{ opacity }} data-handler-id={handlerId}>
@@ -391,7 +400,7 @@ function FavoritesList({
                 role="button"
                 tabIndex={0}
                 aria-label={localize('com_agents_marketplace')}
-                className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-active-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+                className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-active-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary"
                 onClick={handleAgentMarketplace}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -450,6 +459,7 @@ function FavoritesList({
                       onSelectSpec={onSelectSpec}
                       onRemoveFocus={handleRemoveFocus}
                       endpointsConfig={endpointsConfig}
+                      agentAvatarURL={getSpecAgentAvatarURL(spec, agentsMap)}
                     />
                   </DraggableFavoriteItem>
                 );

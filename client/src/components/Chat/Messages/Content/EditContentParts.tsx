@@ -1,0 +1,447 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRecoilValue } from 'recoil';
+import { Alert, Button, TextareaAutosize } from '@librechat/client';
+import { ContentTypes, stripReasoningLabelMetadata } from 'librechat-data-provider';
+import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
+import type { TMessageContentParts, TextData } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
+import { useMessagesConversation, useMessagesOperations } from '~/Providers';
+import { splitMarkdownIntoBlocks } from './splitMarkdown';
+import { useGetAddedConvo } from '~/hooks/Chat';
+import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
+import store from '~/store';
+
+type EditableType = ContentTypes.TEXT | ContentTypes.THINK;
+
+type EditablePart = {
+  index: number;
+  localIndex: number;
+  type: EditableType;
+  original: string;
+};
+
+type EditContentPartsProps = {
+  content: Array<TMessageContentParts | undefined>;
+  contentIndexOffset?: number;
+  messageId: string;
+  isSubmitting: boolean;
+  enterEdit: (cancel?: boolean) => void | null | undefined;
+  siblingIdx: number | null;
+  setSiblingIdx: (value: number) => void;
+  renderReadOnlyPart: (part: TMessageContentParts, index: number, isLastPart: boolean) => ReactNode;
+};
+
+/** An editable part holds either a bare string or a `{ value, annotations }` object,
+ *  which is how the Assistants thread sync stores a response that carries file
+ *  citations. Both the read and the write below go through this, so an edit lands in
+ *  the same shape it was read from. */
+const getPartValue = (part: TMessageContentParts): string | TextData => {
+  if (part.type === ContentTypes.TEXT) {
+    return part.text;
+  }
+  if (part.type === ContentTypes.THINK) {
+    return part.think;
+  }
+  return undefined;
+};
+
+const getPartText = (part: TMessageContentParts): string | undefined => {
+  const value = getPartValue(part);
+  return typeof value === 'string' ? value : value?.value;
+};
+
+const withPartText = (part: TMessageContentParts, text: string): string | TextData => {
+  const value = getPartValue(part);
+  return value != null && typeof value === 'object' ? { ...value, value: text } : text;
+};
+
+const containsArtifact = (text: string): boolean => {
+  if (!text.includes('artifact')) {
+    return false;
+  }
+  try {
+    return splitMarkdownIntoBlocks(text).some((block) => block.artifactCount > 0);
+  } catch {
+    return false;
+  }
+};
+
+export default function EditContentParts({
+  content,
+  contentIndexOffset = 0,
+  messageId,
+  isSubmitting,
+  enterEdit,
+  siblingIdx,
+  setSiblingIdx,
+  renderReadOnlyPart,
+}: EditContentPartsProps) {
+  const localize = useLocalize();
+  const isRTL = useRecoilValue(store.chatDirection).toLowerCase() === 'rtl';
+  const { conversation } = useMessagesConversation();
+  const { ask, getMessages, setMessages } = useMessagesOperations();
+  const getAddedConvo = useGetAddedConvo();
+  const firstEditorRef = useRef<HTMLTextAreaElement | null>(null);
+  const [saveError, setSaveError] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const updateMessageContentMutation = useUpdateMessageContentMutation(
+    conversation?.conversationId ?? '',
+  );
+
+  const editableParts = useMemo<EditablePart[]>(() => {
+    const result: EditablePart[] = [];
+    content.forEach((part, localIndex) => {
+      if (!part || (part.type !== ContentTypes.TEXT && part.type !== ContentTypes.THINK)) {
+        return;
+      }
+      if (part.type === ContentTypes.TEXT && part.tool_call_ids != null) {
+        return;
+      }
+      const original = getPartText(part);
+      if (original == null || containsArtifact(original)) {
+        return;
+      }
+      result.push({
+        index: localIndex + contentIndexOffset,
+        localIndex,
+        type: part.type,
+        original,
+      });
+    });
+    return result;
+  }, [content, contentIndexOffset]);
+
+  const [drafts, setDrafts] = useState<Record<number, string>>(() =>
+    Object.fromEntries(editableParts.map((part) => [part.index, part.original])),
+  );
+
+  const editableByLocalIndex = useMemo(
+    () => new Map(editableParts.map((part) => [part.localIndex, part])),
+    [editableParts],
+  );
+  const changedParts = useMemo(
+    () => editableParts.filter((part) => drafts[part.index] !== part.original),
+    [drafts, editableParts],
+  );
+  /** Emptying a part would persist a blank one, and nothing in the editor offers a
+   *  way back: there is no delete-part affordance, so the only reading of a cleared
+   *  box is an accident. The sibling `EditMessage` refuses the same edit through its
+   *  form's `required` rule, so both editors hold the same line. */
+  const hasBlankEdit = useMemo(
+    () => changedParts.some((part) => (drafts[part.index] ?? '').trim() === ''),
+    [changedParts, drafts],
+  );
+  const editedMessage = getMessages()?.find((item) => item.messageId === messageId);
+  const rerunRequiresSave = editedMessage?.isCreatedByUser !== true && changedParts.length > 1;
+  const isBusy = isSubmitting || isSaving;
+
+  useEffect(() => {
+    const editor = firstEditorRef.current;
+    if (!editor) {
+      return;
+    }
+    editor.focus();
+    editor.setSelectionRange(editor.value.length, editor.value.length);
+  }, []);
+
+  const applySavedParts = useCallback(
+    (savedParts: EditablePart[]) => {
+      const messages = getMessages();
+      if (!messages || savedParts.length === 0) {
+        return;
+      }
+      const changedByLocalIndex = new Map(
+        savedParts.map((part) => [part.localIndex, { type: part.type, text: drafts[part.index] }]),
+      );
+      setMessages(
+        messages.map((currentMessage) => {
+          if (currentMessage.messageId !== messageId || !Array.isArray(currentMessage.content)) {
+            return currentMessage;
+          }
+          return {
+            ...currentMessage,
+            content: currentMessage.content.map((part, localIndex) => {
+              const change = changedByLocalIndex.get(localIndex);
+              if (!part || !change || part.type !== change.type) {
+                return part;
+              }
+              const editedPart = {
+                ...part,
+                [change.type]: withPartText(part, change.text),
+              } as TMessageContentParts;
+              return change.type === ContentTypes.THINK
+                ? stripReasoningLabelMetadata(editedPart)
+                : editedPart;
+            }),
+          };
+        }),
+      );
+    },
+    [drafts, getMessages, messageId, setMessages],
+  );
+
+  const saveChanges = useCallback(async () => {
+    if (changedParts.length === 0 || hasBlankEdit || isBusy) {
+      return;
+    }
+    setIsSaving(true);
+    setSaveError(false);
+    /** The endpoint takes one part per call and nothing rolls a write back, so a
+     *  refused part leaves the earlier ones on the server. Recording what actually
+     *  landed lets the failure reconcile the transcript with the server instead of
+     *  claiming nothing was saved, and leaves only the refused parts still edited. */
+    const savedParts: EditablePart[] = [];
+    try {
+      /** Each endpoint call replaces the full content array. Keep writes ordered so a
+       *  later edit reads the content produced by the previous one instead of racing it. */
+      for (const part of changedParts) {
+        await updateMessageContentMutation.mutateAsync({
+          index: part.index,
+          conversationId: conversation?.conversationId ?? '',
+          text: drafts[part.index],
+          messageId,
+        });
+        savedParts.push(part);
+      }
+    } catch {
+      setSaveError(true);
+    } finally {
+      applySavedParts(savedParts);
+      setIsSaving(false);
+    }
+
+    if (savedParts.length === changedParts.length) {
+      enterEdit(true);
+    }
+  }, [
+    applySavedParts,
+    changedParts,
+    conversation?.conversationId,
+    drafts,
+    enterEdit,
+    hasBlankEdit,
+    isBusy,
+    messageId,
+    updateMessageContentMutation,
+  ]);
+
+  const updateAndRerun = useCallback(() => {
+    const firstChange = changedParts[0];
+    if (!firstChange || !editedMessage || rerunRequiresSave || hasBlankEdit || isBusy) {
+      return;
+    }
+    const messages = getMessages();
+
+    /** `ask` refuses to send while another response is streaming and reports it by
+     *  returning false. Closing the editor regardless would throw the drafts away for
+     *  a rerun that never started, so a refused send leaves the editor as it was. */
+    let refused = false;
+
+    if (editedMessage.isCreatedByUser === true) {
+      const userText = editableParts
+        .filter((part) => part.type === ContentTypes.TEXT)
+        .map((part) => drafts[part.index])
+        .join('\n');
+      refused =
+        ask(
+          {
+            text: userText,
+            parentMessageId: editedMessage.parentMessageId,
+            conversationId: editedMessage.conversationId,
+          },
+          {
+            overrideFiles: editedMessage.files,
+            overrideManualSkills: editedMessage.manualSkills,
+            overrideQuotes: editedMessage.quotes,
+            addedConvo: getAddedConvo() || undefined,
+          },
+        ) === false;
+    } else {
+      const parentMessage = messages?.find(
+        (item) => item.messageId === editedMessage.parentMessageId,
+      );
+      if (!parentMessage) {
+        return;
+      }
+      const editedContent =
+        firstChange.type === ContentTypes.THINK
+          ? {
+              index: firstChange.index,
+              type: ContentTypes.THINK as const,
+              [ContentTypes.THINK]: drafts[firstChange.index],
+            }
+          : {
+              index: firstChange.index,
+              type: ContentTypes.TEXT as const,
+              [ContentTypes.TEXT]: drafts[firstChange.index],
+            };
+      refused =
+        ask(
+          { ...parentMessage },
+          {
+            editedContent,
+            editedMessageId: messageId,
+            isRegenerate: true,
+            isEdited: true,
+            overrideManualSkills: parentMessage.manualSkills,
+            overrideQuotes: parentMessage.quotes,
+            addedConvo: getAddedConvo() || undefined,
+          },
+        ) === false;
+    }
+
+    if (refused) {
+      return;
+    }
+
+    setSiblingIdx((siblingIdx ?? 0) - 1);
+    enterEdit(true);
+  }, [
+    ask,
+    changedParts,
+    drafts,
+    editedMessage,
+    editableParts,
+    enterEdit,
+    getAddedConvo,
+    getMessages,
+    hasBlankEdit,
+    isBusy,
+    messageId,
+    rerunRequiresSave,
+    setSiblingIdx,
+    siblingIdx,
+  ]);
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        enterEdit(true);
+        return;
+      }
+      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        updateAndRerun();
+        return;
+      }
+      if (event.key.toLowerCase() === 's' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        void saveChanges();
+      }
+    },
+    [enterEdit, saveChanges, updateAndRerun],
+  );
+
+  /** Both states share the footer's status slot so neither can add a row and
+   *  shift the message below it. */
+  const getStatusMessage = () => {
+    if (hasBlankEdit) {
+      return localize('com_ui_message_part_empty');
+    }
+    if (rerunRequiresSave) {
+      return localize('com_ui_save_before_rerun');
+    }
+    if (changedParts.length > 0) {
+      return localize('com_ui_unsaved_changes');
+    }
+    return '';
+  };
+
+  return (
+    <section
+      aria-label={localize('com_ui_edit_message')}
+      className="flex w-full min-w-0 flex-col gap-2"
+    >
+      {saveError && <Alert variant="error">{localize('com_ui_save_message_error')}</Alert>}
+
+      <div className="flex min-w-0 flex-col gap-3">
+        {content.map((part, localIndex) => {
+          if (!part) {
+            return null;
+          }
+          const editablePart = editableByLocalIndex.get(localIndex);
+          const absoluteIndex = localIndex + contentIndexOffset;
+          if (!editablePart) {
+            return (
+              <div key={`read-only-${messageId}-${absoluteIndex}`} className="min-w-0">
+                {renderReadOnlyPart(part, absoluteIndex, localIndex === content.length - 1)}
+              </div>
+            );
+          }
+          const label =
+            editablePart.type === ContentTypes.THINK
+              ? localize('com_ui_thoughts')
+              : localize('com_ui_response');
+          return (
+            <label
+              key={`editor-${messageId}-${absoluteIndex}`}
+              dir={isRTL ? 'rtl' : 'ltr'}
+              className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-text-secondary"
+            >
+              {label}
+              <TextareaAutosize
+                ref={editablePart === editableParts[0] ? firstEditorRef : undefined}
+                value={drafts[absoluteIndex]}
+                onChange={(event) =>
+                  setDrafts((current) => ({
+                    ...current,
+                    [absoluteIndex]: event.target.value,
+                  }))
+                }
+                onKeyDown={handleKeyDown}
+                aria-label={`${localize('com_ui_editable_message')}: ${label}`}
+                aria-keyshortcuts="Control+Enter Meta+Enter Control+S Meta+S Escape"
+                disabled={isBusy}
+                minRows={3}
+                dir={isRTL ? 'rtl' : 'ltr'}
+                className={cn(
+                  'message-editor-text max-h-[65vh] min-h-24 w-full resize-y rounded-lg',
+                  'border border-border-medium bg-surface-tertiary-alt px-3 py-2',
+                  'font-normal text-text-primary',
+                  'focus-visible:outline-none',
+                  isRTL ? 'text-right' : 'text-left',
+                  'disabled:opacity-50 md:max-h-[75vh]',
+                )}
+              />
+            </label>
+          );
+        })}
+      </div>
+
+      {/* The actions wrap rather than hold one unbreakable row: on a 320px assistant
+          turn the identity column and page padding leave less width than the three
+          English labels need, and a translated label needs more still. */}
+      <footer className="flex flex-wrap items-center justify-between gap-2">
+        <span
+          className="line-clamp-2 min-w-0 flex-1 text-xs text-text-secondary"
+          aria-live="polite"
+        >
+          {getStatusMessage()}
+        </span>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button size="sm" variant="outline" onClick={() => enterEdit(true)} disabled={isSaving}>
+            {localize('com_ui_cancel')}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void saveChanges()}
+            disabled={changedParts.length === 0 || hasBlankEdit || isBusy}
+          >
+            {isSaving ? localize('com_ui_saving') : localize('com_ui_save')}
+          </Button>
+          <Button
+            size="sm"
+            variant="submit"
+            onClick={updateAndRerun}
+            disabled={changedParts.length === 0 || rerunRequiresSave || hasBlankEdit || isBusy}
+          >
+            {localize('com_ui_update_rerun')}
+          </Button>
+        </div>
+      </footer>
+    </section>
+  );
+}

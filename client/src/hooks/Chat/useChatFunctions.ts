@@ -28,7 +28,9 @@ import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import {
   logger,
+  requestChatFocus,
   hasStreamStartFailed,
+  isSubmittableMessage,
   createDualMessageContent,
   getRouteChatProjectId,
 } from '~/utils';
@@ -39,6 +41,11 @@ import store, { useGetEphemeralAgent } from '~/store';
 import { startupConfigKey } from '~/data-provider';
 import useUserKey from '~/hooks/Input/useUserKey';
 import { useAuthContext } from '~/hooks';
+
+/** A revalidating cache younger than this is locally authoritative (the run
+ * that just streamed wrote it) and stays sendable; older ones wait for the
+ * refetch so a send can't fork from an outdated tail. */
+const STALE_SEND_REVALIDATION_MS = 5_000;
 
 const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
@@ -197,7 +204,7 @@ export default function useChatFunctions({
   paramId?: string | undefined;
   conversation: TConversation | null;
   latestMessage: TMessage | null;
-  getMessages: () => TMessage[] | undefined;
+  getMessages: (conversationId?: string | null) => TMessage[] | undefined;
   setMessages: (messages: TMessage[]) => void;
   files?: Map<string, ExtendedFile>;
   setFiles?: SetterOrUpdater<Map<string, ExtendedFile>>;
@@ -279,13 +286,26 @@ export default function useChatFunctions({
       overrideManualSkills,
       overrideQuotes,
       addedConvo,
+      overrideClientRequestId,
+      overrideRecoverySteerId,
+      overrideExpectedPredecessorCreatedAt,
+      overrideQueuedMessageOrigin,
     } = {},
   ) => {
-    setShowStopButton(false);
-
     text = text.trim();
-    if (!!isSubmitting || text === '') {
-      return;
+    /**
+     * Attached files make an otherwise empty draft submittable, e.g. replying
+     * to an agent that asked for a document upload. Replayed turns (regenerate,
+     * or save-and-submit carrying `overrideFiles`) reuse stored attachments that
+     * aren't in the compose `files` map, so count those too and never re-block a
+     * regenerate of an already-validated file-only turn.
+     */
+    const replayFileCount = overrideFiles?.length ?? 0;
+    if (
+      !!isSubmitting ||
+      (!isRegenerate && !isSubmittableMessage(text, (files?.size ?? 0) + replayFileCount))
+    ) {
+      return false;
     }
 
     const conversation = cloneDeep(immutableConversation);
@@ -293,18 +313,48 @@ export default function useChatFunctions({
     const endpoint = conversation?.endpoint;
     if (endpoint === null) {
       console.error('No endpoint available');
-      return;
+      return false;
     }
 
     conversationId = conversationId ?? conversation?.conversationId ?? null;
     if (conversationId == 'search') {
       console.error('cannot send any message under search view!');
-      return;
+      return false;
+    }
+
+    const cachedMessages = getMessages(conversationId);
+    const isExistingConversation = conversationId != null && conversationId !== Constants.NEW_CONVO;
+    if (isExistingConversation && overrideMessages == null && cachedMessages == null) {
+      logger.warn('[useChatFunctions] Refusing to send before existing conversation history loads');
+      return false;
+    }
+
+    /**
+     * Warm-switch revalidation guard: a navigation invalidates the target's
+     * cache and renders it while a background refetch reconciles. Deriving
+     * parentMessageId from that cache could fork from an outdated tail, so
+     * refuse (composer keeps the text) until the refetch settles — but only
+     * when the cache is actually old: a just-streamed cache (fresh
+     * `dataUpdatedAt`) is locally authoritative, and gating it would block
+     * rapid follow-ups during the post-run reconcile.
+     */
+    if (isExistingConversation && overrideMessages == null) {
+      const messagesQueryState = queryClient.getQueryState<TMessage[]>([
+        QueryKeys.messages,
+        conversationId,
+      ]);
+      const isRevalidating =
+        messagesQueryState?.isInvalidated === true && messagesQueryState.fetchStatus === 'fetching';
+      const cacheAgeMs = Date.now() - (messagesQueryState?.dataUpdatedAt ?? 0);
+      if (isRevalidating && cacheAgeMs > STALE_SEND_REVALIDATION_MS) {
+        logger.warn('[useChatFunctions] Refusing to send while conversation history revalidates');
+        return false;
+      }
     }
 
     if (isContinued && !latestMessage) {
       console.error('cannot continue AI message without latestMessage!');
-      return;
+      return false;
     }
 
     if (parentMessageId == null && hasPendingAssistantParent(latestMessage)) {
@@ -314,6 +364,8 @@ export default function useChatFunctions({
       );
       return false;
     }
+
+    setShowStopButton(false);
 
     const ephemeralAgent = getEphemeralAgent(conversationId ?? Constants.NEW_CONVO);
     /**
@@ -357,7 +409,7 @@ export default function useChatFunctions({
     }
     const isEditOrContinue = isEdited || isContinued;
 
-    let currentMessages: TMessage[] = overrideMessages ?? getMessages() ?? [];
+    let currentMessages: TMessage[] = overrideMessages ?? cachedMessages ?? [];
 
     if (conversation?.promptPrefix) {
       conversation.promptPrefix = replaceSpecialVars({
@@ -376,6 +428,10 @@ export default function useChatFunctions({
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
     const intermediateId = overrideUserMessageId ?? v4();
+    /** Stable idempotency key for this submission: fresh per `ask()` (so regenerate differs)
+     *  but reused across the client's start-generation network retries, letting the server
+     *  dedup a retried request instead of starting a second billed generation. */
+    const clientRequestId = overrideClientRequestId ?? v4();
     if (parentMessageId == null) {
       parentMessageId = getAppendParentMessageId({ latestMessage, currentMessages });
     }
@@ -395,7 +451,8 @@ export default function useChatFunctions({
       currentMessages = [];
       conversationId = null;
       const projectSearch = chatProjectId ? `?projectId=${encodeURIComponent(chatProjectId)}` : '';
-      navigate(`/c/new${projectSearch}`, { state: { focusChat: true } });
+      requestChatFocus();
+      navigate(`/c/new${projectSearch}`);
     }
 
     const targetParentMessageId = isRegenerate ? messageId : latestMessage?.parentMessageId;
@@ -489,12 +546,21 @@ export default function useChatFunctions({
 
     if (setFiles && reuseFiles === true) {
       currentMsg.files = [...submissionFiles];
-      setFiles(new Map());
-      setFilesToDelete({});
-    } else if (setFiles && files && files.size > 0) {
+      // Caller-supplied overrideFiles were consumed elsewhere (queued
+      // during-run messages take theirs out of the composer at queue time) —
+      // clearing here would eat attachments staged for the user's NEXT send.
+      if (isRegenerate) {
+        setFiles(new Map());
+        setFilesToDelete({});
+      }
+    } else if (setFiles && files && files.size > 0 && overrideFiles == null) {
+      // `overrideFiles` (even empty) is authoritative for the submission:
+      // auto-drained queued messages must never vacuum up attachments the
+      // user has staged in the composer for their NEXT message.
       currentMsg.files = Array.from(files.values()).map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath,
+        filename: file.filename,
         type: file.type ?? '', // Ensure type is not undefined
         height: file.height,
         width: file.width,
@@ -511,6 +577,8 @@ export default function useChatFunctions({
           )
         : null) ??
       null;
+    /** Set only for edited resubmissions; see `TSubmission.editPrefixLength`. */
+    let editPrefixLength: number | undefined;
     const initialResponseId =
       responseMessageId ?? `${isRegenerate ? messageId : intermediateId}`.replace(/_+$/, '') + '_';
 
@@ -558,11 +626,21 @@ export default function useChatFunctions({
 
       if (editedContent && latestMessage?.content) {
         initialResponse.content = cloneDeep(latestMessage.content);
+        /** Captured now, while it is still the retained prefix: a later resume
+         *  sync replaces this array with the server's completion-local
+         *  snapshot, after which its length no longer describes the offset. */
+        editPrefixLength = initialResponse.content.length;
         const { index, type, ...part } = editedContent;
         if (initialResponse.content && index >= 0 && index < initialResponse.content.length) {
           const contentPart = initialResponse.content[index];
           if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
             contentPart[ContentTypes.THINK] = part[ContentTypes.THINK];
+            delete contentPart.reasoning_label;
+            delete contentPart.reasoning_label_step_id;
+            delete contentPart.reasoning_label_attempts;
+            delete contentPart.reasoning_label_submitted_chars;
+            delete contentPart.reasoning_label_revision;
+            delete contentPart.reasoning_label_status;
           } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
             contentPart[ContentTypes.TEXT] = part[ContentTypes.TEXT];
           }
@@ -618,8 +696,13 @@ export default function useChatFunctions({
       isTemporary,
       ephemeralAgent,
       editedContent,
+      editPrefixLength,
       addedConvo,
       manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
+      clientRequestId,
+      recoverySteerId: overrideRecoverySteerId,
+      expectedPredecessorCreatedAt: overrideExpectedPredecessorCreatedAt,
+      queuedMessageOrigin: overrideQueuedMessageOrigin,
     };
 
     if (isRegenerate) {

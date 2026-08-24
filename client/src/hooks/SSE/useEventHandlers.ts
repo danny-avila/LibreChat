@@ -26,7 +26,11 @@ import type { ConversationCursorData } from '~/utils';
 import {
   logger,
   setDraft,
+  getConversationDraftId,
   scrollToEnd,
+  hasRealTitle,
+  setDocumentTitle,
+  requestChatFocus,
   getAllContentText,
   upsertConvoInAllQueries,
   updateConvoInAllQueries,
@@ -66,9 +70,6 @@ type TTitleEvent = {
   };
 };
 
-const hasRealTitle = (title?: string | null): title is string =>
-  title != null && title !== '' && title !== 'New Chat';
-
 /** Skill caches refreshed when a chat turn authors a skill via `create_file`/`edit_file`. */
 const SKILL_QUERY_KEYS = [
   QueryKeys.skills,
@@ -100,6 +101,36 @@ export const isInitialNewConversationSubmission = ({
   userMessage,
 }: Pick<EventSubmission, 'userMessage'>): boolean =>
   userMessage?.parentMessageId === Constants.NO_PARENT;
+
+/**
+ * Whether the run was sent from the unsaved-chat composer, which is the only case where
+ * finishing it may drop the pane's new-chat draft. Regenerating or resubmitting the first turn
+ * of a saved conversation keeps the root parent id, so the root parent alone cannot decide it.
+ */
+export const startedAsNewConversation = ({
+  conversation,
+  userMessage,
+  isEdited,
+  isRegenerate,
+}: Pick<
+  EventSubmission,
+  'conversation' | 'userMessage' | 'isEdited' | 'isRegenerate'
+>): boolean => {
+  const conversationId = conversation?.conversationId;
+  if (
+    !conversationId ||
+    conversationId === Constants.NEW_CONVO ||
+    conversationId === Constants.PENDING_CONVO
+  ) {
+    return true;
+  }
+
+  return (
+    isEdited !== true &&
+    isRegenerate !== true &&
+    isInitialNewConversationSubmission({ userMessage })
+  );
+};
 
 export const mergeRegenerateFinalMessages = ({
   messages,
@@ -154,8 +185,38 @@ export const getExistingConversationAbortMessages = ({
   return [...sourceMessages];
 };
 
+export const mergeErrorMessages = ({
+  messages,
+  regenerateMessages,
+  userMessage,
+  errorMessage,
+  isRegenerate = false,
+}: Pick<EventSubmission, 'messages' | 'regenerateMessages' | 'userMessage' | 'isRegenerate'> & {
+  errorMessage: TMessage;
+}): TMessage[] => {
+  if (isRegenerate) {
+    const finalMessages: TMessage[] = [];
+    let replaced = false;
+    for (const message of regenerateMessages ?? messages) {
+      if (message.messageId === errorMessage.messageId) {
+        finalMessages.push(errorMessage);
+        replaced = true;
+      } else {
+        finalMessages.push(message);
+      }
+    }
+    if (!replaced) {
+      finalMessages.push(errorMessage);
+    }
+    return finalMessages;
+  }
+
+  return [...messages, userMessage, errorMessage];
+};
+
 export type EventHandlerParams = {
   isAddedRequest?: boolean;
+  runIndex?: number;
   setCompleted: React.Dispatch<React.SetStateAction<Set<unknown>>>;
   setMessages: (messages: TMessage[]) => void;
   getMessages: () => TMessage[] | undefined;
@@ -271,6 +332,7 @@ export default function useEventHandlers({
   getMessages,
   setCompleted,
   isAddedRequest = false,
+  runIndex = 0,
   setConversation,
   setIsSubmitting,
   newConversation,
@@ -309,7 +371,16 @@ export default function useEventHandlers({
       queryClient.invalidateQueries({ queryKey: [key], refetchType: 'all' });
     }
   }, [queryClient]);
-  const { stepHandler, clearStepMaps, resetSubagentAtoms, syncStepMessage } = useStepHandler({
+  const {
+    stepHandler,
+    clearStepMaps,
+    resetSubagentAtoms,
+    resetPtcAtoms,
+    prunePtcTraces,
+    syncStepMessage,
+    cancelPendingDeltaFlush,
+    flushPendingDeltas,
+  } = useStepHandler({
     setMessages,
     getMessages,
     announcePolite,
@@ -351,8 +422,12 @@ export default function useEventHandlers({
       shouldResetSubagentAtomsOnConversationChange(previous, paramId, preserveNewConversationId)
     ) {
       resetSubagentAtoms();
+      /** PTC traces are live-only for the same reason and share the boundary:
+       *  keep them through a run so a finished program stays auditable, drop
+       *  them when the conversation changes. */
+      resetPtcAtoms();
     }
-  }, [paramId, resetSubagentAtoms]);
+  }, [paramId, resetSubagentAtoms, resetPtcAtoms]);
 
   /** Final cleanup on component unmount. `useStepHandler` keeps the
    *  set of known atom keys in a ref; when the hook unmounts (user
@@ -363,8 +438,9 @@ export default function useEventHandlers({
   useEffect(
     () => () => {
       resetSubagentAtoms();
+      resetPtcAtoms();
     },
-    [resetSubagentAtoms],
+    [resetSubagentAtoms, resetPtcAtoms],
   );
 
   const messageHandler = useCallback(
@@ -441,15 +517,24 @@ export default function useEventHandlers({
   const syncHandler = useCallback(
     (data: TSyncData, submission: EventSubmission) => {
       const { conversationId, thread_id, responseMessage, requestMessage } = data;
-      const { initialResponse, messages: _messages, userMessage } = submission;
-      const messages = _messages.filter((msg) => msg.messageId !== userMessage.messageId);
+      const { initialResponse, messages: _messages, userMessage, isTemporary = false } = submission;
+      /** Swap the optimistic user row for the server-stamped one IN PLACE.
+       *  Filtering it out and re-appending at the tail would order any of its
+       *  already-present children (abandoned responses from preempted
+       *  attempts) before their parent, and the message tree hoists such rows
+       *  into phantom root branches — a folded thread. */
+      const userIndex = _messages.findIndex((msg) => msg.messageId === userMessage.messageId);
+      const messages =
+        userIndex >= 0
+          ? _messages.map((msg, i) => (i === userIndex ? requestMessage : msg))
+          : [..._messages, requestMessage];
 
       const nextResponseMessage = {
         ...initialResponse,
         ...responseMessage,
       };
 
-      setMessages([...messages, requestMessage, nextResponseMessage]);
+      setMessages([...messages, nextResponseMessage]);
 
       announcePolite({
         message: 'start',
@@ -476,14 +561,16 @@ export default function useEventHandlers({
           return update;
         });
 
-        if (requestMessage.parentMessageId === Constants.NO_PARENT) {
-          upsertConvoInAllQueries(queryClient, update);
-        } else {
-          updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
-        }
-        if (update.chatProjectId) {
-          queryClient.invalidateQueries([QueryKeys.projects]);
-          queryClient.invalidateQueries([QueryKeys.project, update.chatProjectId]);
+        if (!isTemporary) {
+          if (requestMessage.parentMessageId === Constants.NO_PARENT) {
+            upsertConvoInAllQueries(queryClient, update);
+          } else {
+            updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
+          }
+          if (update.chatProjectId) {
+            queryClient.invalidateQueries([QueryKeys.projects]);
+            queryClient.invalidateQueries([QueryKeys.project, update.chatProjectId]);
+          }
         }
       } else if (setConversation) {
         setConversation((prevState) => {
@@ -615,7 +702,7 @@ export default function useEventHandlers({
       markTitleGenerationProcessed(conversationId);
 
       if (location.pathname.includes(conversationId)) {
-        document.title = title;
+        setDocumentTitle(title);
       }
 
       if (setConversation && !isAddedRequest) {
@@ -683,7 +770,10 @@ export default function useEventHandlers({
           }
           setMessages([]);
           queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
-          setDraft({ id: String(Constants.NEW_CONVO), value: requestMessage?.text });
+          setDraft({
+            id: getConversationDraftId(runIndex, Constants.NEW_CONVO),
+            value: requestMessage?.text,
+          });
           restorePendingQuotes(String(Constants.NEW_CONVO), requestMessage?.quotes);
           if (location.pathname !== `/c/${Constants.NEW_CONVO}`) {
             navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
@@ -748,10 +838,14 @@ export default function useEventHandlers({
             currentConvoId === Constants.NEW_CONVO;
 
           setFinalMessages(currentConvoId, isNewChat ? [] : [...messages]);
-          setDraft({ id: currentConvoId, value: requestMessage?.text });
+          setDraft({
+            id: getConversationDraftId(runIndex, currentConvoId),
+            value: requestMessage?.text,
+          });
           restorePendingQuotes(currentConvoId, requestMessage?.quotes);
           if (isNewChat) {
-            navigate(`/c/${Constants.NEW_CONVO}`, { replace: true, state: { focusChat: true } });
+            requestChatFocus();
+            navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
           }
           return;
         }
@@ -872,6 +966,7 @@ export default function useEventHandlers({
       setMessages,
       queryClient,
       setCompleted,
+      runIndex,
       isAddedRequest,
       announcePolite,
       setConversation,
@@ -886,14 +981,14 @@ export default function useEventHandlers({
 
   const errorHandler = useCallback(
     ({ data, submission }: { data?: TResData; submission: EventSubmission }) => {
-      const { messages, userMessage, initialResponse } = submission;
+      const { userMessage, initialResponse } = submission;
       setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
 
       const conversationId =
         userMessage.conversationId ?? submission.conversation?.conversationId ?? '';
 
       const setErrorMessages = (convoId: string, errorMessage: TMessage) => {
-        const finalMessages: TMessage[] = [...messages, userMessage, errorMessage];
+        const finalMessages = mergeErrorMessages({ ...submission, errorMessage });
         setMessages(finalMessages);
         queryClient.setQueryData<TMessage[]>([QueryKeys.messages, convoId], finalMessages);
       };
@@ -1117,6 +1212,9 @@ export default function useEventHandlers({
     createdHandler,
     titleHandler,
     syncStepMessage,
+    prunePtcTraces,
+    cancelPendingDeltaFlush,
+    flushPendingDeltas,
     attachmentHandler,
     abortConversation,
     resetContentHandler,

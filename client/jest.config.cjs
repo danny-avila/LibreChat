@@ -1,4 +1,4 @@
-/** v0.8.7 */
+/** v0.8.8-rc1 */
 module.exports = {
   roots: ['<rootDir>/src'],
   testEnvironment: 'jsdom',
@@ -33,6 +33,10 @@ module.exports = {
       '<rootDir>/../node_modules/librechat-data-provider/src/react-query',
   },
   maxWorkers: '50%',
+  /** Coverage maps accumulate for the life of a worker, so a long run can push
+   * a worker past a gigabyte and get it killed by the OS, which fails whatever
+   * suite it was holding. Recycling bloated workers also avoids swap thrash. */
+  workerIdleMemoryLimit: '800MB',
   restoreMocks: true,
   testResultsProcessor: 'jest-junit',
   coverageReporters: ['text', 'cobertura', 'lcov'],
@@ -45,6 +49,7 @@ module.exports = {
   transformIgnorePatterns: [
     '/node_modules/(?!(@ariakit/react-components|@ariakit/react-utils|@ariakit/react-store|@ariakit/components|@ariakit/store|@ariakit/utils|@zattoo/use-double-click|@dicebear|@react-dnd|react-dnd.*|dnd-core|filenamify|filename-reserved-regex|heic-to|lowlight|highlight\\.js|fault|react-markdown|unified|bail|trough|devlop|is-.*|parse-entities|stringify-entities|character-.*|trim-lines|style-to-object|inline-style-parser|html-url-attributes|escape-string-regexp|longest-streak|zwitch|ccount|markdown-table|comma-separated-tokens|space-separated-tokens|web-namespaces|property-information|remark-.*|rehype-.*|recma-.*|hast.*|mdast-.*|unist-.*|vfile.*|micromark.*|estree-util-.*|decode-named-character-reference)/)/',
   ],
+  setupFiles: ['<rootDir>/test/polyfills.js'],
   setupFilesAfterEnv: ['@testing-library/jest-dom/extend-expect', '<rootDir>/test/setupTests.js'],
   clearMocks: true,
 };

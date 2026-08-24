@@ -5,10 +5,12 @@ const {
   getSessionInfo,
   checkIfActive,
   readSandboxFile,
+  readSandboxImage,
   writeSandboxFile,
 } = require('~/server/services/Files/Code/process');
 const {
   checkAccess,
+  isMemoryEnabled,
   getStorageMetadata,
   resolveRequestTenantId,
   enrichWithSkillConfigurable,
@@ -25,6 +27,7 @@ const {
   AccessRoleIds,
   PrincipalType,
   PermissionTypes,
+  AgentCapabilities,
   isEphemeralAgentId,
 } = require('librechat-data-provider');
 const { checkPermission, grantPermission } = require('~/server/services/PermissionService');
@@ -278,19 +281,40 @@ function buildAgentToolContext({ agent, config }) {
      *  the producing agent's config in multi-endpoint graphs. */
     endpointTokenConfig: config.endpointTokenConfig,
     toolRegistry: config.toolRegistry,
+    backgroundToolNames: config.backgroundToolNames,
+    intentToolNames: config.intentToolNames,
     mcpAvailableTools: config.mcpAvailableTools,
     requestScopedConnections: config.requestScopedConnections,
     userMCPAuthMap: config.userMCPAuthMap,
     tool_resources: config.tool_resources,
     actionsEnabled: config.actionsEnabled,
+    accessibleMcpServerNames: config.accessibleMcpServerNames,
     accessibleSkillIds: config.accessibleSkillIds,
     activeSkillNames: config.activeSkillNames,
     codeEnvAvailable: config.codeEnvAvailable,
+    codeExecutionContext: config.codeExecutionContext,
     skillAuthoringAvailable: config.skillAuthoringAvailable,
     fileAuthoringToolNames: config.fileAuthoringToolNames,
     skillPrimedIdsByName:
       buildSkillPrimedIdsByName(config.manualSkillPrimes, config.alwaysApplySkillPrimes) ?? {},
   };
+}
+
+/** Resolves the full run-level gate used to expose inline memory tools. */
+function resolveMemoryAvailability({ enabledCapabilities, memoryConfig, user, getRoleByName }) {
+  if (
+    !enabledCapabilities.has(AgentCapabilities.memory) ||
+    !isMemoryEnabled(memoryConfig) ||
+    user?.personalization?.memories === false
+  ) {
+    return false;
+  }
+  return checkAccess({
+    user,
+    permissionType: PermissionTypes.MEMORIES,
+    permissions: [Permissions.USE, Permissions.CREATE, Permissions.UPDATE],
+    getRoleByName,
+  });
 }
 
 function hasOwn(value, key) {
@@ -357,6 +381,12 @@ const skillToolDeps = {
    * the agents-side `ToolNode` via `tc.codeSessionContext`.
    */
   readSandboxFile,
+  /**
+   * Companion to `readSandboxFile` for the raster-image case: pulls the
+   * bytes base64-encoded (size-guarded in-sandbox) so `read_file` can
+   * return an image the model can see instead of refusing it as binary.
+   */
+  readSandboxImage,
   writeSandboxFile,
 };
 
@@ -374,5 +404,6 @@ module.exports = {
   enrichWithSkillConfigurable,
   buildSkillPrimedIdsByName,
   buildAgentToolContext,
+  resolveMemoryAvailability,
   enrichLoadedToolsWithAgentContext,
 };

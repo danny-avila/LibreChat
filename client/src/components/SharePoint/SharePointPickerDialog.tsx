@@ -66,7 +66,7 @@ export default function SharePointPickerDialog({
       <OGDialogPortal>
         <OGDialogOverlay className="bg-black/50" />
         <OGDialogContent
-          className="sharepoint-picker-bg fixed left-1/2 top-1/2 z-50 h-[680px] max-h-[90vh] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 rounded-lg border bg-surface-primary p-2 shadow-lg focus:outline-none"
+          className="sharepoint-picker-bg fixed left-1/2 top-1/2 z-50 h-[680px] max-h-[90vh] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 rounded-lg border bg-surface-dialog p-2 shadow-lg focus:outline-none"
           showCloseButton={true}
         >
           <OGDialogTitle className="sr-only">
@@ -112,7 +112,7 @@ export default function SharePointPickerDialog({
                           })}
                         </p>
                         {downloadProgress.failed.length > 0 && (
-                          <p className="text-xs text-red-500">
+                          <p className="text-xs text-text-destructive">
                             {localize('com_files_download_failed', {
                               0: downloadProgress.failed.length,
                             })}

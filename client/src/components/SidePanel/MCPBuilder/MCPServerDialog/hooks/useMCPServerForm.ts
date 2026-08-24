@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useCallback, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import type { MCPServerCreateParams } from 'librechat-data-provider';
+import { useToastContext } from '@librechat/client';
+import type { MCPServerCreateParams, TokenExchangeMethodEnum } from 'librechat-data-provider';
+import type { MCPServerDefinition } from '~/hooks';
 import {
   useCreateMCPServerMutation,
   useUpdateMCPServerMutation,
   useDeleteMCPServerMutation,
 } from '~/data-provider/MCP';
-import { useToastContext } from '@librechat/client';
-import { useLocalize } from '~/hooks';
 import { extractServerNameFromUrl, isValidUrl, normalizeUrl } from '../utils/urlUtils';
 import {
   buildCompleteConfig,
@@ -16,7 +16,8 @@ import {
   AuthTypeEnum,
   AuthorizationTypeEnum,
 } from '../utils/formHelpers';
-import type { MCPServerDefinition } from '~/hooks';
+import { getMCPServerErrorMessage } from '../utils/error';
+import { useLocalize } from '~/hooks';
 
 // Re-export enums for backwards compatibility
 export { AuthTypeEnum, AuthorizationTypeEnum };
@@ -33,6 +34,7 @@ export interface AuthConfig {
   oauth_authorization_url?: string;
   oauth_token_url?: string;
   oauth_scope?: string;
+  oauth_token_exchange_method?: TokenExchangeMethodEnum;
   obo_scopes?: string;
   server_id?: string;
 }
@@ -165,12 +167,9 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
 
       if (error && typeof error === 'object' && 'response' in error) {
         const axiosError = error as { response?: { data?: { error?: string } } };
-        if (axiosError.response?.data?.error === 'MCP_INSPECTION_FAILED') {
-          errorMessage = localize('com_ui_mcp_server_connection_failed');
-        } else if (axiosError.response?.data?.error === 'MCP_DOMAIN_NOT_ALLOWED') {
-          errorMessage = localize('com_ui_mcp_domain_not_allowed');
-        } else if (axiosError.response?.data?.error) {
-          errorMessage = axiosError.response.data.error;
+        const errorCode = axiosError.response?.data?.error;
+        if (errorCode) {
+          errorMessage = getMCPServerErrorMessage(errorCode, localize);
         }
       } else if (error instanceof Error) {
         errorMessage = error.message;

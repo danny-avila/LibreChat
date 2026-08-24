@@ -471,6 +471,31 @@ describe('registerUser', () => {
       }),
     );
   });
+
+  it('normalizes mixed-case emails when issuing the verification token and link', async () => {
+    checkEmailConfig.mockReturnValue(true);
+
+    const result = await registerUser({
+      ...registrationPayload,
+      email: 'Mixed.Case@Example.com',
+    });
+
+    expect(result.status).toBe(200);
+    expect(createToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'mixed.case@example.com',
+        type: 'email_verification',
+      }),
+    );
+    expect(sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'mixed.case@example.com',
+        payload: expect.objectContaining({
+          verificationLink: expect.stringContaining(encodeURIComponent('mixed.case@example.com')),
+        }),
+      }),
+    );
+  });
 });
 
 describe('verifyEmail public response handling', () => {
@@ -1355,6 +1380,37 @@ describe('registerUser - allowedDomains admin-panel override', () => {
     await registerUser(validUser);
 
     expect(getAppConfig).toHaveBeenCalledWith({ tenantId: 'tenant-x' });
+  });
+
+  it('does not bootstrap a tenant-scoped registrant as an administrator', async () => {
+    getTenantId.mockReturnValue('attacker-selected-tenant');
+    createUser.mockResolvedValue({ _id: 'new-user', emailVerified: true });
+    checkEmailConfig.mockReturnValue(false);
+
+    await registerUser(validUser);
+
+    expect(countUsers).not.toHaveBeenCalled();
+    expect(createUser).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'USER' }),
+      undefined,
+      expect.any(Boolean),
+      true,
+    );
+  });
+
+  it('preserves first-user administrator bootstrap without a tenant context', async () => {
+    createUser.mockResolvedValue({ _id: 'new-user', emailVerified: true });
+    checkEmailConfig.mockReturnValue(false);
+
+    await registerUser(validUser);
+
+    expect(countUsers).toHaveBeenCalledTimes(1);
+    expect(createUser).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'ADMIN' }),
+      undefined,
+      expect.any(Boolean),
+      true,
+    );
   });
 
   it('should block registration when the resolved allowedDomains rejects the email', async () => {

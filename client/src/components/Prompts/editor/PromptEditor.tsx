@@ -1,4 +1,4 @@
-import { useMemo, memo } from 'react';
+import { useRef, useMemo, memo } from 'react';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -24,6 +24,7 @@ type Props = {
 const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
   const localize = useLocalize();
   const { control } = useFormContext();
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const EditorIcon = useMemo(() => {
     return isEditing ? Check : EditIcon;
@@ -51,7 +52,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
         )}
       >
         <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
-          <VariablesDropdown fieldName={name} />
+          <VariablesDropdown fieldName={name} finalFocus={textareaRef} />
           <TooltipAnchor
             description={isEditing ? localize('com_ui_save') : localize('com_ui_edit')}
             render={
@@ -84,12 +85,22 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
             isEditing ? (
               <TextareaAutosize
                 {...field}
+                ref={(el: HTMLTextAreaElement | null) => {
+                  field.ref(el);
+                  textareaRef.current = el;
+                }}
                 // eslint-disable-next-line jsx-a11y/no-autofocus
                 autoFocus
                 className="w-full resize-none overflow-y-auto bg-transparent font-mono text-sm leading-relaxed text-text-primary placeholder:text-text-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary sm:text-base"
                 minRows={4}
                 maxRows={16}
-                onBlur={() => setIsEditing(false)}
+                onBlur={(e) => {
+                  /** Opening the variables menu moves focus into it; that is not leaving the editor */
+                  if (e.relatedTarget?.closest('[role="menu"]')) {
+                    return;
+                  }
+                  setIsEditing(false);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
                     e.preventDefault();

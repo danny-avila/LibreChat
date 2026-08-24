@@ -32,6 +32,10 @@ import type {
 import type { Response } from 'express';
 import type { Types } from 'mongoose';
 import type { ServerRequest, StrategyFunctions } from '~/types';
+import { extractSkillContent, inspectContentWithTraversal } from '~/protection';
+import { contentFilterBlockResponse } from '~/middleware/contentFilter';
+import { resolveSkillFilePathParam } from './path';
+import { parseSkillMarkdown } from './parse';
 import { isBinaryBuffer } from './binary';
 
 /** Thin error shape the skill methods throw on validation failure. */
@@ -263,6 +267,42 @@ function parseLimit(raw: unknown): number {
   return Math.min(Math.max(1, parsed), 100);
 }
 
+function blockFilteredSkillContent(
+  req: ServerRequest,
+  res: Response,
+  input: TCreateSkill | TUpdateSkillPayload,
+): boolean {
+  if (req.config?.filters == null) {
+    return false;
+  }
+  const inlineFrontmatter =
+    typeof input.body === 'string' ? parseSkillMarkdown(input.body).frontmatter : undefined;
+  const { finding, traversalError } = inspectContentWithTraversal(
+    () =>
+      extractSkillContent({
+        name: input.name,
+        displayTitle: input.displayTitle,
+        description: input.description,
+        body: input.body,
+        frontmatter: {
+          ...inlineFrontmatter,
+          ...(input.frontmatter as Record<string, unknown> | undefined),
+        },
+        category: input.category,
+      }),
+    { filters: req.config?.filters },
+  );
+  if (finding != null) {
+    res.status(400).json(contentFilterBlockResponse(finding));
+    return true;
+  }
+  if (traversalError != null) {
+    res.status(traversalError.statusCode).json(traversalError.body);
+    return true;
+  }
+  return false;
+}
+
 /**
  * Factory for the typed Express handlers served at `/api/skills`.
  * The legacy `api/server/routes/skills.js` imports this, passes in concrete
@@ -377,6 +417,9 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       }
       if (!body.description || typeof body.description !== 'string') {
         return res.status(400).json({ error: 'Skill description is required' });
+      }
+      if (blockFilteredSkillContent(req, res, body)) {
+        return res;
       }
 
       const authorId = (user._id ?? user.id) as unknown as Types.ObjectId;
@@ -501,6 +544,9 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       if (Object.keys(update).length === 0) {
         return res.status(400).json({ error: 'At least one field must be provided for update' });
       }
+      if (blockFilteredSkillContent(req, res, rest)) {
+        return res;
+      }
 
       let result: UpdateSkillResult;
       try {
@@ -599,12 +645,12 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
 
   async function downloadFileHandler(req: ServerRequest, res: Response) {
     try {
-      const { id, relativePath } = req.params as { id: string; relativePath: string };
-      let decodedPath: string;
-      try {
-        decodedPath = decodeURIComponent(relativePath);
-      } catch {
-        return res.status(400).json({ error: 'Invalid file path encoding' });
+      const { id } = req.params as { id: string };
+      const decodedPath = resolveSkillFilePathParam(
+        (req.params as { relativePath?: string | string[] }).relativePath,
+      );
+      if (decodedPath == null) {
+        return res.status(404).json({ error: 'Skill file not found' });
       }
 
       // SKILL.md is the skill body itself, not a SkillFile document
@@ -715,15 +761,14 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
         }
       }
 
-      // File was shorter than 8 KB — check what we have
-      if (!binaryChecked && isBinaryBuffer(Buffer.concat(chunks))) {
+      const buffer = Buffer.concat(chunks);
+      if (isBinaryBuffer(buffer)) {
         updateSkillFileContent(id, decodedPath, { isBinary: true }).catch((e) =>
           logger.error('[downloadFile] Cache write failed:', e),
         );
         return res.status(200).json({ ...base, isBinary: true });
       }
 
-      const buffer = Buffer.concat(chunks);
       const text = buffer.toString('utf-8');
       if (buffer.length <= MAX_TEXT_CACHE_BYTES) {
         updateSkillFileContent(id, decodedPath, { content: text, isBinary: false }).catch((e) =>
@@ -732,19 +777,19 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       }
       return res.status(200).json({ ...base, isBinary: false, content: text });
     } catch (error) {
-      logger.error('[GET /skills/:id/files/:relativePath] Error', error);
+      logger.error('[GET /skills/:id/files/*relativePath] Error', error);
       return res.status(500).json({ error: 'Error downloading skill file' });
     }
   }
 
   async function deleteFileHandler(req: ServerRequest, res: Response) {
     try {
-      const { id, relativePath } = req.params as { id: string; relativePath: string };
-      let decodedPath: string;
-      try {
-        decodedPath = decodeURIComponent(relativePath);
-      } catch {
-        return res.status(400).json({ error: 'Invalid file path encoding' });
+      const { id } = req.params as { id: string };
+      const decodedPath = resolveSkillFilePathParam(
+        (req.params as { relativePath?: string | string[] }).relativePath,
+      );
+      if (decodedPath == null) {
+        return res.status(404).json({ error: 'Skill file not found' });
       }
 
       // Look up the file record so we can clean up the storage blob
@@ -777,7 +822,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       };
       return res.status(200).json(response);
     } catch (error) {
-      logger.error('[DELETE /skills/:id/files/:relativePath] Error', error);
+      logger.error('[DELETE /skills/:id/files/*relativePath] Error', error);
       return res.status(500).json({ error: 'Error deleting skill file' });
     }
   }

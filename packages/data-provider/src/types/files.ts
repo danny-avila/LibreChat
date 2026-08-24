@@ -1,5 +1,5 @@
+import type { CodeEnvRef, CodeEnvRefMap } from '../codeEnvRef';
 import { EToolResources } from './assistants';
-import type { CodeEnvRef } from '../codeEnvRef';
 
 export enum FileSources {
   local = 'local',
@@ -39,12 +39,15 @@ export enum FileContext {
   bytes = 'bytes',
 }
 
+/** Structural type for a compiled matcher: a native `RegExp` or a linear-time engine both satisfy it. Only `test` is ever called on `supportedMimeTypes`. */
+export type RegexLike = { test(input: string): boolean };
+
 export type EndpointFileConfig = {
   disabled?: boolean;
   fileLimit?: number;
   fileSizeLimit?: number;
   totalSizeLimit?: number;
-  supportedMimeTypes?: RegExp[];
+  supportedMimeTypes?: RegexLike[];
 };
 
 export type FileConfig = {
@@ -62,17 +65,19 @@ export type FileConfig = {
     maxWidth?: number;
     maxHeight?: number;
     quality?: number;
+    /** Set when `enabled` came from the admin config, in which case it wins over the user's setting */
+    enforced?: boolean;
   };
   ocr?: {
-    supportedMimeTypes?: RegExp[];
+    supportedMimeTypes?: RegexLike[];
   };
   text?: {
-    supportedMimeTypes?: RegExp[];
+    supportedMimeTypes?: RegexLike[];
   };
   stt?: {
-    supportedMimeTypes?: RegExp[];
+    supportedMimeTypes?: RegexLike[];
   };
-  checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
+  checkType?: (fileType: string, supportedTypes: RegexLike[]) => boolean;
 };
 
 export type FileConfigInput = {
@@ -99,7 +104,7 @@ export type FileConfigInput = {
   stt?: {
     supportedMimeTypes?: string[];
   };
-  checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
+  checkType?: (fileType: string, supportedTypes: RegexLike[]) => boolean;
 };
 
 export type TFile = {
@@ -159,6 +164,9 @@ export type TFile = {
      * resolve via `resolveCodeEnvRef`.
      */
     codeEnvRef?: CodeEnvRef;
+    codeEnvRefs?: CodeEnvRefMap;
+    /** Dispatch-order stamp for the current source artifact generation. */
+    sourceDispatchedAt?: number;
   };
   createdAt?: string | Date;
   updatedAt?: string | Date;
@@ -235,6 +243,15 @@ export type VoiceOptions = {
   onSuccess?: (data: VoiceResponse, variables: unknown, context?: unknown) => void;
   onMutate?: () => void | Promise<unknown>;
   onError?: (error: unknown, variables: unknown, context?: unknown) => void;
+};
+
+export type TFilesUsageBody = {
+  file_ids: string[];
+};
+
+export type TFilesUsageResponse = {
+  /** Count of queued uploads whose TTL hold was extended. */
+  held: number;
 };
 
 export type DeleteFilesResponse = {

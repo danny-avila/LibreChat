@@ -4,6 +4,7 @@ import {
   buildTree,
   ContentTypes,
   isEphemeralAgentId,
+  getEphemeralSender,
   appendAgentIdSuffix,
   encodeEphemeralAgentId,
 } from 'librechat-data-provider';
@@ -14,7 +15,7 @@ import type {
   TMessageContentParts,
 } from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
-import type { LocalizeFunction } from '~/common';
+import type { LocalizeFunction, TMessageProps } from '~/common';
 
 export const TEXT_KEY_DIVIDER = '|||';
 export const STREAM_START_FAILED_METADATA_KEY = 'streamStartFailed';
@@ -191,6 +192,14 @@ export const getAllContentText = (message?: TMessage | null): string => {
   return '';
 };
 
+/**
+ * Whether a draft message has enough content to submit: non-whitespace
+ * text, or at least one attached file. Lets users send a file without
+ * having to type a placeholder message alongside it.
+ */
+export const isSubmittableMessage = (text?: string | null, fileCount = 0): boolean =>
+  (text ?? '').trim() !== '' || fileCount > 0;
+
 export const hasStreamStartFailed = (message?: Pick<TMessage, 'metadata'> | null): boolean =>
   message?.metadata?.[STREAM_START_FAILED_METADATA_KEY] === true;
 
@@ -292,9 +301,8 @@ export const scrollToEnd = (callback?: () => void) => {
 };
 
 /**
- * Clears messages for both the specified conversation ID and the NEW_CONVO query key.
- * This ensures that messages are properly cleared in all contexts, preventing stale data
- * from persisting in the NEW_CONVO cache.
+ * Removes an existing conversation's message query so reopening it starts cold, and resets the
+ * NEW_CONVO query to an empty cache for immediate optimistic messages.
  *
  * @param queryClient - The React Query client instance
  * @param conversationId - The conversation ID to clear messages for
@@ -305,13 +313,66 @@ export const clearMessagesCache = (
 ): void => {
   const convoId = conversationId ?? Constants.NEW_CONVO;
 
-  // Clear messages for the current conversation
-  queryClient.setQueryData<TMessage[]>([QueryKeys.messages, convoId], []);
-
-  // Also clear NEW_CONVO messages if we're not already on NEW_CONVO
+  // An absent existing-conversation cache means its history must load before sending.
   if (convoId !== Constants.NEW_CONVO) {
-    queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
+    queryClient.removeQueries([QueryKeys.messages, convoId], { exact: true });
   }
+
+  queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
+};
+
+/**
+ * True while the new-chat cache still holds the given conversation's messages: a chat's first
+ * turn writes the same array under both keys, so the alias survives until it is reset. The
+ * reference check covers the window before the messages carry their conversation ID.
+ */
+const newConversationCacheAliases = (queryClient: QueryClient, conversationId: string): boolean => {
+  const conversationMessages = queryClient.getQueryData<TMessage[]>([
+    QueryKeys.messages,
+    conversationId,
+  ]);
+  const newConversationMessages = queryClient.getQueryData<TMessage[]>([
+    QueryKeys.messages,
+    Constants.NEW_CONVO,
+  ]);
+
+  return (
+    newConversationMessages != null &&
+    (newConversationMessages === conversationMessages ||
+      newConversationMessages.some((message) => message.conversationId === conversationId))
+  );
+};
+
+/** Removes a deleted conversation's message cache and any matching new-chat cache alias. */
+export const clearDeletedConversationMessagesCache = (
+  queryClient: QueryClient,
+  conversationId: string,
+): void => {
+  const newConversationAliasesDeleted = newConversationCacheAliases(queryClient, conversationId);
+
+  queryClient.removeQueries([QueryKeys.messages, conversationId], { exact: true });
+
+  if (!newConversationAliasesDeleted) {
+    return;
+  }
+
+  queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
+};
+
+/**
+ * Drops the new-chat alias of a conversation that was just archived, so returning to a new chat
+ * does not keep rendering it. Its own history stays cached: unlike a deleted chat, an archived
+ * one can still be reopened from the archive.
+ */
+export const clearArchivedConversationMessagesCache = (
+  queryClient: QueryClient,
+  conversationId: string,
+): void => {
+  if (!newConversationCacheAliases(queryClient, conversationId)) {
+    return;
+  }
+
+  queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
 };
 
 /** Returns a 1-based message number, or null if depth is absent or invalid. */
@@ -412,6 +473,7 @@ const formatRelativeTime = (from: Date, to: Date, locale?: string): string => {
 export const getMessageTimestamp = (
   value?: string | null,
   locale?: string,
+  hour12?: boolean,
 ): MessageTimestamp | null => {
   if (!isValidTimestamp(value)) {
     return null;
@@ -427,6 +489,7 @@ export const getMessageTimestamp = (
     absolute: new Intl.DateTimeFormat(safeLocale, {
       dateStyle: 'medium',
       timeStyle: 'short',
+      hour12,
     }).format(date),
     isRecent: Math.abs(now.getTime() - date.getTime()) < RECENT_THRESHOLD_MS,
   };
@@ -461,13 +524,13 @@ export const createDualMessageContent = (
       primaryConvo.spec != null && primaryConvo.spec !== ''
         ? modelSpecs?.find((s) => s.name === primaryConvo.spec)
         : undefined;
-    // For ephemeral agents, use modelLabel if provided, then model spec's label,
-    // then modelDisplayLabel from endpoint config, otherwise empty string to show model name
-    const primarySender =
-      primaryConvo.modelLabel ??
-      primarySpec?.label ??
-      (primaryEndpoint ? endpointsConfig?.[primaryEndpoint]?.modelDisplayLabel : undefined) ??
-      '';
+    const primarySender = getEphemeralSender({
+      modelLabel: primaryConvo.modelLabel,
+      specLabel: primarySpec?.label,
+      modelDisplayLabel: primaryEndpoint
+        ? endpointsConfig?.[primaryEndpoint]?.modelDisplayLabel
+        : undefined,
+    });
     primaryAgentId = encodeEphemeralAgentId({
       endpoint: primaryEndpoint ?? '',
       model: primaryModel,
@@ -501,13 +564,13 @@ export const createDualMessageContent = (
       addedConvo.spec != null && addedConvo.spec !== ''
         ? modelSpecs?.find((s) => s.name === addedConvo.spec)
         : undefined;
-    // For ephemeral agents, use modelLabel if provided, then model spec's label,
-    // then modelDisplayLabel from endpoint config, otherwise empty string to show model name
-    const addedSender =
-      addedConvo.modelLabel ??
-      addedSpec?.label ??
-      (addedEndpoint ? endpointsConfig?.[addedEndpoint]?.modelDisplayLabel : undefined) ??
-      '';
+    const addedSender = getEphemeralSender({
+      modelLabel: addedConvo.modelLabel,
+      specLabel: addedSpec?.label,
+      modelDisplayLabel: addedEndpoint
+        ? endpointsConfig?.[addedEndpoint]?.modelDisplayLabel
+        : undefined,
+    });
     addedAgentId = encodeEphemeralAgentId({
       endpoint: addedEndpoint ?? '',
       model: addedModel,
@@ -527,3 +590,75 @@ export const createDualMessageContent = (
   // that will be replaced by real content with proper types from the server
   return [primaryContent, addedContent] as unknown as TMessageContentParts[];
 };
+
+export function areMessageFilesEqual(prevFiles?: TMessage['files'], nextFiles?: TMessage['files']) {
+  if (prevFiles === nextFiles) {
+    return true;
+  }
+  const prevLength = prevFiles?.length ?? 0;
+  const nextLength = nextFiles?.length ?? 0;
+  if (prevLength !== nextLength) {
+    return false;
+  }
+  if (prevLength === 0) {
+    return true;
+  }
+  return prevFiles?.every((file, index) => file === nextFiles?.[index]) ?? true;
+}
+
+/**
+ * Field-level equality for `message` props: `buildTree` mints a new node object
+ * for EVERY message on each streaming update, so memo comparators must diff the
+ * fields that drive rendering instead of the object reference.
+ */
+export function areMessageFieldsEqual(
+  prevMsg?: TMessage | null,
+  nextMsg?: TMessage | null,
+): boolean {
+  if (prevMsg === nextMsg) {
+    return true;
+  }
+  if (!prevMsg || !nextMsg) {
+    return false;
+  }
+
+  return (
+    prevMsg.messageId === nextMsg.messageId &&
+    prevMsg.text === nextMsg.text &&
+    prevMsg.error === nextMsg.error &&
+    prevMsg.unfinished === nextMsg.unfinished &&
+    prevMsg.createdAt === nextMsg.createdAt &&
+    prevMsg.depth === nextMsg.depth &&
+    prevMsg.isCreatedByUser === nextMsg.isCreatedByUser &&
+    (prevMsg.children?.length ?? 0) === (nextMsg.children?.length ?? 0) &&
+    prevMsg.content === nextMsg.content &&
+    prevMsg.model === nextMsg.model &&
+    prevMsg.endpoint === nextMsg.endpoint &&
+    prevMsg.iconURL === nextMsg.iconURL &&
+    prevMsg.feedback?.rating === nextMsg.feedback?.rating &&
+    areMessageFilesEqual(prevMsg.files, nextMsg.files) &&
+    (prevMsg.attachments?.length ?? 0) === (nextMsg.attachments?.length ?? 0) &&
+    (prevMsg.manualSkills?.length ?? 0) === (nextMsg.manualSkills?.length ?? 0) &&
+    (prevMsg.alwaysAppliedSkills?.length ?? 0) === (nextMsg.alwaysAppliedSkills?.length ?? 0) &&
+    (prevMsg.quotes?.length ?? 0) === (nextMsg.quotes?.length ?? 0)
+  );
+}
+
+/**
+ * Comparator for the memoized message-row wrappers (Message / MessageContent /
+ * MessageParts): identity-compare the scalar props, field-compare the message.
+ * The child recursion lives in MultiMessage, so a bailed row never severs the
+ * spine walk that delivers streaming updates to descendants.
+ */
+export function areMessageRowPropsEqual(prev: TMessageProps, next: TMessageProps): boolean {
+  return (
+    prev.currentEditId === next.currentEditId &&
+    prev.setCurrentEditId === next.setCurrentEditId &&
+    prev.siblingIdx === next.siblingIdx &&
+    prev.siblingCount === next.siblingCount &&
+    prev.setSiblingIdx === next.setSiblingIdx &&
+    prev.isSearchView === next.isSearchView &&
+    prev.conversation === next.conversation &&
+    areMessageFieldsEqual(prev.message, next.message)
+  );
+}

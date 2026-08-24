@@ -5,6 +5,7 @@ const express = require('express');
 const {
   createSkillsHandlers,
   createImportHandler,
+  blockFilteredSkillFile,
   generateCheckAccess,
   getStorageMetadata,
   resolveRequestTenantId,
@@ -211,6 +212,15 @@ async function uploadFileHandler(req, res) {
     ) {
       return res.status(400).json({ error: 'Invalid file path' });
     }
+    if (
+      blockFilteredSkillFile(req.config?.filters, res, {
+        buffer: file.buffer,
+        originalName: file.originalname,
+        relativePath,
+      })
+    ) {
+      return res;
+    }
 
     const tenantId = resolveRequestTenantId(req);
 
@@ -346,14 +356,18 @@ router.post(
   uploadFileHandler,
 );
 
+// Wildcard splat (`*relativePath`) captures nested skill paths (e.g.
+// `references/guide.md`) whether the client sends an encoded `%2F` or a proxy
+// has already decoded it to a literal slash. A single `:relativePath` segment
+// 404s in the latter case, which is why nested files failed behind proxies.
 router.get(
-  '/:id/files/:relativePath',
+  '/:id/files/*relativePath',
   canAccessSkillResource({ requiredPermission: PermissionBits.VIEW }),
   handlers.downloadFile,
 );
 
 router.delete(
-  '/:id/files/:relativePath',
+  '/:id/files/*relativePath',
   canAccessSkillResource({ requiredPermission: PermissionBits.EDIT }),
   handlers.deleteFile,
 );

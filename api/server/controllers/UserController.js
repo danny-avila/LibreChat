@@ -3,10 +3,13 @@ const { logger, getTenantId, webSearchKeys } = require('@librechat/data-schemas'
 const {
   getNewS3URL,
   needsRefresh,
+  GenerationJobManager,
   MCPOAuthHandler,
   MCPTokenStorage,
+  getAppConfigOptionsFromUser,
   normalizeHttpError,
   extractWebSearchEnvVars,
+  deleteAgentCheckpoints,
   deleteAllSharedLinksWithCleanup,
 } = require('@librechat/api');
 const {
@@ -22,7 +25,19 @@ const { verifyEmail, resendVerificationEmail } = require('~/server/services/Auth
 const { getMCPManager, getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
 const { processDeleteRequest } = require('~/server/services/Files/process');
+const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
+const {
+  drainAgentTriggerDeliveriesForUser,
+  prepareAgentTriggerUserPurge,
+  cancelAgentTriggerUserPurge,
+  purgeAgentTriggerDeliveriesForUser,
+} = require('~/server/services/Agents/triggers');
 const { getAppConfig } = require('~/server/services/Config');
+const { randomUUID } = require('node:crypto');
+const {
+  quiesceUserSchedules,
+  restoreUserSchedulesFromDeletion,
+} = require('~/server/services/Schedules');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
@@ -58,13 +73,7 @@ const sanitizeUserForResponse = (user) => {
 };
 
 const getUserController = async (req, res) => {
-  const appConfig =
-    req.config ??
-    (await getAppConfig({
-      role: req.user?.role,
-      userId: req.user?.id,
-      tenantId: req.user?.tenantId,
-    }));
+  const appConfig = req.config ?? (await getAppConfig(getAppConfigOptionsFromUser(req.user)));
   /** @type {IUser} */
   const userData = sanitizeUserForResponse(req.user);
   if (appConfig.fileStrategy === FileSources.s3 && userData.avatar) {
@@ -181,14 +190,24 @@ const deleteUserMcpServers = async (userId) => {
     const allServersToDelete = [...aclOwnedServers, ...legacyServers];
 
     const mcpManager = getMCPManager();
-    if (mcpManager) {
-      await Promise.all(
-        allServersToDelete.map(async (s) => {
-          await mcpManager.disconnectUserConnection(userId, s.serverName);
+    await Promise.allSettled(
+      allServersToDelete.map(async (s) => {
+        try {
           await invalidateCachedTools({ userId, serverName: s.serverName });
-        }),
-      );
-    }
+        } catch (error) {
+          logger.warn(
+            `[deleteUserMcpServers] Failed to invalidate tools for ${s.serverName}:`,
+            error,
+          );
+        } finally {
+          try {
+            await mcpManager?.disconnectUserConnection(userId, s.serverName);
+          } catch (error) {
+            logger.warn(`[deleteUserMcpServers] Failed to disconnect ${s.serverName}:`, error);
+          }
+        }
+      }),
+    );
 
     await AclEntry.deleteMany({
       resourceType: ResourceType.MCPSERVER,
@@ -202,13 +221,7 @@ const deleteUserMcpServers = async (userId) => {
 };
 
 const updateUserPluginsController = async (req, res) => {
-  const appConfig =
-    req.config ??
-    (await getAppConfig({
-      role: req.user?.role,
-      userId: req.user?.id,
-      tenantId: req.user?.tenantId,
-    }));
+  const appConfig = req.config ?? (await getAppConfig(getAppConfigOptionsFromUser(req.user)));
   const { user } = req;
   const { pluginKey, action, auth, isEntityTool } = req.body;
   try {
@@ -305,21 +318,37 @@ const updateUserPluginsController = async (req, res) => {
       if (pluginKey.startsWith(Constants.mcp_prefix)) {
         try {
           const mcpManager = getMCPManager();
+          // Extract server name from pluginKey (format: "mcp_<serverName>")
+          const serverName = pluginKey.replace(Constants.mcp_prefix, '');
           if (mcpManager) {
-            // Extract server name from pluginKey (format: "mcp_<serverName>")
-            const serverName = pluginKey.replace(Constants.mcp_prefix, '');
             logger.info(
               `[updateUserPluginsController] Attempting disconnect of MCP server "${serverName}" for user ${user.id} after plugin auth update.`,
             );
-            await mcpManager.disconnectUserConnection(user.id, serverName);
+          }
+          let invalidationError;
+          try {
             await invalidateCachedTools({ userId: user.id, serverName });
+          } catch (error) {
+            invalidationError = error;
+          }
+          try {
+            await mcpManager?.disconnectUserConnection(user.id, serverName);
+          } catch (error) {
+            logger.error(
+              `[updateUserPluginsController] Error disconnecting MCP connection for user ${user.id} after plugin auth update:`,
+              error,
+            );
+          }
+          if (invalidationError) {
+            throw invalidationError;
           }
         } catch (disconnectError) {
           logger.error(
-            `[updateUserPluginsController] Error disconnecting MCP connection for user ${user.id} after plugin auth update:`,
+            `[updateUserPluginsController] Error fencing MCP connection for user ${user.id} after plugin auth update:`,
             disconnectError,
           );
-          // Do not fail the request for this, but log it.
+          // A credential mutation is not safely published until the shared generation fence moves.
+          throw disconnectError;
         }
       }
       return res.status(status).send();
@@ -335,6 +364,9 @@ const updateUserPluginsController = async (req, res) => {
 
 const deleteUserController = async (req, res) => {
   const { user } = req;
+  let triggerDeletionFence;
+  let scheduleSuspensionToken;
+  let userDeleted = false;
 
   try {
     const existingUser = await db.getUserById(
@@ -353,6 +385,40 @@ const deleteUserController = async (req, res) => {
       }
     }
 
+    // Block new trigger admissions across replicas while preserving the user
+    // principal so a transient cleanup failure remains retryable.
+    triggerDeletionFence = new Date();
+    const fenceState = await db.beginAgentTriggerUserDeletion(user.id, triggerDeletionFence);
+    if (fenceState === 'in_progress') {
+      triggerDeletionFence = undefined;
+      throw new Error('Agent trigger account deletion is already in progress');
+    }
+    if (fenceState === 'missing') {
+      triggerDeletionFence = undefined;
+    }
+    if (triggerDeletionFence != null) {
+      await prepareAgentTriggerUserPurge(user.id, triggerDeletionFence, user.tenantId);
+    }
+    await drainAgentTriggerDeliveriesForUser(user.id);
+    await subagentThreadTaskStore.cancelAndDrainForOwner(user.id, user.tenantId);
+    // Reversibly suspend the user's schedules under a per-attempt token BEFORE draining.
+    // A later cascade step (or this drain) can still fail and cancel the deletion, and the
+    // catch below restores exactly this attempt's rows — so a failed deletion never leaves
+    // a live user with silently disabled, erasure-eligible schedules.
+    scheduleSuspensionToken = randomUUID();
+    if (!(await quiesceUserSchedules(user.id, scheduleSuspensionToken))) {
+      throw new Error('Scheduled executions could not be confirmed stopped');
+    }
+    const activeAgentRuns = await GenerationJobManager.getCleanupBlockingJobIdsForUser(
+      user.id,
+      user.tenantId,
+    );
+    await Promise.all(
+      activeAgentRuns.map((streamId) =>
+        GenerationJobManager.abortJob(streamId, { awaitProviderDrain: true }),
+      ),
+    );
+
     await db.deleteMessages({ user: user.id });
     await db.deleteAllUserSessions({ userId: user.id });
     await db.deleteTransactions({ user: user.id });
@@ -360,12 +426,24 @@ const deleteUserController = async (req, res) => {
     await db.deleteBalances({ user: user._id });
     await db.deletePresets(user.id);
     try {
-      await db.deleteConvos(user.id);
+      const convoDeletion = await db.deleteConvos(user.id);
+      // HITL: prune the deleted conversations' durable checkpoints — a paused run's
+      // checkpoint would otherwise persist until the Mongo TTL. Never throws.
+      const appConfig =
+        req.config ??
+        (await getAppConfig({
+          role: req.user?.role,
+          userId: req.user?.id,
+          tenantId: req.user?.tenantId,
+        }));
+      await deleteAgentCheckpoints(
+        convoDeletion?.conversationIds,
+        appConfig?.endpoints?.agents?.checkpointer,
+      );
     } catch (error) {
       logger.error('[deleteUserController] Error deleting user convos, likely no convos', error);
     }
     await deleteUserPluginAuth(user.id, null, true);
-    await db.deleteUserById(user.id);
     await deleteAllSharedLinksWithCleanup(user.id);
     await deleteUserFiles(req);
     await db.deleteFiles(null, user.id);
@@ -382,9 +460,58 @@ const deleteUserController = async (req, res) => {
     await db.deleteTokens({ userId: user.id });
     await db.removeUserFromAllGroups(user.id);
     await db.deleteAclEntries({ principalId: user._id });
+    await db.deleteSchedulesByUser(user.id);
+    const deleteResult = await db.deleteUserById(user.id);
+    if (deleteResult.deletedCount !== 1) {
+      throw new Error('User disappeared before account deletion could commit');
+    }
+    userDeleted = true;
+    await purgeAgentTriggerDeliveriesForUser(user.id);
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
+    // The account survives this failed attempt, so its schedules must too: restore the
+    // exact rows this attempt suspended (re-enabled/re-armed from their snapshot). Fenced
+    // to the token, so a schedule the owner deleted meanwhile is not resurrected. A
+    // successful deletion never reaches here (userDeleted short-circuits it).
+    //
+    // RESTORE BEFORE RELEASING THE DELETION FENCE. That fence is what refuses new schedule
+    // writes/claims for this user; releasing it first opens a window where an owner PATCH
+    // could edit a still-suspended row and then have its enabled/next-run state overwritten
+    // by this older snapshot, and where a second deletion attempt could re-suspend these
+    // rows under a new token — making this restore a no-op and stranding the disabled
+    // snapshot permanently.
+    if (scheduleSuspensionToken != null && !userDeleted) {
+      try {
+        await restoreUserSchedulesFromDeletion(user.id, scheduleSuspensionToken);
+      } catch (restoreError) {
+        // Every retry is exhausted at this point. The fence is still released below on
+        // purpose: retaining it would refuse this live account's schedule writes AND make
+        // `beginAgentTriggerUserDeletion` report `in_progress` forever, blocking the retry
+        // that is the convergence path — a later attempt re-suspends by ADOPTING this
+        // snapshot, so its cancel restores these exact rows. Log the token so the state is
+        // recoverable directly if that never happens.
+        logger.error(
+          `[deleteUserController] Failed to restore suspended schedules after a cancelled deletion; they remain disabled for user ${user.id} under suspension token ${scheduleSuspensionToken}`,
+          restoreError,
+        );
+      }
+    }
+    if (triggerDeletionFence != null && !userDeleted) {
+      try {
+        await cancelAgentTriggerUserPurge(user.id, triggerDeletionFence);
+      } catch (purgeFenceError) {
+        logger.error(
+          '[deleteUserController] Failed to disarm trigger purge recovery',
+          purgeFenceError,
+        );
+      }
+      try {
+        await db.cancelAgentTriggerUserDeletion(user.id, triggerDeletionFence);
+      } catch (fenceError) {
+        logger.error('[deleteUserController] Failed to release trigger deletion fence', fenceError);
+      }
+    }
     logger.error('[deleteUserController]', err);
     return res.status(500).json({ message: 'Something went wrong.' });
   }
@@ -454,7 +581,11 @@ const clearStoredMCPOAuthState = async (userId, serverName) => {
         }) === index,
     );
     const results = await Promise.allSettled(
-      flowDeletes.map(([flowId, type]) => flowManager.deleteFlow(flowId, type)),
+      flowDeletes.map(([flowId, type]) =>
+        type === 'mcp_oauth'
+          ? MCPOAuthHandler.deleteFlowAndStateMapping(flowId, flowManager)
+          : flowManager.deleteFlow(flowId, type),
+      ),
     );
     for (const result of results) {
       if (result.status === 'rejected') {
@@ -513,6 +644,21 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
     return;
   }
   const { clientInfo, clientMetadata } = clientTokenData;
+  const storedServerUrl = clientMetadata.server_url;
+  const storedClientSource = clientMetadata.client_source;
+  if (
+    typeof storedServerUrl !== 'string' ||
+    typeof clientMetadata.token_endpoint !== 'string' ||
+    typeof clientMetadata.revocation_endpoint !== 'string' ||
+    typeof clientMetadata.credential_set_id !== 'string' ||
+    (storedClientSource !== 'configured' && storedClientSource !== 'dynamic')
+  ) {
+    logger.warn(
+      `[maybeUninstallOAuthMCP] Stored OAuth binding metadata is incomplete for ${serverName}; clearing local MCP OAuth state without remote revocation.`,
+    );
+    await clearStoredMCPOAuthState(userId, serverName);
+    return;
+  }
 
   // 2. get decrypted tokens before deletion
   let tokens = null;
@@ -522,7 +668,15 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
       serverName,
       findToken: db.findToken,
     });
+    if (tokens) {
+      MCPTokenStorage.assertCredentialSetBinding(
+        serverName,
+        tokens.credential_set_id,
+        clientMetadata,
+      );
+    }
   } catch (error) {
+    tokens = null;
     logger.warn(
       `[maybeUninstallOAuthMCP] Unable to load OAuth tokens for ${serverName}; clearing local token state.`,
       error,
@@ -530,10 +684,8 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   }
 
   // 3. revoke OAuth tokens at the provider
-  const revocationEndpoint =
-    serverConfig.oauth?.revocation_endpoint ?? clientMetadata.revocation_endpoint;
+  const revocationEndpoint = clientMetadata.revocation_endpoint;
   const revocationEndpointAuthMethodsSupported =
-    serverConfig.oauth?.revocation_endpoint_auth_methods_supported ??
     clientMetadata.revocation_endpoint_auth_methods_supported;
   const oauthHeaders = serverConfig.oauth_headers ?? {};
   // Use the request's merged (tenant/principal-scoped) allowlists so admin-panel mcpSettings
@@ -548,7 +700,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
         tokens.access_token,
         'access',
         {
-          serverUrl: serverConfig.url,
+          serverUrl: storedServerUrl,
           clientId: clientInfo.client_id,
           clientSecret: clientInfo.client_secret ?? '',
           revocationEndpoint,
@@ -573,7 +725,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
         tokens.refresh_token,
         'refresh',
         {
-          serverUrl: serverConfig.url,
+          serverUrl: storedServerUrl,
           clientId: clientInfo.client_id,
           clientSecret: clientInfo.client_secret ?? '',
           revocationEndpoint,

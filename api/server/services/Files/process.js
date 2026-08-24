@@ -10,20 +10,30 @@ const {
   imageExtRegex,
   EModelEndpoint,
   EToolResources,
+  mergeCodeEnvRef,
   mergeFileConfig,
   AgentCapabilities,
   checkOpenAIStorage,
   removeNullishValues,
   isAssistantsEndpoint,
   getEndpointFileConfig,
-  documentParserMimeTypes,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   sanitizeFilename,
   parseText,
   processAudioFile,
+  extractInspectableFileText,
+  assertExtractedTextInspectable,
+  getFileExtractionLogDetails,
+  getUploadExtractedTextPlan,
+  UPLOAD_EXTRACTED_TEXT_PLANS,
+  inspectContent,
+  extractFileContent,
+  hasActiveFileFieldPolicy,
+  sendUploadSuccess,
   getStorageMetadata,
+  contentFilterBlockResponse,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
@@ -67,7 +77,8 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
   };
 };
 
-const hasCodeEnvRef = (file) => file?.metadata?.codeEnvRef != null;
+const hasCodeEnvRef = (file) =>
+  file?.metadata?.codeEnvRef != null || file?.metadata?.codeEnvRefs != null;
 
 const isMissingStorageError = (err) => {
   const code = err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
@@ -446,9 +457,10 @@ const processFileURL = async ({
  * @param {Express.Response} [params.res] - The Express response object.
  * @param {ImageMetadata} params.metadata - Additional metadata for the file.
  * @param {boolean} params.returnFile - Whether to return the file metadata or return response as normal.
+ * @param {import('@librechat/api').UploadSseStream | null} [params.sseStream] - Active upload SSE stream, if enabled.
  * @returns {Promise<void>}
  */
-const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
+const processImageFile = async ({ req, res, metadata, returnFile = false, sseStream }) => {
   const { file } = req;
   const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
@@ -486,7 +498,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
   if (returnFile) {
     return result;
   }
-  res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
+  sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
 
 /**
@@ -553,9 +565,10 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
  * @param {ServerRequest} params.req - The Express request object.
  * @param {Express.Response} params.res - The Express response object.
  * @param {FileMetadata} params.metadata - Additional metadata for the file.
+ * @param {import('@librechat/api').UploadSseStream | null} [params.sseStream] - Active upload SSE stream, if enabled.
  * @returns {Promise<void>}
  */
-const processFileUpload = async ({ req, res, metadata }) => {
+const processFileUpload = async ({ req, res, metadata, sseStream }) => {
   const appConfig = req.config;
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
@@ -648,7 +661,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
     },
     true,
   );
-  res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
+  sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
 
 /**
@@ -660,9 +673,10 @@ const processFileUpload = async ({ req, res, metadata }) => {
  * @param {ServerRequest} params.req - The Express request object.
  * @param {Express.Response} params.res - The Express response object.
  * @param {FileMetadata} params.metadata - Additional metadata for the file.
+ * @param {import('@librechat/api').UploadSseStream | null} [params.sseStream] - Active upload SSE stream, if enabled.
  * @returns {Promise<void>}
  */
-const processAgentFileUpload = async ({ req, res, metadata }) => {
+const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const { file } = req;
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
@@ -722,14 +736,13 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
      * `fileIdentifier` key would be silently dropped by mongoose strict
      * mode and the file would lose its sandbox reference on subsequent
      * priming turns. */
-    fileInfoMetadata = {
-      codeEnvRef: {
-        kind: codeKind,
-        id: codeId,
-        storage_session_id: uploaded.storage_session_id,
-        file_id: uploaded.file_id,
-      },
-    };
+    fileInfoMetadata = mergeCodeEnvRef(undefined, {
+      kind: codeKind,
+      id: codeId,
+      storage_session_id: uploaded.storage_session_id,
+      file_id: uploaded.file_id,
+      executionProfile: 'default',
+    });
   } else if (tool_resource === EToolResources.file_search) {
     const isFileSearchEnabled = await checkCapability(req, AgentCapabilities.file_search);
     if (!isFileSearchEnabled) {
@@ -738,6 +751,14 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     // Note: File search processing continues to dual storage logic below
   } else if (tool_resource === EToolResources.context) {
     const { file_id, temp_file_id = null } = metadata;
+    const getExtractionLogDetails = (error) =>
+      getFileExtractionLogDetails({
+        filters: appConfig?.filters,
+        filename: file.originalname,
+        fileId: file_id,
+        error,
+      });
+    const { fileLabel: extractionFileLabel } = getExtractionLogDetails(undefined);
 
     /**
      * @param {object} params
@@ -745,14 +766,52 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
      * @param {number} params.bytes
      * @param {string} params.filepath
      * @param {string} params.type
+     * @param {boolean} params.isTranscript
      * @return {Promise<void>}
      */
-    const createTextFile = async ({ text, bytes, filepath, type = 'text/plain' }) => {
+    const createTextFile = async ({
+      text,
+      bytes,
+      filepath,
+      type = 'text/plain',
+      isTranscript = false,
+    }) => {
+      if (!isTranscript) {
+        assertExtractedTextInspectable({
+          filters: appConfig?.filters,
+          text,
+        });
+      }
       const textBytes = Buffer.byteLength(text, 'utf8');
       if (textBytes > 15 * megabyte) {
         throw new Error(
           `Extracted text from "${file.originalname}" exceeds the 15MB storage limit (${Math.round(textBytes / megabyte)}MB). Try a shorter document.`,
         );
+      }
+      if (
+        hasActiveFileFieldPolicy(appConfig?.filters, [
+          isTranscript ? 'transcript' : 'extracted_text',
+        ])
+      ) {
+        const content = isTranscript ? { transcript: text } : { extractedText: text };
+        const finding = inspectContent(extractFileContent(content), {
+          filters: appConfig.filters,
+        });
+        if (finding != null) {
+          const blockResponse = contentFilterBlockResponse(finding);
+          if (sseStream) {
+            sseStream.sendError({
+              ...blockResponse,
+              code: 400,
+              temp_file_id,
+              tool_resource,
+              display_to_user: true,
+            });
+          } else {
+            res.status(400).json(blockResponse);
+          }
+          return;
+        }
       }
       const retentionExpiry = await getAgentFileRetentionExpiry({
         req,
@@ -786,19 +845,22 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         });
       }
       const result = await db.createFile(fileInfo, true);
-      return res
-        .status(200)
-        .json({ message: 'Agent file uploaded and processed successfully', ...result });
+      sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
     };
 
     const fileConfig = mergeFileConfig(appConfig.fileConfig);
-
-    const shouldUseConfiguredOCR =
-      appConfig?.ocr != null &&
-      fileConfig.checkType(file.mimetype, fileConfig.ocr?.supportedMimeTypes || []);
-
+    const extractedTextPlan = getUploadExtractedTextPlan({
+      endpoint: metadata.endpoint,
+      toolResource: tool_resource,
+      mimeType: file.mimetype,
+      fileConfig,
+      ocrConfigured: appConfig?.ocr != null,
+      ragConfigured: !!process.env.RAG_API_URL,
+    });
+    const shouldUseConfiguredOCR = extractedTextPlan === UPLOAD_EXTRACTED_TEXT_PLANS.configuredOCR;
+    const shouldUseConfiguredText = extractedTextPlan === UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG;
     const shouldUseDocumentParser =
-      !shouldUseConfiguredOCR && documentParserMimeTypes.some((regex) => regex.test(file.mimetype));
+      extractedTextPlan === UPLOAD_EXTRACTED_TEXT_PLANS.documentParser;
 
     const shouldUseOCR = shouldUseConfiguredOCR || shouldUseDocumentParser;
 
@@ -809,9 +871,10 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
           const { handleFileUpload } = getStrategyFunctions(ocrStrategy);
           return await handleFileUpload({ req, file, loadAuthValues });
         } catch (err) {
+          const { errorMetadata } = getExtractionLogDetails(err);
           logger.error(
-            `[processAgentFileUpload] Configured OCR failed for "${file.originalname}", falling back to document_parser:`,
-            err,
+            `[processAgentFileUpload] Configured OCR failed for ${extractionFileLabel}, falling back to document_parser:`,
+            errorMetadata,
           );
         }
       }
@@ -819,9 +882,10 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         const { handleFileUpload } = getStrategyFunctions(FileSources.document_parser);
         return await handleFileUpload({ req, file, loadAuthValues });
       } catch (err) {
+        const { errorMetadata } = getExtractionLogDetails(err);
         logger.error(
-          `[processAgentFileUpload] Document parser failed for "${file.originalname}":`,
-          err,
+          `[processAgentFileUpload] Document parser failed for ${extractionFileLabel}:`,
+          errorMetadata,
         );
       }
     };
@@ -831,7 +895,10 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     }
 
     if (shouldUseOCR) {
-      const ocrResult = await resolveDocumentText();
+      const ocrResult = await extractInspectableFileText({
+        filters: appConfig?.filters,
+        extract: resolveDocumentText,
+      });
       if (ocrResult) {
         const { text, bytes, filepath: ocrFileURL } = ocrResult;
         return await createTextFile({ text, bytes, filepath: ocrFileURL });
@@ -849,7 +916,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     if (shouldUseSTT) {
       const sttService = await STTService.getInstance();
       const { text, bytes } = await processAudioFile({ req, file, sttService });
-      return await createTextFile({ text, bytes });
+      return await createTextFile({ text, bytes, type: file.mimetype, isTranscript: true });
     }
 
     const shouldUseText = fileConfig.checkType(
@@ -861,7 +928,46 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       throw new Error(`File type ${file.mimetype} is not supported for text parsing.`);
     }
 
-    const { text, bytes } = await parseText({ req, file, file_id });
+    /**
+     * A document type the admin routed to configured text extraction: prefer RAG `/text`, but fall
+     * back to the built-in document parser (not raw native text) when RAG is unavailable, so a
+     * transient outage doesn't degrade a docx/pdf to unreadable bytes. Only the RAG extraction is
+     * inside the fallback catch: a downstream persistence failure (size guard, DB, agent-resource
+     * mutation) must surface as itself, not trigger a second extraction attempt.
+     */
+    if (shouldUseConfiguredText) {
+      let configuredText;
+      try {
+        configuredText = await parseText({ req, file, file_id, allowNativeFallback: false });
+      } catch (err) {
+        const { errorMetadata } = getExtractionLogDetails(err);
+        logger.warn(
+          `[processAgentFileUpload] Configured RAG text extraction unavailable for ${extractionFileLabel}, using built-in document parser:`,
+          errorMetadata,
+        );
+        const documentText = await extractInspectableFileText({
+          filters: appConfig?.filters,
+          extract: resolveDocumentText,
+        });
+        if (!documentText) {
+          throw new Error(
+            `Unable to extract text from "${file.originalname}". RAG text extraction was unavailable and the built-in parser produced no result.`,
+          );
+        }
+        const { text, bytes, filepath: docFileURL } = documentText;
+        return await createTextFile({ text, bytes, filepath: docFileURL });
+      }
+      return await createTextFile({
+        text: configuredText.text,
+        bytes: configuredText.bytes,
+        type: file.mimetype,
+      });
+    }
+
+    const { text, bytes } = await extractInspectableFileText({
+      filters: appConfig?.filters,
+      extract: () => parseText({ req, file, file_id }),
+    });
     return await createTextFile({ text, bytes, type: file.mimetype });
   }
 
@@ -985,7 +1091,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
   const result = await db.createFile(fileInfo, true);
 
-  res.status(200).json({ message: 'Agent file uploaded and processed successfully', ...result });
+  sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
 };
 
 /**

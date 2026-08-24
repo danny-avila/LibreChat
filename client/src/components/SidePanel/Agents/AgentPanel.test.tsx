@@ -2,9 +2,11 @@
  * @jest-environment jsdom
  */
 import * as React from 'react';
-import { render, waitFor, fireEvent } from '@testing-library/react';
+import { render, waitFor, fireEvent, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { UseFormReturn } from 'react-hook-form';
 import type { Agent } from 'librechat-data-provider';
+import type { AgentForm } from '~/common';
 
 // Mock toast context - define this after all mocks
 let mockShowToast: jest.Mock;
@@ -167,6 +169,7 @@ jest.mock('./AgentFooter', () => ({
 
 // Mock react-hook-form to capture form submission
 let mockFormSubmitHandler: (() => void) | null = null;
+let capturedFormMethods: UseFormReturn<AgentForm> | null = null;
 
 jest.mock('react-hook-form', () => {
   const actual = jest.requireActual('react-hook-form') as any;
@@ -187,6 +190,8 @@ jest.mock('react-hook-form', () => {
         },
       });
 
+      capturedFormMethods = methods;
+
       return {
         ...methods,
         handleSubmit: (onSubmit: any) => (e?: any) => {
@@ -203,7 +208,7 @@ jest.mock('react-hook-form', () => {
 
 // Import after mocks
 import { dataService } from 'librechat-data-provider';
-import { useGetAgentByIdQuery } from '~/data-provider';
+import { useGetAgentByIdQuery, useGetExpandedAgentByIdQuery } from '~/data-provider';
 import AgentPanel from './AgentPanel';
 
 // Mock useGetAgentByIdQuery
@@ -212,10 +217,7 @@ jest.mock('~/data-provider', () => {
   return {
     ...actual,
     useGetAgentByIdQuery: jest.fn(),
-    useGetExpandedAgentByIdQuery: jest.fn(() => ({
-      data: null,
-      isInitialLoading: false,
-    })),
+    useGetExpandedAgentByIdQuery: jest.fn(),
     useUpdateAgentMutation: actual.useUpdateAgentMutation,
   };
 });
@@ -250,14 +252,22 @@ const mockAgentQuery = (
   mockUseGetAgentByIdQuery: jest.MockedFunction<typeof useGetAgentByIdQuery>,
   agent: Partial<Agent>,
 ) => {
-  mockUseGetAgentByIdQuery.mockReturnValue({
-    data: {
-      id: 'agent-123',
-      author: 'user-123',
-      ...agent,
-    } as Agent,
-    isInitialLoading: false,
-  } as any);
+  const data = {
+    id: 'agent-123',
+    author: 'user-123',
+    /** Matches `createMockAgent`, so a field the submission carries but never edits
+     *  compares equal across the update rather than reading as a change. */
+    provider: 'openai',
+    model: 'gpt-4',
+    ...agent,
+  } as Agent;
+
+  mockUseGetAgentByIdQuery.mockReturnValue({ data, isInitialLoading: false } as any);
+  /** The panel resolves to the expanded query once it has data, and only that projection
+   *  carries every field the submission compares against. */
+  (
+    useGetExpandedAgentByIdQuery as jest.MockedFunction<typeof useGetExpandedAgentByIdQuery>
+  ).mockReturnValue({ data, isInitialLoading: false } as any);
 };
 
 const createMockAgent = (overrides: Partial<Agent> = {}): Agent =>
@@ -289,6 +299,7 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
     jest.clearAllMocks();
     mockShowToast = jest.fn();
     mockFormSubmitHandler = null;
+    capturedFormMethods = null;
   });
 
   describe('AgentPanel', () => {
@@ -307,6 +318,111 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
       await renderAndSubmitForm();
 
       // Wait for the toast to be shown
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'com_ui_no_changes',
+          status: 'info',
+        });
+      });
+    });
+
+    it('should show "update success" toast when an edited agent reuses the same version', async () => {
+      const { mockUseGetAgentByIdQuery, mockUpdateAgent } = setupMocks();
+
+      mockAgentQuery(mockUseGetAgentByIdQuery, {
+        name: 'Test Agent',
+        version: 2,
+      });
+
+      /** An update whose result matches the newest version is written without recording a
+       *  version entry, so the count comes back unchanged even though the edit was saved. */
+      mockUpdateAgent.mockResolvedValue(createMockAgent({ name: 'Renamed Agent', version: 2 }));
+
+      const Wrapper = createWrapper();
+      const { container } = render(<AgentPanel />, { wrapper: Wrapper });
+
+      act(() => {
+        capturedFormMethods!.setValue('name', 'Renamed Agent', { shouldDirty: true });
+      });
+
+      fireEvent.submit(container.querySelector('form')!);
+      mockFormSubmitHandler?.();
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'com_assistants_update_success_name',
+          status: undefined,
+        });
+      });
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'com_ui_no_changes' }),
+      );
+    });
+
+    it('should show "update success" toast when an avatar reset reuses the same version', async () => {
+      const { mockUseGetAgentByIdQuery, mockUpdateAgent } = setupMocks();
+
+      mockAgentQuery(mockUseGetAgentByIdQuery, {
+        name: 'Test Agent',
+        version: 2,
+        avatar: { filepath: '/images/agent-123/avatar.png', source: 'local' },
+      });
+
+      /** A reset rides the update payload as `avatar: null`, and clearing an avatar the
+       *  newest version never recorded reads as a duplicate, so the count comes back
+       *  unchanged even though the avatar was deleted. */
+      mockUpdateAgent.mockResolvedValue(
+        createMockAgent({ name: 'Test Agent', version: 2, avatar: null }),
+      );
+
+      const Wrapper = createWrapper();
+      const { container } = render(<AgentPanel />, { wrapper: Wrapper });
+
+      act(() => {
+        capturedFormMethods!.setValue('avatar_action', 'reset', { shouldDirty: true });
+      });
+
+      fireEvent.submit(container.querySelector('form')!);
+      mockFormSubmitHandler?.();
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'com_assistants_update_success_name',
+          status: undefined,
+        });
+      });
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'com_ui_no_changes' }),
+      );
+    });
+
+    it('should show "no changes" toast when the server drops the submitted edit', async () => {
+      const { mockUseGetAgentByIdQuery, mockUpdateAgent } = setupMocks();
+
+      mockAgentQuery(mockUseGetAgentByIdQuery, {
+        name: 'Test Agent',
+        version: 2,
+        tools: ['keep'],
+      });
+
+      /** An MCP tool the user added can be stripped by authorization before the write, so
+       *  a dirty submission is no promise that anything was persisted. */
+      mockUpdateAgent.mockResolvedValue(
+        createMockAgent({ name: 'Test Agent', version: 2, tools: ['keep'] }),
+      );
+
+      const Wrapper = createWrapper();
+      const { container } = render(<AgentPanel />, { wrapper: Wrapper });
+
+      act(() => {
+        capturedFormMethods!.setValue('tools', ['keep', 'rejected_mcp_tool'], {
+          shouldDirty: true,
+        });
+      });
+
+      fireEvent.submit(container.querySelector('form')!);
+      mockFormSubmitHandler?.();
+
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith({
           message: 'com_ui_no_changes',

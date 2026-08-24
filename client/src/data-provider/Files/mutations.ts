@@ -8,8 +8,9 @@ import {
   defaultOrderQuery,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
+import type * as t from 'librechat-data-provider';
+import { useGetStartupConfig } from '../Endpoints';
 import { useLocalize } from '~/hooks';
 
 export const useUploadFileMutation = (
@@ -21,6 +22,8 @@ export const useUploadFileMutation = (
   FormData, // request
   unknown // context
 > => {
+  const { data: startupConfig } = useGetStartupConfig();
+  const sseEnabled = startupConfig?.fileUploadSseEnabled === true;
   const queryClient = useQueryClient();
   const { onSuccess, ...options } = _options || {};
   return useMutation([MutationKeys.fileUpload], {
@@ -30,19 +33,29 @@ export const useUploadFileMutation = (
       const version = body.get('version') ?? '';
       const endpoint = (body.get('endpoint') ?? '') as string;
       if (isAssistantsEndpoint(endpoint) && version === '2') {
-        return dataService.uploadFile(body, signal);
+        return dataService.uploadFile(body, signal, sseEnabled);
       }
 
       if (width !== '' && height !== '') {
-        return dataService.uploadImage(body, signal);
+        return dataService.uploadImage(body, signal, sseEnabled);
       }
 
-      return dataService.uploadFile(body, signal);
+      return dataService.uploadFile(body, signal, sseEnabled);
     },
     ...options,
     onSuccess: (data, formData, context) => {
+      /** `temp_file_id` is the server's echo of the `file_id` the request was sent
+       * with, and that request id is what every client-side handle for the upload
+       * is keyed by — the composer's file map, the draft it saves, the delayed
+       * toast timer. A record cached under an echo that disagrees cannot be
+       * correlated back to the draft, so the attachment is silently dropped on the
+       * next conversation switch or reload. Normalize once, on the way in. */
+      const requestFileId = (formData.get('file_id') as string | null) ?? data.temp_file_id;
+      const file =
+        data.temp_file_id === requestFileId ? data : { ...data, temp_file_id: requestFileId };
+
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (_files) => [
-        data,
+        file,
         ...(_files ?? []),
       ]);
 
@@ -53,7 +66,7 @@ export const useUploadFileMutation = (
       const tool_resource = (formData.get('tool_resource') as string | undefined) ?? '';
 
       if (message_file === 'true') {
-        onSuccess?.(data, formData, context);
+        onSuccess?.(file, formData, context);
         return;
       }
 
@@ -89,7 +102,7 @@ export const useUploadFileMutation = (
       }
 
       if (!assistant_id) {
-        onSuccess?.(data, formData, context);
+        onSuccess?.(file, formData, context);
         return;
       }
 
@@ -133,8 +146,24 @@ export const useUploadFileMutation = (
           };
         },
       );
-      onSuccess?.(data, formData, context);
+      onSuccess?.(file, formData, context);
     },
+  });
+};
+
+/**
+ * Owner-scoped usage touch for uploads entering the client-side queue, so the
+ * upload-window TTL cannot reap them while the message waits out a long run.
+ * Fire-and-forget: failures are tolerated (send-time marking is the backstop).
+ */
+export const useMarkFilesUsageMutation = (): UseMutationResult<
+  t.TFilesUsageResponse, // response data
+  unknown, // error
+  t.TFilesUsageBody, // request
+  unknown // context
+> => {
+  return useMutation([MutationKeys.fileUsage], {
+    mutationFn: (body: t.TFilesUsageBody) => dataService.markFilesUsage(body),
   });
 };
 

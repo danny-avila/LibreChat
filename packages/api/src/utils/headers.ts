@@ -3,6 +3,22 @@ import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody, RunLLMConfig } from '~/types';
 import { resolveHeaders } from './env';
 
+/**
+ * The media type of a `Content-Type` header — the lowercased `type/subtype` pair with any
+ * parameters stripped, or `''` when the header is absent or empty.
+ *
+ * Substring-matching the raw header is wrong in both directions. A `text/plain;
+ * boundary=text/event-stream` value contains the SSE type without being one, and a
+ * `TEXT/EVENT-STREAM` value is one without containing it in the expected case. Callers
+ * classifying a response by its type must compare against this, not the raw header.
+ */
+export function mediaTypeEssence(header: string | null | undefined): string {
+  if (!header) {
+    return '';
+  }
+  return (header.split(';', 1)[0] ?? '').trim().toLowerCase();
+}
+
 /** Comma-unions two header values (deduped, trimmed), e.g. `anthropic-beta`. */
 function unionCsv(a: string, b: string): string {
   const values = [a, b]
@@ -89,6 +105,11 @@ const resolvedHeaderMaps = new WeakSet<object>();
  * Resolution runs at request time so request-body placeholders (e.g.
  * `{{LIBRECHAT_BODY_CONVERSATIONID}}`) resolve against the live request. It is a
  * no-op for header values without placeholders, and idempotent under config reuse.
+ *
+ * This is the last resolution pass before the outbound provider request, so any
+ * placeholder still unresolved here (missing user context, a user without the
+ * configured field) is stripped rather than forwarded as literal template text
+ * the upstream could mistake for real user data.
  */
 export function resolveConfigHeaders({
   llmConfig,
@@ -96,7 +117,11 @@ export function resolveConfigHeaders({
   body,
   customUserVars,
 }: {
-  llmConfig?: RunLLMConfig | null;
+  /** Partial: this only reads the three provider header carriers, so
+   *  callers with a bare ClientOptions (e.g. auxiliary generations like
+   *  titles/activity labels) can resolve headers without assembling a
+   *  full run config. */
+  llmConfig?: Partial<RunLLMConfig> | null;
   user?: Partial<IUser> | { id: string };
   body?: RequestBody;
   customUserVars?: Record<string, string>;
@@ -109,7 +134,7 @@ export function resolveConfigHeaders({
     if (resolvedHeaderMaps.has(headers)) {
       return headers;
     }
-    const resolved = resolveHeaders({ headers, user, body, customUserVars });
+    const resolved = resolveHeaders({ headers, user, body, customUserVars, stripUnresolved: true });
     resolvedHeaderMaps.add(resolved);
     return resolved;
   };

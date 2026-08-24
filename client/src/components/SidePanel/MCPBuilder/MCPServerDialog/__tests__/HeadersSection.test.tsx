@@ -358,7 +358,9 @@ describe('HeadersSection – variable picker', () => {
       <Wrapper
         defaultValues={{
           headers: [{ key: 'X-Index', value: '', isSecret: false }],
-          customUserVars: [{ key: 'MY_VAR', title: 'My Variable', description: '' }],
+          customUserVars: [
+            { key: 'MY_VAR', title: 'My Variable', description: '', sensitive: true },
+          ],
         }}
       />,
     );
@@ -370,7 +372,9 @@ describe('HeadersSection – variable picker', () => {
       <Wrapper
         defaultValues={{
           headers: [{ key: 'X-Secret', value: '', isSecret: true }],
-          customUserVars: [{ key: 'MY_VAR', title: 'My Variable', description: '' }],
+          customUserVars: [
+            { key: 'MY_VAR', title: 'My Variable', description: '', sensitive: true },
+          ],
         }}
       />,
     );
@@ -382,7 +386,7 @@ describe('HeadersSection – variable picker', () => {
       <Wrapper
         defaultValues={{
           headers: [{ key: 'X-Index', value: '', isSecret: false }],
-          customUserVars: [{ key: '', title: '', description: '' }],
+          customUserVars: [{ key: '', title: '', description: '', sensitive: true }],
         }}
       />,
     );

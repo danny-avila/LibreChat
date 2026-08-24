@@ -1,9 +1,12 @@
 import type { AxiosResponse } from 'axios';
+import type { TInsightsAccessResponse, TInsightsParams, TInsightsResponse } from './types/insights';
 import type { TFileConfig } from './file-config';
 import type * as t from './types';
 import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
+import { uploadEventStream } from './upload';
 import * as mcp from './types/mcpServers';
+import * as sch from './types/schedules';
 import * as a from './types/assistants';
 import * as m from './types/mutations';
 import * as ag from './types/agents';
@@ -14,6 +17,43 @@ import * as config from './config';
 import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
+
+export function getInsights(params: TInsightsParams = {}): Promise<TInsightsResponse> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      query.set(key, String(value));
+    }
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return request.get(`${endpoints.insights()}${suffix}`);
+}
+
+export function getInsightsAccess(): Promise<TInsightsAccessResponse> {
+  return request.get(endpoints.insightsAccess());
+}
+
+export function getLangfuseConnection(): Promise<t.TLangfuseConnectionStatus> {
+  return request.get(endpoints.adminLangfuseConnection());
+}
+
+export function updateLangfuseConnection(
+  payload: t.TUpdateLangfuseConnectionRequest,
+): Promise<t.TLangfuseConnectionStatus> {
+  return request.put(endpoints.adminLangfuseConnection(), payload);
+}
+
+export function testLangfuseConnection(
+  payload: t.TLangfuseConnectionTestRequest,
+): Promise<t.TLangfuseConnectionTestResponse> {
+  return request.post(endpoints.adminLangfuseConnectionTest(), payload);
+}
+
+export function getLangfuseSessionLink(
+  conversationId: string,
+): Promise<t.TLangfuseSessionLinkResponse> {
+  return request.get(endpoints.adminLangfuseSessionLink(conversationId));
+}
 
 export function revokeUserKey(name: string): Promise<unknown> {
   return request.delete(endpoints.revokeUserKey(name));
@@ -35,17 +75,17 @@ export function updateFavorites(favorites: q.TUserFavorite[]): Promise<q.TUserFa
   return request.post(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`, { favorites });
 }
 
-/**
- * Skill favorites (star-a-skill). The backend route is phase 2 — see the
- * original UI PR for the client surface. Until then, these resolve with
- * an empty list so the UI hooks compile and the Star button is a no-op.
- */
-export function getSkillFavorites(): Promise<string[]> {
-  return Promise.resolve([] as string[]);
+/** Tool favorites — starred marketplace items (builtins, tools, MCP servers, skills). */
+export function getToolFavorites(): Promise<q.TToolFavorite[]> {
+  return request.get(endpoints.toolFavorites());
 }
 
-export function updateSkillFavorites(skillFavorites: string[]): Promise<string[]> {
-  return Promise.resolve(skillFavorites);
+export function addToolFavorite(favorite: q.TToolFavorite): Promise<q.TToolFavorite> {
+  return request.put(endpoints.toolFavorite(favorite.itemType, favorite.itemId));
+}
+
+export function removeToolFavorite(favorite: q.TToolFavorite): Promise<{ ok: boolean }> {
+  return request.delete(endpoints.toolFavorite(favorite.itemType, favorite.itemId));
 }
 
 /** Per-user skill active/inactive overrides. */
@@ -149,6 +189,12 @@ export function getUser(): Promise<t.TUser> {
   return request.get(endpoints.user());
 }
 
+export function updateUserPreferences(
+  preferences: t.TUpdateUserPreferencesRequest,
+): Promise<t.TUpdateUserPreferencesResponse> {
+  return request.patch(endpoints.userPreferences(), preferences);
+}
+
 export function getUserBalance(): Promise<t.TBalanceResponse> {
   return request.get(endpoints.balance());
 }
@@ -204,7 +250,7 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
   return request.post(endpoints.userPlugins(), payload);
 };
 
-export const reinitializeMCPServer = (serverName: string) => {
+export const reinitializeMCPServer = (serverName: string): Promise<mcp.MCPReinitializeResponse> => {
   return request.post(endpoints.mcpReinitialize(serverName));
 };
 
@@ -232,6 +278,10 @@ export const getMCPAuthValues = (serverName: string): Promise<q.MCPAuthValuesRes
 
 export function cancelMCPOAuth(serverName: string): Promise<m.CancelMCPOAuthResponse> {
   return request.post(endpoints.cancelMCPOAuth(serverName), {});
+}
+
+export function getMCPOAuthStatus(flowId: string): Promise<mcp.MCPOAuthStatusResponse> {
+  return request.get(endpoints.mcpOAuthStatus(flowId));
 }
 
 /* Config */
@@ -455,14 +505,34 @@ export const getFileConfig = (): Promise<TFileConfig> => {
 export const uploadImage = (
   data: FormData,
   signal?: AbortSignal | null,
+  sseEnabled = false,
 ): Promise<f.TFileUpload> => {
   const requestConfig = signal ? { signal } : undefined;
+  if (sseEnabled) {
+    return uploadEventStream(endpoints.images(), data, signal);
+  }
   return request.postMultiPart(endpoints.images(), data, requestConfig);
 };
 
-export const uploadFile = (data: FormData, signal?: AbortSignal | null): Promise<f.TFileUpload> => {
+export const uploadFile = (
+  data: FormData,
+  signal?: AbortSignal | null,
+  sseEnabled = false,
+): Promise<f.TFileUpload> => {
   const requestConfig = signal ? { signal } : undefined;
+  if (sseEnabled) {
+    return uploadEventStream(endpoints.files(), data, signal);
+  }
   return request.postMultiPart(endpoints.files(), data, requestConfig);
+};
+
+/**
+ * Marks uploaded files as used (owner-scoped TTL touch) so the upload-window
+ * TTL cannot reap attachments held in a client-side queue during a long run.
+ * Best-effort: callers fire-and-forget — send-time marking is the backstop.
+ */
+export const markFilesUsage = (body: f.TFilesUsageBody): Promise<f.TFilesUsageResponse> => {
+  return request.post(endpoints.fileUsage(), body);
 };
 
 /* actions */
@@ -803,8 +873,12 @@ export function forkConversation(payload: t.TForkConvoRequest): Promise<t.TForkC
 export function forkSharedConversation(
   shareId: string,
   targetMessageIndex?: number,
+  shareRevision?: string,
 ): Promise<t.TForkConvoResponse> {
-  return request.post(endpoints.forkSharedMessages(shareId), { targetMessageIndex });
+  return request.post(endpoints.forkSharedMessages(shareId), {
+    targetMessageIndex,
+    shareRevision,
+  });
 }
 
 export function deleteConversation(payload: t.TDeleteConversationRequest) {
@@ -839,6 +913,10 @@ export function archiveConversation(
   payload: t.TArchiveConversationRequest,
 ): Promise<t.TArchiveConversationResponse> {
   return request.post(endpoints.archiveConversation(), { arg: payload });
+}
+
+export function archiveAllConversations(): Promise<t.TArchiveAllConversationsResponse> {
+  return request.post(endpoints.archiveAllConversations(), {});
 }
 
 export function listProjects(params?: q.ProjectListParams): Promise<q.ProjectListResponse> {
@@ -924,6 +1002,18 @@ export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage
   return request.get(endpoints.messages({ conversationId }));
 }
 
+export function getParentSubagents(parentConversationId: string): Promise<t.ParentSubagentIndex> {
+  return request.get(endpoints.parentSubagents(parentConversationId));
+}
+
+export function getSubagentThread(
+  parentConversationId: string,
+  threadId: string,
+  taskId?: string,
+): Promise<t.SubagentThreadView> {
+  return request.get(endpoints.subagentThread(parentConversationId, threadId, taskId));
+}
+
 export function getPrompt(id: string): Promise<{ prompt: t.TPrompt }> {
   return request.get(endpoints.getPrompt(id));
 }
@@ -999,6 +1089,30 @@ export function getRandomPrompts(
 
 export function listSkills(params?: sk.TSkillListRequest): Promise<sk.TSkillListResponse> {
   return request.get(endpoints.listSkillsWithFilters(params ?? {}));
+}
+
+export function getSchedules(): Promise<sch.TSchedulesResponse> {
+  return request.get(endpoints.schedules());
+}
+
+export function getSchedule(id: string): Promise<sch.TSchedule> {
+  return request.get(endpoints.schedule(id));
+}
+
+export function createSchedule(payload: sch.TCreateSchedule): Promise<sch.TSchedule> {
+  return request.post(endpoints.schedules(), payload);
+}
+
+export function updateSchedule(id: string, payload: sch.TUpdateSchedule): Promise<sch.TSchedule> {
+  return request.patch(endpoints.schedule(id), payload);
+}
+
+export function deleteSchedule(id: string): Promise<{ id: string }> {
+  return request.delete(endpoints.schedule(id));
+}
+
+export function runScheduleNow(id: string): Promise<sch.TScheduleRunNowResponse> {
+  return request.post(endpoints.runSchedule(id), {});
 }
 
 export function getSkill(id: string): Promise<sk.TSkill> {
@@ -1307,16 +1421,33 @@ export const getMemories = (): Promise<q.MemoriesResponse> => {
   return request.get(endpoints.memories());
 };
 
-export const deleteMemory = (key: string): Promise<void> => {
-  return request.delete(endpoints.memory(key));
+export const deleteMemory = (key: string, agentId?: string): Promise<q.DeleteMemoryResponse> => {
+  return request.delete(endpoints.memory(key, agentId));
+};
+
+export const deleteMemoryById = (id: string, agentId?: string): Promise<q.DeleteMemoryResponse> => {
+  return request.delete(endpoints.memoryById(id, agentId));
 };
 
 export const updateMemory = (
   key: string,
   value: string,
   originalKey?: string,
-): Promise<q.TUserMemory> => {
-  return request.patch(endpoints.memory(originalKey || key), { key, value });
+  agentId?: string,
+): Promise<q.UpdateMemoryResponse> => {
+  return request.patch(endpoints.memory(originalKey || key, agentId), { key, value });
+};
+
+export const updateMemoryById = (
+  id: string,
+  value: string,
+  key?: string,
+  agentId?: string,
+): Promise<q.UpdateMemoryResponse> => {
+  return request.patch(endpoints.memoryById(id, agentId), {
+    value,
+    ...(key ? { key } : {}),
+  });
 };
 
 export const updateMemoryPreferences = (preferences: {
@@ -1328,6 +1459,7 @@ export const updateMemoryPreferences = (preferences: {
 export const createMemory = (data: {
   key: string;
   value: string;
+  agentId?: string;
 }): Promise<{ created: boolean; memory: q.TUserMemory }> => {
   return request.post(endpoints.memories(), data);
 };

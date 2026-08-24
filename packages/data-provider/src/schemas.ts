@@ -1,7 +1,13 @@
 import { z } from 'zod';
-import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
+import type {
+  TMessageContentParts,
+  AgentSubagentGraph,
+  FunctionToolCall,
+  FunctionTool,
+} from './types/assistants';
 import type { SearchResultData } from './types/web';
 import type { TFile } from './types/files';
+import { userSubmittedMessageFieldPathSchema } from './filters';
 import { TFeedback, feedbackSchema } from './feedback';
 import { Tools } from './types/assistants';
 
@@ -202,6 +208,7 @@ export enum ReasoningEffort {
   medium = 'medium',
   high = 'high',
   xhigh = 'xhigh',
+  max = 'max',
 }
 
 export enum ReasoningParameterFormat {
@@ -274,6 +281,21 @@ export enum ThinkingLevel {
   high = 'high',
 }
 
+/** OpenAI Responses API `reasoning.mode` (GPT-5.6+). */
+export enum ReasoningMode {
+  unset = '',
+  standard = 'standard',
+  pro = 'pro',
+}
+
+/** OpenAI Responses API `reasoning.context` (GPT-5.6+). */
+export enum ReasoningContext {
+  unset = '',
+  auto = 'auto',
+  current_turn = 'current_turn',
+  all_turns = 'all_turns',
+}
+
 export const imageDetailNumeric = {
   [ImageDetail.low]: 0,
   [ImageDetail.auto]: 1,
@@ -295,6 +317,8 @@ export const eThinkingDisplaySchema = z.nativeEnum(ThinkingDisplay);
 export const eReasoningSummarySchema = z.nativeEnum(ReasoningSummary);
 export const eVerbositySchema = z.nativeEnum(Verbosity);
 export const eThinkingLevelSchema = z.nativeEnum(ThinkingLevel);
+export const eReasoningModeSchema = z.nativeEnum(ReasoningMode);
+export const eReasoningContextSchema = z.nativeEnum(ReasoningContext);
 
 export const defaultAssistantFormValues = {
   assistant: '',
@@ -329,6 +353,7 @@ export const defaultAgentFormValues = {
   [Tools.file_search]: false,
   [Tools.web_search]: false,
   [Tools.memory]: false,
+  stateful_code_environment: 'user' as const,
   category: 'general',
   support_contact: {
     name: '',
@@ -342,8 +367,15 @@ export const defaultAgentFormValues = {
   skills_enabled: undefined as boolean | undefined,
   /** `undefined` = feature disabled by default (no subagent tool injected). */
   subagents: undefined as
-    | { enabled?: boolean; allowSelf?: boolean; agent_ids?: string[] }
+    | {
+        enabled?: boolean;
+        allowSelf?: boolean;
+        agent_ids?: string[];
+        graphs?: AgentSubagentGraph[];
+      }
     | undefined,
+  /** Memory partition: 'agent' isolates memories per (user, agent); default shared pool */
+  memory_scope: undefined as MemoryScope | undefined,
 };
 
 export const ImageVisionTool: FunctionTool = {
@@ -487,6 +519,8 @@ const CLAUDE_4_64K_MAX_OUTPUT = 64000 as const;
 const CLAUDE_32K_MAX_OUTPUT = 32000 as const;
 const DEFAULT_MAX_OUTPUT = 8192 as const;
 const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096 as const;
+const CLAUDE_SONNET_128K_OUTPUT_PATTERN =
+  /claude-sonnet[-.]?(?:4[-.]?(?:[6-9]|\d{2})|[5-9]|\d{2,})(?=$|[^0-9])/;
 
 /**
  * Claude "Mythos-class" model families — new top-level classes (peers of
@@ -547,7 +581,7 @@ export const anthropicSettings = {
         return ANTHROPIC_MAX_OUTPUT;
       }
 
-      if (/claude-sonnet[-.]?(?:[5-9]|\d{2,})/.test(modelName)) {
+      if (CLAUDE_SONNET_128K_OUTPUT_PATTERN.test(modelName)) {
         return ANTHROPIC_MAX_OUTPUT;
       }
 
@@ -580,7 +614,7 @@ export const anthropicSettings = {
         return value;
       }
 
-      if (/claude-sonnet[-.]?(?:[5-9]|\d{2,})/.test(modelName)) {
+      if (CLAUDE_SONNET_128K_OUTPUT_PATTERN.test(modelName)) {
         if (value > ANTHROPIC_MAX_OUTPUT) {
           return ANTHROPIC_MAX_OUTPUT;
         }
@@ -732,6 +766,9 @@ export const tPluginSchema = z.object({
   chatMenu: z.boolean().optional(),
   isButton: z.boolean().optional(),
   toolkit: z.boolean().optional(),
+  /** Raw upstream tool name when the model-facing key stripped a redundant
+   *  server-name prefix — proves upstream identity for legacy id migration. */
+  serverToolName: z.string().optional(),
 });
 
 export type TPlugin = z.infer<typeof tPluginSchema>;
@@ -767,6 +804,12 @@ export const tMessageSchema = z.object({
   /** @deprecated */
   generation: z.string().nullable().optional(),
   isCreatedByUser: z.boolean(),
+  /** True when the complete stored row came from outside the model. */
+  isUserSubmitted: z.boolean().optional(),
+  /** JSON pointers to caller-authored fields in an otherwise mixed model response. */
+  userSubmittedPaths: z.array(z.string().startsWith('/')).optional(),
+  /** Exact HITL message-field identity for caller-authored values stored in mixed responses. */
+  userSubmittedMessageFieldPaths: z.array(userSubmittedMessageFieldPathSchema).optional(),
   isTemporary: z.boolean().optional(),
   expiredAt: z.string().nullable().optional(),
   error: z.boolean().optional(),
@@ -835,11 +878,23 @@ export const tMessageSchema = z.object({
   quotes: z.array(z.string()).optional(),
 });
 
+/**
+ * Which memory partition an agent reads/writes.
+ * `user` = the shared personal pool (default); `agent` = a partition
+ * isolated per (user, agent) so the agent only sees its own memories.
+ */
+export enum MemoryScope {
+  user = 'user',
+  agent = 'agent',
+}
+
 export type MemoryArtifact = {
   key: string;
   value?: string;
   tokenCount?: number;
   type: 'update' | 'delete' | 'error';
+  /** Agent partition the write targeted; absent = shared personal pool */
+  agentId?: string;
 };
 
 export type UIResource = {
@@ -850,10 +905,17 @@ export type UIResource = {
   [key: string]: unknown;
 };
 
+export type WorkspaceChange = {
+  profile: 'stateful';
+  operation: 'created' | 'updated';
+  path: string;
+};
+
 export type TAttachmentMetadata = {
   type?: Tools;
   messageId: string;
   toolCallId: string;
+  workspaceChange?: WorkspaceChange;
   [Tools.memory]?: MemoryArtifact;
   [Tools.ui_resources]?: UIResource[];
   [Tools.web_search]?: SearchResultData;
@@ -906,12 +968,29 @@ const DocumentType: z.ZodType<DocumentTypeValue> = z.lazy(() =>
   ]),
 );
 
+export const subagentThreadLineageSchema = z.object({
+  rootConversationId: z.string().min(1),
+  parentConversationId: z.string().min(1),
+  parentMessageId: z.string().min(1),
+  parentToolCallId: z.string().min(1),
+  parentAgentId: z.string().min(1).optional(),
+  subagentType: z.string().min(1),
+  subagentKind: z.enum(['agent', 'graph']),
+  depth: z.number().int().positive(),
+});
+
+export type TSubagentThreadLineage = z.infer<typeof subagentThreadLineageSchema>;
+
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
   endpoint: eModelEndpointSchema.nullable(),
   endpointType: eModelEndpointSchema.nullable().optional(),
   isArchived: z.boolean().optional(),
+  /** When the chat was archived; absent on chats archived before this was recorded. */
+  archivedAt: z.string().nullable().optional(),
   pinned: z.boolean().optional(),
+  /** Server-derived: an active shared link exists for this conversation. Not persisted. */
+  isShared: z.boolean().optional(),
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   user: z.string().optional(),
   messages: z.array(z.string()).optional(),
@@ -956,6 +1035,9 @@ export const tConversationSchema = z.object({
   /* OpenAI: Reasoning models only */
   reasoning_effort: eReasoningEffortSchema.optional().nullable(),
   reasoning_summary: eReasoningSummarySchema.optional().nullable(),
+  /* OpenAI Responses API: reasoning mode (standard/pro) + context */
+  reasoning_mode: eReasoningModeSchema.optional().nullable(),
+  reasoning_context: eReasoningContextSchema.optional().nullable(),
   /* OpenAI: Verbosity control */
   verbosity: eVerbositySchema.optional().nullable(),
   /* OpenAI: use Responses API */
@@ -974,6 +1056,8 @@ export const tConversationSchema = z.object({
   assistant_id: z.string().optional(),
   /* agents */
   agent_id: z.string().optional(),
+  /** Durable parent/child navigation for a subagent thread. */
+  subagentThread: subagentThreadLineageSchema.optional(),
   /* AWS Bedrock */
   region: z.string().optional(),
   maxTokens: coerceNumber.optional(),
@@ -1073,6 +1157,10 @@ export const tQueryParamsSchema = tConversationSchema
     /** @endpoints openAI, custom, azureOpenAI */
     reasoning_summary: true,
     /** @endpoints openAI, custom, azureOpenAI */
+    reasoning_mode: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    reasoning_context: true,
+    /** @endpoints openAI, custom, azureOpenAI */
     verbosity: true,
     /** @endpoints openAI, custom, azureOpenAI */
     useResponsesApi: true,
@@ -1130,24 +1218,53 @@ export const tQueryParamsSchema = tConversationSchema
  * `spec` is set by the client from `modelSpec.name` via `getModelSpecPreset` and is
  * omitted to avoid duplicate configuration surface.
  */
-export const tModelSpecPresetSchema = tPresetSchema.omit({
-  conversationId: true,
-  presetId: true,
-  title: true,
-  defaultPreset: true,
-  order: true,
-  isArchived: true,
-  user: true,
-  messages: true,
-  tags: true,
-  file_ids: true,
-  expiredAt: true,
-  parentMessageId: true,
-  resendImages: true,
-  chatGptLabel: true,
-  presetOverride: true,
-  spec: true,
-});
+export const tModelSpecPresetSchema = tPresetSchema
+  .omit({
+    conversationId: true,
+    presetId: true,
+    title: true,
+    defaultPreset: true,
+    order: true,
+    isArchived: true,
+    user: true,
+    messages: true,
+    tags: true,
+    file_ids: true,
+    expiredAt: true,
+    parentMessageId: true,
+    resendImages: true,
+    chatGptLabel: true,
+    presetOverride: true,
+    spec: true,
+  })
+  .merge(
+    z.object({
+      /**
+       * Optional here, unlike `tPresetSchema`, where the key is required (though
+       * nullable). A preset naming an `agent_id` has an unambiguous endpoint, so
+       * config may omit it and `resolveModelSpecEndpoint` infers `agents` when
+       * specs are materialized at config load.
+       */
+      endpoint: extendedModelEndpointSchema.nullish(),
+    }),
+  )
+  .superRefine((preset, ctx) => {
+    /**
+     * Omission is only legal when the endpoint is inferable, which requires a
+     * NON-EMPTY `agent_id` — form-backed writers persist untouched fields as
+     * `''`, which names no agent. An explicit `endpoint: null` stays accepted:
+     * it validated before the key became optional, so rejecting it now would
+     * break previously valid configs.
+     */
+    if (preset.endpoint === undefined && !preset.agent_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['endpoint'],
+        message:
+          'endpoint is required unless the preset names a non-empty agent_id (the agents endpoint is then inferred)',
+      });
+    }
+  });
 
 export type TModelSpecPreset = z.infer<typeof tModelSpecPresetSchema>;
 
@@ -1387,6 +1504,8 @@ export const openAIBaseSchema = tConversationSchema.pick({
   max_tokens: true,
   reasoning_effort: true,
   reasoning_summary: true,
+  reasoning_mode: true,
+  reasoning_context: true,
   verbosity: true,
   useResponsesApi: true,
   web_search: true,

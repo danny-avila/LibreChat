@@ -237,7 +237,7 @@ export default function AssistantPanel({
           {/* Select Button */}
           {assistant_id && (
             <button
-              className="btn btn-primary focus:shadow-outline mx-2 mt-1 h-[40px] rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
+              className="btn btn-primary mx-2 mt-1 h-[40px] rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
               type="button"
               disabled={!assistant_id}
               onClick={(e) => {
@@ -249,7 +249,7 @@ export default function AssistantPanel({
             </button>
           )}
         </div>
-        <div className="bg-surface-50 h-auto px-4 pb-8 pt-3 dark:bg-transparent">
+        <div className="h-auto bg-surface-primary px-4 pb-8 pt-3 dark:bg-transparent">
           {/* Avatar & Name */}
           <div className="mb-4">
             <AssistantAvatar
@@ -460,7 +460,7 @@ export default function AssistantPanel({
             />
             {/* Submit Button */}
             <button
-              className="btn btn-primary focus:shadow-outline flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
+              className="btn btn-primary flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
               type="submit"
             >
               {submitContext}

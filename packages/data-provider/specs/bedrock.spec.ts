@@ -1,10 +1,17 @@
-import { ThinkingDisplay, isMythosClassModel, MYTHOS_CLASS_FAMILIES } from '../src/schemas';
+import {
+  ThinkingDisplay,
+  AnthropicEffort,
+  isMythosClassModel,
+  MYTHOS_CLASS_FAMILIES,
+} from '../src/schemas';
 import {
   BEDROCK_OUTPUT_128K_BETA,
   supportsAdaptiveThinking,
   omitsSamplingParameters,
   omitsThinkingByDefault,
   requiresExplicitThinkingDisabled,
+  capsEffortWhenThinkingDisabled,
+  clampEffortForDisabledThinking,
   resolveThinkingDisplay,
   bedrockOutputParser,
   bedrockInputParser,
@@ -92,6 +99,16 @@ describe('supportsAdaptiveThinking', () => {
     expect(supportsAdaptiveThinking('claude-sonnet-4-7')).toBe(true);
   });
 
+  test('should return true for double-digit claude-sonnet-4 minors', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-4-10')).toBe(true);
+    expect(supportsAdaptiveThinking('claude-sonnet-4.10')).toBe(true);
+    expect(supportsAdaptiveThinking('claude-4-10-sonnet')).toBe(true);
+  });
+
+  test('should not parse Sonnet 4 date suffixes as double-digit minors', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-4-20250514')).toBe(false);
+  });
+
   test('should return true for anthropic.claude-sonnet-4-6 (Bedrock)', () => {
     expect(supportsAdaptiveThinking('anthropic.claude-sonnet-4-6')).toBe(true);
   });
@@ -164,6 +181,16 @@ describe('supportsContext1m', () => {
 
   test('should return true for claude-sonnet-4-6', () => {
     expect(supportsContext1m('claude-sonnet-4-6')).toBe(true);
+  });
+
+  test('should return true for double-digit claude-sonnet-4 minors', () => {
+    expect(supportsContext1m('claude-sonnet-4-10')).toBe(true);
+    expect(supportsContext1m('claude-sonnet-4.10')).toBe(true);
+    expect(supportsContext1m('claude-4-10-sonnet')).toBe(true);
+  });
+
+  test('should not treat Sonnet 4 date suffixes as 1M context models', () => {
+    expect(supportsContext1m('claude-sonnet-4-20250514')).toBe(false);
   });
 
   test('should return true for anthropic.claude-sonnet-4-6 (Bedrock)', () => {
@@ -380,13 +407,57 @@ describe('requiresExplicitThinkingDisabled', () => {
     expect(requiresExplicitThinkingDisabled('claude-sonnet-9')).toBe(true);
   });
 
-  test('returns false for pre-5 Sonnet, Opus, and Mythos-class models', () => {
-    // Opus 4.7+ omit -> off; Fable/Mythos reject an explicit disabled config (400)
+  test('returns true for Opus 5+ (omitted thinking runs adaptive by default)', () => {
+    expect(requiresExplicitThinkingDisabled('claude-opus-5')).toBe(true);
+    expect(requiresExplicitThinkingDisabled('claude-opus-5-20260701')).toBe(true);
+    expect(requiresExplicitThinkingDisabled('anthropic.claude-opus-5')).toBe(true);
+    expect(requiresExplicitThinkingDisabled('us.anthropic.claude-opus-5')).toBe(true);
+    expect(requiresExplicitThinkingDisabled('claude-opus-9')).toBe(true);
+  });
+
+  test('returns false for pre-5 Sonnet, pre-5 Opus, and Mythos-class models', () => {
+    // Opus 4.7/4.8 omit -> off; Fable/Mythos reject an explicit disabled config (400)
     expect(requiresExplicitThinkingDisabled('claude-sonnet-4-6')).toBe(false);
     expect(requiresExplicitThinkingDisabled('claude-opus-4-8')).toBe(false);
+    expect(requiresExplicitThinkingDisabled('claude-opus-4-7')).toBe(false);
     expect(requiresExplicitThinkingDisabled('claude-fable-5')).toBe(false);
     expect(requiresExplicitThinkingDisabled('claude-mythos-5')).toBe(false);
     expect(requiresExplicitThinkingDisabled('gpt-4o')).toBe(false);
+  });
+});
+
+describe('capsEffortWhenThinkingDisabled', () => {
+  test('returns true for Opus 5+', () => {
+    expect(capsEffortWhenThinkingDisabled('claude-opus-5')).toBe(true);
+    expect(capsEffortWhenThinkingDisabled('anthropic.claude-opus-5')).toBe(true);
+    expect(capsEffortWhenThinkingDisabled('claude-opus-9')).toBe(true);
+  });
+
+  test('returns false for models that accept every effort with thinking off', () => {
+    // Live-verified: these all return 200 for thinking disabled + effort xhigh/max
+    expect(capsEffortWhenThinkingDisabled('claude-opus-4-8')).toBe(false);
+    expect(capsEffortWhenThinkingDisabled('claude-opus-4-7')).toBe(false);
+    expect(capsEffortWhenThinkingDisabled('claude-sonnet-5')).toBe(false);
+    expect(capsEffortWhenThinkingDisabled('claude-fable-5')).toBe(false);
+    expect(capsEffortWhenThinkingDisabled('gpt-4o')).toBe(false);
+  });
+});
+
+describe('clampEffortForDisabledThinking', () => {
+  test('lowers xhigh/max to high on Opus 5', () => {
+    expect(clampEffortForDisabledThinking('claude-opus-5', AnthropicEffort.xhigh)).toBe('high');
+    expect(clampEffortForDisabledThinking('claude-opus-5', AnthropicEffort.max)).toBe('high');
+  });
+
+  test('leaves accepted effort levels untouched on Opus 5', () => {
+    expect(clampEffortForDisabledThinking('claude-opus-5', AnthropicEffort.high)).toBe('high');
+    expect(clampEffortForDisabledThinking('claude-opus-5', AnthropicEffort.medium)).toBe('medium');
+    expect(clampEffortForDisabledThinking('claude-opus-5', AnthropicEffort.low)).toBe('low');
+  });
+
+  test('leaves effort untouched on models without the cap', () => {
+    expect(clampEffortForDisabledThinking('claude-opus-4-8', AnthropicEffort.xhigh)).toBe('xhigh');
+    expect(clampEffortForDisabledThinking('claude-sonnet-5', AnthropicEffort.max)).toBe('max');
   });
 });
 
@@ -1208,17 +1279,88 @@ describe('bedrockInputParser', () => {
       expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
       expect(additionalFields.output_config).toEqual({ effort: 'max' });
     });
+
+    test.each(['xhigh', 'max'])(
+      'clamps %s effort to high for Opus 5 when thinking is disabled',
+      (effort) => {
+        const result = bedrockInputParser.parse({
+          model: 'anthropic.claude-opus-5',
+          thinking: false,
+          effort,
+        }) as Record<string, unknown>;
+        const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+        expect(additionalFields.thinking).toEqual({ type: 'disabled' });
+        expect(additionalFields.output_config).toEqual({ effort: 'high' });
+      },
+    );
+
+    test('clamps persisted output_config effort for Opus 5 when thinking is disabled', () => {
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-5',
+        thinking: false,
+        additionalModelRequestFields: {
+          output_config: { effort: 'xhigh' },
+        },
+      }) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.output_config).toEqual({ effort: 'high' });
+    });
+
+    test('clamps persisted effort for Opus 5 when a disabled config round-trips from persistence', () => {
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-5',
+        additionalModelRequestFields: {
+          thinking: { type: 'disabled' },
+          output_config: { effort: 'max' },
+        },
+      }) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'disabled' });
+      expect(additionalFields.output_config).toEqual({ effort: 'high' });
+    });
+
+    test('keeps xhigh effort for Opus 5 while thinking is enabled', () => {
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-5',
+        thinking: true,
+        effort: 'xhigh',
+      }) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+      expect(additionalFields.output_config).toEqual({ effort: 'xhigh' });
+    });
+
+    test('does not clamp xhigh effort for Opus 4.8 when thinking is disabled', () => {
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-8',
+        thinking: false,
+        effort: 'xhigh',
+      }) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.output_config).toEqual({ effort: 'xhigh' });
+    });
   });
 
   describe('bedrockOutputParser with configureThinking', () => {
-    test('should preserve adaptive thinking config without setting default maxTokens', () => {
+    test('defaults adaptive maxTokens to the model max output when unset', () => {
       const parsed = bedrockInputParser.parse({
         model: 'anthropic.claude-opus-4-6-v1',
       }) as Record<string, unknown>;
       const output = bedrockOutputParser(parsed as Record<string, unknown>);
       const amrf = output.additionalModelRequestFields as Record<string, unknown>;
       expect(amrf.thinking).toEqual({ type: 'adaptive' });
-      expect(output.maxTokens).toBeUndefined();
+      expect(output.maxTokens).toBe(128000);
+      expect(output.maxOutputTokens).toBeUndefined();
+    });
+
+    test('defaults Bedrock Claude Sonnet 4.6 adaptive maxTokens to its Bedrock max output when unset', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-sonnet-4-6',
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.thinking).toEqual({ type: 'adaptive' });
+      expect(output.maxTokens).toBe(64000);
       expect(output.maxOutputTokens).toBeUndefined();
     });
 
@@ -1248,7 +1390,7 @@ describe('bedrockInputParser', () => {
       const output = bedrockOutputParser(parsed as Record<string, unknown>);
       const amrf = output.additionalModelRequestFields as Record<string, unknown>;
       expect(amrf.thinking).toEqual({ type: 'enabled', budget_tokens: 2000 });
-      expect(output.maxTokens).toBe(8192);
+      expect(output.maxTokens).toBe(64000);
     });
 
     test('should pass output_config through for adaptive model with effort', () => {
@@ -1262,24 +1404,52 @@ describe('bedrockInputParser', () => {
       expect(amrf.output_config).toEqual({ effort: 'low' });
     });
 
-    test('should not set maxTokens for adaptive models when neither maxTokens nor maxOutputTokens are provided', () => {
+    test('defaults adaptive maxTokens to the model max when neither maxTokens nor maxOutputTokens are provided', () => {
       const parsed = bedrockInputParser.parse({
         model: 'anthropic.claude-opus-4-6-v1',
       }) as Record<string, unknown>;
       parsed.maxOutputTokens = undefined;
       (parsed as Record<string, unknown>).maxTokens = undefined;
       const output = bedrockOutputParser(parsed as Record<string, unknown>);
-      expect(output.maxTokens).toBeUndefined();
+      expect(output.maxTokens).toBe(128000);
     });
 
-    test('should use enabled default maxTokens (8192) for non-adaptive thinking models', () => {
+    // Regression: a bare inference-profile adaptive model (e.g. claude-sonnet-5)
+    // with no explicit maxTokens must get the model's full output budget so
+    // reasoning + a large create_file argument does not truncate mid-stream.
+    test('defaults a bare adaptive inference-profile model to its full max output', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'claude-sonnet-5',
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+      expect(output.maxTokens).toBe(128000);
+    });
+
+    // Number-first aliases (claude-4-7-sonnet, claude-5-sonnet) are gated as
+    // thinking models here but are not matched by the family-first reset()
+    // regex; they must still resolve to the real ceiling, not the 8192 fallback.
+    test.each([
+      ['anthropic.claude-4-7-sonnet', 128000],
+      ['claude-5-sonnet', 128000],
+      ['anthropic.claude-4-8-opus', 128000],
+    ])('defaults number-first adaptive alias %s to its real max output', (model, expected) => {
+      const parsed = bedrockInputParser.parse({ model }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      expect((amrf.thinking as { type: string }).type).toBe('adaptive');
+      expect(output.maxTokens).toBe(expected);
+    });
+
+    test('defaults non-adaptive thinking maxTokens to the model max output', () => {
       const parsed = bedrockInputParser.parse({
         model: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
       }) as Record<string, unknown>;
       parsed.maxOutputTokens = undefined;
       (parsed as Record<string, unknown>).maxTokens = undefined;
       const output = bedrockOutputParser(parsed as Record<string, unknown>);
-      expect(output.maxTokens).toBe(8192);
+      expect(output.maxTokens).toBe(64000);
     });
 
     test('should use default thinking budget (2000) when no custom budget is set', () => {
@@ -1310,6 +1480,89 @@ describe('bedrockInputParser', () => {
       }) as Record<string, unknown>;
       const output = bedrockOutputParser(parsed as Record<string, unknown>);
       expect(output.additionalModelRequestFields).toBeUndefined();
+    });
+  });
+
+  // Regression for #14029: `system` is a reserved top-level Converse field, so a
+  // copy left inside additionalModelRequestFields makes Bedrock reject the request
+  // ("The additional field system conflicts with an existing field").
+  describe('system field (issue #14029)', () => {
+    test('promotes system to root without duplicating it in additionalModelRequestFields', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'some-other-model',
+        system: 'You are a helpful assistant.',
+      }) as Record<string, unknown>;
+      expect((parsed.additionalModelRequestFields as Record<string, unknown>).system).toBe(
+        'You are a helpful assistant.',
+      );
+
+      const output = bedrockOutputParser(parsed);
+      expect(output.system).toBe('You are a helpful assistant.');
+      expect(output.additionalModelRequestFields).toBeUndefined();
+    });
+
+    test('strips system from additionalModelRequestFields while preserving other fields', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-3-7-sonnet',
+        system: 'You are a helpful assistant.',
+      }) as Record<string, unknown>;
+
+      const output = bedrockOutputParser(parsed);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(output.system).toBe('You are a helpful assistant.');
+      expect(amrf?.system).toBeUndefined();
+      expect(amrf?.thinking).toBeDefined();
+    });
+
+    // DocumentType permits scalars, so a saved preset can carry a non-object
+    // additionalModelRequestFields; the `system` cleanup must not throw on it.
+    test.each([['a-scalar-string'], [42], [true]])(
+      'tolerates a scalar additionalModelRequestFields (%p) without throwing',
+      (scalar) => {
+        expect(() =>
+          bedrockOutputParser({
+            model: 'some-other-model',
+            additionalModelRequestFields: scalar,
+          }),
+        ).not.toThrow();
+      },
+    );
+
+    // `system` is not the only reserved name: the input parser's catch-all routes
+    // ANY unknown preset key into additionalModelRequestFields, and each reserved
+    // Converse field collides the same way when the request sends it top-level.
+    test.each([['messages'], ['modelId'], ['toolConfig'], ['inferenceConfig']])(
+      'strips reserved Converse field %p from additionalModelRequestFields',
+      (reserved) => {
+        const parsed = bedrockInputParser.parse({
+          model: 'some-other-model',
+          [reserved]: { some: 'value' },
+        }) as Record<string, unknown>;
+        expect(
+          (parsed.additionalModelRequestFields as Record<string, unknown>)[reserved],
+        ).toBeDefined();
+
+        const output = bedrockOutputParser(parsed);
+        const amrf = output.additionalModelRequestFields as Record<string, unknown> | undefined;
+        expect(amrf?.[reserved]).toBeUndefined();
+      },
+    );
+
+    test('keeps non-reserved passthrough fields intact while stripping reserved ones', () => {
+      const output = bedrockOutputParser({
+        model: 'some-other-model',
+        additionalModelRequestFields: {
+          system: 'dup',
+          messages: [],
+          anthropic_beta: ['context-1m-2025-08-07'],
+          top_k: 40,
+        },
+      });
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.system).toBeUndefined();
+      expect(amrf.messages).toBeUndefined();
+      expect(amrf.anthropic_beta).toEqual(['context-1m-2025-08-07']);
+      expect(amrf.top_k).toBe(40);
     });
   });
 

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -70,6 +71,22 @@ func TestLoadConfigRequiresRedisURI(t *testing.T) {
 	}
 }
 
+func TestLoadConfigDisablesCentralMediaExport(t *testing.T) {
+	t.Setenv("LANGFUSE_FANOUT_CENTRAL_BASE_URL", "https://cloud.langfuse.com")
+	t.Setenv("LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER", "Basic central")
+	t.Setenv("LANGFUSE_FANOUT_PUBLIC_URL", "http://fanout.local:4318")
+	t.Setenv("LANGFUSE_FANOUT_REDIS_URI", "redis://localhost:6379")
+	t.Setenv("LANGFUSE_FANOUT_CENTRAL_MEDIA_EXPORT_DISABLED", "true")
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig error: %v", err)
+	}
+	if cfg.centralMediaExport {
+		t.Fatal("central media export should be disabled")
+	}
+}
+
 func TestNormalizeBaseURLAllowsOnlyHTTPAndHTTPS(t *testing.T) {
 	if got := normalizeBaseURL("http://localhost:3000/path/"); got != "http://localhost:3000/path" {
 		t.Fatalf("http URL normalized to %q", got)
@@ -79,6 +96,66 @@ func TestNormalizeBaseURLAllowsOnlyHTTPAndHTTPS(t *testing.T) {
 	}
 	if got := normalizeBaseURL("file:///tmp/langfuse"); got != "" {
 		t.Fatalf("file URL should be rejected, got %q", got)
+	}
+}
+
+func TestValidateMediaUploadURLRequiresHTTPS(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+	}{
+		{name: "public storage", url: "https://bucket.s3.amazonaws.com/object?X-Amz-Signature=value"},
+		{name: "self-hosted storage", url: "https://minio.internal:9000/object"},
+		{name: "private address", url: "https://10.0.0.8/object"},
+		{name: "http", url: "http://minio.internal:9000/object", wantErr: true},
+		{name: "unsupported scheme", url: "ftp://storage.example.com/object", wantErr: true},
+		{name: "relative", url: "/object", wantErr: true},
+		{name: "missing host", url: "https:///object", wantErr: true},
+		{name: "malformed", url: "://storage.example.com/object", wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateMediaUploadURL(test.url)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("validateMediaUploadURL(%q) error = %v, wantErr %t", test.url, err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestPutMediaDoesNotFollowRedirects(t *testing.T) {
+	t.Parallel()
+
+	var targetRequests int
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetRequests++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	redirect := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/upload", http.StatusTemporaryRedirect)
+	}))
+	defer redirect.Close()
+
+	gw := newTestGateway(redirect.URL, nil)
+	gw.cfg.client = redirect.Client()
+	status, err := gw.putMedia(context.Background(), uploadDestination{
+		Name:      centralName,
+		UploadURL: redirect.URL + "/upload",
+	}, []byte("hello"), http.Header{"Content-Type": []string{"image/png"}})
+	if status != http.StatusTemporaryRedirect {
+		t.Fatalf("status = %d, want %d", status, http.StatusTemporaryRedirect)
+	}
+	if err == nil {
+		t.Fatal("expected redirect response to fail the upload")
+	}
+	if targetRequests != 0 {
+		t.Fatalf("redirect target requests = %d, want 0", targetRequests)
 	}
 }
 
@@ -128,6 +205,46 @@ func TestTraceProxyForwardsExistingRoutingAttributesToCollector(t *testing.T) {
 	}
 	if attrs["kept"] != "value" {
 		t.Fatalf("collector trace lost kept attr: %#v", attrs)
+	}
+}
+
+func TestTraceProxyDoesNotReturnCollectorErrorDetails(t *testing.T) {
+	var logBuffer bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logBuffer, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(previousLogger)
+	})
+	collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "failed https://storage.example.com/object?X-Amz-Signature=secret", http.StatusBadGateway)
+	}))
+	defer collector.Close()
+
+	gw := newTestGatewayWithCollector(collector.URL)
+	body := buildTraceRequest(t, nil)
+	req := httptest.NewRequest(http.MethodPost, otelTracePath, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	resp := httptest.NewRecorder()
+
+	gw.handle(resp, req)
+	if resp.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if strings.Contains(resp.Body.String(), "storage.example.com") || strings.Contains(resp.Body.String(), "secret") {
+		t.Fatalf("response leaked collector error details: %s", resp.Body.String())
+	}
+	if strings.TrimSpace(resp.Body.String()) != "trace collector export failed" {
+		t.Fatalf("unexpected response body: %s", resp.Body.String())
+	}
+	logOutput := logBuffer.String()
+	if strings.Contains(logOutput, "storage.example.com") || strings.Contains(logOutput, "secret") {
+		t.Fatalf("log leaked collector error details: %s", logOutput)
+	}
+	if !strings.Contains(logOutput, `"operation":"trace_collector"`) {
+		t.Fatalf("log missing operation context: %s", logOutput)
+	}
+	if got := strings.Count(strings.TrimSpace(logOutput), "\n") + 1; got != 1 {
+		t.Fatalf("expected one gateway failure log, got %d: %s", got, logOutput)
 	}
 }
 
@@ -233,10 +350,10 @@ func TestMediaUploadFansOutToCentralAndTenant(t *testing.T) {
 	var mu sync.Mutex
 	uploads := map[string]string{}
 	upstream := func(name string) *httptest.Server {
-		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case r.Method == http.MethodPost && r.URL.Path == mediaPath:
-				uploadURL := "http://" + r.Host + "/upload/" + name
+				uploadURL := "https://" + r.Host + "/upload/" + name
 				writeJSON(w, http.StatusCreated, mediaUploadResponse{
 					MediaID:   "same-media-id",
 					UploadURL: &uploadURL,
@@ -262,6 +379,8 @@ func TestMediaUploadFansOutToCentralAndTenant(t *testing.T) {
 	store := newFakeUploadPlanStore()
 	createGateway := newTestGatewayWithStore(central.URL, map[string]string{"eu": tenant.URL}, store)
 	uploadGateway := newTestGatewayWithStore(central.URL, map[string]string{"eu": tenant.URL}, store)
+	createGateway.cfg.client = central.Client()
+	uploadGateway.cfg.client = central.Client()
 	createBody := `{"traceId":"trace","contentType":"image/png","contentLength":5,"sha256Hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","field":"input"}`
 	req := httptest.NewRequest(http.MethodPost, tenantPrefix+"eu"+mediaPath, strings.NewReader(createBody))
 	req.Header.Set("Authorization", "Basic tenant")
@@ -313,6 +432,122 @@ func TestMediaUploadFansOutToCentralAndTenant(t *testing.T) {
 	}
 }
 
+func TestMediaUploadSkipsCentralForCentralMediaDisabledTenantRoute(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	uploads := map[string]string{}
+	upstream := func(name string) *httptest.Server {
+		return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodPost && r.URL.Path == mediaPath:
+				uploadURL := "https://" + r.Host + "/upload/" + name
+				writeJSON(w, http.StatusCreated, mediaUploadResponse{
+					MediaID:   "same-media-id",
+					UploadURL: &uploadURL,
+				})
+			case r.Method == http.MethodPut && r.URL.Path == "/upload/"+name:
+				body, _ := io.ReadAll(r.Body)
+				mu.Lock()
+				uploads[name] = string(body)
+				mu.Unlock()
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodPatch && r.URL.Path == mediaPath+"/same-media-id":
+				w.WriteHeader(http.StatusNoContent)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+	}
+	central := upstream("central")
+	defer central.Close()
+	tenant := upstream("tenant")
+	defer tenant.Close()
+
+	store := newFakeUploadPlanStore()
+	createGateway := newTestGatewayWithStore(central.URL, map[string]string{"eu": tenant.URL}, store)
+	uploadGateway := newTestGatewayWithStore(central.URL, map[string]string{"eu": tenant.URL}, store)
+	createGateway.cfg.client = central.Client()
+	uploadGateway.cfg.client = central.Client()
+	createBody := `{"traceId":"trace","contentType":"image/png","contentLength":5,"sha256Hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","field":"input"}`
+	req := httptest.NewRequest(http.MethodPost, tenantPrefix+"eu/"+centralMediaDisabled+mediaPath, strings.NewReader(createBody))
+	req.Header.Set("Authorization", "Basic tenant")
+	resp := httptest.NewRecorder()
+
+	createGateway.handle(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	var create mediaUploadResponse
+	if err := json.NewDecoder(resp.Body).Decode(&create); err != nil {
+		t.Fatal(err)
+	}
+	if create.MediaID != "same-media-id" || create.UploadURL == nil {
+		t.Fatalf("unexpected create response: %#v", create)
+	}
+
+	uploadReq := httptest.NewRequest(http.MethodPut, *create.UploadURL, strings.NewReader("hello"))
+	uploadReq.Header.Set("Content-Type", "image/png")
+	uploadResp := httptest.NewRecorder()
+	uploadGateway.handle(uploadResp, uploadReq)
+	if uploadResp.Code != http.StatusOK {
+		t.Fatalf("upload status = %d, body = %s", uploadResp.Code, uploadResp.Body.String())
+	}
+
+	patchReq := httptest.NewRequest(http.MethodPatch, tenantPrefix+"eu/"+centralMediaDisabled+mediaPath+"/same-media-id", strings.NewReader(`{"uploadHttpStatus":200}`))
+	patchReq.Header.Set("Authorization", "Basic tenant")
+	patchResp := httptest.NewRecorder()
+	uploadGateway.handle(patchResp, patchReq)
+	if patchResp.Code != http.StatusNoContent {
+		t.Fatalf("patch status = %d, body = %s", patchResp.Code, patchResp.Body.String())
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if _, ok := uploads["central"]; ok {
+		t.Fatalf("central upload should be skipped, uploads = %#v", uploads)
+	}
+	if uploads["tenant"] != "hello" {
+		t.Fatalf("tenant upload missing, uploads = %#v", uploads)
+	}
+}
+
+func TestMediaUploadSkipsCentralWhenCentralMediaExportDisabled(t *testing.T) {
+	t.Parallel()
+
+	var centralCreates int
+	central := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		centralCreates++
+		http.NotFound(w, r)
+	}))
+	defer central.Close()
+
+	var tenantCreates int
+	tenant := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != mediaPath {
+			http.NotFound(w, r)
+			return
+		}
+		tenantCreates++
+		writeJSON(w, http.StatusCreated, mediaUploadResponse{MediaID: "same-media-id"})
+	}))
+	defer tenant.Close()
+
+	gw := newTestGateway(central.URL, map[string]string{"eu": tenant.URL})
+	gw.cfg.centralMediaExport = false
+	req := httptest.NewRequest(http.MethodPost, tenantPrefix+"eu"+mediaPath, strings.NewReader(`{"contentLength":0}`))
+	req.Header.Set("Authorization", "Basic tenant")
+	resp := httptest.NewRecorder()
+
+	gw.handle(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if centralCreates != 0 || tenantCreates != 1 {
+		t.Fatalf("centralCreates=%d tenantCreates=%d", centralCreates, tenantCreates)
+	}
+}
+
 func TestMediaUploadRejectsInvalidIDBeforeReadingBody(t *testing.T) {
 	t.Parallel()
 
@@ -330,11 +565,94 @@ func TestMediaUploadRejectsInvalidIDBeforeReadingBody(t *testing.T) {
 	}
 }
 
+func TestUploadPlanStoreErrorsUseGenericResponses(t *testing.T) {
+	t.Parallel()
+
+	sensitiveErr := errors.New("redis://internal-redis:6379 leaked-secret")
+
+	t.Run("ping", func(t *testing.T) {
+		t.Parallel()
+
+		store := newFakeUploadPlanStore()
+		store.pingErr = sensitiveErr
+		gw := newTestGatewayWithStore("http://central.invalid", nil, store)
+
+		req := httptest.NewRequest(http.MethodPost, mediaPath, strings.NewReader(`{"contentLength":5}`))
+		resp := httptest.NewRecorder()
+		gw.handle(resp, req)
+
+		assertGenericErrorResponse(t, resp, http.StatusBadGateway, "media upload plan store unavailable")
+	})
+
+	t.Run("put", func(t *testing.T) {
+		t.Parallel()
+
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			uploadURL := "http://storage.invalid/upload"
+			writeJSON(w, http.StatusCreated, mediaUploadResponse{
+				MediaID:   "same-media-id",
+				UploadURL: &uploadURL,
+			})
+		}))
+		defer upstream.Close()
+
+		store := newFakeUploadPlanStore()
+		store.putErr = sensitiveErr
+		gw := newTestGatewayWithStore(upstream.URL, nil, store)
+
+		req := httptest.NewRequest(http.MethodPost, mediaPath, strings.NewReader(`{"contentLength":5}`))
+		resp := httptest.NewRecorder()
+		gw.handle(resp, req)
+
+		assertGenericErrorResponse(t, resp, http.StatusBadGateway, "failed to store media upload plan")
+	})
+
+	t.Run("take", func(t *testing.T) {
+		t.Parallel()
+
+		store := newFakeUploadPlanStore()
+		store.takeErr = sensitiveErr
+		gw := newTestGatewayWithStore("http://central.invalid", nil, store)
+
+		req := httptest.NewRequest(http.MethodPut, mediaUploadProxyPath+"abcdef1234", strings.NewReader("hello"))
+		resp := httptest.NewRecorder()
+		gw.handle(resp, req)
+
+		assertGenericErrorResponse(t, resp, http.StatusBadGateway, "failed to load media upload plan")
+	})
+}
+
+func TestUploadPlanStoreErrorsUseRedactedLogs(t *testing.T) {
+	var logBuffer bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logBuffer, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(previousLogger)
+	})
+
+	store := newFakeUploadPlanStore()
+	store.pingErr = errors.New("redis://internal-redis:6379 leaked-secret")
+	gw := newTestGatewayWithStore("http://central.invalid", nil, store)
+
+	req := httptest.NewRequest(http.MethodPost, mediaPath, strings.NewReader(`{"contentLength":5}`))
+	resp := httptest.NewRecorder()
+	gw.handle(resp, req)
+
+	assertGenericErrorResponse(t, resp, http.StatusBadGateway, "media upload plan store unavailable")
+	logOutput := logBuffer.String()
+	if strings.Contains(logOutput, "internal-redis") || strings.Contains(logOutput, "leaked-secret") {
+		t.Fatalf("log leaked upload plan store details: %s", logOutput)
+	}
+	if !strings.Contains(logOutput, `"error":"error details redacted"`) {
+		t.Fatalf("log missing redacted error context: %s", logOutput)
+	}
+}
+
 func TestMediaUploadIsOneTime(t *testing.T) {
 	t.Parallel()
 
 	var uploads int
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut || r.URL.Path != "/upload" {
 			http.NotFound(w, r)
 			return
@@ -355,6 +673,7 @@ func TestMediaUploadIsOneTime(t *testing.T) {
 		}},
 	})
 	gw := newTestGatewayWithStore(upstream.URL, nil, store)
+	gw.cfg.client = upstream.Client()
 
 	for index, expectedStatus := range []int{http.StatusOK, http.StatusNotFound} {
 		req := httptest.NewRequest(http.MethodPut, mediaUploadProxyPath+uploadID, strings.NewReader("hello"))
@@ -374,7 +693,7 @@ func TestMediaUploadOversizeRestoresPlanForRetry(t *testing.T) {
 	t.Parallel()
 
 	var uploads int
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut || r.URL.Path != "/upload" {
 			http.NotFound(w, r)
 			return
@@ -395,6 +714,7 @@ func TestMediaUploadOversizeRestoresPlanForRetry(t *testing.T) {
 		}},
 	})
 	gw := newTestGatewayWithStore(upstream.URL, nil, store)
+	gw.cfg.client = upstream.Client()
 
 	oversizeReq := httptest.NewRequest(
 		http.MethodPut,
@@ -424,7 +744,7 @@ func TestMediaUploadUnsupportedContentTypeRestoresPlanForRetry(t *testing.T) {
 	t.Parallel()
 
 	var uploads int
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut || r.URL.Path != "/upload" {
 			http.NotFound(w, r)
 			return
@@ -445,6 +765,7 @@ func TestMediaUploadUnsupportedContentTypeRestoresPlanForRetry(t *testing.T) {
 		}},
 	})
 	gw := newTestGatewayWithStore(upstream.URL, nil, store)
+	gw.cfg.client = upstream.Client()
 
 	badReq := httptest.NewRequest(http.MethodPut, mediaUploadProxyPath+uploadID, strings.NewReader("hello"))
 	badReq.Header.Set("Content-Type", "text/html")
@@ -687,6 +1008,36 @@ func TestMetricsEndpointRequiresBearerToken(t *testing.T) {
 	}
 }
 
+func TestSafeErrorMessageRedactsURLErrorURL(t *testing.T) {
+	t.Parallel()
+
+	err := &url.Error{
+		Op:  "Put",
+		URL: "https://storage.example.com/object?X-Amz-Signature=secret",
+		Err: errors.New("lookup bucket.storage.example.com: connection refused"),
+	}
+
+	message := safeErrorMessage(err)
+	if strings.Contains(message, "storage.example.com") || strings.Contains(message, "bucket") || strings.Contains(message, "secret") {
+		t.Fatalf("safe error leaked URL details: %q", message)
+	}
+	if !strings.Contains(message, "Put") || !strings.Contains(message, "URL request failed") {
+		t.Fatalf("safe error lost useful context: %q", message)
+	}
+}
+
+func TestSafeErrorMessageRedactsGenericError(t *testing.T) {
+	t.Parallel()
+
+	message := safeErrorMessage(errors.New("redis://internal-redis:6379 leaked-secret"))
+	if strings.Contains(message, "internal-redis") || strings.Contains(message, "leaked-secret") {
+		t.Fatalf("safe error leaked generic error details: %q", message)
+	}
+	if message != "error details redacted" {
+		t.Fatalf("unexpected generic error message: %q", message)
+	}
+}
+
 func TestTraceProxyRecordsPrometheusMetrics(t *testing.T) {
 	t.Parallel()
 
@@ -722,9 +1073,10 @@ func newTestGateway(centralURL string, tenants map[string]string) *gateway {
 
 func newTestGatewayWithStore(centralURL string, tenants map[string]string, store uploadPlanStore) *gateway {
 	return newGateway(config{
-		traceCollectorURL: "http://collector.invalid",
-		publicURL:         "http://fanout.local:4318",
-		metricsSecret:     "test-secret",
+		traceCollectorURL:  "http://collector.invalid",
+		publicURL:          "http://fanout.local:4318",
+		metricsSecret:      "test-secret",
+		centralMediaExport: true,
 		central: destination{
 			name:          centralName,
 			baseURL:       centralURL,
@@ -878,6 +1230,19 @@ func scrapeMetrics(t *testing.T, gw *gateway) string {
 	return resp.Body.String()
 }
 
+func assertGenericErrorResponse(t *testing.T, resp *httptest.ResponseRecorder, status int, body string) {
+	t.Helper()
+	if resp.Code != status {
+		t.Fatalf("status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if strings.TrimSpace(resp.Body.String()) != body {
+		t.Fatalf("unexpected body: %s", resp.Body.String())
+	}
+	if strings.Contains(resp.Body.String(), "internal-redis") || strings.Contains(resp.Body.String(), "leaked-secret") {
+		t.Fatalf("response leaked upload plan store details: %s", resp.Body.String())
+	}
+}
+
 func newUploadURLPath(t *testing.T, value string) string {
 	t.Helper()
 	parsed, err := url.Parse(value)
@@ -890,6 +1255,10 @@ func newUploadURLPath(t *testing.T, value string) string {
 type fakeUploadPlanStore struct {
 	mu    sync.Mutex
 	plans map[string]uploadPlan
+
+	putErr  error
+	takeErr error
+	pingErr error
 }
 
 func newFakeUploadPlanStore() *fakeUploadPlanStore {
@@ -897,6 +1266,9 @@ func newFakeUploadPlanStore() *fakeUploadPlanStore {
 }
 
 func (s *fakeUploadPlanStore) Put(_ context.Context, uploadID string, plan uploadPlan) error {
+	if s.putErr != nil {
+		return s.putErr
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.plans[uploadID] = plan
@@ -904,6 +1276,9 @@ func (s *fakeUploadPlanStore) Put(_ context.Context, uploadID string, plan uploa
 }
 
 func (s *fakeUploadPlanStore) Take(_ context.Context, uploadID string) (uploadPlan, bool, error) {
+	if s.takeErr != nil {
+		return uploadPlan{}, false, s.takeErr
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	plan, ok := s.plans[uploadID]
@@ -912,6 +1287,9 @@ func (s *fakeUploadPlanStore) Take(_ context.Context, uploadID string) (uploadPl
 }
 
 func (s *fakeUploadPlanStore) Ping(_ context.Context) error {
+	if s.pingErr != nil {
+		return s.pingErr
+	}
 	return nil
 }
 

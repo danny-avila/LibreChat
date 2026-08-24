@@ -10,8 +10,11 @@ import type { TModelsConfig, TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { ServerRequest, GetUserKeyValuesFunction, UserKeyValues } from '~/types';
 import type { FetchModelsParams } from '~/endpoints/models';
+import type { GetAppConfigOptions } from '~/app/service';
 import { fetchModels as defaultFetchModels } from '~/endpoints/models';
 import { getTokenConfigKey } from '~/endpoints/custom/initialize';
+import { getAppConfigOptionsFromUser } from '~/app/service';
+import { resolveConfigSecret } from '~/admin/secrets';
 import { validateEndpointURL } from '~/auth';
 import { tokenConfigCache } from '~/cache';
 import { isUserProvided } from '~/utils';
@@ -43,11 +46,7 @@ interface ResolvedEndpoint {
 }
 
 export interface LoadConfigModelsDeps {
-  getAppConfig: (params: {
-    role?: string;
-    userId?: string;
-    tenantId?: string;
-  }) => Promise<AppConfig>;
+  getAppConfig: (params: GetAppConfigOptions) => Promise<AppConfig>;
   getUserKeyValues: GetUserKeyValuesFunction;
   fetchModels?: (params: FetchModelsParams) => Promise<string[]>;
 }
@@ -56,13 +55,7 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
   const { getAppConfig, getUserKeyValues, fetchModels = defaultFetchModels } = deps;
 
   return async function loadConfigModels(req: ServerRequest): Promise<TModelsConfig> {
-    const appConfig =
-      req.config ??
-      (await getAppConfig({
-        role: req.user?.role,
-        userId: req.user?.id,
-        tenantId: req.user?.tenantId,
-      }));
+    const appConfig = req.config ?? (await getAppConfig(getAppConfigOptionsFromUser(req.user)));
     if (!appConfig) {
       return {};
     }
@@ -115,7 +108,7 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
       endpointsMap[name] = endpoint;
       modelsConfig[name] = [];
 
-      const resolvedApiKey = extractEnvVariable(apiKey);
+      const resolvedApiKey = resolveConfigSecret(apiKey) ?? '';
       const resolvedBaseURL = extractEnvVariable(baseURL);
       const entry: ResolvedEndpoint = {
         name,

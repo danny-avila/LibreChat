@@ -1,4 +1,8 @@
+import { createAgentTriggerLaneSequenceModel } from './triggerLaneSequence';
+import { createScheduleModel, createScheduleRunModel } from './schedule';
 import { createSkillSyncCredentialModel } from './skillSyncCredential';
+import { createAgentTriggerUserPurgeModel } from './triggerUserPurge';
+import { createAgentTriggerDeliveryModel } from './triggerDelivery';
 import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';
 import { createAgentCategoryModel } from './agentCategory';
@@ -10,6 +14,7 @@ import { createSystemGrantModel } from './systemGrant';
 import { createPluginAuthModel } from './pluginAuth';
 import { createSharedLinkModel } from './sharedLink';
 import { createAccessRoleModel } from './accessRole';
+import { createToolFavoriteModel } from './favorite';
 import { createMCPServerModel } from './mcpServer';
 import { createAssistantModel } from './assistant';
 import { createSkillFileModel } from './skillFile';
@@ -34,6 +39,7 @@ import { createUserModel } from './user';
 import { createRoleModel } from './role';
 import { createFileModel } from './file';
 import { createKeyModel } from './key';
+import logger from '~/config/winston';
 
 /**
  * Creates all database models for all collections
@@ -69,14 +75,20 @@ export function createModels(mongoose: typeof import('mongoose')): {
   SharedLink: ReturnType<typeof createSharedLinkModel>;
   ToolCall: ReturnType<typeof createToolCallModel>;
   MemoryEntry: ReturnType<typeof createMemoryModel>;
+  ToolFavorite: ReturnType<typeof createToolFavoriteModel>;
   AccessRole: ReturnType<typeof createAccessRoleModel>;
   AclEntry: ReturnType<typeof createAclEntryModel>;
   SystemGrant: ReturnType<typeof createSystemGrantModel>;
   AuditLog: ReturnType<typeof createAuditLogModel>;
   Group: ReturnType<typeof createGroupModel>;
   Config: ReturnType<typeof createConfigModel>;
+  AgentTriggerDelivery: ReturnType<typeof createAgentTriggerDeliveryModel>;
+  AgentTriggerLaneSequence: ReturnType<typeof createAgentTriggerLaneSequenceModel>;
+  AgentTriggerUserPurge: ReturnType<typeof createAgentTriggerUserPurgeModel>;
+  Schedule: ReturnType<typeof createScheduleModel>;
+  ScheduleRun: ReturnType<typeof createScheduleRunModel>;
 } {
-  return {
+  const models = {
     User: createUserModel(mongoose),
     Token: createTokenModel(mongoose),
     Session: createSessionModel(mongoose),
@@ -107,11 +119,32 @@ export function createModels(mongoose: typeof import('mongoose')): {
     SharedLink: createSharedLinkModel(mongoose),
     ToolCall: createToolCallModel(mongoose),
     MemoryEntry: createMemoryModel(mongoose),
+    ToolFavorite: createToolFavoriteModel(mongoose),
     AccessRole: createAccessRoleModel(mongoose),
     AclEntry: createAclEntryModel(mongoose),
     SystemGrant: createSystemGrantModel(mongoose),
     AuditLog: createAuditLogModel(mongoose),
     Group: createGroupModel(mongoose),
     Config: createConfigModel(mongoose),
+    AgentTriggerDelivery: createAgentTriggerDeliveryModel(mongoose),
+    AgentTriggerLaneSequence: createAgentTriggerLaneSequenceModel(mongoose),
+    AgentTriggerUserPurge: createAgentTriggerUserPurgeModel(mongoose),
+    Schedule: createScheduleModel(mongoose),
+    ScheduleRun: createScheduleRunModel(mongoose),
   };
+  /**
+   * Background index builds fail silently unless an 'index' listener is
+   * attached (e.g. Amazon DocumentDB <5.0 rejecting partialFilterExpression),
+   * leaving unique constraints unenforced with no trace in the logs.
+   */
+  for (const model of Object.values(models)) {
+    if (model.listenerCount('index') === 0) {
+      model.on('index', (error?: Error) => {
+        if (error) {
+          logger.error(`Index build failed for "${model.modelName}": ${error.message}`);
+        }
+      });
+    }
+  }
+  return models;
 }

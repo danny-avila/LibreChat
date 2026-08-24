@@ -1,7 +1,8 @@
 import yaml from 'js-yaml';
 import { Types } from 'mongoose';
-import { logger } from '@librechat/data-schemas';
 import { GraphEvents, Constants } from '@librechat/agents';
+import { logger, normalizeSkillFrontmatterKeys } from '@librechat/data-schemas';
+import { hasActivePiiFields, hasActivePiiPatterns } from 'librechat-data-provider';
 import type {
   LCTool,
   EventHandler,
@@ -10,22 +11,69 @@ import type {
   ToolCallRequest,
   ToolExecuteResult,
   ToolExecuteBatchRequest,
+  SubagentTaskConfig,
+  CallerCapabilityProjectionSnapshot,
 } from '@librechat/agents';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
-import type { CodeEnvRef } from 'librechat-data-provider';
-import type { SkillFileRecord } from './skillFiles';
+import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
+import type { ValidationIssue } from '@librechat/data-schemas';
+import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
+import type { CodeExecutionContext } from './execution';
+import type { TextContentFragment } from '~/protection';
 import type { ServerRequest } from '~/types';
+import {
+  backgroundTaskRegistry,
+  runCheckBackgroundTask,
+  getBackgroundTaskSnapshot,
+  claimBackgroundArtifact,
+  restoreBackgroundArtifact,
+  getBackgroundCodeDelivery,
+  isBackgroundRequested,
+  hasRunInBackgroundArg,
+  stripRunInBackgroundArg,
+  buildBackgroundHandleContent,
+  buildBackgroundCapacityContent,
+  stripBackgroundFromToolDefinitions,
+  BACKGROUND_STATUS_ATTACHMENT_TYPE,
+  CHECK_BACKGROUND_TASK_NAME,
+  RUN_IN_BACKGROUND_ARG,
+} from './background';
+import {
+  contentFilterUninspectableResponse,
+  extractFileContent,
+  extractSkillContent,
+  extractToolArgumentContent,
+  hasActiveFileFieldPolicy,
+  getContentTraversalFragments,
+  getBlockedUninspectableFileField,
+  inspectContent,
+  isContentTraversalLimitError,
+} from '~/protection';
 import {
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
 } from './tools';
+import {
+  ContentFilterError,
+  contentFilterModelBoundBlockResponse,
+  isContentFilterError,
+} from '~/middleware/contentFilter';
+import {
+  hasIntentArg,
+  stripIntentArg,
+  stripIntentLabelsFromToolDefinitions,
+  INTENT_ARG,
+} from './intent';
+import { getSafeErrorMetadata, logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
+import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
-import { logAxiosError, runOutsideTracing } from '~/utils';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
+import { instrumentPtcToolMap } from './ptc';
+import { markSandboxReady } from './prewarm';
 
 export interface ToolEndCallbackData {
   output: {
@@ -52,13 +100,50 @@ export interface ToolExecuteOptions {
   loadTools: (
     toolNames: string[],
     agentId?: string,
+    /** Immutable run configuration available before deferred tools connect. */
+    configurable?: Record<string, unknown>,
+    /** SDK-owned live caller capability projection for this agent context. */
+    callerCapabilityProjection?: CallerCapabilityProjectionSnapshot,
   ) => Promise<{
     loadedTools: StructuredToolInterface[];
     /** Additional configurable properties to merge (e.g., userMCPAuthMap) */
     configurable?: Record<string, unknown>;
   }>;
+  /** Trusted detached-subagent task scope for polling and parent controls. */
+  subagentTasks?: SubagentTaskConfig;
   /** Callback to process tool artifacts (code output files, file citations, etc.) */
   toolEndCallback?: ToolEndCallback;
+  /**
+   * Persists a backgrounded code-execution result onto the dispatch turn once
+   * the detached call settles: downloads/persists generated files, patches the
+   * original tool-call part's `output`, and appends the attachments to the
+   * dispatch turn's message row. Returns the persisted attachments so the poll
+   * turn can re-emit them on its live stream. With `reapply: true` it only
+   * re-applies the (idempotent) row patch using the provided attachments — no
+   * file processing — to heal a full-row save that reverted the anchor.
+   */
+  persistBackgroundCodeResult?: (params: {
+    toolName: string;
+    toolCallId: string;
+    messageId?: string;
+    conversationId?: string;
+    agentId?: string;
+    dispatchedAt?: number;
+    output?: string;
+    artifact?: unknown;
+    codeExecutionContext?: CodeExecutionContext;
+    attachments?: unknown[];
+    reapply?: boolean;
+  }) => Promise<{ attachments?: unknown[] } | null>;
+  /** Emits an `attachment` SSE event on the current request's live stream. */
+  emitAttachment?: (attachment: unknown) => void;
+  /**
+   * Emits an `on_ptc_tool_call` SSE event for one inner tool invocation made
+   * by a programmatic tool-calling program. Absent on transports that don't
+   * carry the LibreChat step stream (Open Responses), which simply skips the
+   * instrumentation.
+   */
+  emitPtcProgress?: (event: PtcToolCallEvent) => void;
   /**
    * Loads a skill by name with ACL constraint (returns full body for injection).
    *
@@ -75,6 +160,8 @@ export interface ToolExecuteOptions {
   ) => Promise<{
     body: string;
     name: string;
+    description?: string;
+    frontmatter?: Record<string, unknown>;
     _id: Types.ObjectId;
     /** Monotonic counter on the skill record. Threaded into
      *  `codeEnvRef.version` so codeapi's sessionKey scopes the cache
@@ -101,6 +188,8 @@ export interface ToolExecuteOptions {
   getAuthorSkillByName?: (params: { req: ServerRequest; name: string }) => Promise<{
     body: string;
     name: string;
+    description?: string;
+    frontmatter?: Record<string, unknown>;
     _id: Types.ObjectId;
     version: number;
     fileCount: number;
@@ -123,6 +212,7 @@ export interface ToolExecuteOptions {
       body: string;
       version: number;
     };
+    warnings: ValidationIssue[];
   }>;
   /** Updates a skill body and derived metadata from a tool-authored SKILL.md body. */
   updateSkill?: (params: {
@@ -138,6 +228,7 @@ export interface ToolExecuteOptions {
     | {
         status: 'updated';
         skill: { _id: Types.ObjectId; name: string; body: string; version: number };
+        warnings: ValidationIssue[];
       }
     | { status: 'conflict'; current: { _id: Types.ObjectId; name: string; version: number } }
     | { status: 'not_found' }
@@ -184,12 +275,21 @@ export interface ToolExecuteOptions {
     id: string;
     version?: number;
     read_only?: boolean;
+    codeApiBaseUrl?: string;
+    executionProfile?: CodeExecutionContext['executionProfile'];
   }) => Promise<{
     storage_session_id: string;
     files: Array<{ fileId: string; filename: string }>;
   }>;
   /** Checks if a code env file is still active. Returns lastModified or null. */
-  getSessionInfo?: (ref: CodeEnvRef, req?: ServerRequest) => Promise<string | null>;
+  getSessionInfo?: (
+    ref: CodeEnvRef,
+    req?: ServerRequest,
+    route?: {
+      baseUrl?: string;
+      executionProfile?: CodeExecutionContext['executionProfile'];
+    },
+  ) => Promise<string | null>;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
   /** Persists `codeEnvRef` on skill files after upload */
@@ -232,8 +332,36 @@ export interface ToolExecuteOptions {
     file_path: string;
     session_id?: string;
     files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    /** Per-conversation stateful runtime-session hint (thread_id); forwarded so a
+     *  host file op that is the first sandbox call joins the same runtime session
+     *  as bash_tool instead of the Code API's default session. */
+    runtime_session_hint?: string;
+    codeApiBaseUrl?: string;
+    executionProfile?: CodeExecutionContext['executionProfile'];
     req?: ServerRequest;
   }) => Promise<{ content: string } | null>;
+  /**
+   * Reads a small image file out of the code-execution sandbox as base64 so
+   * `read_file` can surface it to vision-capable models. The `readSandboxFile`
+   * `cat` path round-trips stdout through codeapi's JSON transport, which
+   * lossily replaces non-UTF-8 bytes and mangles image data — this reader
+   * base64-encodes the bytes IN the sandbox (ASCII-safe over JSON) after an
+   * in-sandbox size guard so an oversize image never crosses the wire.
+   * Returns `null` when codeapi is unavailable; throws on transport / read
+   * errors so the handler can fall back to an instructive message.
+   */
+  readSandboxImage?: (params: {
+    file_path: string;
+    session_id?: string;
+    files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    /** @see readSandboxFile.runtime_session_hint */
+    runtime_session_hint?: string;
+    codeApiBaseUrl?: string;
+    executionProfile?: CodeExecutionContext['executionProfile'];
+    /** In-sandbox size cap; files larger than this return `tooLarge` without transferring bytes. */
+    maxBytes?: number;
+    req?: ServerRequest;
+  }) => Promise<{ base64: string; bytes: number } | { tooLarge: true; bytes: number } | null>;
   /**
    * Writes a UTF-8 text file into the code-execution sandbox via the
    * sandbox `/exec` endpoint. Mirrors `readSandboxFile` session forwarding
@@ -245,6 +373,10 @@ export interface ToolExecuteOptions {
     content: string;
     session_id?: string;
     files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    /** @see readSandboxFile.runtime_session_hint */
+    runtime_session_hint?: string;
+    codeApiBaseUrl?: string;
+    executionProfile?: CodeExecutionContext['executionProfile'];
     req?: ServerRequest;
   }) => Promise<{
     stdout?: string;
@@ -256,34 +388,69 @@ export interface ToolExecuteOptions {
 
 const MAX_READABLE_BYTES = 262_144;
 const MAX_BINARY_BYTES = 5 * 1024 * 1024;
+/**
+ * Inline ceiling for images pulled out of the code-execution sandbox —
+ * deliberately tighter than {@link MAX_BINARY_BYTES}, which governs the
+ * skill-file path. The two differ because their transports differ: skill
+ * files stream from storage, while sandbox bytes come back base64 over
+ * `/exec` stdout, which the runner caps (`SANDBOX_OUTPUT_MAX_SIZE`). The
+ * reader therefore windows the file, so cost scales in round-trips —
+ * ~32 at this limit vs ~160 at 5MB. Nothing is lost by stopping here:
+ * vision providers downsample to ~1.5-2k px regardless, so multi-MB
+ * originals buy no fidelity, and anything larger degrades to the
+ * `bash_tool` hint below.
+ */
+const MAX_SANDBOX_INLINE_IMAGE_BYTES = 1024 * 1024;
 const MAX_CACHE_BYTES = 512 * 1024;
 const MAX_AUTHORING_BYTES = 10 * 1024 * 1024;
 const MAX_TOOL_ERROR_MESSAGE_CHARS = 12_000;
 const MAX_TOOL_ERROR_STACK_CHARS = 4_000;
 const SKILL_MD = 'SKILL.md';
+const MAX_SKILL_AUTHORING_WARNINGS = 20;
+const MAX_SKILL_WARNING_FIELD_CHARS = 120;
+const MAX_SKILL_WARNING_CODE_CHARS = 64;
+const MAX_SKILL_WARNING_MESSAGE_CHARS = 300;
 
 const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+
+function getCodeExecutionContext(
+  configurable: Record<string, unknown>,
+): CodeExecutionContext | undefined {
+  const context = configurable.codeExecutionContext;
+  if (context == null || typeof context !== 'object') {
+    return undefined;
+  }
+  const candidate = context as Partial<CodeExecutionContext>;
+  if (
+    typeof candidate.baseUrl !== 'string' ||
+    typeof candidate.codeSessionKey !== 'string' ||
+    (candidate.executionProfile !== 'default' && candidate.executionProfile !== 'stateful') ||
+    typeof candidate.statefulSessions !== 'boolean'
+  ) {
+    return undefined;
+  }
+  return candidate as CodeExecutionContext;
+}
+
+function codeExecutionRequestParams(context?: CodeExecutionContext): {
+  codeApiBaseUrl?: string;
+  executionProfile?: CodeExecutionContext['executionProfile'];
+  runtime_session_hint?: string;
+} {
+  if (!context) {
+    return {};
+  }
+  return {
+    codeApiBaseUrl: context.baseUrl,
+    executionProfile: context.executionProfile,
+    ...(context.runtimeSessionHint ? { runtime_session_hint: context.runtimeSessionHint } : {}),
+  };
+}
 
 type ToolInputSchemaKind = {
   object: boolean;
   string: boolean;
 };
-
-function truncateMiddle(value: string, maxChars: number): string {
-  if (value.length <= maxChars) {
-    return value;
-  }
-
-  const indicator = `\n\n... [truncated: ${value.length} chars exceeded ${maxChars} limit] ...\n\n`;
-  const available = maxChars - indicator.length;
-  if (available <= 0) {
-    return value.slice(0, maxChars);
-  }
-
-  const headSize = Math.ceil(available * 0.7);
-  const tailSize = available - headSize;
-  return value.slice(0, headSize) + indicator + value.slice(value.length - tailSize);
-}
 
 function stringifyThrownValue(error: unknown): string {
   try {
@@ -526,6 +693,223 @@ function errorResult(tc: ToolCallRequest, errorMessage: string): ToolExecuteResu
   };
 }
 
+function modelBoundContentFilterErrorMessage(
+  finding: Parameters<typeof contentFilterModelBoundBlockResponse>[0],
+): string {
+  return JSON.stringify(contentFilterModelBoundBlockResponse(finding));
+}
+
+function contentFilterErrorResult(
+  tc: ToolCallRequest,
+  finding: Parameters<typeof contentFilterModelBoundBlockResponse>[0],
+): ToolExecuteResult {
+  return errorResult(tc, modelBoundContentFilterErrorMessage(finding));
+}
+
+function filteredContentResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  fragments: Iterable<TextContentFragment>,
+): ToolExecuteResult | null {
+  const filters = req?.config?.filters;
+  if (filters == null) {
+    return null;
+  }
+  const finding = inspectContent(fragments, { filters });
+  return finding == null ? null : contentFilterErrorResult(tc, finding);
+}
+
+function filteredToolArgumentsResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  args: unknown,
+): ToolExecuteResult | null {
+  const pii = req?.config?.filters?.toolArguments?.pii;
+  if (!hasActivePiiFields(pii, ['name', 'arguments'])) {
+    return null;
+  }
+  const inspectName = pii?.fields == null || pii.fields.includes('name');
+  const inspectArguments = pii?.fields == null || pii.fields.includes('arguments');
+  try {
+    return filteredContentResult(
+      tc,
+      req,
+      extractToolArgumentContent({
+        ...(inspectName && { name: tc.name }),
+        ...(inspectArguments && { arguments: args }),
+      }),
+    );
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    return (
+      filteredContentResult(tc, req, getContentTraversalFragments(error)) ??
+      errorResult(tc, error.body.message)
+    );
+  }
+}
+
+/**
+ * Inner tool names the `name` PII policy would block. `filteredToolArgumentsResult`
+ * inspects `tc.name` for direct calls, but inner calls bypass it entirely — and
+ * the trace event carries the name unconditionally, so without this the trace
+ * becomes the disclosure path the policy exists to close. The eligible map holds
+ * a handful of names, each inspected once per PTC call.
+ */
+function collectFilteredPtcToolNames(
+  names: Iterable<string>,
+  req: ServerRequest | undefined,
+): ReadonlySet<string> | undefined {
+  const filters = req?.config?.filters;
+  if (filters == null || !hasActivePiiFields(filters.toolArguments?.pii, ['name'])) {
+    return undefined;
+  }
+  const blocked = new Set<string>();
+  for (const name of names) {
+    try {
+      if (inspectContent(extractToolArgumentContent({ name }), { filters }) != null) {
+        blocked.add(name);
+      }
+    } catch {
+      /* An un-inspectable name is treated as blocked: fail closed. */
+      blocked.add(name);
+    }
+  }
+  return blocked.size > 0 ? blocked : undefined;
+}
+
+function filteredToolOutputResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  output: unknown,
+): ToolExecuteResult | null {
+  const pii = req?.config?.filters?.toolArguments?.pii;
+  if (!hasActivePiiFields(pii, ['output'])) {
+    return null;
+  }
+  try {
+    return filteredContentResult(tc, req, extractToolArgumentContent({ name: tc.name, output }));
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    return (
+      filteredContentResult(tc, req, getContentTraversalFragments(error)) ??
+      errorResult(tc, error.body.message)
+    );
+  }
+}
+
+function filteredSkillResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  input: Parameters<typeof extractSkillContent>[0],
+): ToolExecuteResult | null {
+  const pii = req?.config?.filters?.skills?.pii;
+  if (!hasActivePiiPatterns(pii)) {
+    return null;
+  }
+  const selectedFields = new Set<string>(pii?.fields ?? []);
+  const selected = (field: string): boolean => pii?.fields == null || selectedFields.has(field);
+  const projected = {
+    ...(selected('name') && { name: input?.name }),
+    ...(selected('display_title') && { displayTitle: input?.displayTitle }),
+    ...(selected('description') && { description: input?.description }),
+    ...(selected('category') && { category: input?.category }),
+    ...(selected('instructions') && {
+      body: input?.body,
+      instructions: input?.instructions,
+    }),
+    ...(selected('imported_text') && { importedText: input?.importedText }),
+    ...(selected('frontmatter') && { frontmatter: input?.frontmatter }),
+    ...((selected('file_name') || selected('file_text')) && {
+      files: input?.files?.map((file) => ({
+        ...(selected('file_name') && { name: file?.name, filename: file?.filename }),
+        ...(selected('file_text') && { text: file?.text, content: file?.content }),
+      })),
+    }),
+  };
+  return filteredContentResult(tc, req, extractSkillContent(projected));
+}
+
+function isFilteredSkillProjection(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  input: Parameters<typeof extractSkillContent>[0],
+): boolean {
+  try {
+    return filteredSkillResult(tc, req, input) != null;
+  } catch (error) {
+    if (isContentTraversalLimitError(error)) {
+      return true;
+    }
+    throw error;
+  }
+}
+
+function filteredFileNameResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  filename: string,
+): ToolExecuteResult | null {
+  if (!hasActiveFileFieldPolicy(req?.config?.filters, ['name'])) {
+    return null;
+  }
+  return filteredContentResult(tc, req, extractFileContent({ filename }));
+}
+
+function uninspectableFileResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+): ToolExecuteResult | null {
+  const field = getBlockedUninspectableFileField(req?.config?.filters, [
+    'content',
+    'extracted_text',
+  ]);
+  return field == null ? null : errorResult(tc, contentFilterUninspectableResponse(field).message);
+}
+
+function filteredBinaryFileResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  filename: string,
+): ToolExecuteResult | null {
+  return filteredFileNameResult(tc, req, filename) ?? uninspectableFileResult(tc, req);
+}
+
+function filteredFileResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  filename: string,
+  content: string,
+): ToolExecuteResult | null {
+  const filters = req?.config?.filters;
+  if (!hasActiveFileFieldPolicy(filters, ['name', 'content', 'extracted_text'])) {
+    return null;
+  }
+  const filteredName = filteredFileNameResult(tc, req, filename);
+  if (filteredName != null) {
+    return filteredName;
+  }
+  const inspectRawContent = hasActiveFileFieldPolicy(filters, ['content']);
+  const inspectExtractedText = hasActiveFileFieldPolicy(filters, ['extracted_text']);
+  if (!inspectRawContent && !inspectExtractedText) {
+    return null;
+  }
+  if (looksBinary(content)) {
+    return uninspectableFileResult(tc, req);
+  }
+  return filteredContentResult(
+    tc,
+    req,
+    extractFileContent({
+      ...(inspectRawContent && { content }),
+      ...(inspectExtractedText && { extractedText: content }),
+    }),
+  );
+}
+
 function successResult(
   tc: ToolCallRequest,
   content: string,
@@ -540,6 +924,34 @@ function successResult(
     result.artifact = artifact;
   }
   return result;
+}
+
+function surfaceSkillAuthoringWarnings(warnings: ValidationIssue[] | undefined): {
+  contentSuffix: string;
+  warnings: Array<ValidationIssue & { severity: 'warning' }>;
+  warningCount: number;
+} | null {
+  if (!warnings?.length) {
+    return null;
+  }
+  const surfaced = warnings.slice(0, MAX_SKILL_AUTHORING_WARNINGS).map((warning) => ({
+    field: truncateMiddle(warning.field, MAX_SKILL_WARNING_FIELD_CHARS),
+    code: truncateMiddle(warning.code, MAX_SKILL_WARNING_CODE_CHARS),
+    message: truncateMiddle(warning.message, MAX_SKILL_WARNING_MESSAGE_CHARS),
+    severity: 'warning' as const,
+  }));
+  const omitted = warnings.length - surfaced.length;
+  const lines = surfaced.map(
+    (warning) => `- ${warning.field} [${warning.code}]: ${warning.message}`,
+  );
+  if (omitted > 0) {
+    lines.push(`- ${omitted} additional warning(s) omitted.`);
+  }
+  return {
+    contentSuffix: `\n\nWarnings:\n${lines.join('\n')}`,
+    warnings: surfaced,
+    warningCount: warnings.length,
+  };
 }
 
 function guessMimeType(filename: string): string {
@@ -744,7 +1156,11 @@ function parseStructuredSkillFrontmatter(
     if (typeof parsed !== 'object' || Array.isArray(parsed)) {
       return { error: `${SKILL_MD} frontmatter must be a YAML mapping.` };
     }
-    return { frontmatter: parsed as Record<string, unknown> };
+    const normalized = normalizeSkillFrontmatterKeys(parsed as Record<string, unknown>);
+    if ('error' in normalized) {
+      return { error: `Invalid ${SKILL_MD} frontmatter: ${normalized.error}` };
+    }
+    return { frontmatter: normalized.frontmatter };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { error: `Invalid ${SKILL_MD} frontmatter: ${message}` };
@@ -1103,6 +1519,7 @@ const BINARY_EXTENSIONS_NEVER_READABLE = new Set([
   '.xlsx',
   '.ppt',
   '.pptx',
+  '.potx',
   '.odt',
   '.ods',
   '.odp',
@@ -1186,31 +1603,221 @@ function lowercaseExtension(filePath: string): string {
  * Builds the model-visible error returned when `read_file` is invoked on
  * a binary path. Phrasing is tuned for the LLM: states the fact (file is
  * binary, can't be read as text), points at the correct affordance for
- * each common case (image already in the chat; bash for everything else),
- * and includes the path verbatim so the model can copy-paste into its
- * next call.
+ * each common case (image via bash bytes; bash for everything else), and
+ * includes the path verbatim so the model can copy-paste into its next
+ * call. Supported raster images take the inline-attachment path first (see
+ * `handleSandboxImageRead`); this image branch is only reached when that
+ * read is unavailable (codeapi off) or fails.
  */
 function buildBinaryFileError(filePath: string, ext: string): string {
   if (IMAGE_EXTENSIONS_FOR_HINT.has(ext)) {
-    return `"${filePath}" is an image file (${ext}) and cannot be read as text. The image is already attached to the conversation and visible to the user. To process it programmatically, use \`bash_tool\` (e.g. \`file ${filePath}\` for metadata, or \`python3 -c '...'\` to operate on the bytes).`;
+    return `"${filePath}" is an image file (${ext}) and cannot be read as text. To process it programmatically, use \`bash_tool\` (e.g. \`file ${filePath}\` for metadata, or \`python3 -c '...'\` to operate on the bytes).`;
   }
   return `"${filePath}" is a binary file (${ext}) and cannot be read as text by \`read_file\`. Use \`bash_tool\` to process it (e.g. \`file ${filePath}\` for metadata, or a runtime-appropriate command for the format).`;
 }
 
 /**
- * True when the first chunk of a string contains a NUL byte. Used as a
- * post-fetch safety net for files whose extension didn't match the
- * blocklist (no extension, novel format, etc.) — sniffs `cat` stdout to
- * avoid ever forwarding mangled bytes to the LLM. 8KB is the same
- * window the skill-file path uses; enough for any reasonable magic
- * number while bounded enough to stay cheap.
+ * Sandbox file extensions `read_file` attempts to inline as visual content.
+ * The extension only decides ROUTING (try the base64 image read vs the text
+ * / bash path); the emitted MIME comes from the magic-byte sniff so the
+ * declared type always matches the actual bytes. Scoped to the four raster
+ * formats the providers accept in tool results (`IMAGE_MIMES`); other image
+ * extensions (`.bmp`, `.tiff`, `.svg`, ...) stay on the text / bash path.
  */
+const SANDBOX_IMAGE_EXTENSIONS = new Set<string>(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+
+/**
+ * Magic-byte sniff for the raster formats we inline. Preferred over the
+ * extension so a mislabelled `.png` that is really a JPEG is declared with
+ * the MIME the provider will actually validate the bytes against. Returns
+ * `undefined` when the header matches none of the supported formats.
+ */
+function sniffImageMime(buffer: Buffer): string | undefined {
+  if (buffer.length < 4) return undefined;
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  ) {
+    return 'image/png';
+  }
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (
+    buffer.length >= 6 &&
+    buffer[0] === 0x47 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x38
+  ) {
+    return 'image/gif';
+  }
+  if (
+    buffer.length >= 12 &&
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x45 &&
+    buffer[10] === 0x42 &&
+    buffer[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+  return undefined;
+}
+
+/**
+ * Cheap structural check that the image bytes are complete, not just that the
+ * header sniffed valid — a truncated/interrupted write can keep a valid magic
+ * prefix while the body is missing, which would then fail `saveBase64Image`
+ * resizing or the next provider request instead of the intended bash-hint
+ * fallback. Only png (fixed 8-byte IEND trailer) and webp (self-describing
+ * RIFF size) have a false-positive-free end marker; jpeg/gif can legitimately
+ * carry trailing metadata, so those stay at header-level sniffing rather than
+ * risk rejecting a valid file.
+ */
+function isCompleteImage(buffer: Buffer, mime: string): boolean {
+  if (mime === 'image/png') {
+    if (buffer.length < 8) return false;
+    const iend = buffer.subarray(buffer.length - 8);
+    return (
+      iend[0] === 0x49 &&
+      iend[1] === 0x45 &&
+      iend[2] === 0x4e &&
+      iend[3] === 0x44 &&
+      iend[4] === 0xae &&
+      iend[5] === 0x42 &&
+      iend[6] === 0x60 &&
+      iend[7] === 0x82
+    );
+  }
+  if (mime === 'image/webp') {
+    if (buffer.length < 12) return false;
+    return buffer.readUInt32LE(4) === buffer.length - 8;
+  }
+  return true;
+}
+
+/**
+ * Builds the `read_file` success result for an image: a short text line the
+ * model reads plus the `image_url` block in `artifact.content`. The SDK
+ * folds `artifact.content` into what the model sees (Anthropic tool_result
+ * or a trailing Human message for OpenAI/Google), and the host tool-end
+ * callback saves the same data URL as a viewable attachment. Shared by the
+ * skill-file and sandbox read paths so both surface images identically.
+ */
+function buildImageArtifactResult(
+  toolCallId: string,
+  displayPath: string,
+  mimeType: string,
+  bytes: number,
+  base64: string,
+): ToolExecuteResult {
+  return {
+    toolCallId,
+    status: 'success',
+    content: `Image: ${displayPath} (${bytes} bytes, ${mimeType})`,
+    artifact: {
+      content: [{ type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } }],
+    },
+  };
+}
+
+/** True when bounded authored or fetched content contains a NUL byte. */
 function looksBinary(content: string): boolean {
-  const limit = Math.min(content.length, 8192);
-  for (let i = 0; i < limit; i++) {
+  for (let i = 0; i < content.length; i++) {
     if (content.charCodeAt(i) === 0) return true;
   }
   return false;
+}
+
+/**
+ * Reads a sandbox image as a viewable artifact so `read_file` can hand the
+ * bytes to vision-capable models instead of refusing them. Fetches the file
+ * base64-encoded from the sandbox (`readSandboxImage`), verifies the decoded
+ * length matches the size the sandbox reported (guards against codeapi
+ * truncating a large `/exec` stdout into a corrupt image), sniffs the real
+ * MIME, and returns the shared image-artifact result. Degrades to the
+ * text-oriented binary hint when the reader is unavailable, the image is
+ * over the inline cap, or the read fails — never throws.
+ */
+async function handleSandboxImageRead(
+  tc: ToolCallRequest,
+  filePath: string,
+  ext: string,
+  options: ToolExecuteOptions,
+  req?: ServerRequest,
+  codeExecutionContext?: CodeExecutionContext,
+  onSuccess?: () => void,
+): Promise<ToolExecuteResult> {
+  const filtered = filteredBinaryFileResult(tc, req, filePath);
+  if (filtered != null) {
+    return filtered;
+  }
+
+  const { readSandboxImage } = options;
+  const binaryHint = (): ToolExecuteResult => ({
+    toolCallId: tc.id,
+    status: 'error',
+    content: '',
+    errorMessage: buildBinaryFileError(filePath, ext),
+  });
+  if (!readSandboxImage) {
+    return binaryHint();
+  }
+
+  const ctx = tc.codeSessionContext as SandboxSessionContext | undefined;
+  let read: { base64: string; bytes: number } | { tooLarge: true; bytes: number } | null;
+  try {
+    read = await readSandboxImage({
+      file_path: filePath,
+      session_id: ctx?.session_id,
+      files: ctx?.files,
+      maxBytes: MAX_SANDBOX_INLINE_IMAGE_BYTES,
+      ...codeExecutionRequestParams(codeExecutionContext),
+      ...(req ? { req } : {}),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`[handleReadFileCall] Sandbox image read failed for "${filePath}": ${message}`);
+    return binaryHint();
+  }
+
+  if (!read) {
+    return binaryHint();
+  }
+  if ('tooLarge' in read) {
+    onSuccess?.();
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: `Image "${filePath}" is ${read.bytes} bytes, over the ${MAX_SANDBOX_INLINE_IMAGE_BYTES}-byte inline limit. Use \`bash_tool\` to process it (e.g. \`file ${filePath}\` for metadata).`,
+    };
+  }
+
+  const buffer = Buffer.from(read.base64, 'base64');
+  if (buffer.length !== read.bytes) {
+    logger.warn(
+      `[handleReadFileCall] Sandbox image byte mismatch for "${filePath}" (decoded ${buffer.length} != reported ${read.bytes})`,
+    );
+    return binaryHint();
+  }
+  // Resolve the MIME from the actual bytes, never the extension: a file
+  // routed here by its `.png`/`.jpg`/... name whose header matches none of
+  // the supported formats is a mislabeled non-image (a renamed .txt/.pdf).
+  // Refuse it (and any truncated/incomplete image) with the bash hint
+  // instead of shipping bytes the provider would reject as a corrupt image.
+  const mimeType = sniffImageMime(buffer);
+  if (!mimeType || !isCompleteImage(buffer, mimeType)) {
+    return binaryHint();
+  }
+  onSuccess?.();
+  return buildImageArtifactResult(tc.id, filePath, mimeType, buffer.length, read.base64);
 }
 
 /**
@@ -1223,21 +1830,32 @@ function looksBinary(content: string): boolean {
  * or an instructive error pointing the model at `bash_tool` when the
  * sandbox isn't reachable from this configuration.
  *
- * Two binary guards keep `cat`-on-a-PNG-style mojibake out of the LLM
- * context: (1) an extension precheck that short-circuits known binary
- * types BEFORE any network call, and (2) a NUL-byte content sniff after
- * the read for unknown extensions. The codeapi `/exec` transport is JSON,
- * which already lossily down-converts non-UTF-8 stdout to replacement
- * characters — the bytes are unrecoverable here, so the goal is to fail
- * fast with an instructive message rather than ship garbage.
+ * Supported raster images (`.png/.jpg/.jpeg/.gif/.webp`) take a dedicated
+ * base64 read path (`handleSandboxImageRead`) so the model can actually see
+ * them. Two binary guards then keep `cat`-on-a-PNG-style mojibake out of the
+ * LLM context for everything else: (1) an extension precheck that short-
+ * circuits known binary types BEFORE any network call, and (2) a NUL-byte
+ * content sniff after the read for unknown extensions. The codeapi `/exec`
+ * transport is JSON, which lossily down-converts non-UTF-8 `cat` stdout to
+ * replacement characters — text bytes are unrecoverable there, so the goal
+ * is to fail fast with an instructive message rather than ship garbage.
  */
 async function handleSandboxFileFallback(
   tc: ToolCallRequest,
   filePath: string,
   options: ToolExecuteOptions,
   req?: ServerRequest,
+  codeExecutionContext?: CodeExecutionContext,
+  onSuccess?: () => void,
 ): Promise<ToolExecuteResult> {
   const ext = lowercaseExtension(filePath);
+  if (SANDBOX_IMAGE_EXTENSIONS.has(ext)) {
+    return handleSandboxImageRead(tc, filePath, ext, options, req, codeExecutionContext, onSuccess);
+  }
+  const filteredName = filteredFileNameResult(tc, req, filePath);
+  if (filteredName != null) {
+    return filteredName;
+  }
   if (BINARY_EXTENSIONS_NEVER_READABLE.has(ext)) {
     return {
       toolCallId: tc.id,
@@ -1263,6 +1881,7 @@ async function handleSandboxFileFallback(
       file_path: filePath,
       session_id: ctx?.session_id,
       files: ctx?.files,
+      ...codeExecutionRequestParams(codeExecutionContext),
       ...(req ? { req } : {}),
     });
     if (!result || result.content == null) {
@@ -1272,6 +1891,10 @@ async function handleSandboxFileFallback(
         content: '',
         errorMessage: `Failed to read "${filePath}" from the code-execution sandbox. Try \`bash_tool\` (e.g. \`cat ${filePath}\`).`,
       };
+    }
+    const filtered = filteredFileResult(tc, req, filePath, result.content);
+    if (filtered != null) {
+      return filtered;
     }
     if (looksBinary(result.content)) {
       return {
@@ -1300,6 +1923,7 @@ async function handleSandboxFileFallback(
     if (truncated) {
       numbered += `\n\n[truncated at ${MAX_READABLE_BYTES} bytes — use \`bash_tool\` (e.g. \`head -c\` / \`tail\`) to read the rest of "${filePath}"]`;
     }
+    onSuccess?.();
     return {
       toolCallId: tc.id,
       status: 'success',
@@ -1307,7 +1931,7 @@ async function handleSandboxFileFallback(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger.warn(`[handleReadFileCall] Sandbox fallback failed for "${filePath}": ${message}`);
+    logger.warn('[handleReadFileCall] Sandbox fallback failed', getSafeErrorMetadata(error));
     return {
       toolCallId: tc.id,
       status: 'error',
@@ -1407,12 +2031,14 @@ async function loadSandboxTextForAuthoring({
   options,
   req,
   sandboxContext,
+  codeExecutionContext,
 }: {
   filePath: string;
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
   req?: ServerRequest;
   sandboxContext?: SandboxSessionContext;
+  codeExecutionContext?: CodeExecutionContext;
 }): Promise<LoadedSandboxText> {
   const ext = lowercaseExtension(filePath);
   if (BINARY_EXTENSIONS_NEVER_READABLE.has(ext)) {
@@ -1431,6 +2057,7 @@ async function loadSandboxTextForAuthoring({
       file_path: filePath,
       session_id: ctx?.session_id,
       files: ctx?.files,
+      ...codeExecutionRequestParams(codeExecutionContext),
       ...(req ? { req } : {}),
     });
     if (!result || result.content == null) {
@@ -1464,7 +2091,7 @@ async function loadSandboxTextForAuthoring({
       return { status: 'missing' };
     }
     const message = getThrownValueMessage(error);
-    logger.warn(`[file_authoring] Sandbox read failed for "${filePath}": ${message}`);
+    logger.warn('[file_authoring] Sandbox read failed', getSafeErrorMetadata(error));
     return {
       status: 'error',
       message: `Error reading "${filePath}" from the code-execution sandbox: ${message}.`,
@@ -1481,6 +2108,7 @@ async function writeSandboxTextForAuthoring({
   oldContent,
   created,
   sandboxContext,
+  codeExecutionContext,
 }: {
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
@@ -1490,12 +2118,26 @@ async function writeSandboxTextForAuthoring({
   oldContent?: string;
   created: boolean;
   sandboxContext?: SandboxSessionContext;
+  codeExecutionContext?: CodeExecutionContext;
 }): AuthoringResult {
   if (!options.writeSandboxFile) {
     return errorResult(
       tc,
       `Sandbox file writing is not configured. Use \`bash_tool\` to write "${filePath}".`,
     );
+  }
+  const filtered = filteredFileResult(tc, req, filePath, content);
+  if (filtered != null) {
+    return filtered;
+  }
+  let diff =
+    oldContent !== undefined ? createUnifiedDiff(filePath, oldContent, content) : undefined;
+  if (
+    diff &&
+    (filteredFileResult(tc, req, filePath, oldContent ?? '') != null ||
+      filteredFileResult(tc, req, filePath, diff) != null)
+  ) {
+    diff = undefined;
   }
   const ctx = sandboxSessionContext(tc, sandboxContext);
   let writeResult: Awaited<ReturnType<NonNullable<ToolExecuteOptions['writeSandboxFile']>>>;
@@ -1505,11 +2147,12 @@ async function writeSandboxTextForAuthoring({
       content,
       session_id: ctx?.session_id,
       files: ctx?.files,
+      ...codeExecutionRequestParams(codeExecutionContext),
       ...(req ? { req } : {}),
     });
   } catch (error) {
     const message = getThrownValueMessage(error);
-    logger.warn(`[file_authoring] Sandbox write failed for "${filePath}": ${message}`);
+    logger.warn('[file_authoring] Sandbox write failed', getSafeErrorMetadata(error));
     return errorResult(
       tc,
       `Error writing "${filePath}" to the code-execution sandbox: ${message}.`,
@@ -1519,8 +2162,6 @@ async function writeSandboxTextForAuthoring({
     return errorResult(tc, `Failed to write "${filePath}" to the code-execution sandbox.`);
   }
 
-  const diff =
-    oldContent !== undefined ? createUnifiedDiff(filePath, oldContent, content) : undefined;
   const action = created ? 'Created' : 'Updated';
   const summary = `${action} ${filePath} (${content.length} chars).`;
   return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {
@@ -1710,6 +2351,95 @@ function mergeActiveSkillNames(
     }
   }
   return names.size > 0 ? names : undefined;
+}
+
+/**
+ * True for MCP tools on an ephemeral request-scoped connection (runtime body
+ * placeholders), tagged in `createToolInstance`. Their connection is torn down
+ * at request end, so they must run in the foreground rather than be backgrounded.
+ */
+function toolRequiresEphemeralConnection(tool: StructuredToolInterface | undefined): boolean {
+  return (
+    (tool as (StructuredToolInterface & { mcpRequiresEphemeralConnection?: boolean }) | undefined)
+      ?.mcpRequiresEphemeralConnection === true
+  );
+}
+
+const EMPTY_BACKGROUND_TOOL_SET: ReadonlySet<string> = new Set();
+
+/**
+ * Authenticated user id for background-task scoping. The in-repo routes merge
+ * `req` into the tool-execute configurable, but external hosts of the exported
+ * OpenAI-compatible service inject their own `loadTools` and may not — fall
+ * back to the run configurable's user identity so tasks are never registered
+ * under an empty user id (which would collapse isolation to conversationId).
+ */
+function resolveBackgroundUserId(configurable: Record<string, unknown> | undefined): string {
+  const req = configurable?.req as ServerRequest | undefined;
+  if (req?.user?.id) {
+    return req.user.id;
+  }
+  const userId = configurable?.user_id;
+  if (typeof userId === 'string' && userId !== '') {
+    return userId;
+  }
+  const user = configurable?.user;
+  if (typeof user === 'string') {
+    return user;
+  }
+  const idFromUser = (user as { id?: string } | undefined)?.id;
+  return typeof idFromUser === 'string' ? idFromUser : '';
+}
+
+/**
+ * True when the tool's own schema declares `run_in_background` (zod shape or
+ * raw JSON schema), i.e. the parameter belongs to the tool rather than being
+ * host-injected — such a tool must receive the argument untouched.
+ */
+function toolDeclaresRunInBackgroundParam(tool: StructuredToolInterface): boolean {
+  const schema = (
+    tool as StructuredToolInterface & {
+      schema?: { shape?: Record<string, unknown>; properties?: Record<string, unknown> };
+    }
+  ).schema;
+  if (schema == null) {
+    return false;
+  }
+  return (
+    schema.shape?.[RUN_IN_BACKGROUND_ARG] != null ||
+    schema.properties?.[RUN_IN_BACKGROUND_ARG] != null
+  );
+}
+
+/**
+ * True when the tool's own schema declares `intent` (zod shape or raw JSON
+ * schema) — SDK-native intent tools do, so they receive the argument
+ * untouched and handle it themselves; host-injected tools do not, so the
+ * arg is stripped before invocation.
+ */
+function toolDeclaresIntentParam(tool: StructuredToolInterface): boolean {
+  const schema = (
+    tool as StructuredToolInterface & {
+      schema?: { shape?: Record<string, unknown>; properties?: Record<string, unknown> };
+    }
+  ).schema;
+  if (schema == null) {
+    return false;
+  }
+  return schema.shape?.[INTENT_ARG] != null || schema.properties?.[INTENT_ARG] != null;
+}
+
+/**
+ * Strips the host-injected `intent` label from invoke args unless the tool's
+ * own schema declares it. The label rides `tool_call.args` to the client
+ * untouched — only the tool body must never see an undeclared parameter
+ * (strict MCP/action schemas would reject it; zod tools would strip-or-throw).
+ */
+function stripIntentForInvoke(args: unknown, tool: StructuredToolInterface): unknown {
+  if (!hasIntentArg(args) || toolDeclaresIntentParam(tool)) {
+    return args;
+  }
+  return stripIntentArg(args);
 }
 
 function mergeToolConfigurables(
@@ -2007,6 +2737,16 @@ async function writeSkillMd({
   if (structured.error) {
     return errorResult(tc, structured.error);
   }
+  const parsedContent = parseSkillMdUpdate(content);
+  const filtered = filteredSkillResult(tc, req, {
+    name: skillName,
+    description: parsedContent.description,
+    body: content,
+    frontmatter: structured.frontmatter,
+  });
+  if (filtered != null) {
+    return filtered;
+  }
 
   if (!skill) {
     const createDenied = await ensureCanCreateSkill(tc, options, req);
@@ -2020,17 +2760,20 @@ async function writeSkillMd({
     if (!author) {
       return errorResult(tc, 'Authentication required to create a skill.');
     }
-    const parsed = parseSkillMdUpdate(content);
     let result: Awaited<ReturnType<NonNullable<ToolExecuteOptions['createSkill']>>>;
     try {
       result = await options.createSkill({
         name: skillName,
-        description: parsed.description,
+        description: parsedContent.description,
         body: content,
-        ...(parsed.frontmatter !== undefined ? { frontmatter: parsed.frontmatter } : {}),
+        ...(parsedContent.frontmatter !== undefined
+          ? { frontmatter: parsedContent.frontmatter }
+          : {}),
         author: author.author,
         authorName: author.authorName,
-        ...(parsed.alwaysApply !== undefined ? { alwaysApply: parsed.alwaysApply } : {}),
+        ...(parsedContent.alwaysApply !== undefined
+          ? { alwaysApply: parsedContent.alwaysApply }
+          : {}),
         ...(author.tenantId ? { tenantId: author.tenantId } : {}),
       });
     } catch (error) {
@@ -2055,13 +2798,20 @@ async function writeSkillMd({
       throw error;
     }
     rememberAuthoredSkill([mergedConfigurable, sourceConfigurable], result.skill);
+    const surfacedWarnings = surfaceSkillAuthoringWarnings(result.warnings);
     return successResult(
       tc,
-      `Created ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).`,
+      `Created ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).${surfacedWarnings?.contentSuffix ?? ''}`,
       {
         path: `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`,
         bytes_written: Buffer.byteLength(content, 'utf8'),
         created: true,
+        ...(surfacedWarnings
+          ? {
+              warnings: surfacedWarnings.warnings,
+              warning_count: surfacedWarnings.warningCount,
+            }
+          : {}),
       },
     );
   }
@@ -2073,15 +2823,31 @@ async function writeSkillMd({
   if (!options.updateSkill) {
     return errorResult(tc, 'Skill updating is not configured.');
   }
-  const parsedUpdate = parseSkillMdUpdate(content);
+  let diff = createUnifiedDiff(`${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`, skill.body, content);
+  if (
+    diff &&
+    (isFilteredSkillProjection(tc, req, {
+      name: skill.name,
+      description: skill.description,
+      body: skill.body,
+      frontmatter: skill.frontmatter,
+    }) ||
+      isFilteredSkillProjection(tc, req, { body: diff }))
+  ) {
+    diff = '';
+  }
   const result = await options.updateSkill({
     id: skill._id.toString(),
     expectedVersion: skill.version,
     update: {
       body: content,
-      description: parsedUpdate.description,
-      ...(parsedUpdate.frontmatter !== undefined ? { frontmatter: parsedUpdate.frontmatter } : {}),
-      ...(parsedUpdate.alwaysApply !== undefined ? { alwaysApply: parsedUpdate.alwaysApply } : {}),
+      description: parsedContent.description,
+      ...(parsedContent.frontmatter !== undefined
+        ? { frontmatter: parsedContent.frontmatter }
+        : {}),
+      ...(parsedContent.alwaysApply !== undefined
+        ? { alwaysApply: parsedContent.alwaysApply }
+        : {}),
     },
   });
   if (result.status === 'conflict') {
@@ -2094,17 +2860,20 @@ async function writeSkillMd({
     return errorResult(tc, `Skill "${skillName}" not found or not accessible.`);
   }
 
-  const diff = createUnifiedDiff(
-    `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`,
-    skill.body,
-    content,
-  );
   const summary = `Updated ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).`;
-  return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {
+  const surfacedWarnings = surfaceSkillAuthoringWarnings(result.warnings);
+  const summaryWithWarnings = `${summary}${surfacedWarnings?.contentSuffix ?? ''}`;
+  return successResult(tc, diff ? `${summaryWithWarnings}\n\n${diff}` : summaryWithWarnings, {
     path: `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`,
     bytes_written: Buffer.byteLength(content, 'utf8'),
     created: false,
     ...(diff ? { diff } : {}),
+    ...(surfacedWarnings
+      ? {
+          warnings: surfacedWarnings.warnings,
+          warning_count: surfacedWarnings.warningCount,
+        }
+      : {}),
   });
 }
 
@@ -2145,6 +2914,32 @@ async function writeBundledSkillFile({
   if (staleDenied) {
     return staleDenied;
   }
+  const skillFiltered = filteredSkillResult(tc, req, {
+    files: [{ filename: displayPath, content }],
+  });
+  if (skillFiltered != null) {
+    return skillFiltered;
+  }
+  const fileFiltered = filteredFileResult(tc, req, displayPath, content);
+  if (fileFiltered != null) {
+    return fileFiltered;
+  }
+
+  let diff =
+    oldContent !== undefined ? createUnifiedDiff(displayPath, oldContent, content) : undefined;
+  if (
+    diff &&
+    (isFilteredSkillProjection(tc, req, {
+      files: [{ filename: displayPath, content: oldContent }],
+    }) ||
+      filteredFileResult(tc, req, displayPath, oldContent ?? '') != null ||
+      isFilteredSkillProjection(tc, req, {
+        files: [{ filename: displayPath, content: diff }],
+      }) ||
+      filteredFileResult(tc, req, displayPath, diff) != null)
+  ) {
+    diff = undefined;
+  }
 
   await options.saveSkillFileContent({
     req,
@@ -2153,8 +2948,6 @@ async function writeBundledSkillFile({
     content,
     mimeType: guessMimeType(relativePath),
   });
-  const diff =
-    oldContent !== undefined ? createUnifiedDiff(displayPath, oldContent, content) : undefined;
   const action = created ? 'Created' : 'Updated';
   const summary = `${action} ${displayPath} (${content.length} chars).`;
   return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {
@@ -2173,6 +2966,7 @@ async function handleSandboxCreateFileCall({
   content,
   overwrite,
   sandboxContext,
+  codeExecutionContext,
 }: {
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
@@ -2181,6 +2975,7 @@ async function handleSandboxCreateFileCall({
   content: string;
   overwrite: boolean;
   sandboxContext?: SandboxSessionContext;
+  codeExecutionContext?: CodeExecutionContext;
 }): AuthoringResult {
   const pathError = invalidSandboxAuthoringPath(filePath);
   if (pathError) {
@@ -2193,6 +2988,7 @@ async function handleSandboxCreateFileCall({
     options,
     req,
     sandboxContext,
+    codeExecutionContext,
   });
   if (current.status === 'error') {
     return errorResult(tc, current.message);
@@ -2210,6 +3006,7 @@ async function handleSandboxCreateFileCall({
     oldContent: current.status === 'loaded' ? current.content : undefined,
     created: current.status === 'missing',
     sandboxContext,
+    codeExecutionContext,
   });
 }
 
@@ -2220,6 +3017,7 @@ async function handleSandboxEditFileCall({
   filePath,
   edits,
   sandboxContext,
+  codeExecutionContext,
 }: {
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
@@ -2227,6 +3025,7 @@ async function handleSandboxEditFileCall({
   filePath: string;
   edits: TextEdit[];
   sandboxContext?: SandboxSessionContext;
+  codeExecutionContext?: CodeExecutionContext;
 }): AuthoringResult {
   const pathError = invalidSandboxAuthoringPath(filePath);
   if (pathError) {
@@ -2239,6 +3038,7 @@ async function handleSandboxEditFileCall({
     options,
     req,
     sandboxContext,
+    codeExecutionContext,
   });
   if (current.status === 'missing') {
     return errorResult(tc, `File not found: "${filePath}"`);
@@ -2266,6 +3066,7 @@ async function handleSandboxEditFileCall({
     oldContent: current.content,
     created: false,
     sandboxContext,
+    codeExecutionContext,
   });
   if (result.status === 'success') {
     result.artifact = {
@@ -2318,6 +3119,7 @@ async function handleCreateFileCall(
       content: args.content,
       overwrite,
       sandboxContext,
+      codeExecutionContext: getCodeExecutionContext(mergedConfigurable),
     });
   }
 
@@ -2427,6 +3229,7 @@ async function handleEditFileCall(
       filePath: args.path,
       edits,
       sandboxContext,
+      codeExecutionContext: getCodeExecutionContext(mergedConfigurable),
     });
   }
 
@@ -2529,6 +3332,7 @@ async function handleReadFileCall(
   mergedConfigurable: Record<string, unknown>,
   options: ToolExecuteOptions,
   req?: ServerRequest,
+  onSandboxReadSuccess?: () => void,
 ): Promise<ToolExecuteResult> {
   const { getSkillByName, getSkillFileByPath, getStrategyFunctions, updateSkillFileContent } =
     options;
@@ -2543,6 +3347,7 @@ async function handleReadFileCall(
   }
 
   const codeEnvAvailable = mergedConfigurable?.codeEnvAvailable === true;
+  const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
   let accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
 
   /**
@@ -2552,7 +3357,14 @@ async function handleReadFileCall(
    */
   if (args.path.startsWith('/mnt/data/')) {
     if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.path, options, req);
+      return handleSandboxFileFallback(
+        tc,
+        args.path,
+        options,
+        req,
+        codeExecutionContext,
+        onSandboxReadSuccess,
+      );
     }
     return {
       toolCallId: tc.id,
@@ -2581,7 +3393,14 @@ async function handleReadFileCall(
     const slashIdx = args.path.indexOf('/');
     if (slashIdx < 1) {
       if (codeEnvAvailable) {
-        return handleSandboxFileFallback(tc, args.path, options, req);
+        return handleSandboxFileFallback(
+          tc,
+          args.path,
+          options,
+          req,
+          codeExecutionContext,
+          onSandboxReadSuccess,
+        );
       }
       return {
         toolCallId: tc.id,
@@ -2601,7 +3420,14 @@ async function handleReadFileCall(
        * dead-ending with a skill-centric error message.
        */
       if (codeEnvAvailable) {
-        return handleSandboxFileFallback(tc, args.path, options, req);
+        return handleSandboxFileFallback(
+          tc,
+          args.path,
+          options,
+          req,
+          codeExecutionContext,
+          onSandboxReadSuccess,
+        );
       }
       return {
         toolCallId: tc.id,
@@ -2663,7 +3489,14 @@ async function handleReadFileCall(
    */
   if (!skillsEffectivelyEnabled) {
     if (codeEnvAvailable && !explicitSkillNamespace) {
-      return handleSandboxFileFallback(tc, args.path, options, req);
+      return handleSandboxFileFallback(
+        tc,
+        args.path,
+        options,
+        req,
+        codeExecutionContext,
+        onSandboxReadSuccess,
+      );
     }
     return {
       toolCallId: tc.id,
@@ -2702,7 +3535,14 @@ async function handleReadFileCall(
     const recovered = await recoverAuthorSkill();
     if (!recovered) {
       if (codeEnvAvailable && !explicitSkillNamespace) {
-        return handleSandboxFileFallback(tc, args.path, options, req);
+        return handleSandboxFileFallback(
+          tc,
+          args.path,
+          options,
+          req,
+          codeExecutionContext,
+          onSandboxReadSuccess,
+        );
       }
       return {
         toolCallId: tc.id,
@@ -2781,6 +3621,15 @@ async function handleReadFileCall(
         errorMessage: `SKILL.md is empty for skill "${skillName}"`,
       };
     }
+    const filtered = filteredSkillResult(tc, req, {
+      name: skill.name,
+      description: skill.description,
+      body: skill.body,
+      frontmatter: skill.frontmatter,
+    });
+    if (filtered != null) {
+      return filtered;
+    }
     return {
       toolCallId: tc.id,
       status: 'success',
@@ -2815,6 +3664,13 @@ async function handleReadFileCall(
     };
   }
 
+  const fileFiltered = IMAGE_MIMES.has(file.mimeType)
+    ? filteredBinaryFileResult(tc, req, args.path)
+    : filteredFileNameResult(tc, req, args.path);
+  if (fileFiltered != null) {
+    return fileFiltered;
+  }
+
   // Known binary — serve images as artifacts, others as metadata
   if (file.isBinary === true) {
     if (IMAGE_MIMES.has(file.mimeType) && file.bytes <= MAX_BINARY_BYTES) {
@@ -2830,6 +3686,16 @@ async function handleReadFileCall(
 
   // Cached text content
   if (file.isBinary !== true && file.content != null && file.content !== '') {
+    const skillFiltered = filteredSkillResult(tc, req, {
+      files: [{ filename: args.path, content: file.content }],
+    });
+    if (skillFiltered != null) {
+      return skillFiltered;
+    }
+    const fileFiltered = filteredFileResult(tc, req, args.path, file.content);
+    if (fileFiltered != null) {
+      return fileFiltered;
+    }
     return {
       toolCallId: tc.id,
       status: 'success',
@@ -2928,17 +3794,13 @@ async function handleReadFileCall(
 
       // Return images/PDFs as artifacts
       if (IMAGE_MIMES.has(file.mimeType) && buffer.length <= MAX_BINARY_BYTES) {
-        const base64 = buffer.toString('base64');
-        return {
-          toolCallId: tc.id,
-          status: 'success',
-          content: `Image: ${args.path} (${buffer.length} bytes, ${file.mimeType})`,
-          artifact: {
-            content: [
-              { type: 'image_url', image_url: { url: `data:${file.mimeType};base64,${base64}` } },
-            ],
-          },
-        };
+        return buildImageArtifactResult(
+          tc.id,
+          args.path,
+          file.mimeType,
+          buffer.length,
+          buffer.toString('base64'),
+        );
       }
 
       // TODO: PDF artifact support requires a document content block path
@@ -2953,6 +3815,16 @@ async function handleReadFileCall(
     }
 
     const text = buffer.toString('utf-8');
+    const skillFiltered = filteredSkillResult(tc, req, {
+      files: [{ filename: args.path, content: text }],
+    });
+    if (skillFiltered != null) {
+      return skillFiltered;
+    }
+    const fileFiltered = filteredFileResult(tc, req, args.path, text);
+    if (fileFiltered != null) {
+      return fileFiltered;
+    }
 
     // Cache text on first read (skill files are immutable)
     if (file.content == null && updateSkillFileContent && buffer.length <= MAX_CACHE_BYTES) {
@@ -3065,10 +3937,19 @@ async function handleSkillToolCall(
   if (args.args) {
     body = body.replace(/\$ARGUMENTS/g, args.args);
   }
+  const filtered = filteredSkillResult(tc, req, {
+    name: skill.name,
+    description: skill.description,
+    body,
+    frontmatter: skill.frontmatter,
+  });
+  if (filtered != null) {
+    return filtered;
+  }
 
   const injectedMessages: InjectedMessage[] = [buildSkillPrimeMessage({ name: skill.name, body })];
 
-  const contentText = `Skill "${args.skillName}" loaded. Follow the instructions below.`;
+  let contentText = `Skill "${args.skillName}" loaded. Follow the instructions below.`;
   let artifact:
     | {
         session_id: string;
@@ -3089,6 +3970,7 @@ async function handleSkillToolCall(
   // is enabled for this run. The flag is threaded via configurable upstream
   // so this gate cannot be bypassed.
   const codeEnvAvailable = mergedConfigurable?.codeEnvAvailable === true;
+  const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
   if (
     codeEnvAvailable &&
     skill.fileCount > 0 &&
@@ -3097,9 +3979,10 @@ async function handleSkillToolCall(
     getStrategyFunctions &&
     batchUploadCodeEnvFiles
   ) {
+    let primeResult: PrimeSkillFilesResult | null = null;
     try {
       const skillFiles = await listSkillFiles(skill._id);
-      const primeResult = await primeSkillFiles({
+      primeResult = await primeSkillFiles({
         skill,
         skillFiles,
         req,
@@ -3108,6 +3991,7 @@ async function handleSkillToolCall(
         getSessionInfo,
         checkIfActive,
         updateSkillFileCodeEnvIds,
+        codeExecutionContext,
       });
       if (primeResult) {
         /* `session_id` at the top of the artifact is the (representative)
@@ -3132,10 +4016,24 @@ async function handleSkillToolCall(
         };
       }
     } catch (error) {
+      if (isContentFilterError(error)) {
+        return error instanceof ContentFilterError
+          ? errorResult(tc, modelBoundContentFilterErrorMessage(error.body))
+          : errorResult(tc, error.body.message);
+      }
       logger.error(
         `[handleSkillToolCall] Failed to prime files for skill "${args.skillName}":`,
         error instanceof Error ? error.message : error,
       );
+    }
+    if (!primeResult) {
+      /* Degrade loudly: without this note the model follows skill
+       * instructions referencing sandbox paths that were never mounted
+       * and burns turns on missing-path errors. */
+      contentText +=
+        `\n\nNote: this skill's bundled files could not be loaded into the code environment ` +
+        `(upload failed or was rate-limited). Paths under /mnt/data/${SKILL_FILE_PREFIX}${skill.name}/ ` +
+        `are NOT available to bash or code execution this turn. Use the read_file tool to view bundled files instead.`;
     }
   }
 
@@ -3174,12 +4072,140 @@ function getFileAuthoringQueueKey(
  * This handler receives batched tool calls, loads the required tools,
  * executes them in parallel, and resolves with the results.
  */
+/**
+ * Foreground tool failures reach persisted parts wrapped by the graph as
+ * `Error: [toolName] tool call failed: <message>` — the exact shape the
+ * client's `isError` detection keys on. Detached failures bypass the graph,
+ * so wrap them identically before patching the dispatch row, or a reloaded
+ * failed background run renders as clean stdout.
+ */
+function toCodeToolFailure(toolName: string, message: string): string {
+  if (/^Error:\s*(\[.*?\]\s*)*tool call failed:/i.test(message)) {
+    return message;
+  }
+  return `Error: [${toolName}] tool call failed: ${message}`;
+}
+
+/**
+ * Invoke-time `toolCall` config for a call: identity plus the stateful
+ * runtime-session hint and code-session context (`session_id` +
+ * `_injected_files`) for sandbox-bound tools. Shared by the foreground path
+ * and background dispatch so a detached code call keeps the same session and
+ * file continuity a foreground call gets.
+ */
+function buildToolCallConfig(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown>,
+): Record<string, unknown> {
+  const toolCallConfig: Record<string, unknown> = {
+    id: tc.id,
+    stepId: tc.stepId,
+    turn: tc.turn,
+  };
+
+  /* Stateful runtime-session hint: the SDK resolves it onto
+   * the request for execute_code/bash (orthogonal to the
+   * transient exec-session below — a first call has a hint but
+   * no session yet). The remote executors read it off
+   * `config.toolCall._runtime_session_hint`; without this the
+   * event-driven ON_TOOL_EXECUTE path drops it and every
+   * conversation collapses onto the Code API's `default`
+   * session (no per-conversation isolation). */
+  if (tc.runtimeSessionHint != null && tc.runtimeSessionHint !== '') {
+    toolCallConfig._runtime_session_hint = tc.runtimeSessionHint;
+  }
+
+  if (tc.codeSessionContext && isCodeSessionAwareToolCall(tc.name, mergedConfigurable)) {
+    toolCallConfig.session_id = tc.codeSessionContext.session_id;
+    if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
+      toolCallConfig._injected_files = tc.codeSessionContext.files;
+      /* Last LC-controlled point before the wire. Mirrors
+       * codeapi's validator context so the two log sides
+       * correlate on a single grep. */
+      const refs = tc.codeSessionContext.files as Array<{
+        id?: unknown;
+        resource_id?: unknown;
+        storage_session_id?: unknown;
+        kind?: unknown;
+        version?: unknown;
+        name?: unknown;
+      }>;
+      const summary = refs.map((f) => ({
+        kind: f.kind,
+        hasResourceId: typeof f.resource_id === 'string' && !!f.resource_id,
+        hasStorageSessionId: typeof f.storage_session_id === 'string' && !!f.storage_session_id,
+        hasVersion: typeof f.version === 'number',
+      }));
+      let missingResourceId = 0;
+      let missingStorageSessionId = 0;
+      let missingVersion = 0;
+      const kindCounts: Record<string, number> = {};
+      for (const s of summary) {
+        if (!s.hasResourceId) missingResourceId++;
+        if (!s.hasStorageSessionId) missingStorageSessionId++;
+        if (!s.hasVersion) missingVersion++;
+        const k = typeof s.kind === 'string' ? s.kind : 'unknown';
+        kindCounts[k] = (kindCounts[k] ?? 0) + 1;
+      }
+      logger.debug(
+        `[code-env:inject] tool=${tc.name} files=${refs.length} ` +
+          `missingResourceId=${missingResourceId} ` +
+          `missingStorageSessionId=${missingStorageSessionId} ` +
+          `missingVersion=${missingVersion} ` +
+          `kinds=${JSON.stringify(kindCounts)}`,
+      );
+      if (missingResourceId > 0) {
+        logger.warn(
+          `[code-env:inject] ${missingResourceId}/${refs.length} files missing resource_id ` +
+            `for tool=${tc.name} — codeapi will reject with 400`,
+          { summary },
+        );
+      }
+    } else {
+      /* Empty `_injected_files` on a code-execution tool
+       * call. Almost always means the seeding chain
+       * (primeCodeFiles → initialSessions →
+       * CodeSessionContext) dropped the file upstream.
+       * `session_id` is still emitted for continuity, but
+       * concrete file refs must arrive through
+       * `_injected_files`; agents no longer falls back to
+       * `/files/<sid>`. Pair with `[primeCodeFiles]`
+       * traces below to locate the layer that lost the ref. */
+      logger.warn(
+        `[code-env:inject] tool=${tc.name} _injected_files=0 — sandbox will see no input files`,
+        {
+          tool: tc.name,
+          session_id: tc.codeSessionContext.session_id,
+          codeSessionContextHasFiles: tc.codeSessionContext.files !== undefined,
+          codeSessionContextFileCount: tc.codeSessionContext.files?.length ?? 0,
+        },
+      );
+    }
+  }
+
+  return toolCallConfig;
+}
+
 export function createToolExecuteHandler(options: ToolExecuteOptions): EventHandler {
-  const { loadTools, toolEndCallback } = options;
+  const {
+    loadTools,
+    toolEndCallback,
+    persistBackgroundCodeResult,
+    emitAttachment,
+    emitPtcProgress,
+    subagentTasks,
+  } = options;
 
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
       const { toolCalls, agentId, configurable, metadata, resolve, reject } = data;
+      const callerCapabilityProjection = resolveCallerCapabilityProjectionSnapshot(
+        (
+          data as ToolExecuteBatchRequest & {
+            callerCapabilityProjection?: unknown;
+          }
+        ).callerCapabilityProjection,
+      );
       /** Optional per-call channel (agents SDK > 3.2.33); cast keeps older
        * installed SDK typings compiling until the release lands. */
       const onResult = (
@@ -3202,23 +4228,573 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
       try {
         await runOutsideTracing(async () => {
           try {
-            const toolNames = [...new Set(toolCalls.map((tc: ToolCallRequest) => tc.name))];
+            const sourceConfigurable = configurable as Record<string, unknown> | undefined;
+            const sourceReq = sourceConfigurable?.req as ServerRequest | undefined;
+            const preloadedNameBlocks = new Map<ToolCallRequest, ToolExecuteResult>();
+            const allowedToolCalls: ToolCallRequest[] = [];
+            for (const tc of toolCalls) {
+              const filteredName = filteredToolArgumentsResult(tc, sourceReq, undefined);
+              if (filteredName != null) {
+                preloadedNameBlocks.set(tc, filteredName);
+              } else {
+                allowedToolCalls.push(tc);
+              }
+            }
+            if (allowedToolCalls.length === 0) {
+              resolve(
+                toolCalls.map((tc) =>
+                  reportResult(
+                    preloadedNameBlocks.get(tc) ??
+                      errorResult(tc, 'Submitted tool name was blocked.'),
+                  ),
+                ),
+              );
+              return;
+            }
+            const toolNames = [...new Set(allowedToolCalls.map((tc) => tc.name))];
             const { loadedTools, configurable: toolConfigurable } = await loadTools(
               toolNames,
               agentId,
+              sourceConfigurable,
+              callerCapabilityProjection,
             );
             const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
-            const sourceConfigurable = configurable as Record<string, unknown> | undefined;
             const loadedConfigurable = toolConfigurable as Record<string, unknown> | undefined;
             const mergedConfigurable = mergeToolConfigurables(
               sourceConfigurable,
               loadedConfigurable,
             );
+            const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
+            const runtimeSessionHint = codeExecutionContext?.runtimeSessionHint;
+            const sandboxConversationId =
+              ((metadata as Record<string, unknown>)?.thread_id as string | undefined) ??
+              (mergedConfigurable?.thread_id as string | undefined) ??
+              (
+                (mergedConfigurable?.req as ServerRequest | undefined)?.body as
+                  | { conversationId?: string }
+                  | undefined
+              )?.conversationId;
+            const markCodeSandboxWarm = (): void => {
+              if (runtimeSessionHint) {
+                void markSandboxReady(runtimeSessionHint);
+              }
+              if (sandboxConversationId) {
+                void markSandboxReady(sandboxConversationId);
+              }
+            };
             const authoringQueues = new Map<string, Promise<void>>();
             const sandboxAuthoringContexts = new Map<string, SandboxSessionContext>();
 
+            /**
+             * Background tool calls. The set of tools that received the injected
+             * `run_in_background` param is threaded per-agent from `initializeAgent`
+             * via `configurable.backgroundToolNames` (a reliable channel, unlike
+             * `toolRegistry` which only reaches the executor for PTC/tool_search).
+             * A non-empty set is the exact condition under which the run registered
+             * the poll tool and the model could have been shown the param, so it
+             * also gates the `check_background_task` interception and enforces the
+             * per-tool opt-in (a tool not in the set never had the param).
+             */
+            const backgroundToolNames = mergedConfigurable?.backgroundToolNames as
+              | string[]
+              | undefined;
+            const backgroundEnabledForRun = (backgroundToolNames?.length ?? 0) > 0;
+            const backgroundControlEnabled = backgroundEnabledForRun || subagentTasks != null;
+            const backgroundToolSet: ReadonlySet<string> = backgroundEnabledForRun
+              ? new Set(backgroundToolNames)
+              : EMPTY_BACKGROUND_TOOL_SET;
+            const backgroundReq = backgroundControlEnabled
+              ? (mergedConfigurable?.req as ServerRequest | undefined)
+              : undefined;
+            const backgroundUserId = backgroundControlEnabled
+              ? resolveBackgroundUserId(mergedConfigurable)
+              : '';
+            const backgroundConversationId = backgroundControlEnabled
+              ? (((metadata as Record<string, unknown>)?.thread_id as string | undefined) ??
+                (mergedConfigurable?.thread_id as string | undefined) ??
+                (backgroundReq?.body as { conversationId?: string } | undefined)?.conversationId ??
+                '')
+              : '';
+
+            /**
+             * Registers the task, returns a synthetic handle immediately, and
+             * runs the real tool as a floating promise whose result lands in the
+             * registry for `check_background_task` to collect. Idempotent by
+             * `toolCallId` so graph re-execution (resume/replay) never double-fires.
+             */
+            const backgroundRunId = (metadata as Record<string, unknown>)?.run_id as
+              | string
+              | undefined;
+            const dispatchBackgroundToolCall = (tc: ToolCallRequest): ToolExecuteResult => {
+              /** A tool that failed to load must error immediately (matching the
+               *  foreground path) — a synthetic "started" handle would tell the
+               *  model a side effect is in flight that never executed. */
+              const tool = toolMap.get(tc.name);
+              if (!tool) {
+                const missingToolResult: ToolExecuteResult = {
+                  toolCallId: tc.id,
+                  status: 'error' as const,
+                  content: '',
+                  errorMessage: `Tool ${tc.name} not found`,
+                };
+                return (
+                  filteredToolOutputResult(tc, backgroundReq, {
+                    errorMessage: missingToolResult.errorMessage,
+                  }) ?? missingToolResult
+                );
+              }
+              const isCodeCall = isCodeSessionAwareToolCall(tc.name, mergedConfigurable);
+              const harvestEnabled = isCodeCall && persistBackgroundCodeResult != null;
+              const strippedArgs = stripIntentForInvoke(stripRunInBackgroundArg(tc.args), tool);
+              const normalizedArgs = normalizeToolInvokeArgs(strippedArgs, tool);
+              const filtered = filteredToolArgumentsResult(tc, backgroundReq, normalizedArgs);
+              if (filtered != null) {
+                return filtered;
+              }
+              const created = backgroundTaskRegistry.create({
+                userId: backgroundUserId,
+                conversationId: backgroundConversationId,
+                toolCallId: tc.id,
+                toolName: tc.name,
+                messageId: backgroundRunId,
+                harvestStarted: harvestEnabled,
+                /** Scope idempotency to the agent + run + turn so a later turn's
+                 *  or a second agent's repeated provider id (e.g. `call_0`)
+                 *  starts a fresh task instead of colliding. */
+                agentId,
+                runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
+              });
+              if ('atCapacity' in created) {
+                return {
+                  toolCallId: tc.id,
+                  status: 'success' as const,
+                  content: buildBackgroundCapacityContent(tc.name),
+                };
+              }
+              const { task, isNew } = created;
+              if (isNew) {
+                /** Persists the settled result onto the dispatch turn's message
+                 *  (patch the tool-call part's output, persist generated files,
+                 *  append attachments), so a backgrounded code call reads like a
+                 *  foreground one on reload and in later model turns — even if
+                 *  the model never polls. Runs DETACHED from task completion:
+                 *  the dispatch row may not exist until that turn finalizes, so
+                 *  gating `complete()` on the patch would livelock same-turn
+                 *  polls on `running`. Failures degrade to poll-only delivery. */
+                const harvestCodeResult = (params: {
+                  output?: string;
+                  artifact?: unknown;
+                }): void => {
+                  if (!harvestEnabled || !persistBackgroundCodeResult) {
+                    return;
+                  }
+                  void (async () => {
+                    try {
+                      const persisted = await persistBackgroundCodeResult({
+                        toolName: tc.name,
+                        toolCallId: tc.id,
+                        messageId: backgroundRunId,
+                        conversationId: backgroundConversationId,
+                        /** Disambiguates repeated provider ids (e.g. `call_0`)
+                         *  across agents sharing one response message. */
+                        agentId,
+                        /** Stale-output ordering is decided by DISPATCH order,
+                         *  not harvest wall-clock: a slow old task settling
+                         *  after a newer run wrote the same filename must not
+                         *  overwrite it. */
+                        dispatchedAt: task.createdAt,
+                        codeExecutionContext,
+                        ...params,
+                      });
+                      if (persisted == null) {
+                        /** Harvest never persisted anything (missing anchor
+                         *  identity): hand delivery back to the legacy poll-turn
+                         *  callback, restoring the artifact if a poll already
+                         *  claimed it while the harvest was in flight. */
+                        backgroundTaskRegistry.revokeHarvest(
+                          backgroundUserId,
+                          backgroundConversationId,
+                          task.id,
+                          params.artifact,
+                        );
+                        return;
+                      }
+                      backgroundTaskRegistry.finishHarvest(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        persisted.attachments,
+                      );
+                    } catch (persistError) {
+                      if (isContentFilterError(persistError)) {
+                        backgroundTaskRegistry.blockArtifact(
+                          backgroundUserId,
+                          backgroundConversationId,
+                          task.id,
+                          persistError instanceof ContentFilterError
+                            ? modelBoundContentFilterErrorMessage(persistError.body)
+                            : persistError.body.message,
+                        );
+                        logger.warn(
+                          `[background] Generated code output for task ${task.id} was blocked by content policy.`,
+                        );
+                        return;
+                      }
+                      logger.warn(
+                        `[background] Failed to persist code result for task ${task.id}:`,
+                        persistError,
+                      );
+                      backgroundTaskRegistry.revokeHarvest(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        params.artifact,
+                      );
+                    }
+                  })();
+                };
+                void (async () => {
+                  try {
+                    const result = (await tool.invoke(normalizedArgs, {
+                      /** Full invoke config (not just identity): a detached
+                       *  code call still needs `session_id`/`_injected_files`/
+                       *  `_runtime_session_hint` or it runs fileless on the
+                       *  Code API's default runtime session. */
+                      toolCall: buildToolCallConfig(tc, mergedConfigurable),
+                      configurable: mergedConfigurable,
+                      metadata,
+                    } as Record<string, unknown>)) as { content?: unknown; artifact?: unknown };
+                    if (isCodeCall) {
+                      markCodeSandboxWarm();
+                    }
+                    const content =
+                      isCodeCall && typeof result.content === 'string'
+                        ? cleanCodeToolOutput(result.content)
+                        : result.content;
+                    const filteredOutput = filteredToolOutputResult(tc, backgroundReq, {
+                      content,
+                      artifact: result.artifact,
+                    });
+                    if (filteredOutput != null) {
+                      const policyError =
+                        filteredOutput.errorMessage ?? 'Submitted content was blocked.';
+                      const errorOutput = isCodeCall
+                        ? toCodeToolFailure(tc.name, policyError)
+                        : policyError;
+                      backgroundTaskRegistry.fail(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        errorOutput,
+                        { harvestStarted: harvestEnabled },
+                      );
+                      harvestCodeResult({ output: errorOutput });
+                      return;
+                    }
+                    /** Hold any artifact (images, files, UI resources,
+                     *  citations) on the task instead of routing it through
+                     *  this dispatch turn's callback: a slow background call
+                     *  resolves after the turn finalized, when its
+                     *  artifactPromises are already awaited and the stream is
+                     *  closed, so that push would be silently dropped. The poll
+                     *  turn delivers it live in `check_background_task`. */
+                    backgroundTaskRegistry.complete(
+                      backgroundUserId,
+                      backgroundConversationId,
+                      task.id,
+                      { content, artifact: result.artifact, harvestStarted: harvestEnabled },
+                    );
+                    harvestCodeResult({
+                      output: typeof content === 'string' ? content : undefined,
+                      artifact: result.artifact,
+                    });
+                  } catch (toolError) {
+                    const policyError =
+                      toolError instanceof ContentFilterError
+                        ? modelBoundContentFilterErrorMessage(toolError.body)
+                        : null;
+                    const { message } = getSafeToolError(toolError);
+                    const errorOutput =
+                      policyError ?? (isCodeCall ? toCodeToolFailure(tc.name, message) : message);
+                    const filteredError =
+                      policyError == null
+                        ? filteredToolOutputResult(tc, backgroundReq, {
+                            errorMessage: errorOutput,
+                          })
+                        : null;
+                    const neutralizedError = filteredError?.errorMessage ?? errorOutput;
+                    const deliveredError =
+                      isCodeCall && (policyError != null || filteredError != null)
+                        ? toCodeToolFailure(tc.name, neutralizedError)
+                        : neutralizedError;
+                    backgroundTaskRegistry.fail(
+                      backgroundUserId,
+                      backgroundConversationId,
+                      task.id,
+                      deliveredError,
+                      /** Failed code tasks join the heal path too: without this,
+                       *  a full-row save reverting the error patch would leave
+                       *  the dispatch card on the handle JSON forever. */
+                      { harvestStarted: harvestEnabled },
+                    );
+                    harvestCodeResult({ output: deliveredError });
+                  }
+                })();
+              }
+              return {
+                toolCallId: tc.id,
+                status: 'success' as const,
+                content: buildBackgroundHandleContent(task),
+              };
+            };
+
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
+                const preloadedNameBlock = preloadedNameBlocks.get(tc);
+                if (preloadedNameBlock != null) {
+                  return reportResult(preloadedNameBlock);
+                }
+                /** Tool names are user/model-submitted content too. Check them
+                 *  before lookup so an unknown blocked name cannot reach logs
+                 *  or error history. Arguments are inspected after the tool
+                 *  schema normalizes them below. */
+                const filteredName = filteredToolArgumentsResult(
+                  tc,
+                  mergedConfigurable?.req as ServerRequest | undefined,
+                  undefined,
+                );
+                if (filteredName != null) {
+                  return reportResult(filteredName);
+                }
+                if (backgroundControlEnabled && tc.name === CHECK_BACKGROUND_TASK_NAME) {
+                  const req = mergedConfigurable?.req as ServerRequest | undefined;
+                  const filteredArguments = filteredToolArgumentsResult(tc, req, tc.args);
+                  if (filteredArguments != null) {
+                    return reportResult(filteredArguments);
+                  }
+                  const pollContent = await runCheckBackgroundTask({
+                    userId: backgroundUserId,
+                    conversationId: backgroundConversationId,
+                    args: tc.args,
+                    toolCallId: tc.id,
+                    agentId,
+                    runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
+                    subagentTasks,
+                  });
+                  const taskSnapshot = getBackgroundTaskSnapshot({
+                    userId: backgroundUserId,
+                    conversationId: backgroundConversationId,
+                    args: tc.args,
+                  });
+                  /** Read harvest delivery before filtering and reuse that
+                   *  snapshot below. If attachments land afterward, this poll
+                   *  cannot emit them; the next poll reads and inspects them. */
+                  const delivery = getBackgroundCodeDelivery({
+                    userId: backgroundUserId,
+                    conversationId: backgroundConversationId,
+                    args: tc.args,
+                  });
+                  const filteredPollOutput = filteredToolOutputResult(tc, req, {
+                    content: pollContent,
+                    task:
+                      taskSnapshot == null
+                        ? undefined
+                        : {
+                            result: taskSnapshot.result,
+                            error: taskSnapshot.error,
+                            artifact: taskSnapshot.artifact,
+                            attachments: taskSnapshot.attachments,
+                          },
+                    delivery,
+                  });
+                  if (filteredPollOutput != null) {
+                    return reportResult(filteredPollOutput);
+                  }
+                  /** Deliver a completed task's artifact through THIS live poll
+                   *  turn (once): the tool's own turn finalized before the
+                   *  artifact resolved, so this is where it can be surfaced.
+                   *  Code tasks are claimed even without a `toolEndCallback` —
+                   *  their files were already persisted at completion, and the
+                   *  claimed artifact still has to ride this result so the SDK
+                   *  folds the exec session into the run's shared code session. */
+                  let codeSessionArtifact: unknown;
+                  const pending = claimBackgroundArtifact({
+                    userId: backgroundUserId,
+                    conversationId: backgroundConversationId,
+                    args: tc.args,
+                    shouldClaim: (pendingTask) =>
+                      toolEndCallback != null ||
+                      isCodeSessionAwareToolCall(pendingTask.toolName, mergedConfigurable),
+                  });
+                  if (pending) {
+                    const isCodeTask = isCodeSessionAwareToolCall(
+                      pending.toolName,
+                      mergedConfigurable,
+                    );
+                    if (isCodeTask) {
+                      codeSessionArtifact = pending.artifact;
+                    }
+                    /** Harvested code tasks never route through the poll turn's
+                     *  callback — their files were already persisted with the
+                     *  ORIGINAL tool-call identity by the completion harvest. */
+                    if (toolEndCallback && !(isCodeTask && pending.harvestStarted === true)) {
+                      try {
+                        await toolEndCallback(
+                          {
+                            output: {
+                              name: pending.toolName,
+                              tool_call_id: tc.id,
+                              content: pending.content,
+                              artifact: pending.artifact,
+                            },
+                          },
+                          {
+                            ...(metadata ?? {}),
+                            executingAgentId: agentId,
+                          } as ToolEndCallbackMetadata,
+                        );
+                      } catch (callbackError) {
+                        if (isContentFilterError(callbackError)) {
+                          backgroundTaskRegistry.blockArtifact(
+                            backgroundUserId,
+                            backgroundConversationId,
+                            pending.taskId,
+                            callbackError instanceof ContentFilterError
+                              ? modelBoundContentFilterErrorMessage(callbackError.body)
+                              : callbackError.body.message,
+                          );
+                          logger.warn(
+                            `[background] Artifact delivery for task ${pending.taskId} was blocked by content policy.`,
+                          );
+                          return reportResult({
+                            toolCallId: tc.id,
+                            status: 'success' as const,
+                            content: await runCheckBackgroundTask({
+                              userId: backgroundUserId,
+                              conversationId: backgroundConversationId,
+                              args: tc.args,
+                            }),
+                          });
+                        }
+                        /** Only synchronous callback throws land here (e.g. a
+                         *  malformed artifact shape); the callback's downstream
+                         *  persistence is fire-and-forget, so a storage failure
+                         *  is at-most-once — the same semantics as a foreground
+                         *  artifact. */
+                        restoreBackgroundArtifact({
+                          userId: backgroundUserId,
+                          conversationId: backgroundConversationId,
+                          taskId: pending.taskId,
+                          artifact: pending.artifact,
+                        });
+                        logger.warn(
+                          '[background] toolEndCallback error delivering artifact on poll:',
+                          callbackError,
+                        );
+                      }
+                    }
+                  }
+                  /** Harvest delivery is independent of the one-shot artifact
+                   *  claim so attachments that land AFTER an earlier poll still
+                   *  reach a later one. Re-emitting is idempotent (the client
+                   *  upserts by `file_id`) and the row patch re-application
+                   *  guards against a HITL-pause/resume full-row save having
+                   *  reverted the anchored result. */
+                  if (
+                    delivery &&
+                    delivery.status !== 'running' &&
+                    isCodeSessionAwareToolCall(delivery.toolName, mergedConfigurable)
+                  ) {
+                    for (const attachment of delivery.attachments ?? []) {
+                      try {
+                        emitAttachment?.(attachment);
+                      } catch (emitError) {
+                        logger.warn(
+                          '[background] Failed to emit harvested attachment on poll:',
+                          emitError,
+                        );
+                      }
+                    }
+                    /** Live completion signal for the original card: stdout-only
+                     *  runs emit no file attachments, so a settled task also
+                     *  emits a synthetic status marker (upserted client-side by
+                     *  its stable id; filtered out of file rendering). */
+                    if (emitAttachment && delivery.messageId) {
+                      try {
+                        emitAttachment({
+                          type: BACKGROUND_STATUS_ATTACHMENT_TYPE,
+                          /** Provider ids repeat across agents in handoffs;
+                           *  the agent suffix keeps sibling markers from
+                           *  upserting over each other client-side. */
+                          file_id: `bg-${delivery.toolCallId}${
+                            delivery.agentId != null ? `-${delivery.agentId}` : ''
+                          }`,
+                          messageId: delivery.messageId,
+                          conversationId: backgroundConversationId,
+                          toolCallId: delivery.toolCallId,
+                          agentId: delivery.agentId,
+                          status: delivery.status,
+                        });
+                      } catch (emitError) {
+                        logger.warn(
+                          '[background] Failed to emit background status marker on poll:',
+                          emitError,
+                        );
+                      }
+                    }
+                    if (persistBackgroundCodeResult && delivery.messageId) {
+                      /** Error tasks carry their message in `error`, not
+                       *  `result`; reaped (timed-out) tasks store it raw, so
+                       *  wrap here — `toCodeToolFailure` is a no-op for
+                       *  already-wrapped detached failures. */
+                      const reapplyOutput =
+                        delivery.status === 'error'
+                          ? toCodeToolFailure(
+                              delivery.toolName,
+                              delivery.error ?? delivery.result ?? 'Background task failed',
+                            )
+                          : delivery.result;
+                      void persistBackgroundCodeResult({
+                        toolName: delivery.toolName,
+                        toolCallId: delivery.toolCallId,
+                        messageId: delivery.messageId,
+                        conversationId: backgroundConversationId,
+                        agentId: delivery.agentId,
+                        output: reapplyOutput,
+                        attachments: delivery.attachments,
+                        reapply: true,
+                      }).catch((reapplyError) => {
+                        logger.warn(
+                          '[background] Failed to re-anchor harvested code result:',
+                          reapplyError,
+                        );
+                      });
+                    }
+                  }
+                  return reportResult({
+                    toolCallId: tc.id,
+                    status: 'success' as const,
+                    content: pollContent,
+                    ...(codeSessionArtifact != null ? { artifact: codeSessionArtifact } : {}),
+                  });
+                }
+
+                if (
+                  backgroundToolSet.has(tc.name) &&
+                  isBackgroundRequested(tc.args) &&
+                  !toolRequiresEphemeralConnection(toolMap.get(tc.name)) &&
+                  /** Code tools depend on the completion-time harvest to anchor
+                   *  results; hosts that don't wire the persister (OpenAI-compat
+                   *  and Responses controllers) downgrade code calls to
+                   *  foreground rather than losing generated files. */
+                  !(
+                    isCodeSessionAwareToolCall(tc.name, mergedConfigurable) &&
+                    persistBackgroundCodeResult == null
+                  )
+                ) {
+                  return reportResult(dispatchBackgroundToolCall(tc));
+                }
+
                 const execute = async (
                   sandboxContext?: SandboxSessionContext,
                 ): Promise<ToolExecuteResult> => {
@@ -3230,12 +4806,17 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     isFileAuthoringCall &&
                     typeof (tc.args as { path?: unknown }).path === 'string' &&
                     !(tc.args as { path: string }).path.startsWith(SKILL_FILE_PREFIX);
+                  let sandboxReadSucceeded = false;
                   if (
                     tc.name === Constants.SKILL_TOOL ||
                     tc.name === Constants.READ_FILE ||
                     isFileAuthoringCall
                   ) {
                     const req = mergedConfigurable?.req as ServerRequest | undefined;
+                    const filtered = filteredToolArgumentsResult(tc, req, tc.args);
+                    if (filtered != null) {
+                      return filtered;
+                    }
                     let handlerResult: ToolExecuteResult;
                     try {
                       if (tc.name === Constants.SKILL_TOOL) {
@@ -3251,6 +4832,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           mergedConfigurable,
                           options,
                           req,
+                          () => {
+                            sandboxReadSucceeded = true;
+                          },
                         );
                       } else if (tc.name === CREATE_FILE_TOOL_NAME && isFileAuthoringCall) {
                         handlerResult = await handleCreateFileCall(
@@ -3273,7 +4857,24 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         handlerResult = errorResult(tc, `Tool ${tc.name} not found`);
                       }
                     } catch (toolError) {
+                      if (toolError instanceof ContentFilterError) {
+                        logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                          name: toolError.name,
+                          contentFiltered: true,
+                        });
+                        return errorResult(tc, modelBoundContentFilterErrorMessage(toolError.body));
+                      }
                       const { message, logContext } = getSafeToolError(toolError);
+                      const filteredError = filteredToolOutputResult(tc, req, {
+                        errorMessage: message,
+                      });
+                      if (filteredError != null) {
+                        logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                          name: logContext.name,
+                          contentFiltered: true,
+                        });
+                        return filteredError;
+                      }
                       logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
                         ...logContext,
                         toolCallArgsShape: getValueShape(tc.args),
@@ -3286,6 +4887,52 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       };
                     }
 
+                    const filteredOutput = filteredToolOutputResult(tc, req, {
+                      content: handlerResult.content,
+                      artifact: handlerResult.artifact,
+                      errorMessage: handlerResult.errorMessage,
+                    });
+                    if (filteredOutput != null) {
+                      return filteredOutput;
+                    }
+
+                    if (toolEndCallback && handlerResult.artifact) {
+                      try {
+                        await toolEndCallback(
+                          {
+                            output: {
+                              name: tc.name,
+                              tool_call_id: tc.id,
+                              content: handlerResult.content,
+                              artifact: handlerResult.artifact,
+                            },
+                          },
+                          {
+                            run_id: (metadata as Record<string, unknown>)?.run_id as
+                              | string
+                              | undefined,
+                            thread_id: (metadata as Record<string, unknown>)?.thread_id as
+                              | string
+                              | undefined,
+                            ...metadata,
+                            executingAgentId: agentId,
+                            codeExecutionContext,
+                          },
+                        );
+                      } catch (callbackError) {
+                        if (callbackError instanceof ContentFilterError) {
+                          logger.warn(
+                            `[ON_TOOL_EXECUTE] Artifact delivery for tool ${tc.name} was blocked by content policy.`,
+                          );
+                          return errorResult(
+                            tc,
+                            modelBoundContentFilterErrorMessage(callbackError.body),
+                          );
+                        }
+                        throw callbackError;
+                      }
+                    }
+
                     if (
                       isSandboxFileAuthoringCall &&
                       handlerResult.status === 'success' &&
@@ -3294,26 +4941,17 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       mergeSandboxSessionArtifact(sandboxContext, handlerResult.artifact);
                     }
 
-                    if (toolEndCallback && handlerResult.artifact) {
-                      await toolEndCallback(
-                        {
-                          output: {
-                            name: tc.name,
-                            tool_call_id: tc.id,
-                            content: handlerResult.content,
-                            artifact: handlerResult.artifact,
-                          },
-                        },
-                        {
-                          run_id: (metadata as Record<string, unknown>)?.run_id as
-                            | string
-                            | undefined,
-                          thread_id: (metadata as Record<string, unknown>)?.thread_id as
-                            | string
-                            | undefined,
-                          ...metadata,
-                        },
-                      );
+                    /* Sandbox-routed host file tools return before the
+                     * generic invoke path's marker below, so refresh the warm
+                     * window here. `sandboxReadSucceeded` is set only after an
+                     * actual Code API read succeeds, so skill reads never mark
+                     * the sandbox warm. */
+                    if (
+                      (isSandboxFileAuthoringCall || sandboxReadSucceeded) &&
+                      handlerResult.status === 'success' &&
+                      (runtimeSessionHint || sandboxConversationId)
+                    ) {
+                      markCodeSandboxWarm();
                     }
 
                     return handlerResult;
@@ -3322,95 +4960,28 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   const tool = toolMap.get(tc.name);
 
                   if (!tool) {
-                    logger.warn(
-                      `[ON_TOOL_EXECUTE] Tool "${tc.name}" not found. Available: ${[...toolMap.keys()].map((k) => `"${k}"`).join(', ')}`,
-                    );
-                    return {
+                    const missingToolResult: ToolExecuteResult = {
                       toolCallId: tc.id,
                       status: 'error' as const,
                       content: '',
                       errorMessage: `Tool ${tc.name} not found`,
                     };
+                    const filteredMissingTool = filteredToolOutputResult(
+                      tc,
+                      mergedConfigurable?.req as ServerRequest | undefined,
+                      { errorMessage: missingToolResult.errorMessage },
+                    );
+                    if (filteredMissingTool != null) {
+                      return filteredMissingTool;
+                    }
+                    logger.warn(
+                      `[ON_TOOL_EXECUTE] Tool "${tc.name}" not found. Available: ${[...toolMap.keys()].map((k) => `"${k}"`).join(', ')}`,
+                    );
+                    return missingToolResult;
                   }
 
                   try {
-                    const toolCallConfig: Record<string, unknown> = {
-                      id: tc.id,
-                      stepId: tc.stepId,
-                      turn: tc.turn,
-                    };
-
-                    if (
-                      tc.codeSessionContext &&
-                      isCodeSessionAwareToolCall(tc.name, mergedConfigurable)
-                    ) {
-                      toolCallConfig.session_id = tc.codeSessionContext.session_id;
-                      if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
-                        toolCallConfig._injected_files = tc.codeSessionContext.files;
-                        /* Last LC-controlled point before the wire. Mirrors
-                         * codeapi's validator context so the two log sides
-                         * correlate on a single grep. */
-                        const refs = tc.codeSessionContext.files as Array<{
-                          id?: unknown;
-                          resource_id?: unknown;
-                          storage_session_id?: unknown;
-                          kind?: unknown;
-                          version?: unknown;
-                          name?: unknown;
-                        }>;
-                        const summary = refs.map((f) => ({
-                          kind: f.kind,
-                          hasResourceId: typeof f.resource_id === 'string' && !!f.resource_id,
-                          hasStorageSessionId:
-                            typeof f.storage_session_id === 'string' && !!f.storage_session_id,
-                          hasVersion: typeof f.version === 'number',
-                        }));
-                        let missingResourceId = 0;
-                        let missingStorageSessionId = 0;
-                        let missingVersion = 0;
-                        const kindCounts: Record<string, number> = {};
-                        for (const s of summary) {
-                          if (!s.hasResourceId) missingResourceId++;
-                          if (!s.hasStorageSessionId) missingStorageSessionId++;
-                          if (!s.hasVersion) missingVersion++;
-                          const k = typeof s.kind === 'string' ? s.kind : 'unknown';
-                          kindCounts[k] = (kindCounts[k] ?? 0) + 1;
-                        }
-                        logger.debug(
-                          `[code-env:inject] tool=${tc.name} files=${refs.length} ` +
-                            `missingResourceId=${missingResourceId} ` +
-                            `missingStorageSessionId=${missingStorageSessionId} ` +
-                            `missingVersion=${missingVersion} ` +
-                            `kinds=${JSON.stringify(kindCounts)}`,
-                        );
-                        if (missingResourceId > 0) {
-                          logger.warn(
-                            `[code-env:inject] ${missingResourceId}/${refs.length} files missing resource_id ` +
-                              `for tool=${tc.name} — codeapi will reject with 400`,
-                            { summary },
-                          );
-                        }
-                      } else {
-                        /* Empty `_injected_files` on a code-execution tool
-                         * call. Almost always means the seeding chain
-                         * (primeCodeFiles → initialSessions →
-                         * CodeSessionContext) dropped the file upstream.
-                         * `session_id` is still emitted for continuity, but
-                         * concrete file refs must arrive through
-                         * `_injected_files`; agents no longer falls back to
-                         * `/files/<sid>`. Pair with `[primeCodeFiles]`
-                         * traces below to locate the layer that lost the ref. */
-                        logger.warn(
-                          `[code-env:inject] tool=${tc.name} _injected_files=0 — sandbox will see no input files`,
-                          {
-                            tool: tc.name,
-                            session_id: tc.codeSessionContext.session_id,
-                            codeSessionContextHasFiles: tc.codeSessionContext.files !== undefined,
-                            codeSessionContextFileCount: tc.codeSessionContext.files?.length ?? 0,
-                          },
-                        );
-                      }
-                    }
+                    const toolCallConfig = buildToolCallConfig(tc, mergedConfigurable);
 
                     if (
                       tc.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING ||
@@ -3423,25 +4994,136 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         | Map<string, StructuredToolInterface>
                         | undefined;
                       if (toolRegistry) {
+                        const activeCodeExecutionToolNames = callerCapabilityProjection
+                          ? new Set(callerCapabilityProjection.codeExecutionToolNames)
+                          : undefined;
+                        const activeDirectOnlyToolNames = callerCapabilityProjection
+                          ? new Set(callerCapabilityProjection.directOnlyToolNames)
+                          : undefined;
                         const fileAuthoringToolNames =
                           getFileAuthoringToolNames(mergedConfigurable) ?? new Set<string>();
-                        const toolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
-                          (t) =>
-                            t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
-                            t.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
-                            t.name !== Constants.TOOL_SEARCH &&
-                            !fileAuthoringToolNames.has(t.name),
+                        const eligibleToolDefs: LCTool[] = [];
+                        const disallowedToolDefs: LCTool[] = [];
+                        for (const toolDef of toolRegistry.values()) {
+                          const isInnerTool =
+                            toolDef.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
+                            toolDef.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
+                            toolDef.name !== Constants.TOOL_SEARCH &&
+                            toolDef.name !== CHECK_BACKGROUND_TASK_NAME &&
+                            !fileAuthoringToolNames.has(toolDef.name);
+                          if (!isInnerTool) {
+                            continue;
+                          }
+                          const allowsCodeExecution = (
+                            toolDef.allowed_callers ?? ['direct']
+                          ).includes('code_execution');
+                          if (
+                            allowsCodeExecution &&
+                            (activeCodeExecutionToolNames == null ||
+                              activeCodeExecutionToolNames.has(toolDef.name))
+                          ) {
+                            eligibleToolDefs.push(toolDef);
+                          } else if (
+                            !allowsCodeExecution &&
+                            (activeDirectOnlyToolNames == null ||
+                              activeDirectOnlyToolNames.has(toolDef.name))
+                          ) {
+                            disallowedToolDefs.push({
+                              name: toolDef.name,
+                            });
+                          }
+                        }
+                        /* PTC-generated calls don't go through the host background
+                         * interceptor, so strip the injected `run_in_background`
+                         * param from target schemas (the registry entries were
+                         * mutated to include it) — mirrors the self-spawn path.
+                         * Intent LABELS are stripped for the same reason —
+                         * host-injected AND SDK-native alike (marker-guarded):
+                         * no card renders for an inner call, so the sandbox
+                         * bridge must not advertise them. */
+                        const toolDefs = stripIntentLabelsFromToolDefinitions(
+                          stripBackgroundFromToolDefinitions(
+                            eligibleToolDefs,
+                            mergedConfigurable?.backgroundToolNames as string[] | undefined,
+                          ),
                         );
                         toolCallConfig.toolDefs = toolDefs;
-                        toolCallConfig.toolMap = ptcToolMap ?? toolMap;
+                        toolCallConfig.disallowedToolDefs = disallowedToolDefs;
+                        const eligibleNames = new Set(toolDefs.map((toolDef) => toolDef.name));
+                        /* Instrument the ELIGIBLE map, never the raw one: the
+                         * caller-capability restriction decides what the sandbox
+                         * may reach, and tracing must not widen it. */
+                        const eligiblePtcToolMap = new Map(
+                          [...(ptcToolMap ?? toolMap)].filter(([name]) => eligibleNames.has(name)),
+                        );
+                        /* Inner calls produce no run step and no card of their
+                         * own, so the only record of what the program did is
+                         * this trace. `invoke` is the single seam every inner
+                         * call passes through.
+                         *
+                         * They also never reach `filteredToolArgumentsResult` —
+                         * the sandbox bridge invokes them directly — so when the
+                         * deployment filters tool arguments for PII, the trace
+                         * must not put their values on the wire. */
+                        const ptcReq = mergedConfigurable?.req as ServerRequest | undefined;
+                        const ptcArgumentPii = ptcReq?.config?.filters?.toolArguments?.pii;
+                        toolCallConfig.toolMap = emitPtcProgress
+                          ? instrumentPtcToolMap({
+                              toolMap: eligiblePtcToolMap,
+                              toolCallId: tc.id,
+                              runId: (metadata as Record<string, unknown>)?.run_id as
+                                | string
+                                | undefined,
+                              includePreviews: !hasActivePiiFields(ptcArgumentPii, [
+                                'name',
+                                'arguments',
+                                'output',
+                              ]),
+                              traceExclusions: collectFilteredPtcToolNames(
+                                eligiblePtcToolMap.keys(),
+                                ptcReq,
+                              ),
+                              emit: emitPtcProgress,
+                            })
+                          : eligiblePtcToolMap;
                       }
                     }
 
-                    const result = await tool.invoke(normalizeToolInvokeArgs(tc.args, tool), {
+                    /** Strip the host-only `run_in_background` flag on foreground
+                     *  calls (the model may emit it as `false`, or imitate it from
+                     *  another agent's history on a tool this agent never opted
+                     *  in), so a strict MCP/action schema doesn't reject an
+                     *  undeclared argument. Only a tool whose own schema declares
+                     *  the parameter receives it. */
+                    const foregroundArgs =
+                      backgroundToolSet.has(tc.name) ||
+                      (hasRunInBackgroundArg(tc.args) && !toolDeclaresRunInBackgroundParam(tool))
+                        ? stripRunInBackgroundArg(tc.args)
+                        : tc.args;
+                    const normalizedArgs = normalizeToolInvokeArgs(
+                      stripIntentForInvoke(foregroundArgs, tool),
+                      tool,
+                    );
+                    const filtered = filteredToolArgumentsResult(
+                      tc,
+                      mergedConfigurable?.req as ServerRequest | undefined,
+                      normalizedArgs,
+                    );
+                    if (filtered != null) {
+                      return filtered;
+                    }
+                    const result = await tool.invoke(normalizedArgs, {
                       toolCall: toolCallConfig,
                       configurable: mergedConfigurable,
                       metadata,
                     } as Record<string, unknown>);
+
+                    /* Only sandbox-bound calls carry a runtime session hint, so
+                     * this refreshes the prewarm module's warm window without
+                     * inspecting tool names. */
+                    if (isCodeSessionAwareToolCall(tc.name, mergedConfigurable)) {
+                      markCodeSandboxWarm();
+                    }
 
                     // Code-execution tools emit per-call boilerplate
                     // ("Note: ..." paragraphs and `| <annotation>` per-file
@@ -3455,6 +5137,17 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       typeof result.content === 'string'
                         ? cleanCodeToolOutput(result.content)
                         : result.content;
+                    const filteredOutput = filteredToolOutputResult(
+                      tc,
+                      mergedConfigurable?.req as ServerRequest | undefined,
+                      {
+                        content: cleanedContent,
+                        artifact: result.artifact,
+                      },
+                    );
+                    if (filteredOutput != null) {
+                      return filteredOutput;
+                    }
 
                     if (toolEndCallback) {
                       await toolEndCallback(
@@ -3474,6 +5167,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                             | string
                             | undefined,
                           ...metadata,
+                          executingAgentId: agentId,
+                          codeExecutionContext,
                         },
                       );
                     }
@@ -3485,7 +5180,25 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       status: 'success' as const,
                     };
                   } catch (toolError) {
+                    if (toolError instanceof ContentFilterError) {
+                      logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                        name: toolError.name,
+                        contentFiltered: true,
+                      });
+                      return errorResult(tc, modelBoundContentFilterErrorMessage(toolError.body));
+                    }
                     const { message, logContext } = getSafeToolError(toolError);
+                    const req = mergedConfigurable?.req as ServerRequest | undefined;
+                    const filteredError = filteredToolOutputResult(tc, req, {
+                      errorMessage: message,
+                    });
+                    if (filteredError != null) {
+                      logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                        name: logContext.name,
+                        contentFiltered: true,
+                      });
+                      return filteredError;
+                    }
                     logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
                       ...logContext,
                       toolCallArgsShape: getValueShape(tc.args),

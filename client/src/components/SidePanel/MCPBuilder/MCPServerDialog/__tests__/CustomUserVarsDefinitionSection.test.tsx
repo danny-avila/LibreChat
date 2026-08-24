@@ -222,8 +222,8 @@ describe('CustomUserVarsDefinitionSection – pre-populated entries', () => {
       <Wrapper
         defaultValues={{
           customUserVars: [
-            { key: 'API_KEY', title: 'API Key', description: 'Your API key' },
-            { key: 'INDEX', title: 'Index Name', description: '' },
+            { key: 'API_KEY', title: 'API Key', description: 'Your API key', sensitive: true },
+            { key: 'INDEX', title: 'Index Name', description: '', sensitive: true },
           ],
         }}
       />,
@@ -237,7 +237,12 @@ describe('CustomUserVarsDefinitionSection – pre-populated entries', () => {
       <Wrapper
         defaultValues={{
           customUserVars: [
-            { key: 'TOKEN', title: 'Auth Token', description: 'Bearer token for auth' },
+            {
+              key: 'TOKEN',
+              title: 'Auth Token',
+              description: 'Bearer token for auth',
+              sensitive: true,
+            },
           ],
         }}
       />,
@@ -255,7 +260,7 @@ describe('CustomUserVarsDefinitionSection – pre-populated entries', () => {
     render(
       <Wrapper
         defaultValues={{
-          customUserVars: [{ key: 'MY_KEY', title: 'My Key', description: '' }],
+          customUserVars: [{ key: 'MY_KEY', title: 'My Key', description: '', sensitive: true }],
         }}
       />,
     );
@@ -272,8 +277,8 @@ describe('CustomUserVarsDefinitionSection – removing entries', () => {
       <Wrapper
         defaultValues={{
           customUserVars: [
-            { key: 'A', title: 'Var A', description: '' },
-            { key: 'B', title: 'Var B', description: '' },
+            { key: 'A', title: 'Var A', description: '', sensitive: true },
+            { key: 'B', title: 'Var B', description: '', sensitive: true },
           ],
         }}
       />,
@@ -286,8 +291,8 @@ describe('CustomUserVarsDefinitionSection – removing entries', () => {
       <Wrapper
         defaultValues={{
           customUserVars: [
-            { key: 'REMOVE_ME', title: 'Remove', description: '' },
-            { key: 'KEEP_ME', title: 'Keep', description: '' },
+            { key: 'REMOVE_ME', title: 'Remove', description: '', sensitive: true },
+            { key: 'KEEP_ME', title: 'Keep', description: '', sensitive: true },
           ],
         }}
       />,

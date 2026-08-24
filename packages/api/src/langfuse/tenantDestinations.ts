@@ -7,7 +7,6 @@ const DEFAULT_TENANT_DESTINATIONS: Array<[string, string]> = [
 ];
 
 const DESTINATIONS_ENV = 'LANGFUSE_FANOUT_TENANT_DESTINATIONS';
-const LEGACY_TENANT_BASE_URL_ENV = 'LANGFUSE_FANOUT_TENANT_BASE_URL';
 
 export type LangfuseTenantDestination = {
   key: string;
@@ -84,28 +83,99 @@ export function getLangfuseTenantDestinations(): LangfuseTenantDestination[] {
     return uniqueDestinations(configured);
   }
 
-  const legacyBaseUrl = normalizeBaseUrl(process.env[LEGACY_TENANT_BASE_URL_ENV]);
   const defaults = DEFAULT_TENANT_DESTINATIONS.map(([key, defaultBaseUrl]) => ({
     key,
-    baseUrl:
-      normalizeBaseUrl(process.env[destinationEnvName(key)]) ??
-      (key === 'eu' ? legacyBaseUrl : undefined) ??
-      defaultBaseUrl,
+    baseUrl: normalizeBaseUrl(process.env[destinationEnvName(key)]) ?? defaultBaseUrl,
   }));
 
   return uniqueDestinations(defaults);
 }
 
-export function resolveLangfuseTenantDestination(
-  baseUrl: unknown,
-): LangfuseTenantDestination | undefined {
-  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+function originOf(value: string): string | undefined {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return undefined;
+  }
+}
 
-  if (!normalizedBaseUrl) {
+/**
+ * Origins the deployment explicitly pointed Langfuse traffic at — a self-hosted
+ * base URL, the fanout collector, or a tenant destination whose URL was set by
+ * env. The built-in `*.cloud.langfuse.com` defaults are deliberately excluded:
+ * they are third-party origins nobody configured.
+ */
+function getConfiguredLangfuseOrigins(): Set<string> {
+  const origins = new Set<string>();
+  const add = (value: unknown): void => {
+    const baseUrl = normalizeBaseUrl(value);
+    const origin = baseUrl ? originOf(baseUrl) : undefined;
+    if (origin) {
+      origins.add(origin);
+    }
+  };
+
+  add(process.env.LANGFUSE_BASE_URL);
+  add(process.env.LANGFUSE_HOST);
+  add(process.env.LANGFUSE_BASEURL);
+  add(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
+
+  const configuredList = normalizeString(process.env[DESTINATIONS_ENV]);
+  if (configuredList) {
+    for (const destination of parseDestinationList(configuredList)) {
+      add(destination.baseUrl);
+    }
+    return origins;
+  }
+
+  for (const [key] of DEFAULT_TENANT_DESTINATIONS) {
+    add(process.env[destinationEnvName(key)]);
+  }
+  return origins;
+}
+
+/**
+ * Whether custom Langfuse headers may be sent to `baseUrl`.
+ *
+ * `langfuse.headers` is a single map with no way to say *which* endpoint it
+ * authenticates to, so it is only unambiguous when the deployment configured
+ * exactly one Langfuse origin. With several — a collector plus a self-hosted
+ * central, say — any rule for picking recipients is a guess, and guessing wrong
+ * discloses a gateway credential to the other origin. So the headers are sent
+ * only when there is one configured origin and this is it.
+ *
+ * That covers the self-hosted-behind-a-proxy case this feature exists for.
+ * Multi-destination deployments need per-destination header configuration,
+ * which the schema does not yet express.
+ */
+export function allowsLangfuseCustomHeaders(baseUrl: string): boolean {
+  const configured = getConfiguredLangfuseOrigins();
+  if (configured.size !== 1) {
+    return false;
+  }
+  const origin = originOf(baseUrl);
+  return origin != null && configured.has(origin);
+}
+
+/** True when headers were configured but the deployment has several possible
+ *  Langfuse origins, so none can be given the map. Callers use this to explain
+ *  the silence rather than leaving an operator debugging a missing header. */
+export function hasAmbiguousLangfuseOrigins(): boolean {
+  return getConfiguredLangfuseOrigins().size > 1;
+}
+
+export function resolveLangfuseTenantDestination(
+  destinationKey: unknown,
+): LangfuseTenantDestination | undefined {
+  const normalizedKey = normalizeString(destinationKey);
+  if (!normalizedKey) {
     return undefined;
   }
 
-  return getLangfuseTenantDestinations().find(
-    (destination) => destination.baseUrl === normalizedBaseUrl,
-  );
+  const key = normalizeDestinationKey(normalizedKey);
+  if (!key) {
+    return undefined;
+  }
+
+  return getLangfuseTenantDestinations().find((destination) => destination.key === key);
 }

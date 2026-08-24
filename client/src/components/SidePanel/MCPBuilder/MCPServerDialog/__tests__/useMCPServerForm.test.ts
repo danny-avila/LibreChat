@@ -5,6 +5,7 @@
  * These tests exercise pure TypeScript logic directly without mounting React, keeping
  * them fast and dependency-free.
  */
+import { TokenExchangeMethodEnum } from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { MCPServerDefinition } from '~/hooks';
 
@@ -16,6 +17,7 @@ import {
   buildCustomUserVars,
   deriveDefaultValues,
   buildBaseConfig,
+  buildCompleteConfig,
   AuthTypeEnum,
   AuthorizationTypeEnum,
 } from '../utils/formHelpers';
@@ -108,6 +110,18 @@ describe('deriveDefaultValues – serverInstructions', () => {
   });
 });
 
+describe('deriveDefaultValues – OAuth token exchange method', () => {
+  it('preserves the configured token exchange method', () => {
+    const server = makeServer({
+      oauth: { token_exchange_method: TokenExchangeMethodEnum.BasicAuthHeader },
+    });
+    const defaults = deriveDefaultValues(server);
+    expect(defaults.auth.oauth_token_exchange_method).toBe(
+      TokenExchangeMethodEnum.BasicAuthHeader,
+    );
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Tests: buildConfig – chatMenu payload
 // ---------------------------------------------------------------------------
@@ -117,6 +131,7 @@ describe('buildConfig – chatMenu', () => {
     title: 'My Server',
     url: 'https://mcp.example.com/sse',
     type: 'sse',
+    requiresOAuth: false,
     auth: {
       auth_type: AuthTypeEnum.None,
       api_key: '',
@@ -157,6 +172,7 @@ describe('buildConfig – serverInstructions', () => {
     title: 'My Server',
     url: 'https://mcp.example.com/sse',
     type: 'sse',
+    requiresOAuth: false,
     auth: {
       auth_type: AuthTypeEnum.None,
       api_key: '',
@@ -234,6 +250,7 @@ describe('buildConfig – combined chatMenu and serverInstructions', () => {
       title: 'Server',
       url: 'https://mcp.example.com/sse',
       type: 'sse',
+      requiresOAuth: false,
       auth: {
         auth_type: AuthTypeEnum.None,
         api_key: '',
@@ -263,6 +280,7 @@ describe('buildConfig – combined chatMenu and serverInstructions', () => {
       title: 'Hidden Server',
       url: 'https://mcp.example.com/sse',
       type: 'sse',
+      requiresOAuth: false,
       auth: {
         auth_type: AuthTypeEnum.None,
         api_key: '',
@@ -292,6 +310,7 @@ describe('buildConfig – combined chatMenu and serverInstructions', () => {
       title: 'Default Server',
       url: 'https://mcp.example.com/sse',
       type: 'sse',
+      requiresOAuth: false,
       auth: {
         auth_type: AuthTypeEnum.None,
         api_key: '',
@@ -514,7 +533,7 @@ describe('buildCustomUserVars', () => {
 
   it('builds a map with title and description', () => {
     const result = buildCustomUserVars([
-      { key: 'API_KEY', title: 'API Key', description: 'Your API key' },
+      { key: 'API_KEY', title: 'API Key', description: 'Your API key', sensitive: true },
     ]);
     expect(result).toEqual({
       API_KEY: { title: 'API Key', description: 'Your API key', sensitive: true },
@@ -522,56 +541,62 @@ describe('buildCustomUserVars', () => {
   });
 
   it('preserves empty description string', () => {
-    const result = buildCustomUserVars([{ key: 'TOKEN', title: 'Token', description: '' }]);
+    const result = buildCustomUserVars([
+      { key: 'TOKEN', title: 'Token', description: '', sensitive: true },
+    ]);
     expect(result).toEqual({ TOKEN: { title: 'Token', description: '', sensitive: true } });
   });
 
   it('trims whitespace from key, title, and description', () => {
     const result = buildCustomUserVars([
-      { key: '  MY_VAR  ', title: '  My Var  ', description: '  desc  ' },
+      { key: '  MY_VAR  ', title: '  My Var  ', description: '  desc  ', sensitive: true },
     ]);
     expect(result).toEqual({ MY_VAR: { title: 'My Var', description: 'desc', sensitive: true } });
   });
 
   it('skips entries with blank keys', () => {
     const result = buildCustomUserVars([
-      { key: '', title: 'Should be skipped', description: '' },
-      { key: 'VALID', title: 'Valid Var', description: '' },
+      { key: '', title: 'Should be skipped', description: '', sensitive: true },
+      { key: 'VALID', title: 'Valid Var', description: '', sensitive: true },
     ]);
     expect(result).toEqual({ VALID: { title: 'Valid Var', description: '', sensitive: true } });
   });
 
   it('skips entries with blank titles', () => {
     const result = buildCustomUserVars([
-      { key: 'MY_KEY', title: '', description: 'some desc' },
-      { key: 'OTHER', title: 'Other', description: '' },
+      { key: 'MY_KEY', title: '', description: 'some desc', sensitive: true },
+      { key: 'OTHER', title: 'Other', description: '', sensitive: true },
     ]);
     expect(result).toEqual({ OTHER: { title: 'Other', description: '', sensitive: true } });
   });
 
   it('skips entries with whitespace-only key', () => {
-    const result = buildCustomUserVars([{ key: '   ', title: 'Title', description: '' }]);
+    const result = buildCustomUserVars([
+      { key: '   ', title: 'Title', description: '', sensitive: true },
+    ]);
     expect(result).toBeUndefined();
   });
 
   it('skips entries with whitespace-only title', () => {
-    const result = buildCustomUserVars([{ key: 'MY_KEY', title: '   ', description: '' }]);
+    const result = buildCustomUserVars([
+      { key: 'MY_KEY', title: '   ', description: '', sensitive: true },
+    ]);
     expect(result).toBeUndefined();
   });
 
   it('returns undefined when all entries are invalid', () => {
     const result = buildCustomUserVars([
-      { key: '', title: '', description: '' },
-      { key: '  ', title: '  ', description: '' },
+      { key: '', title: '', description: '', sensitive: true },
+      { key: '  ', title: '  ', description: '', sensitive: true },
     ]);
     expect(result).toBeUndefined();
   });
 
   it('handles multiple valid entries', () => {
     const result = buildCustomUserVars([
-      { key: 'API_KEY', title: 'API Key', description: 'Key for auth' },
-      { key: 'INDEX', title: 'Index Name', description: '' },
-      { key: 'TOP_K', title: 'Top K', description: 'Number of results' },
+      { key: 'API_KEY', title: 'API Key', description: 'Key for auth', sensitive: true },
+      { key: 'INDEX', title: 'Index Name', description: '', sensitive: true },
+      { key: 'TOP_K', title: 'Top K', description: 'Number of results', sensitive: true },
     ]);
     expect(result).toEqual({
       API_KEY: { title: 'API Key', description: 'Key for auth', sensitive: true },
@@ -591,6 +616,43 @@ describe('buildCustomUserVars', () => {
     ]);
     expect(result).toEqual({
       PROJECT_ID: { title: 'Project ID', description: 'Public identifier', sensitive: false },
+    });
+  });
+});
+
+describe('buildCompleteConfig – OAuth token exchange method', () => {
+  it('includes the selected token exchange method in the OAuth payload', () => {
+    const config = buildCompleteConfig({
+      title: 'OAuth Server',
+      description: '',
+      icon: '',
+      url: 'https://mcp.example.com/sse',
+      type: 'sse',
+      requiresOAuth: false,
+      auth: {
+        auth_type: AuthTypeEnum.OAuth,
+        api_key: '',
+        api_key_source: 'admin',
+        api_key_authorization_type: AuthorizationTypeEnum.Bearer,
+        api_key_custom_header: '',
+        oauth_client_id: '',
+        oauth_client_secret: '',
+        oauth_authorization_url: '',
+        oauth_token_url: '',
+        oauth_scope: '',
+        oauth_token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+        obo_scopes: '',
+      },
+      trust: true,
+      headers: [],
+      customUserVars: [],
+      chatMenu: true,
+      serverInstructionsMode: 'none',
+      serverInstructionsCustom: '',
+    });
+
+    expect(config.oauth).toEqual({
+      token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
     });
   });
 });

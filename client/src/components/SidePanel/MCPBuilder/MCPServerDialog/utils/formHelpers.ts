@@ -91,6 +91,7 @@ export function deriveDefaultValues(server: MCPServerDefinition): MCPServerFormD
       oauth_authorization_url: server.config.oauth?.authorization_url || '',
       oauth_token_url: server.config.oauth?.token_url || '',
       oauth_scope: server.config.oauth?.scope || '',
+      oauth_token_exchange_method: server.config.oauth?.token_exchange_method,
       obo_scopes: 'obo' in server.config && server.config.obo ? server.config.obo.scopes : '',
       server_id: server.serverName,
     },
@@ -135,6 +136,7 @@ export function getNewServerDefaults(): MCPServerFormData {
       oauth_authorization_url: '',
       oauth_token_url: '',
       oauth_scope: '',
+      oauth_token_exchange_method: undefined,
       obo_scopes: '',
     },
     trust: false,
@@ -198,7 +200,8 @@ export function addOAuthConfig(
       auth.oauth_client_secret ||
       auth.oauth_authorization_url ||
       auth.oauth_token_url ||
-      auth.oauth_scope)
+      auth.oauth_scope ||
+      auth.oauth_token_exchange_method)
   ) {
     config.oauth = {
       ...(auth.oauth_client_id && { client_id: auth.oauth_client_id }),
@@ -206,6 +209,9 @@ export function addOAuthConfig(
       ...(auth.oauth_authorization_url && { authorization_url: auth.oauth_authorization_url }),
       ...(auth.oauth_token_url && { token_url: auth.oauth_token_url }),
       ...(auth.oauth_scope && { scope: auth.oauth_scope }),
+      ...(auth.oauth_token_exchange_method && {
+        token_exchange_method: auth.oauth_token_exchange_method,
+      }),
     };
   }
   return config;

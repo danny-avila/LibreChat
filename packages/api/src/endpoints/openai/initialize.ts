@@ -194,21 +194,19 @@ export async function initializeOpenAI({
     (options as InitializeResultBase).useLegacyContent = true;
   }
 
-  const azureRate = modelName?.includes('gpt-4') ? 30 : 17;
-
   let streamRate: number | undefined;
 
   if (isAzureOpenAI && azureConfig) {
-    streamRate = azureConfig.streamRate ?? azureRate;
+    streamRate = azureConfig.streamRate;
   } else if (!isAzureOpenAI && openAIConfig) {
     streamRate = openAIConfig.streamRate;
   }
 
-  if (allConfig?.streamRate) {
+  if (allConfig?.streamRate != null) {
     streamRate = allConfig.streamRate;
   }
 
-  if (streamRate) {
+  if (streamRate != null) {
     options.llmConfig._lc_stream_delay = streamRate;
   }
 

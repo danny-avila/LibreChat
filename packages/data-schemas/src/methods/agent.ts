@@ -6,8 +6,8 @@ import {
   actionDelimiter,
   isActionTool,
 } from 'librechat-data-provider';
+import type { FilterQuery, Model, PipelineStage, Types } from 'mongoose';
 import type { AgentToolResources } from 'librechat-data-provider';
-import type { FilterQuery, Model, Types } from 'mongoose';
 import type { IAgent, IAclEntry } from '~/types';
 import { filterExistingSkillIds } from './skill';
 import logger from '~/config/winston';
@@ -28,6 +28,84 @@ const TOOL_RESOURCE_KEYS: ReadonlyArray<keyof AgentToolResources> = [
   EToolResources.ocr,
 ];
 
+/** Builds an atomic update that prunes deleted IDs without discarding surviving edge members. */
+function createEdgeCleanupPipeline(agentIds: string[]): PipelineStage[] {
+  const cleanEndpoint = (endpoint: string) => ({
+    $cond: [
+      { $isArray: endpoint },
+      {
+        $filter: {
+          input: endpoint,
+          as: 'agentId',
+          cond: { $not: [{ $in: ['$$agentId', agentIds] }] },
+        },
+      },
+      { $cond: [{ $in: [endpoint, agentIds] }, null, endpoint] },
+    ],
+  });
+  const hasEndpoint = (endpoint: string) => ({
+    $cond: [{ $isArray: endpoint }, { $gt: [{ $size: endpoint }, 0] }, { $ne: [endpoint, null] }],
+  });
+
+  return [
+    {
+      $set: {
+        edges: {
+          $filter: {
+            input: {
+              $map: {
+                input: { $ifNull: ['$edges', []] },
+                as: 'edge',
+                in: {
+                  $let: {
+                    vars: {
+                      cleanedFrom: cleanEndpoint('$$edge.from'),
+                      cleanedTo: cleanEndpoint('$$edge.to'),
+                    },
+                    in: {
+                      $cond: [
+                        {
+                          $and: [hasEndpoint('$$cleanedFrom'), hasEndpoint('$$cleanedTo')],
+                        },
+                        {
+                          $mergeObjects: [
+                            '$$edge',
+                            {
+                              from: '$$cleanedFrom',
+                              to: '$$cleanedTo',
+                            },
+                          ],
+                        },
+                        null,
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+            as: 'edge',
+            cond: { $ne: ['$$edge', null] },
+          },
+        },
+      },
+    },
+  ];
+}
+
+/** Removes deleted agent references from every active graph that contains them. */
+async function removeAgentIdsFromEdges(Agent: Model<IAgent>, agentIds: string[]): Promise<void> {
+  if (agentIds.length === 0) {
+    return;
+  }
+
+  await Agent.updateMany(
+    {
+      $or: [{ 'edges.from': { $in: agentIds } }, { 'edges.to': { $in: agentIds } }],
+    },
+    createEdgeCleanupPipeline(agentIds),
+  );
+}
+
 export interface AgentDeps {
   /** Removes all ACL permissions for a resource. Injected from PermissionService. */
   removeAllPermissions: (params: { resourceType: string; resourceId: unknown }) => Promise<void>;
@@ -41,6 +119,8 @@ export interface AgentDeps {
     userObjectId: Types.ObjectId,
     resourceTypes: string | string[],
   ) => Promise<Types.ObjectId[]>;
+  /** Recognizes skill IDs supplied by an external, non-database registry. */
+  isExternalSkillId?: (id: string) => boolean;
 }
 
 /**
@@ -57,11 +137,120 @@ function extractMCPServerNames(tools: string[] | undefined | null): string[] {
       continue;
     }
     const parts = tool.split(mcp_delimiter);
+    /** This index only grants DB-backed servers (`ServerConfigsDB.getAccessibleServers`),
+     * and DB server names are slugs that cannot contain the delimiter
+     * (`generateServerNameFromTitle` strips underscores), so the last segment is always
+     * the real server for those. A config server whose own name contains the delimiter
+     * yields a trailing segment that is not its name; resolving that needs the configured
+     * server list, which is unavailable here - see #14449. */
     if (parts.length >= 2) {
       serverNames.add(parts[parts.length - 1]);
     }
   }
   return Array.from(serverNames);
+}
+
+/**
+ * Rebuilds an agent's MCP server index across a tools update without re-deriving
+ * names from the keys.
+ *
+ * A name already on the agent was resolved against the registry when it was
+ * stored, so it is authoritative; it carries forward while some retained tool
+ * still resolves to it. Only keys that match none of them fall back to the
+ * ambiguous trailing-segment derivation, which cannot tell a config server's
+ * suffix from a real DB server name.
+ */
+function rebuildMCPServerNames(tools: string[] | undefined | null, priorNames: string[]): string[] {
+  if (priorNames.length === 0) {
+    return extractMCPServerNames(tools);
+  }
+
+  const retained = new Set<string>();
+  const unmatched: string[] = [];
+  for (const tool of tools ?? []) {
+    if (!tool || !tool.includes(mcp_delimiter) || isActionTool(tool)) {
+      continue;
+    }
+    const match = priorNames
+      .filter((name) => tool.endsWith(`${mcp_delimiter}${name}`))
+      .sort((a, b) => b.length - a.length)[0];
+    if (match) {
+      retained.add(match);
+    } else {
+      unmatched.push(tool);
+    }
+  }
+
+  for (const name of extractMCPServerNames(unmatched)) {
+    retained.add(name);
+  }
+  return Array.from(retained);
+}
+
+const hasOperatorKeys = (value: unknown): boolean =>
+  typeof value === 'object' && value !== null && Object.keys(value as object).length > 0;
+
+/** Resolves a dotted operator path, such as `tool_resources.file_search.file_ids`. */
+function resolveDocumentPath(source: Record<string, unknown>, path: string): unknown {
+  let current: unknown = source;
+  for (const segment of path.split('.')) {
+    if (typeof current !== 'object' || current === null) {
+      return undefined;
+    }
+    current =
+      current instanceof Map ? current.get(segment) : (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+/** The values an `$addToSet` specification would add, flattening the `$each` form. */
+function addToSetCandidates(spec: unknown): unknown[] {
+  if (
+    typeof spec === 'object' &&
+    spec !== null &&
+    Array.isArray((spec as { $each?: unknown }).$each)
+  ) {
+    return (spec as { $each: unknown[] }).$each;
+  }
+  return [spec];
+}
+
+/**
+ * Whether an update's atomic operators can still change the stored document. `$push`
+ * always appends and `$pull` matches on arbitrary query criteria, so both count as
+ * mutating. `$addToSet` is a no-op once every value it adds is already stored, which is
+ * exactly what an idempotent retry looks like, so it is resolved against the document.
+ * Whatever cannot be compared cheaply counts as mutating: over-reporting only records a
+ * redundant version, while under-reporting would apply a change no version records.
+ */
+function operatorsMutateDocument(
+  currentObject: Record<string, unknown>,
+  $push: unknown,
+  $pull: unknown,
+  $addToSet: unknown,
+): boolean {
+  if (hasOperatorKeys($push) || hasOperatorKeys($pull)) {
+    return true;
+  }
+
+  if (!hasOperatorKeys($addToSet)) {
+    return false;
+  }
+
+  for (const [path, spec] of Object.entries($addToSet as Record<string, unknown>)) {
+    const existing = resolveDocumentPath(currentObject, path);
+    const stored = Array.isArray(existing) ? existing : [];
+    for (const candidate of addToSetCandidates(spec)) {
+      if (typeof candidate === 'object' && candidate !== null) {
+        return true;
+      }
+      if (!stored.includes(candidate)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -328,7 +517,7 @@ export function createAgentMethods(
     file_ids: string[];
   }) => Promise<{ matchedCount: number; modifiedCount: number }>;
 } {
-  const { removeAllPermissions, getActions, getSoleOwnedResourceIds } = deps;
+  const { removeAllPermissions, getActions, getSoleOwnedResourceIds, isExternalSkillId } = deps;
 
   /**
    * Create an agent with the provided data.
@@ -336,7 +525,11 @@ export function createAgentMethods(
   async function createAgent(agentData: Record<string, unknown>): Promise<IAgent> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
     if (Array.isArray(agentData.skills) && agentData.skills.length > 0) {
-      const prunedSkills = await filterExistingSkillIds(mongoose, agentData.skills as string[]);
+      const prunedSkills = await filterExistingSkillIds(
+        mongoose,
+        agentData.skills as string[],
+        isExternalSkillId,
+      );
       agentData.skills = prunedSkills;
       /** Fail closed when pruning empties a non-empty allowlist — empty +
        *  enabled means the full catalog, and hygiene must never widen scope. */
@@ -356,7 +549,11 @@ export function createAgentMethods(
         },
       ],
       category: (agentData.category as string) || 'general',
-      mcpServerNames: extractMCPServerNames(agentData.tools as string[] | undefined),
+      /** Callers that authorized the tools pass resolved names; deriving from the key
+       * alone cannot tell a config server's suffix from a real DB server name. */
+      mcpServerNames:
+        (agentData.mcpServerNames as string[] | undefined) ??
+        extractMCPServerNames(agentData.tools as string[] | undefined),
     };
 
     return (await Agent.create(initialAgentData)).toObject() as IAgent;
@@ -473,20 +670,18 @@ export function createAgentMethods(
     const Agent = mongoose.models.Agent as Model<IAgent>;
     const { updatingUserId = null, forceVersion = false, skipVersioning = false } = options;
     const mongoOptions = { new: true, upsert: false };
+    /** Set when the update would snapshot a version identical to the newest one. The write
+     *  still lands; only the `versions` entry is dropped. */
+    let suppressedVersionEntry = false;
 
     const currentAgent = await Agent.findOne(searchParameter);
     if (currentAgent) {
-      const {
-        __v,
-        _id,
-        id: __id,
-        versions,
-        author: _author,
-        ...versionData
-      } = currentAgent.toObject() as unknown as Record<string, unknown>;
+      const currentObject = currentAgent.toObject() as unknown as Record<string, unknown>;
+      const { __v, _id, id: __id, versions, author: _author, ...versionData } = currentObject;
       const { $push, $pull, $addToSet, ...directUpdates } = updateData;
 
-      /** Self-heal: drop allowlist ids whose skill doc no longer exists.
+      /** Self-heal: drop allowlist ids whose skill no longer exists in the
+       *  database or the external registry.
        *  A dangling id keeps the allowlist non-empty while scoping the
        *  runtime catalog to an empty intersection — silently disabling
        *  skills for the agent. When pruning empties a non-empty allowlist,
@@ -498,6 +693,7 @@ export function createAgentMethods(
         const prunedSkills = await filterExistingSkillIds(
           mongoose,
           directUpdates.skills as string[],
+          isExternalSkillId,
         );
         directUpdates.skills = prunedSkills;
         updateData.skills = prunedSkills;
@@ -509,9 +705,17 @@ export function createAgentMethods(
 
       // Sync mcpServerNames when tools are updated
       if ((directUpdates as Record<string, unknown>).tools !== undefined) {
-        const mcpServerNames = extractMCPServerNames(
-          (directUpdates as Record<string, unknown>).tools as string[],
-        );
+        /** Callers that authorized the tools pass resolved names; deriving from the key
+         * alone cannot tell a config server's suffix from a real DB server name. */
+        const supplied = (directUpdates as Record<string, unknown>).mcpServerNames as
+          | string[]
+          | undefined;
+        const mcpServerNames =
+          supplied ??
+          rebuildMCPServerNames(
+            (directUpdates as Record<string, unknown>).tools as string[],
+            (currentAgent.mcpServerNames as string[] | undefined) ?? [],
+          );
         (directUpdates as Record<string, unknown>).mcpServerNames = mcpServerNames;
         updateData.mcpServerNames = mcpServerNames;
       }
@@ -552,13 +756,31 @@ export function createAgentMethods(
           versions as Record<string, unknown>[],
           actionsHash,
         );
-        if (duplicateVersion && !forceVersion) {
-          const agentObj = currentAgent.toObject() as IAgent & {
-            version?: number;
-            versions?: unknown[];
-          };
-          agentObj.version = (versions as unknown[]).length;
-          return agentObj;
+        /** A duplicate snapshot adds no history, but the write itself must still land: the
+         *  document is regularly not equal to its newest version, because `$push`/`$pull`/
+         *  `$addToSet` snapshot the pre-update state and `skipVersioning` snapshots nothing.
+         *  `isDuplicateVersion` compares direct updates only, so it cannot speak for an
+         *  update that also carries an operator that lands a change; suppressing there
+         *  would apply a change no version records. An operator that changes nothing, the
+         *  shape of an idempotent retry, leaves the snapshot a genuine duplicate. */
+        const mutatesOutsideSnapshot = operatorsMutateDocument(
+          currentObject,
+          $push,
+          $pull,
+          $addToSet,
+        );
+        if (duplicateVersion && !forceVersion && !mutatesOutsideSnapshot) {
+          suppressedVersionEntry = true;
+          /** Every operator that reaches here was judged unable to change the document,
+           *  and for `$addToSet` that reading came from a document fetched before the
+           *  write, so it cannot bind a concurrent one: a `$pull` landing in between would
+           *  leave this update re-adding the value with no version entry to record it.
+           *  Drop what was judged a no-op rather than race it, so the suppressed write
+           *  carries no operator at all and is true by construction instead of true only
+           *  while nothing else writes first. */
+          delete updateData.$addToSet;
+          delete updateData.$push;
+          delete updateData.$pull;
         }
       }
 
@@ -576,7 +798,7 @@ export function createAgentMethods(
         versionEntry.updatedBy = new mongoose.Types.ObjectId(updatingUserId);
       }
 
-      if (shouldCreateVersion) {
+      if (shouldCreateVersion && !suppressedVersionEntry) {
         updateData.$push = {
           ...(($push as Record<string, unknown>) || {}),
           versions: versionEntry,
@@ -584,11 +806,21 @@ export function createAgentMethods(
       }
     }
 
-    return (await Agent.findOneAndUpdate(
+    const updatedAgent = (await Agent.findOneAndUpdate(
       searchParameter,
       updateData,
       mongoOptions,
     ).lean()) as IAgent | null;
+
+    /** `version` is a response-only field holding the count of `versions`. It is reported
+     *  here so a suppressed entry keeps the shape callers saw before the write was fixed.
+     *  It answers "was a version recorded", never "did the update apply". The two stopped
+     *  being the same question once a suppressed update started landing. */
+    if (updatedAgent && suppressedVersionEntry) {
+      (updatedAgent as IAgent & { version?: number }).version = updatedAgent.versions?.length ?? 0;
+    }
+
+    return updatedAgent;
   }
 
   /**
@@ -737,10 +969,7 @@ export function createAgentMethods(
         }),
       ]);
       try {
-        await Agent.updateMany(
-          { 'edges.to': (agent as unknown as { id: string }).id },
-          { $pull: { edges: { to: (agent as unknown as { id: string }).id } } },
-        );
+        await removeAgentIdsFromEdges(Agent, [(agent as unknown as { id: string }).id]);
       } catch (error) {
         logger.error('[deleteAgent] Error removing agent from handoff edges', error);
       }
@@ -812,10 +1041,7 @@ export function createAgentMethods(
       });
 
       try {
-        await Agent.updateMany(
-          { 'edges.to': { $in: agentIds } },
-          { $pull: { edges: { to: { $in: agentIds } } } },
-        );
+        await removeAgentIdsFromEdges(Agent, agentIds);
       } catch (error) {
         logger.error('[deleteUserAgents] Error removing agents from handoff edges', error);
       }
@@ -905,6 +1131,7 @@ export function createAgentMethods(
       avatar: 1,
       author: 1,
       description: 1,
+      conversation_starters: 1,
       updatedAt: 1,
       category: 1,
       support_contact: 1,
@@ -987,6 +1214,7 @@ export function createAgentMethods(
       const prunedSkills = await filterExistingSkillIds(
         mongoose,
         revertToVersion.skills as string[],
+        isExternalSkillId,
       );
       revertToVersion.skills = prunedSkills;
       if (prunedSkills.length === 0) {
