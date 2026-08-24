@@ -51,6 +51,17 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
     };
   }
 
+  describe('toPendingSteer', () => {
+    test('keeps quotes in the client-safe projection while dropping userId', () => {
+      const projected = toPendingSteer({
+        ...buildSteer('with context'),
+        quotes: ['the excerpt'],
+      });
+      expect(projected.quotes).toEqual(['the excerpt']);
+      expect(projected).not.toHaveProperty('userId');
+    });
+  });
+
   describe('enqueue', () => {
     test('appends to a running job and returns the queue depth', async () => {
       const streamId = 'steer-enqueue';
