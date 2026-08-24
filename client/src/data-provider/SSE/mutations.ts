@@ -194,6 +194,10 @@ export interface SteerMessageResponse {
   /** Whether the seal request was actually armed; see {@link SteerMessageParams.preempt}. */
   preempt?: boolean;
   preemptRevision?: number;
+  /** Echoed when the durable item carries the sent quotes. Absent on a
+   *  pre-quotes server (which 202s while dropping them) — the client then
+   *  re-stages the excerpts as composer chips instead of losing them. */
+  quotesAccepted?: boolean;
   /** Receipt replay after this item already left the durable queue. */
   settled?: boolean;
   /** Settled specifically by terminal drain; restore as a queued follow-up. */

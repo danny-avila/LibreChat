@@ -641,6 +641,44 @@ export default function useSteering({
     [conversationId],
   );
 
+  /** Returns a steer's excerpts to the composer chips when the accepting
+   *  server proved — by omitting the `quotesAccepted` echo — that it dropped
+   *  them (a pre-quotes replica during a rolling deploy). Re-staging restores
+   *  the pre-steer behavior exactly: the excerpts ride the next send instead
+   *  of vanishing behind a 202. Chips staged since the drain are kept. */
+  const restageQuotes = useRecoilCallback(
+    ({ set }) =>
+      (convoId: string, quotes: string[]) => {
+        set(store.pendingQuotesByConvoId(convoId), (prev) => {
+          const fresh = quotes.filter((quote) => !prev.includes(quote));
+          return fresh.length > 0 ? [...prev, ...fresh] : prev;
+        });
+      },
+    [],
+  );
+
+  /** Drops the carried excerpts from a surviving chip whose server rejected
+   *  them, so the restaged composer chips are their single representation —
+   *  a later terminal conversion of that chip must not duplicate them. */
+  const stripSteerChipQuotes = useRecoilCallback(
+    ({ set }) =>
+      (convoId: string, steerIds: string[]) => {
+        set(store.pendingSteersByConvoId(convoId), (prev) => {
+          let changed = false;
+          const next = prev.map((steer) => {
+            if (!steerIds.includes(steer.steerId) || steer.quotes == null) {
+              return steer;
+            }
+            changed = true;
+            const { quotes: _quotes, ...rest } = steer;
+            return rest;
+          });
+          return changed ? next : prev;
+        });
+      },
+    [],
+  );
+
   /** Consumes the composer's autosaved draft once its text has been taken into
    *  a steer or queued item. The composer clears via the form's `reset()`,
    *  which is programmatic and never fires the `input` event `useAutoSave`
@@ -980,6 +1018,15 @@ export default function useSteering({
           {
             onSuccess: (response) => {
               try {
+                /** A 202 without the echo means a pre-quotes replica accepted
+                 *  the words but dropped the excerpts. Composer-origin quotes
+                 *  are re-staged as chips (their only remaining home); a
+                 *  queued-origin item keeps them — its restore paths return
+                 *  the exact item, and re-staging would duplicate them. */
+                const rejectedQuotes =
+                  opts?.queuedOrigin == null && response.quotesAccepted !== true
+                    ? carried.quotes
+                    : undefined;
                 const canUseV2Receipt =
                   targetGenerationProtocolVersion === 2 && supportsGenerationProtocolV2(response);
                 if (canUseV2Receipt && response.settled === true) {
@@ -1000,6 +1047,9 @@ export default function useSteering({
                     });
                   } else {
                     settleReceiptReplay(conversationId, localId, response.steerId);
+                    if (rejectedQuotes) {
+                      restageQuotes(conversationId, rejectedQuotes);
+                    }
                   }
                   return;
                 }
@@ -1026,7 +1076,13 @@ export default function useSteering({
                   ...carried,
                 } satisfies PendingSteer;
                 if (acknowledgeSteer(conversationId, localId, acknowledged)) {
+                  /** Terminal conversion re-homes the words as a queued
+                   *  follow-up that sends via `ask` — the carried quotes ride
+                   *  it there, so nothing is re-staged. */
                   queueRecoveredSteer(acknowledged);
+                } else if (rejectedQuotes) {
+                  restageQuotes(conversationId, rejectedQuotes);
+                  stripSteerChipQuotes(conversationId, [localId, response.steerId]);
                 }
               } finally {
                 settleDispatch();
@@ -1149,6 +1205,8 @@ export default function useSteering({
       acknowledgeSteer,
       settleReceiptReplay,
       queueRecoveredSteer,
+      restageQuotes,
+      stripSteerChipQuotes,
       steerMessage,
       sendNow,
       enqueue,

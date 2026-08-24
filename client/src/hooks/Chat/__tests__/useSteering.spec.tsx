@@ -2246,7 +2246,13 @@ describe('useSteering', () => {
 
     it('carries a queued-origin context onto the sending chip and the 202 ACK chip', () => {
       mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
-        onSuccess({ steerId: 'srv-ctx', status: 'queued', position: 1, conversationId: CONVO_ID });
+        onSuccess({
+          steerId: 'srv-ctx',
+          status: 'queued',
+          position: 1,
+          conversationId: CONVO_ID,
+          quotesAccepted: true,
+        });
       });
       const { result } = setupWithContext();
       act(() => {
@@ -2263,6 +2269,68 @@ describe('useSteering', () => {
           manualSkills: ['carried-skill'],
         }),
       ]);
+    });
+
+    it('re-stages composer quotes when the ACK omits the quotes echo (old server)', () => {
+      // A pre-quotes replica 202s the words but drops the excerpts. The chips
+      // were already drained, so the ACK's missing echo is the only proof —
+      // restore them as composer chips (the pre-steer behavior) and strip the
+      // pending chip so a later terminal conversion cannot duplicate them.
+      mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
+        onSuccess({ steerId: 'srv-old', status: 'queued', position: 1, conversationId: CONVO_ID });
+      });
+      const { result } = setupWithContext({}, stageContext);
+      act(() => {
+        result.current.steering.steerFromComposer('quoted for an old server');
+      });
+      expect(result.current.pendingQuotes).toEqual(['quoted excerpt']);
+      expect(result.current.chips).toEqual([
+        expect.objectContaining({ steerId: 'srv-old', status: 'pending' }),
+      ]);
+      expect(result.current.chips[0].quotes).toBeUndefined();
+    });
+
+    it('keeps quotes drained when the ACK confirms they were accepted', () => {
+      mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
+        onSuccess({
+          steerId: 'srv-new',
+          status: 'queued',
+          position: 1,
+          conversationId: CONVO_ID,
+          quotesAccepted: true,
+        });
+      });
+      const { result } = setupWithContext({}, stageContext);
+      act(() => {
+        result.current.steering.steerFromComposer('quoted for a new server');
+      });
+      expect(result.current.pendingQuotes).toEqual([]);
+      expect(result.current.chips[0]).toMatchObject({
+        steerId: 'srv-new',
+        quotes: ['quoted excerpt'],
+      });
+    });
+
+    it('re-stages quotes on a settled receipt replay that never carried them', () => {
+      // Lost first ACK against an old replica; the retry's receipt replay
+      // (settled, already injected) proves the excerpts never attached.
+      mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
+        onSuccess({
+          steerId: 'srv-replayed',
+          status: 'queued',
+          position: 1,
+          conversationId: CONVO_ID,
+          settled: true,
+          replayed: true,
+          generationProtocolVersion: 2,
+        });
+      });
+      const { result } = setupWithContext({}, stageContext);
+      act(() => {
+        result.current.steering.steerFromComposer('replayed without quotes');
+      });
+      expect(result.current.pendingQuotes).toEqual(['quoted excerpt']);
+      expect(result.current.chips).toEqual([]);
     });
 
     it('restores the carried context when a late ACK converts straight to queued', () => {
@@ -2364,6 +2432,7 @@ describe('useSteering', () => {
           status: 'queued',
           position: 1,
           conversationId: CONVO_ID,
+          quotesAccepted: true,
         });
       });
       act(() => {

@@ -268,6 +268,13 @@ function receiptResponse(conversationId: string, receipt: SteerReceipt): SteerRe
       settled: receipt.state !== 'queued' && receipt.state !== 'claimed',
       leftover: receipt.state === 'leftover',
       replayed: true,
+      /** From the DURABLE item, mirroring the fresh 202: a receipt written by
+       *  a pre-quotes replica replays without this marker, telling the client
+       *  its excerpts never attached to the accepted words. */
+      ...(receipt.item.quotes != null &&
+        receipt.item.quotes.length > 0 && {
+          quotesAccepted: true,
+        }),
       ...(receipt.item.preemptRevision != null && {
         preemptRevision: receipt.item.preemptRevision,
       }),
@@ -745,6 +752,14 @@ async function handleSteerRequestInternal(
       position: depth,
       conversationId,
       preempt: preemptArmed,
+      /** Echoed from the DURABLE item so the client can tell whether its
+       *  quoted excerpts will actually inject. A pre-quotes replica never
+       *  sets this, and the client re-stages the excerpts on that absence —
+       *  a 202 must not silently drop model-bound context. */
+      ...(persistedItem.quotes != null &&
+        persistedItem.quotes.length > 0 && {
+          quotesAccepted: true,
+        }),
       ...(protocol.value === 2 && preemptRevision != null && { preemptRevision }),
     },
   };

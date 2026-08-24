@@ -307,6 +307,7 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
     });
 
     expect(result.status).toBe(202);
+    expect(result.body.quotesAccepted).toBe(true);
     const queued = await GenerationJobManager.steering.peek(streamId);
     expect(queued[0].quotes).toEqual(['kept excerpt', 'second']);
   });
@@ -322,6 +323,7 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
     });
 
     expect(result.status).toBe(202);
+    expect(result.body).not.toHaveProperty('quotesAccepted');
     const queued = await GenerationJobManager.steering.peek(streamId);
     expect(queued[0]).not.toHaveProperty('quotes');
   });
@@ -860,7 +862,14 @@ describe('generation protocol bridge for steering mutations', () => {
     );
 
     expect(accepted.status).toBe(202);
-    expect(replayed.body).toMatchObject({ steerId: accepted.body.steerId, replayed: true });
+    expect(accepted.body.quotesAccepted).toBe(true);
+    expect(replayed.body).toMatchObject({
+      steerId: accepted.body.steerId,
+      replayed: true,
+      // Echoed from the durable item so a lost-ACK retry still learns the
+      // excerpts were attached to the accepted words.
+      quotesAccepted: true,
+    });
     expect(conflicting.status).toBe(409);
     expect(conflicting.body.code).toBe('STEER_IDEMPOTENCY_CONFLICT');
   });
