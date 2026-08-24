@@ -66,6 +66,9 @@ const MAX_CONTROL_INVOCATIONS = 4_096;
 /** Terminal controls are side-effect free, but retaining one bounded window
  * prevents duplicate storage writers while preserving recent retry replay. */
 const MAX_TERMINAL_CONTROL_INVOCATIONS = 64;
+/** Keep same-task durable reservations below the storage CAS retry bound. Receipt
+ * finalization is serialized per task separately, leaving ample collision headroom. */
+const CONTROL_RESERVATION_CONCURRENCY = 32;
 const MAX_DURABLE_CONTROL_MESSAGE_CHARS = 4 * 1024;
 const DEFAULT_CONTROL_RECEIPT_RETRY_MS = 5_000;
 const SHUTDOWN_CONTROL_RECEIPT_FLUSH_ATTEMPTS = 4;
@@ -559,6 +562,9 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
 
   private readonly controlPersistenceTails = new Map<string, Promise<void>>();
   private readonly controlPersistenceRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly controlReservationSlot = createConcurrencyLimiter(
+    CONTROL_RESERVATION_CONCURRENCY,
+  );
   private controlPersistenceStopping = false;
   private controlCommandAdmissionClosed = false;
 
@@ -654,6 +660,9 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     const durable = this.durableReceipt(invocation, receipt);
     invocation.receipt = durable;
     invocation.result = this.controlResultFromReceipt(invocation, durable);
+    if (receipt.status !== 'accepted') {
+      this.controlInvocationByReceipt.delete(controlReceiptKey(scopeId, taskId, receipt.controlId));
+    }
     invocation.receiptPersisted = false;
     const persistence = this.queueControlReceipt(scopeId, taskId, threadId, durable).then(() => {
       if (invocation.receipt === durable) invocation.receiptPersisted = true;
@@ -1026,6 +1035,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         }
         return cancelled;
       },
+      retainsTaskOwnership: (scopeId, taskId) =>
+        this.pendingControlReceipts.has(controlTaskKey(scopeId, taskId)),
     });
     this.taskControlTransport = transport;
   }
@@ -1904,14 +1915,16 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       };
       let reserved: boolean | 'unchanged' | 'conflict';
       try {
-        reserved = (await this.runWithOwnerContext(scope, () =>
-          this.methods.recordSubagentTaskControlReceipt({
-            userId: scope.userId,
-            conversationId: localTask.threadId as string,
-            taskId,
-            ...(scope.tenantId == null ? {} : { tenantId: scope.tenantId }),
-            receipt: reservation,
-          }),
+        reserved = (await this.controlReservationSlot(() =>
+          this.runWithOwnerContext(scope, () =>
+            this.methods.recordSubagentTaskControlReceipt({
+              userId: scope.userId,
+              conversationId: localTask.threadId as string,
+              taskId,
+              ...(scope.tenantId == null ? {} : { tenantId: scope.tenantId }),
+              receipt: reservation,
+            }),
+          ),
         )) as boolean | 'unchanged' | 'conflict';
       } catch (error) {
         logger.warn('[subagentThreads] Failed to reserve a child control invocation', error);

@@ -2084,6 +2084,10 @@ describe('SubagentThreadTaskStore', () => {
     const acceptedControlId =
       routed.status === 'accepted' && routed.controlId != null ? routed.controlId : undefined;
     expect(acceptedControlId).toBeDefined();
+    const receiptIndex = (
+      ownerStore as unknown as { controlInvocationByReceipt: Map<string, unknown> }
+    ).controlInvocationByReceipt;
+    expect(receiptIndex.size).toBe(1);
     const transitionTime = Date.now();
     ownerStore.emitControlReceiptForTest(config.scopeId, taskId, {
       controlId: acceptedControlId as string,
@@ -2093,6 +2097,7 @@ describe('SubagentThreadTaskStore', () => {
       updatedAt: transitionTime,
       boundary: 'turn',
     });
+    expect(receiptIndex.size).toBe(0);
     await waitUntil(
       () => ownerStore.get(config.scopeId, taskId) != null,
       'the owner task to remain available',
@@ -2430,6 +2435,59 @@ describe('SubagentThreadTaskStore', () => {
     finish({ content: 'Done.' });
     await waitForSettled(store, config.scopeId, started);
     await store.destroyTaskControlTransport();
+  });
+
+  it('bounds concurrent durable reservation writers below the storage CAS retry limit', async () => {
+    const userId = 'bounded-control-reservation-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods, { maxControlsPerTask: 100 });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let finish = (_value: { content: string }): void => undefined;
+    const result = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = store.start(taskRequest(config.scopeId, { run: async () => result }));
+    const taskId = requireAccepted(started).task.taskId;
+    await waitUntil(() => store.get(config.scopeId, taskId)?.status === 'running', 'running task');
+
+    let activeReservations = 0;
+    let maxActiveReservations = 0;
+    let releaseReservations = (): void => undefined;
+    const reservationGate = new Promise<void>((resolve) => {
+      releaseReservations = resolve;
+    });
+    const persist = jest
+      .spyOn(methods, 'recordSubagentTaskControlReceipt')
+      .mockImplementation(async ({ receipt }) => {
+        if (receipt.status !== 'reserved') return true;
+        activeReservations += 1;
+        maxActiveReservations = Math.max(maxActiveReservations, activeReservations);
+        await reservationGate;
+        activeReservations -= 1;
+        return true;
+      });
+    try {
+      const controls = Array.from({ length: 65 }, (_, index) =>
+        store.controlTask(
+          config.scopeId,
+          taskId,
+          { action: 'queue', message: `Control ${index}` },
+          `bounded-reservation-${index}`,
+        ),
+      );
+      await waitUntil(() => activeReservations === 32, 'the reservation writer bound');
+      expect(maxActiveReservations).toBe(32);
+      releaseReservations();
+      await expect(Promise.all(controls)).resolves.toHaveLength(65);
+      expect(maxActiveReservations).toBe(32);
+    } finally {
+      releaseReservations();
+      persist.mockRestore();
+      finish({ content: 'Done.' });
+      await waitForSettled(store, config.scopeId, started);
+      await store.destroyTaskControlTransport();
+    }
   });
 
   it('bounds retained terminal control invocations while persisting their receipts', async () => {

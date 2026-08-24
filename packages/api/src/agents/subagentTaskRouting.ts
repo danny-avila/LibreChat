@@ -186,6 +186,9 @@ export interface SubagentTaskControlHandler {
     invocationId: string,
   ): Promise<SubagentTaskControlResult> | SubagentTaskControlResult;
   list(scopeId: string): SubagentTaskSnapshot[];
+  /** Receipt retry work can outlive the SDK task/result buckets. Keep its owner
+   * addressable so deletion can revoke work whose durable target was removed. */
+  retainsTaskOwnership(scopeId: string, taskId: string): boolean;
   cancelScope(
     scopeId: string,
     threadIds: string[] | null,
@@ -1341,7 +1344,8 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
        * address outlives the task itself until the result is acknowledged. */
       if (
         localTaskIds.has(taskId) ||
-        this.claimReplays.entries.has(this.claimReplayKey(scopeId, taskId))
+        this.claimReplays.entries.has(this.claimReplayKey(scopeId, taskId)) ||
+        handler.retainsTaskOwnership(scopeId, taskId)
       ) {
         retained.push(registration);
         continue;
