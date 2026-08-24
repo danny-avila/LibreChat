@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, MessagesSquare, X } from 'lucide-react';
 import { ForkOptions } from 'librechat-data-provider';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
@@ -34,6 +34,8 @@ import { useParentSubagents } from './ParentSubagentsProvider';
 import { eventSubagentSelection } from './eventSelection';
 import { useAgentsMapContext } from '~/Providers';
 
+const EVENT_TASK_PAGE_SIZE = 3;
+
 export default function SubagentThreadPanel({ selection }: { selection: ActiveSubagentPanel }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -60,6 +62,34 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const threadId = selection.durable?.threadId ?? '';
   const taskId = selection.durable?.taskId ?? '';
   const eventSummary = selection.event == null ? undefined : byThreadId.get(threadId);
+  const eventTaskCount = eventSummary?.tasks.length ?? 0;
+  const [eventTaskWindow, setEventTaskWindow] = useState(() => ({
+    threadId,
+    count: EVENT_TASK_PAGE_SIZE,
+    taskCount: eventSummary == null ? null : eventTaskCount,
+  }));
+  useEffect(() => {
+    setEventTaskWindow((current) => {
+      if (current.threadId !== threadId || current.taskCount == null) {
+        return { threadId, count: EVENT_TASK_PAGE_SIZE, taskCount: eventTaskCount };
+      }
+      const appended = Math.max(0, eventTaskCount - current.taskCount);
+      return {
+        threadId,
+        count: Math.min(eventTaskCount, current.count + appended),
+        taskCount: eventTaskCount,
+      };
+    });
+  }, [eventTaskCount, threadId]);
+  const visibleEventTaskCount = Math.min(
+    eventTaskCount,
+    eventTaskWindow.threadId === threadId ? eventTaskWindow.count : EVENT_TASK_PAGE_SIZE,
+  );
+  const visibleEventTasks = useMemo(
+    () => (eventSummary?.tasks ?? []).slice(0, visibleEventTaskCount).reverse(),
+    [eventSummary?.tasks, visibleEventTaskCount],
+  );
+  const hasEarlierRetainedTasks = visibleEventTaskCount < eventTaskCount;
   const eventTaskRunning =
     eventSummary?.tasks.find((task) => task.taskId === taskId)?.status === 'running';
   const eventSiblings = useMemo(() => {
@@ -269,6 +299,32 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       />
     );
   };
+  const loadEarlierEventTasks = () => {
+    setEventTaskWindow({
+      threadId,
+      count: Math.min(eventTaskCount, visibleEventTaskCount + EVENT_TASK_PAGE_SIZE),
+      taskCount: eventTaskCount,
+    });
+  };
+  let timelinePrefix = null;
+  if (hasEarlierRetainedTasks) {
+    timelinePrefix = (
+      <div className="flex justify-center border-b border-border-light px-4 py-2">
+        <Button type="button" variant="ghost" size="sm" onClick={loadEarlierEventTasks}>
+          {localize('com_ui_load_more')}
+        </Button>
+      </div>
+    );
+  } else if (eventSummary?.tasksTruncated) {
+    timelinePrefix = (
+      <div
+        role="note"
+        className="border-b border-border-light px-4 py-3 text-sm text-text-secondary"
+      >
+        {localize('com_ui_subagent_thread_history_truncated')}
+      </div>
+    );
+  }
 
   return (
     <aside
@@ -350,7 +406,8 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         {selection.event != null && (eventSummary?.tasks.length ?? 0) > 1 ? (
           <SubagentActivityScrollSurface padded={false}>
             <div data-subagent-thread-timeline>
-              {[...(eventSummary?.tasks ?? [])].reverse().map(renderEventTask)}
+              {timelinePrefix}
+              {visibleEventTasks.map(renderEventTask)}
             </div>
           </SubagentActivityScrollSurface>
         ) : (

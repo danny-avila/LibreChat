@@ -782,4 +782,58 @@ describe('SubagentThreadPanel', () => {
     );
     expect(screen.getAllByTestId('shared-activity')).toHaveLength(2);
   });
+
+  it('loads retained event history in bounded pages and marks an omitted beginning', () => {
+    const tasks = Array.from({ length: 5 }, (_, index) => ({
+      taskId: `task-${5 - index}`,
+      status: 'completed' as const,
+    }));
+    const eventChild: ParentSubagentSummary = {
+      threadId: 'child-thread',
+      parentMessageId: 'parent-message',
+      subagentType: 'agent-1',
+      subagentKind: 'agent',
+      agentId: 'agent-1',
+      title: 'Actor',
+      origin: 'event',
+      actorId: 'actor-1',
+      status: 'completed',
+      latestTaskId: 'task-5',
+      tasks,
+      tasksTruncated: true,
+    };
+    mockParentChildrenByMessage = new Map([['parent-message', [eventChild]]]);
+    mockParentChildrenByThread = new Map([[eventChild.threadId, eventChild]]);
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const eventSelection: ActiveSubagentPanel = {
+      ...selection,
+      durable: { threadId: 'child-thread', taskId: 'task-5' },
+      event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task-5' },
+    };
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={eventSelection} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getAllByTestId('shared-activity')).toHaveLength(3);
+    expect(new Set(mockUseSubagentThreadQuery.mock.calls.map((call) => call[2]))).toEqual(
+      new Set(['task-5', 'task-4', 'task-3']),
+    );
+    expect(screen.queryByText('com_ui_subagent_thread_history_truncated')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_load_more' }));
+
+    expect(screen.getAllByTestId('shared-activity')).toHaveLength(5);
+    expect(new Set(mockUseSubagentThreadQuery.mock.calls.map((call) => call[2]))).toEqual(
+      new Set(['task-5', 'task-4', 'task-3', 'task-2', 'task-1']),
+    );
+    expect(screen.getByText('com_ui_subagent_thread_history_truncated')).toBeInTheDocument();
+  });
 });

@@ -179,6 +179,7 @@ export const ParallelColumns = memo(function ParallelColumns({
             part?.type !== ContentTypes.ACTIVITY_LABEL ||
             getActivityLabelText(getActivityLabelPart(part)).length > 0,
         );
+        const lastColumnCursorIdx = lastParallelColumnCursorIdx(columnParts);
         // Show loading cursor if column has no content parts yet (empty array from placeholder)
         const showLoadingCursor = isSubmitting && columnParts.length === 0;
 
@@ -200,7 +201,7 @@ export const ParallelColumns = memo(function ParallelColumns({
               </Container>
             ) : (
               columnParts.map(({ part, idx }) => {
-                const isLastInColumn = idx === columnParts[columnParts.length - 1]?.idx;
+                const isLastInColumn = idx === lastColumnCursorIdx;
                 const isLastContent = idx === lastContentIdx;
                 return renderPart(part, idx, isLastInColumn && isLastContent);
               })
@@ -211,6 +212,13 @@ export const ParallelColumns = memo(function ParallelColumns({
     </div>
   );
 });
+
+export function lastParallelColumnCursorIdx(
+  parts: ReadonlyArray<{ part: TMessageContentParts; idx: number }>,
+): number {
+  const relativeIdx = lastCursorContentIdx(parts.map(({ part }) => part));
+  return relativeIdx < 0 ? -1 : (parts[relativeIdx]?.idx ?? -1);
+}
 
 type ParallelContentRendererProps = {
   content?: Array<TMessageContentParts | undefined>;
