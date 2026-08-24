@@ -26,7 +26,9 @@ describe('MessageEndpointIcon', () => {
       />,
     );
 
-    expect(container.firstElementChild).toHaveClass('text-white');
+    expect(container.firstElementChild).toHaveStyle({
+      color: 'var(--provider-foreground, #ffffff)',
+    });
     expect(container.firstElementChild).not.toHaveClass('text-text-primary');
   });
 

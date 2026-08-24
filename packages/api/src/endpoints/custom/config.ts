@@ -64,7 +64,12 @@ export function loadCustomEndpointsConfig(
         customParams: resolvedCustomParams,
         modelDisplayLabel,
         iconURL,
-        providerId: resolveEndpointProviderId({ name, baseURL: resolvedBaseURL, iconURL }),
+        providerId: resolveEndpointProviderId({
+          name,
+          baseURL: resolvedBaseURL,
+          iconURL,
+          provider,
+        }),
       };
     }
   }

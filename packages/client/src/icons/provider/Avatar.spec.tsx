@@ -8,13 +8,13 @@ describe('ProviderAvatar', () => {
     const { container } = render(<ProviderAvatar provider={ProviderId.anthropic} />);
     const tile = container.firstChild as HTMLElement;
     expect(tile).toHaveStyle({ background: 'var(--provider-anthropic, #d09a74)' });
-    expect(tile).toHaveClass('text-white');
+    expect(tile).toHaveStyle({ color: 'var(--provider-foreground, #ffffff)' });
   });
 
   it('keeps monochrome art white on a branded tile', () => {
     const { container } = render(<ProviderAvatar provider={ProviderId.anthropic} />);
     const icon = container.querySelector('[role="img"]');
-    expect(icon).toHaveClass('text-white');
+    expect(icon).toHaveClass('[color:inherit]');
     expect(icon).not.toHaveClass('text-text-primary');
   });
 

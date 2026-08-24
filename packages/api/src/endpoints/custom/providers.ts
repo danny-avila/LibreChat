@@ -55,14 +55,17 @@ export function resolveEndpointProviderId({
   name,
   baseURL,
   iconURL,
+  provider,
 }: {
   name: string;
   baseURL?: string;
   iconURL?: string;
+  provider?: string;
 }): ProviderId | undefined {
   return (
     resolveProviderId(iconURL) ??
     providerFromBaseURL(baseURL) ??
+    resolveProviderId(provider) ??
     resolveProviderId(name) ??
     undefined
   );

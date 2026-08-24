@@ -1,7 +1,8 @@
 import React, { memo, useState } from 'react';
-import { AlertCircle, Feather } from 'lucide-react';
-import { ProviderIcon, Sparkles } from '@librechat/client';
-import { EModelEndpoint, resolveProviderId } from 'librechat-data-provider';
+import { AlertCircle } from 'lucide-react';
+import { ProviderIcon } from '@librechat/client';
+import { resolveProviderId } from 'librechat-data-provider';
+import { EntityEndpointMark, isEntityEndpoint } from '~/components/Endpoints/EntityEndpointMark';
 import { isImageURL } from '~/utils/icons';
 
 interface GroupIconProps {
@@ -17,18 +18,10 @@ const GroupIcon: React.FC<GroupIconProps> = ({ iconURL, groupName }) => {
     setImageError(true);
   };
 
-  if (iconURL === EModelEndpoint.agents) {
+  if (isEntityEndpoint(iconURL)) {
     return (
       <div className="relative" style={{ width: 20, height: 20, margin: '2px' }} title={groupName}>
-        <Feather className="icon-md shrink-0" aria-hidden="true" />
-      </div>
-    );
-  }
-
-  if (iconURL === EModelEndpoint.assistants || iconURL === EModelEndpoint.azureAssistants) {
-    return (
-      <div className="relative" style={{ width: 20, height: 20, margin: '2px' }} title={groupName}>
-        <Sparkles className="icon-md shrink-0" aria-hidden="true" />
+        <EntityEndpointMark endpoint={iconURL} />
       </div>
     );
   }

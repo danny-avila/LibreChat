@@ -250,6 +250,7 @@ html {
   --provider-anthropic: #d09a74;
   --provider-azure: linear-gradient(0.375turn, #61bde2, #4389d0);
   --provider-bedrock: #268672;
+  --provider-foreground: #ffffff;
 }
 .dark {
   --brand-purple: 171 104 255;
@@ -338,6 +339,7 @@ html {
   --provider-anthropic: #d09a74;
   --provider-azure: linear-gradient(0.375turn, #61bde2, #4389d0);
   --provider-bedrock: #268672;
+  --provider-foreground: #ffffff;
 }
 .gizmo {
   --text-primary: var(--gizmo-gray-950);

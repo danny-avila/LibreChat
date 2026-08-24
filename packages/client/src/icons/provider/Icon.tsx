@@ -19,7 +19,11 @@ function ProviderIconComponent({
   className,
 }: ProviderIconProps): JSX.Element {
   const def = getProviderIconDef(provider, model);
-  const classes = cn(def.mono === true ? 'text-text-primary' : '', def.className, className);
+  const classes = cn(
+    def.mono === true && className == null ? 'text-text-primary' : '',
+    def.className,
+    className,
+  );
 
   if (def.art.kind === 'component') {
     const { Component } = def.art;

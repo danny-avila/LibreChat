@@ -304,7 +304,6 @@ export interface ThemeModeDefinition {
   appearance?: Partial<IThemeAppearance>;
 }
 
-/** CSS color values for provider identity backgrounds. Hex or linear-gradient. */
 export interface IThemeBrands {
   'provider-openai': string;
   'provider-openai-gpt4': string;
@@ -312,6 +311,7 @@ export interface IThemeBrands {
   'provider-anthropic': string;
   'provider-azure': string;
   'provider-bedrock': string;
+  'provider-foreground': string;
 }
 
 /** Versioned, data-only theme input. Missing values resolve against LibreChat defaults. */

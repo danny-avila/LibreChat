@@ -30,10 +30,15 @@ function ProviderAvatarComponent({
   return (
     <span
       title={def.label}
-      style={{ background: hasBrand ? def.brandColor : 'transparent', width: size, height: size }}
+      style={{
+        background: hasBrand ? def.brandColor : 'transparent',
+        width: size,
+        height: size,
+        color: hasBrand ? 'var(--provider-foreground, #ffffff)' : undefined,
+      }}
       className={cn(
         'relative flex items-center justify-center rounded-sm p-1',
-        hasBrand ? 'text-white' : 'text-text-primary',
+        hasBrand ? undefined : 'text-text-primary',
         className,
       )}
     >
@@ -41,7 +46,7 @@ function ProviderAvatarComponent({
         provider={provider}
         model={model}
         size={size * artScale}
-        className={hasBrand ? 'text-white' : undefined}
+        className={hasBrand ? '[color:inherit]' : undefined}
       />
       {children}
     </span>

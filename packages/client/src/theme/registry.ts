@@ -68,6 +68,7 @@ export const themeBrandTokens = [
   'provider-anthropic',
   'provider-azure',
   'provider-bedrock',
+  'provider-foreground',
 ] as const satisfies readonly (keyof IThemeBrands)[];
 
 export const defaultBrands: IThemeBrands = Object.freeze({
@@ -77,6 +78,7 @@ export const defaultBrands: IThemeBrands = Object.freeze({
   'provider-anthropic': '#d09a74',
   'provider-azure': 'linear-gradient(0.375turn, #61bde2, #4389d0)',
   'provider-bedrock': '#268672',
+  'provider-foreground': '#ffffff',
 });
 
 export const libreChatTheme: ThemeDefinition = Object.freeze({

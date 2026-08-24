@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import { ProviderIcon } from '@librechat/client';
 import type { TModelSpec, TEndpointsConfig } from 'librechat-data-provider';
+import { EntityEndpointMark, isEntityEndpoint } from '~/components/Endpoints/EntityEndpointMark';
 import { URLIcon } from '~/components/Endpoints/URLIcon';
 import { useProviderIcon } from '~/hooks/Endpoint';
 import { getModelSpecIconURL } from '~/utils';
@@ -28,6 +29,10 @@ const SpecIcon: React.FC<SpecIconProps> = ({ currentSpec, endpointsConfig, agent
         provider={fallbackProvider}
       />
     );
+  }
+
+  if (isEntityEndpoint(iconURL || endpoint)) {
+    return <EntityEndpointMark endpoint={iconURL || endpoint} />;
   }
 
   return (

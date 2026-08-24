@@ -58,6 +58,16 @@ describe('resolveEndpointProviderId', () => {
     ).toBe(ProviderId.cohere);
   });
 
+  it('honors an explicit native provider when the host is unknown', () => {
+    expect(
+      resolveEndpointProviderId({
+        name: 'My Claude Proxy',
+        baseURL: 'https://gateway.internal/v1',
+        provider: 'anthropic',
+      }),
+    ).toBe(ProviderId.anthropic);
+  });
+
   it('falls back to the endpoint name', () => {
     expect(resolveEndpointProviderId({ name: 'Mistral' })).toBe(ProviderId.mistral);
   });
