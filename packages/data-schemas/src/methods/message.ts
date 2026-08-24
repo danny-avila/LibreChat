@@ -144,20 +144,24 @@ function retainSubagentControlReceipts(
     if (existing.fingerprint !== receipt.fingerprint) {
       return { status: 'conflict', receipts: current };
     }
-    if (terminalControlReceipt(existing)) {
+    if (
+      terminalControlReceipt(existing) ||
+      existing.status === receipt.status ||
+      (existing.status === 'accepted' && receipt.status === 'reserved')
+    ) {
       return { status: 'unchanged', receipts: current };
     }
     merged = current.map((candidate, index) => (index === existingIndex ? receipt : candidate));
   }
   const accepted = merged
-    .filter((candidate) => candidate.status === 'accepted')
+    .filter((candidate) => candidate.status === 'reserved' || candidate.status === 'accepted')
     .slice(-MAX_SUBAGENT_CONTROL_RECEIPTS);
   const terminalAllowance = Math.max(0, MAX_SUBAGENT_CONTROL_RECEIPTS - accepted.length);
   const terminal =
     terminalAllowance === 0
       ? []
       : merged
-          .filter((candidate) => candidate.status !== 'accepted')
+          .filter((candidate) => candidate.status !== 'reserved' && candidate.status !== 'accepted')
           .sort(
             (left, right) =>
               left.createdAt.getTime() - right.createdAt.getTime() ||
@@ -361,6 +365,7 @@ export interface MessageMethods {
       subagentType: string;
       status: NonNullable<IMessage['subagentTask']>['status'];
       resultAvailable: boolean;
+      resultClaimed: boolean;
       createdAt: Date;
       updatedAt: Date;
     };
@@ -967,7 +972,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     receipt: NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number];
   }): Promise<boolean | 'unchanged' | 'conflict'> {
     const validActions = new Set(['steer', 'queue', 'interrupt', 'cancel', 'cancel_message']);
-    const validStatuses = new Set(['accepted', 'applied', 'rejected', 'failed']);
+    const validStatuses = new Set(['reserved', 'accepted', 'applied', 'rejected', 'failed']);
     if (
       userId.length === 0 ||
       conversationId.length === 0 ||
@@ -1066,11 +1071,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     })
       .select({ 'subagentTask.controlReceipts': 1, _id: 0 })
       .lean<Pick<IMessage, 'subagentTask'> | null>();
-    return (
-      input?.subagentTask?.controlReceipts?.find(
-        (receipt) => receipt.invocationId === invocationId,
-      ) ?? null
+    const receipt = input?.subagentTask?.controlReceipts?.find(
+      (candidate) => candidate.invocationId === invocationId,
     );
+    /** Reservations are a server-private at-most-once fence, not proof that a
+     * control was applied. Public HTTP callers retry through the owning store. */
+    return receipt?.status === 'reserved' ? null : (receipt ?? null);
   }
 
   /** Resolves one authoritative receipt after its live owner disappears. The
@@ -1096,6 +1102,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       subagentType: string;
       status: 'running' | 'completed' | 'error' | 'cancelled';
       resultAvailable: boolean;
+      resultClaimed: boolean;
       createdAt: Date;
       updatedAt: Date;
     };
@@ -1159,7 +1166,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       messageId: `${taskId}:assistant`,
       'subagentTask.status': { $in: ['completed', 'error', 'cancelled'] },
     })
-      .select({ updatedAt: 1, 'subagentTask.status': 1, _id: 0 })
+      .select({ updatedAt: 1, 'subagentTask.status': 1, 'subagentTask.resultClaim': 1, _id: 0 })
       .lean<Pick<IMessage, 'updatedAt' | 'subagentTask'> | null>();
     /** A committed cancel receipt is itself the authoritative cancellation
      * boundary. The terminal row is written asynchronously and may not exist if
@@ -1175,6 +1182,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         subagentType,
         status: replayStatus,
         resultAvailable: terminal != null,
+        resultClaimed: terminal?.subagentTask?.resultClaim != null,
         createdAt: input.createdAt,
         updatedAt:
           terminal?.updatedAt ??

@@ -188,7 +188,7 @@ const messageSchema: Schema<IMessage> = new Schema(
               },
               status: {
                 type: String,
-                enum: ['accepted', 'applied', 'rejected', 'failed'],
+                enum: ['reserved', 'accepted', 'applied', 'rejected', 'failed'],
                 required: true,
               },
               createdAt: { type: Date, required: true },

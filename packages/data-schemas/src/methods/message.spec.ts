@@ -2348,6 +2348,25 @@ describe('Message Operations', () => {
           userId: 'user123',
           conversationId,
           taskId: 'task-1',
+          receipt: { ...accepted, controlId: undefined, status: 'reserved' },
+        }),
+      ).resolves.toBe(true);
+      /** A reservation fences competing owners but is not public evidence that
+       * the command was accepted or applied. */
+      await expect(
+        getSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          invocationId: 'invocation-1',
+        }),
+      ).resolves.toBeNull();
+
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
           receipt: accepted,
         }),
       ).resolves.toBe(true);
@@ -2490,6 +2509,11 @@ describe('Message Operations', () => {
           attemptKey: 'task-1-attempt',
           parentRunId: 'parent-message',
           status: 'completed',
+          resultClaim: {
+            kind: 'manual',
+            claimId: 'poll-1',
+            claimedAt: new Date('2026-08-24T12:00:02.000Z'),
+          },
         },
       });
       const now = new Date('2026-08-24T12:00:00.000Z');
@@ -2548,6 +2572,7 @@ describe('Message Operations', () => {
           subagentType: 'researcher',
           status: 'completed',
           resultAvailable: true,
+          resultClaimed: true,
         }),
       });
       await expect(
@@ -2637,6 +2662,7 @@ describe('Message Operations', () => {
           threadId: conversationId,
           status: 'cancelled',
           resultAvailable: false,
+          resultClaimed: false,
           updatedAt: now,
         }),
       });

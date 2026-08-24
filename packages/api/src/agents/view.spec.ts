@@ -207,6 +207,14 @@ describe('subagent thread parent-scoped view', () => {
   it('returns bounded authoritative control receipts without private fingerprints', async () => {
     const input = message('task-1:user', 'running', true);
     input.subagentTask!.controlReceipts = [
+      {
+        invocationId: 'private-reservation',
+        fingerprint: 'private-reservation-fingerprint',
+        action: 'queue' as const,
+        status: 'reserved' as const,
+        createdAt: new Date('2026-08-21T09:59:59.000Z'),
+        updatedAt: new Date('2026-08-21T09:59:59.000Z'),
+      },
       ...Array.from({ length: 32 }, (_, index) => ({
         invocationId: `earlier-${index}`,
         fingerprint: `private-${index}`,
@@ -258,6 +266,7 @@ describe('subagent thread parent-scoped view', () => {
     expect(Buffer.byteLength(projected?.message ?? '', 'utf8')).toBeLessThanOrEqual(512);
     expect(view.controlReceipts).toHaveLength(32);
     expect(view.controlReceiptsTruncated).toBe(true);
+    expect(JSON.stringify(view)).not.toContain('private-reservation');
     expect(JSON.stringify(view)).not.toContain('private-fingerprint');
   });
 

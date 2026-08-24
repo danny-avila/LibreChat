@@ -2488,6 +2488,68 @@ describe('SubagentThreadTaskStore', () => {
     await store.destroyTaskControlTransport();
   });
 
+  it('does not replay a control whose prior owner only reserved its invocation', async () => {
+    const userId = 'abandoned-control-reservation-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let runtime: SubagentTaskRuntime | undefined;
+    let finish = (_value: { content: string }): void => undefined;
+    const result = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async (taskRuntime) => {
+          runtime = taskRuntime;
+          return result;
+        },
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    const threadId = requireThreadId(started);
+    await waitUntil(() => runtime != null, 'the child runtime to start');
+    await waitUntil(
+      async () =>
+        (
+          await methods.getMessages(
+            { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+            '+subagentTask',
+          )
+        ).length === 1,
+      'the durable task input',
+    );
+    const command = { action: 'queue' as const, message: 'Apply this once.' };
+    await expect(
+      methods.recordSubagentTaskControlReceipt({
+        userId,
+        conversationId: threadId,
+        taskId,
+        receipt: {
+          invocationId: 'abandoned-reservation',
+          fingerprint: controlFingerprint(command),
+          action: 'queue',
+          status: 'reserved',
+          message: command.message,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      }),
+    ).resolves.toBe(true);
+
+    /** The reservation proves a prior owner may have crossed the side-effect
+     * boundary. A retry must neither apply it again nor report false acceptance. */
+    await expect(
+      store.controlTask(config.scopeId, taskId, command, 'abandoned-reservation'),
+    ).rejects.toBeInstanceOf(SubagentTaskOwnerUnavailableError);
+    expect(store.get(config.scopeId, taskId)?.pendingControls).toBe(0);
+
+    finish({ content: 'Done.' });
+    await waitForSettled(store, config.scopeId, started);
+    await store.destroyTaskControlTransport();
+  });
+
   it('retains only the bounded public projection of a control payload', async () => {
     const userId = 'bounded-control-payload-user';
     const parentConversationId = randomUUID();
@@ -2978,6 +3040,74 @@ describe('SubagentThreadTaskStore', () => {
     persistence.mockRestore();
     await store.destroyTaskControlTransport();
     await waitForSettled(store, config.scopeId, started);
+  });
+
+  it('drops permanently unwritable control receipt work after its conversations are deleted', async () => {
+    const userId = 'deleted-control-receipt-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new ReceiptTestSubagentThreadTaskStore(methods, {
+      controlReceiptRetryMs: 60_000,
+      shutdownControlReceiptBackoffMs: 1,
+    });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let runtime: SubagentTaskRuntime | undefined;
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async (taskRuntime) => {
+          runtime = taskRuntime;
+          return await new Promise<{ content: string }>((_resolve, reject) => {
+            taskRuntime.signal.addEventListener('abort', () => reject(new Error('deleted')), {
+              once: true,
+            });
+          });
+        },
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    const threadId = requireThreadId(started);
+    await waitUntil(() => runtime != null, 'the child runtime to start');
+    const accepted = await store.controlTask(
+      config.scopeId,
+      taskId,
+      { action: 'queue', message: 'This receipt target will be deleted.' },
+      'deleted-receipt-invocation',
+    );
+    expect(accepted).toMatchObject({ status: 'accepted' });
+    const controlId = accepted.status === 'accepted' ? accepted.controlId : undefined;
+    expect(controlId).toBeDefined();
+
+    const persistence = jest
+      .spyOn(methods, 'recordSubagentTaskControlReceipt')
+      .mockRejectedValue(new Error('receipt target deleted'));
+    try {
+      const appliedAt = Date.now();
+      store.emitControlReceiptForTest(config.scopeId, taskId, {
+        controlId: controlId as string,
+        action: 'queue',
+        status: 'applied',
+        createdAt: appliedAt - 1,
+        updatedAt: appliedAt,
+        boundary: 'turn',
+      });
+      await waitUntil(
+        () => persistence.mock.calls.length >= 1,
+        'the permanently unwritable receipt',
+      );
+
+      const plan = await store.planCancellationForConversations(userId, [parentConversationId]);
+      await methods.deleteConvos(userId, { conversationId: parentConversationId });
+      await expect(
+        store.cancelPlan(plan, [parentConversationId, threadId]),
+      ).resolves.toBeGreaterThanOrEqual(1);
+      await waitForSettled(store, config.scopeId, started);
+    } finally {
+      persistence.mockRestore();
+    }
+
+    /** Deletion is a terminal storage outcome, so shutdown must not keep retrying
+     * receipt rows whose authorized parent or child no longer exists. */
+    await expect(store.destroyTaskControlTransport()).resolves.toBeUndefined();
   });
 
   it('fails a child closed when its owner address cannot be published', async () => {
