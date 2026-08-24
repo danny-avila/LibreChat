@@ -1,13 +1,16 @@
 /**
  * @jest-environment jsdom
  */
-import { render } from '@testing-library/react';
-import type { ControllerRenderProps } from 'react-hook-form';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { Controller, useForm } from 'react-hook-form';
+import type { UseFormReturn } from 'react-hook-form';
 import type { ReactNode } from 'react';
 import type { AgentForm } from '~/common';
 import AgentSubagents from '../AgentSubagents';
 
-let selectAgent: ((agentId: string) => void) | undefined;
+let mockSelectAgent: ((agentId: string) => void) | undefined;
+let mockGetValues: UseFormReturn<AgentForm>['getValues'] | undefined;
+const mockSubmit = jest.fn();
 
 jest.mock('@librechat/client', () => ({
   Switch: () => null,
@@ -19,7 +22,7 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('../AgentList', () => ({
   AddAgentSelect: ({ onSelect }: { onSelect: (agentId: string) => void }) => {
-    selectAgent = onSelect;
+    mockSelectAgent = onSelect;
     return null;
   },
   ListMeta: () => null,
@@ -43,34 +46,60 @@ jest.mock('../ui', () => ({
 
 describe('AgentSubagents', () => {
   beforeEach(() => {
-    selectAgent = undefined;
+    mockSelectAgent = undefined;
+    mockGetValues = undefined;
+    mockSubmit.mockReset();
   });
 
-  it('commits a selected agent to form state synchronously', () => {
-    let persistedValue: NonNullable<AgentForm['subagents']> = {
-      enabled: true,
-      allowSelf: false,
-      agent_ids: [] as string[],
-    };
-    const field = {
-      name: 'subagents',
-      value: persistedValue,
-      onBlur: jest.fn(),
-      onChange: jest.fn((value: NonNullable<AgentForm['subagents']>) => {
-        persistedValue = value;
-      }),
-      ref: jest.fn(),
-    } as unknown as ControllerRenderProps<AgentForm, 'subagents'>;
+  function Harness() {
+    const methods = useForm<AgentForm>({
+      defaultValues: {
+        subagents: {
+          enabled: true,
+          allowSelf: false,
+          agent_ids: [],
+        },
+      },
+    });
+    mockGetValues = methods.getValues;
 
-    render(<AgentSubagents field={field} currentAgentId="parent" maxSubagents={10} />);
+    return (
+      <form aria-label="agent form" onSubmit={methods.handleSubmit(mockSubmit)}>
+        <Controller
+          name="subagents"
+          control={methods.control}
+          render={({ field }) => (
+            <AgentSubagents field={field} currentAgentId="parent" maxSubagents={10} />
+          )}
+        />
+      </form>
+    );
+  }
 
-    selectAgent?.('child');
+  it('commits a selected agent before an immediate form submit', async () => {
+    render(<Harness />);
 
-    expect(field.onChange).toHaveBeenCalledWith({
+    act(() => {
+      mockSelectAgent?.('child');
+      fireEvent.submit(screen.getByRole('form', { name: 'agent form' }));
+    });
+
+    expect(mockGetValues?.('subagents')).toEqual({
       enabled: true,
       allowSelf: false,
       agent_ids: ['child'],
     });
-    expect(persistedValue.agent_ids).toEqual(['child']);
+    await waitFor(() =>
+      expect(mockSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subagents: {
+            enabled: true,
+            allowSelf: false,
+            agent_ids: ['child'],
+          },
+        }),
+        expect.anything(),
+      ),
+    );
   });
 });
