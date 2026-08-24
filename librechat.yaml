@@ -150,18 +150,12 @@ interface:
   modelSelect: false
   parameters: true
   presets: false
-  prompts:
-    use: true
-    create: true
-    share: false
-    public: false
+  # prompts/agents: no explicit config on purpose — per-role permissions are
+  # managed directly in the roles collection (USER loses builder/prompts/skills/
+  # memories rail icons; ADMIN keeps them). Explicit config here would reset
+  # both roles to the same values on every restart.
   bookmarks: false
   multiConvo: false
-  agents:
-    use: true
-    create: true
-    share: false
-    public: false
   peoplePicker:
     users: true
     groups: true
