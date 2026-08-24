@@ -392,6 +392,40 @@ describe('SubagentActivity', () => {
     expect(onCancelControl).toHaveBeenCalledWith('control-1');
   });
 
+  it('renders storage-prioritized control receipts in chronological order', () => {
+    render(
+      <SubagentActivity
+        activity={{
+          ...base,
+          controls: [
+            {
+              invocationId: 'new-accepted',
+              controlId: 'control-2',
+              action: 'queue',
+              status: 'accepted',
+              createdAt: '2026-08-24T12:00:02.000Z',
+              updatedAt: '2026-08-24T12:00:02.000Z',
+            },
+            {
+              invocationId: 'old-applied',
+              controlId: 'control-1',
+              action: 'steer',
+              status: 'applied',
+              createdAt: '2026-08-24T12:00:01.000Z',
+              updatedAt: '2026-08-24T12:00:03.000Z',
+            },
+          ],
+        }}
+      />,
+    );
+
+    const applied = screen.getByText('com_ui_subagent_control_status_applied');
+    const accepted = screen.getByText('com_ui_subagent_control_status_accepted');
+    expect(
+      applied.compareDocumentPosition(accepted) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('scopes regular-chat renderer state to the selected child activity', () => {
     render(<SubagentActivity activity={base} activityId="parent:tool:child" />);
 

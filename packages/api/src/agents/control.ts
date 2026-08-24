@@ -234,7 +234,20 @@ export function createSubagentControlHandler(deps: Dependencies) {
         res.status(404).json({ error: 'Conversation not found' });
         return;
       }
-      const receipt = responseReceipt(body.invocationId, command, result);
+      /** Routing returns the SDK task result, whose legacy `accepted` shape cannot
+       * distinguish an accepted command from one that became applied during the
+       * call. The durable ledger is authoritative after the store returns. */
+      const settledReceipt = await deps.getSubagentTaskControlReceipt({
+        userId,
+        conversationId: threadId,
+        taskId: body.taskId,
+        invocationId: body.invocationId,
+        ...(tenantId == null ? {} : { tenantId }),
+      });
+      const receipt =
+        settledReceipt != null && settledReceipt.fingerprint === fingerprint
+          ? publicStoredReceipt(settledReceipt)
+          : responseReceipt(body.invocationId, command, result);
       res.status(200).json({ receipt } satisfies SubagentControlResponse);
     } catch (error) {
       if (error instanceof SubagentTaskOwnerUnavailableError) {

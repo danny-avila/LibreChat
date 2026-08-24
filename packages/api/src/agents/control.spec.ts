@@ -110,6 +110,40 @@ describe('subagent control handler', () => {
     );
   });
 
+  it('returns the durable applied receipt when settlement races the owner response', async () => {
+    const command = { action: 'queue' as const, message: 'Check the primary source.' };
+    const controlTask = jest.fn().mockResolvedValue({
+      status: 'accepted',
+      controlId: 'control-1',
+      task: { taskId, threadId, status: 'running' },
+    });
+    const deps = dependencies(controlTask);
+    deps.getSubagentTaskControlReceipt.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      invocationId: 'invocation-race',
+      fingerprint: controlFingerprint(command),
+      controlId: 'control-1',
+      action: 'queue',
+      status: 'applied',
+      boundary: 'turn',
+      createdAt: new Date('2026-08-24T12:00:00.000Z'),
+      updatedAt: new Date('2026-08-24T12:00:01.000Z'),
+    });
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(request({ taskId, invocationId: 'invocation-race', ...command }), res.value);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      receipt: expect.objectContaining({
+        invocationId: 'invocation-race',
+        status: 'applied',
+        boundary: 'turn',
+      }),
+    });
+    expect(deps.getSubagentTaskControlReceipt).toHaveBeenCalledTimes(2);
+  });
+
   it('fails parent authorization closed without contacting a task owner', async () => {
     const deps = dependencies();
     deps.getConvoOwnership.mockResolvedValue(null);

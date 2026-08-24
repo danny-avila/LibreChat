@@ -49,9 +49,18 @@ function SubagentControlHistory({
 }) {
   const localize = useLocalize();
   if (controls.length === 0) return null;
+  /** Storage keeps actionable accepted receipts ahead of bounded terminal history.
+   * Presentation restores chronology without changing that retention priority. */
+  const chronologicalControls = controls
+    .map((control, index) => ({ control, index }))
+    .sort(
+      (left, right) =>
+        left.control.createdAt.localeCompare(right.control.createdAt) || left.index - right.index,
+    )
+    .map(({ control }) => control);
   return (
     <section aria-label={localize('com_ui_subagent_control_history')} className="mb-3 space-y-2">
-      {controls.map((control) => {
+      {chronologicalControls.map((control) => {
         const pending = control.status === 'submitted' || control.status === 'accepted';
         let StatusIcon = XCircle;
         if (pending) StatusIcon = Clock3;
