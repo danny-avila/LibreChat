@@ -1,7 +1,7 @@
 import { useContext, useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { Md5 } from 'ts-md5';
-import { ThemeContext, isDark } from '@librechat/client';
+import { ThemeContext } from '@librechat/client';
 import type { MermaidConfig } from 'mermaid';
 import {
   contrastMermaidVariables,
@@ -59,10 +59,11 @@ export const useMermaid = ({
   config,
   enabled = true,
 }: UseMermaidOptions): UseMermaidReturn => {
-  /** Read from context rather than derived here: under `system` the contrast
-   *  comes from a media query, so deriving it locally would never rerender. */
-  const { theme, highContrast } = useContext(ThemeContext);
-  const isDarkMode = isDark(theme);
+  /** Read from context rather than derived here: under `system` both the scheme
+   *  and the contrast come from media queries, so deriving either locally would
+   *  keep whatever this hook computed on its last render. */
+  const { resolvedMode, highContrast } = useContext(ThemeContext);
+  const isDarkMode = resolvedMode === 'dark';
 
   // Store last valid SVG for fallback on errors
   const [validContent, setValidContent] = useState<string>('');

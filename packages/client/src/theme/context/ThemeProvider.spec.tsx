@@ -30,11 +30,13 @@ function Controls() {
     setThemeRGB,
     themeName,
     highContrast,
+    resolvedMode,
   } = useTheme();
   return (
     <>
       <output>{themeName}</output>
       <output data-testid="high-contrast">{String(highContrast)}</output>
+      <output data-testid="resolved-mode">{resolvedMode}</output>
       <button onClick={() => setTheme('dark')}>Dark</button>
       <button onClick={() => setTheme('light')}>Light</button>
       <button onClick={() => setTheme('high-contrast-light')}>HC light</button>
@@ -916,5 +918,41 @@ describe('ThemeProvider', () => {
     /** The DOM alone is not enough: a consumer keying off the resolved contrast,
      *  such as the Mermaid cache, only recomputes if the context value moves. */
     expect(screen.getByTestId('high-contrast')).toHaveTextContent('true');
+  });
+
+  /** The same staleness for the scheme: with contrast already on, flipping the
+   *  OS colour scheme leaves `theme` at `system` and `setHighContrast` a no-op,
+   *  so nothing rerendered until the resolved mode was published too. */
+  it('reacts when the OS colour scheme changes under the system mode', async () => {
+    const listeners: Array<() => void> = [];
+    let prefersDark = false;
+    window.matchMedia = jest.fn((query: string) => {
+      const isSchemeQuery = query.includes('color-scheme');
+      return {
+        ...matchMedia(isSchemeQuery ? prefersDark : true),
+        addEventListener: (_event: string, listener: () => void) => {
+          if (isSchemeQuery) {
+            listeners.push(listener);
+          }
+        },
+        removeEventListener: jest.fn(),
+      } as unknown as MediaQueryList;
+    });
+
+    render(
+      <ThemeProvider initialTheme="system">
+        <Controls />
+      </ThemeProvider>,
+    );
+    expect(screen.getByTestId('resolved-mode')).toHaveTextContent('light');
+    expect(screen.getByTestId('high-contrast')).toHaveTextContent('true');
+
+    prefersDark = true;
+    act(() => listeners.forEach((listener) => listener()));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('resolved-mode')).toHaveTextContent('dark');
+    });
+    expect(document.documentElement).toHaveClass('dark', 'high-contrast');
   });
 });

@@ -58,11 +58,13 @@ type ThemeContextType = {
   theme: AppearanceMode;
   setTheme: (theme: string) => void;
   /**
-   * Whether the contrast palette is in effect. Published as state rather than
-   * derived by consumers, because under `system` it depends on a media query
-   * that React cannot observe: `theme` stays `'system'` when the OS preference
-   * flips, so anything deriving it from `theme` alone would never rerender.
+   * The scheme and contrast actually in effect. Both are published as state
+   * rather than derived by consumers, because under `system` they come from
+   * media queries React cannot observe: `theme` stays `'system'` when an OS
+   * preference flips, so anything deriving from `theme` alone never rerenders
+   * and keeps whatever it computed on its last render.
    */
+  resolvedMode: ThemeMode;
   highContrast: boolean;
   themeRGB?: IThemeRGB;
   setThemeRGB: (colors?: IThemeRGB) => void;
@@ -76,6 +78,7 @@ type ThemeContextType = {
 export const ThemeContext: React.Context<ThemeContextType> = createContext<ThemeContextType>({
   theme: 'system',
   setTheme: () => undefined,
+  resolvedMode: 'light',
   highContrast: false,
   setThemeRGB: () => undefined,
   setThemeDefinition: () => undefined,
@@ -294,13 +297,14 @@ export function ThemeProvider({
     }
   }
 
-  const [theme, setThemeState] = useState<AppearanceMode>(() =>
-    initialTheme && isAppearanceMode(initialTheme) ? initialTheme : getInitialTheme(),
+  const initialAppearance =
+    initialTheme && isAppearanceMode(initialTheme) ? initialTheme : getInitialTheme();
+  const [theme, setThemeState] = useState<AppearanceMode>(initialAppearance);
+  const [resolvedMode, setResolvedMode] = useState<ThemeMode>(() =>
+    isDark(initialAppearance) ? 'dark' : 'light',
   );
   const [highContrast, setHighContrast] = useState<boolean>(() =>
-    resolvesToHighContrast(
-      initialTheme && isAppearanceMode(initialTheme) ? initialTheme : getInitialTheme(),
-    ),
+    resolvesToHighContrast(initialAppearance),
   );
   const [themeDefinition, setThemeDefinitionState] = useState<ThemeDefinition | undefined>(
     initialThemeState.current.definition,
@@ -545,8 +549,9 @@ export function ThemeProvider({
       const root = window.document.documentElement;
       const mode: ThemeMode = isDark(currentTheme) ? 'dark' : 'light';
       const highContrast = resolvesToHighContrast(currentTheme);
-      /** Publish it so consumers rerender when the OS preference flips under
+      /** Publish both so consumers rerender when an OS preference flips under
        *  `system`, where `theme` itself never changes. */
+      setResolvedMode(mode);
       setHighContrast(highContrast);
 
       if (!themeClassSnapshot.current) {
@@ -633,6 +638,7 @@ export function ThemeProvider({
     () => ({
       theme,
       setTheme,
+      resolvedMode,
       highContrast,
       themeRGB,
       setThemeRGB,
@@ -648,6 +654,7 @@ export function ThemeProvider({
       setThemeDefinition,
       setThemeName,
       setThemeRGB,
+      resolvedMode,
       highContrast,
       theme,
       themeDefinition,
