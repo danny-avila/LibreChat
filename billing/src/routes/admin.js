@@ -61,17 +61,17 @@ adminRoutes.get('/admin/tariffs', async (req, res) => {
 });
 
 adminRoutes.post('/admin/tariffs', sameOrigin, async (req, res) => {
-  const { id, title, description, priceRub, creditsMln, sort, active } = req.body;
+  const { id, title, description, priceRub, durationDays, sort, active } = req.body;
   const doc = {
     title: String(title || '').trim(),
     description: String(description || '').trim(),
     priceKopecks: Math.round(parseFloat(priceRub) * 100),
-    credits: Math.round(parseFloat(creditsMln) * 1_000_000),
+    durationDays: parseInt(durationDays, 10),
     sort: parseInt(sort || '0', 10),
     active: active === 'on',
   };
-  if (!doc.title || !(doc.priceKopecks > 0) || !(doc.credits > 0)) {
-    return res.redirect('/billing/admin/tariffs?msg=' + encodeURIComponent('Заполните название, цену и кредиты'));
+  if (!doc.title || !(doc.priceKopecks > 0) || !(doc.durationDays > 0)) {
+    return res.redirect('/billing/admin/tariffs?msg=' + encodeURIComponent('Заполните название, цену и срок действия'));
   }
   if (id) await Tariff.updateOne({ _id: id }, { $set: doc });
   else await Tariff.create(doc);

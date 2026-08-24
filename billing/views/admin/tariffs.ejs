@@ -4,17 +4,17 @@
 
 <section class="card">
   <div class="table-wrap"><table>
-    <thead><tr><th>Название</th><th>Цена</th><th>Кредиты</th><th>Порядок</th><th>Активен</th><th></th></tr></thead>
+    <thead><tr><th>Название</th><th>Цена</th><th>Срок, дней</th><th>Порядок</th><th>Активен</th><th></th></tr></thead>
     <tbody>
     <% tariffs.forEach((t) => { %>
       <tr>
         <td><b><%= t.title %></b><div class="muted small"><%= t.description %></div></td>
         <td><%= fmtRub(t.priceKopecks) %></td>
-        <td><%= fmtCredits(t.credits) %></td>
+        <td><%= t.durationDays ?? 30 %></td>
         <td><%= t.sort %></td>
         <td><%= t.active ? 'да' : 'нет' %></td>
         <td class="row-actions">
-          <button class="btn small-btn" onclick='fillForm(<%- JSON.stringify({ id: String(t._id), title: t.title, description: t.description, priceRub: t.priceKopecks / 100, creditsMln: t.credits / 1e6, sort: t.sort, active: t.active }) %>)'>Изменить</button>
+          <button class="btn small-btn" onclick='fillForm(<%- JSON.stringify({ id: String(t._id), title: t.title, description: t.description, priceRub: t.priceKopecks / 100, durationDays: t.durationDays ?? 30, sort: t.sort, active: t.active }) %>)'>Изменить</button>
           <form method="post" action="<%= basePath %>/admin/tariffs/<%= t._id %>/delete" onsubmit="return confirm('Удалить тариф «<%= t.title %>»?')"><button class="btn small-btn danger">Удалить</button></form>
         </td>
       </tr>
@@ -30,7 +30,7 @@
     <label>Название <input name="title" id="f-title" required></label>
     <label>Описание <input name="description" id="f-description"></label>
     <label>Цена, ₽ <input name="priceRub" id="f-priceRub" type="number" min="1" step="0.01" required></label>
-    <label>Кредиты, млн <input name="creditsMln" id="f-creditsMln" type="number" min="0.01" step="0.01" required></label>
+    <label>Срок, дней <input name="durationDays" id="f-durationDays" type="number" min="1" max="3650" value="30" required></label>
     <label>Порядок <input name="sort" id="f-sort" type="number" value="0"></label>
     <label class="checkline"><input type="checkbox" name="active" id="f-active" checked> Активен</label>
     <div><button class="btn primary" type="submit">Сохранить</button> <button class="btn" type="button" onclick="resetForm()">Очистить</button></div>
@@ -39,7 +39,7 @@
 <script>
 function fillForm(t) {
   document.getElementById('form-title').textContent = 'Изменить тариф';
-  for (const k of ['id','title','description','priceRub','creditsMln','sort']) document.getElementById('f-' + k).value = t[k] ?? '';
+  for (const k of ['id','title','description','priceRub','durationDays','sort']) document.getElementById('f-' + k).value = t[k] ?? '';
   document.getElementById('f-active').checked = !!t.active;
   document.getElementById('tariff-form').scrollIntoView({ behavior: 'smooth' });
 }

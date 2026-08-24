@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { Balance, Order, Tariff } from '../db.js';
+import { Order, Tariff } from '../db.js';
 import { requireUser, requireUserApi, sameOrigin } from '../auth.js';
 import { alfapay } from '../alfapay.js';
 import { config } from '../config.js';
@@ -9,16 +9,14 @@ import { getSubscription } from '../subscriptions.js';
 export const userRoutes = Router();
 
 userRoutes.get('/', requireUser, async (req, res) => {
-  const [tariffs, balance, orders, subscription] = await Promise.all([
+  const [tariffs, orders, subscription] = await Promise.all([
     Tariff.find({ active: true }).sort({ sort: 1, priceKopecks: 1 }).lean(),
-    Balance.findOne({ user: req.user._id }).lean(),
     Order.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(50).lean(),
     getSubscription(req.user._id),
   ]);
   res.render('index', {
     user: req.user,
     tariffs,
-    balance: balance?.tokenCredits ?? 0,
     orders,
     subscription,
     paid: req.query.paid,
@@ -35,14 +33,17 @@ userRoutes.get('/api/subscription', requireUserApi, async (req, res) => {
   );
 });
 
-userRoutes.post('/buy', requireUser, sameOrigin, async (req, res) => {
-  const tariff = await Tariff.findOne({ _id: req.body.tariffId, active: true }).lean();
-  if (!tariff) return res.status(400).render('error', { user: req.user, title: 'Ошибка', message: 'Тариф не найден или отключён.' });
-
+// Shared by /buy (choose or switch tariff) and /renew (extend current one).
+async function startOrder(tariff, req, res) {
   const order = await Order.create({
     user: req.user._id,
     userEmail: req.user.email,
-    tariff: { id: tariff._id, title: tariff.title, priceKopecks: tariff.priceKopecks, credits: tariff.credits },
+    tariff: {
+      id: tariff._id,
+      title: tariff.title,
+      priceKopecks: tariff.priceKopecks,
+      durationDays: tariff.durationDays ?? 30,
+    },
     orderNumber: newOrderNumber(req.user._id),
     status: 'created',
   });
@@ -65,6 +66,21 @@ userRoutes.post('/buy', requireUser, sameOrigin, async (req, res) => {
       message: 'Не удалось создать платёж. Попробуйте ещё раз через пару минут.',
     });
   }
+}
+
+userRoutes.post('/buy', requireUser, sameOrigin, async (req, res) => {
+  const tariff = await Tariff.findOne({ _id: req.body.tariffId, active: true }).lean();
+  if (!tariff) return res.status(400).render('error', { user: req.user, title: 'Ошибка', message: 'Тариф не найден или отключён.' });
+  return startOrder(tariff, req, res);
+});
+
+// Extend the currently subscribed tariff for another period.
+userRoutes.post('/renew', requireUser, sameOrigin, async (req, res) => {
+  const sub = await getSubscription(req.user._id);
+  if (!sub?.tariff?.id) return res.redirect(config.basePath);
+  const tariff = await Tariff.findOne({ _id: sub.tariff.id, active: true }).lean();
+  if (!tariff) return res.status(400).render('error', { user: req.user, title: 'Ошибка', message: 'Ваш тариф больше не продаётся — выберите другой из списка.' });
+  return startOrder(tariff, req, res);
 });
 
 // The bank redirects the customer back here after the payment form.

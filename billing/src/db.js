@@ -35,7 +35,6 @@ const tariffSchema = new mongoose.Schema(
     title: { type: String, required: true },
     description: { type: String, default: '' },
     priceKopecks: { type: Number, required: true, min: 100 },
-    credits: { type: Number, required: true, min: 1 },
     // Subscription period granted by purchasing this tariff.
     durationDays: { type: Number, default: 30, min: 1 },
     active: { type: Boolean, default: true },
@@ -54,7 +53,8 @@ const orderSchema = new mongoose.Schema(
       id: mongoose.Schema.Types.ObjectId,
       title: String,
       priceKopecks: Number,
-      credits: Number,
+      durationDays: Number,
+      credits: Number, // legacy orders only (credit packages era)
     },
     orderNumber: { type: String, required: true, unique: true }, // our id, goes to the gateway
     alfaOrderId: { type: String, index: true },                  // orderId from Alfa-Bank

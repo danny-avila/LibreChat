@@ -31,3 +31,13 @@ export async function grantSubscription(userId, tariff, days, source = 'payment'
   console.log(`[billing] subscription for ${userId}: «${tariff.title}» until ${expiresAt.toISOString()}`);
   return sub;
 }
+
+// Refund: takes the tariff's period back from the subscription.
+export async function revokeSubscriptionDays(userId, days) {
+  const sub = await Subscription.findOne({ user: userId });
+  if (!sub) return null;
+  sub.expiresAt = new Date(sub.expiresAt.getTime() - days * 24 * 60 * 60 * 1000);
+  await sub.save();
+  console.log(`[billing] revoked ${days}d from ${userId}: now until ${sub.expiresAt.toISOString()}`);
+  return sub.toObject();
+}
