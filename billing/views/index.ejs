@@ -2,10 +2,22 @@
 
 <section class="balance-strip">
   <div>
-    <div class="muted">Ваш баланс</div>
-    <div class="balance-value"><%= fmtCredits(balance) %> <span class="muted small">кредитов</span></div>
+    <div class="muted">Ваш тариф</div>
+    <div class="balance-value">
+      <% if (subscription && subscription.active) { %>
+        <%= subscription.tariff?.title || '—' %> <span class="muted small">оплачен до <%= fmtDate(subscription.expiresAt) %></span>
+      <% } else if (subscription) { %>
+        <%= subscription.tariff?.title || '—' %> <span class="muted small danger">истёк <%= fmtDate(subscription.expiresAt) %></span>
+      <% } else { %>
+        <span class="muted">не подключён</span>
+      <% } %>
+    </div>
   </div>
-  <div class="muted small">Кредиты списываются автоматически по мере использования моделей.<br>1 млн кредитов ≈ 1 $ расхода на модели.</div>
+  <% if (subscription && subscription.tariff) { %>
+  <form method="post" action="<%= basePath %>/renew">
+    <button class="btn primary" type="submit">Продлить</button>
+  </form>
+  <% } %>
 </section>
 
 <h1>Тарифы</h1>
@@ -16,31 +28,37 @@
   <% tariffs.forEach((t) => { %>
     <div class="card tariff">
       <h2><%= t.title %></h2>
-      <div class="tariff-price"><%= fmtRub(t.priceKopecks) %></div>
-      <div class="tariff-credits"><%= fmtCredits(t.credits) %> кредитов</div>
+      <div class="tariff-price"><%= fmtRub(t.priceKopecks) %> <span class="muted small">/ <%= t.durationDays ?? 30 %> дн.</span></div>
       <% if (t.description) { %><p class="muted small"><%= t.description %></p><% } %>
-      <form method="post" action="<%= basePath %>/buy">
-        <input type="hidden" name="tariffId" value="<%= t._id %>">
-        <button class="btn primary" type="submit">Оплатить</button>
-      </form>
+      <% if (subscription && subscription.tariff && String(subscription.tariff.id) === String(t._id)) { %>
+        <div class="muted small">Ваш текущий тариф</div>
+        <form method="post" action="<%= basePath %>/renew">
+          <button class="btn primary" type="submit">Продлить</button>
+        </form>
+      <% } else { %>
+        <form method="post" action="<%= basePath %>/buy">
+          <input type="hidden" name="tariffId" value="<%= t._id %>">
+          <button class="btn primary" type="submit"><%= subscription && subscription.tariff ? 'Сменить' : 'Купить' %></button>
+        </form>
+      <% } %>
     </div>
   <% }) %>
 </section>
 
-<h1 id="history">История покупок</h1>
+<h1 id="history">История покупок и продлений</h1>
 <section class="card">
   <% if (!orders.length) { %>
     <p class="muted">Покупок пока не было.</p>
   <% } else { %>
   <div class="table-wrap"><table>
-    <thead><tr><th>Дата</th><th>Пакет</th><th>Сумма</th><th>Кредиты</th><th>Статус</th><th></th></tr></thead>
+    <thead><tr><th>Дата</th><th>Тариф</th><th>Сумма</th><th>Срок</th><th>Статус</th><th></th></tr></thead>
     <tbody>
       <% orders.forEach((o) => { %>
       <tr>
         <td><%= fmtDate(o.createdAt) %></td>
         <td><%= o.tariff.title %></td>
         <td><%= fmtRub(o.tariff.priceKopecks) %></td>
-        <td><%= fmtCredits(o.tariff.credits) %></td>
+        <td><%= o.tariff.durationDays ? o.tariff.durationDays + ' дн.' : '—' %></td>
         <td><span class="status st-<%= o.status %>"><%= statusRu(o.status) %></span></td>
         <td>
           <% if (o.status === 'pending' && o.paymentUrl) { %>

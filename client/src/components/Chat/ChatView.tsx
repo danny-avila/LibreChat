@@ -1,8 +1,8 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Constants, buildTree } from 'librechat-data-provider';
 import type { TChatProject, TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
@@ -21,6 +21,7 @@ import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
+import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
 import Header from './Header';
 import Footer from './Footer';
 import { cn } from '~/utils';
@@ -98,6 +99,17 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
     (conversationId === Constants.NEW_CONVO || !conversationId);
   const isNavigating = (!messagesTree || messagesTree.length === 0) && conversationId != null;
   const isProjectLandingPage = isLandingPage && project != null;
+  const navigate = useNavigate();
+  const [showCreateProject, setShowCreateProject] = useState(false);
+  const routeConversation =
+    chatHelpers.conversation?.conversationId === conversationId
+      ? chatHelpers.conversation
+      : undefined;
+  // DSTLab: chatting happens only inside a project. A new chat must be scoped
+  // to a project; legacy conversations without one open read-only.
+  const requiresProject = isLandingPage
+    ? project == null
+    : routeConversation != null && routeConversation.chatProjectId == null;
 
   if (isLoading && conversationId !== Constants.NEW_CONVO) {
     content = <LoadingSpinner />;
@@ -105,6 +117,23 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
     content = <LoadingSpinner />;
   } else if (!isLandingPage) {
     content = <MessagesView messagesTree={messagesTree} />;
+  } else if (requiresProject) {
+    content = (
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 text-center">
+        <h2 className="text-2xl font-semibold text-text-primary">Общение ведётся в проектах</h2>
+        <p className="max-w-md text-sm text-text-secondary">
+          Создайте проект — для него будет открыт чат, в котором вы сможете общаться с моделью.
+        </p>
+        <button type="button" className="btn btn-primary" onClick={() => setShowCreateProject(true)}>
+          Создать проект
+        </button>
+        <ProjectCreateDialog
+          open={showCreateProject}
+          onOpenChange={setShowCreateProject}
+          onCreated={(created) => navigate(`/c/new?projectId=${created._id}`)}
+        />
+      </div>
+    );
   } else {
     content = <Landing centerFormOnLanding={centerFormOnLanding} />;
   }
@@ -156,8 +185,17 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                       isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
                     )}
                   >
-                    {isLandingPage && <ConversationStarters />}
-                    {isSubagentThreadReadOnly ? (
+                    {isLandingPage && !requiresProject && <ConversationStarters />}
+                    {requiresProject ? (
+                      !isLandingPage && (
+                        <div
+                          className="mx-auto w-full max-w-3xl px-4 py-3 text-center text-sm text-text-secondary xl:max-w-4xl"
+                          role="note"
+                        >
+                          Этот чат не привязан к проекту и доступен только для чтения.
+                        </div>
+                      )
+                    ) : isSubagentThreadReadOnly ? (
                       <div
                         className="mx-auto w-full max-w-3xl px-4 py-3 text-center text-sm text-text-secondary xl:max-w-4xl"
                         role="note"

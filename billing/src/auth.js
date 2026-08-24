@@ -20,6 +20,21 @@ export async function requireUser(req, res, next) {
   }
 }
 
+// Same check as requireUser, but for JSON endpoints: 401 instead of redirect.
+export async function requireUserApi(req, res, next) {
+  try {
+    const token = req.cookies?.refreshToken;
+    if (!token) return res.status(401).json({ error: 'unauthorized' });
+    const payload = jwt.verify(token, config.jwtRefreshSecret);
+    const user = await User.findById(payload.id).lean();
+    if (!user) return res.status(401).json({ error: 'unauthorized' });
+    req.user = user;
+    next();
+  } catch {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+}
+
 export function requireAdmin(req, res, next) {
   if (req.user?.role !== 'ADMIN') {
     return res.status(403).render('error', {

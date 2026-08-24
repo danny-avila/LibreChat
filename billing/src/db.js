@@ -35,7 +35,8 @@ const tariffSchema = new mongoose.Schema(
     title: { type: String, required: true },
     description: { type: String, default: '' },
     priceKopecks: { type: Number, required: true, min: 100 },
-    credits: { type: Number, required: true, min: 1 },
+    // Subscription period granted by purchasing this tariff.
+    durationDays: { type: Number, default: 30, min: 1 },
     active: { type: Boolean, default: true },
     sort: { type: Number, default: 0 },
   },
@@ -52,7 +53,8 @@ const orderSchema = new mongoose.Schema(
       id: mongoose.Schema.Types.ObjectId,
       title: String,
       priceKopecks: Number,
-      credits: Number,
+      durationDays: Number,
+      credits: Number, // legacy orders only (credit packages era)
     },
     orderNumber: { type: String, required: true, unique: true }, // our id, goes to the gateway
     alfaOrderId: { type: String, index: true },                  // orderId from Alfa-Bank
@@ -74,6 +76,22 @@ const orderSchema = new mongoose.Schema(
   { collection: 'billing_orders', timestamps: true },
 );
 export const Order = mongoose.model('Order', orderSchema);
+
+// One active subscription per user: which tariff they are on and until when.
+const subscriptionSchema = new mongoose.Schema(
+  {
+    user: { type: mongoose.Schema.Types.ObjectId, required: true, unique: true, index: true },
+    tariff: {
+      id: mongoose.Schema.Types.ObjectId,
+      title: String,
+    },
+    startsAt: { type: Date, default: Date.now },
+    expiresAt: { type: Date, required: true, index: true },
+    source: { type: String, enum: ['payment', 'manual'], default: 'payment' },
+  },
+  { collection: 'billing_subscriptions', timestamps: true },
+);
+export const Subscription = mongoose.model('Subscription', subscriptionSchema);
 
 export async function connectDb() {
   mongoose.set('strictQuery', true);

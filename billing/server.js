@@ -55,9 +55,9 @@ app.use((err, req, res, next) => {
 async function seedTariffs() {
   if (await Tariff.countDocuments()) return;
   await Tariff.insertMany([
-    { title: 'Старт', description: 'Для знакомства с платформой', priceKopecks: 500_00, credits: 5_000_000, sort: 10 },
-    { title: 'Стандарт', description: 'Оптимально для регулярной работы', priceKopecks: 1500_00, credits: 16_000_000, sort: 20 },
-    { title: 'Про', description: 'Максимум кредитов по лучшей цене', priceKopecks: 5000_00, credits: 60_000_000, sort: 30 },
+    { title: 'Старт', description: 'Для знакомства с платформой', priceKopecks: 500_00, durationDays: 30, sort: 10 },
+    { title: 'Стандарт', description: 'Оптимально для регулярной работы', priceKopecks: 1500_00, durationDays: 30, sort: 20 },
+    { title: 'Про', description: 'Максимум возможностей', priceKopecks: 5000_00, durationDays: 30, sort: 30 },
   ]);
   console.log('[billing] seeded default tariffs');
 }

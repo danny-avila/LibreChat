@@ -17,7 +17,7 @@
 
 <section class="card">
   <div class="table-wrap"><table>
-    <thead><tr><th>Дата</th><th>Пользователь</th><th>Пакет</th><th>Сумма</th><th>Кредиты</th><th>Статус</th><th>Заказ</th><th></th></tr></thead>
+    <thead><tr><th>Дата</th><th>Пользователь</th><th>Тариф</th><th>Сумма</th><th>Срок</th><th>Статус</th><th>Заказ</th><th></th></tr></thead>
     <tbody>
     <% orders.forEach((o) => { %>
       <tr>
@@ -25,7 +25,7 @@
         <td><%= o.userEmail %></td>
         <td><%= o.tariff.title %></td>
         <td><%= fmtRub(o.tariff.priceKopecks) %></td>
-        <td><%= fmtCredits(o.tariff.credits) %></td>
+        <td><%= o.tariff.durationDays ? o.tariff.durationDays + ' дн.' : '—' %></td>
         <td><span class="status st-<%= o.status %>"><%= statusRu(o.status) %></span></td>
         <td class="muted small"><%= o.orderNumber %></td>
         <td class="row-actions">

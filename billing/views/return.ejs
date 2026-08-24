@@ -3,11 +3,11 @@
   <% if (order.status === 'paid') { %>
     <div class="result-icon ok">✓</div>
     <h1>Оплата прошла успешно</h1>
-    <p>Пакет «<%= order.tariff.title %>» — на баланс зачислено <b><%= fmtCredits(order.tariff.credits) %></b> кредитов.</p>
+    <p>Тариф «<%= order.tariff.title %>» активирован<% if (order.tariff.durationDays) { %> — подписка продлена на <b><%= order.tariff.durationDays %> дн.</b><% } %></p>
   <% } else if (order.status === 'pending' || order.status === 'hold') { %>
     <div class="result-icon wait">⏳</div>
     <h1>Платёж обрабатывается</h1>
-    <p class="muted">Банк ещё не подтвердил оплату. Кредиты будут зачислены автоматически, страницу можно закрыть.</p>
+    <p class="muted">Банк ещё не подтвердил оплату. Тариф активируется автоматически, страницу можно закрыть.</p>
   <% } else { %>
     <div class="result-icon fail">✕</div>
     <h1>Оплата не прошла</h1>

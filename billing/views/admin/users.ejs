@@ -3,7 +3,7 @@
 <% if (msg) { %><div class="notice"><%= msg %></div><% } %>
 <section class="card">
   <div class="table-wrap"><table>
-    <thead><tr><th>Email</th><th>Имя</th><th>Роль</th><th>Баланс</th><th>Корректировка</th></tr></thead>
+    <thead><tr><th>Email</th><th>Имя</th><th>Роль</th><th>Баланс</th><th>Тариф</th><th>Назначить тариф</th><th>Корректировка</th></tr></thead>
     <tbody>
     <% users.forEach((u) => { %>
       <tr>
@@ -11,6 +11,23 @@
         <td><%= u.name || u.username || '—' %></td>
         <td><%= u.role %></td>
         <td><b><%= fmtCredits(u.credits) %></b></td>
+        <td>
+          <% if (u.subscription) { %>
+            <b><%= u.subscription.tariff?.title || '—' %></b><br>
+            <span class="muted small <%= new Date(u.subscription.expiresAt) > new Date() ? '' : 'danger' %>">
+              до <%= fmtDate(u.subscription.expiresAt) %><%= new Date(u.subscription.expiresAt) > new Date() ? '' : ' (истёк)' %>
+            </span>
+          <% } else { %><span class="muted">нет</span><% } %>
+        </td>
+        <td>
+          <form method="post" action="<%= basePath %>/admin/users/<%= u._id %>/subscription" class="inline-form">
+            <select name="tariffId" required>
+              <% tariffs.forEach((t) => { %><option value="<%= t._id %>"><%= t.title %></option><% }) %>
+            </select>
+            <input name="days" type="number" min="1" max="3650" placeholder="дней" required style="width:5em">
+            <button class="btn small-btn" type="submit">Выдать</button>
+          </form>
+        </td>
         <td>
           <form method="post" action="<%= basePath %>/admin/users/<%= u._id %>/adjust" class="inline-form">
             <input name="delta" type="number" step="0.01" placeholder="± млн кредитов" required>

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
-import { Balance, Order, Transaction } from './db.js';
+import { Order, Tariff } from './db.js';
+import { grantSubscription, revokeSubscriptionDays } from './subscriptions.js';
 import { alfapay } from './alfapay.js';
 import { config } from './config.js';
 import { notifyPlatform } from './platform.js';
@@ -9,33 +10,25 @@ export function newOrderNumber(userId) {
   return `lc-${String(userId).slice(-6)}-${ts}-${crypto.randomBytes(3).toString('hex')}`;
 }
 
-// Idempotent crediting: flips `credited` exactly once, then increments the
-// LibreChat balance and writes a LibreChat transaction record.
+// Idempotent activation: flips `credited` exactly once, then extends the
+// user's subscription by the tariff's period. (Tariffs no longer add token
+// credits — they gate functionality via the subscription.)
 export async function creditOrder(order) {
   const flip = await Order.updateOne(
     { _id: order._id, status: 'paid', credited: { $ne: true } },
     { $set: { credited: true, creditedAt: new Date() } },
   );
-  if (flip.modifiedCount !== 1) return false; // already credited or not paid
-  await Balance.updateOne(
-    { user: order.user },
-    { $inc: { tokenCredits: order.tariff.credits } },
-    { upsert: true },
-  );
-  await Transaction.create({
-    user: order.user,
-    tokenType: 'credits',
-    context: 'payment',
-    rawAmount: order.tariff.credits,
-    tokenValue: order.tariff.credits,
-    model: null,
-  });
-  console.log(`[billing] credited order ${order.orderNumber}: +${order.tariff.credits} to ${order.userEmail}`);
+  if (flip.modifiedCount !== 1) return false; // already activated or not paid
+  const days = order.tariff.durationDays
+    ?? (await Tariff.findById(order.tariff.id).lean())?.durationDays
+    ?? 30;
+  await grantSubscription(order.user, order.tariff, days, 'payment');
+  console.log(`[billing] order ${order.orderNumber}: «${order.tariff.title}» +${days}d for ${order.userEmail}`);
   await notifyPlatformOnce(order);
   return true;
 }
 
-// Platform provisioning callback. Never blocks crediting: a failure only
+// Platform provisioning callback. Never blocks activation: a failure only
 // leaves platformNotifiedAt unset, and the poller keeps retrying — the
 // platform side is idempotent by order_id.
 export async function notifyPlatformOnce(order) {
@@ -49,22 +42,12 @@ export async function notifyPlatformOnce(order) {
   }
 }
 
-// Deducts credits after a refund (may drive the balance negative on purpose —
-// the user already spent part of them; LibreChat clamps at 0 during spending).
+// Refund: take the paid period back from the subscription.
 export async function debitRefund(order) {
-  await Balance.updateOne(
-    { user: order.user },
-    { $inc: { tokenCredits: -order.tariff.credits } },
-    { upsert: true },
-  );
-  await Transaction.create({
-    user: order.user,
-    tokenType: 'credits',
-    context: 'refund',
-    rawAmount: -order.tariff.credits,
-    tokenValue: -order.tariff.credits,
-    model: null,
-  });
+  const days = order.tariff.durationDays
+    ?? (await Tariff.findById(order.tariff.id).lean())?.durationDays
+    ?? 30;
+  await revokeSubscriptionDays(order.user, days);
 }
 
 // Pulls the authoritative status from the gateway and applies transitions.

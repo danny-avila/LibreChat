@@ -4,6 +4,8 @@ import { Balance, Order, Tariff, Transaction, User } from '../db.js';
 import { requireUser, requireAdmin, sameOrigin } from '../auth.js';
 import { alfapay } from '../alfapay.js';
 import { debitRefund, syncOrder } from '../orders.js';
+import { grantSubscription } from '../subscriptions.js';
+import { Subscription } from '../db.js';
 
 export const adminRoutes = Router();
 adminRoutes.use('/admin', requireUser, requireAdmin);
@@ -59,17 +61,17 @@ adminRoutes.get('/admin/tariffs', async (req, res) => {
 });
 
 adminRoutes.post('/admin/tariffs', sameOrigin, async (req, res) => {
-  const { id, title, description, priceRub, creditsMln, sort, active } = req.body;
+  const { id, title, description, priceRub, durationDays, sort, active } = req.body;
   const doc = {
     title: String(title || '').trim(),
     description: String(description || '').trim(),
     priceKopecks: Math.round(parseFloat(priceRub) * 100),
-    credits: Math.round(parseFloat(creditsMln) * 1_000_000),
+    durationDays: parseInt(durationDays, 10),
     sort: parseInt(sort || '0', 10),
     active: active === 'on',
   };
-  if (!doc.title || !(doc.priceKopecks > 0) || !(doc.credits > 0)) {
-    return res.redirect('/billing/admin/tariffs?msg=' + encodeURIComponent('Заполните название, цену и кредиты'));
+  if (!doc.title || !(doc.priceKopecks > 0) || !(doc.durationDays > 0)) {
+    return res.redirect('/billing/admin/tariffs?msg=' + encodeURIComponent('Заполните название, цену и срок действия'));
   }
   if (id) await Tariff.updateOne({ _id: id }, { $set: doc });
   else await Tariff.create(doc);
@@ -84,14 +86,35 @@ adminRoutes.post('/admin/tariffs/:id/delete', sameOrigin, async (req, res) => {
 // --- Users & balances ---
 
 adminRoutes.get('/admin/users', async (req, res) => {
-  const users = await User.find().select('email name username role createdAt').lean();
-  const balances = await Balance.find().lean();
+  const [users, balances, subs, tariffs] = await Promise.all([
+    User.find().select('email name username role createdAt').lean(),
+    Balance.find().lean(),
+    Subscription.find().lean(),
+    Tariff.find({ active: true }).sort({ sort: 1 }).lean(),
+  ]);
   const byUser = Object.fromEntries(balances.map((b) => [String(b.user), b.tokenCredits]));
+  const subByUser = Object.fromEntries(subs.map((s) => [String(s.user), s]));
   res.render('admin/users', {
     user: req.user,
-    users: users.map((u) => ({ ...u, credits: byUser[String(u._id)] ?? 0 })),
+    users: users.map((u) => ({ ...u, credits: byUser[String(u._id)] ?? 0, subscription: subByUser[String(u._id)] ?? null })),
+    tariffs,
     msg: req.query.msg,
   });
+});
+
+// Manually grant/extend a subscription: tariff + number of days.
+adminRoutes.post('/admin/users/:id/subscription', sameOrigin, async (req, res) => {
+  const target = await User.findById(req.params.id).lean();
+  const tariff = await Tariff.findById(req.body.tariffId).lean();
+  const days = parseInt(req.body.days, 10);
+  if (!target || !tariff || !Number.isFinite(days) || days < 1 || days > 3650) {
+    return res.redirect(`${req.baseUrl}/admin/users?msg=` + encodeURIComponent('Некорректные данные подписки'));
+  }
+  await grantSubscription(target._id, tariff, days, 'manual');
+  res.redirect(
+    `${req.baseUrl}/admin/users?msg=` +
+      encodeURIComponent(`Подписка «${tariff.title}» продлена на ${days} дн. для ${target.email}`),
+  );
 });
 
 // Manual balance adjustment (+/- credits) with an audit trail transaction.

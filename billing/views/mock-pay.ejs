@@ -2,7 +2,7 @@
 <div class="card center-card">
   <h1>Тестовая платёжная страница</h1>
   <p class="muted">Режим mock: реальный платёжный шлюз не настроен. Здесь можно сымитировать результат оплаты.</p>
-  <p><b><%= order.tariff.title %></b> — <%= fmtRub(order.tariff.priceKopecks) %> за <%= fmtCredits(order.tariff.credits) %> кредитов</p>
+  <p><b><%= order.tariff.title %></b> — <%= fmtRub(order.tariff.priceKopecks) %><% if (order.tariff.durationDays) { %> за <%= order.tariff.durationDays %> дн. подписки<% } %></p>
   <form method="post" action="<%= basePath %>/mock-pay">
     <input type="hidden" name="order" value="<%= order._id %>">
     <button class="btn primary" name="outcome" value="pay" type="submit">Оплатить (успех)</button>
