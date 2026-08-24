@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Bot, MessagesSquare, X } from 'lucide-react';
 import { ForkOptions } from 'librechat-data-provider';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
@@ -306,7 +307,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       taskCount: eventTaskCount,
     });
   };
-  let timelinePrefix = null;
+  let timelinePrefix: ReactNode = null;
   if (hasEarlierRetainedTasks) {
     timelinePrefix = (
       <div className="flex justify-center border-b border-border-light px-4 py-2">
