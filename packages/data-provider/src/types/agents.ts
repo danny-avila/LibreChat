@@ -751,12 +751,19 @@ export type GraphEdge = {
    * For handoff edges: Description for the input parameter that the handoff tool accepts,
    * allowing the supervisor to pass specific instructions/context to the transferred agent.
    *
-   * The callback's message array is loosely typed: data-provider cannot depend on
-   * langchain's BaseMessage, and runtime edges are authored against the agents SDK types.
+   * The callback receives a minimal structural view of the run's messages (data-provider
+   * cannot depend on langchain's BaseMessage): every langchain message satisfies
+   * `{ content: unknown }`, and callbacks typed against richer structural message shapes
+   * remain assignable. The promise branch mirrors the agents SDK signature exactly —
+   * widening it (e.g. to `Promise<string | undefined>`) would break assignability of
+   * stored edges into the SDK's `GraphEdge`.
    */
   prompt?:
     | string
-    | ((messages: unknown[], runStartIndex: number) => string | Promise<string> | undefined);
+    | ((
+        messages: { content: unknown }[],
+        runStartIndex: number,
+      ) => string | Promise<string> | undefined);
   /**
    * When true, excludes messages from startIndex when adding prompt.
    * Automatically set to true when {results} variable is used in prompt.
