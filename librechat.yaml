@@ -532,8 +532,9 @@ endpoints:
       models:
         default: ['jetcode']
         fetch: true
-      titleConvo: true
-      titleModel: 'current_model'
+      # Title generation would be a SECOND full claude run per conversation
+      # on the client's own account — not worth the latency or the quota.
+      titleConvo: false
       modelDisplayLabel: 'JetCode'
 
 # Example modelSpecs configuration showing grouping options
