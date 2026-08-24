@@ -65,6 +65,32 @@ describe('Elapsed', () => {
     expect(screen.getByTestId('stream-elapsed')).toHaveTextContent(/^1s$/);
   });
 
+  it('continues from the anchored start across an unmount and remount', () => {
+    const start = Date.now() - 30_000;
+    const view = render(
+      <RecoilRoot initializeState={({ set }) => set(store.submissionStartFamily(0), start)}>
+        <Elapsed index={0} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByTestId('stream-elapsed')).toHaveTextContent(/^30s$/);
+
+    view.rerender(
+      <RecoilRoot initializeState={({ set }) => set(store.submissionStartFamily(0), start)}>
+        {null}
+      </RecoilRoot>,
+    );
+    expect(screen.queryByTestId('stream-elapsed')).toBeNull();
+
+    advance(5_000);
+    view.rerender(
+      <RecoilRoot initializeState={({ set }) => set(store.submissionStartFamily(0), start)}>
+        <Elapsed index={0} />
+      </RecoilRoot>,
+    );
+    expect(screen.getByTestId('stream-elapsed')).toHaveTextContent(/^35s$/);
+  });
+
   it('clears its interval on unmount', () => {
     const view = renderElapsed();
     const timersWhileMounted = jest.getTimerCount();

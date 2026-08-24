@@ -39,10 +39,13 @@ const submissionByIndex = atomFamily<TSubmission | null, string | number>({
 });
 
 /**
- * Epoch ms when the current generation started (send, regenerate, continue, or
- * resume attach). Anchors the streaming elapsed-time indicator so it survives
- * message-row remounts (new-conversation id hydration, navigation) that would
- * reset a component-local timestamp.
+ * Epoch ms when this session last submitted a generation at this index (send,
+ * regenerate, continue, edit-resubmit — every path through `ask`). Anchors the
+ * streaming elapsed-time indicator so it survives the remounts that would reset
+ * a component-local timestamp: new-conversation id hydration, and navigating
+ * away from a still-streaming conversation and back. Resume paths deliberately
+ * do NOT restamp it — reattaching must keep the original baseline, and after a
+ * reload (atom empty) the indicator falls back to its own mount time.
  */
 const submissionStartFamily = atomFamily<number | null, string | number>({
   key: 'submissionStartByIndex',

@@ -246,7 +246,6 @@ export default function useResumeOnLoad(
 ) {
   const queryClient = useQueryClient();
   const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
-  const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(runIndex));
   const currentSubmission = useRecoilValue(store.submissionByIndex(runIndex));
   const currentConversation = useRecoilValue(store.conversationByIndex(runIndex));
   const endpoint = currentConversation?.endpoint;
@@ -590,9 +589,6 @@ export default function useResumeOnLoad(
     });
 
     const messages = getMessages() || [];
-    /** Elapsed-time anchor for the reattached generation. Client clock only:
-     *  the server's `createdAt` is not comparable across clock skew. */
-    setSubmissionStart(Date.now());
 
     // Build submission from resume state if available
     if (streamStatus.resumeState) {
@@ -662,7 +658,6 @@ export default function useResumeOnLoad(
     streamStatus,
     getMessages,
     setSubmission,
-    setSubmissionStart,
     restoreResumeBranch,
     restoreSteerChips,
     settleAppliedSteerParts,
