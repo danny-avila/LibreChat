@@ -98,7 +98,7 @@ describe('createSteerDrainHook', () => {
       },
     });
 
-    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    const output = (await hook(batchInput(), abortSignal)) as SteerDrainOutput;
     expect(applied).toEqual(['first', 'second']);
     expect(output.injectedMessages).toEqual([
       { role: 'user', content: 'first', source: 'steer' },
@@ -156,7 +156,7 @@ describe('createSteerDrainHook', () => {
       },
     });
 
-    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    const output = (await hook(batchInput(), abortSignal)) as SteerDrainOutput;
     expect(output).toEqual({});
     expect((await GenerationJobManager.steering.peek(streamId)).map((item) => item.text)).toEqual([
       'survives',
@@ -194,7 +194,7 @@ describe('createSteerDrainHook', () => {
       buildMedia,
     });
 
-    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    const output = (await hook(batchInput(), abortSignal)) as SteerDrainOutput;
     // buildMedia is consulted only for items that carry files.
     expect(buildMedia).toHaveBeenCalledTimes(1);
     expect(calls).toEqual(['apply:s1', 'apply:s2', 'media:s1']);
@@ -227,7 +227,7 @@ describe('createSteerDrainHook', () => {
       },
     });
 
-    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    const output = (await hook(batchInput(), abortSignal)) as SteerDrainOutput;
     expect(appliedBeforeEncode).toBe(true);
     expect(output.injectedMessages).toEqual([
       { role: 'user', content: 'must land first', source: 'steer' },
@@ -251,7 +251,7 @@ describe('createSteerDrainHook', () => {
       },
     });
 
-    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    const output = (await hook(batchInput(), abortSignal)) as SteerDrainOutput;
     expect(output.injectedMessages).toEqual([
       { role: 'user', content: 'words survive', source: 'steer' },
     ]);
@@ -300,7 +300,7 @@ describe('createSteerPreemptBoundaryHook', () => {
       },
     });
 
-    const output: SteerDrainOutput = await hook(boundaryInput(), abortSignal);
+    const output = (await hook(boundaryInput(), abortSignal)) as SteerDrainOutput;
     expect(applied).toEqual(['first', 'second']);
     expect(output.injectedMessages).toEqual([
       { role: 'user', content: 'first', source: 'steer' },
@@ -436,7 +436,7 @@ describe('createSteerPreemptBoundaryHook', () => {
       jobCreatedAt: job.createdAt,
       applySteer: jest.fn(),
     });
-    const output: SteerDrainOutput = await hook(boundaryInput(), abortSignal);
+    const output = (await hook(boundaryInput(), abortSignal)) as SteerDrainOutput;
 
     expect(output.injectedMessages).toHaveLength(1);
     /** Both the drained id and the stale snapshot id are spent. */
@@ -485,7 +485,7 @@ describe('createSteerPreemptBoundaryHook', () => {
       },
     });
 
-    const output: SteerDrainOutput = await hook(boundaryInput(), abortSignal);
+    const output = (await hook(boundaryInput(), abortSignal)) as SteerDrainOutput;
     expect(output).toEqual({});
     expect((await GenerationJobManager.steering.peek(streamId)).map((item) => item.text)).toEqual([
       'still injected',

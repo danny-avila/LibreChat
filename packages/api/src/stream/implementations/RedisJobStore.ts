@@ -34,6 +34,7 @@ import {
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   PAUSE_PERSISTENCE_TIMEOUT_MS,
   isPendingActionStale,
+  toWireRunSteps,
 } from '~/stream/interfaces/IJobStore';
 import {
   MAX_COALESCED_BYTES,
@@ -3661,7 +3662,7 @@ export class RedisJobStore implements IJobStoreV2 {
           g.getRunSteps(),
         );
         if (localSteps && localSteps.length > 0) {
-          return localSteps;
+          return toWireRunSteps(localSteps);
         }
       }
       // Note: Don't delete from cache here - graph may still be valid

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 import type { TTokenUsageEvent, TContextUsageEvent, TPendingSteer } from './runs';
-import type { FunctionToolCall, SummaryContentPart } from './assistants';
 import type { TAttachment, TPlugin } from 'src/schemas';
+import type { SummaryContentPart } from './assistants';
 import { StepTypes, ContentTypes, ToolCallTypes } from './runs';
 
 export namespace Agents {
@@ -67,8 +67,9 @@ export namespace Agents {
    * A call to a tool.
    */
   export type ToolCall = {
-    /** Type ("tool_call") according to Assistants Tool Call Structure */
-    type: ToolCallTypes.TOOL_CALL;
+    /** Type ("tool_call") according to Assistants Tool Call Structure; optional literal
+     *  form included to mirror langchain's ToolCall, whose `type` is optional. */
+    type?: ToolCallTypes.TOOL_CALL | 'tool_call';
     /** The name of the tool to be called */
     name: string;
 
@@ -324,7 +325,7 @@ export namespace Agents {
   };
   export type ToolCallsDetails = {
     type: StepTypes.TOOL_CALLS;
-    tool_calls: AgentToolCall[];
+    tool_calls?: AgentToolCall[];
   };
   export type ToolCallDelta = {
     type: StepTypes.TOOL_CALLS | string;
@@ -338,7 +339,22 @@ export namespace Agents {
       description?: string;
     };
   };
-  export type AgentToolCall = FunctionToolCall | ToolCall;
+  /**
+   * Mirrors the agents SDK's function tool-call variant: `arguments` may arrive as a
+   * parsed object, and `output` is attached by LibreChat aggregation only once available
+   * (the legacy assistants `FunctionToolCall` requires both as string/present).
+   */
+  export type AgentFunctionToolCall = {
+    id: string;
+    type: 'function';
+    function: {
+      name: string;
+      arguments: string | object;
+      output?: string | null;
+    };
+  };
+
+  export type AgentToolCall = AgentFunctionToolCall | ToolCall;
 
   /**
    * Human-in-the-loop interrupt categories. The discriminator on
@@ -734,8 +750,13 @@ export type GraphEdge = {
    *
    * For handoff edges: Description for the input parameter that the handoff tool accepts,
    * allowing the supervisor to pass specific instructions/context to the transferred agent.
+   *
+   * The callback's message array is loosely typed: data-provider cannot depend on
+   * langchain's BaseMessage, and runtime edges are authored against the agents SDK types.
    */
-  prompt?: string | ((messages: BaseMessage[], runStartIndex: number) => string | undefined);
+  prompt?:
+    | string
+    | ((messages: unknown[], runStartIndex: number) => string | Promise<string> | undefined);
   /**
    * When true, excludes messages from startIndex when adding prompt.
    * Automatically set to true when {results} variable is used in prompt.

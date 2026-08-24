@@ -4,11 +4,22 @@ import type {
   TPendingSteer,
   UserSubmittedMessageFieldPath,
 } from 'librechat-data-provider';
-import type { StandardGraph } from '@librechat/agents';
+import type { RunStep, StandardGraph } from '@librechat/agents';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '../SteerRecovery';
 import type { MCPRuntimeRequestBody } from '~/mcp/types';
+
+/**
+ * Run steps living on the SDK graph serialize to exactly the wire shape
+ * `Agents.RunStep` describes; the two types differ only in nominally distinct
+ * enums (the SDK and data-provider each declare `ContentTypes`/`StepTypes`
+ * with identical string values), which no structural widening can bridge.
+ * Re-tag at this boundary instead of copying the array.
+ */
+export function toWireRunSteps(steps: readonly RunStep[]): Agents.RunStep[] {
+  return steps as unknown as Agents.RunStep[];
+}
 
 /**
  * A pause owner has this long to durably persist the interrupted turn before

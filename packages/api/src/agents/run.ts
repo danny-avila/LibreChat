@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import { ensureHandler } from '@langchain/core/callbacks/manager';
 import { Run, Providers, Constants, HookRegistry } from '@librechat/agents';
@@ -1883,6 +1884,7 @@ export async function createRun({
   }
 
   const streamLimits = resolveStreamLimits(agentsEndpointConfig);
+  const resolvedRunId = runId ?? randomUUID();
 
   /**
    * Built as a variable (not an inline literal) so the extra
@@ -1892,7 +1894,7 @@ export async function createRun({
    * the field at the call site once the dependency is bumped.
    */
   const runConfig = {
-    runId,
+    runId: resolvedRunId,
     graphConfig,
     tokenCounter,
     customHandlers,
@@ -1959,7 +1961,7 @@ export async function createRun({
     // tracing is enabled. Requires @librechat/agents >= 3.2.21.
     langfuse: buildLangfuseConfig({
       appConfig,
-      runId,
+      runId: resolvedRunId,
       tenantId: tenantId ?? user?.tenantId,
       centralTraceExportEnabled,
     }),

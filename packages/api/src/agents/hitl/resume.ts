@@ -324,7 +324,7 @@ type ResumableRunStep = {
 
 export function normalizeResumeRunStepIndices<T extends ResumableRunStep>(
   runSteps: readonly T[],
-  seedContent: readonly { type?: string; tool_call?: { id?: string } }[] = [],
+  seedContent: readonly ({ type?: string; tool_call?: { id?: string } } | undefined)[] = [],
 ): T[] {
   const toolCallIndices = new Map<string, number>();
   seedContent.forEach((part, index) => {
@@ -361,7 +361,7 @@ export function hydrateResumeRunSteps(
   runSteps: readonly RunStep[],
   stepMap: Map<string, RunStep | undefined> | undefined,
   graph: { toolCallStepIds?: Map<string, string> } | null | undefined,
-  seedContent: readonly { type?: string; tool_call?: { id?: string } }[] = [],
+  seedContent: readonly ({ type?: string; tool_call?: { id?: string } } | undefined)[] = [],
 ): void {
   for (const runStep of normalizeResumeRunStepIndices(runSteps, seedContent)) {
     if (!runStep?.id) {
