@@ -339,7 +339,7 @@ export interface MessageMethods {
     taskId: string;
     tenantId?: string;
     receipt: NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number];
-  }): Promise<boolean>;
+  }): Promise<boolean | 'conflict'>;
   getSubagentTaskControlReceipt(input: {
     userId: string;
     conversationId: string;
@@ -964,7 +964,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     taskId: string;
     tenantId?: string;
     receipt: NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number];
-  }): Promise<boolean> {
+  }): Promise<boolean | 'conflict'> {
     const validActions = new Set(['steer', 'queue', 'interrupt', 'cancel', 'cancel_message']);
     const validStatuses = new Set(['accepted', 'applied', 'rejected', 'failed']);
     if (
@@ -1011,7 +1011,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       if (currentMessage == null) return false;
       const current = currentMessage.subagentTask?.controlReceipts ?? [];
       const retained = retainSubagentControlReceipts(current, receipt);
-      if (retained.status === 'conflict') return false;
+      if (retained.status === 'conflict') return 'conflict';
       if (retained.status === 'unchanged') return true;
       const next = retained.receipts;
       const currentFilter =
@@ -1150,15 +1150,24 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       .lean<Pick<IConversation, 'subagentThread'> | null>();
     const subagentType = conversation?.subagentThread?.subagentType;
     if (subagentType == null || subagentType === '') return null;
+    const terminal = await Message.findOne({
+      user: userId,
+      conversationId: input.conversationId,
+      ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+      messageId: `${taskId}:assistant`,
+      'subagentTask.status': { $in: ['completed', 'error', 'cancelled'] },
+    })
+      .select({ updatedAt: 1, 'subagentTask.status': 1, _id: 0 })
+      .lean<Pick<IMessage, 'updatedAt' | 'subagentTask'> | null>();
     return {
       receipt,
       task: {
         taskId,
         threadId: input.conversationId,
         subagentType,
-        status,
+        status: terminal?.subagentTask?.status ?? status,
         createdAt: input.createdAt,
-        updatedAt: input.updatedAt,
+        updatedAt: terminal?.updatedAt ?? input.updatedAt,
       },
     };
   }

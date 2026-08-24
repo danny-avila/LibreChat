@@ -2475,10 +2475,21 @@ describe('Message Operations', () => {
           depth: 1,
         },
       });
-      await Message.updateOne(
-        { user: 'user123', conversationId, messageId: 'task-1:user' },
-        { $set: { 'subagentTask.status': 'completed' } },
-      );
+      await Message.create({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:assistant',
+        parentMessageId: 'task-1:user',
+        sender: 'researcher',
+        text: 'Done.',
+        endpoint: 'agents',
+        isCreatedByUser: false,
+        subagentTask: {
+          attemptKey: 'task-1-attempt',
+          parentRunId: 'parent-message',
+          status: 'completed',
+        },
+      });
       const now = new Date('2026-08-24T12:00:00.000Z');
       await expect(
         recordSubagentTaskControlReceipt({
@@ -2602,7 +2613,7 @@ describe('Message Operations', () => {
           taskId: 'task-1',
           receipt: { ...receipt, fingerprint: 'different-fingerprint' },
         }),
-      ).resolves.toBe(false);
+      ).resolves.toBe('conflict');
     });
 
     it('retains concurrent receipts without requiring an aggregation-pipeline update', async () => {

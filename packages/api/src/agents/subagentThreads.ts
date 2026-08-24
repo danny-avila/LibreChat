@@ -69,6 +69,7 @@ const MAX_TERMINAL_CONTROL_INVOCATIONS = 64;
 const MAX_DURABLE_CONTROL_MESSAGE_CHARS = 4 * 1024;
 const DEFAULT_CONTROL_RECEIPT_RETRY_MS = 5_000;
 const SHUTDOWN_CONTROL_RECEIPT_FLUSH_ATTEMPTS = 4;
+const DEFAULT_SHUTDOWN_CONTROL_RECEIPT_BACKOFF_MS = 1_000;
 /** Bounds retained live-only updates while an event transport is unavailable. */
 const MAX_PENDING_ACTIVITY_EVENTS = 32;
 /** Live activity must never delay terminal notification indefinitely. */
@@ -93,6 +94,7 @@ const DURABLE_RESULT_SELECT =
 
 class SubagentThreadPublicError extends Error {}
 class SubagentThreadDeletedError extends SubagentThreadPublicError {}
+class SubagentControlReceiptConflictError extends Error {}
 
 type SubagentThreadMethods = Pick<
   AllMethods,
@@ -167,6 +169,9 @@ type ControlInvocationRecord = {
   /** Last authoritative SDK transition, retained for idempotent retries even
    * after the bounded SDK snapshot evicts older receipt history. */
   receipt?: ISubagentTaskControlReceipt;
+  /** True only after this invocation's current receipt is durable and therefore
+   * safe to evict from the bounded process-local replay window. */
+  receiptPersisted?: boolean;
 };
 
 interface TaskThreadLease {
@@ -227,6 +232,7 @@ export interface SubagentThreadTaskStoreOptions extends InMemorySubagentTaskStor
   isOwnerActive?: (userId: string) => Promise<boolean>;
   maxControlInvocations?: number;
   controlReceiptRetryMs?: number;
+  shutdownControlReceiptBackoffMs?: number;
   ownerFenceGraceMs?: number;
   fenceOwnerAdmission?: (userId: string, token: string, fencedUntil: Date) => Promise<void>;
   renewOwnerAdmission?: (userId: string, token: string, fencedUntil: Date) => Promise<boolean>;
@@ -557,6 +563,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   private readonly taskRoutingTtlMs: number;
   private readonly maxControlInvocations: number;
   private readonly controlReceiptRetryMs: number;
+  private readonly shutdownControlReceiptBackoffMs: number;
   private readonly ownerFenceGraceMs: number;
   private readonly isOwnerActive: (userId: string) => Promise<boolean>;
   private readonly fenceOwnerAdmission?: (
@@ -605,6 +612,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       options.controlReceiptRetryMs,
       DEFAULT_CONTROL_RECEIPT_RETRY_MS,
     );
+    this.shutdownControlReceiptBackoffMs = positiveInteger(
+      options.shutdownControlReceiptBackoffMs,
+      DEFAULT_SHUTDOWN_CONTROL_RECEIPT_BACKOFF_MS,
+    );
     this.ownerFenceGraceMs = positiveInteger(options.ownerFenceGraceMs, OWNER_FENCE_GRACE_MS);
     this.isOwnerActive = options.isOwnerActive ?? (async () => true);
     this.fenceOwnerAdmission = options.fenceOwnerAdmission;
@@ -634,7 +645,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     if (invocation == null || threadId == null) return undefined;
     const durable = this.durableReceipt(invocation, receipt);
     invocation.receipt = durable;
-    return this.queueControlReceipt(scopeId, taskId, threadId, durable);
+    invocation.receiptPersisted = false;
+    return this.queueControlReceipt(scopeId, taskId, threadId, durable).then(() => {
+      if (invocation.receipt === durable) invocation.receiptPersisted = true;
+    });
   }
 
   private durableReceipt(
@@ -835,6 +849,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
               receipt: candidate.receipt,
             }),
           );
+          if (persisted === 'conflict') {
+            if (pending.get(invocationId) === candidate) pending.delete(invocationId);
+            if (pending.size === 0) this.pendingControlReceipts.delete(key);
+            throw new SubagentControlReceiptConflictError();
+          }
           if (!persisted) {
             throw new Error('The child control receipt target is not ready.');
           }
@@ -959,10 +978,18 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       if (this.pendingControlReceipts.size === 0 && this.controlPersistenceTails.size === 0) {
         break;
       }
+      if (attempt + 1 < SHUTDOWN_CONTROL_RECEIPT_FLUSH_ATTEMPTS) {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, this.shutdownControlReceiptBackoffMs * 2 ** attempt);
+        });
+      }
     }
     const transport = this.taskControlTransport;
     this.taskControlTransport = undefined;
     await transport?.destroy();
+    if (this.pendingControlReceipts.size > 0 || this.controlPersistenceTails.size > 0) {
+      throw new SubagentTaskOwnerUnavailableError();
+    }
   }
 
   /** Replaces the process-local activity bus after the host's Redis service is ready. */
@@ -1465,6 +1492,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     command: SubagentTaskControlCommand,
     invocationId: string = randomUUID(),
   ): Promise<SubagentTaskControlResult> {
+    const retained = this.retainedControlResult(scopeId, taskId, command, invocationId);
+    if (retained != null) return retained;
     const localTask = this.get(scopeId, taskId);
     if (localTask != null && localTask.status !== 'running') {
       const replay = await this.replayDurableControl(scopeId, taskId, command, invocationId);
@@ -1474,11 +1503,37 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     if (local.status !== 'not_found') {
       return local;
     }
-    const routed = await this.taskControlTransport?.control(scopeId, taskId, command, invocationId);
+    let routed: SubagentTaskControlResult | undefined;
+    try {
+      routed = await this.taskControlTransport?.control(scopeId, taskId, command, invocationId);
+    } catch (error) {
+      if (error instanceof SubagentTaskOwnerUnavailableError) {
+        const replay = await this.replayDurableControl(scopeId, taskId, command, invocationId);
+        if (replay != null) return replay;
+      }
+      throw error;
+    }
     if (routed != null && routed.status !== 'not_found') return routed;
     return (
       (await this.replayDurableControl(scopeId, taskId, command, invocationId)) ?? routed ?? local
     );
+  }
+
+  private retainedControlResult(
+    scopeId: string,
+    taskId: string,
+    command: SubagentTaskControlCommand,
+    invocationId: string,
+  ): SubagentTaskControlResult | undefined {
+    const key = `${scopeId}\u0000${taskId}\u0000${invocationId}`;
+    const retained = this.controlInvocations.get(key) ?? this.terminalControlInvocations.get(key);
+    if (retained == null) return undefined;
+    return retained.fingerprint === controlFingerprint(command)
+      ? retained.result
+      : {
+          status: 'invalid',
+          message: 'This control invocation id was already used for a different command.',
+        };
   }
 
   /**
@@ -1498,17 +1553,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     }
     const key = `${scopeId}\u0000${taskId}\u0000${invocationId}`;
     const fingerprint = controlFingerprint(command);
-    const applied = this.controlInvocations.get(key) ?? this.terminalControlInvocations.get(key);
-    if (applied != null) {
-      /** One invocation is one command; reusing its id for different content is a
-       * caller error rather than a retry, so it is refused instead of applied. */
-      return applied.fingerprint === fingerprint
-        ? applied.result
-        : {
-            status: 'invalid',
-            message: 'This control invocation id was already used for a different command.',
-          };
-    }
+    const applied = this.retainedControlResult(scopeId, taskId, command, invocationId);
+    if (applied != null) return applied;
     const localTask = this.get(scopeId, taskId);
     if (localTask == null) {
       /** Not this replica's task. Refusing here would keep the command from ever
@@ -1520,8 +1566,17 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       const result = this.control(scopeId, taskId, command);
       if (result.status === 'not_found' || result.status === 'invalid') return result;
       if (this.terminalControlInvocations.size >= MAX_TERMINAL_CONTROL_INVOCATIONS) {
-        const oldest = this.terminalControlInvocations.keys().next().value as string | undefined;
-        if (oldest != null) this.terminalControlInvocations.delete(oldest);
+        const oldestPersisted = [...this.terminalControlInvocations].find(
+          ([, invocation]) => invocation.receiptPersisted === true,
+        )?.[0];
+        if (oldestPersisted == null) {
+          return {
+            status: 'invalid',
+            message:
+              'Too many terminal control invocations are awaiting persistence; retry shortly.',
+          };
+        }
+        this.terminalControlInvocations.delete(oldestPersisted);
       }
       this.terminalControlInvocations.set(key, {
         scopeId,
@@ -1610,8 +1665,27 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     try {
       if (receipt != null) {
         await this.queueControlReceipt(scopeId, taskId, threadId, receipt);
+        invocation.receiptPersisted = true;
       }
     } catch (error) {
+      if (error instanceof SubagentControlReceiptConflictError) {
+        const invalid: SubagentTaskControlResult = {
+          status: 'invalid',
+          message: 'This control invocation id was already used for a different command.',
+        };
+        invocation.result = invalid;
+        invocation.receiptPersisted = true;
+        if (result.status === 'accepted' && result.controlId != null) {
+          this.controlInvocationByReceipt.delete(
+            controlReceiptKey(scopeId, taskId, result.controlId),
+          );
+          super.control(scopeId, taskId, {
+            action: 'cancel_message',
+            controlId: result.controlId,
+          });
+        }
+        return invalid;
+      }
       logger.warn('[subagentThreads] Failed to durably accept a child control', error);
       throw new SubagentTaskOwnerUnavailableError();
     }
