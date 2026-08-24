@@ -72,13 +72,31 @@ router.post('/', async (req, res) => {
     return res.status(captured.code).json(captured.payload);
   }
 
-  // …then provision the platform side. Failures never lose the UI project.
+  // …then provision the platform side. A project without its platform half
+  // is a lie (no model, no Claude), so failures ROLL BACK the UI project
+  // and surface a real error instead of a fake success.
   let platform = null;
+  let failure = null;
   try {
     platform = await provisionPlatformProject(req, captured.payload?.name || 'Проект');
+    if (platform?.error === 'no_free_slot') {
+      failure = platform.detail || 'Нет оплаченного тарифа под новый проект — оплатите тариф в разделе /billing и попробуйте снова.';
+    }
   } catch (error) {
     logger.error('[projects] platform provisioning failed', error);
-    platform = { error: 'platform_unavailable' };
+    failure = 'Платформа временно недоступна — попробуйте создать проект ещё раз через минуту.';
+  }
+
+  if (failure) {
+    const projectId = captured.payload?._id || captured.payload?.id;
+    if (projectId) {
+      try {
+        await db.deleteChatProject(req.user?.id ?? String(req.user?._id), String(projectId));
+      } catch (error) {
+        logger.error('[projects] rollback of UI project failed', error);
+      }
+    }
+    return res.status(402).json({ error: failure });
   }
 
   return res.status(201).json({ ...captured.payload, platform });
