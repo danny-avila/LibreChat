@@ -37,6 +37,8 @@ const assistantMap = {
   [EModelEndpoint.assistants]: { [assistant.id]: assistant },
 } as TAssistantsMap;
 
+const cohereConversation = { endpoint: ProviderId.cohere } as unknown as TConversation;
+
 const renderIcon = (conversation: TConversation) =>
   render(
     <ConvoIcon
@@ -91,14 +93,12 @@ describe('ConvoIcon', () => {
   });
 
   it('keeps Cohere landing padding off other contexts and on landing', () => {
-    const { container: landing } = renderIcon({
-      endpoint: ProviderId.cohere,
-    } as TConversation);
+    const { container: landing } = renderIcon(cohereConversation);
     expect(landing.querySelector('img')).toHaveClass('p-2');
 
     const { container: nav } = render(
       <ConvoIcon
-        conversation={{ endpoint: ProviderId.cohere } as TConversation}
+        conversation={cohereConversation}
         endpointsConfig={endpointsConfig}
         assistantMap={assistantMap}
         agentsMap={agentsMap}

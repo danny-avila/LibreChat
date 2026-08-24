@@ -11,10 +11,10 @@ import type {
   TAssistantsMap,
   TEndpointsConfig,
 } from 'librechat-data-provider';
+import { getAgentAvatarUrl, getIconEndpoint, cn } from '~/utils';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
-import { getAgentAvatarUrl, getIconEndpoint, cn } from '~/utils';
-import { useProviderIcon } from '~/hooks/Endpoint';
+import { resolveProviderIcon } from '~/hooks/Endpoint';
 import { isImageURL } from '~/utils/icons';
 
 const emptyEndpointsConfig = {} as TEndpointsConfig;
@@ -43,7 +43,7 @@ export default function EndpointIcon({
   endpoint = getIconEndpoint({ endpointsConfig, iconURL: convoIconURL, endpoint });
 
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
-  const { provider } = useProviderIcon({ endpoint, endpointsConfig });
+  const { provider } = resolveProviderIcon({ endpoint, endpointsConfig });
 
   const agent = isAgentsEndpoint(endpoint) ? agentsMap?.[conversation?.agent_id ?? ''] : null;
   const assistant = isAssistantsEndpoint(endpoint)

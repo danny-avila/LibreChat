@@ -24,8 +24,8 @@ import {
 import type { MenuItemProps } from '@librechat/client';
 import type { TPreset } from 'librechat-data-provider';
 import type { ChangeEvent, FC } from 'react';
-import { resolveProviderIcon } from '~/hooks/Endpoint';
 import { ResolvedProviderIcon } from '~/components/Endpoints/ResolvedProviderIcon';
+import { resolveProviderIcon } from '~/hooks/Endpoint';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { getPresetTitle } from '~/utils';
 import { MenuSeparator } from '../UI';

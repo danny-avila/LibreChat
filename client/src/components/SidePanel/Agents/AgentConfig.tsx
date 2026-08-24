@@ -1,11 +1,11 @@
 import { Input, Label } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import type { AgentForm } from '~/common';
+import { ResolvedProviderIcon } from '~/components/Endpoints/ResolvedProviderIcon';
 import AgentCategorySelector from './AgentCategorySelector';
 import { useLocalize, useAgentCapabilities } from '~/hooks';
 import { useAgentFileEntries } from './Tools/hooks';
 import { useAgentPanelContext } from '~/Providers';
-import { ResolvedProviderIcon } from '~/components/Endpoints/ResolvedProviderIcon';
 import { useProviderIcon } from '~/hooks/Endpoint';
 import ToolsSection from './Tools/ToolsSection';
 import { validateEmail, cn } from '~/utils';

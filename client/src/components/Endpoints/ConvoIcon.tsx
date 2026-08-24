@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Feather } from 'lucide-react';
-import { Sparkles, AssistantIcon, ProviderIcon } from '@librechat/client';
 import { ProviderId } from 'librechat-data-provider';
+import { Sparkles, AssistantIcon, ProviderIcon } from '@librechat/client';
 import type * as t from 'librechat-data-provider';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { cn, getEntity, getIconEndpoint } from '~/utils';
