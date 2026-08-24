@@ -10,7 +10,7 @@ import type { ReactNode, ReactElement } from 'react';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
 import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceChanges';
-import { groupActivityPhases, lastVisibleContentIdx } from '~/utils/activityLabels';
+import { groupActivityPhases, lastCursorContentIdx } from '~/utils/activityLabels';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
 import { MessageContext, SearchContext } from '~/Providers';
@@ -497,7 +497,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   }
 
   if (phaseSegments != null) {
-    const relativeGlobalLastContentIdx = lastVisibleContentIdx(content ?? []);
+    const relativeGlobalLastContentIdx = lastCursorContentIdx(content ?? []);
     const globalLastContentIdx =
       relativeGlobalLastContentIdx < 0 ? -1 : absoluteIndexAt(relativeGlobalLastContentIdx);
     const renderSegment = (
@@ -586,10 +586,9 @@ const ContentPartsBody = memo(function ContentPartsBody({
    *  empty TEXT after real parts keeps its flush in-flow cursor. */
   const solitaryEmptyText = safeContent.length === 1 && isEmptyTextPart(safeContent[0]);
   const showEmptyCursor = (safeContent.length === 0 || solitaryEmptyText) && effectiveIsSubmitting;
-  /** Skips trailing BLANK label reservations — they render nothing, and
-   *  counting one as last would strip the streaming cursor from the last
-   *  VISIBLE part until the next delta. */
-  const relativeLastContentIdx = lastVisibleContentIdx(safeContent);
+  /** Skips trailing blank label reservations and empty provider placeholders,
+   * keeping the cursor attached to the last visible output. */
+  const relativeLastContentIdx = lastCursorContentIdx(safeContent);
   const lastContentIdx = relativeLastContentIdx < 0 ? -1 : absoluteIndexAt(relativeLastContentIdx);
 
   // Parallel content: use dedicated renderer with columns (TMessageContentParts includes ContentMetadata)

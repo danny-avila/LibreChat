@@ -359,6 +359,32 @@ export function lastVisibleContentIdx(
   return -1;
 }
 
+function isEmptyTextContentPart(part: TMessageContentParts | undefined): boolean {
+  if (part == null || part.type !== ContentTypes.TEXT) {
+    return false;
+  }
+  const text = typeof part.text === 'string' ? part.text : part.text?.value;
+  return (text ?? '').length === 0;
+}
+
+/**
+ * Last content index that should own the streaming cursor. A provider may
+ * append an empty TEXT placeholder after already-visible output; that
+ * placeholder must remain available for the initial waiting state without
+ * moving the cursor away from the visible part in either renderer.
+ */
+export function lastCursorContentIdx(
+  content: ReadonlyArray<TMessageContentParts | undefined> | undefined,
+): number {
+  const parts = content ?? [];
+  const lastIdx = lastVisibleContentIdx(parts);
+  if (lastIdx > 0 && isEmptyTextContentPart(parts[lastIdx])) {
+    const precedingIdx = lastVisibleContentIdx(parts.slice(0, lastIdx));
+    return precedingIdx >= 0 ? precedingIdx : lastIdx;
+  }
+  return lastIdx;
+}
+
 /**
  * Resolves the assistant response message an activity-label event targets.
  * Exact-id assistant match when `responseMessageId` is present (a miss
