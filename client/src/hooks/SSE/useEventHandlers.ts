@@ -342,6 +342,11 @@ export default function useEventHandlers({
   const { announcePolite } = useLiveAnnouncer();
   const applyAgentTemplate = useApplyAgentTemplate();
   const setAbortScroll = useSetRecoilState(store.abortScroll);
+  /** Cleared on every terminal path below: the elapsed anchor must not outlive
+   *  its generation, or a later externally-started run attached at this index
+   *  would inherit a stale baseline. Navigation teardown deliberately does not
+   *  clear it — a reattach to a still-live run keeps its original start. */
+  const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(runIndex));
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -734,6 +739,7 @@ export default function useEventHandlers({
         isTemporary: _isTemporary = false,
       } = submission;
       const serverConversation = conversation as TConversation;
+      setSubmissionStart(null);
 
       try {
         // Handle early abort - aborted before any response message was saved.
@@ -975,6 +981,7 @@ export default function useEventHandlers({
       location.pathname,
       applyAgentTemplate,
       attachmentHandler,
+      setSubmissionStart,
       restorePendingQuotes,
     ],
   );
@@ -983,6 +990,7 @@ export default function useEventHandlers({
     ({ data, submission }: { data?: TResData; submission: EventSubmission }) => {
       const { userMessage, initialResponse } = submission;
       setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
+      setSubmissionStart(null);
 
       const conversationId =
         userMessage.conversationId ?? submission.conversation?.conversationId ?? '';
@@ -1075,6 +1083,7 @@ export default function useEventHandlers({
       paramId,
       newConversation,
       setIsSubmitting,
+      setSubmissionStart,
       getMessages,
       queryClient,
     ],
@@ -1122,6 +1131,7 @@ export default function useEventHandlers({
           console.error('Error in finalHandler during abort:', error);
           setShowStopButton(false);
           setIsSubmitting(false);
+          setSubmissionStart(null);
         }
         return;
       } else if (!isAssistantsEndpoint(endpoint)) {
@@ -1198,6 +1208,7 @@ export default function useEventHandlers({
       newConversation,
       setIsSubmitting,
       setShowStopButton,
+      setSubmissionStart,
     ],
   );
 

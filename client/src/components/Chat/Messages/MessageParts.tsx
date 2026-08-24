@@ -14,10 +14,10 @@ import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
 import { revealOnRowHoverClasses, messageFooterClasses } from './styles';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
+import Elapsed, { shouldShowElapsed } from './Elapsed';
 import ContentParts from './Content/ContentParts';
 import SiblingSwitch from './SiblingSwitch';
 import HoverButtons from './HoverButtons';
-import Elapsed from './Elapsed';
 import SubRow from './SubRow';
 import store from '~/store';
 
@@ -135,9 +135,13 @@ function MessageParts(props: TMessageProps) {
                   isSubmitting && messageId === latestMessageId && revealOnRowHoverClasses,
                 )}
               />
-              {isSubmitting && messageId === latestMessageId && isCreatedByUser !== true && (
-                <Elapsed index={index} />
-              )}
+              {shouldShowElapsed({
+                isSubmitting,
+                isLatestMessage: messageId === latestMessageId,
+                isCreatedByUser,
+                siblingIdx,
+                siblingCount,
+              }) && <Elapsed index={index} />}
               <HoverButtons
                 index={index}
                 isEditing={edit}

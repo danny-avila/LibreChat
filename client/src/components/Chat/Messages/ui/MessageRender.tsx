@@ -9,6 +9,7 @@ import {
   getMessageAriaLabel,
 } from '~/utils';
 import { revealOnRowHoverClasses, messageFooterClasses } from '~/components/Chat/Messages/styles';
+import Elapsed, { shouldShowElapsed } from '~/components/Chat/Messages/Elapsed';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
 import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
@@ -16,7 +17,6 @@ import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
-import Elapsed from '~/components/Chat/Messages/Elapsed';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { MessageContext } from '~/Providers';
 import store from '~/store';
@@ -181,9 +181,13 @@ const MessageRender = memo(function MessageRender({
               isSubmitting && isLatestMessage && revealOnRowHoverClasses,
             )}
           />
-          {isSubmitting && isLatestMessage && msg.isCreatedByUser !== true && (
-            <Elapsed index={index} />
-          )}
+          {shouldShowElapsed({
+            isSubmitting,
+            isLatestMessage,
+            isCreatedByUser: msg.isCreatedByUser,
+            siblingIdx,
+            siblingCount,
+          }) && <Elapsed index={index} />}
           <HoverButtons
             index={index}
             isEditing={edit}

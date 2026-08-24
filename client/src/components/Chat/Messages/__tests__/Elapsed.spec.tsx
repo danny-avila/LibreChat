@@ -1,7 +1,7 @@
 import React from 'react';
 import { RecoilRoot, type MutableSnapshot } from 'recoil';
 import { render, screen, act } from '@testing-library/react';
-import Elapsed from '~/components/Chat/Messages/Elapsed';
+import Elapsed, { shouldShowElapsed } from '~/components/Chat/Messages/Elapsed';
 import store from '~/store';
 
 function renderElapsed(initializeState?: (snapshot: MutableSnapshot) => void) {
@@ -32,12 +32,15 @@ describe('Elapsed', () => {
     renderElapsed(({ set }) => set(store.submissionStartFamily(0), start));
 
     expect(screen.getByTestId('stream-elapsed')).toHaveTextContent(/^5s$/);
+    expect(screen.getByTestId('stream-elapsed')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByText('5 seconds elapsed')).toHaveClass('sr-only');
 
     advance(54_000);
     expect(screen.getByTestId('stream-elapsed')).toHaveTextContent(/^59s$/);
 
     advance(1_000);
     expect(screen.getByTestId('stream-elapsed')).toHaveTextContent(/^1m 0s$/);
+    expect(screen.getByText('1 minute elapsed')).toHaveClass('sr-only');
 
     advance(59_000);
     expect(screen.getByTestId('stream-elapsed')).toHaveTextContent(/^1m 59s$/);
@@ -98,5 +101,35 @@ describe('Elapsed', () => {
 
     view.rerender(<RecoilRoot>{null}</RecoilRoot>);
     expect(jest.getTimerCount()).toBe(timersWhileMounted - 1);
+  });
+});
+
+describe('shouldShowElapsed', () => {
+  const streamingRow = {
+    isSubmitting: true,
+    isLatestMessage: true,
+    isCreatedByUser: false,
+    siblingIdx: 1,
+    siblingCount: 2,
+  };
+
+  it('shows under the newest sibling of the streaming latest assistant row', () => {
+    expect(shouldShowElapsed(streamingRow)).toBe(true);
+  });
+
+  it('shows when sibling metadata is absent (a lone response)', () => {
+    expect(
+      shouldShowElapsed({ isSubmitting: true, isLatestMessage: true, isCreatedByUser: false }),
+    ).toBe(true);
+  });
+
+  it('hides under an older sibling the reader paged to mid-stream', () => {
+    expect(shouldShowElapsed({ ...streamingRow, siblingIdx: 0 })).toBe(false);
+  });
+
+  it('hides for user rows, settled rows, and non-latest rows', () => {
+    expect(shouldShowElapsed({ ...streamingRow, isCreatedByUser: true })).toBe(false);
+    expect(shouldShowElapsed({ ...streamingRow, isSubmitting: false })).toBe(false);
+    expect(shouldShowElapsed({ ...streamingRow, isLatestMessage: false })).toBe(false);
   });
 });

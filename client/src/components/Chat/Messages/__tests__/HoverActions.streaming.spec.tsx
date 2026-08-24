@@ -143,9 +143,11 @@ function createQueryClient() {
 function DerivedStreamingRow({
   structured = false,
   submitting = true,
+  siblingIdx = 1,
 }: {
   structured?: boolean;
   submitting?: boolean;
+  siblingIdx?: number;
 }) {
   const queryClient = useQueryClient();
   const latestMessage = useLatestMessage(0);
@@ -189,7 +191,7 @@ function DerivedStreamingRow({
           message={latestMessage}
           currentEditId={null}
           setCurrentEditId={jest.fn()}
-          siblingIdx={0}
+          siblingIdx={siblingIdx}
           siblingCount={2}
           setSiblingIdx={jest.fn()}
         />
@@ -198,7 +200,7 @@ function DerivedStreamingRow({
   );
 }
 
-function renderStreamingRow(structured = false, submitting = true) {
+function renderStreamingRow(structured = false, submitting = true, siblingIdx = 1) {
   const queryClient = createQueryClient();
   queryClient.setQueryData<TMessage[]>(
     [QueryKeys.messages, conversation.conversationId],
@@ -214,7 +216,11 @@ function renderStreamingRow(structured = false, submitting = true) {
     <QueryClientProvider client={queryClient}>
       <RecoilRoot initializeState={initializeState}>
         <MemoryRouter initialEntries={[`/c/${conversation.conversationId}`]}>
-          <DerivedStreamingRow structured={structured} submitting={submitting} />
+          <DerivedStreamingRow
+            structured={structured}
+            submitting={submitting}
+            siblingIdx={siblingIdx}
+          />
         </MemoryRouter>
       </RecoilRoot>
     </QueryClientProvider>,
@@ -314,6 +320,19 @@ describe('streaming hover actions', () => {
     renderStreamingRow(false, false);
 
     expect(screen.queryByTestId('stream-elapsed')).toBeNull();
+  });
+
+  /**
+   * `latestMessageId` follows the SELECTED branch, so a settled older sibling
+   * the reader paged to mid-regeneration satisfies the latest+submitting gate.
+   * The timer additionally requires the newest sibling position — a counting
+   * timer under settled content misleads in a way withheld buttons don't.
+   */
+  it('renders no elapsed timer under an older sibling selected mid-stream', () => {
+    renderStreamingRow(false, true, 0);
+
+    expect(screen.queryByTestId('stream-elapsed')).toBeNull();
+    expect(screen.getByTestId('hover-buttons')).toBeInTheDocument();
   });
 
   /**
