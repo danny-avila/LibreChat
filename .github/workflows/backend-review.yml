@@ -429,9 +429,24 @@ jobs:
           SELECTED: ${{ needs.codegraph_select.outputs.api_files }}
         run: |
           cd api
+          # A selected path can be stale in exactly two ways at this checkout (Codex P2, #15145 r6):
+          # deleted on the branch — dropped, which matches full CI (the file runs nowhere) — or
+          # renamed, where the NEW path is a changed test file and is selected independently. If
+          # NOTHING selected exists, the selection is stale wholesale and the suite runs FULL;
+          # --passWithNoTests must never turn "ran nothing" into green.
           if [ -n "$SELECTED" ]; then
-            echo "codegraph: $(echo $SELECTED | wc -w) selected test files (safe mode)"
-            npm run test:ci -- --shard=${{ matrix.shard }}/3 --passWithNoTests --runTestsByPath $SELECTED
+            KEEP=""
+            for f in $SELECTED; do
+              if [ -f "$f" ]; then KEEP="$KEEP $f"; else echo "dropping selected path absent at HEAD (deleted or renamed): $f"; fi
+            done
+            KEEP="${KEEP# }"
+            if [ -z "$KEEP" ]; then
+              echo "no selected test file exists at HEAD (stale selection); running FULL"
+              npm run test:ci -- --shard=${{ matrix.shard }}/3
+            else
+              echo "codegraph: $(echo $KEEP | wc -w) selected test files (safe mode)"
+              npm run test:ci -- --shard=${{ matrix.shard }}/3 --passWithNoTests --runTestsByPath $KEEP
+            fi
           else
             npm run test:ci -- --shard=${{ matrix.shard }}/3
           fi
@@ -491,8 +506,18 @@ jobs:
         run: |
           cd packages/data-provider
           if [ -n "$SELECTED" ]; then
-            echo "codegraph: $(echo $SELECTED | wc -w) selected test files (safe mode)"
-            npm run test:ci -- --passWithNoTests --runTestsByPath $SELECTED
+            KEEP=""
+            for f in $SELECTED; do
+              if [ -f "$f" ]; then KEEP="$KEEP $f"; else echo "dropping selected path absent at HEAD (deleted or renamed): $f"; fi
+            done
+            KEEP="${KEEP# }"
+            if [ -z "$KEEP" ]; then
+              echo "no selected test file exists at HEAD (stale selection); running FULL"
+              npm run test:ci
+            else
+              echo "codegraph: $(echo $KEEP | wc -w) selected test files (safe mode)"
+              npm run test:ci -- --passWithNoTests --runTestsByPath $KEEP
+            fi
           else
             npm run test:ci
           fi
@@ -558,8 +583,18 @@ jobs:
         run: |
           cd packages/data-schemas
           if [ -n "$SELECTED" ]; then
-            echo "codegraph: $(echo $SELECTED | wc -w) selected test files (safe mode)"
-            npm run test:ci -- --passWithNoTests --runTestsByPath $SELECTED
+            KEEP=""
+            for f in $SELECTED; do
+              if [ -f "$f" ]; then KEEP="$KEEP $f"; else echo "dropping selected path absent at HEAD (deleted or renamed): $f"; fi
+            done
+            KEEP="${KEEP# }"
+            if [ -z "$KEEP" ]; then
+              echo "no selected test file exists at HEAD (stale selection); running FULL"
+              npm run test:ci
+            else
+              echo "codegraph: $(echo $KEEP | wc -w) selected test files (safe mode)"
+              npm run test:ci -- --passWithNoTests --runTestsByPath $KEEP
+            fi
           else
             npm run test:ci
           fi
@@ -639,8 +674,18 @@ jobs:
         run: |
           cd packages/api
           if [ -n "$SELECTED" ]; then
-            echo "codegraph: $(echo $SELECTED | wc -w) selected test files (safe mode)"
-            npm run test:ci -- --shard=${{ matrix.shard }}/4 --passWithNoTests --runTestsByPath $SELECTED
+            KEEP=""
+            for f in $SELECTED; do
+              if [ -f "$f" ]; then KEEP="$KEEP $f"; else echo "dropping selected path absent at HEAD (deleted or renamed): $f"; fi
+            done
+            KEEP="${KEEP# }"
+            if [ -z "$KEEP" ]; then
+              echo "no selected test file exists at HEAD (stale selection); running FULL"
+              npm run test:ci -- --shard=${{ matrix.shard }}/4
+            else
+              echo "codegraph: $(echo $KEEP | wc -w) selected test files (safe mode)"
+              npm run test:ci -- --shard=${{ matrix.shard }}/4 --passWithNoTests --runTestsByPath $KEEP
+            fi
           else
             npm run test:ci -- --shard=${{ matrix.shard }}/4
           fi
