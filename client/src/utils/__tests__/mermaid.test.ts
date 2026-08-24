@@ -3,6 +3,7 @@ import {
   sanitizeMermaidSvg,
   artifactFlowchartConfig,
   inlineFlowchartConfig,
+  contrastMermaidVariables,
   getMermaidFiles,
 } from '~/utils/mermaid';
 
@@ -267,5 +268,44 @@ describe('mermaid config', () => {
       expect(result).toContain('second line');
       expect(result).toMatch(/<br\s*\/>/);
     });
+  });
+});
+
+describe('high contrast mermaid palette', () => {
+  it('stays out of the way in the standard themes', () => {
+    expect(contrastMermaidVariables(false, false)).toBeUndefined();
+    expect(contrastMermaidVariables(true, false)).toBeUndefined();
+  });
+
+  /** Mermaid's own `neutral` and `dark` palettes are unreachable from a theme
+   *  token, so a contrast mode has to drive them through themeVariables. */
+  it('puts diagrams on the canvas with ink marks in both contrast modes', () => {
+    const light = contrastMermaidVariables(false, true)!;
+    expect(light.background).toBe('#ffffff');
+    expect(light.mainBkg).toBe('#ffffff');
+    expect(light.lineColor).toBe('#000000');
+    expect(light.textColor).toBe('#000000');
+    expect(light.nodeBorder).toBe('#000000');
+
+    const dark = contrastMermaidVariables(true, true)!;
+    expect(dark.background).toBe('#000000');
+    expect(dark.mainBkg).toBe('#000000');
+    expect(dark.lineColor).toBe('#ffffff');
+    expect(dark.textColor).toBe('#ffffff');
+    expect(dark.nodeBorder).toBe('#ffffff');
+  });
+
+  it('switches the artifact document to the base theme and the contrast canvas', () => {
+    const standard = getMermaidFiles('graph TD; a-->b', true, false);
+    const component = standard['/components/ui/MermaidDiagram.tsx'];
+    expect(component).toContain('theme: "dark"');
+    expect(component).not.toContain('themeVariables');
+    expect(standard['mermaid.css']).toContain('#212121');
+
+    const contrast = getMermaidFiles('graph TD; a-->b', true, true);
+    const contrastComponent = contrast['/components/ui/MermaidDiagram.tsx'];
+    expect(contrastComponent).toContain('theme: "base"');
+    expect(contrastComponent).toContain('"lineColor":"#ffffff"');
+    expect(contrast['mermaid.css']).toContain('#000000');
   });
 });

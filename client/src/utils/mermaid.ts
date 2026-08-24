@@ -1,5 +1,6 @@
 import dedent from 'dedent';
 import DOMPurify from 'dompurify';
+import { highContrastDarkTheme, highContrastLightTheme } from '@librechat/client';
 
 interface MermaidButtonStyles {
   bg: string;
@@ -57,6 +58,56 @@ const inlineFlowchartConfig = {
 };
 
 export { inlineFlowchartConfig, artifactFlowchartConfig };
+
+const tokenHex = (triplet: string | undefined, fallback: string): string => {
+  const channels = triplet?.trim().split(/\s+/).map(Number);
+  if (channels?.length !== 3 || channels.some(Number.isNaN)) {
+    return fallback;
+  }
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+};
+
+/**
+ * Mermaid's built-in `neutral` and `dark` themes carry their own palette, which
+ * no app token can reach, so a diagram keeps mid-grey nodes and mid-grey edges
+ * in a contrast mode. These variables put the diagram on the canvas with ink
+ * nodes, ink edges and ink labels, which is 21:1 for every mark and every
+ * label. Returns undefined outside the contrast modes so the standard themes
+ * keep rendering exactly as they do today.
+ */
+export const contrastMermaidVariables = (
+  isDarkMode: boolean,
+  highContrast: boolean,
+): Record<string, string> | undefined => {
+  if (!highContrast) {
+    return undefined;
+  }
+
+  const palette = isDarkMode ? highContrastDarkTheme : highContrastLightTheme;
+  const canvas = tokenHex(palette['rgb-surface-primary'], isDarkMode ? '#000000' : '#ffffff');
+  const ink = tokenHex(palette['rgb-text-primary'], isDarkMode ? '#ffffff' : '#000000');
+
+  return {
+    background: canvas,
+    mainBkg: canvas,
+    primaryColor: canvas,
+    secondaryColor: canvas,
+    tertiaryColor: canvas,
+    clusterBkg: canvas,
+    edgeLabelBackground: canvas,
+    primaryTextColor: ink,
+    secondaryTextColor: ink,
+    tertiaryTextColor: ink,
+    textColor: ink,
+    titleColor: ink,
+    primaryBorderColor: ink,
+    secondaryBorderColor: ink,
+    tertiaryBorderColor: ink,
+    nodeBorder: ink,
+    clusterBorder: ink,
+    lineColor: ink,
+  };
+};
 
 /** Perceived luminance (0 = black, 1 = white) via BT.601 luma coefficients */
 const hexLuminance = (hex: string): number => {
@@ -143,6 +194,7 @@ const buildMermaidComponent = (
   mermaidTheme: string,
   bgColor: string,
   btnStyles: MermaidButtonStyles,
+  themeVariables?: Record<string, string>,
 ) =>
   dedent(`import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
@@ -289,6 +341,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
     mermaid.initialize({
       startOnLoad: false,
       theme: "${mermaidTheme}",
+      ${themeVariables ? `themeVariables: ${JSON.stringify(themeVariables)},` : ''}
       securityLevel: "strict",
       flowchart: ${JSON.stringify(artifactFlowchartConfig, null, 8)},
     });
@@ -461,10 +514,13 @@ export default App;
 `);
 };
 
-export const getMermaidFiles = (content: string, isDarkMode = true) => {
-  const mermaidTheme = isDarkMode ? 'dark' : 'neutral';
+export const getMermaidFiles = (content: string, isDarkMode = true, highContrast = false) => {
+  const themeVariables = contrastMermaidVariables(isDarkMode, highContrast);
+  const standardTheme = isDarkMode ? 'dark' : 'neutral';
+  /** `base` is the only built-in mermaid theme that honours themeVariables. */
+  const mermaidTheme = themeVariables ? 'base' : standardTheme;
   const btnStyles = getButtonStyles(isDarkMode);
-  const bgColor = isDarkMode ? '#212121' : '#FFFFFF';
+  const bgColor = themeVariables?.background ?? (isDarkMode ? '#212121' : '#FFFFFF');
   const mermaidCSS = `
 body {
   background-color: ${bgColor};
@@ -484,7 +540,12 @@ import App from "./App";
 const root = createRoot(document.getElementById("root"));
 root.render(<App />);
 ;`),
-    '/components/ui/MermaidDiagram.tsx': buildMermaidComponent(mermaidTheme, bgColor, btnStyles),
+    '/components/ui/MermaidDiagram.tsx': buildMermaidComponent(
+      mermaidTheme,
+      bgColor,
+      btnStyles,
+      themeVariables,
+    ),
     'mermaid.css': mermaidCSS,
   };
 };

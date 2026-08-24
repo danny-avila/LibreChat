@@ -1,5 +1,5 @@
 import { useContext, useMemo } from 'react';
-import { ThemeContext, isDark } from '@librechat/client';
+import { ThemeContext, isDark, resolvesToHighContrast } from '@librechat/client';
 import { removeNullishValues } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 import {
@@ -17,13 +17,14 @@ import { getMermaidFiles } from '~/utils/mermaid';
 export default function useArtifactProps({ artifact }: { artifact: Artifact }) {
   const { theme } = useContext(ThemeContext);
   const isDarkMode = isDark(theme);
+  const highContrast = resolvesToHighContrast(theme);
 
   const [fileKey, files] = useMemo(() => {
     const key = getKey(artifact.type ?? '', artifact.language);
     const type = artifact.type ?? '';
 
     if (key.includes('mermaid')) {
-      return ['diagram.mmd', getMermaidFiles(artifact.content ?? '', isDarkMode)];
+      return ['diagram.mmd', getMermaidFiles(artifact.content ?? '', isDarkMode, highContrast)];
     }
 
     /* CODE bucket: source files render through the same static-markdown
@@ -65,7 +66,14 @@ export default function useArtifactProps({ artifact }: { artifact: Artifact }) {
       [fileKey]: artifact.content,
     });
     return [fileKey, files];
-  }, [artifact.type, artifact.content, artifact.language, artifact.title, isDarkMode]);
+  }, [
+    artifact.type,
+    artifact.content,
+    artifact.language,
+    artifact.title,
+    isDarkMode,
+    highContrast,
+  ]);
 
   const template = useMemo(
     () => getTemplate(artifact.type ?? '', artifact.language),

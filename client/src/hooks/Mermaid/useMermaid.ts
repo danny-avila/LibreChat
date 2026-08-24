@@ -1,9 +1,13 @@
 import { useContext, useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { Md5 } from 'ts-md5';
-import { ThemeContext, isDark } from '@librechat/client';
+import { ThemeContext, isDark, resolvesToHighContrast } from '@librechat/client';
 import type { MermaidConfig } from 'mermaid';
-import { inlineFlowchartConfig, sanitizeMermaidSvg } from '~/utils/mermaid';
+import {
+  contrastMermaidVariables,
+  inlineFlowchartConfig,
+  sanitizeMermaidSvg,
+} from '~/utils/mermaid';
 
 // Constants
 const MD5_LENGTH_THRESHOLD = 10_000;
@@ -57,6 +61,9 @@ export const useMermaid = ({
 }: UseMermaidOptions): UseMermaidReturn => {
   const { theme } = useContext(ThemeContext);
   const isDarkMode = isDark(theme);
+  /** A contrast mode changes the diagram palette, so it has to change the cache
+   *  key too, or an already-rendered SVG survives the switch untouched. */
+  const highContrast = resolvesToHighContrast(theme);
 
   // Store last valid SVG for fallback on errors
   const [validContent, setValidContent] = useState<string>('');
@@ -71,10 +78,10 @@ export const useMermaid = ({
     const contentHash = content.length < MD5_LENGTH_THRESHOLD ? content : Md5.hashStr(content);
 
     // Include theme mode in cache key to handle theme switches
-    const themeKey = customTheme || (isDarkMode ? 'd' : 'l');
+    const themeKey = customTheme || `${isDarkMode ? 'd' : 'l'}${highContrast ? 'h' : ''}`;
 
     return [id, themeKey, contentHash].filter(Boolean).join('-');
-  }, [content, enabled, id, isDarkMode, customTheme]);
+  }, [content, enabled, id, isDarkMode, highContrast, customTheme]);
 
   // Generate unique diagram ID (mermaid requires unique IDs in the DOM)
   // Include cacheKey to regenerate when content/theme changes, preventing mermaid internal conflicts
@@ -88,10 +95,12 @@ export const useMermaid = ({
   // Build mermaid configuration
   const mermaidConfig = useMemo((): MermaidConfig => {
     const defaultTheme = isDarkMode ? 'dark' : 'neutral';
+    const themeVariables = contrastMermaidVariables(isDarkMode, highContrast);
 
     return {
       startOnLoad: false,
-      theme: (customTheme as MermaidConfig['theme']) || defaultTheme,
+      theme: (customTheme as MermaidConfig['theme']) || (themeVariables ? 'base' : defaultTheme),
+      ...(themeVariables ? { themeVariables } : {}),
       ...config,
       flowchart: { ...inlineFlowchartConfig, ...config?.flowchart, htmlLabels: false },
       // Security hardening: MUST come after ...config spread to prevent override
@@ -99,7 +108,7 @@ export const useMermaid = ({
       maxTextSize: config?.maxTextSize ?? 50000,
       maxEdges: config?.maxEdges ?? 500,
     };
-  }, [customTheme, isDarkMode, config]);
+  }, [customTheme, isDarkMode, highContrast, config]);
 
   // Fetch/render function
   const fetchSvg = async (): Promise<string> => {
