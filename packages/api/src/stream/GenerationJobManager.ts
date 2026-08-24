@@ -2566,6 +2566,9 @@ class GenerationJobManagerClass {
         // Surface the owning replica's seal capability so the steer route can
         // honour it instead of probing its own (possibly older) SDK.
         preemptCapable: jobData.preemptCapable,
+        // Same owner-recorded pattern for quote handling: admission must not
+        // store/acknowledge quotes an older owning drain would drop.
+        steerQuotesCapable: jobData.steerQuotesCapable,
         providerExecutionId: jobData.providerExecutionId,
         providerDrained: jobData.providerDrained,
         steersClosed: jobData.steersClosed,

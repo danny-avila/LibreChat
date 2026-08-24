@@ -56,6 +56,78 @@ export function collectAppliedSteerIds(values: unknown[] | undefined): string[] 
   return [...ids];
 }
 
+/** Ids of applied steer parts that carry NO quotes, same traversal as
+ * `collectAppliedSteerIds`. Paired with a quote-bearing local chip, such a
+ * part proves a pre-quotes server injected the words bare — the chip's
+ * excerpts must be re-staged before the settle removes their only copy. */
+export function collectQuotelessAppliedSteerIds(values: unknown[] | undefined): Set<string> {
+  if (!values) {
+    return new Set();
+  }
+  const ids = new Set<string>();
+  for (const value of values) {
+    if (value == null || typeof value !== 'object') {
+      continue;
+    }
+    const object = value as { content?: unknown };
+    const parts = Array.isArray(object.content) ? object.content : [value];
+    for (const part of parts) {
+      if (part == null || typeof part !== 'object') {
+        continue;
+      }
+      const candidate = part as {
+        type?: unknown;
+        steerId?: unknown;
+        clientSteerId?: unknown;
+        quotes?: unknown;
+      };
+      if (candidate.type !== ContentTypes.STEER) {
+        continue;
+      }
+      if (Array.isArray(candidate.quotes) && candidate.quotes.length > 0) {
+        continue;
+      }
+      if (typeof candidate.steerId === 'string') {
+        ids.add(candidate.steerId);
+      }
+      if (typeof candidate.clientSteerId === 'string') {
+        ids.add(candidate.clientSteerId);
+      }
+    }
+  }
+  return ids;
+}
+
+/** Dedupe-appends re-staged excerpts onto the composer's pending-quote chips,
+ * returning `prev` untouched when nothing new lands (Recoil referential
+ * stability). The dedupe also makes the multiple restore triggers — ACK echo,
+ * applied event, reconnect settle — idempotent for the same excerpts. */
+export function mergeRestagedQuotes(prev: string[], quotes: string[]): string[] {
+  const fresh = quotes.filter((quote) => !prev.includes(quote));
+  return fresh.length > 0 ? [...prev, ...fresh] : prev;
+}
+
+/** Excerpts to re-stage when applied steer parts settle their chips: the
+ * quotes carried by each chip whose applied part has none — proof a
+ * pre-quotes server injected the words bare, leaving the chip as the only
+ * copy of the user's excerpts. */
+export function collectDroppedSteerQuotes(
+  values: unknown[] | undefined,
+  chips: readonly Pick<TPendingSteer, 'steerId' | 'clientSteerId' | 'quotes'>[],
+): string[] {
+  const quoteless = collectQuotelessAppliedSteerIds(values);
+  if (quoteless.size === 0) {
+    return [];
+  }
+  return chips.flatMap((steer) =>
+    (steer.quotes?.length ?? 0) > 0 &&
+    (quoteless.has(steer.steerId) ||
+      (steer.clientSteerId != null && quoteless.has(steer.clientSteerId)))
+      ? (steer.quotes ?? [])
+      : [],
+  );
+}
+
 /**
  * Places an injected steer part at its absolute content index on the target
  * response message. The server reserved that slot (subsequent SDK events were

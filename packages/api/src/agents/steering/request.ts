@@ -595,6 +595,14 @@ async function handleSteerRequestInternal(
   if (isAborted(deps.signal)) {
     return { status: 499, body: { code: 'STEER_ABORTED' } };
   }
+  /** The OWNER's recorded capability, exactly like `preemptCapable`: an
+   * upgraded admission replica must not store quotes (and claim them
+   * accepted) for a generation whose older owning drain would silently drop
+   * them at injection. Dropping here keeps the durable item and the
+   * `quotesAccepted` echo consistent — the missing echo makes the client
+   * re-stage the excerpts, and a later HITL handover to a capable owner
+   * cannot double-deliver context the client already restored. */
+  const ownerAcceptsQuotes = owner.metadata?.steerQuotesCapable === true;
   const item: SteerQueueItem = {
     steerId: randomUUID(),
     ...(protocol.value === 2 && typeof clientSteerId === 'string' && { clientSteerId }),
@@ -602,7 +610,7 @@ async function handleSteerRequestInternal(
     userId: user.id ?? '',
     createdAt: Date.now(),
     ...(queuedFiles && { files: queuedFiles }),
-    ...(quotes != null && { quotes }),
+    ...(quotes != null && ownerAcceptsQuotes && { quotes }),
   };
   /**
    * Fenced to the generation the capability decision was made against. The

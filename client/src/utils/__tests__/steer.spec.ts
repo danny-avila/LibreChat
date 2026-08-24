@@ -8,6 +8,8 @@ import {
   appendAppliedSteerIds,
   resolveAbortSteerTarget,
   insertQueuedOrigin,
+  mergeRestagedQuotes,
+  collectDroppedSteerQuotes,
 } from '../steer';
 
 const buildEvent = (overrides: Partial<TSteerAppliedEvent> = {}): TSteerAppliedEvent => ({
@@ -216,5 +218,46 @@ describe('insertQueuedOrigin', () => {
       }),
       expect.objectContaining({ id: 'queued-d' }),
     ]);
+  });
+});
+
+describe('mergeRestagedQuotes', () => {
+  it('appends only fresh excerpts and keeps referential stability when none land', () => {
+    const prev = ['kept'];
+    expect(mergeRestagedQuotes(prev, ['kept'])).toBe(prev);
+    expect(mergeRestagedQuotes(prev, ['kept', 'new'])).toEqual(['kept', 'new']);
+  });
+});
+
+describe('collectDroppedSteerQuotes', () => {
+  const chips = [
+    { steerId: 'srv-1', clientSteerId: 'local-1', quotes: ['excerpt one'] },
+    { steerId: 'srv-2', quotes: ['excerpt two'] },
+    { steerId: 'srv-3' },
+  ];
+
+  it('collects quotes for chips whose applied part carries none', () => {
+    const values = [
+      {
+        content: [
+          { type: ContentTypes.STEER, steerId: 'srv-1' },
+          { type: ContentTypes.STEER, steerId: 'srv-2', quotes: ['excerpt two'] },
+          { type: ContentTypes.STEER, steerId: 'srv-3' },
+        ],
+      },
+    ];
+    expect(collectDroppedSteerQuotes(values, chips)).toEqual(['excerpt one']);
+  });
+
+  it('matches a quote-less part by the client correlation id too', () => {
+    const values = [{ content: [{ type: ContentTypes.STEER, clientSteerId: 'local-1' }] }];
+    expect(collectDroppedSteerQuotes(values, chips)).toEqual(['excerpt one']);
+  });
+
+  it('returns nothing when every applied part kept its quotes', () => {
+    const values = [
+      { content: [{ type: ContentTypes.STEER, steerId: 'srv-1', quotes: ['excerpt one'] }] },
+    ];
+    expect(collectDroppedSteerQuotes(values, chips)).toEqual([]);
   });
 });

@@ -20,6 +20,7 @@ import {
   clearAllDrafts,
   getPendingDraftId,
   insertQueuedOrigin,
+  mergeRestagedQuotes,
 } from '~/utils';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useSetFilesToDelete } from '~/hooks/Files';
@@ -649,10 +650,7 @@ export default function useSteering({
   const restageQuotes = useRecoilCallback(
     ({ set }) =>
       (convoId: string, quotes: string[]) => {
-        set(store.pendingQuotesByConvoId(convoId), (prev) => {
-          const fresh = quotes.filter((quote) => !prev.includes(quote));
-          return fresh.length > 0 ? [...prev, ...fresh] : prev;
-        });
+        set(store.pendingQuotesByConvoId(convoId), (prev) => mergeRestagedQuotes(prev, quotes));
       },
     [],
   );

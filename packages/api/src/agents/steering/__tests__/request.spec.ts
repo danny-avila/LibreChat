@@ -298,7 +298,9 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
 
   it('normalizes quoted excerpts into the queue item like the chat route', async () => {
     const streamId = 'steer-req-quotes';
-    await GenerationJobManager.createJob(streamId, user.id);
+    await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { steerQuotesCapable: true },
+    });
 
     const result = await handleSteerRequest(user, {
       conversationId: streamId,
@@ -310,6 +312,25 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
     expect(result.body.quotesAccepted).toBe(true);
     const queued = await GenerationJobManager.steering.peek(streamId);
     expect(queued[0].quotes).toEqual(['kept excerpt', 'second']);
+  });
+
+  it('drops quotes without the echo when the generation owner cannot merge them', async () => {
+    // The job was created by a pre-quotes replica (no capability flag): an
+    // upgraded admission replica must not store quotes its owning drain would
+    // silently ignore — the missing echo makes the client re-stage them.
+    const streamId = 'steer-req-quotes-incapable-owner';
+    await GenerationJobManager.createJob(streamId, user.id);
+
+    const result = await handleSteerRequest(user, {
+      conversationId: streamId,
+      text: 'about the selection',
+      quotes: ['the excerpt'],
+    });
+
+    expect(result.status).toBe(202);
+    expect(result.body).not.toHaveProperty('quotesAccepted');
+    const queued = await GenerationJobManager.steering.peek(streamId);
+    expect(queued[0]).not.toHaveProperty('quotes');
   });
 
   it('omits quotes from the queue item when nothing usable was sent', async () => {
@@ -840,7 +861,7 @@ describe('generation protocol bridge for steering mutations', () => {
   it('treats quotes as part of the idempotency fingerprint', async () => {
     const streamId = 'steer-protocol-v2-quote-fingerprint';
     await GenerationJobManager.createJob(streamId, user.id, undefined, {
-      initialMetadata: { generationProtocolVersion: 2 },
+      initialMetadata: { generationProtocolVersion: 2, steerQuotesCapable: true },
     });
     const requestBody = {
       conversationId: streamId,

@@ -167,6 +167,16 @@ export interface SerializableJobData {
    * preempt shipped, which reads as incapable: the honest outcome.
    */
   preemptCapable?: boolean;
+  /**
+   * Whether the owning replica's drain merges `SteerQueueItem.quotes` into
+   * the injected turn and persists them on the steer part. Recorded at
+   * createJob (and rewritten on HITL handover) for the same reason as
+   * `preemptCapable`: a steer admitted by an upgraded replica must not store
+   * and acknowledge quotes an older owner would silently drop. Absent reads
+   * as incapable — admission then drops the quotes and omits the
+   * `quotesAccepted` echo, so the client re-stages them.
+   */
+  steerQuotesCapable?: boolean;
 
   /** Explicitly false until the provider-owning replica has installed its
    * generation-fenced abort subscription. Missing is conservative legacy
@@ -383,6 +393,7 @@ export type JobMetadataPatch = Partial<
     | 'discoveredTools'
     | 'activityPhaseSnapshot'
     | 'preemptCapable'
+    | 'steerQuotesCapable'
     | 'providerExecutionId'
     | 'providerDrained'
     | 'generationProtocolVersion'
