@@ -190,6 +190,10 @@ export function createSubagentControlHandler(deps: Dependencies) {
       if (result.status === 'not_found') {
         throw new SubagentTaskOwnerUnavailableError();
       }
+      if ('task' in result && result.task.threadId !== threadId) {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
       const receipt = responseReceipt(body.invocationId, command, result);
       res.status(200).json({ receipt } satisfies SubagentControlResponse);
     } catch (error) {

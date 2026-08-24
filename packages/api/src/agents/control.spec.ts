@@ -312,6 +312,26 @@ describe('subagent control handler', () => {
     });
   });
 
+  it('rejects a task result owned by a sibling child thread', async () => {
+    const deps = dependencies(
+      jest.fn().mockResolvedValue({
+        status: 'accepted',
+        controlId: 'control-1',
+        task: { taskId, threadId: 'sibling-thread', status: 'running' },
+      }),
+    );
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(
+      request({ taskId, invocationId: 'invocation-1', action: 'queue', message: 'Continue.' }),
+      res.value,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Conversation not found' });
+  });
+
   it('rejects malformed controls before authorization or routing', async () => {
     const deps = dependencies();
     const handler = createSubagentControlHandler(deps);
