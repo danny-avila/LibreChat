@@ -55,8 +55,13 @@ export const highContrastLightTheme: IThemeRGB = {
   'rgb-header-button-hover': '212 212 212', // #d4d4d4
 
   // Surface colors
-  'rgb-surface-active': '212 212 212', // #d4d4d4
-  'rgb-surface-active-alt': '184 184 184', // #b8b8b8
+  /** Selected state, so WCAG 1.4.11 applies: 3.36:1 and 4.29:1 against the
+   *  canvas. Their black label lands at 6.25:1 and 4.89:1, short of AAA, which
+   *  is the unavoidable trade. Below L 0.3 a fill clears the 3:1 state floor and
+   *  caps its own label below 7:1; above it the label clears AAA and the state
+   *  disappears. 1.4.11 is Level AA and 1.4.6 is Level AAA, so the state wins. */
+  'rgb-surface-active': '140 140 140', // #8c8c8c
+  'rgb-surface-active-alt': '122 122 122', // #7a7a7a
   'rgb-surface-hover': '212 212 212', // #d4d4d4
   'rgb-surface-hover-alt': '184 184 184', // #b8b8b8
   'rgb-surface-composer-hover': '212 212 212', // #d4d4d4
@@ -169,8 +174,13 @@ export const highContrastDarkTheme: IThemeRGB = {
   'rgb-header-button-hover': '61 61 61', // #3d3d3d
 
   // Surface colors
-  'rgb-surface-active': '61 61 61', // #3d3d3d
-  'rgb-surface-active-alt': '87 87 87', // #575757
+  /** Selected state, so WCAG 1.4.11 applies: 3.14:1 and 3.83:1 against the
+   *  canvas. Their white label lands at 6.69:1 and 5.49:1, short of AAA, which
+   *  is the unavoidable trade. Above L 0.1 a fill clears the 3:1 state floor and
+   *  caps its own label below 7:1; below it the label clears AAA and the state
+   *  disappears. 1.4.11 is Level AA and 1.4.6 is Level AAA, so the state wins. */
+  'rgb-surface-active': '92 92 92', // #5c5c5c
+  'rgb-surface-active-alt': '105 105 105', // #696969
   'rgb-surface-hover': '61 61 61', // #3d3d3d
   'rgb-surface-hover-alt': '87 87 87', // #575757
   'rgb-surface-composer-hover': '61 61 61', // #3d3d3d

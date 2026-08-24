@@ -3,19 +3,40 @@ import {
   HIGH_CONTRAST_THEME_NAME,
   highContrastTheme,
   resolveTheme,
+  themeBrandTokens,
   themeColorTokens,
+  validateThemeDefinition,
 } from '../registry';
 import { highContrastDarkTheme, highContrastLightTheme } from './highContrast';
 
 type Rgb = [number, number, number];
 
+/** Brands are hex rather than channel triplets, so they need their own parser. */
+function hexToRgb(value: string): Rgb {
+  const hex = value.replace('#', '');
+  const full =
+    hex.length === 3
+      ? hex
+          .split('')
+          .map((channel) => channel + channel)
+          .join('')
+      : hex.slice(0, 6);
+  return [
+    parseInt(full.slice(0, 2), 16),
+    parseInt(full.slice(2, 4), 16),
+    parseInt(full.slice(4, 6), 16),
+  ];
+}
+
 /** WCAG 1.4.6 enhanced contrast, the reason these modes exist. */
 const WCAG_AAA_NORMAL = 7;
+/** WCAG 1.4.3, the floor a fill that must also satisfy 1.4.11 can still carry. */
+const WCAG_AA_NORMAL = 4.5;
 /** WCAG 1.4.11 non-text contrast, for borders, rings, marks and fills. */
 const WCAG_NON_TEXT = 3;
 
-/** Surfaces body copy renders on, including the interaction fills; a hover
- *  state that drops text below AAA is still a contrast failure. */
+/** Surfaces body copy renders on, including hover, which is transient and so
+ *  carries no state-contrast duty of its own and can afford AAA text. */
 const surfaces: Array<keyof IThemeRGB> = [
   'rgb-surface-primary',
   'rgb-surface-primary-alt',
@@ -29,13 +50,20 @@ const surfaces: Array<keyof IThemeRGB> = [
   'rgb-presentation',
   'rgb-surface-hover',
   'rgb-surface-hover-alt',
-  'rgb-surface-active',
-  'rgb-surface-active-alt',
   'rgb-surface-composer-hover',
   'rgb-header-primary',
   'rgb-header-hover',
   'rgb-header-button-hover',
 ];
+
+/** The selected state. Dozens of call sites convey it with this fill alone, and
+ *  every ink token collapses to one colour here, so the fill has to satisfy
+ *  WCAG 1.4.11 on its own. That caps the label it can carry: see the note on
+ *  these tokens in `highContrast.ts` for why AAA is unreachable for both. */
+const activeFills: Array<keyof IThemeRGB> = ['rgb-surface-active', 'rgb-surface-active-alt'];
+
+/** The canvas each mode's active fill has to stand out from. */
+const canvasSurfaces: Array<keyof IThemeRGB> = ['rgb-surface-primary', 'rgb-presentation'];
 
 const textTokens: Array<keyof IThemeRGB> = [
   'rgb-text-primary',
@@ -140,8 +168,13 @@ describe.each([
     expect(Object.keys(theme).sort()).toEqual([...themeColorTokens].sort());
   });
 
-  it('keeps neutral text at WCAG AAA on every surface, hover and active fill', () => {
+  it('keeps neutral text at WCAG AAA on every canvas and hover fill', () => {
     expect(below(theme, WCAG_AAA_NORMAL, textTokens, surfaces)).toEqual([]);
+  });
+
+  it('makes the selected state visible without dropping its label below AA', () => {
+    expect(below(theme, WCAG_NON_TEXT, activeFills, canvasSurfaces)).toEqual([]);
+    expect(below(theme, WCAG_AA_NORMAL, textTokens, activeFills)).toEqual([]);
   });
 
   /** The standard palettes are deliberately not held to this: their dark
@@ -247,5 +280,78 @@ describe('high contrast theme definition', () => {
     expect(highContrastLightTheme['rgb-text-primary']).toBe('0 0 0');
     expect(highContrastDarkTheme['rgb-surface-primary']).toBe('0 0 0');
     expect(highContrastDarkTheme['rgb-text-primary']).toBe('255 255 255');
+  });
+
+  /** A provider avatar is a brand fill carrying a glyph, so it owes the same two
+   *  ratios a status fill does: the glyph against the fill, and the fill against
+   *  the canvas. The standard brand set leaves the white glyph at 2.30:1 on
+   *  OpenAI green, which is why these are declared per mode. */
+  it('keeps every provider avatar at WCAG AAA in both modes', () => {
+    const providerFills = themeBrandTokens.filter((token) => token !== 'provider-foreground');
+
+    (
+      [
+        ['light', '255 255 255'],
+        ['dark', '0 0 0'],
+      ] as const
+    ).forEach(([mode, canvas]) => {
+      const resolved = resolveTheme(highContrastTheme, mode);
+      const glyph = hexToRgb(resolved.brands['provider-foreground']);
+      const canvasRgb = canvas.split(' ').map(Number) as Rgb;
+
+      providerFills.forEach((token) => {
+        const fill = hexToRgb(resolved.brands[token]);
+        expect({
+          token: `${mode} ${token} glyph`,
+          ratio: contrast(glyph, fill) >= WCAG_AAA_NORMAL,
+        }).toEqual({ token: `${mode} ${token} glyph`, ratio: true });
+        expect({
+          token: `${mode} ${token} silhouette`,
+          ratio: contrast(fill, canvasRgb) >= WCAG_AAA_NORMAL,
+        }).toEqual({ token: `${mode} ${token} silhouette`, ratio: true });
+      });
+    });
+  });
+
+  it('lets a mode override the theme-wide brand set', () => {
+    const themed = resolveTheme(
+      {
+        version: 1,
+        name: 'per-mode-brands',
+        modes: { dark: { brands: { 'provider-openai': '#123456' } } },
+        brands: { 'provider-openai': '#abcdef' },
+      },
+      'dark',
+    );
+    expect(themed.brands['provider-openai']).toBe('#123456');
+
+    const inherited = resolveTheme(
+      {
+        version: 1,
+        name: 'per-mode-brands',
+        modes: { dark: { brands: { 'provider-openai': '#123456' } } },
+        brands: { 'provider-openai': '#abcdef' },
+      },
+      'light',
+    );
+    expect(inherited.brands['provider-openai']).toBe('#abcdef');
+  });
+
+  it('validates a mode brand block the same way as the theme-wide one', () => {
+    expect(
+      validateThemeDefinition({
+        version: 1,
+        name: 'invalid',
+        modes: { light: { brands: { 'provider-openai': 'rgb(var(--text-primary))' } } },
+      }),
+    ).toContain('Invalid brand value for provider-openai: rgb(var(--text-primary))');
+    expect(
+      validateThemeDefinition({
+        version: 1,
+        name: 'invalid',
+        // @ts-expect-error the unknown token is the point of the assertion
+        modes: { light: { brands: { 'provider-nope': '#000000' } } },
+      }),
+    ).toContain('Unknown brand token: provider-nope');
   });
 });

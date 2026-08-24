@@ -341,6 +341,13 @@ export interface IThemeAppearance {
 export interface ThemeModeDefinition {
   colors?: IThemeRGB;
   appearance?: Partial<IThemeAppearance>;
+  /**
+   * Brand overrides for this mode only, applied over the theme-wide `brands`.
+   * A brand fill carries a glyph and has to stand out from the canvas, and both
+   * of those flip between light and dark, so a single set cannot serve both at
+   * enhanced contrast.
+   */
+  brands?: Partial<IThemeBrands>;
 }
 
 export interface IThemeBrands {

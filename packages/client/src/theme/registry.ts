@@ -101,12 +101,39 @@ export const libreChatTheme: ThemeDefinition = Object.freeze({
  */
 export const HIGH_CONTRAST_THEME_NAME = 'high-contrast' as const;
 
+/**
+ * A brand fill carries a glyph and has to stand out from the canvas, and both
+ * flip between the modes, so the brands are declared per mode: dark tints under
+ * a white glyph on white, bright tints under a black glyph on black. Hue is kept
+ * so a provider stays recognisable; the worst pair measures 8.76:1 for both the
+ * glyph and the silhouette, against 2.30:1 for the standard brand set.
+ */
+const highContrastLightBrands: Partial<IThemeBrands> = Object.freeze({
+  'provider-openai': '#00563d',
+  'provider-openai-gpt4': '#4d1a99',
+  'provider-openai-reasoning': '#000000',
+  'provider-anthropic': '#6b3d00',
+  'provider-azure': '#00417a',
+  'provider-bedrock': '#00504d',
+  'provider-foreground': '#ffffff',
+});
+
+const highContrastDarkBrands: Partial<IThemeBrands> = Object.freeze({
+  'provider-openai': '#7ff0b3',
+  'provider-openai-gpt4': '#c8a3ff',
+  'provider-openai-reasoning': '#ffffff',
+  'provider-anthropic': '#ffc94d',
+  'provider-azure': '#8cc8ff',
+  'provider-bedrock': '#5ce6db',
+  'provider-foreground': '#000000',
+});
+
 export const highContrastTheme: ThemeDefinition = Object.freeze({
   version: THEME_VERSION,
   name: HIGH_CONTRAST_THEME_NAME,
   modes: {
-    light: { colors: highContrastLightTheme },
-    dark: { colors: highContrastDarkTheme },
+    light: { colors: highContrastLightTheme, brands: highContrastLightBrands },
+    dark: { colors: highContrastDarkTheme, brands: highContrastDarkBrands },
   },
 });
 
@@ -178,6 +205,27 @@ const appearanceValidators: Record<keyof IThemeAppearance, (value: unknown) => b
   motionNormal: isDuration,
 };
 
+/** Shared by the theme-wide `brands` and each mode's override block. */
+function collectBrandErrors(brands: unknown): string[] {
+  if (!isPlainRecord(brands)) {
+    return [];
+  }
+
+  return Object.entries(brands).flatMap(([key, value]) => {
+    if (!themeBrandTokens.includes(key as keyof IThemeBrands)) {
+      return [`Unknown brand token: ${key}`];
+    }
+    /** Only the glyph is a flat colour; a fill may also be a gradient. */
+    const isColorOnly = key === 'provider-foreground';
+    const isValidBrand =
+      typeof value === 'string' &&
+      (isColorOnly
+        ? hexColorPattern.test(value)
+        : hexColorPattern.test(value) || isLinearGradient(value));
+    return value !== undefined && !isValidBrand ? [`Invalid brand value for ${key}: ${value}`] : [];
+  });
+}
+
 export function validateThemeDefinition(theme: ThemeDefinition): string[] {
   const errors: string[] = [];
 
@@ -220,7 +268,7 @@ export function validateThemeDefinition(theme: ThemeDefinition): string[] {
     }
 
     Object.keys(definition).forEach((key) => {
-      if (key !== 'colors' && key !== 'appearance') {
+      if (key !== 'colors' && key !== 'appearance' && key !== 'brands') {
         errors.push(`Unknown ${mode} theme field: ${key}`);
       }
     });
@@ -254,26 +302,18 @@ export function validateThemeDefinition(theme: ThemeDefinition): string[] {
         }
       });
     }
+
+    if (definition.brands !== undefined && !isPlainRecord(definition.brands)) {
+      errors.push(`Theme brands for ${mode} must be an object`);
+    } else {
+      errors.push(...collectBrandErrors(definition.brands));
+    }
   });
 
   if (theme.brands !== undefined && !isPlainRecord(theme.brands)) {
     errors.push('Theme brands must be an object');
   } else {
-    Object.entries(theme.brands ?? {}).forEach(([key, value]) => {
-      if (!themeBrandTokens.includes(key as keyof IThemeBrands)) {
-        errors.push(`Unknown brand token: ${key}`);
-        return;
-      }
-      const isColorOnly = key === 'provider-foreground';
-      const isValidBrand =
-        typeof value === 'string' &&
-        (isColorOnly
-          ? hexColorPattern.test(value)
-          : hexColorPattern.test(value) || isLinearGradient(value));
-      if (value !== undefined && !isValidBrand) {
-        errors.push(`Invalid brand value for ${key}: ${value}`);
-      }
-    });
+    errors.push(...collectBrandErrors(theme.brands));
   }
 
   return errors;
@@ -336,7 +376,8 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ...chartWidgetStrokeFallback,
     } as Required<IThemeRGB>,
     appearance: { ...defaultAppearance, ...definition?.appearance },
-    brands: { ...defaultBrands, ...theme.brands },
+    /** Mode last: a mode override is more specific than the theme-wide set. */
+    brands: { ...defaultBrands, ...theme.brands, ...definition?.brands },
   };
 }
 
