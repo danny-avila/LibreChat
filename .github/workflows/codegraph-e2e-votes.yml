@@ -10,7 +10,8 @@
 # entries outside that directory matched nothing — and the covered-list log line still
 # claimed them, minting graduation trials for specs that never executed (run 32701691037:
 # a11y/keys/messages in the covered list, zero of their tests run). The covered list below
-# is now derived from Playwright's own discovery, not from the input, and the run takes no
+# is therefore derived from the run's EXECUTED results — discovery is not enough either,
+# since env-gated suites self-skip under this job's default env — and the run takes no
 # path filters at all.
 #
 # It cannot fail the branch: the test step is continue-on-error. The newest merge cancels
@@ -170,28 +171,32 @@ jobs:
         continue-on-error: true
         run: .github/scripts/install-playwright-fonts.sh
 
-      - name: Enumerate the suite (ground truth for the trial ledger)
+      - name: Vote — run the full mock suite (cannot fail the branch)
+        continue-on-error: true
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: pw-results.json
+        run: npx playwright test --config=e2e/playwright.config.mock.ts --reporter=line,json
+
+      - name: Ledger — log the specs that actually executed
         run: |
           set +e
           # The shadow's per-spec graduation ledger counts a clean trial for every spec a green
-          # run covered, so the covered list must come from what Playwright will actually
-          # discover — echoing an input list is how phantom trials happened. --list needs no
-          # browsers and starts no web server; the git fallback enumerates the same testDir.
-          npx playwright test --config=e2e/playwright.config.mock.ts --list --reporter=json > pw-list.json 2>/dev/null
-          if jq -e '.suites | length > 0' pw-list.json >/dev/null 2>&1; then
-            jq -r '.suites[].file' pw-list.json | sort -u | sed 's|^|specs/mock/|' > covered.txt
+          # run covered, so the covered list must come from EXECUTED tests, not from discovery:
+          # env-gated suites (mcp-tool-list-changed needs E2E_MCP_LIST_CHANGED, enforced-model-
+          # specs needs E2E_MODEL_SPECS_ENFORCE) are discovered by --list yet skip every test
+          # under this job's default env — counting them as covered would mint phantom trials,
+          # the exact bug this workflow revision exists to kill (Codex P1 on #15162). A spec is
+          # covered iff at least one of its tests reached a non-skipped outcome.
+          if jq -e '.suites' pw-results.json >/dev/null 2>&1; then
+            jq -r '[.suites[] | recurse(.suites[]?) | .specs[]? | select([.tests[]?.status] | any(. != "skipped")) | .file] | unique | .[]' pw-results.json \
+              | sed 's|^|specs/mock/|' > covered.txt
+            N=$(wc -l < covered.txt | tr -d ' ')
+            echo "codegraph-votes: running $N specs (executed, full suite)"
+            if [ "$N" != "0" ]; then echo "codegraph-votes-specs: $(tr '\n' ' ' < covered.txt)"; fi
           else
-            echo "playwright --list unavailable; falling back to git enumeration"
-            git ls-files 'e2e/specs/mock/*.spec.ts' 'e2e/specs/mock/**/*.spec.ts' | sed 's|^e2e/||' | sort -u > covered.txt
+            echo "codegraph-votes: no results json — run crashed before reporting; no trials logged"
           fi
-          N=$(wc -l < covered.txt | tr -d ' ')
-          echo "codegraph-votes: running $N specs (full suite)"
-          if [ "$N" != "0" ]; then echo "codegraph-votes-specs: $(tr '\n' ' ' < covered.txt)"; fi
           exit 0
-
-      - name: Vote — run the full mock suite (cannot fail the branch)
-        continue-on-error: true
-        run: npx playwright test --config=e2e/playwright.config.mock.ts
 
       - name: Done
         if: always()
