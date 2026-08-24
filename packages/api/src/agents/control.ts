@@ -199,6 +199,25 @@ export function createSubagentControlHandler(deps: Dependencies) {
           receipt: storedReceipt,
           ...(tenantId == null ? {} : { tenantId }),
         });
+        if (persisted === 'conflict') {
+          const conflicting = await deps.getSubagentTaskControlReceipt({
+            userId,
+            conversationId: threadId,
+            taskId: body.taskId,
+            invocationId: body.invocationId,
+            ...(tenantId == null ? {} : { tenantId }),
+          });
+          if (conflicting == null) throw new SubagentTaskOwnerUnavailableError();
+          const receipt =
+            conflicting.fingerprint === fingerprint
+              ? publicStoredReceipt(conflicting)
+              : responseReceipt(body.invocationId, command, {
+                  status: 'invalid',
+                  message: 'This control invocation id was already used for a different command.',
+                });
+          res.status(200).json({ receipt } satisfies SubagentControlResponse);
+          return;
+        }
         if (!persisted) throw new SubagentTaskOwnerUnavailableError();
         res
           .status(200)

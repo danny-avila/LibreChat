@@ -163,6 +163,47 @@ describe('subagent control handler', () => {
     });
   });
 
+  it('resolves a concurrent expired-task receipt conflict authoritatively', async () => {
+    const deps = dependencies();
+    deps.getSubagentThreadForParent.mockResolvedValue({
+      ...child,
+      subagentThreadLease: undefined,
+    });
+    deps.recordSubagentTaskControlReceipt.mockResolvedValue('conflict');
+    deps.getSubagentTaskControlReceipt.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      invocationId: 'invocation-1',
+      fingerprint: controlFingerprint({ action: 'queue', message: 'Original command.' }),
+      action: 'queue',
+      status: 'rejected',
+      createdAt: new Date('2026-08-24T12:00:00.000Z'),
+      updatedAt: new Date('2026-08-24T12:00:00.000Z'),
+      message: 'Original command.',
+      reason: 'task_not_running',
+    });
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(
+      request({
+        taskId,
+        invocationId: 'invocation-1',
+        action: 'queue',
+        message: 'Different command.',
+      }),
+      res.value,
+    );
+
+    expect(deps.store.controlTask).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      receipt: expect.objectContaining({
+        invocationId: 'invocation-1',
+        status: 'rejected',
+        reason: 'invalid_command',
+      }),
+    });
+  });
+
   it('replays the durable authoritative receipt before rejecting an expired lease', async () => {
     const deps = dependencies();
     deps.getSubagentThreadForParent.mockResolvedValue({
