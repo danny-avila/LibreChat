@@ -198,7 +198,7 @@ function MultiMessage({
     );
   }
   const isEditingActivityAnchor =
-    currentEditId != null && activityParentMessageIds.includes(currentEditId);
+    typeof currentEditId === 'string' && activityParentMessageIds.includes(currentEditId);
   const hasParallelContent =
     !message.isCreatedByUser && message.content?.some((part) => part.groupId != null) === true;
 
