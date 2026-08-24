@@ -45,6 +45,9 @@ let recordSubagentTaskControlReceipt: ReturnType<
 let getSubagentTaskControlReceipt: ReturnType<
   typeof createMessageMethods
 >['getSubagentTaskControlReceipt'];
+let getSubagentTaskControlReplay: ReturnType<
+  typeof createMessageMethods
+>['getSubagentTaskControlReplay'];
 let releaseSubagentTaskResultClaim: ReturnType<
   typeof createMessageMethods
 >['releaseSubagentTaskResultClaim'];
@@ -72,6 +75,7 @@ beforeAll(async () => {
   claimSubagentTaskResult = methods.claimSubagentTaskResult;
   recordSubagentTaskControlReceipt = methods.recordSubagentTaskControlReceipt;
   getSubagentTaskControlReceipt = methods.getSubagentTaskControlReceipt;
+  getSubagentTaskControlReplay = methods.getSubagentTaskControlReplay;
   releaseSubagentTaskResultClaim = methods.releaseSubagentTaskResultClaim;
 
   await mongoose.connect(mongoUri);
@@ -101,6 +105,7 @@ describe('Message Operations', () => {
 
     // Clear database
     await Message.deleteMany({});
+    await mongoose.models.Conversation.deleteMany({});
 
     mockCtx = {
       userId: 'user123',
@@ -2455,6 +2460,21 @@ describe('Message Operations', () => {
     it('reads an exact authorized receipt and persists a new terminal rejection', async () => {
       const conversationId = uuidv4();
       await createTaskInput(conversationId);
+      await mongoose.models.Conversation.create({
+        user: 'user123',
+        conversationId,
+        title: 'Child thread',
+        endpoint: 'agents',
+        subagentThread: {
+          rootConversationId: 'parent-conversation',
+          parentConversationId: 'parent-conversation',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
       await Message.updateOne(
         { user: 'user123', conversationId, messageId: 'task-1:user' },
         { $set: { 'subagentTask.status': 'completed' } },
@@ -2500,12 +2520,36 @@ describe('Message Operations', () => {
           invocationId: 'terminal-invocation',
         }),
       ).resolves.toBeNull();
+      await expect(
+        getSubagentTaskControlReplay({
+          userId: 'user123',
+          parentConversationId: 'parent-conversation',
+          taskId: 'task-1',
+          invocationId: 'terminal-invocation',
+        }),
+      ).resolves.toEqual({
+        receipt: expect.objectContaining({ invocationId: 'terminal-invocation' }),
+        task: expect.objectContaining({
+          taskId: 'task-1',
+          threadId: conversationId,
+          subagentType: 'researcher',
+          status: 'completed',
+        }),
+      });
+      await expect(
+        getSubagentTaskControlReplay({
+          userId: 'user123',
+          parentConversationId: 'different-parent',
+          taskId: 'task-1',
+          invocationId: 'terminal-invocation',
+        }),
+      ).resolves.toBeNull();
 
       const ordinaryConversationId = uuidv4();
       await Message.create({
         user: 'user123',
         conversationId: ordinaryConversationId,
-        messageId: 'task-1:user',
+        messageId: 'ordinary-task:user',
         parentMessageId: Constants.NO_PARENT,
         sender: 'User',
         text: 'An ordinary message with a colliding id.',
@@ -2516,7 +2560,7 @@ describe('Message Operations', () => {
         recordSubagentTaskControlReceipt({
           userId: 'user123',
           conversationId: ordinaryConversationId,
-          taskId: 'task-1',
+          taskId: 'ordinary-task',
           receipt: {
             invocationId: 'terminal-invocation',
             fingerprint: 'terminal-fingerprint',
@@ -2526,6 +2570,37 @@ describe('Message Operations', () => {
             createdAt: now,
             updatedAt: now,
           },
+        }),
+      ).resolves.toBe(false);
+    });
+
+    it('rejects an invocation fingerprint conflict without reporting persistence', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      const now = new Date('2026-08-24T12:00:00.000Z');
+      const receipt = {
+        invocationId: 'conflicting-invocation',
+        fingerprint: 'first-fingerprint',
+        controlId: 'first-control',
+        action: 'queue' as const,
+        status: 'accepted' as const,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt,
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: { ...receipt, fingerprint: 'different-fingerprint' },
         }),
       ).resolves.toBe(false);
     });

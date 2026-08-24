@@ -1,9 +1,9 @@
 import { HITL_MESSAGE_FILTER_FIELDS, RetentionMode } from 'librechat-data-provider';
 import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model, Types } from 'mongoose';
-import type { AppConfig, IMessage } from '~/types';
+import type { AppConfig, IConversation, IMessage } from '~/types';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
-import { createFallbackRetentionDate } from '~/utils/retention';
+import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 
@@ -15,8 +15,8 @@ const MAX_STORED_USER_SUBMITTED_FIELD_PATHS = MAX_NORMALIZED_USER_SUBMITTED_PATH
 const MAX_USER_SUBMITTED_PATH_LENGTH = 2048;
 const MAX_SUBAGENT_CONTROL_RECEIPTS = 64;
 const MAX_SUBAGENT_CONTROL_MESSAGE_LENGTH = 4 * 1024;
-/** One owner admits at most 32 live control invocations. Two attempts per
- * admitted writer lets a full-window burst converge while remaining bounded. */
+/** One owner admits at most 64 terminal control invocations. The optimistic
+ * writer therefore has enough rounds for every admitted receipt to converge. */
 const MAX_SUBAGENT_CONTROL_RECEIPT_CAS_ATTEMPTS = 64;
 const PROVENANCE_PATHS_UNION_FIELD = '__lcProvenancePathsUnion';
 const PROVENANCE_FIELD_PATHS_UNION_FIELD = '__lcProvenanceFieldPathsUnion';
@@ -132,7 +132,7 @@ const terminalControlReceipt = (receipt: StoredSubagentControlReceipt): boolean 
 function retainSubagentControlReceipts(
   current: StoredSubagentControlReceipt[],
   receipt: StoredSubagentControlReceipt,
-): StoredSubagentControlReceipt[] {
+): { status: 'updated' | 'unchanged' | 'conflict'; receipts: StoredSubagentControlReceipt[] } {
   const existingIndex = current.findIndex(
     (candidate) => candidate.invocationId === receipt.invocationId,
   );
@@ -141,8 +141,11 @@ function retainSubagentControlReceipts(
     merged = [...current, receipt];
   } else {
     const existing = current[existingIndex];
-    if (terminalControlReceipt(existing) || existing.fingerprint !== receipt.fingerprint) {
-      return current;
+    if (existing.fingerprint !== receipt.fingerprint) {
+      return { status: 'conflict', receipts: current };
+    }
+    if (terminalControlReceipt(existing)) {
+      return { status: 'unchanged', receipts: current };
     }
     merged = current.map((candidate, index) => (index === existingIndex ? receipt : candidate));
   }
@@ -161,7 +164,7 @@ function retainSubagentControlReceipts(
               left.invocationId.localeCompare(right.invocationId),
           )
           .slice(-terminalAllowance);
-  return [...accepted, ...terminal];
+  return { status: 'updated', receipts: [...accepted, ...terminal] };
 }
 
 /**
@@ -344,6 +347,23 @@ export interface MessageMethods {
     invocationId: string;
     tenantId?: string;
   }): Promise<NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number] | null>;
+  getSubagentTaskControlReplay(input: {
+    userId: string;
+    parentConversationId: string;
+    taskId: string;
+    invocationId: string;
+    tenantId?: string;
+  }): Promise<{
+    receipt: NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number];
+    task: {
+      taskId: string;
+      threadId: string;
+      subagentType: string;
+      status: NonNullable<IMessage['subagentTask']>['status'];
+      createdAt: Date;
+      updatedAt: Date;
+    };
+  } | null>;
   bulkSaveMessages(
     messages: Array<Partial<IMessage>>,
     overrideTimestamp?: boolean,
@@ -990,8 +1010,10 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         .lean<Pick<IMessage, 'subagentTask'> | null>();
       if (currentMessage == null) return false;
       const current = currentMessage.subagentTask?.controlReceipts ?? [];
-      const next = retainSubagentControlReceipts(current, receipt);
-      if (next === current) return true;
+      const retained = retainSubagentControlReceipts(current, receipt);
+      if (retained.status === 'conflict') return false;
+      if (retained.status === 'unchanged') return true;
+      const next = retained.receipts;
       const currentFilter =
         currentMessage.subagentTask?.controlReceipts == null
           ? { 'subagentTask.controlReceipts': { $exists: false } }
@@ -1048,6 +1070,97 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         (receipt) => receipt.invocationId === invocationId,
       ) ?? null
     );
+  }
+
+  /** Resolves one authoritative receipt after its live owner disappears. The
+   * child conversation must still belong to the caller's parent thread, so a
+   * task id learned in another chat cannot cross orchestration scopes. */
+  async function getSubagentTaskControlReplay({
+    userId,
+    parentConversationId,
+    taskId,
+    invocationId,
+    tenantId,
+  }: {
+    userId: string;
+    parentConversationId: string;
+    taskId: string;
+    invocationId: string;
+    tenantId?: string;
+  }): Promise<{
+    receipt: StoredSubagentControlReceipt;
+    task: {
+      taskId: string;
+      threadId: string;
+      subagentType: string;
+      status: 'running' | 'completed' | 'error' | 'cancelled';
+      createdAt: Date;
+      updatedAt: Date;
+    };
+  } | null> {
+    if (
+      userId.length === 0 ||
+      parentConversationId.length === 0 ||
+      parentConversationId.length > 256 ||
+      taskId.length === 0 ||
+      taskId.length > 256 ||
+      invocationId.length === 0 ||
+      invocationId.length > 128
+    ) {
+      throw new TypeError('Invalid subagent task control replay identity');
+    }
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const input = await Message.findOne({
+      user: userId,
+      ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+      messageId: `${taskId}:user`,
+      'subagentTask.controlReceipts.invocationId': invocationId,
+    })
+      .select({
+        conversationId: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        'subagentTask.status': 1,
+        'subagentTask.controlReceipts': 1,
+        _id: 0,
+      })
+      .lean<Pick<IMessage, 'conversationId' | 'createdAt' | 'updatedAt' | 'subagentTask'> | null>();
+    const receipt = input?.subagentTask?.controlReceipts?.find(
+      (candidate) => candidate.invocationId === invocationId,
+    );
+    const status = input?.subagentTask?.status;
+    if (
+      input == null ||
+      receipt == null ||
+      status == null ||
+      input.createdAt == null ||
+      input.updatedAt == null
+    ) {
+      return null;
+    }
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const conversation = await Conversation.findOne({
+      user: userId,
+      conversationId: input.conversationId,
+      ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+      'subagentThread.parentConversationId': parentConversationId,
+      ...activeExpirationFilter<IConversation>(),
+    })
+      .select({ 'subagentThread.subagentType': 1, _id: 0 })
+      .lean<Pick<IConversation, 'subagentThread'> | null>();
+    const subagentType = conversation?.subagentThread?.subagentType;
+    if (subagentType == null || subagentType === '') return null;
+    return {
+      receipt,
+      task: {
+        taskId,
+        threadId: input.conversationId,
+        subagentType,
+        status,
+        createdAt: input.createdAt,
+        updatedAt: input.updatedAt,
+      },
+    };
   }
 
   /** Atomically assigns one durable terminal child result to either its
@@ -1656,6 +1769,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     updateMessage,
     recordSubagentTaskControlReceipt,
     getSubagentTaskControlReceipt,
+    getSubagentTaskControlReplay,
     claimSubagentTaskResult,
     releaseSubagentTaskResultClaim,
     deleteMessagesSince,

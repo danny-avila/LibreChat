@@ -63,8 +63,12 @@ const DEFAULT_OWNER_DRAIN_POLL_MS = 100;
 const DELETION_CANCEL_CONCURRENCY = 32;
 /** Bounds retained control invocations; one entry per applied command. */
 const MAX_CONTROL_INVOCATIONS = 4_096;
+/** Terminal controls are side-effect free, but retaining one bounded window
+ * prevents duplicate storage writers while preserving recent retry replay. */
+const MAX_TERMINAL_CONTROL_INVOCATIONS = 64;
 const MAX_DURABLE_CONTROL_MESSAGE_CHARS = 4 * 1024;
 const DEFAULT_CONTROL_RECEIPT_RETRY_MS = 5_000;
+const SHUTDOWN_CONTROL_RECEIPT_FLUSH_ATTEMPTS = 4;
 /** Bounds retained live-only updates while an event transport is unavailable. */
 const MAX_PENDING_ACTIVITY_EVENTS = 32;
 /** Live activity must never delay terminal notification indefinitely. */
@@ -98,6 +102,7 @@ type SubagentThreadMethods = Pick<
   | 'deleteConvos'
   | 'deleteMessages'
   | 'getConvo'
+  | 'getSubagentTaskControlReplay'
   | 'getMessages'
   | 'listActiveSubagentThreadLeases'
   | 'reserveSubagentThread'
@@ -530,6 +535,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   readonly supportsThreadContinuation = true;
   private readonly activeThreads = new Map<string, TaskThreadLease>();
   private readonly controlInvocations = new Map<string, ControlInvocationRecord>();
+  private readonly terminalControlInvocations = new Map<string, ControlInvocationRecord>();
 
   private readonly controlInvocationByReceipt = new Map<string, ControlInvocationRecord>();
   private readonly pendingControlReceipts = new Map<
@@ -694,6 +700,98 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     };
   }
 
+  private async replayDurableControl(
+    scopeId: string,
+    taskId: string,
+    command: SubagentTaskControlCommand,
+    invocationId: string,
+  ): Promise<SubagentTaskControlResult | undefined> {
+    const scope = parseScope(scopeId);
+    const replay = await this.runWithOwnerContext(scope, () =>
+      this.methods.getSubagentTaskControlReplay({
+        userId: scope.userId,
+        parentConversationId: scope.parentConversationId,
+        taskId,
+        invocationId,
+        ...(scope.tenantId == null ? {} : { tenantId: scope.tenantId }),
+      }),
+    );
+    if (replay == null) return undefined;
+    if (replay.receipt.fingerprint !== controlFingerprint(command)) {
+      return {
+        status: 'invalid',
+        message: 'This control invocation id was already used for a different command.',
+      };
+    }
+    const { receipt, task: durableTask } = replay;
+    const task: SubagentTaskSnapshot = {
+      taskId,
+      threadId: durableTask.threadId,
+      subagentType: durableTask.subagentType,
+      status: durableTask.status,
+      createdAt: durableTask.createdAt.getTime(),
+      updatedAt: durableTask.updatedAt.getTime(),
+      resultAvailable: durableTask.status !== 'running',
+      resultClaimed: false,
+      pendingControls: receipt.status === 'accepted' ? 1 : 0,
+      ...(receipt.controlId != null &&
+      (receipt.action === 'steer' || receipt.action === 'queue' || receipt.action === 'interrupt')
+        ? {
+            controlReceipts: [
+              {
+                controlId: receipt.controlId,
+                action: receipt.action,
+                status: receipt.status,
+                createdAt: receipt.createdAt.getTime(),
+                updatedAt: receipt.updatedAt.getTime(),
+                ...(receipt.boundary == null ? {} : { boundary: receipt.boundary }),
+                ...(receipt.reason === 'withdrawn' ||
+                receipt.reason === 'task_completed' ||
+                receipt.reason === 'task_cancelled' ||
+                receipt.reason === 'task_failed'
+                  ? { reason: receipt.reason }
+                  : {}),
+              },
+            ],
+          }
+        : {}),
+    };
+    if (receipt.status === 'accepted') {
+      return {
+        status: 'accepted',
+        task,
+        ...(receipt.controlId == null ? {} : { controlId: receipt.controlId }),
+      };
+    }
+    if (receipt.status === 'applied') {
+      return command.action === 'cancel'
+        ? { status: 'cancelled', task }
+        : {
+            status: 'accepted',
+            task,
+            ...(receipt.controlId == null ? {} : { controlId: receipt.controlId }),
+          };
+    }
+    if (
+      receipt.reason === 'task_not_running' ||
+      receipt.reason === 'task_completed' ||
+      receipt.reason === 'task_cancelled' ||
+      receipt.reason === 'task_failed'
+    ) {
+      return { status: 'not_running', task };
+    }
+    if (receipt.reason === 'control_not_found' || receipt.reason === 'withdrawn') {
+      return { status: 'control_not_found', task };
+    }
+    return {
+      status: 'invalid',
+      message:
+        receipt.status === 'failed'
+          ? 'The prior control invocation failed.'
+          : 'The prior control invocation was rejected.',
+    };
+  }
+
   private queueControlReceipt(
     scopeId: string,
     taskId: string,
@@ -822,13 +920,21 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     this.controlPersistenceStopping = true;
     for (const timer of this.controlPersistenceRetryTimers.values()) clearTimeout(timer);
     this.controlPersistenceRetryTimers.clear();
-    const pendingTasks = [...this.pendingControlReceipts.keys()]
-      .map(parseControlTaskKey)
-      .filter((task): task is { scopeId: string; taskId: string } => task != null);
-    await Promise.allSettled(
-      pendingTasks.map(({ scopeId, taskId }) => this.flushControlReceipts(scopeId, taskId)),
-    );
-    await Promise.allSettled(this.controlPersistenceTails.values());
+    /** Cancellation can enqueue its terminal transition behind an already-failing
+     * acceptance write. Re-snapshot both maps after each round so work admitted
+     * synchronously before shutdown cannot appear just after the final snapshot. */
+    for (let attempt = 0; attempt < SHUTDOWN_CONTROL_RECEIPT_FLUSH_ATTEMPTS; attempt += 1) {
+      const pendingTasks = [...this.pendingControlReceipts.keys()]
+        .map(parseControlTaskKey)
+        .filter((task): task is { scopeId: string; taskId: string } => task != null);
+      await Promise.allSettled(
+        pendingTasks.map(({ scopeId, taskId }) => this.flushControlReceipts(scopeId, taskId)),
+      );
+      await Promise.allSettled([...this.controlPersistenceTails.values()]);
+      if (this.pendingControlReceipts.size === 0 && this.controlPersistenceTails.size === 0) {
+        break;
+      }
+    }
     const transport = this.taskControlTransport;
     this.taskControlTransport = undefined;
     await transport?.destroy();
@@ -1334,12 +1440,19 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     command: SubagentTaskControlCommand,
     invocationId: string = randomUUID(),
   ): Promise<SubagentTaskControlResult> {
+    const localTask = this.get(scopeId, taskId);
+    if (localTask != null && localTask.status !== 'running') {
+      const replay = await this.replayDurableControl(scopeId, taskId, command, invocationId);
+      if (replay != null) return replay;
+    }
     const local = await this.controlInvocationAndPersist(scopeId, taskId, command, invocationId);
     if (local.status !== 'not_found') {
       return local;
     }
+    const routed = await this.taskControlTransport?.control(scopeId, taskId, command, invocationId);
+    if (routed != null && routed.status !== 'not_found') return routed;
     return (
-      (await this.taskControlTransport?.control(scopeId, taskId, command, invocationId)) ?? local
+      (await this.replayDurableControl(scopeId, taskId, command, invocationId)) ?? routed ?? local
     );
   }
 
@@ -1360,7 +1473,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     }
     const key = `${scopeId}\u0000${taskId}\u0000${invocationId}`;
     const fingerprint = controlFingerprint(command);
-    const applied = this.controlInvocations.get(key);
+    const applied = this.controlInvocations.get(key) ?? this.terminalControlInvocations.get(key);
     if (applied != null) {
       /** One invocation is one command; reusing its id for different content is a
        * caller error rather than a retry, so it is refused instead of applied. */
@@ -1379,9 +1492,24 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       return this.control(scopeId, taskId, command);
     }
     if (localTask.status !== 'running') {
-      /** Terminal controls are side-effect free and can be recomputed on retry;
-       * retaining them would let rejected traffic exhaust the replay window. */
-      return this.control(scopeId, taskId, command);
+      const result = this.control(scopeId, taskId, command);
+      if (result.status === 'not_found' || result.status === 'invalid') return result;
+      if (this.terminalControlInvocations.size >= MAX_TERMINAL_CONTROL_INVOCATIONS) {
+        const oldest = this.terminalControlInvocations.keys().next().value as string | undefined;
+        if (oldest != null) this.terminalControlInvocations.delete(oldest);
+      }
+      this.terminalControlInvocations.set(key, {
+        scopeId,
+        taskId,
+        invocationId,
+        fingerprint,
+        command: boundedControlCommand(command),
+        commandMessageTruncated:
+          'message' in command && command.message.length > MAX_DURABLE_CONTROL_MESSAGE_CHARS,
+        result,
+        createdAt: Date.now(),
+      });
+      return result;
     }
     if (!this.makeRoomForInvocation()) {
       /** Every tracked invocation belongs to a task this store still holds. Applying
@@ -1433,7 +1561,9 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   ): Promise<SubagentTaskControlResult> {
     const invocationKey = `${scopeId}\u0000${taskId}\u0000${invocationId}`;
     const result = this.controlInvocation(scopeId, taskId, command, invocationId);
-    const retainedInvocation = this.controlInvocations.get(invocationKey);
+    const retainedInvocation =
+      this.controlInvocations.get(invocationKey) ??
+      this.terminalControlInvocations.get(invocationKey);
     const invocation: ControlInvocationRecord | undefined =
       retainedInvocation ??
       (result.status === 'not_found' || result.status === 'invalid'
@@ -2687,6 +2817,7 @@ const REQUIRED_THREAD_METHODS = [
   'deleteConvos',
   'deleteMessages',
   'getConvo',
+  'getSubagentTaskControlReplay',
   'getMessages',
   'listActiveSubagentThreadLeases',
   'recordSubagentTaskControlReceipt',
@@ -2714,6 +2845,7 @@ export function createSubagentThreadTaskStore(
       MessageMethods,
       | 'claimSubagentTaskResult'
       | 'deleteMessages'
+      | 'getSubagentTaskControlReplay'
       | 'getMessages'
       | 'recordSubagentTaskControlReceipt'
       | 'saveMessage'

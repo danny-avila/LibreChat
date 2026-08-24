@@ -2139,6 +2139,74 @@ describe('SubagentThreadTaskStore', () => {
     ]);
   });
 
+  it('replays a durable control after owner loss and rejects fingerprint reuse', async () => {
+    const userId = 'durable-control-replay-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const ownerStore = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
+    let finish = (_value: { content: string }): void => undefined;
+    const result = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = ownerStore.start(taskRequest(config.scopeId, { run: async () => result }));
+    const taskId = requireAccepted(started).task.taskId;
+    const threadId = requireThreadId(started);
+    await waitUntil(
+      async () =>
+        (
+          await methods.getMessages(
+            { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+            '+subagentTask',
+          )
+        ).length === 1,
+      'the durable task input',
+    );
+    const command = { action: 'queue' as const, message: 'Keep the citation.' };
+    await expect(
+      ownerStore.controlTask(config.scopeId, taskId, command, 'durable-invocation'),
+    ).resolves.toMatchObject({ status: 'accepted' });
+    finish({ content: 'Done.' });
+    await waitForSettled(ownerStore, config.scopeId, started);
+    await ownerStore.destroyTaskControlTransport();
+
+    const restartedStore = new SubagentThreadTaskStore(methods);
+    await expect(
+      restartedStore.controlTask(config.scopeId, taskId, command, 'durable-invocation'),
+    ).resolves.toMatchObject({ status: 'not_running' });
+    await expect(
+      restartedStore.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'queue', message: 'Different command.' },
+        'durable-invocation',
+      ),
+    ).resolves.toMatchObject({ status: 'invalid' });
+    await restartedStore.destroyTaskControlTransport();
+  });
+
+  it('bounds retained terminal control invocations while persisting their receipts', async () => {
+    const userId = 'terminal-control-window-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(
+      taskRequest(config.scopeId, { run: async () => ({ content: 'Done.' }) }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await waitForSettled(store, config.scopeId, started);
+    for (let index = 0; index < 65; index += 1) {
+      await expect(
+        store.controlTask(config.scopeId, taskId, { action: 'cancel' }, `terminal-${index}`),
+      ).resolves.toMatchObject({ status: 'not_running' });
+    }
+    const retained = (store as unknown as { terminalControlInvocations: Map<string, unknown> })
+      .terminalControlInvocations;
+    expect(retained.size).toBe(64);
+    await store.destroyTaskControlTransport();
+  });
+
   it('fails acceptance closed when the durable receipt target is not ready', async () => {
     const userId = 'receipt-target-user';
     const parentConversationId = randomUUID();
