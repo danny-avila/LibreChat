@@ -128,7 +128,7 @@ export default function MCPConfigDialog({
         }
         selection={{
           selectHandler: handleSubmit(onFormSubmit),
-          selectClasses: 'bg-surface-submit text-white hover:bg-surface-submit-hover',
+          selectClasses: 'bg-surface-submit text-text-on-status hover:bg-surface-submit-hover',
           selectText: isSubmitting ? localize('com_ui_saving') : localize('com_ui_save'),
         }}
         buttons={

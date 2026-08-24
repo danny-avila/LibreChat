@@ -38,7 +38,7 @@
 
 .popover-ui:focus-visible,
 .popover-ui[data-focus-visible] {
-  outline: var(--bg-surface-hover);
+  outline: 2px solid rgb(var(--text-primary));
   outline-offset: -1px;
 }
 

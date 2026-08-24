@@ -118,8 +118,8 @@ interface CompactStatusDotProps {
 function CompactStatusDot({ serverStatus, isInitializing }: CompactStatusDotProps) {
   if (isInitializing) {
     return (
-      <div className="flex size-3.5 items-center justify-center rounded-full border-2 border-surface-secondary bg-status-info">
-        <div className="size-1.5 animate-pulse rounded-full bg-white" />
+      <div className="flex size-3.5 items-center justify-center rounded-full border-2 border-surface-secondary bg-status-info-strong">
+        <div className="size-1.5 animate-pulse rounded-full bg-text-on-status" />
       </div>
     );
   }
