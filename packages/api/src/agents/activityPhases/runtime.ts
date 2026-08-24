@@ -415,13 +415,12 @@ export function createAssistantPhaseStampingHandlers(
           (part as { type?: string } | null)?.type === ContentTypes.TEXT
             ? { ...(part as Record<string, unknown>), phase }
             : part;
-        const forwarded = {
-          ...(data as Record<string, unknown>),
+        const forwarded = Object.assign({}, data, {
           delta: {
             ...delta,
             content: Array.isArray(raw) ? raw.map(stamp) : stamp(raw),
           },
-        };
+        });
         return messageHandler.handle(event, forwarded, metadata, graph);
       },
     };

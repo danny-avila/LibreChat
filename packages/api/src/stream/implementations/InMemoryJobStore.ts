@@ -31,6 +31,7 @@ import {
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   PAUSE_PERSISTENCE_TIMEOUT_MS,
   isPendingActionStale,
+  toWireRunSteps,
 } from '~/stream/interfaces/IJobStore';
 import {
   isRecoveredSteerPayload,
@@ -1466,7 +1467,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
 
     // Dereference WeakRef - may return undefined if GC'd
     const graph = state.graphRef.deref();
-    return graph?.contentData ?? [];
+    return toWireRunSteps(graph?.contentData ?? []);
   }
 
   /**

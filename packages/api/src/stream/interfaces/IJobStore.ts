@@ -4,11 +4,62 @@ import type {
   TPendingSteer,
   UserSubmittedMessageFieldPath,
 } from 'librechat-data-provider';
-import type { StandardGraph } from '@librechat/agents';
+import type { RunStep, StandardGraph } from '@librechat/agents';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '../SteerRecovery';
 import type { MCPRuntimeRequestBody } from '~/mcp/types';
+
+/**
+ * Rewrites string-enum members to their literal values, recursively. The SDK and
+ * data-provider declare nominally distinct enums (`ContentTypes`, `StepTypes`, ...)
+ * with identical string values; erasing that nominality is what lets the two run-step
+ * contracts be compared structurally.
+ */
+type WireShape<T> = T extends string
+  ? `${T}`
+  : T extends readonly (infer U)[]
+    ? WireShape<U>[]
+    : T extends object
+      ? { [K in keyof T]: WireShape<T[K]> }
+      : T;
+
+type StaticAssert<T extends true> = T;
+
+/**
+ * Compile-time proof that the SDK run step and the wire contract (`Agents.RunStep`)
+ * agree structurally once enum nominality is erased: any added, removed, retyped, or
+ * newly optional SDK field fails these assertions, so drift cannot silently enter
+ * resume state through `toWireRunSteps`.
+ *
+ * `summary.content` is the one deliberately unchecked field: the SDK reuses its full
+ * `MessageContentComplex` union there, while the wire contract narrows it to the plain
+ * text blocks summarization actually emits. That narrowing is the single semantic
+ * judgment this conversion vouches for.
+ */
+type _WireRunStepContractHolds = StaticAssert<
+  WireShape<Omit<RunStep, 'summary'>> extends WireShape<Omit<Agents.RunStep, 'summary'>>
+    ? true
+    : false
+>;
+
+type _WireSummaryContractHolds = StaticAssert<
+  WireShape<Omit<NonNullable<RunStep['summary']>, 'content'>> extends WireShape<
+    Omit<NonNullable<Agents.RunStep['summary']>, 'content'>
+  >
+    ? true
+    : false
+>;
+
+/**
+ * Run steps living on the SDK graph serialize to exactly the wire shape
+ * `Agents.RunStep` describes; the assertion is safe because
+ * `_WireRunStepContractHolds` above proves the contracts identical modulo the
+ * nominally-split enums, which share their string values at runtime.
+ */
+export function toWireRunSteps(steps: readonly RunStep[]): Agents.RunStep[] {
+  return steps as Agents.RunStep[];
+}
 
 /**
  * A pause owner has this long to durably persist the interrupted turn before

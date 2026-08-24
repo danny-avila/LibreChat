@@ -954,7 +954,7 @@ export default function useStepHandler({
         // Store tool call IDs if present
         if (runStep.stepDetails.type === StepTypes.TOOL_CALLS) {
           let updatedResponse = { ...response };
-          (runStep.stepDetails.tool_calls as Agents.ToolCall[]).forEach((toolCall) => {
+          ((runStep.stepDetails.tool_calls ?? []) as Agents.ToolCall[]).forEach((toolCall) => {
             const toolCallId = toolCall.id ?? '';
             if ('id' in toolCall && toolCallId) {
               toolCallIdMap.current.set(runStep.id, toolCallId);

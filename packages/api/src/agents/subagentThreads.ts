@@ -1146,7 +1146,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     const snapshot = this.get(scopeId, taskId);
     const lockKey = snapshot?.threadId == null ? undefined : `${scopeId}\u0000${snapshot.threadId}`;
     const lease = lockKey == null ? undefined : this.activeThreads.get(lockKey);
-    if (lease?.taskId === taskId && lease.settling) {
+    if (snapshot != null && lease?.taskId === taskId && lease.settling) {
       return { status: 'not_running', task: snapshot };
     }
     const result = super.control(scopeId, taskId, command);
