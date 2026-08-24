@@ -115,8 +115,20 @@ jest.mock('../Container', () => ({
 
 jest.mock('../Part', () => ({
   __esModule: true,
-  default: ({ part, idx }: { part: TMessageContentParts; idx: number }) => (
-    <div data-testid={`real-part-${part.type}`} data-index={idx} />
+  default: ({
+    part,
+    idx,
+    showCursor,
+  }: {
+    part: TMessageContentParts;
+    idx: number;
+    showCursor?: boolean;
+  }) => (
+    <div
+      data-testid={`real-part-${part.type}`}
+      data-index={idx}
+      data-show-cursor={String(showCursor === true)}
+    />
   ),
 }));
 
@@ -453,6 +465,25 @@ describe('ContentParts — post-steer author re-attribution', () => {
 });
 
 describe('ContentParts — activity phase state', () => {
+  it('keeps a streaming cursor on visible text when a provider appends an empty placeholder', () => {
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[
+          { type: ContentTypes.TEXT, text: 'Visible answer' } as TMessageContentParts,
+          { type: ContentTypes.TEXT, text: '' } as TMessageContentParts,
+        ]}
+        isLast
+        isSubmitting
+        isLatestMessage
+      />,
+    );
+
+    const textParts = screen.getAllByTestId(`real-part-${ContentTypes.TEXT}`);
+    expect(textParts[0]).toHaveAttribute('data-show-cursor', 'true');
+    expect(textParts[1]).toHaveAttribute('data-show-cursor', 'false');
+  });
+
   it('renders a completion-appended parent before the final root text', () => {
     const tool = {
       type: ContentTypes.TOOL_CALL,

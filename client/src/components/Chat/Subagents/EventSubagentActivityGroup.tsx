@@ -1,7 +1,7 @@
-import { useCallback } from 'react';
-import { Bot } from 'lucide-react';
-import { cn } from '@librechat/client';
-import { useResetRecoilState, useSetRecoilState } from 'recoil';
+import { useCallback, useId, useMemo, useState } from 'react';
+import { Bot, ChevronDown } from 'lucide-react';
+import { Button, cn } from '@librechat/client';
+import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type { ParentSubagentSummary } from 'librechat-data-provider';
 import { subagentStatusIcon, subagentStatusLabelKey } from './status';
 import { useParentSubagents } from './ParentSubagentsProvider';
@@ -11,33 +11,45 @@ import { useAgentsMapContext } from '~/Providers';
 import { renderAgentAvatar } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
+import { getMessageRowWidthClass } from '~/components/Chat/Messages/ui/MessageRow';
 
 export default function EventSubagentActivityGroup({
   conversationId,
-  parentMessageId,
+  parentMessageIds,
 }: {
   conversationId: string;
-  parentMessageId: string;
+  parentMessageIds: string[];
 }) {
   const { byMessageId } = useParentSubagents();
-  const children = byMessageId.get(parentMessageId) ?? [];
+  const children = useMemo(() => {
+    const seen = new Set<string>();
+    return parentMessageIds
+      .flatMap((messageId) => byMessageId.get(messageId) ?? [])
+      .filter((child) => {
+        if (seen.has(child.threadId)) return false;
+        seen.add(child.threadId);
+        return true;
+      });
+  }, [byMessageId, parentMessageIds]);
+  const fullWidth = useRecoilValue(store.maximizeChatSpace);
   if (children.length === 0) return null;
   return (
-    <EventSubagentRows
-      conversationId={conversationId}
-      parentMessageId={parentMessageId}
-      eventChildren={children}
-    />
+    <div
+      className={cn(
+        'mx-auto min-w-0 flex-1 transition-[max-width] duration-theme-normal motion-reduce:transition-none',
+        getMessageRowWidthClass({ fullWidth }),
+      )}
+    >
+      <EventSubagentRows conversationId={conversationId} eventChildren={children} />
+    </div>
   );
 }
 
 function EventSubagentRows({
   conversationId,
-  parentMessageId,
   eventChildren,
 }: {
   conversationId: string;
-  parentMessageId: string;
   eventChildren: ParentSubagentSummary[];
 }) {
   const localize = useLocalize();
@@ -46,6 +58,23 @@ function EventSubagentRows({
   const setSelected = useSetRecoilState(activeSubagentPanel);
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
+  const [expanded, setExpanded] = useState(false);
+  const panelId = useId();
+  const counts = useMemo(() => {
+    const result = new Map<ParentSubagentSummary['status'], number>();
+    eventChildren.forEach((child) => result.set(child.status, (result.get(child.status) ?? 0) + 1));
+    return result;
+  }, [eventChildren]);
+  const summary = [
+    localize(
+      eventChildren.length === 1 ? 'com_ui_subagent_agent_count' : 'com_ui_subagent_agents_count',
+      { 0: String(eventChildren.length) },
+    ),
+    ...Array.from(counts.entries()).map(
+      ([status, count]) =>
+        `${count} ${localize(subagentStatusLabelKey(status)).toLocaleLowerCase()}`,
+    ),
+  ].join(' · ');
   const openChild = useCallback(
     (child: ParentSubagentSummary) => {
       const selection = eventSubagentSelection(conversationId, child);
@@ -75,13 +104,31 @@ function EventSubagentRows({
   return (
     <section
       aria-label={localize('com_ui_subagent_activity')}
-      className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary"
-      data-event-subagent-group={parentMessageId}
+      className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary/40"
+      data-event-subagent-group={eventChildren[0]?.parentMessageId}
     >
-      <div className="border-b border-border-light px-3 py-2 text-xs font-medium text-text-secondary">
-        {localize('com_ui_subagent_activity')}
-      </div>
-      <div className="divide-y divide-border-light">
+      <Button
+        variant="ghost"
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        aria-controls={panelId}
+        aria-label={`${localize('com_ui_subagent_activity')}: ${summary}`}
+        className="flex h-auto min-h-10 w-full items-center justify-start gap-2 rounded-lg px-3 py-2 text-left text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary focus-visible:ring-offset-0"
+      >
+        <Bot size={15} className="shrink-0" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{summary}</span>
+        <ChevronDown
+          size={16}
+          className={cn('shrink-0 transition-transform', expanded && 'rotate-180')}
+          aria-hidden="true"
+        />
+      </Button>
+      <div
+        id={panelId}
+        hidden={!expanded}
+        className="divide-y divide-border-light border-t border-border-light"
+      >
         {eventChildren.map((child) => {
           const StatusIcon = subagentStatusIcon(child.status);
           const agent = child.agentId == null ? undefined : agentsMap?.[child.agentId];
@@ -94,11 +141,11 @@ function EventSubagentRows({
               disabled={!canOpen}
               onClick={() => openChild(child)}
               data-subagent-tool-call={`event-thread:${child.threadId}`}
-              data-subagent-parent-message={parentMessageId}
+              data-subagent-parent-message={child.parentMessageId}
               data-subagent-part-index="0"
               className={cn(
-                'flex w-full items-center gap-2 px-3 py-2 text-left text-sm',
-                canOpen ? 'hover:bg-surface-tertiary' : 'cursor-default opacity-70',
+                'flex w-full items-center gap-2 px-3 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary',
+                canOpen ? 'hover:bg-surface-hover' : 'cursor-default opacity-70',
               )}
             >
               <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full">

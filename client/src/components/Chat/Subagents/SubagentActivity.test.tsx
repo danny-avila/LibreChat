@@ -382,11 +382,13 @@ describe('SubagentActivity', () => {
     expect(screen.queryByText('com_ui_subagent_waiting')).not.toBeInTheDocument();
   });
 
-  it.each([
-    ['error', 'com_ui_subagent_thread_load_error'],
-    ['ready', 'com_ui_subagent_empty_result'],
-  ] as const)('renders the %s state', (state, label) => {
-    render(<SubagentActivity activity={{ ...base, items: [] }} state={state} />);
-    expect(screen.getByText(label)).toBeInTheDocument();
+  it('renders the load error state', () => {
+    render(<SubagentActivity activity={{ ...base, items: [] }} state="error" />);
+    expect(screen.getByText('com_ui_subagent_thread_load_error')).toBeInTheDocument();
+  });
+
+  it('does not describe a completed tool-only child as missing a result', () => {
+    render(<SubagentActivity activity={{ ...base, status: 'completed', items: [] }} />);
+    expect(screen.queryByText('com_ui_subagent_empty_result')).not.toBeInTheDocument();
   });
 });

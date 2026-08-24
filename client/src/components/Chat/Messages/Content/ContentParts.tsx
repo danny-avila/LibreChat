@@ -35,6 +35,18 @@ const isEmptyTextPart = (part: TMessageContentParts | undefined): boolean => {
   return text.length === 0;
 };
 
+/** A trailing empty provider placeholder must not move the streaming cursor
+ * away from text that is already visible. Keep the cursor on the preceding
+ * visible part; the empty placeholder remains available for the initial
+ * no-content waiting state handled below. */
+const lastCursorContentIdx = (content: Array<TMessageContentParts | undefined>): number => {
+  const lastIdx = lastVisibleContentIdx(content);
+  if (lastIdx > 0 && isEmptyTextPart(content[lastIdx])) {
+    return lastVisibleContentIdx(content.slice(0, lastIdx));
+  }
+  return lastIdx;
+};
+
 const getToolCallId = (part: TMessageContentParts): string =>
   (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
 
@@ -497,7 +509,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   }
 
   if (phaseSegments != null) {
-    const relativeGlobalLastContentIdx = lastVisibleContentIdx(content ?? []);
+    const relativeGlobalLastContentIdx = lastCursorContentIdx(content ?? []);
     const globalLastContentIdx =
       relativeGlobalLastContentIdx < 0 ? -1 : absoluteIndexAt(relativeGlobalLastContentIdx);
     const renderSegment = (
@@ -586,10 +598,9 @@ const ContentPartsBody = memo(function ContentPartsBody({
    *  empty TEXT after real parts keeps its flush in-flow cursor. */
   const solitaryEmptyText = safeContent.length === 1 && isEmptyTextPart(safeContent[0]);
   const showEmptyCursor = (safeContent.length === 0 || solitaryEmptyText) && effectiveIsSubmitting;
-  /** Skips trailing BLANK label reservations — they render nothing, and
-   *  counting one as last would strip the streaming cursor from the last
-   *  VISIBLE part until the next delta. */
-  const relativeLastContentIdx = lastVisibleContentIdx(safeContent);
+  /** Skips trailing blank label reservations and empty provider placeholders,
+   * keeping the cursor attached to the last visible output. */
+  const relativeLastContentIdx = lastCursorContentIdx(safeContent);
   const lastContentIdx = relativeLastContentIdx < 0 ? -1 : absoluteIndexAt(relativeLastContentIdx);
 
   // Parallel content: use dedicated renderer with columns (TMessageContentParts includes ContentMetadata)

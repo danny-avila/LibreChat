@@ -34,8 +34,11 @@ jest.mock('../MessageParts', () => ({ __esModule: true, default: createRowStub()
 jest.mock('../Message', () => ({ __esModule: true, default: createRowStub() }));
 jest.mock('~/components/Chat/Subagents/EventSubagentActivityGroup', () => ({
   __esModule: true,
-  default: ({ parentMessageId }: { parentMessageId: string }) => (
-    <div data-testid="event-subagent-activity" data-parent-message-id={parentMessageId} />
+  default: ({ parentMessageIds }: { parentMessageIds: string[] }) => (
+    <div
+      data-testid="event-subagent-activity"
+      data-parent-message-ids={parentMessageIds.join(',')}
+    />
   ),
 }));
 
@@ -81,8 +84,8 @@ describe('MultiMessage sibling selection', () => {
     );
 
     expect(screen.getByTestId('event-subagent-activity')).toHaveAttribute(
-      'data-parent-message-id',
-      'structured',
+      'data-parent-message-ids',
+      'structured,parent-1',
     );
 
     view.rerender(
@@ -96,9 +99,42 @@ describe('MultiMessage sibling selection', () => {
       </RecoilRoot>,
     );
     expect(screen.getByTestId('event-subagent-activity')).toHaveAttribute(
-      'data-parent-message-id',
-      'legacy',
+      'data-parent-message-ids',
+      'legacy,parent-1',
     );
+  });
+
+  it('places a user-anchored event group after the assistant response', () => {
+    const assistant = msg('assistant');
+    const user = {
+      ...msg('user'),
+      isCreatedByUser: true,
+      parentMessageId: 'root',
+      children: [assistant],
+    } as TMessage;
+    assistant.parentMessageId = 'user';
+
+    render(
+      <RecoilRoot>
+        <MultiMessage
+          messageId="root"
+          messagesTree={[user]}
+          currentEditId={null}
+          setCurrentEditId={jest.fn()}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getAllByTestId('event-subagent-activity')).toHaveLength(1);
+    expect(screen.getByTestId('event-subagent-activity')).toHaveAttribute(
+      'data-parent-message-ids',
+      'assistant,user',
+    );
+    expect(
+      screen
+        .getByText('assistant')
+        .compareDocumentPosition(screen.getByTestId('event-subagent-activity')),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('shows the newest sibling by default and follows a newly appended one', () => {

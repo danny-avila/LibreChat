@@ -182,11 +182,7 @@ export default function SubagentActivity({
       <Container>
         <EmptyText />
       </Container>
-    ) : (
-      <div className="rounded-lg border border-border-light bg-surface-secondary p-3 text-sm text-text-secondary">
-        {localize('com_ui_subagent_empty_result')}
-      </div>
-    );
+    ) : null;
   } else {
     body = (
       <ContentParts

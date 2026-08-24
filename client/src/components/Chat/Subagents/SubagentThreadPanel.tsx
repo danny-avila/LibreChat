@@ -223,6 +223,25 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     },
     [eventSummary?.tasks, selection, setSelection],
   );
+  const taskLabel = useCallback(
+    (task: NonNullable<typeof eventSummary>['tasks'][number], index: number) => {
+      if (index === 0) return localize('com_ui_subagent_latest_activity');
+      if (task.createdAt == null) {
+        return localize('com_ui_subagent_previous_activity', { 0: String(index) });
+      }
+      const createdAt = new Date(task.createdAt);
+      if (Number.isNaN(createdAt.getTime())) {
+        return localize('com_ui_subagent_previous_activity', { 0: String(index) });
+      }
+      return new Intl.DateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(createdAt);
+    },
+    [localize],
+  );
   let panelState: 'ready' | 'loading' | 'error' = 'ready';
   if (
     selection.durable != null &&
@@ -302,22 +321,22 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
               </SelectContent>
             </Select>
           </div>
-          <div className="w-32">
-            <Select value={taskId} onValueChange={selectTask}>
-              <SelectTrigger className="h-8" aria-label={localize('com_ui_subagent_turn')}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(eventSummary?.tasks ?? []).map((task, index) => (
-                  <SelectItem key={task.taskId} value={task.taskId}>
-                    {index === 0
-                      ? localize('com_ui_subagent_latest_turn')
-                      : localize('com_ui_subagent_earlier_turn', { 0: String(index) })}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {(eventSummary?.tasks.length ?? 0) > 1 && (
+            <div className="w-44">
+              <Select value={taskId} onValueChange={selectTask}>
+                <SelectTrigger className="h-8" aria-label={localize('com_ui_subagent_turn')}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(eventSummary?.tasks ?? []).map((task, index) => (
+                    <SelectItem key={task.taskId} value={task.taskId}>
+                      {taskLabel(task, index)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
       )}
 

@@ -40,11 +40,15 @@ jest.mock('~/utils', () => ({
   renderAgentAvatar: () => <span data-testid="agent-avatar" />,
 }));
 jest.mock('@librechat/client', () => ({
+  Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
+    <button {...props}>{children}</button>
+  ),
   cn: (...values: Array<string | false | undefined>) => values.filter(Boolean).join(' '),
 }));
 jest.mock('lucide-react', () => ({
   AlertCircle: () => null,
   Bot: () => null,
+  ChevronDown: () => null,
   Check: () => null,
   CheckCircle2: () => null,
   CircleAlert: () => null,
@@ -70,11 +74,16 @@ describe('EventSubagentActivityGroup', () => {
         <Observer />
         <EventSubagentActivityGroup
           conversationId="parent-conversation"
-          parentMessageId="parent-message"
+          parentMessageIds={['parent-message']}
         />
       </RecoilRoot>,
     );
 
+    expect(
+      screen.getByRole('region', { name: 'com_ui_subagent_activity' }).parentElement,
+    ).toHaveClass('md:max-w-3xl', 'xl:max-w-4xl');
+    expect(screen.queryByRole('button', { name: /Visible Agent/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /com_ui_subagent_activity/ }));
     fireEvent.click(screen.getByRole('button', { name: /Visible Agent/ }));
 
     expect(mockRefresh).toHaveBeenCalledTimes(1);
@@ -115,11 +124,12 @@ describe('EventSubagentActivityGroup', () => {
         <ClosePanel />
         <EventSubagentActivityGroup
           conversationId="parent-conversation"
-          parentMessageId="parent-message"
+          parentMessageIds={['parent-message']}
         />
       </RecoilRoot>,
     );
 
+    fireEvent.click(screen.getByRole('button', { name: /com_ui_subagent_activity/ }));
     fireEvent.click(screen.getByRole('button', { name: /Visible Agent/ }));
     expect(selection).toEqual(
       expect.objectContaining({ durable: expect.objectContaining({ taskId: 'task-1' }) }),

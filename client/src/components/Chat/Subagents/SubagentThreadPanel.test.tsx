@@ -550,6 +550,9 @@ describe('SubagentThreadPanel', () => {
       { refetchInterval: 2000 },
     );
     expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(eventSelection, true);
+    expect(
+      screen.queryByRole('combobox', { name: 'com_ui_subagent_turn' }),
+    ).not.toBeInTheDocument();
     await waitFor(() => expect(refetch).toHaveBeenCalled());
   });
 
@@ -684,7 +687,7 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.click(screen.getByRole('option', { name: 'com_ui_subagent_earlier_turn' }));
+    fireEvent.click(screen.getByRole('option', { name: 'com_ui_subagent_previous_activity' }));
     expect(active?.durable).toEqual({ threadId: 'child-thread', taskId: 'task-earlier' });
     expect(active?.event?.progressKey).toBe('event-task:child-thread:task-earlier');
 
