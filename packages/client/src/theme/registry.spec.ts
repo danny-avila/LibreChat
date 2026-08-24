@@ -83,6 +83,35 @@ describe('theme registry', () => {
     );
   });
 
+  it('rejects stacked CSS after a balanced gradient', () => {
+    expect(
+      validateThemeDefinition({
+        version: 1,
+        name: 'invalid',
+        modes: {},
+        brands: {
+          'provider-azure':
+            'linear-gradient(#000,#000), -webkit-image-set("https://example.com/pixel" 1x)',
+        },
+      }),
+    ).toEqual(
+      expect.arrayContaining([expect.stringContaining('Invalid brand value for provider-azure')]),
+    );
+  });
+
+  it('rejects a gradient for the provider foreground token', () => {
+    expect(
+      validateThemeDefinition({
+        version: 1,
+        name: 'invalid',
+        modes: {},
+        brands: {
+          'provider-foreground': 'linear-gradient(#fff,#fff)',
+        },
+      }),
+    ).toContain('Invalid brand value for provider-foreground: linear-gradient(#fff,#fff)');
+  });
+
   it('preserves hover overrides from themes created before the composer hover token', () => {
     const storedTheme: ThemeDefinition = {
       version: 1,

@@ -26,10 +26,12 @@ export const URLIcon = memo(
     };
 
     if (imageError || !iconURL) {
+      const numericSize =
+        typeof containerStyle.width === 'number' ? containerStyle.width : undefined;
       return (
         <div className="relative" style={{ ...containerStyle, margin: '2px' }}>
           <div className={className}>
-            <ProviderIcon provider={provider} size={Number(containerStyle.width) || 20} />
+            <ProviderIcon provider={provider} size={numericSize} className="h-full w-full" />
           </div>
           {imageError && iconURL && (
             <div

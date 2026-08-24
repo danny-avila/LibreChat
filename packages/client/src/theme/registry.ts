@@ -95,7 +95,28 @@ const rgbPattern = /^(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})$/;
 const cssLengthPattern = /^(0|\d*\.?\d+(px|rem|em))$/;
 const cssDurationPattern = /^\d*\.?\d+(ms|s)$/;
 const hexColorPattern = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-const gradientPattern = /^linear-gradient\([^;{}]*\)$/;
+
+function isLinearGradient(value: string): boolean {
+  if (!value.startsWith('linear-gradient(') || /url\s*\(|image-set/i.test(value)) {
+    return false;
+  }
+  let depth = 0;
+  for (let i = 0; i < value.length; i++) {
+    const char = value[i];
+    if (char === '(') {
+      depth += 1;
+    } else if (char === ')') {
+      depth -= 1;
+      if (depth === 0) {
+        return i === value.length - 1;
+      }
+      if (depth < 0) {
+        return false;
+      }
+    }
+  }
+  return false;
+}
 
 const isRGB = (value: unknown): value is string => {
   if (typeof value !== 'string') {
@@ -224,14 +245,13 @@ export function validateThemeDefinition(theme: ThemeDefinition): string[] {
         errors.push(`Unknown brand token: ${key}`);
         return;
       }
-      if (
-        value !== undefined &&
-        !(
-          typeof value === 'string' &&
-          !/url\s*\(/i.test(value) &&
-          (hexColorPattern.test(value) || gradientPattern.test(value))
-        )
-      ) {
+      const isColorOnly = key === 'provider-foreground';
+      const isValidBrand =
+        typeof value === 'string' &&
+        (isColorOnly
+          ? hexColorPattern.test(value)
+          : hexColorPattern.test(value) || isLinearGradient(value));
+      if (value !== undefined && !isValidBrand) {
         errors.push(`Invalid brand value for ${key}: ${value}`);
       }
     });

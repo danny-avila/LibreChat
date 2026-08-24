@@ -7,6 +7,7 @@ describe('isImageURL', () => {
     '/assets/icon.svg',
     'assets/company.png',
     'assets/icon.svg',
+    'assets/company.svg#mark',
     'data:image/png;base64,iVBORw0KGgo=',
   ])('accepts image URL %s', (iconURL) => {
     expect(isImageURL(iconURL)).toBe(true);
