@@ -67,7 +67,7 @@ describe('MessageEndpointIcon', () => {
     );
 
     expect(container.querySelector('[title="OpenAI"]')).toHaveStyle({
-      background: 'var(--provider-openai-reasoning)',
+      background: 'var(--provider-openai-reasoning, #000000)',
     });
   });
 

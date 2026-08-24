@@ -68,6 +68,21 @@ describe('theme registry', () => {
     expect(custom.brands['provider-openai']).toBe(defaultBrands['provider-openai']);
   });
 
+  it('rejects CSS appended to a provider gradient', () => {
+    expect(
+      validateThemeDefinition({
+        version: 1,
+        name: 'invalid',
+        modes: {},
+        brands: {
+          'provider-azure': 'linear-gradient(#000,#000), url(https://example.com/pixel)',
+        },
+      }),
+    ).toContain(
+      'Invalid brand value for provider-azure: linear-gradient(#000,#000), url(https://example.com/pixel)',
+    );
+  });
+
   it('preserves hover overrides from themes created before the composer hover token', () => {
     const storedTheme: ThemeDefinition = {
       version: 1,

@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { EModelEndpoint } from 'librechat-data-provider';
 import GroupIcon from '../GroupIcon';
 
 describe('GroupIcon', () => {
@@ -6,6 +7,16 @@ describe('GroupIcon', () => {
     render(<GroupIcon iconURL="openAI" groupName="OpenAI" />);
 
     expect(screen.getByRole('img', { name: 'OpenAI' })).toBeInTheDocument();
+  });
+
+  it('keeps the agents mark for an agents group icon', () => {
+    const { container } = render(
+      <GroupIcon iconURL={EModelEndpoint.agents} groupName="My Agents" />,
+    );
+
+    expect(screen.queryByRole('img', { name: 'Custom' })).not.toBeInTheDocument();
+    expect(container.querySelector('svg')).toBeInTheDocument();
+    expect(screen.getByTitle('My Agents')).toBeInTheDocument();
   });
 
   it('resolves known endpoint asset aliases case-insensitively', () => {

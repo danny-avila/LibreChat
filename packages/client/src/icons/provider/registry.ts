@@ -9,23 +9,6 @@ import BedrockIcon from '../../svgs/BedrockIcon';
 import GeminiIcon from '../../svgs/GeminiIcon';
 import GPTIcon from '../../svgs/GPTIcon';
 import XAIcon from '../../svgs/XAIcon';
-import anyscale from './assets/anyscale.png';
-import apipie from './assets/apipie.png';
-import cohere from './assets/cohere.png';
-import deepseek from './assets/deepseek.svg';
-import fireworks from './assets/fireworks.png';
-import groq from './assets/groq.png';
-import helicone from './assets/helicone.svg';
-import huggingface from './assets/huggingface.svg';
-import mistral from './assets/mistral.png';
-import mlx from './assets/mlx.png';
-import ollama from './assets/ollama.png';
-import openrouter from './assets/openrouter.png';
-import perplexity from './assets/perplexity.png';
-import qwen from './assets/qwen.svg';
-import shuttleai from './assets/shuttleai.png';
-import together from './assets/together.png';
-import unify from './assets/unify.webp';
 
 type ProviderArtComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
 
@@ -56,9 +39,11 @@ const component = (Component: ProviderArtComponent): ProviderArt => ({
 const openAIBrandColor = (model: string): string => {
   const value = model.toLowerCase();
   if (/\b(o\d)\b/.test(value) || /\bgpt-[5-9](?:\.\d+)?\b/.test(value)) {
-    return 'var(--provider-openai-reasoning)';
+    return 'var(--provider-openai-reasoning, #000000)';
   }
-  return value.includes('gpt-4') ? 'var(--provider-openai-gpt4)' : 'var(--provider-openai)';
+  return value.includes('gpt-4')
+    ? 'var(--provider-openai-gpt4, #AB68FF)'
+    : 'var(--provider-openai, #19C37D)';
 };
 
 const googleByModel = (model: string): Partial<ProviderIconDef> | undefined => {
@@ -77,14 +62,14 @@ export const providerIcons: Record<ProviderId, ProviderIconDef> = {
     art: component(GPTIcon),
     label: 'OpenAI',
     mono: true,
-    brandColor: 'var(--provider-openai)',
+    brandColor: 'var(--provider-openai, #19C37D)',
     byModel: (model) => ({ brandColor: openAIBrandColor(model) }),
   },
   [ProviderId.anthropic]: {
     art: component(AnthropicIcon),
     label: 'Anthropic',
     mono: true,
-    brandColor: 'var(--provider-anthropic)',
+    brandColor: 'var(--provider-anthropic, #d09a74)',
   },
   [ProviderId.google]: {
     art: component(GoogleMinimalIcon),
@@ -96,36 +81,36 @@ export const providerIcons: Record<ProviderId, ProviderIconDef> = {
     art: component(AzureMinimalIcon),
     label: 'Azure OpenAI',
     mono: true,
-    brandColor: 'var(--provider-azure)',
+    brandColor: 'var(--provider-azure, linear-gradient(0.375turn, #61bde2, #4389d0))',
   },
   [ProviderId.bedrock]: {
     art: component(BedrockIcon),
     label: 'AWS Bedrock',
     mono: true,
-    brandColor: 'var(--provider-bedrock)',
+    brandColor: 'var(--provider-bedrock, #268672)',
   },
   [ProviderId.xai]: { art: component(XAIcon), label: 'xAI', mono: true },
   [ProviderId.moonshot]: { art: component(MoonshotIcon), label: 'Moonshot', mono: true },
-  [ProviderId.anyscale]: { art: asset(anyscale), label: 'Anyscale' },
-  [ProviderId.apipie]: { art: asset(apipie), label: 'APIpie' },
+  [ProviderId.anyscale]: { art: asset('assets/anyscale.png'), label: 'Anyscale' },
+  [ProviderId.apipie]: { art: asset('assets/apipie.png'), label: 'APIpie' },
   [ProviderId.cohere]: {
-    art: asset(cohere),
+    art: asset('assets/cohere.png'),
     label: 'Cohere',
   },
-  [ProviderId.deepseek]: { art: asset(deepseek), label: 'DeepSeek' },
-  [ProviderId.fireworks]: { art: asset(fireworks), label: 'Fireworks' },
-  [ProviderId.groq]: { art: asset(groq), label: 'Groq' },
-  [ProviderId.helicone]: { art: asset(helicone), label: 'Helicone' },
-  [ProviderId.huggingface]: { art: asset(huggingface), label: 'Hugging Face' },
-  [ProviderId.mistral]: { art: asset(mistral), label: 'Mistral' },
-  [ProviderId.mlx]: { art: asset(mlx), label: 'MLX' },
-  [ProviderId.ollama]: { art: asset(ollama), label: 'Ollama' },
-  [ProviderId.openrouter]: { art: asset(openrouter), label: 'OpenRouter' },
-  [ProviderId.perplexity]: { art: asset(perplexity), label: 'Perplexity' },
-  [ProviderId.qwen]: { art: asset(qwen), label: 'Qwen' },
-  [ProviderId.shuttleai]: { art: asset(shuttleai), label: 'ShuttleAI' },
-  [ProviderId.together]: { art: asset(together), label: 'Together AI' },
-  [ProviderId.unify]: { art: asset(unify), label: 'Unify' },
+  [ProviderId.deepseek]: { art: asset('assets/deepseek.svg'), label: 'DeepSeek' },
+  [ProviderId.fireworks]: { art: asset('assets/fireworks.png'), label: 'Fireworks' },
+  [ProviderId.groq]: { art: asset('assets/groq.png'), label: 'Groq' },
+  [ProviderId.helicone]: { art: asset('assets/helicone.svg'), label: 'Helicone' },
+  [ProviderId.huggingface]: { art: asset('assets/huggingface.svg'), label: 'Hugging Face' },
+  [ProviderId.mistral]: { art: asset('assets/mistral.png'), label: 'Mistral' },
+  [ProviderId.mlx]: { art: asset('assets/mlx.png'), label: 'MLX' },
+  [ProviderId.ollama]: { art: asset('assets/ollama.png'), label: 'Ollama' },
+  [ProviderId.openrouter]: { art: asset('assets/openrouter.png'), label: 'OpenRouter' },
+  [ProviderId.perplexity]: { art: asset('assets/perplexity.png'), label: 'Perplexity' },
+  [ProviderId.qwen]: { art: asset('assets/qwen.svg'), label: 'Qwen' },
+  [ProviderId.shuttleai]: { art: asset('assets/shuttleai.png'), label: 'ShuttleAI' },
+  [ProviderId.together]: { art: asset('assets/together.png'), label: 'Together AI' },
+  [ProviderId.unify]: { art: asset('assets/unify.webp'), label: 'Unify' },
   [ProviderId.vercel]: {
     art: component(CustomMinimalIcon),
     label: 'Vercel',

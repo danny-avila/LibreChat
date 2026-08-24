@@ -93,7 +93,7 @@ const rgbPattern = /^(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})$/;
 const cssLengthPattern = /^(0|\d*\.?\d+(px|rem|em))$/;
 const cssDurationPattern = /^\d*\.?\d+(ms|s)$/;
 const hexColorPattern = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-const gradientPattern = /^linear-gradient\(/;
+const gradientPattern = /^linear-gradient\([^;{}]*\)$/;
 
 const isRGB = (value: unknown): value is string => {
   if (typeof value !== 'string') {
@@ -224,7 +224,11 @@ export function validateThemeDefinition(theme: ThemeDefinition): string[] {
       }
       if (
         value !== undefined &&
-        !(typeof value === 'string' && (hexColorPattern.test(value) || gradientPattern.test(value)))
+        !(
+          typeof value === 'string' &&
+          !/url\s*\(/i.test(value) &&
+          (hexColorPattern.test(value) || gradientPattern.test(value))
+        )
       ) {
         errors.push(`Invalid brand value for ${key}: ${value}`);
       }

@@ -65,7 +65,7 @@ describe('providerIcons', () => {
   it('varies the OpenAI tile color by model generation', () => {
     const gpt4 = getProviderIconDef(ProviderId.openai, 'gpt-4o');
     const gpt5 = getProviderIconDef(ProviderId.openai, 'gpt-5.6');
-    expect(gpt4.brandColor).toBe('var(--provider-openai-gpt4)');
-    expect(gpt5.brandColor).toBe('var(--provider-openai-reasoning)');
+    expect(gpt4.brandColor).toBe('var(--provider-openai-gpt4, #AB68FF)');
+    expect(gpt5.brandColor).toBe('var(--provider-openai-reasoning, #000000)');
   });
 });

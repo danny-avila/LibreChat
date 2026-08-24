@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'tsdown';
 
@@ -10,30 +9,6 @@ const define = {
   'process.env.VITE_ENABLE_LOGGER': JSON.stringify(process.env.VITE_ENABLE_LOGGER || 'false'),
   'process.env.VITE_LOGGER_FILTER': JSON.stringify(process.env.VITE_LOGGER_FILTER || ''),
 };
-
-const imageMime = {
-  '.png': 'image/png',
-  '.webp': 'image/webp',
-  '.svg': 'image/svg+xml',
-};
-
-function providerAssetDataUrlPlugin() {
-  return {
-    name: 'provider-asset-data-url',
-    load(id) {
-      const ext = path.extname(id);
-      const mime = imageMime[ext];
-      if (
-        !mime ||
-        !id.includes(`${path.sep}icons${path.sep}provider${path.sep}assets${path.sep}`)
-      ) {
-        return null;
-      }
-      const href = `data:${mime};base64,${fs.readFileSync(id).toString('base64')}`;
-      return `export default ${JSON.stringify(href)};`;
-    },
-  };
-}
 
 export default defineConfig({
   entry: ['src/index.ts'],
@@ -48,7 +23,7 @@ export default defineConfig({
   // CommonJS (jest.config.js / babel.config.js are CJS) while still shipping dual ESM/CJS.
   fixedExtension: true,
   define,
-  plugins: [providerAssetDataUrlPlugin()],
+  copy: [{ from: 'src/icons/provider/assets', to: 'dist' }],
   // Extract all component CSS into a single `dist/style.css` (no import left in the JS, so the
   // CJS output stays valid CommonJS). Consumers import `@librechat/client/style.css` once.
   css: { inject: false },
