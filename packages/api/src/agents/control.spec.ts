@@ -119,7 +119,12 @@ describe('subagent control handler', () => {
   });
 
   it('returns an authoritative rejection when the selected task is no longer live', async () => {
-    const deps = dependencies();
+    const deps = dependencies(
+      jest.fn().mockResolvedValue({
+        status: 'not_running',
+        task: { taskId, threadId, status: 'completed' },
+      }),
+    );
     deps.getSubagentThreadForParent.mockResolvedValue({
       ...child,
       subagentThreadLease: undefined,
@@ -137,20 +142,11 @@ describe('subagent control handler', () => {
       res.value,
     );
 
-    expect(deps.store.controlTask).not.toHaveBeenCalled();
-    expect(deps.recordSubagentTaskControlReceipt).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: 'user-1',
-        tenantId: 'tenant-1',
-        conversationId: threadId,
-        taskId,
-        receipt: expect.objectContaining({
-          invocationId: 'invocation-1',
-          fingerprint: expect.any(String),
-          status: 'rejected',
-          reason: 'task_not_running',
-        }),
-      }),
+    expect(deps.store.controlTask).toHaveBeenCalledWith(
+      expect.any(String),
+      taskId,
+      { action: 'cancel_message', controlId: 'queued-control' },
+      'invocation-1',
     );
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
@@ -159,47 +155,6 @@ describe('subagent control handler', () => {
         action: 'cancel_message',
         status: 'rejected',
         reason: 'task_not_running',
-      }),
-    });
-  });
-
-  it('resolves a concurrent expired-task receipt conflict authoritatively', async () => {
-    const deps = dependencies();
-    deps.getSubagentThreadForParent.mockResolvedValue({
-      ...child,
-      subagentThreadLease: undefined,
-    });
-    deps.recordSubagentTaskControlReceipt.mockResolvedValue('conflict');
-    deps.getSubagentTaskControlReceipt.mockResolvedValueOnce(null).mockResolvedValueOnce({
-      invocationId: 'invocation-1',
-      fingerprint: controlFingerprint({ action: 'queue', message: 'Original command.' }),
-      action: 'queue',
-      status: 'rejected',
-      createdAt: new Date('2026-08-24T12:00:00.000Z'),
-      updatedAt: new Date('2026-08-24T12:00:00.000Z'),
-      message: 'Original command.',
-      reason: 'task_not_running',
-    });
-    const handler = createSubagentControlHandler(deps);
-    const res = response();
-
-    await handler(
-      request({
-        taskId,
-        invocationId: 'invocation-1',
-        action: 'queue',
-        message: 'Different command.',
-      }),
-      res.value,
-    );
-
-    expect(deps.store.controlTask).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({
-      receipt: expect.objectContaining({
-        invocationId: 'invocation-1',
-        status: 'rejected',
-        reason: 'invalid_command',
       }),
     });
   });
@@ -364,6 +319,24 @@ describe('subagent control handler', () => {
 
     await handler(
       request({ taskId, invocationId: 'invocation-1', action: 'steer', message: ' ' }),
+      res.value,
+    );
+
+    expect(deps.getConvoOwnership).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('rejects task ids beyond the durable storage bound before authorization', async () => {
+    const deps = dependencies();
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(
+      request({
+        taskId: 't'.repeat(257),
+        invocationId: 'invocation-1',
+        action: 'cancel',
+      }),
       res.value,
     );
 

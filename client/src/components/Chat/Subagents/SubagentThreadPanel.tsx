@@ -55,6 +55,10 @@ const TERMINAL_CONTROL_REASONS = new Set([
 const isTerminalControlReason = (reason?: string): boolean =>
   reason != null && TERMINAL_CONTROL_REASONS.has(reason);
 
+const closesTaskControls = (receipt: SubagentControlReceipt): boolean =>
+  isTerminalControlReason(receipt.reason) ||
+  (receipt.action === 'cancel' && receipt.status === 'applied');
+
 const responseStatus = (error: unknown): number | undefined =>
   typeof error === 'object' &&
   error != null &&
@@ -221,23 +225,29 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   }, [taskId, threadId]);
 
   useEffect(() => {
-    if (
-      transientControl == null ||
-      !data?.controlReceipts?.some(
-        (receipt) => receipt.invocationId === transientControl.invocationId,
-      )
-    ) {
-      return;
-    }
+    if (transientControl == null) return;
+    const durableReceipt = data?.controlReceipts?.find(
+      (receipt) => receipt.invocationId === transientControl.invocationId,
+    );
+    if (durableReceipt == null) return;
     /** The durable view is authoritative after refresh. Drop mutation-only state
      * once the same invocation appears there so stale failure/retry UI cannot
      * outlive a successfully persisted receipt. */
+    if (
+      retryControl != null &&
+      retryControl.action !== 'cancel' &&
+      retryControl.action !== 'cancel_message' &&
+      (durableReceipt.status === 'accepted' || durableReceipt.status === 'applied')
+    ) {
+      setControlMessage((current) => (current === retryControl.message ? '' : current));
+    }
+    if (closesTaskControls(durableReceipt)) setControlsClosed(true);
     setTransientControl(null);
     setRetryControl(null);
-  }, [data?.controlReceipts, transientControl]);
+  }, [data?.controlReceipts, retryControl, transientControl]);
 
   useEffect(() => {
-    if (data?.controlReceipts?.some((receipt) => isTerminalControlReason(receipt.reason))) {
+    if (data?.controlReceipts?.some(closesTaskControls)) {
       setControlsClosed(true);
     }
   }, [data?.controlReceipts]);
@@ -307,7 +317,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
             if (controlSelectionRef.current !== submittedSelection) return;
             controlInFlightRef.current = false;
             setTransientControl(receipt);
-            if (isTerminalControlReason(receipt.reason)) setControlsClosed(true);
+            if (closesTaskControls(receipt)) setControlsClosed(true);
             if (receipt.status !== 'failed') setRetryControl(null);
             if (
               command.action !== 'cancel_message' &&

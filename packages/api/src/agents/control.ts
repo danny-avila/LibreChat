@@ -16,6 +16,7 @@ import { controlFingerprint, SubagentTaskOwnerUnavailableError } from './subagen
 import { createSubagentThreadScopeId } from './subagentThreads';
 
 const MAX_ID_BYTES = 512;
+const MAX_TASK_ID_BYTES = 256;
 const MAX_INVOCATION_ID_BYTES = 128;
 const MAX_CONTROL_MESSAGE_CHARS = 4 * 1024;
 
@@ -29,7 +30,7 @@ type ControlStore = {
 };
 
 type Dependencies = Pick<ConversationMethods, 'getConvoOwnership' | 'getSubagentThreadForParent'> &
-  Pick<MessageMethods, 'getSubagentTaskControlReceipt' | 'recordSubagentTaskControlReceipt'> & {
+  Pick<MessageMethods, 'getSubagentTaskControlReceipt'> & {
     store: ControlStore;
   };
 
@@ -131,7 +132,7 @@ export function createSubagentControlHandler(deps: Dependencies) {
       !validId(parentConversationId) ||
       !validId(threadId) ||
       parentConversationId === threadId ||
-      !validId(body.taskId) ||
+      !validId(body.taskId, MAX_TASK_ID_BYTES) ||
       !validId(body.invocationId, MAX_INVOCATION_ID_BYTES) ||
       command == null
     ) {
@@ -177,58 +178,14 @@ export function createSubagentControlHandler(deps: Dependencies) {
         res.status(200).json({ receipt } satisfies SubagentControlResponse);
         return;
       }
-      if (
-        child.subagentThreadLease?.taskId !== body.taskId ||
-        child.subagentThreadLease.expiresAt.getTime() <= Date.now()
-      ) {
-        const now = new Date();
-        const storedReceipt: ISubagentTaskControlReceipt = {
-          invocationId: body.invocationId,
-          fingerprint,
-          ...commandReceiptFields(command),
-          action: command.action,
-          status: 'rejected',
-          createdAt: now,
-          updatedAt: now,
-          reason: 'task_not_running',
-        };
-        const persisted = await deps.recordSubagentTaskControlReceipt({
-          userId,
-          conversationId: threadId,
-          taskId: body.taskId,
-          receipt: storedReceipt,
-          ...(tenantId == null ? {} : { tenantId }),
-        });
-        if (persisted === 'conflict') {
-          const conflicting = await deps.getSubagentTaskControlReceipt({
-            userId,
-            conversationId: threadId,
-            taskId: body.taskId,
-            invocationId: body.invocationId,
-            ...(tenantId == null ? {} : { tenantId }),
-          });
-          if (conflicting == null) throw new SubagentTaskOwnerUnavailableError();
-          const receipt =
-            conflicting.fingerprint === fingerprint
-              ? publicStoredReceipt(conflicting)
-              : responseReceipt(body.invocationId, command, {
-                  status: 'invalid',
-                  message: 'This control invocation id was already used for a different command.',
-                });
-          res.status(200).json({ receipt } satisfies SubagentControlResponse);
-          return;
-        }
-        if (!persisted) throw new SubagentTaskOwnerUnavailableError();
-        res
-          .status(200)
-          .json({ receipt: publicStoredReceipt(storedReceipt) } satisfies SubagentControlResponse);
-        return;
-      }
       const scopeId = createSubagentThreadScopeId({
         userId,
         parentConversationId,
         ...(tenantId == null ? {} : { tenantId }),
       });
+      /** Retry identity and durable settlement belong to the task store. Route
+       * through that ledger even when the visible lease is stale instead of
+       * synthesizing a rejection that can race the owner's delayed receipt. */
       const result = await deps.store.controlTask(scopeId, body.taskId, command, body.invocationId);
       if (result.status === 'not_found') {
         throw new SubagentTaskOwnerUnavailableError();

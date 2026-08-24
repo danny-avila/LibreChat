@@ -486,9 +486,44 @@ describe('SubagentThreadPanel', () => {
 
     expect(screen.getByText('applied')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'com_ui_retry' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('com_ui_subagent_control_message')).toHaveValue('');
     expect(
       screen.queryByText('com_ui_subagent_control_reason_owner_unavailable'),
     ).not.toBeInTheDocument();
+  });
+
+  it('closes stale running controls after task cancellation is applied', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_cancel_task' }));
+    const command = mockControlMutate.mock.calls[0][0].command;
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onSuccess({
+        receipt: {
+          invocationId: command.invocationId,
+          action: 'cancel',
+          status: 'applied',
+          createdAt: '2026-08-24T12:00:00.000Z',
+          updatedAt: '2026-08-24T12:00:01.000Z',
+        },
+      });
+    });
+
+    expect(screen.queryByLabelText('com_ui_subagent_control_message')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'com_ui_subagent_cancel_task' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-can-withdraw', 'false');
   });
 
   it('reports an inaccessible task without offering a misleading retry', () => {
