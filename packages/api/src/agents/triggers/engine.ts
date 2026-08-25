@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { logger, runAsSystem } from '@librechat/data-schemas';
 import type { AgentTriggerExecutionResult } from './host';
+import { createAgentTriggerBatchEnvelope } from './batch';
 import { AgentTriggerDispatchError } from './dispatch';
 import { AgentTriggerExecutionError } from './host';
 
@@ -26,7 +27,13 @@ export class AgentTriggerDeliveryDeferredError extends Error {
   }
 }
 
-export type AgentTriggerDeliveryStatus = 'staging' | 'pending' | 'leased' | 'succeeded' | 'dead';
+export type AgentTriggerDeliveryStatus =
+  | 'staging'
+  | 'batched'
+  | 'pending'
+  | 'leased'
+  | 'succeeded'
+  | 'dead';
 
 export interface AgentTriggerDeliveryFailure {
   code: string;
@@ -50,6 +57,14 @@ export interface AgentTriggerDeliveryRecord {
   attempts: number;
   availableAt: Date;
   createdAt: Date;
+  envelopeBytes?: number;
+  coalesceKey?: string;
+  coalesceUntil?: Date;
+  batchSize?: number;
+  batchBytes?: number;
+  batchMemberIds?: Array<{ toString(): string } | string>;
+  batchRootId?: { toString(): string } | string;
+  batchMembersSettledAt?: Date;
   leaseBy?: string;
   leaseUntil?: Date;
   lastError?: AgentTriggerDeliveryFailure;
@@ -59,6 +74,11 @@ export interface AgentTriggerOrderingBlock {
   availableAt: Date;
   leaseUntil?: Date;
 }
+
+export type AgentTriggerBatchMember = Pick<
+  AgentTriggerDeliveryRecord,
+  'id' | 'deliveryKey' | 'envelope'
+>;
 
 export interface AgentTriggerDeliveryStore {
   claimNext: (input: {
@@ -70,6 +90,9 @@ export interface AgentTriggerDeliveryStore {
   findEarlierUnsettled: (
     delivery: AgentTriggerDeliveryRecord,
   ) => Promise<AgentTriggerOrderingBlock | null>;
+  getBatch: (
+    delivery: Pick<AgentTriggerDeliveryRecord, 'id' | 'batchMemberIds'>,
+  ) => Promise<AgentTriggerBatchMember[]>;
   release: (input: {
     id: string;
     workerId: string;
@@ -350,7 +373,12 @@ export function createAgentTriggerDeliveryEngine(
     try {
       let result: AgentTriggerExecutionResult;
       try {
-        result = await deps.dispatch(delivery.envelope, { signal: controller.signal });
+        const members = await deps.store.getBatch(delivery);
+        const dispatchEnvelope =
+          members.length === 0
+            ? delivery.envelope
+            : createAgentTriggerBatchEnvelope(delivery, members);
+        result = await deps.dispatch(dispatchEnvelope, { signal: controller.signal });
       } catch (error) {
         const attemptedAt = now();
         const deletionCancelled = controller.signal.aborted && cancelledUsers.has(userId);

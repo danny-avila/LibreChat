@@ -50,7 +50,7 @@ export interface AgentTriggerServiceDeps {
 export interface AgentTriggerDeliveryReceipt {
   id: string;
   deliveryKey: string;
-  status: AgentTriggerStoredRecord['status'];
+  status: Exclude<AgentTriggerStoredRecord['status'], 'batched'>;
   availableAt: Date;
   replayed: boolean;
 }
@@ -88,6 +88,7 @@ export interface AgentTriggerDeliveryPersistence {
   ) => Promise<{ delivery: AgentTriggerStoredRecord; replayed: boolean }>;
   claimNextAgentTriggerDelivery: AgentTriggerDeliveryStore['claimNext'];
   findEarlierAgentTriggerDelivery: AgentTriggerDeliveryStore['findEarlierUnsettled'];
+  getAgentTriggerDeliveryBatch: AgentTriggerDeliveryStore['getBatch'];
   releaseAgentTriggerDelivery: AgentTriggerDeliveryStore['release'];
   beginAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['beginAttempt'];
   deferAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['defer'];
@@ -108,6 +109,7 @@ export interface AgentTriggerDeliveryPersistence {
   ) => Promise<AgentTriggerStoredRecord | null>;
   countActiveAgentTriggerDeliveriesByUser: (userId: string, now: Date) => Promise<number>;
   recoverAgentTriggerLanePublications: (limit?: number) => Promise<number>;
+  recoverAgentTriggerBatchReceipts: (limit?: number) => Promise<number>;
   reclaimInactiveAgentTriggerLanes: (limit?: number) => Promise<number>;
   prepareAgentTriggerUserPurge: (
     userId: string,
@@ -149,6 +151,7 @@ function createDeliveryStore(methods: AgentTriggerDeliveryPersistence): AgentTri
   return {
     claimNext: methods.claimNextAgentTriggerDelivery,
     findEarlierUnsettled: methods.findEarlierAgentTriggerDelivery,
+    getBatch: methods.getAgentTriggerDeliveryBatch,
     release: methods.releaseAgentTriggerDelivery,
     beginAttempt: methods.beginAgentTriggerDeliveryAttempt,
     defer: methods.deferAgentTriggerDeliveryAttempt,
@@ -156,6 +159,12 @@ function createDeliveryStore(methods: AgentTriggerDeliveryPersistence): AgentTri
     retry: methods.retryAgentTriggerDelivery,
     dead: methods.deadLetterAgentTriggerDelivery,
   };
+}
+
+function publicReceiptStatus(
+  status: AgentTriggerStoredRecord['status'],
+): AgentTriggerDeliveryReceipt['status'] {
+  return status === 'batched' ? 'pending' : status;
 }
 
 function requireDeliveryOrigin(boundOrigin: string | undefined): void {
@@ -286,18 +295,20 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     }
     const methods = deps.methods;
     const current = runAsSystem(async () => {
-      const [purgedUsers, publishedLanes, reclaimedLanes] = await Promise.all([
+      const [purgedUsers, publishedLanes, recoveredBatches, reclaimedLanes] = await Promise.all([
         methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit),
         methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
+        methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit),
         methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit),
       ]);
       if (publishedLanes > 0) {
         deliveryEngine?.wake();
       }
-      if (purgedUsers > 0 || publishedLanes > 0 || reclaimedLanes > 0) {
+      if (purgedUsers > 0 || publishedLanes > 0 || recoveredBatches > 0 || reclaimedLanes > 0) {
         logger.info('[agent-triggers] recovered durable delivery maintenance', {
           purgedUsers,
           publishedLanes,
+          recoveredBatches,
           reclaimedLanes,
         });
       }
@@ -402,11 +413,22 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       } else {
         deliveryEngine?.wake();
       }
+      const effective =
+        queued.delivery.status === 'batched'
+          ? await runAsSystem(async () =>
+              methods.getAgentTriggerDeliveryStatus(
+                prepared.deliveryKey,
+                prepared.user,
+                prepared.envelope.event.source.id,
+                prepared.tenantId,
+              ),
+            )
+          : null;
       return {
         id: queued.delivery.id,
         deliveryKey: queued.delivery.deliveryKey,
-        status: queued.delivery.status,
-        availableAt: queued.delivery.availableAt,
+        status: publicReceiptStatus(effective?.status ?? queued.delivery.status),
+        availableAt: effective?.availableAt ?? queued.delivery.availableAt,
         replayed: queued.replayed,
       };
     },

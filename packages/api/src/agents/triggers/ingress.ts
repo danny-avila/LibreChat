@@ -38,6 +38,7 @@ interface AgentTriggerIngressBody {
   target?: AgentContinueTarget | AgentFireTarget | AgentSteerTarget;
   input?: string;
   orderingKey?: string;
+  coalesce?: { key?: string };
 }
 
 export interface AgentTriggerIngressDependencies {
@@ -133,7 +134,20 @@ function enqueueOptions(body: AgentTriggerIngressBody): AgentTriggerEnqueueOptio
   if (body.orderingKey != null && typeof body.orderingKey !== 'string') {
     throw new AgentTriggerIngressError('orderingKey must be a string');
   }
-  return body.orderingKey == null ? {} : { orderingKey: body.orderingKey };
+  let coalesce: AgentTriggerEnqueueOptions['coalesce'];
+  if (body.coalesce != null) {
+    if (typeof body.coalesce !== 'object' || Array.isArray(body.coalesce)) {
+      throw new AgentTriggerIngressError('coalesce must be an object');
+    }
+    if (typeof body.coalesce.key !== 'string') {
+      throw new AgentTriggerIngressError('coalesce.key must be a string');
+    }
+    coalesce = { key: body.coalesce.key };
+  }
+  return {
+    ...(body.orderingKey != null && { orderingKey: body.orderingKey }),
+    ...(coalesce != null && { coalesce }),
+  };
 }
 
 function toPublicDelivery(delivery: Awaited<ReturnType<AgentTriggerService['getDeliveryStatus']>>) {

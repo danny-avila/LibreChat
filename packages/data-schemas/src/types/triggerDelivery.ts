@@ -1,6 +1,12 @@
 import type { Document, Types } from 'mongoose';
 
-export type AgentTriggerDeliveryStatus = 'staging' | 'pending' | 'leased' | 'succeeded' | 'dead';
+export type AgentTriggerDeliveryStatus =
+  | 'staging'
+  | 'batched'
+  | 'pending'
+  | 'leased'
+  | 'succeeded'
+  | 'dead';
 export type AgentTriggerDeliveryOutcome = 'succeeded' | 'retry' | 'dead';
 
 export interface AgentTriggerDeliveryFailure {
@@ -33,6 +39,14 @@ export interface IAgentTriggerDelivery {
   status: AgentTriggerDeliveryStatus;
   attempts: number;
   availableAt: Date;
+  envelopeBytes?: number;
+  coalesceKey?: string;
+  coalesceUntil?: Date;
+  batchSize?: number;
+  batchBytes?: number;
+  batchMemberIds?: Types.ObjectId[];
+  batchRootId?: Types.ObjectId;
+  batchMembersSettledAt?: Date;
   leaseBy?: string;
   leaseUntil?: Date;
   claimToken?: string;

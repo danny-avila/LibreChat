@@ -210,6 +210,250 @@ describe('agent trigger delivery methods', () => {
     );
   });
 
+  it('coalesces a concurrent replica burst behind one claimable root and settles every receipt', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const coalesceUntil = new Date(Date.now() + 60_000);
+    const replicas = [
+      createAgentTriggerDeliveryMethods(mongoose),
+      createAgentTriggerDeliveryMethods(mongoose),
+    ];
+    const inputs = Array.from({ length: 4 }, (_, index) =>
+      enqueueInput({
+        user,
+        orderingKey: 'commentary-lane',
+        coalesceKey: 'trigger_batch_commentary',
+        coalesceUntil,
+        availableAt: coalesceUntil,
+        envelopeBytes: 128,
+        envelope: {
+          event: {
+            id: `event-${index}`,
+            source: { id: 'source-key', type: 'remote_api_key' },
+          },
+        },
+      }),
+    );
+    const queued = await Promise.all(
+      inputs.map((input, index) =>
+        replicas[index % replicas.length].enqueueAgentTriggerDelivery(input),
+      ),
+    );
+    const persisted = await Delivery.find({ orderingKey: 'commentary-lane' })
+      .sort({ laneSequence: 1 })
+      .lean();
+    const [root] = persisted.filter((row) => row.status === 'pending');
+
+    expect(persisted.filter((row) => row.status === 'pending')).toHaveLength(1);
+    expect(persisted.filter((row) => row.status === 'batched')).toHaveLength(3);
+    expect(root).toMatchObject({ batchSize: 4, batchBytes: 512 });
+    expect(root?.batchMemberIds).toHaveLength(3);
+
+    const claims = await Promise.all(
+      replicas.map((replica, index) =>
+        replica.claimNextAgentTriggerDelivery({
+          workerId: `worker-${index}`,
+          claimToken: `claim-${index}`,
+          now: coalesceUntil,
+          leaseUntil: new Date(coalesceUntil.getTime() + 60_000),
+        }),
+      ),
+    );
+    const [claim] = claims.filter((candidate) => candidate != null);
+    expect(claims.filter((candidate) => candidate != null)).toHaveLength(1);
+    expect(claim).toBeDefined();
+    const members = await methods.getAgentTriggerDeliveryBatch(claim!);
+    expect(members.map((member) => member.deliveryKey)).toHaveLength(3);
+
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: claim!.leaseBy,
+      claimToken: claim!.claimToken,
+      now: coalesceUntil,
+    });
+    const result = { mode: 'continue', status: 'started', conversationId: 'child-thread' };
+    await expect(
+      methods.completeAgentTriggerDelivery({
+        id: claim!.id,
+        workerId: claim!.leaseBy,
+        claimToken: claim!.claimToken,
+        attempt: attempt!,
+        result,
+        settledAt: coalesceUntil,
+      }),
+    ).resolves.toBe(true);
+
+    const settled = await Delivery.find({ orderingKey: 'commentary-lane' }).lean();
+    expect(settled).toHaveLength(4);
+    expect(settled.every((row) => row.status === 'succeeded')).toBe(true);
+    expect(settled.map((row) => row.result)).toEqual(Array(4).fill(result));
+    expect(new Set(queued.map(({ delivery }) => delivery.deliveryKey)).size).toBe(4);
+    const receipts = await Promise.all(
+      queued.map(({ delivery }) =>
+        methods.getAgentTriggerDeliveryStatus(delivery.deliveryKey, user, 'source-key', 'tenant-1'),
+      ),
+    );
+    expect(receipts).toHaveLength(4);
+    expect(receipts.every((receipt) => receipt?.status === 'succeeded')).toBe(true);
+  });
+
+  it('recovers batch receipts and lane cleanup after root settlement was interrupted', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const coalesceUntil = new Date(Date.now() + 60_000);
+    await Promise.all(
+      Array.from({ length: 2 }, (_, index) =>
+        methods.enqueueAgentTriggerDelivery(
+          enqueueInput({
+            user,
+            orderingKey: 'batch-recovery-lane',
+            coalesceKey: 'trigger_batch_recovery',
+            coalesceUntil,
+            availableAt: coalesceUntil,
+            envelopeBytes: 128,
+            envelope: {
+              event: {
+                id: `recovery-event-${index}`,
+                source: { id: 'source-key', type: 'remote_api_key' },
+              },
+            },
+          }),
+        ),
+      ),
+    );
+    const root = await Delivery.findOne({
+      orderingKey: 'batch-recovery-lane',
+      status: 'pending',
+    }).lean();
+    expect(root?._id).toBeDefined();
+    const result = { mode: 'continue', status: 'started', conversationId: 'child-thread' };
+    await Delivery.updateOne(
+      { _id: root!._id },
+      {
+        $set: {
+          status: 'succeeded',
+          attempts: 1,
+          result,
+          settledAt: START,
+          expiresAt: new Date(START.getTime() + 90 * 24 * 60 * 60_000),
+          laneCleanupPendingAt: START,
+        },
+      },
+    );
+
+    await expect(methods.recoverAgentTriggerBatchReceipts()).resolves.toBe(1);
+
+    const deliveries = await Delivery.find({ orderingKey: 'batch-recovery-lane' }).lean();
+    expect(deliveries).toHaveLength(2);
+    expect(deliveries.every((delivery) => delivery.status === 'succeeded')).toBe(true);
+    expect(deliveries.map((delivery) => delivery.result)).toEqual(Array(2).fill(result));
+    expect(deliveries.find((delivery) => String(delivery._id) === String(root!._id))).toMatchObject(
+      {
+        batchMembersSettledAt: START,
+      },
+    );
+    expect(await LaneSequence.exists({ _id: 'batch-recovery-lane' })).toBeNull();
+
+    await expect(methods.recoverAgentTriggerBatchReceipts()).resolves.toBe(0);
+    const histories = await Delivery.find({ orderingKey: 'batch-recovery-lane' })
+      .select('history')
+      .lean();
+    expect(histories.map(({ history }) => history?.length ?? 0).sort()).toEqual([0, 1]);
+  });
+
+  it('starts the next linear batch outside the collection window and enforces the size cap', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const openUntil = new Date(Date.now() + 60_000);
+    const inputs = Array.from({ length: 9 }, () =>
+      enqueueInput({
+        user,
+        orderingKey: 'bounded-lane',
+        coalesceKey: 'trigger_batch_bounded',
+        coalesceUntil: openUntil,
+        availableAt: openUntil,
+        envelopeBytes: 64,
+      }),
+    );
+    await Promise.all(inputs.map((input) => methods.enqueueAgentTriggerDelivery(input)));
+
+    expect(await Delivery.countDocuments({ orderingKey: 'bounded-lane', status: 'pending' })).toBe(
+      2,
+    );
+    expect(await Delivery.countDocuments({ orderingKey: 'bounded-lane', status: 'batched' })).toBe(
+      7,
+    );
+
+    const closedUntil = new Date(Date.now() - 1);
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        orderingKey: 'closed-lane',
+        coalesceKey: 'trigger_batch_closed',
+        coalesceUntil: closedUntil,
+        availableAt: closedUntil,
+        envelopeBytes: 64,
+      }),
+    );
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        orderingKey: 'closed-lane',
+        coalesceKey: 'trigger_batch_closed',
+        coalesceUntil: closedUntil,
+        availableAt: closedUntil,
+        envelopeBytes: 64,
+      }),
+    );
+    expect(await Delivery.countDocuments({ orderingKey: 'closed-lane', status: 'pending' })).toBe(
+      2,
+    );
+  });
+
+  it('requeues a dead batch as a root instead of nesting it under a newer batch', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const coalesceUntil = new Date(Date.now() + 60_000);
+    const shared = {
+      user,
+      orderingKey: 'batch-requeue-lane',
+      coalesceKey: 'trigger_batch_requeue',
+      coalesceUntil,
+      availableAt: coalesceUntil,
+      envelopeBytes: 128,
+    };
+    await Promise.all(
+      Array.from({ length: 2 }, () => methods.enqueueAgentTriggerDelivery(enqueueInput(shared))),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: coalesceUntil,
+      leaseUntil: new Date(coalesceUntil.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: coalesceUntil,
+    });
+    await methods.deadLetterAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: attempt!,
+      error: transientFailure({ retryable: false }),
+      settledAt: coalesceUntil,
+    });
+    await methods.enqueueAgentTriggerDelivery(enqueueInput(shared));
+
+    const requeued = await methods.requeueAgentTriggerDelivery(claim!.id, coalesceUntil);
+
+    expect(requeued).toMatchObject({ status: 'pending', batchSize: 2 });
+    expect(requeued?.batchRootId).toBeUndefined();
+    const rows = await Delivery.find({ orderingKey: 'batch-requeue-lane' }).lean();
+    expect(rows.filter((row) => row.status === 'pending')).toHaveLength(2);
+    expect(
+      rows.filter((row) => row.batchRootId != null && String(row.batchRootId) === claim!.id),
+    ).toHaveLength(1);
+  });
+
   it('publishes an abandoned lane owner before allocating the next sequence', async () => {
     const user = new mongoose.Types.ObjectId();
     const orderingKey = 'publication-race';

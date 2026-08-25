@@ -205,6 +205,31 @@ describe('agent trigger event ingress', () => {
     );
   });
 
+  it('passes explicit observational coalescing only for a resolved bound continuation', async () => {
+    const deps = dependencies();
+    const response = await request(createApp(deps, undefined, true))
+      .post('/api/agents/v1/events')
+      .set('Idempotency-Key', 'commentary-game-start-1')
+      .send({
+        mode: 'continue',
+        event: fireEvent().event,
+        target: {
+          agentId: 'commentator',
+          conversationId: 'commentator-thread',
+          parentMessageId: 'placeholder',
+          bindingId: `evtbind_${'b'.repeat(48)}`,
+          sourceKeyId: API_KEY_ID,
+        },
+        input: 'Comment on this game start.',
+        coalesce: { key: 'championship-commentary' },
+      });
+
+    expect(response.status).toBe(202);
+    expect(deps.enqueue).toHaveBeenCalledWith(expect.objectContaining({ mode: 'continue' }), {
+      coalesce: { key: 'championship-commentary' },
+    });
+  });
+
   it('fails closed when the idempotency header is absent or duplicated', async () => {
     const deps = dependencies();
     const app = createApp(deps);
