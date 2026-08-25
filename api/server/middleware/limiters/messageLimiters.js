@@ -87,8 +87,12 @@ const agentEventUserLimiter = (req, res, next) => {
     configuredAgentEventUserLimiter = rateLimit({
       windowMs: windowInMinutes * 60 * 1000,
       max,
-      handler: (_limitedReq, limitedRes) => {
-        limitedRes.set('Retry-After', String(Math.max(1, Math.ceil(windowInMinutes * 60))));
+      handler: (limitedReq, limitedRes) => {
+        const resetAt = limitedReq.rateLimit?.resetTime?.getTime?.();
+        const retryAfterSeconds = Number.isFinite(resetAt)
+          ? Math.max(1, Math.ceil((resetAt - Date.now()) / 1000))
+          : Math.max(1, Math.ceil(windowInMinutes * 60));
+        limitedRes.set('Retry-After', String(retryAfterSeconds));
         return limitedRes
           .status(429)
           .type('application/json')

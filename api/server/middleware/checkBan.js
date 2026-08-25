@@ -10,7 +10,7 @@ const { findUser } = require('~/models');
 const banCache = new Keyv({ store: keyvMongo, namespace: ViolationTypes.BAN, ttl: 0 });
 const message = 'Your account has been temporarily banned due to violations of our service.';
 const AGENT_CHAT_PATH = '/api/agents/chat';
-const AGENT_CHAT_API_ROUTES = new Set(['abort', 'active', 'status', 'stream', 'steer']);
+const AGENT_CHAT_POST_CONTROL_ROUTES = new Set(['abort', 'steer']);
 
 /** @returns {string} Cache key for ban lookups, prefixed for Redis or raw for MongoDB */
 const getBanCacheKey = (prefix, value, useRedis) => {
@@ -35,7 +35,7 @@ const isInteractiveAgentChatRequest = (req) => {
   }
 
   const route = pathname.slice(`${AGENT_CHAT_PATH}/`.length);
-  return route.length > 0 && !route.includes('/') && !AGENT_CHAT_API_ROUTES.has(route);
+  return route.length > 0 && !route.includes('/') && !AGENT_CHAT_POST_CONTROL_ROUTES.has(route);
 };
 
 /**

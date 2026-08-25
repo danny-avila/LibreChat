@@ -51,12 +51,16 @@ describe('agent event rate limiter', () => {
     agentEventUserLimiter({ apiKeyId: 'key-1' }, {}, jest.fn());
     const options = mockRateLimit.mock.calls.at(-1)[0];
     const app = express();
+    app.use((req, _res, next) => {
+      req.rateLimit = { resetTime: new Date(Date.now() + 30_000) };
+      next();
+    });
     app.post('/api/agents/v1/events', options.handler);
     const response = await request(app).post('/api/agents/v1/events');
 
     expect(response.status).toBe(429);
     expect(response.headers['content-type']).toMatch(/^application\/json/);
-    expect(response.headers['retry-after']).toBe('120');
+    expect(response.headers['retry-after']).toBe('30');
     expect(response.body).toEqual({
       error: {
         code: 'agent_event_rate_limited',

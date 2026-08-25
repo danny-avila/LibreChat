@@ -211,6 +211,24 @@ describe('checkBan middleware', () => {
       expect(res.status).not.toHaveBeenCalled();
     });
 
+    it.each(['active', 'status', 'stream'])(
+      'preserves SSE denial when a custom endpoint uses the POST-only name %s',
+      async (endpoint) => {
+        mockBanCacheGet.mockResolvedValueOnce({ expiresAt: Date.now() + 60000 });
+        const req = createReq({
+          method: 'POST',
+          baseUrl: '/api/agents',
+          originalUrl: `/api/agents/chat/${endpoint}`,
+        });
+        const res = createRes();
+
+        await checkBan(req, res, jest.fn());
+
+        expect(denyRequest).toHaveBeenCalledWith(req, res, { type: ViolationTypes.BAN });
+        expect(res.status).not.toHaveBeenCalled();
+      },
+    );
+
     it('returns JSON for a bodyless browser POST to an interactive chat path', async () => {
       mockBanCacheGet.mockResolvedValueOnce({ expiresAt: Date.now() + 60000 });
       const req = createReq({
