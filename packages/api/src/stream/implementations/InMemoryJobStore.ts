@@ -30,6 +30,7 @@ import {
   STEER_QUEUE_MAX_DEPTH,
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   PAUSE_PERSISTENCE_TIMEOUT_MS,
+  PROVIDER_DRAIN_TIMEOUT_MS,
   isPendingActionStale,
   toWireRunSteps,
 } from '~/stream/interfaces/IJobStore';
@@ -351,10 +352,11 @@ export class InMemoryJobStore implements IJobStoreV2 {
       const current = this.jobs.get(streamId);
       const currentCreatedAt = current?.createdAt ?? this.getRetainedGenerationEpoch(streamId);
       if (
-        rejectActivePredecessor === true &&
-        (current?.status === 'running' ||
-          current?.status === 'requires_action' ||
-          current?.terminalPersistencePending === true)
+        current?.terminalHostActionPending === true ||
+        (rejectActivePredecessor === true &&
+          (current?.status === 'running' ||
+            current?.status === 'requires_action' ||
+            current?.terminalPersistencePending === true))
       ) {
         throw new JobPredecessorMismatchError({
           createdAt: current.createdAt,
@@ -1045,7 +1047,21 @@ export class InMemoryJobStore implements IJobStoreV2 {
     const pending: SerializableJobData[] = [];
     const now = Date.now();
     for (const job of this.jobs.values()) {
-      if (job.terminalHostActionPending === true) {
+      if (job.terminalHostActionPending !== true) {
+        continue;
+      }
+      if (
+        job.providerDrained === false &&
+        job.completedAt != null &&
+        now - job.completedAt >= PROVIDER_DRAIN_TIMEOUT_MS
+      ) {
+        // No owner can renew this terminal segment. The pre-CAS snapshot is
+        // already retained; force the same bounded recovery used by callers
+        // waiting for a provider drain so one crashed process cannot hold the
+        // conversation lane forever.
+        job.providerDrained = true;
+      }
+      if (job.providerDrained !== false) {
         // Enumerating IS the retry attempt: refresh retention so evidence outlives a host
         // dependency that is unreachable for longer than the retention window.
         job.terminalHostActionRefreshedAt = now;
@@ -1113,6 +1129,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
           patch: {
             completedAt: now,
             error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+            ...(job.agentEventDeliveryKey != null && { terminalHostActionPending: true }),
           },
           clear: [
             'pendingAction',

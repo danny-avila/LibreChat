@@ -69,6 +69,11 @@ export function toWireRunSteps(steps: readonly RunStep[]): Agents.RunStep[] {
  */
 export const PAUSE_PERSISTENCE_TIMEOUT_MS = 30_000;
 export const PAUSE_PERSISTENCE_TIMEOUT_ERROR = 'Paused response persistence timed out';
+/** Maximum time a terminal provider owner may remain undrained before its
+ * process is treated as lost. Terminal host settlement retains the last
+ * durable evidence through this grace period, then releases the lane from a
+ * crashed owner instead of refreshing its fence forever. */
+export const PROVIDER_DRAIN_TIMEOUT_MS = 30_000;
 
 /**
  * Job status enum.
@@ -273,6 +278,8 @@ export interface SerializableJobData {
    * resume request can't be trusted to re-send the flag.
    */
   isTemporary?: boolean;
+  agentEventDeliveryKey?: string;
+  agentEventExpectedAction?: import('~/agents/triggers/types').AgentTriggerExpectedAction;
 
   /**
    * Set when status is `requires_action`. Describes the human review the
@@ -390,6 +397,8 @@ export type JobMetadataPatch = Partial<
     | 'model'
     | 'agent_id'
     | 'isTemporary'
+    | 'agentEventDeliveryKey'
+    | 'agentEventExpectedAction'
     | 'scheduleId'
     | 'scheduledFor'
     | 'scheduleConfigRevision'

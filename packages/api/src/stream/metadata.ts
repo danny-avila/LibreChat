@@ -36,6 +36,12 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   if (metadata.isTemporary !== undefined) {
     patch.isTemporary = metadata.isTemporary;
   }
+  if (metadata.agentEventDeliveryKey) {
+    patch.agentEventDeliveryKey = metadata.agentEventDeliveryKey;
+  }
+  if (metadata.agentEventExpectedAction) {
+    patch.agentEventExpectedAction = metadata.agentEventExpectedAction;
+  }
   if (metadata.scheduleId) {
     patch.scheduleId = metadata.scheduleId;
   }

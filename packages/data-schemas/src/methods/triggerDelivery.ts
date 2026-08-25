@@ -2,6 +2,7 @@ import type { Model, Types } from 'mongoose';
 import type {
   AgentTriggerDeliveryClaim,
   AgentTriggerDeliveryFailure,
+  AgentTriggerHandlingState,
   AgentTriggerDeliveryRecord,
   AgentTriggerDeliveryStatusRecord,
   AgentTriggerOrderingBlock,
@@ -56,6 +57,16 @@ export interface AgentTriggerDeliveryFence {
   claimToken: string;
 }
 
+export interface SettleAgentTriggerHandlingOutcomeInput {
+  deliveryKey: string;
+  conversationId: string;
+  generationCreatedAt: number;
+  status: Exclude<AgentTriggerHandlingState['status'], 'started'>;
+  settledAt: Date;
+  error?: string;
+  action?: AgentTriggerHandlingState['action'];
+}
+
 export interface AgentTriggerDeliveryMethods {
   ensureAgentTriggerDeliveryIndexes: () => Promise<void>;
   enqueueAgentTriggerDelivery: (
@@ -87,7 +98,11 @@ export interface AgentTriggerDeliveryMethods {
       attempt: number;
       result: unknown;
       settledAt: Date;
+      handling?: AgentTriggerHandlingState;
     },
+  ) => Promise<boolean>;
+  settleAgentTriggerHandlingOutcome: (
+    input: SettleAgentTriggerHandlingOutcomeInput,
   ) => Promise<boolean>;
   retryAgentTriggerDelivery: (
     input: AgentTriggerDeliveryFence & {
@@ -181,6 +196,7 @@ function toRecord(delivery: IAgentTriggerDelivery): AgentTriggerDeliveryRecord {
     ...(delivery.batchMembersSettledAt != null && {
       batchMembersSettledAt: delivery.batchMembersSettledAt,
     }),
+    ...(delivery.handling != null && { handling: delivery.handling }),
   };
 }
 
@@ -796,10 +812,38 @@ export function createAgentTriggerDeliveryMethods(
     });
   }
 
+  async function propagateBatchHandling(
+    root: Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'batchMemberIds' | 'handling'>,
+  ): Promise<void> {
+    if (root._id == null || root.handling == null || !root.batchMemberIds?.length) {
+      return;
+    }
+    const status = root.handling.status;
+    await Delivery().updateMany(
+      {
+        _id: { $in: root.batchMemberIds },
+        orderingKey: root.orderingKey,
+        $or:
+          status === 'started'
+            ? [{ 'handling.status': 'started' }, { 'handling.status': { $exists: false } }]
+            : [
+                { 'handling.status': { $in: ['started', status] } },
+                { 'handling.status': { $exists: false } },
+              ],
+      },
+      { $set: { handling: root.handling } },
+    );
+  }
+
   async function settleBatchMembers(
     root: Pick<
       IAgentTriggerDelivery,
-      '_id' | 'orderingKey' | 'batchMemberIds' | 'batchMembersSettledAt' | 'requeueCount'
+      | '_id'
+      | 'orderingKey'
+      | 'batchMemberIds'
+      | 'batchMembersSettledAt'
+      | 'requeueCount'
+      | 'handling'
     >,
     input: {
       attempt: number;
@@ -826,6 +870,7 @@ export function createAgentTriggerDeliveryMethods(
               settledAt: input.settledAt,
               expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
               batchRootId: root._id,
+              ...(root.handling != null && { handling: root.handling }),
             }
           : {
               status: input.status,
@@ -876,6 +921,17 @@ export function createAgentTriggerDeliveryMethods(
       });
       if (settledCount !== memberIds.length) {
         throw new Error('Not every agent trigger batch receipt could be settled');
+      }
+      if (input.status === 'succeeded' && root.handling != null) {
+        const authoritative = await Delivery()
+          .findById(root._id)
+          .select('_id orderingKey batchMemberIds handling')
+          .lean<
+            Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'batchMemberIds' | 'handling'>
+          >();
+        if (authoritative != null) {
+          await propagateBatchHandling(authoritative);
+        }
       }
     }
     await Delivery().updateOne(
@@ -976,6 +1032,7 @@ export function createAgentTriggerDeliveryMethods(
       attempt: number;
       result: unknown;
       settledAt: Date;
+      handling?: AgentTriggerHandlingState;
     },
   ): Promise<boolean> {
     const completed = await Delivery()
@@ -988,6 +1045,7 @@ export function createAgentTriggerDeliveryMethods(
             settledAt: input.settledAt,
             expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
             laneCleanupPendingAt: input.settledAt,
+            ...(input.handling != null && { handling: input.handling }),
           },
           $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, lastError: 1 },
           $push: {
@@ -1007,7 +1065,7 @@ export function createAgentTriggerDeliveryMethods(
         { new: true },
       )
       .select(
-        '_id orderingKey laneCleanupPendingAt batchMemberIds batchMembersSettledAt requeueCount',
+        '_id orderingKey laneCleanupPendingAt batchMemberIds batchMembersSettledAt requeueCount handling',
       )
       .lean<
         Pick<
@@ -1018,6 +1076,7 @@ export function createAgentTriggerDeliveryMethods(
           | 'batchMemberIds'
           | 'batchMembersSettledAt'
           | 'requeueCount'
+          | 'handling'
         >
       >();
     if (completed?._id == null) {
@@ -1041,6 +1100,61 @@ export function createAgentTriggerDeliveryMethods(
         error: error instanceof Error ? error.message : String(error),
       });
     }
+    return true;
+  }
+
+  async function settleAgentTriggerHandlingOutcome(
+    input: SettleAgentTriggerHandlingOutcomeInput,
+  ): Promise<boolean> {
+    const error = input.error?.slice(0, MAX_ERROR_MESSAGE_LENGTH);
+    const terminalHandling = {
+      'handling.status': input.status,
+      'handling.settledAt': input.settledAt,
+      ...(error != null && { 'handling.error': error }),
+      ...(input.action != null && { 'handling.action': input.action }),
+    };
+    const terminal = await Delivery()
+      .findOneAndUpdate(
+        {
+          deliveryKey: input.deliveryKey,
+          'handling.status': 'started',
+          'handling.conversationId': input.conversationId,
+          'handling.generationCreatedAt': input.generationCreatedAt,
+        },
+        {
+          $set: terminalHandling,
+          $unset: {
+            ...(error == null && { 'handling.error': 1 }),
+            ...(input.action == null && { 'handling.action': 1 }),
+          },
+        },
+        { new: true },
+      )
+      .select('_id orderingKey batchMemberIds handling')
+      .lean<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'batchMemberIds' | 'handling'>>();
+
+    let authoritative = terminal;
+    if (authoritative == null) {
+      const existing = await Delivery()
+        .findOne({
+          deliveryKey: input.deliveryKey,
+          'handling.conversationId': input.conversationId,
+          'handling.generationCreatedAt': input.generationCreatedAt,
+        })
+        .select('_id orderingKey batchMemberIds handling')
+        .lean<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'batchMemberIds' | 'handling'>>();
+      const replayed =
+        existing?.handling?.status === input.status &&
+        existing.handling.error === error &&
+        existing.handling.action?.toolName === input.action?.toolName &&
+        existing.handling.action?.toolCallId === input.action?.toolCallId;
+      if (!replayed) {
+        return false;
+      }
+      authoritative = existing;
+    }
+
+    await propagateBatchHandling(authoritative);
     return true;
   }
 
@@ -1154,7 +1268,9 @@ export function createAgentTriggerDeliveryMethods(
         'envelope.event.source.type': 'remote_api_key',
         ...tenantScope,
       })
-      .select('-_id deliveryKey status attempts availableAt createdAt settledAt result lastError')
+      .select(
+        '-_id deliveryKey status attempts availableAt createdAt settledAt result lastError handling',
+      )
       .lean<AgentTriggerDeliveryStatusRecord>();
     if (delivery != null && delivery.status === 'batched') {
       const member = await Delivery()
@@ -1172,11 +1288,17 @@ export function createAgentTriggerDeliveryMethods(
           'envelope.event.source.type': 'remote_api_key',
           ...tenantScope,
         })
-        .select('-_id status attempts availableAt settledAt result lastError')
+        .select('-_id status attempts availableAt settledAt result lastError handling')
         .lean<
           Pick<
             AgentTriggerDeliveryStatusRecord,
-            'status' | 'attempts' | 'availableAt' | 'settledAt' | 'result' | 'lastError'
+            | 'status'
+            | 'attempts'
+            | 'availableAt'
+            | 'settledAt'
+            | 'result'
+            | 'lastError'
+            | 'handling'
           >
         >();
       if (root == null) {
@@ -1408,6 +1530,7 @@ export function createAgentTriggerDeliveryMethods(
     beginAgentTriggerDeliveryAttempt,
     deferAgentTriggerDeliveryAttempt,
     completeAgentTriggerDelivery,
+    settleAgentTriggerHandlingOutcome,
     retryAgentTriggerDelivery,
     deadLetterAgentTriggerDelivery,
     getAgentTriggerDelivery,

@@ -799,7 +799,7 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
         streamId,
         expect.objectContaining({
           createdAt: job.createdAt,
-          status: 'requires_action',
+          status: 'aborted',
           scheduleId: 'schedule-1',
           scheduledFor: '2026-08-17T12:00:00.000Z',
         }),
@@ -826,7 +826,7 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
         expect.objectContaining({
           createdAt: job.createdAt,
           scheduleId: 'schedule-ownerless',
-          status: 'requires_action',
+          status: 'aborted',
         }),
       );
       await expect(jobStore.getJob(streamId)).resolves.toMatchObject({ status: 'aborted' });
@@ -1059,6 +1059,28 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       expect(handler).toHaveBeenCalledTimes(1); // no duplicate invocation
     });
 
+    test('passes the committed aborted state to an event outcome handler', async () => {
+      const streamId = 'stream-host-event-expiry-state';
+      await manager.createJob(streamId, 'user-1');
+      await manager.updateMetadata(streamId, { agentEventDeliveryKey: 'delivery-expired' });
+      await manager.approvals.pause(streamId, buildAction(streamId));
+      const handler = jest.fn().mockResolvedValue(undefined);
+      manager.setTerminalHostActionHandler(handler);
+
+      expect(await manager.expireApproval(streamId)).toBe(true);
+
+      expect(handler).toHaveBeenCalledWith(
+        streamId,
+        expect.objectContaining({
+          status: 'aborted',
+          error: 'Approval expired before a decision was made',
+          terminalHostActionPending: true,
+        }),
+        expect.any(Array),
+        expect.any(Array),
+      );
+    });
+
     test('clearTerminalHostAction is identity-fenced against a replacement generation', async () => {
       const streamId = 'stream-host-fence';
       const job = await pauseScheduled(streamId);
@@ -1265,6 +1287,11 @@ describe('InMemoryJobStore — approval expiry cleanup', () => {
     const store = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     try {
       const job = await store.createJob('stale-pause-barrier', 'u1');
+      await store.updateJob(
+        'stale-pause-barrier',
+        { agentEventDeliveryKey: 'trigger-stale-pause' },
+        job.createdAt,
+      );
       await store.enqueueSteer(
         'stale-pause-barrier',
         {
@@ -1296,6 +1323,7 @@ describe('InMemoryJobStore — approval expiry cleanup', () => {
       await expect(store.getJob('stale-pause-barrier')).resolves.toMatchObject({
         status: 'error',
         error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+        terminalHostActionPending: true,
       });
       const failedJob = await store.getJob('stale-pause-barrier');
       expect(failedJob?.pendingAction).toBeUndefined();

@@ -153,7 +153,20 @@ export function prepareAgentTriggerDelivery(
   // a fresh request trace without weakening content-conflict detection.
   const { requestId: _requestId, receivedAt: _receivedAt, ...durableIdentity } = envelope;
   const requestedAvailableAt = requireAvailableAt(options.availableAt);
+  if (
+    envelope.expectedAction != null &&
+    (envelope.mode !== 'continue' ||
+      envelope.target.bindingId == null ||
+      envelope.target.sourceKeyId == null)
+  ) {
+    throw new AgentTriggerDeliveryError(
+      'Expected actions require an authenticated bound-child continue event',
+    );
+  }
   const coalesceKey = coalescingIdentity(envelope, options.coalesce);
+  if (coalesceKey != null && envelope.expectedAction != null) {
+    throw new AgentTriggerDeliveryError('Expected actions cannot be coalesced');
+  }
   if (coalesceKey != null && bytes > MAX_AGENT_TRIGGER_BATCH_BYTES) {
     throw new AgentTriggerDeliveryError(
       `Coalesced agent trigger envelope exceeds ${MAX_AGENT_TRIGGER_BATCH_BYTES} bytes`,

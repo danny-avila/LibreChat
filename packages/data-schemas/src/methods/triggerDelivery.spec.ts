@@ -228,6 +228,8 @@ describe('agent trigger delivery methods', () => {
         availableAt: coalesceUntil,
         envelopeBytes: 128,
         envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-1' },
           event: {
             id: `event-${index}`,
             source: { id: 'source-key', type: 'remote_api_key' },
@@ -272,7 +274,13 @@ describe('agent trigger delivery methods', () => {
       claimToken: claim!.claimToken,
       now: coalesceUntil,
     });
-    const result = { mode: 'continue', status: 'started', conversationId: 'child-thread' };
+    const result = {
+      mode: 'continue',
+      status: 'started',
+      conversationId: 'child-thread',
+      streamId: 'child-thread',
+      generationCreatedAt: 1_787_000_000_000,
+    };
     await expect(
       methods.completeAgentTriggerDelivery({
         id: claim!.id,
@@ -281,6 +289,13 @@ describe('agent trigger delivery methods', () => {
         attempt: attempt!,
         result,
         settledAt: coalesceUntil,
+        handling: {
+          status: 'started',
+          conversationId: 'child-thread',
+          streamId: 'child-thread',
+          generationCreatedAt: 1_787_000_000_000,
+          startedAt: coalesceUntil,
+        },
       }),
     ).resolves.toBe(true);
 
@@ -296,6 +311,34 @@ describe('agent trigger delivery methods', () => {
     );
     expect(receipts).toHaveLength(4);
     expect(receipts.every((receipt) => receipt?.status === 'succeeded')).toBe(true);
+    expect(receipts.every((receipt) => receipt?.handling?.status === 'started')).toBe(true);
+
+    await expect(
+      methods.settleAgentTriggerHandlingOutcome({
+        deliveryKey: root!.deliveryKey,
+        conversationId: 'child-thread',
+        generationCreatedAt: 1_787_000_000_000,
+        status: 'completed_no_action',
+        settledAt: new Date(coalesceUntil.getTime() + 1_000),
+      }),
+    ).resolves.toBe(true);
+
+    let terminal = await Delivery.find({ orderingKey: 'commentary-lane' }).lean();
+    expect(terminal.every((row) => row.handling?.status === 'completed_no_action')).toBe(true);
+
+    const recoveringMember = terminal.find((row) => String(row._id) !== String(root!._id));
+    await Delivery.updateOne({ _id: recoveringMember!._id }, { $unset: { handling: 1 } });
+    await expect(
+      methods.settleAgentTriggerHandlingOutcome({
+        deliveryKey: root!.deliveryKey,
+        conversationId: 'child-thread',
+        generationCreatedAt: 1_787_000_000_000,
+        status: 'completed_no_action',
+        settledAt: new Date(coalesceUntil.getTime() + 1_000),
+      }),
+    ).resolves.toBe(true);
+    terminal = await Delivery.find({ orderingKey: 'commentary-lane' }).lean();
+    expect(terminal.every((row) => row.handling?.status === 'completed_no_action')).toBe(true);
   });
 
   it('recovers batch receipts and lane cleanup after root settlement was interrupted', async () => {
@@ -1177,6 +1220,158 @@ describe('agent trigger delivery methods', () => {
     expect(stored?.expiresAt?.getTime()).toBe(
       new Date(START.getTime() + 2_000).getTime() + 90 * 24 * 60 * 60_000,
     );
+  });
+
+  it('projects a bound continuation as started after generation admission', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-1' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const claimed = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claimed!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+    });
+
+    await methods.completeAgentTriggerDelivery({
+      id: claimed!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: attempt!,
+      result: {
+        mode: 'continue',
+        status: 'started',
+        conversationId: 'conversation-1',
+        streamId: 'conversation-1',
+        generationCreatedAt: 1_787_000_000_000,
+      },
+      settledAt: new Date(START.getTime() + 1_000),
+      handling: {
+        status: 'started',
+        conversationId: 'conversation-1',
+        streamId: 'conversation-1',
+        generationCreatedAt: 1_787_000_000_000,
+        startedAt: new Date(START.getTime() + 1_000),
+      },
+    });
+
+    await expect(
+      methods.getAgentTriggerDeliveryStatus(
+        queued.delivery.deliveryKey,
+        user,
+        'source-key-1',
+        'tenant-1',
+      ),
+    ).resolves.toMatchObject({
+      status: 'succeeded',
+      handling: {
+        status: 'started',
+        conversationId: 'conversation-1',
+        streamId: 'conversation-1',
+        generationCreatedAt: 1_787_000_000_000,
+        startedAt: new Date(START.getTime() + 1_000),
+      },
+    });
+  });
+
+  it('settles only the exact started generation and rejects stale terminal callbacks', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-1' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const claimed = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claimed!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+    });
+    await methods.completeAgentTriggerDelivery({
+      id: claimed!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: attempt!,
+      result: {
+        mode: 'continue',
+        status: 'started',
+        conversationId: 'conversation-1',
+        streamId: 'conversation-1',
+        generationCreatedAt: 1_787_000_000_000,
+      },
+      settledAt: new Date(START.getTime() + 1_000),
+      handling: {
+        status: 'started',
+        conversationId: 'conversation-1',
+        streamId: 'conversation-1',
+        generationCreatedAt: 1_787_000_000_000,
+        startedAt: new Date(START.getTime() + 1_000),
+      },
+    });
+
+    await expect(
+      methods.settleAgentTriggerHandlingOutcome({
+        deliveryKey: queued.delivery.deliveryKey,
+        conversationId: 'conversation-1',
+        generationCreatedAt: 1_786_999_999_999,
+        status: 'failed',
+        settledAt: new Date(START.getTime() + 2_000),
+        error: 'stale failure',
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      methods.settleAgentTriggerHandlingOutcome({
+        deliveryKey: queued.delivery.deliveryKey,
+        conversationId: 'conversation-1',
+        generationCreatedAt: 1_787_000_000_000,
+        status: 'failed',
+        settledAt: new Date(START.getTime() + 3_000),
+        error: 'provider rejected the model',
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      methods.settleAgentTriggerHandlingOutcome({
+        deliveryKey: queued.delivery.deliveryKey,
+        conversationId: 'conversation-1',
+        generationCreatedAt: 1_787_000_000_000,
+        status: 'applied',
+        settledAt: new Date(START.getTime() + 4_000),
+        action: { toolName: 'submit_move' },
+      }),
+    ).resolves.toBe(false);
+
+    await expect(
+      methods.getAgentTriggerDelivery(queued.delivery.deliveryKey),
+    ).resolves.toMatchObject({
+      handling: {
+        status: 'failed',
+        settledAt: new Date(START.getTime() + 3_000),
+        error: 'provider rejected the model',
+      },
+    });
   });
 
   it('reclaims an inactive high-cardinality lane after its tail succeeds', async () => {

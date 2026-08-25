@@ -258,6 +258,7 @@ export class ApprovalLifecycle {
       patch: {
         completedAt,
         error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+        ...(job.agentEventDeliveryKey != null && { terminalHostActionPending: true }),
       },
       clear: [
         'pendingAction',
@@ -394,10 +395,10 @@ export class ApprovalLifecycle {
   }
 
   /**
-   * Expires the observed approval and returns the winning pre-transition job.
-   * Callers that need to notify runtime-local subscribers or run host lifecycle
-   * hooks get both the exact generation identity and its trusted metadata without
-   * a racy post-transition read (the terminal TTL may already remove the hash).
+   * Expires the observed approval and returns the winning terminal snapshot.
+   * Callers that run host lifecycle hooks get the trusted pre-CAS metadata plus
+   * the exact status/error/completion fields committed by this transition,
+   * without a racy post-transition read (the terminal TTL may remove the hash).
    */
   async expireWithIdentity(
     streamId: string,
@@ -413,11 +414,18 @@ export class ApprovalLifecycle {
     ) {
       return null;
     }
-    // Built-in in-memory stores may mutate the returned job object in place during
-    // transitionStatus. Snapshot it before the CAS so the host hook receives the
-    // observed generation metadata even when terminal TTL removes or rewrites it.
-    const expiredJob = { ...job };
     const createdAt = job.createdAt;
+    const completedAt = Date.now();
+    const error = 'Approval expired before a decision was made';
+    const expiredJob: SerializableJobData = {
+      ...job,
+      status: 'aborted',
+      error,
+      completedAt,
+      ...(options?.markHostActionPending === true && { terminalHostActionPending: true }),
+    };
+    delete expiredJob.pendingAction;
+    delete expiredJob.pendingActionId;
     const ok = await this.store.transitionStatus(streamId, {
       from: 'requires_action',
       to: 'aborted',
@@ -428,8 +436,8 @@ export class ApprovalLifecycle {
       // enumerable) until the adapter acknowledges — set ATOMICALLY here so a crash right
       // after this CAS still leaves the durable retry evidence.
       patch: {
-        error: 'Approval expired before a decision was made',
-        completedAt: Date.now(),
+        error,
+        completedAt,
         ...(options?.markHostActionPending === true && { terminalHostActionPending: true }),
       },
       expectActionId: expectedActionId,

@@ -144,6 +144,33 @@ describe('prepareAgentTriggerDelivery', () => {
     );
   });
 
+  it('rejects action evidence contracts on observational batches', () => {
+    const bound = envelope({
+      mode: 'continue',
+      target: {
+        agentId: 'agent-1',
+        conversationId: 'child-thread',
+        parentMessageId: 'placeholder',
+        bindingId: `evtbind_${'a'.repeat(48)}`,
+        sourceKeyId: 'source-key',
+      },
+      expectedAction: {
+        toolName: 'submit_move',
+        argumentSubset: { gameId: 'game-1', expectedPly: 7 },
+      },
+    });
+
+    expect(() => prepareAgentTriggerDelivery(bound, { coalesce: { key: 'commentary' } })).toThrow(
+      'Expected actions cannot be coalesced',
+    );
+  });
+
+  it('accepts action evidence contracts only for bound child continuations', () => {
+    expect(() =>
+      prepareAgentTriggerDelivery(envelope({ expectedAction: { toolName: 'submit_move' } })),
+    ).toThrow('Expected actions require an authenticated bound-child continue event');
+  });
+
   it('rejects invalid scheduling metadata and oversized envelopes', () => {
     expect(() =>
       prepareAgentTriggerDelivery(envelope(), { availableAt: new Date(Number.NaN) }),
