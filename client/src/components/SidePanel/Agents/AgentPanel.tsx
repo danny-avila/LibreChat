@@ -319,8 +319,15 @@ export default function AgentPanel() {
 
   const agentQuery = canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
 
-  const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
   const modelsReady = modelsQuery.isFetchedAfterMount && !modelsQuery.isFetching;
+  const modelsError = modelsQuery.isFetchedAfterMount && !modelsQuery.isSuccess;
+  /** The models query is seeded with a static fallback config, so its entries only describe the
+   *  active server once the fetch issued on mount has resolved. Until then there is nothing
+   *  authoritative to offer, and an outright failure must not fall back to the seed either. */
+  const models = useMemo(
+    () => (modelsQuery.isFetchedAfterMount && !modelsError ? (modelsQuery.data ?? {}) : {}),
+    [modelsError, modelsQuery.isFetchedAfterMount, modelsQuery.data],
+  );
   const methods = useForm<AgentForm>({
     defaultValues: getDefaultAgentFormValues(defaultStatefulCodeEnvironment),
     mode: 'onChange',
@@ -600,6 +607,18 @@ export default function AgentPanel() {
           status: 'error',
         });
       }
+      if (!modelsReady || modelsError) {
+        return showToast({
+          message: localize('com_error_models_not_loaded'),
+          status: 'error',
+        });
+      }
+      if (!(models[provider] ?? []).includes(model)) {
+        return showToast({
+          message: localize('com_error_model_not_found'),
+          status: 'error',
+        });
+      }
       if (!data.name) {
         return showToast({
           message: localize('com_agents_missing_name'),
@@ -609,7 +628,18 @@ export default function AgentPanel() {
 
       create.mutate({ ...basePayload, model, tools, provider });
     },
-    [agent_id, create, dirtyFields, handleAvatarUpload, update, showToast, localize],
+    [
+      agent_id,
+      create,
+      dirtyFields,
+      handleAvatarUpload,
+      models,
+      modelsError,
+      modelsReady,
+      update,
+      showToast,
+      localize,
+    ],
   );
 
   const handleSelectAgent = useCallback(() => {
@@ -693,6 +723,7 @@ export default function AgentPanel() {
             <ModelPanel
               models={models}
               providers={providers}
+              modelsError={modelsError}
               modelsReady={modelsReady}
               setActivePanel={setActivePanel}
             />
