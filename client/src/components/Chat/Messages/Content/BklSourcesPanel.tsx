@@ -86,10 +86,7 @@ function sourceHasFolderLink(source: BklSource | null): boolean {
 
 function sourceHasBimsLink(source: BklSource | null): boolean {
   const meta = source?.metadata?.[0] as Record<string, unknown> | undefined;
-  return Boolean(
-    source?.source?.bims_url ||
-      (typeof meta?.bims_url === 'string' && meta.bims_url),
-  );
+  return Boolean(source?.source?.bims_url || (typeof meta?.bims_url === 'string' && meta.bims_url));
 }
 
 function withImanageDetails(source: BklSource, details: Record<string, unknown>): BklSource {
@@ -114,7 +111,8 @@ function withImanageDetails(source: BklSource, details: Record<string, unknown>)
       imanage_url: (details.imanage_url as string) ?? source.source?.imanage_url,
       imanage_preview_url:
         (details.imanage_preview_url as string) ?? source.source?.imanage_preview_url,
-      imanage_folder_url: (details.imanage_folder_url as string) ?? source.source?.imanage_folder_url,
+      imanage_folder_url:
+        (details.imanage_folder_url as string) ?? source.source?.imanage_folder_url,
       bims_url: (details.bims_url as string) ?? source.source?.bims_url,
     },
     metadata,
@@ -306,8 +304,11 @@ export default function BklSourcesPanel({ onBack }: BklSourcesPanelProps = {}) {
     if (
       !active ||
       !current ||
-      (sourceHasDisplayMetadata(current) && sourceHasFolderLink(current) && sourceHasBimsLink(current))
-    ) return;
+      (sourceHasDisplayMetadata(current) &&
+        sourceHasFolderLink(current) &&
+        sourceHasBimsLink(current))
+    )
+      return;
     const docId = sourceDocId(current);
     if (!docId) return;
     let cancelled = false;
@@ -347,43 +348,55 @@ export default function BklSourcesPanel({ onBack }: BklSourcesPanelProps = {}) {
       )}
     >
       {/* Header — mirrors Artifacts.tsx chrome: surface-primary-alt bar with
-          a subtle bottom border and a ghost-icon close button on the right.
-          We intentionally do NOT surface prev/next or a "3 / 10" counter:
-          only a subset of the retrieved chunks are actually cited in the
-          answer, so exposing navigation across all retrieved sources would
-          mislead the user into treating unused chunks as evidence. The
-          panel shows exactly the one chunk whose `[N]` marker was clicked. */}
-      <div className="flex flex-shrink-0 items-center justify-between gap-2 overflow-hidden border-b border-border-light bg-surface-primary-alt px-3 py-2">
-        {onBack ? (
+          a subtle bottom border. We intentionally do NOT surface prev/next or
+          a "3 / 10" counter: only a subset of the retrieved chunks are
+          actually cited in the answer, so exposing navigation across all
+          retrieved sources would mislead the user into treating unused
+          chunks as evidence.
+
+          좁은 패널 대응(2026-08-25): 한 행에 제목과 액션 버튼을 나란히 두면
+          300~400px 폭에서 제목이 0px 로 짜부라져 세로로 깨진다. 세 단으로
+          나눠 각각 독립적으로 줄바꿈/말줄임되게 한다.
+            1행 — [뒤로] 출처 [N] + 메타 뱃지(wrap) + [닫기]
+            2행 — 파일 아이콘 + 파일명(truncate)
+            3행 — iM 파일 / iM 폴더 / BIMS / 담기 (wrap) */}
+      <div className="flex flex-shrink-0 flex-col gap-1 border-b border-border-light bg-surface-primary-alt px-3 py-2">
+        <div className="flex items-start gap-1">
+          {onBack ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={onBack}
+              aria-label="목록으로"
+              title="목록으로"
+              className="-ml-1 h-7 w-7 shrink-0"
+            >
+              <ChevronLeft size={16} aria-hidden="true" />
+            </Button>
+          ) : null}
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 pt-0.5 text-xs font-medium uppercase tracking-wider text-text-secondary">
+            <span className="whitespace-nowrap">출처 [{active.n}]</span>
+            <PanelTopMeta source={current} />
+          </div>
           <Button
             size="icon"
             variant="ghost"
-            onClick={onBack}
-            aria-label="목록으로"
-            title="목록으로"
-            className="shrink-0"
+            onClick={onClose}
+            aria-label="닫기"
+            className="-mr-1 h-7 w-7 shrink-0"
           >
-            <ChevronLeft size={16} aria-hidden="true" />
-          </Button>
-        ) : null}
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-text-secondary">
-            <span>출처 [{active.n}]</span>
-            <PanelTopMeta source={current} />
-          </div>
-          <div className="flex min-w-0 items-start gap-2">
-            <PanelTitleIcon source={current} />
-            <div className="min-w-0 flex-1">
-              <PanelTitle source={current} />
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <ExternalSystemButtons source={current} />
-          <AddToProjectButton source={current} />
-          <Button size="icon" variant="ghost" onClick={onClose} aria-label="닫기">
             <X size={16} aria-hidden="true" />
           </Button>
+        </div>
+        <div className="flex min-w-0 items-start gap-2">
+          <PanelTitleIcon source={current} />
+          <div className="min-w-0 flex-1">
+            <PanelTitle source={current} />
+          </div>
+        </div>
+        <div className="-ml-1 flex flex-wrap items-center gap-x-0.5 gap-y-1">
+          <ExternalSystemButtons source={current} />
+          <AddToProjectButton source={current} />
         </div>
       </div>
 
@@ -397,8 +410,7 @@ export default function BklSourcesPanel({ onBack }: BklSourcesPanelProps = {}) {
             <p className="text-sm text-text-secondary">출처를 불러오는 중…</p>
           ) : (
             <p className="text-sm text-text-secondary">
-              출처 정보를 표시할 수 없습니다. 접근 권한이 없거나 출처가 만료되었을 수
-              있습니다.
+              출처 정보를 표시할 수 없습니다. 접근 권한이 없거나 출처가 만료되었을 수 있습니다.
             </p>
           )}
         </div>
@@ -482,7 +494,8 @@ function ExternalSystemButtons({ source }: { source: BklSource | null }) {
       source.source?.imanage_folder_url ??
       (typeof meta?.imanage_folder_url === 'string' ? (meta.imanage_folder_url as string) : null);
     const directBims =
-      source.source?.bims_url ?? (typeof meta?.bims_url === 'string' ? (meta.bims_url as string) : null);
+      source.source?.bims_url ??
+      (typeof meta?.bims_url === 'string' ? (meta.bims_url as string) : null);
     setFileUrl(directFile);
     setFolderUrl(directFolder);
     setBimsUrl(directBims);
