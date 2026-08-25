@@ -172,8 +172,6 @@ async function main() {
           getRoleByName: (name, fields) => db.getRoleByName(name, fields, baseOnly),
           createRoleByName: (role) => db.createRoleByName(role, baseOnly),
           updateRoleByName: (name, updates) => db.updateRoleByName(name, updates, baseOnly),
-          updateAccessPermissions: (name, permissions, role) =>
-            db.updateAccessPermissions(name, permissions, role, baseOnly),
           findConfigByPrincipal: (type, id, options, session) =>
             db.findConfigByPrincipal(type, id, { ...options, ...baseOnly }, session),
           upsertConfig: (type, id, model, overrides, priority, session, options) =>
@@ -187,11 +185,6 @@ async function main() {
       getRoleByName: roleDb.getRoleByName,
       createRoleByName: roleDb.createRoleByName,
       updateRoleByName: roleDb.updateRoleByName,
-      updateAccessPermissions: roleDb.updateAccessPermissions,
-      findUserIdsByRole: db.findUserIdsByRole,
-      updateUsersByRole: db.updateUsersByRole,
-      updateUsersRoleByIds: db.updateUsersRoleByIds,
-      renameConfigPrincipal: db.renameConfigPrincipal,
       findConfigByPrincipal: roleDb.findConfigByPrincipal,
       upsertConfig: roleDb.upsertConfig,
       invalidateConfigCaches: () => invalidateConfigCaches(scope.tenantId),

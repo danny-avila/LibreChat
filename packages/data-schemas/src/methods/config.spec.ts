@@ -141,36 +141,6 @@ describe('upsertConfig tombstone preservation', () => {
   });
 });
 
-describe('renameConfigPrincipal', () => {
-  it('renames a config without losing its stored state', async () => {
-    const original = await methods.upsertConfig(
-      PrincipalType.ROLE,
-      'BETA',
-      PrincipalModel.ROLE,
-      { memory: { disabled: false } },
-      10,
-    );
-    await mongoose.models.Config.updateOne(
-      { _id: original!._id },
-      { $set: { tombstones: ['interface.modelSelect'], isActive: false } },
-    );
-
-    const renamed = await methods.renameConfigPrincipal(PrincipalType.ROLE, 'BETA', 'REVIEWER');
-
-    expect(renamed).toMatchObject({
-      principalId: 'REVIEWER',
-      priority: 10,
-      overrides: { memory: { disabled: false } },
-      tombstones: ['interface.modelSelect'],
-      isActive: false,
-      configVersion: 2,
-    });
-    await expect(
-      methods.findConfigByPrincipal(PrincipalType.ROLE, 'BETA', { includeInactive: true }),
-    ).resolves.toBeNull();
-  });
-});
-
 describe('findConfigByPrincipal', () => {
   it('finds an active config', async () => {
     await methods.upsertConfig(

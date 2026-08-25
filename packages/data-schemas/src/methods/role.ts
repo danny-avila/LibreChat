@@ -63,7 +63,6 @@ export function createRoleMethods(
     roleName: string,
     permissionsUpdate: Record<string, Record<string, boolean>>,
     roleData?: IRole,
-    options?: { baseOnly?: boolean },
   ) => Promise<void>;
   migrateRoleSchema: (roleName?: string) => Promise<number>;
   createRoleByName: (roleData: Partial<IRole>, options?: { baseOnly?: boolean }) => Promise<IRole>;
@@ -323,7 +322,6 @@ export function createRoleMethods(
     roleName: string,
     permissionsUpdate: Record<string, Record<string, boolean>>,
     roleData?: IRole,
-    options?: { baseOnly?: boolean },
   ): Promise<void> {
     const updates: Record<string, Record<string, boolean>> = {};
     for (const [permissionType, permissions] of Object.entries(permissionsUpdate)) {
@@ -339,7 +337,7 @@ export function createRoleMethods(
     }
 
     try {
-      const role = roleData ?? (await getRoleByName(roleName, null, options));
+      const role = roleData ?? (await getRoleByName(roleName));
       if (!role) {
         return;
       }
@@ -446,18 +444,18 @@ export function createRoleMethods(
           );
 
           try {
-            const filter = options?.baseOnly
-              ? { name: roleName, tenantId: { $in: [null, undefined] } }
-              : { name: roleName };
-            await Role.updateOne(filter, {
-              $set: updateObj,
-              $unset: unsetFields,
-            });
+            await Role.updateOne(
+              { name: roleName },
+              {
+                $set: updateObj,
+                $unset: unsetFields,
+              },
+            );
 
             const cache = deps.getCache?.(CacheKeys.ROLES);
-            const updatedRole = await Role.findOne(filter).select('-__v').lean().exec();
+            const updatedRole = await Role.findOne({ name: roleName }).select('-__v').lean().exec();
             if (cache) {
-              await cache.set(scopedCacheKey(roleName), options?.baseOnly ? null : updatedRole);
+              await cache.set(scopedCacheKey(roleName), updatedRole);
             }
 
             logger.info(`Updated role '${roleName}' and removed old schema fields`);
@@ -466,7 +464,7 @@ export function createRoleMethods(
             throw updateError;
           }
         } else {
-          await updateRoleByName(roleName, updateObj as unknown as Partial<IRole>, options);
+          await updateRoleByName(roleName, updateObj as unknown as Partial<IRole>);
         }
 
         logger.info(`Updated '${roleName}' role permissions`);

@@ -67,12 +67,6 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     session?: ClientSession,
     options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
-  renameConfigPrincipal: (
-    principalType: PrincipalType,
-    currentPrincipalId: string | Types.ObjectId,
-    nextPrincipalId: string | Types.ObjectId,
-    session?: ClientSession,
-  ) => Promise<IConfig | null>;
   toggleConfigActive: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
@@ -331,20 +325,6 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     return await Config.findOneAndDelete(filter).session(session ?? null);
   }
 
-  async function renameConfigPrincipal(
-    principalType: PrincipalType,
-    currentPrincipalId: string | Types.ObjectId,
-    nextPrincipalId: string | Types.ObjectId,
-    session?: ClientSession,
-  ): Promise<IConfig | null> {
-    const Config = mongoose.models.Config as Model<IConfig>;
-    return await Config.findOneAndUpdate(
-      { principalType, principalId: currentPrincipalId.toString() },
-      { $set: { principalId: nextPrincipalId.toString() }, $inc: { configVersion: 1 } },
-      { new: true, ...(session ? { session } : {}) },
-    );
-  }
-
   async function toggleConfigActive(
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
@@ -379,7 +359,6 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     tombstoneConfigField,
     unsetConfigField,
     deleteConfig,
-    renameConfigPrincipal,
     toggleConfigActive,
   };
 }
