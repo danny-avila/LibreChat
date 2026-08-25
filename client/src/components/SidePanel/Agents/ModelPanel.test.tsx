@@ -8,6 +8,7 @@ import type { AgentForm } from '~/common';
 import ModelPanel from './ModelPanel';
 
 jest.mock('@librechat/client', () => ({
+  Alert: ({ children }: { children: React.ReactNode }) => <div role="alert">{children}</div>,
   Button: ({ children, onClick, type }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
     <button type={type} onClick={onClick}>
       {children}
@@ -17,17 +18,25 @@ jest.mock('@librechat/client', () => ({
     ariaLabel,
     disabled,
     items,
+    selectId,
     selectedValue,
+    selectPlaceholder,
     setValue,
   }: {
     ariaLabel: string;
     disabled?: boolean;
     items: Array<{ label: string; value: string }>;
+    selectId?: string;
     selectedValue: string;
+    selectPlaceholder?: string;
     setValue: (value: string) => void;
   }) => (
     <div>
+      <button id={selectId} type="button" disabled={disabled} aria-label={ariaLabel}>
+        {selectedValue || selectPlaceholder}
+      </button>
       <span data-testid={`${ariaLabel}-selected`}>{selectedValue}</span>
+      <span data-testid={`${ariaLabel}-placeholder`}>{selectPlaceholder}</span>
       {items.map((item) => (
         <button
           key={item.value}
@@ -67,12 +76,14 @@ function TestForm({
   defaultModel = '',
   defaultProvider = '',
   models,
+  modelsError = false,
   modelsReady,
   providers = [{ label: 'Custom', value: 'custom' }],
 }: {
   defaultModel?: string;
   defaultProvider?: string;
   models: Record<string, string[]>;
+  modelsError?: boolean;
   modelsReady: boolean;
   providers?: Array<{ label: string; value: string }>;
 }) {
@@ -89,6 +100,7 @@ function TestForm({
       <ModelPanel
         providers={providers}
         models={models}
+        modelsError={modelsError}
         modelsReady={modelsReady}
         setActivePanel={jest.fn()}
       />
@@ -163,5 +175,38 @@ describe('ModelPanel', () => {
 
     expect(localStorage.getItem('lastAgentProvider')).toBe('custom');
     expect(localStorage.getItem('lastAgentModel')).toBe('second-model');
+  });
+
+  it('announces the pending catalogue instead of inviting a selection', () => {
+    const { getByTestId } = render(
+      <TestForm defaultProvider="custom" models={{}} modelsReady={false} />,
+    );
+
+    expect(getByTestId('com_ui_model-placeholder')).toHaveTextContent('com_ui_loading');
+  });
+
+  it('offers no models and explains the failure when the catalogue cannot be loaded', () => {
+    const { getByRole, getByTestId, queryByTestId } = render(
+      <TestForm defaultProvider="custom" models={{}} modelsError={true} modelsReady={true} />,
+    );
+
+    expect(getByRole('alert')).toHaveTextContent('com_error_models_not_loaded');
+    expect(queryByTestId('com_ui_model-placeholder')).toHaveTextContent('com_ui_select_model');
+    expect(getByTestId('com_ui_provider-custom')).toBeDisabled();
+  });
+
+  it('labels the provider and model controls', () => {
+    const { container } = render(
+      <TestForm
+        defaultProvider="custom"
+        models={{ custom: ['custom-model'] }}
+        modelsReady={true}
+      />,
+    );
+
+    expect(container.querySelector('label[for="provider"]')).not.toBeNull();
+    expect(container.querySelector('label[for="model"]')).not.toBeNull();
+    expect(container.querySelector('#provider')).not.toBeNull();
+    expect(container.querySelector('#model')).not.toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import keyBy from 'lodash/keyBy';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
-import { Button, ControlCombobox } from '@librechat/client';
+import { Alert, Button, ControlCombobox } from '@librechat/client';
 import { useFormContext, useWatch, Controller } from 'react-hook-form';
 import {
   alternateName,
@@ -21,12 +21,26 @@ import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 import { cn } from '~/utils';
 
+function getModelPlaceholderKey(modelsPending: boolean, provider: string) {
+  if (modelsPending) {
+    return 'com_ui_loading';
+  }
+  if (provider) {
+    return 'com_ui_select_model';
+  }
+  return 'com_ui_select_provider_first';
+}
+
 export default function ModelPanel({
   providers,
+  modelsError,
   setActivePanel,
   models: modelsData,
   modelsReady,
-}: Pick<AgentModelPanelProps, 'models' | 'modelsReady' | 'providers' | 'setActivePanel'>) {
+}: Pick<
+  AgentModelPanelProps,
+  'models' | 'modelsError' | 'modelsReady' | 'providers' | 'setActivePanel'
+>) {
   const localize = useLocalize();
   const { announcePolite } = useLiveAnnouncer();
 
@@ -47,6 +61,8 @@ export default function ModelPanel({
     () => (provider ? (modelsData[provider] ?? []) : []),
     [modelsData, provider],
   );
+  const modelsPending = !modelsReady && !modelsError;
+  const selectionDisabled = !modelsReady || modelsError;
 
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();
 
@@ -105,10 +121,13 @@ export default function ModelPanel({
       </header>
       <div>
         {/* Endpoint aka Provider for Agents */}
-        <div className="mb-3">
+        <div className="mb-3" aria-busy={modelsPending}>
           <label
             id="provider-label"
-            className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary"
+            className={cn(
+              'mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary',
+              modelsPending && 'opacity-60',
+            )}
             htmlFor="provider"
           >
             {localize('com_ui_provider')} <span className="text-red-500">*</span>
@@ -130,6 +149,7 @@ export default function ModelPanel({
               return (
                 <>
                   <ControlCombobox
+                    selectId="provider"
                     selectedValue={value}
                     displayValue={alternateName[display] ?? display}
                     selectPlaceholder={localize('com_ui_select_provider')}
@@ -154,7 +174,7 @@ export default function ModelPanel({
                     }))}
                     className={cn(error ? 'border-2 border-red-500' : '')}
                     ariaLabel={localize('com_ui_provider')}
-                    disabled={!modelsReady}
+                    disabled={selectionDisabled}
                     isCollapsed={false}
                     showCarat={true}
                   />
@@ -169,12 +189,12 @@ export default function ModelPanel({
           />
         </div>
         {/* Model */}
-        <div className="mb-3">
+        <div className="mb-3" aria-busy={modelsPending}>
           <label
             id="model-label"
             className={cn(
               'mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary',
-              !provider && 'opacity-60',
+              (!provider || modelsPending) && 'opacity-60',
             )}
             htmlFor="model"
           >
@@ -188,12 +208,9 @@ export default function ModelPanel({
               return (
                 <>
                   <ControlCombobox
+                    selectId="model"
                     selectedValue={field.value || ''}
-                    selectPlaceholder={
-                      provider
-                        ? localize('com_ui_select_model')
-                        : localize('com_ui_select_provider_first')
-                    }
+                    selectPlaceholder={localize(getModelPlaceholderKey(modelsPending, provider))}
                     searchPlaceholder={localize('com_ui_select_model')}
                     setValue={(value) => {
                       field.onChange(value);
@@ -208,7 +225,7 @@ export default function ModelPanel({
                       label: model,
                       value: model,
                     }))}
-                    disabled={!provider || !modelsReady}
+                    disabled={!provider || selectionDisabled}
                     className={cn('disabled:opacity-50', error ? 'border-2 border-red-500' : '')}
                     ariaLabel={localize('com_ui_model')}
                     isCollapsed={false}
@@ -223,6 +240,11 @@ export default function ModelPanel({
               );
             }}
           />
+          {modelsError && (
+            <Alert variant="error" className="mt-1">
+              {localize('com_error_models_not_loaded')}
+            </Alert>
+          )}
         </div>
       </div>
       {/* Model Parameters */}
