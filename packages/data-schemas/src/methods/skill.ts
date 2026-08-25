@@ -967,9 +967,46 @@ function fingerprintBodyFlagValue(value: unknown): string {
   }
 }
 
+/**
+ * Recover a top-level flag's authored same-line value as a fallback when the
+ * failsafe parse cannot understand an unrelated explicit YAML tag. Restrict
+ * matching to the block's base indentation so nested metadata cannot shadow a
+ * real flag; quoted spellings are accepted because js-yaml accepts them too.
+ */
+function getRawBodyFlagValue(block: string, keys: readonly string[]): string | undefined {
+  const lines = block.split('\n');
+  const contentLines = lines.filter((line) => {
+    const trimmed = line.trim();
+    return trimmed.length > 0 && !trimmed.startsWith('#');
+  });
+  const baseIndent = contentLines.reduce((minimum, line) => {
+    const indentation = line.match(/^[ \t]*/)?.[0].length ?? 0;
+    return Math.min(minimum, indentation);
+  }, Number.POSITIVE_INFINITY);
+  if (!Number.isFinite(baseIndent)) {
+    return undefined;
+  }
+  const alternatives = keys
+    .map((key) => key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .flatMap((key) => [key, `"${key}"`, `'${key}'`])
+    .join('|');
+  const pattern = new RegExp(`^[ \\t]{${baseIndent}}(?:${alternatives})\\s*:\\s*(.*)$`, 'i');
+  const line = lines.find((candidate) => pattern.test(candidate));
+  return line?.match(pattern)?.[1];
+}
+
+function isRawBodyFlagPlaceholder(value: string | undefined): boolean {
+  if (value === undefined) {
+    return false;
+  }
+  const trimmed = value.trim();
+  return trimmed.length === 0 || trimmed.startsWith('#');
+}
+
 function readParsedBodyFlagValue(
   value: unknown,
   authoredValue: { available: boolean; value?: unknown },
+  rawValue?: string,
 ): BodyAlwaysApplyResult {
   if (typeof value === 'boolean') {
     return { status: 'valid', value };
@@ -983,14 +1020,20 @@ function readParsedBodyFlagValue(
        so implicit scalar resolution stays disabled: a genuine placeholder is
        still null, while authored null text remains a string and is rejected.
        If the second parse is unavailable (for example because the document
-       contains an explicit tag the failsafe schema does not know), reject the
-       ambiguous value rather than silently treating authored content as empty. */
-    if (authoredValue.available && authoredValue.value === null) {
+       contains an explicit tag the failsafe schema does not know), fall back
+       to a base-indentation-aware raw check and accept only an actual empty or
+       comment-only flag line. */
+    if (
+      (authoredValue.available && authoredValue.value === null) ||
+      (!authoredValue.available && isRawBodyFlagPlaceholder(rawValue))
+    ) {
       return { status: 'absent' };
     }
     return {
       status: 'invalid',
-      fingerprint: fingerprintBodyFlagValue(authoredValue.available ? authoredValue.value : value),
+      fingerprint: fingerprintBodyFlagValue(
+        authoredValue.available ? authoredValue.value : (rawValue ?? value),
+      ),
     };
   }
   if (typeof value === 'string') {
@@ -1073,10 +1116,14 @@ function extractBooleanFlagsFromBody(body: string | undefined): BodyFlagResults 
       Object.prototype.hasOwnProperty.call(normalized.frontmatter, candidate),
     );
     if (key !== undefined) {
-      results[flag.column] = readParsedBodyFlagValue(normalized.frontmatter[key], {
-        available: Object.prototype.hasOwnProperty.call(authoredFrontmatter ?? {}, key),
-        value: authoredFrontmatter?.[key],
-      });
+      results[flag.column] = readParsedBodyFlagValue(
+        normalized.frontmatter[key],
+        {
+          available: Object.prototype.hasOwnProperty.call(authoredFrontmatter ?? {}, key),
+          value: authoredFrontmatter?.[key],
+        },
+        getRawBodyFlagValue(block, [flag.key, ...flag.aliases]),
+      );
     }
   }
   return results;
@@ -1816,18 +1863,16 @@ export function createSkillMethods(
     const storedBodyFlags = storedSkillState
       ? extractBooleanFlagsFromBody(storedSkillState.body)
       : undefined;
-    const bodyFrontmatter =
-      update.body !== undefined
-        ? {
-            ...(update.frontmatter !== undefined
-              ? isPlainObject(frontmatter)
-                ? frontmatter
-                : {}
-              : isPlainObject(storedSkillState?.frontmatter)
-                ? storedSkillState.frontmatter
-                : {}),
-          }
-        : undefined;
+    let bodyFrontmatter: Record<string, unknown> | undefined;
+    if (update.body !== undefined) {
+      if (update.frontmatter !== undefined) {
+        bodyFrontmatter = { ...(isPlainObject(frontmatter) ? frontmatter : {}) };
+      } else {
+        bodyFrontmatter = {
+          ...(isPlainObject(storedSkillState?.frontmatter) ? storedSkillState.frontmatter : {}),
+        };
+      }
+    }
     let bodyFrontmatterChanged = false;
     const issues: ValidationIssue[] = [];
     if (update.name !== undefined) issues.push(...validateSkillName(update.name));

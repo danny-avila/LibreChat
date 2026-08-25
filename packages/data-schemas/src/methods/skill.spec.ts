@@ -1544,6 +1544,30 @@ describe('Skill CRUD methods', () => {
       });
     });
 
+    it('distinguishes changed null spellings when failsafe parsing is unavailable', async () => {
+      const malformed =
+        '---\nname: changed-null-typo\ndescription: A demo skill.\npublished: !!timestamp 2026-08-25\nuser-invocable: null\n---\n\nBody.';
+      const stored = await Skill.create({
+        name: 'changed-null-typo',
+        description: 'A demo skill.',
+        body: malformed,
+        frontmatter: {},
+        author: owner._id,
+        authorName: owner.name ?? 'Skill Owner',
+        version: 1,
+        source: 'inline',
+        fileCount: 0,
+      });
+
+      await expect(
+        methods.updateSkill({
+          id: (stored._id as mongoose.Types.ObjectId).toString(),
+          expectedVersion: 1,
+          update: { body: malformed.replace('user-invocable: null', 'user-invocable: ~') },
+        }),
+      ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+    });
+
     it('returns a conflict before validating a stale legacy body', async () => {
       const malformed =
         '---\nname: stale-legacy-body\ndescription: A demo skill.\nuser-invocable: yes\n---\n\nBody.';
@@ -1590,6 +1614,19 @@ describe('Skill CRUD methods', () => {
           }),
         ),
       ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+    });
+
+    it('preserves an empty body flag when an unrelated explicit tag breaks failsafe parsing', async () => {
+      const { skill } = await methods.createSkill(
+        makeSkillInput({
+          name: 'explicit-tag-empty-flag',
+          body: '---\nname: explicit-tag-empty-flag\ndescription: A demo skill.\npublished: !!timestamp 2026-08-25\nuser-invocable:\n---\n\nBody.',
+          frontmatter: undefined,
+        }),
+      );
+
+      expect(skill.userInvocable).toBe(true);
+      expect(skill.frontmatter ?? {}).not.toHaveProperty('user-invocable');
     });
 
     it('updateSkill rejects a non-boolean flag introduced by a body edit', async () => {

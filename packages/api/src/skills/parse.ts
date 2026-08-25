@@ -71,17 +71,32 @@ function hasCaseInsensitive(frontmatter: Record<string, unknown>, key: string): 
 
 /**
  * Recover the text a key carried on its own line so an empty/comment-only
- * placeholder can be distinguished from an invalid scalar. Anchored at column
- * zero so a nested mapping that reuses a flag name (`metadata:` →
- * `  user-invocable: ...`) can't shadow the top-level key; nested keys never
- * reach the top-level bag, so matching one here would attribute an unrelated
- * value to the flag. YAML aliases and tags are resolved by the parser itself,
- * so their raw spelling is deliberately not used to second-guess a boolean.
+ * placeholder can be distinguished from an invalid scalar. Matching is
+ * anchored at the mapping's base indentation so a nested mapping that reuses a
+ * flag name (`metadata:` → `  user-invocable: ...`) can't shadow the top-level
+ * key while a mapping indented as a whole still works. YAML aliases and tags
+ * are resolved by the parser itself, so their raw spelling is deliberately not
+ * used to second-guess a resolved boolean.
  */
 function getRawFrontmatterValue(block: string, key: string): string | undefined {
   const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = new RegExp(`^${escapedKey}\\s*:\\s*(.*)$`, 'i');
-  const line = block.split('\n').find((candidate) => pattern.test(candidate));
+  const lines = block.split('\n');
+  const contentLines = lines.filter((line) => {
+    const trimmed = line.trim();
+    return trimmed.length > 0 && !trimmed.startsWith('#');
+  });
+  const baseIndent = contentLines.reduce((minimum, line) => {
+    const indentation = line.match(/^[ \t]*/)?.[0].length ?? 0;
+    return Math.min(minimum, indentation);
+  }, Number.POSITIVE_INFINITY);
+  if (!Number.isFinite(baseIndent)) {
+    return undefined;
+  }
+  const pattern = new RegExp(
+    `^[ \\t]{${baseIndent}}(?:${escapedKey}|"${escapedKey}"|'${escapedKey}')\\s*:\\s*(.*)$`,
+    'i',
+  );
+  const line = lines.find((candidate) => pattern.test(candidate));
   const match = line?.match(pattern);
   return match?.[1];
 }
