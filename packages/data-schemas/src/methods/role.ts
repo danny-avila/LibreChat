@@ -45,19 +45,28 @@ export function createRoleMethods(
   }) => Promise<Pick<IRole, '_id' | 'name' | 'description'>[]>;
   countRoles: () => Promise<number>;
   initializeRoles: () => Promise<void>;
-  getRoleByName: (roleName: string, fieldsToSelect?: string | string[] | null) => Promise<IRole>;
+  getRoleByName: (
+    roleName: string,
+    fieldsToSelect?: string | string[] | null,
+    options?: { baseOnly?: boolean },
+  ) => Promise<IRole>;
   findRolesByNames: (
     roleNames: string[],
     fieldsToSelect?: string | string[] | null,
   ) => Promise<IRole[]>;
-  updateRoleByName: (roleName: string, updates: Partial<IRole>) => Promise<IRole>;
+  updateRoleByName: (
+    roleName: string,
+    updates: Partial<IRole>,
+    options?: { baseOnly?: boolean },
+  ) => Promise<IRole>;
   updateAccessPermissions: (
     roleName: string,
     permissionsUpdate: Record<string, Record<string, boolean>>,
     roleData?: IRole,
+    options?: { baseOnly?: boolean },
   ) => Promise<void>;
   migrateRoleSchema: (roleName?: string) => Promise<number>;
-  createRoleByName: (roleData: Partial<IRole>) => Promise<IRole>;
+  createRoleByName: (roleData: Partial<IRole>, options?: { baseOnly?: boolean }) => Promise<IRole>;
   deleteRoleByName: (roleName: string) => Promise<IRole | null>;
   updateUsersByRole: (oldRole: string, newRole: string) => Promise<void>;
   findUserIdsByRole: (roleName: string) => Promise<string[]>;
@@ -166,17 +175,21 @@ export function createRoleMethods(
   async function getRoleByName(
     roleName: string,
     fieldsToSelect: string | string[] | null = null,
+    options?: { baseOnly?: boolean },
   ): Promise<IRole> {
     const cache = deps.getCache?.(CacheKeys.ROLES);
     try {
-      if (cache) {
+      if (cache && !options?.baseOnly) {
         const cachedRole = await cache.get(scopedCacheKey(roleName));
         if (cachedRole) {
           return cachedRole as IRole;
         }
       }
       const Role = mongoose.models.Role;
-      let query = Role.findOne({ name: roleName });
+      const filter = options?.baseOnly
+        ? { name: roleName, tenantId: { $in: [null, undefined] } }
+        : { name: roleName };
+      let query = Role.findOne(filter);
       if (fieldsToSelect) {
         query = query.select(fieldsToSelect);
       }
@@ -185,12 +198,12 @@ export function createRoleMethods(
       if (!role && systemRoleValues.has(roleName)) {
         const newRole = await new Role(roleDefaults[roleName as keyof typeof roleDefaults]).save();
         if (cache) {
-          await cache.set(scopedCacheKey(roleName), newRole);
+          await cache.set(scopedCacheKey(roleName), options?.baseOnly ? null : newRole);
         }
         return newRole.toObject() as IRole;
       }
       if (cache) {
-        await cache.set(scopedCacheKey(roleName), role);
+        await cache.set(scopedCacheKey(roleName), options?.baseOnly ? null : role);
       }
       return role as unknown as IRole;
     } catch (error) {
@@ -251,23 +264,41 @@ export function createRoleMethods(
   /**
    * Update role values by name.
    */
-  async function updateRoleByName(roleName: string, updates: Partial<IRole>): Promise<IRole> {
+  async function updateRoleByName(
+    roleName: string,
+    updates: Partial<IRole>,
+    options?: { baseOnly?: boolean },
+  ): Promise<IRole> {
     const cache = deps.getCache?.(CacheKeys.ROLES);
     try {
       const Role = mongoose.models.Role;
-      const role = await Role.findOneAndUpdate({ name: roleName }, { $set: updates }, { new: true })
+      const filter = options?.baseOnly
+        ? { name: roleName, tenantId: { $in: [null, undefined] } }
+        : { name: roleName };
+      const role = await Role.findOneAndUpdate(filter, { $set: updates }, { new: true })
         .select('-__v')
         .lean()
         .exec();
-      if (cache) {
-        if (updates.name && updates.name !== roleName) {
-          await Promise.all([
-            cache.set(scopedCacheKey(roleName), null),
-            cache.set(scopedCacheKey(updates.name), role),
-          ]);
-        } else {
-          await cache.set(scopedCacheKey(roleName), role);
+      try {
+        if (cache) {
+          if (options?.baseOnly) {
+            await Promise.all([
+              cache.set(scopedCacheKey(roleName), null),
+              ...(updates.name && updates.name !== roleName
+                ? [cache.set(scopedCacheKey(updates.name), null)]
+                : []),
+            ]);
+          } else if (updates.name && updates.name !== roleName) {
+            await Promise.all([
+              cache.set(scopedCacheKey(roleName), null),
+              cache.set(scopedCacheKey(updates.name), role),
+            ]);
+          } else {
+            await cache.set(scopedCacheKey(roleName), role);
+          }
         }
+      } catch (cacheError) {
+        logger.error(`[updateRoleByName] cache update failed for "${roleName}":`, cacheError);
       }
       return role as unknown as IRole;
     } catch (error) {
@@ -292,6 +323,7 @@ export function createRoleMethods(
     roleName: string,
     permissionsUpdate: Record<string, Record<string, boolean>>,
     roleData?: IRole,
+    options?: { baseOnly?: boolean },
   ): Promise<void> {
     const updates: Record<string, Record<string, boolean>> = {};
     for (const [permissionType, permissions] of Object.entries(permissionsUpdate)) {
@@ -307,7 +339,7 @@ export function createRoleMethods(
     }
 
     try {
-      const role = roleData ?? (await getRoleByName(roleName));
+      const role = roleData ?? (await getRoleByName(roleName, null, options));
       if (!role) {
         return;
       }
@@ -414,18 +446,18 @@ export function createRoleMethods(
           );
 
           try {
-            await Role.updateOne(
-              { name: roleName },
-              {
-                $set: updateObj,
-                $unset: unsetFields,
-              },
-            );
+            const filter = options?.baseOnly
+              ? { name: roleName, tenantId: { $in: [null, undefined] } }
+              : { name: roleName };
+            await Role.updateOne(filter, {
+              $set: updateObj,
+              $unset: unsetFields,
+            });
 
             const cache = deps.getCache?.(CacheKeys.ROLES);
-            const updatedRole = await Role.findOne({ name: roleName }).select('-__v').lean().exec();
+            const updatedRole = await Role.findOne(filter).select('-__v').lean().exec();
             if (cache) {
-              await cache.set(scopedCacheKey(roleName), updatedRole);
+              await cache.set(scopedCacheKey(roleName), options?.baseOnly ? null : updatedRole);
             }
 
             logger.info(`Updated role '${roleName}' and removed old schema fields`);
@@ -434,7 +466,7 @@ export function createRoleMethods(
             throw updateError;
           }
         } else {
-          await updateRoleByName(roleName, updateObj as unknown as Partial<IRole>);
+          await updateRoleByName(roleName, updateObj as unknown as Partial<IRole>, options);
         }
 
         logger.info(`Updated '${roleName}' role permissions`);
@@ -515,7 +547,10 @@ export function createRoleMethods(
   }
 
   /** Rejects names that match system roles. */
-  async function createRoleByName(roleData: Partial<IRole>): Promise<IRole> {
+  async function createRoleByName(
+    roleData: Partial<IRole>,
+    options?: { baseOnly?: boolean },
+  ): Promise<IRole> {
     const { name } = roleData;
     if (!name || typeof name !== 'string' || !name.trim()) {
       throw new Error('Role name is required');
@@ -525,13 +560,20 @@ export function createRoleMethods(
       throw new RoleConflictError(`Cannot create role with reserved system name: ${name}`);
     }
     const Role = mongoose.models.Role;
-    const existing = await Role.findOne({ name: trimmed }).lean();
+    const filter = options?.baseOnly
+      ? { name: trimmed, tenantId: { $in: [null, undefined] } }
+      : { name: trimmed };
+    const existing = await Role.findOne(filter).lean();
     if (existing) {
       throw new RoleConflictError(`Role "${trimmed}" already exists`);
     }
     let role;
     try {
-      role = await new Role({ ...roleData, name: trimmed }).save();
+      role = await new Role({
+        ...roleData,
+        name: trimmed,
+        ...(options?.baseOnly ? { tenantId: undefined } : {}),
+      }).save();
     } catch (err) {
       /**
        * The compound unique index `{ name: 1, tenantId: 1 }` on the role schema
@@ -547,7 +589,7 @@ export function createRoleMethods(
     try {
       const cache = deps.getCache?.(CacheKeys.ROLES);
       if (cache) {
-        await cache.set(scopedCacheKey(role.name), role.toObject());
+        await cache.set(scopedCacheKey(role.name), options?.baseOnly ? null : role.toObject());
       }
     } catch (cacheError) {
       logger.error(`[createRoleByName] cache set failed for "${role.name}":`, cacheError);

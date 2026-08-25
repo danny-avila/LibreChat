@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { z } = require('zod');
+const { SYSTEM_TENANT_ID } = require('@librechat/data-schemas');
 const { configSchema, permissionsSchema, SystemRoles } = require('librechat-data-provider');
 
 const systemRoleNames = new Set(Object.values(SystemRoles));
@@ -88,7 +89,10 @@ function loadRoleDefinitions(args) {
   const inline = getFlagValue(args, '--roles') ?? process.env.ROLE_DEFINITIONS_JSON;
   const file =
     getFlagValue(args, '--file') ??
-    args.find((arg, index) => !arg.startsWith('--') && args[index - 1] !== '--roles') ??
+    args.find(
+      (arg, index) =>
+        !arg.startsWith('--') && !['--roles', '--file', '--tenant'].includes(args[index - 1]),
+    ) ??
     process.env.ROLE_DEFINITIONS_FILE;
   if (!inline && !file) {
     throw new Error('Pass role definitions with --roles <json> or --file <path>');
@@ -100,6 +104,23 @@ function loadRoleDefinitions(args) {
     `Loaded role definitions from ${inline ? 'the inline parameter' : path.resolve(process.cwd(), file)}`,
   );
   return definitions;
+}
+
+function getDeploymentScope(args) {
+  const base = args.includes('--base');
+  const tenantId = getFlagValue(args, '--tenant');
+  if (args.some((arg) => arg === '--tenant' || arg.startsWith('--tenant='))) {
+    if (!tenantId || tenantId.startsWith('--')) {
+      throw new Error('--tenant requires a tenant ID');
+    }
+    if (tenantId === SYSTEM_TENANT_ID) {
+      throw new Error(`--tenant cannot use the reserved tenant ID "${SYSTEM_TENANT_ID}"`);
+    }
+  }
+  if (base === Boolean(tenantId)) {
+    throw new Error('Pass exactly one deployment scope: --base or --tenant <tenant-id>');
+  }
+  return tenantId ? { tenantId } : { base: true };
 }
 
 async function deployRole(definition, service) {
@@ -130,7 +151,7 @@ async function deployRole(definition, service) {
 async function main() {
   require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
   const mongoose = require('mongoose');
-  const { createModels } = require('@librechat/data-schemas');
+  const { createModels, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
   const { createRoleAdminService } = require('@librechat/api');
   const { invalidateConfigCaches } = require('~/server/services/Config');
   const db = require('~/models');
@@ -141,23 +162,48 @@ async function main() {
 
   let exitCode = 0;
   try {
-    const definitions = loadRoleDefinitions(process.argv.slice(2));
+    const args = process.argv.slice(2);
+    const definitions = loadRoleDefinitions(args);
+    const scope = getDeploymentScope(args);
     await connect();
+    const baseOnly = { baseOnly: true };
+    const roleDb = scope.base
+      ? {
+          getRoleByName: (name, fields) => db.getRoleByName(name, fields, baseOnly),
+          createRoleByName: (role) => db.createRoleByName(role, baseOnly),
+          updateRoleByName: (name, updates) => db.updateRoleByName(name, updates, baseOnly),
+          updateAccessPermissions: (name, permissions, role) =>
+            db.updateAccessPermissions(name, permissions, role, baseOnly),
+          findConfigByPrincipal: (type, id, options, session) =>
+            db.findConfigByPrincipal(type, id, { ...options, ...baseOnly }, session),
+          upsertConfig: (type, id, model, overrides, priority, session, options) =>
+            db.upsertConfig(type, id, model, overrides, priority, session, {
+              ...options,
+              ...baseOnly,
+            }),
+        }
+      : db;
     const service = createRoleAdminService({
-      getRoleByName: db.getRoleByName,
-      createRoleByName: db.createRoleByName,
-      updateRoleByName: db.updateRoleByName,
-      updateAccessPermissions: db.updateAccessPermissions,
+      getRoleByName: roleDb.getRoleByName,
+      createRoleByName: roleDb.createRoleByName,
+      updateRoleByName: roleDb.updateRoleByName,
+      updateAccessPermissions: roleDb.updateAccessPermissions,
       findUserIdsByRole: db.findUserIdsByRole,
       updateUsersByRole: db.updateUsersByRole,
       updateUsersRoleByIds: db.updateUsersRoleByIds,
-      findConfigByPrincipal: db.findConfigByPrincipal,
-      upsertConfig: db.upsertConfig,
-      invalidateConfigCaches,
+      renameConfigPrincipal: db.renameConfigPrincipal,
+      findConfigByPrincipal: roleDb.findConfigByPrincipal,
+      upsertConfig: roleDb.upsertConfig,
+      invalidateConfigCaches: () => invalidateConfigCaches(scope.tenantId),
     });
-    for (const definition of definitions) {
-      await deployRole(definition, service);
-    }
+    const deploy = async () => {
+      for (const definition of definitions) {
+        await deployRole(definition, service);
+      }
+    };
+    await (scope.base
+      ? runAsSystem(deploy)
+      : tenantStorage.run({ tenantId: scope.tenantId }, deploy));
     console.green('Deployment completed');
   } catch (error) {
     exitCode = 1;
@@ -177,4 +223,10 @@ if (require.main === module) {
   void main();
 }
 
-module.exports = { deployRole, loadRoleDefinitions, mergePermissions, validateRoleDefinitions };
+module.exports = {
+  deployRole,
+  getDeploymentScope,
+  loadRoleDefinitions,
+  mergePermissions,
+  validateRoleDefinitions,
+};

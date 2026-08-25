@@ -23,7 +23,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
   findConfigByPrincipal: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
-    options?: { includeInactive?: boolean },
+    options?: { includeInactive?: boolean; baseOnly?: boolean },
     session?: ClientSession,
   ) => Promise<IConfig | null>;
   getApplicableConfigs: (
@@ -37,7 +37,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
-    options?: { expectEmpty?: boolean; preservePriority?: boolean },
+    options?: { expectEmpty?: boolean; preservePriority?: boolean; baseOnly?: boolean },
   ) => Promise<IConfig | null>;
   patchConfigFields: (
     principalType: PrincipalType,
@@ -67,6 +67,12 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     session?: ClientSession,
     options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
+  renameConfigPrincipal: (
+    principalType: PrincipalType,
+    currentPrincipalId: string | Types.ObjectId,
+    nextPrincipalId: string | Types.ObjectId,
+    session?: ClientSession,
+  ) => Promise<IConfig | null>;
   toggleConfigActive: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
@@ -78,14 +84,17 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
   async function findConfigByPrincipal(
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
-    options?: { includeInactive?: boolean },
+    options?: { includeInactive?: boolean; baseOnly?: boolean },
     session?: ClientSession,
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
-    const filter: { principalType: PrincipalType; principalId: string; isActive?: boolean } = {
+    const filter: FilterQuery<IConfig> = {
       principalType,
       principalId: principalId.toString(),
     };
+    if (options?.baseOnly) {
+      filter.tenantId = { $in: [null, undefined] };
+    }
     if (!options?.includeInactive) {
       filter.isActive = true;
     }
@@ -149,7 +158,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
-    options?: { expectEmpty?: boolean; preservePriority?: boolean },
+    options?: { expectEmpty?: boolean; preservePriority?: boolean; baseOnly?: boolean },
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
 
@@ -157,6 +166,9 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       principalType,
       principalId: principalId.toString(),
     };
+    if (options?.baseOnly) {
+      query.tenantId = { $in: [null, undefined] };
+    }
     if (options?.expectEmpty) {
       query.$and = [
         { $or: [{ overrides: { $eq: {} } }, { overrides: { $exists: false } }] },
@@ -190,7 +202,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
           return null;
         }
         return await Config.findOneAndUpdate(
-          { principalType, principalId: principalId.toString() },
+          query,
           { $set: update.$set, $inc: update.$inc },
           { new: true, ...(session ? { session } : {}) },
         );
@@ -319,6 +331,20 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     return await Config.findOneAndDelete(filter).session(session ?? null);
   }
 
+  async function renameConfigPrincipal(
+    principalType: PrincipalType,
+    currentPrincipalId: string | Types.ObjectId,
+    nextPrincipalId: string | Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<IConfig | null> {
+    const Config = mongoose.models.Config as Model<IConfig>;
+    return await Config.findOneAndUpdate(
+      { principalType, principalId: currentPrincipalId.toString() },
+      { $set: { principalId: nextPrincipalId.toString() }, $inc: { configVersion: 1 } },
+      { new: true, ...(session ? { session } : {}) },
+    );
+  }
+
   async function toggleConfigActive(
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
@@ -353,6 +379,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     tombstoneConfigField,
     unsetConfigField,
     deleteConfig,
+    renameConfigPrincipal,
     toggleConfigActive,
   };
 }

@@ -1,10 +1,37 @@
 const {
+  getDeploymentScope,
   loadRoleDefinitions,
   mergePermissions,
   validateRoleDefinitions,
 } = require('../deploy-role');
 
 describe('deploy role script', () => {
+  it('requires an explicit base or tenant scope', () => {
+    expect(getDeploymentScope(['--base'])).toEqual({ base: true });
+    expect(getDeploymentScope(['--tenant', 'tenant-123'])).toEqual({ tenantId: 'tenant-123' });
+    expect(() => getDeploymentScope([])).toThrow('exactly one deployment scope');
+    expect(() => getDeploymentScope(['--tenant'])).toThrow('requires a tenant ID');
+    expect(() => getDeploymentScope(['--tenant', '__SYSTEM__'])).toThrow('reserved tenant ID');
+    expect(() => getDeploymentScope(['--tenant=__SYSTEM__'])).toThrow('reserved tenant ID');
+    expect(() => getDeploymentScope(['--base', '--tenant', 'tenant-123'])).toThrow(
+      'exactly one deployment scope',
+    );
+  });
+
+  it('does not interpret the tenant ID as a definitions file', () => {
+    process.env.ROLE_DEFINITIONS_JSON = JSON.stringify([
+      {
+        name: 'BETA',
+        inheritPermissionsFrom: 'USER',
+        permissionOverrides: {},
+        config: { priority: 10, overrides: {} },
+      },
+    ]);
+
+    expect(loadRoleDefinitions(['--tenant', 'tenant-123'])[0].name).toBe('BETA');
+    delete process.env.ROLE_DEFINITIONS_JSON;
+  });
+
   it('merges permission overrides without mutating the baseline', () => {
     const baseline = { AGENTS: { USE: true, CREATE: false } };
 

@@ -1,6 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import { PrincipalType, PrincipalModel, SystemRoles } from 'librechat-data-provider';
-import type { Config, CreateRoleRequest, IRole, UpdateRoleRequest } from '@librechat/data-schemas';
+import type {
+  Config,
+  ConfigMethods,
+  CreateRoleRequest,
+  IRole,
+  UpdateRoleRequest,
+} from '@librechat/data-schemas';
 import type { AdminConfigDeps } from '../config';
 import type { AdminRolesDeps } from '../roles';
 import { validateDescription, validateRoleName } from '../roles';
@@ -16,6 +22,7 @@ type RoleServiceDeps = Pick<
   | 'updateUsersByRole'
   | 'updateUsersRoleByIds'
 > &
+  Pick<ConfigMethods, 'renameConfigPrincipal'> &
   Pick<AdminConfigDeps, 'findConfigByPrincipal' | 'upsertConfig'> & {
     invalidateConfigCaches: () => Promise<void>;
   };
@@ -108,14 +115,17 @@ export function createRoleAdminService(deps: RoleServiceDeps): RoleAdminService 
       return role;
     }
 
-    const migratedIds = await deps.findUserIdsByRole(normalizedName);
-    await deps.updateUsersByRole(normalizedName, nextName);
+    const config = await deps.renameConfigPrincipal(PrincipalType.ROLE, normalizedName, nextName);
+    let migratedIds: string[] = [];
+    let renamedRole: IRole;
     try {
+      migratedIds = await deps.findUserIdsByRole(normalizedName);
+      await deps.updateUsersByRole(normalizedName, nextName);
       const role = await deps.updateRoleByName(normalizedName, roleUpdates);
       if (!role) {
         throw new Error(`Role "${normalizedName}" was not found`);
       }
-      return role;
+      renamedRole = role;
     } catch (error) {
       try {
         if (migratedIds.length > 0) {
@@ -127,8 +137,20 @@ export function createRoleAdminService(deps: RoleServiceDeps): RoleAdminService 
           rollbackError,
         );
       }
+      if (config) {
+        try {
+          await deps.renameConfigPrincipal(PrincipalType.ROLE, nextName, normalizedName);
+          await deps.invalidateConfigCaches();
+        } catch (rollbackError) {
+          logger.error('[roleAdminService] Config rename rollback failed', rollbackError);
+        }
+      }
       throw error;
     }
+    if (config) {
+      await deps.invalidateConfigCaches();
+    }
+    return renamedRole;
   }
 
   async function updateRolePermissions(

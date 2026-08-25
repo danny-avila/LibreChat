@@ -9,7 +9,7 @@ configuration overrides. Repeated runs update the same role and config documents
 Configure LibreChat as usual, then run:
 
 ```sh
-npm run deploy-role -- path/to/roles.json
+npm run deploy-role -- --base path/to/roles.json
 ```
 
 The path may also be passed as `--file path/to/roles.json` or through the
@@ -19,7 +19,7 @@ variable.
 The complete array can instead be supplied as an inline parameter:
 
 ```sh
-npm run deploy-role -- --roles='[
+npm run deploy-role -- --base --roles='[
   {
     "name": "BETA",
     "description": "Beta role",
@@ -58,15 +58,25 @@ npm run deploy-role -- --roles='[
 Use `--roles=<json>` if preferred. For CI/CD, the same value can be supplied through
 `ROLE_DEFINITIONS_JSON`. Inline JSON takes precedence over file input when both are present.
 
+Every deployment must select exactly one scope:
+
+- `--base` creates or updates roles without a tenant.
+- `--tenant <tenant-id>` creates or updates roles for that tenant.
+
+For example, replace `--base` in the commands above with `--tenant tenant-123` to deploy the same
+definitions within `tenant-123`.
+
 The script uses LibreChat's normal database bootstrap. At minimum, provide the same `MONGO_URI`
 used by the application; any environment variables normally required by that deployment's
 configuration must also be available. No JWT, Entra token, refresh token, or Admin API credential
-is required.
+is required. Base deployment uses explicit no-tenant database filters; tenant deployment uses
+LibreChat's normal tenant context. Both modes remain usable with strict tenant isolation.
 
 ## CI/CD
 
 Install the repository dependencies, expose `MONGO_URI` as a protected CI secret, and run
-`npm run deploy-role -- path/to/roles.json` before starting or restarting LibreChat. Alternatively,
+`npm run deploy-role -- --base path/to/roles.json` before starting or restarting LibreChat.
+Alternatively,
 set `ROLE_DEFINITIONS_FILE` to the definitions path or `ROLE_DEFINITIONS_JSON` to an inline array.
 Do not print connection strings or inline definitions containing sensitive values. The command
 exits non-zero if the input is invalid, a baseline role is missing, or any deployment step fails.
