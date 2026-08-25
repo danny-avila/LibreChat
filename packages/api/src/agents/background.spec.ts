@@ -250,6 +250,34 @@ describe('applyBackgroundToolCalls', () => {
     expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(true);
   });
 
+  it('merges a raw action opt-in into an existing normalized option entry', () => {
+    const defs = [mcpDef('getPerson_action_swapi_tech')];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: {
+        'getPerson_action_swapi---tech': { run_in_background: true },
+        getPerson_action_swapi_tech: { defer_loading: true },
+      },
+    });
+    expect(result.backgroundToolNames).toEqual(['getPerson_action_swapi_tech']);
+  });
+
+  it('keeps an explicit normalized action background option authoritative', () => {
+    const defs = [mcpDef('getPerson_action_swapi_tech')];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: {
+        'getPerson_action_swapi---tech': { run_in_background: true },
+        getPerson_action_swapi_tech: { run_in_background: false },
+      },
+    });
+    expect(result.backgroundToolNames).toEqual([]);
+  });
+
   it('does not collapse hyphens in the operationId when normalizing an action key', () => {
     const defs = [
       mcpDef('get_foo---bar_action_swapi_tech'),

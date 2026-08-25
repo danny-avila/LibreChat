@@ -131,18 +131,27 @@ const EXCLUDED_BACKGROUND_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
  * hostnames), while the runtime definitions those names must match against are
  * always `_`-collapsed. The builder writes `tool_options` keyed by the persisted
  * name, so alias every action-shaped key to its normalized form; without this
- * the opt-in silently never resolves for short-hostname actions. Aliasing (not
- * rewriting) keeps an already-normalized key authoritative.
+ * the opt-in silently never resolves for short-hostname actions. Merge the raw
+ * background option into any normalized entry while keeping an explicit
+ * normalized background value authoritative.
  */
 function expandActionToolOptions(toolOptions: AgentToolOptions): AgentToolOptions {
   let expanded: AgentToolOptions | undefined;
   for (const [name, options] of Object.entries(toolOptions)) {
     const normalized = normalizeActionToolName(name);
-    if (normalized === name || toolOptions[normalized] != null) {
+    const runInBackground = options?.run_in_background;
+    if (
+      normalized === name ||
+      runInBackground == null ||
+      toolOptions[normalized]?.run_in_background != null
+    ) {
       continue;
     }
     expanded = expanded ?? { ...toolOptions };
-    expanded[normalized] = options;
+    expanded[normalized] = {
+      ...toolOptions[normalized],
+      run_in_background: runInBackground,
+    };
   }
   return expanded ?? toolOptions;
 }
