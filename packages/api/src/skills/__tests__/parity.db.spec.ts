@@ -104,6 +104,8 @@ const CORPUS: Array<[label: string, frontmatterLines: string]> = [
   ['quoted value with comment', 'user-invocable: "false" # off'],
   ['comment-only value', 'user-invocable: # todo'],
   ['empty value', 'user-invocable:'],
+  ['explicit YAML null', 'user-invocable: null'],
+  ['explicit YAML tilde null', 'user-invocable: ~'],
   ['value on the next line', 'user-invocable:\n  false'],
   ['YAML boolean alias', 'default: &off false\nuser-invocable: *off'],
   ['uppercase key and value', 'USER-INVOCABLE: FALSE'],
@@ -157,5 +159,25 @@ describe('frontmatter parity between the upload and inline-body routes', () => {
     const body = `---\n{name: ${name}, description: ${DESCRIPTION}, user-invocable: false}\n---\n\nBody.`;
 
     expect(await viaInlineBody(name, body)).toEqual(await viaImport(name, body));
+  });
+
+  it.each([
+    [
+      'an indented mapping',
+      `---\n  name: parity-null-indented\n  description: ${DESCRIPTION}\n  user-invocable: null\n---\n\nBody.`,
+    ],
+    [
+      'a flow-style mapping',
+      `---\n{name: parity-null-flow, description: ${DESCRIPTION}, user-invocable: null}\n---\n\nBody.`,
+    ],
+    [
+      'an alias',
+      `---\nname: parity-null-alias\ndescription: ${DESCRIPTION}\ndefault: &null-value null\nuser-invocable: *null-value\n---\n\nBody.`,
+    ],
+  ])('rejects explicit YAML null in %s on both routes', async (_label, body) => {
+    const name = `parity-null-${_label.replaceAll(/\W+/g, '-')}`;
+
+    expect(await viaImport(name, body)).toEqual({ rejected: true });
+    expect(await viaInlineBody(name, body)).toEqual({ rejected: true });
   });
 });

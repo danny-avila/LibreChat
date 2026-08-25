@@ -1544,6 +1544,54 @@ describe('Skill CRUD methods', () => {
       });
     });
 
+    it('returns a conflict before validating a stale legacy body', async () => {
+      const malformed =
+        '---\nname: stale-legacy-body\ndescription: A demo skill.\nuser-invocable: yes\n---\n\nBody.';
+      const stored = await Skill.create({
+        name: 'stale-legacy-body',
+        description: 'A demo skill.',
+        body: malformed,
+        frontmatter: {},
+        author: owner._id,
+        authorName: owner.name ?? 'Skill Owner',
+        version: 1,
+        source: 'inline',
+        fileCount: 0,
+      });
+      const fixed = malformed.replace('user-invocable: yes', 'user-invocable: true');
+      await Skill.updateOne({ _id: stored._id }, { $set: { body: fixed }, $inc: { version: 1 } });
+
+      const result = await methods.updateSkill({
+        id: (stored._id as mongoose.Types.ObjectId).toString(),
+        expectedVersion: 1,
+        update: { description: 'A stale edit.', body: malformed },
+      });
+
+      expect(result.status).toBe('conflict');
+      if (result.status !== 'conflict') return;
+      expect(result.current.version).toBe(2);
+      expect(result.current.body).toBe(fixed);
+    });
+
+    it.each([
+      ['user-invocable', 'null'],
+      ['user-invocable', '~'],
+      ['disable-model-invocation', 'null'],
+      ['disable-model-invocation', '~'],
+      ['always-apply', 'null'],
+      ['always-apply', '~'],
+    ])('rejects explicit YAML null body flag %s: %s', async (key, value) => {
+      await expect(
+        methods.createSkill(
+          makeSkillInput({
+            name: `explicit-null-${key}-${value === '~' ? 'tilde' : 'word'}`,
+            body: `---\nname: explicit-null\ndescription: A demo skill.\n${key}: ${value}\n---\n\nBody.`,
+            frontmatter: undefined,
+          }),
+        ),
+      ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+    });
+
     it('updateSkill rejects a non-boolean flag introduced by a body edit', async () => {
       const { skill } = await methods.createSkill(makeSkillInput({ name: 'body-edit-typo' }));
 

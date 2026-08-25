@@ -153,6 +153,7 @@ type ResolvedBooleanFlag = { value?: boolean; invalidKey?: string };
  */
 function readPresentBooleanFlag(
   frontmatter: Record<string, unknown>,
+  authoredFrontmatter: Record<string, unknown> | undefined,
   block: string,
   key: string,
 ): ResolvedBooleanFlag {
@@ -162,26 +163,39 @@ function readPresentBooleanFlag(
   if (value !== undefined) {
     return { value };
   }
-  if (
-    (parsedValue === null || parsedValue === '') &&
-    (rawValue === undefined || hasBooleanPlaceholder(rawValue))
-  ) {
+  if (parsedValue === '') {
     return {};
+  }
+  if (parsedValue === null) {
+    /* A failsafe parse preserves explicit `null` / `~` as strings but leaves
+       a genuinely empty/comment-only value as null. This works for flow-style,
+       indented, quoted-key, and alias forms where a line-based check cannot
+       reliably recover the authored scalar. The raw line is only a fallback
+       when an unrelated explicit YAML tag makes the failsafe parse unavailable. */
+    if (
+      (authoredFrontmatter &&
+        hasCaseInsensitive(authoredFrontmatter, key) &&
+        getCaseInsensitive(authoredFrontmatter, key) === null) ||
+      (!authoredFrontmatter && rawValue !== undefined && hasBooleanPlaceholder(rawValue))
+    ) {
+      return {};
+    }
   }
   return { invalidKey: key };
 }
 
 function resolveBooleanFlag(
   frontmatter: Record<string, unknown>,
+  authoredFrontmatter: Record<string, unknown> | undefined,
   block: string,
   flag: SkillBooleanFlag,
 ): ResolvedBooleanFlag {
   if (hasCaseInsensitive(frontmatter, flag.key)) {
-    return readPresentBooleanFlag(frontmatter, block, flag.key);
+    return readPresentBooleanFlag(frontmatter, authoredFrontmatter, block, flag.key);
   }
   const alias = flag.aliases.find((candidate) => hasCaseInsensitive(frontmatter, candidate));
   if (alias !== undefined) {
-    return readPresentBooleanFlag(frontmatter, block, alias);
+    return readPresentBooleanFlag(frontmatter, authoredFrontmatter, block, alias);
   }
   return {};
 }
@@ -213,6 +227,7 @@ export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
     };
   }
   let frontmatter: Record<string, unknown> = {};
+  let authoredFrontmatter: Record<string, unknown> | undefined;
   if (isPlainObject(parsed)) {
     const normalized = normalizeSkillFrontmatterKeys(parsed);
     if ('error' in normalized) {
@@ -224,6 +239,18 @@ export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
       };
     }
     frontmatter = normalized.frontmatter;
+  }
+  try {
+    const authoredParsed = yaml.load(block, { schema: yaml.FAILSAFE_SCHEMA });
+    if (isPlainObject(authoredParsed)) {
+      const authoredNormalized = normalizeSkillFrontmatterKeys(authoredParsed);
+      if ('frontmatter' in authoredNormalized) {
+        authoredFrontmatter = authoredNormalized.frontmatter;
+      }
+    }
+  } catch {
+    /* The default parse above remains authoritative. This second parse exists
+       only to distinguish implicit empty values from explicit YAML nulls. */
   }
   const nameValue = getCaseInsensitive(frontmatter, 'name');
   const descriptionValue = getCaseInsensitive(frontmatter, 'description');
@@ -238,7 +265,7 @@ export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
   const flagValues: Partial<Record<SkillBooleanColumn, boolean>> = {};
   const invalidBooleans: string[] = [];
   for (const flag of SKILL_BOOLEAN_FLAGS) {
-    const { value, invalidKey } = resolveBooleanFlag(frontmatter, block, flag);
+    const { value, invalidKey } = resolveBooleanFlag(frontmatter, authoredFrontmatter, block, flag);
     if (invalidKey !== undefined) {
       invalidBooleans.push(invalidKey);
       continue;

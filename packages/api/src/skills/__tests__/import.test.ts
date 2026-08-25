@@ -304,6 +304,13 @@ describe('parseFrontmatter', () => {
     expect(result.invalidBooleans).toEqual(['always-apply']);
   });
 
+  it.each(['null', '~'])('flags indented always-apply: %s as invalid', (value) => {
+    const raw = `---\n  name: n\n  description: d\n  always-apply: ${value}\n---\n\nbody`;
+    const result = parseFrontmatter(raw);
+    expect(result.alwaysApply).toBeUndefined();
+    expect(result.invalidBooleans).toEqual(['always-apply']);
+  });
+
   it('does not flag always-apply when the key is absent', () => {
     const raw = `---\nname: n\ndescription: d\n---\n\nbody`;
     expect(parseFrontmatter(raw).invalidBooleans).toEqual([]);

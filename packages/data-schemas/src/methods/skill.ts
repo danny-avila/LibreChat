@@ -967,12 +967,31 @@ function fingerprintBodyFlagValue(value: unknown): string {
   }
 }
 
-function readParsedBodyFlagValue(value: unknown): BodyAlwaysApplyResult {
+function readParsedBodyFlagValue(
+  value: unknown,
+  authoredValue: { available: boolean; value?: unknown },
+): BodyAlwaysApplyResult {
   if (typeof value === 'boolean') {
     return { status: 'valid', value };
   }
-  if (value === null || value === '') {
+  if (value === '') {
     return { status: 'absent' };
+  }
+  if (value === null) {
+    /* js-yaml resolves both an empty/comment-only value and explicit YAML null
+       spellings (`null`, `~`) to JavaScript null. Reparse with FAILSAFE_SCHEMA
+       so implicit scalar resolution stays disabled: a genuine placeholder is
+       still null, while authored null text remains a string and is rejected.
+       If the second parse is unavailable (for example because the document
+       contains an explicit tag the failsafe schema does not know), reject the
+       ambiguous value rather than silently treating authored content as empty. */
+    if (authoredValue.available && authoredValue.value === null) {
+      return { status: 'absent' };
+    }
+    return {
+      status: 'invalid',
+      fingerprint: fingerprintBodyFlagValue(authoredValue.available ? authoredValue.value : value),
+    };
   }
   if (typeof value === 'string') {
     const lowered = value.trim().toLowerCase();
@@ -1035,12 +1054,29 @@ function extractBooleanFlagsFromBody(body: string | undefined): BodyFlagResults 
     const invalid = { status: 'invalid' as const, fingerprint: normalized.error };
     return { alwaysApply: invalid, userInvocable: invalid, disableModelInvocation: invalid };
   }
+  let authoredFrontmatter: Record<string, unknown> | undefined;
+  try {
+    const authoredParsed = yaml.load(block, { schema: yaml.FAILSAFE_SCHEMA });
+    if (isPlainObject(authoredParsed)) {
+      const authoredNormalized = normalizeSkillFrontmatterKeys(authoredParsed);
+      if ('frontmatter' in authoredNormalized) {
+        authoredFrontmatter = authoredNormalized.frontmatter;
+      }
+    }
+  } catch {
+    /* The default parse above is authoritative. This second parse exists only
+       to distinguish implicit empty values from explicit YAML null spellings;
+       an unavailable authored value is handled conservatively below. */
+  }
   for (const flag of SKILL_BOOLEAN_FLAGS) {
     const key = [flag.key, ...flag.aliases].find((candidate) =>
       Object.prototype.hasOwnProperty.call(normalized.frontmatter, candidate),
     );
     if (key !== undefined) {
-      results[flag.column] = readParsedBodyFlagValue(normalized.frontmatter[key]);
+      results[flag.column] = readParsedBodyFlagValue(normalized.frontmatter[key], {
+        available: Object.prototype.hasOwnProperty.call(authoredFrontmatter ?? {}, key),
+        value: authoredFrontmatter?.[key],
+      });
     }
   }
   return results;
@@ -1756,14 +1792,27 @@ export function createSkillMethods(
      * A key the reader cannot see is therefore invisible on both sides of the
      * comparison, and the flag is left alone instead of being wrongly released.
      *
-     * Safe under optimistic concurrency: the write below still requires
-     * `version: expectedVersion`, so a body that changed between this read and
-     * the update fails as a version mismatch rather than acting on stale text.
+     * Safe under optimistic concurrency: this read is itself constrained to
+     * `expectedVersion`. A request already stale returns a conflict before
+     * validation, while a body changed after this read still fails the
+     * versioned write below rather than acting on newer text.
      */
     const storedSkillState =
       update.body !== undefined
-        ? await Skill.findById(id).select('body frontmatter').lean()
+        ? await Skill.findOne({ _id: id, version: expectedVersion })
+            .select('body frontmatter')
+            .lean()
         : undefined;
+    if (update.body !== undefined && !storedSkillState) {
+      const current = await Skill.findById(id).lean();
+      if (!current) {
+        return { status: 'not_found' };
+      }
+      return {
+        status: 'conflict',
+        current: current as unknown as ISkill & { _id: Types.ObjectId },
+      };
+    }
     const storedBodyFlags = storedSkillState
       ? extractBooleanFlagsFromBody(storedSkillState.body)
       : undefined;
