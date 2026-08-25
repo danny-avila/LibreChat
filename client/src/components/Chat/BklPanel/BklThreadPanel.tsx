@@ -60,9 +60,7 @@ function ThreadOverview() {
               <p className="text-sm text-text-secondary">출처를 불러오는 중…</p>
             ) : (
               <>
-                <p className="text-sm font-medium text-text-primary">
-                  아직 인용된 출처가 없습니다
-                </p>
+                <p className="text-sm font-medium text-text-primary">아직 인용된 출처가 없습니다</p>
                 <p className="text-sm leading-relaxed text-text-secondary">
                   답변 본문에 인용된 문서와 청크가
                   <br />
