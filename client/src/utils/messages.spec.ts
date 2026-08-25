@@ -1,6 +1,6 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
-import { preserveStreamedContentIdentity } from './messages';
+import { preserveStreamedContentIdentity, stripStreamedIndexStamps } from './messages';
 
 const text = (value: string, extra: Record<string, unknown> = {}): TMessageContentParts =>
   ({ type: ContentTypes.TEXT, text: value, ...extra }) as TMessageContentParts;
@@ -125,6 +125,20 @@ describe('preserveStreamedContentIdentity', () => {
     expect(preserveStreamedContentIdentity(streamed, final)).toBe(final);
   });
 
+  it('abandons stamping when an omitted intermediate is a prefix of the retained output', () => {
+    const streamed = [text('Answer:'), text('Answer: final details')];
+    const final = [text('Answer: final details')];
+
+    expect(preserveStreamedContentIdentity(streamed, final)).toBe(final);
+  });
+
+  it('ignores trailing holes and empty slots when checking for removed content', () => {
+    const streamed = [undefined, tool('call_a'), text('answer'), text(''), undefined];
+    const final = [tool('call_a'), text('answer')];
+
+    expect(streamedIndexes(preserveStreamedContentIdentity(streamed, final))).toEqual([1, 2]);
+  });
+
   it('abandons stamping when streamed and final text diverge', () => {
     const streamed = [undefined, text('answer A')];
     const final = [text('answer B')];
@@ -193,5 +207,36 @@ describe('preserveStreamedContentIdentity', () => {
     const final = [tool(undefined, 'web_search')];
 
     expect(preserveStreamedContentIdentity(streamed, final)).toBe(final);
+  });
+});
+
+describe('stripStreamedIndexStamps', () => {
+  const tool = (id: string): TMessageContentParts =>
+    ({
+      type: ContentTypes.TOOL_CALL,
+      tool_call: { id, name: 'search', args: '' },
+    }) as TMessageContentParts;
+
+  it('drops every stamp from a settled content array', () => {
+    const settled = preserveStreamedContentIdentity(
+      [
+        undefined,
+        tool('call_a'),
+        { type: ContentTypes.TEXT, text: 'answer' } as TMessageContentParts,
+      ],
+      [tool('call_a'), { type: ContentTypes.TEXT, text: 'answer' } as TMessageContentParts],
+    );
+    expect((settled ?? []).some((part) => part?.streamedIndex !== undefined)).toBe(true);
+
+    const stripped = stripStreamedIndexStamps(settled);
+
+    expect((stripped ?? []).every((part) => part?.streamedIndex === undefined)).toBe(true);
+  });
+
+  it('returns the same reference when nothing is stamped', () => {
+    const plain = [tool('call_a')];
+
+    expect(stripStreamedIndexStamps(plain)).toBe(plain);
+    expect(stripStreamedIndexStamps(undefined)).toBeUndefined();
   });
 });

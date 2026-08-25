@@ -286,8 +286,11 @@ const isSameStreamedPart = (
  *
  * Pairing is all-or-nothing: a partially stamped array could collide a
  * streamed key with a compacted fallback key. When any final part has no
- * streamed counterpart (server-enriched content), the final array is returned
- * untouched and the message re-keys as before.
+ * streamed counterpart (server-enriched content), or any substantial streamed
+ * part has no final counterpart (a filtered run that dropped intermediate
+ * outputs — where in-order pairing could hand a retained part an omitted
+ * part's identity), the final array is returned untouched and the message
+ * re-keys as before.
  */
 export const preserveStreamedContentIdentity = (
   streamedContent: Array<TMessageContentParts | undefined> | undefined,
@@ -342,8 +345,44 @@ export const preserveStreamedContentIdentity = (
       stamped[index] = { ...finalPart, streamedIndex: stampIndex };
     }
   }
+  /** Leftover substantial streamed parts mean the server REMOVED content
+   *  (`hide_sequential_outputs`), so every pairing above is suspect — an
+   *  omitted intermediate that happens to prefix the retained output would
+   *  have claimed its identity. Only holes and empty slots may remain. */
+  for (let rest = cursor; rest < streamedContent.length; rest++) {
+    const leftover = streamedContent[rest];
+    if (leftover != null && !isEmptyContentPart(leftover)) {
+      return finalContent;
+    }
+  }
   return stamped ?? finalContent;
 };
+
+/**
+ * Drops the client-only `streamedIndex` stamps from a content array. An
+ * edited resubmission retains the settled prefix and appends the rerun's
+ * parts at the prefix LENGTH — a stamp at or above that length would collide
+ * with an appended part's key — so the retained prefix reverts to physical
+ * identity for the rerun. Returns the input untouched when nothing is
+ * stamped.
+ */
+export function stripStreamedIndexStamps(content: TMessageContentParts[]): TMessageContentParts[];
+export function stripStreamedIndexStamps(content: TMessage['content']): TMessage['content'];
+export function stripStreamedIndexStamps(content: TMessage['content']): TMessage['content'] {
+  if (!content?.length) {
+    return content;
+  }
+  let changed = false;
+  const next = content.map((part) => {
+    if (part == null || part.streamedIndex === undefined) {
+      return part;
+    }
+    changed = true;
+    const { streamedIndex: _streamedIndex, ...rest } = part;
+    return rest as TMessageContentParts;
+  });
+  return changed ? next : content;
+}
 
 /** Render-identity index for content-part keys: the streamed position stamped
  * by the final handler survives the sparse→compact swap; everything else keys
