@@ -62,6 +62,7 @@ const subagentThreadTaskStore = createSubagentThreadTaskStore(
     deleteConvos: db.deleteConvos,
     deleteMessages: db.deleteMessages,
     getConvo: db.getConvo,
+    getSubagentTaskControlReplay: db.getSubagentTaskControlReplay,
     getMessages: db.getMessages,
     listActiveSubagentThreadLeases: db.listActiveSubagentThreadLeases,
     recordSubagentTaskControlReceipt: db.recordSubagentTaskControlReceipt,
@@ -93,6 +94,20 @@ registerShutdownTask(
 );
 
 let taskRoutingConfigured = false;
+let disconnectTaskRouting = () => {};
+
+/** Store quiescence is required even without Redis. Optional transport cleanup
+ * is attached after configuration, but local child cancellation and the final
+ * durable receipt flush always participate in graceful shutdown. */
+registerShutdownTask(
+  'subagent task store',
+  async () => {
+    await subagentThreadTaskStore.destroyTaskControlTransport();
+    subagentThreadTaskStore.destroyActivityStream();
+    disconnectTaskRouting();
+  },
+  { priority: 90 },
+);
 
 /** Starts the optional Redis owner directory before HTTP admission opens. */
 async function configureSubagentTaskRouting() {
@@ -126,17 +141,11 @@ async function configureSubagentTaskRouting() {
     throw error;
   }
   taskRoutingConfigured = true;
-  registerShutdownTask(
-    'subagent task control transport',
-    async () => {
-      await subagentThreadTaskStore.destroyTaskControlTransport();
-      subagentThreadTaskStore.destroyActivityStream();
-      publisher.disconnect();
-      activitySubscriber.disconnect();
-      activityPublisher.disconnect();
-    },
-    { priority: 90 },
-  );
+  disconnectTaskRouting = () => {
+    publisher.disconnect();
+    activitySubscriber.disconnect();
+    activityPublisher.disconnect();
+  };
 }
 
 module.exports = subagentThreadTaskStore;

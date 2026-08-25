@@ -125,8 +125,17 @@ const publicControlReceipts = (
 ): { receipts: SubagentControlReceipt[]; truncated: boolean } => {
   const input = messages.find((message) => message.messageId === `${taskId}:user`);
   const stored = input?.subagentTask?.controlReceipts ?? [];
-  const accepted = stored.filter((receipt) => receipt.status === 'accepted');
-  const terminal = stored.filter((receipt) => receipt.status !== 'accepted');
+  /** A reservation only fences at-most-once application; it does not claim that
+   * guidance was accepted and must never appear in the public activity view. */
+  const visible = stored.filter(
+    (
+      receipt,
+    ): receipt is typeof receipt & {
+      status: 'accepted' | 'applied' | 'rejected' | 'failed';
+    } => receipt.status !== 'reserved',
+  );
+  const accepted = visible.filter((receipt) => receipt.status === 'accepted');
+  const terminal = visible.filter((receipt) => receipt.status !== 'accepted');
   const terminalLimit = Math.max(0, MAX_PUBLIC_CONTROL_RECEIPTS - accepted.length);
   const retained = [...accepted, ...(terminalLimit === 0 ? [] : terminal.slice(-terminalLimit))]
     .slice(0, MAX_PUBLIC_CONTROL_RECEIPTS)
@@ -154,7 +163,7 @@ const publicControlReceipts = (
           : {}),
       };
     });
-  return { receipts: retained, truncated: retained.length < stored.length };
+  return { receipts: retained, truncated: retained.length < visible.length };
 };
 
 const publicStatus = (

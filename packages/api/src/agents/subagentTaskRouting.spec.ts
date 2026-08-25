@@ -177,6 +177,7 @@ function taskHandler(
     claim: () => ({ status: 'not_found' }),
     control: () => ({ status: 'not_found' }),
     list: () => [],
+    retainsTaskOwnership: () => false,
     cancelScope: () => 0,
     ...overrides,
   };
@@ -472,6 +473,49 @@ describe('RedisSubagentTaskControlTransport', () => {
     }
     await expect(requester.hasTasks('scope-1')).resolves.toBe(true);
 
+    await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
+  it('keeps a receipt-only owner registered until deletion cleanup can reach it', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', registrationHeartbeatMs: 5 },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 100, retryDelayMs: 5 },
+    );
+    let receiptPending = true;
+    const cancelScope = jest.fn(() => 0);
+    await owner.bind(
+      taskHandler({
+        retainsTaskOwnership: (_scopeId, taskId) => receiptPending && taskId === 'task-1',
+        cancelScope,
+      }),
+    );
+    await requester.bind(taskHandler());
+    await owner.registerTask('scope-1', 'task-1', 60_000);
+
+    /** Model the SDK task/result buckets dropping the task and Redis losing the
+     * directory entry before the next owner heartbeat. Pending receipt work is
+     * the only remaining reason this process can still handle deletion cleanup. */
+    bus.hashes.clear();
+    for (let attempt = 0; attempt < 100 && !(await requester.hasTasks('scope-1')); attempt += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    }
+    await expect(requester.hasTasks('scope-1')).resolves.toBe(true);
+    await expect(requester.cancelScope('scope-1', null, ['deleted-child-thread'])).resolves.toBe(0);
+    expect(cancelScope).toHaveBeenCalledWith('scope-1', null, ['deleted-child-thread']);
+
+    receiptPending = false;
+    bus.hashes.clear();
+    for (let attempt = 0; attempt < 100 && (await requester.hasTasks('scope-1')); attempt += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    }
+    await expect(requester.hasTasks('scope-1')).resolves.toBe(false);
     await Promise.all([owner.destroy(), requester.destroy()]);
   });
 

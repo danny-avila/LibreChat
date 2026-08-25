@@ -28,6 +28,7 @@ jest.mock('~/models', () => ({
   deleteConvos: jest.fn(),
   deleteMessages: jest.fn(),
   getConvo: jest.fn(),
+  getSubagentTaskControlReplay: jest.fn(),
   getMessages: jest.fn(),
   listActiveSubagentThreadLeases: jest.fn(),
   recordSubagentTaskControlReceipt: jest.fn(),
@@ -61,12 +62,16 @@ const db = require('~/models');
 const activityPrepareRegistration = registerShutdownTask.mock.calls.find(
   ([name]) => name === 'subagent activity streams prepare',
 );
+const taskStoreShutdownRegistration = registerShutdownTask.mock.calls.find(
+  ([name]) => name === 'subagent task store',
+);
 
 describe('subagent thread Redis lifecycle', () => {
   it('wires durable control receipt persistence into the host store', () => {
     expect(taskStoreMethods.recordSubagentTaskControlReceipt).toBe(
       db.recordSubagentTaskControlReceipt,
     );
+    expect(taskStoreMethods.getSubagentTaskControlReplay).toBe(db.getSubagentTaskControlReplay);
   });
 
   it('reads completion wakeup rollout state at task preparation time', async () => {
@@ -81,6 +86,14 @@ describe('subagent thread Redis lifecycle', () => {
     expect(subagentThreadTaskStore.completionWakeupsEnabled).toBe(true);
     isEnabled.mockReturnValueOnce(false);
     expect(subagentThreadTaskStore.completionWakeupsEnabled).toBe(false);
+  });
+
+  it('registers local task-store quiescence independently of optional Redis setup', () => {
+    expect(taskStoreShutdownRegistration).toEqual([
+      'subagent task store',
+      expect.any(Function),
+      { priority: 90 },
+    ]);
   });
 
   it('closes activity SSE before drain and disconnects its subscriber after drain', async () => {
@@ -102,18 +115,16 @@ describe('subagent thread Redis lifecycle', () => {
       expect.any(Function),
       { phase: 'pre-drain', priority: 100 },
     ]);
-    expect(registerShutdownTask).toHaveBeenCalledWith(
-      'subagent task control transport',
+    expect(taskStoreShutdownRegistration).toEqual([
+      'subagent task store',
       expect.any(Function),
       { priority: 90 },
-    );
+    ]);
     const prepare = activityPrepareRegistration[1];
     prepare();
     expect(mockTaskStore.prepareActivityForShutdown).toHaveBeenCalledTimes(1);
 
-    const shutdown = registerShutdownTask.mock.calls.find(
-      ([name]) => name === 'subagent task control transport',
-    )[1];
+    const shutdown = taskStoreShutdownRegistration[1];
     await shutdown();
 
     expect(mockTaskStore.destroyTaskControlTransport).toHaveBeenCalledTimes(1);

@@ -37,6 +37,7 @@ function makeStore(): SubagentThreadTaskStore {
     deleteConvos: unused as AllMethods['deleteConvos'],
     deleteMessages: unused as AllMethods['deleteMessages'],
     getConvo: unused as AllMethods['getConvo'],
+    getSubagentTaskControlReplay: unused as AllMethods['getSubagentTaskControlReplay'],
     getMessages: unused as AllMethods['getMessages'],
     listActiveSubagentThreadLeases: unused as AllMethods['listActiveSubagentThreadLeases'],
     recordSubagentTaskControlReceipt: unused as AllMethods['recordSubagentTaskControlReceipt'],

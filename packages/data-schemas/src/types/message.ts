@@ -12,7 +12,12 @@ export type SubagentTaskControlAction =
   | 'cancel'
   | 'cancel_message';
 
-export type SubagentTaskControlReceiptStatus = 'accepted' | 'applied' | 'rejected' | 'failed';
+export type SubagentTaskControlReceiptStatus =
+  | 'reserved'
+  | 'accepted'
+  | 'applied'
+  | 'rejected'
+  | 'failed';
 
 /** Server-private durable receipt for one parent-to-child control invocation. */
 export interface ISubagentTaskControlReceipt {
