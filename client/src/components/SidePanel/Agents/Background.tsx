@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
+import { normalizeActionToolName } from 'librechat-data-provider';
 import {
   Switch,
   HoverCard,
@@ -31,13 +32,24 @@ export default function Background({ toolIds, switchId, labelKey, infoKey }: Pro
   const { backgroundToolsEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
   const { control, getValues, setValue } = useFormContext<AgentForm>();
   const toolOptions = useWatch({ control, name: 'tool_options' });
-  const enabled = toolIds.some((toolId) => toolOptions?.[toolId]?.run_in_background === true);
+  const enabled = toolIds.some((toolId) => {
+    const normalized = normalizeActionToolName(toolId);
+    const normalizedValue = toolOptions?.[normalized]?.run_in_background;
+    if (normalized !== toolId && normalizedValue != null) {
+      return normalizedValue;
+    }
+    return toolOptions?.[toolId]?.run_in_background === true;
+  });
 
   const handleChange = useCallback(
     (value: boolean) => {
       let updated = getValues('tool_options') || {};
       for (const toolId of toolIds) {
-        updated = withBooleanOption(updated, toolId, 'run_in_background', value);
+        const normalized = normalizeActionToolName(toolId);
+        const aliases = normalized === toolId ? [toolId] : [toolId, normalized];
+        for (const alias of aliases) {
+          updated = withBooleanOption(updated, alias, 'run_in_background', value);
+        }
       }
       setValue('tool_options', updated, { shouldDirty: true });
     },

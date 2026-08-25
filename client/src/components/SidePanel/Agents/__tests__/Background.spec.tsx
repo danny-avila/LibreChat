@@ -92,4 +92,42 @@ describe('Background switch', () => {
       wolfram: { run_in_background: true },
     });
   });
+
+  test('reconciles raw and normalized action aliases when enabling', () => {
+    const rawToolId = 'getPerson_action_swapi---tech';
+    const normalizedToolId = 'getPerson_action_swapi_tech';
+    renderBackground([rawToolId], {
+      tool_options: {
+        [rawToolId]: { run_in_background: true },
+        [normalizedToolId]: { defer_loading: true, run_in_background: false },
+      },
+    });
+
+    const switchEl = screen.getByTestId('bg-switch');
+    expect(switchEl).not.toBeChecked();
+    fireEvent.click(switchEl);
+
+    expect(JSON.parse(screen.getByTestId('options').textContent ?? 'null')).toEqual({
+      [rawToolId]: { run_in_background: true },
+      [normalizedToolId]: { defer_loading: true, run_in_background: true },
+    });
+  });
+
+  test('clears both action aliases when disabling', () => {
+    const rawToolId = 'getPerson_action_swapi---tech';
+    const normalizedToolId = 'getPerson_action_swapi_tech';
+    renderBackground([rawToolId], {
+      tool_options: {
+        [normalizedToolId]: { defer_loading: true, run_in_background: true },
+      },
+    });
+
+    const switchEl = screen.getByTestId('bg-switch');
+    expect(switchEl).toBeChecked();
+    fireEvent.click(switchEl);
+
+    expect(JSON.parse(screen.getByTestId('options').textContent ?? 'null')).toEqual({
+      [normalizedToolId]: { defer_loading: true },
+    });
+  });
 });
