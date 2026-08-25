@@ -128,7 +128,7 @@ export default function ModelPanel({
             )}
             htmlFor="provider"
           >
-            {localize('com_ui_provider')} <span className="text-red-500">*</span>
+            {localize('com_ui_provider')} <span className="text-text-destructive">*</span>
           </label>
           <Controller
             name="provider"
@@ -171,14 +171,14 @@ export default function ModelPanel({
                       label: typeof provider === 'string' ? provider : provider.label,
                       value: typeof provider === 'string' ? provider : provider.value,
                     }))}
-                    className={cn(error ? 'border-2 border-red-500' : '')}
+                    className={cn(error ? 'border-2 border-border-destructive' : '')}
                     ariaLabel={localize('com_ui_provider')}
                     disabled={selectionDisabled}
                     isCollapsed={false}
                     showCarat={true}
                   />
                   {error && (
-                    <span className="mt-1 text-xs text-red-500" role="alert">
+                    <span className="mt-1 text-xs text-text-destructive" role="alert">
                       {localize('com_ui_field_required')}
                     </span>
                   )}
@@ -197,7 +197,7 @@ export default function ModelPanel({
             )}
             htmlFor="model"
           >
-            {localize('com_ui_model')} <span className="text-red-500">*</span>
+            {localize('com_ui_model')} <span className="text-text-destructive">*</span>
           </label>
           <Controller
             name="model"
@@ -225,13 +225,16 @@ export default function ModelPanel({
                       value: model,
                     }))}
                     disabled={!provider || selectionDisabled}
-                    className={cn('disabled:opacity-50', error ? 'border-2 border-red-500' : '')}
+                    className={cn(
+                      'disabled:opacity-50',
+                      error ? 'border-2 border-border-destructive' : '',
+                    )}
                     ariaLabel={localize('com_ui_model')}
                     isCollapsed={false}
                     showCarat={true}
                   />
                   {provider && error && (
-                    <span className="mt-1 text-xs text-red-500" role="alert">
+                    <span className="mt-1 text-xs text-text-destructive" role="alert">
                       {localize('com_ui_field_required')}
                     </span>
                   )}

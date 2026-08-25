@@ -415,10 +415,13 @@ export default function AssistantPanel({
                       cardStyle,
                       'flex h-[40px] w-full flex-none items-center justify-center px-4 hover:cursor-pointer',
                     )}
-                    containerClassName={cn('rounded-md', error ? 'border-red-500 border-2' : '')}
+                    containerClassName={cn(
+                      'rounded-md',
+                      error ? 'border-border-destructive border-2' : '',
+                    )}
                   />
                   {error && (
-                    <span className="text-sm text-red-500 transition duration-300 ease-in-out">
+                    <span className="text-sm text-text-destructive transition duration-300 ease-in-out">
                       {localize('com_ui_field_required')}
                     </span>
                   )}

@@ -320,6 +320,18 @@ describe.each([
 
     expect(failures).toEqual([]);
   });
+
+  /** A series slot is not only a chart mark: the file-source badges fill a chip
+   *  with one and drop a glyph on top, so a slot has to carry `text-on-status`
+   *  at the same 3:1 floor. */
+  it('lets every series slot carry the status label at the 3:1 mark floor', () => {
+    const failures = seriesTokens.flatMap((token) => {
+      const ratio = contrast(toRgb(theme, token), toRgb(theme, 'rgb-text-on-status'));
+      return ratio < WCAG_MARK_MIN ? [`${token} under text-on-status: ${ratio.toFixed(2)}:1`] : [];
+    });
+
+    expect(failures).toEqual([]);
+  });
 });
 
 /** `status-success-strong` is the one status fill that also paints bare marks:
