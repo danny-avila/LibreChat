@@ -91,7 +91,7 @@ export function createAgentEventTerminalHandler(methods: {
   settleAgentTriggerHandlingOutcome: (
     input: SettleAgentTriggerHandlingOutcomeInput,
   ) => Promise<boolean>;
-}) {
+}): (streamId: string, job: SerializableJobData, runSteps: Agents.RunStep[]) => Promise<void> {
   return async (streamId: string, job: SerializableJobData, runSteps: Agents.RunStep[]) => {
     if (job.agentEventDeliveryKey == null) {
       return;
