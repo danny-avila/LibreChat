@@ -33,7 +33,9 @@ describe('deploy role script', () => {
           service,
         ),
       ).rejects.toThrow('role replacement failed');
-      expect(service.updateRole).toHaveBeenCalledWith('BETA', { permissions: {} });
+      expect(service.updateRole).toHaveBeenCalledWith('BETA', {
+        permissions: expect.any(Object),
+      });
       expect(service.upsertRoleConfig).not.toHaveBeenCalled();
     } finally {
       console.green = green;
@@ -73,6 +75,42 @@ describe('deploy role script', () => {
       AGENTS: { USE: true, CREATE: true },
     });
     expect(baseline.AGENTS.CREATE).toBe(false);
+  });
+
+  it('fills missing system baseline permissions from current defaults', async () => {
+    const green = console.green;
+    console.green = jest.fn();
+    const service = {
+      getRole: jest
+        .fn()
+        .mockResolvedValueOnce({ name: 'USER', permissions: { AGENTS: { USE: false } } })
+        .mockResolvedValueOnce(null),
+      createRole: jest.fn(async () => undefined),
+      upsertRoleConfig: jest.fn(async () => undefined),
+    };
+
+    try {
+      await deployRole(
+        {
+          name: 'BETA',
+          inheritPermissionsFrom: 'USER',
+          permissionOverrides: {},
+          config: { priority: 10, overrides: {} },
+        },
+        service,
+      );
+
+      expect(service.createRole).toHaveBeenCalledWith(
+        expect.objectContaining({
+          permissions: expect.objectContaining({
+            AGENTS: expect.objectContaining({ USE: false }),
+            PROMPTS: expect.any(Object),
+          }),
+        }),
+      );
+    } finally {
+      console.green = green;
+    }
   });
 
   it('loads definitions from an inline parameter', () => {

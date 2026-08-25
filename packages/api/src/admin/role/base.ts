@@ -122,12 +122,23 @@ export function createBaseRoleAdminService(
     }
   };
 
+  const clearConfigTombstones = async (
+    principalType: PrincipalType,
+    principalId: string,
+  ): Promise<void> => {
+    await Config.updateOne(
+      { principalType, principalId, ...baseFilter },
+      { $set: { tombstones: [] } },
+    );
+  };
+
   return createRoleAdminService({
     getRoleByName,
     createRoleByName,
     updateRoleByName,
     findConfigByPrincipal,
     upsertConfig,
+    clearConfigTombstones,
     invalidateConfigCaches: deps.invalidateConfigCaches,
   });
 }

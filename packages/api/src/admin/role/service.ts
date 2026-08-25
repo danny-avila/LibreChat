@@ -10,6 +10,7 @@ type RoleServiceDeps = Pick<
   'getRoleByName' | 'createRoleByName' | 'updateRoleByName'
 > &
   Pick<AdminConfigDeps, 'findConfigByPrincipal' | 'upsertConfig'> & {
+    clearConfigTombstones: (principalType: PrincipalType, principalId: string) => Promise<void>;
     invalidateConfigCaches: () => Promise<void>;
   };
 
@@ -108,7 +109,11 @@ export function createRoleAdminService(deps: RoleServiceDeps): RoleAdminService 
       overrides,
       config.priority,
     );
-    await deps.invalidateConfigCaches();
+    try {
+      await deps.clearConfigTombstones(PrincipalType.ROLE, normalizedName);
+    } finally {
+      await deps.invalidateConfigCaches();
+    }
   }
 
   return {

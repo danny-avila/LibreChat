@@ -10,6 +10,7 @@ function createDeps() {
     updateRoleByName: jest.fn(async () => role as IRole | null),
     findConfigByPrincipal: jest.fn(async () => null),
     upsertConfig: jest.fn(async () => null),
+    clearConfigTombstones: jest.fn(async () => undefined),
     invalidateConfigCaches: jest.fn(async () => undefined),
   };
 }
@@ -59,6 +60,18 @@ describe('role admin service', () => {
       expect.anything(),
       { memory: { disabled: false } },
       10,
+    );
+    expect(deps.invalidateConfigCaches).toHaveBeenCalledTimes(1);
+    expect(deps.clearConfigTombstones).toHaveBeenCalledWith(expect.anything(), 'BETA');
+  });
+
+  it('invalidates config caches when clearing tombstones fails', async () => {
+    const deps = createDeps();
+    deps.clearConfigTombstones.mockRejectedValueOnce(new Error('tombstone update failed'));
+    const service = createRoleAdminService(deps);
+
+    await expect(service.upsertRoleConfig('BETA', { priority: 10, overrides: {} })).rejects.toThrow(
+      'tombstone update failed',
     );
     expect(deps.invalidateConfigCaches).toHaveBeenCalledTimes(1);
   });

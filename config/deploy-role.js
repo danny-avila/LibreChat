@@ -6,6 +6,7 @@ const {
   CacheKeys,
   configSchema,
   permissionsSchema,
+  roleDefaults,
   SystemRoles,
 } = require('librechat-data-provider');
 
@@ -129,16 +130,24 @@ function getDeploymentScope(args) {
 }
 
 async function deployRole(definition, service) {
-  const baseline = await service.getRole(definition.inheritPermissionsFrom);
+  const normalizedBaseline = definition.inheritPermissionsFrom.toUpperCase();
+  const baselineName = systemRoleNames.has(normalizedBaseline)
+    ? normalizedBaseline
+    : definition.inheritPermissionsFrom;
+  const baseline = await service.getRole(baselineName);
   if (!baseline) {
     throw new Error(`Baseline role "${definition.inheritPermissionsFrom}" was not found`);
   }
   console.green(`Found ${definition.inheritPermissionsFrom} role`);
 
+  const baselinePermissions = systemRoleNames.has(baselineName)
+    ? mergePermissions(roleDefaults[baselineName].permissions, baseline.permissions ?? {})
+    : (baseline.permissions ?? {});
+
   const role = {
     name: definition.name,
     description: definition.description,
-    permissions: mergePermissions(baseline.permissions ?? {}, definition.permissionOverrides),
+    permissions: mergePermissions(baselinePermissions, definition.permissionOverrides),
   };
   const existing = await service.getRole(role.name);
   if (existing) {
@@ -184,6 +193,12 @@ async function main() {
           updateRoleByName: db.updateRoleByName,
           findConfigByPrincipal: db.findConfigByPrincipal,
           upsertConfig: db.upsertConfig,
+          clearConfigTombstones: async (principalType, principalId) => {
+            await mongoose.models.Config.updateOne(
+              { principalType, principalId },
+              { $set: { tombstones: [] } },
+            );
+          },
           invalidateConfigCaches: invalidateCaches,
         });
     const deploy = async () => {

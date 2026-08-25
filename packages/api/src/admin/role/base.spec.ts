@@ -77,6 +77,7 @@ describe('base role admin service', () => {
       principalModel: PrincipalModel.ROLE,
       priority: 5,
       overrides: {},
+      tombstones: ['memory.tokenLimit'],
     };
     await runAsSystem(async () => {
       await mongoose.models.Config.create(config);
@@ -108,7 +109,9 @@ describe('base role admin service', () => {
     );
     expect(base?.priority).toBe(10);
     expect(base?.overrides).toEqual({ memory: { disabled: false } });
+    expect(base?.tombstones).toEqual([]);
     expect(tenant?.priority).toBe(20);
+    expect(tenant?.tombstones).toEqual(['memory.tokenLimit']);
     expect(invalidateConfigCaches).toHaveBeenCalledTimes(1);
   });
 
