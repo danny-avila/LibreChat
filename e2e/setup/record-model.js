@@ -15,5 +15,9 @@ module.exports = function recordModelHook(run, context) {
     console.warn('[e2e model-replay] record hook: run.Graph unavailable');
     return;
   }
-  installRecorder({ graph, messages: context?.messages });
+  installRecorder({
+    graph,
+    messages: context?.messages,
+    conversationId: context?.conversationId,
+  });
 };

@@ -174,6 +174,7 @@ const recordingState = {
   initialized: false,
   fixturePath: undefined,
   invocationCounter: 0,
+  conversationId: undefined,
   runIdToInvocation: new Map(),
 };
 
@@ -192,6 +193,7 @@ function initializeRecording(fixtureName) {
   });
   recordingState.initialized = true;
   recordingState.invocationCounter = 0;
+  recordingState.conversationId = undefined;
   recordingState.runIdToInvocation.clear();
   console.log(`[e2e model-replay] recording fixture ${recordingState.fixturePath}`);
 }
@@ -203,15 +205,26 @@ function initializeRecording(fixtureName) {
  * 0/1 (or keeps a previous attempt's `error` line) and the fixture is
  * unusable for replay.
  *
- * A retry is identified by the conversation boundary rather than by prompt
- * text: this runs once per `createRun`, so a turn whose history holds no
- * prior human message is a conversation's first turn. Prompt equality would
- * be wrong — a turn that calls a tool invokes the model again under the same
- * latest human message, and treating that as a retry would truncate the
- * fixture mid-turn and discard the recorded tool-call invocation.
+ * A new attempt is a new conversation. Identity comes from `conversationId`
+ * rather than from the prompt or the history: a turn that calls a tool
+ * invokes the model again under the same latest human message, and a resumed
+ * run after a tool-approval pause rebuilds `createRun` with no messages at
+ * all because state is rehydrated from the checkpoint. Both would look like
+ * fresh attempts to any text- or history-based rule, and truncate the fixture
+ * mid-turn.
  */
 function isConversationStart(messages) {
   return humanTexts(messages).length <= 1;
+}
+
+function startsNewRecording(conversationId, messages) {
+  if (recordingState.invocationCounter === 0) {
+    return false;
+  }
+  if (conversationId != null && recordingState.conversationId != null) {
+    return recordingState.conversationId !== conversationId;
+  }
+  return isConversationStart(messages);
 }
 
 function createRecorderHandler() {
@@ -273,15 +286,17 @@ function createRecorderHandler() {
  * callback here puts the recorder on the real provider stream without
  * replacing the model.
  */
-function installRecorder({ graph, messages }) {
+function installRecorder({ graph, messages, conversationId }) {
   const fixtureName = process.env.E2E_MODEL_FIXTURE_NAME;
   if (!fixtureName) {
     console.warn('[e2e model-replay] E2E_MODEL_FIXTURE_NAME unset; not recording');
     return;
   }
-  const restarting = recordingState.invocationCounter > 0 && isConversationStart(messages);
-  if (!recordingState.initialized || restarting) {
+  if (!recordingState.initialized || startsNewRecording(conversationId, messages)) {
     initializeRecording(fixtureName);
+  }
+  if (conversationId != null) {
+    recordingState.conversationId = conversationId;
   }
   const contexts = graph?.agentContexts;
   if (!contexts || typeof contexts.values !== 'function') {
@@ -292,20 +307,38 @@ function installRecorder({ graph, messages }) {
     if (!context.clientOptions) {
       context.clientOptions = {};
     }
-    const existing = context.clientOptions.callbacks;
-    if (Array.isArray(existing)) {
-      if (!existing.some((handler) => handler?.name === RECORDER_HANDLER_NAME)) {
-        context.clientOptions.callbacks = [...existing, createRecorderHandler()];
-      }
-    } else if (existing == null) {
-      context.clientOptions.callbacks = [createRecorderHandler()];
-    } else if (typeof existing.addHandler === 'function') {
-      const alreadyAttached = existing.handlers?.some(
-        (handler) => handler?.name === RECORDER_HANDLER_NAME,
-      );
-      if (!alreadyAttached) {
-        existing.addHandler(createRecorderHandler());
-      }
+    attachRecorder(context.clientOptions);
+    /** Summarization runs on its own model with its own callback list, so a
+     * scenario crossing the context-pruning threshold would otherwise record
+     * the agent's invocations but not the summary provider's — leaving a
+     * fixture that cannot reproduce the pruned context or the response that
+     * followed it. */
+    const summarizationParameters = context.summarizationConfig?.config?.parameters;
+    if (summarizationParameters) {
+      attachRecorder(summarizationParameters);
+    }
+  }
+}
+
+/** Append the recorder to a client-options object's callbacks, once. */
+function attachRecorder(options) {
+  const existing = options.callbacks;
+  if (Array.isArray(existing)) {
+    if (!existing.some((handler) => handler?.name === RECORDER_HANDLER_NAME)) {
+      options.callbacks = [...existing, createRecorderHandler()];
+    }
+    return;
+  }
+  if (existing == null) {
+    options.callbacks = [createRecorderHandler()];
+    return;
+  }
+  if (typeof existing.addHandler === 'function') {
+    const alreadyAttached = existing.handlers?.some(
+      (handler) => handler?.name === RECORDER_HANDLER_NAME,
+    );
+    if (!alreadyAttached) {
+      existing.addHandler(createRecorderHandler());
     }
   }
 }
@@ -466,8 +499,13 @@ class ReplayChatModel extends FakeChatModel {
           `after all ${fixture.invocations.length} recorded invocations were drained`,
       );
     }
+    /** A resumed run carries no human message — state is rehydrated from the
+     * checkpoint — so there is no prompt to check against. Ownership already
+     * established which conversation this is; enforcing the recorded prompt
+     * here would reject every resume. Every real turn still gets checked. */
     const promptText = latestHumanText(messages);
-    if (promptText !== invocation.userText) {
+    const carriesHumanTurn = humanTexts(messages).length > 0;
+    if (carriesHumanTurn && promptText !== invocation.userText) {
       state.ledger.promptMismatches.push({
         invocation: state.cursor,
         expected: invocation.userText,
@@ -520,42 +558,59 @@ function ensureReplayProviderRegistered() {
  * Returns true when the graph's model was overridden with the replaying
  * model; false lets the fake-model marker routing proceed unchanged.
  */
-function tryBindReplay({ graph, agents, text, messages, modelCallbacks }) {
-  if (!text) {
-    return false;
+/**
+ * Decide how this run relates to a fixture.
+ *
+ * `own` — the conversation that claimed the fixture is back. Its cursor is
+ * authoritative wherever it stands, including past the end, so an extra turn
+ * reaches the over-consumption guard instead of falling through to the
+ * scripted fake model, and a resumed run after a tool-approval pause keeps
+ * replaying even though it arrives with no messages and no prompt text.
+ *
+ * `claim` — a different (or first) conversation opening the fixture: rewind
+ * and take ownership. This is what a Playwright retry looks like.
+ *
+ * Anything else is refused, so an unrelated conversation can never continue
+ * someone else's partly consumed script by happening to repeat a later prompt.
+ */
+function classifyBinding({ fixture, state, text, messages, conversationId }) {
+  if (conversationId != null && state.conversationId != null) {
+    if (state.conversationId === conversationId) {
+      return 'own';
+    }
+    return fixture.turns[0] === text ? 'claim' : 'refuse';
   }
+  /** Identity unavailable (an older `@librechat/api` does not supply it):
+   *  fall back to the text and history rules this lane used before. */
+  if (state.cursor !== 0 && isConversationStart(messages)) {
+    return fixture.turns[0] === text ? 'claim' : 'refuse';
+  }
+  if (fixture.invocations[state.cursor]?.userText === text) {
+    return 'own';
+  }
+  if (state.cursor !== 0 && fixture.turns[0] === text) {
+    return 'claim';
+  }
+  if (state.cursor >= fixture.invocations.length && conversationDroveFixture(messages, fixture)) {
+    return 'own';
+  }
+  return 'refuse';
+}
+
+function tryBindReplay({ graph, agents, text, messages, conversationId, modelCallbacks }) {
   const registry = loadFixtureRegistry();
   const matches = [];
   for (const fixture of registry.values()) {
     let state = getReplayState(fixture);
-    /** A conversation boundary outranks an in-progress cursor: a fresh
-     * conversation may only rewind a partly consumed fixture, never continue
-     * it. Continuing would be wrong in both directions — a retry stopping
-     * mid-turn leaves the cursor on an invocation still carrying the opening
-     * prompt (a tool call produces exactly that), and an unrelated new
-     * conversation opening with a later invocation's prompt would otherwise
-     * receive that recorded response and advance the shared cursor despite
-     * never having driven the turns before it. */
-    if (state.cursor !== 0 && isConversationStart(messages)) {
-      if (fixture.turns[0] !== text) {
-        continue;
-      }
+    const binding = classifyBinding({ fixture, state, text, messages, conversationId });
+    if (binding === 'refuse') {
+      continue;
+    }
+    if (binding === 'claim') {
       state = restartReplayState(fixture);
-    } else if (fixture.invocations[state.cursor]?.userText !== text) {
-      /** Continuing an in-progress binding otherwise outranks restarting,
-       * which outranks retaining a consumed one: a fixture whose first prompt
-       * repeats later in the script advances rather than rewinding. */
-      if (state.cursor !== 0 && fixture.invocations[0]?.userText === text) {
-        state = restartReplayState(fixture);
-      } else if (
-        state.cursor >= fixture.invocations.length &&
-        conversationDroveFixture(messages, fixture)
-      ) {
-        /** Bound deliberately past the end so the stream raises the
-         * over-consumption error instead of silently falling through. */
-      } else {
-        continue;
-      }
+    }
+    if (conversationId != null) {
+      state.conversationId = conversationId;
     }
     matches.push({ fixture, state });
   }
