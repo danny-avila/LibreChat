@@ -95,9 +95,8 @@ const DEFAULT_CRON = '0 9 * * 1-5';
 const DEFAULT_WEEKLY_DAYS = [1];
 
 /** Enough previewed occurrences to show the SHAPE of a cadence (that `0 9,17 * * 1-5`
- *  fires twice a day), which a single row cannot. Kept small deliberately: the dialog
- *  turns scrolling off at `md` (see the template className below), so every preview
- *  row spends the same fixed height budget a form row does. */
+ *  fires twice a day), which a single row cannot. Kept small deliberately so the
+ *  schedule's next occurrences remain easy to scan in the dialog. */
 const PREVIEW_RUN_COUNT = 3;
 
 const FORM_ID = 'schedule-form';
@@ -527,10 +526,7 @@ export default function ScheduleDialog({
     [locale, weekdayIndexes],
   );
 
-  /** A CELL in the cadence grid rather than a row of its own, in both modes. The
-   *  template's height budget is a contract (see its className below): scrolling is
-   *  off at `md`, so a full-width timezone row would push the footer's submit button
-   *  out of a 720px-tall viewport where it can never be scrolled back. */
+  /** A CELL in the cadence grid rather than a row of its own, in both modes. */
   const timezoneField = (
     <fieldset className="space-y-2">
       <legend>
@@ -569,17 +565,7 @@ export default function ScheduleDialog({
       <OGDialogTemplate
         title={localize(schedule ? 'com_ui_schedule_edit' : 'com_ui_schedule_new')}
         showCloseButton={false}
-        // The agent and time popovers cannot portal out of a focus-trapping dialog
-        // (see below), so `overflow-visible` keeps them from being clipped. Only from
-        // `md` up: the identity row fits well inside 90vh there, while narrow
-        // viewports keep the template's scrolling so the footer stays reachable.
-        //
-        // THE BUDGET IS A CONTRACT: with scrolling off at `md`, anything that adds a
-        // ROW here pushes the footer's submit button out of a 720px-tall viewport,
-        // where it can never be scrolled back — the e2e edit spec times out clicking
-        // Save. A new field belongs in an existing row (see the identity row below),
-        // not stacked beneath one.
-        className="w-11/12 md:max-w-3xl md:overflow-visible"
+        className="w-11/12 md:max-w-3xl"
         main={
           <form id={FORM_ID} onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {/* Identity row: what the schedule is, who runs it, where its chats land.
@@ -723,8 +709,7 @@ export default function ScheduleDialog({
                 </div>
               </div>
               {/* Full width, not inside the agent cell: at a third of the dialog this
-                sentence wraps an extra line, and the identity row is the tallest thing
-                competing for the fixed height budget described on the template above. */}
+                sentence wraps an extra line and makes the identity row needlessly tall. */}
               <p className="text-xs text-text-secondary">
                 {localize('com_ui_schedule_target_new_chat')}
               </p>
@@ -825,8 +810,7 @@ export default function ScheduleDialog({
               <div
                 className={cn(
                   'grid gap-4',
-                  // Three cells in weekly (day, time, zone) must still be ONE row at
-                  // md for the same height-budget reason the zone is a cell at all.
+                  // Three cells in weekly (day, time, zone) share one row at md.
                   frequency === 'weekly' ? 'md:grid-cols-3' : 'md:grid-cols-2',
                 )}
               >
@@ -850,8 +834,7 @@ export default function ScheduleDialog({
                       control={control}
                       render={({ field }) => (
                         // No wrap, and every pill shares the row's width equally: at
-                        // `md` this cell is a third of the dialog, and a second pill
-                        // line would spend height the budget above does not have.
+                        // `md` this cell is a third of the dialog.
                         <div className="flex gap-1">
                           {weekdayOptions.map(({ day, label, narrow }) => {
                             const selected = field.value.includes(day);
