@@ -227,6 +227,7 @@ export type AgentModelPanelProps = {
   agent_id?: string;
   providers: Option[];
   models: Record<string, string[] | undefined>;
+  modelsReady: boolean;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
 };
 

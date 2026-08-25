@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import keyBy from 'lodash/keyBy';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
 import { Button, ControlCombobox } from '@librechat/client';
@@ -25,7 +25,8 @@ export default function ModelPanel({
   providers,
   setActivePanel,
   models: modelsData,
-}: Pick<AgentModelPanelProps, 'models' | 'providers' | 'setActivePanel'>) {
+  modelsReady,
+}: Pick<AgentModelPanelProps, 'models' | 'modelsReady' | 'providers' | 'setActivePanel'>) {
   const localize = useLocalize();
   const { announcePolite } = useLiveAnnouncer();
 
@@ -46,23 +47,6 @@ export default function ModelPanel({
     () => (provider ? (modelsData[provider] ?? []) : []),
     [modelsData, provider],
   );
-
-  useEffect(() => {
-    const _model = model ?? '';
-    if (provider && _model) {
-      const modelExists = models.includes(_model);
-      if (!modelExists) {
-        const newModels = modelsData[provider] ?? [];
-        setValue('model', newModels[0] ?? '');
-      }
-      localStorage.setItem(LocalStorageKeys.LAST_AGENT_MODEL, _model);
-      localStorage.setItem(LocalStorageKeys.LAST_AGENT_PROVIDER, provider);
-    }
-
-    if (provider && !_model) {
-      setValue('model', models[0] ?? '');
-    }
-  }, [provider, models, modelsData, setValue, model]);
 
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();
 
@@ -150,13 +134,27 @@ export default function ModelPanel({
                     displayValue={alternateName[display] ?? display}
                     selectPlaceholder={localize('com_ui_select_provider')}
                     searchPlaceholder={localize('com_ui_select_search_provider')}
-                    setValue={field.onChange}
+                    setValue={(value) => {
+                      if (value === provider) {
+                        return;
+                      }
+                      const nextModel = modelsData[value]?.[0] ?? '';
+                      field.onChange(value);
+                      setValue('model', nextModel);
+                      localStorage.setItem(LocalStorageKeys.LAST_AGENT_PROVIDER, value);
+                      if (nextModel) {
+                        localStorage.setItem(LocalStorageKeys.LAST_AGENT_MODEL, nextModel);
+                      } else {
+                        localStorage.removeItem(LocalStorageKeys.LAST_AGENT_MODEL);
+                      }
+                    }}
                     items={providers.map((provider) => ({
                       label: typeof provider === 'string' ? provider : provider.label,
                       value: typeof provider === 'string' ? provider : provider.value,
                     }))}
                     className={cn(error ? 'border-2 border-red-500' : '')}
                     ariaLabel={localize('com_ui_provider')}
+                    disabled={!modelsReady}
                     isCollapsed={false}
                     showCarat={true}
                   />
@@ -197,12 +195,20 @@ export default function ModelPanel({
                         : localize('com_ui_select_provider_first')
                     }
                     searchPlaceholder={localize('com_ui_select_model')}
-                    setValue={field.onChange}
+                    setValue={(value) => {
+                      field.onChange(value);
+                      localStorage.setItem(LocalStorageKeys.LAST_AGENT_PROVIDER, provider);
+                      if (value) {
+                        localStorage.setItem(LocalStorageKeys.LAST_AGENT_MODEL, value);
+                      } else {
+                        localStorage.removeItem(LocalStorageKeys.LAST_AGENT_MODEL);
+                      }
+                    }}
                     items={models.map((model) => ({
                       label: model,
                       value: model,
                     }))}
-                    disabled={!provider}
+                    disabled={!provider || !modelsReady}
                     className={cn('disabled:opacity-50', error ? 'border-2 border-red-500' : '')}
                     ariaLabel={localize('com_ui_model')}
                     isCollapsed={false}
