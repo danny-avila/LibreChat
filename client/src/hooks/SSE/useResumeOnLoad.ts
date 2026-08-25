@@ -609,9 +609,10 @@ export default function useResumeOnLoad(
     const messages = getMessages() || [];
     /** Fill the elapsed baseline only when none survives: a reattach to the run
      *  this session already anchored keeps its original start (the atom outlives
-     *  the submission), while a run it never anchored — another client's, or any
-     *  attach after the previous run's terminal clear — counts from attach. */
-    setSubmissionStart((prev) => prev ?? Date.now());
+     *  the submission). A run it never anchored — after a reload, or started by
+     *  another client — anchors at the server-recorded generation start, so the
+     *  reading reports real elapsed time rather than time since this attach. */
+    setSubmissionStart((prev) => prev ?? streamStatus.createdAt ?? Date.now());
 
     // Build submission from resume state if available
     if (streamStatus.resumeState) {
