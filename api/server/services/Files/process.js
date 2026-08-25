@@ -41,6 +41,8 @@ const {
   hasActiveFileFieldPolicy,
   sendUploadSuccess,
   getStorageMetadata,
+  resolveStorageScope,
+  persistFileWithQuota,
   contentFilterBlockResponse,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
@@ -62,6 +64,42 @@ const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getRetentionExpiry, getAgentFileRetentionExpiry } = require('./retention');
 const { getStrategyFunctions } = require('./strategies');
+
+/** Removes a blob written before the row was offered to the ledger. */
+const deleteStoredBlob = async (req, { source, filepath, storageKey, storageRegion, tenantId }) => {
+  const { deleteFile } = getStrategyFunctions(source ?? FileSources.local);
+  if (!deleteFile) {
+    return;
+  }
+  await deleteFile(req, {
+    filepath,
+    storageKey,
+    storageRegion,
+    user: req.user.id,
+    tenantId: tenantId ?? req.user.tenantId,
+  });
+};
+
+/**
+ * The one quota-checked path to the `File` ledger in this service.
+ *
+ * `rollback` is positional and required — `null` is how a caller states that nothing
+ * was written before this point. Defaulting it would let a path that *does* leave a
+ * blob behind reach the write by omission, which is the leak class this seam exists
+ * to close.
+ */
+const persistFile = (req, row, rollback, { disableTTL = true } = {}) =>
+  persistFileWithQuota(
+    {
+      scope: resolveStorageScope(req),
+      row,
+      write: (scopedRow) => db.createFile(scopedRow, disableTTL),
+      rollback,
+      getUserStorageUsage: db.getUserStorageUsage,
+    },
+    (error) => logger.error('[persistFile] Cleanup after a quota rejection failed:', error),
+  );
+
 const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
 const db = require('~/models');
@@ -439,7 +477,8 @@ const processFileURL = async ({
       storageRegion: typeof savedFile === 'string' ? undefined : savedFile.storageRegion,
     });
 
-    return await db.createFile(
+    return await persistFile(
+      req,
       {
         user: userId,
         file_id: v4(),
@@ -455,7 +494,7 @@ const processFileURL = async ({
         width: dimensions.width,
         height: dimensions.height,
       },
-      true,
+      () => deleteStoredBlob(req, { source: fileStrategy, filepath, ...storageMetadata, tenantId }),
     );
   } catch (error) {
     logger.error(`Error while processing the image with ${fileStrategy}:`, error);
@@ -538,7 +577,11 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     return fileInfo;
   }
 
-  const result = await db.createFile(fileInfo, true);
+  const result = await persistFile(
+    req,
+    fileInfo,
+    () => deleteStoredBlob(req, { source, filepath, storageKey, storageRegion }),
+  );
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
 
@@ -578,7 +621,8 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
     tenantId: req.user.tenantId,
   });
   const storageMetadata = getStorageMetadata({ filepath, source });
-  return await db.createFile(
+  return await persistFile(
+    req,
     {
       user: req.user.id,
       file_id,
@@ -594,7 +638,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
       height,
       tenantId: req.user.tenantId,
     },
-    true,
+    () => deleteStoredBlob(req, { source, filepath, ...storageMetadata }),
   );
 };
 
@@ -690,7 +734,8 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
     });
   }
 
-  const result = await db.createFile(
+  const result = await persistFile(
+    req,
     {
       user: req.user.id,
       file_id: id ?? file_id,
@@ -709,7 +754,13 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
       width,
       tenantId: req.user.tenantId,
     },
-    true,
+    /* An assistant upload's row points at the provider copy, or — for images — at a
+     * blob `processImageFile` already persisted under its own quota-checked row.
+     * Neither is exclusively owned by this write, so there is nothing here to undo;
+     * detaching the provider-side file is tracked separately. */
+    isAssistantUpload
+      ? null
+      : () => deleteStoredBlob(req, { source, filepath, ...storageMetadata }),
   );
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
@@ -984,7 +1035,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       const fileInfo = {
         ...removeNullishValues({
           text,
-          bytes,
+          /* Extractors may report a conservative estimate (Mistral OCR returns
+           * `text.length * 4`). The ledger charges what it writes, so the row has to
+           * record the size actually persisted. */
+          bytes: Buffer.byteLength(text, 'utf8'),
           file_id,
           temp_file_id,
           user: req.user.id,
@@ -1012,7 +1066,9 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           updatingUserId: req?.user?.id,
         });
       }
-      const result = await db.createFile(fileInfo, true);
+      /* `FileSources.text` rows carry the extracted text inline; the temporary upload
+       * is cleaned up by the caller's `finally`, so there is nothing here to undo. */
+      const result = await persistFile(req, fileInfo, null);
       sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
     };
 
@@ -1347,7 +1403,13 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     ...retentionExpiry,
   };
 
-  const result = await db.createFile(fileInfo, true);
+  /* An image row points at a blob `processImageFile` already persisted under its own
+   * quota-checked row, so only the non-image storage write is ours to undo. */
+  const result = await persistFile(
+    req,
+    fileInfo,
+    isImage ? null : () => deleteStoredBlob(req, { source, filepath, ...storageMetadata }),
+  );
 
   sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
 };
@@ -1396,7 +1458,9 @@ const processOpenAIFile = async ({
   };
 
   if (saveFile) {
-    await db.createFile(file, true);
+    /* The bytes live on the provider and were not written by this request, so a
+     * rejection just declines to record them — there is nothing local to undo. */
+    await persistFile(openai.req, file, null);
   } else if (updateUsage) {
     try {
       await db.updateFileUsage({
@@ -1445,7 +1509,9 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     tenantId: req.user.tenantId,
   };
   try {
-    await db.createFile(file, true);
+    await persistFile(req, file, () =>
+      deleteStoredBlob(req, { source: file.source, filepath: file.filepath }),
+    );
   } catch (error) {
     logger.warn('Error saving OpenAI image output file metadata', error);
   }
@@ -1606,7 +1672,8 @@ async function saveBase64Image(
     tenantId: req.user.tenantId,
   });
   const storageMetadata = getStorageMetadata({ filepath, source });
-  return await db.createFile(
+  return await persistFile(
+    req,
     {
       type,
       source,
@@ -1622,7 +1689,7 @@ async function saveBase64Image(
       height: image.height,
       tenantId: req.user.tenantId,
     },
-    true,
+    () => deleteStoredBlob(req, { source, filepath, ...storageMetadata }),
   );
 }
 
