@@ -92,6 +92,10 @@ endpoints:
         - module: e2e/setup/tool-approval-hook.js
           matcher: ^approval_probe_mcp_e2e-memory$
   custom:
+    # Substituted with a REAL provider endpoint only when the mock config runs
+    # in model-fixture record mode (E2E_MODEL_FIXTURES=record); a comment
+    # otherwise, so the credential-free profile never gains a live endpoint.
+    # __E2E_MODEL_RECORD_PROVIDER__
     - name: 'Mock Provider A'
       apiKey: 'e2e-mock-key-a'
       baseURL: 'http://127.0.0.1:8889/v1'
@@ -184,6 +188,7 @@ modelSpecs:
   # Surfaces the endpoints menu (modelSelect defaults on when addedEndpoints is
   # set) limited to entries that don't collide with the spec labels above.
   addedEndpoints:
+    # __E2E_MODEL_RECORD_ADDED_ENDPOINT__
     - 'Mock Provider C'
     - 'Mock Provider D'
     - 'Mock Provider E'

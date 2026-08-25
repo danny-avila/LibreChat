@@ -26,6 +26,19 @@ const labelServerPath = path.resolve(rootPath, 'e2e/setup/fake-label-server.js')
  *  `writeRuntimeMockConfig` substitutes any override into the generated copy. */
 const LABEL_PORT = process.env.E2E_LABEL_PORT || '8889';
 const fakeModelHookPath = path.resolve(rootPath, 'e2e/setup/fake-model.js');
+/** Model-fixture record mode: the run hook taps the REAL provider stream into a
+ *  replayable fixture instead of overriding the model (e2e/setup/model-replay.js). */
+const modelFixtureRecording = process.env.E2E_MODEL_FIXTURES === 'record';
+const recordModelHookPath = path.resolve(rootPath, 'e2e/setup/record-model.js');
+const recordProviderBaseURL =
+  process.env.E2E_RECORD_PROVIDER_BASE_URL || 'https://api.deepseek.com/v1';
+const recordProviderModel = process.env.E2E_RECORD_PROVIDER_MODEL || 'deepseek-chat';
+if (modelFixtureRecording && !process.env.E2E_RECORD_PROVIDER_API_KEY) {
+  throw new Error('E2E_MODEL_FIXTURES=record requires E2E_RECORD_PROVIDER_API_KEY');
+}
+if (modelFixtureRecording && !process.env.E2E_MODEL_FIXTURE_NAME) {
+  throw new Error('E2E_MODEL_FIXTURES=record requires E2E_MODEL_FIXTURE_NAME');
+}
 const assistantsServerPath = path.resolve(rootPath, 'e2e/setup/fake-assistants-server.js');
 const ASSISTANTS_PORT = process.env.E2E_ASSISTANTS_PORT || '8890';
 const configTemplatePath = path.resolve(rootPath, 'e2e/config/librechat.e2e.yaml');
@@ -61,8 +74,15 @@ const baseEnv = {
   ...getLocalE2EEnv(),
   CONFIG_PATH: configPath,
   DEPLOYMENT_SKILLS_DIR: deploymentSkillsPath,
-  /** Loaded in-process by `@librechat/api`'s `createRun` to swap in a fake model. */
-  LIBRECHAT_TEST_RUN_HOOK: fakeModelHookPath,
+  /** Loaded in-process by `@librechat/api`'s `createRun` to swap in a fake model —
+   *  or, in model-fixture record mode, to tap the real provider stream. */
+  LIBRECHAT_TEST_RUN_HOOK: modelFixtureRecording ? recordModelHookPath : fakeModelHookPath,
+  ...(modelFixtureRecording
+    ? {
+        E2E_MODEL_FIXTURE_NAME: process.env.E2E_MODEL_FIXTURE_NAME ?? '',
+        E2E_RECORD_PROVIDER_API_KEY: process.env.E2E_RECORD_PROVIDER_API_KEY ?? '',
+      }
+    : {}),
   ...(enableDynamicMcp ? { E2E_MCP_LIST_CHANGED: 'true', E2E_MCP_STATE_PATH: MCP_STATE_PATH } : {}),
   /** The Assistants runtime uses the OpenAI SDK directly, outside the agents run hook. */
   ASSISTANTS_API_KEY: 'e2e-mock-assistants-key',
@@ -117,7 +137,27 @@ function writeRuntimeMockConfig() {
         ].join('\n'),
       }
     : { allowedDomain: '', stdioEnv: '', networkServers: '' };
+  const recordProviderBlock = modelFixtureRecording
+    ? [
+        `- name: 'Replay Record Provider'`,
+        `  apiKey: '\${E2E_RECORD_PROVIDER_API_KEY}'`,
+        `  baseURL: '${recordProviderBaseURL}'`,
+        '  models:',
+        '    default:',
+        `      - '${recordProviderModel}'`,
+        '    fetch: false',
+        '  titleConvo: false',
+        `  modelDisplayLabel: 'Replay Record Provider'`,
+      ].join('\n    ')
+    : '# __E2E_MODEL_RECORD_PROVIDER__';
   config = config
+    .replace('# __E2E_MODEL_RECORD_PROVIDER__', recordProviderBlock)
+    .replace(
+      '# __E2E_MODEL_RECORD_ADDED_ENDPOINT__',
+      modelFixtureRecording
+        ? `- 'Replay Record Provider'`
+        : '# __E2E_MODEL_RECORD_ADDED_ENDPOINT__',
+    )
     .replace('# __E2E_DYNAMIC_MCP_ALLOWED_DOMAIN__', dynamicMcpConfig.allowedDomain)
     .replace('# __E2E_DYNAMIC_MCP_STDIO_ENV__', dynamicMcpConfig.stdioEnv)
     .replace('# __E2E_DYNAMIC_MCP_NETWORK_SERVERS__', dynamicMcpConfig.networkServers);
