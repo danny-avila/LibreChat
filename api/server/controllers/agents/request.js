@@ -30,6 +30,10 @@ const {
   getAttachmentTitleText,
   createMCPRuntimeRequestBody,
   isAgentEventRetentionActive,
+  executeAgentEventActor,
+  findAgentEventAppliedAction,
+  isHITLEnabled,
+  agentRequestsAskUserQuestion,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -43,6 +47,8 @@ const {
   saveConvo,
   getMessages,
   getConvo,
+  getAgentEventActorState,
+  commitAgentEventActorState,
   isAgentTriggerPrincipalActive,
   isSubagentOwnerAdmissible,
 } = require('~/models');
@@ -1878,7 +1884,57 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           },
         };
 
-        const sendPromise = client.sendMessage(text, messageOptions);
+        const checkpointForksEnabled =
+          req.config?.endpoints?.[EModelEndpoint.agents]?.eventDriven?.checkpointForks === true;
+        const agentsConfig = req.config?.endpoints?.[EModelEndpoint.agents];
+        const eventActorMayPause =
+          isHITLEnabled(agentsConfig?.toolApproval) ||
+          agentRequestsAskUserQuestion(client?.options?.agent ?? {});
+        const canUseEventActorFork =
+          checkpointForksEnabled &&
+          !eventActorMayPause &&
+          agentEventDelivery?.event != null &&
+          agentEventDelivery.expectedAction != null &&
+          typeof eventTaskId === 'string' &&
+          req._agentEventBindingParentConversationId != null;
+        const sendPromise = canUseEventActorFork
+          ? executeAgentEventActor(
+              {
+                user: userId,
+                ...(tenantId == null ? {} : { tenantId }),
+                conversationId,
+                invocationId: eventTaskId,
+                event: agentEventDelivery.event,
+                signal: job.abortController.signal,
+                checkpointer: req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
+                invoke: async (actorContext) => {
+                  client.checkpointNamespace = actorContext.checkpointNamespace;
+                  client.eventActorCheckpointId = actorContext.checkpointId;
+                  client.eventActorInvocationId = actorContext.invocationId;
+                  client.eventActorContinuation = actorContext.continuation;
+                  return client.sendMessage(text, messageOptions);
+                },
+                readAppliedAction: () =>
+                  findAgentEventAppliedAction(
+                    agentEventDelivery.expectedAction,
+                    client?.run?.getRunSteps?.() ?? [],
+                    client?.contentParts ?? [],
+                  ),
+              },
+              {
+                getState: getAgentEventActorState,
+                commitState: commitAgentEventActorState,
+              },
+            ).then(({ value, execution }) => {
+              logger.info('[event-actor] Bound child event completed', {
+                conversationId,
+                invocationId: eventTaskId,
+                status: execution.status,
+                continuation: execution.continuation,
+              });
+              return value;
+            })
+          : client.sendMessage(text, messageOptions);
 
         if (titleEligible && titleTiming === 'immediate') {
           immediateTitlePromise = addTitle(req, {

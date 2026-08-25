@@ -14,6 +14,19 @@ export interface IAgentEventBinding {
   actorId: string;
 }
 
+export interface IAgentEventActorCheckpoint {
+  threadId: string;
+  checkpointId: string;
+  checkpointNs: string;
+}
+
+/** Private committed checkpoint state for one event-bound child actor. */
+export interface IAgentEventActorState {
+  generation: number;
+  checkpoint: IAgentEventActorCheckpoint;
+  previousCheckpoint?: IAgentEventActorCheckpoint;
+}
+
 export interface IAgentEventBindingRecord {
   conversationId: string;
   agentId: string;
@@ -75,6 +88,8 @@ export interface IConversation extends Document {
   subagentThreadLease?: ISubagentThreadLease;
   /** Internal event-source identity. Excluded from ordinary conversation reads. */
   agentEventBinding?: IAgentEventBinding;
+  /** Internal event-actor checkpoint head. Excluded from ordinary conversation reads. */
+  agentEventActor?: IAgentEventActorState;
   assistant_id?: string;
   instructions?: string;
   stop?: string[];

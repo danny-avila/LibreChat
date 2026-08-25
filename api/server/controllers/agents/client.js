@@ -47,6 +47,7 @@ const {
   isContentFilterError,
   deleteAgentCheckpoint,
   LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
+  LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY,
   agentRequestsAskUserQuestion,
   attachAskUserQuestionArgs,
   hydrateResumeRunSteps,
@@ -217,6 +218,11 @@ class AgentClient extends BaseClient {
     /** Generation-scoped LangGraph checkpoint namespace. Legacy paused jobs
      * intentionally use the historical empty namespace. @type {string} */
     this.checkpointNamespace = options.checkpointNamespace ?? '';
+    /** Bound-event invocation state is assigned immediately before sendMessage,
+     * after the SDK has prepared its isolated fork. */
+    this.eventActorCheckpointId = undefined;
+    this.eventActorInvocationId = undefined;
+    this.eventActorContinuation = undefined;
 
     /** @type {AgentRun} */
     this.run;
@@ -3297,6 +3303,16 @@ class AgentClient extends BaseClient {
           // into its physical namespace while tools keep the conversation id.
           checkpoint_ns: '',
           [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: this.checkpointNamespace,
+          ...(this.eventActorCheckpointId == null
+            ? {}
+            : { checkpoint_id: this.eventActorCheckpointId }),
+          ...(this.eventActorInvocationId == null
+            ? {}
+            : {
+                [LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY]: this.eventActorInvocationId,
+                event_actor_invocation_id: this.eventActorInvocationId,
+                event_actor_depth: 1,
+              }),
           last_agent_index: this.agentConfigs?.size ?? 0,
           user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
@@ -3547,6 +3563,7 @@ class AgentClient extends BaseClient {
         // below still guarantees it completes before the graph is exposed or run.
         const shouldPruneCheckpoint =
           streamId &&
+          this.eventActorInvocationId == null &&
           (isHITLEnabled(agentsEConfig?.toolApproval) || agents.some(agentRequestsAskUserQuestion));
         let checkpointPrunePromise = Promise.resolve();
         if (shouldPruneCheckpoint && this.checkpointNamespace !== '') {
@@ -3617,6 +3634,7 @@ class AgentClient extends BaseClient {
           steering: this.buildSteerWiring(streamId),
           activityLabel,
           activityPhase,
+          eventActorCheckpointing: this.eventActorInvocationId != null,
           indexTokenCountMap,
           initialSummary,
           initialSessions,
@@ -3690,7 +3708,9 @@ class AgentClient extends BaseClient {
           await this.activityLabelsMarkedPromise;
         }
         try {
-          await run.processStream({ messages }, config, {
+          const invocationMessages =
+            this.eventActorContinuation === 'warm' ? messages.slice(-1) : messages;
+          await run.processStream({ messages: invocationMessages }, config, {
             callbacks: {
               [Callback.TOOL_ERROR]: logToolError,
             },

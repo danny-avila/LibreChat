@@ -18,6 +18,13 @@ interface CompletedToolEvidence {
   arguments?: unknown;
 }
 
+export interface AgentEventRunOutcome {
+  status: 'applied' | 'completed_no_action' | 'failed' | 'cancelled';
+  action?: { toolName: string; toolCallId?: string };
+}
+
+export type AgentEventAppliedAction = NonNullable<AgentEventRunOutcome['action']>;
+
 const MAX_RECEIPT_ID_LENGTH = 256;
 
 function isBackgroundNonExecutionReceipt(value: unknown, argumentsValue: unknown): boolean {
@@ -129,6 +136,52 @@ function parseArguments(value: unknown): unknown {
   }
 }
 
+/** Classifies terminal run evidence once for both checkpoint commit and public receipt. */
+export function classifyAgentEventRunOutcome(
+  job: SerializableJobData,
+  runSteps: Agents.RunStep[],
+  content: Agents.MessageContentComplex[] = [],
+): AgentEventRunOutcome {
+  const action = findAgentEventAppliedAction(job.agentEventExpectedAction, runSteps, content, job);
+  if (action != null) {
+    return { status: 'applied', action };
+  }
+  if (job.status === 'error') {
+    return { status: 'failed' };
+  }
+  if (job.status === 'aborted') {
+    return { status: 'cancelled' };
+  }
+  return { status: 'completed_no_action' };
+}
+
+/** Finds qualifying action evidence without requiring the generation to be terminal yet. */
+export function findAgentEventAppliedAction(
+  expectedAction: AgentTriggerExpectedAction | undefined,
+  runSteps: Agents.RunStep[],
+  content: Agents.MessageContentComplex[] = [],
+  provenance: Pick<SerializableJobData, 'userSubmittedMessageFieldPaths'> = {},
+): AgentEventAppliedAction | undefined {
+  if (expectedAction == null) {
+    return undefined;
+  }
+  const nonExecutedToolCallIds = nonExecutedHITLToolCallIds(
+    provenance as SerializableJobData,
+    content,
+  );
+  const action = runSteps
+    .flatMap((step) => toolEvidence(step, nonExecutedToolCallIds))
+    .find((item) => matchesExpectedAction(item, expectedAction));
+  return action == null
+    ? undefined
+    : {
+        toolName: action.toolName.slice(0, MAX_RECEIPT_ID_LENGTH),
+        ...(action.toolCallId == null
+          ? {}
+          : { toolCallId: action.toolCallId.slice(0, MAX_RECEIPT_ID_LENGTH) }),
+      };
+}
+
 function containsSubset(value: unknown, subset: unknown): boolean {
   if (Array.isArray(subset)) {
     return (
@@ -181,36 +234,16 @@ export function createAgentEventTerminalHandler(methods: {
     if (job.agentEventDeliveryKey == null) {
       return;
     }
-    const nonExecutedToolCallIds = nonExecutedHITLToolCallIds(job, content);
-    const evidence = runSteps.flatMap((step) => toolEvidence(step, nonExecutedToolCallIds));
-    const action =
-      job.agentEventExpectedAction == null
-        ? undefined
-        : evidence.find((item) => matchesExpectedAction(item, job.agentEventExpectedAction!));
+    const outcome = classifyAgentEventRunOutcome(job, runSteps, content);
     const settledAt = new Date(job.completedAt ?? Date.now());
-    let status: SettleAgentTriggerHandlingOutcomeInput['status'] = 'completed_no_action';
-    if (action != null) {
-      status = 'applied';
-    } else if (job.status === 'error') {
-      status = 'failed';
-    } else if (job.status === 'aborted') {
-      status = 'cancelled';
-    }
     const settled = await methods.settleAgentTriggerHandlingOutcome({
       deliveryKey: job.agentEventDeliveryKey,
       conversationId: job.conversationId ?? streamId,
       generationCreatedAt: job.createdAt,
-      status,
+      status: outcome.status,
       settledAt,
-      ...(status === 'failed' && { error: job.error ?? 'Generation failed' }),
-      ...(action != null && {
-        action: {
-          toolName: action.toolName.slice(0, MAX_RECEIPT_ID_LENGTH),
-          ...(action.toolCallId != null && {
-            toolCallId: action.toolCallId.slice(0, MAX_RECEIPT_ID_LENGTH),
-          }),
-        },
-      }),
+      ...(outcome.status === 'failed' && { error: job.error ?? 'Generation failed' }),
+      ...(outcome.action != null && { action: outcome.action }),
     });
     if (!settled) {
       throw new Error(`Failed to settle agent event delivery ${job.agentEventDeliveryKey}`);

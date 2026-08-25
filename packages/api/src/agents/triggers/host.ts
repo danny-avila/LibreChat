@@ -619,6 +619,7 @@ async function startRun(
             envelope.target.bindingId != null && {
               agentEventDelivery: {
                 deliveryKey: context.idempotencyKey,
+                event: envelope.event,
                 ...(envelope.expectedAction != null && {
                   expectedAction: envelope.expectedAction,
                 }),

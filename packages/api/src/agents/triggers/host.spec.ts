@@ -608,6 +608,7 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
     expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toMatchObject({
       agentEventDelivery: {
         deliveryKey: getAgentTriggerIdempotencyKey(envelope),
+        event: envelope.event,
         expectedAction: envelope.expectedAction,
       },
     });

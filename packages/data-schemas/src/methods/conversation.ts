@@ -2,6 +2,8 @@ import { RetentionMode } from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
 import type {
+  IAgentEventActorCheckpoint,
+  IAgentEventActorState,
   IAgentEventBindingRecord,
   AppConfig,
   IChatProjectDocument,
@@ -53,6 +55,14 @@ export type SubagentThreadReadRecord = Pick<
 };
 
 export type ParentSubagentThreadRecord = SubagentThreadReadRecord;
+
+export type AgentEventActorCommitResult =
+  | {
+      status: 'committed';
+      state: IAgentEventActorState;
+      prunableCheckpoint?: IAgentEventActorCheckpoint;
+    }
+  | { status: 'stale'; state?: IAgentEventActorState };
 
 const ARCHIVE_CONVERSATION_BATCH_SIZE = 500;
 const PROJECT_STATS_REFRESH_CONCURRENCY = 10;
@@ -211,6 +221,18 @@ export interface ConversationMethods {
     sourceKeyId: string;
     tenantId?: string;
   }): Promise<IAgentEventBindingRecord | null>;
+  getAgentEventActorState(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+  }): Promise<IAgentEventActorState | null | undefined>;
+  commitAgentEventActorState(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    expected?: IAgentEventActorState;
+    checkpoint: IAgentEventActorCheckpoint;
+  }): Promise<AgentEventActorCommitResult>;
   reserveSubagentThread(input: {
     user: string;
     conversationId: string;
@@ -411,6 +433,92 @@ export function createConversationMethods(
       ...(conversation.expiredAt == null ? {} : { expiredAt: conversation.expiredAt }),
       binding: conversation.agentEventBinding,
       lineage: conversation.subagentThread,
+    };
+  }
+
+  /** Reads the committed actor head without exposing it through ordinary conversation queries. */
+  async function getAgentEventActorState(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+  }): Promise<IAgentEventActorState | null | undefined> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const conversation = await Conversation.findOne({
+      user: input.user,
+      conversationId: input.conversationId,
+      subagentThread: { $exists: true },
+      agentEventBinding: { $exists: true },
+      ...subagentLeaseTenantFilter(input.tenantId),
+      ...activeExpirationFilter<IConversation>(),
+    })
+      .select('+agentEventActor')
+      .lean<IConversation>();
+    return conversation == null ? undefined : (conversation.agentEventActor ?? null);
+  }
+
+  /** Advances one actor head only when its complete prior identity still matches. */
+  async function commitAgentEventActorState(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    expected?: IAgentEventActorState;
+    checkpoint: IAgentEventActorCheckpoint;
+  }): Promise<AgentEventActorCommitResult> {
+    if (input.checkpoint.threadId !== input.conversationId) {
+      throw new Error('Event actor checkpoint changed its logical thread');
+    }
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const expectedFilter: FilterQuery<IConversation> =
+      input.expected == null
+        ? { agentEventActor: { $exists: false } }
+        : {
+            'agentEventActor.generation': input.expected.generation,
+            'agentEventActor.checkpoint.threadId': input.expected.checkpoint.threadId,
+            'agentEventActor.checkpoint.checkpointId': input.expected.checkpoint.checkpointId,
+            'agentEventActor.checkpoint.checkpointNs': input.expected.checkpoint.checkpointNs,
+          };
+    const nextState: IAgentEventActorState = {
+      generation: (input.expected?.generation ?? 0) + 1,
+      checkpoint: input.checkpoint,
+      ...(input.expected == null ? {} : { previousCheckpoint: input.expected.checkpoint }),
+    };
+    const previous = await Conversation.findOneAndUpdate(
+      {
+        user: input.user,
+        conversationId: input.conversationId,
+        subagentThread: { $exists: true },
+        agentEventBinding: { $exists: true },
+        ...subagentLeaseTenantFilter(input.tenantId),
+        ...activeExpirationFilter<IConversation>(),
+        ...expectedFilter,
+      },
+      [
+        {
+          $set: {
+            'agentEventActor.generation': nextState.generation,
+            'agentEventActor.checkpoint': input.checkpoint,
+            'agentEventActor.previousCheckpoint':
+              input.expected == null ? '$$REMOVE' : '$agentEventActor.checkpoint',
+          },
+        },
+      ],
+      { new: false, timestamps: false },
+    )
+      .select('+agentEventActor')
+      .lean<IConversation>();
+    if (previous != null) {
+      return {
+        status: 'committed',
+        state: nextState,
+        ...(previous.agentEventActor?.previousCheckpoint == null
+          ? {}
+          : { prunableCheckpoint: previous.agentEventActor.previousCheckpoint }),
+      };
+    }
+    const current = await getAgentEventActorState(input);
+    return {
+      status: 'stale',
+      ...(current == null ? {} : { state: current }),
     };
   }
 
@@ -1786,6 +1894,8 @@ export function createConversationMethods(
     getSubagentThreadForParent,
     listSubagentThreadsForParent,
     getAgentEventBinding,
+    getAgentEventActorState,
+    commitAgentEventActorState,
     reserveSubagentThread,
     acquireSubagentThreadLease,
     renewSubagentThreadLease,

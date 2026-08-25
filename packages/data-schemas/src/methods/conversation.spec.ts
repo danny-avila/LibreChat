@@ -3926,6 +3926,106 @@ describe('Conversation Operations', () => {
       );
     });
 
+    it('commits event actor heads with full checkpoint CAS and bounded retention', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'actor-head-user',
+        tenantId: 'tenant-a',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: {
+          bindingId: `evtbind_${'c'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      const checkpoint = (suffix: string) => ({
+        threadId: conversationId,
+        checkpointId: `checkpoint-${suffix}`,
+        checkpointNs: `event-actor/${suffix}`,
+      });
+
+      const first = await methods.commitAgentEventActorState({
+        user: 'actor-head-user',
+        tenantId: 'tenant-a',
+        conversationId,
+        checkpoint: checkpoint('one'),
+      });
+      expect(first).toEqual({
+        status: 'committed',
+        state: { generation: 1, checkpoint: checkpoint('one') },
+      });
+
+      const stale = await methods.commitAgentEventActorState({
+        user: 'actor-head-user',
+        tenantId: 'tenant-a',
+        conversationId,
+        checkpoint: checkpoint('stale'),
+      });
+      expect(stale).toEqual({ status: 'stale', state: first.state });
+
+      const second = await methods.commitAgentEventActorState({
+        user: 'actor-head-user',
+        tenantId: 'tenant-a',
+        conversationId,
+        expected: first.state,
+        checkpoint: checkpoint('two'),
+      });
+      expect(second).toEqual({
+        status: 'committed',
+        state: {
+          generation: 2,
+          checkpoint: checkpoint('two'),
+          previousCheckpoint: checkpoint('one'),
+        },
+      });
+
+      const third = await methods.commitAgentEventActorState({
+        user: 'actor-head-user',
+        tenantId: 'tenant-a',
+        conversationId,
+        expected: second.state,
+        checkpoint: checkpoint('three'),
+      });
+      expect(third).toEqual({
+        status: 'committed',
+        state: {
+          generation: 3,
+          checkpoint: checkpoint('three'),
+          previousCheckpoint: checkpoint('two'),
+        },
+        prunableCheckpoint: checkpoint('one'),
+      });
+      await expect(
+        methods.getAgentEventActorState({
+          user: 'actor-head-user',
+          tenantId: 'tenant-a',
+          conversationId,
+        }),
+      ).resolves.toEqual(third.state);
+      await expect(
+        methods.getAgentEventActorState({
+          user: 'actor-head-user',
+          tenantId: 'tenant-a',
+          conversationId: 'missing-actor-thread',
+        }),
+      ).resolves.toBeUndefined();
+      expect(await methods.getConvo('actor-head-user', conversationId)).not.toHaveProperty(
+        'agentEventActor',
+      );
+    });
+
     it('admits one cross-replica owner and fences renewal and release by token', async () => {
       const conversationId = uuidv4();
       await Conversation.create({

@@ -66,6 +66,34 @@ const convoSchema: Schema<IConversation> = new Schema(
       default: undefined,
       select: false,
     },
+    /** Committed event-actor state. Invocation forks live in the checkpointer;
+     * only the current and previous committed identities live with the binding. */
+    agentEventActor: {
+      type: {
+        generation: { type: Number, min: 1, required: true },
+        checkpoint: {
+          type: {
+            threadId: { type: String, required: true },
+            checkpointId: { type: String, required: true },
+            checkpointNs: { type: String, required: true },
+          },
+          _id: false,
+          required: true,
+        },
+        previousCheckpoint: {
+          type: {
+            threadId: { type: String, required: true },
+            checkpointId: { type: String, required: true },
+            checkpointNs: { type: String, required: true },
+          },
+          _id: false,
+          default: undefined,
+        },
+      },
+      _id: false,
+      default: undefined,
+      select: false,
+    },
     tags: {
       type: [String],
       default: [],

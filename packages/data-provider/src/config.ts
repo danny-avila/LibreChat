@@ -70,6 +70,7 @@ export const defaultRetrievalModels = [
 export const excludedKeys = new Set([
   'conversationId',
   'agentEventBinding',
+  'agentEventActor',
   'subagentThread',
   'title',
   'iconURL',
@@ -1047,6 +1048,10 @@ export const agentsEndpointSchema = baseEndpointSchema
           completionWakeups: z.boolean().optional(),
           /** Enable only after every API worker can consume coalesced deliveries. */
           coalescing: z.boolean().optional(),
+          /** Reuse a bound event actor's committed checkpoint through isolated
+           *  per-invocation forks. Keep off until every API worker runs an SDK
+           *  and host adapter that understand the fork lifecycle. */
+          checkpointForks: z.boolean().optional(),
           /** Optional trusted origin for in-process trigger delivery. The bound
            *  listener remains the default and is safer for most deployments. */
           selfUrl: z.string().url().optional(),

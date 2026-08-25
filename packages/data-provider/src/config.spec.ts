@@ -21,7 +21,7 @@ const endpointsConfig: TEndpointsConfig = {
 };
 
 describe('excludedKeys', () => {
-  it.each(['_id', 'user', 'conversationId', 'agentEventBinding', '__v'])(
+  it.each(['_id', 'user', 'conversationId', 'agentEventBinding', 'agentEventActor', '__v'])(
     'excludes system field "%s"',
     (field) => {
       expect(excludedKeys.has(field)).toBe(true);
@@ -71,6 +71,7 @@ describe('agent event runtime config', () => {
             childTurns: true,
             completionWakeups: false,
             coalescing: true,
+            checkpointForks: true,
             selfUrl: 'https://triggers.internal',
           },
         },
@@ -88,6 +89,7 @@ describe('agent event runtime config', () => {
       childTurns: true,
       completionWakeups: false,
       coalescing: true,
+      checkpointForks: true,
       selfUrl: 'https://triggers.internal',
     });
     expect(result.data.rateLimits?.agentEvents).toEqual({
