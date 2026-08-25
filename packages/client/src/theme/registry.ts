@@ -8,9 +8,9 @@ import type {
   ThemeDefinition,
   ThemeMode,
 } from './types';
+import { highContrastDarkTheme, highContrastLightTheme } from './themes/highContrast';
 import { defaultTheme } from './themes/default';
 import { darkTheme } from './themes/dark';
-import { highContrastDarkTheme, highContrastLightTheme } from './themes/highContrast';
 export const THEME_VERSION = 1 as const;
 
 /**

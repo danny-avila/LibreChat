@@ -9,13 +9,13 @@ import React, {
 } from 'react';
 import { JSX } from 'react/jsx-runtime';
 import type { IThemeRGB, ThemeDefinition, ThemeMode } from '../types';
-import applyTheme, { applyResolvedTheme, themeOwnedProperties } from '../utils/applyTheme';
 import {
   fromLegacyTheme,
   highContrastTheme,
   resolveTheme,
   validateThemeDefinition,
 } from '../registry';
+import applyTheme, { applyResolvedTheme, themeOwnedProperties } from '../utils/applyTheme';
 
 const THEME_KEY = 'color-theme';
 const THEME_COLORS_KEY = 'theme-colors';

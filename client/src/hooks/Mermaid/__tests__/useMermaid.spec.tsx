@@ -1,6 +1,6 @@
 import React from 'react';
-import { SWRConfig } from 'swr';
 import mermaid from 'mermaid';
+import { SWRConfig } from 'swr';
 import { ThemeContext } from '@librechat/client';
 import { renderHook, waitFor } from '@testing-library/react';
 import useMermaid from '../useMermaid';

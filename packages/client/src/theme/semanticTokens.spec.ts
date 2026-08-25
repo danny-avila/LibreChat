@@ -1,10 +1,10 @@
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import type { IThemeRGB } from './types';
+import { highContrastDarkTheme, highContrastLightTheme } from './themes/highContrast';
 import { createTailwindColors } from './utils/createTailwindColors';
 import { defaultTheme } from './themes/default';
 import { darkTheme } from './themes/dark';
-import { highContrastDarkTheme, highContrastLightTheme } from './themes/highContrast';
 
 const sharedComponents = [
   'AnimatedSearchInput.tsx',
