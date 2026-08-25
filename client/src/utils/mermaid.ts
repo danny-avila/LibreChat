@@ -1,6 +1,7 @@
 import dedent from 'dedent';
 import DOMPurify from 'dompurify';
 import { highContrastDarkTheme, highContrastLightTheme } from '@librechat/client';
+import type { IThemeRGB } from '@librechat/client';
 
 interface MermaidButtonStyles {
   bg: string;
@@ -94,6 +95,16 @@ const tokenHex = (triplet: string | undefined, fallback: string): string => {
   return `#${channels.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
 };
 
+/** Mermaid reads twelve pie slots; the palette ships seven, so they wrap. */
+const seriesVariables = (palette: IThemeRGB): Record<string, string> => {
+  const slots = Array.from({ length: 7 }, (_, index) =>
+    tokenHex(palette[`rgb-series-${index + 1}` as keyof IThemeRGB], '#000000'),
+  );
+  return Object.fromEntries(
+    Array.from({ length: 12 }, (_, index) => [`pie${index + 1}`, slots[index % slots.length]]),
+  );
+};
+
 /**
  * Mermaid's built-in `neutral` and `dark` themes carry their own palette, which
  * no app token can reach, so a diagram keeps mid-grey nodes and mid-grey edges
@@ -133,6 +144,20 @@ export const contrastMermaidVariables = (
     nodeBorder: ink,
     clusterBorder: ink,
     lineColor: ink,
+    /**
+     * `pie1`..`pie12` otherwise derive from the primary, secondary and tertiary
+     * colours, which are all the canvas here, so every slice would collapse
+     * into the background and into its neighbours. The series scale is the
+     * palette's own categorical ramp: seven slots that clear the 3:1 mark floor
+     * on this canvas and stay separable under simulated deuteranopia. Slices
+     * beyond the seventh wrap, which mermaid's own palettes do as well.
+     */
+    ...seriesVariables(palette),
+    pieStrokeColor: ink,
+    pieOuterStrokeColor: ink,
+    pieTitleTextColor: ink,
+    pieSectionTextColor: ink,
+    pieLegendTextColor: ink,
   };
 };
 

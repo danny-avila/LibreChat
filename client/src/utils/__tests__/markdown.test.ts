@@ -136,6 +136,25 @@ describe('markdown artifacts', () => {
       expect(files['index.html']).toContain('prefers-color-scheme: dark');
     });
 
+    /** The base sheet picks its palette from the iframe's own
+     *  `prefers-color-scheme`, so the contrast block is appended unconditionally
+     *  and therefore also overrides that media query. */
+    it('appends a contrast override that outranks the media query', () => {
+      const standard = getMarkdownFiles('# Test')['index.html'];
+      expect(standard).toContain('prefers-color-scheme: dark');
+      expect(standard).not.toContain('background-color: #000000');
+
+      const contrastDark = getMarkdownFiles('# Test', true, true)['index.html'];
+      const overrideIndex = contrastDark.lastIndexOf('.markdown-body { color: #ffffff');
+      expect(overrideIndex).toBeGreaterThan(contrastDark.indexOf('prefers-color-scheme: dark'));
+      expect(contrastDark).toContain('background-color: #000000');
+      expect(contrastDark).toContain('color: #8cc8ff');
+
+      const contrastLight = getMarkdownFiles('# Test', false, true)['index.html'];
+      expect(contrastLight).toContain('.markdown-body { color: #000000');
+      expect(contrastLight).toContain('color: #0000cc');
+    });
+
     describe('content escaping', () => {
       it('should escape backticks in markdown content', () => {
         const markdown = 'Here is some `inline code`';

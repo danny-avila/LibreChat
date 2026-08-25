@@ -955,4 +955,26 @@ describe('ThemeProvider', () => {
     });
     expect(document.documentElement).toHaveClass('dark', 'high-contrast');
   });
+
+  /** The provider reads both media queries during render now, so it has to
+   *  tolerate the absence of a window the way the storage helpers already do. */
+  it('renders without a window, as under server rendering', () => {
+    const restore = window.matchMedia;
+    /** jsdom's property is non-configurable, so assign rather than redefine. */
+    window.matchMedia = undefined as unknown as typeof window.matchMedia;
+
+    try {
+      expect(() =>
+        render(
+          <ThemeProvider initialTheme="system">
+            <Controls />
+          </ThemeProvider>,
+        ),
+      ).not.toThrow();
+      expect(screen.getByTestId('resolved-mode')).toHaveTextContent('light');
+      expect(screen.getByTestId('high-contrast')).toHaveTextContent('false');
+    } finally {
+      window.matchMedia = restore;
+    }
+  });
 });

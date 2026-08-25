@@ -38,11 +38,11 @@ export default function useArtifactProps({ artifact }: { artifact: Artifact }) {
     if (type === TOOL_ARTIFACT_TYPES.CODE) {
       const lang = artifact.language ?? languageForFilename(artifact.title);
       const wrapped = wrapAsFencedCodeBlock(artifact.content ?? '', lang);
-      return ['content.md', getMarkdownFiles(wrapped)];
+      return ['content.md', getMarkdownFiles(wrapped, isDarkMode, highContrast)];
     }
 
     if (type === 'text/markdown' || type === 'text/md' || type === 'text/plain') {
-      return ['content.md', getMarkdownFiles(artifact.content ?? '')];
+      return ['content.md', getMarkdownFiles(artifact.content ?? '', isDarkMode, highContrast)];
     }
 
     /* Office preview buckets (DOCX/SPREADSHEET/PRESENTATION): the backend

@@ -326,4 +326,22 @@ describe('high contrast mermaid palette', () => {
     expect(contrast).toContain('2px solid #000000');
     expect(contrast).toContain('color: "#000000"');
   });
+
+  /** Every node fill is the canvas here, and mermaid derives `pie1..pie3` from
+   *  the primary, secondary and tertiary colours, so without the series ramp a
+   *  pie chart loses its encoding entirely. */
+  it('keeps pie slices distinct from each other and the canvas', () => {
+    for (const isDarkMode of [false, true]) {
+      const vars = contrastMermaidVariables(isDarkMode, true)!;
+      const slices = Array.from({ length: 12 }, (_, index) => vars[`pie${index + 1}`]);
+
+      expect(slices.every(Boolean)).toBe(true);
+      expect(slices.some((slice) => slice === vars.background)).toBe(false);
+      /** Seven distinct slots, wrapping after that, so no neighbour repeats. */
+      expect(new Set(slices).size).toBe(7);
+      slices.slice(0, 6).forEach((slice, index) => {
+        expect(slice).not.toBe(slices[index + 1]);
+      });
+    }
+  });
 });

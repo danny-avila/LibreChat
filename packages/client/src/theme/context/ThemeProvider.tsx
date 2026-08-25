@@ -96,9 +96,21 @@ export interface ThemeProviderProps {
   initialTheme?: string;
 }
 
+/**
+ * Media queries are read during render by the provider's state initializers and
+ * by consumers, so they have to tolerate the absence of a window the same way
+ * the storage helpers do. On the server both preferences resolve to false, which
+ * renders the light palette with no contrast override; the effects that apply
+ * the real values run on hydration.
+ */
+const matchesMedia = (query: string): boolean =>
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia(query).matches
+    : false;
+
 export const isDark = (theme: string): boolean => {
   if (theme === 'system') {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    return matchesMedia('(prefers-color-scheme: dark)');
   }
   return theme === 'dark' || theme === 'high-contrast-dark';
 };
@@ -117,7 +129,7 @@ export const isHighContrast = (theme: string): boolean =>
  * the colour scheme, so a user who has switched on "Increase contrast" gets the
  * accessible palette without first discovering this setting.
  */
-const prefersMoreContrast = (): boolean => window.matchMedia('(prefers-contrast: more)').matches;
+const prefersMoreContrast = (): boolean => matchesMedia('(prefers-contrast: more)');
 
 /** The resolved contrast for an appearance mode, explicit choice or OS request. */
 export const resolvesToHighContrast = (theme: string): boolean =>
@@ -602,7 +614,11 @@ export function ThemeProvider({
       return;
     }
 
-    /** `system` tracks both OS preferences it resolves against. */
+    /** `system` tracks both OS preferences it resolves against, when the host
+     *  provides matchMedia at all. */
+    if (typeof window.matchMedia !== 'function') {
+      return;
+    }
     const queries = [
       window.matchMedia('(prefers-color-scheme: dark)'),
       window.matchMedia('(prefers-contrast: more)'),
