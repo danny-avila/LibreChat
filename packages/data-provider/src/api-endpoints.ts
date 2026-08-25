@@ -124,6 +124,9 @@ export const subagentThread = (parentConversationId: string, threadId: string, t
   return taskId == null ? endpoint : `${endpoint}?taskId=${encodeURIComponent(taskId)}`;
 };
 
+export const subagentControl = (parentConversationId: string, threadId: string) =>
+  `${conversationsRoot}/${encodeURIComponent(parentConversationId)}/subagents/${encodeURIComponent(threadId)}/control`;
+
 export const genTitle = (conversationId: string) =>
   `${conversationsRoot}/gen_title/${encodeURIComponent(conversationId)}`;
 

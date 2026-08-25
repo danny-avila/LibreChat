@@ -2,10 +2,13 @@ import { atom, atomFamily } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   PartMetadata,
+  SubagentControlReceipt,
+  SubagentControlRequest,
   SubagentUpdatePhase,
   TMessageContentParts,
   SubagentUpdateEvent,
 } from 'librechat-data-provider';
+import type { AtomEffect } from 'recoil';
 import type {
   SubagentAggregatorState,
   SubagentContentPart,
@@ -279,6 +282,122 @@ export type ActiveSubagentPanel = {
 export const activeSubagentPanel = atom<ActiveSubagentPanel | null>({
   key: 'activeSubagentPanel',
   default: null,
+});
+
+export type SubagentControlUiReceipt = Omit<SubagentControlReceipt, 'status'> & {
+  status: SubagentControlReceipt['status'] | 'submitted';
+};
+
+export type SubagentControlUiState = {
+  receipt: SubagentControlUiReceipt;
+  /** Present only while the same invocation must be retried to resolve an
+   * ambiguous delivery. It is never replaced with a fresh invocation id. */
+  retry?: SubagentControlRequest;
+};
+
+export const subagentControlStateKey = (
+  parentConversationId: string,
+  threadId: string,
+  taskId: string,
+): string => `${parentConversationId}\u0000${threadId}\u0000${taskId}`;
+
+const SUBAGENT_CONTROL_STORAGE_PREFIX = 'librechat.subagent-control:';
+const CONTROL_ACTIONS = new Set(['steer', 'queue', 'interrupt', 'cancel', 'cancel_message']);
+const storedControlState = (value: unknown): SubagentControlUiState | null => {
+  if (value == null || typeof value !== 'object') return null;
+  const candidate = value as Partial<SubagentControlUiState>;
+  const receipt = candidate.receipt as Partial<SubagentControlUiReceipt> | undefined;
+  const retry = candidate.retry as Partial<SubagentControlRequest> | undefined;
+  if (
+    receipt == null ||
+    typeof receipt.invocationId !== 'string' ||
+    !CONTROL_ACTIONS.has(receipt.action ?? '') ||
+    (receipt.status !== 'submitted' && receipt.status !== 'failed') ||
+    typeof receipt.createdAt !== 'string' ||
+    typeof receipt.updatedAt !== 'string' ||
+    retry == null ||
+    typeof retry.taskId !== 'string' ||
+    retry.taskId === '' ||
+    retry.invocationId !== receipt.invocationId ||
+    retry.action !== receipt.action ||
+    !CONTROL_ACTIONS.has(retry.action ?? '')
+  ) {
+    return null;
+  }
+  const action = retry.action as SubagentControlRequest['action'];
+  if (
+    (action === 'cancel' && (retry.message != null || retry.controlId != null)) ||
+    (action === 'cancel_message' &&
+      (typeof retry.controlId !== 'string' || retry.controlId === '' || retry.message != null)) ||
+    (action !== 'cancel' &&
+      action !== 'cancel_message' &&
+      (typeof retry.message !== 'string' || retry.message.trim() === '' || retry.controlId != null))
+  ) {
+    return null;
+  }
+  const now = new Date().toISOString();
+  const sanitizedRetry = {
+    taskId: retry.taskId,
+    invocationId: retry.invocationId,
+    action,
+    ...(action === 'cancel_message' ? { controlId: retry.controlId as string } : {}),
+    ...(action !== 'cancel' && action !== 'cancel_message'
+      ? { message: retry.message as string }
+      : {}),
+  } as SubagentControlRequest;
+  return {
+    receipt: {
+      invocationId: receipt.invocationId,
+      action,
+      status: 'failed',
+      createdAt: receipt.createdAt,
+      updatedAt: now,
+      ...(action === 'cancel_message' ? { controlId: retry.controlId as string } : {}),
+      ...(action !== 'cancel' && action !== 'cancel_message'
+        ? { message: retry.message as string }
+        : {}),
+      reason: 'owner_unavailable',
+    },
+    retry: sanitizedRetry,
+  };
+};
+
+const subagentControlStorageEffect =
+  (identity: string): AtomEffect<SubagentControlUiState | null> =>
+  ({ setSelf, onSet }) => {
+    if (typeof window === 'undefined') return;
+    const storageKey = `${SUBAGENT_CONTROL_STORAGE_PREFIX}${encodeURIComponent(identity)}`;
+    try {
+      const raw = window.sessionStorage.getItem(storageKey);
+      if (raw != null) {
+        const restored = storedControlState(JSON.parse(raw));
+        if (restored == null) window.sessionStorage.removeItem(storageKey);
+        else setSelf(restored);
+      }
+    } catch {
+      try {
+        window.sessionStorage.removeItem(storageKey);
+      } catch {
+        // Some privacy modes deny session storage entirely.
+      }
+    }
+    onSet((next, _previous, isReset) => {
+      try {
+        if (isReset || next?.retry == null) window.sessionStorage.removeItem(storageKey);
+        else window.sessionStorage.setItem(storageKey, JSON.stringify(next));
+      } catch {
+        // Storage is best-effort; the in-memory receipt still protects this mounted session.
+      }
+    });
+  };
+
+/** Parent-owned control state survives closing the activity panel or selecting
+ * another child. Ambiguous retries also survive a full page reload in this tab;
+ * durable receipts clear both copies after authoritative reconciliation. */
+export const subagentControlStateByTask = atomFamily<SubagentControlUiState | null, string>({
+  key: 'subagentControlStateByTask',
+  default: null,
+  effects_UNSTABLE: (identity) => [subagentControlStorageEffect(identity)],
 });
 
 /** Stable identity for one subagent invocation in the parent conversation. */

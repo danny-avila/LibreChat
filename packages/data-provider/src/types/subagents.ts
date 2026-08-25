@@ -66,10 +66,12 @@ export type SubagentActivityItem =
       outputTruncated?: boolean;
     };
 
+export type SubagentControlAction = 'steer' | 'queue' | 'interrupt' | 'cancel' | 'cancel_message';
+
 export type SubagentControlReceipt = {
   invocationId: string;
   controlId?: string;
-  action: 'steer' | 'queue' | 'interrupt' | 'cancel' | 'cancel_message';
+  action: SubagentControlAction;
   status: 'accepted' | 'applied' | 'rejected' | 'failed';
   createdAt: string;
   updatedAt: string;
@@ -77,6 +79,18 @@ export type SubagentControlReceipt = {
   reason?: string;
   message?: string;
   messageTruncated?: boolean;
+};
+
+export type SubagentControlRequest = {
+  taskId: string;
+  invocationId: string;
+  action: SubagentControlAction;
+  message?: string;
+  controlId?: string;
+};
+
+export type SubagentControlResponse = {
+  receipt: SubagentControlReceipt;
 };
 
 export type SubagentThreadMessage = {

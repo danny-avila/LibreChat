@@ -1,6 +1,6 @@
 import React from 'react';
-import { RecoilRoot, useRecoilValue } from 'recoil';
 import { ContentTypes, ForkOptions } from 'librechat-data-provider';
+import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type {
   ParentSubagentSummary,
@@ -19,6 +19,7 @@ import SubagentThreadPanel from './SubagentThreadPanel';
 const mockUseSubagentThreadQuery = jest.fn();
 const mockUseSubagentActivityStream = jest.fn();
 const mockForkMutate = jest.fn();
+const mockControlMutate = jest.fn();
 const mockNavigateToConvo = jest.fn();
 const mockShowToast = jest.fn();
 const mockApprovalProviderMounted = jest.fn();
@@ -41,6 +42,17 @@ jest.mock('~/data-provider', () => ({
     onError: () => void;
   }) => ({
     mutate: (payload: unknown) => mockForkMutate(payload, options),
+    isLoading: false,
+  }),
+  useSubagentControlMutation: (options: {
+    onSuccess: (result: unknown, variables: unknown) => void;
+    onError: (error: unknown, variables: unknown) => void;
+  }) => ({
+    mutate: (variables: unknown) =>
+      mockControlMutate(variables, {
+        onSuccess: (result: unknown) => options.onSuccess(result, variables),
+        onError: (error: unknown) => options.onError(error, variables),
+      }),
     isLoading: false,
   }),
 }));
@@ -97,21 +109,39 @@ jest.mock('./SubagentActivity', () => ({
     activity,
     activityId,
     state,
+    onCancelControl,
   }: {
-    activity: { status: string; prompt?: string; items: Array<{ type: string; text?: string }> };
+    activity: {
+      status: string;
+      prompt?: string;
+      items: Array<{ type: string; text?: string }>;
+      controls?: Array<{ invocationId: string; status: string }>;
+    };
     activityId?: string;
     state: string;
+    onCancelControl?: (controlId: string) => void;
   }) => (
     <div
       data-testid="shared-activity"
       data-activity-id={activityId}
       data-state={state}
       data-status={activity.status}
+      data-can-withdraw={onCancelControl != null ? 'true' : 'false'}
     >
       {activity.prompt}
       {activity.items.map((item, index) => (
         <span key={index}>{item.text ?? item.type}</span>
       ))}
+      {activity.controls?.map((control) => (
+        <span key={control.invocationId}>{control.status}</span>
+      ))}
+      {onCancelControl != null && (
+        <button
+          type="button"
+          data-testid="withdraw-control"
+          onClick={() => onCancelControl('control-1')}
+        />
+      )}
     </div>
   ),
 }));
@@ -120,6 +150,11 @@ jest.mock('@librechat/client', () => {
   const mockReact = jest.requireActual<typeof import('react')>('react');
   const MockSelectContext = mockReact.createContext((_value: string): void => {});
   return {
+    Alert: ({ children, ...props }: React.ComponentProps<'div'>) => (
+      <div role="alert" {...props}>
+        {children}
+      </div>
+    ),
     Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
       <button {...props}>{children}</button>
     ),
@@ -151,6 +186,7 @@ jest.mock('@librechat/client', () => {
         </button>
       );
     },
+    Textarea: (props: React.ComponentProps<'textarea'>) => <textarea {...props} />,
     useMediaQuery: () => mockIsMobile,
     useToastContext: () => ({ showToast: mockShowToast }),
   };
@@ -159,11 +195,15 @@ jest.mock('@librechat/client', () => {
 jest.mock('lucide-react', () => ({
   AlertCircle: () => null,
   Bot: () => null,
+  CornerDownRight: () => null,
   CheckCircle2: () => null,
   Clock3: () => null,
+  ListEnd: () => null,
   MessagesSquare: () => null,
+  OctagonX: () => null,
   X: () => null,
   XCircle: () => null,
+  Zap: () => null,
 }));
 
 const selection: ActiveSubagentPanel = {
@@ -210,10 +250,12 @@ const completedView: SubagentThreadView = {
 
 describe('SubagentThreadPanel', () => {
   beforeEach(() => {
+    window.sessionStorage.clear();
     mockIsMobile = false;
     mockApprovalProviderMounted.mockClear();
     mockApprovalProviderUnmounted.mockClear();
     mockForkMutate.mockClear();
+    mockControlMutate.mockClear();
     mockNavigateToConvo.mockClear();
     mockShowToast.mockClear();
     mockRefreshParentChildren.mockClear();
@@ -268,6 +310,499 @@ describe('SubagentThreadPanel', () => {
         ),
       ).toHaveFocus(),
     );
+  });
+
+  it('submits one command invocation, blocks duplicate clicks, and shows its receipt', async () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+      target: { value: 'Check the primary source.' },
+    });
+    const queue = screen.getByRole('button', { name: 'com_ui_queue' });
+    fireEvent.click(queue);
+    fireEvent.click(queue);
+
+    expect(mockControlMutate).toHaveBeenCalledTimes(1);
+    const [variables, callbacks] = mockControlMutate.mock.calls[0] as [
+      {
+        parentConversationId: string;
+        threadId: string;
+        command: { taskId: string; invocationId: string; action: string; message: string };
+      },
+      { onSuccess: (value: unknown) => void },
+    ];
+    expect(variables).toEqual({
+      parentConversationId: 'parent-conversation',
+      threadId: 'child-thread',
+      submittedAt: expect.any(String),
+      command: {
+        taskId: 'task',
+        invocationId: expect.any(String),
+        action: 'queue',
+        message: 'Check the primary source.',
+      },
+    });
+    act(() => {
+      callbacks.onSuccess({
+        receipt: {
+          invocationId: variables.command.invocationId,
+          controlId: 'control-1',
+          action: 'queue',
+          status: 'accepted',
+          createdAt: '2026-08-24T12:00:00.000Z',
+          updatedAt: '2026-08-24T12:00:00.000Z',
+        },
+      });
+    });
+    expect(screen.getByText('accepted')).toBeInTheDocument();
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-can-withdraw', 'true');
+  });
+
+  it('retries an unavailable owner with the same authoritative invocation id', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+      target: { value: 'Use the primary source.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer' }));
+    const firstCommand = mockControlMutate.mock.calls[0][0].command;
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
+    });
+
+    expect(screen.getByLabelText('com_ui_subagent_control_message')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'com_ui_subagent_cancel_task' })).toBeDisabled();
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-can-withdraw', 'false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+
+    expect(mockControlMutate).toHaveBeenCalledTimes(2);
+    expect(mockControlMutate.mock.calls[1][0].command).toEqual(firstCommand);
+  });
+
+  it('releases the composer after a definitive policy rejection', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+      target: { value: 'Blocked guidance.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer' }));
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onError({ response: { status: 400 } });
+    });
+
+    expect(screen.getByText('com_ui_subagent_control_reason_invalid_command')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'com_ui_retry' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('com_ui_subagent_control_message')).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'com_ui_subagent_cancel_task' })).toBeEnabled();
+  });
+
+  it('retains an ambiguous invocation across closing and reopening the panel', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const PanelHost = () => {
+      const current = useRecoilValue(activeSubagentPanel);
+      const setCurrent = useSetRecoilState(activeSubagentPanel);
+      return current == null ? (
+        <button type="button" onClick={() => setCurrent(selection)}>
+          {selection.subagentType}
+        </button>
+      ) : (
+        <SubagentThreadPanel selection={current} />
+      );
+    };
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <PanelHost />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+      target: { value: 'Use the primary source.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_queue' }));
+    const firstCommand = mockControlMutate.mock.calls[0][0].command;
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
+    fireEvent.click(screen.getByRole('button', { name: selection.subagentType }));
+
+    expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+    expect(mockControlMutate.mock.calls[1][0].command).toEqual(firstCommand);
+  });
+
+  it('retains an ambiguous invocation across a full page-state reload', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const first = render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+      target: { value: 'Keep the same invocation.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_queue' }));
+    const firstCommand = mockControlMutate.mock.calls[0][0].command;
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
+    });
+    first.unmount();
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+    expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+    expect(mockControlMutate.mock.calls[1][0].command).toEqual(firstCommand);
+  });
+
+  it('records an ambiguous result after the panel closes before the mutation settles', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const PanelHost = () => {
+      const current = useRecoilValue(activeSubagentPanel);
+      const setCurrent = useSetRecoilState(activeSubagentPanel);
+      return current == null ? (
+        <button type="button" onClick={() => setCurrent(selection)}>
+          {selection.subagentType}
+        </button>
+      ) : (
+        <SubagentThreadPanel selection={current} />
+      );
+    };
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <PanelHost />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+      target: { value: 'Retry after closing.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_queue' }));
+    const firstCommand = mockControlMutate.mock.calls[0][0].command;
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
+    });
+    fireEvent.click(screen.getByRole('button', { name: selection.subagentType }));
+
+    expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+    expect(mockControlMutate.mock.calls[1][0].command).toEqual(firstCommand);
+  });
+
+  it('keeps an unavailable-owner retry visible if the child settles before the receipt appears', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const { rerender } = render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+      target: { value: 'Use the primary source.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer' }));
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
+    });
+
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    rerender(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(
+      screen.getByText('com_ui_subagent_control_reason_owner_unavailable'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('com_ui_subagent_control_message')).not.toBeInTheDocument();
+  });
+
+  it('preserves drafted guidance when withdrawing an accepted control', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: {
+        ...completedView,
+        status: 'running',
+        controlReceipts: [
+          {
+            invocationId: 'accepted-control',
+            controlId: 'control-1',
+            action: 'queue',
+            status: 'accepted',
+            createdAt: '2026-08-24T12:00:00.000Z',
+            updatedAt: '2026-08-24T12:00:00.000Z',
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    const composer = screen.getByLabelText('com_ui_subagent_control_message');
+    fireEvent.change(composer, { target: { value: 'Keep this draft.' } });
+    fireEvent.click(screen.getByTestId('withdraw-control'));
+    const command = mockControlMutate.mock.calls[0][0].command;
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onSuccess({
+        receipt: {
+          invocationId: command.invocationId,
+          controlId: 'control-1',
+          action: 'cancel_message',
+          status: 'applied',
+          createdAt: '2026-08-24T12:00:01.000Z',
+          updatedAt: '2026-08-24T12:00:01.000Z',
+        },
+      });
+    });
+
+    expect(composer).toHaveValue('Keep this draft.');
+  });
+
+  it('clears transient retry state when refresh returns the same durable invocation', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const { rerender } = render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+      target: { value: 'Use the primary source.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer' }));
+    const command = mockControlMutate.mock.calls[0][0].command;
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
+    });
+    expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeInTheDocument();
+    expect(window.sessionStorage.length).toBe(1);
+
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: {
+        ...completedView,
+        status: 'running',
+        controlReceipts: [
+          {
+            invocationId: command.invocationId,
+            action: 'steer',
+            status: 'applied',
+            createdAt: '2026-08-24T12:00:00.000Z',
+            updatedAt: '2026-08-24T12:00:01.000Z',
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    rerender(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByText('applied')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'com_ui_retry' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('com_ui_subagent_control_message')).toHaveValue('');
+    expect(
+      screen.queryByText('com_ui_subagent_control_reason_owner_unavailable'),
+    ).not.toBeInTheDocument();
+    expect(window.sessionStorage.length).toBe(0);
+  });
+
+  it('closes stale running controls after task cancellation is applied', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_cancel_task' }));
+    const command = mockControlMutate.mock.calls[0][0].command;
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onSuccess({
+        receipt: {
+          invocationId: command.invocationId,
+          action: 'cancel',
+          status: 'applied',
+          createdAt: '2026-08-24T12:00:00.000Z',
+          updatedAt: '2026-08-24T12:00:01.000Z',
+        },
+      });
+    });
+
+    expect(screen.queryByLabelText('com_ui_subagent_control_message')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'com_ui_subagent_cancel_task' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-can-withdraw', 'false');
+  });
+
+  it('reports an inaccessible task without offering a misleading retry', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_cancel_task' }));
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onError({ response: { status: 404 } });
+    });
+
+    expect(
+      screen.getByText('com_ui_subagent_control_reason_task_inaccessible'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'com_ui_retry' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('com_ui_subagent_control_message')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'com_ui_subagent_cancel_task' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-can-withdraw', 'false');
+  });
+
+  it('renders rejected and refreshed applied receipts independently from child status', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: {
+        ...completedView,
+        status: 'running',
+        controlReceipts: [
+          {
+            invocationId: 'persisted',
+            action: 'interrupt',
+            status: 'applied',
+            createdAt: '2026-08-24T12:00:00.000Z',
+            updatedAt: '2026-08-24T12:00:01.000Z',
+          },
+          {
+            invocationId: 'terminal-race',
+            action: 'steer',
+            status: 'rejected',
+            createdAt: '2026-08-24T12:00:02.000Z',
+            updatedAt: '2026-08-24T12:00:03.000Z',
+            reason: 'task_completed',
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByText('applied')).toBeInTheDocument();
+    expect(screen.getByText('rejected')).toBeInTheDocument();
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-status', 'running');
+    expect(screen.queryByLabelText('com_ui_subagent_control_message')).not.toBeInTheDocument();
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-can-withdraw', 'false');
+  });
+
+  it('does not expose task controls after the selected child is terminal', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.queryByLabelText('com_ui_subagent_control_message')).not.toBeInTheDocument();
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-can-withdraw', 'false');
   });
 
   it('renders foreground persisted activity through the same shared panel without a durable read', () => {

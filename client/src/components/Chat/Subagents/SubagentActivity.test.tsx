@@ -216,6 +216,12 @@ describe('SubagentActivity', () => {
     },
   );
 
+  it('reports when the durable control history is bounded', () => {
+    render(<SubagentActivity activity={{ ...base, controlsTruncated: true }} />);
+
+    expect(screen.getByText('com_ui_subagent_control_history_truncated')).toBeInTheDocument();
+  });
+
   it('preserves question input-validation failure for the regular renderer', () => {
     render(
       <SubagentActivity
@@ -324,6 +330,100 @@ describe('SubagentActivity', () => {
     expect(screen.getByText('Checked constraints')).toBeInTheDocument();
     expect(screen.getByText('Draft.')).toHaveAttribute('data-phase', 'commentary');
     expect(screen.getByText('Prepared the release')).toBeInTheDocument();
+  });
+
+  it('renders command receipts separately from child status and allows an accepted withdrawal', () => {
+    const onCancelControl = jest.fn();
+    render(
+      <SubagentActivity
+        activity={{
+          ...base,
+          status: 'running',
+          controls: [
+            {
+              invocationId: 'submitted',
+              action: 'steer',
+              status: 'submitted',
+              createdAt: '2026-08-24T12:00:00.000Z',
+              updatedAt: '2026-08-24T12:00:00.000Z',
+              message: 'Check the source.',
+            },
+            {
+              invocationId: 'accepted',
+              controlId: 'control-1',
+              action: 'queue',
+              status: 'accepted',
+              createdAt: '2026-08-24T12:00:01.000Z',
+              updatedAt: '2026-08-24T12:00:01.000Z',
+              message: 'Add a citation.',
+              messageTruncated: true,
+            },
+            {
+              invocationId: 'applied',
+              action: 'interrupt',
+              status: 'applied',
+              createdAt: '2026-08-24T12:00:02.000Z',
+              updatedAt: '2026-08-24T12:00:03.000Z',
+              boundary: 'preempt',
+            },
+            {
+              invocationId: 'rejected',
+              action: 'steer',
+              status: 'rejected',
+              createdAt: '2026-08-24T12:00:04.000Z',
+              updatedAt: '2026-08-24T12:00:05.000Z',
+              reason: 'task_completed',
+            },
+          ],
+        }}
+        onCancelControl={onCancelControl}
+      />,
+    );
+
+    expect(screen.getByText('com_ui_subagent_thread_status_running')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_subagent_control_status_submitted')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_subagent_control_status_accepted')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_subagent_control_status_applied')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_subagent_control_status_rejected')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_subagent_control_message_truncated')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_subagent_control_reason_task_completed')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_control_withdraw' }));
+    expect(onCancelControl).toHaveBeenCalledWith('control-1');
+  });
+
+  it('renders storage-prioritized control receipts in chronological order', () => {
+    render(
+      <SubagentActivity
+        activity={{
+          ...base,
+          controls: [
+            {
+              invocationId: 'new-accepted',
+              controlId: 'control-2',
+              action: 'queue',
+              status: 'accepted',
+              createdAt: '2026-08-24T12:00:02.000Z',
+              updatedAt: '2026-08-24T12:00:02.000Z',
+            },
+            {
+              invocationId: 'old-applied',
+              controlId: 'control-1',
+              action: 'steer',
+              status: 'applied',
+              createdAt: '2026-08-24T12:00:01.000Z',
+              updatedAt: '2026-08-24T12:00:03.000Z',
+            },
+          ],
+        }}
+      />,
+    );
+
+    const applied = screen.getByText('com_ui_subagent_control_status_applied');
+    const accepted = screen.getByText('com_ui_subagent_control_status_accepted');
+    expect(
+      applied.compareDocumentPosition(accepted) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('scopes regular-chat renderer state to the selected child activity', () => {
