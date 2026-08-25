@@ -638,10 +638,20 @@ export type PartMetadata = {
    * as dispatch time rather than the task's runtime.
    */
   backgrounded?: boolean;
+  /**
+   * Content index this part occupied while its run streamed. The aggregator
+   * writes parts at provider-source indexes, so the streamed array is sparse;
+   * persistence compacts it and every part after a hole shifts down. The
+   * client's final handler stamps the streamed position onto the compacted
+   * parts it adopts, so index-derived render identity survives the swap
+   * instead of remounting the settled message. Client-only and absent
+   * everywhere else — persisted content never carries it.
+   */
+  streamedIndex?: number;
 };
 
 /** Metadata for parallel content rendering - subset of PartMetadata */
-export type ContentMetadata = Pick<PartMetadata, 'agentId' | 'groupId'>;
+export type ContentMetadata = Pick<PartMetadata, 'agentId' | 'groupId' | 'streamedIndex'>;
 
 export type ContentPart = (
   | CodeToolCall

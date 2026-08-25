@@ -9,6 +9,7 @@ import {
   encodeEphemeralAgentId,
 } from 'librechat-data-provider';
 import type {
+  Agents,
   TMessage,
   TConversation,
   TEndpointsConfig,
@@ -190,6 +191,123 @@ export const getAllContentText = (message?: TMessage | null): string => {
   }
 
   return '';
+};
+
+const getPartTextValue = (value?: string | { value?: string }): string =>
+  (typeof value === 'string' ? value : value?.value) ?? '';
+
+const getPartToolCall = (part: TMessageContentParts): Agents.ToolCall | undefined =>
+  part.type === ContentTypes.TOOL_CALL
+    ? (part[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)
+    : undefined;
+
+/** Slots the persistence compaction leaves nothing behind for: the
+ * dual-message `type: ''` placeholders, text/think parts that never received a
+ * delta, and tool calls missing their `tool_call` payload. */
+const isEmptyContentPart = (part: TMessageContentParts): boolean => {
+  if (!part.type) {
+    return true;
+  }
+  if (part.type === ContentTypes.TEXT) {
+    return getPartTextValue(part.text).length === 0;
+  }
+  if (part.type === ContentTypes.THINK) {
+    return getPartTextValue(part.think).length === 0;
+  }
+  if (part.type === ContentTypes.TOOL_CALL) {
+    return getPartToolCall(part) == null;
+  }
+  return false;
+};
+
+/** Identity match, not equality: the persisted part may carry richer content
+ * (flushed text, tool output) than its streamed counterpart, and updating a
+ * kept identity in place is exactly the point. */
+const isSameStreamedPart = (
+  streamed: TMessageContentParts,
+  final: TMessageContentParts,
+): boolean => {
+  if (streamed.type !== final.type) {
+    return false;
+  }
+  if (streamed.type !== ContentTypes.TOOL_CALL) {
+    return true;
+  }
+  const streamedCall = getPartToolCall(streamed);
+  const finalCall = getPartToolCall(final);
+  if (streamedCall?.id != null && finalCall?.id != null) {
+    return streamedCall.id === finalCall.id;
+  }
+  if (streamedCall?.name != null && finalCall?.name != null) {
+    return streamedCall.name === finalCall.name;
+  }
+  return true;
+};
+
+/**
+ * Stamps each part of a final (persisted, compacted) content array with the
+ * index it occupied while it streamed, pairing the two arrays in order.
+ *
+ * The aggregator writes parts at provider-source indexes, so the streamed
+ * array is sparse wherever a step produced nothing; persistence compacts the
+ * holes away and every later part shifts down. Adopting the compacted array
+ * verbatim re-keys every index-derived React identity at the final event —
+ * the settled message remounts wholesale, entrance animations replay, and the
+ * thread visibly jumps. The stamp (`streamedIndex`) lets renderers keep the
+ * streamed key while all coordinate logic uses the compacted positions the
+ * server persisted.
+ *
+ * Pairing is all-or-nothing: a partially stamped array could collide a
+ * streamed key with a compacted fallback key. When any final part has no
+ * streamed counterpart (server-enriched content), the final array is returned
+ * untouched and the message re-keys as before.
+ */
+export const preserveStreamedContentIdentity = (
+  streamedContent: Array<TMessageContentParts | undefined> | undefined,
+  finalContent: TMessage['content'],
+): TMessage['content'] => {
+  if (!streamedContent?.length || !finalContent?.length) {
+    return finalContent;
+  }
+
+  let cursor = 0;
+  let stamped: TMessageContentParts[] | null = null;
+  for (let index = 0; index < finalContent.length; index++) {
+    const finalPart = finalContent[index] as TMessageContentParts | undefined;
+    if (finalPart == null) {
+      return finalContent;
+    }
+    let matchedIndex = -1;
+    while (cursor < streamedContent.length) {
+      const streamedPart = streamedContent[cursor];
+      if (streamedPart == null) {
+        cursor += 1;
+        continue;
+      }
+      /** An empty streamed slot facing a filled final part was dropped by the
+       *  compaction — never let it steal the match from the filled streamed
+       *  part behind it (an empty THINK ahead of the real one, say). */
+      if (isEmptyContentPart(streamedPart) && !isEmptyContentPart(finalPart)) {
+        cursor += 1;
+        continue;
+      }
+      if (isSameStreamedPart(streamedPart, finalPart)) {
+        matchedIndex = cursor;
+        cursor += 1;
+      }
+      break;
+    }
+    if (matchedIndex === -1) {
+      return finalContent;
+    }
+    if (matchedIndex !== index && stamped == null) {
+      stamped = [...finalContent];
+    }
+    if (stamped != null && matchedIndex !== index) {
+      stamped[index] = { ...finalPart, streamedIndex: matchedIndex };
+    }
+  }
+  return stamped ?? finalContent;
 };
 
 /**
