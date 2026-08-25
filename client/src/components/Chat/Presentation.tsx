@@ -1,5 +1,6 @@
 import { useRecoilValue } from 'recoil';
 import { useEffect, useMemo } from 'react';
+import { useMediaQuery } from '@librechat/client';
 import { FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDeleteFilesMutation } from '~/data-provider';
@@ -59,7 +60,7 @@ export default function Presentation({ children }: { children: React.ReactNode }
   const fullCollapse = useMemo(() => localStorage.getItem('fullPanelCollapse') === 'true', []);
 
   const activeBklSource = useRecoilValue(store.activeBklSource);
-  const bklPanelOpen = useRecoilValue(store.bklPanelOpen);
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   /**
    * Memoize artifacts JSX to prevent recreating it on every render
@@ -80,20 +81,25 @@ export default function Presentation({ children }: { children: React.ReactNode }
 
   /**
    * Right-side panel routing:
-   * The BKL thread panel takes over the artifact slot when either
-   *  - the user pinned it open via the header toggle (`bklPanelOpen`), or
-   *  - a `[N]` citation is active (chunk view inside the same panel).
-   * That way it renders inside LibreChat's native `ResizablePanel`
-   * (same chrome, same resize handle, same mobile behaviour as artifacts).
-   * Only one of {artifact, thread panel} is visible at a time; the panel wins
-   * because it's always an explicit user action.
+   * The BKL thread panel is ALWAYS visible on desktop — it renders the
+   * conversation-level overview (mentioned files + cited chunks) and swaps
+   * to the chunk text view when a `[N]` citation is active. Artifacts (if
+   * any) only take the slot when no citation is open.
+   *
+   * On small screens `SidePanelGroup` renders this slot as a `fixed inset-0`
+   * overlay, so an always-open panel would cover the whole chat — mobile
+   * therefore only mounts the panel while a citation chunk view is active
+   * (same behaviour as before).
    */
   const sidePanelElement = useMemo(() => {
-    if (activeBklSource != null || bklPanelOpen) {
+    if (activeBklSource != null) {
       return <BklThreadPanel />;
     }
-    return artifactsElement;
-  }, [activeBklSource, bklPanelOpen, artifactsElement]);
+    if (artifactsElement != null) {
+      return artifactsElement;
+    }
+    return isSmallScreen ? null : <BklThreadPanel />;
+  }, [activeBklSource, artifactsElement, isSmallScreen]);
 
   return (
     <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">

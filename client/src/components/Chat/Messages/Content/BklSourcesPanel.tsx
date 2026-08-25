@@ -187,18 +187,13 @@ function formatRelevance(raw: unknown): string | null {
 
 type BklSourcesPanelProps = {
   /**
-   * 대화 패널(BklThreadPanel) Overview 에서 청크를 연 경우 — 헤더 왼쪽에
-   * 뒤로가기 버튼을 노출하고, 클릭 시 청크 선택만 해제해 목록으로 복귀한다.
+   * 대화 패널(BklThreadPanel)에서 렌더될 때 — 헤더 왼쪽에 뒤로가기 버튼을
+   * 노출한다. 클릭 시 청크 선택만 해제해 Overview 목록으로 복귀한다.
    */
   onBack?: () => void;
-  /**
-   * X 버튼의 동작 재정의 — 대화 패널이 핀 고정된 상태에서는 청크 선택 해제와
-   * 함께 패널 전체를 닫아야 하므로 부모가 슬라이드아웃 후 호출될 콜백을 넘긴다.
-   */
-  onCloseAll?: () => void;
 };
 
-export default function BklSourcesPanel({ onBack, onCloseAll }: BklSourcesPanelProps = {}) {
+export default function BklSourcesPanel({ onBack }: BklSourcesPanelProps = {}) {
   const [active, setActive] = useRecoilState(store.activeBklSource);
   const [sources, setSources] = useState<BklSource[] | null>(null);
   // Flips true when the 20s cache-poll below gives up without sources —
@@ -277,11 +272,10 @@ export default function BklSourcesPanel({ onBack, onCloseAll }: BklSourcesPanelP
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     closeTimerRef.current = setTimeout(() => {
       setActive(null);
-      onCloseAll?.();
       setIsClosing(false);
       closeTimerRef.current = null;
     }, CLOSE_ANIM_MS);
-  }, [setActive, onCloseAll]);
+  }, [setActive]);
 
   // Cleanup any pending close timer on unmount so we don't late-write to an
   // unmounted tree if the user navigates away mid-animation.

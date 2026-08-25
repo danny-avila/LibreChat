@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
-import { ChevronDown, ChevronRight, ExternalLink, X } from 'lucide-react';
-import { Button } from '@librechat/client';
+import React, { useCallback, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { ChevronDown, ChevronRight, ExternalLink, FileText } from 'lucide-react';
 import store from '~/store';
 import { cn, FileTypeIcon } from '~/utils';
 import BklSourcesPanel from '~/components/Chat/Messages/Content/BklSourcesPanel';
@@ -13,46 +13,31 @@ import {
 } from './useConversationCitations';
 
 /**
- * 대화 단위 우측 패널 (mentat ThreadPanel 스타일).
+ * 대화 단위 우측 패널 (mentat ThreadPanel 스타일) — 데스크톱에선 항상 열려
+ * 있다 (Presentation.tsx 가 아티팩트 슬롯에 상시 라우팅).
  *
  * Overview(언급된 파일 / 인용된 청크 2개 접이식 섹션) ↔ 청크 텍스트 뷰의
- * 2상태로 동작한다. 청크 뷰는 기존 BklSourcesPanel 을 그대로 재사용하되,
- * 패널이 핀 고정(bklPanelOpen)된 상태에선 뒤로가기로 Overview 에 복귀한다.
- *
- * Presentation.tsx 가 SidePanelGroup 의 아티팩트 슬롯에 이 컴포넌트를
- * 라우팅하므로 리사이즈·모바일 동작은 아티팩트 패널과 동일하다.
+ * 2상태로 동작한다. 청크 뷰는 기존 BklSourcesPanel 을 재사용하고, 뒤로가기
+ * 또는 닫기로 Overview 에 복귀한다.
  */
 export default function BklThreadPanel() {
   const active = useRecoilValue(store.activeBklSource);
   const setActive = useSetRecoilState(store.activeBklSource);
-  const [panelOpen, setPanelOpen] = useRecoilState(store.bklPanelOpen);
 
-  // 청크 뷰 — [N] 클릭(패널 미고정)과 Overview 행 클릭(패널 고정) 모두 이 경로.
+  // 청크 뷰 — 본문 [N] 클릭과 Overview 행 클릭 모두 이 경로.
   if (active != null) {
-    return (
-      <BklSourcesPanel
-        onBack={panelOpen ? () => setActive(null) : undefined}
-        onCloseAll={panelOpen ? () => setPanelOpen(false) : undefined}
-      />
-    );
+    return <BklSourcesPanel onBack={() => setActive(null)} />;
   }
 
-  return <ThreadOverview onClose={() => setPanelOpen(false)} />;
+  return <ThreadOverview />;
 }
 
-function ThreadOverview({ onClose }: { onClose: () => void }) {
-  const conversation = useRecoilValue(store.conversationByIndex(0));
-  const conversationId = conversation?.conversationId;
+function ThreadOverview() {
+  // ChatView 와 동일하게 라우트 파라미터를 쓴다 — 메시지 쿼리 캐시 키가
+  // 같아야 스트리밍 직후에도 같은 데이터를 본다.
+  const { conversationId } = useParams();
   const { turns, files, isLoading } = useConversationCitations(conversationId);
   const setActive = useSetRecoilState(store.activeBklSource);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
 
   const openChunk = useCallback(
     (messageId: string, n: number) => setActive({ messageId, n }),
@@ -62,28 +47,30 @@ function ThreadOverview({ onClose }: { onClose: () => void }) {
   const isEmpty = turns.length === 0 && files.length === 0;
 
   return (
-    <div className="flex h-full w-full flex-col bg-surface-primary text-text-primary shadow-2xl">
-      <div className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-border-light bg-surface-primary-alt px-3 py-2">
-        <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium uppercase tracking-wider text-text-secondary">
-            대화 자료
-          </div>
-          <h2 className="mt-0.5 truncate text-sm font-semibold text-text-primary">
-            인용된 출처 모아보기
-          </h2>
-        </div>
-        <Button size="icon" variant="ghost" onClick={onClose} aria-label="닫기">
-          <X size={16} aria-hidden="true" />
-        </Button>
+    <div className="flex h-full w-full flex-col bg-surface-primary text-text-primary">
+      <div className="flex flex-shrink-0 items-center gap-2 border-b border-border-light bg-surface-primary-alt px-4 py-3">
+        <h2 className="truncate text-sm font-semibold text-text-primary">대화 자료</h2>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {isEmpty ? (
-          <p className="px-4 py-6 text-sm text-text-secondary">
-            {isLoading
-              ? '출처를 불러오는 중…'
-              : '아직 인용된 출처가 없습니다. 답변 본문에 [N] 으로 인용된 문서와 청크가 여기에 쌓입니다.'}
-          </p>
+          <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
+            <FileText size={28} className="text-text-tertiary" aria-hidden="true" />
+            {isLoading ? (
+              <p className="text-sm text-text-secondary">출처를 불러오는 중…</p>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-text-primary">
+                  아직 인용된 출처가 없습니다
+                </p>
+                <p className="text-sm leading-relaxed text-text-secondary">
+                  답변 본문에 인용된 문서와 청크가
+                  <br />
+                  여기에 정리됩니다.
+                </p>
+              </>
+            )}
+          </div>
         ) : (
           <>
             <PanelSection label="언급된 파일" count={files.length} defaultOpen>

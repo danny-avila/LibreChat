@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { useConversationSources } from '~/data-provider/Sources';
@@ -86,7 +86,11 @@ export type MentionedFile = {
   sample: BklSource;
 };
 
-/** messageId → 저장된 출처 배열. API 응답 우선, 스트리밍 중이면 SSE 캐시 폴백. */
+/**
+ * messageId → 저장된 출처 배열. API 응답 우선, 없으면 스트리밍 캐시
+ * (window.__bklSources) → localStorage(bkl_src_*, BklCitation 이 쓰는 것과
+ * 동일 키) 순으로 폴백한다. API 미배포·재접속 직후에도 패널이 차도록.
+ */
 function sourcesForMessage(
   apiByMessage: Map<string, BklSource[]>,
   messageId: string,
@@ -97,7 +101,44 @@ function sourcesForMessage(
     messageId
   ];
   if (Array.isArray(mem) && mem.length > 0) return mem as BklSource[];
+  try {
+    const raw = localStorage.getItem('bkl_src_' + messageId);
+    if (raw) {
+      const parsed = JSON.parse(raw) as { s?: unknown };
+      if (Array.isArray(parsed?.s) && parsed.s.length > 0) return parsed.s as BklSource[];
+    }
+  } catch {
+    /* parse error — ignore */
+  }
   return fromApi ?? null;
+}
+
+/**
+ * window.__bklSources 는 SSE 가 직접 채우는 비반응형 캐시라, 스트리밍이 끝나
+ * 출처가 도착해도 React 는 모른다. 값싼 시그니처(메시지 키 + 각 배열 길이)를
+ * 주기적으로 비교해 변할 때만 tick 을 올려 집계를 다시 돌린다.
+ */
+function useStreamingSourcesTick(): number {
+  const [tick, setTick] = useState(0);
+  const sigRef = useRef('');
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const cache = (window as unknown as { __bklSources?: Record<string, unknown[]> })
+        .__bklSources;
+      const sig = cache
+        ? Object.keys(cache)
+            .sort()
+            .map((k) => `${k}:${Array.isArray(cache[k]) ? cache[k].length : 0}`)
+            .join('|')
+        : '';
+      if (sig !== sigRef.current) {
+        sigRef.current = sig;
+        setTick((t) => t + 1);
+      }
+    }, 1000);
+    return () => clearInterval(iv);
+  }, []);
+  return tick;
 }
 
 export function useConversationCitations(conversationId: string | null | undefined) {
@@ -107,6 +148,17 @@ export function useConversationCitations(conversationId: string | null | undefin
   const { data: messages } = useGetMessagesByConvoId(conversationId ?? '', {
     enabled: Boolean(conversationId) && conversationId !== 'new',
   });
+  const streamTick = useStreamingSourcesTick();
+
+  // 새 답변이 저장되면 대화 단위 출처도 다시 가져온다 (스트리밍 캐시 폴백이
+  // 먼저 채우고, PG 영속본이 도착하면 그걸로 대체되는 순서).
+  const assistantCount = (messages ?? []).filter((m) => !m.isCreatedByUser).length;
+  const refetchSources = sourcesQuery.refetch;
+  useEffect(() => {
+    if (assistantCount > 0) {
+      refetchSources();
+    }
+  }, [assistantCount, refetchSources]);
 
   return useMemo(() => {
     const apiByMessage = new Map<string, BklSource[]>();
@@ -155,7 +207,11 @@ export function useConversationCitations(conversationId: string | null | undefin
     return {
       turns,
       files: [...fileMap.values()],
-      isLoading: sourcesQuery.isLoading,
+      // v4 에서 disabled 쿼리는 status 'loading' 이므로 isInitialLoading 을
+      // 써야 새 대화(landing)에서 "불러오는 중" 이 영영 뜨지 않는다.
+      isLoading: sourcesQuery.isInitialLoading,
     };
-  }, [sourcesQuery.data, sourcesQuery.isLoading, messages]);
+    // streamTick: window.__bklSources 변화 감지용 — 값 자체는 쓰지 않는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourcesQuery.data, sourcesQuery.isInitialLoading, messages, streamTick]);
 }
