@@ -65,67 +65,68 @@ const EditMessage = ({
    *  returning false. Closing the editor regardless would throw the draft away for
    *  a rerun that never started, so a refused send leaves the editor as it was. */
   const resubmitMessage = (data: { text: string }) => {
-    if (isUserTurn) {
-      const submitted = ask(
-        {
-          text: data.text,
-          parentMessageId,
-          conversationId,
-        },
-        {
-          overrideFiles: message.files,
-          /** Pills on the edited user message stay visible after save-and-submit;
-           *  carry the picks forward so the new turn primes the same skills
-           *  instead of running unprimed. */
-          overrideManualSkills: message.manualSkills,
-          /** Carry the edited user message's quoted excerpts forward so the new
-           *  turn sends the same referenced context the pills still show. */
-          overrideQuotes: message.quotes,
-          addedConvo: getAddedConvo() || undefined,
-        },
-      );
+    const submitted = ask(
+      {
+        text: data.text,
+        parentMessageId,
+        conversationId,
+      },
+      {
+        overrideFiles: message.files,
+        /** Pills on the edited user message stay visible after save-and-submit;
+         *  carry the picks forward so the new turn primes the same skills
+         *  instead of running unprimed. */
+        overrideManualSkills: message.manualSkills,
+        /** Carry the edited user message's quoted excerpts forward so the new
+         *  turn sends the same referenced context the pills still show. */
+        overrideQuotes: message.quotes,
+        addedConvo: getAddedConvo() || undefined,
+      },
+    );
 
-      if (submitted === false) {
-        return;
-      }
-
-      setSiblingIdx((siblingIdx ?? 0) - 1);
-    } else {
-      const messages = getMessages();
-      const parentMessage = messages?.find((msg) => msg.messageId === parentMessageId);
-
-      if (!parentMessage) {
-        return;
-      }
-      /** No draft rides along: `editedContent` is index-addressed over a content array
-       *  and this editor only opens on messages that have none, so there is nothing for
-       *  a text-level edit to target. `editedMessageId` also regenerates this row in
-       *  place, which would overwrite the draft even if it were persisted first. Hence
-       *  "Rerun", never "Update & rerun", on an assistant turn. */
-      const submitted = ask(
-        { ...parentMessage },
-        {
-          editedMessageId: messageId,
-          isRegenerate: true,
-          isEdited: true,
-          /** Edit-assistant-response flow replays the parent user turn; keep
-           *  the same manual skills so the regenerated response is primed
-           *  identically. */
-          overrideManualSkills: parentMessage.manualSkills,
-          /** Replaying the parent user turn: keep its quoted excerpts so the
-           *  regenerated response is sent the same referenced context. */
-          overrideQuotes: parentMessage.quotes,
-          addedConvo: getAddedConvo() || undefined,
-        },
-      );
-
-      if (submitted === false) {
-        return;
-      }
-
-      setSiblingIdx((siblingIdx ?? 0) - 1);
+    if (submitted === false) {
+      return;
     }
 
+    setSiblingIdx((siblingIdx ?? 0) - 1);
+    enterEdit(true);
+  };
+
+  /** No draft reaches the submission: `editedContent` is index-addressed over a content
+   *  array and this editor only opens on messages that have none, so a text edit has
+   *  nothing to target. Rerunning an answer is therefore a plain regeneration, the same
+   *  one the hover action sends, which is why the draft neither gates this nor is
+   *  offered as an update. Deliberately NOT routed through `handleSubmit`: the field is
+   *  required so Save cannot blank a response, and a response that is already empty (a
+   *  cancellation before the first token) is exactly what needs rerunning. */
+  const rerunResponse = () => {
+    const parentMessage = getMessages()?.find((msg) => msg.messageId === parentMessageId);
+
+    if (!parentMessage) {
+      return;
+    }
+    const submitted = ask(
+      { ...parentMessage },
+      {
+        isRegenerate: true,
+        /** Name the response being regenerated. Without it the submission resolves the
+         *  NEWEST answer for this turn, so rerunning an older sibling prunes the wrong
+         *  subtree from the optimistic thread. */
+        targetResponseMessageId: messageId,
+        /** Replaying the parent user turn: keep its manual skills and quoted excerpts so
+         *  the regenerated response is primed and given the same context as the first. */
+        overrideManualSkills: parentMessage.manualSkills,
+        overrideQuotes: parentMessage.quotes,
+        addedConvo: getAddedConvo() || undefined,
+      },
+    );
+
+    if (submitted === false) {
+      return;
+    }
+
+    /** The new answer is a sibling of this one, not of the user turn `siblingIdx` walks,
+     *  so the index stays put and the thread follows the appended child. */
     enterEdit(true);
   };
 
@@ -237,7 +238,7 @@ const EditMessage = ({
             aria-live="polite"
           >
             {isDirty
-              ? localize(isUserTurn ? 'com_ui_unsaved_changes' : 'com_ui_rerun_replaces_response')
+              ? localize(isUserTurn ? 'com_ui_unsaved_changes' : 'com_ui_rerun_discards_changes')
               : ''}
           </span>
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -262,16 +263,21 @@ const EditMessage = ({
             </Button>
             {/* A rerun with no edits is a first-class action, not a mistake: a cancelled
                 or failed response, or a backend restarted on different parameters, has
-                to be reissued byte-for-byte. Validity only gates an edited draft: a
-                pristine one is the persisted message, already submittable by
-                construction, and `isValid` is false for a tick after mount while the
-                form's first validation pass settles. */}
+                to be reissued byte-for-byte. Validity gates only an edited USER draft,
+                which is the one that becomes the submission: a pristine draft is the
+                persisted message, already submittable by construction, `isValid` is
+                false for a tick after mount while the form's first validation pass
+                settles, and an answer's draft is never sent at all. */}
             <Button
               ref={submitButtonRef}
               size="sm"
               variant="submit"
-              disabled={isSubmitting || updateMessageMutation.isLoading || (isDirty && !isValid)}
-              onClick={handleSubmit(resubmitMessage)}
+              disabled={
+                isSubmitting ||
+                updateMessageMutation.isLoading ||
+                (isUserTurn && isDirty && !isValid)
+              }
+              onClick={isUserTurn ? handleSubmit(resubmitMessage) : rerunResponse}
             >
               {isDirty && isUserTurn ? localize('com_ui_update_rerun') : localize('com_ui_rerun')}
             </Button>

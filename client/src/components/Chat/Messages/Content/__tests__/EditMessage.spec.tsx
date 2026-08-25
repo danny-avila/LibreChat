@@ -63,6 +63,14 @@ const assistantMessage = {
   text: 'Original answer',
 } as TMessage;
 
+const emptyAssistantMessage = {
+  messageId: 'assistant-2',
+  parentMessageId: 'user-1',
+  conversationId: 'conversation-1',
+  isCreatedByUser: false,
+  text: '',
+} as TMessage;
+
 function renderEditor({
   enterEdit = jest.fn(),
   ask = jest.fn(),
@@ -260,30 +268,61 @@ describe('EditMessage', () => {
     expect(enterEdit).not.toHaveBeenCalled();
   });
 
-  /** The submission carries no draft on an assistant turn and regenerates the row in
-   *  place, so the button must not offer to update it and the status slot has to say
-   *  where an unsaved edit is about to go. */
-  it('never offers to update an assistant response it is about to replace', async () => {
+  /** An answer's draft never reaches the submission, so the button must not offer to
+   *  update it, the status slot has to say the edit is about to be dropped, and the
+   *  submission has to be the plain regeneration the hover action sends. */
+  it('reruns an assistant response as a regeneration of that response', async () => {
     const user = userEvent.setup();
     mockGetMessages.mockReturnValue([message, assistantMessage]);
     const ask = jest.fn();
-    const { enterEdit } = renderEditor({ ask, editedMessage: assistantMessage });
+    const { enterEdit, setSiblingIdx } = renderEditor({ ask, editedMessage: assistantMessage });
 
     await user.clear(screen.getByTestId('message-text-editor'));
     await user.type(screen.getByTestId('message-text-editor'), 'An edited answer');
 
     expect(screen.queryByRole('button', { name: 'com_ui_update_rerun' })).toBeNull();
-    expect(screen.getByText('com_ui_rerun_replaces_response')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_rerun_discards_changes')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'com_ui_rerun' }));
 
     await waitFor(() => expect(ask).toHaveBeenCalled());
+    expect(ask).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: message.messageId }),
+      expect.objectContaining({
+        isRegenerate: true,
+        /** Names this answer, so an older sibling's rerun cannot prune the newest
+         *  answer's subtree out of the optimistic thread. */
+        targetResponseMessageId: assistantMessage.messageId,
+      }),
+    );
     const [, options] = ask.mock.calls[0] as [unknown, Record<string, unknown>];
+    /** Edit-resubmission options would replace this row in place instead. */
+    expect(options).not.toHaveProperty('editedMessageId');
+    expect(options).not.toHaveProperty('isEdited');
     expect(options).not.toHaveProperty('editedText');
-    expect(options).toMatchObject({
-      editedMessageId: assistantMessage.messageId,
-      isRegenerate: true,
-    });
+    /** The new answer is a sibling of this one, not of the user turn. */
+    expect(setSiblingIdx).not.toHaveBeenCalled();
+    expect(enterEdit).toHaveBeenCalledWith(true);
+  });
+
+  /** A response cancelled before its first token is exactly what needs rerunning, and
+   *  the form marks text required so Save cannot blank a message. Routing the rerun
+   *  through that validation left the enabled button inert. */
+  it('reruns an answer that was cancelled before any text arrived', async () => {
+    const user = userEvent.setup();
+    mockGetMessages.mockReturnValue([message, emptyAssistantMessage]);
+    const ask = jest.fn();
+    const { enterEdit } = renderEditor({ ask, editedMessage: emptyAssistantMessage });
+
+    const rerun = screen.getByRole('button', { name: 'com_ui_rerun' });
+    expect(rerun).toBeEnabled();
+    await user.click(rerun);
+
+    await waitFor(() => expect(ask).toHaveBeenCalled());
+    expect(ask).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: message.messageId }),
+      expect.objectContaining({ targetResponseMessageId: emptyAssistantMessage.messageId }),
+    );
     expect(enterEdit).toHaveBeenCalledWith(true);
   });
 });

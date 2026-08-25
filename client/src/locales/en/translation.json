@@ -1829,7 +1829,7 @@
   "com_ui_rename_failed": "Failed to rename conversation",
   "com_ui_requires_auth": "Requires Authentication",
   "com_ui_rerun": "Rerun",
-  "com_ui_rerun_replaces_response": "Rerunning replaces this response. Save to keep your changes.",
+  "com_ui_rerun_discards_changes": "Rerunning discards these changes and generates a new response. Save to keep them.",
   "com_ui_reset": "Reset",
   "com_ui_reset_adjustments": "Reset adjustments",
   "com_ui_reset_var": "Reset {{0}}",
