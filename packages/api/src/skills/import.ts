@@ -38,10 +38,10 @@ import {
   getBlockedUninspectableSkillFileField,
 } from '~/protection';
 import { contentFilterBlockResponse } from '~/middleware/contentFilter';
+import { parseSkillMarkdown, toCleanFrontmatter } from './parse';
 import { resolveRequestTenantId } from '~/middleware/tenant';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from './limits';
 import { isSafeSkillFilePath } from './path';
-import { parseSkillMarkdown, toCleanFrontmatter } from './parse';
 import { isBinaryBuffer } from './binary';
 
 const SKILL_MD = 'SKILL.md';

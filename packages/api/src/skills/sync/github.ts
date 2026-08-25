@@ -36,8 +36,8 @@ import {
   GITHUB_FINE_GRAINED_TOKEN_RECOMMENDATION,
   createGitHubRepoAdapter,
 } from './adapters/github';
-import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
 import { parseSkillMarkdown, toCleanFrontmatter } from '../parse';
+import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
 import { normalizeRepoPath } from './path';
 import { SkillSyncError } from './errors';
 

@@ -1826,7 +1826,7 @@ export function createSkillMethods(
     const storedBodyFlags = storedSkillState
       ? extractBooleanFlagsFromBody(storedSkillState.body)
       : undefined;
-    let bodyFrontmatter =
+    const bodyFrontmatter =
       update.body !== undefined && update.frontmatter === undefined
         ? { ...(isPlainObject(storedSkillState?.frontmatter) ? storedSkillState.frontmatter : {}) }
         : undefined;
