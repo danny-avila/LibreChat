@@ -105,6 +105,7 @@ const CORPUS: Array<[label: string, frontmatterLines: string]> = [
   ['comment-only value', 'user-invocable: # todo'],
   ['empty value', 'user-invocable:'],
   ['value on the next line', 'user-invocable:\n  false'],
+  ['YAML boolean alias', 'default: &off false\nuser-invocable: *off'],
   ['uppercase key and value', 'USER-INVOCABLE: FALSE'],
   ['spaces before the colon', 'user-invocable   : false'],
   ['trailing spaces after the value', 'user-invocable: false   '],

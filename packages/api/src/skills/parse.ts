@@ -70,12 +70,13 @@ function hasCaseInsensitive(frontmatter: Record<string, unknown>, key: string): 
 }
 
 /**
- * Recover the text a key carried on its own line, used to cross-check the
- * value the YAML parser resolved. Anchored at column zero so a nested mapping
- * that reuses a flag name (`metadata:` → `  user-invocable: ...`) can't shadow
- * the top-level key; nested keys never reach the top-level bag, so matching one
- * here would attribute an unrelated value to the flag. Returns `undefined` when
- * no line matches, which callers treat as "nothing to cross-check".
+ * Recover the text a key carried on its own line so an empty/comment-only
+ * placeholder can be distinguished from an invalid scalar. Anchored at column
+ * zero so a nested mapping that reuses a flag name (`metadata:` →
+ * `  user-invocable: ...`) can't shadow the top-level key; nested keys never
+ * reach the top-level bag, so matching one here would attribute an unrelated
+ * value to the flag. YAML aliases and tags are resolved by the parser itself,
+ * so their raw spelling is deliberately not used to second-guess a boolean.
  */
 function getRawFrontmatterValue(block: string, key: string): string | undefined {
   const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -111,19 +112,9 @@ function unquoteScalar(value: string): string {
   }
   return value;
 }
-function parseBoolean(value: unknown, rawValue?: string): boolean | undefined {
-  const raw = rawValue === undefined ? undefined : stripInlineComment(rawValue).toLowerCase();
+function parseBoolean(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') {
-    /* The raw line exists only to reject inline text that contradicts the
-       resolved value (an explicit `!!bool` tag, say). When the key's line holds
-       no value of its own — because YAML continues it on the following line, or
-       the whole mapping is indented and the line scan finds nothing — there is
-       nothing to contradict, so trust the boolean the parser resolved. Treating
-       it as absent instead would silently discard a declared flag. */
-    if (raw === undefined || raw.length === 0) {
-      return value;
-    }
-    return raw === 'true' || raw === 'false' ? value : undefined;
+    return value;
   }
   if (typeof value !== 'string') {
     return undefined;
@@ -167,7 +158,7 @@ function readPresentBooleanFlag(
 ): ResolvedBooleanFlag {
   const rawValue = getRawFrontmatterValue(block, key);
   const parsedValue = getCaseInsensitive(frontmatter, key);
-  const value = parseBoolean(parsedValue, rawValue);
+  const value = parseBoolean(parsedValue);
   if (value !== undefined) {
     return { value };
   }
@@ -272,12 +263,12 @@ export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
  * `name`/`description` live in their own columns, and every boolean flag is
  * rewritten from the parser's resolved value under its canonical key.
  *
- * That rewrite is what keeps the bag honest. Values the parser could not read
- * as booleans — a mid-edit `user-invocable:` placeholder, a
- * `disable-model-invocation: yes` typo, a quoted `"true"` — never reach the
- * document as-is, so the bag both passes strict frontmatter validation and
- * agrees with the columns `deriveStructuredFrontmatterFields` derives from it.
- * The legacy `alwaysApply` spelling is folded into `always-apply`.
+ * That rewrite is what keeps the bag honest. Recognized values such as quoted
+ * `"true"` are persisted as canonical booleans, while placeholders and invalid
+ * values never reach the document as-is. The bag therefore passes strict
+ * frontmatter validation and agrees with the columns
+ * `deriveStructuredFrontmatterFields` derives from it. The legacy
+ * `alwaysApply` spelling is folded into `always-apply`.
  *
  * Key order is preserved: a flag is rewritten in place rather than appended,
  * so re-cleaning an unchanged SKILL.md is byte-identical for callers that

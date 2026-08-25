@@ -1210,6 +1210,48 @@ describe('Skill CRUD methods', () => {
       });
     });
 
+    it('merges body flags into a simultaneously supplied bag that omits them', async () => {
+      const { skill } = await methods.createSkill(makeSkillInput({ name: 'mixed-body-bag' }));
+
+      const updated = await methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: skill.version,
+        update: {
+          body: '---\nname: mixed-body-bag\ndescription: A demo skill.\nalways-apply: true\nuser-invocable: false\ndisable-model-invocation: true\n---\n\nBody.',
+          frontmatter: { metadata: { note: 'same request' } },
+        },
+      });
+
+      expect(updated.status).toBe('updated');
+      if (updated.status !== 'updated') return;
+      expect(updated.skill.alwaysApply).toBe(true);
+      expect(updated.skill.userInvocable).toBe(false);
+      expect(updated.skill.disableModelInvocation).toBe(true);
+      expect(updated.skill.frontmatter).toEqual({
+        metadata: { note: 'same request' },
+        'user-invocable': false,
+        'disable-model-invocation': true,
+        'always-apply': true,
+      });
+
+      const bagOnly = await methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: updated.skill.version,
+        update: {
+          frontmatter: {
+            ...(updated.skill.frontmatter ?? {}),
+            metadata: { note: 'later request' },
+          },
+        },
+      });
+
+      expect(bagOnly.status).toBe('updated');
+      if (bagOnly.status !== 'updated') return;
+      expect(bagOnly.skill.alwaysApply).toBe(true);
+      expect(bagOnly.skill.userInvocable).toBe(false);
+      expect(bagOnly.skill.disableModelInvocation).toBe(true);
+    });
+
     it('updateSkill releases a restriction when the body drops the flag line', async () => {
       /* Regression for the sticky-column trap: an imported skill restricted to
          manual-only had no way back — the edit UI sends `body` only, so the

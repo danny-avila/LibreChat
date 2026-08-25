@@ -1385,10 +1385,10 @@ export function createSkillMethods(
     /* Body-level `always-apply:` only needs to be well-formed when a
        higher-precedence source won't override it (see
        `resolveAlwaysApplyFromInput` for the cascade). A caller sending
-       an explicit top-level `alwaysApply` or a structured
-       an always-apply value in structured `frontmatter` has the body value overridden at
-       derivation time, so rejecting them for a typo they aren't relying
-       on would be user-hostile. */
+       an explicit top-level `alwaysApply` or an always-apply value in
+       structured `frontmatter` has the body value overridden at derivation
+       time, so rejecting them for a typo they aren't relying on would be
+       user-hostile. */
     if (
       bodyAlwaysApply?.status === 'invalid' &&
       typeof data.alwaysApply !== 'boolean' &&
@@ -1768,8 +1768,16 @@ export function createSkillMethods(
       ? extractBooleanFlagsFromBody(storedSkillState.body)
       : undefined;
     const bodyFrontmatter =
-      update.body !== undefined && update.frontmatter === undefined
-        ? { ...(isPlainObject(storedSkillState?.frontmatter) ? storedSkillState.frontmatter : {}) }
+      update.body !== undefined
+        ? {
+            ...(update.frontmatter !== undefined
+              ? isPlainObject(frontmatter)
+                ? frontmatter
+                : {}
+              : isPlainObject(storedSkillState?.frontmatter)
+                ? storedSkillState.frontmatter
+                : {}),
+          }
         : undefined;
     let bodyFrontmatterChanged = false;
     const issues: ValidationIssue[] = [];
@@ -1856,8 +1864,8 @@ export function createSkillMethods(
       if (resolved !== undefined) {
         setPayload[column] = resolved;
         if (
-          update.frontmatter === undefined &&
           bodyScan?.[column].status === 'valid' &&
+          typeof bagDerived?.[column] !== 'boolean' &&
           bodyFrontmatter &&
           flag
         ) {
@@ -1938,9 +1946,9 @@ export function createSkillMethods(
     }
     if (
       update.alwaysApply === undefined &&
-      update.frontmatter === undefined &&
       bodyAlwaysApply !== undefined &&
-      bodyFrontmatter
+      bodyFrontmatter &&
+      getAlwaysApplyFrontmatterValue(frontmatter) === undefined
     ) {
       const alwaysApplyFlag = SKILL_BOOLEAN_FLAGS.find(
         (candidate) => candidate.column === 'alwaysApply',

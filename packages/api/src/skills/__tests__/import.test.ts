@@ -534,6 +534,16 @@ describe('parseFrontmatter', () => {
     });
   });
 
+  it('accepts a YAML alias that resolves to a boolean', () => {
+    const raw = `---\nname: n\ndescription: d\ndefault: &off false\nuser-invocable: *off\n---\n\nbody`;
+
+    expect(parseFrontmatter(raw)).toMatchObject({
+      userInvocable: false,
+      invalidBooleans: [],
+      frontmatter: { 'user-invocable': false },
+    });
+  });
+
   it('is case-insensitive on the new flag keys', () => {
     const raw = `---\nname: n\ndescription: d\nUser-Invocable: FALSE\nDISABLE-MODEL-INVOCATION: True\n---\n\nbody`;
     const result = parseFrontmatter(raw);
