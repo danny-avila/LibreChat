@@ -8,11 +8,11 @@ import {
 } from '~/utils/activityLabels';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
+import { cn, getPartKeyIndex } from '~/utils';
 import { SearchContext } from '~/Providers';
 import SiblingHeader from './SiblingHeader';
 import { EmptyText } from './Parts';
 import Container from './Container';
-import { cn } from '~/utils';
 
 export type PartWithIndex = { part: TMessageContentParts; idx: number };
 
@@ -235,7 +235,7 @@ type ParallelContentRendererProps = {
    * sequential before/after stretches consult it: column content already
    * carries per-agent identity.
    */
-  renderResumeAttribution?: (idx: number) => React.ReactNode;
+  renderResumeAttribution?: (idx: number, keyIdx?: number) => React.ReactNode;
   showDecorations?: boolean;
   /** Absolute transcript index represented by `content[0]` in a phase slice. */
   contentIndexOffset?: number;
@@ -302,7 +302,7 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
 
       {/* Sequential content BEFORE parallel sections */}
       {before.flatMap(({ part, idx }) => {
-        const attribution = renderResumeAttribution?.(idx);
+        const attribution = renderResumeAttribution?.(idx, getPartKeyIndex(part, idx));
         const rendered = renderPart(part, idx, false);
         return attribution != null ? [attribution, rendered] : [rendered];
       })}
@@ -324,7 +324,7 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
 
       {/* Sequential content AFTER parallel sections */}
       {after.flatMap(({ part, idx }) => {
-        const attribution = renderResumeAttribution?.(idx);
+        const attribution = renderResumeAttribution?.(idx, getPartKeyIndex(part, idx));
         const rendered = renderPart(part, idx, idx === lastContentIdx);
         return attribution != null ? [attribution, rendered] : [rendered];
       })}
