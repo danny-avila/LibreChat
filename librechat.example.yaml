@@ -809,6 +809,20 @@ endpoints:
       modelDisplayLabel: 'Portkey'
       iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
 
+    # GAIB Token Kiosk Example
+    - name: 'GAIB Token Kiosk'
+      apiKey: '${GAIB_TOKEN_KIOSK_API_KEY}'
+      baseURL: 'https://agent-router.gaib.ai/v1'
+      models:
+        default:
+          - 'claude-3-5-sonnet'
+          - 'gpt-4o'
+          - 'deepseek-r1'
+        fetch: false
+      titleConvo: true
+      titleModel: 'gpt-4o'
+      modelDisplayLabel: 'GAIB Token Kiosk'
+
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
   # bedrock:
