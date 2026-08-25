@@ -15,6 +15,7 @@ import {
   isAskAnswerDraftId,
   isFilesDraftOwnedByThisTab,
   isNewConversationDraftId,
+  mayWriteComposerText,
   migrateFilesDraft,
   migrateTextDraft,
   publishTabAttachmentIds,
@@ -200,26 +201,26 @@ export const useAutoSave = ({
     },
     [textAreaRef],
   );
-
   useEffect(() => {
     // This useEffect is responsible for setting up and cleaning up the auto-save functionality
     // for the text area input. It saves the text to localStorage with a debounce to prevent
     // excessive writes.
-    if (!saveDrafts || conversationId == null || conversationId === '') {
+    const draftStorageId = currentConversationId ?? conversationId;
+    if (!saveDrafts || draftStorageId == null || draftStorageId === '') {
       return;
     }
 
     /** Saves the composer's value AT FLUSH TIME rather than the value captured
-     *  when the event fired. A during-run steer/queue consumes the text and
-     *  clears the composer programmatically, so a write still in flight would
-     *  otherwise land after the submit and restore the just-sent text. */
+     * when the event fired. A during-run steer/queue consumes the text and
+     * clears the composer programmatically, so a write still in flight would
+     * otherwise land after the submit and restore the just-sent text. */
     const saveLatest = () =>
-      setDraft({ id: conversationId, value: textAreaRef?.current?.value ?? '' });
+      setDraft({ id: draftStorageId, value: textAreaRef?.current?.value ?? '' });
 
     /** Use shorter debounce for saving text (25ms) to capture rapid typing */
     const handleInputFast = debounce(saveLatest, 25);
 
-    /** Use longer debounce for clearing empty values (850ms) to prevent accidental draft loss */
+    /** Use longer debounce for clearing empty values (850ms) to prevent accidental clearing */
     const handleInputSlow = debounce(saveLatest, 850);
 
     const eventListener = (e: Event) => {
@@ -251,7 +252,7 @@ export const useAutoSave = ({
       handleInputFast.cancel();
       handleInputSlow.cancel();
     };
-  }, [conversationId, saveDrafts, textAreaRef]);
+  }, [conversationId, currentConversationId, saveDrafts, textAreaRef]);
 
   const prevConversationIdRef = useRef<string | null>(null);
 
@@ -275,14 +276,21 @@ export const useAutoSave = ({
      * storage refuses leaves them behind, and recovery has to read them where they still are. */
     let filesDraftId = conversationId;
     let textDraftId = conversationId;
+    let nextConversationId = conversationId;
 
     try {
       // Check for transition from PENDING_CONVO to a valid conversationId.
       // An ask-answer key is excluded: it is a temporary overlay, not the
-      // pending draft's destination — migrating would delete the very draft
+      // pending draft's destination. Migrating would delete the very draft
       // the answer-phase swap-back is supposed to restore.
+      /** A reload has no previous key to report, but an owned pending draft still needs to remain
+       * active when the destination is blocked by another live tab. */
+      const pendingStorageActive =
+        prevConversationIdRef.current === pendingDraftId ||
+        currentConversationId === pendingDraftId ||
+        currentConversationId == null;
       if (
-        prevConversationIdRef.current === pendingDraftId &&
+        pendingStorageActive &&
         conversationId !== pendingDraftId &&
         !isAskAnswerDraftId(conversationId) &&
         !isNewConversationDraftId(conversationId) &&
@@ -291,18 +299,20 @@ export const useAutoSave = ({
         /** Two tabs running at once share the default pending key, so the record here may be
          * another tab's: migrating first and checking ownership afterwards moved that tab's text
          * and attachments under this conversation and left it nothing to carry over when its own
-         * run finished. This composer's own text still belongs to the conversation it just
-         * became, so it is saved either way. */
+         * run finished. This composer's text moves to the conversation only when that key is
+         * writable; otherwise the pending key remains the active storage location. */
         /** The destination has to be writable too: another tab viewing this same conversation can
          * own its draft with attachments still on screen, and migrating over it would delete that
          * record and restamp the owner. */
         const pendingOwned = isFilesDraftOwnedByThisTab(getFilesDraft(pendingDraftId));
         const destinationOwned = isFilesDraftOwnedByThisTab(getFilesDraft(conversationId));
-        if (pendingOwned && !destinationOwned) {
-          /** Ours to move but nowhere to move it to. Everything stays on the key this tab owns
-           * and is restored from there, rather than being dropped for want of a destination. */
+        const destinationWritable = destinationOwned && mayWriteComposerText(conversationId);
+        if (pendingOwned && !destinationWritable) {
+          /** Ours to move but nowhere to move it to. Keep both the draft and the active storage key
+           * on the pending id until the destination can be written without clobbering its owner. */
           filesDraftId = pendingDraftId;
           textDraftId = pendingDraftId;
+          nextConversationId = pendingDraftId;
         } else if (pendingOwned) {
           // Move the pending text draft to the new conversationId, falling back to the current
           // text area value when there was no pending draft to carry over
@@ -345,8 +355,8 @@ export const useAutoSave = ({
       console.error(e);
     }
 
-    prevConversationIdRef.current = conversationId;
-    setCurrentConversationId(conversationId);
+    prevConversationIdRef.current = nextConversationId;
+    setCurrentConversationId(nextConversationId);
   }, [
     currentConversationId,
     conversationId,
@@ -360,19 +370,14 @@ export const useAutoSave = ({
   ]);
 
   useEffect(() => {
-    if (
-      !saveDrafts ||
-      conversationId == null ||
-      conversationId === '' ||
-      currentConversationId !== conversationId ||
-      fileList == null
-    ) {
+    const draftStorageId = currentConversationId ?? conversationId;
+    if (!saveDrafts || draftStorageId == null || draftStorageId === '' || fileList == null) {
       return;
     }
 
-    const pendingPastes = restoreFiles(conversationId);
+    const pendingPastes = restoreFiles(draftStorageId);
     if (pendingPastes.length > 0) {
-      restoreText(conversationId, pendingPastes);
+      restoreText(draftStorageId, pendingPastes);
     }
   }, [conversationId, currentConversationId, fileList, restoreFiles, restoreText, saveDrafts]);
 
@@ -381,17 +386,13 @@ export const useAutoSave = ({
     // in localStorage whenever the file attachments change.
     // It ensures that the file drafts are kept up-to-date and can be restored
     // when the conversation is revisited.
+    const draftStorageId = currentConversationId ?? conversationId;
 
-    if (
-      !saveDrafts ||
-      conversationId == null ||
-      conversationId === '' ||
-      currentConversationId !== conversationId
-    ) {
+    if (!saveDrafts || draftStorageId == null || draftStorageId === '') {
       return;
     }
 
-    const existingDraft = getFilesDraft(conversationId);
+    const existingDraft = getFilesDraft(draftStorageId);
     if (!isFilesDraftOwnedByThisTab(existingDraft)) {
       return;
     }
@@ -424,7 +425,7 @@ export const useAutoSave = ({
         claimed.add(id);
       }
     }
-    setFilesDraft(conversationId, {
+    setFilesDraft(draftStorageId, {
       fileIds: draftFileIds,
       pastedTextIds,
       pendingPastes: existingDraft.pendingPastes,

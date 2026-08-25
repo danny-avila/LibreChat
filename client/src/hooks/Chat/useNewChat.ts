@@ -15,6 +15,7 @@ import {
   getFilesDraft,
   getNewConversationDraftId,
   collectDraftedAttachmentIds,
+  collectForeignAttachmentClaims,
   collectLiveAttachmentIds,
   endRetainedDeletionPass,
   getPendingDraftId,
@@ -383,10 +384,7 @@ export default function useNewChat({
        * these pastes and even sent it, in which case its draft or its published presence is the
        * only thing standing between the upload and this request. Its own keys and its own presence
        * are excluded, because those hold exactly what this discard is throwing away. */
-      const claimedElsewhere = collectDraftedAttachmentIds([draftId, pendingId]);
-      for (const liveId of collectLiveAttachmentIds({ excludeSelf: true })) {
-        claimedElsewhere.add(liveId);
-      }
+      const claimedElsewhere = collectForeignAttachmentClaims([draftId, pendingId], index);
       const discardable = deletable.filter((record) => !claimedElsewhere.has(record.file_id));
       if (discardable.length > 0) {
         mutateAsync({ files: discardable })

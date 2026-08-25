@@ -21,11 +21,13 @@ const useFileDeletion = ({
   agent_id,
   assistant_id,
   tool_resource,
+  index,
 }: {
   mutateAsync: UseMutateAsyncFunction<t.DeleteFilesResponse, unknown, t.DeleteFilesBody, unknown>;
   agent_id?: string;
   assistant_id?: string;
   tool_resource?: EToolResources;
+  index?: number;
 }) => {
   const [_batch, setFileDeleteBatch] = useState<t.BatchFile[]>([]);
   const setFilesToDelete = useSetFilesToDelete();
@@ -108,7 +110,7 @@ const useFileDeletion = ({
       if (temp_file_id) {
         clearUploadRecovery(temp_file_id);
       }
-      removeTabAttachmentPresence([file_id, temp_file_id].filter(Boolean));
+      removeTabAttachmentPresence([file_id, temp_file_id].filter(Boolean), index);
       const progress = _file['progress'] ?? 1;
 
       if (progress < 1) {
@@ -152,7 +154,7 @@ const useFileDeletion = ({
         return newBatch;
       });
     },
-    [debouncedDelete, setFilesToDelete, agent_id, assistant_id, tool_resource],
+    [debouncedDelete, setFilesToDelete, agent_id, assistant_id, tool_resource, index],
   );
 
   const deleteFiles = useCallback(
@@ -187,6 +189,7 @@ const useFileDeletion = ({
       }
       removeTabAttachmentPresence(
         batchFiles.flatMap((f) => [f.file_id, f.temp_file_id].filter(Boolean) as string[]),
+        index,
       );
 
       if (setFiles) {
@@ -214,7 +217,7 @@ const useFileDeletion = ({
         return newBatch;
       });
     },
-    [debouncedDelete, setFilesToDelete, agent_id, assistant_id],
+    [debouncedDelete, setFilesToDelete, agent_id, assistant_id, index],
   );
 
   return { deleteFile, deleteFiles };

@@ -735,7 +735,69 @@ describe('useAutoSave — file cache updates', () => {
     expect(mockSetValue).not.toHaveBeenCalledWith('text', 'other tab text');
     expect(getFilesDraft('convo-2').tabId).toBe('other-tab');
   });
+  it('keeps autosaving to the pending key while the destination is owned by another live tab', () => {
+    jest.useFakeTimers();
+    markTabLive('other-tab');
+    const savedDrafts = new Map<string, string>();
+    mockGetDraft.mockImplementation((id: string) => savedDrafts.get(id) ?? '');
+    mockSetDraft.mockImplementation(({ id, value }: { id: string; value?: string }) => {
+      if (value != null && value.length > 1) {
+        savedDrafts.set(id, value);
+      }
+    });
+    const textAreaRef = makeTextAreaRef('queued draft');
+    const { rerender, unmount } = renderHook(
+      ({ isSubmitting }: { isSubmitting: boolean }) =>
+        useAutoSave({
+          isSubmitting,
+          conversationId: 'convo-2',
+          textAreaRef,
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      { initialProps: { isSubmitting: true } },
+    );
 
+    setFilesDraft(Constants.PENDING_CONVO, {
+      fileIds: ['queued-file'],
+      pendingPastes: {},
+    });
+    setFilesDraft('convo-2', {
+      fileIds: ['other-tab-file'],
+      pendingPastes: {},
+      tabId: 'other-tab',
+    });
+
+    act(() => {
+      rerender({ isSubmitting: false });
+    });
+
+    const inputListeners = (textAreaRef.current!.addEventListener as jest.Mock).mock.calls.filter(
+      ([event]) => event === 'input',
+    );
+    const inputListener = inputListeners[inputListeners.length - 1][1] as (event: unknown) => void;
+    textAreaRef.current!.value = 'later edit';
+    act(() => {
+      inputListener({ target: { value: 'later edit' } });
+      jest.advanceTimersByTime(50);
+    });
+
+    expect(savedDrafts.get(Constants.PENDING_CONVO)).toBe('later edit');
+
+    unmount();
+    mockSetValue.mockClear();
+    renderHook(() =>
+      useAutoSave({
+        isSubmitting: false,
+        conversationId: 'convo-2',
+        textAreaRef: makeTextAreaRef(),
+        files: new Map(),
+        setFiles: jest.fn(),
+      }),
+    );
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'later edit');
+    jest.useRealTimers();
+  });
   it('restores a files draft whose owning tab has closed', () => {
     /** A closed tab's id can never be presented again, so without reclaiming it the draft and
      * the text saved beside it would stay unreachable for the rest of the profile's life. */

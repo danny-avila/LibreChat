@@ -621,6 +621,7 @@ const ChatForm = memo(function ChatForm({
                 setBadges={setBadges}
               />
               <FileFormChat
+                index={index}
                 conversation={conversation}
                 files={files}
                 setFiles={setFiles}

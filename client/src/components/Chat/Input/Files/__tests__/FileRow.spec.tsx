@@ -106,6 +106,27 @@ describe('FileRow', () => {
     );
   };
 
+  it('passes the composer pane index to file deletion', () => {
+    const file = createMockFile();
+    const filesMap = new Map<string, ExtendedFile>();
+    filesMap.set(file.file_id, file);
+
+    render(
+      <FileRow
+        files={filesMap}
+        setFiles={mockSetFiles}
+        setFilesLoading={mockSetFilesLoading}
+        index={1}
+      />,
+    );
+
+    expect(mockUseFileDeletion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        index: 1,
+      }),
+    );
+  });
+
   describe('Image URL Selection Logic', () => {
     it('should prefer cached preview over filepath when upload is complete', () => {
       const file = createMockFile({

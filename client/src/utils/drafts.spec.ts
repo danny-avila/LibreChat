@@ -295,6 +295,25 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     expect(first).toBe(getBrowserTabId());
   });
 
+  it('still attributes a tab when session storage is unusable', () => {
+    /** Session storage can be blocked or quota-exhausted while localStorage still works. Returning
+     * an empty id left the document unattributed, and every ownership and liveness guard reads
+     * that as "no owner", so tabs would destructively clear each other's attachment-backed drafts.
+     * An id that lasts only for this document still tells the open tabs apart. */
+    const getItem = jest.spyOn(Storage.prototype, 'getItem').mockImplementation((key: string) => {
+      if (key === 'librechat-tab-session') {
+        throw new Error('session storage blocked');
+      }
+      return null;
+    });
+
+    try {
+      expect(getBrowserTabId()).not.toBe('');
+    } finally {
+      getItem.mockRestore();
+    }
+  });
+
   /** jsdom's performance object has no navigation-timing entries at all, so the stub installs
    * the method rather than spying on it. */
   const withNavigationType = (type: string, run: () => void): void => {
@@ -489,7 +508,7 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     removeTabAttachmentPresence(['shared-file']);
 
     expect(collectLiveAttachmentIds().has('shared-file')).toBe(true);
-    expect(collectLiveAttachmentIds({ excludeSelf: true }).has('shared-file')).toBe(true);
+    expect(collectLiveAttachmentIds({ excludeOwnPane: 'tab' }).has('shared-file')).toBe(true);
   });
 
   it('keeps a submitted id protected when a later chip of it is removed', () => {
@@ -514,6 +533,37 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     removeTabAttachmentPresence(['shared-across-panes'], 0);
 
     expect(collectLiveAttachmentIds().has('shared-across-panes')).toBe(true);
+  });
+
+  it("reports a sibling pane's chip as claimed elsewhere", () => {
+    /** Excluding the whole tab hid the other composer, so the pane doing the discarding deleted a
+     * file the sibling still had on screen. Side-by-side panes are as independent here as separate
+     * tabs; only the discarding pane's own entry is left out. */
+    publishTabAttachmentIds(0, ['pane-0-file']);
+    publishTabAttachmentIds(1, ['pane-1-file']);
+
+    const claimed = collectLiveAttachmentIds({ excludeOwnPane: 0 });
+
+    expect(claimed.has('pane-1-file')).toBe(true);
+    expect(claimed.has('pane-0-file')).toBe(false);
+  });
+
+  it('refreshes liveness when a resumed tab publishes an attachment', () => {
+    /** Publishing is a user-visible act, so it proves the tab is running. Rewriting the record
+     * with its expired seenAt left a resumed tab looking dead until its next interval tick, long
+     * enough for another tab's cleanup to delete the file under the chip just added. */
+    const tabId = getBrowserTabId();
+    publishTabAttachmentIds(0, ['first-file']);
+    const presence = JSON.parse(localStorage.getItem(`librechat-live-tab:${tabId}`) ?? '{}');
+    localStorage.setItem(
+      `librechat-live-tab:${tabId}`,
+      JSON.stringify({ ...presence, seenAt: Date.now() - 600_000 }),
+    );
+
+    publishTabAttachmentIds(0, ['first-file', 'just-added']);
+
+    expect(isTabLive(tabId)).toBe(true);
+    expect(collectLiveAttachmentIds().has('just-added')).toBe(true);
   });
 
   it('keeps its own published ids through a heartbeat that resumes past the window', () => {

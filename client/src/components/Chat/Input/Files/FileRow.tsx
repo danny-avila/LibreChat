@@ -26,6 +26,7 @@ export default function FileRow({
   assistant_id,
   agent_id,
   tool_resource,
+  index,
   fileFilter,
   isRTL = false,
   Wrapper,
@@ -42,6 +43,7 @@ export default function FileRow({
   assistant_id?: string;
   agent_id?: string;
   tool_resource?: EToolResources;
+  index?: number;
   isRTL?: boolean;
   Wrapper?: React.FC<{ children: React.ReactNode }>;
   /** Marks chips the composer generated from a long paste. Provenance comes from the caller's
@@ -78,7 +80,13 @@ export default function FileRow({
     },
   });
 
-  const { deleteFile } = useFileDeletion({ mutateAsync, agent_id, assistant_id, tool_resource });
+  const { deleteFile } = useFileDeletion({
+    mutateAsync,
+    agent_id,
+    assistant_id,
+    tool_resource,
+    index,
+  });
 
   useEffect(() => {
     if (!setFilesLoading) return;
@@ -133,7 +141,7 @@ export default function FileRow({
             },
             { map: new Map(), uniqueFiles: [] as ExtendedFile[] },
           )
-          .uniqueFiles.map((file: ExtendedFile, index: number) => {
+          .uniqueFiles.map((file: ExtendedFile, fileIndex: number) => {
             const handleDelete = () => {
               if (abortUpload && file.progress < 1) {
                 abortUpload(file.file_id);
@@ -159,7 +167,7 @@ export default function FileRow({
 
             return (
               <div
-                key={index}
+                key={fileIndex}
                 style={{
                   flexBasis: '70px',
                   flexGrow: 0,

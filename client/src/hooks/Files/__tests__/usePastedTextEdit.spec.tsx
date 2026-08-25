@@ -26,9 +26,10 @@ const mockRouteFiles = jest.fn();
 const mockFileDownload = jest.fn();
 const mockMarkPastedTextFile = jest.fn();
 const mockRetainFileDeletion = jest.fn();
+const mockRemoveTabAttachmentPresence = jest.fn();
 const mockAddPastedTextDraftFile = jest.fn();
 const mockCollectForeignAttachmentClaims = jest.fn(
-  (excludeDraftIds: string[] = []): Set<string> => {
+  (excludeDraftIds: string[] = [], _excludeOwnPane: number | 'tab' = 'tab'): Set<string> => {
     const excluded = new Set(excludeDraftIds);
     const claims = new Set<string>();
     for (const [draftId, draft] of Object.entries(mockState.draftsById)) {
@@ -107,8 +108,10 @@ jest.mock('~/data-provider', () => ({
 }));
 
 jest.mock('~/utils', () => ({
-  collectForeignAttachmentClaims: (excludeDraftIds: string[] = []) =>
-    mockCollectForeignAttachmentClaims(excludeDraftIds),
+  collectForeignAttachmentClaims: (
+    excludeDraftIds: string[] = [],
+    excludeOwnPane: number | 'tab' = 'tab',
+  ) => mockCollectForeignAttachmentClaims(excludeDraftIds, excludeOwnPane),
   forceResize: jest.fn(),
   getNewConversationDraftToken: () => mockState.draftToken,
   getComposerDraftId: (index: number, conversationId: string | null, isSubmitting = false) =>
@@ -122,6 +125,7 @@ jest.mock('~/utils', () => ({
   isPasteSubmitted: (fileId?: string | null) =>
     fileId != null && mockState.submittedPasteIds.has(fileId),
   markPastedTextFile: (...args: unknown[]) => mockMarkPastedTextFile(...args),
+  removeTabAttachmentPresence: (...args: unknown[]) => mockRemoveTabAttachmentPresence(...args),
   retainFileDeletion: (...args: unknown[]) => mockRetainFileDeletion(...args),
   addPastedTextDraftFile: (...args: unknown[]) => mockAddPastedTextDraftFile(...args),
   nextPastedTextFilename: jest.requireActual('~/utils/files').nextPastedTextFilename,
@@ -171,12 +175,13 @@ describe('usePastedTextEdit', () => {
     );
   });
 
-  const renderEditor = (files?: Map<string, ExtendedFile>) =>
+  const renderEditor = (files?: Map<string, ExtendedFile>, index = 0, setFiles = jest.fn()) =>
     renderHook(
       ({ files: composerFiles }) =>
         usePastedTextEdit({
           files: composerFiles,
-          setFiles: jest.fn(),
+          index,
+          setFiles,
           textAreaRef: { current: null },
         }),
       {
@@ -222,6 +227,38 @@ describe('usePastedTextEdit', () => {
       file: expect.objectContaining({ file_id: 'pasted-file' }),
       setFiles: expect.anything(),
     });
+  });
+  it('removes a live paste claimed by another tab without scheduling deletion or retry', async () => {
+    const live = pastedFile({ file_id: 'claimed-live-file' });
+    mockState.draftsById['other-tab-draft'] = {
+      fileIds: ['claimed-live-file'],
+      pendingPastes: {},
+      pastedTextIds: [],
+      tabId: 'other-tab',
+    };
+    let currentFiles = new Map<string, ExtendedFile>([['claimed-live-file', live]]);
+    const setFiles = jest.fn(
+      (update: (current: Map<string, ExtendedFile>) => Map<string, ExtendedFile>) => {
+        currentFiles = update(currentFiles);
+      },
+    );
+    const editor = renderEditor(currentFiles, 2, setFiles);
+
+    await act(async () => {
+      await editor.result.current.openEditor(live);
+    });
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+    await act(async () => {
+      capturedLifecycle?.onSuccess?.('replacement-file');
+    });
+
+    expect(currentFiles.has('claimed-live-file')).toBe(false);
+    expect(mockDeleteFile).not.toHaveBeenCalled();
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
+    expect(mockRetainFileDeletion).not.toHaveBeenCalled();
+    expect(mockCollectForeignAttachmentClaims).toHaveBeenCalledWith(expect.any(Array), 2);
   });
 
   it('leaves the original attached when the replacement is rejected', async () => {
@@ -403,13 +440,13 @@ describe('usePastedTextEdit', () => {
       capturedLifecycle?.onSuccess?.('replacement-file');
     });
 
-    expect(mockDeleteFile).toHaveBeenCalledTimes(1);
+    expect(mockDeleteFile).not.toHaveBeenCalled();
     expect(mockDeleteFiles).not.toHaveBeenCalled();
     expect(mockRetainFileDeletion).not.toHaveBeenCalled();
-    expect(mockCollectForeignAttachmentClaims).toHaveBeenCalledWith([
-      'conversation-a:0:idle',
-      'conversation-a:0:pending',
-    ]);
+    expect(mockCollectForeignAttachmentClaims).toHaveBeenCalledWith(
+      ['conversation-a:0:idle', 'conversation-a:0:pending'],
+      0,
+    );
   });
 
   it('spares a restored paste whose draft another tab wrote last', async () => {

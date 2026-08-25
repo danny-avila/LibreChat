@@ -2,7 +2,12 @@ import React, { useState } from 'react';
 import { FileSources, EToolResources } from 'librechat-data-provider';
 import { render, screen, act, renderHook } from '@testing-library/react';
 import type { ExtendedFile } from '~/common';
-import { clearRetainedFileDeletion, takeRetainedFileDeletions } from '~/utils';
+import {
+  clearRetainedFileDeletion,
+  collectLiveAttachmentIds,
+  publishTabAttachmentIds,
+  takeRetainedFileDeletions,
+} from '~/utils';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import useFileDeletion from '../useFileDeletion';
 
@@ -207,5 +212,33 @@ describe('useFileDeletion', () => {
 
     expect(mockClearUploadRecovery).toHaveBeenCalledWith('pending-file');
     expect(mockMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("keeps a sibling pane's published claim when pane 0 removes its chip", () => {
+    publishTabAttachmentIds(0, ['shared-file']);
+    publishTabAttachmentIds(1, ['shared-file']);
+    const { result } = renderHook(() =>
+      useFileDeletion({ mutateAsync: mockMutateAsync, index: 0 }),
+    );
+
+    act(() => {
+      result.current.deleteFile({ file: makeFile('shared-file') });
+    });
+
+    expect(collectLiveAttachmentIds().has('shared-file')).toBe(true);
+  });
+
+  it("keeps a sibling pane's published claim when pane 0 removes a batch", () => {
+    publishTabAttachmentIds(0, ['batch-shared-file']);
+    publishTabAttachmentIds(1, ['batch-shared-file']);
+    const { result } = renderHook(() =>
+      useFileDeletion({ mutateAsync: mockMutateAsync, index: 0 }),
+    );
+
+    act(() => {
+      result.current.deleteFiles({ files: [makeFile('batch-shared-file')] });
+    });
+
+    expect(collectLiveAttachmentIds().has('batch-shared-file')).toBe(true);
   });
 });

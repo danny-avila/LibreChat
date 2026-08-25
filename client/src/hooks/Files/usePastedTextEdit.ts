@@ -21,6 +21,7 @@ import {
   getFilesDraftCached,
   markPastedTextFile,
   nextPastedTextFilename,
+  removeTabAttachmentPresence,
   retainFileDeletion,
 } from '~/utils';
 import { useDeleteFilesMutation, useGetFiles } from '~/data-provider';
@@ -212,14 +213,30 @@ export default function usePastedTextEdit({
 
   /** Removes the chip locally and schedules the upload's deletion. A paste restored from a
    * draft carries `attached: true`, which makes `deleteFile` keep the server record because a
-   * restored file is normally shared. Only a paste this composer's own draft claims is deleted
-   * explicitly: the session registry also remembers ids of pastes that were already sent and
-   * re-attached from the library, and a draft claim is only this tab's when the draft's stamp
-   * says so, because another tab can restore the very same record. Both draft keys are read,
-   * since a response finishing mid-edit migrates the record between them. */
+   * restored file is normally shared. Foreign claims are checked before either path can schedule
+   * deletion, because another tab or composer pane may still reference the upload. Both draft keys
+   * are read, since a response finishing mid-edit migrates the record between them. */
   const detach = useCallback(
     (file: ExtendedFile) => {
       const restored = file.attached === true;
+      const attachmentIds = [file.file_id, file.temp_file_id].filter(
+        (id): id is string => id != null && id !== '',
+      );
+      const draftIds = [
+        getComposerDraftId(index, conversationIdRef.current, isSubmitting),
+        getComposerDraftId(index, conversationIdRef.current, !isSubmitting),
+      ];
+      const claimedElsewhere = collectForeignAttachmentClaims(draftIds, index);
+      if (attachmentIds.some((id) => claimedElsewhere.has(id))) {
+        removeTabAttachmentPresence(attachmentIds, index);
+        setFiles((currentFiles) => {
+          const updatedFiles = new Map(currentFiles);
+          attachmentIds.forEach((id) => updatedFiles.delete(id));
+          return updatedFiles;
+        });
+        return;
+      }
+
       deleteFile({ file, setFiles });
       if (!restored || file.progress < 1) {
         return;
@@ -227,7 +244,7 @@ export default function usePastedTextEdit({
       /** A submitted paste is still referenced by the message that consumed it. Stop and error
        * paths intentionally leave its draft provenance behind, so detaching a restored chip must
        * not mistake that stale claim for ownership and delete the server record. */
-      if ([file.file_id, file.temp_file_id].some((id) => isPasteSubmitted(id))) {
+      if (attachmentIds.some((id) => isPasteSubmitted(id))) {
         return;
       }
       const draftOwned = [isSubmitting, !isSubmitting].some((submitting) => {
@@ -238,26 +255,9 @@ export default function usePastedTextEdit({
           return false;
         }
         const claimed = draft.pastedTextIds ?? [];
-        return [file.file_id, file.temp_file_id].some(
-          (id) => id != null && id !== '' && claimed.includes(id),
-        );
+        return attachmentIds.some((id) => claimed.includes(id));
       });
       if (draftOwned) {
-        const draftIds = [
-          getComposerDraftId(index, conversationIdRef.current, isSubmitting),
-          getComposerDraftId(index, conversationIdRef.current, !isSubmitting),
-        ];
-        /** The submitted marker is tab-scoped, so it cannot reveal that another tab has already
-         * consumed or reattached this file. Shared draft and live claims must protect either
-         * file identity before this restored record is deleted. */
-        const claimedElsewhere = collectForeignAttachmentClaims(draftIds);
-        if (
-          [file.file_id, file.temp_file_id].some(
-            (id) => id != null && id !== '' && claimedElsewhere.has(id),
-          )
-        ) {
-          return;
-        }
         const deletion = {
           file_id: file.file_id,
           embedded: file.embedded ?? false,

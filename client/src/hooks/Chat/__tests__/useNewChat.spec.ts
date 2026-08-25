@@ -120,12 +120,40 @@ jest.mock('~/utils', () => ({
   scheduleRetainedFileDeletionRetry: () => mockScheduleRetainedRetry(),
   isPastedTextFileMarked: (fileId: string) => mockState.markedPasteIds.includes(fileId),
   isPasteSubmitted: (fileId: string) => mockState.submittedPasteIds.includes(fileId),
-  collectLiveAttachmentIds: ({ excludeSelf = false } = {}) =>
+  collectLiveAttachmentIds: ({ excludeOwnPane }: { excludeOwnPane?: number | 'tab' } = {}) =>
     new Set<string>(
-      excludeSelf
-        ? mockState.foreignLiveAttachmentIds
-        : [...mockState.liveAttachmentIds, ...mockState.foreignLiveAttachmentIds],
+      excludeOwnPane === undefined
+        ? [...mockState.liveAttachmentIds, ...mockState.foreignLiveAttachmentIds]
+        : mockState.foreignLiveAttachmentIds,
     ),
+  /** The union every deletion path consults: other tabs' drafts and other tabs' live presence,
+   * with the caller's own discarded draft keys left out. */
+  collectForeignAttachmentClaims: (excludeDraftIds: string[] = []) => {
+    const ids = new Set<string>(mockState.foreignDraftedIds);
+    const excluded = new Set(excludeDraftIds);
+    const own: [string, FilesDraft][] = [
+      ['new', mockState.filesDraft],
+      ['pending', mockState.pendingFilesDraft],
+    ];
+    for (const [draftId, draft] of own) {
+      if (excluded.has(draftId)) {
+        continue;
+      }
+      for (const fileId of draft.fileIds) {
+        ids.add(fileId);
+      }
+      for (const pasteId of draft.pastedTextIds ?? []) {
+        ids.add(pasteId);
+      }
+      for (const pendingId of Object.keys(draft.pendingPastes)) {
+        ids.add(pendingId);
+      }
+    }
+    for (const id of mockState.foreignLiveAttachmentIds) {
+      ids.add(id);
+    }
+    return ids;
+  },
   removeTabAttachmentPresence: (ids: string[]) => {
     const idSet = new Set(ids);
     mockState.liveAttachmentIds = mockState.liveAttachmentIds.filter((id) => !idSet.has(id));

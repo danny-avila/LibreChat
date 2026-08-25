@@ -471,8 +471,13 @@ const resolveBrowserTabId = (): string => {
     sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, documentTabId);
     return documentTabId;
   } catch {
-    // Privacy-blocked storage cannot attribute drafts to a tab; share one identity instead.
-    return '';
+    /** Session storage can be blocked or full while `localStorage` still works. Returning '' here
+     * gave the document no identity at all, and every ownership and liveness guard reads '' as
+     * unattributed, so tabs would overwrite and destructively clear each other's attachment-backed
+     * drafts. An id that lives only for this document still tells the open tabs apart; all that is
+     * lost is recognising itself after a reload. */
+    documentTabId = documentTabId ?? mintTabId();
+    return documentTabId;
   }
 };
 
@@ -651,9 +656,13 @@ export const publishTabAttachmentIds = (index: number, ids: string[]): void => {
   for (const id of ids) {
     recent[id] = now;
   }
+  /** Publishing is a user-visible act, so it is proof this tab is running right now. Carrying the
+   * old `seenAt` over meant a tab whose timers had been paused past the liveness window published
+   * a chip and stayed expired until its next interval tick, long enough for another tab's cleanup
+   * to sweep the record and delete the file under the chip that had just appeared. A document
+   * publishing attachments is also plainly not frozen in the back-forward cache. */
   writeTabPresence(tabId, {
-    seenAt: existing?.seenAt ?? now,
-    ...(existing?.suspended === true ? { suspended: true } : {}),
+    seenAt: now,
     ...(Object.keys(attachments).length > 0 ? { attachments } : {}),
     ...(Object.keys(recent).length > 0 ? { recent } : {}),
   });
@@ -736,21 +745,35 @@ export const removeTabAttachmentPresence = (ids: string[], index?: number): void
 };
 
 /** Every attachment id a live tab's composers are currently showing, or held recently enough to
- * still count. `excludeSelf` narrows that to the other tabs: a discard already knows what its own
- * composer holds, because that is precisely what it is discarding, so counting itself would
- * protect every file from its own cleanup. */
-export const collectLiveAttachmentIds = ({ excludeSelf = false } = {}): Set<string> => {
+ * still count.
+ *
+ * `excludeOwnPane` is how a discard asks what everyone *else* is holding. It cannot count its own
+ * pane, because that pane's chips are precisely what it is discarding, and it cannot count this
+ * tab's `recent` either, since that map is flat and cannot say which pane an id came from. Every
+ * other pane of this tab does count: side-by-side composers are as independent as separate tabs
+ * here, and excluding the whole tab deleted files out from under a sibling pane's live chip.
+ * Pass `'tab'` when the caller speaks for the tab as a whole rather than one pane. */
+export const collectLiveAttachmentIds = ({
+  excludeOwnPane,
+}: { excludeOwnPane?: number | 'tab' } = {}): Set<string> => {
   const ids = new Set<string>();
   const now = Date.now();
-  const ownTabId = excludeSelf ? getBrowserTabId() : '';
+  const ownTabId = excludeOwnPane === undefined ? '' : getBrowserTabId();
   for (const [tabId, presence] of readLiveTabs()) {
-    if (excludeSelf && tabId === ownTabId) {
+    const isOwnTab = ownTabId !== '' && tabId === ownTabId;
+    if (isOwnTab && excludeOwnPane === 'tab') {
       continue;
     }
-    for (const paneIds of Object.values(presence.attachments ?? {})) {
+    for (const [pane, paneIds] of Object.entries(presence.attachments ?? {})) {
+      if (isOwnTab && pane === `${excludeOwnPane}`) {
+        continue;
+      }
       for (const id of paneIds) {
         ids.add(id);
       }
+    }
+    if (isOwnTab) {
+      continue;
     }
     for (const [id, seenAt] of Object.entries(presence.recent ?? {})) {
       if (now - seenAt <= RECENT_ATTACHMENT_WINDOW_MS) {
@@ -968,9 +991,12 @@ export const collectDraftedAttachmentIds = (excludeIds: string[] = []): Set<stri
  * library file, or sent it, and its claim is the only thing standing between that file and the
  * request. One helper rather than a union rebuilt at each deletion site: the guard was missed at
  * three of them precisely because each site assembled it by hand. */
-export const collectForeignAttachmentClaims = (excludeDraftIds: string[] = []): Set<string> => {
+export const collectForeignAttachmentClaims = (
+  excludeDraftIds: string[] = [],
+  excludeOwnPane: number | 'tab' = 'tab',
+): Set<string> => {
   const ids = collectDraftedAttachmentIds(excludeDraftIds);
-  for (const liveId of collectLiveAttachmentIds({ excludeSelf: true })) {
+  for (const liveId of collectLiveAttachmentIds({ excludeOwnPane })) {
     ids.add(liveId);
   }
   return ids;

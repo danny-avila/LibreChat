@@ -433,10 +433,10 @@ const useNewConvo = (index = 0) => {
            * message may still reference the same server upload. The discarded draft keys are
            * excluded so this pane's own claims do not block its cleanup, and skipped records are
            * not retained for retry because they are not this pane's to delete. */
-          const claimedElsewhere = collectForeignAttachmentClaims([
-            getNewConversationDraftId(index),
-            getPendingDraftId(index),
-          ]);
+          const claimedElsewhere = collectForeignAttachmentClaims(
+            [getNewConversationDraftId(index), getPendingDraftId(index)],
+            index,
+          );
           const deletableFiles = filesToDelete.filter(
             (record) => !claimedElsewhere.has(record.file_id),
           );

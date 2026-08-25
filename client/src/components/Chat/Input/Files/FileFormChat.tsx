@@ -16,6 +16,7 @@ const ChatFileRowWrapper = ({ children }: { children: React.ReactNode }) => (
 );
 
 function FileFormChat({
+  index,
   conversation,
   files,
   setFiles,
@@ -25,6 +26,7 @@ function FileFormChat({
   onEditPastedText,
   onMovePastedTextInline,
 }: {
+  index: number;
   conversation: TConversation | null;
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
@@ -53,6 +55,7 @@ function FileFormChat({
     <>
       <FileRow
         files={files}
+        index={index}
         setFiles={setFiles}
         abortUpload={abortUpload}
         setFilesLoading={setFilesLoading}
