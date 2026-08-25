@@ -302,6 +302,10 @@ const getMCPTools = async (req, res) => {
               name: toolName,
               pluginKey: toolKey,
               description: toolData.function.description || '',
+              /** Upstream identity for keys that stripped a redundant
+               *  server-name prefix — the agent editor migrates legacy
+               *  persisted ids only when this proves the same tool. */
+              ...(toolData.serverToolName != null && { serverToolName: toolData.serverToolName }),
             });
           }
         }

@@ -117,7 +117,15 @@ export default function ProgressText({
         <span className={cn(showShimmer ? 'shimmer' : '', 'min-w-0 truncate font-medium')}>
           {text}
         </span>
-        {subtitle && <span className="font-normal text-text-secondary">{subtitle}</span>}
+        {/* The label names the card and stays whole; a subtitle can be
+            arbitrary authored text (a question, a server name), so it takes
+            essentially all of the shrink and ellipsizes instead of pushing
+            the line past the message column. */}
+        {subtitle && (
+          <span className="min-w-0 shrink-[100] truncate font-normal text-text-secondary">
+            {subtitle}
+          </span>
+        )}
         {errorSuffix && <span className="font-normal text-status-error">· {errorSuffix}</span>}
         {duration && (
           <>

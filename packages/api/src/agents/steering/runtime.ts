@@ -9,6 +9,7 @@ import type {
 } from '@librechat/agents';
 import type { SteerQueueItem } from '~/stream/interfaces/IJobStore';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
+import { getReferencedQuotes, mergeQuotedText } from '~/utils';
 
 type SteerDrainOutput = HookOutputByEvent['PostToolBatch'];
 
@@ -168,9 +169,14 @@ async function drainAndBuildInjections(opts: SteerDrainHookOptions): Promise<Inj
           );
         }
       }
+      /** The media path already merged quotes into its text part; the plain
+       *  path (no files, or a degraded encode) merges here so the excerpts
+       *  reach the model exactly like `prependQuotes` on a normal turn. */
+      const quotes = getReferencedQuotes(item.quotes);
+      const textContent = quotes != null ? mergeQuotedText(item.text, quotes) : item.text;
       injectedMessages.push({
         role: 'user' as const,
-        content: (media?.content ?? item.text) as InjectedMessage['content'],
+        content: (media?.content ?? textContent) as InjectedMessage['content'],
         source: 'steer' as const,
       });
     }

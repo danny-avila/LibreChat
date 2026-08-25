@@ -21,6 +21,15 @@ const {
 const { updateUser, findUser, isAgentTriggerPrincipalActive } = require('~/models');
 const getLogStores = require('~/cache/getLogStores');
 
+function decodeJwtExpiry(token) {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    return typeof payload.exp === 'number' ? payload.exp : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const getOpenIdJwtAudience = () => {
   const parsedAudience = (process.env.OPENID_AUDIENCE ?? '')
     .split(',')
@@ -224,11 +233,13 @@ const openIdJwtLogin = (openIdConfig) => {
             refreshToken = refreshToken || parsedCookies.refreshToken;
           }
 
+          const resolvedAccessToken = accessToken || rawToken;
           user.federatedTokens = {
-            access_token: accessToken || rawToken,
+            access_token: resolvedAccessToken,
             id_token: idToken,
             refresh_token: refreshToken,
-            expires_at: payload.exp,
+            expires_at:
+              resolvedAccessToken === rawToken ? payload.exp : decodeJwtExpiry(resolvedAccessToken),
           };
 
           done(null, user);

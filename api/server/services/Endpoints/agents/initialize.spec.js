@@ -49,6 +49,7 @@ const mockArtifactToolEndCallback = jest.fn();
 jest.mock('~/server/controllers/agents/callbacks', () => ({
   createToolEndCallback: jest.fn(() => mockArtifactToolEndCallback),
   createAttachmentEmitter: jest.fn(() => jest.fn()),
+  createPtcProgressEmitter: jest.fn(() => jest.fn()),
   createBackgroundCodeResultHandler: jest.fn(() => jest.fn()),
   getDefaultHandlers: jest.fn((opts) => {
     capturedDefaultHandlerOptions = opts;
@@ -138,6 +139,7 @@ describe('initializeClient — processAgent ACL gate', () => {
   const makeReq = () => ({
     user: { id: testUser._id.toString(), role: 'USER' },
     body: { conversationId: 'conv_1', files: [] },
+    resolvedConversation: null,
     config: { endpoints: {} },
     _resumableStreamId: null,
   });
@@ -205,6 +207,7 @@ describe('initializeClient — processAgent ACL gate', () => {
   it('threads the owning job epoch into resumable event handlers', async () => {
     const {
       createAttachmentEmitter,
+      createPtcProgressEmitter,
       createToolEndCallback,
     } = require('~/server/controllers/agents/callbacks');
     mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
@@ -236,6 +239,13 @@ describe('initializeClient — processAgent ACL gate', () => {
       streamId: 'conv_1',
       jobCreatedAt: 1234,
     });
+    /** The PTC trace emitter is generation-fenced like every other resumable
+     *  emitter; a stale epoch would leak one run's inner calls into the next. */
+    expect(createPtcProgressEmitter).toHaveBeenCalledWith({
+      res: {},
+      streamId: 'conv_1',
+      jobCreatedAt: 1234,
+    });
 
     mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [], configurable: {} });
     await capturedToolExecuteOptions.loadTools([], PRIMARY_ID);
@@ -245,6 +255,46 @@ describe('initializeClient — processAgent ACL gate', () => {
         jobCreatedAt: 1234,
       }),
     );
+  });
+
+  it('publishes event-root activity through the owning child task stream', async () => {
+    const subagentThreadTaskStore = require('./subagentThreadStore');
+    const publishTaskActivity = jest
+      .spyOn(subagentThreadTaskStore, 'publishTaskActivity')
+      .mockResolvedValueOnce(undefined);
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const req = makeReq();
+    req._resumableStreamId = 'child-conversation';
+    req.body.conversationId = 'child-conversation';
+    req._agentEventTaskId = 'event-task';
+    req._agentEventBindingParentConversationId = 'parent-conversation';
+    req._agentEventBindingParentAgentId = 'parent-agent';
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(capturedDefaultHandlerOptions.eventChildActivity).toEqual(
+      expect.objectContaining({
+        runId: 'child-conversation',
+        parentRunId: 'parent-conversation',
+        subagentRunId: 'event-task',
+        subagentType: PRIMARY_ID,
+        subagentAgentId: PRIMARY_ID,
+        parentAgentId: 'parent-agent',
+      }),
+    );
+    await capturedDefaultHandlerOptions.eventChildActivity.publish({
+      phase: 'writing',
+      label: 'Drafting response',
+    });
+    expect(publishTaskActivity).toHaveBeenCalledWith('child-conversation', 'event-task', {
+      phase: 'writing',
+      label: 'Drafting response',
+    });
   });
 
   it('propagates an expected-MCP-tools failure from the runtime tool loader', async () => {
@@ -616,7 +666,7 @@ describe('initializeClient — subagent loading', () => {
     agentClientArgs = undefined;
     capturedToolExecuteOptions = undefined;
     mockLoadToolsForExecution.mockReset();
-    mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [] });
+    mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [], configurable: {} });
 
     testUser = await User.create({
       email: 'subagent@example.com',
@@ -645,6 +695,7 @@ describe('initializeClient — subagent loading', () => {
   const makeSubagentReq = () => ({
     user: { id: testUser._id.toString(), role: 'USER' },
     body: { conversationId: 'conv_sub', files: [] },
+    resolvedConversation: null,
     config: {
       endpoints: {
         agents: {
@@ -713,6 +764,132 @@ describe('initializeClient — subagent loading', () => {
     await grantView(agent);
     return agent;
   };
+
+  it('creates one trusted durable thread scope for detached subagents', async () => {
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+      }),
+    );
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('run_in_background');
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.subagentTasks).toBe(capturedToolExecuteOptions.subagentTasks);
+    expect(agentClientArgs.subagentTasks.store.supportsThreadContinuation).toBe(true);
+    expect(JSON.parse(agentClientArgs.subagentTasks.scopeId)).toEqual({
+      version: 1,
+      userId: testUser._id.toString(),
+      parentConversationId: 'conv_sub',
+    });
+  });
+
+  it('uses one normalized MCP body for discovery, deferred execution, and AgentClient', async () => {
+    const requestBody = Object.freeze({
+      messageId: 'response-message',
+      conversationId: 'conv_sub',
+      parentMessageId: 'user-message',
+    });
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig({}));
+    mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [], configurable: {} });
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+      requestBody,
+    });
+
+    expect(mockInitializeAgent.mock.calls[0][0].requestBody).toBe(requestBody);
+    expect(agentClientArgs.mcpRequestBody).toBe(requestBody);
+
+    await capturedToolExecuteOptions.loadTools([], PRIMARY_ID);
+    expect(mockLoadToolsForExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ requestBody }),
+    );
+  });
+
+  it('keeps an existing detached task controllable after subagent config is disabled', async () => {
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+      }),
+    );
+    const initialReq = makeSubagentReq();
+    initialReq.config.endpoints.agents.capabilities.push('run_in_background');
+    await initializeClient({
+      req: initialReq,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    const existingConfig = agentClientArgs.subagentTasks;
+    const hasTasksSpy = jest.spyOn(existingConfig.store, 'hasTasks').mockResolvedValueOnce(true);
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig({}));
+    const changedReq = makeSubagentReq();
+    changedReq.config.endpoints.agents.capabilities.push('run_in_background');
+
+    await initializeClient({
+      req: changedReq,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.subagentTasks).toEqual(existingConfig);
+    expect(capturedToolExecuteOptions.subagentTasks).toEqual(existingConfig);
+    expect(agentClientArgs.agent.subagents).toBeUndefined();
+    hasTasksSpy.mockRestore();
+  });
+
+  it('disables every nested subagent path at the durable child-thread depth limit', async () => {
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+    });
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('run_in_background');
+    req.resolvedConversation = {
+      conversationId: 'conv_sub',
+      subagentThread: { depth: 1 },
+    };
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.subagentTasks).toBeUndefined();
+    expect(capturedToolExecuteOptions.subagentTasks).toBeUndefined();
+    expect(agentClientArgs.agent.subagents).toBeUndefined();
+  });
+
+  it('keeps detached subagents disabled without the admin background capability', async () => {
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+      }),
+    );
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.subagentTasks).toBeUndefined();
+    expect(capturedToolExecuteOptions.subagentTasks).toBeUndefined();
+  });
 
   it('defers pure-subagent MCP initialization until the descriptor is selected', async () => {
     const subAgent = await createAgent({
@@ -1210,8 +1387,10 @@ describe('initializeClient — subagent loading', () => {
       Promise.resolve(agent.id === PRIMARY_ID ? primaryConfig : memberConfigs.get(agent.id)),
     );
 
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('run_in_background');
     const { userMCPAuthMap } = await initializeClient({
-      req: makeSubagentReq(),
+      req,
       res: {},
       signal: new AbortController().signal,
       endpointOption: makeEndpointOption(),
@@ -1224,6 +1403,7 @@ describe('initializeClient — subagent loading', () => {
       },
     ]);
     expect(memberIds.every((id) => !agentClientArgs.agentConfigs.has(id))).toBe(true);
+    expect(agentClientArgs.subagentTasks).toBe(capturedToolExecuteOptions.subagentTasks);
     expect(userMCPAuthMap).toEqual({
       server_0: { token: 'token_0' },
       server_1: { token: 'token_1' },

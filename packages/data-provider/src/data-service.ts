@@ -1,10 +1,12 @@
 import type { AxiosResponse } from 'axios';
+import type { TInsightsAccessResponse, TInsightsParams, TInsightsResponse } from './types/insights';
 import type { TFileConfig } from './file-config';
 import type * as t from './types';
 import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
 import { uploadEventStream } from './upload';
 import * as mcp from './types/mcpServers';
+import * as sch from './types/schedules';
 import * as a from './types/assistants';
 import * as m from './types/mutations';
 import * as ag from './types/agents';
@@ -15,6 +17,21 @@ import * as config from './config';
 import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
+
+export function getInsights(params: TInsightsParams = {}): Promise<TInsightsResponse> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      query.set(key, String(value));
+    }
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return request.get(`${endpoints.insights()}${suffix}`);
+}
+
+export function getInsightsAccess(): Promise<TInsightsAccessResponse> {
+  return request.get(endpoints.insightsAccess());
+}
 
 export function getLangfuseConnection(): Promise<t.TLangfuseConnectionStatus> {
   return request.get(endpoints.adminLangfuseConnection());
@@ -985,6 +1002,26 @@ export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage
   return request.get(endpoints.messages({ conversationId }));
 }
 
+export function getParentSubagents(parentConversationId: string): Promise<t.ParentSubagentIndex> {
+  return request.get(endpoints.parentSubagents(parentConversationId));
+}
+
+export function getSubagentThread(
+  parentConversationId: string,
+  threadId: string,
+  taskId?: string,
+): Promise<t.SubagentThreadView> {
+  return request.get(endpoints.subagentThread(parentConversationId, threadId, taskId));
+}
+
+export function controlSubagentTask(
+  parentConversationId: string,
+  threadId: string,
+  body: t.SubagentControlRequest,
+): Promise<t.SubagentControlResponse> {
+  return request.post(endpoints.subagentControl(parentConversationId, threadId), body);
+}
+
 export function getPrompt(id: string): Promise<{ prompt: t.TPrompt }> {
   return request.get(endpoints.getPrompt(id));
 }
@@ -1060,6 +1097,30 @@ export function getRandomPrompts(
 
 export function listSkills(params?: sk.TSkillListRequest): Promise<sk.TSkillListResponse> {
   return request.get(endpoints.listSkillsWithFilters(params ?? {}));
+}
+
+export function getSchedules(): Promise<sch.TSchedulesResponse> {
+  return request.get(endpoints.schedules());
+}
+
+export function getSchedule(id: string): Promise<sch.TSchedule> {
+  return request.get(endpoints.schedule(id));
+}
+
+export function createSchedule(payload: sch.TCreateSchedule): Promise<sch.TSchedule> {
+  return request.post(endpoints.schedules(), payload);
+}
+
+export function updateSchedule(id: string, payload: sch.TUpdateSchedule): Promise<sch.TSchedule> {
+  return request.patch(endpoints.schedule(id), payload);
+}
+
+export function deleteSchedule(id: string): Promise<{ id: string }> {
+  return request.delete(endpoints.schedule(id));
+}
+
+export function runScheduleNow(id: string): Promise<sch.TScheduleRunNowResponse> {
+  return request.post(endpoints.runSchedule(id), {});
 }
 
 export function getSkill(id: string): Promise<sk.TSkill> {
@@ -1368,8 +1429,12 @@ export const getMemories = (): Promise<q.MemoriesResponse> => {
   return request.get(endpoints.memories());
 };
 
-export const deleteMemory = (key: string, agentId?: string): Promise<void> => {
+export const deleteMemory = (key: string, agentId?: string): Promise<q.DeleteMemoryResponse> => {
   return request.delete(endpoints.memory(key, agentId));
+};
+
+export const deleteMemoryById = (id: string, agentId?: string): Promise<q.DeleteMemoryResponse> => {
+  return request.delete(endpoints.memoryById(id, agentId));
 };
 
 export const updateMemory = (
@@ -1377,8 +1442,20 @@ export const updateMemory = (
   value: string,
   originalKey?: string,
   agentId?: string,
-): Promise<q.TUserMemory> => {
+): Promise<q.UpdateMemoryResponse> => {
   return request.patch(endpoints.memory(originalKey || key, agentId), { key, value });
+};
+
+export const updateMemoryById = (
+  id: string,
+  value: string,
+  key?: string,
+  agentId?: string,
+): Promise<q.UpdateMemoryResponse> => {
+  return request.patch(endpoints.memoryById(id, agentId), {
+    value,
+    ...(key ? { key } : {}),
+  });
 };
 
 export const updateMemoryPreferences = (preferences: {

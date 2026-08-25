@@ -32,6 +32,22 @@ jest.mock('~/components/Messages/MessageContent', () => ({
 }));
 jest.mock('../MessageParts', () => ({ __esModule: true, default: createRowStub() }));
 jest.mock('../Message', () => ({ __esModule: true, default: createRowStub() }));
+jest.mock('~/components/Chat/Subagents/EventSubagentActivityGroup', () => ({
+  __esModule: true,
+  default: ({
+    parentMessageIds,
+    hasParallelContent,
+  }: {
+    parentMessageIds: string[];
+    hasParallelContent?: boolean;
+  }) => (
+    <div
+      data-testid="event-subagent-activity"
+      data-parent-message-ids={parentMessageIds.join(',')}
+      data-has-parallel-content={String(hasParallelContent)}
+    />
+  ),
+}));
 
 const msg = (messageId: string): TMessage =>
   ({
@@ -60,6 +76,144 @@ const treeElement = (ids: string[]) => (
 const displayed = () => screen.getAllByTestId('row')[0].textContent;
 
 describe('MultiMessage sibling selection', () => {
+  it('hosts event activity for structured and legacy message rows', () => {
+    const structured = msg('structured');
+    const legacy = { ...msg('legacy'), content: undefined } as TMessage;
+    const view = render(
+      <RecoilRoot>
+        <MultiMessage
+          messageId="parent-1"
+          messagesTree={[structured]}
+          currentEditId={null}
+          setCurrentEditId={jest.fn()}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByTestId('event-subagent-activity')).toHaveAttribute(
+      'data-parent-message-ids',
+      'structured,parent-1',
+    );
+
+    view.rerender(
+      <RecoilRoot>
+        <MultiMessage
+          messageId="parent-1"
+          messagesTree={[legacy]}
+          currentEditId={null}
+          setCurrentEditId={jest.fn()}
+        />
+      </RecoilRoot>,
+    );
+    expect(screen.getByTestId('event-subagent-activity')).toHaveAttribute(
+      'data-parent-message-ids',
+      'legacy,parent-1',
+    );
+  });
+
+  it('places a user-anchored event group after the assistant response', () => {
+    const assistant = msg('assistant');
+    const user = {
+      ...msg('user'),
+      isCreatedByUser: true,
+      parentMessageId: 'root',
+      children: [assistant],
+    } as TMessage;
+    assistant.parentMessageId = 'user';
+
+    render(
+      <RecoilRoot>
+        <MultiMessage
+          messageId="root"
+          messagesTree={[user]}
+          currentEditId={null}
+          setCurrentEditId={jest.fn()}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getAllByTestId('event-subagent-activity')).toHaveLength(1);
+    expect(screen.getByTestId('event-subagent-activity')).toHaveAttribute(
+      'data-parent-message-ids',
+      'assistant,user',
+    );
+    expect(
+      screen
+        .getByText('assistant')
+        .compareDocumentPosition(screen.getByTestId('event-subagent-activity')),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('hides merged event activity while its user anchor is being edited', () => {
+    const assistant = { ...msg('assistant'), parentMessageId: 'user' } as TMessage;
+    const user = {
+      ...msg('user'),
+      isCreatedByUser: true,
+      parentMessageId: 'root',
+      children: [assistant],
+    } as TMessage;
+
+    render(
+      <RecoilRoot>
+        <MultiMessage
+          messageId="root"
+          messagesTree={[user]}
+          currentEditId="user"
+          setCurrentEditId={jest.fn()}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.queryByTestId('event-subagent-activity')).not.toBeInTheDocument();
+  });
+
+  it('matches the wider layout of a parallel assistant response', () => {
+    const assistant = {
+      ...msg('assistant'),
+      content: [{ type: 'text', text: 'answer', groupId: 'parallel-group' }],
+    } as unknown as TMessage;
+
+    render(
+      <RecoilRoot>
+        <MultiMessage
+          messageId="parent-1"
+          messagesTree={[assistant]}
+          currentEditId={null}
+          setCurrentEditId={jest.fn()}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByTestId('event-subagent-activity')).toHaveAttribute(
+      'data-has-parallel-content',
+      'true',
+    );
+  });
+
+  it('renders assistant content containing an undefined streaming placeholder', () => {
+    const assistant = {
+      ...msg('assistant'),
+      content: [undefined, { type: 'text', text: 'answer' }],
+    } as unknown as TMessage;
+
+    render(
+      <RecoilRoot>
+        <MultiMessage
+          messageId="parent-1"
+          messagesTree={[assistant]}
+          currentEditId={null}
+          setCurrentEditId={jest.fn()}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByTestId('row')).toHaveTextContent('assistant');
+    expect(screen.getByTestId('event-subagent-activity')).toHaveAttribute(
+      'data-has-parallel-content',
+      'false',
+    );
+  });
+
   it('shows the newest sibling by default and follows a newly appended one', () => {
     const view = render(treeElement(['a', 'b']));
     expect(displayed()).toBe('b');

@@ -8,22 +8,37 @@ const mockSetValue = jest.fn();
 const mockGetValues = jest.fn((): string[] => []);
 const mockGetToolOptions = jest.fn((): Record<string, object> | undefined => undefined);
 const mockMcpServersMap = jest.fn((): Map<string, object> => new Map());
+const mockGetServerStatusIconProps = jest.fn((): object | null => null);
 const mockInitializeServer = jest.fn();
 const mockIsConnectionDeferred = jest.fn((): boolean => false);
 const mockToggleIntentAll = jest.fn();
 const mockIsToolProgrammaticOnly = jest.fn((_toolId: string): boolean => false);
+const mockAreAllToolsProgrammatic = jest.fn((): boolean => false);
 const mockCapabilities = {
+  codeEnabled: false,
   deferredToolsEnabled: false,
   programmaticToolsEnabled: false,
   backgroundToolsEnabled: false,
   toolIntentsEnabled: false,
 };
+const mockLocalize = jest.fn((key: string, values?: Record<number, string>) =>
+  key === 'com_nav_mcp_status_connecting' ? `${values?.[0]} - Connecting` : key,
+);
 
 jest.mock('react-hook-form', () => ({
   useFormContext: () => ({ control: {}, setValue: mockSetValue, getValues: mockGetValues }),
-  useWatch: ({ name }: { name: string }) =>
-    name === 'tool_options' ? mockGetToolOptions() : mockGetValues(),
+  useWatch: ({ name }: { name: string }) => {
+    if (name === 'tool_options') {
+      return mockGetToolOptions();
+    }
+    if (name === 'execute_code') {
+      return mockCodeInterpreterSelected();
+    }
+    return mockGetValues();
+  },
 }));
+
+const mockCodeInterpreterSelected = jest.fn((): boolean => false);
 
 jest.mock('~/Providers', () => ({
   useAgentPanelContext: () => ({ mcpServersMap: mockMcpServersMap() }),
@@ -35,12 +50,12 @@ jest.mock('~/components/ui', () => ({
 }));
 
 jest.mock('~/hooks', () => ({
-  useLocalize: () => (key: string) => key,
+  useLocalize: () => mockLocalize,
   useCopyToClipboard: () => jest.fn(),
   useAgentCapabilities: () => mockCapabilities,
   useGetAgentsConfig: () => ({ agentsConfig: { capabilities: [] } }),
   useMCPServerManager: () => ({
-    getServerStatusIconProps: () => null,
+    getServerStatusIconProps: mockGetServerStatusIconProps,
     getConfigDialogProps: () => null,
     initializeServer: mockInitializeServer,
     isConnectionDeferred: mockIsConnectionDeferred,
@@ -60,7 +75,7 @@ jest.mock('~/hooks', () => ({
     toggleToolBackground: jest.fn(),
     toggleToolIntent: jest.fn(),
     areAllToolsDeferred: () => false,
-    areAllToolsProgrammatic: () => false,
+    areAllToolsProgrammatic: mockAreAllToolsProgrammatic,
     areAllToolsBackground: () => false,
     areAllToolsIntent: () => false,
     toggleDeferAll: jest.fn(),
@@ -110,6 +125,7 @@ jest.mock('@librechat/client', () => {
   const React = jest.requireActual('react');
   return {
     TooltipAnchor: ({ render }: { render: React.ReactElement }) => render,
+    Spinner: ({ className }: { className?: string }) => React.createElement('span', { className }),
     Button: ({
       children,
       variant: _variant,
@@ -164,10 +180,21 @@ describe('McpSection', () => {
     mockToggleIntentAll.mockClear();
     mockIsToolProgrammaticOnly.mockReset();
     mockIsToolProgrammaticOnly.mockReturnValue(false);
+    mockAreAllToolsProgrammatic.mockReset();
+    mockAreAllToolsProgrammatic.mockReturnValue(false);
     mockGetToolOptions.mockReset();
     mockGetToolOptions.mockReturnValue(undefined);
     mockMcpServersMap.mockReset();
     mockMcpServersMap.mockReturnValue(new Map());
+    mockGetServerStatusIconProps.mockReset();
+    mockGetServerStatusIconProps.mockReturnValue(null);
+    mockLocalize.mockClear();
+    mockCodeInterpreterSelected.mockReset();
+    mockCodeInterpreterSelected.mockReturnValue(false);
+    mockCapabilities.codeEnabled = false;
+    mockCapabilities.deferredToolsEnabled = false;
+    mockCapabilities.programmaticToolsEnabled = false;
+    mockCapabilities.backgroundToolsEnabled = false;
     mockCapabilities.toolIntentsEnabled = false;
   });
 
@@ -175,6 +202,21 @@ describe('McpSection', () => {
     render(<McpSection item={item} />);
     expect(screen.getByTestId('tool-mcp:srv:a')).toBeInTheDocument();
     expect(screen.getByTestId('tool-mcp:srv:b')).toBeInTheDocument();
+  });
+
+  test('interpolates the server name when another manager reports a connecting state', () => {
+    mockGetServerStatusIconProps.mockReturnValue({
+      serverStatus: {
+        connectionState: 'connecting',
+        requiresOAuth: true,
+      },
+      isInitializing: false,
+    });
+
+    render(<McpSection item={item} />);
+
+    expect(screen.getByText('srv - Connecting')).toBeInTheDocument();
+    expect(mockLocalize).toHaveBeenCalledWith('com_nav_mcp_status_connecting', { 0: 'srv' });
   });
 
   test('toggling a tool writes its id plus the server token into agent.tools', () => {
@@ -263,13 +305,14 @@ describe('McpSection', () => {
     expect(screen.getByText('com_ui_tools_mcp_no_tools')).toBeInTheDocument();
   });
 
-  test('lets an already-connected request-scoped server attach its runtime tools', () => {
+  test('lets a ready request-scoped server attach its runtime tools', () => {
     const runtimeItem: McpItem = {
       ...item,
       server: {
         ...item.server,
         tools: [],
-        isConnected: true,
+        isConnected: false,
+        isReadyForAgent: true,
         requestScoped: true,
       } as never,
       toolCount: 0,
@@ -301,6 +344,7 @@ describe('McpSection', () => {
         ...item.server,
         tools: [],
         isConnected: true,
+        isReadyForAgent: true,
         requestScoped: true,
       } as never,
       toolCount: 0,
@@ -403,6 +447,34 @@ describe('McpSection', () => {
     render(<McpSection item={item} />);
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_mcp_intent_all' }));
     expect(mockToggleIntentAll).toHaveBeenCalledWith(item.server.tools);
+  });
+
+  test('bulk programmatic toggle requires Code Interpreter to be available and selected', () => {
+    mockCapabilities.programmaticToolsEnabled = true;
+    const { unmount } = render(<McpSection item={item} />);
+    expect(screen.getByRole('button', { name: 'com_ui_mcp_programmatic_all' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    unmount();
+
+    mockCapabilities.codeEnabled = true;
+    mockCodeInterpreterSelected.mockReturnValue(true);
+    render(<McpSection item={item} />);
+    expect(screen.getByRole('button', { name: 'com_ui_mcp_programmatic_all' })).not.toHaveAttribute(
+      'aria-disabled',
+    );
+  });
+
+  test('bulk programmatic toggle can clear a legacy programmatic configuration', () => {
+    mockCapabilities.programmaticToolsEnabled = true;
+    mockAreAllToolsProgrammatic.mockReturnValue(true);
+
+    render(<McpSection item={item} />);
+
+    expect(
+      screen.getByRole('button', { name: 'com_ui_mcp_unprogrammatic_all' }),
+    ).not.toHaveAttribute('aria-disabled');
   });
 
   test('bulk intent skips programmatic-only tools (label can never reach them)', () => {

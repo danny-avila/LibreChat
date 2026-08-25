@@ -1,3 +1,4 @@
+import { Tokenizer as AiTokenizer } from 'ai-tokenizer';
 import Tokenizer from './tokenizer';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -51,6 +52,21 @@ describe('Tokenizer', () => {
     it('should count tokens using claude encoding', () => {
       const count = Tokenizer.getTokenCount('Hello, world!', 'claude');
       expect(count).toBeGreaterThan(0);
+    });
+  });
+
+  describe('createExactTokenCounter', () => {
+    it('throws instead of returning a fallback estimate after a tokenizer failure', async () => {
+      const counter = await Tokenizer.createExactTokenCounter('o200k_base');
+      const count = jest.spyOn(AiTokenizer.prototype, 'count').mockImplementationOnce(() => {
+        throw new Error('tokenizer failed');
+      });
+      try {
+        expect(() => counter('Stable cached context')).toThrow('tokenizer failed');
+      } finally {
+        count.mockRestore();
+        await Tokenizer.initEncoding('o200k_base');
+      }
     });
   });
 });

@@ -23,6 +23,12 @@ jest.mock('~/Providers', () => ({
 }));
 
 jest.mock('~/utils', () => ({
+  getDownloadFilename: (filename: string, fileId?: string, source?: string) => {
+    const resolvedFilename = filename || fileId || 'download';
+    return source === 'text' && !resolvedFilename.toLowerCase().endsWith('.txt')
+      ? `${resolvedFilename}.txt`
+      : resolvedFilename;
+  },
   isHttpDownloadTarget: (target?: string | null) => /^https?:\/\//i.test(target ?? ''),
   triggerDownload: (...args: Parameters<typeof mockTriggerDownload>) =>
     mockTriggerDownload(...args),
@@ -128,5 +134,58 @@ describe('LogLink download routing', () => {
     });
     expect(mockDownloadFromUrl).toHaveBeenCalledTimes(1);
     expect(mockDownloadFromApi).not.toHaveBeenCalled();
+  });
+
+  it('uses a text filename for shared text-source downloads', async () => {
+    mockShareContext = { shareId: 'share-9' };
+    const filename = 'report.pdf';
+
+    render(
+      <LogLink
+        href="/api/share/share-9/files/file-1"
+        file_id="file-1"
+        filename={filename}
+        source={FileSources.text}
+      >
+        {filename}
+      </LogLink>,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: filename }));
+
+    await waitFor(() => {
+      expect(mockTriggerDownload).toHaveBeenCalledWith(
+        '/api/share/share-9/files/file-1/download',
+        'report.pdf.txt',
+      );
+    });
+  });
+
+  it('uses the authorized file route and a text filename for owned text-source files', async () => {
+    const filename = 'report.pdf';
+    mockDownloadFromApi.mockResolvedValue({ data: 'blob:https://app.example.com/text-file' });
+
+    render(
+      <LogLink
+        user="user-1"
+        file_id="file-1"
+        filename={filename}
+        source={FileSources.text}
+        href="mistral_ocr"
+      >
+        {filename}
+      </LogLink>,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: filename }));
+
+    await waitFor(() => {
+      expect(mockTriggerDownload).toHaveBeenCalledWith(
+        'blob:https://app.example.com/text-file',
+        'report.pdf.txt',
+      );
+    });
+    expect(mockDownloadFromApi).toHaveBeenCalledTimes(1);
+    expect(mockDownloadFromUrl).not.toHaveBeenCalled();
   });
 });

@@ -259,7 +259,8 @@ describe('MCPConnection.fetchTools pagination', () => {
     expect(options.timeout).toBeGreaterThan(0);
     expect(options.timeout).toBeLessThanOrEqual(25);
     expect(options.maxTotalTimeout).toBe(options.timeout);
-    expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('Request timed out'));
+    expect(mockLogger.error).toHaveBeenCalledWith('[MCP] Failed to fetch tools');
+    expect(JSON.stringify(mockLogger.error.mock.calls)).not.toContain('Request timed out');
   });
 
   it('stops and warns when the server repeats a cursor instead of looping forever', async () => {

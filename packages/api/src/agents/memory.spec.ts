@@ -1,14 +1,19 @@
 import { Types } from 'mongoose';
-import { Tools, MemoryScope } from 'librechat-data-provider';
 import { Run, Providers, GraphEvents } from '@librechat/agents';
+import { AIMessage, HumanMessage } from '@librechat/agents/langchain/messages';
+import { Tools, MemoryScope, EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
+import type { FiltersConfig } from 'librechat-data-provider';
+import type { RuntimeProviderName } from '@librechat/agents';
 import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
+import type { ServerRequest } from '~/types';
 import {
   processMemory,
   createMemoryProcessor,
   createMemoryTool,
   getMemoryAgentId,
   getRequestMemories,
+  buildInlineMemoryTool,
   createDeleteMemoryTool,
   invalidateRequestMemories,
   agentHasInlineMemoryTools,
@@ -16,6 +21,9 @@ import {
 } from './memory';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
 
+jest.mock('~/middleware/access', () => ({
+  checkAccess: jest.fn().mockResolvedValue(true),
+}));
 jest.mock('~/stream/GenerationJobManager');
 
 const mockCreateSafeUser = jest.fn((user) => ({
@@ -66,6 +74,12 @@ jest.mock('~/utils', () => ({
     getTokenCount: jest.fn(() => 10),
   },
   createSafeUser: (user: unknown) => mockCreateSafeUser(user),
+  getSafeErrorMetadata: (error: unknown) => ({
+    type:
+      error != null && typeof error === 'object' && (error as { name?: unknown }).name === 'Error'
+        ? 'Error'
+        : 'Object',
+  }),
   resolveConfigHeaders: (opts: unknown) => mockResolveConfigHeaders(opts as never),
 }));
 
@@ -136,6 +150,7 @@ describe('Memory attachment generation fencing', () => {
       memoryMethods: {
         setMemory: jest.fn(),
         deleteMemory: jest.fn(),
+        getUserMemories: jest.fn().mockResolvedValue([]),
         getFormattedMemories: jest.fn().mockResolvedValue({
           withKeys: '',
           withoutKeys: '',
@@ -209,7 +224,7 @@ describe('Memory Agent Header Resolution', () => {
 
   it('should resolve environment variables in custom endpoint headers', async () => {
     const llmConfig = {
-      provider: 'custom',
+      provider: 'custom' as RuntimeProviderName,
       model: 'gpt-4o-mini',
       configuration: {
         defaultHeaders: {
@@ -244,7 +259,7 @@ describe('Memory Agent Header Resolution', () => {
 
   it('should resolve user placeholders in custom endpoint headers', async () => {
     const llmConfig = {
-      provider: 'custom',
+      provider: 'custom' as RuntimeProviderName,
       model: 'gpt-4o-mini',
       configuration: {
         defaultHeaders: {
@@ -279,7 +294,7 @@ describe('Memory Agent Header Resolution', () => {
 
   it('should handle mixed environment variables and user placeholders', async () => {
     const llmConfig = {
-      provider: 'custom',
+      provider: 'custom' as RuntimeProviderName,
       model: 'gpt-4o-mini',
       configuration: {
         defaultHeaders: {
@@ -316,7 +331,7 @@ describe('Memory Agent Header Resolution', () => {
 
   it('should resolve env vars when user is undefined', async () => {
     const llmConfig = {
-      provider: 'custom',
+      provider: 'custom' as RuntimeProviderName,
       model: 'gpt-4o-mini',
       configuration: {
         defaultHeaders: {
@@ -731,6 +746,67 @@ describe('createMemoryTool tokenLimit enforcement', () => {
   });
 });
 
+describe('buildInlineMemoryTool content filtering', () => {
+  it('keeps a legacy-only message filter scoped to ingress messages', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    const req = {
+      config: {
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            capabilities: [AgentCapabilities.memory],
+          },
+        },
+        memory: {
+          disabled: false,
+        },
+        messageFilter: {
+          pii: {
+            customPatterns: [
+              {
+                id: 'organization-token',
+                label: 'secret token',
+                regex: 'ORG-[A-Z]+',
+              },
+            ],
+          },
+        },
+      },
+      user: {
+        id: 'user-1',
+        personalization: {
+          memories: true,
+        },
+      },
+    } as ServerRequest;
+
+    const memoryTool = await buildInlineMemoryTool({
+      toolName: 'set_memory',
+      req,
+      agent: {
+        tools: [AgentCapabilities.memory],
+      },
+      userId: 'user-1',
+      memoryMethods: {
+        setMemory,
+        deleteMemory: jest.fn(),
+        getFormattedMemories: jest.fn(),
+      },
+      getRoleByName: jest.fn(),
+    });
+
+    expect(memoryTool).not.toBeNull();
+    await memoryTool?.func({ key: 'preferences', value: 'Keep ORG-SECRET' });
+
+    expect(setMemory).toHaveBeenCalledTimes(1);
+    expect(setMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: 'preferences',
+        value: 'Keep ORG-SECRET',
+      }),
+    );
+  });
+});
+
 describe('agentHasInlineMemoryTools', () => {
   it('returns false for a nullish agent', () => {
     expect(agentHasInlineMemoryTools(null)).toBe(false);
@@ -853,5 +929,154 @@ describe('getMemoryAgentId', () => {
     expect(getMemoryAgentId({ id: 'agent_a____1', memory_scope: MemoryScope.agent })).toBe(
       'agent_a',
     );
+  });
+});
+
+describe('memory model-bound content preflight', () => {
+  const res = {
+    write: jest.fn(),
+    end: jest.fn(),
+    headersSent: false,
+  } as unknown as Response;
+  const setMemory = jest.fn().mockResolvedValue({ ok: true });
+  const deleteMemory = jest.fn().mockResolvedValue({ ok: true });
+  const baseArgs = {
+    res,
+    userId: 'user-1',
+    setMemory,
+    deleteMemory,
+    messages: [],
+    memory: '',
+    messageId: 'message-1',
+    conversationId: 'conversation-1',
+    instructions: 'Safe memory instructions',
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('blocks a canonical memory key before creating a model run', async () => {
+    const rawValue = 'PRIVATE-MEMORY-KEY';
+
+    await processMemory({
+      ...baseArgs,
+      memory: `1. ["key": "${rawValue}"]. ["value": "safe"]`,
+      memoryEntries: [{ key: rawValue, value: 'safe' }],
+      filters: {
+        memories: {
+          pii: {
+            fields: ['key'],
+            starterPatterns: [],
+            customPatterns: [{ id: 'private', label: 'private value', regex: rawValue }],
+          },
+        },
+      },
+    });
+
+    expect(Run.create).not.toHaveBeenCalled();
+  });
+
+  it('conservatively checks flattened memory for direct callers without canonical rows', async () => {
+    const rawValue = 'PRIVATE-FLATTENED-KEY';
+
+    await processMemory({
+      ...baseArgs,
+      memory: `["key": "${rawValue}"]`,
+      filters: {
+        memories: {
+          pii: {
+            fields: ['key'],
+            starterPatterns: [],
+            customPatterns: [{ id: 'private', label: 'private value', regex: rawValue }],
+          },
+        },
+      },
+    });
+
+    expect(Run.create).not.toHaveBeenCalled();
+  });
+
+  it('checks human input and agent configuration without classifying model output as submitted', async () => {
+    const rawValue = 'PRIVATE-MEMORY-INPUT';
+    const filters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['text'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: rawValue }],
+        },
+      },
+    };
+
+    await processMemory({
+      ...baseArgs,
+      messages: [new HumanMessage(rawValue)],
+      filters,
+    });
+    expect(Run.create).not.toHaveBeenCalled();
+
+    jest.clearAllMocks();
+    await processMemory({
+      ...baseArgs,
+      messages: [new AIMessage(rawValue)],
+      filters,
+    });
+    expect(Run.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses role-preserving inspection messages for a flattened memory prompt', async () => {
+    const rawValue = 'PRIVATE-MEMORY-MODEL-OUTPUT';
+    const filters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['text'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: rawValue }],
+        },
+      },
+    };
+
+    await processMemory({
+      ...baseArgs,
+      messages: [new HumanMessage(`# Current Chat:\n\nAI: ${rawValue}`)],
+      inspectionMessages: [new HumanMessage('Safe user input'), new AIMessage(rawValue)],
+      filters,
+    });
+
+    expect(Run.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when canonical memory rows cannot be loaded under active policy', async () => {
+    const getUserMemories = jest.fn().mockRejectedValue(new Error('database unavailable'));
+
+    await expect(
+      createMemoryProcessor({
+        res,
+        userId: 'user-1',
+        messageId: 'message-1',
+        conversationId: 'conversation-1',
+        filters: {
+          memories: {
+            pii: {
+              fields: ['key'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+        memoryMethods: {
+          setMemory,
+          deleteMemory,
+          getUserMemories,
+          getFormattedMemories: jest.fn().mockResolvedValue({
+            withKeys: 'formatted memory',
+            withoutKeys: 'memory',
+            totalTokens: 1,
+          }),
+        },
+      }),
+    ).rejects.toThrow('database unavailable');
+    expect(getUserMemories).toHaveBeenCalledTimes(1);
+    expect(Run.create).not.toHaveBeenCalled();
   });
 });

@@ -47,6 +47,8 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  isScheduleFireRequest: jest.fn(() => false),
+  exemptFromConcurrencyLimiter: jest.fn(() => false),
   toPendingSteer: jest.fn((item) => item),
   isSteerPreemptSupported: jest.fn(() => true),
   buildRecoveredSteerPayload: jest.fn(() => null),
@@ -81,6 +83,11 @@ jest.mock('@librechat/api', () => ({
   getAgentStartupTelemetry: jest.fn(() => undefined),
   acceptAgentStartupTelemetry: jest.fn(),
   isUnpersistedPreliminaryParent: jest.fn(async () => false),
+  createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
+    messageId,
+    conversationId,
+    parentMessageId,
+  }),
 }));
 
 jest.mock('~/server/cleanup', () => ({

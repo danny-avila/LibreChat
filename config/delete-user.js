@@ -3,6 +3,7 @@
 // @ts-nocheck
 const path = require('path');
 const mongoose = require('mongoose');
+const { randomUUID } = require('node:crypto');
 const { createModels, createMethods, runAsSystem } = require('@librechat/data-schemas');
 const {
   Key,
@@ -118,6 +119,7 @@ async function gracefulExit(code = 0) {
   }
 
   let deletionFence;
+  let scheduleSuspensionToken;
   let userDeleted = false;
 
   try {
@@ -157,6 +159,13 @@ async function gracefulExit(code = 0) {
     if (deletionFence != null) {
       await runAsSystem(() =>
         methods.prepareAgentTriggerUserPurge(uid, deletionFence, user.tenantId),
+      );
+      // Reversible, token-fenced suspension (the same protocol the HTTP controller uses):
+      // an attempt that does not commit restores exactly these rows in the finally block,
+      // rather than leaving a surviving account with disabled, erasure-eligible schedules.
+      scheduleSuspensionToken = randomUUID();
+      await runAsSystem(() =>
+        methods.suspendUserSchedulesForDeletion(uid, scheduleSuspensionToken),
       );
       if (hasSharedGenerationStore) {
         const deadline = Date.now() + TRIGGER_DRAIN_TIMEOUT_MS;
@@ -214,6 +223,7 @@ async function gracefulExit(code = 0) {
     }
 
     await Promise.all(tasks);
+    await runAsSystem(() => methods.deleteSchedulesByUser(uid));
 
     // 6) Remove user from all groups
     await Group.updateMany({ memberIds: uid }, { $pullAll: { memberIds: [uid] } });
@@ -226,6 +236,22 @@ async function gracefulExit(code = 0) {
     userDeleted = true;
     await runAsSystem(() => methods.deleteAgentTriggerDeliveriesByUser(uid));
   } finally {
+    // RESTORE BEFORE RELEASING THE FENCE. While the user-deletion fence is still armed, new
+    // schedule writes/claims are refused, so this restore cannot race an owner PATCH nor be
+    // superseded by a second deletion attempt re-suspending these rows under a new token.
+    if (scheduleSuspensionToken != null && !userDeleted) {
+      // Retried inside the method; the fence is still released below on purpose, since
+      // retaining it would block the retry that is the convergence path. Print the token
+      // so a restore that never converges stays recoverable by hand.
+      await runAsSystem(() =>
+        methods.restoreUserSchedulesFromDeletion(uid, scheduleSuspensionToken),
+      ).catch((error) =>
+        console.error(
+          `Failed to restore suspended schedules; they remain disabled for user ${uid} under suspension token ${scheduleSuspensionToken}:`,
+          error,
+        ),
+      );
+    }
     if (deletionFence != null && !userDeleted) {
       await runAsSystem(() => methods.cancelAgentTriggerUserPurge(uid, deletionFence)).catch(
         (error) => console.error('Failed to disarm trigger purge recovery:', error),

@@ -1,5 +1,5 @@
 import { useContext, useMemo, useState } from 'react';
-import { ChevronUp, TriangleAlert } from 'lucide-react';
+import { ChevronUp, TriangleAlert, X } from 'lucide-react';
 import { Button, TextareaAutosize } from '@librechat/client';
 import type { Agents } from 'librechat-data-provider';
 import { useApprovalContext, useAskSubmitStatus, useResumeSubmit } from './ApprovalContext';
@@ -40,6 +40,7 @@ export default function AskUserQuestion({
         questions={questions}
         className="my-2 max-h-[70vh] w-full rounded-lg border border-border-light bg-surface-secondary"
         onExpand={answerMode.collapsed && isLivePause ? answerMode.expand : undefined}
+        onDismiss={answerMode.collapsed && isLivePause ? answerMode.dismiss : undefined}
       />
     );
   }
@@ -68,7 +69,7 @@ function AskUserQuestionSingle({
    * chevron re-expands it) or dismissed (and in contexts without a
    * ChatContext, where the popover can't exist).
    */
-  const { popoverVisible, collapsed, expand, liveAsk } = answerMode;
+  const { popoverVisible, collapsed, expand, dismiss, liveAsk } = answerMode;
   const isLivePause = liveAsk?.actionId === actionId;
 
   /** Same fold as the popover: a model-supplied catch-all "Other" option
@@ -144,14 +145,26 @@ function AskUserQuestionSingle({
           {question.question}
         </p>
         {collapsed && isLivePause && (
-          <button
-            type="button"
-            aria-label={localize('com_ui_expand')}
-            className="rounded p-1 text-text-secondary hover:bg-surface-hover"
-            onClick={expand}
-          >
-            <ChevronUp className="h-4 w-4" aria-hidden="true" />
-          </button>
+          <div className="flex shrink-0 items-center">
+            <button
+              type="button"
+              aria-label={localize('com_ui_expand')}
+              className="rounded p-1 text-text-secondary hover:bg-surface-hover"
+              onClick={expand}
+            >
+              <ChevronUp className="h-4 w-4" aria-hidden="true" />
+            </button>
+            {/** Mirrors the popover's ×: the collapsed card is the only chrome
+             *   left, so the way out of answer mode has to live here too. */}
+            <button
+              type="button"
+              aria-label={localize('com_ui_close')}
+              className="rounded p-1 text-text-secondary hover:bg-surface-hover"
+              onClick={dismiss}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
         )}
       </div>
       {question.description != null && question.description.length > 0 && (
@@ -166,7 +179,7 @@ function AskUserQuestionSingle({
             <Button
               key={option.value}
               size="sm"
-              variant={multiSelect && checkedIndices.includes(index) ? 'submit' : 'outline'}
+              variant={multiSelect && checkedIndices.includes(index) ? 'submit' : 'choice'}
               role={multiSelect ? 'checkbox' : undefined}
               aria-checked={multiSelect ? checkedIndices.includes(index) : undefined}
               disabled={locked}
@@ -189,7 +202,7 @@ function AskUserQuestionSingle({
         minRows={2}
         maxRows={12}
         placeholder={otherLabel ?? localize('com_ui_your_answer')}
-        className="w-full resize-none rounded-md border border-border-light bg-surface-primary p-2 text-sm text-text-primary"
+        className="w-full resize-none rounded-md border border-border-xheavy bg-surface-primary p-2 text-sm text-text-primary"
         aria-label={localize('com_ui_your_answer')}
       />
 

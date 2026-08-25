@@ -16,8 +16,8 @@ import type { TConversation } from 'librechat-data-provider';
 import type { MeasuredCellParent } from '~/components/Conversations/Conversations';
 import ConversationEndpointIcon from '~/components/Conversations/ConversationEndpointIcon';
 import { areConversationListItemFieldsEqual } from '~/components/Conversations/utils';
+import { useLocalize, useNavigateToConvo, useClockFormat } from '~/hooks';
 import { DateLabel } from '~/components/Conversations/Conversations';
-import { useLocalize, useNavigateToConvo } from '~/hooks';
 import { cn, groupConversationsByDate } from '~/utils';
 import ProjectChatOptions from './ProjectChatOptions';
 import { useActiveJobs } from '~/data-provider';
@@ -79,10 +79,13 @@ const ConversationRow = memo(
   ({ conversation, isGenerating }: { conversation: TConversation; isGenerating: boolean }) => {
     const { navigateToConvo } = useNavigateToConvo();
     const localize = useLocalize();
+    const hour12 = useClockFormat();
     const conversationId = conversation.conversationId ?? '';
     const title = conversation.title || localize('com_ui_untitled');
     const updatedAt = conversation.updatedAt || conversation.createdAt;
-    const formattedDate = updatedAt ? new Date(updatedAt).toLocaleString() : '';
+    const formattedDate = updatedAt
+      ? new Date(updatedAt).toLocaleString(undefined, { hour12 })
+      : '';
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     return (

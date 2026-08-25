@@ -74,7 +74,9 @@ describe('PinnedSection', () => {
       'aria-expanded',
       'false',
     );
-    expect(screen.queryByText('Pinned Chat')).not.toBeInTheDocument();
+    /** Collapse keeps children mounted so the height can tween, and hides them
+     *  from assistive tech instead, the same as ProjectsSection above it. */
+    expect(screen.getByText('Pinned Chat').closest('[aria-hidden="true"]')).not.toBeNull();
   });
 
   it('toggles the section when the header is clicked', () => {

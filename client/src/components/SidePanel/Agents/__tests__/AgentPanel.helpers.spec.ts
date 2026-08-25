@@ -85,6 +85,32 @@ describe('composeAgentUpdatePayload', () => {
     expect(payload.stateful_code_sessions).toBe(false);
   });
 
+  it('removes programmatic callers when execute_code is disabled', () => {
+    const form = createForm();
+    form.execute_code = false;
+    form.tool_options = {
+      search: { allowed_callers: ['code_execution'], defer_loading: true },
+    };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.tool_options).toEqual({ search: { defer_loading: true } });
+  });
+
+  it('preserves programmatic callers when execute_code is enabled', () => {
+    const form = createForm();
+    form.execute_code = true;
+    form.tool_options = {
+      search: { allowed_callers: ['code_execution'] },
+    };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.tool_options).toEqual({
+      search: { allowed_callers: ['code_execution'] },
+    });
+  });
+
   it('preserves stateful_code_sessions when execute_code is enabled', () => {
     const form = createForm();
     form.execute_code = true;

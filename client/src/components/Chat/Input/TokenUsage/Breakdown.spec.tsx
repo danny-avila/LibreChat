@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/extend-expect';
 import { Provider } from 'jotai';
 import userEvent from '@testing-library/user-event';
 import { Constants, Tools } from 'librechat-data-provider';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import type { TokenUsageView } from '~/hooks/Chat/useTokenUsage';
 import Breakdown from './Breakdown';
 
@@ -138,7 +138,7 @@ describe('TokenUsage Breakdown', () => {
           (segment) => /(?:bg-series-\d(?:\/25)?)/.exec(segment.className)?.[0] ?? 'none',
         ),
       ).toEqual([
-        'bg-series-1/25', // messages
+        'bg-series-1', // messages
         'bg-series-2', // system prompt
         'bg-series-3', // system tools
         'bg-series-3', // system tools, deferred
@@ -178,7 +178,7 @@ describe('TokenUsage Breakdown', () => {
       expect(deferred.getAttribute('style')).toContain('repeating-linear-gradient');
     });
 
-    it('marks Messages as the one translucent, edged segment', async () => {
+    it('renders the Messages segment solid, like every other series', async () => {
       renderBreakdown({ view: snapshotView });
       await userEvent.click(toggle());
 
@@ -186,8 +186,80 @@ describe('TokenUsage Breakdown', () => {
         'com_ui_context_messages',
       ).parentElement?.firstElementChild as HTMLElement;
 
-      expect(messages).toHaveClass('bg-series-1/25');
-      expect(messages).toHaveClass('ring-series-1');
+      expect(messages).toHaveClass('bg-series-1');
+      expect(messages.className).not.toContain('ring-series-1');
+    });
+
+    it('dims the other bar segments while a legend row is hovered', async () => {
+      renderBreakdown({ view: snapshotView });
+      await userEvent.click(toggle());
+
+      const segments = Array.from(screen.getByRole('progressbar').children) as HTMLElement[];
+      const rowFor = (label: string) =>
+        within(screen.getByTestId('context-breakdown'))
+          .getByText(label)
+          .closest('div') as HTMLElement;
+
+      fireEvent.pointerEnter(rowFor('com_ui_context_messages'));
+
+      expect(segments[0].className).not.toContain('opacity-40');
+      segments.slice(1).forEach((segment) => expect(segment).toHaveClass('opacity-40'));
+
+      fireEvent.pointerLeave(rowFor('com_ui_context_messages'));
+
+      segments.forEach((segment) => expect(segment.className).not.toContain('opacity-40'));
+    });
+
+    it('recedes every segment when the free track row is hovered', async () => {
+      renderBreakdown({ view: snapshotView });
+      await userEvent.click(toggle());
+
+      const segments = Array.from(screen.getByRole('progressbar').children) as HTMLElement[];
+      const rowFor = (label: string) =>
+        within(screen.getByTestId('context-breakdown'))
+          .getByText(label)
+          .closest('div') as HTMLElement;
+
+      fireEvent.pointerEnter(rowFor('com_ui_context_free'));
+
+      segments.forEach((segment) => expect(segment).toHaveClass('opacity-40'));
+    });
+
+    it('drops the dimming when the hovered row disappears from a live update', async () => {
+      const noSubagents = JSON.parse(JSON.stringify(snapshotView)) as TokenUsageView;
+      delete noSubagents.snapshot?.breakdown.toolTokenCounts?.[Constants.SUBAGENT];
+
+      const { rerender } = renderBreakdown({ view: snapshotView });
+      await userEvent.click(toggle());
+
+      const segments = () => Array.from(screen.getByRole('progressbar').children) as HTMLElement[];
+      const rowFor = (label: string) =>
+        within(screen.getByTestId('context-breakdown'))
+          .getByText(label)
+          .closest('div') as HTMLElement;
+
+      fireEvent.pointerEnter(rowFor('com_ui_context_subagents'));
+      segments().forEach((segment, index) =>
+        expect(segment.classList.contains('opacity-40')).toBe(index !== 7),
+      );
+
+      rerender(
+        <Provider>
+          <Breakdown view={noSubagents} showCost={false} />
+        </Provider>,
+      );
+
+      segments().forEach((segment) => expect(segment.className).not.toContain('opacity-40'));
+
+      /** The hover state is cleared, not masked: the row reappearing on a later
+       *  live update must not bring the stale dimming back. */
+      rerender(
+        <Provider>
+          <Breakdown view={snapshotView} showCost={false} />
+        </Provider>,
+      );
+
+      segments().forEach((segment) => expect(segment.className).not.toContain('opacity-40'));
     });
 
     it('leaves the estimate path unsegmented, with no swatches on its rows', async () => {

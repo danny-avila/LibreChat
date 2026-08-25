@@ -198,6 +198,37 @@ describe('ToolsSection', () => {
     expect(screen.queryByTestId('item-dialog')).not.toBeInTheDocument();
     expect(mockSetValue).toHaveBeenCalledWith('file_search', false, { shouldDirty: true });
   });
+
+  test('clears programmatic MCP callers when Code Interpreter is removed', () => {
+    mockSelected = [
+      {
+        kind: 'builtin',
+        id: 'execute_code',
+        name: 'Run Code',
+        description: '',
+        iconKey: 'execute_code',
+      },
+    ];
+    mockFormValues = {
+      tool_options: {
+        search: { allowed_callers: ['code_execution'], defer_loading: true },
+        direct: { allowed_callers: ['direct'] },
+      },
+    };
+
+    render(<ToolsSection agentId="a" />);
+    fireEvent.click(screen.getByRole('button', { name: 'remove-execute_code' }));
+
+    expect(mockSetValue).toHaveBeenCalledWith('execute_code', false, { shouldDirty: true });
+    expect(mockSetValue).toHaveBeenCalledWith(
+      'tool_options',
+      {
+        search: { defer_loading: true },
+        direct: { allowed_callers: ['direct'] },
+      },
+      { shouldDirty: true },
+    );
+  });
 });
 
 describe('use all skills toggle', () => {

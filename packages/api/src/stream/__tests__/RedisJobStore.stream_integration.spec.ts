@@ -1166,7 +1166,7 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
-    test('createJob clears stale per-turn identity (agent_id, isTemporary) from a reused hash', async () => {
+    test('createJob clears stale per-turn identity and provenance from a reused hash', async () => {
       if (!ioredisClient) {
         return;
       }
@@ -1181,11 +1181,17 @@ describe('RedisJobStore Integration Tests', () => {
         agent_id: 'saved-agent-1',
         isTemporary: true,
         discoveredTools: ['deep_tool'],
+        userSubmittedPaths: ['/content/0/tool_call/args'],
+        userSubmittedMessageFieldPaths: [{ path: '/content/0/tool_call/output', field: 'answer' }],
       });
       const turn1 = await store.getJob(streamId);
       expect(turn1?.agent_id).toBe('saved-agent-1');
       expect(turn1?.isTemporary).toBe(true);
       expect(turn1?.discoveredTools).toEqual(['deep_tool']);
+      expect(turn1?.userSubmittedPaths).toEqual(['/content/0/tool_call/args']);
+      expect(turn1?.userSubmittedMessageFieldPaths).toEqual([
+        { path: '/content/0/tool_call/output', field: 'answer' },
+      ]);
 
       // Turn 2 on the SAME conversation switches to an ephemeral / non-temporary turn.
       // The hash is keyed by conversationId, so without clearing, the old agent_id and
@@ -1197,6 +1203,8 @@ describe('RedisJobStore Integration Tests', () => {
       expect(turn2?.agent_id).toBeUndefined();
       expect(turn2?.isTemporary).toBeUndefined();
       expect(turn2?.discoveredTools).toBeUndefined();
+      expect(turn2?.userSubmittedPaths).toBeUndefined();
+      expect(turn2?.userSubmittedMessageFieldPaths).toBeUndefined();
 
       await store.destroy();
     });
@@ -1427,12 +1435,23 @@ describe('RedisJobStore Integration Tests', () => {
       expect(jobFromInstance2?.streamId).toBe(streamId);
 
       // Instance 1 updates job
-      await instance1.updateJob(streamId, { sender: 'TestAgent', syncSent: true });
+      await instance1.updateJob(streamId, {
+        sender: 'TestAgent',
+        syncSent: true,
+        userSubmittedPaths: ['/content/0/tool_call/args'],
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/0/tool_call/output', field: 'decision_response' },
+        ],
+      });
 
       // Instance 2 should see the update
       const updatedJob = await instance2.getJob(streamId);
       expect(updatedJob?.sender).toBe('TestAgent');
       expect(updatedJob?.syncSent).toBe(true);
+      expect(updatedJob?.userSubmittedPaths).toEqual(['/content/0/tool_call/args']);
+      expect(updatedJob?.userSubmittedMessageFieldPaths).toEqual([
+        { path: '/content/0/tool_call/output', field: 'decision_response' },
+      ]);
 
       await instance1.destroy();
       await instance2.destroy();
@@ -3099,7 +3118,7 @@ describe('RedisJobStore Integration Tests', () => {
         undefined,
         undefined,
         undefined,
-        { text: 'kept', fileIds: [] },
+        { text: 'kept', fileIds: [], quotes: [] },
       );
       expect(await store.claimParkedSteers(streamId, 'steer-user')).toBeUndefined();
       expect(await ioredisClient.exists(`stream:{${streamId}}:parked`)).toBe(1);
@@ -3126,7 +3145,7 @@ describe('RedisJobStore Integration Tests', () => {
         undefined,
         undefined,
         undefined,
-        { text: 'kept', fileIds: [] },
+        { text: 'kept', fileIds: [], quotes: [] },
       );
       expect(
         await store.consumeParkedSteer(
@@ -3144,8 +3163,12 @@ describe('RedisJobStore Integration Tests', () => {
     });
 
     test.each([
-      ['changed text', { text: 'forged words', fileIds: ['file-a', 'file-b'] }],
-      ['changed files', { text: 'original words', fileIds: ['file-a', 'file-c'] }],
+      ['changed text', { text: 'forged words', fileIds: ['file-a', 'file-b'], quotes: [] }],
+      ['changed files', { text: 'original words', fileIds: ['file-a', 'file-c'], quotes: [] }],
+      [
+        'changed quotes',
+        { text: 'original words', fileIds: ['file-a', 'file-b'], quotes: ['forged excerpt'] },
+      ],
     ])('atomically refuses parked recovery with %s', async (_label, proof) => {
       if (!ioredisClient) {
         return;
@@ -4158,6 +4181,7 @@ describe('RedisJobStore Integration Tests', () => {
           {
             text: item.text,
             fileIds: (item.files ?? []).flatMap((file) => file.file_id ?? []).sort(),
+            quotes: item.quotes ?? [],
           },
         );
 
@@ -4248,6 +4272,7 @@ describe('RedisJobStore Integration Tests', () => {
           {
             text: item.text,
             fileIds: (item.files ?? []).flatMap((file) => file.file_id ?? []).sort(),
+            quotes: item.quotes ?? [],
           },
         );
         await expect(

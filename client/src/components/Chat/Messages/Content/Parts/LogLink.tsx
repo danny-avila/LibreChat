@@ -1,8 +1,8 @@
 import React from 'react';
 import { useToastContext } from '@librechat/client';
 import { FileSources, sharedFileDownload } from 'librechat-data-provider';
+import { getDownloadFilename, isHttpDownloadTarget, triggerDownload } from '~/utils';
 import { useCodeOutputDownload, useFileDownload } from '~/data-provider';
-import { isHttpDownloadTarget, triggerDownload } from '~/utils';
 import { useShareContext } from '~/Providers';
 
 interface LogLinkProps {
@@ -37,6 +37,7 @@ export const isLocallyStoredSource = (source?: string): boolean => {
     FileSources.s3,
     FileSources.cloudfront,
     FileSources.azure_blob,
+    FileSources.text,
   ].includes(source as FileSources);
 };
 
@@ -53,6 +54,7 @@ export const useAttachmentLink = ({
   const useLocalDownload = isLocallyStoredSource(source) && !!file_id && !!user;
   const { refetch: downloadFromApi } = useFileDownload(user, file_id, { source });
   const { refetch: downloadFromUrl } = useCodeOutputDownload(href);
+  const downloadFilename = getDownloadFilename(filename, file_id, source);
 
   /**
    * Triggers the download and reports whether a file was actually
@@ -71,12 +73,12 @@ export const useAttachmentLink = ({
       // permission, not owner ACL). Non-snapshotted files fall through so the
       // original href / code-output path still works when snapshots are disabled.
       if (shareId && file_id && href.startsWith('/api/share/')) {
-        triggerDownload(sharedFileDownload(shareId, file_id), filename);
+        triggerDownload(sharedFileDownload(shareId, file_id), downloadFilename);
         return true;
       }
 
       if (!useLocalDownload && isHttpDownloadTarget(href)) {
-        triggerDownload(href, filename);
+        triggerDownload(href, downloadFilename);
         return true;
       }
 
@@ -89,7 +91,7 @@ export const useAttachmentLink = ({
         });
         return false;
       }
-      triggerDownload(stream.data, filename);
+      triggerDownload(stream.data, downloadFilename);
       return true;
     } catch (error) {
       console.error('Error downloading file:', error);

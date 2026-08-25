@@ -44,8 +44,20 @@ import { createCategoriesMethods, type CategoriesMethods } from './categories';
 import { createPresetMethods, type PresetMethods } from './preset';
 /* Tier 2 — Moderate (service deps injected) */
 import { createConversationTagMethods, type ConversationTagMethods } from './conversationTag';
-import { createMessageMethods, CLIENT_MESSAGE_SELECT, type MessageMethods } from './message';
-import { createConversationMethods, type ConversationMethods } from './conversation';
+import {
+  createMessageMethods,
+  CLIENT_MESSAGE_SELECT,
+  SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+  type MessageMethods,
+  type ParentSubagentTaskRecord,
+  type SubagentThreadViewMessageRecord,
+  type SubagentTaskResultClaim,
+} from './message';
+import {
+  createConversationMethods,
+  type ConversationMethods,
+  type ParentSubagentThreadRecord,
+} from './conversation';
 import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
 export type {
   AssignConversationToProjectResult,
@@ -93,6 +105,7 @@ import {
   type UpdateSkillResult,
   type ValidationIssue,
 } from './skill';
+import { createScheduleMethods, type ScheduleMethods } from './schedule';
 import {
   createAgentTriggerDeliveryMethods,
   AgentTriggerDeliveryConflictError,
@@ -122,6 +135,8 @@ import {
   type MCPAuthorityConfigSourceDocument,
   type MCPAuthorityCredentialSourceDocument,
 } from './mcpAuthority';
+/* Insights */
+import { createInsightsMethods, type InsightsMethods } from './insights';
 
 export {
   RoleConflictError,
@@ -137,7 +152,7 @@ export {
 };
 export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate, createTxMethods };
 export { permissionBitSupersets };
-export { CLIENT_MESSAGE_SELECT };
+export { CLIENT_MESSAGE_SELECT, SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT };
 export {
   partitionIssues,
   validateSkillName,
@@ -189,9 +204,11 @@ export type AllMethods = UserMethods &
   SkillMethods &
   SkillSyncMethods &
   AgentTriggerDeliveryMethods &
+  ScheduleMethods &
   AgentMethods &
   ConfigMethods &
-  MCPAuthorityMethods;
+  MCPAuthorityMethods &
+  InsightsMethods;
 
 /** Dependencies injected from the api layer into createMethods */
 export interface CreateMethodsDeps {
@@ -326,12 +343,15 @@ export function createMethods(
     ...skillMethods,
     ...createSkillSyncMethods(mongoose),
     ...createAgentTriggerDeliveryMethods(mongoose),
+    ...createScheduleMethods(mongoose),
     /* Tier 5 */
     ...agentMethods,
     /* Config */
     ...createConfigMethods(mongoose),
     /* MCP authority proofs */
     ...createMCPAuthorityMethods(mongoose),
+    /* Insights */
+    ...createInsightsMethods(mongoose),
   };
 }
 
@@ -363,6 +383,10 @@ export type {
   PresetMethods,
   ConversationTagMethods,
   MessageMethods,
+  ParentSubagentTaskRecord,
+  ParentSubagentThreadRecord,
+  SubagentThreadViewMessageRecord,
+  SubagentTaskResultClaim,
   ConversationMethods,
   ChatProjectMethods,
   TxMethods,
@@ -384,10 +408,12 @@ export type {
   UpsertSkillSyncCredentialInput,
   SkillSyncMethods,
   AgentTriggerDeliveryMethods,
+  ScheduleMethods,
   AgentMethods,
   ConfigMethods,
   MCPAuthorityMethods,
   MCPAuthorityMethodHooks,
   MCPAuthorityConfigSourceDocument,
   MCPAuthorityCredentialSourceDocument,
+  InsightsMethods,
 };

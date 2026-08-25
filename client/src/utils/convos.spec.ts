@@ -733,6 +733,40 @@ describe('Conversation Utilities', () => {
         expect(data!.pages[0].conversations.map((c) => c.conversationId)).toEqual(['a', 'c']);
       });
 
+      it('upsertConvoInAllQueries keeps temporary conversations out of the list', () => {
+        upsertConvoInAllQueries(queryClient, { ...convoB, isTemporary: true } as TConversation);
+        const data = queryClient.getQueryData<InfiniteData<{ conversations: TConversation[] }>>([
+          'allConversations',
+        ]);
+
+        expect(data!.pages[0].conversations.map((c) => c.conversationId)).toEqual(['a']);
+      });
+
+      it('upsertConvoInAllQueries keeps legacy expiring conversations out of the list', () => {
+        upsertConvoInAllQueries(queryClient, {
+          ...convoB,
+          expiredAt: '2099-01-01T00:00:00Z',
+        } as TConversation);
+        const data = queryClient.getQueryData<InfiniteData<{ conversations: TConversation[] }>>([
+          'allConversations',
+        ]);
+
+        expect(data!.pages[0].conversations.map((c) => c.conversationId)).toEqual(['a']);
+      });
+
+      it('upsertConvoInAllQueries still admits retained conversations that carry an expiry', () => {
+        upsertConvoInAllQueries(queryClient, {
+          ...convoB,
+          isTemporary: false,
+          expiredAt: '2099-01-01T00:00:00Z',
+        } as TConversation);
+        const data = queryClient.getQueryData<InfiniteData<{ conversations: TConversation[] }>>([
+          'allConversations',
+        ]);
+
+        expect(data!.pages[0].conversations.map((c) => c.conversationId)).toEqual(['b', 'a']);
+      });
+
       it('updateConvoInAllQueries updates correct convo', () => {
         updateConvoInAllQueries(queryClient, 'a', (c) => ({ ...c, model: 'gpt-4' }));
         const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);

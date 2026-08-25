@@ -53,7 +53,9 @@ interface MeasuredRowProps {
   children: React.ReactNode;
 }
 
-/** Reusable wrapper for virtualized row measurement */
+/** Reusable wrapper for virtualized row measurement.
+ *  The List renders role="grid" over a role="rowgroup" container, so each row carries the
+ *  row/gridcell roles those parents require of their children. */
 const MeasuredRow: FC<MeasuredRowProps> = memo(
   ({ cache, rowKey, parent, index, style, children }) => (
     <CellMeasurer cache={cache} columnIndex={0} key={rowKey} parent={parent} rowIndex={index}>
@@ -63,8 +65,9 @@ const MeasuredRow: FC<MeasuredRowProps> = memo(
           style={style}
           className="px-3"
           data-testid="convo-list-row"
+          role="row"
         >
-          {children}
+          <div role="gridcell">{children}</div>
         </div>
       )}
     </CellMeasurer>

@@ -65,11 +65,12 @@ export const useAutoSave = ({
     (id: string): PendingTextAttachmentDraft[] => {
       const filesDraft = getFilesDraft(id);
 
-      if (filesDraft.fileIds.length === 0) {
-        setFiles(new Map());
-        return [];
-      }
-      if (fileList == null) {
+      /** Restoring adds what the draft holds; it never clears. The conversation
+       * swap below owns that, and does it explicitly before calling here — while
+       * the file-cache path runs on every `QueryKeys.files` write (an upload
+       * landing, an SSE attachment during a run), where an empty draft means the
+       * write has not caught up yet, not that the user has no attachments. */
+      if (filesDraft.fileIds.length === 0 || fileList == null) {
         return [];
       }
 
@@ -95,10 +96,20 @@ export const useAutoSave = ({
           delete pendingPastes[fileId];
           setFiles((currentFiles) => {
             const updatedFiles = new Map(currentFiles);
+            /** The same entry may still be live in the composer — this path also
+             * runs when the upload that created it writes the file cache. Layer
+             * the persisted record over it instead of replacing it: the local
+             * `File`, the blob preview the chip renders from, and the tool
+             * resource the upload was staged under exist nowhere on the server
+             * record, and `attached` decides whether removing the chip also
+             * deletes the file, which a composer-owned upload still needs. */
+            const live = updatedFiles.get(fileIdToRecover);
             updatedFiles.set(fileIdToRecover, {
+              ...live,
               ...fileToRecover,
+              preview: live?.preview ?? fileToRecover.preview,
               progress: 1,
-              attached: true,
+              attached: live ? (live.attached ?? false) : true,
               size: fileToRecover.bytes,
             });
             return updatedFiles;
