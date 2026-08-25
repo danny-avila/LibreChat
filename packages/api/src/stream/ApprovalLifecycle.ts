@@ -258,6 +258,7 @@ export class ApprovalLifecycle {
       patch: {
         completedAt,
         error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+        ...(job.agentEventDeliveryKey != null && { terminalHostActionPending: true }),
       },
       clear: [
         'pendingAction',

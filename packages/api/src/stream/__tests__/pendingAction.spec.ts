@@ -1265,6 +1265,11 @@ describe('InMemoryJobStore — approval expiry cleanup', () => {
     const store = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     try {
       const job = await store.createJob('stale-pause-barrier', 'u1');
+      await store.updateJob(
+        'stale-pause-barrier',
+        { agentEventDeliveryKey: 'trigger-stale-pause' },
+        job.createdAt,
+      );
       await store.enqueueSteer(
         'stale-pause-barrier',
         {
@@ -1296,6 +1301,7 @@ describe('InMemoryJobStore — approval expiry cleanup', () => {
       await expect(store.getJob('stale-pause-barrier')).resolves.toMatchObject({
         status: 'error',
         error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+        terminalHostActionPending: true,
       });
       const failedJob = await store.getJob('stale-pause-barrier');
       expect(failedJob?.pendingAction).toBeUndefined();

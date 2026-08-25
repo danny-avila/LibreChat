@@ -278,6 +278,7 @@ describe('GenerationJobManager startup telemetry', () => {
       streamId,
       expect.objectContaining({ agentEventDeliveryKey: 'delivery-1', status: 'aborted' }),
       [],
+      expect.any(Array),
     );
     await manager.destroy();
   });

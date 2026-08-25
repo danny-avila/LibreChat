@@ -1,6 +1,7 @@
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
+import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
 
 describe('GenerationJobManager terminal host actions', () => {
   let manager: GenerationJobManagerClass;
@@ -31,17 +32,26 @@ describe('GenerationJobManager terminal host actions', () => {
       },
     });
     await manager.emitChunk('conversation-1', {
+      event: 'on_run_step',
+      data: {
+        id: 'step-1',
+        index: 0,
+        type: 'tool_calls',
+        status: 'in_progress',
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-1', name: 'submit_move', args: { gameId: 'game-1' } }],
+        },
+      },
+    });
+    await manager.emitChunk('conversation-1', {
       event: 'on_run_step_completed',
       data: {
         result: {
           id: 'step-1',
           index: 0,
-          type: 'tool_calls',
-          status: 'completed',
-          stepDetails: {
-            type: 'tool_calls',
-            tool_calls: [{ id: 'call-1', name: 'submit_move', output: 'ok' }],
-          },
+          type: 'tool_call',
+          tool_call: { id: 'call-1', name: 'submit_move', output: 'ok' },
         },
       },
     });
@@ -57,11 +67,83 @@ describe('GenerationJobManager terminal host actions', () => {
         agentEventDeliveryKey: 'trigger_1',
         status: 'complete',
       }),
-      [expect.objectContaining({ id: 'step-1', status: 'completed' })],
+      [
+        expect.objectContaining({
+          id: 'step-1',
+          status: 'completed',
+          stepDetails: expect.objectContaining({
+            tool_calls: [
+              expect.objectContaining({
+                id: 'call-1',
+                args: { gameId: 'game-1' },
+                output: 'ok',
+              }),
+            ],
+          }),
+        }),
+      ],
+      expect.any(Array),
     );
     await expect(store.getJob('conversation-1')).resolves.not.toHaveProperty(
       'terminalHostActionPending',
     );
+  });
+
+  it('serializes run-step snapshots so an earlier write cannot erase completion evidence', async () => {
+    const handler = jest.fn().mockResolvedValue(undefined);
+    manager.setTerminalHostActionHandler(handler);
+    const streamId = 'conversation-run-step-order';
+    const job = await manager.createJob(streamId, 'user-1', streamId, {
+      initialMetadata: { agentEventDeliveryKey: 'trigger_run_step_order' },
+    });
+    let releaseFirstWrite: (() => void) | undefined;
+    const firstWrite = new Promise<void>((resolve) => {
+      releaseFirstWrite = resolve;
+    });
+    const writes: Array<Array<{ status?: string }>> = [];
+    Object.assign(store, { saveRunSteps: jest.fn() });
+    jest
+      .spyOn(store as InMemoryJobStore & { saveRunSteps: jest.Mock }, 'saveRunSteps')
+      .mockImplementation(async (_id, steps) => {
+        writes.push(structuredClone(steps));
+        if (writes.length === 1) {
+          await firstWrite;
+        }
+      });
+
+    await manager.emitChunk(streamId, {
+      event: 'on_run_step',
+      data: {
+        id: 'step-ordered',
+        index: 0,
+        type: 'tool_calls',
+        status: 'in_progress',
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-ordered', name: 'submit_move', args: {} }],
+        },
+      },
+    });
+    await manager.emitChunk(streamId, {
+      event: 'on_run_step_completed',
+      data: {
+        result: {
+          id: 'step-ordered',
+          index: 0,
+          type: 'tool_call',
+          tool_call: { id: 'call-ordered', name: 'submit_move', output: 'ok' },
+        },
+      },
+    });
+
+    const completing = manager.completeJob(streamId, undefined, job.createdAt);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(handler).not.toHaveBeenCalled();
+    releaseFirstWrite?.();
+    await expect(completing).resolves.toBe(true);
+
+    expect(writes[writes.length - 1]).toEqual([expect.objectContaining({ status: 'completed' })]);
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 
   it('retains a failed host action and lets a later cleanup owner retry it', async () => {
@@ -104,6 +186,7 @@ describe('GenerationJobManager terminal host actions', () => {
       'conversation-2',
       expect.objectContaining({ createdAt: job.createdAt, agentEventDeliveryKey: 'trigger_2' }),
       [expect.objectContaining({ id: 'step-2', status: 'completed' })],
+      expect.any(Array),
     );
     await expect(store.getJob('conversation-2')).resolves.not.toHaveProperty(
       'terminalHostActionPending',
@@ -154,6 +237,7 @@ describe('GenerationJobManager terminal host actions', () => {
       'conversation-retry',
       expect.objectContaining({ agentEventDeliveryKey: 'trigger_retry' }),
       [expect.objectContaining({ id: 'step-retry', status: 'completed' })],
+      expect.any(Array),
     );
     await expect(store.getJob('conversation-retry')).resolves.not.toHaveProperty(
       'terminalHostActionPending',
@@ -189,6 +273,7 @@ describe('GenerationJobManager terminal host actions', () => {
       streamId,
       expect.objectContaining({ agentEventDeliveryKey: 'trigger_completed' }),
       [expect.objectContaining({ id: 'step-shared', status: 'completed' })],
+      expect.any(Array),
     );
   });
 
@@ -211,9 +296,72 @@ describe('GenerationJobManager terminal host actions', () => {
         status: 'aborted',
       }),
       [],
+      expect.any(Array),
     );
     await expect(store.getJob('conversation-3')).resolves.not.toHaveProperty(
       'terminalHostActionPending',
     );
+  });
+
+  it('settles a bound generation when graceful shutdown terminalizes it', async () => {
+    const handler = jest.fn().mockResolvedValue(undefined);
+    manager.setTerminalHostActionHandler(handler);
+    const streamId = 'conversation-shutdown';
+    const job = await manager.createJob(streamId, 'user-1', streamId, {
+      initialMetadata: { agentEventDeliveryKey: 'trigger_shutdown' },
+    });
+
+    await (
+      manager as unknown as { finalizeOwnedJobsForShutdown: () => Promise<void> }
+    ).finalizeOwnedJobsForShutdown();
+
+    expect(handler).toHaveBeenCalledWith(
+      streamId,
+      expect.objectContaining({
+        createdAt: job.createdAt,
+        agentEventDeliveryKey: 'trigger_shutdown',
+        status: 'error',
+      }),
+      [],
+      expect.any(Array),
+    );
+    await expect(store.getJob(streamId)).resolves.not.toHaveProperty('terminalHostActionPending');
+  });
+
+  it('settles a bound generation when pause persistence times out', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    const handler = jest.fn().mockResolvedValue(undefined);
+    manager.setTerminalHostActionHandler(handler);
+    const streamId = 'conversation-pause-timeout';
+    const job = await manager.createJob(streamId, 'user-1', streamId, {
+      initialMetadata: { agentEventDeliveryKey: 'trigger_pause_timeout' },
+    });
+    const action = buildPendingAction(
+      buildToolApprovalPayload([
+        { name: 'submit_move', arguments: { gameId: 'game-1' }, tool_call_id: 'call-1' },
+      ]),
+      { streamId, conversationId: streamId },
+    );
+    await expect(
+      manager.approvals.pause(streamId, action, {
+        expectedCreatedAt: job.createdAt,
+        persistencePending: true,
+      }),
+    ).resolves.toBe(true);
+
+    now.mockReturnValue(31_001);
+    await (manager as unknown as { cleanup: () => Promise<void> }).cleanup();
+
+    expect(handler).toHaveBeenCalledWith(
+      streamId,
+      expect.objectContaining({
+        agentEventDeliveryKey: 'trigger_pause_timeout',
+        status: 'error',
+      }),
+      [],
+      expect.any(Array),
+    );
+    await expect(store.getJob(streamId)).resolves.not.toHaveProperty('terminalHostActionPending');
+    now.mockRestore();
   });
 });

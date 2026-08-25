@@ -3359,6 +3359,11 @@ describe('RedisJobStore Integration Tests', () => {
       try {
         const streamId = 'pause-barrier-expiry-cleanup';
         const job = await store.createJob(streamId, 'steer-user', streamId, 'tenant-1');
+        await store.updateJob(
+          streamId,
+          { agentEventDeliveryKey: 'trigger-pause-barrier-expiry' },
+          job.createdAt,
+        );
         await store.enqueueSteer(
           streamId,
           buildSteer('pause-barrier-steer', 'frozen while pause persists'),
@@ -3391,6 +3396,7 @@ describe('RedisJobStore Integration Tests', () => {
         await expect(store.getJob(streamId)).resolves.toMatchObject({
           status: 'error',
           error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+          terminalHostActionPending: true,
         });
         const failedJob = await store.getJob(streamId);
         expect(failedJob?.pendingAction).toBeUndefined();

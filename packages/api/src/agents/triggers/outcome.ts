@@ -20,27 +20,46 @@ interface CompletedToolEvidence {
 
 const MAX_RECEIPT_ID_LENGTH = 256;
 
-function isBackgroundLaunchReceipt(value: unknown): boolean {
+function isBackgroundNonExecutionReceipt(value: unknown, argumentsValue: unknown): boolean {
+  const parsedArguments = parseArguments(argumentsValue);
+  if (
+    parsedArguments == null ||
+    typeof parsedArguments !== 'object' ||
+    Array.isArray(parsedArguments) ||
+    (parsedArguments as Record<string, unknown>).run_in_background !== true
+  ) {
+    return false;
+  }
   const parsed = parseArguments(value);
+  if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return false;
+  }
+  const receipt = parsed as Record<string, unknown>;
   return (
-    parsed != null &&
-    typeof parsed === 'object' &&
-    !Array.isArray(parsed) &&
-    (parsed as Record<string, unknown>).status === 'running' &&
-    typeof (parsed as Record<string, unknown>).background_task_id === 'string'
+    (receipt.status === 'running' && typeof receipt.background_task_id === 'string') ||
+    receipt.status === 'rejected'
   );
 }
 
-function toolEvidence(step: Agents.RunStep): CompletedToolEvidence[] {
-  if (step.status !== 'completed' || step.stepDetails.type !== 'tool_calls') {
+function toolEvidence(
+  step: Agents.RunStep,
+  nonExecutedToolCallIds: ReadonlySet<string>,
+): CompletedToolEvidence[] {
+  if (step.status !== 'completed' || step.stepDetails?.type !== 'tool_calls') {
     return [];
   }
   return (step.stepDetails.tool_calls ?? []).flatMap((call) => {
     if ('inputValidationError' in call && call.inputValidationError === true) {
       return [];
     }
+    if (call.id != null && nonExecutedToolCallIds.has(call.id)) {
+      return [];
+    }
     if ('function' in call) {
-      if (call.function.output == null || isBackgroundLaunchReceipt(call.function.output)) {
+      if (
+        call.function.output == null ||
+        isBackgroundNonExecutionReceipt(call.function.output, call.function.arguments)
+      ) {
         return [];
       }
       return [
@@ -51,7 +70,7 @@ function toolEvidence(step: Agents.RunStep): CompletedToolEvidence[] {
         },
       ];
     }
-    if (call.output == null || isBackgroundLaunchReceipt(call.output)) {
+    if (call.output == null || isBackgroundNonExecutionReceipt(call.output, call.args)) {
       return [];
     }
     return [
@@ -62,6 +81,29 @@ function toolEvidence(step: Agents.RunStep): CompletedToolEvidence[] {
       },
     ];
   });
+}
+
+function nonExecutedHITLToolCallIds(
+  job: SerializableJobData,
+  content: Agents.MessageContentComplex[],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const provenance of job.userSubmittedMessageFieldPaths ?? []) {
+    if (provenance.field !== 'decision_response' && provenance.field !== 'decision_reason') {
+      continue;
+    }
+    const match = /^\/content\/(\d+)\/tool_call\/output$/.exec(provenance.path);
+    const index = match == null ? Number.NaN : Number(match[1]);
+    const part = Number.isSafeInteger(index) ? content[index] : undefined;
+    if (part == null || typeof part !== 'object' || !('tool_call' in part)) {
+      continue;
+    }
+    const toolCall = part.tool_call;
+    if (toolCall?.id != null && toolCall.id.length > 0) {
+      ids.add(toolCall.id);
+    }
+  }
+  return ids;
 }
 
 function parseArguments(value: unknown): unknown {
@@ -112,12 +154,23 @@ export function createAgentEventTerminalHandler(methods: {
   settleAgentTriggerHandlingOutcome: (
     input: SettleAgentTriggerHandlingOutcomeInput,
   ) => Promise<boolean>;
-}): (streamId: string, job: SerializableJobData, runSteps: Agents.RunStep[]) => Promise<void> {
-  return async (streamId: string, job: SerializableJobData, runSteps: Agents.RunStep[]) => {
+}): (
+  streamId: string,
+  job: SerializableJobData,
+  runSteps: Agents.RunStep[],
+  content?: Agents.MessageContentComplex[],
+) => Promise<void> {
+  return async (
+    streamId: string,
+    job: SerializableJobData,
+    runSteps: Agents.RunStep[],
+    content: Agents.MessageContentComplex[] = [],
+  ) => {
     if (job.agentEventDeliveryKey == null) {
       return;
     }
-    const evidence = runSteps.flatMap(toolEvidence);
+    const nonExecutedToolCallIds = nonExecutedHITLToolCallIds(job, content);
+    const evidence = runSteps.flatMap((step) => toolEvidence(step, nonExecutedToolCallIds));
     const action =
       job.agentEventExpectedAction == null
         ? undefined

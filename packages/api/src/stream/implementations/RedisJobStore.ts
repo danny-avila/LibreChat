@@ -2932,6 +2932,7 @@ export class RedisJobStore implements IJobStoreV2 {
               patch: {
                 completedAt: now,
                 error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+                ...(job.agentEventDeliveryKey != null && { terminalHostActionPending: true }),
               },
               clear: [
                 'pendingAction',

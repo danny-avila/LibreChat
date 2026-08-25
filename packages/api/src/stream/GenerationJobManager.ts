@@ -3,6 +3,7 @@ import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import {
   Constants,
   ContentTypes,
+  StepTypes,
   UsageEvents,
   ApprovalEvents,
   SteerEvents,
@@ -492,6 +493,7 @@ export type TerminalHostActionHandler = (
   streamId: string,
   job: SerializableJobData,
   runSteps: Agents.RunStep[],
+  content: Agents.MessageContentComplex[],
 ) => void | Promise<void>;
 
 export interface CreateGenerationJobOptions {
@@ -702,6 +704,9 @@ class GenerationJobManagerClass {
   /** Serializes token-usage read/modify/write updates per stream. */
   private tokenUsageWriteQueues = new Map<string, Promise<void>>();
 
+  /** Serializes whole-array run-step snapshots so an older save cannot overwrite completion. */
+  private runStepWriteQueues = new Map<string, Promise<void>>();
+
   /** Partial-response and disconnect-state writes still draining during shutdown. */
   private subscriberCleanupPromises = new Set<Promise<void>>();
 
@@ -840,6 +845,7 @@ class GenerationJobManagerClass {
       this.runStepBuffers?.clear();
       this.replayEventWriteQueues.clear();
       this.tokenUsageWriteQueues.clear();
+      this.runStepWriteQueues.clear();
     }
 
     this.ownedJobs.clear();
@@ -1594,6 +1600,7 @@ class GenerationJobManagerClass {
       this.runStepBuffers?.delete(streamId);
       this.replayEventWriteQueues.delete(streamId);
       this.tokenUsageWriteQueues.delete(streamId);
+      this.runStepWriteQueues.delete(streamId);
       this.jobStore.clearContentState(streamId, predecessor.createdAt);
       try {
         // The replacement cannot be exposed, so neither generation can
@@ -1935,7 +1942,10 @@ class GenerationJobManagerClass {
    * terminal hash that makes every duplicate retry wait until Redis TTL expiry. */
   private async terminalizeUnexposedGeneration(
     streamId: string,
-    job: Pick<SerializableJobData, 'createdAt' | 'conversationId' | 'providerExecutionId'>,
+    job: Pick<
+      SerializableJobData,
+      'createdAt' | 'conversationId' | 'providerExecutionId' | 'agentEventDeliveryKey'
+    >,
     message: string,
   ): Promise<boolean> {
     try {
@@ -1958,6 +1968,10 @@ class GenerationJobManagerClass {
                 completedAt: Date.now(),
                 error: message,
                 finalEvent: JSON.stringify(finalEvent),
+                ...(job.agentEventDeliveryKey != null &&
+                  this.terminalHostActionHandler != null && {
+                    terminalHostActionPending: true,
+                  }),
               },
               expectCreatedAt: job.createdAt,
             })
@@ -2247,12 +2261,7 @@ class GenerationJobManagerClass {
           return false;
         },
       );
-      await this.jobStore.transitionStatus(streamId, {
-        from: 'running',
-        to: 'error',
-        patch: { completedAt: Date.now(), error: SHUTDOWN_JOB_ERROR },
-        expectCreatedAt: jobData.createdAt,
-      });
+      await this.completeJob(streamId, SHUTDOWN_JOB_ERROR, jobData.createdAt);
       if (jobData.providerExecutionId) {
         await this.markProviderExecutionDrained(
           streamId,
@@ -3283,7 +3292,9 @@ class GenerationJobManagerClass {
     }
     const buffered = this.runStepBuffers?.get(streamId);
     if (buffered?.createdAt === job.createdAt && this.jobStore.saveRunSteps != null) {
-      await this.jobStore.saveRunSteps(streamId, buffered.steps, job.createdAt);
+      await this.queueJobWrite(this.runStepWriteQueues, streamId, () =>
+        this.jobStore.saveRunSteps!(streamId, [...buffered.steps], job.createdAt),
+      );
     }
   }
 
@@ -3648,6 +3659,7 @@ class GenerationJobManagerClass {
         }
         this.replayEventWriteQueues.delete(streamId);
         this.tokenUsageWriteQueues.delete(streamId);
+        this.runStepWriteQueues.delete(streamId);
         if (status !== 'error' && this._cleanupOnComplete) {
           this.runtimeState.delete(streamId);
         }
@@ -6078,6 +6090,7 @@ class GenerationJobManagerClass {
         this.runStepBuffers?.delete(streamId);
         this.replayEventWriteQueues.delete(streamId);
         this.tokenUsageWriteQueues.delete(streamId);
+        this.runStepWriteQueues.delete(streamId);
       }
     }
 
@@ -6207,8 +6220,75 @@ class GenerationJobManagerClass {
       return;
     }
 
-    // Fire and forget - accumulate run steps
-    this.accumulateRunStep(streamId, candidate as Agents.RunStep, expectedCreatedAt);
+    if (eventType === 'on_run_step') {
+      this.accumulateRunStep(streamId, candidate as Agents.RunStep, expectedCreatedAt);
+      return;
+    }
+
+    if ('stepDetails' in candidate) {
+      this.accumulateRunStep(
+        streamId,
+        { ...(candidate as Agents.RunStep), status: 'completed' },
+        expectedCreatedAt,
+      );
+      return;
+    }
+
+    const completion = candidate as Agents.ToolEndEvent;
+    const completedToolCall = completion.tool_call;
+    if (completedToolCall == null) {
+      return;
+    }
+    const bufferState = this.runStepBuffers?.get(streamId);
+    const existingStep =
+      bufferState?.createdAt === expectedCreatedAt
+        ? bufferState.steps.find((step) => step.id === completion.id)
+        : undefined;
+    const existingCalls =
+      existingStep?.stepDetails?.type === StepTypes.TOOL_CALLS
+        ? (existingStep.stepDetails.tool_calls ?? [])
+        : [];
+    const completedCallId = completedToolCall.id;
+    const existingCallIndex =
+      completedCallId == null ? -1 : existingCalls.findIndex((call) => call.id === completedCallId);
+    const completedCalls = [...existingCalls];
+    if (existingCallIndex >= 0) {
+      const existingCall = completedCalls[existingCallIndex];
+      completedCalls[existingCallIndex] =
+        'function' in existingCall
+          ? {
+              id: existingCall.id,
+              type: 'function',
+              function: {
+                ...existingCall.function,
+                output: completedToolCall.output,
+              },
+              ...('inputValidationError' in completedToolCall &&
+                completedToolCall.inputValidationError === true && {
+                  inputValidationError: true,
+                }),
+            }
+          : { ...existingCall, ...completedToolCall };
+    } else {
+      completedCalls.push(completedToolCall);
+    }
+
+    this.accumulateRunStep(
+      streamId,
+      {
+        ...(existingStep ?? {
+          id: completion.id,
+          index: completion.index,
+          type: StepTypes.TOOL_CALLS,
+        }),
+        status: 'completed',
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: completedCalls,
+        },
+      },
+      expectedCreatedAt,
+    );
   }
 
   /**
@@ -6245,7 +6325,10 @@ class GenerationJobManagerClass {
 
     // Save to Redis
     if (this.jobStore.saveRunSteps) {
-      this.jobStore.saveRunSteps(streamId, buffer, expectedCreatedAt).catch((err) => {
+      const snapshot = [...buffer];
+      void this.queueJobWrite(this.runStepWriteQueues, streamId, () =>
+        this.jobStore.saveRunSteps!(streamId, snapshot, expectedCreatedAt),
+      ).catch((err) => {
         logger.error(`[GenerationJobManager] Failed to save run steps:`, err);
       });
     }
@@ -7244,6 +7327,7 @@ class GenerationJobManagerClass {
           streamId,
           job,
           await this.getTerminalRunSteps(streamId, job),
+          (await this.jobStore.getContentParts(streamId, job.createdAt))?.content ?? [],
         );
       }
       // Success: the durable host action is settled. Clear its pending marker, fenced to
@@ -7269,6 +7353,7 @@ class GenerationJobManagerClass {
           streamId,
           job,
           await this.getTerminalRunSteps(streamId, job),
+          (await this.jobStore.getContentParts(streamId, job.createdAt))?.content ?? [],
         );
       }
       await this.jobStore.clearTerminalHostAction?.(streamId, job.createdAt);
@@ -7517,6 +7602,7 @@ class GenerationJobManagerClass {
         this.runStepBuffers?.delete(streamId);
         this.replayEventWriteQueues.delete(streamId);
         this.tokenUsageWriteQueues.delete(streamId);
+        this.runStepWriteQueues.delete(streamId);
         this.jobStore.clearContentState(streamId, observedRuntime.createdAt);
         this.eventTransport.cleanup(streamId);
         continue;
@@ -7692,7 +7778,6 @@ class GenerationJobManagerClass {
       return;
     }
 
-    const completedAt = Date.now();
     const results = await Promise.allSettled(
       ownedJobs.map(async ([streamId, createdAt]) => {
         const job = await this.jobStore.getJob(streamId);
@@ -7708,35 +7793,11 @@ class GenerationJobManagerClass {
           runtime.lastSubscriberCleanupGeneration = runtime.attachmentGeneration;
           await this.persistSubscriberCleanup(streamId, runtime);
         }
-        /** Shutdown interrupts live emitters, so their coalesced window must
-         * drain before the terminal CAS — same rule as claim/abort. */
-        await this.flushCoalescedStreamBuffers(streamId);
-        const finalized = await this.jobStore.transitionStatus(streamId, {
-          from: 'running',
-          to: 'error',
-          expectCreatedAt: createdAt,
-          patch: { completedAt, error: SHUTDOWN_JOB_ERROR },
-        });
-        if (!finalized) {
+        const claim = await this.claimTerminalJob(streamId, 'error', SHUTDOWN_JOB_ERROR, createdAt);
+        if (claim == null) {
           return;
         }
-
-        if (runtime?.createdAt === createdAt) {
-          runtime.errorEvent = SHUTDOWN_JOB_ERROR;
-          this.releaseAbortSubscription(runtime);
-        }
-        try {
-          await this.eventTransport.emitError(streamId, SHUTDOWN_JOB_ERROR, createdAt);
-        } catch (err) {
-          logger.error(
-            `[GenerationJobManager] Failed to publish shutdown error for ${streamId}:`,
-            err,
-          );
-        }
-        if (this.ownedJobs.get(streamId) === createdAt) {
-          this.ownedJobs.delete(streamId);
-        }
-        recordGenerationJob(this.storeLabel, 'error');
+        await this.finishTerminalJob(claim);
       }),
     );
 
@@ -7809,6 +7870,7 @@ class GenerationJobManagerClass {
     this.runStepBuffers?.clear();
     this.replayEventWriteQueues.clear();
     this.tokenUsageWriteQueues.clear();
+    this.runStepWriteQueues.clear();
 
     logger.debug('[GenerationJobManager] Destroyed');
   }
