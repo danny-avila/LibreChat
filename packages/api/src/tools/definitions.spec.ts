@@ -48,6 +48,7 @@ describe('definitions.ts', () => {
       expect(result.toolDefinitions).toHaveLength(0);
       expect(result.toolRegistry.size).toBe(0);
       expect(result.hasDeferredTools).toBe(false);
+      expect(result.oauthActionToolNames).toEqual([]);
     });
 
     describe('action tool definitions', () => {
@@ -128,6 +129,53 @@ describe('definitions.ts', () => {
         );
         expect(actionDef).toBeDefined();
         expect(actionDef?.parameters).toBeUndefined();
+      });
+
+      it('collects OAuth action tool names and strips the marker from emitted defs', async () => {
+        const mockActionDefs: ActionToolDefinition[] = [
+          {
+            name: 'getWeather_action_weather_com',
+            description: 'Get weather for a location',
+            oauth: false,
+          },
+          {
+            name: 'sendMail_action_mail_example_com',
+            description: 'Send an email',
+            oauth: true,
+          },
+          {
+            name: 'listItems_action_api_example_com',
+            description: 'List all items',
+          },
+        ];
+
+        const mockGetActionToolDefinitions = jest.fn().mockResolvedValue(mockActionDefs);
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: [
+            'getWeather_action_weather---com',
+            'sendMail_action_mail---example---com',
+            'listItems_action_api---example---com',
+          ],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          getActionToolDefinitions: mockGetActionToolDefinitions,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        expect(result.oauthActionToolNames).toEqual(['sendMail_action_mail_example_com']);
+        for (const def of result.toolDefinitions) {
+          expect(def).not.toHaveProperty('oauth');
+        }
+        const registryEntry = result.toolRegistry.get('sendMail_action_mail_example_com');
+        expect(registryEntry).toBeDefined();
+        expect(registryEntry).not.toHaveProperty('oauth');
       });
 
       it('should not classify MCP tools with _action in name as action tools', async () => {

@@ -36,6 +36,7 @@ import {
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
   findConversationInInfinite,
+  preserveStreamedContentIdentity,
 } from '~/utils';
 import {
   startupConfigKey,
@@ -870,19 +871,29 @@ export default function useEventHandlers({
           finalMessages = [...messages, requestMessage, responseMessage];
         }
 
-        /* Preserve files from current messages when server response lacks them */
+        /* Preserve files and streamed content identity from current messages:
+         * files fill in when the server response lacks them, and the persisted
+         * (compacted) content is stamped with the indexes it streamed at so
+         * index-keyed renders don't remount the settled message. */
         if (finalMessages.length > 0) {
-          const currentMsgMap = new Map(
-            currentMessages
-              .filter((m) => m.files && m.files.length > 0)
-              .map((m) => [m.messageId, m.files]),
-          );
+          const currentMsgMap = new Map(currentMessages.map((m) => [m.messageId, m]));
           for (let i = 0; i < finalMessages.length; i++) {
             const msg = finalMessages[i];
-            const preservedFiles = currentMsgMap.get(msg.messageId);
-            if (msg.files == null && preservedFiles) {
-              finalMessages[i] = { ...msg, files: preservedFiles };
+            const currentMsg = currentMsgMap.get(msg.messageId);
+            if (!currentMsg) {
+              continue;
             }
+            const preservedFiles =
+              msg.files == null && currentMsg.files?.length ? currentMsg.files : undefined;
+            const content = preserveStreamedContentIdentity(currentMsg.content, msg.content);
+            if (preservedFiles == null && content === msg.content) {
+              continue;
+            }
+            finalMessages[i] = {
+              ...msg,
+              ...(preservedFiles != null ? { files: preservedFiles } : {}),
+              ...(content !== msg.content ? { content } : {}),
+            };
           }
         }
 

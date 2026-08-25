@@ -3778,7 +3778,13 @@ describe('SubagentThreadTaskStore', () => {
     expect(store.get(config.scopeId, liveTaskId)?.pendingControls).toBe(2);
 
     finish({ content: 'done' });
-    await waitForSettled(store, config.scopeId, live);
+    /** This store deliberately uses a 20 ms completed TTL. Under coverage the
+     * task can settle and expire between polling ticks, which is also a valid
+     * terminal outcome for the cleanup asserted by this test. */
+    await waitUntil(
+      () => store.get(config.scopeId, liveTaskId)?.status !== 'running',
+      'the live replay-window task to settle or expire',
+    );
     await store.destroyTaskControlTransport();
   });
 

@@ -8,7 +8,12 @@ import type {
 } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
-import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
+import {
+  mapAttachments,
+  getPartKeyIndex,
+  filterAttachmentsForPart,
+  groupSequentialToolCalls,
+} from '~/utils';
 import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceChanges';
 import { groupActivityPhases, lastCursorContentIdx } from '~/utils/activityLabels';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
@@ -51,20 +56,20 @@ const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string =
    *  absorbs the block's leading THINK part when its text lands, so keying on
    *  `parts[0]` would flip the key mid-run — remounting the group and losing
    *  whatever the user had expanded. The tool calls themselves do not move. */
-  let firstToolIdx: number | undefined;
+  let firstToolKeyIdx: number | undefined;
   for (const { part, idx } of parts) {
     const toolCallId = getToolCallId(part);
     if (toolCallId) {
       return `tool:${toolCallId}`;
     }
-    if (firstToolIdx === undefined && part?.type === ContentTypes.TOOL_CALL) {
-      firstToolIdx = idx;
+    if (firstToolKeyIdx === undefined && part?.type === ContentTypes.TOOL_CALL) {
+      firstToolKeyIdx = getPartKeyIndex(part, idx);
     }
   }
   /** Same reasoning for id-less tool calls: anchor to the first TOOL entry's
    *  index rather than the block's first part, which shifts when reasoning is
    *  absorbed. Only a block with no tool call at all falls back to `parts[0]`. */
-  return `fallback:${fallbackScope}:${firstToolIdx ?? firstPart.idx}`;
+  return `fallback:${fallbackScope}:${firstToolKeyIdx ?? getPartKeyIndex(firstPart.part, firstPart.idx)}`;
 };
 
 type PartWithContextProps = {
@@ -117,7 +122,7 @@ const PartWithContext = memo(function PartWithContext({
         part={part}
         attachments={partAttachments}
         isSubmitting={isSubmitting}
-        key={`part-${messageId}-${idx}`}
+        key={`part-${messageId}-${getPartKeyIndex(part, idx)}`}
         isCreatedByUser={isCreatedByUser}
         isLast={isLastPart}
         showCursor={isLastPart && isLast}
@@ -248,7 +253,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
     const indices = new Set<number>();
     for (const segment of phaseSegments ?? []) {
       if (segment.type === 'phase') {
-        indices.add(segment.labelIndex);
+        indices.add(getPartKeyIndex(segment.labelPart, segment.labelIndex));
       }
     }
     return indices;
@@ -332,7 +337,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
       const localIdx = localIndexByAbsolute?.get(idx) ?? idx - contentIndexOffset;
       return (
         <PartWithContext
-          key={`provider-${messageId}-${idx}`}
+          key={`provider-${messageId}-${getPartKeyIndex(part, idx)}`}
           idx={idx}
           part={part}
           isLast={isLast}
@@ -369,7 +374,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
       const localIdx = localIndexByAbsolute?.get(idx) ?? idx - contentIndexOffset;
       return (
         <PartWithContext
-          key={`provider-${messageId}-${idx}`}
+          key={`provider-${messageId}-${getPartKeyIndex(part, idx)}`}
           idx={idx}
           part={part}
           isLast={isLast}
@@ -456,15 +461,15 @@ const ContentPartsBody = memo(function ContentPartsBody({
   /** The re-attribution node for a part resuming after a steer block, shared
    *  by the sequential path and the parallel renderer's sequential stretches. */
   const renderResumeAttribution = useCallback(
-    (idx: number): ReactElement | null => {
+    (idx: number, keyIdx: number = idx): ReactElement | null => {
       if (authorHeader == null || !postSteerAuthors.has(idx)) {
         return null;
       }
       const activeAgentId = postSteerAuthors.get(idx);
       if (activeAgentId != null) {
-        return <AgentUpdate key={`author-${messageId}-${idx}`} currentAgentId={activeAgentId} />;
+        return <AgentUpdate key={`author-${messageId}-${keyIdx}`} currentAgentId={activeAgentId} />;
       }
-      return <Fragment key={`author-${messageId}-${idx}`}>{authorHeader}</Fragment>;
+      return <Fragment key={`author-${messageId}-${keyIdx}`}>{authorHeader}</Fragment>;
     },
     [authorHeader, postSteerAuthors, messageId],
   );
@@ -500,6 +505,23 @@ const ContentPartsBody = memo(function ContentPartsBody({
     const relativeGlobalLastContentIdx = lastCursorContentIdx(content ?? []);
     const globalLastContentIdx =
       relativeGlobalLastContentIdx < 0 ? -1 : absoluteIndexAt(relativeGlobalLastContentIdx);
+    /** Segment keys anchor to their first defined part's stable index, never
+     *  to the segment's ordinal: hole-only slots form phantom segments while
+     *  a run streams and vanish from the compacted final content, so ordinal
+     *  keys shift at settle and remount every segment body after them. */
+    const segmentKeyIndex = (segment: {
+      content: Array<TMessageContentParts | undefined>;
+      contentIndices: number[];
+      startIndex: number;
+    }): number => {
+      for (let i = 0; i < segment.content.length; i++) {
+        const part = segment.content[i];
+        if (part != null) {
+          return getPartKeyIndex(part, absoluteIndexAt(segment.contentIndices[i]));
+        }
+      }
+      return absoluteIndexAt(segment.startIndex);
+    };
     const renderSegment = (
       segmentContent: Array<TMessageContentParts | undefined>,
       segmentStartIndex: number,
@@ -538,17 +560,26 @@ const ContentPartsBody = memo(function ContentPartsBody({
             <Sources messageId={messageId} conversationId={conversationId || undefined} />
           )}
           {renderPendingSkills()}
-          {phaseSegments.map((segment, index) =>
-            segment.type === 'phase' ? (
+          {phaseSegments.map((segment) => {
+            if (segment.type !== 'phase') {
+              return renderSegment(
+                segment.content,
+                absoluteIndexAt(segment.startIndex),
+                segment.contentIndices.map(absoluteIndexAt),
+                `phase-adjacent-${segmentKeyIndex(segment)}`,
+              );
+            }
+            const phaseKeyIndex = getPartKeyIndex(segment.labelPart, segment.labelIndex);
+            return (
               <ActivityPhaseGroup
-                key={`activity-phase-${messageId}-${segment.labelIndex}`}
+                key={`activity-phase-${messageId}-${phaseKeyIndex}`}
                 labelPart={segment.labelPart}
                 hasContent={segment.hasContent}
                 hasPendingApproval={segment.content.some(
                   (part) => part != null && hasPendingApprovalInPart(part),
                 )}
                 animateEntrance={
-                  previousPhaseIndices != null && !previousPhaseIndices.has(segment.labelIndex)
+                  previousPhaseIndices != null && !previousPhaseIndices.has(phaseKeyIndex)
                 }
                 showCursor={
                   isLast &&
@@ -560,18 +591,11 @@ const ContentPartsBody = memo(function ContentPartsBody({
                   segment.content,
                   absoluteIndexAt(segment.startIndex),
                   segment.contentIndices.map(absoluteIndexAt),
-                  `phase-content-${index}`,
+                  `phase-content-${phaseKeyIndex}`,
                 )}
               </ActivityPhaseGroup>
-            ) : (
-              renderSegment(
-                segment.content,
-                absoluteIndexAt(segment.startIndex),
-                segment.contentIndices.map(absoluteIndexAt),
-                `phase-adjacent-${index}`,
-              )
-            ),
-          )}
+            );
+          })}
           <WorkspaceChanges attachments={workspaceChanges} />
         </SearchContext.Provider>
       </ApprovalProvider>
@@ -639,9 +663,13 @@ const ContentPartsBody = memo(function ContentPartsBody({
       )}
       {!showEmptyCursor &&
         groupedParts.flatMap((group) => {
-          const firstIdx = group.type === 'single' ? group.part.idx : (group.parts[0]?.idx ?? -1);
+          const first = group.type === 'single' ? group.part : group.parts[0];
+          const firstIdx = first?.idx ?? -1;
           const nodes: ReactElement[] = [];
-          const attribution = renderResumeAttribution(firstIdx);
+          const attribution = renderResumeAttribution(
+            firstIdx,
+            first ? getPartKeyIndex(first.part, first.idx) : firstIdx,
+          );
           if (attribution != null) {
             nodes.push(attribution);
           }
