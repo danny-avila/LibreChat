@@ -95,7 +95,7 @@ export default function VersionItem({
           <div
             className={cn(
               'absolute -bottom-3 top-0 w-px',
-              isActive ? 'bg-status-success-strong/40' : 'bg-border-light',
+              isActive ? 'bg-status-success-strong' : 'bg-border-light',
             )}
           />
         )}

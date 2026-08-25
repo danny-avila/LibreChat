@@ -72,7 +72,12 @@ export const darkTheme: IThemeRGB = {
   'rgb-status-success': '110 231 183', // #6ee7b7 (green-300)
   'rgb-status-success-subtle': '2 44 34', // #022c22 (green-950)
   'rgb-status-success-border': '6 95 70', // #065f46 (green-800)
-  'rgb-status-success-strong': '6 95 70', // #065f46 (green-800)
+  /** Not `green-800` like its border twin: this fill also paints bare marks
+   *  (selection checks, the version timeline rail, prompt chips) that have to
+   *  clear 3:1 against the #212121 panel, and green-800 reached only 2.10:1
+   *  there. Balanced instead, the same way light's `#02855e` is: 4.55:1 under
+   *  the white `text-on-status` label and 3.54:1 against the panel. */
+  'rgb-status-success-strong': '8 135 89', // #088759
   'rgb-status-info': '147 197 253', // #93c5fd (blue-300)
   'rgb-status-info-subtle': '23 37 84', // #172554 (blue-950)
   'rgb-status-info-border': '30 64 175', // #1e40af (blue-800)

@@ -321,7 +321,7 @@ html {
   --status-success: var(--green-300);
   --status-success-subtle: var(--green-950);
   --status-success-border: var(--green-800);
-  --status-success-strong: var(--green-800);
+  --status-success-strong: 8 135 89;
   --status-info: var(--blue-300);
   --status-info-subtle: var(--blue-950);
   --status-info-border: var(--blue-800);

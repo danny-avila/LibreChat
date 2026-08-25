@@ -322,6 +322,55 @@ describe.each([
   });
 });
 
+/** `status-success-strong` is the one status fill that also paints bare marks:
+ *  the selected-tool check, the version timeline rail and its "current" dot, and
+ *  the selected prompt-version chip. It owes two ratios at once, AA under the
+ *  `text-on-status` label it carries and the 3:1 mark floor against the panel it
+ *  sits on. `surface-secondary` is that panel in every mode. */
+describe.each([
+  ['default', defaultTheme],
+  ['dark', darkTheme],
+  ['high contrast light', highContrastLightTheme],
+  ['high contrast dark', highContrastDarkTheme],
+])('%s success fill', (_name, theme: IThemeRGB) => {
+  it('carries its label at WCAG AA', () => {
+    const ratio = contrast(
+      toRgb(theme, 'rgb-status-success-strong'),
+      toRgb(theme, 'rgb-text-on-status'),
+    );
+    expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL);
+  });
+
+  it('keeps its silhouette at the 3:1 mark floor on the panel', () => {
+    const ratio = contrast(
+      toRgb(theme, 'rgb-status-success-strong'),
+      toRgb(theme, 'rgb-surface-secondary'),
+    );
+    expect(ratio).toBeGreaterThanOrEqual(WCAG_MARK_MIN);
+  });
+});
+
+describe('success fill defaults', () => {
+  /** Both copies have to move together: the value is a tuned hex rather than a
+   *  palette step, so the stylesheet cannot alias it to a `--green-*` step. */
+  it('keeps the app CSS in step with the runtime themes', () => {
+    const appStyles = readFileSync(
+      join(__dirname, '..', '..', '..', '..', 'client', 'src', 'style.css'),
+      'utf8',
+    );
+
+    const declared = [...appStyles.matchAll(/--status-success-strong:\s*([^;]+);/g)].map((match) =>
+      match[1].trim(),
+    );
+
+    /** One declaration for `html`, one for `.dark`, and both must match. */
+    expect(declared).toEqual([
+      defaultTheme['rgb-status-success-strong'],
+      darkTheme['rgb-status-success-strong'],
+    ]);
+  });
+});
+
 /** The syntax palette used to live as raw hex in `style.css`, which meant a
  *  change had to be made twice and neither copy was checked. It is a registry
  *  token map now, so the stylesheet is only allowed to restate it. */

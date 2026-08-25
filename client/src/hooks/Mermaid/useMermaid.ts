@@ -77,10 +77,12 @@ export const useMermaid = ({
     // For large diagrams, use MD5 hash instead of full content
     const contentHash = content.length < MD5_LENGTH_THRESHOLD ? content : Md5.hashStr(content);
 
-    // Include theme mode in cache key to handle theme switches
-    const themeKey = customTheme || `${isDarkMode ? 'd' : 'l'}${highContrast ? 'h' : ''}`;
+    /** Scheme and contrast belong in the key even when a custom theme is set:
+     *  `mermaidConfig` still rebuilds `themeVariables` per appearance, so a
+     *  key that stopped at `customTheme` would replay the stale SVG. */
+    const appearanceKey = `${isDarkMode ? 'd' : 'l'}${highContrast ? 'h' : ''}`;
 
-    return [id, themeKey, contentHash].filter(Boolean).join('-');
+    return [id, customTheme, appearanceKey, contentHash].filter(Boolean).join('-');
   }, [content, enabled, id, isDarkMode, highContrast, customTheme]);
 
   // Generate unique diagram ID (mermaid requires unique IDs in the DOM)
