@@ -1,5 +1,4 @@
 import { atom, atomFamily } from 'recoil';
-import type { AtomEffect } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   PartMetadata,
@@ -9,6 +8,7 @@ import type {
   TMessageContentParts,
   SubagentUpdateEvent,
 } from 'librechat-data-provider';
+import type { AtomEffect } from 'recoil';
 import type {
   SubagentAggregatorState,
   SubagentContentPart,
