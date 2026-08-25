@@ -18,6 +18,30 @@ export enum FileSources {
   document_parser = 'document_parser',
 }
 
+/**
+ * Which local engine produced a parsed record's text, recorded as provenance.
+ *
+ * Deliberately not `FileSources` members: no strategy resolves them, nothing streams
+ * from them, and a caller that asked for one would receive a storage adapter that
+ * cannot answer. Keeping them here means an engine can be swapped without touching the
+ * enum every stored record is validated against.
+ */
+export enum DocumentParser {
+  document_parser = 'document_parser',
+  pdf_inspector = 'pdf_inspector',
+  anydoc = 'anydoc',
+}
+
+/**
+ * Local document parsers, whose extraction results keep the uploaded file's MIME
+ * type. Remote OCR results must not: its supported types include images, and an
+ * OCR'd image stored as `image/png` with a provider marker for a filepath renders
+ * as a broken thumbnail.
+ */
+export const documentParserSources: ReadonlySet<string> = new Set<string>(
+  Object.values(DocumentParser),
+);
+
 export const checkOpenAIStorage = (source: string) =>
   source === FileSources.openai || source === FileSources.azure;
 
@@ -70,9 +94,16 @@ export type FileConfig = {
   };
   ocr?: {
     supportedMimeTypes?: RegexLike[];
+    /** Server-derived signal that an OCR strategy is configured. */
+    enabled?: boolean;
+  };
+  documentParser?: {
+    supportedMimeTypes?: RegexLike[];
   };
   text?: {
     supportedMimeTypes?: RegexLike[];
+    /** Server-derived signal that a RAG text service is configured. */
+    enabled?: boolean;
   };
   stt?: {
     supportedMimeTypes?: RegexLike[];
@@ -97,9 +128,14 @@ export type FileConfigInput = {
   };
   ocr?: {
     supportedMimeTypes?: string[];
+    enabled?: boolean;
+  };
+  documentParser?: {
+    supportedMimeTypes?: string[];
   };
   text?: {
     supportedMimeTypes?: string[];
+    enabled?: boolean;
   };
   stt?: {
     supportedMimeTypes?: string[];
@@ -132,6 +168,8 @@ export type TFile = {
   height?: number;
   expiresAt?: string | Date;
   preview?: string;
+  /** Share-safe marker for a parsed document whose durable preview is extracted text. */
+  hasTextPreview?: boolean;
   text?: string;
   /**
    * Format of the `text` field. `'html'` means the backend produced

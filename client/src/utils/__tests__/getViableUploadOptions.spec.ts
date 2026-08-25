@@ -4,12 +4,21 @@ import { getViableUploadOptions, type UploadOptionContext } from '../files';
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const POTX = 'application/vnd.openxmlformats-officedocument.presentationml.template';
+const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const VENDOR_SCAN = 'application/x-vendor-scan';
 
-/** context accepts plain text + csv (text), pdf + xlsx (ocr); nothing else */
+/** context accepts plain text + csv (text), pdf + xlsx (ocr), and rtf (document parser). */
 const fileConfig = {
   text: { supportedMimeTypes: [/^text\/(plain|csv)$/] },
   ocr: {
     supportedMimeTypes: [
+      /^application\/pdf$/,
+      /^application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet$/,
+    ],
+  },
+  documentParser: {
+    supportedMimeTypes: [
+      /^application\/rtf$/,
       /^application\/pdf$/,
       /^application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet$/,
     ],
@@ -25,6 +34,7 @@ const baseCtx = (over: Partial<UploadOptionContext> = {}): UploadOptionContext =
   fileSearchEnabled: true,
   codeEnabled: true,
   contextEnabled: true,
+  ocrEnabled: true,
   fileSearchAllowedByAgent: true,
   codeAllowedByAgent: true,
   fileConfig,
@@ -43,6 +53,90 @@ describe('getViableUploadOptions', () => {
   });
 
   describe('Anthropic (PDF/image only for provider attach)', () => {
+    it('routes a document-parser-only type to context', () => {
+      expect(getViableUploadOptions([file('application/rtf', 'notes.rtf')], baseCtx())).toEqual([
+        EToolResources.context,
+      ]);
+    });
+
+    it('routes a locally excluded document through explicitly configured OCR', () => {
+      const parserRestrictedConfig = {
+        text: { supportedMimeTypes: [/^[\w.-]+\/[\w.-]+$/] },
+        ocr: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)], enabled: true },
+        documentParser: { supportedMimeTypes: [/^application\/pdf$/] },
+        stt: { supportedMimeTypes: [] },
+      } as unknown as FileConfig;
+      const ctx = baseCtx({
+        fileConfig: parserRestrictedConfig,
+        fileSearchEnabled: false,
+        codeEnabled: false,
+      });
+
+      expect(getViableUploadOptions([file(DOCX, 'report.docx')], ctx)).toEqual([
+        EToolResources.context,
+      ]);
+    });
+
+    it('does not treat the default OCR type catalog as a configured fallback', () => {
+      const parserRestrictedConfig = {
+        text: { supportedMimeTypes: [/^[\w.-]+\/[\w.-]+$/] },
+        ocr: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)] },
+        documentParser: { supportedMimeTypes: [/^application\/pdf$/] },
+        stt: { supportedMimeTypes: [] },
+      } as unknown as FileConfig;
+      const ctx = baseCtx({
+        fileConfig: parserRestrictedConfig,
+        fileSearchEnabled: false,
+        codeEnabled: false,
+      });
+
+      expect(getViableUploadOptions([file(DOCX, 'report.docx')], ctx)).toEqual([]);
+    });
+
+    it('does not offer configured OCR when the agent lacks the OCR capability', () => {
+      const parserRestrictedConfig = {
+        text: { supportedMimeTypes: [] },
+        ocr: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)], enabled: true },
+        documentParser: { supportedMimeTypes: [/^application\/pdf$/] },
+        stt: { supportedMimeTypes: [] },
+      } as unknown as FileConfig;
+      const ctx = baseCtx({
+        fileConfig: parserRestrictedConfig,
+        fileSearchEnabled: false,
+        codeEnabled: false,
+        ocrEnabled: false,
+      });
+
+      expect(getViableUploadOptions([file(DOCX, 'report.docx')], ctx)).toEqual([]);
+    });
+
+    it('gates a non-document OCR type on the provider and agent capability', () => {
+      const ocrOnlyConfig = {
+        text: { supportedMimeTypes: [] },
+        ocr: { supportedMimeTypes: [new RegExp(`^${VENDOR_SCAN}$`)], enabled: true },
+        documentParser: { supportedMimeTypes: [/^application\/pdf$/] },
+        stt: { supportedMimeTypes: [] },
+      } as unknown as FileConfig;
+      const contextOnly = {
+        fileConfig: ocrOnlyConfig,
+        fileSearchEnabled: false,
+        codeEnabled: false,
+      };
+
+      expect(
+        getViableUploadOptions(
+          [file(VENDOR_SCAN, 'page.scan')],
+          baseCtx({ ...contextOnly, ocrEnabled: false }),
+        ),
+      ).toEqual([]);
+      expect(
+        getViableUploadOptions(
+          [file(VENDOR_SCAN, 'page.scan')],
+          baseCtx({ ...contextOnly, ocrEnabled: true }),
+        ),
+      ).toEqual([EToolResources.context]);
+    });
+
     it('routes a spreadsheet to code + text, not the provider', () => {
       expect(getViableUploadOptions([file(XLSX, 'report.xlsx')], baseCtx())).toEqual([
         EToolResources.execute_code,

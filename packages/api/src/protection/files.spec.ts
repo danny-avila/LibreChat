@@ -65,6 +65,19 @@ describe('file content inspection policy', () => {
       }),
     ).toBe(false);
 
+    const configuredDocumentParser = mergeFileConfig({
+      documentParser: { supportedMimeTypes: ['^application\\/vnd\\.vendor\\.word$'] },
+      ocr: { supportedMimeTypes: [] },
+      text: { supportedMimeTypes: [] },
+    });
+    expect(
+      getUploadExtractedTextPlan({
+        ...baseInput,
+        mimeType: 'application/vnd.vendor.word',
+        fileConfig: configuredDocumentParser,
+      }),
+    ).toBe(UPLOAD_EXTRACTED_TEXT_PLANS.documentParser);
+
     const configuredNonDocumentText = mergeFileConfig({
       ocr: { supportedMimeTypes: [] },
       text: { supportedMimeTypes: ['application/x-rag-document'] },
@@ -115,6 +128,24 @@ describe('file content inspection policy', () => {
         fileConfig: configuredDocumentRAG,
       }),
     ).toBe(UPLOAD_EXTRACTED_TEXT_PLANS.documentParser);
+
+    const configuredRagOnlyDocument = mergeFileConfig({
+      documentParser: { supportedMimeTypes: ['^application\\/pdf$'] },
+      ocr: { supportedMimeTypes: [] },
+      text: {
+        supportedMimeTypes: [
+          '^application\\/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document$',
+        ],
+      },
+    });
+    expect(
+      getUploadExtractedTextPlan({
+        ...baseInput,
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        fileConfig: configuredRagOnlyDocument,
+        ragConfigured: true,
+      }),
+    ).toBe(UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG);
 
     const configuredOCR = mergeFileConfig({
       ocr: { supportedMimeTypes: ['application/x-ocr-document'] },

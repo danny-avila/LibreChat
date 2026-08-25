@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import copy from 'copy-to-clipboard';
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
+import { FileSources, isParsedDocument } from 'librechat-data-provider';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
+import ExtractedTextPanel from '~/components/Chat/Input/Files/ExtractedTextPanel';
 import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
 import { revokeDownloadURL, useFileDownload, useSharedFileDownload } from '~/data-provider';
 import { getFileExtension, getPreviewKind, shouldUseSharedFileDownload } from './preview';
@@ -23,6 +25,14 @@ interface FilePreviewDialogProps {
   fileType?: string;
   fileSource?: string;
   fileSize?: number;
+  /**
+   * Storage backend the record was written to. Only `FileSources.text` records
+   * hold extracted text, so the parsed-text fallback stays off when the caller
+   * cannot supply it rather than promising text that was never stored.
+   */
+  source?: FileSources;
+  /** Share-safe replacement for `source`, which shared-message sanitization removes. */
+  hasTextPreview?: boolean;
 }
 
 /** Formats bytes with unit suffix (differs from ~/utils/formatBytes which returns a raw number). */
@@ -78,9 +88,20 @@ export default function FilePreviewDialog({
   fileType,
   fileSource,
   fileSize,
+  source,
+  hasTextPreview,
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
+  /**
+   * Parsed documents render no preview of their own, so fall back to their text.
+   * The MIME type alone is not enough: a stored PDF whose download fails is not a
+   * parsed record, and offering its "extracted text" hides the real "preview
+   * unavailable" outcome behind an empty state.
+   */
+  const showParsedText =
+    (source === FileSources.text || hasTextPreview === true) &&
+    isParsedDocument(fileType, fileName);
   const { shareId } = useShareContext();
   // Preview reads revoke their blob after consumption, so they need a separate
   // query identity from user-triggered downloads that may be in flight concurrently.
@@ -104,7 +125,7 @@ export default function FilePreviewDialog({
   const [isCopied, setIsCopied] = useState(false);
   const loadingRef = useRef(false);
 
-  const previewKind = getPreviewKind(fileName, fileType, fileSource);
+  const previewKind = showParsedText ? false : getPreviewKind(fileName, fileType, fileSource);
   const downloadFilename = getDownloadFilename(fileName, fileId, fileSource);
 
   const cancelledRef = useRef(false);
@@ -239,7 +260,7 @@ export default function FilePreviewDialog({
             <OGDialogDescription className="min-w-0 truncate">
               {metaParts.join(' · ')}
             </OGDialogDescription>
-            {fileId && (
+            {fileId && !showParsedText && (
               <button
                 type="button"
                 onClick={handleDownload}
@@ -261,7 +282,7 @@ export default function FilePreviewDialog({
               </span>
             </div>
           )}
-          {previewError && (
+          {previewError && !showParsedText && (
             <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="text-sm text-text-secondary">
                 {localize('com_ui_preview_unavailable')}
@@ -293,12 +314,22 @@ export default function FilePreviewDialog({
               </div>
             </>
           )}
-          {!previewKind && !loading && (
+          {!previewKind && !loading && !showParsedText && (
             <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="text-sm text-text-secondary">
                 {localize('com_ui_preview_unavailable')}
               </span>
             </div>
+          )}
+          {/* Parsed documents have no stored binary here, but the parser already read
+           * them for the model. Showing that text avoids a request for a marker path. */}
+          {!previewKind && !loading && showParsedText && (
+            <>
+              <p className="pb-3 text-sm text-text-secondary">
+                {localize('com_ui_extracted_text_description')}
+              </p>
+              <ExtractedTextPanel fileId={fileId} enabled={open} shareId={shareId} />
+            </>
           )}
         </div>
       </OGDialogContent>
