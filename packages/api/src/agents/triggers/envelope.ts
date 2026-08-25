@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
 import type { AgentRunPrincipal, AgentRunPrincipalInput } from '../envelope';
+import type { AgentTriggerExpectedAction } from './types';
 import type { JsonValue } from '../json';
 import { cloneJsonValue } from '../json';
+
+export type { AgentTriggerExpectedAction } from './types';
 
 export const AGENT_TRIGGER_ENVELOPE_VERSION = 1 as const;
 export const AGENT_TRIGGER_IDEMPOTENCY_PREFIX = 'trigger_';
@@ -25,14 +28,6 @@ export interface AgentTriggerEvent {
   /** Sanitized source data; adapters must omit credentials and transport secrets. */
   payload?: JsonValue;
   source: AgentTriggerSource;
-}
-
-/** Optional source-declared proof the generation is expected to produce. The
- * host evaluates this against completed tool evidence; it never trusts a model
- * assertion that work happened. */
-export interface AgentTriggerExpectedAction {
-  toolName: string;
-  argumentSubset?: Record<string, JsonValue>;
 }
 
 interface AgentTriggerTarget {

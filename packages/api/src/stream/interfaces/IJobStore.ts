@@ -274,7 +274,7 @@ export interface SerializableJobData {
    */
   isTemporary?: boolean;
   agentEventDeliveryKey?: string;
-  agentEventExpectedAction?: import('~/agents/triggers/envelope').AgentTriggerExpectedAction;
+  agentEventExpectedAction?: import('~/agents/triggers/types').AgentTriggerExpectedAction;
 
   /**
    * Set when status is `requires_action`. Describes the human review the
