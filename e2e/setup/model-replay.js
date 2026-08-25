@@ -73,18 +73,41 @@ function messageType(message) {
   return message?.role;
 }
 
-/** The latest human message's text — the binding and prompt-check key. */
-function latestHumanText(messages) {
+/** Every human message's text, oldest first. */
+function humanTexts(messages) {
   if (!Array.isArray(messages)) {
-    return '';
+    return [];
   }
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const type = messageType(messages[i]);
+  const texts = [];
+  for (const message of messages) {
+    const type = messageType(message);
     if (type === 'human' || type === 'user') {
-      return extractText(messages[i].content);
+      texts.push(extractText(message.content));
     }
   }
-  return '';
+  return texts;
+}
+
+/** The latest human message's text — the binding and prompt-check key. */
+function latestHumanText(messages) {
+  const texts = humanTexts(messages);
+  return texts.length > 0 ? texts[texts.length - 1] : '';
+}
+
+/**
+ * Whether this conversation is the one that already drove the fixture: its
+ * human turns open with exactly the fixture's recorded prompts, in order. A
+ * consumed binding has to be retained for such a conversation, or an extra
+ * user turn would find no next invocation, fall through to ordinary
+ * fake-model routing, and be answered with a mock reply — leaving the
+ * over-consumption guard unreached and the drained ledger still passing.
+ */
+function conversationDroveFixture(messages, fixture) {
+  const texts = humanTexts(messages);
+  if (texts.length <= fixture.invocations.length) {
+    return false;
+  }
+  return fixture.invocations.every((invocation, index) => invocation.userText === texts[index]);
 }
 
 function jsonClone(value) {
@@ -134,6 +157,7 @@ const recordingState = {
   initialized: false,
   fixturePath: undefined,
   invocationCounter: 0,
+  firstUserText: undefined,
   runIdToInvocation: new Map(),
 };
 
@@ -151,7 +175,27 @@ function initializeRecording(fixtureName) {
     recordedAt: new Date().toISOString(),
   });
   recordingState.initialized = true;
+  recordingState.invocationCounter = 0;
+  recordingState.firstUserText = undefined;
+  recordingState.runIdToInvocation.clear();
   console.log(`[e2e model-replay] recording fixture ${recordingState.fixturePath}`);
+}
+
+/**
+ * The recorder's state is process-global and the web server outlives a
+ * Playwright retry, so a failed attempt that already recorded invocations
+ * would otherwise leave the counter advanced: the retry appends 2/3 after
+ * 0/1 (or keeps a previous attempt's `error` line) and the fixture is
+ * unusable for replay. Restarting on the opening prompt mirrors the replay
+ * side's rule, and carries the same caveat — a script that legitimately
+ * repeats its first prompt as a later turn truncates instead of appending.
+ */
+function shouldRestartRecording(userText) {
+  return (
+    recordingState.invocationCounter > 0 &&
+    recordingState.firstUserText != null &&
+    userText === recordingState.firstUserText
+  );
 }
 
 function createRecorderHandler() {
@@ -163,13 +207,16 @@ function createRecorderHandler() {
     awaitHandlers: true,
     raiseError: true,
     handleChatModelStart(_llm, messageBatches, runId) {
+      const userText = latestHumanText(messageBatches?.[0]);
+      if (shouldRestartRecording(userText)) {
+        initializeRecording(path.basename(recordingState.fixturePath, '.jsonl'));
+      }
       const index = recordingState.invocationCounter++;
+      if (index === 0) {
+        recordingState.firstUserText = userText;
+      }
       recordingState.runIdToInvocation.set(runId, index);
-      appendFixtureLine({
-        type: 'invocation',
-        index,
-        userText: latestHumanText(messageBatches?.[0]),
-      });
+      appendFixtureLine({ type: 'invocation', index, userText });
     },
     handleLLMNewToken(token, _idx, runId, _parentRunId, _tags, fields) {
       const invocation = recordingState.runIdToInvocation.get(runId);
@@ -455,21 +502,29 @@ function ensureReplayProviderRegistered() {
  * Returns true when the graph's model was overridden with the replaying
  * model; false lets the fake-model marker routing proceed unchanged.
  */
-function tryBindReplay({ graph, agents, text, modelCallbacks }) {
+function tryBindReplay({ graph, agents, text, messages, modelCallbacks }) {
   if (!text) {
     return false;
   }
   const registry = loadFixtureRegistry();
   for (const fixture of registry.values()) {
     let state = getReplayState(fixture);
-    /** Continuing an in-progress binding outranks restarting, so a fixture
-     * whose first prompt repeats later in the script still advances rather
-     * than rewinding to the top. */
+    /** Continuing an in-progress binding outranks restarting, which in turn
+     * outranks retaining a consumed one: a fixture whose first prompt repeats
+     * later in the script advances rather than rewinding, and a retry's fresh
+     * conversation rewinds rather than being treated as an extra turn. */
     if (fixture.invocations[state.cursor]?.userText !== text) {
-      if (state.cursor === 0 || fixture.invocations[0]?.userText !== text) {
+      if (state.cursor !== 0 && fixture.invocations[0]?.userText === text) {
+        state = restartReplayState(fixture);
+      } else if (
+        state.cursor >= fixture.invocations.length &&
+        conversationDroveFixture(messages, fixture)
+      ) {
+        /** Bound deliberately past the end so the stream raises the
+         * over-consumption error instead of silently falling through. */
+      } else {
         continue;
       }
-      state = restartReplayState(fixture);
     }
     ensureReplayProviderRegistered();
     const model = initializeModel({

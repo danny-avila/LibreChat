@@ -2402,6 +2402,7 @@ module.exports = function fakeModelHook(run, context) {
       graph,
       text,
       agents: context?.agents,
+      messages: context?.messages,
       modelCallbacks: context?.modelCallbacks,
     })
   ) {

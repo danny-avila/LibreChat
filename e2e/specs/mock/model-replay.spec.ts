@@ -24,8 +24,18 @@ import {
  * the committed fixture by prompt text, assistant turns must equal the
  * recorded turns exactly, and the consumption ledger must drain completely.
  */
-const FIXTURE = 'deepseek-two-turn';
+const COMMITTED_FIXTURE = 'deepseek-two-turn';
 const RECORDING = process.env.E2E_MODEL_FIXTURES === 'record';
+/**
+ * Record mode writes to whatever `E2E_MODEL_FIXTURE_NAME` selects, so the
+ * assertions have to inspect that artifact. Reading the committed fixture
+ * instead would validate a pre-existing file while the recorder wrote
+ * elsewhere — and because these prompts are fixed, the stale answers could
+ * still match and pass a recording run that produced nothing verified.
+ */
+const FIXTURE = RECORDING
+  ? (process.env.E2E_MODEL_FIXTURE_NAME ?? COMMITTED_FIXTURE)
+  : COMMITTED_FIXTURE;
 const RECORD_ENDPOINT = {
   label: 'Replay Record Provider',
   model: process.env.E2E_RECORD_PROVIDER_MODEL || 'deepseek-chat',
