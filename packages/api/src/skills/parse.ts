@@ -96,9 +96,24 @@ function getRawFrontmatterValue(block: string, key: string): string | undefined 
     `^[ \\t]{${baseIndent}}(?:${escapedKey}|"${escapedKey}"|'${escapedKey}')\\s*:\\s*(.*)$`,
     'i',
   );
-  const line = lines.find((candidate) => pattern.test(candidate));
-  const match = line?.match(pattern);
-  return match?.[1];
+  const lineIndex = lines.findIndex((candidate) => pattern.test(candidate));
+  if (lineIndex === -1) {
+    return undefined;
+  }
+  const sameLineValue = lines[lineIndex].match(pattern)?.[1];
+  if (!hasBooleanPlaceholder(sameLineValue)) {
+    return sameLineValue;
+  }
+  for (let index = lineIndex + 1; index < lines.length; index++) {
+    const candidate = lines[index];
+    const trimmed = candidate.trim();
+    if (trimmed.length === 0 || trimmed.startsWith('#')) {
+      continue;
+    }
+    const indentation = candidate.match(/^[ \\t]*/)?.[0].length ?? 0;
+    return indentation > baseIndent ? trimmed : sameLineValue;
+  }
+  return sameLineValue;
 }
 
 function stripInlineComment(value: string): string {

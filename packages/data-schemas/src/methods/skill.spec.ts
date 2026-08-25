@@ -1629,6 +1629,18 @@ describe('Skill CRUD methods', () => {
       expect(skill.frontmatter ?? {}).not.toHaveProperty('user-invocable');
     });
 
+    it('rejects a continued null when an unrelated explicit tag breaks failsafe parsing', async () => {
+      await expect(
+        methods.createSkill(
+          makeSkillInput({
+            name: 'explicit-tag-continued-null',
+            body: '---\nname: explicit-tag-continued-null\ndescription: A demo skill.\npublished: !!timestamp 2026-08-25\nuser-invocable:\n  null\n---\n\nBody.',
+            frontmatter: undefined,
+          }),
+        ),
+      ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+    });
+
     it('updateSkill rejects a non-boolean flag introduced by a body edit', async () => {
       const { skill } = await methods.createSkill(makeSkillInput({ name: 'body-edit-typo' }));
 

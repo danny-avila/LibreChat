@@ -111,6 +111,10 @@ const CORPUS: Array<[label: string, frontmatterLines: string]> = [
     'explicit null beside an explicit tag',
     'published: !!timestamp 2026-08-25\nuser-invocable: null',
   ],
+  [
+    'continued explicit null beside an explicit tag',
+    'published: !!timestamp 2026-08-25\nuser-invocable:\n  null',
+  ],
   ['value on the next line', 'user-invocable:\n  false'],
   ['YAML boolean alias', 'default: &off false\nuser-invocable: *off'],
   ['uppercase key and value', 'USER-INVOCABLE: FALSE'],
