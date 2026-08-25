@@ -24,6 +24,12 @@ const mockResolveHostnameSSRF = jest.fn().mockResolvedValue(false);
 jest.mock('../auth', () => ({
   isSSRFTarget: (...args: unknown[]) => mockIsSSRFTarget(...args),
   resolveHostnameSSRF: (...args: unknown[]) => mockResolveHostnameSSRF(...args),
+  getEffectivePort: (protocol: string, port?: string) => {
+    if (port) {
+      return port;
+    }
+    return protocol === 'https:' ? '443' : '80';
+  },
 }));
 
 describe('web.ts', () => {
@@ -353,13 +359,67 @@ describe('web.ts', () => {
         expect(result.authenticated).toBe(true);
         expect(result.authResult.tavilySearchUrl).toBe('https://tenant-search.example/search');
         expect(result.authResult.tavilyExtractUrl).toBe('https://tenant-extract.example/extract');
-        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith('tenant-search.example');
-        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith('tenant-extract.example');
+        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith(
+          'tenant-search.example',
+          undefined,
+          '443',
+        );
+        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith(
+          'tenant-extract.example',
+          undefined,
+          '443',
+        );
         expect(result.authTypes).toEqual([
           ['providers', AuthType.USER_PROVIDED],
           ['scrapers', AuthType.USER_PROVIDED],
           ['rerankers', AuthType.SYSTEM_DEFINED],
         ]);
+      } finally {
+        process.env = originalEnv;
+      }
+    });
+
+    it('threads allowedAddresses and the effective port into the SSRF preflight for user-provided URLs', async () => {
+      mockIsSSRFTarget.mockClear();
+      mockResolveHostnameSSRF.mockClear();
+      mockIsSSRFTarget.mockReturnValue(false);
+      mockResolveHostnameSSRF.mockResolvedValue(false);
+
+      const originalEnv = process.env;
+      try {
+        process.env = { ...originalEnv };
+        delete process.env.SEARXNG_INSTANCE_URL;
+
+        const searxngConfig = {
+          searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+          searchProvider: 'searxng' as SearchProviders,
+          rerankerType: 'none' as RerankerTypes,
+          allowedAddresses: ['localhost:8888'],
+        } as TWebSearchConfig;
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'SEARXNG_INSTANCE_URL') {
+              result[field] = 'http://localhost:8888';
+            }
+          });
+          return Promise.resolve(result);
+        });
+
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig: searxngConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost', ['localhost:8888'], '8888');
+        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith(
+          'localhost',
+          ['localhost:8888'],
+          '8888',
+        );
+        expect(result.authResult.searxngInstanceUrl).toBe('http://localhost:8888');
       } finally {
         process.env = originalEnv;
       }
@@ -896,6 +956,87 @@ describe('web.ts', () => {
       } finally {
         process.env = originalEnv;
       }
+    });
+
+    it('should authenticate SearXNG as a search provider and pass search options through', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        searchProvider: 'searxng' as SearchProviders,
+        scraperProvider: 'firecrawl' as ScraperProviders,
+        rerankerType: 'none' as RerankerTypes,
+        searxngSearchOptions: {
+          engines: 'google,bing,startpage,qwant',
+          language: 'en',
+          timeRange: 'month',
+          timeout: 15000,
+        },
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'SEARXNG_INSTANCE_URL') {
+            result[field] = 'https://search.example';
+          } else if (field === 'SEARXNG_API_KEY') {
+            result[field] = 'searxng-api-key';
+          } else if (field === 'FIRECRAWL_API_URL') {
+            result[field] = 'https://api.firecrawl.dev';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.searchProvider).toBe('searxng');
+      expect(result.authResult.searxngInstanceUrl).toBe('https://search.example');
+      expect(result.authResult.searxngSearchOptions).toEqual(webSearchConfig.searxngSearchOptions);
+    });
+
+    it('should leave searxngSearchOptions undefined when not configured', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        searchProvider: 'searxng' as SearchProviders,
+        scraperProvider: 'firecrawl' as ScraperProviders,
+        rerankerType: 'none' as RerankerTypes,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'SEARXNG_INSTANCE_URL') {
+            result[field] = 'https://search.example';
+          } else if (field === 'FIRECRAWL_API_URL') {
+            result[field] = 'https://api.firecrawl.dev';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.searxngSearchOptions).toBeUndefined();
     });
 
     it('should fail authentication when Tavily search API key is missing', async () => {
@@ -1675,7 +1816,7 @@ describe('web.ts', () => {
       });
 
       expect(result.authResult.jinaApiUrl).toBeUndefined();
-      expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost');
+      expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost', undefined, '8080');
     });
 
     it('should block user-provided firecrawlApiUrl resolving to private IP', async () => {
@@ -1832,7 +1973,7 @@ describe('web.ts', () => {
         expect(result.authResult.tavilySearchUrl).toBeUndefined();
         expect(result.authResult.searchProvider).toBe('tavily');
         expect(result.authenticated).toBe(true);
-        expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost');
+        expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost', undefined, '8080');
       } finally {
         process.env = originalEnv;
       }
@@ -1880,7 +2021,11 @@ describe('web.ts', () => {
         expect(result.authResult.tavilyExtractUrl).toBeUndefined();
         expect(result.authResult.scraperProvider).toBe('tavily');
         expect(result.authenticated).toBe(true);
-        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith('extract.internal-service.com');
+        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith(
+          'extract.internal-service.com',
+          undefined,
+          '443',
+        );
       } finally {
         process.env = originalEnv;
       }

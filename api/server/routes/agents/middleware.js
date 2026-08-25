@@ -4,6 +4,7 @@ const {
   preAuthTenantMiddleware,
   createRequireApiKeyAuth,
   createRemoteAgentAuth,
+  createCheckAgentTriggerAccess,
   createCheckRemoteAgentAccess,
 } = require('@librechat/api');
 const { getEffectivePermissions } = require('~/server/services/PermissionService');
@@ -29,13 +30,17 @@ const checkRemoteAgentsFeature = generateCheckAccess({
   getRoleByName: db.getRoleByName,
 });
 
-const checkAgentPermission = createCheckRemoteAgentAccess({
+const agentAccessDependencies = {
   getAgent: db.getAgent,
   getEffectivePermissions,
-});
+};
+
+const checkAgentPermission = createCheckRemoteAgentAccess(agentAccessDependencies);
+const checkAgentTriggerPermission = createCheckAgentTriggerAccess(agentAccessDependencies);
 
 module.exports = {
   checkAgentPermission,
+  checkAgentTriggerPermission,
   preAuthTenantMiddleware,
   requireRemoteAgentAuth,
   checkRemoteAgentsFeature,

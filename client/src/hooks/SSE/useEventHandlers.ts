@@ -26,13 +26,17 @@ import type { ConversationCursorData } from '~/utils';
 import {
   logger,
   setDraft,
+  getConversationDraftId,
   scrollToEnd,
+  hasRealTitle,
+  setDocumentTitle,
   requestChatFocus,
   getAllContentText,
   upsertConvoInAllQueries,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
   findConversationInInfinite,
+  preserveStreamedContentIdentity,
 } from '~/utils';
 import {
   startupConfigKey,
@@ -67,9 +71,6 @@ type TTitleEvent = {
   };
 };
 
-const hasRealTitle = (title?: string | null): title is string =>
-  title != null && title !== '' && title !== 'New Chat';
-
 /** Skill caches refreshed when a chat turn authors a skill via `create_file`/`edit_file`. */
 const SKILL_QUERY_KEYS = [
   QueryKeys.skills,
@@ -101,6 +102,36 @@ export const isInitialNewConversationSubmission = ({
   userMessage,
 }: Pick<EventSubmission, 'userMessage'>): boolean =>
   userMessage?.parentMessageId === Constants.NO_PARENT;
+
+/**
+ * Whether the run was sent from the unsaved-chat composer, which is the only case where
+ * finishing it may drop the pane's new-chat draft. Regenerating or resubmitting the first turn
+ * of a saved conversation keeps the root parent id, so the root parent alone cannot decide it.
+ */
+export const startedAsNewConversation = ({
+  conversation,
+  userMessage,
+  isEdited,
+  isRegenerate,
+}: Pick<
+  EventSubmission,
+  'conversation' | 'userMessage' | 'isEdited' | 'isRegenerate'
+>): boolean => {
+  const conversationId = conversation?.conversationId;
+  if (
+    !conversationId ||
+    conversationId === Constants.NEW_CONVO ||
+    conversationId === Constants.PENDING_CONVO
+  ) {
+    return true;
+  }
+
+  return (
+    isEdited !== true &&
+    isRegenerate !== true &&
+    isInitialNewConversationSubmission({ userMessage })
+  );
+};
 
 export const mergeRegenerateFinalMessages = ({
   messages,
@@ -155,8 +186,38 @@ export const getExistingConversationAbortMessages = ({
   return [...sourceMessages];
 };
 
+export const mergeErrorMessages = ({
+  messages,
+  regenerateMessages,
+  userMessage,
+  errorMessage,
+  isRegenerate = false,
+}: Pick<EventSubmission, 'messages' | 'regenerateMessages' | 'userMessage' | 'isRegenerate'> & {
+  errorMessage: TMessage;
+}): TMessage[] => {
+  if (isRegenerate) {
+    const finalMessages: TMessage[] = [];
+    let replaced = false;
+    for (const message of regenerateMessages ?? messages) {
+      if (message.messageId === errorMessage.messageId) {
+        finalMessages.push(errorMessage);
+        replaced = true;
+      } else {
+        finalMessages.push(message);
+      }
+    }
+    if (!replaced) {
+      finalMessages.push(errorMessage);
+    }
+    return finalMessages;
+  }
+
+  return [...messages, userMessage, errorMessage];
+};
+
 export type EventHandlerParams = {
   isAddedRequest?: boolean;
+  runIndex?: number;
   setCompleted: React.Dispatch<React.SetStateAction<Set<unknown>>>;
   setMessages: (messages: TMessage[]) => void;
   getMessages: () => TMessage[] | undefined;
@@ -272,6 +333,7 @@ export default function useEventHandlers({
   getMessages,
   setCompleted,
   isAddedRequest = false,
+  runIndex = 0,
   setConversation,
   setIsSubmitting,
   newConversation,
@@ -281,6 +343,11 @@ export default function useEventHandlers({
   const { announcePolite } = useLiveAnnouncer();
   const applyAgentTemplate = useApplyAgentTemplate();
   const setAbortScroll = useSetRecoilState(store.abortScroll);
+  /** Cleared on every terminal path below: the elapsed anchor must not outlive
+   *  its generation, or a later externally-started run attached at this index
+   *  would inherit a stale baseline. Navigation teardown deliberately does not
+   *  clear it — a reattach to a still-live run keeps its original start. */
+  const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(runIndex));
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -314,6 +381,8 @@ export default function useEventHandlers({
     stepHandler,
     clearStepMaps,
     resetSubagentAtoms,
+    resetPtcAtoms,
+    prunePtcTraces,
     syncStepMessage,
     cancelPendingDeltaFlush,
     flushPendingDeltas,
@@ -359,8 +428,12 @@ export default function useEventHandlers({
       shouldResetSubagentAtomsOnConversationChange(previous, paramId, preserveNewConversationId)
     ) {
       resetSubagentAtoms();
+      /** PTC traces are live-only for the same reason and share the boundary:
+       *  keep them through a run so a finished program stays auditable, drop
+       *  them when the conversation changes. */
+      resetPtcAtoms();
     }
-  }, [paramId, resetSubagentAtoms]);
+  }, [paramId, resetSubagentAtoms, resetPtcAtoms]);
 
   /** Final cleanup on component unmount. `useStepHandler` keeps the
    *  set of known atom keys in a ref; when the hook unmounts (user
@@ -371,8 +444,9 @@ export default function useEventHandlers({
   useEffect(
     () => () => {
       resetSubagentAtoms();
+      resetPtcAtoms();
     },
-    [resetSubagentAtoms],
+    [resetSubagentAtoms, resetPtcAtoms],
   );
 
   const messageHandler = useCallback(
@@ -449,15 +523,24 @@ export default function useEventHandlers({
   const syncHandler = useCallback(
     (data: TSyncData, submission: EventSubmission) => {
       const { conversationId, thread_id, responseMessage, requestMessage } = data;
-      const { initialResponse, messages: _messages, userMessage } = submission;
-      const messages = _messages.filter((msg) => msg.messageId !== userMessage.messageId);
+      const { initialResponse, messages: _messages, userMessage, isTemporary = false } = submission;
+      /** Swap the optimistic user row for the server-stamped one IN PLACE.
+       *  Filtering it out and re-appending at the tail would order any of its
+       *  already-present children (abandoned responses from preempted
+       *  attempts) before their parent, and the message tree hoists such rows
+       *  into phantom root branches — a folded thread. */
+      const userIndex = _messages.findIndex((msg) => msg.messageId === userMessage.messageId);
+      const messages =
+        userIndex >= 0
+          ? _messages.map((msg, i) => (i === userIndex ? requestMessage : msg))
+          : [..._messages, requestMessage];
 
       const nextResponseMessage = {
         ...initialResponse,
         ...responseMessage,
       };
 
-      setMessages([...messages, requestMessage, nextResponseMessage]);
+      setMessages([...messages, nextResponseMessage]);
 
       announcePolite({
         message: 'start',
@@ -484,14 +567,16 @@ export default function useEventHandlers({
           return update;
         });
 
-        if (requestMessage.parentMessageId === Constants.NO_PARENT) {
-          upsertConvoInAllQueries(queryClient, update);
-        } else {
-          updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
-        }
-        if (update.chatProjectId) {
-          queryClient.invalidateQueries([QueryKeys.projects]);
-          queryClient.invalidateQueries([QueryKeys.project, update.chatProjectId]);
+        if (!isTemporary) {
+          if (requestMessage.parentMessageId === Constants.NO_PARENT) {
+            upsertConvoInAllQueries(queryClient, update);
+          } else {
+            updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
+          }
+          if (update.chatProjectId) {
+            queryClient.invalidateQueries([QueryKeys.projects]);
+            queryClient.invalidateQueries([QueryKeys.project, update.chatProjectId]);
+          }
         }
       } else if (setConversation) {
         setConversation((prevState) => {
@@ -623,7 +708,7 @@ export default function useEventHandlers({
       markTitleGenerationProcessed(conversationId);
 
       if (location.pathname.includes(conversationId)) {
-        document.title = title;
+        setDocumentTitle(title);
       }
 
       if (setConversation && !isAddedRequest) {
@@ -655,6 +740,7 @@ export default function useEventHandlers({
         isTemporary: _isTemporary = false,
       } = submission;
       const serverConversation = conversation as TConversation;
+      setSubmissionStart(null);
 
       try {
         // Handle early abort - aborted before any response message was saved.
@@ -691,7 +777,10 @@ export default function useEventHandlers({
           }
           setMessages([]);
           queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
-          setDraft({ id: String(Constants.NEW_CONVO), value: requestMessage?.text });
+          setDraft({
+            id: getConversationDraftId(runIndex, Constants.NEW_CONVO),
+            value: requestMessage?.text,
+          });
           restorePendingQuotes(String(Constants.NEW_CONVO), requestMessage?.quotes);
           if (location.pathname !== `/c/${Constants.NEW_CONVO}`) {
             navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
@@ -756,7 +845,10 @@ export default function useEventHandlers({
             currentConvoId === Constants.NEW_CONVO;
 
           setFinalMessages(currentConvoId, isNewChat ? [] : [...messages]);
-          setDraft({ id: currentConvoId, value: requestMessage?.text });
+          setDraft({
+            id: getConversationDraftId(runIndex, currentConvoId),
+            value: requestMessage?.text,
+          });
           restorePendingQuotes(currentConvoId, requestMessage?.quotes);
           if (isNewChat) {
             requestChatFocus();
@@ -779,19 +871,29 @@ export default function useEventHandlers({
           finalMessages = [...messages, requestMessage, responseMessage];
         }
 
-        /* Preserve files from current messages when server response lacks them */
+        /* Preserve files and streamed content identity from current messages:
+         * files fill in when the server response lacks them, and the persisted
+         * (compacted) content is stamped with the indexes it streamed at so
+         * index-keyed renders don't remount the settled message. */
         if (finalMessages.length > 0) {
-          const currentMsgMap = new Map(
-            currentMessages
-              .filter((m) => m.files && m.files.length > 0)
-              .map((m) => [m.messageId, m.files]),
-          );
+          const currentMsgMap = new Map(currentMessages.map((m) => [m.messageId, m]));
           for (let i = 0; i < finalMessages.length; i++) {
             const msg = finalMessages[i];
-            const preservedFiles = currentMsgMap.get(msg.messageId);
-            if (msg.files == null && preservedFiles) {
-              finalMessages[i] = { ...msg, files: preservedFiles };
+            const currentMsg = currentMsgMap.get(msg.messageId);
+            if (!currentMsg) {
+              continue;
             }
+            const preservedFiles =
+              msg.files == null && currentMsg.files?.length ? currentMsg.files : undefined;
+            const content = preserveStreamedContentIdentity(currentMsg.content, msg.content);
+            if (preservedFiles == null && content === msg.content) {
+              continue;
+            }
+            finalMessages[i] = {
+              ...msg,
+              ...(preservedFiles != null ? { files: preservedFiles } : {}),
+              ...(content !== msg.content ? { content } : {}),
+            };
           }
         }
 
@@ -881,6 +983,7 @@ export default function useEventHandlers({
       setMessages,
       queryClient,
       setCompleted,
+      runIndex,
       isAddedRequest,
       announcePolite,
       setConversation,
@@ -889,20 +992,22 @@ export default function useEventHandlers({
       location.pathname,
       applyAgentTemplate,
       attachmentHandler,
+      setSubmissionStart,
       restorePendingQuotes,
     ],
   );
 
   const errorHandler = useCallback(
     ({ data, submission }: { data?: TResData; submission: EventSubmission }) => {
-      const { messages, userMessage, initialResponse } = submission;
+      const { userMessage, initialResponse } = submission;
       setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
+      setSubmissionStart(null);
 
       const conversationId =
         userMessage.conversationId ?? submission.conversation?.conversationId ?? '';
 
       const setErrorMessages = (convoId: string, errorMessage: TMessage) => {
-        const finalMessages: TMessage[] = [...messages, userMessage, errorMessage];
+        const finalMessages = mergeErrorMessages({ ...submission, errorMessage });
         setMessages(finalMessages);
         queryClient.setQueryData<TMessage[]>([QueryKeys.messages, convoId], finalMessages);
       };
@@ -989,6 +1094,7 @@ export default function useEventHandlers({
       paramId,
       newConversation,
       setIsSubmitting,
+      setSubmissionStart,
       getMessages,
       queryClient,
     ],
@@ -1036,6 +1142,7 @@ export default function useEventHandlers({
           console.error('Error in finalHandler during abort:', error);
           setShowStopButton(false);
           setIsSubmitting(false);
+          setSubmissionStart(null);
         }
         return;
       } else if (!isAssistantsEndpoint(endpoint)) {
@@ -1112,6 +1219,7 @@ export default function useEventHandlers({
       newConversation,
       setIsSubmitting,
       setShowStopButton,
+      setSubmissionStart,
     ],
   );
 
@@ -1126,6 +1234,7 @@ export default function useEventHandlers({
     createdHandler,
     titleHandler,
     syncStepMessage,
+    prunePtcTraces,
     cancelPendingDeltaFlush,
     flushPendingDeltas,
     attachmentHandler,

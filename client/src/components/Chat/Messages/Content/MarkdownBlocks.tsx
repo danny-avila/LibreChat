@@ -1,20 +1,24 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useLayoutEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { PluggableList } from 'unified';
 import type { ElementType } from 'react';
 import { ArtifactProvider, CodeBlockProvider } from '~/Providers';
 import { splitMarkdownIntoBlocks } from './splitMarkdown';
+import { createFadePlugin } from './animate';
 
 type SharedProps = {
   remarkPlugins: PluggableList;
   rehypePlugins: PluggableList;
   components: { [nodeType: string]: ElementType };
+  animate?: boolean;
+  hydrated?: boolean;
 };
 
 type MarkdownBlockProps = SharedProps & {
   content: string;
   codeBaseIndex: number;
   artifactBaseIndex: number;
+  mermaidBaseIndex: number;
 };
 
 /**
@@ -29,18 +33,40 @@ const MarkdownBlock = memo(
     content,
     codeBaseIndex,
     artifactBaseIndex,
+    mermaidBaseIndex,
     remarkPlugins,
     rehypePlugins,
     components,
+    animate = false,
+    hydrated = false,
   }: MarkdownBlockProps) {
+    // One fade-plugin instance per block: its closure tracks this block's
+    // character offsets so only newly streamed words animate. When `animate`
+    // flips off at stream end, the plain plugin array renders the settled
+    // block without wrapper spans. Classification is staged during render and
+    // published after React commits, so abandoned renders leave no trace.
+    // `hydrated` only matters at plugin creation (its first run), so it is
+    // deliberately absent from the memo comparator and the useMemo deps.
+    const fade = useMemo(
+      () => (animate ? createFadePlugin(hydrated) : null),
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [animate],
+    );
+    const blockRehypePlugins = useMemo(
+      () => (fade == null ? rehypePlugins : [...rehypePlugins, fade.plugin]),
+      [fade, rehypePlugins],
+    );
+    useLayoutEffect(() => {
+      fade?.commit();
+    });
     return (
       <ArtifactProvider baseIndex={artifactBaseIndex}>
-        <CodeBlockProvider baseIndex={codeBaseIndex}>
+        <CodeBlockProvider baseIndex={codeBaseIndex} mermaidBaseIndex={mermaidBaseIndex}>
           <ReactMarkdown
             /** @ts-ignore */
             remarkPlugins={remarkPlugins}
             /** @ts-ignore */
-            rehypePlugins={rehypePlugins}
+            rehypePlugins={blockRehypePlugins}
             components={components}
           >
             {content}
@@ -52,7 +78,9 @@ const MarkdownBlock = memo(
   (prev, next) =>
     prev.content === next.content &&
     prev.codeBaseIndex === next.codeBaseIndex &&
-    prev.artifactBaseIndex === next.artifactBaseIndex,
+    prev.artifactBaseIndex === next.artifactBaseIndex &&
+    prev.mermaidBaseIndex === next.mermaidBaseIndex &&
+    prev.animate === next.animate,
 );
 MarkdownBlock.displayName = 'MarkdownBlock';
 
@@ -72,14 +100,18 @@ const MarkdownBlocks = memo(function MarkdownBlocks({
   remarkPlugins,
   rehypePlugins,
   components,
+  animate,
+  hydrated,
 }: MarkdownBlocksProps) {
   const blocks = useMemo(() => {
     let codeBaseIndex = 0;
     let artifactBaseIndex = 0;
+    let mermaidBaseIndex = 0;
     return splitMarkdownIntoBlocks(content).map((block) => {
-      const entry = { raw: block.raw, codeBaseIndex, artifactBaseIndex };
+      const entry = { raw: block.raw, codeBaseIndex, artifactBaseIndex, mermaidBaseIndex };
       codeBaseIndex += block.codeBlockCount;
       artifactBaseIndex += block.artifactCount;
+      mermaidBaseIndex += block.mermaidCount;
       return entry;
     });
   }, [content]);
@@ -93,13 +125,16 @@ const MarkdownBlocks = memo(function MarkdownBlocks({
         // ref. During append-only streaming these stay constant, so completed
         // blocks keep a stable key and are not remounted.
         <MarkdownBlock
-          key={`${index}-${block.codeBaseIndex}-${block.artifactBaseIndex}`}
+          key={`${index}-${block.codeBaseIndex}-${block.artifactBaseIndex}-${block.mermaidBaseIndex}`}
           content={block.raw}
           codeBaseIndex={block.codeBaseIndex}
           artifactBaseIndex={block.artifactBaseIndex}
+          mermaidBaseIndex={block.mermaidBaseIndex}
           remarkPlugins={remarkPlugins}
           rehypePlugins={rehypePlugins}
           components={components}
+          animate={animate}
+          hydrated={hydrated}
         />
       ))}
     </>

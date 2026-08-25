@@ -2,6 +2,8 @@ const express = require('express');
 const request = require('supertest');
 
 const mockHandleSteerRequest = jest.fn();
+const mockHandleSteerCancel = jest.fn();
+const mockHandleSteerArm = jest.fn();
 const mockCheckAccess = jest.fn();
 const mockCheckPermission = jest.fn();
 const mockHasCapability = jest.fn();
@@ -15,7 +17,10 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
+  GenerationJobManager: { isRedis: false },
   handleSteerRequest: (...args) => mockHandleSteerRequest(...args),
+  handleSteerCancel: (...args) => mockHandleSteerCancel(...args),
+  handleSteerArm: (...args) => mockHandleSteerArm(...args),
   checkAccess: (...args) => mockCheckAccess(...args),
 }));
 
@@ -36,6 +41,9 @@ jest.mock('~/models', () => ({
 
 const { Permissions, PermissionTypes, PermissionBits } = require('librechat-data-provider');
 const SteerController = require('~/server/controllers/agents/steer');
+const { SteerDeliveryController, SteerCancelController, SteerArmController } = SteerController;
+
+const GENERATION_PROTOCOL_HEADER = 'x-librechat-generation-protocol';
 
 /**
  * The guard ladder itself (validation, file sanitization, ownership, enqueue
@@ -52,6 +60,9 @@ function buildApp(user = { id: 'user-1', tenantId: 'tenant-1' }) {
     next();
   });
   app.post('/chat/steer', SteerController);
+  app.post('/chat/steer/deliver', SteerDeliveryController);
+  app.post('/chat/steer/cancel', SteerCancelController);
+  app.post('/chat/steer/arm', SteerArmController);
   return app;
 }
 
@@ -60,10 +71,16 @@ describe('SteerController (wrapper)', () => {
     jest.clearAllMocks();
   });
 
-  it('serializes the handler result verbatim', async () => {
+  it('defaults an unmarked request to v1 and serializes the marker in body and header', async () => {
     mockHandleSteerRequest.mockResolvedValue({
       status: 202,
-      body: { status: 'queued', steerId: 's1', position: 1, conversationId: 'c1' },
+      body: {
+        status: 'queued',
+        steerId: 's1',
+        position: 1,
+        conversationId: 'c1',
+        generationProtocolVersion: 1,
+      },
     });
 
     const res = await request(buildApp())
@@ -76,11 +93,15 @@ describe('SteerController (wrapper)', () => {
       steerId: 's1',
       position: 1,
       conversationId: 'c1',
+      generationProtocolVersion: 1,
     });
+    expect(res.headers[GENERATION_PROTOCOL_HEADER]).toBe('1');
     expect(mockHandleSteerRequest).toHaveBeenCalledWith(
       { id: 'user-1', tenantId: 'tenant-1' },
       { conversationId: 'c1', text: 'hello', files: [{ file_id: 'f1' }] },
       {
+        generationProtocolVersion: 1,
+        signal: expect.any(AbortSignal),
         getFiles: expect.any(Function),
         updateFilesUsage: expect.any(Function),
         checkAgentAccess: expect.any(Function),
@@ -89,12 +110,55 @@ describe('SteerController (wrapper)', () => {
   });
 
   it('passes rejection statuses through untouched', async () => {
-    mockHandleSteerRequest.mockResolvedValue({ status: 409, body: { code: 'RUN_PAUSED' } });
+    mockHandleSteerRequest.mockResolvedValue({
+      status: 409,
+      body: { code: 'RUN_PAUSED', generationProtocolVersion: 1 },
+    });
 
     const res = await request(buildApp()).post('/chat/steer').send({ conversationId: 'c1' });
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('RUN_PAUSED');
+    expect(res.body.generationProtocolVersion).toBe(1);
+    expect(res.headers[GENERATION_PROTOCOL_HEADER]).toBe('1');
+  });
+
+  it('makes trigger delivery strict and fences it to the declared agent', async () => {
+    mockHandleSteerRequest.mockResolvedValue({
+      status: 202,
+      body: { status: 'queued', generationProtocolVersion: 2 },
+    });
+    mockCheckAccess.mockResolvedValue(true);
+    mockHasCapability.mockResolvedValue(true);
+
+    await request(buildApp({ id: 'user-1', role: 'USER' }))
+      .post('/chat/steer/deliver')
+      .set('X-LibreChat-Generation-Protocol', '2')
+      .send({
+        agentId: 'agent-1',
+        conversationId: 'c1',
+        clientSteerId: 'delivery-1',
+        text: 'move now',
+        generationProtocolVersion: 2,
+      });
+
+    const options = mockHandleSteerRequest.mock.calls[0][2];
+    expect(options).toEqual(
+      expect.objectContaining({
+        generationProtocolVersion: 2,
+        requireIdempotentDelivery: true,
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    await expect(
+      options.checkAgentAccess({ agentId: 'agent-1', endpoint: 'agents' }),
+    ).resolves.toBe(true);
+    await expect(
+      options.checkAgentAccess({ agentId: 'agent-other', endpoint: 'agents' }),
+    ).resolves.toBe(false);
+    await expect(
+      options.checkAgentAccess({ agentId: 'agent-1', endpoint: 'openAI' }),
+    ).resolves.toBe(false);
   });
 
   it('500s with STEER_FAILED when the handler throws', async () => {
@@ -105,8 +169,112 @@ describe('SteerController (wrapper)', () => {
       .send({ conversationId: 'c1', text: 'x' });
 
     expect(res.status).toBe(500);
-    expect(res.body.code).toBe('STEER_FAILED');
+    expect(res.body).toEqual({ code: 'STEER_FAILED', generationProtocolVersion: 1 });
+    expect(res.headers[GENERATION_PROTOCOL_HEADER]).toBe('1');
     expect(mockLogger.error).toHaveBeenCalled();
+  });
+
+  it('passes an exact body+header v2 marker through the server rollout gate', async () => {
+    mockHandleSteerRequest.mockResolvedValue({
+      status: 202,
+      body: { status: 'queued', generationProtocolVersion: 2 },
+    });
+
+    const res = await request(buildApp())
+      .post('/chat/steer')
+      .set('X-LibreChat-Generation-Protocol', '2')
+      .send({ conversationId: 'c1', text: 'hello', generationProtocolVersion: 2 });
+
+    expect(mockHandleSteerRequest.mock.calls[0][2]).toEqual(
+      expect.objectContaining({ generationProtocolVersion: 2 }),
+    );
+    expect(res.body.generationProtocolVersion).toBe(2);
+    expect(res.headers[GENERATION_PROTOCOL_HEADER]).toBe('2');
+  });
+
+  it.each([
+    ['conflicting', '1'],
+    ['malformed', 'not-a-version'],
+  ])('downgrades %s body/header markers to v1', async (_label, header) => {
+    mockHandleSteerRequest.mockResolvedValue({
+      status: 202,
+      body: { status: 'queued', generationProtocolVersion: 1 },
+    });
+
+    const res = await request(buildApp())
+      .post('/chat/steer')
+      .set('X-LibreChat-Generation-Protocol', header)
+      .send({ conversationId: 'c1', text: 'hello', generationProtocolVersion: 2 });
+
+    expect(mockHandleSteerRequest.mock.calls[0][2]).toEqual(
+      expect.objectContaining({ generationProtocolVersion: 1 }),
+    );
+    expect(res.body.generationProtocolVersion).toBe(1);
+    expect(res.headers[GENERATION_PROTOCOL_HEADER]).toBe('1');
+  });
+
+  it('honors a v1 server rollout gate even when the request advertises exact v2', async () => {
+    const previous = process.env.GENERATION_PROTOCOL_VERSION;
+    process.env.GENERATION_PROTOCOL_VERSION = '1';
+    mockHandleSteerRequest.mockResolvedValue({
+      status: 202,
+      body: { status: 'queued', generationProtocolVersion: 1 },
+    });
+    try {
+      await request(buildApp())
+        .post('/chat/steer')
+        .set('X-LibreChat-Generation-Protocol', '2')
+        .send({ conversationId: 'c1', text: 'hello', generationProtocolVersion: 2 });
+
+      expect(mockHandleSteerRequest.mock.calls[0][2]).toEqual(
+        expect.objectContaining({ generationProtocolVersion: 1 }),
+      );
+    } finally {
+      if (previous == null) {
+        delete process.env.GENERATION_PROTOCOL_VERSION;
+      } else {
+        process.env.GENERATION_PROTOCOL_VERSION = previous;
+      }
+    }
+  });
+
+  it('uses the package job cap, not the host maximum, for the final response marker', async () => {
+    mockHandleSteerRequest.mockResolvedValue({
+      status: 202,
+      body: { status: 'queued', generationProtocolVersion: 1 },
+    });
+
+    const res = await request(buildApp())
+      .post('/chat/steer')
+      .set('X-LibreChat-Generation-Protocol', '2')
+      .send({ conversationId: 'c1', text: 'hello', generationProtocolVersion: 2 });
+
+    expect(mockHandleSteerRequest.mock.calls[0][2].generationProtocolVersion).toBe(2);
+    expect(res.body.generationProtocolVersion).toBe(1);
+    expect(res.headers[GENERATION_PROTOCOL_HEADER]).toBe('1');
+  });
+
+  it.each([
+    ['/chat/steer/cancel', mockHandleSteerCancel, { conversationId: 'c1', steerId: 's1' }],
+    ['/chat/steer/arm', mockHandleSteerArm, { conversationId: 'c1', steerId: 's1' }],
+  ])('negotiates and echoes protocol markers for %s', async (path, handler, body) => {
+    handler.mockResolvedValue({
+      status: 200,
+      body: { ok: true, generationProtocolVersion: 2 },
+    });
+
+    const res = await request(buildApp())
+      .post(path)
+      .set('X-LibreChat-Generation-Protocol', '2')
+      .send({ ...body, generationProtocolVersion: 2 });
+
+    expect(handler).toHaveBeenCalledWith(
+      { id: 'user-1', tenantId: 'tenant-1' },
+      { ...body, generationProtocolVersion: 2 },
+      { generationProtocolVersion: 2 },
+    );
+    expect(res.body.generationProtocolVersion).toBe(2);
+    expect(res.headers[GENERATION_PROTOCOL_HEADER]).toBe('2');
   });
 });
 

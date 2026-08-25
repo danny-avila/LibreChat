@@ -4,9 +4,9 @@ import { createReadStream } from 'fs';
 import { readFile, stat } from 'fs/promises';
 
 const USER_FACING_UPLOAD_ERRORS = [
-  'Invalid file format',
-  'exceeds token limit',
-  'Unable to extract text from',
+  ['Invalid file format', 'Invalid file format'],
+  ['exceeds token limit', 'File content exceeds token limit'],
+  ['Unable to extract text from', 'Unable to extract text from file'],
 ] as const;
 
 const ASCII_FILENAME_SAFE_PATTERN = /^[a-zA-Z0-9._-]$/;
@@ -65,12 +65,13 @@ function truncateLeafWithSuffix(leaf: string, suffix: string, maxBytes: number):
 
 /**
  * Resolves a user-facing error message from a file upload error.
- * Returns the error's own message if it matches a known user-facing pattern,
- * otherwise returns the default message.
+ * When redaction is enabled, maps known error patterns to fixed messages
+ * without exposing provider, filesystem, filename, or submitted-content details.
  */
 export function resolveUploadErrorMessage(
   error: { message?: string } | null | undefined,
   defaultMessage = 'Error processing file',
+  redactDetails = false,
 ): string {
   const errorMessage = error?.message;
   if (!errorMessage) {
@@ -78,12 +79,14 @@ export function resolveUploadErrorMessage(
   }
 
   if (errorMessage.includes('file_ids')) {
-    return `${defaultMessage}: ${errorMessage}`;
+    return redactDetails
+      ? `${defaultMessage}: File limit reached`
+      : `${defaultMessage}: ${errorMessage}`;
   }
 
-  for (const fragment of USER_FACING_UPLOAD_ERRORS) {
+  for (const [fragment, userMessage] of USER_FACING_UPLOAD_ERRORS) {
     if (errorMessage.includes(fragment)) {
-      return errorMessage;
+      return redactDetails ? userMessage : errorMessage;
     }
   }
 

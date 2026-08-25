@@ -42,6 +42,7 @@ export default [
       'data-node/**/*',
       'meili_data/**/*',
       '**/node_modules/**/*',
+      'venv/**/*',
       '.devcontainer/**/*',
     ],
   },
@@ -169,7 +170,7 @@ export default [
     },
   },
   {
-    files: ['**/rollup.config.js', '**/.eslintrc.js', '**/jest.config.js', 'client/vite.config.ts'],
+    files: ['**/.eslintrc.js', '**/jest.config.js', 'client/vite.config.ts'],
     languageOptions: {
       globals: {
         ...globals.node,

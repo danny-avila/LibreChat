@@ -86,6 +86,38 @@ describe('File Methods', () => {
       expect(file?.file_id).toBe(fileId);
       expect(file?.expiresAt).toBeUndefined();
     });
+
+    it('persists independent Code API pointers for both execution profiles', async () => {
+      const defaultRef = {
+        kind: 'user' as const,
+        id: 'user-1',
+        storage_session_id: 'default-session',
+        file_id: 'default-file',
+        executionProfile: 'default' as const,
+      };
+      const statefulRef = {
+        ...defaultRef,
+        storage_session_id: 'stateful-session',
+        file_id: 'stateful-file',
+        executionProfile: 'stateful' as const,
+      };
+
+      const file = await fileMethods.createFile({
+        file_id: uuidv4(),
+        user: new mongoose.Types.ObjectId(),
+        filename: 'dual-profile.txt',
+        filepath: '/uploads/dual-profile.txt',
+        type: 'text/plain',
+        bytes: 10,
+        metadata: {
+          codeEnvRef: defaultRef,
+          codeEnvRefs: { default: defaultRef, stateful: statefulRef },
+        },
+      });
+
+      expect(file?.metadata?.codeEnvRefs?.default?.file_id).toBe('default-file');
+      expect(file?.metadata?.codeEnvRefs?.stateful?.file_id).toBe('stateful-file');
+    });
   });
 
   describe('claimCodeFile', () => {
@@ -1143,9 +1175,17 @@ describe('File Methods', () => {
       });
       await mongoose.models.File.updateOne(
         { file_id: fileId },
-        { $set: { expiresAt, ...(createdAt ? { createdAt } : {}) } },
+        { $set: { expiresAt } },
         { timestamps: false },
       );
+      /** Mongoose strips the immutable `createdAt` from updates, so backdating
+       *  must go through the raw driver to actually land. */
+      if (createdAt) {
+        await mongoose.models.File.collection.updateOne(
+          { file_id: fileId },
+          { $set: { createdAt } },
+        );
+      }
       return fileId;
     };
 
@@ -1212,6 +1252,28 @@ describe('File Methods', () => {
       const file = await readFile(fileId);
       /* Anchoring to createdAt alone would have expired this an hour ago. */
       expect(file.expiresAt!.getTime()).toBeGreaterThan(Date.now() + 50 * 60_000);
+    });
+
+    it("applies each file's own ceiling within a single batch", async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const soon = new Date(Date.now() + 60_000);
+      const freshId = await seedTempFile(userId, soon);
+      const agedId = await seedTempFile(userId, soon, new Date(Date.now() - 47 * HOUR));
+      const releasedId = await seedTempFile(userId, soon);
+      await fileMethods.updateFileUsage({ file_id: releasedId, user: String(userId) });
+
+      const count = await fileMethods.extendFilesTTL([freshId, agedId, releasedId], HOLD, {
+        user: String(userId),
+      });
+
+      expect(count).toBe(2);
+      const fresh = await readFile(freshId);
+      expect(fresh.expiresAt!.getTime()).toBeGreaterThan(Date.now() + 23 * HOUR);
+      const aged = await readFile(agedId);
+      expect(aged.expiresAt!.getTime()).toBe(aged.createdAt.getTime() + HOLD.maxLifetimeMs);
+      expect(aged.expiresAt!.getTime()).toBeLessThan(Date.now() + 2 * HOUR);
+      const released = await readFile(releasedId);
+      expect(released.expiresAt).toBeUndefined();
     });
 
     it('does not resurrect a TTL on an already-released file', async () => {

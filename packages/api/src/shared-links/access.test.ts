@@ -75,6 +75,9 @@ function createRes(): Response & { _status: number; _json: unknown } {
       res._json = body;
       return res;
     },
+    end() {
+      return res;
+    },
   };
   return res as unknown as Response & { _status: number; _json: unknown };
 }
@@ -109,6 +112,18 @@ async function grantUserViewer(resourceId: Types.ObjectId, uid: Types.ObjectId) 
     accessRoleId: AccessRoleIds.SHARED_LINK_VIEWER,
     grantedBy: userId,
   });
+}
+
+async function grantTenantUserViewer(resourceId: Types.ObjectId, uid: Types.ObjectId) {
+  await new AclEntry({
+    principalType: PrincipalType.USER,
+    principalModel: PrincipalModel.USER,
+    principalId: uid,
+    resourceType: ResourceType.SHARED_LINK,
+    resourceId,
+    permBits: PermissionBits.VIEW,
+    grantedBy: userId,
+  }).save();
 }
 
 /**
@@ -248,6 +263,7 @@ describe('canAccessSharedLink', () => {
       await canAccessSharedLink(req, res, next as unknown as NextFunction);
 
       expect(res._status).toBe(403);
+      expect(res._json).toBeNull();
       expect(next).not.toHaveBeenCalled();
     });
 
@@ -274,6 +290,32 @@ describe('canAccessSharedLink', () => {
   });
 
   describe('cross-tenant lookup', () => {
+    test('exposes the share tenant after a cross-tenant user grant succeeds', async () => {
+      const viewer = new Types.ObjectId();
+      const link = await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+        const tenantLink = await createTestLink();
+        await grantTenantUserViewer(tenantLink._id, viewer);
+        return tenantLink;
+      });
+      mockGetUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: viewer },
+      ]);
+      const req = createReq({
+        params: { shareId: link.shareId },
+        user: { id: viewer.toString(), _id: viewer, role: 'USER', tenantId: 'tenant-b' },
+      });
+      const res = createRes();
+      const next = jest.fn();
+
+      await tenantStorage.run({ tenantId: 'tenant-b' }, () =>
+        canAccessSharedLink(req, res, next as unknown as NextFunction),
+      );
+
+      expect(next).toHaveBeenCalled();
+      expect((req as unknown as Record<string, unknown>).shareTenantId).toBe('tenant-a');
+      expect((req as unknown as Record<string, unknown>).shareResourceId).toBe(link._id.toString());
+    });
+
     test('does not let a cross-tenant viewer role satisfy a ROLE ACL from another tenant', async () => {
       // Share owned by tenant-a, granted VIEW to role USER. A tenant-b viewer whose
       // own role is also USER must not inherit that grant: role principals are just

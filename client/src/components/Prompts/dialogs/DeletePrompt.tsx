@@ -31,7 +31,6 @@ const DeleteConfirmDialog = ({
             <Button
               variant="destructive"
               size="icon"
-              className="size-9"
               aria-label={localize('com_ui_delete')}
               disabled={disabled}
               onClick={(e) => {

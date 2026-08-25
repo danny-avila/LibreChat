@@ -276,7 +276,7 @@ function defaultPortForProtocol(protocol: SupportedProtocol | string | null): st
   return '';
 }
 
-function getEffectivePort(
+export function getEffectivePort(
   protocol: SupportedProtocol | string | null,
   port?: string | null,
 ): string {

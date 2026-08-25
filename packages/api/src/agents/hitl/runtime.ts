@@ -1,7 +1,13 @@
 import { HookRegistry, createToolPolicyHook } from '@librechat/agents';
 import type { TToolApprovalPolicy } from 'librechat-data-provider';
+import type { MCPToolAlias } from '~/tools/classification';
 import type { ToolApprovalHookContext } from './hooks';
-import { isHITLEnabled, mapToolApprovalPolicy } from './policy';
+import {
+  isHITLEnabled,
+  mapToolApprovalPolicy,
+  collectAliasMatcherNames,
+  buildAliasMatcherPattern,
+} from './policy';
 import { buildToolApprovalHooks } from './hooks';
 
 /**
@@ -33,6 +39,7 @@ export interface HITLRunWiring {
 export function buildHITLRunWiring(
   policy: TToolApprovalPolicy | undefined,
   context: ToolApprovalHookContext = {},
+  mcpToolAliases: readonly MCPToolAlias[] = [],
 ): HITLRunWiring | undefined {
   if (!isHITLEnabled(policy)) {
     return undefined;
@@ -52,6 +59,20 @@ export function buildHITLRunWiring(
       'PreToolUse',
       matcher ? { pattern: matcher, hooks: [hook] } : { hooks: [hook] },
     );
+    /** A matcher written against a tool's OTHER key spelling (pre-strip or
+     *  current) would silently never fire for the renamed instance, skipping
+     *  its argument/user/tenant-specific deny or ask. The SAME hook is
+     *  registered again under an exact-name pattern for those aliased names
+     *  — a separate entry keeps the admin's regex semantics and the SDK's
+     *  pattern-length cap intact, and the name sets are disjoint so the hook
+     *  never fires twice for one call. */
+    const aliasNames = matcher ? collectAliasMatcherNames(matcher, mcpToolAliases) : [];
+    if (aliasNames.length > 0) {
+      registry.register('PreToolUse', {
+        pattern: buildAliasMatcherPattern(aliasNames),
+        hooks: [hook],
+      });
+    }
   }
 
   return { humanInTheLoop: { enabled: true }, hooks: registry };

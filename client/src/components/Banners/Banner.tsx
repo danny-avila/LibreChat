@@ -1,7 +1,7 @@
+import { useEffect, useMemo, useRef } from 'react';
 import { XIcon } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import { Button, cn } from '@librechat/client';
-import { useEffect, useMemo, useRef } from 'react';
 import {
   CONFIG_HTML_TEXT_TAGS,
   CONFIG_HTML_CLASS_ATTR,
@@ -62,7 +62,7 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
     >
       <div
         className={cn(
-          'text-md w-full truncate text-center [&_a]:text-blue-700 [&_a]:underline dark:[&_a]:text-blue-400',
+          'w-full truncate text-center text-base [&_a]:text-link [&_a]:underline',
           !banner.persistable && 'px-4',
         )}
         dangerouslySetInnerHTML={{ __html: sanitizedMessage }}

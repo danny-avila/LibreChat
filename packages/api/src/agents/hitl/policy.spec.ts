@@ -2,6 +2,9 @@ import type { Agents, TToolApprovalPolicy } from 'librechat-data-provider';
 import {
   resolveToolApprovalPolicy,
   isHITLEnabled,
+  healToolApprovalPolicy,
+  collectAliasMatcherNames,
+  buildAliasMatcherPattern,
   mapToolApprovalPolicy,
   buildToolApprovalPayload,
   buildAskUserQuestionPayload,
@@ -12,6 +15,7 @@ import {
   sanitizeResumeModelParameters,
   pickResumeContext,
   applyResumeContext,
+  applyResumeModelParameters,
   exemptAskUserQuestionFromApproval,
 } from './policy';
 
@@ -319,6 +323,7 @@ describe('sanitizeResumeModelParameters', () => {
       authOptions: { credentials: { private_key: 'google-secret' } },
       credentials: { accessKeyId: 'aws-id', secretAccessKey: 'aws-secret' },
       client: { config: { token: { token: 'bedrock-bearer' } } },
+      endpoint: 'aiplatform.eu.rep.googleapis.com',
       endpointHost: 'vpce.internal.example',
       baseURL: 'https://internal-gateway.example',
     });
@@ -472,6 +477,19 @@ describe('captureResumeModelParameters', () => {
     expect(captureResumeModelParameters({ temperature: 0.5 }, undefined)).toEqual({
       temperature: 0.5,
     });
+  });
+
+  test('does not capture a provider transport endpoint for request replay (#14946)', () => {
+    expect(
+      captureResumeModelParameters(
+        { temperature: 0.2 },
+        {
+          model: 'gemini-3.7-flash',
+          temperature: 0.2,
+          endpoint: 'aiplatform.eu.rep.googleapis.com',
+        },
+      ),
+    ).toEqual({ model: 'gemini-3.7-flash', temperature: 0.2 });
   });
 
   test('only replays schema-known generation params; identity fields stay owned elsewhere', () => {
@@ -694,6 +712,52 @@ describe('pickResumeContext / applyResumeContext', () => {
   });
 });
 
+describe('applyResumeModelParameters', () => {
+  it('replays generation params without replacing routing or resume identity fields (#14946)', () => {
+    const body: Record<string, unknown> = {
+      conversationId: 'conversation-1',
+      generationCreatedAt: 123,
+      actionId: 'action-1',
+      endpoint: 'agents',
+      endpointType: 'google',
+      agent_id: 'agent-1',
+      model: 'gemini-3.7-flash',
+      temperature: 1,
+    };
+
+    applyResumeModelParameters(body, {
+      conversationId: 'provider-conversation',
+      generationCreatedAt: 999,
+      actionId: 'provider-action',
+      endpoint: 'aiplatform.eu.rep.googleapis.com',
+      endpointType: 'custom',
+      agent_id: 'provider-agent',
+      model: 'provider-model',
+      temperature: 0.2,
+      maxOutputTokens: 2048,
+    });
+
+    expect(body).toEqual({
+      conversationId: 'conversation-1',
+      generationCreatedAt: 123,
+      actionId: 'action-1',
+      endpoint: 'agents',
+      endpointType: 'google',
+      agent_id: 'agent-1',
+      model: 'gemini-3.7-flash',
+      temperature: 0.2,
+      maxOutputTokens: 2048,
+    });
+  });
+
+  it('is a no-op for invalid captured parameters', () => {
+    const body: Record<string, unknown> = { endpoint: 'agents' };
+    applyResumeModelParameters(body, undefined);
+    applyResumeModelParameters(body, ['aiplatform.eu.rep.googleapis.com']);
+    expect(body).toEqual({ endpoint: 'agents' });
+  });
+});
+
 describe('exemptAskUserQuestionFromApproval', () => {
   const NAME = 'ask_user_question';
   it('adds the tool to allow when the admin did not mention it', () => {
@@ -710,5 +774,89 @@ describe('exemptAskUserQuestionFromApproval', () => {
   });
   it('passes undefined through', () => {
     expect(exemptAskUserQuestionFromApproval(undefined, NAME)).toBeUndefined();
+  });
+});
+
+describe('healToolApprovalPolicy', () => {
+  const aliases = [
+    { name: 'delete_thing_mcp_acme', aliasName: 'acme_delete_thing_mcp_acme' },
+    { name: 'search_mcp_acme', aliasName: 'acme_search_mcp_acme' },
+  ];
+
+  it('appends current names to lists whose patterns match only the legacy spelling', () => {
+    /** Admin YAML written against upstream naming must keep applying — a
+     *  non-matching deny fails OPEN. */
+    const healed = healToolApprovalPolicy(
+      { enabled: true, deny: ['acme_delete_*'], ask: ['acme_search_mcp_acme'] },
+      aliases,
+    );
+
+    expect(healed?.deny).toEqual(['acme_delete_*', 'delete_thing_mcp_acme']);
+    expect(healed?.ask).toEqual(['acme_search_mcp_acme', 'search_mcp_acme']);
+  });
+
+  it('heals list-level so allow semantics are preserved, not tightened', () => {
+    const healed = healToolApprovalPolicy({ enabled: true, allow: ['acme_search_*'] }, aliases);
+
+    expect(healed?.allow).toEqual(['acme_search_*', 'search_mcp_acme']);
+  });
+
+  it('skips names the list already matches and leaves non-matching lists untouched', () => {
+    const healed = healToolApprovalPolicy(
+      { enabled: true, deny: ['*_mcp_acme'], allow: ['unrelated_tool'] },
+      aliases,
+    );
+
+    expect(healed?.deny).toEqual(['*_mcp_acme']);
+    expect(healed?.allow).toEqual(['unrelated_tool']);
+  });
+
+  it('passes through without aliases or policy', () => {
+    expect(healToolApprovalPolicy(undefined, aliases)).toBeUndefined();
+    const policy: TToolApprovalPolicy = { enabled: true, deny: ['x'] };
+    expect(healToolApprovalPolicy(policy, [])).toBe(policy);
+  });
+});
+
+describe('healToolApprovalPolicy reverse direction', () => {
+  it('appends a legacy-named instance when the pattern targets the current catalog name', () => {
+    /** An unedited agent retains the pre-strip instance name — a deny written
+     *  against the current catalog name must still reach it. */
+    const aliases = [{ name: 'acme_search_mcp_acme', aliasName: 'search_mcp_acme' }];
+    const healed = healToolApprovalPolicy(
+      { enabled: true, mode: 'bypass', deny: ['search_mcp_acme'] },
+      aliases,
+    );
+
+    expect(healed?.deny).toEqual(['search_mcp_acme', 'acme_search_mcp_acme']);
+  });
+});
+
+describe('collectAliasMatcherNames', () => {
+  const aliases = [
+    { name: 'search_mcp_acme', aliasName: 'acme_search_mcp_acme' },
+    { name: 'acme_list_mcp_acme', aliasName: 'list_mcp_acme' },
+  ];
+
+  it('returns names whose alias matches the regex while the name does not', () => {
+    expect(collectAliasMatcherNames('^acme_search_mcp_acme$', aliases)).toEqual([
+      'search_mcp_acme',
+    ]);
+    expect(collectAliasMatcherNames('^list_mcp_acme$', aliases)).toEqual(['acme_list_mcp_acme']);
+  });
+
+  it('skips names the matcher already matches and invalid patterns', () => {
+    expect(collectAliasMatcherNames('_mcp_acme$', aliases)).toEqual([]);
+    expect(collectAliasMatcherNames('(unclosed', aliases)).toEqual([]);
+    expect(collectAliasMatcherNames(undefined, aliases)).toEqual([]);
+  });
+
+  it('builds an anchored exact-name pattern with escaped names', () => {
+    const pattern = buildAliasMatcherPattern(['a.b_mcp_acme', 'c_mcp_acme']);
+    const regex = new RegExp(pattern);
+    expect(regex.test('a.b_mcp_acme')).toBe(true);
+    expect(regex.test('axb_mcp_acme')).toBe(false);
+    expect(regex.test('c_mcp_acme')).toBe(true);
+    expect(regex.test('xc_mcp_acme')).toBe(false);
   });
 });

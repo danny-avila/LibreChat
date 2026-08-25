@@ -37,6 +37,7 @@ export interface IAgent extends Omit<Document, 'model'> {
   hide_sequential_outputs?: boolean;
   end_after_tools?: boolean;
   stateful_code_sessions?: boolean;
+  stateful_code_environment?: 'user' | 'agent-user' | 'conversation';
   /** @deprecated Use edges instead */
   agent_ids?: string[];
   edges?: GraphEdge[];
@@ -48,7 +49,7 @@ export interface IAgent extends Omit<Document, 'model'> {
   is_promoted?: boolean;
   /** MCP server names extracted from tools for efficient querying */
   mcpServerNames?: string[];
-  /** Per-tool configuration (defer_loading, allowed_callers) */
+  /** Per-tool configuration (defer_loading, allowed_callers, run_in_background, describe_intent) */
   tool_options?: AgentToolOptions;
   /** Subagent spawning configuration — isolated-context child agents. */
   subagents?: AgentSubagentsConfig;

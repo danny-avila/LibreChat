@@ -1,5 +1,37 @@
 import type { RunLLMConfig } from '~/types';
-import { mergeHeaders, resolveConfigHeaders } from './headers';
+import { mediaTypeEssence, mergeHeaders, resolveConfigHeaders } from './headers';
+
+describe('mediaTypeEssence', () => {
+  it('returns the bare type for a header with no parameters', () => {
+    expect(mediaTypeEssence('text/event-stream')).toBe('text/event-stream');
+  });
+
+  it('strips parameters', () => {
+    expect(mediaTypeEssence('text/event-stream; charset=utf-8')).toBe('text/event-stream');
+    expect(mediaTypeEssence('application/json;charset=utf-8')).toBe('application/json');
+  });
+
+  it('lowercases the type', () => {
+    expect(mediaTypeEssence('TEXT/EVENT-STREAM')).toBe('text/event-stream');
+    expect(mediaTypeEssence('Application/JSON; Charset=UTF-8')).toBe('application/json');
+  });
+
+  it('trims surrounding whitespace', () => {
+    expect(mediaTypeEssence('  text/plain  ; charset=utf-8')).toBe('text/plain');
+  });
+
+  it('does not match a type named only inside a parameter', () => {
+    expect(mediaTypeEssence('text/plain; boundary=text/event-stream')).toBe('text/plain');
+    expect(mediaTypeEssence('text/plain; x=application/json')).toBe('text/plain');
+  });
+
+  it('returns an empty string for absent or empty headers', () => {
+    expect(mediaTypeEssence(undefined)).toBe('');
+    expect(mediaTypeEssence(null)).toBe('');
+    expect(mediaTypeEssence('')).toBe('');
+    expect(mediaTypeEssence('   ')).toBe('');
+  });
+});
 
 describe('mergeHeaders', () => {
   it('returns undefined when neither side has headers', () => {
@@ -151,5 +183,37 @@ describe('resolveConfigHeaders', () => {
     const llmConfig = { model: 'gpt-4o', configuration: {} } as unknown as RunLLMConfig;
     expect(() => resolveConfigHeaders({ llmConfig, user, body })).not.toThrow();
     expect(llmConfig.configuration).toEqual({});
+  });
+
+  it('never forwards unresolved user placeholders when user context is missing (issue #14580)', () => {
+    const llmConfig = {
+      configuration: {
+        defaultHeaders: {
+          'X-LibreChat-User': '{{LIBRECHAT_USER_OPENIDID}}',
+          'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        },
+      },
+    } as unknown as RunLLMConfig;
+
+    // The empty safe user produced by createSafeUser(undefined) — e.g. a disposed
+    // req racing async title generation — must not leak literal template text.
+    resolveConfigHeaders({ llmConfig, user: {} as { id: string }, body });
+
+    expect(llmConfig.configuration?.defaultHeaders).toEqual({
+      'X-LibreChat-User': '',
+      'X-Conversation-Id': 'convo-abc',
+    });
+  });
+
+  it('strips placeholders for fields the resolved user lacks', () => {
+    const llmConfig = {
+      configuration: {
+        defaultHeaders: { 'X-LibreChat-User': '{{LIBRECHAT_USER_OPENIDID}}' },
+      },
+    } as unknown as RunLLMConfig;
+
+    resolveConfigHeaders({ llmConfig, user, body });
+
+    expect(llmConfig.configuration?.defaultHeaders).toEqual({ 'X-LibreChat-User': '' });
   });
 });

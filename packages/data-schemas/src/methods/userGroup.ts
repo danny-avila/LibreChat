@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 import { AsyncLocalStorage } from 'async_hooks';
 import { CacheKeys, PrincipalType } from 'librechat-data-provider';
-import type { TUser, TPrincipalSearchResult } from 'librechat-data-provider';
+import type { TPrincipalSearchResult } from 'librechat-data-provider';
 import type { Model, ClientSession, FilterQuery } from 'mongoose';
 import type { CacheStore, IGroup, IRole, IUser } from '~/types';
 import { isValidObjectIdString } from '~/utils/objectId';
@@ -1013,7 +1013,12 @@ export function createUserGroupMethods(
    * @param user - User object from database
    * @returns Transformed user result
    */
-  function transformUserToTPrincipalSearchResult(user: TUser): TPrincipalSearchResult {
+  function transformUserToTPrincipalSearchResult(
+    user: Pick<
+      IUser,
+      'id' | 'name' | 'email' | 'username' | 'avatar' | 'provider' | 'idOnTheSource'
+    >,
+  ): TPrincipalSearchResult {
     return {
       id: user.id,
       type: PrincipalType.USER,
@@ -1023,7 +1028,7 @@ export function createUserGroupMethods(
       avatar: user.avatar,
       provider: user.provider,
       source: 'local',
-      idOnTheSource: (user as TUser & { idOnTheSource?: string }).idOnTheSource || user.id,
+      idOnTheSource: user.idOnTheSource || user.id,
     };
   }
 
@@ -1087,17 +1092,17 @@ export function createUserGroupMethods(
 
       promises.push(
         userQuery.lean<IUser[]>().then((users) =>
-          users.map((user) => {
-            const userWithId = user as IUser & { idOnTheSource?: string };
-            return transformUserToTPrincipalSearchResult({
-              id: userWithId._id?.toString() || '',
-              name: userWithId.name,
-              email: userWithId.email,
-              username: userWithId.username,
-              avatar: userWithId.avatar,
-              provider: userWithId.provider,
-            } as TUser);
-          }),
+          users.map((user) =>
+            transformUserToTPrincipalSearchResult({
+              id: user._id?.toString() || '',
+              name: user.name,
+              email: user.email,
+              username: user.username,
+              avatar: user.avatar,
+              provider: user.provider,
+              idOnTheSource: user.idOnTheSource,
+            }),
+          ),
         ),
       );
     } else {

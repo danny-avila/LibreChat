@@ -91,52 +91,45 @@ jest.mock('~/Providers', () => ({
 }));
 
 // Mock @librechat/client with proper Dialog behavior
-jest.mock(
-  '@librechat/client',
-  () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const React = require('react');
-    return {
-      useToastContext: jest.fn(() => ({
-        showToast: jest.fn(),
-      })),
-      OGDialog: ({ children, open, onOpenChange }: any) => {
-        // Store onOpenChange in context for trigger to call
-        return (
-          <div data-testid="dialog-wrapper" data-open={open}>
-            {React.Children.map(children, (child: any) => {
-              if (
-                child?.type?.displayName === 'OGDialogTrigger' ||
-                child?.props?.['data-trigger']
-              ) {
-                return React.cloneElement(child, { onOpenChange });
-              }
-              // Only render content when open
-              if (child?.type?.displayName === 'OGDialogContent' && !open) {
-                return null;
-              }
-              return child;
-            })}
-          </div>
-        );
-      },
-      OGDialogTrigger: ({ children, asChild, onOpenChange }: any) => {
-        if (asChild && React.isValidElement(children)) {
-          return React.cloneElement(children as React.ReactElement<any>, {
-            onClick: (e: any) => {
-              (children as any).props?.onClick?.(e);
-              onOpenChange?.(true);
-            },
-          });
-        }
-        return <div onClick={() => onOpenChange?.(true)}>{children}</div>;
-      },
-      OGDialogContent: ({ children }: any) => <div data-testid="dialog-content">{children}</div>,
-      Label: ({ children, className }: any) => <span className={className}>{children}</span>,
-    };
-  },
-  { virtual: true },
-);
+jest.mock('@librechat/client', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require('react');
+  return {
+    useToastContext: jest.fn(() => ({
+      showToast: jest.fn(),
+    })),
+    OGDialog: ({ children, open, onOpenChange }: any) => {
+      // Store onOpenChange in context for trigger to call
+      return (
+        <div data-testid="dialog-wrapper" data-open={open}>
+          {React.Children.map(children, (child: any) => {
+            if (child?.type?.displayName === 'OGDialogTrigger' || child?.props?.['data-trigger']) {
+              return React.cloneElement(child, { onOpenChange });
+            }
+            // Only render content when open
+            if (child?.type?.displayName === 'OGDialogContent' && !open) {
+              return null;
+            }
+            return child;
+          })}
+        </div>
+      );
+    },
+    OGDialogTrigger: ({ children, asChild, onOpenChange }: any) => {
+      if (asChild && React.isValidElement(children)) {
+        return React.cloneElement(children as React.ReactElement<any>, {
+          onClick: (e: any) => {
+            (children as any).props?.onClick?.(e);
+            onOpenChange?.(true);
+          },
+        });
+      }
+      return <div onClick={() => onOpenChange?.(true)}>{children}</div>;
+    },
+    OGDialogContent: ({ children }: any) => <div data-testid="dialog-content">{children}</div>,
+    Label: ({ children, className }: any) => <span className={className}>{children}</span>,
+  };
+});
 
 // Create wrapper with QueryClient
 const createWrapper = () => {
@@ -324,7 +317,6 @@ describe('AgentCard', () => {
       authorName: 'John Doe',
       owner_contact: {
         name: 'Owner User',
-        email: 'owner@example.com',
       },
     };
 
@@ -335,10 +327,8 @@ describe('AgentCard', () => {
     );
 
     expect(screen.getByText('Contact:')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Owner User' })).toHaveAttribute(
-      'href',
-      'mailto:owner@example.com',
-    );
+    expect(screen.getByText('Owner User')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Owner User' })).not.toBeInTheDocument();
     expect(screen.queryByText('by John Doe')).not.toBeInTheDocument();
   });
 

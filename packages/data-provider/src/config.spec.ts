@@ -21,9 +21,12 @@ const endpointsConfig: TEndpointsConfig = {
 };
 
 describe('excludedKeys', () => {
-  it.each(['_id', 'user', 'conversationId', '__v'])('excludes system field "%s"', (field) => {
-    expect(excludedKeys.has(field)).toBe(true);
-  });
+  it.each(['_id', 'user', 'conversationId', 'agentEventBinding', '__v'])(
+    'excludes system field "%s"',
+    (field) => {
+      expect(excludedKeys.has(field)).toBe(true);
+    },
+  );
 
   it('does not exclude tenantId (plugin-level guard owns this)', () => {
     expect(excludedKeys.has('tenantId')).toBe(false);
@@ -55,6 +58,84 @@ describe('bedrockEndpointSchema', () => {
       return;
     }
     expect(result.data.endpoints?.bedrock?.guardrailConfig).toEqual(guardrailConfig);
+  });
+});
+
+describe('agent event runtime config', () => {
+  it('accepts rollout flags and agent-event admission limits', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          eventDriven: {
+            childTurns: true,
+            completionWakeups: false,
+            selfUrl: 'https://triggers.internal',
+          },
+        },
+      },
+      rateLimits: {
+        agentEvents: { userMax: 80, userWindowInMinutes: 2 },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.eventDriven).toEqual({
+      childTurns: true,
+      completionWakeups: false,
+      selfUrl: 'https://triggers.internal',
+    });
+    expect(result.data.rateLimits?.agentEvents).toEqual({
+      userMax: 80,
+      userWindowInMinutes: 2,
+    });
+  });
+});
+
+describe('speechTab schema', () => {
+  it.each(['browser', 'external', 'openai', 'azureOpenAI'])(
+    'accepts the speech-to-text engine "%s"',
+    (engineSTT) => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        speech: { speechTab: { speechToText: { engineSTT } } },
+      });
+
+      expect(result.success).toBe(true);
+    },
+  );
+
+  it('rejects an unknown speech-to-text engine', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      speech: { speechTab: { speechToText: { engineSTT: 'unknown' } } },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it.each(['browser', 'external', 'openai', 'azureOpenAI', 'elevenlabs', 'localai'])(
+    'accepts the text-to-speech engine "%s"',
+    (engineTTS) => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        speech: { speechTab: { textToSpeech: { engineTTS } } },
+      });
+
+      expect(result.success).toBe(true);
+    },
+  );
+
+  it('rejects an unknown text-to-speech engine', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      speech: { speechTab: { textToSpeech: { engineTTS: 'unknown' } } },
+    });
+
+    expect(result.success).toBe(false);
   });
 });
 
@@ -377,6 +458,10 @@ describe('allowedAddressesSchema', () => {
       ['[fc00::1]:8080', 'IPv6 unique-local with port'],
       ['[fd00::1]:8080', 'IPv6 unique-local with port'],
       ['[fe80::1]:8080', 'IPv6 link-local with port'],
+      ['[::ffff:10.0.0.5]:8080', 'IPv4-mapped IPv6 of a private address'],
+      ['[64:ff9b::a00:1]:8080', 'NAT64 embedding private 10.0.0.1'],
+      ['[2002:a00:1::]:8080', '6to4 embedding private 10.0.0.1'],
+      ['[2001::ffff:f5ff:fffe]:8080', 'Teredo embedding a private address'],
     ])('accepts "%s" (%s)', (entry) => {
       expect(allowedAddressesSchema.parse([entry])).toEqual([entry]);
     });
@@ -398,6 +483,8 @@ describe('allowedAddressesSchema', () => {
       ['https://internal.example', 'https URL'],
       ['ws://10.0.0.5', 'ws URL'],
       ['10.0.0.0/24', 'CIDR range'],
+      ['[64:ff9b::808:808]:8080', 'NAT64 embedding public 8.8.8.8'],
+      ['[2002:808:808::]:8080', '6to4 embedding public 8.8.8.8'],
       ['/path', 'leading slash / path'],
       ['10.0.0.5/api', 'embedded path'],
       ['localhost', 'bare hostname'],
@@ -492,6 +579,62 @@ describe('allowedAddressesSchema', () => {
       });
       expect(result.success).toBe(false);
     });
+
+    it('accepts the field on speech.stt', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        speech: { stt: { allowedAddresses: ['127.0.0.1:8080'] } },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts the field on speech.tts', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        speech: { tts: { allowedAddresses: ['localhost:11434', 'ollama.internal:11434'] } },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts the field on ocr', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        ocr: { allowedAddresses: ['10.0.0.5:443'] },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('omitting the field on ocr leaves it undefined', () => {
+      const result = configSchema.safeParse({ version: '1.0', ocr: {} });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.ocr?.allowedAddresses).toBeUndefined();
+      }
+    });
+
+    it('rejects a public IP at the speech.stt location', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        speech: { stt: { allowedAddresses: ['8.8.8.8:53'] } },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects a bare host at the speech.tts location', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        speech: { tts: { allowedAddresses: ['localhost'] } },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects a CIDR range at the ocr location', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        ocr: { allowedAddresses: ['10.0.0.0/24'] },
+      });
+      expect(result.success).toBe(false);
+    });
   });
 });
 
@@ -555,6 +698,88 @@ describe('webSearchSchema', () => {
       webSearchSchema.parse({
         tavilyScraperOptions: {
           timeout: 120001,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts SearXNG search options', () => {
+    const result = webSearchSchema.parse({
+      searxngSearchOptions: {
+        engines: 'google,bing,startpage,qwant',
+        language: 'en',
+        timeRange: 'month',
+        timeout: 15000,
+      },
+    });
+
+    expect(result.searxngSearchOptions?.engines).toBe('google,bing,startpage,qwant');
+    expect(result.searxngSearchOptions?.language).toBe('en');
+    expect(result.searxngSearchOptions?.timeRange).toBe('month');
+    expect(result.searxngSearchOptions?.timeout).toBe(15000);
+  });
+
+  it('normalizes a SearXNG engine list into a comma-separated string', () => {
+    const result = webSearchSchema.parse({
+      searxngSearchOptions: {
+        engines: ['google', 'bing', 'startpage', 'qwant'],
+      },
+    });
+
+    expect(result.searxngSearchOptions?.engines).toBe('google,bing,startpage,qwant');
+  });
+
+  it('trims whitespace and empty entries from SearXNG engines', () => {
+    const result = webSearchSchema.parse({
+      searxngSearchOptions: {
+        engines: 'google, bing , , startpage',
+      },
+    });
+
+    expect(result.searxngSearchOptions?.engines).toBe('google,bing,startpage');
+  });
+
+  it('treats a blank SearXNG engines value as unset', () => {
+    const result = webSearchSchema.parse({
+      searxngSearchOptions: {
+        engines: '  ,  ',
+      },
+    });
+
+    expect(result.searxngSearchOptions?.engines).toBeUndefined();
+  });
+
+  it('rejects invalid SearXNG search options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        searxngSearchOptions: {
+          timeRange: 'week',
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        searxngSearchOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        searxngSearchOptions: {
+          engines: 42,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a zero SearXNG timeout, which axios reads as no timeout at all', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        searxngSearchOptions: {
+          timeout: 0,
         },
       }),
     ).toThrow();
