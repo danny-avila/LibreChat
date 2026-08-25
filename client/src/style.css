@@ -444,13 +444,6 @@ html.high-contrast * {
    * that blank it outright. */
   --tw-ring-opacity: 1;
 }
-/* Popover elevation is a black shadow, which carries no separation at all
- * against a pure black surface. */
-html.high-contrast .popover-ui,
-html.high-contrast .tooltip {
-  border: 1px solid rgb(var(--border-medium));
-  box-shadow: none;
-}
 /* `.dark body`/`.dark html` pin the page to #212121, which would leave a
  * near-black canvas behind the pure black surfaces. */
 html.high-contrast,

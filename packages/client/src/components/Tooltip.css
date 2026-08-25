@@ -27,3 +27,13 @@
 .tooltip:where(.dark, .dark *) {
   box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.35);
 }
+
+/* The contrast edge ships with the primitive: the app stylesheet is not part of
+ * the published package, so a consumer importing this file has to get the
+ * boundary too. In a contrast mode the `surface-primary` fill is the canvas
+ * itself, and the black shadow the tooltip otherwise leans on carries no
+ * separation against pure black. */
+html.high-contrast .tooltip {
+  border: 1px solid rgb(var(--border-medium));
+  box-shadow: none;
+}

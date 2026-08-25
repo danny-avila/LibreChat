@@ -71,8 +71,26 @@ describe('useMermaid cache key', () => {
     await waitFor(() => expect(mermaidMock.render).toHaveBeenCalledTimes(2));
 
     const [first, second] = mermaidMock.initialize.mock.calls;
+    expect(first[0].theme).toBe('forest');
     expect(first[0].themeVariables).toBeUndefined();
+    /** `base` is the only built-in theme mermaid applies `themeVariables` to, so
+     *  the contrast palette has to outrank the caller's theme. */
+    expect(second[0].theme).toBe('base');
     expect(second[0].themeVariables).toEqual(expect.objectContaining({ primaryColor: '#ffffff' }));
+  });
+
+  it('keeps the contrast palette ahead of a caller-supplied config theme', async () => {
+    appearance = { resolvedMode: 'dark', highContrast: true };
+    renderHook(
+      () => useMermaid({ content: CONTENT, theme: 'forest', config: { theme: 'forest' } }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(mermaidMock.initialize).toHaveBeenCalledTimes(1));
+
+    const [config] = mermaidMock.initialize.mock.calls[0];
+    expect(config.theme).toBe('base');
+    expect(config.themeVariables).toEqual(expect.objectContaining({ primaryColor: '#000000' }));
   });
 
   it('rerenders a custom-themed diagram when the scheme changes', async () => {

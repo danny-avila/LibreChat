@@ -101,10 +101,14 @@ export const useMermaid = ({
 
     return {
       startOnLoad: false,
-      theme: (customTheme as MermaidConfig['theme']) || (themeVariables ? 'base' : defaultTheme),
-      ...(themeVariables ? { themeVariables } : {}),
+      theme: (customTheme as MermaidConfig['theme']) || defaultTheme,
       ...config,
       flowchart: { ...inlineFlowchartConfig, ...config?.flowchart, htmlLabels: false },
+      /** A contrast mode is an accessibility need rather than a caller
+       *  preference, and mermaid honours `themeVariables` only under `base`, so
+       *  both MUST come after the `config` spread and outrank `customTheme`.
+       *  Otherwise the diagram keeps a built-in palette no token can reach. */
+      ...(themeVariables ? { theme: 'base' as const, themeVariables } : {}),
       // Security hardening: MUST come after ...config spread to prevent override
       securityLevel: 'strict',
       maxTextSize: config?.maxTextSize ?? 50000,
