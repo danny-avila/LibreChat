@@ -1156,6 +1156,37 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('terminal host acknowledgement deletes a zero-TTL job after settlement', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { completedTtl: 0 });
+      await store.initialize();
+
+      const streamId = `terminal-host-zero-ttl-${Date.now()}`;
+      const job = await store.createJob(streamId, 'user-1', streamId);
+      await expect(
+        store.transitionStatus(streamId, {
+          from: 'running',
+          to: 'aborted',
+          expectCreatedAt: job.createdAt,
+          patch: { completedAt: Date.now(), terminalHostActionPending: true },
+        }),
+      ).resolves.toBe(true);
+      await expect(store.getJob(streamId)).resolves.toMatchObject({
+        status: 'aborted',
+        terminalHostActionPending: true,
+      });
+
+      await expect(store.clearTerminalHostAction(streamId, job.createdAt)).resolves.toBeUndefined();
+      await expect(store.getJob(streamId)).resolves.toBeNull();
+      await expect(store.getTerminalHostActionJobs()).resolves.toEqual([]);
+
+      await store.destroy();
+    });
+
     test('appendChunk gives the approval TTL when the chunk key did not exist at pause time', async () => {
       if (!ioredisClient) {
         return;

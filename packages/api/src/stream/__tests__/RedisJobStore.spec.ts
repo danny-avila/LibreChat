@@ -1013,7 +1013,9 @@ describe('RedisJobStore', () => {
     await store.clearTerminalHostAction('stream-host-action-clear', 100);
 
     expect(evalClear).toHaveBeenCalledWith(
-      expect.stringContaining('redis.call("DEL", KEYS[2])'),
+      expect.stringContaining(
+        'if tonumber(ARGV[2]) > 0 then redis.call("EXPIRE", KEYS[1], ARGV[2]) else redis.call("DEL", KEYS[1]) end',
+      ),
       3,
       'stream:{stream-host-action-clear}:job',
       'stream:{stream-host-action-clear}:chunks',

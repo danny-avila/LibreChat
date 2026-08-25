@@ -2313,18 +2313,6 @@ export class RedisJobStore implements IJobStoreV2 {
     const terminalMember = job == null ? null : terminalHostActionMember(streamId, job.createdAt);
 
     if (this.isCluster) {
-      let terminalMembershipOperation: Promise<unknown>;
-      if (job?.terminalHostActionPending === true) {
-        terminalMembershipOperation = this.redis.sadd(KEYS.terminalHostActionJobs, terminalMember!);
-      } else if (terminalMember == null) {
-        terminalMembershipOperation = this.redis.srem(KEYS.terminalHostActionJobs, streamId);
-      } else {
-        terminalMembershipOperation = this.redis.srem(
-          KEYS.terminalHostActionJobs,
-          streamId,
-          terminalMember,
-        );
-      }
       const operations: Promise<unknown>[] = [
         statusKey === KEYS.runningJobs
           ? this.redis.sadd(KEYS.runningJobs, streamId)
@@ -2332,10 +2320,16 @@ export class RedisJobStore implements IJobStoreV2 {
         statusKey === KEYS.requiresActionJobs
           ? this.redis.sadd(KEYS.requiresActionJobs, streamId)
           : this.redis.srem(KEYS.requiresActionJobs, streamId),
-        // Terminal host-action membership follows the durable hash field, not status, so
-        // an aborted approval-expiry job stays enumerable for hook retry until acked.
-        terminalMembershipOperation,
       ];
+      if (job?.terminalHostActionPending === true) {
+        operations.push(this.redis.sadd(KEYS.terminalHostActionJobs, terminalMember!));
+      } else if (terminalMember == null) {
+        operations.push(this.redis.srem(KEYS.terminalHostActionJobs, streamId));
+      } else {
+        operations.push(this.redis.srem(KEYS.terminalHostActionJobs, streamId, terminalMember));
+      }
+      // Terminal host-action membership follows the durable hash field, not status, so
+      // an aborted approval-expiry job stays enumerable for hook retry until acked.
       for (const userJobsKey of observedUserKeys) {
         if (userJobsKey !== activeUserKey) {
           operations.push(this.redis.srem(userJobsKey, streamId));
@@ -2907,7 +2901,7 @@ export class RedisJobStore implements IJobStoreV2 {
     const cleared = (await this.redis.eval(
       'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
         'redis.call("HDEL", KEYS[1], "terminalHostActionPending") ' +
-        'if tonumber(ARGV[2]) > 0 then redis.call("EXPIRE", KEYS[1], ARGV[2]) end ' +
+        'if tonumber(ARGV[2]) > 0 then redis.call("EXPIRE", KEYS[1], ARGV[2]) else redis.call("DEL", KEYS[1]) end ' +
         'if tonumber(ARGV[3]) > 0 then redis.call("EXPIRE", KEYS[2], ARGV[3]) else redis.call("DEL", KEYS[2]) end ' +
         'if tonumber(ARGV[4]) > 0 then redis.call("EXPIRE", KEYS[3], ARGV[4]) else redis.call("DEL", KEYS[3]) end ' +
         'return 1',
