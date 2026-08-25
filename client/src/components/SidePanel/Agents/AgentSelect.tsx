@@ -8,6 +8,7 @@ import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-que
 import type { TAgentCapabilities, AgentForm } from '~/common';
 import { cn, createProviderOption, processAgentOption, getDefaultAgentFormValues } from '~/utils';
 import { useLocalize, useAgentDefaultPermissionLevel } from '~/hooks';
+import { mergeDirtyToolsWithServerActions } from './agentTools';
 import { useListAgentsQuery } from '~/data-provider';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));
@@ -29,11 +30,15 @@ function AgentSelect({
   const lastSelectedAgent = useRef<string | null>(null);
   const {
     control,
+    getValues,
     reset,
+    setValue,
     /** Subscribing dirtyFields is required for reset({ keepDirtyValues: true })
      * to preserve edits when an action mutation refreshes the agent query. */
-    formState: { dirtyFields: _dirtyFields },
+    formState: { dirtyFields },
   } = useFormContext();
+  const dirtyFieldsRef = useRef(dirtyFields);
+  dirtyFieldsRef.current = dirtyFields;
   const permissionLevel = useAgentDefaultPermissionLevel();
 
   const { data: agents = null } = useListAgentsQuery(
@@ -174,9 +179,16 @@ function AgentSelect({
         formValues.skills_enabled = true;
       }
 
+      const mergedDirtyTools =
+        preserveDirtyValues && dirtyFieldsRef.current.tools != null
+          ? mergeDirtyToolsWithServerActions(getValues('tools') ?? [], agentTools)
+          : undefined;
       reset(formValues, { keepDirtyValues: preserveDirtyValues });
+      if (mergedDirtyTools != null) {
+        setValue('tools', mergedDirtyTools, { shouldDirty: true });
+      }
     },
-    [reset],
+    [getValues, reset, setValue],
   );
 
   const onSelect = useCallback(
