@@ -45,6 +45,7 @@ const {
   isFatalAgentInitializationError,
   resolveCodeExecutionContext,
   resolveCallerCapabilityProjectionSnapshot,
+  getTransactionsConfig,
 } = require('@librechat/api');
 const {
   Time,
@@ -296,6 +297,7 @@ const processVisionRequest = async (client, currentAction) => {
       model: client.req.body.model,
       conversationId: (client.responseMessage ?? client.finalMessage).conversationId,
       ...completion.usage,
+      transactions: getTransactionsConfig(client.req.config),
     });
   }
   const output = completion?.choices?.[0]?.message?.content ?? 'No image details found.';

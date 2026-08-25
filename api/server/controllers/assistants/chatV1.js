@@ -7,6 +7,7 @@ const {
   checkBalance,
   getBalanceConfig,
   getModelMaxTokens,
+  getTransactionsConfig,
   ATTACHMENT_ONLY_TEXT,
   isContentFilterError,
   hasActiveFilePolicy,
@@ -194,6 +195,7 @@ const chatV1 = async (req, res) => {
         model: run.model,
         user: req.user.id,
         conversationId,
+        transactions: getTransactionsConfig(req.config),
       });
     } catch (error) {
       logger.error('[/assistants/chat/] Error fetching or processing run', error);
@@ -734,6 +736,7 @@ const chatV1 = async (req, res) => {
           user: req.user.id,
           model: completedRun.model ?? model,
           conversationId,
+          transactions: getTransactionsConfig(req.config),
         });
       }
     } else {
@@ -742,6 +745,7 @@ const chatV1 = async (req, res) => {
         user: req.user.id,
         model: response.run.model ?? model,
         conversationId,
+        transactions: getTransactionsConfig(req.config),
       });
     }
   } catch (error) {
