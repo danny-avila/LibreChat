@@ -24,6 +24,7 @@ jobs:
        github.event.workflow_run.conclusion == 'timed_out') &&
       github.event.workflow_run.run_attempt < 3
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Check failed run is still current
         id: current-run

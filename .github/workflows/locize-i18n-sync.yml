@@ -20,6 +20,7 @@ jobs:
   sync-translations:
     name: Sync Translation Keys with Locize
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
@@ -54,6 +55,7 @@ jobs:
     name: Create Translation PR on Version Published
     if: ${{ github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: sync-translations
     permissions:
       contents: write
