@@ -24,6 +24,7 @@ import {
   renewNewConversationDraftToken,
   setDraft,
   setFilesDraft,
+  removePendingTextAttachmentDraft,
   setPendingTextAttachmentDraft,
 } from './drafts';
 import { markPasteSubmitted } from './files';
@@ -370,6 +371,34 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     expect(isFilesDraftOwnedByThisTab({ fileIds: [], pendingPastes: {}, tabId: 'other-tab' })).toBe(
       false,
     );
+  });
+
+  it('leaves no attachment claim behind when a rejected upload is removed', () => {
+    /** Validation can reject a paste before it ever reaches composer state, and the failure path
+     * removes it with `removeFile`. Keeping the id in `pastedTextIds` made the leftover record read
+     * as a real attachment claim, and with the file map unchanged nothing would prune it, so the
+     * stub locked every other tab out of the shared composer key with no chip behind it. */
+    setPendingTextAttachmentDraft({
+      id: Constants.NEW_CONVO as string,
+      fileId: 'rejected-paste',
+      text: 'a'.repeat(30),
+      selectionStart: 0,
+    });
+    setFilesDraft(Constants.NEW_CONVO, {
+      ...getFilesDraft(Constants.NEW_CONVO),
+      pastedTextIds: ['rejected-paste'],
+    });
+
+    removePendingTextAttachmentDraft({
+      id: Constants.NEW_CONVO as string,
+      fileId: 'rejected-paste',
+      removeFile: true,
+    });
+
+    const draft = getFilesDraft(Constants.NEW_CONVO);
+    expect(draft.fileIds).toEqual([]);
+    expect(draft.pastedTextIds ?? []).toEqual([]);
+    expect(Object.keys(draft.pendingPastes)).toEqual([]);
   });
 
   it('reclaims a record whose owning tab has closed', () => {

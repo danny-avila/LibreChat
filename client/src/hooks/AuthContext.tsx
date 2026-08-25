@@ -20,19 +20,20 @@ import {
 import type * as t from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import {
+  SESSION_KEY,
+  isSafeRedirect,
+  getPostLoginRedirect,
+  clearComposerDraftStorage,
+  clearRetainedFileDeletions,
+  openFileDeletionRetention,
+} from '~/utils';
+import {
   useGetRole,
   useGetUserQuery,
   useLoginUserMutation,
   useLogoutUserMutation,
   useRefreshTokenMutation,
 } from '~/data-provider';
-import {
-  SESSION_KEY,
-  isSafeRedirect,
-  getPostLoginRedirect,
-  clearRetainedFileDeletions,
-  openFileDeletionRetention,
-} from '~/utils';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import useTimeout from './useTimeout';
 import store from '~/store';
@@ -42,6 +43,17 @@ const AuthContext = (import.meta.hot?.data?.__AuthContext ??
 if (import.meta.hot) {
   import.meta.hot.data.__AuthContext = AuthContext;
 }
+
+/** Client state belonging to the session that is ending. Drafts go out with the retained
+ * deletions rather than being left to the next sign-in: a social sign-in returns through the
+ * silent refresh and never passes the login mutation that clears them, and the browser tab keeps
+ * its identity across an in-app account switch, so the account on the way out is the only place
+ * that reliably sees the transition. Both are cleared together so neither can be added to an exit
+ * path the other was wired into. */
+const endSessionClientState = (): void => {
+  clearRetainedFileDeletions();
+  clearComposerDraftStorage();
+};
 
 const AuthContextProvider = ({
   authConfig,
@@ -93,7 +105,7 @@ const AuthContextProvider = ({
            * explicit logout, a silent refresh that comes back empty, and a failed user query.
            * Carrying the queue across would retry it under whoever signs in next, which the
            * ownership check rejects forever instead of cleaning anything up. */
-          clearRetainedFileDeletions();
+          endSessionClientState();
         }
 
         const searchParams = new URLSearchParams(window.location.search);
@@ -150,11 +162,11 @@ const AuthContextProvider = ({
          * axios Authorization header and deletion state synchronously to prevent in-flight requests. */
         isExternalRedirectRef.current = true;
         setTokenHeader(undefined);
-        clearRetainedFileDeletions();
+        endSessionClientState();
         window.location.replace(data.redirect);
         return;
       }
-      clearRetainedFileDeletions();
+      endSessionClientState();
       setUserContext({
         token: undefined,
         isAuthenticated: false,
@@ -163,7 +175,7 @@ const AuthContextProvider = ({
       });
     },
     onError: (error) => {
-      clearRetainedFileDeletions();
+      endSessionClientState();
       doSetError((error as Error).message);
       setUserContext({
         token: undefined,
@@ -222,7 +234,7 @@ const AuthContextProvider = ({
           return;
         }
         console.log('Token is not present. User is not authenticated.');
-        clearRetainedFileDeletions();
+        endSessionClientState();
         if (authConfig?.test === true) {
           return;
         }
@@ -233,7 +245,7 @@ const AuthContextProvider = ({
           return;
         }
         console.log('refreshToken mutation error:', error);
-        clearRetainedFileDeletions();
+        endSessionClientState();
         if (authConfig?.test === true) {
           return;
         }
@@ -250,7 +262,7 @@ const AuthContextProvider = ({
     if (userQuery.data) {
       setUser(userQuery.data);
     } else if (userQuery.isError) {
-      clearRetainedFileDeletions();
+      endSessionClientState();
       doSetError((userQuery.error as Error).message);
       navigate(buildLoginRedirectUrl(), { replace: true });
     }

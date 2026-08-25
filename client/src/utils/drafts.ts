@@ -1118,11 +1118,18 @@ export const removePendingTextAttachmentDraft = ({
   const draft = getFilesDraft(id);
   const pendingPastes = { ...draft.pendingPastes };
   delete pendingPastes[fileId];
+  /** `removeFile` means the upload never landed or is gone, so its provenance goes with it.
+   * Leaving the id in `pastedTextIds` was enough for `hasDraftAttachments` to read the record as a
+   * real attachment claim, and since the file map never changed there was no later render to prune
+   * it: the stub then locked every other tab out of the shared composer key with no chip behind
+   * it. */
   setFilesDraft(id, {
     fileIds: removeFile
       ? draft.fileIds.filter((draftFileId) => draftFileId !== fileId)
       : draft.fileIds,
-    pastedTextIds: draft.pastedTextIds,
+    pastedTextIds: removeFile
+      ? draft.pastedTextIds?.filter((pasteId) => pasteId !== fileId)
+      : draft.pastedTextIds,
     pendingPastes,
   });
 };

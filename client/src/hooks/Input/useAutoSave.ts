@@ -410,9 +410,23 @@ export const useAutoSave = ({
         liveIds.add(file.temp_file_id);
       }
     });
+    /** Provenance is rebuilt, not just filtered. A paste queued during a run has its pending
+     * draft taken by `takeComposerDraft`, so choosing Edit message later restores the upload into
+     * an otherwise empty composer with nothing recording that it was ever a generated paste.
+     * Filtering alone left it unmarked, and an unmarked restored chip is treated as a shared
+     * attachment: removing it would not delete it and New Chat would skip it, so the unsent upload
+     * was orphaned. The session registry still knows, so it is asked. */
+    const pastedTextIds = (existingDraft.pastedTextIds ?? []).filter((id) => liveIds.has(id));
+    const claimed = new Set(pastedTextIds);
+    for (const id of liveIds) {
+      if (!claimed.has(id) && isPastedTextFileMarked(id)) {
+        pastedTextIds.push(id);
+        claimed.add(id);
+      }
+    }
     setFilesDraft(conversationId, {
       fileIds: draftFileIds,
-      pastedTextIds: (existingDraft.pastedTextIds ?? []).filter((id) => liveIds.has(id)),
+      pastedTextIds,
       pendingPastes: existingDraft.pendingPastes,
     });
   }, [conversationId, saveDrafts, currentConversationId, fileIds, files]);

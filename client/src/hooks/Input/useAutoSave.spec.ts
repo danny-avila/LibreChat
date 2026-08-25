@@ -42,6 +42,7 @@ import {
   setDraft,
   setFilesDraft,
 } from '~/utils';
+import { markPastedTextFile } from '~/utils/files';
 import store from '~/store';
 import { useAutoSave } from '~/hooks';
 
@@ -682,6 +683,29 @@ describe('useAutoSave — file cache updates', () => {
     );
 
     expect(getFilesDraft('convo-1').pastedTextIds).toEqual(['live-file']);
+  });
+
+  it('rebuilds paste provenance for a queued upload restored without a draft', () => {
+    /** A paste queued during a run has its pending draft taken by `takeComposerDraft`, so Edit
+     * message later restores the upload into an otherwise empty composer with nothing recording
+     * that it was a generated paste. Unmarked, it reads as a shared attachment: removing it would
+     * not delete it and New Chat would skip it, orphaning the unsent upload. */
+    markPastedTextFile('queued-paste');
+    setFilesDraft('convo-1', { fileIds: ['queued-paste'], pendingPastes: {} });
+    const files = new Map([
+      ['queued-paste', { file_id: 'queued-paste', progress: 1, size: 0, attached: true }],
+    ]);
+
+    renderHook(() =>
+      useAutoSave({
+        conversationId: 'convo-1',
+        textAreaRef: makeTextAreaRef(),
+        files,
+        setFiles: jest.fn(),
+      }),
+    );
+
+    expect(getFilesDraft('convo-1').pastedTextIds).toEqual(['queued-paste']);
   });
 
   it('does not restore a files draft another open tab owns', () => {
