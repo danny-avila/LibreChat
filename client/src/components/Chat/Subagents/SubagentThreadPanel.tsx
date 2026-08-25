@@ -585,7 +585,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       role={isMobile ? 'dialog' : 'region'}
       aria-modal={isMobile || undefined}
       aria-label={localize('com_ui_subagent_thread_panel')}
-      className="flex h-full w-full flex-col overflow-hidden bg-surface-primary text-text-primary"
+      className="flex h-full w-full flex-col overflow-hidden bg-surface-primary-alt text-text-primary"
     >
       <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-border-light px-4 py-3">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-tertiary">
