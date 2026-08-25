@@ -3600,6 +3600,9 @@ class AgentClient extends BaseClient {
           (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers);
         const createRunPromise = createRun({
           agents,
+          // Conversation-stable identity for the e2e run hook; a resumed run
+          // carries no messages, so history cannot identify the conversation.
+          conversationId: this.conversationId,
           messages,
           modelCallbacks: [modelBoundCallback],
           // This controller implements the full HITL pause/resume lifecycle (handleRunInterrupt
@@ -4070,6 +4073,7 @@ class AgentClient extends BaseClient {
         (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers);
       run = await createRun({
         agents,
+        conversationId: this.conversationId,
         modelCallbacks: [modelBoundCallback],
         // State (messages, tool calls) is rehydrated from the checkpoint by
         // run.resume; createRun only needs the agents to rebuild the graph.

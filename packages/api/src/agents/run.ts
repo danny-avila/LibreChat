@@ -1301,6 +1301,7 @@ function buildSubagentConfigs(
 export async function createRun({
   runId,
   signal,
+  conversationId,
   agents,
   messages,
   discoveredToolNames,
@@ -1331,6 +1332,9 @@ export async function createRun({
   agents: RunAgent[];
   signal: AbortSignal;
   runId?: string;
+  /** Conversation-stable identity, used by the e2e run hook to tell a resumed
+   *  run apart from a fresh attempt (a resume carries no messages). */
+  conversationId?: string;
   streaming?: boolean;
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
@@ -1991,6 +1995,11 @@ export async function createRun({
   const run = await Run.create(runConfig);
 
   applyCustomHandoffPromptKeyCompatibility(run, runConfig.graphConfig);
-  applyTestRunHook(run, { messages, agents, modelCallbacks });
+  applyTestRunHook(run, {
+    messages,
+    agents,
+    modelCallbacks,
+    conversationId: conversationId ?? requestBody?.conversationId ?? undefined,
+  });
   return run;
 }
