@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import {
   BASE_PRINCIPAL_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_SECTIONS,
@@ -81,8 +82,16 @@ export function prepareConfigOverrides(
   }
   for (const key of Object.keys(values)) {
     const section = key.split('.')[0];
-    if (BASE_ONLY_SECTIONS.has(section) || BASE_PRINCIPAL_SECTIONS.has(section)) {
+    if (BASE_ONLY_SECTIONS.has(section)) {
       delete values[key];
+      logger.warn(
+        `[roleConfig] Stripping base-only config section "${key}" - configure it in librechat.yaml instead`,
+      );
+    } else if (BASE_PRINCIPAL_SECTIONS.has(section)) {
+      delete values[key];
+      logger.warn(
+        `[roleConfig] Stripping dedicated tenant-wide config section "${key}" from role configuration`,
+      );
     }
   }
   if ('interface' in values) {

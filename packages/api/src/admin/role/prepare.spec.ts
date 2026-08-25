@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import { prepareConfigOverrides } from './prepare';
 
 describe('prepareConfigOverrides', () => {
@@ -10,8 +11,12 @@ describe('prepareConfigOverrides', () => {
   });
 
   it('strips sections that cannot be overridden by a role', () => {
+    const warning = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
     expect(prepareConfigOverrides({ filters: {} })).toEqual({});
     expect(prepareConfigOverrides({ langfuse: { publicKey: 'public' } })).toEqual({});
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('base-only config section'));
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('tenant-wide config section'));
   });
 
   it('strips interface permissions and preserves supported values', () => {

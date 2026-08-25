@@ -100,7 +100,7 @@ deployment so the new role permissions and resolved configuration take effect co
 
 Unlike the Admin API, this command does not perform authentication, authorization, or audit
 logging. Its extracted preparation helper applies the Admin API's storage safety rules without
-changing the existing Admin handler: it rejects restricted process configuration, sections that
-cannot be overridden by a role, and interface permission fields, and it encrypts or preserves
-registered configuration secrets. Avoid placing plaintext secrets in checked-in definition files;
-use protected inline CI input when a deployment requires them.
+changing the existing Admin handler: it rejects restricted process configuration, strips unsupported
+sections with warnings, removes interface permission fields, and encrypts or preserves registered
+configuration secrets. Avoid placing plaintext secrets in checked-in definition files; use
+protected inline CI input when a deployment requires them.
