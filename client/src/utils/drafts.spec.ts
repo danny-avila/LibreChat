@@ -535,6 +535,24 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     expect(collectLiveAttachmentIds().has('shared-across-panes')).toBe(true);
   });
 
+  it("keeps a sibling pane's chip live when withdrawal resumes after liveness expires", () => {
+    /** A resumed withdrawal proves the tab is running, just like publishing does. If it rewrites
+     * its expired timestamp unchanged, the collection sweep removes the whole record and erases a
+     * sibling pane's only claim before cleanup checks what remains on screen. */
+    const tabId = getBrowserTabId();
+    publishTabAttachmentIds(0, ['resumed-withdrawal']);
+    publishTabAttachmentIds(1, ['resumed-withdrawal']);
+    const presence = JSON.parse(localStorage.getItem(`librechat-live-tab:${tabId}`) ?? '{}');
+    localStorage.setItem(
+      `librechat-live-tab:${tabId}`,
+      JSON.stringify({ ...presence, seenAt: Date.now() - 600_000 }),
+    );
+
+    removeTabAttachmentPresence(['resumed-withdrawal'], 0);
+
+    expect(collectLiveAttachmentIds({ excludeOwnPane: 0 }).has('resumed-withdrawal')).toBe(true);
+  });
+
   it("reports a sibling pane's chip as claimed elsewhere", () => {
     /** Excluding the whole tab hid the other composer, so the pane doing the discarding deleted a
      * file the sibling still had on screen. Side-by-side panes are as independent here as separate

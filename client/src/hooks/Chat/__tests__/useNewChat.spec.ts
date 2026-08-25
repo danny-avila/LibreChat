@@ -966,6 +966,48 @@ describe('useNewChat', () => {
     expect(result.current).toBeDefined();
   });
 
+  it('spares a submitted file from a retained deletion retry', async () => {
+    /** The tab that sent the message can be suspended, or have sent it longer ago than presence
+     * remembers, so neither its draft nor its published chips are here to speak for the file. The
+     * submitted ledger is durable and shared, and it is the only thing left that can. */
+    mockState.retainedDeletions = [
+      { file_id: 'sent-file', filepath: '/uploads/sent.txt', source: 'local' },
+    ];
+    mockState.submittedPasteIds = ['sent-file'];
+    mockState.fileList = [{ file_id: 'sent-file', filepath: '/uploads/sent.txt', source: 'local' }];
+    const { result, rerender } = renderHook(() => useNewChat());
+
+    await act(async () => {
+      rerender();
+    });
+
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
+    expect(result.current).toBeDefined();
+  });
+
+  it('spares a discard whose server record a submission consumed under another id', async () => {
+    /** The discard is keyed by the temporary upload id while the pane that sent it marked only the
+     * server id, so the record has to be resolved before the ledger is consulted. */
+    mockState.persistedPendingDiscardIds = ['client-temp-id'];
+    mockState.submittedPasteIds = ['server-file-id'];
+    mockState.fileList = [
+      {
+        file_id: 'server-file-id',
+        temp_file_id: 'client-temp-id',
+        filepath: '/uploads/sent.txt',
+        source: 'local',
+      },
+    ];
+    const { result, rerender } = renderHook(() => useNewChat());
+
+    await act(async () => {
+      rerender();
+    });
+
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
+    expect(result.current).toBeDefined();
+  });
+
   it('keeps retained deletions when the API reports a partial failure', async () => {
     mockDeleteFiles.mockResolvedValueOnce({
       message: 'Some files could not be deleted',

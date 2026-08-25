@@ -560,14 +560,17 @@ export const isPastedTextFileMarked = (fileId?: string | null): boolean =>
  *
  * The tab that deletes is rarely the tab that sent. A retained deletion is retried by whichever
  * tab is holding it, possibly long after being frozen and resumed, while the message referencing
- * the file was sent somewhere else entirely. Published tab presence used to be the only
- * cross-tab evidence, and it ages out on a fixed ten-minute window, so a retry resuming after that
- * classified a sent file as abandoned and deleted it out of its message. Timestamped here instead,
- * with a horizon wide enough to outlast any plausible freeze, and a hard cap so a long-lived
- * profile cannot grow this without bound. */
+ * the file was sent somewhere else entirely. Published tab presence used to be the only cross-tab
+ * evidence and it ages out on a ten-minute window, so a retry resuming after that classified a
+ * sent file as abandoned and deleted it out of its message.
+ *
+ * Deliberately not expired on a timer. The work this evidence has to outlast is a retained
+ * deletion, and those carry no expiry of their own: any interval chosen here can be outlived by a
+ * suspended tab still holding cleanup work, which is the same bug again with a longer fuse. The
+ * ledger is bounded by count instead, evicting the oldest entries only when it would otherwise
+ * grow without limit, since running out of origin quota would break draft writes for everyone. */
 const SUBMITTED_PASTES_STORAGE_KEY = 'librechat-submitted-paste-file-ids';
-const SUBMITTED_PASTE_WINDOW_MS = 86_400_000;
-const SUBMITTED_PASTE_LIMIT = 2000;
+const SUBMITTED_PASTE_LIMIT = 5000;
 
 type SubmittedPastes = Record<string, number>;
 
@@ -610,32 +613,24 @@ export const markPasteSubmitted = (fileId?: string | null): void => {
   if (fileId == null || fileId === '') {
     return;
   }
-  const now = Date.now();
-  const ids: SubmittedPastes = { ...readSubmittedPastes(), [fileId]: now };
-  let entries = Object.entries(ids).filter(
-    ([, seenAt]) => now - seenAt <= SUBMITTED_PASTE_WINDOW_MS,
-  );
+  const ids: SubmittedPastes = { ...readSubmittedPastes(), [fileId]: Date.now() };
+  let entries = Object.entries(ids);
   if (entries.length > SUBMITTED_PASTE_LIMIT) {
     entries = entries.sort((a, b) => b[1] - a[1]).slice(0, SUBMITTED_PASTE_LIMIT);
   }
-  const pruned = Object.fromEntries(entries);
+  const bounded = Object.fromEntries(entries);
   try {
-    localStorage.setItem(SUBMITTED_PASTES_STORAGE_KEY, JSON.stringify(pruned));
+    localStorage.setItem(SUBMITTED_PASTES_STORAGE_KEY, JSON.stringify(bounded));
     submittedPastesCache = null;
   } catch {
     /** The write is the protection, so a failure has to be remembered in memory at least: this
      * tab's own cleanup must not turn around and delete what it just sent. */
-    submittedPastesCache = { raw: submittedPastesCache?.raw ?? null, ids: pruned };
+    submittedPastesCache = { raw: submittedPastesCache?.raw ?? null, ids: bounded };
   }
 };
 
-export const isPasteSubmitted = (fileId?: string | null): boolean => {
-  if (fileId == null || fileId === '') {
-    return false;
-  }
-  const seenAt = readSubmittedPastes()[fileId];
-  return seenAt != null && Date.now() - seenAt <= SUBMITTED_PASTE_WINDOW_MS;
-};
+export const isPasteSubmitted = (fileId?: string | null): boolean =>
+  fileId != null && fileId !== '' && readSubmittedPastes()[fileId] != null;
 
 /** A file deletion whose request failed, kept with everything needed to retry it: the chip it
  * came from is already gone, so the payload cannot be rebuilt from the composer. */

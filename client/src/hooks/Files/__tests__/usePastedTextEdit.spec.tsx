@@ -27,7 +27,40 @@ const mockFileDownload = jest.fn();
 const mockMarkPastedTextFile = jest.fn();
 const mockRetainFileDeletion = jest.fn();
 const mockRemoveTabAttachmentPresence = jest.fn();
-const mockAddPastedTextDraftFile = jest.fn();
+const mockAddPastedTextDraftFile = jest.fn(({ id, fileId }: { id: string; fileId: string }) => {
+  const draft = mockState.draftsById[id] ?? {
+    fileIds: [],
+    pendingPastes: {},
+    pastedTextIds: [],
+  };
+  if (draft.pastedTextIds?.includes(fileId) !== true) {
+    mockState.draftsById[id] = {
+      ...draft,
+      pastedTextIds: [...(draft.pastedTextIds ?? []), fileId],
+    };
+  }
+});
+const mockRemovePendingTextAttachmentDraft = jest.fn(
+  ({ id, fileId, removeFile = false }: { id: string; fileId: string; removeFile?: boolean }) => {
+    const draft = mockState.draftsById[id] ?? {
+      fileIds: [],
+      pendingPastes: {},
+      pastedTextIds: [],
+    };
+    mockState.draftsById[id] = {
+      ...draft,
+      fileIds: removeFile
+        ? draft.fileIds.filter((draftFileId) => draftFileId !== fileId)
+        : draft.fileIds,
+      pastedTextIds: removeFile
+        ? draft.pastedTextIds?.filter((pasteId) => pasteId !== fileId)
+        : draft.pastedTextIds,
+      pendingPastes: Object.fromEntries(
+        Object.entries(draft.pendingPastes).filter(([pendingId]) => pendingId !== fileId),
+      ),
+    };
+  },
+);
 const mockCollectForeignAttachmentClaims = jest.fn(
   (excludeDraftIds: string[] = [], _excludeOwnPane: number | 'tab' = 'tab'): Set<string> => {
     const excluded = new Set(excludeDraftIds);
@@ -127,7 +160,10 @@ jest.mock('~/utils', () => ({
   markPastedTextFile: (...args: unknown[]) => mockMarkPastedTextFile(...args),
   removeTabAttachmentPresence: (...args: unknown[]) => mockRemoveTabAttachmentPresence(...args),
   retainFileDeletion: (...args: unknown[]) => mockRetainFileDeletion(...args),
-  addPastedTextDraftFile: (...args: unknown[]) => mockAddPastedTextDraftFile(...args),
+  addPastedTextDraftFile: (args: { id: string; fileId: string }) =>
+    mockAddPastedTextDraftFile(args),
+  removePendingTextAttachmentDraft: (args: { id: string; fileId: string; removeFile?: boolean }) =>
+    mockRemovePendingTextAttachmentDraft(args),
   nextPastedTextFilename: jest.requireActual('~/utils/files').nextPastedTextFilename,
   failedFileIdsFrom: jest.requireActual('~/utils/files').failedFileIdsFrom,
 }));
@@ -273,6 +309,43 @@ describe('usePastedTextEdit', () => {
     expect(mockShowToast).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'com_ui_pasted_text_save_error' }),
     );
+  });
+
+  it('removes replacement provenance when the replacement upload is rejected', async () => {
+    mockRouteFiles.mockResolvedValue(false);
+    const draftId = 'conversation-a:0:idle';
+    mockState.draftsById[draftId] = {
+      fileIds: ['existing-file'],
+      pastedTextIds: ['existing-paste'],
+      pendingPastes: {
+        'existing-paste': { text: 'existing', selectionStart: 0 },
+      },
+    };
+    const editor = await openEditor();
+
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+
+    const replacementCall = mockAddPastedTextDraftFile.mock.calls[0]?.[0];
+    if (
+      replacementCall == null ||
+      typeof replacementCall !== 'object' ||
+      !('fileId' in replacementCall) ||
+      typeof replacementCall.fileId !== 'string'
+    ) {
+      throw new Error('Expected a replacement draft file id');
+    }
+    const replacementId = replacementCall.fileId;
+    const draft = mockState.draftsById[draftId];
+    expect(mockRemovePendingTextAttachmentDraft).toHaveBeenCalledWith({
+      id: draftId,
+      fileId: replacementId,
+      removeFile: true,
+    });
+    expect(draft.fileIds).not.toContain(replacementId);
+    expect(draft.pastedTextIds).not.toContain(replacementId);
+    expect(draft.pendingPastes).not.toHaveProperty(replacementId);
   });
 
   it('queues a failed edit behind a dialog another chip occupies', async () => {

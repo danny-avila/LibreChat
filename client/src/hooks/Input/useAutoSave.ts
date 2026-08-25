@@ -347,12 +347,10 @@ export const useAutoSave = ({
             setDraft({ id: conversationId, value: textAreaRef.current.value });
           }
           /** Nothing is taken from the record, but this tab's own queued attachments still have
-           * to survive the switch. The map is cleared at the top of this effect, and the autosave
-           * that would normally persist them was refused the pending key for the whole run
-           * because another tab owned it, so they are written under the conversation this run
-           * just became and restored from there below. */
+           * to survive the switch. The map is cleared at the top of this effect, so persist them
+           * under the destination when it is writable and restore the live map otherwise. */
           const liveFileIds = Array.from(filesRef.current.keys());
-          if (liveFileIds.length > 0 && isFilesDraftOwnedByThisTab(getFilesDraft(conversationId))) {
+          if (liveFileIds.length > 0 && destinationOwned) {
             /** Provenance travels with them, or the restored chips stop being recognised as
              * pastes and lose both editing and New Chat cleanup. It is rebuilt from the session
              * registry rather than the foreign record, which is not ours to read. The unsent
@@ -363,6 +361,11 @@ export const useAutoSave = ({
               pendingPastes: {},
               pastedTextIds: liveFileIds.filter((fileId) => isPastedTextFileMarked(fileId)),
             });
+          } else if (liveFileIds.length > 0) {
+            /** Neither shared key is writable by this tab. The live map is the only copy of these
+             * queued attachments, so restore it after the unconditional switch clear rather than
+             * dropping it. */
+            setFiles(filesRef.current);
           }
         }
       } else if (currentConversationId != null && currentConversationId) {

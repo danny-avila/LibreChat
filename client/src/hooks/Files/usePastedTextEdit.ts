@@ -21,6 +21,7 @@ import {
   getFilesDraftCached,
   markPastedTextFile,
   nextPastedTextFilename,
+  removePendingTextAttachmentDraft,
   removeTabAttachmentPresence,
   retainFileDeletion,
 } from '~/utils';
@@ -406,6 +407,16 @@ export default function usePastedTextEdit({
       });
       if (!accepted) {
         settleAction();
+        /** The queue rejected the replacement before it could create a file, so remove the
+         * provenance record that was reserved before routing. Recheck ownership because another
+         * tab may have claimed the draft while the upload was in flight. */
+        if (saveDrafts && isFilesDraftOwnedByThisTab(getFilesDraftCached(replacementDraftId))) {
+          removePendingTextAttachmentDraft({
+            id: replacementDraftId,
+            fileId: uploadId,
+            removeFile: true,
+          });
+        }
         /** A send or navigation already took the original; reopening the editor or toasting a
          * save error would put a replacement into the emptied composer. */
         if (

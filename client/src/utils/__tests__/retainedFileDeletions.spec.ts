@@ -124,7 +124,10 @@ describe('retained file deletions', () => {
     expect(otherTab.isPasteSubmitted('sent-in-another-tab')).toBe(true);
   });
 
-  it('forgets submitted paste IDs once the durable horizon has passed', async () => {
+  it('keeps submitted paste IDs however long the deletion work takes', async () => {
+    /** The work this evidence has to outlast is a retained deletion, and those carry no expiry of
+     * their own, so any interval chosen here could be outlived by a suspended tab still holding
+     * cleanup work. It is bounded by count instead of by time. */
     const { markPasteSubmitted, isPasteSubmitted } = await import('../files');
     markPasteSubmitted('long-ago');
     const stored = JSON.parse(
@@ -132,10 +135,10 @@ describe('retained file deletions', () => {
     ) as Record<string, number>;
     localStorage.setItem(
       'librechat-submitted-paste-file-ids',
-      JSON.stringify({ ...stored, 'long-ago': Date.now() - 172_800_000 }),
+      JSON.stringify({ ...stored, 'long-ago': Date.now() - 2_592_000_000 }),
     );
 
-    expect(isPasteSubmitted('long-ago')).toBe(false);
+    expect(isPasteSubmitted('long-ago')).toBe(true);
   });
 
   it('persists marked pasted text IDs across reloads', async () => {

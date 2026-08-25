@@ -210,10 +210,22 @@ export default function useNewChat({
           reattached.add(file.temp_file_id);
         }
       });
+      /** A file a message already consumed is off-limits whatever the draft and presence records
+       * say. Those are per-tab and time-bounded; the submitted ledger is durable and shared, so it
+       * is the one that can still speak for a send that happened in a tab which has since been
+       * suspended, or longer ago than presence remembers.
+       *
+       * The record is resolved before judging, because the two sides can know the file by
+       * different names: a discard is often keyed by the temporary upload id while the pane that
+       * sent it marked only the server id. */
+      const consumedBySubmission = (fileId: string): boolean => {
+        const record = findFilesRecord(fileList, fileId);
+        return [fileId, record?.file_id, record?.temp_file_id].some((id) => isPasteSubmitted(id));
+      };
       const deletable: DeletableRecord[] = [];
       const stillPending: string[] = [];
       for (const fileId of pendingDiscardIds) {
-        if (reattached.has(fileId)) {
+        if (reattached.has(fileId) || consumedBySubmission(fileId)) {
           continue;
         }
         const record = findFilesRecord(fileList, fileId);
@@ -228,10 +240,12 @@ export default function useNewChat({
       }
       /** Deletions other flows retained after a failed request ride along: their payloads
        * cannot be rebuilt, so they retry here until one succeeds. A file the composer has
-       * since reattached is no longer ours to retry. */
-      const retainedToRetry = retained.filter((record) => !reattached.has(record.file_id));
+       * since reattached, or that a message has since consumed, is no longer ours to retry. */
+      const retainedToRetry = retained.filter(
+        (record) => !reattached.has(record.file_id) && !consumedBySubmission(record.file_id),
+      );
       for (const record of retained) {
-        if (reattached.has(record.file_id)) {
+        if (reattached.has(record.file_id) || consumedBySubmission(record.file_id)) {
           clearRetainedFileDeletion(record.file_id);
         }
       }

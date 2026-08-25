@@ -820,6 +820,46 @@ describe('useAutoSave — file cache updates', () => {
 
     expect(mockSetValue).toHaveBeenLastCalledWith('text', 'text that belongs to convo-9');
   });
+  it('keeps live attachments when both pending and destination drafts belong to other tabs', () => {
+    markTabLive('pending-owner');
+    markTabLive('destination-owner');
+    setFilesDraft(Constants.PENDING_CONVO, {
+      fileIds: ['pending-tab-file'],
+      pendingPastes: {},
+      tabId: 'pending-owner',
+    });
+    setFilesDraft('conversation-foreign', {
+      fileIds: ['destination-tab-file'],
+      pendingPastes: {},
+      tabId: 'destination-owner',
+    });
+
+    const files = new Map([
+      ['queued-file', { file_id: 'queued-file', progress: 1, size: 1, attached: true }],
+    ]);
+    const setFiles = jest.fn();
+    const { rerender } = renderHook(
+      ({ isSubmitting }: { isSubmitting: boolean }) =>
+        useAutoSave({
+          conversationId: 'conversation-foreign',
+          isSubmitting,
+          textAreaRef: makeTextAreaRef(),
+          files,
+          setFiles,
+        }),
+      { initialProps: { isSubmitting: true } },
+    );
+
+    act(() => {
+      rerender({ isSubmitting: false });
+    });
+
+    const updates = setFiles.mock.calls.map(([update]) =>
+      typeof update === 'function' ? update(new Map()) : update,
+    );
+    expect(updates.some((update) => update.has('queued-file'))).toBe(true);
+  });
+
   it('does not migrate blocked pending drafts to an unrelated conversation', () => {
     const pendingTextKey = `${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`;
     localStorage.setItem(pendingTextKey, encodeBase64('draft for conversation C'));

@@ -736,9 +736,11 @@ export const removeTabAttachmentPresence = (ids: string[], index?: number): void
   if (!modified) {
     return;
   }
+  /** Withdrawing is a user-visible act, so it proves this tab is running right now. A suspended
+   * document is not withdrawing anything. Carrying the old `seenAt` over would let the collection
+   * sweep remove this record immediately, including claims from sibling panes still on screen. */
   writeTabPresence(tabId, {
-    seenAt: presence.seenAt,
-    ...(presence.suspended === true ? { suspended: true } : {}),
+    seenAt: Date.now(),
     ...(Object.keys(attachments).length > 0 ? { attachments } : {}),
     ...(Object.keys(recent).length > 0 ? { recent } : {}),
   });
