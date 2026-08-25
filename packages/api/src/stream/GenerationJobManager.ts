@@ -37,20 +37,21 @@ import type { SteerContentView } from './SteeringLifecycle';
 import type { GenerationJobStore } from '~/app/metrics';
 import type * as t from '~/types';
 import {
+  JobCreationSupersededError,
+  JobPredecessorMismatchError,
+  isPendingActionStale,
+  isPendingActionExpired,
+  PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+  PROVIDER_DRAIN_TIMEOUT_MS,
+  STEER_QUEUE_MAX_DEPTH,
+} from './interfaces/IJobStore';
+import {
   recordGenerationStreamEarlyBufferOverflow,
   recordGenerationStreamResumePendingEvents,
   recordGenerationStreamSubscription,
   setGenerationJobsInFlight,
   recordGenerationJob,
 } from '~/app/metrics';
-import {
-  JobCreationSupersededError,
-  JobPredecessorMismatchError,
-  isPendingActionStale,
-  isPendingActionExpired,
-  PAUSE_PERSISTENCE_TIMEOUT_ERROR,
-  STEER_QUEUE_MAX_DEPTH,
-} from './interfaces/IJobStore';
 import { isRecoveredSteerPayload, RecoveredSteerPayloadMismatchError } from './SteerRecovery';
 import { assertJobStoreV2 } from './jobStoreCapabilities';
 
@@ -92,8 +93,28 @@ const REAPED_JOB_ERROR = 'Generation timed out';
  * digits; this trips only when Redis stalls, bounding buffered batches and
  * queued commands by pacing the producer instead of growing without limit. */
 const MAX_OUTSTANDING_COALESCED_RECEIPTS = 256;
-const PROVIDER_DRAIN_TIMEOUT_MS = 30_000;
 const PROVIDER_DRAIN_POLL_MS = 50;
+type ToolExecutionStatus = 'success' | 'error' | 'cancelled';
+type ToolCallWithExecutionStatus = Agents.AgentToolCall & {
+  executionStatus?: ToolExecutionStatus;
+};
+
+/** Current agents SDK releases serialize tool failures into one of these
+ * host-authored prefixes but do not yet carry ToolMessage.status on the wire.
+ * Stamp the result on the exact call while the completion envelope still has
+ * that identity; never infer it later from the aggregate step close. */
+function completedToolExecutionStatus(call: Agents.ToolCall): ToolExecutionStatus {
+  if (call.inputValidationError === true) {
+    return 'error';
+  }
+  const output = call.output;
+  return typeof output === 'string' &&
+    (/^Error:\s*(\[.*?\]\s*)*tool call failed:/i.test(output) ||
+      /^Error processing tool(?::|$)/i.test(output) ||
+      /^Error:[\s\S]*\n Please fix your mistakes\.$/i.test(output))
+    ? 'error'
+    : 'success';
+}
 
 /** Bounded completed-request replay horizon. It exceeds the default 24-hour
  * approval window; if a custom/live job outlasts it, `resumeClaimedGeneration`
@@ -6246,9 +6267,31 @@ class GenerationJobManagerClass {
       if (existingStep == null) {
         return;
       }
+      const terminalCalls =
+        existingStep.stepDetails.type === StepTypes.TOOL_CALLS
+          ? ((existingStep.stepDetails.tool_calls ?? []) as ToolCallWithExecutionStatus[])
+          : [];
+      const unresolvedCalls = terminalCalls.filter((call) => call.executionStatus == null);
+      const calls: Agents.AgentToolCall[] =
+        closed.status !== 'completed' && unresolvedCalls.length === 1
+          ? terminalCalls.map((call) =>
+              call === unresolvedCalls[0]
+                ? {
+                    ...call,
+                    executionStatus: closed.status === 'failed' ? 'error' : 'cancelled',
+                  }
+                : call,
+            )
+          : terminalCalls;
       this.accumulateRunStep(
         streamId,
-        { ...existingStep, status: closed.status },
+        {
+          ...existingStep,
+          status: closed.status,
+          ...(existingStep.stepDetails.type === StepTypes.TOOL_CALLS && {
+            stepDetails: { ...existingStep.stepDetails, tool_calls: calls },
+          }),
+        },
         expectedCreatedAt,
       );
       return;
@@ -6278,6 +6321,7 @@ class GenerationJobManagerClass {
         ? (existingStep.stepDetails.tool_calls ?? [])
         : [];
     const completedCallId = completedToolCall.id;
+    const executionStatus = completedToolExecutionStatus(completedToolCall);
     const existingCallIndex =
       completedCallId == null ? -1 : existingCalls.findIndex((call) => call.id === completedCallId);
     const completedCalls = [...existingCalls];
@@ -6285,9 +6329,10 @@ class GenerationJobManagerClass {
       const existingCall = completedCalls[existingCallIndex];
       completedCalls[existingCallIndex] =
         'function' in existingCall
-          ? {
+          ? ({
               id: existingCall.id,
               type: 'function',
+              executionStatus,
               function: {
                 ...existingCall.function,
                 output: completedToolCall.output,
@@ -6296,10 +6341,10 @@ class GenerationJobManagerClass {
                 completedToolCall.inputValidationError === true && {
                   inputValidationError: true,
                 }),
-            }
-          : { ...existingCall, ...completedToolCall };
+            } as ToolCallWithExecutionStatus)
+          : { ...existingCall, ...completedToolCall, executionStatus };
     } else {
-      completedCalls.push(completedToolCall);
+      completedCalls.push({ ...completedToolCall, executionStatus } as ToolCallWithExecutionStatus);
     }
 
     this.accumulateRunStep(
@@ -6688,7 +6733,11 @@ class GenerationJobManagerClass {
       job.providerDrained === true &&
       job.terminalHostActionPending === true
     ) {
-      await this.runTerminalHostActionHandler(streamId, job);
+      if (job.status === 'aborted' && job.error === APPROVAL_EXPIRED_ERROR) {
+        await this.runApprovalExpiredHandler(streamId, job);
+      } else {
+        await this.runTerminalHostActionHandler(streamId, job);
+      }
     }
     if (
       marked &&

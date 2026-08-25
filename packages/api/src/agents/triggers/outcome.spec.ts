@@ -303,6 +303,45 @@ describe('agent event terminal outcomes', () => {
     },
   );
 
+  it('preserves an applied call when a sibling makes the enclosing step fail', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({ settleAgentTriggerHandlingOutcome });
+    const step = completedToolStep();
+    step.status = 'failed';
+    if (step.stepDetails.type !== 'tool_calls') {
+      throw new Error('Expected tool evidence');
+    }
+    step.stepDetails.tool_calls = [
+      {
+        id: 'call-applied',
+        name: 'submit_move_mcp_speed-chess',
+        args: { gameId: 'game-1' },
+        output: '{"accepted":true}',
+        executionStatus: 'success',
+      } as Agents.AgentToolCall,
+      {
+        id: 'call-failed',
+        name: 'notify_spectators',
+        args: {},
+        output: 'Error: [notify_spectators] tool call failed: unavailable',
+        executionStatus: 'error',
+      } as Agents.AgentToolCall,
+    ];
+
+    await handler(
+      'conversation-1',
+      job({ agentEventExpectedAction: { toolName: 'submit_move' } }),
+      [step],
+    );
+
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'applied',
+        action: { toolName: 'submit_move_mcp_speed-chess', toolCallId: 'call-applied' },
+      }),
+    );
+  });
+
   it('does not infer that a source action was applied without an explicit evidence contract', async () => {
     const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
     const handler = createAgentEventTerminalHandler({ settleAgentTriggerHandlingOutcome });

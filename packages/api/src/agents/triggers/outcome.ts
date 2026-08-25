@@ -45,10 +45,22 @@ function toolEvidence(
   step: Agents.RunStep,
   nonExecutedToolCallIds: ReadonlySet<string>,
 ): CompletedToolEvidence[] {
-  if (step.status !== 'completed' || step.stepDetails?.type !== 'tool_calls') {
+  if (step.status === 'in_progress' || step.stepDetails?.type !== 'tool_calls') {
     return [];
   }
   return (step.stepDetails.tool_calls ?? []).flatMap((call) => {
+    const executionStatus = (
+      call as Agents.AgentToolCall & {
+        executionStatus?: 'success' | 'error' | 'cancelled';
+      }
+    ).executionStatus;
+    if (
+      executionStatus === 'error' ||
+      executionStatus === 'cancelled' ||
+      (step.status !== 'completed' && executionStatus !== 'success')
+    ) {
+      return [];
+    }
     if ('inputValidationError' in call && call.inputValidationError === true) {
       return [];
     }

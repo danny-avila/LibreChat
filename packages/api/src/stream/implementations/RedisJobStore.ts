@@ -33,6 +33,7 @@ import {
   STEER_QUEUE_MAX_DEPTH,
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   PAUSE_PERSISTENCE_TIMEOUT_MS,
+  PROVIDER_DRAIN_TIMEOUT_MS,
   isPendingActionStale,
   toWireRunSteps,
 } from '~/stream/interfaces/IJobStore';
@@ -610,6 +611,17 @@ const JOB_UPDATE_LUA =
 const PROVIDER_DRAIN_LUA =
   'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
   'if redis.call("HGET", KEYS[1], "providerExecutionId") ~= ARGV[2] then return 0 end ' +
+  'redis.call("HSET", KEYS[1], "providerDrained", "1") return 1';
+
+/** Recover a terminal host action whose provider-owning process disappeared
+ * after the terminal CAS. `completedAt` is immutable for this generation, so
+ * the deadline cannot be extended by retry enumeration. */
+const RECOVER_TERMINAL_PROVIDER_DRAIN_LUA =
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "terminalHostActionPending") ~= "1" then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "providerDrained") ~= "0" then return 0 end ' +
+  'local completedAt = tonumber(redis.call("HGET", KEYS[1], "completedAt") or "") ' +
+  'if not completedAt or completedAt > tonumber(ARGV[2]) then return 0 end ' +
   'redis.call("HSET", KEYS[1], "providerDrained", "1") return 1';
 
 /** Exact initial provider-start fence. The controller rechecks account
@@ -2761,9 +2773,29 @@ export class RedisJobStore implements IJobStoreV2 {
     const stale: string[] = [];
     const held: SerializableJobData[] = [];
     const ready: SerializableJobData[] = [];
+    const providerLossCutoff = Date.now() - PROVIDER_DRAIN_TIMEOUT_MS;
     for (let i = 0; i < streamIds.length; i++) {
-      const job = jobs[i];
+      let job = jobs[i];
       if (job != null && job.terminalHostActionPending === true) {
+        if (
+          job.providerDrained === false &&
+          job.completedAt != null &&
+          job.completedAt <= providerLossCutoff
+        ) {
+          const recovered =
+            Number(
+              await this.redis.eval(
+                RECOVER_TERMINAL_PROVIDER_DRAIN_LUA,
+                1,
+                KEYS.job(job.streamId),
+                String(job.createdAt),
+                String(providerLossCutoff),
+              ),
+            ) === 1;
+          if (recovered) {
+            job = { ...job, providerDrained: true };
+          }
+        }
         held.push(job);
         // A terminal provider can still be committing its last tool result.
         // The provider owner persists the complete run-step snapshot before it
@@ -2796,19 +2828,42 @@ export class RedisJobStore implements IJobStoreV2 {
   async clearTerminalHostAction(streamId: string, expectedCreatedAt?: number): Promise<void> {
     // Identity-fenced: only clear when the hash still holds this exact generation, so a
     // replacement at the same streamId is never cleared through its predecessor. The HDEL
-    // and the completed-TTL reset happen atomically; membership is then reconciled to SREM.
+    // and configured evidence-TTL reset happen atomically. Global membership cannot share
+    // this hash slot, so removal is followed by a successor-aware repair read.
     const cleared = (await this.redis.eval(
       'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
         'redis.call("HDEL", KEYS[1], "terminalHostActionPending") ' +
         'if tonumber(ARGV[2]) > 0 then redis.call("EXPIRE", KEYS[1], ARGV[2]) end ' +
+        'if tonumber(ARGV[3]) > 0 then redis.call("EXPIRE", KEYS[2], ARGV[3]) else redis.call("DEL", KEYS[2]) end ' +
+        'if tonumber(ARGV[4]) > 0 then redis.call("EXPIRE", KEYS[3], ARGV[4]) else redis.call("DEL", KEYS[3]) end ' +
         'return 1',
-      1,
+      3,
       KEYS.job(streamId),
+      KEYS.chunks(streamId),
+      KEYS.runSteps(streamId),
       expectedCreatedAt != null ? String(expectedCreatedAt) : '',
       String(this.ttl.completed),
+      String(this.ttl.chunksAfterComplete),
+      String(this.ttl.runStepsAfterComplete),
     )) as number;
     if (cleared === 1) {
       await this.redis.srem(KEYS.terminalHostActionJobs, streamId).catch(() => undefined);
+      // A successor can terminalize between the same-slot acknowledgement and
+      // the cross-slot SREM. Repair after removal (not before): whether its
+      // pre-arm SADD ran before or after the removal, the successor finishes
+      // with discoverable membership.
+      let current: SerializableJobData | null;
+      try {
+        current = await this.getJob(streamId);
+      } catch {
+        // A stale hint is self-healing; a missing successor hint is not. Fail
+        // toward rediscovery when the repair read itself is ambiguous.
+        await this.redis.sadd(KEYS.terminalHostActionJobs, streamId).catch(() => undefined);
+        return;
+      }
+      if (current?.terminalHostActionPending === true) {
+        await this.redis.sadd(KEYS.terminalHostActionJobs, streamId).catch(() => undefined);
+      }
     }
   }
 

@@ -154,10 +154,86 @@ describe('GenerationJobManager terminal host actions', () => {
     expect(handler).toHaveBeenCalledWith(
       streamId,
       expect.objectContaining({ providerDrained: true }),
-      [expect.objectContaining({ id: 'step-failed', status: 'failed' })],
+      [
+        expect.objectContaining({
+          id: 'step-failed',
+          status: 'failed',
+          stepDetails: expect.objectContaining({
+            tool_calls: [expect.objectContaining({ executionStatus: 'error' })],
+          }),
+        }),
+      ],
       expect.any(Array),
     );
     await expect(store.getJob(streamId)).resolves.not.toHaveProperty('terminalHostActionPending');
+  });
+
+  it('routes a post-drain approval expiry through the schedule-specific hook', async () => {
+    const approvalHandler = jest.fn().mockResolvedValue(undefined);
+    const genericHandler = jest.fn().mockResolvedValue(undefined);
+    manager.setApprovalExpiredHandler(approvalHandler);
+    manager.setTerminalHostActionHandler(genericHandler);
+    const streamId = 'conversation-expired-approval-drain';
+    const job = await manager.createJob(streamId, 'user-1', streamId, {
+      initialMetadata: { scheduleId: 'schedule-1' },
+    });
+    const providerExecutionId = job.metadata.providerExecutionId!;
+    await manager.beginProviderExecution(streamId, job.createdAt, providerExecutionId);
+    await expect(
+      store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'aborted',
+        expectCreatedAt: job.createdAt,
+        patch: {
+          completedAt: Date.now(),
+          error: 'Approval expired before a decision was made',
+          terminalHostActionPending: true,
+        },
+      }),
+    ).resolves.toBe(true);
+
+    await manager.markProviderExecutionDrained(streamId, job.createdAt, providerExecutionId);
+
+    expect(approvalHandler).toHaveBeenCalledWith(
+      streamId,
+      expect.objectContaining({ scheduleId: 'schedule-1', providerDrained: true }),
+    );
+    expect(genericHandler).not.toHaveBeenCalled();
+    await expect(store.getJob(streamId)).resolves.not.toHaveProperty('terminalHostActionPending');
+  });
+
+  it('recovers a terminal host action after its provider owner is lost', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(10_000);
+    try {
+      const handler = jest.fn().mockResolvedValue(undefined);
+      manager.setTerminalHostActionHandler(handler);
+      const streamId = 'conversation-lost-provider-owner';
+      const job = await manager.createJob(streamId, 'user-1', streamId, {
+        initialMetadata: { agentEventDeliveryKey: 'trigger_lost_provider' },
+      });
+      await manager.beginProviderExecution(
+        streamId,
+        job.createdAt,
+        job.metadata.providerExecutionId!,
+      );
+      await manager.completeJob(streamId, undefined, job.createdAt);
+      expect(handler).not.toHaveBeenCalled();
+
+      now.mockReturnValue(40_001);
+      await (
+        manager as unknown as { expireStaleApprovals: () => Promise<void> }
+      ).expireStaleApprovals();
+
+      expect(handler).toHaveBeenCalledWith(
+        streamId,
+        expect.objectContaining({ providerDrained: true }),
+        expect.any(Array),
+        expect.any(Array),
+      );
+      await expect(store.getJob(streamId)).resolves.not.toHaveProperty('terminalHostActionPending');
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it('serializes run-step snapshots so an earlier write cannot erase completion evidence', async () => {

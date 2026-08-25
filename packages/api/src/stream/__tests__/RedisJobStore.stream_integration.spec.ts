@@ -1115,8 +1115,44 @@ describe('RedisJobStore Integration Tests', () => {
       await store.clearTerminalHostAction?.(streamId, job.createdAt);
       const lateStep = { ...completedStep, id: 'step-too-late' };
       await store.saveRunSteps(streamId, [lateStep], job.createdAt);
-      await expect(store.getRunSteps(streamId, job.createdAt)).resolves.toEqual([completedStep]);
+      await expect(store.getRunSteps(streamId, job.createdAt)).resolves.toEqual([]);
 
+      await store.destroy();
+    });
+
+    test('terminal host settlement recovers a provider owner lost after the terminal CAS', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      await store.initialize();
+
+      const streamId = `terminal-lost-provider-${Date.now()}`;
+      const providerExecutionId = 'terminal-lost-provider';
+      const job = await store.createJob(streamId, 'user-1', streamId, undefined, {
+        providerExecutionId,
+      });
+      await store.beginProviderExecution(streamId, job.createdAt, providerExecutionId);
+      await expect(
+        store.transitionStatus(streamId, {
+          from: 'running',
+          to: 'complete',
+          expectCreatedAt: job.createdAt,
+          patch: {
+            completedAt: Date.now() - 30_001,
+            terminalHostActionPending: true,
+          },
+        }),
+      ).resolves.toBe(true);
+
+      await expect(store.getTerminalHostActionJobs?.()).resolves.toEqual([
+        expect.objectContaining({ streamId, providerDrained: true }),
+      ]);
+      await expect(store.getJob(streamId)).resolves.toMatchObject({ providerDrained: true });
+
+      await store.clearTerminalHostAction(streamId, job.createdAt);
       await store.destroy();
     });
 

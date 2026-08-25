@@ -996,6 +996,50 @@ describe('RedisJobStore', () => {
     expect(transitionCall[18]).toBe('86400');
   });
 
+  test('acknowledges terminal evidence TTLs and repairs a successor retry membership', async () => {
+    const evalClear = jest.fn().mockResolvedValue(1);
+    const srem = jest.fn().mockResolvedValue(1);
+    const sadd = jest.fn().mockResolvedValue(1);
+    const hgetall = jest.fn().mockResolvedValue({
+      streamId: 'stream-host-action-clear',
+      userId: 'user-1',
+      status: 'complete',
+      createdAt: '101',
+      completedAt: '201',
+      terminalHostActionPending: '1',
+      syncSent: '0',
+    });
+    const redis = {
+      isCluster: true,
+      eval: evalClear,
+      srem,
+      sadd,
+      hgetall,
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis, {
+      completedTtl: 300,
+      chunksAfterCompleteTtl: 7,
+      runStepsAfterCompleteTtl: 11,
+    });
+
+    await store.clearTerminalHostAction('stream-host-action-clear', 100);
+
+    expect(evalClear).toHaveBeenCalledWith(
+      expect.stringContaining('redis.call("DEL", KEYS[2])'),
+      3,
+      'stream:{stream-host-action-clear}:job',
+      'stream:{stream-host-action-clear}:chunks',
+      'stream:{stream-host-action-clear}:runsteps',
+      '100',
+      '300',
+      '7',
+      '11',
+    );
+    expect(srem).toHaveBeenCalledWith('stream:terminal_host_action', 'stream-host-action-clear');
+    expect(sadd).toHaveBeenCalledWith('stream:terminal_host_action', 'stream-host-action-clear');
+    expect(srem.mock.invocationCallOrder[0]).toBeLessThan(sadd.mock.invocationCallOrder[0]);
+  });
+
   test('guards asynchronous content cleanup against a replacement epoch', async () => {
     const evalCommand = jest.fn().mockResolvedValue(0);
     const redis = {
