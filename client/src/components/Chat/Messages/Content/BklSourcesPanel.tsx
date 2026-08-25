@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRecoilState } from 'recoil';
-import { FolderPlus, X } from 'lucide-react';
+import { ChevronLeft, FolderPlus, X } from 'lucide-react';
 import { Button } from '@librechat/client';
 import store from '~/store';
 import { cn, FileTypeIcon } from '~/utils';
@@ -185,7 +185,20 @@ function formatRelevance(raw: unknown): string | null {
   return String(raw);
 }
 
-export default function BklSourcesPanel() {
+type BklSourcesPanelProps = {
+  /**
+   * 대화 패널(BklThreadPanel) Overview 에서 청크를 연 경우 — 헤더 왼쪽에
+   * 뒤로가기 버튼을 노출하고, 클릭 시 청크 선택만 해제해 목록으로 복귀한다.
+   */
+  onBack?: () => void;
+  /**
+   * X 버튼의 동작 재정의 — 대화 패널이 핀 고정된 상태에서는 청크 선택 해제와
+   * 함께 패널 전체를 닫아야 하므로 부모가 슬라이드아웃 후 호출될 콜백을 넘긴다.
+   */
+  onCloseAll?: () => void;
+};
+
+export default function BklSourcesPanel({ onBack, onCloseAll }: BklSourcesPanelProps = {}) {
   const [active, setActive] = useRecoilState(store.activeBklSource);
   const [sources, setSources] = useState<BklSource[] | null>(null);
   // Flips true when the 20s cache-poll below gives up without sources —
@@ -264,10 +277,11 @@ export default function BklSourcesPanel() {
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     closeTimerRef.current = setTimeout(() => {
       setActive(null);
+      onCloseAll?.();
       setIsClosing(false);
       closeTimerRef.current = null;
     }, CLOSE_ANIM_MS);
-  }, [setActive]);
+  }, [setActive, onCloseAll]);
 
   // Cleanup any pending close timer on unmount so we don't late-write to an
   // unmounted tree if the user navigates away mid-animation.
@@ -346,6 +360,18 @@ export default function BklSourcesPanel() {
           mislead the user into treating unused chunks as evidence. The
           panel shows exactly the one chunk whose `[N]` marker was clicked. */}
       <div className="flex flex-shrink-0 items-center justify-between gap-2 overflow-hidden border-b border-border-light bg-surface-primary-alt px-3 py-2">
+        {onBack ? (
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={onBack}
+            aria-label="목록으로"
+            title="목록으로"
+            className="shrink-0"
+          >
+            <ChevronLeft size={16} aria-hidden="true" />
+          </Button>
+        ) : null}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-text-secondary">
             <span>출처 [{active.n}]</span>

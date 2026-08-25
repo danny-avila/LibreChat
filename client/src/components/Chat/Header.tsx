@@ -1,6 +1,7 @@
 import { memo } from 'react';
+import { PanelRight } from 'lucide-react';
 import { useMediaQuery } from '@librechat/client';
-import { useRecoilValue } from 'recoil';
+import { useRecoilValue, useRecoilState } from 'recoil';
 import { useOutletContext } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -103,6 +104,7 @@ function Header() {
             <ExportAndShareMenu
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
             />
+            <BklPanelToggle />
             {/* BKL: TemporaryChat 비활성 */}
           </div>
         )}
@@ -110,6 +112,42 @@ function Header() {
       {/* Empty div for spacing */}
       <div />
     </div>
+  );
+}
+
+/**
+ * BKL: 우측 대화 패널(언급된 파일·인용된 청크 모아보기) 토글.
+ * 열려 있으면(핀 고정 or 청크 뷰 활성) 강조 표시하고, 클릭 시 반전한다.
+ * 닫을 때는 열려 있던 청크 뷰도 함께 정리해 아티팩트 슬롯을 되돌린다.
+ */
+function BklPanelToggle() {
+  const [panelOpen, setPanelOpen] = useRecoilState(store.bklPanelOpen);
+  const [activeSource, setActiveSource] = useRecoilState(store.activeBklSource);
+  const isOpen = panelOpen || activeSource != null;
+
+  const toggle = () => {
+    if (isOpen) {
+      setPanelOpen(false);
+      setActiveSource(null);
+    } else {
+      setPanelOpen(true);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-label="대화 자료 패널"
+      aria-pressed={isOpen}
+      title="대화 자료 패널 (인용된 출처 모아보기)"
+      className={cn(
+        'flex size-9 items-center justify-center rounded-xl border border-border-light transition-colors hover:bg-surface-active-alt',
+        isOpen ? 'bg-surface-active-alt text-text-primary' : 'bg-presentation text-text-secondary',
+      )}
+    >
+      <PanelRight size={16} aria-hidden="true" />
+    </button>
   );
 }
 

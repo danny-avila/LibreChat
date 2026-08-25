@@ -22,3 +22,32 @@ export const activeBklSource = atom<ActiveBklSource | null>({
   key: 'activeBklSource',
   default: null,
 });
+
+const PANEL_OPEN_KEY = 'bklPanelOpen';
+
+/**
+ * Whether the conversation-level right panel (mentioned files + cited
+ * chunks overview) is open. Persisted so the panel survives reloads.
+ * Independent from `activeBklSource`: clicking a `[N]` marker can open a
+ * chunk view without the overview panel being pinned open, and vice versa.
+ */
+export const bklPanelOpen = atom<boolean>({
+  key: 'bklPanelOpen',
+  default: false,
+  effects: [
+    ({ setSelf, onSet }) => {
+      try {
+        if (localStorage.getItem(PANEL_OPEN_KEY) === '1') setSelf(true);
+      } catch {
+        /* storage unavailable */
+      }
+      onSet((next) => {
+        try {
+          localStorage.setItem(PANEL_OPEN_KEY, next ? '1' : '0');
+        } catch {
+          /* ignore */
+        }
+      });
+    },
+  ],
+});

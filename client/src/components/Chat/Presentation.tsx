@@ -7,7 +7,7 @@ import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
 import { EditorProvider, SidePanelProvider, ArtifactsProvider } from '~/Providers';
 import Artifacts from '~/components/Artifacts/Artifacts';
 import { SidePanelGroup } from '~/components/SidePanel';
-import BklSourcesPanel from '~/components/Chat/Messages/Content/BklSourcesPanel';
+import BklThreadPanel from '~/components/Chat/BklPanel/BklThreadPanel';
 import { useSetFilesToDelete } from '~/hooks';
 import store from '~/store';
 
@@ -59,6 +59,7 @@ export default function Presentation({ children }: { children: React.ReactNode }
   const fullCollapse = useMemo(() => localStorage.getItem('fullPanelCollapse') === 'true', []);
 
   const activeBklSource = useRecoilValue(store.activeBklSource);
+  const bklPanelOpen = useRecoilValue(store.bklPanelOpen);
 
   /**
    * Memoize artifacts JSX to prevent recreating it on every render
@@ -79,18 +80,20 @@ export default function Presentation({ children }: { children: React.ReactNode }
 
   /**
    * Right-side panel routing:
-   * When the user clicks a `[N]` BKL citation we take over the artifact slot
-   * so the citation renders inside LibreChat's native `ResizablePanel`
+   * The BKL thread panel takes over the artifact slot when either
+   *  - the user pinned it open via the header toggle (`bklPanelOpen`), or
+   *  - a `[N]` citation is active (chunk view inside the same panel).
+   * That way it renders inside LibreChat's native `ResizablePanel`
    * (same chrome, same resize handle, same mobile behaviour as artifacts).
-   * Only one of {artifact, citation} is visible at a time; citation wins
+   * Only one of {artifact, thread panel} is visible at a time; the panel wins
    * because it's always an explicit user action.
    */
   const sidePanelElement = useMemo(() => {
-    if (activeBklSource != null) {
-      return <BklSourcesPanel />;
+    if (activeBklSource != null || bklPanelOpen) {
+      return <BklThreadPanel />;
     }
     return artifactsElement;
-  }, [activeBklSource, artifactsElement]);
+  }, [activeBklSource, bklPanelOpen, artifactsElement]);
 
   return (
     <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
