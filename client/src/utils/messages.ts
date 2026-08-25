@@ -220,9 +220,18 @@ const isEmptyContentPart = (part: TMessageContentParts): boolean => {
   return false;
 };
 
+/** One side extending the other is the same part observed at two moments —
+ * a flushed tail or a server-side trim — while divergent content is a
+ * different part that merely shares the type. */
+const isMutualPrefix = (streamed: string, final: string): boolean =>
+  final.startsWith(streamed) || streamed.startsWith(final);
+
 /** Identity match, not equality: the persisted part may carry richer content
  * (flushed text, tool output) than its streamed counterpart, and updating a
- * kept identity in place is exactly the point. */
+ * kept identity in place is exactly the point. Content still has to agree as
+ * an extension of what streamed: a filtered run (`hide_sequential_outputs`)
+ * omits intermediate parts from the final array, and a type-only match would
+ * hand the retained output an omitted intermediate's identity. */
 const isSameStreamedPart = (
   streamed: TMessageContentParts,
   final: TMessageContentParts,
@@ -230,16 +239,34 @@ const isSameStreamedPart = (
   if (streamed.type !== final.type) {
     return false;
   }
-  if (streamed.type !== ContentTypes.TOOL_CALL) {
+  if (streamed.type === ContentTypes.TOOL_CALL) {
+    const streamedCall = getPartToolCall(streamed);
+    const finalCall = getPartToolCall(final);
+    if (streamedCall?.id != null && finalCall?.id != null) {
+      return streamedCall.id === finalCall.id;
+    }
+    if (streamedCall?.name != null && finalCall?.name != null) {
+      return streamedCall.name === finalCall.name;
+    }
     return true;
   }
-  const streamedCall = getPartToolCall(streamed);
-  const finalCall = getPartToolCall(final);
-  if (streamedCall?.id != null && finalCall?.id != null) {
-    return streamedCall.id === finalCall.id;
+  if (streamed.type === ContentTypes.TEXT && final.type === ContentTypes.TEXT) {
+    if ((streamed.phase ?? null) !== (final.phase ?? null)) {
+      return false;
+    }
+    return isMutualPrefix(getPartTextValue(streamed.text), getPartTextValue(final.text));
   }
-  if (streamedCall?.name != null && finalCall?.name != null) {
-    return streamedCall.name === finalCall.name;
+  if (streamed.type === ContentTypes.THINK && final.type === ContentTypes.THINK) {
+    return isMutualPrefix(getPartTextValue(streamed.think), getPartTextValue(final.think));
+  }
+  if (streamed.type === ContentTypes.ACTIVITY_LABEL && final.type === ContentTypes.ACTIVITY_LABEL) {
+    if ((streamed.activity_label_type ?? null) !== (final.activity_label_type ?? null)) {
+      return false;
+    }
+    return isMutualPrefix(
+      getPartTextValue(streamed.activity_label),
+      getPartTextValue(final.activity_label),
+    );
   }
   return true;
 };

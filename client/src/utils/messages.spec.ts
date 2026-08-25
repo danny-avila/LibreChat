@@ -118,6 +118,41 @@ describe('preserveStreamedContentIdentity', () => {
     expect(preserveStreamedContentIdentity([], final)).toBe(final);
   });
 
+  it('abandons stamping when a filtered run retains only a same-type later part', () => {
+    const streamed = [text('intermediate agent output'), text('final agent answer')];
+    const final = [text('final agent answer')];
+
+    expect(preserveStreamedContentIdentity(streamed, final)).toBe(final);
+  });
+
+  it('abandons stamping when streamed and final text diverge', () => {
+    const streamed = [undefined, text('answer A')];
+    const final = [text('answer B')];
+
+    expect(preserveStreamedContentIdentity(streamed, final)).toBe(final);
+  });
+
+  it('never pairs a batch label with a phase label of the same text', () => {
+    const streamed = [undefined, label('Ran the tools')];
+    const final = [label('Ran the tools', { activity_label_type: 'phase' })];
+
+    expect(preserveStreamedContentIdentity(streamed, final)).toBe(final);
+  });
+
+  it('pairs a blank label reservation with its filled final label', () => {
+    const streamed = [undefined, label('')];
+    const final = [label('Recorded the fact')];
+
+    expect(streamedIndexes(preserveStreamedContentIdentity(streamed, final))).toEqual([1]);
+  });
+
+  it('never pairs text parts across different phases', () => {
+    const streamed = [undefined, text('note', { phase: 'commentary' })];
+    const final = [text('note')];
+
+    expect(preserveStreamedContentIdentity(streamed, final)).toBe(final);
+  });
+
   it('carries existing stamps forward when a settled message is re-delivered compact', () => {
     const streamedSparse = [undefined, tool('call_a'), label('first'), undefined, text('answer')];
     const settled = preserveStreamedContentIdentity(streamedSparse, [
