@@ -33,13 +33,46 @@ const roleDefinitionsSchema = z
           })
           .strict(),
       })
-      .strict()
-      .refine((definition) => definition.name !== definition.inheritPermissionsFrom, {
-        message: 'A role cannot inherit permissions from itself',
-        path: ['inheritPermissionsFrom'],
-      }),
+      .strict(),
   )
-  .min(1, 'Role definitions must be a non-empty array');
+  .min(1, 'Role definitions must be a non-empty array')
+  .superRefine((definitions, context) => {
+    const byName = new Map(
+      definitions.map((definition, index) => [definition.name, { definition, index }]),
+    );
+    const state = new Map();
+
+    function visit(name) {
+      const entry = byName.get(name);
+      if (!entry || state.get(name) === 'visited') {
+        return false;
+      }
+      state.set(name, 'visiting');
+      const inheritedName = entry.definition.inheritPermissionsFrom;
+      if (state.get(inheritedName) === 'visiting') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            inheritedName === name
+              ? 'A role cannot inherit permissions from itself'
+              : 'Role permission inheritance cannot contain a cycle',
+          path: [entry.index, 'inheritPermissionsFrom'],
+        });
+        return true;
+      }
+      if (visit(inheritedName)) {
+        return true;
+      }
+      state.set(name, 'visited');
+      return false;
+    }
+
+    for (const definition of definitions) {
+      if (visit(definition.name)) {
+        return;
+      }
+    }
+  });
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);

@@ -196,6 +196,25 @@ describe('deploy role script', () => {
     ).toThrow('cannot inherit permissions from itself');
   });
 
+  it('rejects indirect permission inheritance cycles', () => {
+    expect(() =>
+      validateRoleDefinitions([
+        {
+          name: 'ALPHA',
+          inheritPermissionsFrom: 'BETA',
+          permissionOverrides: {},
+          config: { priority: 10, overrides: {} },
+        },
+        {
+          name: 'BETA',
+          inheritPermissionsFrom: 'ALPHA',
+          permissionOverrides: {},
+          config: { priority: 20, overrides: {} },
+        },
+      ]),
+    ).toThrow('cannot contain a cycle');
+  });
+
   it('does not add config defaults inside arrays', () => {
     const [definition] = validateRoleDefinitions([
       {
