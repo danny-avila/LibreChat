@@ -9,11 +9,11 @@
 const { installRecorder } = require('./model-replay');
 
 /** @type {import('@librechat/api').TestRunHook} */
-module.exports = function recordModelHook(run) {
+module.exports = function recordModelHook(run, context) {
   const graph = run?.Graph;
   if (!graph) {
     console.warn('[e2e model-replay] record hook: run.Graph unavailable');
     return;
   }
-  installRecorder({ graph });
+  installRecorder({ graph, messages: context?.messages });
 };

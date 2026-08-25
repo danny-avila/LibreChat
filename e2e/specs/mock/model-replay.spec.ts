@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test';
 import type { TMessage } from 'librechat-data-provider';
-import { assertFixtureConsumed, fixtureTurns, readReplayLedger } from './replay.helpers';
+import {
+  assertFixtureConsumed,
+  fixtureTurns,
+  readReplayLedger,
+  removeFixture,
+} from './replay.helpers';
 import {
   NEW_CHAT_PATH,
   fetchJson,
@@ -56,6 +61,10 @@ test.describe('recorded model fixture replay', () => {
 
     await page.goto(NEW_CHAT_PATH, { timeout: 10_000 });
     if (RECORDING) {
+      /** Proof of a fresh write: the assertions below cannot be satisfied by a
+       * pre-existing fixture, so a run whose recorder never installed fails
+       * instead of greening against a stale artifact. */
+      removeFixture(FIXTURE);
       await selectMockEndpoint(page, RECORD_ENDPOINT);
     }
 

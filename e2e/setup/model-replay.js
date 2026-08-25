@@ -95,8 +95,24 @@ function latestHumanText(messages) {
 }
 
 /**
+ * The distinct user turns a fixture records, in order. A turn that calls a
+ * tool spans several model invocations under one prompt, so the invocation
+ * sequence is not the turn sequence and only this collapsed view can be
+ * compared against a conversation's human messages.
+ */
+function fixtureTurnTexts(invocations) {
+  const turns = [];
+  for (const invocation of invocations) {
+    if (turns[turns.length - 1] !== invocation.userText) {
+      turns.push(invocation.userText);
+    }
+  }
+  return turns;
+}
+
+/**
  * Whether this conversation is the one that already drove the fixture: its
- * human turns open with exactly the fixture's recorded prompts, in order. A
+ * human turns open with exactly the fixture's recorded turns, in order. A
  * consumed binding has to be retained for such a conversation, or an extra
  * user turn would find no next invocation, fall through to ordinary
  * fake-model routing, and be answered with a mock reply — leaving the
@@ -104,10 +120,11 @@ function latestHumanText(messages) {
  */
 function conversationDroveFixture(messages, fixture) {
   const texts = humanTexts(messages);
-  if (texts.length <= fixture.invocations.length) {
+  const turns = fixture.turns;
+  if (texts.length <= turns.length) {
     return false;
   }
-  return fixture.invocations.every((invocation, index) => invocation.userText === texts[index]);
+  return turns.every((turn, index) => turn === texts[index]);
 }
 
 function jsonClone(value) {
@@ -157,7 +174,6 @@ const recordingState = {
   initialized: false,
   fixturePath: undefined,
   invocationCounter: 0,
-  firstUserText: undefined,
   runIdToInvocation: new Map(),
 };
 
@@ -176,7 +192,6 @@ function initializeRecording(fixtureName) {
   });
   recordingState.initialized = true;
   recordingState.invocationCounter = 0;
-  recordingState.firstUserText = undefined;
   recordingState.runIdToInvocation.clear();
   console.log(`[e2e model-replay] recording fixture ${recordingState.fixturePath}`);
 }
@@ -186,16 +201,17 @@ function initializeRecording(fixtureName) {
  * Playwright retry, so a failed attempt that already recorded invocations
  * would otherwise leave the counter advanced: the retry appends 2/3 after
  * 0/1 (or keeps a previous attempt's `error` line) and the fixture is
- * unusable for replay. Restarting on the opening prompt mirrors the replay
- * side's rule, and carries the same caveat — a script that legitimately
- * repeats its first prompt as a later turn truncates instead of appending.
+ * unusable for replay.
+ *
+ * A retry is identified by the conversation boundary rather than by prompt
+ * text: this runs once per `createRun`, so a turn whose history holds no
+ * prior human message is a conversation's first turn. Prompt equality would
+ * be wrong — a turn that calls a tool invokes the model again under the same
+ * latest human message, and treating that as a retry would truncate the
+ * fixture mid-turn and discard the recorded tool-call invocation.
  */
-function shouldRestartRecording(userText) {
-  return (
-    recordingState.invocationCounter > 0 &&
-    recordingState.firstUserText != null &&
-    userText === recordingState.firstUserText
-  );
+function isConversationStart(messages) {
+  return humanTexts(messages).length <= 1;
 }
 
 function createRecorderHandler() {
@@ -207,16 +223,13 @@ function createRecorderHandler() {
     awaitHandlers: true,
     raiseError: true,
     handleChatModelStart(_llm, messageBatches, runId) {
-      const userText = latestHumanText(messageBatches?.[0]);
-      if (shouldRestartRecording(userText)) {
-        initializeRecording(path.basename(recordingState.fixturePath, '.jsonl'));
-      }
       const index = recordingState.invocationCounter++;
-      if (index === 0) {
-        recordingState.firstUserText = userText;
-      }
       recordingState.runIdToInvocation.set(runId, index);
-      appendFixtureLine({ type: 'invocation', index, userText });
+      appendFixtureLine({
+        type: 'invocation',
+        index,
+        userText: latestHumanText(messageBatches?.[0]),
+      });
     },
     handleLLMNewToken(token, _idx, runId, _parentRunId, _tags, fields) {
       const invocation = recordingState.runIdToInvocation.get(runId);
@@ -260,13 +273,14 @@ function createRecorderHandler() {
  * callback here puts the recorder on the real provider stream without
  * replacing the model.
  */
-function installRecorder({ graph }) {
+function installRecorder({ graph, messages }) {
   const fixtureName = process.env.E2E_MODEL_FIXTURE_NAME;
   if (!fixtureName) {
     console.warn('[e2e model-replay] E2E_MODEL_FIXTURE_NAME unset; not recording');
     return;
   }
-  if (!recordingState.initialized) {
+  const restarting = recordingState.invocationCounter > 0 && isConversationStart(messages);
+  if (!recordingState.initialized || restarting) {
     initializeRecording(fixtureName);
   }
   const contexts = graph?.agentContexts;
@@ -332,7 +346,11 @@ function parseFixtureFile(filePath) {
   if (missing !== -1) {
     throw new Error(`[e2e model-replay] fixture ${name} is missing invocation ${missing}`);
   }
-  return { meta, invocations };
+  /** The file name is the fixture's identity — it is what `E2E_MODEL_FIXTURE_NAME`
+   * selects, what the spec names, and what the ledger is written under. A
+   * recorded `meta.name` is descriptive only: trusting it would let a renamed
+   * or copied fixture collapse onto another's registry key and ledger. */
+  return { meta: { ...meta, name }, invocations, turns: fixtureTurnTexts(invocations) };
 }
 
 function loadFixtureRegistry() {
@@ -507,6 +525,7 @@ function tryBindReplay({ graph, agents, text, messages, modelCallbacks }) {
     return false;
   }
   const registry = loadFixtureRegistry();
+  const matches = [];
   for (const fixture of registry.values()) {
     let state = getReplayState(fixture);
     /** Continuing an in-progress binding outranks restarting, which in turn
@@ -526,18 +545,43 @@ function tryBindReplay({ graph, agents, text, messages, modelCallbacks }) {
         continue;
       }
     }
-    ensureReplayProviderRegistered();
-    const model = initializeModel({
-      provider: REPLAY_PROVIDER,
-      clientOptions: { fixture, state, callbacks: modelCallbacks },
-      tools: agents?.[0]?.tools ?? [],
-    });
-    state.ledger.toolsBound = model.boundToolNames ?? [];
-    graph.overrideModel = model;
-    writeLedger(fixture.meta.name);
-    return true;
+    matches.push({ fixture, state });
   }
-  return false;
+
+  if (matches.length === 0) {
+    return false;
+  }
+  /** Binding order would otherwise follow filesystem enumeration, so a second
+   * fixture sharing this prompt could silently redirect a scenario to the
+   * wrong chunks and ledger. The spec's fixture choice never reaches this
+   * server-side loop, so ambiguity has to fail rather than pick a winner. */
+  if (matches.length > 1) {
+    throw new Error(
+      `[e2e model-replay] prompt matches ${matches.length} fixtures ` +
+        `(${matches.map(({ fixture }) => fixture.meta.name).join(', ')}); ` +
+        'fixtures must not share a bindable prompt',
+    );
+  }
+
+  const { fixture, state } = matches[0];
+  ensureReplayProviderRegistered();
+  const model = initializeModel({
+    provider: REPLAY_PROVIDER,
+    clientOptions: { fixture, state, callbacks: modelCallbacks },
+    tools: agents?.[0]?.tools ?? [],
+  });
+  state.ledger.toolsBound = model.boundToolNames ?? [];
+  graph.overrideModel = model;
+  /** `graph.overrideModel` is not inherited by child executors, so a fixture
+   * recording a subagent call — record mode captures child invocations, since
+   * the recorder attaches to every agent context — would otherwise leave the
+   * child on its configured provider: an underrun here, and a real provider
+   * request in a lane that must stay keyless. */
+  if (typeof graph.setSubagentModelOverride === 'function') {
+    graph.setSubagentModelOverride(model);
+  }
+  writeLedger(fixture.meta.name);
+  return true;
 }
 
 module.exports = {

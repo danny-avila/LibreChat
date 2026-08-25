@@ -31,6 +31,17 @@ export function fixturePath(name: string): string {
 }
 
 /**
+ * Remove a fixture before a recording run so its assertions cannot be
+ * satisfied by a pre-existing artifact. Without this, a run whose hook failed
+ * to install the recorder would still see the live provider answer these
+ * deterministic prompts while the poll read the stale file — matching answers,
+ * valid chunk counts, and a green run that wrote nothing.
+ */
+export function removeFixture(name: string): void {
+  fs.rmSync(fixturePath(name), { force: true });
+}
+
+/**
  * Parse a fixture's invocations in recorded order. An invocation's final text
  * is the concatenation of its recorded chunk texts — the chunks are written
  * synchronously during the stream, while the provider's `handleLLMEnd`
