@@ -319,6 +319,22 @@ export function validateThemeDefinition(theme: ThemeDefinition): string[] {
   return errors;
 }
 
+/**
+ * A partial theme promises that an omitted value falls back, and
+ * `Partial<IThemeBrands>` lets a key be present with `undefined`. Spreading
+ * that would overwrite the inherited brand with nothing, and unlike colors,
+ * which `mapColors` skips when undefined, every brand token is written to the
+ * DOM unconditionally, so the avatar would lose its fill entirely.
+ */
+function definedBrands(brands?: Partial<IThemeBrands>): Partial<IThemeBrands> {
+  if (!brands) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(brands).filter(([, value]) => value !== undefined),
+  ) as Partial<IThemeBrands>;
+}
+
 export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedThemeDefinition {
   const errors = validateThemeDefinition(theme);
   if (errors.length > 0) {
@@ -377,7 +393,11 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
     } as Required<IThemeRGB>,
     appearance: { ...defaultAppearance, ...definition?.appearance },
     /** Mode last: a mode override is more specific than the theme-wide set. */
-    brands: { ...defaultBrands, ...theme.brands, ...definition?.brands },
+    brands: {
+      ...defaultBrands,
+      ...definedBrands(theme.brands),
+      ...definedBrands(definition?.brands),
+    },
   };
 }
 

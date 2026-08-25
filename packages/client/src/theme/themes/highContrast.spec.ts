@@ -1,6 +1,7 @@
 import type { IThemeRGB } from '../types';
 import {
   HIGH_CONTRAST_THEME_NAME,
+  defaultBrands,
   highContrastTheme,
   resolveTheme,
   themeBrandTokens,
@@ -335,6 +336,25 @@ describe('high contrast theme definition', () => {
       'light',
     );
     expect(inherited.brands['provider-openai']).toBe('#abcdef');
+  });
+
+  /** A key present with `undefined` is what `Partial` permits and what
+   *  validation accepts, and every brand token is written to the DOM
+   *  unconditionally, so spreading it would blank the avatar's fill. */
+  it('falls back rather than blanking a brand set to undefined', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'holes',
+        modes: { dark: { brands: { 'provider-openai': undefined } } },
+        brands: { 'provider-openai': '#abcdef', 'provider-anthropic': undefined },
+      },
+      'dark',
+    );
+
+    expect(resolved.brands['provider-openai']).toBe('#abcdef');
+    expect(resolved.brands['provider-anthropic']).toBe(defaultBrands['provider-anthropic']);
+    expect(Object.values(resolved.brands).every((value) => typeof value === 'string')).toBe(true);
   });
 
   it('validates a mode brand block the same way as the theme-wide one', () => {
