@@ -1,4 +1,7 @@
-import type { IAgentEventActorState } from '@librechat/data-schemas';
+import type {
+  IAgentEventActorReconciliation,
+  IAgentEventActorState,
+} from '@librechat/data-schemas';
 import {
   captureAgentEventCheckpoint,
   deleteAgentCheckpoint,
@@ -43,7 +46,10 @@ describe('event actor host adapter', () => {
   });
 
   const deps = () => ({
-    getSnapshot: jest.fn(async () => ({ state })),
+    getSnapshot: jest.fn(async () => ({
+      state,
+      reconciliations: [] as IAgentEventActorReconciliation[],
+    })),
     commitState: jest.fn(async ({ expected, checkpoint }) => {
       if (
         (state == null && expected != null) ||
@@ -63,6 +69,7 @@ describe('event actor host adapter', () => {
       return { status: 'committed' as const, state };
     }),
     recordReconciliation: jest.fn(async () => true),
+    resolveReconciliation: jest.fn(async () => true),
   });
 
   it('cold-starts once, then forks and warm-continues only the next event', async () => {
@@ -287,12 +294,13 @@ describe('event actor host adapter', () => {
     const dependencies = {
       getSnapshot: jest
         .fn()
-        .mockResolvedValueOnce({ state: baseState })
+        .mockResolvedValueOnce({ state: baseState, reconciliations: [] })
         .mockRejectedValueOnce(new Error('readback unavailable')),
       commitState: jest.fn(async () => {
         throw new Error('commit result unavailable');
       }),
       recordReconciliation: jest.fn(async () => true),
+      resolveReconciliation: jest.fn(async () => true),
     };
 
     await expect(
@@ -314,23 +322,72 @@ describe('event actor host adapter', () => {
     expect(mockedDelete).not.toHaveBeenCalled();
   });
 
+  it('clears a reconciliation whose checkpoint is already authoritative before continuing', async () => {
+    const authoritative: IAgentEventActorState = {
+      generation: 1,
+      checkpoint: {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-authoritative',
+        checkpointNs: 'event-actor/authoritative',
+      },
+    };
+    state = authoritative;
+    const marker = {
+      invocationId: 'event-recovered',
+      status: 'commit_indeterminate' as const,
+      checkpoint: authoritative.checkpoint,
+      action: { toolName: 'submit_move' },
+      observedAt: new Date(),
+    };
+    const dependencies = deps();
+    dependencies.getSnapshot
+      .mockResolvedValueOnce({ state: authoritative, reconciliations: [marker] })
+      .mockResolvedValueOnce({ state: authoritative, reconciliations: [] });
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId: 'event-next',
+          event: { id: 'event-next' },
+          signal: new AbortController().signal,
+          invoke: async () => 'response',
+          readAppliedAction: () => ({ toolName: 'submit_move' }),
+        },
+        dependencies,
+      ),
+    ).resolves.toMatchObject({ execution: { status: 'applied' } });
+
+    expect(dependencies.resolveReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invocationId: marker.invocationId,
+        checkpoint: authoritative.checkpoint,
+        resolution: 'checkpoint_verified',
+      }),
+    );
+  });
+
   it('blocks new invocations while a prior applied fork needs reconciliation', async () => {
     const dependencies = {
       getSnapshot: jest.fn(async () => ({
         state: null,
-        reconciliation: {
-          invocationId: 'event-conflict',
-          status: 'commit_conflict' as const,
-          checkpoint: {
-            threadId: conversationId,
-            checkpointNs: 'event-actor/conflict',
+        reconciliations: [
+          {
+            invocationId: 'event-conflict',
+            status: 'commit_conflict' as const,
+            checkpoint: {
+              threadId: conversationId,
+              checkpointNs: 'event-actor/conflict',
+            },
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
           },
-          action: { toolName: 'submit_move' },
-          observedAt: new Date(),
-        },
+        ],
       })),
       commitState: jest.fn(),
       recordReconciliation: jest.fn(),
+      resolveReconciliation: jest.fn(),
     };
 
     await expect(
@@ -355,6 +412,7 @@ describe('event actor host adapter', () => {
       getSnapshot: jest.fn(async () => undefined),
       commitState: jest.fn(),
       recordReconciliation: jest.fn(),
+      resolveReconciliation: jest.fn(),
     };
 
     await expect(

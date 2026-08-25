@@ -77,6 +77,7 @@ const mockFindAgentEventAppliedAction = jest.fn();
 const mockGetAgentEventActorSnapshot = jest.fn();
 const mockCommitAgentEventActorState = jest.fn();
 const mockRecordAgentEventActorReconciliation = jest.fn();
+const mockResolveAgentEventActorReconciliation = jest.fn();
 const mockStartupTelemetry = {
   mark: jest.fn(),
   setStreamId: jest.fn(),
@@ -242,6 +243,8 @@ jest.mock('~/models', () => ({
   commitAgentEventActorState: (...args) => mockCommitAgentEventActorState(...args),
   recordAgentEventActorReconciliation: (...args) =>
     mockRecordAgentEventActorReconciliation(...args),
+  resolveAgentEventActorReconciliation: (...args) =>
+    mockResolveAgentEventActorReconciliation(...args),
   isAgentTriggerPrincipalActive: (...args) => mockIsAgentTriggerPrincipalActive(...args),
   isSubagentOwnerAdmissible: (...args) => mockIsSubagentOwnerAdmissible(...args),
 }));
@@ -357,7 +360,7 @@ describe('ResumableAgentController resume metadata', () => {
     mockSaveMessage.mockResolvedValue({});
     mockSaveConvo.mockResolvedValue({});
     mockDeleteAgentCheckpoint.mockResolvedValue(undefined);
-    mockGetAgentEventActorSnapshot.mockResolvedValue({ state: null });
+    mockGetAgentEventActorSnapshot.mockResolvedValue({ state: null, reconciliations: [] });
     mockCommitAgentEventActorState.mockResolvedValue({ status: 'stale' });
     mockRecordAgentEventActorReconciliation.mockResolvedValue(true);
   });
@@ -4023,6 +4026,7 @@ describe('ResumableAgentController resume metadata', () => {
         getSnapshot: expect.any(Function),
         commitState: expect.any(Function),
         recordReconciliation: expect.any(Function),
+        resolveReconciliation: expect.any(Function),
       },
     );
     expect(client).toMatchObject({

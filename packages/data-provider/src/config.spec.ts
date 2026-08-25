@@ -27,7 +27,7 @@ describe('excludedKeys', () => {
     'conversationId',
     'agentEventBinding',
     'agentEventActor',
-    'agentEventActorReconciliation',
+    'agentEventActorReconciliations',
     '__v',
   ])('excludes system field "%s"', (field) => {
     expect(excludedKeys.has(field)).toBe(true);

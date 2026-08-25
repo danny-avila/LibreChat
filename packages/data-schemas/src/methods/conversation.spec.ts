@@ -4013,7 +4013,7 @@ describe('Conversation Operations', () => {
           tenantId: 'tenant-a',
           conversationId,
         }),
-      ).resolves.toEqual({ state: third.state });
+      ).resolves.toEqual({ state: third.state, reconciliations: [] });
       await expect(
         methods.getAgentEventActorSnapshot({
           user: 'actor-head-user',
@@ -4026,7 +4026,7 @@ describe('Conversation Operations', () => {
       );
     });
 
-    it('persists the first actor reconciliation marker and blocks later head commits', async () => {
+    it('retains every actor reconciliation and clears only an explicitly resolved marker', async () => {
       const conversationId = uuidv4();
       await Conversation.create({
         conversationId,
@@ -4093,7 +4093,10 @@ describe('Conversation Operations', () => {
           user: 'actor-reconcile-user',
           conversationId,
         }),
-      ).resolves.toEqual({ state: first.state, reconciliation });
+      ).resolves.toEqual({
+        state: first.state,
+        reconciliations: [reconciliation, { ...reconciliation, invocationId: 'event-later' }],
+      });
       await expect(
         methods.commitAgentEventActorState({
           user: 'actor-reconcile-user',
@@ -4102,9 +4105,65 @@ describe('Conversation Operations', () => {
           checkpoint: { ...checkpoint, checkpointId: 'checkpoint-two' },
         }),
       ).resolves.toEqual({ status: 'stale', state: first.state });
+      await expect(
+        methods.resolveAgentEventActorReconciliation({
+          user: 'actor-reconcile-user',
+          conversationId,
+          invocationId: reconciliation.invocationId,
+          checkpoint: {
+            threadId: conversationId,
+            checkpointId: 'checkpoint-conflict',
+            checkpointNs: 'event-actor/conflict',
+          },
+          resolution: 'checkpoint_verified',
+        }),
+      ).resolves.toBe(false);
+      await expect(
+        methods.resolveAgentEventActorReconciliation({
+          user: 'actor-reconcile-user',
+          conversationId,
+          invocationId: reconciliation.invocationId,
+          checkpoint: {
+            threadId: conversationId,
+            checkpointId: 'checkpoint-conflict',
+            checkpointNs: 'event-actor/conflict',
+          },
+          resolution: 'action_compensated',
+        }),
+      ).resolves.toBe(true);
+      const verified = {
+        ...reconciliation,
+        invocationId: 'event-verified',
+        checkpoint,
+      };
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          user: 'actor-reconcile-user',
+          conversationId,
+          reconciliation: verified,
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.resolveAgentEventActorReconciliation({
+          user: 'actor-reconcile-user',
+          conversationId,
+          invocationId: verified.invocationId,
+          checkpoint,
+          resolution: 'checkpoint_verified',
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.getAgentEventActorSnapshot({
+          user: 'actor-reconcile-user',
+          conversationId,
+        }),
+      ).resolves.toEqual({
+        state: first.state,
+        reconciliations: [{ ...reconciliation, invocationId: 'event-later' }],
+      });
       const visible = await methods.getConvo('actor-reconcile-user', conversationId);
       expect(visible).not.toHaveProperty('agentEventActor');
-      expect(visible).not.toHaveProperty('agentEventActorReconciliation');
+      expect(visible).not.toHaveProperty('agentEventActorReconciliations');
     });
 
     it('admits one cross-replica owner and fences renewal and release by token', async () => {

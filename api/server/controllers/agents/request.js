@@ -50,6 +50,7 @@ const {
   getAgentEventActorSnapshot,
   commitAgentEventActorState,
   recordAgentEventActorReconciliation,
+  resolveAgentEventActorReconciliation,
   isAgentTriggerPrincipalActive,
   isSubagentOwnerAdmissible,
 } = require('~/models');
@@ -1931,6 +1932,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 getSnapshot: getAgentEventActorSnapshot,
                 commitState: commitAgentEventActorState,
                 recordReconciliation: recordAgentEventActorReconciliation,
+                resolveReconciliation: resolveAgentEventActorReconciliation,
               },
             ).then(({ value, execution }) => {
               logger.info('[event-actor] Bound child event completed', {

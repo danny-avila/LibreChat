@@ -51,6 +51,7 @@ export interface AgentEventActorDependencies {
   getSnapshot: ConversationMethods['getAgentEventActorSnapshot'];
   commitState: ConversationMethods['commitAgentEventActorState'];
   recordReconciliation: ConversationMethods['recordAgentEventActorReconciliation'];
+  resolveReconciliation: ConversationMethods['resolveAgentEventActorReconciliation'];
 }
 
 function toHead(actorThreadId: string, state: IAgentEventActorState | null): EventActorHead {
@@ -91,7 +92,7 @@ export async function executeAgentEventActor<T>(
       if (context.signal.aborted) {
         throw context.signal.reason;
       }
-      const snapshot = await deps.getSnapshot({
+      let snapshot = await deps.getSnapshot({
         user: input.user,
         conversationId: input.conversationId,
         ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
@@ -99,9 +100,41 @@ export async function executeAgentEventActor<T>(
       if (snapshot === undefined) {
         throw new Error('Event actor binding is no longer active');
       }
-      if (snapshot.reconciliation != null) {
+      const verified = snapshot.reconciliations.filter(
+        (item) =>
+          snapshot?.state != null &&
+          typeof item.checkpoint.checkpointId === 'string' &&
+          checkpointMatches(snapshot.state, item.checkpoint),
+      );
+      if (verified.length > 0) {
+        await Promise.all(
+          verified.map((item) =>
+            deps.resolveReconciliation({
+              user: input.user,
+              conversationId: input.conversationId,
+              ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+              invocationId: item.invocationId,
+              checkpoint: {
+                threadId: item.checkpoint.threadId,
+                checkpointId: item.checkpoint.checkpointId!,
+                checkpointNs: item.checkpoint.checkpointNs,
+              },
+              resolution: 'checkpoint_verified',
+            }),
+          ),
+        );
+        snapshot = await deps.getSnapshot({
+          user: input.user,
+          conversationId: input.conversationId,
+          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+        });
+        if (snapshot === undefined) {
+          throw new Error('Event actor binding is no longer active');
+        }
+      }
+      if (snapshot.reconciliations.length > 0) {
         throw new Error(
-          `Event actor is blocked on ${snapshot.reconciliation.status} reconciliation`,
+          `Event actor is blocked on ${snapshot.reconciliations.map((item) => item.status).join(', ')} reconciliation`,
         );
       }
       const state = snapshot.state;
@@ -300,7 +333,7 @@ export async function executeAgentEventActor<T>(
       });
     }
     if (
-      snapshot?.reconciliation == null &&
+      snapshot?.reconciliations.length === 0 &&
       snapshot?.state != null &&
       checkpointMatches(snapshot.state, execution.checkpoint) &&
       execution.result != null

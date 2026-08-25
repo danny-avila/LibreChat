@@ -94,37 +94,39 @@ const convoSchema: Schema<IConversation> = new Schema(
       default: undefined,
       select: false,
     },
-    /** Fail-closed record for an applied action whose checkpoint did not become
-     * provably authoritative. Later actor turns remain blocked until reconciled. */
-    agentEventActorReconciliation: {
-      type: {
-        invocationId: { type: String, required: true },
-        status: {
-          type: String,
-          enum: ['commit_conflict', 'commit_indeterminate'],
-          required: true,
-        },
-        checkpoint: {
-          type: {
-            threadId: { type: String, required: true },
-            checkpointId: { type: String, default: undefined },
-            checkpointNs: { type: String, required: true },
+    /** Fail-closed records for applied actions whose checkpoints did not become
+     * provably authoritative. Later actor turns remain blocked until all are reconciled. */
+    agentEventActorReconciliations: {
+      type: [
+        {
+          invocationId: { type: String, required: true },
+          status: {
+            type: String,
+            enum: ['commit_conflict', 'commit_indeterminate'],
+            required: true,
           },
-          _id: false,
-          required: true,
-        },
-        action: {
-          type: {
-            toolName: { type: String, required: true },
-            toolCallId: { type: String, default: undefined },
+          checkpoint: {
+            type: {
+              threadId: { type: String, required: true },
+              checkpointId: { type: String, default: undefined },
+              checkpointNs: { type: String, required: true },
+            },
+            _id: false,
+            required: true,
           },
+          action: {
+            type: {
+              toolName: { type: String, required: true },
+              toolCallId: { type: String, default: undefined },
+            },
+            _id: false,
+            required: true,
+          },
+          error: { type: String, default: undefined },
+          observedAt: { type: Date, required: true },
           _id: false,
-          required: true,
         },
-        error: { type: String, default: undefined },
-        observedAt: { type: Date, required: true },
-      },
-      _id: false,
+      ],
       default: undefined,
       select: false,
     },

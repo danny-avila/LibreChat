@@ -38,7 +38,7 @@ export interface IAgentEventActorReconciliation {
 
 export interface IAgentEventActorSnapshot {
   state: IAgentEventActorState | null;
-  reconciliation?: IAgentEventActorReconciliation;
+  reconciliations: IAgentEventActorReconciliation[];
 }
 
 export interface IAgentEventBindingRecord {
@@ -104,8 +104,8 @@ export interface IConversation extends Document {
   agentEventBinding?: IAgentEventBinding;
   /** Internal event-actor checkpoint head. Excluded from ordinary conversation reads. */
   agentEventActor?: IAgentEventActorState;
-  /** Applied action whose checkpoint authority requires reconciliation. */
-  agentEventActorReconciliation?: IAgentEventActorReconciliation;
+  /** Applied actions whose checkpoint authority requires reconciliation. */
+  agentEventActorReconciliations?: IAgentEventActorReconciliation[];
   assistant_id?: string;
   instructions?: string;
   stop?: string[];

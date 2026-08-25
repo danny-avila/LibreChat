@@ -241,6 +241,14 @@ export interface ConversationMethods {
     tenantId?: string;
     reconciliation: IAgentEventActorReconciliation;
   }): Promise<boolean>;
+  resolveAgentEventActorReconciliation(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    invocationId: string;
+    checkpoint: IAgentEventActorCheckpoint;
+    resolution: 'checkpoint_verified' | 'action_compensated';
+  }): Promise<boolean>;
   reserveSubagentThread(input: {
     user: string;
     conversationId: string;
@@ -444,7 +452,7 @@ export function createConversationMethods(
     };
   }
 
-  /** Reads the private actor head and any fail-closed reconciliation marker. */
+  /** Reads the private actor head and every fail-closed reconciliation marker. */
   async function getAgentEventActorSnapshot(input: {
     user: string;
     conversationId: string;
@@ -459,15 +467,13 @@ export function createConversationMethods(
       ...subagentLeaseTenantFilter(input.tenantId),
       ...activeExpirationFilter<IConversation>(),
     })
-      .select('+agentEventActor +agentEventActorReconciliation')
+      .select('+agentEventActor +agentEventActorReconciliations')
       .lean<IConversation>();
     return conversation == null
       ? undefined
       : {
           state: conversation.agentEventActor ?? null,
-          ...(conversation.agentEventActorReconciliation == null
-            ? {}
-            : { reconciliation: conversation.agentEventActorReconciliation }),
+          reconciliations: conversation.agentEventActorReconciliations ?? [],
         };
   }
 
@@ -503,7 +509,7 @@ export function createConversationMethods(
         conversationId: input.conversationId,
         subagentThread: { $exists: true },
         agentEventBinding: { $exists: true },
-        agentEventActorReconciliation: { $exists: false },
+        'agentEventActorReconciliations.0': { $exists: false },
         ...subagentLeaseTenantFilter(input.tenantId),
         ...activeExpirationFilter<IConversation>(),
         ...expectedFilter,
@@ -538,7 +544,7 @@ export function createConversationMethods(
     };
   }
 
-  /** Persists the first unresolved applied checkpoint conflict and blocks later commits. */
+  /** Persists every unresolved applied checkpoint conflict and blocks later commits. */
   async function recordAgentEventActorReconciliation(input: {
     user: string;
     conversationId: string;
@@ -558,19 +564,73 @@ export function createConversationMethods(
       ...activeExpirationFilter<IConversation>(),
     };
     const recorded = await Conversation.findOneAndUpdate(
-      { ...ownership, agentEventActorReconciliation: { $exists: false } },
-      { $set: { agentEventActorReconciliation: input.reconciliation } },
+      {
+        ...ownership,
+        'agentEventActorReconciliations.invocationId': { $ne: input.reconciliation.invocationId },
+      },
+      { $push: { agentEventActorReconciliations: input.reconciliation } },
       { new: true, timestamps: false },
     )
-      .select('+agentEventActorReconciliation')
+      .select('+agentEventActorReconciliations')
       .lean<IConversation>();
-    if (recorded?.agentEventActorReconciliation != null) {
+    if (
+      recorded?.agentEventActorReconciliations?.some(
+        (item) => item.invocationId === input.reconciliation.invocationId,
+      ) === true
+    ) {
       return true;
     }
-    const existing = await Conversation.findOne(ownership)
-      .select('+agentEventActorReconciliation')
+    const existing = await Conversation.findOne({
+      ...ownership,
+      'agentEventActorReconciliations.invocationId': input.reconciliation.invocationId,
+    })
+      .select('+agentEventActorReconciliations')
       .lean<IConversation>();
-    return existing?.agentEventActorReconciliation != null;
+    return existing != null;
+  }
+
+  /** Clears exactly one retained action after its checkpoint is authoritative or its action was compensated. */
+  async function resolveAgentEventActorReconciliation(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    invocationId: string;
+    checkpoint: IAgentEventActorCheckpoint;
+    resolution: 'checkpoint_verified' | 'action_compensated';
+  }): Promise<boolean> {
+    if (input.checkpoint.threadId !== input.conversationId) {
+      throw new Error('Event actor reconciliation changed its logical thread');
+    }
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const checkpointFilter = {
+      invocationId: input.invocationId,
+      'checkpoint.threadId': input.checkpoint.threadId,
+      'checkpoint.checkpointId': input.checkpoint.checkpointId,
+      'checkpoint.checkpointNs': input.checkpoint.checkpointNs,
+    };
+    const resolved = await Conversation.findOneAndUpdate(
+      {
+        user: input.user,
+        conversationId: input.conversationId,
+        subagentThread: { $exists: true },
+        agentEventBinding: { $exists: true },
+        ...subagentLeaseTenantFilter(input.tenantId),
+        ...activeExpirationFilter<IConversation>(),
+        agentEventActorReconciliations: { $elemMatch: checkpointFilter },
+        ...(input.resolution === 'checkpoint_verified'
+          ? {
+              'agentEventActor.checkpoint.threadId': input.checkpoint.threadId,
+              'agentEventActor.checkpoint.checkpointId': input.checkpoint.checkpointId,
+              'agentEventActor.checkpoint.checkpointNs': input.checkpoint.checkpointNs,
+            }
+          : {}),
+      },
+      { $pull: { agentEventActorReconciliations: checkpointFilter } },
+      { new: true, timestamps: false },
+    )
+      .select('+agentEventActorReconciliations')
+      .lean<IConversation>();
+    return resolved != null;
   }
 
   /** Creates immutable child lineage exactly once without overwriting a concurrent winner. */
@@ -1948,6 +2008,7 @@ export function createConversationMethods(
     getAgentEventActorSnapshot,
     commitAgentEventActorState,
     recordAgentEventActorReconciliation,
+    resolveAgentEventActorReconciliation,
     reserveSubagentThread,
     acquireSubagentThreadLease,
     renewSubagentThreadLease,
