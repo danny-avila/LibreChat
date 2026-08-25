@@ -27,50 +27,6 @@ beforeEach(async () => {
   await mongoose.models.Config.deleteMany({});
 });
 
-describe('base config operations', () => {
-  it('ignore a same-principal tenant config and update only the base config', async () => {
-    await mongoose.models.Config.create([
-      {
-        principalType: PrincipalType.ROLE,
-        principalId: 'BETA',
-        principalModel: PrincipalModel.ROLE,
-        priority: 10,
-        overrides: { cache: false },
-        tenantId: null,
-      },
-      {
-        principalType: PrincipalType.ROLE,
-        principalId: 'BETA',
-        principalModel: PrincipalModel.ROLE,
-        priority: 20,
-        overrides: { cache: false },
-        tenantId: 'tenant-a',
-      },
-    ]);
-
-    await methods.upsertConfig(
-      PrincipalType.ROLE,
-      'BETA',
-      PrincipalModel.ROLE,
-      { cache: true },
-      30,
-      undefined,
-      { baseOnly: true },
-    );
-
-    const base = await methods.findConfigByPrincipal(PrincipalType.ROLE, 'BETA', {
-      baseOnly: true,
-    });
-    const tenant = await mongoose.models.Config.findOne({
-      principalType: PrincipalType.ROLE,
-      principalId: 'BETA',
-      tenantId: 'tenant-a',
-    });
-    expect(base?.priority).toBe(30);
-    expect(tenant?.priority).toBe(20);
-  });
-});
-
 describe('upsertConfig tombstone preservation', () => {
   it('creates a new config document', async () => {
     const result = await methods.upsertConfig(

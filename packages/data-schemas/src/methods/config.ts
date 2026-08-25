@@ -23,7 +23,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
   findConfigByPrincipal: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
-    options?: { includeInactive?: boolean; baseOnly?: boolean },
+    options?: { includeInactive?: boolean },
     session?: ClientSession,
   ) => Promise<IConfig | null>;
   getApplicableConfigs: (
@@ -37,7 +37,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
-    options?: { expectEmpty?: boolean; preservePriority?: boolean; baseOnly?: boolean },
+    options?: { expectEmpty?: boolean; preservePriority?: boolean },
   ) => Promise<IConfig | null>;
   patchConfigFields: (
     principalType: PrincipalType,
@@ -78,17 +78,14 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
   async function findConfigByPrincipal(
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
-    options?: { includeInactive?: boolean; baseOnly?: boolean },
+    options?: { includeInactive?: boolean },
     session?: ClientSession,
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
-    const filter: FilterQuery<IConfig> = {
+    const filter: { principalType: PrincipalType; principalId: string; isActive?: boolean } = {
       principalType,
       principalId: principalId.toString(),
     };
-    if (options?.baseOnly) {
-      filter.tenantId = { $in: [null, undefined] };
-    }
     if (!options?.includeInactive) {
       filter.isActive = true;
     }
@@ -152,7 +149,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
-    options?: { expectEmpty?: boolean; preservePriority?: boolean; baseOnly?: boolean },
+    options?: { expectEmpty?: boolean; preservePriority?: boolean },
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
 
@@ -160,9 +157,6 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       principalType,
       principalId: principalId.toString(),
     };
-    if (options?.baseOnly) {
-      query.tenantId = { $in: [null, undefined] };
-    }
     if (options?.expectEmpty) {
       query.$and = [
         { $or: [{ overrides: { $eq: {} } }, { overrides: { $exists: false } }] },
@@ -196,7 +190,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
           return null;
         }
         return await Config.findOneAndUpdate(
-          query,
+          { principalType, principalId: principalId.toString() },
           { $set: update.$set, $inc: update.$inc },
           { new: true, ...(session ? { session } : {}) },
         );

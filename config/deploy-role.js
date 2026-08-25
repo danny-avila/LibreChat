@@ -2,7 +2,12 @@ const fs = require('fs');
 const path = require('path');
 const { z } = require('zod');
 const { SYSTEM_TENANT_ID } = require('@librechat/data-schemas');
-const { configSchema, permissionsSchema, SystemRoles } = require('librechat-data-provider');
+const {
+  CacheKeys,
+  configSchema,
+  permissionsSchema,
+  SystemRoles,
+} = require('librechat-data-provider');
 
 const systemRoleNames = new Set(Object.values(SystemRoles));
 
@@ -152,8 +157,9 @@ async function main() {
   require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
   const mongoose = require('mongoose');
   const { createModels, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
-  const { createRoleAdminService } = require('@librechat/api');
+  const { createBaseRoleAdminService, createRoleAdminService } = require('@librechat/api');
   const { invalidateConfigCaches } = require('~/server/services/Config');
+  const getLogStores = require('~/cache/getLogStores');
   const db = require('~/models');
   const connect = require('./connect');
 
@@ -166,29 +172,20 @@ async function main() {
     const definitions = loadRoleDefinitions(args);
     const scope = getDeploymentScope(args);
     await connect();
-    const baseOnly = { baseOnly: true };
-    const roleDb = scope.base
-      ? {
-          getRoleByName: (name, fields) => db.getRoleByName(name, fields, baseOnly),
-          createRoleByName: (role) => db.createRoleByName(role, baseOnly),
-          updateRoleByName: (name, updates) => db.updateRoleByName(name, updates, baseOnly),
-          findConfigByPrincipal: (type, id, options, session) =>
-            db.findConfigByPrincipal(type, id, { ...options, ...baseOnly }, session),
-          upsertConfig: (type, id, model, overrides, priority, session, options) =>
-            db.upsertConfig(type, id, model, overrides, priority, session, {
-              ...options,
-              ...baseOnly,
-            }),
-        }
-      : db;
-    const service = createRoleAdminService({
-      getRoleByName: roleDb.getRoleByName,
-      createRoleByName: roleDb.createRoleByName,
-      updateRoleByName: roleDb.updateRoleByName,
-      findConfigByPrincipal: roleDb.findConfigByPrincipal,
-      upsertConfig: roleDb.upsertConfig,
-      invalidateConfigCaches: () => invalidateConfigCaches(scope.tenantId),
-    });
+    const invalidateCaches = () => invalidateConfigCaches(scope.tenantId);
+    const service = scope.base
+      ? createBaseRoleAdminService(mongoose, {
+          invalidateRoleCache: (name) => getLogStores(CacheKeys.ROLES).set(name, null),
+          invalidateConfigCaches: invalidateCaches,
+        })
+      : createRoleAdminService({
+          getRoleByName: db.getRoleByName,
+          createRoleByName: db.createRoleByName,
+          updateRoleByName: db.updateRoleByName,
+          findConfigByPrincipal: db.findConfigByPrincipal,
+          upsertConfig: db.upsertConfig,
+          invalidateConfigCaches: invalidateCaches,
+        });
     const deploy = async () => {
       for (const definition of definitions) {
         await deployRole(definition, service);

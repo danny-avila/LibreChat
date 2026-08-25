@@ -10,7 +10,7 @@ import {
 } from 'librechat-data-provider';
 import type { IRole, IUser, RolePermissions } from '..';
 import { _resetStrictCache } from '../models/plugins/tenantIsolation';
-import { runAsSystem, tenantStorage } from '~/config/tenantContext';
+import { tenantStorage } from '~/config/tenantContext';
 import { createRoleMethods } from './role';
 import { createModels } from '../models';
 
@@ -83,50 +83,6 @@ beforeEach(async () => {
   mockCache.set.mockReset();
   mockCache.delete.mockReset();
   delete process.env.AUTH_USER_CACHE_MODE;
-});
-
-describe('base role operations', () => {
-  it('ignore a same-named tenant role and update only the base role', async () => {
-    await runAsSystem(async () => {
-      await Role.create([
-        { name: 'BETA', description: 'base', permissions: {}, tenantId: null },
-        { name: 'BETA', description: 'tenant', permissions: {}, tenantId: 'tenant-a' },
-      ]);
-    });
-
-    const role = await runAsSystem(() => getRoleByName('BETA', null, { baseOnly: true }));
-    expect(role.description).toBe('base');
-
-    await runAsSystem(() =>
-      updateRoleByName('BETA', { description: 'updated' }, { baseOnly: true }),
-    );
-
-    const [base, tenant] = await runAsSystem(async () =>
-      Promise.all([
-        Role.findOne({ name: 'BETA', tenantId: { $in: [null, undefined] } }),
-        Role.findOne({ name: 'BETA', tenantId: 'tenant-a' }),
-      ]),
-    );
-    expect(base?.description).toBe('updated');
-    expect(tenant?.description).toBe('tenant');
-    expect(mockCache.set).toHaveBeenCalledWith('BETA', null);
-  });
-
-  it('does not report a committed role update as failed when cache invalidation fails', async () => {
-    await runAsSystem(async () => {
-      await Role.create({ name: 'BETA', description: 'before', permissions: {} });
-    });
-    mockCache.set.mockRejectedValueOnce(new Error('cache unavailable'));
-
-    await expect(
-      runAsSystem(() => updateRoleByName('BETA', { description: 'after' }, { baseOnly: true })),
-    ).resolves.toMatchObject({ description: 'after' });
-    await expect(
-      runAsSystem(async () =>
-        Role.findOne({ name: 'BETA', tenantId: { $in: [null, undefined] } }).lean(),
-      ),
-    ).resolves.toMatchObject({ description: 'after' });
-  });
 });
 
 describe('findRolesByNames', () => {
