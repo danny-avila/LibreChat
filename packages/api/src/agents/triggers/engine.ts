@@ -75,11 +75,6 @@ export interface AgentTriggerOrderingBlock {
   leaseUntil?: Date;
 }
 
-export type AgentTriggerBatchMember = Pick<
-  AgentTriggerDeliveryRecord,
-  'id' | 'deliveryKey' | 'envelope'
->;
-
 export interface AgentTriggerDeliveryStore {
   claimNext: (input: {
     workerId: string;
@@ -92,7 +87,7 @@ export interface AgentTriggerDeliveryStore {
   ) => Promise<AgentTriggerOrderingBlock | null>;
   getBatch: (
     delivery: Pick<AgentTriggerDeliveryRecord, 'id' | 'batchMemberIds'>,
-  ) => Promise<AgentTriggerBatchMember[]>;
+  ) => Promise<Array<Pick<AgentTriggerDeliveryRecord, 'id' | 'deliveryKey' | 'envelope'>>>;
   release: (input: {
     id: string;
     workerId: string;

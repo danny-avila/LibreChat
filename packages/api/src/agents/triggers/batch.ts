@@ -1,7 +1,11 @@
-import type { AgentTriggerBatchMember, AgentTriggerDeliveryRecord } from './engine';
 import type { AgentContinueTriggerEnvelope, AgentTriggerEvent } from './envelope';
 import { AgentTriggerDispatchError } from './dispatch';
 import { parseAgentTriggerEnvelope } from './envelope';
+
+interface AgentTriggerBatchDelivery {
+  deliveryKey: string;
+  envelope: unknown;
+}
 
 interface StructuredBatchEvent {
   deliveryId: string;
@@ -41,8 +45,8 @@ function compareEvents(
 
 /** Builds one deterministic, structured model turn while retaining every source event. */
 export function createAgentTriggerBatchEnvelope(
-  rootDelivery: AgentTriggerDeliveryRecord,
-  members: AgentTriggerBatchMember[],
+  rootDelivery: AgentTriggerBatchDelivery,
+  members: AgentTriggerBatchDelivery[],
 ): AgentContinueTriggerEnvelope {
   const parsedRoot = parseAgentTriggerEnvelope(rootDelivery.envelope);
   if (
