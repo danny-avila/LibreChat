@@ -65,11 +65,14 @@ services:
 
   admin-panel:
     container_name: admin-panel-v2
-    # Reuse the image the production stack already built; its source repo
-    # (../libre-admin-panel) is not part of this clone.
-    image: libre-admin-panel-dstlab:latest
+    # Built from ../libre-admin-panel (branch codex/clients-tab): adds the
+    # Clients tab that renders JetCode chats via the platform's internal API.
+    image: libre-admin-panel-dstlab:clients
     pull_policy: never
     ports: !reset []
+    environment:
+      # Platform control-plane, reachable only on the stack-internal network.
+      - JETCODE_PLATFORM_URL=http://jetcodem-app:8080
     networks:
       - default
       - edge
