@@ -1069,7 +1069,7 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
-    test('saveRunSteps accepts final provider evidence only while a terminal host action is pending', async () => {
+    test('terminal host settlement retains evidence and waits for the provider drain fence', async () => {
       if (!ioredisClient) {
         return;
       }
@@ -1079,16 +1079,13 @@ describe('RedisJobStore Integration Tests', () => {
       await store.initialize();
 
       const streamId = `terminal-runsteps-${Date.now()}`;
-      const job = await store.createJob(streamId, 'user-1', streamId);
+      const providerExecutionId = 'terminal-runsteps-provider';
+      const job = await store.createJob(streamId, 'user-1', streamId, undefined, {
+        providerExecutionId,
+      });
       await expect(
-        store.transitionStatus(streamId, {
-          from: 'running',
-          to: 'aborted',
-          expectCreatedAt: job.createdAt,
-          patch: { completedAt: Date.now(), terminalHostActionPending: true },
-        }),
+        store.beginProviderExecution(streamId, job.createdAt, providerExecutionId),
       ).resolves.toBe(true);
-
       const completedStep = {
         id: 'step-terminal',
         index: 0,
@@ -1097,7 +1094,23 @@ describe('RedisJobStore Integration Tests', () => {
         stepDetails: { type: StepTypes.TOOL_CALLS, tool_calls: [] },
       } as Agents.RunStep;
       await store.saveRunSteps(streamId, [completedStep], job.createdAt);
+      await expect(
+        store.transitionStatus(streamId, {
+          from: 'running',
+          to: 'aborted',
+          expectCreatedAt: job.createdAt,
+          patch: { completedAt: Date.now(), terminalHostActionPending: true },
+        }),
+      ).resolves.toBe(true);
+      await expect(store.getTerminalHostActionJobs?.()).resolves.toEqual([]);
       await expect(store.getRunSteps(streamId, job.createdAt)).resolves.toEqual([completedStep]);
+
+      await expect(
+        store.markProviderExecutionDrained(streamId, job.createdAt, providerExecutionId),
+      ).resolves.toBe(true);
+      await expect(store.getTerminalHostActionJobs?.()).resolves.toEqual([
+        expect.objectContaining({ streamId, providerDrained: true }),
+      ]);
 
       await store.clearTerminalHostAction?.(streamId, job.createdAt);
       const lateStep = { ...completedStep, id: 'step-too-late' };

@@ -261,6 +261,48 @@ describe('agent event terminal outcomes', () => {
     );
   });
 
+  it.each(['legacy', 'function'] as const)(
+    'does not treat a failed %s foreground call as applied',
+    async (shape) => {
+      const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+      const handler = createAgentEventTerminalHandler({ settleAgentTriggerHandlingOutcome });
+      const step = completedToolStep();
+      step.status = 'failed';
+      if (shape === 'function') {
+        if (step.stepDetails.type !== 'tool_calls') {
+          throw new Error('Expected tool evidence');
+        }
+        step.stepDetails.tool_calls = [
+          {
+            id: 'call-failed',
+            type: 'function',
+            function: {
+              name: 'submit_move_mcp_speed-chess',
+              arguments: { gameId: 'game-1' },
+              output: 'Error: [submit_move] tool call failed: unavailable',
+            },
+          } as Agents.AgentToolCall,
+        ];
+      } else if (step.stepDetails.type === 'tool_calls' && step.stepDetails.tool_calls?.[0]) {
+        const call = step.stepDetails.tool_calls[0];
+        if ('function' in call) {
+          throw new Error('Expected legacy tool evidence');
+        }
+        call.output = 'Error: [submit_move] tool call failed: unavailable';
+      }
+
+      await handler(
+        'conversation-1',
+        job({ agentEventExpectedAction: { toolName: 'submit_move' } }),
+        [step],
+      );
+
+      expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'completed_no_action' }),
+      );
+    },
+  );
+
   it('does not infer that a source action was applied without an explicit evidence contract', async () => {
     const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
     const handler = createAgentEventTerminalHandler({ settleAgentTriggerHandlingOutcome });

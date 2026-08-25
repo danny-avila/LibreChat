@@ -2519,8 +2519,14 @@ export class RedisJobStore implements IJobStoreV2 {
       expectCreatedAt != null ? String(expectCreatedAt) : '',
       String(ttl),
       terminal ? '1' : '0',
-      String(this.ttl.chunksAfterComplete),
-      String(this.ttl.runStepsAfterComplete),
+      String(
+        terminal && patch?.terminalHostActionPending === true ? ttl : this.ttl.chunksAfterComplete,
+      ),
+      String(
+        terminal && patch?.terminalHostActionPending === true
+          ? ttl
+          : this.ttl.runStepsAfterComplete,
+      ),
       String(this.parkedRecoveryTtlSeconds()),
       String(GENERATION_EPOCH_GRACE_TTL_S),
       String(args.steerReceiptTtlSeconds ?? 0),
@@ -2753,11 +2759,18 @@ export class RedisJobStore implements IJobStoreV2 {
     // The durable hash field is the source of truth; a stale set entry (job reaped, or the
     // marker already cleared) is filtered out and self-heals via reconcileJobMembership.
     const stale: string[] = [];
-    const pending: SerializableJobData[] = [];
+    const held: SerializableJobData[] = [];
+    const ready: SerializableJobData[] = [];
     for (let i = 0; i < streamIds.length; i++) {
       const job = jobs[i];
       if (job != null && job.terminalHostActionPending === true) {
-        pending.push(job);
+        held.push(job);
+        // A terminal provider can still be committing its last tool result.
+        // The provider owner persists the complete run-step snapshot before it
+        // flips this fence, so another replica must not settle earlier.
+        if (job.providerDrained !== false) {
+          ready.push(job);
+        }
       } else {
         stale.push(streamIds[i]);
       }
@@ -2768,14 +2781,16 @@ export class RedisJobStore implements IJobStoreV2 {
     // Enumerating IS the retry attempt: extend each pending job's TTL so unacknowledged
     // host-action evidence outlives a host dependency (e.g. Mongo) that stays unreachable
     // longer than the retention window. A deployment that stops sweeping lets it age out.
-    if (pending.length > 0 && this.ttl.requiresAction > 0) {
+    if (held.length > 0 && this.ttl.requiresAction > 0) {
       await Promise.all(
-        pending.map((job) =>
-          this.redis.expire(KEYS.job(job.streamId), this.ttl.requiresAction).catch(() => undefined),
+        held.flatMap((job) =>
+          [KEYS.job(job.streamId), KEYS.chunks(job.streamId), KEYS.runSteps(job.streamId)].map(
+            (key) => this.redis.expire(key, this.ttl.requiresAction).catch(() => undefined),
+          ),
         ),
       );
     }
-    return pending;
+    return ready;
   }
 
   async clearTerminalHostAction(streamId: string, expectedCreatedAt?: number): Promise<void> {

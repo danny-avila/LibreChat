@@ -990,6 +990,10 @@ describe('RedisJobStore', () => {
     expect(sadd.mock.invocationCallOrder[0]).toBeLessThan(
       evalTransition.mock.invocationCallOrder[0],
     );
+    const transitionCall = evalTransition.mock.calls[0];
+    expect(transitionCall[15]).toBe('86400');
+    expect(transitionCall[17]).toBe('86400');
+    expect(transitionCall[18]).toBe('86400');
   });
 
   test('guards asynchronous content cleanup against a replacement epoch', async () => {

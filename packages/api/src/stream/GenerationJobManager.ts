@@ -3586,10 +3586,9 @@ class GenerationJobManagerClass {
         claimedTerminalJob?.createdAt === createdAt &&
         claimedTerminalJob.terminalHostActionPending === true
       ) {
-        retainTerminalHostEvidence = !(await this.runTerminalHostActionHandler(
-          streamId,
-          claimedTerminalJob,
-        ));
+        retainTerminalHostEvidence =
+          claimedTerminalJob.providerDrained === false ||
+          !(await this.runTerminalHostActionHandler(streamId, claimedTerminalJob));
       }
       if (status === 'error' && !this.terminalErrorPublicationSuppressions.has(claim)) {
         const terminalError = error ?? 'Generation failed';
@@ -5602,7 +5601,9 @@ class GenerationJobManagerClass {
     const eventType = eventObj.event as string | undefined;
     const eventData = eventObj.data;
     if (
-      (eventType === 'on_run_step' || eventType === 'on_run_step_completed') &&
+      (eventType === 'on_run_step' ||
+        eventType === 'on_run_step_completed' ||
+        eventType === 'on_run_step_closed') &&
       eventData != null &&
       typeof eventData === 'object'
     ) {
@@ -6201,11 +6202,14 @@ class GenerationJobManagerClass {
 
   /**
    * Extract and save a run step from its wire envelope. Completed events wrap
-   * the authoritative step under `result`; live step events carry it directly.
+   * the authoritative step under `result`; live and closed events carry their
+   * payload directly. The terminal close is the authoritative execution status:
+   * a tool-end payload may contain an error output even though the step closes
+   * as failed.
    */
   private saveRunStepFromEvent(
     streamId: string,
-    eventType: 'on_run_step' | 'on_run_step_completed',
+    eventType: 'on_run_step' | 'on_run_step_completed' | 'on_run_step_closed',
     data: Record<string, unknown>,
     expectedCreatedAt: number,
   ): void {
@@ -6222,6 +6226,31 @@ class GenerationJobManagerClass {
 
     if (eventType === 'on_run_step') {
       this.accumulateRunStep(streamId, candidate as Agents.RunStep, expectedCreatedAt);
+      return;
+    }
+
+    if (eventType === 'on_run_step_closed') {
+      const closed = candidate as Agents.RunStepClosedEvent;
+      if (
+        closed.status !== 'completed' &&
+        closed.status !== 'cancelled' &&
+        closed.status !== 'failed'
+      ) {
+        return;
+      }
+      const bufferState = this.runStepBuffers?.get(streamId);
+      const existingStep =
+        bufferState?.createdAt === expectedCreatedAt
+          ? bufferState.steps.find((step) => step.id === closed.id)
+          : undefined;
+      if (existingStep == null) {
+        return;
+      }
+      this.accumulateRunStep(
+        streamId,
+        { ...existingStep, status: closed.status },
+        expectedCreatedAt,
+      );
       return;
     }
 
@@ -6631,6 +6660,17 @@ class GenerationJobManagerClass {
       return false;
     }
 
+    const observedJob = await this.jobStore.getJob(streamId);
+    if (
+      observedJob?.createdAt === expectedCreatedAt &&
+      observedJob.providerExecutionId === providerExecutionId
+    ) {
+      // `providerDrained` is also the cross-replica host-settlement readiness
+      // fence. Flush the complete generation-fenced run-step snapshot before
+      // advertising that no more provider evidence can arrive.
+      await this.persistAgentEventRunStepEvidence(streamId, observedJob);
+    }
+
     const [marked, recorded] = await Promise.all([
       this.jobStore.markProviderExecutionDrained?.(
         streamId,
@@ -6641,6 +6681,15 @@ class GenerationJobManagerClass {
         Promise.resolve(false),
     ]);
     const job = await this.jobStore.getJob(streamId);
+    if (
+      marked &&
+      job?.createdAt === expectedCreatedAt &&
+      job.providerExecutionId === providerExecutionId &&
+      job.providerDrained === true &&
+      job.terminalHostActionPending === true
+    ) {
+      await this.runTerminalHostActionHandler(streamId, job);
+    }
     if (
       marked &&
       recorded &&
@@ -7481,7 +7530,7 @@ class GenerationJobManagerClass {
         // successful ack prevents duplicate work. The terminal SSE relay below is
         // separately idempotent (emitError's errorEvent flag) and always runs so a
         // loser-replica subscriber still gets a terminal event.
-        if (job.terminalHostActionPending === true) {
+        if (job.terminalHostActionPending === true && job.providerDrained !== false) {
           await this.runApprovalExpiredHandler(streamId, job);
         }
         await this.notifyApprovalExpiredRuntime(streamId, job.createdAt, runtime);
@@ -7492,7 +7541,8 @@ class GenerationJobManagerClass {
         job != null &&
         job.status !== 'running' &&
         job.status !== 'requires_action' &&
-        job.terminalHostActionPending === true
+        job.terminalHostActionPending === true &&
+        job.providerDrained !== false
       ) {
         await this.runTerminalHostActionHandler(streamId, job);
         changed = this.releaseJobOwnership(streamId, job.createdAt) || changed;

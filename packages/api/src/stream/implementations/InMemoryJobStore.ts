@@ -1046,7 +1046,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
     const pending: SerializableJobData[] = [];
     const now = Date.now();
     for (const job of this.jobs.values()) {
-      if (job.terminalHostActionPending === true) {
+      if (job.terminalHostActionPending === true && job.providerDrained !== false) {
         // Enumerating IS the retry attempt: refresh retention so evidence outlives a host
         // dependency that is unreachable for longer than the retention window.
         job.terminalHostActionRefreshedAt = now;

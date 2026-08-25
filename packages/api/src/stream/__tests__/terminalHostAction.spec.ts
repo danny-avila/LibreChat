@@ -89,6 +89,77 @@ describe('GenerationJobManager terminal host actions', () => {
     );
   });
 
+  it('waits for the provider evidence fence and retains a failed tool close', async () => {
+    const handler = jest.fn().mockResolvedValue(undefined);
+    manager.setTerminalHostActionHandler(handler);
+    const streamId = 'conversation-provider-evidence';
+    const job = await manager.createJob(streamId, 'user-1', streamId, {
+      initialMetadata: {
+        agentEventDeliveryKey: 'trigger_provider_evidence',
+      },
+    });
+    const providerExecutionId = job.metadata.providerExecutionId!;
+    await expect(
+      manager.beginProviderExecution(streamId, job.createdAt, providerExecutionId),
+    ).resolves.toBe(true);
+    await manager.emitChunk(streamId, {
+      event: 'on_run_step',
+      data: {
+        id: 'step-failed',
+        index: 0,
+        type: 'tool_calls',
+        status: 'in_progress',
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-failed', name: 'submit_move', args: {} }],
+        },
+      },
+    });
+    await manager.emitChunk(streamId, {
+      event: 'on_run_step_completed',
+      data: {
+        result: {
+          id: 'step-failed',
+          index: 0,
+          type: 'tool_call',
+          tool_call: {
+            id: 'call-failed',
+            name: 'submit_move',
+            output: 'Error: [submit_move] tool call failed: unavailable',
+          },
+        },
+      },
+    });
+    await manager.emitChunk(streamId, {
+      event: 'on_run_step_closed',
+      data: {
+        id: 'step-failed',
+        index: 0,
+        type: 'tool_calls',
+        status: 'failed',
+        closed_at: Date.now(),
+      },
+    });
+
+    await expect(manager.completeJob(streamId, undefined, job.createdAt)).resolves.toBe(true);
+    expect(handler).not.toHaveBeenCalled();
+    await expect(store.getJob(streamId)).resolves.toMatchObject({
+      providerDrained: false,
+      terminalHostActionPending: true,
+    });
+
+    await expect(
+      manager.markProviderExecutionDrained(streamId, job.createdAt, providerExecutionId),
+    ).resolves.toBe(true);
+    expect(handler).toHaveBeenCalledWith(
+      streamId,
+      expect.objectContaining({ providerDrained: true }),
+      [expect.objectContaining({ id: 'step-failed', status: 'failed' })],
+      expect.any(Array),
+    );
+    await expect(store.getJob(streamId)).resolves.not.toHaveProperty('terminalHostActionPending');
+  });
+
   it('serializes run-step snapshots so an earlier write cannot erase completion evidence', async () => {
     const handler = jest.fn().mockResolvedValue(undefined);
     manager.setTerminalHostActionHandler(handler);
