@@ -812,6 +812,32 @@ export function createAgentTriggerDeliveryMethods(
     });
   }
 
+  async function propagateBatchHandling(
+    root: Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'batchMemberIds' | 'handling'>,
+  ): Promise<void> {
+    if (root._id == null || root.handling == null || !root.batchMemberIds?.length) {
+      return;
+    }
+    const status = root.handling.status;
+    await Delivery().updateMany(
+      {
+        _id: { $in: root.batchMemberIds },
+        orderingKey: root.orderingKey,
+        $or:
+          status === 'started'
+            ? [
+                { 'handling.status': 'started' },
+                { 'handling.status': { $exists: false } },
+              ]
+            : [
+                { 'handling.status': { $in: ['started', status] } },
+                { 'handling.status': { $exists: false } },
+              ],
+      },
+      { $set: { handling: root.handling } },
+    );
+  }
+
   async function settleBatchMembers(
     root: Pick<
       IAgentTriggerDelivery,
@@ -898,6 +924,17 @@ export function createAgentTriggerDeliveryMethods(
       });
       if (settledCount !== memberIds.length) {
         throw new Error('Not every agent trigger batch receipt could be settled');
+      }
+      if (input.status === 'succeeded' && root.handling != null) {
+        const authoritative = await Delivery()
+          .findById(root._id)
+          .select('_id orderingKey batchMemberIds handling')
+          .lean<
+            Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'batchMemberIds' | 'handling'>
+          >();
+        if (authoritative != null) {
+          await propagateBatchHandling(authoritative);
+        }
       }
     }
     await Delivery().updateOne(
@@ -1120,28 +1157,7 @@ export function createAgentTriggerDeliveryMethods(
       authoritative = existing;
     }
 
-    if (
-      authoritative._id != null &&
-      authoritative.handling != null &&
-      authoritative.batchMemberIds?.length
-    ) {
-      await Delivery().updateMany(
-        {
-          _id: { $in: authoritative.batchMemberIds },
-          orderingKey: authoritative.orderingKey,
-          'handling.status': { $in: ['started', input.status] },
-          'handling.conversationId': input.conversationId,
-          'handling.generationCreatedAt': input.generationCreatedAt,
-        },
-        {
-          $set: terminalHandling,
-          $unset: {
-            ...(error == null && { 'handling.error': 1 }),
-            ...(input.action == null && { 'handling.action': 1 }),
-          },
-        },
-      );
-    }
+    await propagateBatchHandling(authoritative);
     return true;
   }
 

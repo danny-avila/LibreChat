@@ -65,7 +65,23 @@ describe('GenerationJobManager terminal host actions', () => {
   it('retains a failed host action and lets a later cleanup owner retry it', async () => {
     manager.setTerminalHostActionHandler(jest.fn().mockRejectedValue(new Error('mongo down')));
     const job = await manager.createJob('conversation-2', 'user-1', 'conversation-2', {
-      initialMetadata: { agentEventDeliveryKey: 'trigger_2' },
+      initialMetadata: {
+        agentEventDeliveryKey: 'trigger_2',
+        agentEventExpectedAction: { toolName: 'submit_move' },
+      },
+    });
+    await manager.emitChunk('conversation-2', {
+      event: 'on_run_step_completed',
+      data: {
+        id: 'step-2',
+        index: 0,
+        type: 'tool_calls',
+        status: 'completed',
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-2', name: 'submit_move', output: 'ok' }],
+        },
+      },
     });
     await manager.completeJob('conversation-2', undefined, job.createdAt);
     await expect(store.getJob('conversation-2')).resolves.toMatchObject({
@@ -83,9 +99,34 @@ describe('GenerationJobManager terminal host actions', () => {
     expect(recovered).toHaveBeenCalledWith(
       'conversation-2',
       expect.objectContaining({ createdAt: job.createdAt, agentEventDeliveryKey: 'trigger_2' }),
-      [],
+      [expect.objectContaining({ id: 'step-2', status: 'completed' })],
     );
     await expect(store.getJob('conversation-2')).resolves.not.toHaveProperty(
+      'terminalHostActionPending',
+    );
+  });
+
+  it('marks an aborted event generation for terminal handling', async () => {
+    const handler = jest.fn().mockResolvedValue(undefined);
+    manager.setTerminalHostActionHandler(handler);
+    const job = await manager.createJob('conversation-3', 'user-1', 'conversation-3', {
+      initialMetadata: { agentEventDeliveryKey: 'trigger_3' },
+    });
+
+    await expect(
+      manager.abortJob('conversation-3', { expectedCreatedAt: job.createdAt }),
+    ).resolves.toMatchObject({ success: true });
+
+    expect(handler).toHaveBeenCalledWith(
+      'conversation-3',
+      expect.objectContaining({
+        createdAt: job.createdAt,
+        agentEventDeliveryKey: 'trigger_3',
+        status: 'aborted',
+      }),
+      [],
+    );
+    await expect(store.getJob('conversation-3')).resolves.not.toHaveProperty(
       'terminalHostActionPending',
     );
   });

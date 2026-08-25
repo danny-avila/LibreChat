@@ -3274,6 +3274,19 @@ class GenerationJobManagerClass {
     ]);
   }
 
+  private async persistAgentEventRunStepEvidence(
+    streamId: string,
+    job: Pick<SerializableJobData, 'createdAt' | 'agentEventDeliveryKey'>,
+  ): Promise<void> {
+    if (job.agentEventDeliveryKey == null) {
+      return;
+    }
+    const buffered = this.runStepBuffers?.get(streamId);
+    if (buffered?.createdAt === job.createdAt && this.jobStore.saveRunSteps != null) {
+      await this.jobStore.saveRunSteps(streamId, buffered.steps, job.createdAt);
+    }
+  }
+
   async claimTerminalJob(
     streamId: string,
     status: TerminalJobClaim['status'],
@@ -3339,12 +3352,7 @@ class GenerationJobManagerClass {
     const runtime = observedRuntime?.createdAt === createdAt ? observedRuntime : undefined;
     const terminalError = status === 'error' ? (error ?? 'Generation failed') : undefined;
     await this.flushCoalescedStreamBuffers(streamId);
-    if (jobData.agentEventDeliveryKey != null) {
-      const buffered = this.runStepBuffers?.get(streamId);
-      if (buffered?.createdAt === createdAt && this.jobStore.saveRunSteps != null) {
-        await this.jobStore.saveRunSteps(streamId, buffered.steps, createdAt);
-      }
-    }
+    await this.persistAgentEventRunStepEvidence(streamId, jobData);
     const completedAt = Date.now();
     const drainedSteers = await this.jobStore.transitionStatusAndDrainSteers(streamId, {
       from: sourceStatus,
@@ -3557,6 +3565,7 @@ class GenerationJobManagerClass {
         ? claimedRuntime
         : undefined;
     let cleanupError: unknown;
+    let retainTerminalHostEvidence = false;
 
     // Error jobs stay durable long enough for late subscribers to receive the
     // stored error. A publication failure must never bypass the finally cleanup.
@@ -3566,7 +3575,10 @@ class GenerationJobManagerClass {
         claimedTerminalJob?.createdAt === createdAt &&
         claimedTerminalJob.terminalHostActionPending === true
       ) {
-        await this.runTerminalHostActionHandler(streamId, claimedTerminalJob);
+        retainTerminalHostEvidence = !(await this.runTerminalHostActionHandler(
+          streamId,
+          claimedTerminalJob,
+        ));
       }
       if (status === 'error' && !this.terminalErrorPublicationSuppressions.has(claim)) {
         const terminalError = error ?? 'Generation failed';
@@ -3617,6 +3629,7 @@ class GenerationJobManagerClass {
       }
     } catch (err) {
       cleanupError = err;
+      retainTerminalHostEvidence = true;
     } finally {
       if (runtime && this.runtimeState.get(streamId) === runtime) {
         this.releaseAbortSubscription(runtime);
@@ -3629,8 +3642,10 @@ class GenerationJobManagerClass {
           runtime.startupTelemetry?.end('completed_without_delta');
         }
         runtime.startupTelemetry = undefined;
-        this.jobStore.clearContentState(streamId, createdAt);
-        this.runStepBuffers?.delete(streamId);
+        if (!retainTerminalHostEvidence) {
+          this.jobStore.clearContentState(streamId, createdAt);
+          this.runStepBuffers?.delete(streamId);
+        }
         this.replayEventWriteQueues.delete(streamId);
         this.tokenUsageWriteQueues.delete(streamId);
         if (status !== 'error' && this._cleanupOnComplete) {
@@ -3890,6 +3905,7 @@ class GenerationJobManagerClass {
      * claimTerminalJob), so it must drain the coalescers itself — and ahead of
      * the content snapshot, so a chunk-log reconstruction sees the window tail. */
     await this.flushCoalescedStreamBuffers(streamId);
+    await this.persistAgentEventRunStepEvidence(streamId, jobData);
     /** Snapshot before claiming terminal state. This is non-destructive: if a
      * same-epoch approval resume wins the later CAS, its content and steer
      * queue remain fully owned by that resumed run. */
@@ -3931,6 +3947,10 @@ class GenerationJobManagerClass {
           completedAt: terminalPersistenceStartedAt,
           terminalPersistencePending: true,
           terminalPersistenceStartedAt,
+          ...(jobData.agentEventDeliveryKey != null &&
+            this.terminalHostActionHandler != null && {
+              terminalHostActionPending: true,
+            }),
         },
       });
       if (drainedSteers != null) {
@@ -7228,7 +7248,7 @@ class GenerationJobManagerClass {
   private async runTerminalHostActionHandler(
     streamId: string,
     job: SerializableJobData,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       if (job.agentEventDeliveryKey != null) {
         await this.terminalHostActionHandler?.(
@@ -7238,8 +7258,15 @@ class GenerationJobManagerClass {
         );
       }
       await this.jobStore.clearTerminalHostAction?.(streamId, job.createdAt);
+      this.jobStore.clearContentState(streamId, job.createdAt);
+      const buffered = this.runStepBuffers?.get(streamId);
+      if (buffered?.createdAt === job.createdAt) {
+        this.runStepBuffers?.delete(streamId);
+      }
+      return true;
     } catch (err) {
       logger.error(`[GenerationJobManager] Terminal host hook failed: ${streamId}`, err);
+      return false;
     }
   }
 

@@ -20,13 +20,24 @@ interface CompletedToolEvidence {
 
 const MAX_RECEIPT_ID_LENGTH = 256;
 
+function isBackgroundLaunchReceipt(value: unknown): boolean {
+  const parsed = parseArguments(value);
+  return (
+    parsed != null &&
+    typeof parsed === 'object' &&
+    !Array.isArray(parsed) &&
+    (parsed as Record<string, unknown>).status === 'running' &&
+    typeof (parsed as Record<string, unknown>).background_task_id === 'string'
+  );
+}
+
 function toolEvidence(step: Agents.RunStep): CompletedToolEvidence[] {
   if (step.status !== 'completed' || step.stepDetails.type !== 'tool_calls') {
     return [];
   }
   return (step.stepDetails.tool_calls ?? []).flatMap((call) => {
     if ('function' in call) {
-      if (call.function.output == null) {
+      if (call.function.output == null || isBackgroundLaunchReceipt(call.function.output)) {
         return [];
       }
       return [
@@ -37,7 +48,11 @@ function toolEvidence(step: Agents.RunStep): CompletedToolEvidence[] {
         },
       ];
     }
-    if (call.output == null || call.inputValidationError === true) {
+    if (
+      call.output == null ||
+      call.inputValidationError === true ||
+      isBackgroundLaunchReceipt(call.output)
+    ) {
       return [];
     }
     return [
@@ -62,7 +77,14 @@ function parseArguments(value: unknown): unknown {
 }
 
 function containsSubset(value: unknown, subset: unknown): boolean {
-  if (subset == null || typeof subset !== 'object' || Array.isArray(subset)) {
+  if (Array.isArray(subset)) {
+    return (
+      Array.isArray(value) &&
+      value.length === subset.length &&
+      subset.every((expected, index) => containsSubset(value[index], expected))
+    );
+  }
+  if (subset == null || typeof subset !== 'object') {
     return Object.is(value, subset);
   }
   if (value == null || typeof value !== 'object' || Array.isArray(value)) {

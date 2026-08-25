@@ -357,6 +357,7 @@ const JOB_CREATE_LUA =
   'local replacedProviderExecutionId = redis.call("HGET", KEYS[1], "providerExecutionId") ' +
   'local replacedProviderDrained = redis.call("HGET", KEYS[1], "providerDrained") ' +
   'local replacedTerminalPersistencePending = redis.call("HGET", KEYS[1], "terminalPersistencePending") ' +
+  'local replacedTerminalHostActionPending = redis.call("HGET", KEYS[1], "terminalHostActionPending") ' +
   'local replacedProtocol = redis.call("HGET", KEYS[1], "generationProtocolVersion") ' +
   'local MAX_SAFE_EPOCH = 9007199254740991 ' +
   'local function isSafeEpoch(value) return type(value) == "number" and value >= 0 ' +
@@ -379,10 +380,13 @@ const JOB_CREATE_LUA =
   'local observedConversationId = replacedConversationId ' +
   'local observedActive = previousJobExists == 1 and ' +
   '(replacedStatus == "running" or replacedStatus == "requires_action" ' +
-  'or replacedTerminalPersistencePending == "1") ' +
+  'or replacedTerminalPersistencePending == "1" or replacedTerminalHostActionPending == "1") ' +
   'if retainedEpoch and (not previousCreatedAt or retainedEpoch > previousCreatedAt) then ' +
   'previousCreatedAt = retainedEpoch observedCreatedAt = retainedEpochRaw ' +
   'observedStatus = nil observedConversationId = nil observedActive = false end ' +
+  'if observedActive and replacedTerminalHostActionPending == "1" then ' +
+  'return { previousUserId or "", previousTenantId or "", "0", "predecessor_mismatch", ' +
+  'observedCreatedAt, observedStatus or "", observedConversationId or "", "1", "1" } end ' +
   'if ARGV[13] == "1" and observedActive then ' +
   'return { previousUserId or "", previousTenantId or "", "0", "predecessor_mismatch", ' +
   'observedCreatedAt, observedStatus or "", observedConversationId or "", "1", "1" } end ' +

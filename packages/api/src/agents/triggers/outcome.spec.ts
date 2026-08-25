@@ -83,6 +83,57 @@ describe('agent event terminal outcomes', () => {
     );
   });
 
+  it('matches nested action arrays structurally', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({ settleAgentTriggerHandlingOutcome });
+    const step = completedToolStep();
+    if (step.stepDetails.type !== 'tool_calls' || !step.stepDetails.tool_calls?.[0]) {
+      throw new Error('Expected tool evidence');
+    }
+    step.stepDetails.tool_calls[0].args = {
+      gameId: 'game-1',
+      moves: ['e4', { replies: ['c5', 'Nf3'] }],
+    };
+
+    await handler(
+      'conversation-1',
+      job({
+        agentEventExpectedAction: {
+          toolName: 'submit_move',
+          argumentSubset: { moves: ['e4', { replies: ['c5', 'Nf3'] }] },
+        },
+      }),
+      [step],
+    );
+
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'applied' }),
+    );
+  });
+
+  it('does not treat a background launch handle as applied work', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({ settleAgentTriggerHandlingOutcome });
+    const step = completedToolStep();
+    if (step.stepDetails.type !== 'tool_calls' || !step.stepDetails.tool_calls?.[0]) {
+      throw new Error('Expected tool evidence');
+    }
+    step.stepDetails.tool_calls[0].output = JSON.stringify({
+      status: 'running',
+      background_task_id: 'task-1',
+    });
+
+    await handler(
+      'conversation-1',
+      job({ agentEventExpectedAction: { toolName: 'submit_move' } }),
+      [step],
+    );
+
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'completed_no_action' }),
+    );
+  });
+
   it('does not infer that a source action was applied without an explicit evidence contract', async () => {
     const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
     const handler = createAgentEventTerminalHandler({ settleAgentTriggerHandlingOutcome });
