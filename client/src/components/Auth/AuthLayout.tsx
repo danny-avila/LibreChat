@@ -7,6 +7,9 @@ import { BlinkAnimation } from './BlinkAnimation';
 import { Banner } from '../Banners';
 import Footer from './Footer';
 
+/** Injected into index.html by the server when APP_ICON_URL is set */
+const appIcon = document.querySelector('meta[name="app-icon"]')?.getAttribute('content');
+
 function AuthLayout({
   children,
   header,
@@ -63,13 +66,24 @@ function AuthLayout({
     <div className="relative flex min-h-screen flex-col bg-surface-primary">
       <Banner />
       <BlinkAnimation active={isFetching}>
-        <div className="mt-6 h-10 w-full bg-cover">
+        <div
+          className="mt-6 w-full bg-cover"
+          style={{ height: `${startupConfig?.interface?.loginLogoHeight ?? 40}px` }}
+        >
           <img
-            src="assets/logo.svg"
+            src={appIcon || 'assets/logo.svg'}
             className="h-full w-full object-contain"
             alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
           />
         </div>
+        {startupConfig?.interface?.showLoginTitle && (
+          <h1
+            className="mb-4 mt-2 text-center text-3xl font-semibold text-text-primary"
+            style={{ userSelect: 'none' }}
+          >
+            {startupConfig.appTitle}
+          </h1>
+        )}
       </BlinkAnimation>
       <DisplayError />
       <div className="absolute bottom-0 left-0 md:m-4">

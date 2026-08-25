@@ -107,6 +107,10 @@ function buildPreLoginPayload() {
     payload.ldap = ldap;
   }
 
+  if (typeof process.env.CUSTOM_LOGIN_FOOTER === 'string') {
+    payload.customLoginFooter = process.env.CUSTOM_LOGIN_FOOTER;
+  }
+
   return payload;
 }
 
@@ -226,7 +230,13 @@ router.get('/', async function (req, res) {
 
       const interfaceConfig = baseConfig?.interfaceConfig;
       const buildInfoDisabled = interfaceConfig?.buildInfo === false;
-      if (interfaceConfig?.privacyPolicy || interfaceConfig?.termsOfService || buildInfoDisabled) {
+      if (
+        interfaceConfig?.privacyPolicy ||
+        interfaceConfig?.termsOfService ||
+        buildInfoDisabled ||
+        interfaceConfig?.loginLogoHeight != null ||
+        interfaceConfig?.showLoginTitle != null
+      ) {
         payload.interface = {};
         if (interfaceConfig.privacyPolicy) {
           payload.interface.privacyPolicy = interfaceConfig.privacyPolicy;
@@ -236,6 +246,12 @@ router.get('/', async function (req, res) {
         }
         if (buildInfoDisabled) {
           payload.interface.buildInfo = false;
+        }
+        if (interfaceConfig.loginLogoHeight != null) {
+          payload.interface.loginLogoHeight = interfaceConfig.loginLogoHeight;
+        }
+        if (interfaceConfig.showLoginTitle != null) {
+          payload.interface.showLoginTitle = interfaceConfig.showLoginTitle;
         }
       }
 
