@@ -290,19 +290,19 @@ const removeLocalStorageItem = (key: string): void => {
 
 export const clearDraft = debounce((id?: string | null) => {
   const key = id ?? '';
-  if (!mayWriteComposerText(key)) {
+  if (!mayClearComposerDrafts(key)) {
     return;
   }
   removeLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${key}`);
 }, 2500);
 
 /** Synchronously removes both text and file drafts for a conversation (or NEW_CONVO fallback).
- * A record another open tab owns behind attachments it still has is left alone: every key here is
- * reachable from more than one tab, and clearing one would take that tab's unsent text and its
- * attachment recovery with it. */
+ * A record another live tab owns is left alone, attachment or not: every key here is reachable
+ * from more than one tab, and clearing one would take that tab's unsent text and its attachment
+ * recovery with it. */
 export const clearAllDrafts = (conversationId?: string | null) => {
   const key = conversationId || Constants.NEW_CONVO;
-  if (!mayWriteComposerText(key)) {
+  if (!mayClearComposerDrafts(key)) {
     return;
   }
   removeLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${key}`);
@@ -659,7 +659,7 @@ export const publishTabAttachmentIds = (index: number, ids: string[]): void => {
   });
 };
 
-/** Withdraws attachment ids from this tab's own presence, so a chip that left this composer stops
+/** Withdraws attachment ids from this tab's own presence, so a chip that left a composer stops
  * reading as live. A discarded or deleted file otherwise keeps its `recent` entry for the whole
  * window, and the retry sweep reads that as evidence the file was reattached: it cancels its own
  * cleanup and leaves the failed upload orphaned on the server.
@@ -668,8 +668,13 @@ export const publishTabAttachmentIds = (index: number, ids: string[]): void => {
  * sent it has an empty composer and an empty draft, so its `recent` entry is the only thing left
  * protecting the file; erasing that here would hand the next retry a file it reads as abandoned
  * and let it delete the upload out of the message that now references it. The withdrawing tab is
- * always the one that published what it is withdrawing, so its own record is all it needs. */
-export const removeTabAttachmentPresence = (ids: string[]): void => {
+ * always the one that published what it is withdrawing, so its own record is all it needs.
+ *
+ * `index` narrows that further to the one pane doing the withdrawing. One tab holds several
+ * composers, and the hook that wins the global deletion pass only knows its own `files` map, so
+ * sweeping every pane's entry would erase the evidence of a chip a sibling pane still has on
+ * screen. Omitted only by callers that speak for the whole tab. */
+export const removeTabAttachmentPresence = (ids: string[], index?: number): void => {
   if (ids.length === 0) {
     return;
   }
@@ -683,9 +688,29 @@ export const removeTabAttachmentPresence = (ids: string[]): void => {
   }
   const idSet = new Set(ids);
   let modified = false;
+  const attachments = { ...presence.attachments };
+  for (const [pane, paneIds] of Object.entries(attachments)) {
+    if (index != null && pane !== `${index}`) {
+      continue;
+    }
+    const kept = paneIds.filter((id) => !idSet.has(id));
+    if (kept.length === paneIds.length) {
+      continue;
+    }
+    if (kept.length === 0) {
+      delete attachments[pane];
+    } else {
+      attachments[pane] = kept;
+    }
+    modified = true;
+  }
+  /** Whatever any pane of this tab still shows stays protected: `recent` is one flat map for the
+   * whole tab, so withdrawing an id a sibling pane is still holding would drop the only record of
+   * it when draft saving is off. */
+  const heldElsewhere = new Set(Object.values(attachments).flat());
   const recent = { ...presence.recent };
   for (const id of idSet) {
-    if (recent[id] == null) {
+    if (recent[id] == null || heldElsewhere.has(id)) {
       continue;
     }
     /** A chip leaving is not evidence the file is unused: this tab may have sent the same file on
@@ -697,19 +722,6 @@ export const removeTabAttachmentPresence = (ids: string[]): void => {
       continue;
     }
     delete recent[id];
-    modified = true;
-  }
-  const attachments = { ...presence.attachments };
-  for (const [pane, paneIds] of Object.entries(attachments)) {
-    const kept = paneIds.filter((id) => !idSet.has(id));
-    if (kept.length === paneIds.length) {
-      continue;
-    }
-    if (kept.length === 0) {
-      delete attachments[pane];
-    } else {
-      attachments[pane] = kept;
-    }
     modified = true;
   }
   if (!modified) {
@@ -950,6 +962,20 @@ export const collectDraftedAttachmentIds = (excludeIds: string[] = []): Set<stri
   return ids;
 };
 
+/** Every attachment id something other than the caller still claims: any persisted draft outside
+ * the keys it is acting on, plus what every other live tab publishes. Every path that deletes an
+ * upload has to consult this first, because a second tab or pane can have reattached the same
+ * library file, or sent it, and its claim is the only thing standing between that file and the
+ * request. One helper rather than a union rebuilt at each deletion site: the guard was missed at
+ * three of them precisely because each site assembled it by hand. */
+export const collectForeignAttachmentClaims = (excludeDraftIds: string[] = []): Set<string> => {
+  const ids = collectDraftedAttachmentIds(excludeDraftIds);
+  for (const liveId of collectLiveAttachmentIds({ excludeSelf: true })) {
+    ids.add(liveId);
+  }
+  return ids;
+};
+
 const hasDraftAttachments = (draft: FilesDraft): boolean =>
   draft.fileIds.length > 0 ||
   Object.keys(draft.pendingPastes).length > 0 ||
@@ -963,12 +989,27 @@ const isForeignAttachmentClaim = (draft: FilesDraft, tabId: string): boolean =>
   hasDraftAttachments(draft) &&
   isTabLive(draft.tabId);
 
-/** Whether this tab may write or clear the text record behind a draft key. Conversation keys are
- * reachable from every tab viewing that chat and are stamped just like the shared composer ones,
- * so the guard is not limited to those. */
+/** Whether this tab may write the text record behind a draft key. Conversation keys are reachable
+ * from every tab viewing that chat and are stamped just like the shared composer ones, so the
+ * guard is not limited to those. Only an attachment-backed claim refuses a write: last writer wins
+ * for text is deliberate, or the tab that typed last could not restore what it typed. */
 export const mayWriteComposerText = (id: string): boolean => {
   const tabId = getBrowserTabId();
   return tabId === '' || !isForeignAttachmentClaim(getFilesDraftCached(id), tabId);
+};
+
+/** Any live tab other than this one has the key stamped, whether or not anything is attached. */
+const isForeignLiveClaim = (draft: FilesDraft, tabId: string): boolean =>
+  draft.tabId != null && draft.tabId !== tabId && isTabLive(draft.tabId);
+
+/** Whether this tab may destroy what is behind a draft key. Stricter than the write guard on
+ * purpose: `claimComposerDraftTab` stamps a key that holds nothing but text, and overwriting that
+ * text is a normal race between panes, but deleting another live tab's record is not. Tab A
+ * finishing a run that began as an unsaved chat would otherwise clear the shared new-chat key and
+ * take tab B's half-written message with it, with no attachment anywhere to refuse it. */
+export const mayClearComposerDrafts = (id: string): boolean => {
+  const tabId = getBrowserTabId();
+  return tabId === '' || !isForeignLiveClaim(getFilesDraftCached(id), tabId);
 };
 
 /** Records which tab a shared composer key belongs to when text is all it holds. The files draft
@@ -1163,9 +1204,9 @@ export const setDraft = ({
     setLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`, encodeBase64(value ?? ''));
     return;
   }
-  /** Same guard as the write path: an empty composer in this tab must not erase the text another
-   * open tab is still holding behind its attachments. */
-  if (!mayWriteComposerText(id)) {
+  /** Stricter than the write path: an empty composer in this tab must not erase text another open
+   * tab is still holding, and a tab that has only typed still holds it. */
+  if (!mayClearComposerDrafts(id)) {
     return;
   }
   removeLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`);

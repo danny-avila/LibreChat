@@ -2,6 +2,7 @@ import { renderHook, act } from '@testing-library/react';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation, TMessage, TSubmission } from 'librechat-data-provider';
 import useChatFunctions from '../useChatFunctions';
+import { isPasteSubmitted } from '~/utils';
 
 const mockNavigate = jest.fn();
 const mockSetShowStopButton = jest.fn();
@@ -341,5 +342,45 @@ describe('useChatFunctions ask attachments', () => {
       file_id: 'file-1',
       filename: 'quarterly-report.pdf',
     });
+  });
+
+  it('marks files consumed through overrideFiles as submitted', () => {
+    const overrideFiles = [
+      {
+        file_id: 'queued-override-file',
+        temp_file_id: 'queued-override-temp-file',
+        filepath: '/uploads/queued-override-file',
+        filename: 'queued-override.txt',
+        type: 'text/plain',
+      },
+    ];
+    const setMessages = jest.fn();
+    const setSubmission = jest.fn();
+    const setFiles = jest.fn();
+
+    const { result } = renderHook(() =>
+      useChatFunctions({
+        isSubmitting: false,
+        latestMessage: null,
+        conversation: conversation(Constants.NEW_CONVO as string),
+        getMessages: () => [],
+        setMessages,
+        setSubmission,
+        files: new Map(),
+        setFiles,
+      }),
+    );
+
+    act(() => {
+      result.current.ask(
+        { text: 'queued override' },
+        {
+          overrideFiles,
+        },
+      );
+    });
+
+    expect(isPasteSubmitted('queued-override-file')).toBe(true);
+    expect(isPasteSubmitted('queued-override-temp-file')).toBe(true);
   });
 });

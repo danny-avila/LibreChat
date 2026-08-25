@@ -34,8 +34,11 @@ import {
   buildDefaultConvo,
   requestChatFocus,
   renewNewConversationDraftToken,
+  getNewConversationDraftId,
+  getPendingDraftId,
   isPastedTextFileMarked,
   removeTabAttachmentPresence,
+  collectForeignAttachmentClaims,
   scheduleRetainedFileDeletionRetry,
   retainFileDeletion,
   failedFileIdsFrom,
@@ -422,36 +425,48 @@ const useNewConvo = (index = 0) => {
             ),
           ]),
         );
-        removeTabAttachmentPresence(discardedFileIds);
+        removeTabAttachmentPresence(discardedFileIds, index);
         setFiles(new Map());
         localStorage.setItem(LocalStorageKeys.FILES_TO_DELETE, JSON.stringify({}));
         if (!saveDrafts && filesToDelete.length > 0) {
-          /** The map is already cleared above, so a lost request leaves nothing that could
-           * rebuild these payloads. Whatever the server did not delete is retained for the
-           * cleanup pass, since a failed storage delete comes back as a 200 naming the file in
-           * `failedFileIds` rather than as a rejection. */
-          const retainAll = (records: typeof filesToDelete) => {
-            for (const record of records) {
-              retainFileDeletion(record);
-            }
-            scheduleRetainedFileDeletionRetry();
-          };
-          mutateAsync({ files: filesToDelete })
-            .then((result) => {
-              const failed = new Set(failedFileIdsFrom(result));
-              if (failed.size === 0) {
-                return;
+          /** Another tab's draft or live presence wins over this reset's cleanup: its chip or sent
+           * message may still reference the same server upload. The discarded draft keys are
+           * excluded so this pane's own claims do not block its cleanup, and skipped records are
+           * not retained for retry because they are not this pane's to delete. */
+          const claimedElsewhere = collectForeignAttachmentClaims([
+            getNewConversationDraftId(index),
+            getPendingDraftId(index),
+          ]);
+          const deletableFiles = filesToDelete.filter(
+            (record) => !claimedElsewhere.has(record.file_id),
+          );
+          if (deletableFiles.length > 0) {
+            /** The map is already cleared above, so a lost request leaves nothing that could
+             * rebuild these payloads. Whatever the server did not delete is retained for the
+             * cleanup pass, since a failed storage delete comes back as a 200 naming the file in
+             * `failedFileIds` rather than as a rejection. */
+            const retainAll = (records: typeof filesToDelete) => {
+              for (const record of records) {
+                retainFileDeletion(record);
               }
-              retainAll(filesToDelete.filter((record) => failed.has(record.file_id)));
-            })
-            .catch(() => retainAll(filesToDelete));
+              scheduleRetainedFileDeletionRetry();
+            };
+            mutateAsync({ files: deletableFiles })
+              .then((result) => {
+                const failed = new Set(failedFileIdsFrom(result));
+                if (failed.size === 0) {
+                  return;
+                }
+                retainAll(deletableFiles.filter((record) => failed.has(record.file_id)));
+              })
+              .catch(() => retainAll(deletableFiles));
+          }
         }
       }
 
       /** A first visit to another conversation may still be waiting on its
-       * record. Starting a new chat keeps the pathname, so nothing the route
-       * check sees changes — without this, that record lands and pulls the user
-       * into the conversation they just abandoned.
+       * record. Starting a new chat keeps the pathname, so the route check sees no change. That
+       * record could then land and pull the user into the conversation they just abandoned.
        *
        * `keepComposerState` marks a call that re-renders a composer an earlier
        * call already opened, such as agent metadata arriving late. The user did

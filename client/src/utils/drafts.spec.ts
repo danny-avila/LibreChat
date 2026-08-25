@@ -2,6 +2,7 @@ import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import {
   applyPendingPasteToDraft,
   applyPendingPastesToDraft,
+  clearAllDrafts,
   clearComposerDrafts,
   decodeBase64,
   encodeBase64,
@@ -503,6 +504,18 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     expect(collectLiveAttachmentIds().has('sent-then-reattached')).toBe(true);
   });
 
+  it("keeps a sibling pane's chip protected when one pane withdraws", () => {
+    /** One tab holds several composers, and the hook that wins the global deletion pass only knows
+     * its own pane's file map. Sweeping every pane's entry erased the evidence of a chip the other
+     * pane still has on screen, and with draft saving off nothing else recorded it. */
+    publishTabAttachmentIds(0, ['shared-across-panes']);
+    publishTabAttachmentIds(1, ['shared-across-panes']);
+
+    removeTabAttachmentPresence(['shared-across-panes'], 0);
+
+    expect(collectLiveAttachmentIds().has('shared-across-panes')).toBe(true);
+  });
+
   it('keeps its own published ids through a heartbeat that resumes past the window', () => {
     /** Timers pause while the machine sleeps, so a live tab can beat again with its own record
      * already stale. Sweeping before reading it published an empty presence, and nothing would
@@ -681,6 +694,27 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     setDraft({ id: 'convo-1', value: 'shared conversation text' });
 
     expect(getFilesDraft('convo-1').tabId).toBeUndefined();
+  });
+
+  it('refuses to clear a shared key another live tab holds with text alone', () => {
+    /** `claimComposerDraftTab` stamps a key that holds nothing but text, and the attachment-backed
+     * guard ignored that: tab A finishing a run that began as an unsaved chat cleared the shared
+     * new-chat key and took tab B's half-written message with it. Overwriting that text is still a
+     * normal race between panes; destroying the record is not. Written the way that claim is,
+     * since `setFilesDraft` drops a record with nothing attached rather than leaving a stub. */
+    markTabLive('other-tab');
+    localStorage.setItem(
+      `${LocalStorageKeys.FILES_DRAFT}${Constants.NEW_CONVO}`,
+      JSON.stringify({ fileIds: [], tabId: 'other-tab' }),
+    );
+    localStorage.setItem(
+      `${LocalStorageKeys.TEXT_DRAFT}${Constants.NEW_CONVO}`,
+      encodeBase64('text the other tab is still writing'),
+    );
+
+    clearAllDrafts(Constants.NEW_CONVO);
+
+    expect(getDraft(Constants.NEW_CONVO)).toBe('text the other tab is still writing');
   });
 
   it('keeps the original tab owner when another tab rewrites the same record', () => {

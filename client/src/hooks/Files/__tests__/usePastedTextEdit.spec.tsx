@@ -27,6 +27,27 @@ const mockFileDownload = jest.fn();
 const mockMarkPastedTextFile = jest.fn();
 const mockRetainFileDeletion = jest.fn();
 const mockAddPastedTextDraftFile = jest.fn();
+const mockCollectForeignAttachmentClaims = jest.fn(
+  (excludeDraftIds: string[] = []): Set<string> => {
+    const excluded = new Set(excludeDraftIds);
+    const claims = new Set<string>();
+    for (const [draftId, draft] of Object.entries(mockState.draftsById)) {
+      if (excluded.has(draftId)) {
+        continue;
+      }
+      for (const fileId of draft.fileIds) {
+        claims.add(fileId);
+      }
+      for (const pasteId of draft.pastedTextIds ?? []) {
+        claims.add(pasteId);
+      }
+      for (const pendingId of Object.keys(draft.pendingPastes)) {
+        claims.add(pendingId);
+      }
+    }
+    return claims;
+  },
+);
 
 /** Values the module-level mocks read, so each test can stage its own scenario. */
 const mockState = {
@@ -86,6 +107,8 @@ jest.mock('~/data-provider', () => ({
 }));
 
 jest.mock('~/utils', () => ({
+  collectForeignAttachmentClaims: (excludeDraftIds: string[] = []) =>
+    mockCollectForeignAttachmentClaims(excludeDraftIds),
   forceResize: jest.fn(),
   getNewConversationDraftToken: () => mockState.draftToken,
   getComposerDraftId: (index: number, conversationId: string | null, isSubmitting = false) =>
@@ -349,6 +372,44 @@ describe('usePastedTextEdit', () => {
         }),
       ],
     });
+  });
+  it('removes a restored paste locally without deleting when another draft claims it', async () => {
+    mockState.draftsById = {
+      'conversation-a:0:idle': {
+        fileIds: [],
+        pendingPastes: {},
+        pastedTextIds: ['pasted-file'],
+      },
+      'conversation-b:0:idle': {
+        fileIds: [],
+        pendingPastes: {},
+        pastedTextIds: ['pasted-file'],
+      },
+    };
+    const editor = renderEditor();
+    const restored = pastedFile({
+      attached: true,
+      filepath: '/uploads/user123/pasted-text.txt',
+      source: FileSources.local,
+    });
+
+    await act(async () => {
+      await editor.result.current.openEditor(restored);
+    });
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+    await act(async () => {
+      capturedLifecycle?.onSuccess?.('replacement-file');
+    });
+
+    expect(mockDeleteFile).toHaveBeenCalledTimes(1);
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
+    expect(mockRetainFileDeletion).not.toHaveBeenCalled();
+    expect(mockCollectForeignAttachmentClaims).toHaveBeenCalledWith([
+      'conversation-a:0:idle',
+      'conversation-a:0:pending',
+    ]);
   });
 
   it('spares a restored paste whose draft another tab wrote last', async () => {

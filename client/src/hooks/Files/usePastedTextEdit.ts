@@ -12,6 +12,7 @@ import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
   addPastedTextDraftFile,
+  collectForeignAttachmentClaims,
   failedFileIdsFrom,
   forceResize,
   isFilesDraftOwnedByThisTab,
@@ -242,6 +243,21 @@ export default function usePastedTextEdit({
         );
       });
       if (draftOwned) {
+        const draftIds = [
+          getComposerDraftId(index, conversationIdRef.current, isSubmitting),
+          getComposerDraftId(index, conversationIdRef.current, !isSubmitting),
+        ];
+        /** The submitted marker is tab-scoped, so it cannot reveal that another tab has already
+         * consumed or reattached this file. Shared draft and live claims must protect either
+         * file identity before this restored record is deleted. */
+        const claimedElsewhere = collectForeignAttachmentClaims(draftIds);
+        if (
+          [file.file_id, file.temp_file_id].some(
+            (id) => id != null && id !== '' && claimedElsewhere.has(id),
+          )
+        ) {
+          return;
+        }
         const deletion = {
           file_id: file.file_id,
           embedded: file.embedded ?? false,
