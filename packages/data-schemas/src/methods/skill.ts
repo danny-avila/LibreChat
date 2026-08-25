@@ -603,21 +603,21 @@ export function validateSkillFrontmatter(frontmatter: unknown): ValidationIssue[
 }
 
 /**
- * Narrow a frontmatter bag to exactly the entries `validateSkillFrontmatter`
- * accepts, dropping unknown keys and values that fail their declared kind.
+ * Narrow a frontmatter bag to recognized entries with valid values, dropping
+ * unknown keys and values that fail their declared kind.
  *
  * For ingestion paths that accept files authored outside LibreChat (skill
  * import), where the bag is a byproduct of the upload rather than something
  * the uploader typed: a stray `version: 1.0` or a bespoke `icon:` key must
  * not fail an otherwise valid import, and neither may it reach `createSkill`
- * and trip strict validation there. Fields whose value is load-bearing for
- * behavior (the invocation-mode booleans) are resolved and reported by the
- * caller's own parser before this filter runs, so a malformed one still
- * surfaces as an error rather than being quietly dropped here.
+ * and get stored as pass-through metadata there. Fields whose value is
+ * load-bearing for behavior (the invocation-mode booleans) are resolved and
+ * reported by the caller's own parser before this filter runs, so a malformed
+ * one still surfaces as an error rather than being quietly dropped here.
  *
  * Admin-authored paths (GitHub sync, deployment skills) deliberately skip
- * this and keep the strict validator's hard failure — a typo in a curated
- * source should be loud.
+ * this filter so their supported pass-through metadata is retained. Known
+ * fields still fail validation when their values have the wrong shape.
  */
 export function pickValidFrontmatter(frontmatter: unknown): Record<string, unknown> {
   if (!isPlainObject(frontmatter)) {
@@ -997,18 +997,22 @@ function readContinuedFlagValue(
   keyIndex: number,
   baseIndent: number,
 ): BodyAlwaysApplyResult | null {
+  let continuedValue: BodyAlwaysApplyResult | null = null;
   for (let i = keyIndex + 1; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith('#')) {
       continue;
     }
-    if (indentWidth(line) <= baseIndent || trimmed.includes(':')) {
-      return null;
+    if (indentWidth(line) <= baseIndent) {
+      return continuedValue;
     }
-    return readBodyFlagValue(trimmed);
+    if (continuedValue !== null || trimmed.includes(':')) {
+      return { status: 'invalid' };
+    }
+    continuedValue = readBodyFlagValue(trimmed);
   }
-  return null;
+  return continuedValue;
 }
 
 /** Strip one layer of matching YAML quotes, if present. */
@@ -1134,6 +1138,22 @@ function extractAlwaysApplyFromBody(body: string | undefined): BodyAlwaysApplyRe
  * top-level input and is a non-nullable column, so it runs its own cascade.
  */
 const BODY_DERIVED_COLUMNS = ['userInvocable', 'disableModelInvocation'] as const;
+
+function syncBodyFlagFrontmatter(
+  frontmatter: Record<string, unknown>,
+  flag: SkillBooleanFlag,
+  value?: boolean,
+): void {
+  const acceptedKeys = new Set([flag.key, ...flag.aliases].map((key) => key.toLowerCase()));
+  for (const key of Object.keys(frontmatter)) {
+    if (acceptedKeys.has(key.toLowerCase())) {
+      delete frontmatter[key];
+    }
+  }
+  if (value !== undefined) {
+    frontmatter[flag.key] = value;
+  }
+}
 
 /**
  * Resolve one boolean column from the two sources that can carry it, in
@@ -1799,17 +1819,18 @@ export function createSkillMethods(
      * `version: expectedVersion`, so a body that changed between this read and
      * the update fails as a version mismatch rather than acting on stale text.
      */
-    const storedBodyFlags =
+    const storedSkillState =
       update.body !== undefined
-        ? await Skill.findById(id)
-            .select('body')
-            .lean()
-            .then((doc) =>
-              doc
-                ? extractBooleanFlagsFromBody((doc as unknown as { body?: string }).body)
-                : undefined,
-            )
+        ? await Skill.findById(id).select('body frontmatter').lean()
         : undefined;
+    const storedBodyFlags = storedSkillState
+      ? extractBooleanFlagsFromBody(storedSkillState.body)
+      : undefined;
+    let bodyFrontmatter =
+      update.body !== undefined && update.frontmatter === undefined
+        ? { ...(isPlainObject(storedSkillState?.frontmatter) ? storedSkillState.frontmatter : {}) }
+        : undefined;
+    let bodyFrontmatterChanged = false;
     const issues: ValidationIssue[] = [];
     if (update.name !== undefined) issues.push(...validateSkillName(update.name));
     if (update.description !== undefined)
@@ -1855,9 +1876,7 @@ export function createSkillMethods(
     if (update.source !== undefined) setPayload.source = update.source;
     if (update.sourceMetadata !== undefined) setPayload.sourceMetadata = update.sourceMetadata;
     const bagDerived =
-      update.frontmatter !== undefined
-        ? deriveStructuredFrontmatterFields(frontmatter)
-        : undefined;
+      update.frontmatter !== undefined ? deriveStructuredFrontmatterFields(frontmatter) : undefined;
     if (update.frontmatter !== undefined) {
       setPayload.frontmatter = frontmatter;
       /**
@@ -1888,8 +1907,18 @@ export function createSkillMethods(
      */
     for (const column of BODY_DERIVED_COLUMNS) {
       const resolved = resolveBodyDerivedColumn(column, bagDerived, bodyScan);
+      const flag = SKILL_BOOLEAN_FLAGS.find((candidate) => candidate.column === column);
       if (resolved !== undefined) {
         setPayload[column] = resolved;
+        if (
+          update.frontmatter === undefined &&
+          bodyScan?.[column].status === 'valid' &&
+          bodyFrontmatter &&
+          flag
+        ) {
+          syncBodyFlagFrontmatter(bodyFrontmatter, flag, resolved);
+          bodyFrontmatterChanged = true;
+        }
         continue;
       }
       if (update.frontmatter !== undefined) {
@@ -1900,9 +1929,9 @@ export function createSkillMethods(
         continue;
       }
       unsetPayload[column] = '';
-      const flag = SKILL_BOOLEAN_FLAGS.find((candidate) => candidate.column === column);
-      for (const key of flag ? [flag.key, ...flag.aliases] : []) {
-        unsetPayload[`frontmatter.${key}`] = '';
+      if (bodyFrontmatter && flag) {
+        syncBodyFlagFrontmatter(bodyFrontmatter, flag);
+        bodyFrontmatterChanged = true;
       }
     }
     if (update.category !== undefined) setPayload.category = update.category;
@@ -1929,7 +1958,7 @@ export function createSkillMethods(
      * that sends both `body` and an unrelated `frontmatter` bag (e.g.
      * editing category + rewriting SKILL.md in one PATCH) still gets the
      * body-inline flag respected because no structured always-apply key
-     * is absent in that payload.
+     * is present in that payload.
      */
     let derivedAlwaysApply: boolean | undefined;
     if (update.alwaysApply !== undefined) {
@@ -1961,6 +1990,27 @@ export function createSkillMethods(
     }
     if (derivedAlwaysApply !== undefined) {
       setPayload.alwaysApply = derivedAlwaysApply;
+    }
+    if (
+      update.alwaysApply === undefined &&
+      update.frontmatter === undefined &&
+      bodyAlwaysApply !== undefined &&
+      bodyFrontmatter
+    ) {
+      const alwaysApplyFlag = SKILL_BOOLEAN_FLAGS.find(
+        (candidate) => candidate.column === 'alwaysApply',
+      );
+      if (alwaysApplyFlag && bodyAlwaysApply.status !== 'invalid') {
+        syncBodyFlagFrontmatter(
+          bodyFrontmatter,
+          alwaysApplyFlag,
+          bodyAlwaysApply.status === 'valid' ? bodyAlwaysApply.value : undefined,
+        );
+        bodyFrontmatterChanged = true;
+      }
+    }
+    if (bodyFrontmatterChanged && bodyFrontmatter) {
+      setPayload.frontmatter = bodyFrontmatter;
     }
 
     const updateOps: Record<string, unknown> = {

@@ -490,6 +490,25 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
+  it('marks a source failed when an invocation flag contains a nested value', async () => {
+    const deps = createDeps({
+      fetchFn: githubFetch(
+        '---\nname: research\ndescription: Research things\nuser-invocable:\n  value: false\n---\nBody',
+      ),
+    });
+
+    const result = await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.createSkill).not.toHaveBeenCalled();
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'SKILL_PARSE_FAILED',
+      }),
+    );
+  });
+
   it('rejects case-colliding recognized frontmatter keys instead of choosing by order', async () => {
     const deps = createDeps({
       fetchFn: githubFetch(

@@ -501,6 +501,19 @@ describe('parseFrontmatter', () => {
     },
   );
 
+  it.each([
+    ['mapping', '  value: false'],
+    ['sequence', '  - false'],
+    ['multi-line scalar', '  false\n  extra'],
+  ])('rejects a %s value for an invocation flag', (_shape, value) => {
+    const raw = `---\nname: n\ndescription: d\nuser-invocable:\n${value}\n---\n\nbody`;
+    const result = parseFrontmatter(raw);
+
+    expect(result.userInvocable).toBeUndefined();
+    expect(result.invalidBooleans).toEqual(['user-invocable']);
+    expect(result.frontmatter).toEqual({});
+  });
+
   it('normalizes quoted and comment-trailed invocation booleans', () => {
     const raw = [
       '---',

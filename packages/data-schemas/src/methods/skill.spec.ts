@@ -472,7 +472,7 @@ describe('skill validation helpers', () => {
   });
 
   describe('pickValidFrontmatter', () => {
-    it('keeps every entry the strict validator accepts', () => {
+    it('keeps every recognized entry with a valid value', () => {
       const frontmatter = {
         'when-to-use': 'When the user needs a demo.',
         'allowed-tools': ['read', 'write'],
@@ -1152,6 +1152,33 @@ describe('Skill CRUD methods', () => {
       expect(updated.skill.userInvocable).toBe(false);
     });
 
+    it('updateSkill synchronizes explicit body flag flips into the frontmatter bag', async () => {
+      const { skill } = await methods.createSkill(
+        makeSkillInput({
+          name: 'body-flip-flags',
+          body: bodyWithFlags,
+          frontmatter: { 'user-invocable': false, 'disable-model-invocation': true },
+        }),
+      );
+
+      const updated = await methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: skill.version,
+        update: {
+          body: '---\nname: body-flip-flags\ndescription: A demo skill.\nuser-invocable: true\ndisable-model-invocation: false\n---\n\nBody.',
+        },
+      });
+
+      expect(updated.status).toBe('updated');
+      if (updated.status !== 'updated') return;
+      expect(updated.skill.userInvocable).toBe(true);
+      expect(updated.skill.disableModelInvocation).toBe(false);
+      expect(updated.skill.frontmatter).toEqual({
+        'user-invocable': true,
+        'disable-model-invocation': false,
+      });
+    });
+
     it('updateSkill releases a restriction when the body drops the flag line', async () => {
       /* Regression for the sticky-column trap: an imported skill restricted to
          manual-only had no way back — the edit UI sends `body` only, so the
@@ -1285,6 +1312,23 @@ describe('Skill CRUD methods', () => {
         }),
       );
       expect(skill.userInvocable).toBe(false);
+    });
+
+    it('rejects a continued flag value with additional scalar lines', async () => {
+      await expect(
+        methods.createSkill(
+          makeSkillInput({
+            name: 'continued-multi-line',
+            body: '---\nname: continued-multi-line\ndescription: A demo skill.\nuser-invocable:\n  false\n  extra\n---\n\nBody.',
+            frontmatter: undefined,
+          }),
+        ),
+      ).rejects.toMatchObject({
+        code: 'SKILL_VALIDATION_FAILED',
+        issues: expect.arrayContaining([
+          expect.objectContaining({ field: 'body.frontmatter.user-invocable' }),
+        ]),
+      });
     });
 
     it('reads a flag written with a quoted key', async () => {
@@ -2009,7 +2053,16 @@ describe('Skill CRUD methods', () => {
 
   it('updateSkill derives alwaysApply from a body edit that flips `always-apply:` inline', async () => {
     const { skill } = await methods.createSkill(
-      makeSkillInput({ name: 'body-flip', alwaysApply: true }),
+      makeSkillInput({
+        name: 'body-flip',
+        body: `---\nname: body-flip\ndescription: a demo skill.\nalways-apply: true\n---\n\n# Body`,
+        frontmatter: {
+          name: 'body-flip',
+          description: 'A small demo skill used in tests.',
+          'always-apply': true,
+        },
+        alwaysApply: true,
+      }),
     );
     const newBody = `---\nname: body-flip\ndescription: still a demo skill.\nalways-apply: false\n---\n\n# Edited body`;
     const result = await methods.updateSkill({
@@ -2021,6 +2074,11 @@ describe('Skill CRUD methods', () => {
     if (result.status === 'updated') {
       expect(result.skill.alwaysApply).toBe(false);
       expect(result.skill.body).toBe(newBody);
+      expect(result.skill.frontmatter).toEqual({
+        name: 'body-flip',
+        description: 'A small demo skill used in tests.',
+        'always-apply': false,
+      });
     }
   });
 
@@ -2061,7 +2119,16 @@ describe('Skill CRUD methods', () => {
        stick at `true` and the UI pin badge would persist even though
        the file itself no longer opts in. */
     const { skill } = await methods.createSkill(
-      makeSkillInput({ name: 'body-remove', alwaysApply: true }),
+      makeSkillInput({
+        name: 'body-remove',
+        body: `---\nname: body-remove\ndescription: a demo skill.\nalways-apply: true\n---\n\n# Body`,
+        frontmatter: {
+          name: 'body-remove',
+          description: 'A small demo skill used in tests.',
+          alwaysApply: true,
+        },
+        alwaysApply: true,
+      }),
     );
     const bodyWithoutKey = `---\nname: body-remove\ndescription: opting out by removing the line.\n---\n\n# Body`;
     const result = await methods.updateSkill({
@@ -2073,6 +2140,10 @@ describe('Skill CRUD methods', () => {
     if (result.status === 'updated') {
       expect(result.skill.alwaysApply).toBe(false);
       expect(result.skill.body).toBe(bodyWithoutKey);
+      expect(result.skill.frontmatter).toEqual({
+        name: 'body-remove',
+        description: 'A small demo skill used in tests.',
+      });
     }
   });
 

@@ -4,12 +4,11 @@ import type { SkillBooleanFlag, SkillBooleanColumn } from '@librechat/data-schem
 
 /**
  * Boolean frontmatter flags mirrored onto first-class skill columns, declared
- * locally on purpose. This module is pure text parsing and must stay loadable
- * without `@librechat/data-schemas` initialized: several suites replace that
- * module with a partial mock, and reading a value export from it at module
- * scope resolves to `undefined` and throws before any test runs. The type is
- * still imported (erased at compile time), and `parse.test.ts` asserts this
- * table matches `SKILL_BOOLEAN_FLAGS` in data-schemas so the two cannot drift.
+ * locally on purpose. Several suites replace `@librechat/data-schemas` with a
+ * partial mock, and reading this value export from it at module scope resolves
+ * to `undefined` and throws before any test runs. The type is still imported
+ * (erased at compile time), and `parse.test.ts` asserts this table matches
+ * `SKILL_BOOLEAN_FLAGS` in data-schemas so the two cannot drift.
  */
 export const SKILL_BOOLEAN_FLAGS: readonly SkillBooleanFlag[] = [
   { column: 'alwaysApply', key: 'always-apply', aliases: ['alwaysApply'] },
@@ -172,13 +171,13 @@ function readPresentBooleanFlag(
   if (value !== undefined) {
     return { value };
   }
-  if (rawValue === undefined) {
-    /* No line to cross-check — the key is quoted, or the mapping is indented.
-       Judge by the parsed shape instead: an empty value is a placeholder, while
-       anything else present is a value that failed to read as a boolean. */
-    return parsedValue == null ? {} : { invalidKey: key };
+  if (
+    (parsedValue === null || parsedValue === '') &&
+    (rawValue === undefined || hasBooleanPlaceholder(rawValue))
+  ) {
+    return {};
   }
-  return hasBooleanPlaceholder(rawValue) ? {} : { invalidKey: key };
+  return { invalidKey: key };
 }
 
 function resolveBooleanFlag(

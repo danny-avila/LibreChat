@@ -83,8 +83,9 @@ type ParsedSkillFile = {
  * Entries outside the flags are filtered rather than rejected: an uploaded
  * file is not something the uploader typed into a form, so a stray
  * `version: 1.0` or a bespoke key from another skill ecosystem must not fail
- * the upload. Admin-authored paths (GitHub sync, deployment skills) keep the
- * strict validator's hard failure instead.
+ * the upload. Admin-authored paths (GitHub sync, deployment skills) keep
+ * supported pass-through metadata; known fields with invalid shapes still
+ * fail validation there.
  *
  * Exported for unit testing only — prefer `createImportHandler` at runtime.
  */
