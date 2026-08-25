@@ -221,14 +221,24 @@ type LedgerRow = {
   tenantId?: string;
 };
 
+/** Field naming the row's owner: `File` charges `user`, `SkillFile` charges `author`. */
+type OwnerField = 'user' | 'author';
+
 export type PersistParams<TRow extends LedgerRow, TResult> = {
   scope: StorageScope;
-  /** Row as the caller built it; the ledger stamps the tenant before it is written. */
+  /** Row as the caller built it; the ledger stamps owner and tenant before writing. */
   row: TRow;
-  /** Performs the actual write, receiving the tenant-stamped row. */
+  /** Performs the actual write, receiving the stamped row. */
   write: (row: TRow) => Promise<TResult>;
   rollback: StorageRollback;
   getUserStorageUsage: GetUserStorageUsage;
+  /**
+   * Size of the row this write replaces, when replacing one. Cached usage totals that
+   * do not exclude the replaced row already contain its old bytes, so only the
+   * difference may be added to them — charging the full new size would count both
+   * versions and reject later writes that actually fit.
+   */
+  replacedBytes?: number | null;
 };
 
 async function runRollback(rollback: StorageRollback, onError: (error: unknown) => void) {
@@ -253,11 +263,15 @@ async function runRollback(rollback: StorageRollback, onError: (error: unknown) 
  * cleanup drift apart across every path that can create a file.
  */
 async function persistWithQuota<TRow extends LedgerRow, TResult>(
-  { scope, row, write, rollback, getUserStorageUsage }: PersistParams<TRow, TResult>,
+  { scope, row, write, rollback, getUserStorageUsage, replacedBytes }: PersistParams<TRow, TResult>,
   exclusionFor: (row: TRow) => UsageExclusion,
+  ownerField: OwnerField,
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {
-  const scopedRow: TRow = { ...row, tenantId: scope.tenantId };
+  /* Owner and tenant both come from the scope. A row written to a different owner's
+   * ledger than the one just checked would leave that owner's usage unenforced, so the
+   * queried ledger and the written ledger are made the same by construction. */
+  const scopedRow: TRow = { ...row, [ownerField]: scope.userId, tenantId: scope.tenantId };
   const bytes = normalizeBytes(scopedRow.bytes);
   const exclusion = exclusionFor(scopedRow);
 
@@ -271,7 +285,7 @@ async function persistWithQuota<TRow extends LedgerRow, TResult>(
   }
 
   const result = await write(scopedRow);
-  recordCommittedBytes(scope, bytes, exclusion);
+  recordCommittedBytes(scope, bytes - normalizeBytes(replacedBytes), exclusion);
   return result;
 }
 
@@ -298,7 +312,12 @@ export function persistFileWithQuota<TRow extends FileRow, TResult>(
   params: PersistParams<TRow, TResult>,
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {
-  return persistWithQuota(params, (row) => ({ excludeFileId: row.file_id }), onRollbackError);
+  return persistWithQuota(
+    params,
+    (row) => ({ excludeFileId: row.file_id }),
+    'user',
+    onRollbackError,
+  );
 }
 
 /**
@@ -325,6 +344,7 @@ export function persistSkillFileWithQuota<TRow extends SkillFileRow, TResult>(
         excludeSkillFile: { skillId: row.skillId, relativePath: row.relativePath },
       };
     },
+    'author',
     onRollbackError,
   );
 }
