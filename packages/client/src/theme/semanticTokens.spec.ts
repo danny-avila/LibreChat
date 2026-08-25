@@ -371,6 +371,50 @@ describe('success fill defaults', () => {
   });
 });
 
+/** The shared `Switch` paints this track, so it travels with the package rather
+ *  than the app stylesheet. It is a UI component boundary under WCAG 1.4.11 and
+ *  has to stay distinct from the `surface-primary` thumb on it and from the
+ *  `surface-inverted` fill it swaps with when checked. */
+describe.each([
+  ['default', defaultTheme],
+  ['dark', darkTheme],
+  ['high contrast light', highContrastLightTheme],
+  ['high contrast dark', highContrastDarkTheme],
+])('%s switch track', (_name, theme: IThemeRGB) => {
+  it('keeps the unchecked track at the 3:1 mark floor against thumb and checked fill', () => {
+    const track = toRgb(theme, 'rgb-switch-unchecked');
+    (['rgb-surface-primary', 'rgb-surface-inverted'] as Array<keyof IThemeRGB>).forEach(
+      (surface) => {
+        expect({ surface, ok: contrast(track, toRgb(theme, surface)) >= WCAG_MARK_MIN }).toEqual({
+          surface,
+          ok: true,
+        });
+      },
+    );
+  });
+});
+
+describe('switch track defaults', () => {
+  /** The app stylesheet only restates the registry now: the contrast modes used
+   *  to carry their own `html.high-contrast` overrides here, which the published
+   *  package never shipped. */
+  it('keeps the app CSS in step with the runtime themes', () => {
+    const appStyles = readFileSync(
+      join(__dirname, '..', '..', '..', '..', 'client', 'src', 'style.css'),
+      'utf8',
+    );
+
+    const declared = [...appStyles.matchAll(/--switch-unchecked:\s*([^;]+);/g)].map((match) =>
+      match[1].trim(),
+    );
+
+    expect(declared).toEqual([
+      defaultTheme['rgb-switch-unchecked'],
+      darkTheme['rgb-switch-unchecked'],
+    ]);
+  });
+});
+
 /** The syntax palette used to live as raw hex in `style.css`, which meant a
  *  change had to be made twice and neither copy was checked. It is a registry
  *  token map now, so the stylesheet is only allowed to restate it. */

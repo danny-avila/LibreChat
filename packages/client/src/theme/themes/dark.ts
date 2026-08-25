@@ -121,6 +121,10 @@ export const darkTheme: IThemeRGB = {
   'rgb-series-6': '171 104 254', // #ab68fe (violet)
   'rgb-series-7': '80 167 49', // #50a731 (green)
 
+  /** Unchecked switch track. 3.38:1 against the page and the `surface-primary`
+   *  thumb, 5.74:1 against the checked `surface-inverted` track. */
+  'rgb-switch-unchecked': '102 102 102', // #666666
+
   // Presentation
   'rgb-presentation': '33 33 33', // #212121 (gray-800)
 };

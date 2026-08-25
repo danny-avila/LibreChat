@@ -23,12 +23,23 @@ const themeIcons: Record<ThemeType, IconNode> = {
   'high-contrast-dark': Contrast,
 };
 
-const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) => void }) => {
+const Theme = ({
+  theme,
+  highContrast,
+  onChange,
+}: {
+  theme: string;
+  highContrast: boolean;
+  onChange: (value: string) => void;
+}) => {
   const localize = useLocalize();
 
   const nextScheme = isDark(theme) ? 'light' : 'dark';
-  /** The toggle flips the colour scheme without discarding a contrast choice. */
-  const nextTheme = isHighContrast(theme) ? `high-contrast-${nextScheme}` : nextScheme;
+  /** The toggle flips the colour scheme without discarding a contrast choice.
+   *  Resolved contrast rather than `isHighContrast(theme)`: under `system` the
+   *  contrast comes from `prefers-contrast`, which the stored mode never names,
+   *  so keying off the mode alone would silently drop an OS-requested need. */
+  const nextTheme = highContrast ? `high-contrast-${nextScheme}` : nextScheme;
 
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -59,7 +70,7 @@ const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) =
 };
 
 const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }): JSX.Element => {
-  const { theme, setTheme } = useContext(ThemeContext);
+  const { theme, highContrast, setTheme } = useContext(ThemeContext);
   const [announcement, setAnnouncement] = useState('');
   const localize = useLocalize();
 
@@ -97,13 +108,13 @@ const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }): JSX.
   }, [announcement]);
 
   if (returnThemeOnly === true) {
-    return <Theme theme={theme} onChange={changeTheme} />;
+    return <Theme theme={theme} highContrast={highContrast} onChange={changeTheme} />;
   }
 
   return (
     <div className="flex flex-col items-center justify-center bg-surface-primary pt-6 sm:pt-0">
       <div className="absolute bottom-0 left-0 m-4">
-        <Theme theme={theme} onChange={changeTheme} />
+        <Theme theme={theme} highContrast={highContrast} onChange={changeTheme} />
       </div>
       <div role="alert" aria-live="assertive" aria-atomic="true" className="sr-only">
         {announcement}

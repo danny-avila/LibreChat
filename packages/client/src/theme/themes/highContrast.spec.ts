@@ -259,6 +259,20 @@ describe.each([
     );
   });
 
+  /** The track is a UI component boundary under WCAG 1.4.11, and it has to stay
+   *  distinct from the thumb riding on it and from the checked fill it swaps
+   *  with, or the control loses its state as well as its outline. */
+  it('keeps the unchecked switch track distinct from the page, thumb and checked fill', () => {
+    expect(
+      below(
+        theme,
+        WCAG_NON_TEXT,
+        ['rgb-switch-unchecked'],
+        ['rgb-surface-primary', 'rgb-surface-inverted'],
+      ),
+    ).toEqual([]);
+  });
+
   it('never reuses a reserved status colour for series identity', () => {
     const reserved = new Set(
       statusHues.map((hue) => theme[`rgb-status-${hue}` as keyof IThemeRGB]),

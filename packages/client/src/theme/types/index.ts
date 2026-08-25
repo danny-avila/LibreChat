@@ -121,6 +121,14 @@ export interface IThemeRGB {
   'rgb-series-6'?: string;
   'rgb-series-7'?: string;
 
+  /**
+   * Unchecked track of the shared `Switch`. A control state rather than a
+   * palette entry, but it lives here because the package's own control renders
+   * it: left in the application stylesheet, a consumer of `@librechat/client`
+   * got a switch with no track at all.
+   */
+  'rgb-switch-unchecked'?: string;
+
   // Presentation
   'rgb-presentation'?: string;
 }
@@ -223,6 +231,8 @@ export interface IThemeVariables {
   '--series-6': string;
   '--series-7': string;
 
+  '--switch-unchecked': string;
+
   '--presentation': string;
 }
 
@@ -308,6 +318,7 @@ export interface IThemeColors {
   'series-5'?: string;
   'series-6'?: string;
   'series-7'?: string;
+  'switch-unchecked'?: string;
   presentation?: string;
 
   // Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration)

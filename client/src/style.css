@@ -258,7 +258,7 @@ html {
   --theme-elevation-surface: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   --theme-motion-fast: 150ms;
   --theme-motion-normal: 200ms;
-  --switch-unchecked: 0 0% 58%;
+  --switch-unchecked: 148 148 148;
   --provider-openai: #19c37d;
   --provider-openai-gpt4: #ab68ff;
   --provider-openai-reasoning: #000000;
@@ -365,7 +365,7 @@ html {
   --surface-fixed: var(--white);
   --surface-fixed-hover: var(--gray-100);
   --text-fixed: var(--gray-800);
-  --switch-unchecked: 0 0% 40%;
+  --switch-unchecked: 102 102 102;
   --provider-openai: #19c37d;
   --provider-openai-gpt4: #ab68ff;
   --provider-openai-reasoning: #000000;
@@ -419,16 +419,11 @@ html {
  * measured against the mode's own canvas, pure white or pure black. */
 html.high-contrast {
   color-scheme: light;
-  /* The stock 58%/40% tracks land at 2.9:1 and 2.2:1 against the page. These
-   * clear 3:1 three ways at once: against the page, against the
-   * `surface-primary` thumb, and against the checked `surface-inverted` track. */
-  --switch-unchecked: 0 0% 40%;
   /* A 0.5rem bar is a small target to hit and a thin thing to see. */
   --scrollbar-size: 0.75rem;
 }
 html.high-contrast.dark {
   color-scheme: dark;
-  --switch-unchecked: 0 0% 50%;
 }
 html.high-contrast ::-webkit-scrollbar-thumb {
   /* The 10%-alpha thumb is invisible against a pure black or white canvas. */
