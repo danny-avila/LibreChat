@@ -306,7 +306,9 @@ describe('useResumeOnLoad', () => {
     /** The elapsed indicator's baseline must be the generation's real start:
      *  an attach with no surviving anchor (a reload, or a run another client
      *  started) rebuilds it clock-locally from the server-computed generation
-     *  age, so cross-machine clock skew never enters the reading. */
+     *  age, subtracted from the moment the status response ARRIVED — so
+     *  neither cross-machine clock skew nor a slow history fetch between
+     *  receipt and apply can distort the reading. */
     it('anchors the elapsed baseline via the server-computed generation age', async () => {
       const observedStarts: Array<number | null> = [];
       mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
@@ -326,18 +328,15 @@ describe('useResumeOnLoad', () => {
       });
       mockUseStreamStatus.mockReturnValue({
         ...ACTIVE_STATUS,
+        dataUpdatedAt: 1_000_000,
         data: { ...ACTIVE_STATUS.data, elapsedMs: 30_000 },
       });
-      const before = Date.now();
       rerender();
       await act(async () => {
         await Promise.resolve();
       });
-      const after = Date.now();
 
-      const anchored = observedStarts[observedStarts.length - 1];
-      expect(anchored).toBeGreaterThanOrEqual(before - 30_000);
-      expect(anchored).toBeLessThanOrEqual(after - 30_000);
+      expect(observedStarts[observedStarts.length - 1]).toBe(1_000_000 - 30_000);
     });
 
     /** An older server without `elapsedMs` still beats counting from attach:

@@ -7,6 +7,7 @@ const {
   buildAbortedResponseMetadata,
   isPendingActionStale,
   toClientPendingAction,
+  getGenerationElapsedMs,
   isHITLEnabled,
   captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
@@ -524,9 +525,7 @@ router.get('/chat/status/:conversationId', async (req, res) => {
     status: job.status,
     aggregatedContent: resumeState?.aggregatedContent ?? [],
     createdAt: job.createdAt,
-    // Server-computed so a reattaching client can rebuild a clock-local
-    // elapsed baseline without comparing timestamps across machines.
-    elapsedMs: Math.max(0, Date.now() - job.createdAt),
+    elapsedMs: getGenerationElapsedMs(job),
     resumeState,
     // Surface the live pending approval so a client rebuilding from /chat/status
     // (reload / cross-replica) has the action id + payload to render and submit
