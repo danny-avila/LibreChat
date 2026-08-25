@@ -2,7 +2,6 @@ import { lazy, Suspense, useEffect, useMemo, useRef } from 'react';
 import { useRecoilValue, useResetRecoilState } from 'recoil';
 import { EModelEndpoint, FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { failedFileIdsFrom } from '~/utils';
 import useResetArtifactsOnConversationChange from '~/hooks/Artifacts/useResetArtifactsOnConversationChange';
 import { ParentSubagentsProvider } from '~/components/Chat/Subagents/ParentSubagentsProvider';
 import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
@@ -11,6 +10,7 @@ import { useDeleteFilesMutation } from '~/data-provider';
 import { SidePanelGroup } from '~/components/SidePanel';
 import { activeSubagentPanel } from '~/store/subagents';
 import { useSetFilesToDelete } from '~/hooks';
+import { failedFileIdsFrom } from '~/utils';
 import store from '~/store';
 
 const Artifacts = lazy(() => import('~/components/Artifacts/Artifacts'));

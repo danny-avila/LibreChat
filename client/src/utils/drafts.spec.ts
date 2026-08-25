@@ -444,21 +444,21 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     expect(collectLiveAttachmentIds().has('discarded-file')).toBe(false);
   });
 
-  it('leaves a heartbeatless record expired instead of reviving its claims', () => {
-    /** A record with no readable heartbeat is already gone as far as every other reader is
-     * concerned. Rewriting it to drop one id would hand it a fresh `seenAt`, and every other id
-     * it was still holding would come back as live and stall its own cleanup. The heartbeat is
-     * started first on purpose: its own sweep would otherwise reap the record before the removal
-     * ever looked at it, which is not the case once this tab has been beating for a while. */
-    getBrowserTabId();
+  it("keeps another tab's recent record when withdrawing its own", () => {
+    /** Once that tab reattached the file and sent it, its composer and its draft are both empty,
+     * so this record is the only thing left protecting the upload. Erasing it here would hand the
+     * next retry a file it reads as abandoned and let it delete the upload out of the message that
+     * now references it. */
     localStorage.setItem(
-      'librechat-live-tab:broken-tab',
-      JSON.stringify({ recent: { 'discarded-file': Date.now(), 'other-file': Date.now() } }),
+      'librechat-live-tab:other-tab',
+      JSON.stringify({ seenAt: Date.now(), recent: { 'shared-file': Date.now() } }),
     );
+    publishTabAttachmentIds(0, ['shared-file']);
 
-    removeTabAttachmentPresence(['discarded-file']);
+    removeTabAttachmentPresence(['shared-file']);
 
-    expect(collectLiveAttachmentIds().has('other-file')).toBe(false);
+    expect(collectLiveAttachmentIds().has('shared-file')).toBe(true);
+    expect(collectLiveAttachmentIds({ excludeSelf: true }).has('shared-file')).toBe(true);
   });
 
   it('forgets a held id once the window has passed', () => {

@@ -32,6 +32,10 @@ const mockState = {
   markedPasteIds: [] as string[],
   submittedPasteIds: [] as string[],
   liveAttachmentIds: [] as string[],
+  /** What other live tabs publish and have drafted; the real collectors read these from shared
+   * storage, and a discard must treat them as protection while ignoring its own. */
+  foreignLiveAttachmentIds: [] as string[],
+  foreignDraftedIds: [] as string[],
   retainedPassInFlight: false,
   persistedPendingDiscardIds: [] as string[],
   retainedListener: null as (() => void) | null,
@@ -116,7 +120,12 @@ jest.mock('~/utils', () => ({
   scheduleRetainedFileDeletionRetry: () => mockScheduleRetainedRetry(),
   isPastedTextFileMarked: (fileId: string) => mockState.markedPasteIds.includes(fileId),
   isPasteSubmitted: (fileId: string) => mockState.submittedPasteIds.includes(fileId),
-  collectLiveAttachmentIds: () => new Set<string>(mockState.liveAttachmentIds),
+  collectLiveAttachmentIds: ({ excludeSelf = false } = {}) =>
+    new Set<string>(
+      excludeSelf
+        ? mockState.foreignLiveAttachmentIds
+        : [...mockState.liveAttachmentIds, ...mockState.foreignLiveAttachmentIds],
+    ),
   removeTabAttachmentPresence: (ids: string[]) => {
     const idSet = new Set(ids);
     mockState.liveAttachmentIds = mockState.liveAttachmentIds.filter((id) => !idSet.has(id));
@@ -131,10 +140,19 @@ jest.mock('~/utils', () => ({
   endRetainedDeletionPass: () => {
     mockState.retainedPassInFlight = false;
   },
-  /** Stands in for the localStorage sweep: the ids every mocked draft is holding. */
-  collectDraftedAttachmentIds: () => {
-    const ids = new Set<string>();
-    for (const draft of [mockState.filesDraft, mockState.pendingFilesDraft]) {
+  /** Stands in for the localStorage sweep: the ids every draft is holding, minus the keys the
+   * caller is discarding. Other tabs' drafts are never excludable, which is the point. */
+  collectDraftedAttachmentIds: (excludeIds: string[] = []) => {
+    const ids = new Set<string>(mockState.foreignDraftedIds);
+    const excluded = new Set(excludeIds);
+    const own: [string, FilesDraft][] = [
+      ['new', mockState.filesDraft],
+      ['pending', mockState.pendingFilesDraft],
+    ];
+    for (const [draftId, draft] of own) {
+      if (excluded.has(draftId)) {
+        continue;
+      }
       for (const fileId of draft.fileIds) {
         ids.add(fileId);
       }
@@ -198,6 +216,8 @@ describe('useNewChat', () => {
     mockState.markedPasteIds = [];
     mockState.submittedPasteIds = [];
     mockState.liveAttachmentIds = [];
+    mockState.foreignLiveAttachmentIds = [];
+    mockState.foreignDraftedIds = [];
     mockState.retainedPassInFlight = false;
     mockScheduleRetainedRetry.mockClear();
   });
@@ -464,6 +484,49 @@ describe('useNewChat', () => {
         { file_id: 'own-file', embedded: false, filepath: '/uploads/own.txt', source: 'local' },
       ],
     });
+  });
+
+  it('spares a discarded paste another live tab is holding', () => {
+    /** The retry effect consults other tabs before deleting; this direct path has to as well, or
+     * New Chat here deletes the server file out from under the other tab's chip. */
+    mockState.saveDrafts = true;
+    mockState.filesDraft = {
+      fileIds: ['shared-file'],
+      pendingPastes: {},
+      tabId: 'this-tab',
+    };
+    mockState.files = new Map([['shared-file', { file_id: 'shared-file', progress: 1 }]]);
+    mockState.fileList = [
+      { file_id: 'shared-file', filepath: '/uploads/shared.txt', source: 'local' },
+    ];
+    mockState.foreignLiveAttachmentIds = ['shared-file'];
+    const { result } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
+  });
+
+  it('spares a discarded paste another tab has drafted elsewhere', () => {
+    /** That tab reattached the file to a conversation this pane has never opened, so only its
+     * persisted draft records it. This tab's own discarded keys are excluded from that lookup,
+     * or every discard would protect itself and nothing would ever be cleaned up. */
+    mockState.saveDrafts = true;
+    mockState.filesDraft = {
+      fileIds: ['shared-file'],
+      pendingPastes: {},
+      tabId: 'this-tab',
+    };
+    mockState.files = new Map([['shared-file', { file_id: 'shared-file', progress: 1 }]]);
+    mockState.fileList = [
+      { file_id: 'shared-file', filepath: '/uploads/shared.txt', source: 'local' },
+    ];
+    mockState.foreignDraftedIds = ['shared-file'];
+    const { result } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
   });
 
   it('spares library files the draft recorded through a re-attach', () => {

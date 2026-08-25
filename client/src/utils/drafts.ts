@@ -653,75 +653,73 @@ export const publishTabAttachmentIds = (index: number, ids: string[]): void => {
   });
 };
 
-/** Withdraws attachment ids from every tab's presence, so a chip that left a composer stops
+/** Withdraws attachment ids from this tab's own presence, so a chip that left this composer stops
  * reading as live. A discarded or deleted file otherwise keeps its `recent` entry for the whole
  * window, and the retry sweep reads that as evidence the file was reattached: it cancels its own
- * cleanup and leaves the failed upload orphaned on the server. Only this tab's `attachments` are
- * touched, because another tab's on-screen chips are its own to report. A record whose heartbeat
- * cannot be read is skipped rather than rewritten: handing it a fresh `seenAt` would revive a
- * dead tab's claims over every id it was holding. */
+ * cleanup and leaves the failed upload orphaned on the server.
+ *
+ * Strictly this tab's record, never another's. A second tab that reattached the same file and then
+ * sent it has an empty composer and an empty draft, so its `recent` entry is the only thing left
+ * protecting the file; erasing that here would hand the next retry a file it reads as abandoned
+ * and let it delete the upload out of the message that now references it. The withdrawing tab is
+ * always the one that published what it is withdrawing, so its own record is all it needs. */
 export const removeTabAttachmentPresence = (ids: string[]): void => {
   if (ids.length === 0) {
     return;
   }
-  const idSet = new Set(ids);
-  try {
-    const ownTabId = getBrowserTabId();
-    const tabIds: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key != null && key.startsWith(TAB_PRESENCE_KEY_PREFIX)) {
-        tabIds.push(key.slice(TAB_PRESENCE_KEY_PREFIX.length));
-      }
-    }
-    for (const tabId of tabIds) {
-      const presence = readTabPresence(tabId);
-      if (presence == null) {
-        continue;
-      }
-      let modified = false;
-      const recent = { ...presence.recent };
-      for (const id of idSet) {
-        if (recent[id] != null) {
-          delete recent[id];
-          modified = true;
-        }
-      }
-      const attachments = { ...presence.attachments };
-      if (tabId === ownTabId) {
-        for (const [pane, paneIds] of Object.entries(attachments)) {
-          const kept = paneIds.filter((id) => !idSet.has(id));
-          if (kept.length === paneIds.length) {
-            continue;
-          }
-          if (kept.length === 0) {
-            delete attachments[pane];
-          } else {
-            attachments[pane] = kept;
-          }
-          modified = true;
-        }
-      }
-      if (!modified) {
-        continue;
-      }
-      writeTabPresence(tabId, {
-        seenAt: presence.seenAt,
-        ...(presence.suspended === true ? { suspended: true } : {}),
-        ...(Object.keys(attachments).length > 0 ? { attachments } : {}),
-        ...(Object.keys(recent).length > 0 ? { recent } : {}),
-      });
-    }
-  } catch {
-    // An unreadable store only ever leaves the existing claims in place.
+  const tabId = getBrowserTabId();
+  if (tabId === '') {
+    return;
   }
+  const presence = readTabPresence(tabId);
+  if (presence == null) {
+    return;
+  }
+  const idSet = new Set(ids);
+  let modified = false;
+  const recent = { ...presence.recent };
+  for (const id of idSet) {
+    if (recent[id] != null) {
+      delete recent[id];
+      modified = true;
+    }
+  }
+  const attachments = { ...presence.attachments };
+  for (const [pane, paneIds] of Object.entries(attachments)) {
+    const kept = paneIds.filter((id) => !idSet.has(id));
+    if (kept.length === paneIds.length) {
+      continue;
+    }
+    if (kept.length === 0) {
+      delete attachments[pane];
+    } else {
+      attachments[pane] = kept;
+    }
+    modified = true;
+  }
+  if (!modified) {
+    return;
+  }
+  writeTabPresence(tabId, {
+    seenAt: presence.seenAt,
+    ...(presence.suspended === true ? { suspended: true } : {}),
+    ...(Object.keys(attachments).length > 0 ? { attachments } : {}),
+    ...(Object.keys(recent).length > 0 ? { recent } : {}),
+  });
 };
 
-/** Every attachment id any live tab's composers are currently showing. */
-export const collectLiveAttachmentIds = (): Set<string> => {
+/** Every attachment id a live tab's composers are currently showing, or held recently enough to
+ * still count. `excludeSelf` narrows that to the other tabs: a discard already knows what its own
+ * composer holds, because that is precisely what it is discarding, so counting itself would
+ * protect every file from its own cleanup. */
+export const collectLiveAttachmentIds = ({ excludeSelf = false } = {}): Set<string> => {
   const ids = new Set<string>();
   const now = Date.now();
-  for (const presence of readLiveTabs().values()) {
+  const ownTabId = excludeSelf ? getBrowserTabId() : '';
+  for (const [tabId, presence] of readLiveTabs()) {
+    if (excludeSelf && tabId === ownTabId) {
+      continue;
+    }
     for (const paneIds of Object.values(presence.attachments ?? {})) {
       for (const id of paneIds) {
         ids.add(id);
@@ -902,16 +900,25 @@ export const setFilesDraft = (id: string, draft: FilesDraft): void => {
 /** Every attachment id any persisted composer draft is holding, across every key and therefore
  * every tab: `localStorage` is shared, so a draft another tab wrote for a conversation this one
  * has never opened is still readable here. Cleanup that only consulted this pane's own keys would
- * delete a file a second tab had reattached somewhere else. */
-export const collectDraftedAttachmentIds = (): Set<string> => {
+ * delete a file a second tab had reattached somewhere else.
+ *
+ * `excludeIds` leaves out the keys the caller is itself discarding. Those drafts are the reason
+ * the deletion exists, so counting them as protection would cancel every discard; every other
+ * key, including this tab's own conversation drafts, still counts. */
+export const collectDraftedAttachmentIds = (excludeIds: string[] = []): Set<string> => {
   const ids = new Set<string>();
+  const excluded = new Set(excludeIds);
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key == null || !key.startsWith(LocalStorageKeys.FILES_DRAFT)) {
         continue;
       }
-      const draft = getFilesDraft(key.slice(LocalStorageKeys.FILES_DRAFT.length));
+      const draftId = key.slice(LocalStorageKeys.FILES_DRAFT.length);
+      if (excluded.has(draftId)) {
+        continue;
+      }
+      const draft = getFilesDraft(draftId);
       for (const fileId of draft.fileIds) {
         ids.add(fileId);
       }

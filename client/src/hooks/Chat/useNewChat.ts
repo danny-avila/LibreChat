@@ -378,8 +378,18 @@ export default function useNewChat({
         }
       });
       const deferred = [...idleWork.deferred, ...pendingWork.deferred];
-      if (deletable.length > 0) {
-        mutateAsync({ files: deletable })
+      /** The retry effect consults every other tab before it deletes; this direct path has to do
+       * the same or it races past that guard entirely. A second tab can have reattached one of
+       * these pastes and even sent it, in which case its draft or its published presence is the
+       * only thing standing between the upload and this request. Its own keys and its own presence
+       * are excluded, because those hold exactly what this discard is throwing away. */
+      const claimedElsewhere = collectDraftedAttachmentIds([draftId, pendingId]);
+      for (const liveId of collectLiveAttachmentIds({ excludeSelf: true })) {
+        claimedElsewhere.add(liveId);
+      }
+      const discardable = deletable.filter((record) => !claimedElsewhere.has(record.file_id));
+      if (discardable.length > 0) {
+        mutateAsync({ files: discardable })
           .then((result) => {
             const failedIds = failedFileIdsFrom(result);
             if (failedIds.length > 0) {
@@ -389,7 +399,7 @@ export default function useNewChat({
           .catch(() => {
             /** A failed deletion is retried on the next files-cache update, exactly like a
              * deferred one, instead of orphaning the uploads. */
-            const failedIds = deletable.map((record) => record.file_id);
+            const failedIds = discardable.map((record) => record.file_id);
             setPendingDiscardIds((current) => Array.from(new Set([...current, ...failedIds])));
           });
       }
