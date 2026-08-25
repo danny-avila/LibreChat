@@ -63,6 +63,7 @@ const mockFilterPersistableAbortContent = jest.fn((content) =>
 const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
 const mockSaveMessage = jest.fn();
+const mockSaveConvo = jest.fn();
 const mockIsAgentTriggerPrincipalActive = jest.fn();
 const mockIsSubagentOwnerAdmissible = jest.fn();
 const mockAcquireEventChildGenerationLease = jest.fn();
@@ -224,6 +225,7 @@ jest.mock('~/cache', () => ({
 
 jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
+  saveConvo: (...args) => mockSaveConvo(...args),
   getMessages: (...args) => mockGetMessages(...args),
   getConvo: (...args) => mockGetConvo(...args),
   isAgentTriggerPrincipalActive: (...args) => mockIsAgentTriggerPrincipalActive(...args),
@@ -319,7 +321,12 @@ describe('ResumableAgentController resume metadata', () => {
       }),
     );
     mockGenerationJobManager.finishTerminalJob.mockResolvedValue(undefined);
-    mockGenerationJobManager.completeJob.mockResolvedValue(true);
+    mockGenerationJobManager.completeJob.mockImplementation(
+      async (_streamId, _error, _createdAt, options) => {
+        await options?.beforeErrorPublication?.();
+        return true;
+      },
+    );
     mockGenerationJobManager.beginProviderExecution.mockResolvedValue(true);
     mockGenerationJobManager.markProviderExecutionDrained.mockResolvedValue(true);
     mockGenerationJobManager.failPausePersistence.mockResolvedValue(true);
@@ -334,6 +341,7 @@ describe('ResumableAgentController resume metadata', () => {
     mockGenerationJobManager.steering.park.mockResolvedValue(undefined);
     mockGenerationJobManager.steering.consumeRecovered.mockResolvedValue(true);
     mockSaveMessage.mockResolvedValue({});
+    mockSaveConvo.mockResolvedValue({});
     mockDeleteAgentCheckpoint.mockResolvedValue(undefined);
   });
 
@@ -1362,6 +1370,8 @@ describe('ResumableAgentController resume metadata', () => {
 
     await AgentController(req, res, jest.fn(), initializeClient, null);
     expect(allSubscribersLeftHandler).toEqual(expect.any(Function));
+    mockSaveMessage.mockClear();
+    mockSaveConvo.mockClear();
 
     const oauthPart = {
       type: 'tool_call',
@@ -2289,6 +2299,7 @@ describe('ResumableAgentController resume metadata', () => {
         error: 'Attached resources could not be restored',
       }),
       1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
     );
   });
 
@@ -2326,6 +2337,7 @@ describe('ResumableAgentController resume metadata', () => {
         error: 'Stateful code environment is not allowed by this deployment: conversation',
       }),
       1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
     );
   });
 
@@ -2516,6 +2528,7 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       'provider init failed',
       1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
     );
   });
 
@@ -2552,6 +2565,7 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       'Recovered steer cannot skip user message persistence',
       1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
     );
   });
 
@@ -3024,6 +3038,247 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.claimTerminalJob).not.toHaveBeenCalled();
   });
 
+  describe('failed-turn persistence', () => {
+    const conversationId = 'conversation-123';
+
+    const createFailedRequest = (bodyOverrides = {}) => ({
+      user: { id: 'user-123' },
+      body: {
+        text: 'Hello with a removed model.',
+        messageId: 'user-message',
+        parentMessageId: 'prior-response',
+        conversationId,
+        endpointOption: {
+          endpoint: 'azureOpenAI',
+          modelOptions: { model: 'gpt-4o' },
+        },
+        ...bodyOverrides,
+      },
+      config: {},
+    });
+
+    async function flushBackgroundGeneration() {
+      for (let i = 0; i < 10; i++) {
+        await nextTick();
+      }
+    }
+
+    it('persists an initialization failure before terminal error publication', async () => {
+      const events = [];
+      mockSaveConvo.mockImplementation(async () => {
+        events.push('turn-persisted');
+        return {};
+      });
+      mockGenerationJobManager.completeJob.mockImplementation(
+        async (_streamId, _error, _createdAt, options) => {
+          await options.beforeErrorPublication();
+          events.push('error-published');
+          return true;
+        },
+      );
+      const initializeClient = jest
+        .fn()
+        .mockRejectedValue(new Error('The model "gpt-4o" is not available.'));
+
+      await AgentController(
+        createFailedRequest(),
+        createResumableResponse(),
+        jest.fn(),
+        initializeClient,
+        null,
+      );
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        expect.objectContaining({
+          messageId: 'user-message',
+          parentMessageId: 'prior-response',
+          conversationId,
+          text: 'Hello with a removed model.',
+          isCreatedByUser: true,
+          error: false,
+        }),
+        expect.any(Object),
+      );
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        expect.objectContaining({
+          messageId: 'user-message_',
+          parentMessageId: 'user-message',
+          conversationId,
+          endpoint: 'azureOpenAI',
+          model: 'gpt-4o',
+          text: 'The model "gpt-4o" is not available.',
+          error: true,
+          isCreatedByUser: false,
+        }),
+        expect.any(Object),
+      );
+      expect(events).toEqual(['turn-persisted', 'error-published']);
+      expect(mockSaveConvo).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        { conversationId },
+        expect.objectContaining({ noUpsert: true }),
+      );
+    });
+
+    it('allows a follow-up to chain from the persisted failed response', async () => {
+      const initializeClient = jest.fn().mockRejectedValue(new Error('model unavailable'));
+      await AgentController(
+        createFailedRequest(),
+        createResumableResponse(),
+        jest.fn(),
+        initializeClient,
+        null,
+      );
+
+      expect(mockSaveMessage.mock.calls.map(([, message]) => message.messageId)).toContain(
+        'user-message_',
+      );
+      mockGetMessages.mockResolvedValue([{ _id: 'persisted-error-turn' }]);
+      const followUpRes = createResumableResponse();
+
+      await AgentController(
+        createFailedRequest({
+          text: 'Retry with a valid model.',
+          messageId: 'follow-up-user',
+          parentMessageId: 'user-message_',
+        }),
+        followUpRes,
+        jest.fn(),
+        initializeClient,
+        null,
+      );
+
+      expect(followUpRes.status).not.toHaveBeenCalledWith(409);
+      expect(mockCheckAndIncrementPendingRequest).toHaveBeenCalledTimes(2);
+    });
+
+    it('persists failures raised before generation saves any message', async () => {
+      const client = {
+        options: {},
+        sendMessage: jest.fn().mockRejectedValue(new Error('provider exploded')),
+      };
+
+      await AgentController(
+        createFailedRequest(),
+        createResumableResponse(),
+        jest.fn(),
+        jest.fn().mockResolvedValue({ client }),
+        null,
+      );
+      await flushBackgroundGeneration();
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        expect.objectContaining({
+          messageId: 'user-message_',
+          text: 'provider exploded',
+          error: true,
+        }),
+        expect.any(Object),
+      );
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        conversationId,
+        'provider exploded',
+        1000,
+        expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
+      );
+    });
+
+    it('uses the live user identity after generation starts', async () => {
+      const serverUserMessage = {
+        messageId: 'server-user',
+        parentMessageId: 'prior-response',
+        conversationId,
+        sender: 'User',
+        text: 'Hello with a removed model.',
+        isCreatedByUser: true,
+      };
+      const client = {
+        options: {},
+        sendMessage: jest.fn(async (_text, options) => {
+          options.onStart(serverUserMessage, 'server-response-uuid');
+          throw new Error('failed after onStart');
+        }),
+      };
+
+      await AgentController(
+        createFailedRequest(),
+        createResumableResponse(),
+        jest.fn(),
+        jest.fn().mockResolvedValue({ client }),
+        null,
+      );
+      await flushBackgroundGeneration();
+
+      const savedIds = mockSaveMessage.mock.calls.map(([, message]) => message.messageId);
+      expect(savedIds).toEqual(expect.arrayContaining(['server-user', 'server-user_']));
+      expect(savedIds).not.toContain('user-message_');
+    });
+
+    it('does not overwrite an existing response row', async () => {
+      mockGetMessages.mockResolvedValue([{ _id: 'already-saved' }]);
+
+      await AgentController(
+        createFailedRequest(),
+        createResumableResponse(),
+        jest.fn(),
+        jest.fn().mockRejectedValue(new Error('late failure')),
+        null,
+      );
+
+      expect(mockSaveMessage).not.toHaveBeenCalled();
+      expect(mockSaveConvo).not.toHaveBeenCalled();
+    });
+
+    it('creates the conversation row for a failed first turn', async () => {
+      const res = createResumableResponse();
+      mockGenerationJobManager.claimGeneration.mockImplementation(
+        async (_userId, _clientRequestId, streamId, claimedConversationId) =>
+          wonGenerationClaim({ streamId, conversationId: claimedConversationId }),
+      );
+      const req = createFailedRequest({
+        conversationId: undefined,
+        clientRequestId: 'failed-new-conversation',
+        parentMessageId: '00000000-0000-0000-0000-000000000000',
+        endpointOption: {
+          endpoint: 'azureOpenAI',
+          modelOptions: { model: 'gpt-4o' },
+          chatProjectId: '507f1f77bcf86cd799439011',
+        },
+      });
+
+      await AgentController(
+        req,
+        res,
+        jest.fn(),
+        jest.fn().mockRejectedValue(new Error('model unavailable')),
+        null,
+      );
+
+      const mintedConversationId = res.json.mock.calls[0][0].conversationId;
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({
+          messageId: 'user-message_',
+          conversationId: mintedConversationId,
+        }),
+        expect.any(Object),
+      );
+      expect(mockSaveConvo).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        expect.objectContaining({
+          conversationId: mintedConversationId,
+          endpoint: 'azureOpenAI',
+          model: 'gpt-4o',
+          chatProjectId: '507f1f77bcf86cd799439011',
+        }),
+        expect.any(Object),
+      );
+    });
+  });
+
   it('finalizes the failed job before releasing the idempotency claim', async () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue(wonGenerationClaim());
     const initializeClient = jest.fn().mockRejectedValue(new Error('init boom after res.json'));
@@ -3046,6 +3301,7 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       expect.any(String),
       1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
     );
     expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith(
       'user-123',
@@ -3112,6 +3368,7 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       'init boom after res.json',
       1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
     );
     expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith(
       'user-123',
@@ -3227,6 +3484,7 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       generationError.message,
       1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
     );
     expect(mockGenerationJobManager.completeJob.mock.invocationCallOrder[0]).toBeLessThan(
       mockDecrementPendingRequest.mock.invocationCallOrder[0],
