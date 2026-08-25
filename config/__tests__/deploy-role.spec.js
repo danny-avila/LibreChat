@@ -183,6 +183,19 @@ describe('deploy role script', () => {
     ).toThrow('System roles');
   });
 
+  it('rejects self-referential permission inheritance', () => {
+    expect(() =>
+      validateRoleDefinitions([
+        {
+          name: 'BETA',
+          inheritPermissionsFrom: 'BETA',
+          permissionOverrides: {},
+          config: { priority: 10, overrides: {} },
+        },
+      ]),
+    ).toThrow('cannot inherit permissions from itself');
+  });
+
   it('does not add config defaults inside arrays', () => {
     const [definition] = validateRoleDefinitions([
       {

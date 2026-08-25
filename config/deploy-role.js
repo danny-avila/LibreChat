@@ -33,7 +33,11 @@ const roleDefinitionsSchema = z
           })
           .strict(),
       })
-      .strict(),
+      .strict()
+      .refine((definition) => definition.name !== definition.inheritPermissionsFrom, {
+        message: 'A role cannot inherit permissions from itself',
+        path: ['inheritPermissionsFrom'],
+      }),
   )
   .min(1, 'Role definitions must be a non-empty array');
 
