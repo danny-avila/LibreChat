@@ -255,6 +255,59 @@ describe('persistFileWithQuota', () => {
     );
   });
 
+  /* A cached total that does not exclude the replaced row already contains its old
+   * bytes. The replacement's own check scope excludes it and so uses the full size,
+   * but other cached scopes may only grow by the difference — charging them the full
+   * size counts both versions and rejects later writes that actually fit. */
+  it('charges other cached scopes only the difference when replacing a row', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte - 10);
+
+    await persistFileWithQuota(
+      { scope, row: { bytes: 6 }, write: async (row) => row, rollback: null, getUserStorageUsage },
+      noRollbackErrors,
+    );
+
+    await persistFileWithQuota(
+      {
+        scope,
+        row: { bytes: 8, file_id: 'file-1' },
+        replacedBytes: 6,
+        write: async (row) => row,
+        rollback: null,
+        getUserStorageUsage,
+      },
+      noRollbackErrors,
+    );
+
+    /* The shared scope grew by 2, not 8, so this last write still fits exactly. */
+    const write = jest.fn(async (row: { bytes: number }) => row);
+    await persistFileWithQuota(
+      { scope, row: { bytes: 2 }, write, rollback: null, getUserStorageUsage },
+      noRollbackErrors,
+    );
+
+    expect(write).toHaveBeenCalled();
+  });
+
+  /* Charging one ledger while writing to another leaves the written owner unenforced. */
+  it('writes the row to the owner it charged', async () => {
+    const write = jest.fn(async (row: { bytes: number; user?: string }) => row);
+
+    await persistFileWithQuota(
+      {
+        scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+        row: { bytes: 10, user: 'someone-else' },
+        write,
+        rollback: null,
+        getUserStorageUsage: usageOf(0),
+      },
+      noRollbackErrors,
+    );
+
+    expect(write).toHaveBeenCalledWith(expect.objectContaining({ user: userId }));
+  });
+
   describe('when the user is already over the limit', () => {
     /* Quotas get switched on, or lowered, for accounts already holding more than the
      * new cap. Everything stops until they free space, and the error has to say by
@@ -355,6 +408,24 @@ describe('persistSkillFileWithQuota', () => {
     expect(getUserStorageUsage).toHaveBeenCalledWith(
       expect.not.objectContaining({ excludeSkillFile: expect.anything() }),
     );
+  });
+
+  it('writes the skill row to the author it charged', async () => {
+    const write = jest.fn(async (row: typeof skillRow & { author?: string }) => row);
+
+    await persistSkillFileWithQuota(
+      {
+        scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+        row: { ...skillRow, author: 'someone-else' },
+        replacing: null,
+        write,
+        rollback: null,
+        getUserStorageUsage: usageOf(0),
+      },
+      noRollbackErrors,
+    );
+
+    expect(write).toHaveBeenCalledWith(expect.objectContaining({ author: userId }));
   });
 
   it('stamps the resolved tenant onto skill rows too', async () => {
