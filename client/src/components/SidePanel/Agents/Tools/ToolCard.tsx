@@ -129,7 +129,7 @@ function ToolCardImpl({
                 <span className="truncate">{name}</span>
                 {isNative && (
                   <BadgeCheck
-                    className="size-4 shrink-0 fill-emerald-500 text-white dark:text-surface-primary"
+                    className="size-4 shrink-0 fill-status-success-strong text-text-on-status"
                     strokeWidth={2}
                     aria-label={localize('com_ui_tools_native')}
                   />
@@ -137,7 +137,7 @@ function ToolCardImpl({
               </p>
               {selected && (
                 <span
-                  className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white"
+                  className="flex size-5 shrink-0 items-center justify-center rounded-full bg-status-success-strong text-text-on-status"
                   aria-hidden="true"
                 >
                   <Check className="size-3" strokeWidth={3} />
