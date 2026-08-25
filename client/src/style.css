@@ -473,6 +473,16 @@ html.high-contrast.dark :focus-visible {
   outline: 3px solid rgb(var(--text-primary));
   outline-offset: 2px;
 }
+/* `.select-item` blanks its own outline with `!important`, leaving the navigated
+ * option marked only by a `surface-hover` fill at 1.48:1 on white and 1.93:1 on
+ * black. Hover stays deliberately soft in these palettes, so the cue has to be a
+ * perimeter, and it has to match that `!important` to land. Inset so it reads
+ * inside the popover's own border. */
+html.high-contrast .select-item[data-active-item],
+html.high-contrast .select-item:focus-visible {
+  outline: 3px solid rgb(var(--text-primary)) !important;
+  outline-offset: -3px;
+}
 html[data-input-modality='keyboard'].high-contrast
   :where(
     input:not([type]),

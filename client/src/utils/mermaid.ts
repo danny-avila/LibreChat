@@ -32,8 +32,35 @@ const lightButtonStyles: MermaidButtonStyles = {
   divider: 'rgba(0, 0, 0, 0.1)',
 };
 
-const getButtonStyles = (isDarkMode: boolean): MermaidButtonStyles =>
-  isDarkMode ? darkButtonStyles : lightButtonStyles;
+/**
+ * The standard control palettes hold fixed greys and 10%-alpha borders, which
+ * leave the zoom label below AAA and the border and divider below the 3:1
+ * non-text floor against a pure canvas, so a contrast mode builds its controls
+ * from the same tokens the diagram uses.
+ */
+const contrastButtonStyles = (isDarkMode: boolean): MermaidButtonStyles => {
+  const palette = isDarkMode ? highContrastDarkTheme : highContrastLightTheme;
+  const canvas = tokenHex(palette['rgb-surface-primary'], isDarkMode ? '#000000' : '#ffffff');
+  const ink = tokenHex(palette['rgb-text-primary'], isDarkMode ? '#ffffff' : '#000000');
+  const active = tokenHex(palette['rgb-surface-active'], isDarkMode ? '#5c5c5c' : '#8c8c8c');
+
+  return {
+    bg: canvas,
+    bgHover: active,
+    border: `2px solid ${ink}`,
+    text: ink,
+    textSecondary: ink,
+    shadow: 'none',
+    divider: ink,
+  };
+};
+
+const getButtonStyles = (isDarkMode: boolean, highContrast = false): MermaidButtonStyles => {
+  if (highContrast) {
+    return contrastButtonStyles(isDarkMode);
+  }
+  return isDarkMode ? darkButtonStyles : lightButtonStyles;
+};
 
 const baseFlowchartConfig = {
   curve: 'basis' as const,
@@ -519,7 +546,7 @@ export const getMermaidFiles = (content: string, isDarkMode = true, highContrast
   const standardTheme = isDarkMode ? 'dark' : 'neutral';
   /** `base` is the only built-in mermaid theme that honours themeVariables. */
   const mermaidTheme = themeVariables ? 'base' : standardTheme;
-  const btnStyles = getButtonStyles(isDarkMode);
+  const btnStyles = getButtonStyles(isDarkMode, highContrast);
   const bgColor = themeVariables?.background ?? (isDarkMode ? '#212121' : '#FFFFFF');
   const mermaidCSS = `
 body {

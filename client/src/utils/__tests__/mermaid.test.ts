@@ -308,4 +308,22 @@ describe('high contrast mermaid palette', () => {
     expect(contrastComponent).toContain('"lineColor":"#ffffff"');
     expect(contrast['mermaid.css']).toContain('#000000');
   });
+
+  it('builds the artifact controls from the contrast palette', () => {
+    const standard = getMermaidFiles('graph TD; a-->b', false, false)[
+      '/components/ui/MermaidDiagram.tsx'
+    ];
+    expect(standard).toContain('rgba(0, 0, 0, 0.1)');
+
+    const contrast = getMermaidFiles('graph TD; a-->b', false, true)[
+      '/components/ui/MermaidDiagram.tsx'
+    ];
+    /** Fixed greys and 10%-alpha borders cannot clear the floors on a pure
+     *  canvas, so none of them may survive into the contrast document. */
+    expect(contrast).not.toContain('rgba(0, 0, 0, 0.1)');
+    expect(contrast).not.toContain('#374151');
+    expect(contrast).not.toContain('#6B7280');
+    expect(contrast).toContain('2px solid #000000');
+    expect(contrast).toContain('color: "#000000"');
+  });
 });
