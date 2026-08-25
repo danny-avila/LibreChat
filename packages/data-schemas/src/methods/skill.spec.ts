@@ -1210,6 +1210,50 @@ describe('Skill CRUD methods', () => {
       });
     });
 
+    it('preserves structured invocation overrides across an unrelated body-only edit', async () => {
+      const originalBody = [
+        '---',
+        'name: persistent-overrides',
+        'description: Body declarations are lower precedence.',
+        'always-apply: false',
+        'user-invocable: false',
+        'disable-model-invocation: true',
+        '---',
+        'Original body.',
+      ].join('\n');
+      const { skill } = await methods.createSkill(
+        makeSkillInput({
+          name: 'persistent-overrides',
+          body: originalBody,
+          frontmatter: {
+            'always-apply': true,
+            'user-invocable': true,
+            'disable-model-invocation': false,
+          },
+        }),
+      );
+      expect(skill.alwaysApply).toBe(true);
+      expect(skill.userInvocable).toBe(true);
+      expect(skill.disableModelInvocation).toBe(false);
+
+      const updated = await methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: skill.version,
+        update: { body: originalBody.replace('Original body.', 'Unrelated body edit.') },
+      });
+
+      expect(updated.status).toBe('updated');
+      if (updated.status !== 'updated') return;
+      expect(updated.skill.alwaysApply).toBe(true);
+      expect(updated.skill.userInvocable).toBe(true);
+      expect(updated.skill.disableModelInvocation).toBe(false);
+      expect(updated.skill.frontmatter).toEqual({
+        'always-apply': true,
+        'user-invocable': true,
+        'disable-model-invocation': false,
+      });
+    });
+
     it('merges body flags into a simultaneously supplied bag that omits them', async () => {
       const { skill } = await methods.createSkill(makeSkillInput({ name: 'mixed-body-bag' }));
 
@@ -1544,6 +1588,43 @@ describe('Skill CRUD methods', () => {
       });
     });
 
+    it('rejects changed values in a grandfathered case-colliding frontmatter mapping', async () => {
+      const malformed =
+        '---\nname: colliding-legacy-body\ndescription: A demo skill.\nuser-invocable: false\nUSER-INVOCABLE: true\n---\n\nBody.';
+      const stored = await Skill.create({
+        name: 'colliding-legacy-body',
+        description: 'A demo skill.',
+        body: malformed,
+        frontmatter: {},
+        author: owner._id,
+        authorName: owner.name ?? 'Skill Owner',
+        version: 1,
+        source: 'inline',
+        fileCount: 0,
+      });
+
+      const unrelatedBody = malformed.replace('A demo skill.', 'An edited description.');
+      const unchanged = await methods.updateSkill({
+        id: (stored._id as mongoose.Types.ObjectId).toString(),
+        expectedVersion: 1,
+        update: { description: 'An unrelated edit.', body: unrelatedBody },
+      });
+      expect(unchanged.status).toBe('updated');
+      if (unchanged.status !== 'updated') return;
+
+      await expect(
+        methods.updateSkill({
+          id: (stored._id as mongoose.Types.ObjectId).toString(),
+          expectedVersion: unchanged.skill.version,
+          update: {
+            body: unrelatedBody
+              .replace('user-invocable: false', 'user-invocable: true')
+              .replace('USER-INVOCABLE: true', 'USER-INVOCABLE: false'),
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+    });
+
     it('distinguishes changed null spellings when failsafe parsing is unavailable', async () => {
       const malformed =
         '---\nname: changed-null-typo\ndescription: A demo skill.\npublished: !!timestamp 2026-08-25\nuser-invocable: null\n---\n\nBody.';
@@ -1629,6 +1710,19 @@ describe('Skill CRUD methods', () => {
       expect(skill.frontmatter ?? {}).not.toHaveProperty('user-invocable');
     });
 
+    it('preserves an empty flow-style flag when an unrelated explicit tag breaks failsafe parsing', async () => {
+      const { skill } = await methods.createSkill(
+        makeSkillInput({
+          name: 'explicit-tag-flow-empty-flag',
+          body: '---\n{name: explicit-tag-flow-empty-flag, description: A demo skill., published: !!timestamp 2026-08-25, user-invocable: }\n---\n\nBody.',
+          frontmatter: undefined,
+        }),
+      );
+
+      expect(skill.userInvocable).toBe(true);
+      expect(skill.frontmatter ?? {}).not.toHaveProperty('user-invocable');
+    });
+
     it('rejects a continued null when an unrelated explicit tag breaks failsafe parsing', async () => {
       await expect(
         methods.createSkill(
@@ -1659,6 +1753,26 @@ describe('Skill CRUD methods', () => {
         ]),
       });
     });
+
+    it.each(['always-apply', 'user-invocable', 'disable-model-invocation'])(
+      'does not mistake a synchronized bag copy for an override of malformed %s body text',
+      async (key) => {
+        const name = `synchronized-${key}`;
+        const originalBody = `---\nname: ${name}\ndescription: A demo skill.\n${key}: true\n---\n\nBody.`;
+        const { skill } = await methods.createSkill(
+          makeSkillInput({ name, body: originalBody, frontmatter: undefined }),
+        );
+        expect(skill.frontmatter).toHaveProperty(key, true);
+
+        await expect(
+          methods.updateSkill({
+            id: skill._id.toString(),
+            expectedVersion: skill.version,
+            update: { body: originalBody.replace(`${key}: true`, `${key}: tru`) },
+          }),
+        ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+      },
+    );
   });
 
   it('backfills legacy skills from frontmatter when columns are unset (getSkillByName)', async () => {

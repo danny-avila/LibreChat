@@ -170,6 +170,19 @@ describe('frontmatter parity between the upload and inline-body routes', () => {
     expect(await viaInlineBody(name, body)).toEqual(await viaImport(name, body));
   });
 
+  it('accepts an empty flow-style flag beside an unrelated explicit tag on both routes', async () => {
+    const name = 'parity-flow-empty-explicit-tag';
+    const body = `---\n{name: ${name}, description: ${DESCRIPTION}, published: !!timestamp 2026-08-25, user-invocable: }\n---\n\nBody.`;
+    const expected = {
+      alwaysApply: false,
+      userInvocable: true,
+      disableModelInvocation: false,
+    };
+
+    expect(await viaInlineBody(name, body)).toEqual(expected);
+    expect(await viaImport(name, body)).toEqual(expected);
+  });
+
   it.each([
     [
       'an indented mapping',
@@ -178,6 +191,10 @@ describe('frontmatter parity between the upload and inline-body routes', () => {
     [
       'a flow-style mapping',
       `---\n{name: parity-null-flow, description: ${DESCRIPTION}, user-invocable: null}\n---\n\nBody.`,
+    ],
+    [
+      'an explicitly tagged null in a flow-style mapping',
+      `---\n{name: parity-null-tagged-flow, description: ${DESCRIPTION}, user-invocable: !!null null}\n---\n\nBody.`,
     ],
     [
       'an alias',

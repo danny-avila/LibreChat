@@ -2,6 +2,25 @@ import yaml from 'js-yaml';
 import { normalizeSkillFrontmatterKeys } from '@librechat/data-schemas';
 import type { SkillBooleanFlag, SkillBooleanColumn } from '@librechat/data-schemas';
 
+type SchemaWithTypes = yaml.Schema & { implicit: yaml.Type[]; explicit: yaml.Type[] };
+
+const defaultYamlSchema = yaml.DEFAULT_SCHEMA as SchemaWithTypes;
+const explicitYamlNull = new yaml.Type('tag:yaml.org,2002:null', {
+  kind: 'scalar',
+  resolve: () => true,
+  construct: (value) => ({ explicitYamlNull: value }),
+});
+/** Keep implicit scalar text while accepting standard explicit YAML tags. */
+const AUTHORED_YAML_SCHEMA = yaml.FAILSAFE_SCHEMA.extend({
+  explicit: [
+    ...defaultYamlSchema.explicit,
+    ...defaultYamlSchema.implicit.filter(
+      (type) => (type as yaml.Type & { tag: string }).tag !== 'tag:yaml.org,2002:null',
+    ),
+    explicitYamlNull,
+  ],
+});
+
 /**
  * Boolean frontmatter flags mirrored onto first-class skill columns, declared
  * locally on purpose. Several suites replace `@librechat/data-schemas` with a
@@ -271,7 +290,7 @@ export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
     frontmatter = normalized.frontmatter;
   }
   try {
-    const authoredParsed = yaml.load(block, { schema: yaml.FAILSAFE_SCHEMA });
+    const authoredParsed = yaml.load(block, { schema: AUTHORED_YAML_SCHEMA });
     if (isPlainObject(authoredParsed)) {
       const authoredNormalized = normalizeSkillFrontmatterKeys(authoredParsed);
       if ('frontmatter' in authoredNormalized) {

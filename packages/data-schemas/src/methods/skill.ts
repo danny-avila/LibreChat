@@ -25,6 +25,31 @@ import logger from '~/config/winston';
 
 /** ---------- Validation helpers (pure) ---------- */
 
+type SchemaWithTypes = yaml.Schema & { implicit: yaml.Type[]; explicit: yaml.Type[] };
+
+const defaultYamlSchema = yaml.DEFAULT_SCHEMA as SchemaWithTypes;
+const explicitYamlNull = new yaml.Type('tag:yaml.org,2002:null', {
+  kind: 'scalar',
+  resolve: () => true,
+  construct: (value) => ({ explicitYamlNull: value }),
+});
+/**
+ * Preserve untagged scalar text while accepting every explicit tag understood
+ * by the default parser. This lets an authored-value pass distinguish an empty
+ * flag from `null` / `~` even when an unrelated field uses `!!timestamp` (or
+ * another standard tag). Explicit `!!null` gets a sentinel so it remains an
+ * invalid authored value instead of becoming indistinguishable from empty.
+ */
+const AUTHORED_YAML_SCHEMA = yaml.FAILSAFE_SCHEMA.extend({
+  explicit: [
+    ...defaultYamlSchema.explicit,
+    ...defaultYamlSchema.implicit.filter(
+      (type) => (type as yaml.Type & { tag: string }).tag !== 'tag:yaml.org,2002:null',
+    ),
+    explicitYamlNull,
+  ],
+});
+
 /**
  * A single validation issue emitted by a skill validator. Most issues are
  * errors and block the mutation; some are warnings (e.g. "description is
@@ -963,8 +988,31 @@ function fingerprintBodyFlagValue(value: unknown): string {
   try {
     return JSON.stringify(value) ?? String(value);
   } catch {
-    return String(value);
+    try {
+      return yaml.dump(value, { sortKeys: true });
+    } catch {
+      return String(value);
+    }
   }
+}
+
+function getRecognizedFrontmatterCollisions(
+  frontmatter: Record<string, unknown>,
+): Array<{ canonicalKey: string; entries: Array<[string, unknown]> }> {
+  const byCanonicalKey = new Map<string, Array<[string, unknown]>>();
+  for (const [key, value] of Object.entries(frontmatter)) {
+    const canonicalKey = getCanonicalSkillFrontmatterKey(key);
+    if (canonicalKey === undefined) {
+      continue;
+    }
+    const entries = byCanonicalKey.get(canonicalKey) ?? [];
+    entries.push([key, value]);
+    byCanonicalKey.set(canonicalKey, entries);
+  }
+  return Array.from(byCanonicalKey, ([canonicalKey, entries]) => ({
+    canonicalKey,
+    entries,
+  })).filter(({ entries }) => entries.length > 1);
 }
 
 /**
@@ -1110,12 +1158,18 @@ function extractBooleanFlagsFromBody(body: string | undefined): BodyFlagResults 
   }
   const normalized = normalizeSkillFrontmatterKeys(parsed);
   if ('error' in normalized) {
-    const invalid = { status: 'invalid' as const, fingerprint: normalized.error };
+    const invalid = {
+      status: 'invalid' as const,
+      fingerprint: fingerprintBodyFlagValue({
+        error: normalized.error,
+        collisions: getRecognizedFrontmatterCollisions(parsed),
+      }),
+    };
     return { alwaysApply: invalid, userInvocable: invalid, disableModelInvocation: invalid };
   }
   let authoredFrontmatter: Record<string, unknown> | undefined;
   try {
-    const authoredParsed = yaml.load(block, { schema: yaml.FAILSAFE_SCHEMA });
+    const authoredParsed = yaml.load(block, { schema: AUTHORED_YAML_SCHEMA });
     if (isPlainObject(authoredParsed)) {
       const authoredNormalized = normalizeSkillFrontmatterKeys(authoredParsed);
       if ('frontmatter' in authoredNormalized) {
@@ -1189,6 +1243,46 @@ function resolveBodyDerivedColumn(
   }
   const fromBody = bodyFlags?.[column];
   return fromBody?.status === 'valid' ? fromBody.value : undefined;
+}
+
+/**
+ * A structured bag value that differs from the stored SKILL.md declaration is
+ * a persistent higher-precedence override, not a stale copy of body-derived
+ * state. Body-only PATCHes must preserve that override until a caller submits
+ * a new structured bag; equal values remain body-synchronized and may follow a
+ * later inline edit or removal.
+ */
+function getStoredBagBooleanOverride(
+  column: SkillBooleanColumn,
+  frontmatter: Record<string, unknown> | undefined,
+  bodyFlags: BodyFlagResults | undefined,
+): boolean | undefined {
+  const fromBag =
+    column === 'alwaysApply'
+      ? getAlwaysApplyFrontmatterValue(frontmatter)
+      : deriveStructuredFrontmatterFields(frontmatter)[column];
+  if (typeof fromBag !== 'boolean') {
+    return undefined;
+  }
+  const fromBody = bodyFlags?.[column];
+  if (fromBody?.status === 'valid' && fromBody.value === fromBag) {
+    return undefined;
+  }
+  return fromBag;
+}
+
+function getStoredBagBooleanOverrides(
+  frontmatter: Record<string, unknown> | undefined,
+  bodyFlags: BodyFlagResults | undefined,
+): Record<string, boolean> {
+  const overrides: Record<string, boolean> = {};
+  for (const flag of SKILL_BOOLEAN_FLAGS) {
+    const value = getStoredBagBooleanOverride(flag.column, frontmatter, bodyFlags);
+    if (value !== undefined) {
+      overrides[flag.key] = value;
+    }
+  }
+  return overrides;
 }
 
 /**
@@ -1879,6 +1973,12 @@ export function createSkillMethods(
     const storedBodyFlags = storedSkillState
       ? extractBooleanFlagsFromBody(storedSkillState.body)
       : undefined;
+    const storedFrontmatter = isPlainObject(storedSkillState?.frontmatter)
+      ? storedSkillState.frontmatter
+      : undefined;
+    const storedBagOverrides = getStoredBagBooleanOverrides(storedFrontmatter, storedBodyFlags);
+    const validationFrontmatter =
+      update.frontmatter !== undefined ? frontmatter : storedBagOverrides;
     let bodyFrontmatter: Record<string, unknown> | undefined;
     if (update.body !== undefined) {
       if (update.frontmatter !== undefined) {
@@ -1899,7 +1999,7 @@ export function createSkillMethods(
       issues.push(...validateSkillDisplayTitle(update.displayTitle));
     if (update.frontmatter !== undefined) issues.push(...validateSkillFrontmatter(frontmatter));
     if (update.alwaysApply !== undefined) issues.push(...validateAlwaysApply(update.alwaysApply));
-    issues.push(...validateBodyDerivedColumns(frontmatter, bodyScan, storedBodyFlags));
+    issues.push(...validateBodyDerivedColumns(validationFrontmatter, bodyScan, storedBodyFlags));
     /* Body-level `always-apply:` only needs to be well-formed when a
        higher-precedence source won't override it (see
        `resolveAlwaysApplyFromInput` for precedence). Rejecting a typo
@@ -1909,7 +2009,7 @@ export function createSkillMethods(
     if (
       bodyAlwaysApply?.status === 'invalid' &&
       update.alwaysApply === undefined &&
-      getAlwaysApplyFrontmatterValue(frontmatter) === undefined &&
+      getAlwaysApplyFrontmatterValue(validationFrontmatter) === undefined &&
       !(
         storedBodyFlags?.alwaysApply.status === 'invalid' &&
         storedBodyFlags.alwaysApply.fingerprint === bodyAlwaysApply.fingerprint
@@ -1969,6 +2069,14 @@ export function createSkillMethods(
      * the restriction straight back over the unset column on the next lookup.
      */
     for (const column of BODY_DERIVED_COLUMNS) {
+      const storedBagOverride =
+        update.frontmatter === undefined
+          ? getStoredBagBooleanOverride(column, storedFrontmatter, storedBodyFlags)
+          : undefined;
+      if (storedBagOverride !== undefined) {
+        setPayload[column] = storedBagOverride;
+        continue;
+      }
       const resolved = resolveBodyDerivedColumn(column, bagDerived, bodyScan);
       const flag = SKILL_BOOLEAN_FLAGS.find((candidate) => candidate.column === column);
       if (resolved !== undefined) {
@@ -2024,6 +2132,10 @@ export function createSkillMethods(
      * is present in that payload.
      */
     let derivedAlwaysApply: boolean | undefined;
+    const storedAlwaysApplyBagOverride =
+      update.frontmatter === undefined
+        ? getStoredBagBooleanOverride('alwaysApply', storedFrontmatter, storedBodyFlags)
+        : undefined;
     if (update.alwaysApply !== undefined) {
       derivedAlwaysApply = update.alwaysApply;
     }
@@ -2032,6 +2144,9 @@ export function createSkillMethods(
       if (typeof fromFrontmatter === 'boolean') {
         derivedAlwaysApply = fromFrontmatter;
       }
+    }
+    if (derivedAlwaysApply === undefined && storedAlwaysApplyBagOverride !== undefined) {
+      derivedAlwaysApply = storedAlwaysApplyBagOverride;
     }
     if (derivedAlwaysApply === undefined && bodyAlwaysApply !== undefined) {
       if (bodyAlwaysApply.status === 'valid') {
@@ -2058,6 +2173,7 @@ export function createSkillMethods(
       update.alwaysApply === undefined &&
       bodyAlwaysApply !== undefined &&
       bodyFrontmatter &&
+      storedAlwaysApplyBagOverride === undefined &&
       getAlwaysApplyFrontmatterValue(frontmatter) === undefined
     ) {
       const alwaysApplyFlag = SKILL_BOOLEAN_FLAGS.find(
