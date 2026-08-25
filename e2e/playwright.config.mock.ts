@@ -39,6 +39,25 @@ if (modelFixtureRecording && !process.env.E2E_RECORD_PROVIDER_API_KEY) {
 if (modelFixtureRecording && !process.env.E2E_MODEL_FIXTURE_NAME) {
   throw new Error('E2E_MODEL_FIXTURES=record requires E2E_MODEL_FIXTURE_NAME');
 }
+/**
+ * Derived configs (`playwright.config.redis.ts`, `.mermaid.ts`) spread this
+ * config and then replace `testMatch`, discarding the record-mode restriction
+ * below — their specs would reach the paid provider and rewrite the selected
+ * fixture. The restriction cannot be enforced through a value a consumer can
+ * overwrite, so record mode refuses any config but this one.
+ */
+if (modelFixtureRecording) {
+  const configArg = process.argv.find((arg) => arg.startsWith('--config'));
+  const configPath = configArg?.includes('=')
+    ? configArg.split('=')[1]
+    : process.argv[process.argv.indexOf(configArg ?? '') + 1];
+  if (configPath && !/playwright\.config\.mock\.ts$/.test(configPath)) {
+    throw new Error(
+      `E2E_MODEL_FIXTURES=record only runs under playwright.config.mock.ts, not ${configPath}; ` +
+        'derived configs replace testMatch and would send their specs to the real provider',
+    );
+  }
+}
 const assistantsServerPath = path.resolve(rootPath, 'e2e/setup/fake-assistants-server.js');
 const ASSISTANTS_PORT = process.env.E2E_ASSISTANTS_PORT || '8890';
 const configTemplatePath = path.resolve(rootPath, 'e2e/config/librechat.e2e.yaml');

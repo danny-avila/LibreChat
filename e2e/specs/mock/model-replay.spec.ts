@@ -54,7 +54,7 @@ const RECORD_ENDPOINT = {
  */
 const TURN_PROMPTS = [
   'Name the two prime numbers between 20 and 30, comma separated, and nothing else.',
-  'Now add those two primes together, then explain the arithmetic in two short sentences.',
+  'In two short sentences, explain why the sum of those two primes is an even number. Begin with the word "Because".',
 ];
 
 test.describe('recorded model fixture replay', () => {
@@ -157,9 +157,19 @@ test.describe('recorded model fixture replay', () => {
       expect(assistantTexts, 'replayed assistant turns should equal the recording exactly').toEqual(
         turns.map((turn) => turn.finalText),
       );
-      await expect(messagesView(page)).toContainText(
-        turns[turns.length - 1].finalText.slice(0, 40),
-      );
+      /** Compare against rendered markdown, not the raw recording: a reply
+       * opening with `52.` is rendered as an ordered-list marker and never
+       * appears in the DOM text, so a leading enumerator is stripped before
+       * matching and only a prose prefix is used. */
+      const renderedPrefix = turns[turns.length - 1].finalText
+        .replace(/^\s*\d+[.)]\s*/, '')
+        .trim()
+        .slice(0, 30);
+      expect(
+        renderedPrefix.length,
+        'the prose turn should yield a comparable prefix',
+      ).toBeGreaterThan(15);
+      await expect(messagesView(page)).toContainText(renderedPrefix);
 
       /** Streaming incrementality is asserted from the ledger's drained chunk
        * count, not by sampling transient DOM — every recorded chunk passed

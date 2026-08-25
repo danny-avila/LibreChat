@@ -175,6 +175,9 @@ const recordingState = {
   fixturePath: undefined,
   invocationCounter: 0,
   conversationId: undefined,
+  /** Bumped on every (re)start so handlers left on a superseded graph can be
+   *  told apart from the current attempt's. */
+  generation: 0,
   runIdToInvocation: new Map(),
 };
 
@@ -194,6 +197,7 @@ function initializeRecording(fixtureName) {
   recordingState.initialized = true;
   recordingState.invocationCounter = 0;
   recordingState.conversationId = undefined;
+  recordingState.generation += 1;
   recordingState.runIdToInvocation.clear();
   console.log(`[e2e model-replay] recording fixture ${recordingState.fixturePath}`);
 }
@@ -227,15 +231,29 @@ function startsNewRecording(conversationId, messages) {
   return isConversationStart(messages);
 }
 
+/**
+ * Handlers are stamped with the recording generation they were installed for.
+ * A failed attempt can still have a provider call in flight when the retry
+ * resets the recording, and its graph keeps this handler: without the stamp
+ * that stale call would allocate an invocation index from the new attempt's
+ * counter, or append an `error` entry whose mapping was cleared, corrupting
+ * the freshly reset fixture.
+ */
 function createRecorderHandler() {
+  const generation = recordingState.generation;
+  const superseded = () => generation !== recordingState.generation;
   return {
     name: RECORDER_HANDLER_NAME,
+    generation,
     /** Callbacks must settle before the model call resolves, or the `end`
      * line races the durable-completion barrier the recording spec waits on
      * (the same contract ModelBoundChatModelCallback declares). */
     awaitHandlers: true,
     raiseError: true,
     handleChatModelStart(_llm, messageBatches, runId) {
+      if (superseded()) {
+        return;
+      }
       const index = recordingState.invocationCounter++;
       recordingState.runIdToInvocation.set(runId, index);
       appendFixtureLine({
@@ -246,7 +264,7 @@ function createRecorderHandler() {
     },
     handleLLMNewToken(token, _idx, runId, _parentRunId, _tags, fields) {
       const invocation = recordingState.runIdToInvocation.get(runId);
-      if (invocation == null) {
+      if (superseded() || invocation == null) {
         return;
       }
       appendFixtureLine({
@@ -257,7 +275,7 @@ function createRecorderHandler() {
     },
     handleLLMEnd(output, runId) {
       const invocation = recordingState.runIdToInvocation.get(runId);
-      if (invocation == null) {
+      if (superseded() || invocation == null) {
         return;
       }
       recordingState.runIdToInvocation.delete(runId);
@@ -271,6 +289,9 @@ function createRecorderHandler() {
     handleLLMError(error, runId) {
       const invocation = recordingState.runIdToInvocation.get(runId);
       recordingState.runIdToInvocation.delete(runId);
+      if (superseded()) {
+        return;
+      }
       appendFixtureLine({
         type: 'error',
         invocation: invocation ?? null,
@@ -322,10 +343,19 @@ function installRecorder({ graph, messages, conversationId }) {
 
 /** Append the recorder to a client-options object's callbacks, once. */
 function attachRecorder(options) {
+  /** Dedupe against the CURRENT generation only: a graph carried across a
+   * recording restart still holds a superseded handler, which is inert, so
+   * matching on name alone would leave that options object recording
+   * nothing. */
+  const isCurrent = (handler) =>
+    handler?.name === RECORDER_HANDLER_NAME && handler.generation === recordingState.generation;
   const existing = options.callbacks;
   if (Array.isArray(existing)) {
-    if (!existing.some((handler) => handler?.name === RECORDER_HANDLER_NAME)) {
-      options.callbacks = [...existing, createRecorderHandler()];
+    if (!existing.some(isCurrent)) {
+      options.callbacks = [
+        ...existing.filter((handler) => handler?.name !== RECORDER_HANDLER_NAME),
+        createRecorderHandler(),
+      ];
     }
     return;
   }
@@ -334,10 +364,7 @@ function attachRecorder(options) {
     return;
   }
   if (typeof existing.addHandler === 'function') {
-    const alreadyAttached = existing.handlers?.some(
-      (handler) => handler?.name === RECORDER_HANDLER_NAME,
-    );
-    if (!alreadyAttached) {
+    if (!existing.handlers?.some(isCurrent)) {
       existing.addHandler(createRecorderHandler());
     }
   }
