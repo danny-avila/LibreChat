@@ -339,19 +339,44 @@ describe('retention helpers', () => {
   });
 
   it('creates minimal retention requests for tool calls', () => {
+    const paths = {
+      imageOutput: '/srv/public/images',
+      publicPath: '/srv/public',
+      uploads: '/srv/uploads',
+    };
+
     expect(
       createMinimalRetentionRequest({
         user: { id: 'user-1', tenantId: 'tenant-1' },
         body: { conversationId: 'convo-1', isTemporary: 'true' },
-        config: { interfaceConfig: { retentionMode: RetentionMode.TEMPORARY } },
+        config: { interfaceConfig: { retentionMode: RetentionMode.TEMPORARY }, paths },
       }),
     ).toEqual({
+      tenantId: undefined,
       user: { id: 'user-1', tenantId: 'tenant-1' },
       body: { conversationId: 'convo-1', isTemporary: 'true' },
-      config: { interfaceConfig: { retentionMode: RetentionMode.TEMPORARY } },
+      config: { interfaceConfig: { retentionMode: RetentionMode.TEMPORARY }, paths },
     });
 
     expect(createMinimalRetentionRequest()).toBeUndefined();
+  });
+
+  it('carries the resolved request tenant, not just the user tenant', () => {
+    /* Remote-agent auth places the tenant only on `req.tenantId`. Dropping it here
+     * makes downstream quota checks resolve a null tenant, billing generated images
+     * to a second ledger and handing the user a duplicate allowance. */
+    expect(
+      createMinimalRetentionRequest({
+        tenantId: 'request-tenant',
+        user: { id: 'user-1' },
+        body: { conversationId: 'convo-1' },
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        tenantId: 'request-tenant',
+        user: { id: 'user-1', tenantId: undefined },
+      }),
+    );
   });
 
   describe('getSharedLinkExpiration', () => {

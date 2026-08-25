@@ -37,6 +37,7 @@ import {
   contentFilterUninspectableResponse,
   getBlockedUninspectableSkillFileField,
 } from '~/protection';
+import { isFileStorageLimitError, recordFileStorageUsage } from '~/files/limits';
 import { contentFilterBlockResponse } from '~/middleware/contentFilter';
 import { resolveRequestTenantId } from '~/middleware/tenant';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from './limits';
@@ -47,6 +48,15 @@ import { isBinaryBuffer } from './binary';
 const SKILL_MD = 'SKILL.md';
 
 export type { ImportLimits } from './limits';
+
+type StoredImportFile = {
+  filepath: string;
+  source: string;
+  storageKey?: string;
+  storageRegion?: string;
+  user: Types.ObjectId;
+  tenantId?: string;
+};
 
 /**
  * YAML frontmatter parser — extracts the first-class fields LibreChat
@@ -123,6 +133,25 @@ function isDuplicateKeyError(error: unknown): boolean {
     typeof error === 'object' &&
     'code' in error &&
     (error as { code: unknown }).code === 11000
+  );
+}
+
+async function cleanupStoredImportFiles(
+  deps: ImportSkillDeps,
+  req: Request,
+  files: StoredImportFile[],
+): Promise<void> {
+  const deleteFile = deps.deleteFile;
+  if (!deleteFile || files.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    files.map((file) =>
+      deleteFile(req, file).catch((error) =>
+        logger.error(`[importSkill] Import rollback cleanup failed:`, error),
+      ),
+    ),
   );
 }
 
@@ -599,6 +628,9 @@ async function scanArchiveFiles(
       files.push(fileDescriptor);
       results.push({ path: relativePath, status: 'ok' });
     } catch (error) {
+      if (isFileStorageLimitError(error)) {
+        throw error;
+      }
       logger.error(`[importSkill] Failed to read file ${relativePath}:`, error);
       results.push({
         path: relativePath,
@@ -638,6 +670,8 @@ interface ArchivePersistenceContext {
   readonly skillId: Types.ObjectId;
   readonly authorId: Types.ObjectId;
   readonly tenantId?: string;
+  /** Blobs written so far, so an over-quota abort can roll the whole import back. */
+  readonly savedFiles: StoredImportFile[];
 }
 
 async function persistArchiveFile(
@@ -659,7 +693,7 @@ async function persistArchiveFile(
   });
 
   try {
-    await deps.upsertSkillFile({
+    const savedSkillFile = await deps.upsertSkillFile({
       skillId: context.skillId,
       relativePath: file.relativePath,
       file_id: fileId,
@@ -672,6 +706,21 @@ async function persistArchiveFile(
       bytes: buffer.length,
       isExecutable: false,
       author: context.authorId,
+      tenantId: context.tenantId,
+    });
+    recordFileStorageUsage(req, buffer.length, {
+      skillFile: {
+        id: savedSkillFile?._id,
+        skillId: context.skillId,
+        relativePath: file.relativePath,
+      },
+    });
+    context.savedFiles.push({
+      filepath,
+      storageKey,
+      storageRegion,
+      source,
+      user: context.authorId,
       tenantId: context.tenantId,
     });
   } catch (dbError) {
@@ -737,6 +786,9 @@ async function persistPreflightedArchiveFiles(
       await persistArchiveFile(req, deps, file, buffer, context);
       results.push({ path: file.relativePath, status: 'ok' });
     } catch (error) {
+      if (isFileStorageLimitError(error)) {
+        throw error;
+      }
       logger.error(`[importSkill] Failed to process file ${file.relativePath}:`, error);
       results.push({
         path: file.relativePath,
@@ -950,39 +1002,55 @@ async function handleZip(
     return res.status(500).json({ error: grant.error });
   }
 
+  const savedFiles: StoredImportFile[] = [];
   const persistenceContext: ArchivePersistenceContext = {
     userId,
     skillId: skill._id,
     authorId,
     tenantId,
+    savedFiles,
   };
   let fileResults: ImportFileResult[];
-  if (preflight == null) {
-    const processing = await scanArchiveFiles(
-      zip,
-      prefix,
-      limits,
-      {
-        onFile: async (archiveFile, buffer) => {
-          await persistArchiveFile(req, deps, archiveFile, buffer, persistenceContext);
-          return false;
+  try {
+    if (preflight == null) {
+      const processing = await scanArchiveFiles(
+        zip,
+        prefix,
+        limits,
+        {
+          onFile: async (archiveFile, buffer) => {
+            await persistArchiveFile(req, deps, archiveFile, buffer, persistenceContext);
+            return false;
+          },
         },
-      },
-      skillMdBytes,
-    );
-    fileResults = processing.results;
-  } else {
-    const preflightErrors = preflight.results.filter((result) => result.status === 'error');
-    const persisted = await persistPreflightedArchiveFiles(
-      req,
-      deps,
-      zip,
-      preflight.files,
-      limits,
-      persistenceContext,
-      skillMdBytes,
-    );
-    fileResults = [...preflightErrors, ...persisted];
+        skillMdBytes,
+      );
+      fileResults = processing.results;
+    } else {
+      const preflightErrors = preflight.results.filter((result) => result.status === 'error');
+      const persisted = await persistPreflightedArchiveFiles(
+        req,
+        deps,
+        zip,
+        preflight.files,
+        limits,
+        persistenceContext,
+        skillMdBytes,
+      );
+      fileResults = [...preflightErrors, ...persisted];
+    }
+  } catch (error) {
+    if (!isFileStorageLimitError(error)) {
+      throw error;
+    }
+    await cleanupStoredImportFiles(deps, req, savedFiles);
+    /** Runtime `deleteSkill` cascades SkillFile rows; the blob cleanup above covers storage. */
+    await deps
+      .deleteSkill(skill._id.toString())
+      .catch((rollbackError) =>
+        logger.error(`[importSkill] Failed to roll back over-limit skill import:`, rollbackError),
+      );
+    return res.status(error.status).json({ error: error.message });
   }
 
   const errors: typeof fileResults = [];

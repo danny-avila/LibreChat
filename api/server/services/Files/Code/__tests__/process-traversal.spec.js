@@ -40,6 +40,10 @@ jest.mock('@librechat/api', () => {
      * downstream consumers don't see a phantom format. */
     getExtractedTextFormat: jest.fn(() => null),
     getStorageMetadata: jest.fn(() => ({})),
+    isFileStorageLimitError: jest.fn((error) => error?.code === 'FILE_STORAGE_LIMIT_EXCEEDED'),
+    assertFileStorageLimit: jest.fn().mockResolvedValue(undefined),
+    recordFileStorageUsage: jest.fn(),
+    resolveRequestTenantId: jest.fn((req) => req?.tenantId ?? req?.user?.tenantId),
     /* Pass-through `withTimeout`: this suite asserts traversal sanitization,
      * not deferred preview timing. */
     withTimeout: async (promise) => promise,
@@ -73,8 +77,10 @@ jest.mock('librechat-data-provider', () => ({
 
 jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({}),
+  deleteFile: jest.fn().mockResolvedValue({}),
   getFiles: jest.fn().mockResolvedValue([]),
   updateFile: jest.fn(),
+  getUserStorageUsage: jest.fn().mockResolvedValue(0),
   claimCodeFile: jest.fn().mockResolvedValue({ file_id: 'mock-uuid', usage: 0 }),
 }));
 

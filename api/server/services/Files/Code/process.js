@@ -21,6 +21,10 @@ const {
   getExtractedTextFormat,
   getStorageMetadata,
   getCodeExecutionBaseUrl,
+  isFileStorageLimitError,
+  assertFileStorageLimit,
+  recordFileStorageUsage,
+  resolveRequestTenantId,
   buildCodeEnvDownloadQuery,
   CODE_API_EXPECTED_PROFILE_HEADER,
 } = require('@librechat/api');
@@ -42,7 +46,14 @@ const {
   getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
+const {
+  createFile,
+  deleteFile,
+  getFiles,
+  updateFile,
+  claimCodeFile,
+  getUserStorageUsage,
+} = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
@@ -215,6 +226,94 @@ const prepareCodeOutputForInspection = async ({
       extractedText: extractedText.text ?? undefined,
     },
   };
+};
+
+const assertCodeOutputStorageLimit = (req, incomingBytes, options = {}) =>
+  assertFileStorageLimit({
+    req,
+    incomingBytes,
+    getUserStorageUsage,
+    ...options,
+  });
+
+const cleanupStoredCodeFile = async (req, file) => {
+  const { deleteFile: deleteStoredFile } = getStrategyFunctions(file.source ?? FileSources.local);
+  if (!deleteStoredFile) {
+    return;
+  }
+
+  try {
+    await deleteStoredFile(req, {
+      ...file,
+      user: file.user ?? req.user.id,
+      tenantId: file.tenantId ?? req.user.tenantId,
+    });
+  } catch (cleanupError) {
+    logger.error('[processCodeOutput] Failed to clean up over-limit artifact:', cleanupError);
+  }
+};
+
+const deleteClaimedCodeFile = async (fileId) => {
+  try {
+    await deleteFile(fileId);
+  } catch (cleanupError) {
+    logger.error('[processCodeOutput] Failed to clean up over-limit file claim:', cleanupError);
+  }
+};
+
+const removeCacheBuster = (filepath) =>
+  typeof filepath === 'string' ? filepath.replace(/\?v=\d+$/, '') : filepath;
+
+const getStorageFileId = (fileId, isUpdate) => (isUpdate ? `${fileId}-${v4()}` : fileId);
+const getStorageLimitOptions = (fileId, isUpdate) => (isUpdate ? { excludeFileId: fileId } : {});
+
+const cleanupReplacedCodeFile = async (req, previousFile, nextFile) => {
+  const previousPath = removeCacheBuster(previousFile?.filepath);
+  const nextPath = removeCacheBuster(nextFile?.filepath);
+  if (!previousPath || previousPath === nextPath) {
+    return;
+  }
+
+  await cleanupStoredCodeFile(req, { ...previousFile, filepath: previousPath });
+};
+
+/**
+ * Gates a generated-artifact write on the per-user storage quota, then commits it
+ * through the caller's ownership-aware writer. Usage is only charged once the
+ * commit actually lands, so a stale background harvest never consumes quota.
+ */
+const commitCodeFileWithStorageLimit = async (req, file, commit, options = {}) => {
+  /* Same invariant as the upload ledger: charge and write under one tenant, or the
+   * row falls outside the scope later checks query and the cap stops applying.
+   * Stamped in place so the persisted row and the attachment returned to the caller
+   * cannot disagree. */
+  file.tenantId = resolveRequestTenantId(req);
+  try {
+    await assertCodeOutputStorageLimit(req, file.bytes, options.limitOptions);
+    const committed = await commit(file);
+    if (!committed) {
+      /* A newer writer owns this filename slot. Updates write to a
+       * UUID-suffixed storage key, so the bytes this loser just uploaded are
+       * referenced by nothing once the winner's filepath lands — drop them.
+       * The claimed row itself now belongs to the winner and is left alone. */
+      if (options.cleanupStorage !== false) {
+        await cleanupStoredCodeFile(req, options.cleanupFile ?? file);
+      }
+      return committed;
+    }
+    recordFileStorageUsage(req, file.bytes, { fileId: file.file_id });
+    return committed;
+  } catch (error) {
+    if (isFileStorageLimitError(error)) {
+      if (options.cleanupStorage !== false) {
+        await cleanupStoredCodeFile(req, options.cleanupFile ?? file);
+      }
+      if (options.deleteClaimOnFailure) {
+        await deleteClaimedCodeFile(file.file_id);
+      }
+    }
+    throw error;
+  }
 };
 
 /**
@@ -625,6 +724,7 @@ const processCodeOutput = async ({
     });
     const file_id = claimed.file_id;
     const isUpdate = file_id !== newFileId;
+    const limitOptions = getStorageLimitOptions(file_id, isUpdate);
 
     /**
      * Out-of-order guard for detached (background) harvests: when the claimed
@@ -703,7 +803,8 @@ const processCodeOutput = async ({
 
     if (isImage) {
       const usage = isUpdate ? (claimed.usage ?? 0) + 1 : 1;
-      const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
+      const storageFileId = getStorageFileId(file_id, isUpdate);
+      const _file = await convertImage(req, buffer, 'high', `${storageFileId}${fileExt}`);
       const filepath = usage > 1 ? `${_file.filepath}?v=${Date.now()}` : _file.filepath;
       const storageMetadata = getStorageMetadata({
         filepath: _file.filepath,
@@ -731,8 +832,16 @@ const processCodeOutput = async ({
         metadata: codeEnvMetadata,
         ...(await getRetentionExpiry(req)),
       };
-      if (!(await commitCodeFile(file))) {
+      const committed = await commitCodeFileWithStorageLimit(req, file, commitCodeFile, {
+        cleanupFile: { ...file, filepath: _file.filepath },
+        deleteClaimOnFailure: !isUpdate,
+        limitOptions,
+      });
+      if (!committed) {
         return null;
+      }
+      if (isUpdate) {
+        await cleanupReplacedCodeFile(req, claimed, { ...file, filepath: _file.filepath });
       }
       return { file: Object.assign(file, { messageId, toolCallId, agentId }) };
     }
@@ -755,6 +864,15 @@ const processCodeOutput = async ({
           expiresAt: currentDate.getTime() + 86400000,
         }),
       };
+    }
+
+    try {
+      await assertCodeOutputStorageLimit(req, buffer.length, limitOptions);
+    } catch (error) {
+      if (isFileStorageLimitError(error) && !isUpdate) {
+        await deleteClaimedCodeFile(file_id);
+      }
+      throw error;
     }
 
     const detectedType = await determineFileType(buffer, true);
@@ -782,8 +900,9 @@ const processCodeOutput = async ({
      * the conservative cross-platform NAME_MAX (Linux ext4, NTFS, APFS).
      */
     const NAME_MAX = 255;
-    const flatName = flattenArtifactPath(safeName, NAME_MAX - file_id.length - 2);
-    const fileName = `${file_id}__${flatName}`;
+    const storageFileId = getStorageFileId(file_id, isUpdate);
+    const flatName = flattenArtifactPath(safeName, NAME_MAX - storageFileId.length - 2);
+    const fileName = `${storageFileId}__${flatName}`;
     const filepath = await saveBuffer({
       userId: req.user.id,
       buffer,
@@ -861,8 +980,15 @@ const processCodeOutput = async ({
         previewError: null,
         previewRevision,
       };
-      if (!(await commitCodeFile(file))) {
+      const committed = await commitCodeFileWithStorageLimit(req, file, commitCodeFile, {
+        deleteClaimOnFailure: !isUpdate,
+        limitOptions,
+      });
+      if (!committed) {
         return null;
+      }
+      if (isUpdate) {
+        await cleanupReplacedCodeFile(req, claimed, file);
       }
       return {
         file: Object.assign(file, { messageId, toolCallId, agentId }),
@@ -901,11 +1027,23 @@ const processCodeOutput = async ({
       previewRevision: null,
     };
 
-    if (!(await commitCodeFile(file))) {
+    const committed = await commitCodeFileWithStorageLimit(req, file, commitCodeFile, {
+      deleteClaimOnFailure: !isUpdate,
+      limitOptions,
+    });
+    if (!committed) {
       return null;
+    }
+    if (isUpdate) {
+      await cleanupReplacedCodeFile(req, claimed, file);
     }
     return { file: Object.assign(file, { messageId, toolCallId, agentId }) };
   } catch (error) {
+    if (isFileStorageLimitError(error)) {
+      logger.warn(`[processCodeOutput] Storage limit blocked artifact "${name}"`);
+      throw error;
+    }
+
     if (error?.code === 'CODE_OUTPUT_DOWNLOAD_LIMIT') {
       logger.warn(
         `[processCodeOutput] Generated file exceeds size limit of ${(fileSizeLimit / megabyte).toFixed(2)} MB, falling back to download URL`,

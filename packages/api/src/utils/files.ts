@@ -6,6 +6,10 @@ import { readFile, stat } from 'fs/promises';
 const USER_FACING_UPLOAD_ERRORS = [
   ['Invalid file format', 'Invalid file format'],
   ['exceeds token limit', 'File content exceeds token limit'],
+  [
+    'storage limit',
+    'Storage limit reached. Delete files or ask an admin to raise your storage limit.',
+  ],
   ['Unable to extract text from', 'Unable to extract text from file'],
 ] as const;
 
@@ -91,6 +95,28 @@ export function resolveUploadErrorMessage(
   }
 
   return defaultMessage;
+}
+
+/**
+ * Resolves the HTTP status an upload error should surface with. Honors the
+ * `userErrorStatusCode` convention first, then the `status`/`statusCode` carried by
+ * typed errors such as `FileStorageLimitError`, falling back to 500.
+ */
+export function resolveUploadErrorStatus(
+  error:
+    | { userErrorStatusCode?: unknown; status?: unknown; statusCode?: unknown }
+    | null
+    | undefined,
+  defaultStatus = 500,
+): number {
+  for (const candidate of [error?.userErrorStatusCode, error?.status, error?.statusCode]) {
+    const status = Number(candidate);
+    if (Number.isInteger(status) && status >= 400 && status <= 599) {
+      return status;
+    }
+  }
+
+  return defaultStatus;
 }
 
 /**

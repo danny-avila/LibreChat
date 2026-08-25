@@ -221,6 +221,7 @@ const codeOutputStrategy = () => ({
   handleImageUpload: null,
   /** @type {typeof prepareImagesLocal | null} */
   prepareImagePayload: null,
+  /** @type {typeof deleteLocalFile | null} */
   deleteFile: deleteCodeEnvFile,
   handleFileUpload: uploadCodeEnvFile,
   getDownloadStream: getCodeOutputDownloadStream,

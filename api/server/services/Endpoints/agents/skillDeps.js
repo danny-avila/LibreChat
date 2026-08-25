@@ -13,6 +13,9 @@ const {
   isMemoryEnabled,
   getStorageMetadata,
   resolveRequestTenantId,
+  assertFileStorageLimit,
+  recordFileStorageUsage,
+  getSkillFileReplacementExclusion,
   enrichWithSkillConfigurable,
   mergeDeploymentSkillIds,
   createDeploymentSkillMethods,
@@ -84,6 +87,21 @@ async function saveSkillFileContent({ req, skillId, relativePath, content, mimeT
   const storageFileName = `${fileId}__${filename}`;
   const buffer = Buffer.from(content, 'utf8');
   const storage = resolveSkillStorage(req, { isImage: mimeType.startsWith('image/') });
+  /* Agent-authored skill files land in the same `SkillFile` ledger the HTTP
+   * upload path writes to, so they must clear the same per-user quota — an
+   * editable skill would otherwise be an unmetered way past the cap. */
+  const excludeSkillFile = getSkillFileReplacementExclusion({
+    existingFile,
+    requesterId: req.user._id,
+    skillId,
+    relativePath,
+  });
+  await assertFileStorageLimit({
+    req,
+    incomingBytes: buffer.length,
+    excludeSkillFile,
+    getUserStorageUsage: db.getUserStorageUsage,
+  });
   const filepath = await storage.saveBuffer({
     userId: req.user.id,
     buffer,
@@ -114,6 +132,9 @@ async function saveSkillFileContent({ req, skillId, relativePath, content, mimeT
       error.code = 'SKILL_FILE_UPSERT_NOT_FOUND';
       throw error;
     }
+    recordFileStorageUsage(req, buffer.length, {
+      skillFile: { id: result._id, skillId, relativePath },
+    });
   } catch (error) {
     const { deleteFile } = getStrategyFunctions(storage.source);
     if (deleteFile) {

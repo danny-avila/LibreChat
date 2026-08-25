@@ -5,6 +5,7 @@ const {
   assertDirectToolOutputAllowed,
   loadWebSearchAuth,
   isContentFilterError,
+  isFileStorageLimitError,
 } = require('@librechat/api');
 const {
   Tools,
@@ -224,8 +225,14 @@ const callTool = async (req, res) => {
           previewRevision: result?.previewRevision,
         });
         attachments.push(fileMetadata);
-      } catch {
-        logger.error('Error processing code output');
+      } catch (error) {
+        /* Same split as the streaming path: an over-quota user needs the
+         * storage condition named in the logs, not a generic artifact error. */
+        if (isFileStorageLimitError(error)) {
+          logger.warn(`[processCodeOutput] Artifact dropped: ${error.message}`);
+        } else {
+          logger.error('Error processing code output');
+        }
         attachments.push(null);
       }
     }

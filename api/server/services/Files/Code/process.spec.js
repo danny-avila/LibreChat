@@ -101,6 +101,10 @@ jest.mock('@librechat/api', () => {
      * if a case needs to assert the 'html' value. */
     getExtractedTextFormat: (...args) => mockGetExtractedTextFormat(...args),
     getStorageMetadata: jest.fn(() => ({})),
+    isFileStorageLimitError: jest.fn((error) => error?.code === 'FILE_STORAGE_LIMIT_EXCEEDED'),
+    assertFileStorageLimit: jest.fn().mockResolvedValue(undefined),
+    recordFileStorageUsage: jest.fn(),
+    resolveRequestTenantId: jest.fn((req) => req?.tenantId ?? req?.user?.tenantId),
     /* Identity helpers mirror codeapi's validator. The real impl
      * lives in `packages/api/src/files/code/identity.ts` with its
      * own dedicated `identity.spec.ts`; here we just stub the
@@ -133,8 +137,10 @@ const mockClaimCodeFile = jest.fn();
 const mockUpdateFile = jest.fn();
 jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({}),
+  deleteFile: jest.fn().mockResolvedValue({}),
   getFiles: jest.fn(),
   updateFile: mockUpdateFile,
+  getUserStorageUsage: jest.fn().mockResolvedValue(0),
   claimCodeFile: (...args) => mockClaimCodeFile(...args),
 }));
 
@@ -164,7 +170,7 @@ jest.mock('~/server/utils', () => ({
 
 const http = require('http');
 const https = require('https');
-const { createFile, getFiles } = require('~/models');
+const { createFile, deleteFile, getFiles } = require('~/models');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
@@ -175,6 +181,7 @@ const {
   codeServerHttpsAgent,
   getCodeApiAuthHeaders,
   getStorageMetadata,
+  assertFileStorageLimit,
 } = require('@librechat/api');
 
 const {
@@ -211,6 +218,7 @@ describe('Code Process', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     fileSizeLimitConfig.value = 20 * 1024 * 1024;
+    assertFileStorageLimit.mockResolvedValue(undefined);
     // Default mock: atomic claim returns a new file record (no existing file)
     mockClaimCodeFile.mockResolvedValue({
       file_id: 'mock-uuid-1234',
@@ -456,6 +464,39 @@ describe('Code Process', () => {
       );
     });
 
+    it('deletes the bytes it just wrote when its conditional commit loses the race', async () => {
+      /* Updates write to a UUID-suffixed storage key, so a loser's object is
+       * referenced by nothing once the winner's filepath lands. Drop it rather
+       * than leak — but leave the claimed row, which the winner now owns. */
+      const deleteStoredFile = jest.fn().mockResolvedValue(undefined);
+      const saveBuffer = jest.fn().mockResolvedValue('/uploads/overtaken.txt');
+      getStrategyFunctions.mockReturnValue({ saveBuffer, deleteFile: deleteStoredFile });
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        user: 'user-123',
+        filepath: '/uploads/previous.txt',
+      });
+      mockUpdateFile.mockResolvedValueOnce(null);
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const result = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-01T00:00:00.000Z').getTime(),
+      });
+
+      expect(result).toBeNull();
+      expect(deleteStoredFile).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ filepath: '/uploads/overtaken.txt' }),
+      );
+      /* The previously claimed artifact belongs to the winner now. */
+      expect(deleteStoredFile).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ filepath: '/uploads/previous.txt' }),
+      );
+      expect(deleteFile).not.toHaveBeenCalled();
+    });
+
     it('commits when the conditional write matches (ownership held through the write)', async () => {
       mockClaimCodeFile.mockResolvedValue({
         file_id: 'existing-file-id',
@@ -501,6 +542,23 @@ describe('Code Process', () => {
   });
 
   describe('processCodeOutput', () => {
+    it('rejects over-limit artifacts before saving or persisting them', async () => {
+      const error = Object.assign(new Error('storage limit exceeded.'), {
+        code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+        status: 413,
+      });
+      const saveBuffer = jest.fn().mockResolvedValue('/uploads/should-not-save.txt');
+      getStrategyFunctions.mockReturnValue({ saveBuffer });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+      assertFileStorageLimit.mockRejectedValueOnce(error);
+
+      await expect(processCodeOutput(baseParams)).rejects.toThrow('storage limit exceeded');
+
+      expect(saveBuffer).not.toHaveBeenCalled();
+      expect(createFile).not.toHaveBeenCalled();
+      expect(deleteFile).toHaveBeenCalledWith('mock-uuid-1234');
+    });
+
     it('forwards Code API auth headers when downloading generated output', async () => {
       getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer codeapi-token' });
       mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
@@ -544,6 +602,41 @@ describe('Code Process', () => {
         expect(result.filename).toBe('chart.png');
       });
 
+      it('checks storage quota against converted image bytes, not raw artifact bytes', async () => {
+        const imageParams = { ...baseParams, name: 'chart.png' };
+        const rawArtifactBytes = 10 * 1024 * 1024;
+        const convertedBytes = 512;
+        const rawBytesError = Object.assign(new Error('storage limit exceeded.'), {
+          code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+          status: 413,
+        });
+        mockAxios.mockResolvedValue({ data: Buffer.alloc(rawArtifactBytes) });
+        convertImage.mockResolvedValue({
+          filepath: '/uploads/converted-image.webp',
+          bytes: convertedBytes,
+        });
+        assertFileStorageLimit.mockImplementation(({ incomingBytes }) => {
+          if (incomingBytes === rawArtifactBytes) {
+            return Promise.reject(rawBytesError);
+          }
+          return Promise.resolve();
+        });
+
+        const { file: result } = await processCodeOutput(imageParams);
+
+        expect(result.bytes).toBe(convertedBytes);
+        expect(assertFileStorageLimit).toHaveBeenCalledTimes(1);
+        expect(assertFileStorageLimit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            incomingBytes: convertedBytes,
+          }),
+        );
+        expect(assertFileStorageLimit).toHaveBeenCalledWith(
+          expect.not.objectContaining({ excludeFileId: expect.anything() }),
+        );
+        expect(createFile).toHaveBeenCalled();
+      });
+
       it('persists tenantId on image code output records when present', async () => {
         const tenantReq = { ...mockReq, user: { ...mockReq.user, tenantId: 'tenantA' } };
         const imageBuffer = Buffer.alloc(500);
@@ -567,17 +660,42 @@ describe('Code Process', () => {
         );
       });
 
+      it('persists artifacts under the resolved request tenant, not the user tenant', async () => {
+        /* Remote-agent auth sets `req.tenantId` for users with no `user.tenantId`.
+         * The artifact row has to land in the tenant the quota aggregates, or the
+         * cap silently stops applying to generated files. */
+        const tenantReq = { ...mockReq, tenantId: 'request-tenant', user: { ...mockReq.user } };
+        delete tenantReq.user.tenantId;
+        mockAxios.mockResolvedValue({ data: Buffer.alloc(500) });
+        convertImage.mockResolvedValue({
+          filepath: '/t/request-tenant/images/user-123/mock-uuid-1234.webp',
+        });
+
+        await processCodeOutput({ ...baseParams, req: tenantReq, name: 'chart.png' });
+
+        expect(createFile).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: 'request-tenant' }),
+          true,
+        );
+      });
+
       it('should update existing image file with cache-busted filepath', async () => {
         const imageParams = { ...baseParams, name: 'chart.png' };
+        const deleteStoredFile = jest.fn();
+        getStrategyFunctions.mockReturnValue({ deleteFile: deleteStoredFile });
         mockClaimCodeFile.mockResolvedValue({
           file_id: 'existing-img-id',
           usage: 1,
           createdAt: '2024-01-01T00:00:00.000Z',
+          filepath: '/images/user-123/existing-img-id.webp',
+          source: 'local',
         });
 
         const imageBuffer = Buffer.alloc(500);
         mockAxios.mockResolvedValue({ data: imageBuffer });
-        convertImage.mockResolvedValue({ filepath: '/images/user-123/existing-img-id.webp' });
+        convertImage.mockResolvedValue({
+          filepath: '/images/user-123/existing-img-id-mock-uuid-1234.webp',
+        });
 
         const { file: result } = await processCodeOutput(imageParams);
 
@@ -585,14 +703,50 @@ describe('Code Process', () => {
           mockReq,
           imageBuffer,
           'high',
-          'existing-img-id.png',
+          'existing-img-id-mock-uuid-1234.png',
         );
         expect(result.file_id).toBe('existing-img-id');
         expect(result.usage).toBe(2);
-        expect(result.filepath).toMatch(/^\/images\/user-123\/existing-img-id\.webp\?v=\d+$/);
+        expect(result.filepath).toMatch(
+          /^\/images\/user-123\/existing-img-id-mock-uuid-1234\.webp\?v=\d+$/,
+        );
+        expect(deleteStoredFile).toHaveBeenCalledWith(
+          mockReq,
+          expect.objectContaining({ filepath: '/images/user-123/existing-img-id.webp' }),
+        );
         expect(logger.debug).toHaveBeenCalledWith(
           expect.stringContaining('Updating existing file'),
         );
+      });
+
+      it('cleans only the new image blob when an over-limit image update fails', async () => {
+        const imageParams = { ...baseParams, name: 'chart.png' };
+        const error = Object.assign(new Error('storage limit exceeded.'), {
+          code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+          status: 413,
+        });
+        const deleteStoredFile = jest.fn();
+        getStrategyFunctions.mockReturnValue({ deleteFile: deleteStoredFile });
+        mockClaimCodeFile.mockResolvedValue({
+          file_id: 'existing-img-id',
+          usage: 1,
+          createdAt: '2024-01-01T00:00:00.000Z',
+          filepath: '/images/user-123/existing-img-id.webp',
+          source: 'local',
+        });
+        mockAxios.mockResolvedValue({ data: Buffer.alloc(500) });
+        convertImage.mockResolvedValue({
+          filepath: '/images/user-123/existing-img-id-mock-uuid-1234.webp',
+          bytes: 400,
+        });
+        assertFileStorageLimit.mockRejectedValueOnce(error);
+
+        await expect(processCodeOutput(imageParams)).rejects.toThrow('storage limit exceeded');
+
+        expect(deleteFile).not.toHaveBeenCalledWith('existing-img-id');
+        expect(deleteStoredFile.mock.calls.map(([, file]) => file.filepath)).toEqual([
+          '/images/user-123/existing-img-id-mock-uuid-1234.webp',
+        ]);
       });
     });
 

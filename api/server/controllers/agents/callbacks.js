@@ -28,6 +28,7 @@ const {
   isCodeSessionToolName,
   shouldSignalSandboxStart,
   getToolInputValidationDetails,
+  isFileStorageLimitError,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
@@ -73,7 +74,14 @@ async function enqueueCodeOutputBatch({
   for (const entry of entries) {
     const current = persistenceChain
       .then(() => processEntry(entry))
-      .catch(() => {
+      .catch((error) => {
+        /* Quota rejections are a user condition, not a transport fault — name
+         * them so operators can tell "over storage limit" apart from a failed
+         * download. The attachment is still dropped; the turn continues. */
+        if (isFileStorageLimitError(error)) {
+          logger.warn(`[enqueueCodeOutputBatch] Artifact dropped: ${error.message}`);
+          return null;
+        }
         logger.error('Error processing code output');
         return null;
       });

@@ -573,6 +573,25 @@ describe('resolveUploadErrorMessage', () => {
     expect(result).not.toContain('PRIVATE-UPLOAD');
   });
 
+  test('surfaces storage limit errors', () => {
+    const msg = 'storage limit exceeded. Delete files before uploading more.';
+    expect(resolveUploadErrorMessage({ message: msg })).toBe(msg);
+  });
+
+  test('maps storage limit errors to a fixed message when redaction is enabled', () => {
+    const result = resolveUploadErrorMessage(
+      {
+        message: 'storage limit exceeded. Delete files or ask an admin to raise it (100MB).',
+      },
+      undefined,
+      true,
+    );
+
+    expect(result).toBe(
+      'Storage limit reached. Delete files or ask an admin to raise your storage limit.',
+    );
+  });
+
   test('preserves legacy "Unable to extract text from" details by default', () => {
     const msg = 'Unable to extract text from "doc.pdf". The document may be image-based.';
     expect(resolveUploadErrorMessage({ message: msg })).toBe(msg);

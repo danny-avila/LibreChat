@@ -128,6 +128,10 @@ jest.mock('@librechat/api', () => {
       res.status(200).json({ message, ...result });
     }),
     getStorageMetadata: jest.fn(() => ({})),
+    isFileStorageLimitError: jest.fn((error) => error?.code === 'FILE_STORAGE_LIMIT_EXCEEDED'),
+    assertFileStorageLimit: jest.fn().mockResolvedValue(undefined),
+    recordFileStorageUsage: jest.fn(),
+    resolveRequestTenantId: jest.fn((req) => req?.tenantId ?? req?.user?.tenantId),
     getRetentionExpiry,
     getAgentFileRetentionExpiry: jest.fn(({ req, messageAttachment, toolResource }) => {
       const interfaceConfig = req?.config?.interfaceConfig;
@@ -167,6 +171,7 @@ jest.mock('~/server/services/Tools/credentials', () => ({
 
 jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({ file_id: 'created-file-id' }),
+  getUserStorageUsage: jest.fn().mockResolvedValue(0),
   updateFileUsage: jest.fn(),
   deleteFiles: jest.fn(),
   findFileById: jest.fn(),
@@ -212,6 +217,7 @@ jest.mock('~/server/services/Files/Audio/STTService', () => ({
 }));
 
 const {
+  assertFileStorageLimit,
   getRetentionExpiry,
   getAgentFileRetentionExpiry,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
@@ -221,21 +227,31 @@ const {
   EToolResources,
   FileSources,
   FileContext,
+  EModelEndpoint,
   RetentionMode,
   AgentCapabilities,
 } = require('librechat-data-provider');
 const { mergeFileConfig } = require('librechat-data-provider');
 const { checkCapability } = require('~/server/services/Config');
+const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
+const { addResourceFileId, deleteResourceFileId } = require('~/server/controllers/assistants/v2');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { uploadVectors } = require('./VectorDB/crud');
 const { logger } = require('@librechat/data-schemas');
+const { convertImage, resizeImageBuffer } = require('~/server/services/Files/images');
 const db = require('~/models');
 const {
   processAgentFileUpload,
   processDeleteRequest,
   processFileURL,
+  processImageFile,
+  processFileUpload,
+  retrieveAndProcessFile,
+  saveBase64Image,
   sweepExpiredFiles,
   startExpiredFileSweep,
+  uploadImageBuffer,
 } = require('./process');
 const {
   inspectContent,
@@ -328,6 +344,7 @@ const setupStoredFileUpload = (result = {}) => {
 describe('processAgentFileUpload', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    assertFileStorageLimit.mockResolvedValue(undefined);
     mockRes.status.mockReturnThis();
     mockRes.json.mockReturnValue({});
     checkCapability.mockResolvedValue(true);
@@ -492,6 +509,108 @@ describe('processAgentFileUpload', () => {
       expect(db.addAgentResourceFile).toHaveBeenCalledTimes(1);
       expect(db.createFile).toHaveBeenCalledTimes(1);
     });
+  });
+
+  test('rejects over-limit uploads before storage processing starts', async () => {
+    const error = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    assertFileStorageLimit.mockRejectedValueOnce(error);
+    const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+    req.file.size = 1024;
+
+    await expect(
+      processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: { ...makeMetadata(), tool_resource: EToolResources.file_search },
+      }),
+    ).rejects.toThrow('storage limit exceeded');
+
+    expect(getStrategyFunctions).not.toHaveBeenCalled();
+    expect(db.createFile).not.toHaveBeenCalled();
+  });
+
+  test('does not attach an agent resource when the final storage check rejects', async () => {
+    const error = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    assertFileStorageLimit.mockRejectedValueOnce(error);
+    const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+    req.file.size = 16;
+
+    await expect(
+      processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+    ).rejects.toThrow('storage limit exceeded');
+
+    expect(db.createFile).not.toHaveBeenCalled();
+    expect(db.addAgentResourceFile).not.toHaveBeenCalled();
+  });
+
+  test('checks context upload quota against extracted text bytes, not raw upload bytes', async () => {
+    const rawUploadBytes = 10 * 1024 * 1024;
+    const extractedText = 'small extracted text';
+    /* Mistral OCR reports a conservative `text.length * 4` estimate; the row must be
+     * charged and persisted at the size actually written. */
+    const extractedBytes = Buffer.byteLength(extractedText, 'utf8');
+    const rawBytesError = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    assertFileStorageLimit.mockImplementation(({ incomingBytes }) => {
+      if (incomingBytes === rawUploadBytes) {
+        return Promise.reject(rawBytesError);
+      }
+      return Promise.resolve();
+    });
+    getStrategyFunctions.mockReturnValue({
+      handleFileUpload: jest.fn().mockResolvedValue({
+        text: extractedText,
+        bytes: extractedText.length * 4,
+        filepath: 'doc://result',
+      }),
+    });
+    const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+    req.file.size = rawUploadBytes;
+
+    await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+    expect(assertFileStorageLimit).toHaveBeenCalledTimes(1);
+    expect(assertFileStorageLimit).toHaveBeenCalledWith(
+      expect.objectContaining({ incomingBytes: extractedBytes }),
+    );
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({ bytes: extractedBytes, source: FileSources.text }),
+      true,
+    );
+  });
+
+  test('persists the ledger row under the resolved request tenant, not the user tenant', async () => {
+    /* Remote-agent auth sets `req.tenantId` for users carrying no `user.tenantId`.
+     * Usage aggregates under the resolved tenant, so a row written under the user
+     * tenant would never be counted again and the cap would stop applying. */
+    getStrategyFunctions.mockReturnValue({
+      handleFileUpload: jest.fn().mockResolvedValue({
+        text: 'extracted',
+        bytes: 9,
+        filepath: 'doc://result',
+      }),
+    });
+    const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+    req.user.tenantId = undefined;
+    req.tenantId = 'request-tenant';
+
+    await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+    expect(assertFileStorageLimit).toHaveBeenCalledWith(
+      expect.objectContaining({ req: expect.objectContaining({ tenantId: 'request-tenant' }) }),
+    );
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'request-tenant' }),
+      true,
+    );
   });
 
   describe('OCR strategy selection', () => {
@@ -1133,6 +1252,199 @@ describe('processAgentFileUpload', () => {
     });
   });
 
+  describe('storage-limit cleanup after secondary processing', () => {
+    it('cleans up original agent image storage when image persistence quota fails', async () => {
+      const error = Object.assign(new Error('storage limit exceeded.'), {
+        code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+        status: 413,
+      });
+      const handleFileUpload = jest.fn().mockResolvedValue({
+        bytes: 700,
+        filename: 'image.png',
+        filepath: '/uploads/user-123/original.png',
+      });
+      const handleImageUpload = jest.fn().mockResolvedValue({
+        filepath: '/images/user-123/resized.png',
+        bytes: 100,
+        width: 32,
+        height: 32,
+      });
+      const deleteFile = jest.fn().mockResolvedValue(undefined);
+      getStrategyFunctions.mockReturnValue({ handleFileUpload, handleImageUpload, deleteFile });
+      assertFileStorageLimit.mockResolvedValueOnce(undefined).mockRejectedValueOnce(error);
+      const req = makeReq({ mimetype: 'image/png' });
+      req.config.imageOutputType = 'png';
+
+      await expect(
+        processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: { file_id: 'agent-file-id', message_file: true },
+        }),
+      ).rejects.toThrow('storage limit exceeded');
+
+      expect(deleteFile).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ filepath: '/images/user-123/resized.png' }),
+        undefined,
+      );
+      expect(deleteFile).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ filepath: '/uploads/user-123/original.png' }),
+        undefined,
+      );
+      expect(db.createFile).not.toHaveBeenCalled();
+    });
+
+    it('cleans up agent image side effects when final metadata quota check fails', async () => {
+      const error = Object.assign(new Error('storage limit exceeded.'), {
+        code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+        status: 413,
+      });
+      const handleFileUpload = jest.fn().mockResolvedValue({
+        bytes: 700,
+        filename: 'image.png',
+        filepath: '/uploads/user-123/original.png',
+      });
+      const handleImageUpload = jest.fn().mockResolvedValue({
+        filepath: '/images/user-123/resized.png',
+        bytes: 100,
+        width: 32,
+        height: 32,
+      });
+      const deleteFile = jest.fn().mockResolvedValue(undefined);
+      getStrategyFunctions.mockReturnValue({ handleFileUpload, handleImageUpload, deleteFile });
+      db.createFile.mockImplementation((fileInfo) => Promise.resolve(fileInfo));
+      db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+      assertFileStorageLimit
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(error);
+      const req = makeReq({ mimetype: 'image/png' });
+      req.config.imageOutputType = 'png';
+
+      await expect(
+        processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: { file_id: 'agent-file-id', message_file: true },
+        }),
+      ).rejects.toThrow('storage limit exceeded');
+
+      expect(db.deleteFiles).toHaveBeenCalledWith(['mock-uuid']);
+      expect(deleteFile).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ filepath: '/uploads/user-123/original.png' }),
+        undefined,
+      );
+      expect(deleteFile).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ filepath: '/images/user-123/resized.png' }),
+        undefined,
+      );
+    });
+
+    it('uses converted image metadata for the final agent image record', async () => {
+      const handleFileUpload = jest.fn().mockResolvedValue({
+        bytes: 100,
+        filename: 'image.jpg',
+        filepath: '/uploads/user-123/original.jpg',
+      });
+      const handleImageUpload = jest.fn().mockResolvedValue({
+        filepath: '/images/user-123/resized.png',
+        bytes: 700,
+        width: 32,
+        height: 64,
+      });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload, handleImageUpload });
+      db.createFile.mockImplementation((fileInfo) => Promise.resolve(fileInfo));
+      const req = makeReq({ mimetype: 'image/jpeg' });
+      req.config.imageOutputType = 'png';
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: { file_id: 'agent-file-id', message_file: true },
+      });
+
+      const [finalFile] = db.createFile.mock.calls.find(
+        ([fileInfo]) => fileInfo.file_id === 'agent-file-id',
+      );
+      expect(finalFile).toEqual(
+        expect.objectContaining({
+          bytes: 700,
+          filepath: '/images/user-123/resized.png',
+          source: FileSources.local,
+          type: 'image/png',
+          width: 32,
+          height: 64,
+        }),
+      );
+      expect(assertFileStorageLimit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          incomingBytes: 700,
+          excludeFileId: 'agent-file-id',
+        }),
+      );
+    });
+
+    it('cleans up vector embeddings when file_search metadata quota check fails', async () => {
+      const error = Object.assign(new Error('storage limit exceeded.'), {
+        code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+        status: 413,
+      });
+      const handleFileUpload = jest.fn().mockResolvedValue({
+        bytes: 700,
+        filename: 'doc.pdf',
+        filepath: '/uploads/user-123/doc.pdf',
+      });
+      const deleteStoredFile = jest.fn().mockResolvedValue(undefined);
+      const deleteVectorFile = jest.fn().mockResolvedValue(undefined);
+      getStrategyFunctions.mockImplementation((source) =>
+        source === FileSources.vectordb
+          ? { deleteFile: deleteVectorFile }
+          : { handleFileUpload, deleteFile: deleteStoredFile },
+      );
+      uploadVectors.mockResolvedValue({
+        bytes: 700,
+        filename: 'doc.pdf',
+        filepath: FileSources.vectordb,
+        embedded: true,
+      });
+      assertFileStorageLimit
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(error);
+
+      await expect(
+        processAgentFileUpload({
+          req: makeReq(),
+          res: mockRes,
+          metadata: {
+            agent_id: 'agent-abc',
+            tool_resource: EToolResources.file_search,
+            file_id: 'agent-file-id',
+          },
+        }),
+      ).rejects.toThrow('storage limit exceeded');
+
+      expect(deleteStoredFile).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ filepath: '/uploads/user-123/doc.pdf' }),
+        undefined,
+      );
+      expect(deleteVectorFile).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          file_id: 'agent-file-id',
+          source: FileSources.vectordb,
+          embedded: true,
+        }),
+      );
+      expect(db.createFile).not.toHaveBeenCalled();
+    });
+  });
+
   /* Phase C / option α regression: the upload must persist its sandbox
    * pointer under `metadata.codeEnvRef` (the post-cutover schema). The
    * legacy `metadata.fileIdentifier` key is silently stripped by mongoose
@@ -1166,17 +1478,19 @@ describe('processAgentFileUpload', () => {
        * runs in the same flow. Both must return a working
        * `handleFileUpload`. */
       const codeEnvUpload = jest.fn().mockResolvedValue(uploaded);
+      const codeEnvDelete = jest.fn().mockResolvedValue(undefined);
       const localUpload = jest.fn().mockResolvedValue({
         bytes: 0,
         filename: 'upload.bin',
         filepath: '/uploads/upload.bin',
       });
+      const localDelete = jest.fn().mockResolvedValue(undefined);
       getStrategyFunctions.mockImplementation((src) =>
         src === FileSources.execute_code
-          ? { handleFileUpload: codeEnvUpload }
-          : { handleFileUpload: localUpload, saveBuffer: jest.fn() },
+          ? { handleFileUpload: codeEnvUpload, deleteFile: codeEnvDelete }
+          : { handleFileUpload: localUpload, deleteFile: localDelete, saveBuffer: jest.fn() },
       );
-      return codeEnvUpload;
+      return { codeEnvUpload, codeEnvDelete, localDelete };
     };
 
     it('persists kind:user codeEnvRef for chat attachments (messageAttachment=true)', async () => {
@@ -1349,12 +1663,314 @@ describe('processAgentFileUpload', () => {
       const persisted = db.createFile.mock.calls[0][0];
       expect(persisted.metadata).not.toHaveProperty('fileIdentifier');
     });
+
+    it('rolls back code env uploads when final storage quota rejects', async () => {
+      const error = Object.assign(new Error('storage limit exceeded.'), {
+        code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+        status: 413,
+      });
+      const { codeEnvDelete, localDelete } = setupCodeEnvUpload({
+        storage_session_id: 'sess-4',
+        file_id: 'fid-4',
+      });
+      assertFileStorageLimit.mockResolvedValueOnce(undefined).mockRejectedValueOnce(error);
+      const req = makeReq();
+
+      await expect(
+        processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: {
+            agent_id: 'agent-abc',
+            tool_resource: EToolResources.execute_code,
+            file_id: 'file-uuid',
+          },
+        }),
+      ).rejects.toThrow('storage limit exceeded');
+
+      expect(localDelete).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ filepath: '/uploads/upload.bin' }),
+        undefined,
+      );
+      expect(codeEnvDelete).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            codeEnvRef: expect.objectContaining({
+              kind: 'agent',
+              id: 'agent-abc',
+              storage_session_id: 'sess-4',
+              file_id: 'fid-4',
+            }),
+          }),
+        }),
+      );
+      expect(db.createFile).not.toHaveBeenCalled();
+    });
+
+    it('rolls back persisted execute_code uploads when agent resource linking fails', async () => {
+      const { codeEnvDelete, localDelete } = setupCodeEnvUpload({
+        storage_session_id: 'sess-link',
+        file_id: 'fid-link',
+      });
+      db.createFile.mockImplementation((fileInfo) => Promise.resolve(fileInfo));
+      db.addAgentResourceFile.mockRejectedValueOnce(new Error('link failed'));
+      const req = makeReq();
+
+      await expect(
+        processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: {
+            agent_id: 'agent-abc',
+            tool_resource: EToolResources.execute_code,
+            file_id: 'file-uuid',
+          },
+        }),
+      ).rejects.toThrow('link failed');
+
+      expect(db.deleteFiles).toHaveBeenCalledWith(['file-uuid']);
+      expect(localDelete).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ filepath: '/uploads/upload.bin' }),
+        undefined,
+      );
+      expect(codeEnvDelete).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            codeEnvRef: expect.objectContaining({
+              kind: 'agent',
+              id: 'agent-abc',
+              storage_session_id: 'sess-link',
+              file_id: 'fid-link',
+            }),
+          }),
+        }),
+      );
+    });
+  });
+});
+
+describe('processImageFile storage-limit checks', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    assertFileStorageLimit.mockResolvedValue(undefined);
+    db.createFile.mockImplementation((fileInfo) => Promise.resolve(fileInfo));
+    mockRes.status.mockReturnThis();
+    mockRes.json.mockReturnValue({});
+  });
+
+  it('checks quota against persisted image bytes, not raw upload bytes', async () => {
+    const rawUploadBytes = 10 * 1024 * 1024;
+    const persistedBytes = 256;
+    const rawBytesError = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    assertFileStorageLimit.mockImplementation(({ incomingBytes }) => {
+      if (incomingBytes === rawUploadBytes) {
+        return Promise.reject(rawBytesError);
+      }
+      return Promise.resolve();
+    });
+    const handleImageUpload = jest.fn().mockResolvedValue({
+      filepath: '/images/user-123/image.png',
+      bytes: persistedBytes,
+      width: 32,
+      height: 32,
+    });
+    getStrategyFunctions.mockReturnValue({ handleImageUpload });
+    const req = makeReq({ mimetype: 'image/png' });
+    req.file.size = rawUploadBytes;
+    req.config.imageOutputType = 'png';
+
+    await processImageFile({
+      req,
+      res: mockRes,
+      metadata: { file_id: 'image-file-id', endpoint: 'agents' },
+    });
+
+    expect(handleImageUpload).toHaveBeenCalled();
+    expect(assertFileStorageLimit).toHaveBeenCalledTimes(1);
+    expect(assertFileStorageLimit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        incomingBytes: persistedBytes,
+        excludeFileId: 'image-file-id',
+      }),
+    );
+  });
+});
+
+describe('processFileUpload assistant storage-limit cleanup', () => {
+  const makeAssistantImageReq = () => ({
+    user: { id: 'user-123', tenantId: 'tenant-a' },
+    file: {
+      path: '/tmp/image.png',
+      originalname: 'image.png',
+      filename: 'image.png',
+      mimetype: 'image/png',
+      size: 128,
+    },
+    body: { model: 'gpt-4o' },
+    config: {
+      fileConfig: { storageLimit: 1 },
+      fileStrategy: FileSources.local,
+      imageOutputType: 'png',
+    },
+  });
+
+  const makeOpenAI = () => ({
+    baseURL: 'https://api.openai.test/v1',
+    files: {
+      del: jest.fn().mockResolvedValue({ deleted: true }),
+    },
+    beta: {
+      assistants: {
+        files: {
+          create: jest.fn().mockResolvedValue({}),
+          del: jest.fn().mockResolvedValue({ deleted: true }),
+        },
+      },
+    },
+  });
+
+  const setupAssistantStrategies = () => {
+    const deleteOpenAIFile = jest.fn((req, file, openai) => openai.files.del(file.file_id));
+    const deleteLocalFile = jest.fn().mockResolvedValue(undefined);
+    const uploadAssistantFile = jest.fn().mockResolvedValue({
+      id: 'file-openai',
+      bytes: 200,
+      filename: 'image.png',
+    });
+    const uploadLocalImage = jest.fn().mockResolvedValue({
+      filepath: '/images/user-123/local-image.png',
+      bytes: 300,
+      width: 32,
+      height: 32,
+    });
+
+    getStrategyFunctions.mockImplementation((source) =>
+      source === FileSources.openai
+        ? { handleFileUpload: uploadAssistantFile, deleteFile: deleteOpenAIFile }
+        : { handleImageUpload: uploadLocalImage, deleteFile: deleteLocalFile },
+    );
+
+    return {
+      deleteOpenAIFile,
+      deleteLocalFile,
+      uploadAssistantFile,
+      uploadLocalImage,
+    };
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    assertFileStorageLimit.mockResolvedValue(undefined);
+    db.createFile.mockResolvedValue({ file_id: 'created-file-id' });
+    db.deleteFiles.mockResolvedValue(undefined);
+    mockRes.status.mockReturnThis();
+    mockRes.json.mockReturnValue({});
+  });
+
+  it('removes an assistant tool-resource file when image persistence fails quota after upload', async () => {
+    const error = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    const openai = makeOpenAI();
+    const { deleteOpenAIFile } = setupAssistantStrategies();
+    getOpenAIClient.mockResolvedValue({ openai });
+    assertFileStorageLimit.mockResolvedValueOnce(undefined).mockRejectedValueOnce(error);
+
+    await expect(
+      processFileUpload({
+        req: makeAssistantImageReq(),
+        res: mockRes,
+        metadata: {
+          endpoint: EModelEndpoint.assistants,
+          assistant_id: 'asst-1',
+          tool_resource: EToolResources.file_search,
+          file_id: 'metadata-file-id',
+        },
+      }),
+    ).rejects.toThrow('storage limit exceeded');
+
+    expect(addResourceFileId).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file_id: 'file-openai',
+        assistant_id: 'asst-1',
+        tool_resource: EToolResources.file_search,
+      }),
+    );
+    expect(deleteResourceFileId).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file_id: 'file-openai',
+        assistant_id: 'asst-1',
+        tool_resource: EToolResources.file_search,
+      }),
+    );
+    expect(deleteOpenAIFile).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ file_id: 'file-openai', source: FileSources.openai }),
+      openai,
+    );
+    expect(db.createFile).not.toHaveBeenCalled();
+  });
+
+  it('rolls back the local assistant image record when assistant metadata persistence fails quota', async () => {
+    const error = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    const openai = makeOpenAI();
+    const { deleteOpenAIFile, deleteLocalFile } = setupAssistantStrategies();
+    getOpenAIClient.mockResolvedValue({ openai });
+    db.createFile.mockImplementation((fileInfo) => Promise.resolve(fileInfo));
+    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    assertFileStorageLimit
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(error);
+
+    await expect(
+      processFileUpload({
+        req: makeAssistantImageReq(),
+        res: mockRes,
+        metadata: {
+          endpoint: EModelEndpoint.assistants,
+          assistant_id: 'asst-1',
+          file_id: 'metadata-file-id',
+        },
+      }),
+    ).rejects.toThrow('storage limit exceeded');
+
+    expect(openai.beta.assistants.files.del).toHaveBeenCalledWith('asst-1', 'file-openai');
+    expect(deleteOpenAIFile).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ file_id: 'file-openai', source: FileSources.openai }),
+      openai,
+    );
+    expect(deleteLocalFile).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        file_id: 'mock-uuid',
+        filepath: '/images/user-123/local-image.png',
+        source: FileSources.local,
+      }),
+      undefined,
+    );
+    expect(db.deleteFiles).toHaveBeenCalledWith(['mock-uuid']);
+    expect(db.createFile).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('processFileURL', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    assertFileStorageLimit.mockResolvedValue(undefined);
+    db.createFile.mockResolvedValue({ file_id: 'created-file-id' });
   });
 
   it('throws and skips DB persistence when saveURL returns null', async () => {
@@ -1414,6 +2030,92 @@ describe('processFileURL', () => {
       }),
       true,
     );
+  });
+
+  it('cleans up URL-saved files when the final storage limit check fails', async () => {
+    const error = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    const saveURL = jest.fn().mockResolvedValue({
+      filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+      bytes: 512,
+      type: 'image/png',
+    });
+    const getFileURL = jest.fn();
+    const deleteFile = jest.fn().mockResolvedValue(undefined);
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL, deleteFile });
+    assertFileStorageLimit.mockRejectedValueOnce(error);
+
+    await expect(
+      processFileURL({
+        fileStrategy: FileSources.cloudfront,
+        userId: 'user-123',
+        URL: 'https://example.com/image.png',
+        fileName: 'image.png',
+        basePath: 'images',
+        context: FileContext.image_generation,
+        tenantId: 'tenant-a',
+        req: {
+          user: { id: 'user-123', tenantId: 'tenant-a' },
+          body: {},
+          config: { fileConfig: { storageLimit: 1 } },
+        },
+      }),
+    ).rejects.toThrow('storage limit exceeded');
+
+    expect(deleteFile).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+        source: FileSources.cloudfront,
+      }),
+      undefined,
+    );
+    expect(db.createFile).not.toHaveBeenCalled();
+  });
+
+  it('passes request path config to local URL cleanup on storage limit failure', async () => {
+    const error = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    const paths = { publicPath: '/srv/public', uploads: '/srv/uploads' };
+    const saveURL = jest.fn().mockResolvedValue({
+      filepath: '/images/user-123/image.png',
+      bytes: 512,
+      type: 'image/png',
+    });
+    const deleteFile = jest.fn().mockResolvedValue(undefined);
+    getStrategyFunctions.mockReturnValue({ saveURL, deleteFile });
+    assertFileStorageLimit.mockRejectedValueOnce(error);
+
+    await expect(
+      processFileURL({
+        fileStrategy: FileSources.local,
+        userId: 'user-123',
+        URL: 'https://example.com/image.png',
+        fileName: 'image.png',
+        basePath: 'images',
+        context: FileContext.image_generation,
+        tenantId: 'tenant-a',
+        req: {
+          user: { id: 'user-123', tenantId: 'tenant-a' },
+          body: {},
+          config: { fileConfig: { storageLimit: 1 }, paths },
+        },
+      }),
+    ).rejects.toThrow('storage limit exceeded');
+
+    expect(deleteFile).toHaveBeenCalledWith(
+      expect.objectContaining({ config: expect.objectContaining({ paths }) }),
+      expect.objectContaining({
+        filepath: '/images/user-123/image.png',
+        source: FileSources.local,
+      }),
+      undefined,
+    );
+    expect(db.createFile).not.toHaveBeenCalled();
   });
 
   it('applies retention metadata for generated images when retention mode is all', async () => {
@@ -1586,6 +2288,313 @@ describe('processFileURL', () => {
       }),
       true,
     );
+  });
+
+  it('cleans up and rejects request-scoped URL saves without byte metadata', async () => {
+    const saveURL = jest.fn().mockResolvedValue('/images/user-123/image.png');
+    const deleteFile = jest.fn().mockResolvedValue(undefined);
+    getStrategyFunctions.mockReturnValue({ saveURL, deleteFile });
+
+    await expect(
+      processFileURL({
+        fileStrategy: FileSources.local,
+        userId: 'user-123',
+        URL: 'https://example.com/image.png',
+        fileName: 'image.png',
+        basePath: 'images',
+        context: FileContext.image_generation,
+        tenantId: 'tenant-a',
+        req: {
+          user: { id: 'user-123', tenantId: 'tenant-a' },
+          body: {},
+          config: { fileConfig: { storageLimit: 1 } },
+        },
+      }),
+    ).rejects.toThrow('did not return byte metadata');
+
+    expect(deleteFile).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        filepath: '/images/user-123/image.png',
+        source: FileSources.local,
+      }),
+      undefined,
+    );
+    expect(db.createFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('generated image quota paths', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    assertFileStorageLimit.mockResolvedValue(undefined);
+    db.createFile.mockResolvedValue({ file_id: 'created-file-id' });
+  });
+
+  it('uploadImageBuffer rejects over-limit images before saving the buffer', async () => {
+    const error = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    const saveBuffer = jest.fn();
+    getStrategyFunctions.mockReturnValue({ saveBuffer });
+    assertFileStorageLimit.mockRejectedValueOnce(error);
+
+    await expect(
+      uploadImageBuffer({
+        req: {
+          user: { id: 'user-123', tenantId: 'tenant-a' },
+          file: { originalname: 'input.png' },
+          body: {},
+          config: { fileConfig: { storageLimit: 1 }, imageOutputType: 'webp' },
+        },
+        context: FileContext.image_generation,
+        resize: false,
+        metadata: {
+          buffer: Buffer.from('image'),
+          bytes: 512,
+          width: 10,
+          height: 10,
+          filename: 'image.webp',
+          file_id: 'image-file-id',
+          type: 'image/webp',
+        },
+      }),
+    ).rejects.toThrow('storage limit exceeded');
+
+    expect(saveBuffer).not.toHaveBeenCalled();
+    expect(db.createFile).not.toHaveBeenCalled();
+  });
+
+  it('saveBase64Image rejects over-limit resized images before saving the buffer', async () => {
+    const error = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    const saveBuffer = jest.fn();
+    getStrategyFunctions.mockReturnValue({ saveBuffer });
+    resizeImageBuffer.mockResolvedValue({
+      buffer: Buffer.from('resized'),
+      bytes: 512,
+      width: 10,
+      height: 10,
+    });
+    assertFileStorageLimit.mockRejectedValueOnce(error);
+
+    await expect(
+      saveBase64Image('data:image/png;base64,aW1hZ2U=', {
+        req: {
+          user: { id: 'user-123', tenantId: 'tenant-a' },
+          body: {},
+          config: {
+            fileConfig: { storageLimit: 1, imageGeneration: 'low' },
+            imageOutputType: 'webp',
+          },
+        },
+        filename: 'image.png',
+        endpoint: EModelEndpoint.openAI,
+        context: FileContext.image_generation,
+      }),
+    ).rejects.toThrow('storage limit exceeded');
+
+    expect(saveBuffer).not.toHaveBeenCalled();
+    expect(db.createFile).not.toHaveBeenCalled();
+  });
+
+  it('retrieveAndProcessFile applies quota to OpenAI file metadata with explicit req', async () => {
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+      body: { endpoint: EModelEndpoint.assistants, model: 'gpt-4o' },
+      config: { fileConfig: { storageLimit: 1 } },
+    };
+    const openai = {
+      baseURL: 'https://api.openai.test',
+      files: {
+        retrieve: jest.fn().mockResolvedValue({
+          bytes: 512,
+          filename: 'remote.txt',
+          purpose: 'assistants_output',
+        }),
+      },
+    };
+
+    await retrieveAndProcessFile({
+      openai,
+      client: { req },
+      file_id: 'openai-file-id',
+    });
+
+    expect(assertFileStorageLimit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        req,
+        incomingBytes: 512,
+        excludeFileId: 'openai-file-id',
+      }),
+    );
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file_id: 'openai-file-id',
+        tenantId: 'tenant-a',
+        source: FileSources.openai,
+      }),
+      true,
+    );
+  });
+
+  it('retrieveAndProcessFile does not delete existing OpenAI files when metadata quota rejects', async () => {
+    const error = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+      body: { endpoint: EModelEndpoint.assistants, model: 'gpt-4o' },
+      config: { fileConfig: { storageLimit: 1 } },
+    };
+    const openai = {
+      baseURL: 'https://api.openai.test',
+      files: {
+        retrieve: jest.fn().mockResolvedValue({
+          bytes: 512,
+          filename: 'remote.txt',
+          purpose: 'assistants_output',
+        }),
+      },
+    };
+    const deleteFile = jest.fn();
+    getStrategyFunctions.mockReturnValue({ deleteFile });
+    assertFileStorageLimit.mockRejectedValueOnce(error);
+
+    await expect(
+      retrieveAndProcessFile({
+        openai,
+        client: { req },
+        file_id: 'openai-file-id',
+      }),
+    ).rejects.toThrow('storage limit exceeded');
+
+    expect(deleteFile).not.toHaveBeenCalled();
+    expect(db.createFile).not.toHaveBeenCalled();
+  });
+
+  it('retrieveAndProcessFile rejects over-limit OpenAI image outputs before metadata persistence', async () => {
+    const error = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+      body: { endpoint: EModelEndpoint.assistants, model: 'gpt-4o' },
+      config: {
+        fileConfig: { storageLimit: 1 },
+        fileStrategy: FileSources.local,
+        imageOutputType: 'webp',
+      },
+    };
+    const openai = {
+      baseURL: 'https://api.openai.test',
+      files: {
+        retrieve: jest.fn().mockResolvedValue({
+          bytes: 1024,
+          filename: 'image.png',
+          purpose: 'assistants_output',
+        }),
+        content: jest.fn().mockResolvedValue({
+          arrayBuffer: jest.fn().mockResolvedValue(Buffer.from('raw-image')),
+        }),
+      },
+    };
+    convertImage.mockResolvedValue({
+      filepath: '/images/user-123/openai-file-id.webp',
+      bytes: 512,
+      width: 10,
+      height: 10,
+    });
+    assertFileStorageLimit.mockRejectedValueOnce(error);
+
+    await expect(
+      retrieveAndProcessFile({
+        openai,
+        client: {
+          req,
+          attachedFileIds: new Set(),
+          processedFileIds: new Set(),
+        },
+        file_id: 'openai-file-id',
+        basename: 'image.png',
+      }),
+    ).rejects.toThrow('storage limit exceeded');
+
+    expect(convertImage).toHaveBeenCalled();
+    expect(db.createFile).not.toHaveBeenCalled();
+  });
+
+  it('cleans over-limit OpenAI image outputs with the file strategy used by conversion', async () => {
+    const error = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+      body: { endpoint: EModelEndpoint.assistants, model: 'gpt-4o' },
+      config: {
+        fileConfig: { storageLimit: 1 },
+        fileStrategy: FileSources.local,
+        imageOutputType: 'webp',
+      },
+    };
+    const openai = {
+      baseURL: 'https://api.openai.test',
+      files: {
+        retrieve: jest.fn().mockResolvedValue({
+          bytes: 1024,
+          filename: 'image.png',
+          purpose: 'assistants_output',
+        }),
+        content: jest.fn().mockResolvedValue({
+          arrayBuffer: jest.fn().mockResolvedValue(Buffer.from('raw-image')),
+        }),
+      },
+    };
+    const deleteLocalFile = jest.fn().mockResolvedValue(undefined);
+    const deleteImageStrategyFile = jest.fn().mockResolvedValue(undefined);
+    getFileStrategy.mockReturnValueOnce('image-strategy');
+    getStrategyFunctions.mockImplementation((source) =>
+      source === FileSources.local
+        ? { deleteFile: deleteLocalFile }
+        : { deleteFile: deleteImageStrategyFile },
+    );
+    convertImage.mockResolvedValue({
+      filepath: '/images/user-123/openai-file-id.webp',
+      bytes: 512,
+      width: 10,
+      height: 10,
+    });
+    assertFileStorageLimit.mockRejectedValueOnce(error);
+
+    await expect(
+      retrieveAndProcessFile({
+        openai,
+        client: {
+          req,
+          attachedFileIds: new Set(),
+          processedFileIds: new Set(),
+        },
+        file_id: 'openai-file-id',
+        basename: 'image.png',
+      }),
+    ).rejects.toThrow('storage limit exceeded');
+
+    expect(deleteLocalFile).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        filepath: '/images/user-123/openai-file-id.webp',
+        source: FileSources.local,
+      }),
+      undefined,
+    );
+    expect(deleteImageStrategyFile).not.toHaveBeenCalled();
+    expect(db.createFile).not.toHaveBeenCalled();
   });
 });
 

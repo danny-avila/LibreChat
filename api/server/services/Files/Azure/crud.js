@@ -12,6 +12,7 @@ const {
   getRemoteFileFetchTimeoutMs,
   assertRemoteFileContentLength,
 } = require('@librechat/api');
+const { getBufferMetadata } = require('~/server/utils');
 
 const defaultBasePath = 'images';
 const { AZURE_STORAGE_PUBLIC_ACCESS = 'true', AZURE_CONTAINER_NAME = 'files' } = process.env;
@@ -60,7 +61,7 @@ async function saveBufferToAzure({
  * @param {string} params.fileName - The name of the file.
  * @param {string} [params.basePath='images'] - The base folder within the container.
  * @param {string} [params.containerName] - The Azure Blob container name.
- * @returns {Promise<string>} The URL of the uploaded blob.
+ * @returns {Promise<{ filepath: string, bytes: number, type: string, dimensions: Record<string, number> }>} The uploaded blob metadata.
  */
 async function saveURLToAzure({
   userId,
@@ -84,7 +85,9 @@ async function saveURLToAzure({
       throw new Error(`Remote file response too large: ${buffer.length} bytes`);
     }
 
-    return await saveBufferToAzure({ userId, buffer, fileName, basePath, containerName });
+    const metadata = await getBufferMetadata(buffer);
+    const filepath = await saveBufferToAzure({ userId, buffer, fileName, basePath, containerName });
+    return { filepath, ...metadata };
   } catch (error) {
     logger.error('[saveURLToAzure] Error uploading file from URL:', error);
     throw error;

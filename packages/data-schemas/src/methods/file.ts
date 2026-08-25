@@ -1,7 +1,9 @@
 import { EToolResources, FileContext } from 'librechat-data-provider';
-import type { FilterQuery, SortOrder, Model } from 'mongoose';
+import type { FilterQuery, SortOrder, Model, Types } from 'mongoose';
+import type { ISkillFileDocument } from '~/types/skill';
 import type { IMongoFile } from '~/types/file';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { runAsSystem } from '~/config/tenantContext';
 import logger from '../config/winston';
 
 export type FileOwnerScope = {
@@ -26,6 +28,21 @@ function withOwnerScope<T extends FilterQuery<IMongoFile>>(
   }
   return scopedFilter;
 }
+
+type ObjectIdInput = string | Types.ObjectId;
+
+export type SkillFileStorageExclusion = {
+  id?: ObjectIdInput;
+  skillId?: ObjectIdInput;
+  relativePath?: string;
+};
+
+export type UserStorageUsageParams = {
+  userId: ObjectIdInput;
+  tenantId?: string | null;
+  excludeFileId?: string | null;
+  excludeSkillFile?: SkillFileStorageExclusion | null;
+};
 
 /** Factory function that takes mongoose instance and returns the file methods */
 export function createFileMethods(mongoose: typeof import('mongoose')): {
@@ -88,7 +105,78 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     owner: { user: string; tenantId?: string | null },
   ) => Promise<number>;
   sweepOrphanedPreviews: (maxAgeMs?: number) => Promise<number>;
+  getUserStorageUsage: (params: UserStorageUsageParams) => Promise<number>;
 } {
+  function toObjectId(value: ObjectIdInput, label: string): Types.ObjectId {
+    if (value instanceof mongoose.Types.ObjectId) {
+      return value;
+    }
+
+    if (mongoose.Types.ObjectId.isValid(value)) {
+      return new mongoose.Types.ObjectId(value);
+    }
+
+    throw new Error(`Invalid ${label}`);
+  }
+
+  async function sumFileBytes(match: FilterQuery<IMongoFile>): Promise<number> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const [result] = await File.aggregate<{ total: number }>([
+      { $match: match },
+      { $group: { _id: null, total: { $sum: '$bytes' } } },
+    ]);
+    return result?.total ?? 0;
+  }
+
+  async function sumSkillFileBytes(match: FilterQuery<ISkillFileDocument>): Promise<number> {
+    const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
+    const [result] = await SkillFile.aggregate<{ total: number }>([
+      { $match: match },
+      { $group: { _id: null, total: { $sum: '$bytes' } } },
+    ]);
+    return result?.total ?? 0;
+  }
+
+  async function getUserStorageUsage({
+    userId,
+    tenantId,
+    excludeFileId,
+    excludeSkillFile,
+  }: UserStorageUsageParams): Promise<number> {
+    const userObjectId = toObjectId(userId, 'userId');
+    const scopedTenantId = tenantId ?? null;
+    const fileMatch: FilterQuery<IMongoFile> = {
+      user: userObjectId,
+      tenantId: scopedTenantId,
+      bytes: { $gt: 0 },
+    };
+    const skillFileMatch: FilterQuery<ISkillFileDocument> = {
+      author: userObjectId,
+      tenantId: scopedTenantId,
+      bytes: { $gt: 0 },
+    };
+
+    if (excludeFileId) {
+      fileMatch.file_id = { $ne: excludeFileId };
+    }
+
+    if (excludeSkillFile?.id) {
+      skillFileMatch._id = { $ne: toObjectId(excludeSkillFile.id, 'excludeSkillFile.id') };
+    } else if (excludeSkillFile?.skillId && excludeSkillFile.relativePath) {
+      skillFileMatch.$nor = [
+        {
+          skillId: toObjectId(excludeSkillFile.skillId, 'excludeSkillFile.skillId'),
+          relativePath: excludeSkillFile.relativePath,
+        },
+      ];
+    }
+
+    const [fileBytes, skillFileBytes] = await runAsSystem(() =>
+      Promise.all([sumFileBytes(fileMatch), sumSkillFileBytes(skillFileMatch)]),
+    );
+    return fileBytes + skillFileBytes;
+  }
+
   /**
    * Finds a file by its file_id with additional query options.
    * @param file_id - The unique identifier of the file
@@ -677,6 +765,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
 
   return {
     findFileById,
+    getUserStorageUsage,
     getFiles,
     getExpiredFiles,
     getToolFilesByIds,

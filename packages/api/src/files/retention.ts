@@ -3,6 +3,8 @@ import { createFallbackRetentionDate } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
 
 type InterfaceConfig = AppConfig['interfaceConfig'];
+type FileConfig = AppConfig['fileConfig'];
+type PathsConfig = AppConfig['paths'];
 
 const retentionExpiryCache = new WeakMap<
   RetentionRequest,
@@ -17,6 +19,8 @@ export type RetentionConversation = {
 };
 
 export type RetentionRequest = {
+  /** Tenant resolved by request middleware; outranks `user.tenantId` when present. */
+  tenantId?: string;
   user?: {
     id?: string;
     tenantId?: string;
@@ -27,6 +31,8 @@ export type RetentionRequest = {
   };
   config?: {
     interfaceConfig?: InterfaceConfig;
+    paths?: PathsConfig;
+    fileConfig?: FileConfig;
   };
 };
 
@@ -249,6 +255,11 @@ export const createMinimalRetentionRequest = (
   }
 
   return {
+    /* Carry the resolved request tenant, not just the user's. Remote-agent auth puts
+     * the tenant only on `req.tenantId`; dropping it here would make quota checks
+     * downstream of this request resolve a null tenant and bill generated images to a
+     * second, separate ledger. */
+    tenantId: req.tenantId,
     user: req.user
       ? {
           id: req.user.id,
@@ -261,6 +272,8 @@ export const createMinimalRetentionRequest = (
     },
     config: {
       interfaceConfig: req.config?.interfaceConfig,
+      ...(req.config?.paths ? { paths: req.config.paths } : {}),
+      ...(req.config?.fileConfig ? { fileConfig: req.config.fileConfig } : {}),
     },
   };
 };
