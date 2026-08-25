@@ -189,6 +189,46 @@ describe('EditMessage', () => {
     expect(enterEdit).toHaveBeenCalledWith(true);
   });
 
+  /** The rerun that matters most needs no edit at all: a cancelled response, or a
+   *  backend restarted on different parameters, has to be reissued untouched. */
+  it('reruns an unchanged request without needing a cosmetic edit first', async () => {
+    const user = userEvent.setup();
+    const ask = jest.fn();
+    const { enterEdit, setSiblingIdx } = renderEditor({ ask });
+
+    const rerun = screen.getByRole('button', { name: 'com_ui_rerun' });
+    expect(rerun).toBeEnabled();
+    /** Saving an untouched draft still has nothing to write. */
+    expect(screen.getByRole('button', { name: 'com_ui_save' })).toBeDisabled();
+
+    await user.click(rerun);
+
+    await waitFor(() =>
+      expect(ask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'Original message',
+          parentMessageId: message.parentMessageId,
+          conversationId: message.conversationId,
+        }),
+        expect.objectContaining({ overrideFiles: message.files }),
+      ),
+    );
+    expect(setSiblingIdx).toHaveBeenCalledWith(-1);
+    expect(enterEdit).toHaveBeenCalledWith(true);
+  });
+
+  it('names the rerun after the edit only once the draft differs', async () => {
+    const user = userEvent.setup();
+    renderEditor();
+
+    expect(screen.getByRole('button', { name: 'com_ui_rerun' })).toBeInTheDocument();
+
+    await user.type(screen.getByTestId('message-text-editor'), ' again');
+
+    expect(screen.queryByRole('button', { name: 'com_ui_rerun' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'com_ui_update_rerun' })).toBeEnabled();
+  });
+
   it('keeps the editor open with the draft when a rerun is refused mid-stream', async () => {
     const user = userEvent.setup();
     const ask = jest.fn().mockReturnValue(false);
@@ -212,11 +252,38 @@ describe('EditMessage', () => {
 
     await user.clear(screen.getByTestId('message-text-editor'));
     await user.type(screen.getByTestId('message-text-editor'), 'Refused answer edit');
-    await user.click(screen.getByRole('button', { name: 'com_ui_update_rerun' }));
+    await user.click(screen.getByRole('button', { name: 'com_ui_rerun' }));
 
     await waitFor(() => expect(ask).toHaveBeenCalled());
     expect(screen.getByTestId('message-text-editor')).toHaveValue('Refused answer edit');
     expect(setSiblingIdx).not.toHaveBeenCalled();
     expect(enterEdit).not.toHaveBeenCalled();
+  });
+
+  /** The submission carries no draft on an assistant turn and regenerates the row in
+   *  place, so the button must not offer to update it and the status slot has to say
+   *  where an unsaved edit is about to go. */
+  it('never offers to update an assistant response it is about to replace', async () => {
+    const user = userEvent.setup();
+    mockGetMessages.mockReturnValue([message, assistantMessage]);
+    const ask = jest.fn();
+    const { enterEdit } = renderEditor({ ask, editedMessage: assistantMessage });
+
+    await user.clear(screen.getByTestId('message-text-editor'));
+    await user.type(screen.getByTestId('message-text-editor'), 'An edited answer');
+
+    expect(screen.queryByRole('button', { name: 'com_ui_update_rerun' })).toBeNull();
+    expect(screen.getByText('com_ui_rerun_replaces_response')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'com_ui_rerun' }));
+
+    await waitFor(() => expect(ask).toHaveBeenCalled());
+    const [, options] = ask.mock.calls[0] as [unknown, Record<string, unknown>];
+    expect(options).not.toHaveProperty('editedText');
+    expect(options).toMatchObject({
+      editedMessageId: assistantMessage.messageId,
+      isRegenerate: true,
+    });
+    expect(enterEdit).toHaveBeenCalledWith(true);
   });
 });

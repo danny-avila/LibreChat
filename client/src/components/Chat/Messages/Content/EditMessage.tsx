@@ -29,6 +29,9 @@ const EditMessage = ({
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const { conversationId, parentMessageId, messageId } = message;
+  /** Only a user turn's draft becomes the submission; an assistant turn's is discarded
+   *  by the rerun (see `resubmitMessage`), so it must not be labelled as an update. */
+  const isUserTurn = message.isCreatedByUser === true;
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
   const localize = useLocalize();
 
@@ -62,7 +65,7 @@ const EditMessage = ({
    *  returning false. Closing the editor regardless would throw the draft away for
    *  a rerun that never started, so a refused send leaves the editor as it was. */
   const resubmitMessage = (data: { text: string }) => {
-    if (message.isCreatedByUser) {
+    if (isUserTurn) {
       const submitted = ask(
         {
           text: data.text,
@@ -94,10 +97,14 @@ const EditMessage = ({
       if (!parentMessage) {
         return;
       }
+      /** No draft rides along: `editedContent` is index-addressed over a content array
+       *  and this editor only opens on messages that have none, so there is nothing for
+       *  a text-level edit to target. `editedMessageId` also regenerates this row in
+       *  place, which would overwrite the draft even if it were persisted first. Hence
+       *  "Rerun", never "Update & rerun", on an assistant turn. */
       const submitted = ask(
         { ...parentMessage },
         {
-          editedText: data.text,
           editedMessageId: messageId,
           isRegenerate: true,
           isEdited: true,
@@ -229,7 +236,9 @@ const EditMessage = ({
             className="line-clamp-2 min-w-0 flex-1 text-xs text-text-secondary"
             aria-live="polite"
           >
-            {isDirty ? localize('com_ui_unsaved_changes') : ''}
+            {isDirty
+              ? localize(isUserTurn ? 'com_ui_unsaved_changes' : 'com_ui_rerun_replaces_response')
+              : ''}
           </span>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
@@ -251,14 +260,20 @@ const EditMessage = ({
                 ? localize('com_ui_saving')
                 : localize('com_ui_save')}
             </Button>
+            {/* A rerun with no edits is a first-class action, not a mistake: a cancelled
+                or failed response, or a backend restarted on different parameters, has
+                to be reissued byte-for-byte. Validity only gates an edited draft: a
+                pristine one is the persisted message, already submittable by
+                construction, and `isValid` is false for a tick after mount while the
+                form's first validation pass settles. */}
             <Button
               ref={submitButtonRef}
               size="sm"
               variant="submit"
-              disabled={isSubmitting || updateMessageMutation.isLoading || !isDirty || !isValid}
+              disabled={isSubmitting || updateMessageMutation.isLoading || (isDirty && !isValid)}
               onClick={handleSubmit(resubmitMessage)}
             >
-              {localize('com_ui_update_rerun')}
+              {isDirty && isUserTurn ? localize('com_ui_update_rerun') : localize('com_ui_rerun')}
             </Button>
           </div>
         </footer>
