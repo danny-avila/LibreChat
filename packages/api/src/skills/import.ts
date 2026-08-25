@@ -89,21 +89,28 @@ type ParsedSkillFile = {
  *
  * Exported for unit testing only — prefer `createImportHandler` at runtime.
  */
-export function parseFrontmatter(raw: string): ParsedSkillFile {
-  const parsed = parseSkillMarkdown(raw);
+function parseFrontmatterForImport(raw: string): {
+  parsed: ParsedSkillFile;
+  inspectionFrontmatter: Record<string, unknown>;
+} {
+  const markdown = parseSkillMarkdown(raw);
   const result: ParsedSkillFile = {
-    name: parsed.name,
-    description: parsed.description,
-    alwaysApply: parsed.alwaysApply,
-    userInvocable: parsed.userInvocable,
-    disableModelInvocation: parsed.disableModelInvocation,
-    frontmatter: pickValidFrontmatter(toCleanFrontmatter(parsed)),
-    invalidBooleans: parsed.invalidBooleans,
+    name: markdown.name,
+    description: markdown.description,
+    alwaysApply: markdown.alwaysApply,
+    userInvocable: markdown.userInvocable,
+    disableModelInvocation: markdown.disableModelInvocation,
+    frontmatter: pickValidFrontmatter(toCleanFrontmatter(markdown)),
+    invalidBooleans: markdown.invalidBooleans,
   };
-  if (parsed.parseError) {
-    result.parseError = parsed.parseError;
+  if (markdown.parseError) {
+    result.parseError = markdown.parseError;
   }
-  return result;
+  return { parsed: result, inspectionFrontmatter: markdown.frontmatter ?? {} };
+}
+
+export function parseFrontmatter(raw: string): ParsedSkillFile {
+  return parseFrontmatterForImport(raw).parsed;
 }
 
 /**
@@ -429,7 +436,7 @@ async function handleMarkdown(
   }
   const content = file.buffer.toString('utf-8');
 
-  const parsed = parseFrontmatter(content);
+  const { parsed, inspectionFrontmatter } = parseFrontmatterForImport(content);
   const frontmatterError = sendFrontmatterIssues(res, parsed);
   if (frontmatterError) {
     return frontmatterError;
@@ -458,7 +465,7 @@ async function handleMarkdown(
         description: description || inferredName,
         body: content,
         importedText: content,
-        frontmatter,
+        frontmatter: inspectionFrontmatter,
       },
       [{ filename: file.originalname, text: content }],
     )
@@ -845,7 +852,7 @@ async function handleZip(
     return res.status(400).json({ error: 'Could not read SKILL.md from archive' });
   }
 
-  const parsed = parseFrontmatter(skillMdContent);
+  const { parsed, inspectionFrontmatter } = parseFrontmatterForImport(skillMdContent);
   const frontmatterError = sendFrontmatterIssues(res, parsed);
   if (frontmatterError) {
     return frontmatterError;
@@ -893,7 +900,7 @@ async function handleZip(
           description: description || inferredName,
           body: skillMdContent,
           importedText: skillMdContent,
-          frontmatter,
+          frontmatter: inspectionFrontmatter,
         },
         [{ filename: file.originalname }, { filename: skillMdPath, text: skillMdContent }],
       )

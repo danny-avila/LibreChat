@@ -1,3 +1,4 @@
+import yaml from 'js-yaml';
 import {
   ResourceType,
   SKILL_NAME_MAX_LENGTH,
@@ -19,7 +20,6 @@ import type {
 import type { IAgent } from '~/types/agent';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
-import { stripYamlTrailingComment } from '~/utils/yaml';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
 
@@ -934,119 +934,56 @@ export type CreateSkillResult = {
 type BodyAlwaysApplyResult =
   | { status: 'absent' }
   | { status: 'valid'; value: boolean }
-  | { status: 'invalid' };
+  | { status: 'invalid'; fingerprint: string };
 
 /** Body-derived state for every boolean flag mirrored onto a column. */
 type BodyFlagResults = Record<SkillBooleanColumn, BodyAlwaysApplyResult>;
-
-const BODY_FLAG_BY_KEY = new Map<string, SkillBooleanFlag>(
-  SKILL_BOOLEAN_FLAGS.flatMap((flag) =>
-    [flag.key, ...flag.aliases].map((key) => [key.toLowerCase(), flag] as const),
-  ),
-);
 
 /** Isolate a SKILL.md body's leading YAML frontmatter block, or `null`. */
 function extractBodyFrontmatterBlock(body: string | undefined): string | null {
   if (typeof body !== 'string' || body.length === 0) {
     return null;
   }
-  const trimmed = body.trim();
-  if (!trimmed.startsWith('---')) {
+  const normalized = body.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+  const firstContentIndex = normalized.search(/\S/);
+  if (firstContentIndex === -1) {
     return null;
   }
-  const after = trimmed.slice(3);
-  const closingIdx = after.indexOf('\n---');
-  if (closingIdx === -1) {
+  const content = normalized.slice(firstContentIndex);
+  const opening = /^---[ \t]*\n/.exec(content);
+  if (!opening) {
     return null;
   }
-  return after.slice(0, closingIdx);
+  const afterOpening = content.slice(opening[0].length);
+  const closing = /(?:^|\n)---[ \t]*(?:\n|$)/.exec(afterOpening);
+  return closing ? afterOpening.slice(0, closing.index) : null;
 }
 
-function indentWidth(line: string): number {
-  let width = 0;
-  while (width < line.length && (line[width] === ' ' || line[width] === '\t')) {
-    width++;
+function fingerprintBodyFlagValue(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
   }
-  return width;
 }
 
-/**
- * Indentation of the frontmatter mapping's own keys, taken from its first
- * content line. Usually zero, but a block whose every key is indented is still
- * valid YAML and its keys are still top-level.
- */
-function findMappingIndent(lines: string[]): number | null {
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.length === 0 || trimmed.startsWith('#')) {
-      continue;
-    }
-    return indentWidth(line);
+function readParsedBodyFlagValue(value: unknown): BodyAlwaysApplyResult {
+  if (typeof value === 'boolean') {
+    return { status: 'valid', value };
   }
-  return null;
-}
-
-/**
- * Read a flag value that YAML continues on a following line, as in
- * `user-invocable:` followed by an indented `false`. Only a lone indented
- * scalar qualifies — anything carrying its own `:` is a nested mapping, which
- * makes the flag a mapping rather than a boolean.
- */
-function readContinuedFlagValue(
-  lines: string[],
-  keyIndex: number,
-  baseIndent: number,
-): BodyAlwaysApplyResult | null {
-  let continuedValue: BodyAlwaysApplyResult | null = null;
-  for (let i = keyIndex + 1; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    if (trimmed.length === 0 || trimmed.startsWith('#')) {
-      continue;
-    }
-    if (indentWidth(line) <= baseIndent) {
-      return continuedValue;
-    }
-    if (continuedValue !== null || trimmed.includes(':')) {
-      return { status: 'invalid' };
-    }
-    continuedValue = readBodyFlagValue(trimmed);
-  }
-  return continuedValue;
-}
-
-/** Strip one layer of matching YAML quotes, if present. */
-function unquoteScalar(value: string): string {
-  if (
-    value.length >= 2 &&
-    ((value[0] === '"' && value[value.length - 1] === '"') ||
-      (value[0] === "'" && value[value.length - 1] === "'"))
-  ) {
-    return value.slice(1, -1).trim();
-  }
-  return value;
-}
-
-function readBodyFlagValue(rawValue: string): BodyAlwaysApplyResult {
-  /* Strip the YAML inline comment BEFORE unquoting — a line like
-     `always-apply: "true" # note` has both, and handling whole-line quoting
-     first would leave `"true"` behind, which parses as invalid. */
-  let value = stripYamlTrailingComment(rawValue.trim()).trim();
-  if (value === '') {
+  if (value === null || value === '') {
     return { status: 'absent' };
   }
-  value = unquoteScalar(value);
-  if (value === '') {
-    return { status: 'absent' };
+  if (typeof value === 'string') {
+    const lowered = value.trim().toLowerCase();
+    if (lowered === 'true') {
+      return { status: 'valid', value: true };
+    }
+    if (lowered === 'false') {
+      return { status: 'valid', value: false };
+    }
   }
-  const lowered = value.toLowerCase();
-  if (lowered === 'true') {
-    return { status: 'valid', value: true };
-  }
-  if (lowered === 'false') {
-    return { status: 'valid', value: false };
-  }
-  return { status: 'invalid' };
+  return { status: 'invalid', fingerprint: fingerprintBodyFlagValue(value) };
 }
 
 /**
@@ -1056,6 +993,9 @@ function readBodyFlagValue(rawValue: string): BodyAlwaysApplyResult {
  * object, so this is the only signal we have for "user flipped
  * `user-invocable:` inline in their editor".
  *
+ * The block is parsed with the same YAML implementation used by import and
+ * GitHub sync. This keeps exact fences, flow mappings, duplicate recognized
+ * keys, nested values, and continued scalars consistent across every route.
  * Each flag resolves to a discriminated union so callers can tell:
  *  - `absent` — key not present (or present with an empty value, a mid-edit
  *    placeholder that must not reject a save). Treated as a declaration that
@@ -1068,12 +1008,7 @@ function readBodyFlagValue(rawValue: string): BodyAlwaysApplyResult {
  *    from what the saved SKILL.md text says.
  *
  * The first canonical spelling wins; a legacy alias (`alwaysApply`) is only
- * consulted when the canonical key never appears. Only keys at the mapping's
- * own indentation are read, so a nested mapping reusing a flag name
- * (`metadata:` → `  user-invocable:`) is not mistaken for a declaration, while
- * a frontmatter block that is indented as a whole still parses. A flag whose
- * value YAML continues onto the following line is read from there rather than
- * being treated as an unwritten placeholder.
+ * consulted when the canonical key never appears.
  */
 function extractBooleanFlagsFromBody(body: string | undefined): BodyFlagResults {
   const results: BodyFlagResults = {
@@ -1085,44 +1020,27 @@ function extractBooleanFlagsFromBody(body: string | undefined): BodyFlagResults 
   if (block === null) {
     return results;
   }
-  const lines = block.split('\n');
-  const baseIndent = findMappingIndent(lines);
-  if (baseIndent === null) {
+  let parsed: unknown;
+  try {
+    parsed = yaml.load(block);
+  } catch {
+    const invalid = { status: 'invalid' as const, fingerprint: block };
+    return { alwaysApply: invalid, userInvocable: invalid, disableModelInvocation: invalid };
+  }
+  if (!isPlainObject(parsed)) {
     return results;
   }
-  const canonical = new Map<SkillBooleanColumn, BodyAlwaysApplyResult>();
-  const aliased = new Map<SkillBooleanColumn, BodyAlwaysApplyResult>();
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    if (trimmed.length === 0 || trimmed.startsWith('#') || indentWidth(line) !== baseIndent) {
-      continue;
-    }
-    const colon = trimmed.indexOf(':');
-    if (colon === -1) {
-      continue;
-    }
-    const key = unquoteScalar(trimmed.slice(0, colon).trim()).toLowerCase();
-    const flag = BODY_FLAG_BY_KEY.get(key);
-    if (!flag) {
-      continue;
-    }
-    let result = readBodyFlagValue(trimmed.slice(colon + 1));
-    if (result.status === 'absent') {
-      result = readContinuedFlagValue(lines, i, baseIndent) ?? result;
-    }
-    if (key === flag.key) {
-      if (!canonical.has(flag.column)) {
-        canonical.set(flag.column, result);
-      }
-      continue;
-    }
-    aliased.set(flag.column, result);
+  const normalized = normalizeSkillFrontmatterKeys(parsed);
+  if ('error' in normalized) {
+    const invalid = { status: 'invalid' as const, fingerprint: normalized.error };
+    return { alwaysApply: invalid, userInvocable: invalid, disableModelInvocation: invalid };
   }
   for (const flag of SKILL_BOOLEAN_FLAGS) {
-    const resolved = canonical.get(flag.column) ?? aliased.get(flag.column);
-    if (resolved) {
-      results[flag.column] = resolved;
+    const key = [flag.key, ...flag.aliases].find((candidate) =>
+      Object.prototype.hasOwnProperty.call(normalized.frontmatter, candidate),
+    );
+    if (key !== undefined) {
+      results[flag.column] = readParsedBodyFlagValue(normalized.frontmatter[key]);
     }
   }
   return results;
@@ -1193,11 +1111,14 @@ function validateBodyDerivedColumns(
       continue;
     }
     const column = flag.column as (typeof BODY_DERIVED_COLUMNS)[number];
-    if (bodyFlags[column].status !== 'invalid' || typeof bagDerived[column] === 'boolean') {
+    const bodyFlag = bodyFlags[column];
+    if (bodyFlag.status !== 'invalid' || typeof bagDerived[column] === 'boolean') {
       continue;
     }
-    /* Already malformed before this edit — not something to reject now. */
-    if (storedBodyFlags?.[column].status === 'invalid') {
+    /* An unchanged legacy typo does not block an unrelated body edit, but a
+       different malformed value is newly authored and must be rejected. */
+    const storedFlag = storedBodyFlags?.[column];
+    if (storedFlag?.status === 'invalid' && storedFlag.fingerprint === bodyFlag.fingerprint) {
       continue;
     }
     issues.push({
@@ -1508,6 +1429,9 @@ export function createSkillMethods(
     }
 
     const derived = deriveStructuredFrontmatterFields(frontmatter);
+    const persistedFrontmatter = {
+      ...(isPlainObject(frontmatter) ? frontmatter : {}),
+    };
     /**
      * A caller may declare the invocation-mode flags in the structured bag, in
      * the SKILL.md body's own frontmatter, or both — the UI's create form sends
@@ -1520,6 +1444,29 @@ export function createSkillMethods(
       const resolved = resolveBodyDerivedColumn(column, derived, bodyScan);
       if (resolved !== undefined) {
         bodyDerived[column] = resolved;
+        const flag = SKILL_BOOLEAN_FLAGS.find((candidate) => candidate.column === column);
+        if (flag) {
+          syncBodyFlagFrontmatter(persistedFrontmatter, flag, resolved);
+        }
+      }
+    }
+    const resolvedAlwaysApply = resolveAlwaysApplyFromInput(
+      data.alwaysApply,
+      frontmatter,
+      data.body,
+      false,
+      bodyAlwaysApply,
+    );
+    if (
+      data.alwaysApply === undefined &&
+      getAlwaysApplyFrontmatterValue(frontmatter) === undefined &&
+      bodyAlwaysApply?.status === 'valid'
+    ) {
+      const alwaysApplyFlag = SKILL_BOOLEAN_FLAGS.find(
+        (candidate) => candidate.column === 'alwaysApply',
+      );
+      if (alwaysApplyFlag) {
+        syncBodyFlagFrontmatter(persistedFrontmatter, alwaysApplyFlag, bodyAlwaysApply.value);
       }
     }
     const doc = await Skill.create({
@@ -1527,7 +1474,7 @@ export function createSkillMethods(
       displayTitle: data.displayTitle,
       description: data.description,
       body: data.body ?? '',
-      frontmatter: frontmatter ?? {},
+      frontmatter: persistedFrontmatter,
       category: data.category ?? '',
       author: data.author,
       authorName: data.authorName,
@@ -1535,13 +1482,7 @@ export function createSkillMethods(
       source: data.source ?? 'inline',
       sourceMetadata: data.sourceMetadata,
       fileCount: 0,
-      alwaysApply: resolveAlwaysApplyFromInput(
-        data.alwaysApply,
-        frontmatter,
-        data.body,
-        false,
-        bodyAlwaysApply,
-      ),
+      alwaysApply: resolvedAlwaysApply,
       tenantId: data.tenantId,
       ...bodyDerived,
       ...derived,
@@ -1850,7 +1791,11 @@ export function createSkillMethods(
     if (
       bodyAlwaysApply?.status === 'invalid' &&
       update.alwaysApply === undefined &&
-      getAlwaysApplyFrontmatterValue(frontmatter) === undefined
+      getAlwaysApplyFrontmatterValue(frontmatter) === undefined &&
+      !(
+        storedBodyFlags?.alwaysApply.status === 'invalid' &&
+        storedBodyFlags.alwaysApply.fingerprint === bodyAlwaysApply.fingerprint
+      )
     ) {
       issues.push({
         field: 'body.frontmatter.alwaysApply',

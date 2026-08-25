@@ -1078,6 +1078,11 @@ describe('Skill CRUD methods', () => {
       expect(skill.alwaysApply).toBe(true);
       expect(skill.userInvocable).toBe(false);
       expect(skill.disableModelInvocation).toBe(true);
+      expect(skill.frontmatter).toEqual({
+        'always-apply': true,
+        'user-invocable': false,
+        'disable-model-invocation': true,
+      });
 
       const reloaded = await methods.getSkillById(skill._id);
       expect(reloaded?.userInvocable).toBe(false);
@@ -1134,6 +1139,32 @@ describe('Skill CRUD methods', () => {
         }),
       );
       expect(skill.userInvocable).toBe(true);
+    });
+
+    it('createSkill reads invocation flags from a flow-style frontmatter mapping', async () => {
+      const { skill } = await methods.createSkill(
+        makeSkillInput({
+          name: 'flow-style-flags',
+          body: `---\n{name: flow-style-flags, description: A demo skill., user-invocable: false}\n---\n\nBody.`,
+          frontmatter: undefined,
+        }),
+      );
+
+      expect(skill.userInvocable).toBe(false);
+      expect(skill.frontmatter).toEqual({ 'user-invocable': false });
+    });
+
+    it('does not treat a Markdown thematic break as an opening YAML fence', async () => {
+      const { skill } = await methods.createSkill(
+        makeSkillInput({
+          name: 'thematic-break',
+          body: '----\nOrdinary Markdown.\nuser-invocable: false\n---\nStill ordinary Markdown.',
+          frontmatter: undefined,
+        }),
+      );
+
+      expect(skill.userInvocable).toBe(true);
+      expect(skill.frontmatter).toBeUndefined();
     });
 
     it('updateSkill picks up flags added to the body', async () => {
@@ -1440,6 +1471,35 @@ describe('Skill CRUD methods', () => {
       expect(updated.status).toBe('updated');
       if (updated.status !== 'updated') return;
       expect(updated.skill.description).toBe('An edited description.');
+    });
+
+    it('rejects a changed malformed flag on a body that already contained a typo', async () => {
+      const malformed =
+        '---\nname: changed-typo\ndescription: A demo skill.\nuser-invocable: yes\n---\n\nBody.';
+      const stored = await Skill.create({
+        name: 'changed-typo',
+        description: 'A demo skill.',
+        body: malformed,
+        frontmatter: {},
+        author: owner._id,
+        authorName: owner.name ?? 'Skill Owner',
+        version: 1,
+        source: 'inline',
+        fileCount: 0,
+      });
+
+      await expect(
+        methods.updateSkill({
+          id: (stored._id as mongoose.Types.ObjectId).toString(),
+          expectedVersion: 1,
+          update: { body: malformed.replace('user-invocable: yes', 'user-invocable: tru') },
+        }),
+      ).rejects.toMatchObject({
+        code: 'SKILL_VALIDATION_FAILED',
+        issues: expect.arrayContaining([
+          expect.objectContaining({ field: 'body.frontmatter.user-invocable' }),
+        ]),
+      });
     });
 
     it('updateSkill rejects a non-boolean flag introduced by a body edit', async () => {

@@ -14,10 +14,9 @@ logger.silent = true;
 /**
  * The invariant this PR rests on: the same SKILL.md text must produce the same
  * invocation-mode columns whether it arrives as an upload or is pasted into the
- * skill editor. Those two routes read frontmatter differently — the upload path
- * runs js-yaml (`parseSkillMarkdown`), while a body-only save is read by the
- * line scanner inside `createSkill` — so nothing but a shared corpus keeps them
- * from drifting apart on the next change.
+ * skill editor. Both routes parse YAML before deriving the columns, but their
+ * persistence entry points remain separate, so a shared corpus keeps them from
+ * drifting apart on the next change.
  *
  * Each row is fed through both routes and the resulting columns compared. Add a
  * row here for any frontmatter shape a bug report turns up.
@@ -81,7 +80,7 @@ async function viaImport(name: string, body: string): Promise<Columns> {
   return columnsOf(skill);
 }
 
-/** The editor route: body only, read by the body scanner inside `createSkill`. */
+/** The editor route: body only, parsed inside `createSkill`. */
 async function viaInlineBody(name: string, body: string): Promise<Columns> {
   try {
     const { skill } = await methods.createSkill({
@@ -136,32 +135,26 @@ describe('frontmatter parity between the upload and inline-body routes', () => {
     expect(await viaInlineBody(name, body)).toEqual(await viaImport(name, body));
   });
 
-  it('rejects YAML the editor route tolerates, without setting a column either way', async () => {
-    /* Tabs are illegal for YAML indentation, so js-yaml refuses the file and the
-       upload is rejected outright, while the line scanner simply sees nothing at
-       the mapping's indent and saves the text as authored. The asymmetry is in
-       the rejection, never in the columns — neither route sets a flag — and it
-       predates this work, since only the upload route ever parsed YAML. */
+  it('rejects invalid YAML indentation on both routes', async () => {
     const name = 'parity-tab-indent';
     const body = bodyFor(name, 'metadata:\n\tuser-invocable: false');
 
     expect(await viaImport(name, body)).toEqual({ rejected: true });
-    expect(await viaInlineBody(name, body)).toMatchObject({
-      userInvocable: true,
-      disableModelInvocation: false,
-    });
+    expect(await viaInlineBody(name, body)).toEqual({ rejected: true });
   });
 
-  it('documents the one shape the two routes read differently', async () => {
-    /* Duplicate keys differing only in case: js-yaml keeps the last after the
-       keys normalize to one, the line scanner takes the first. The file is
-       ambiguous by construction and neither reading can release a restriction,
-       so this is pinned rather than fixed — widening the line scanner into a
-       second YAML implementation would cost more than it buys. */
+  it('rejects recognized keys that collide after case normalization on both routes', async () => {
     const name = 'parity-case-duplicate';
     const body = bodyFor(name, 'user-invocable: false\nUSER-INVOCABLE: true');
 
-    expect(await viaImport(name, body)).toMatchObject({ userInvocable: true });
-    expect(await viaInlineBody(name, body)).toMatchObject({ userInvocable: false });
+    expect(await viaImport(name, body)).toEqual({ rejected: true });
+    expect(await viaInlineBody(name, body)).toEqual({ rejected: true });
+  });
+
+  it('derives flags from a flow-style top-level mapping on both routes', async () => {
+    const name = 'parity-flow-top-level';
+    const body = `---\n{name: ${name}, description: ${DESCRIPTION}, user-invocable: false}\n---\n\nBody.`;
+
+    expect(await viaInlineBody(name, body)).toEqual(await viaImport(name, body));
   });
 });
