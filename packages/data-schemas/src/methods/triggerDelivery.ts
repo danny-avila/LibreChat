@@ -24,6 +24,7 @@ const MAX_DEAD_LETTER_LIMIT = 200;
 const DEFAULT_PURGE_RECOVERY_LIMIT = 25;
 const MAX_PURGE_RECOVERY_LIMIT = 200;
 const HISTORY_LIMIT = 64;
+const BATCH_WINDOW_MS = 750;
 const MAX_BATCH_SIZE = 8;
 const MAX_BATCH_BYTES = 512 * 1024;
 
@@ -277,7 +278,11 @@ export function createAgentTriggerDeliveryMethods(
               orderingKey: lane._id,
               coalesceKey: staged.coalesceKey,
               status: 'pending',
-              coalesceUntil: { $gt: new Date() },
+              coalesceUntil: {
+                $gt: new Date(),
+                $gte: new Date(staged.coalesceUntil.getTime() - BATCH_WINDOW_MS),
+                $lte: staged.coalesceUntil,
+              },
               batchMemberIds: { $ne: staged._id },
               batchSize: { $lt: MAX_BATCH_SIZE },
               batchBytes: { $lte: MAX_BATCH_BYTES - staged.envelopeBytes },

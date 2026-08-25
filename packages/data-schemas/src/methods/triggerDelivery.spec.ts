@@ -405,6 +405,32 @@ describe('agent trigger delivery methods', () => {
     expect(await Delivery.countDocuments({ orderingKey: 'closed-lane', status: 'pending' })).toBe(
       2,
     );
+
+    const nearUntil = new Date(Date.now() + 60_000);
+    const distantUntil = new Date(nearUntil.getTime() + 24 * 60 * 60_000);
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        orderingKey: 'scheduled-lane',
+        coalesceKey: 'trigger_batch_scheduled',
+        coalesceUntil: nearUntil,
+        availableAt: nearUntil,
+        envelopeBytes: 64,
+      }),
+    );
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        orderingKey: 'scheduled-lane',
+        coalesceKey: 'trigger_batch_scheduled',
+        coalesceUntil: distantUntil,
+        availableAt: distantUntil,
+        envelopeBytes: 64,
+      }),
+    );
+    expect(
+      await Delivery.countDocuments({ orderingKey: 'scheduled-lane', status: 'pending' }),
+    ).toBe(2);
   });
 
   it('requeues a dead batch as a root instead of nesting it under a newer batch', async () => {
