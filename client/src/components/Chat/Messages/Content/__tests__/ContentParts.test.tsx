@@ -11,6 +11,7 @@ jest.mock('~/utils', () => ({
   filterAttachmentsForPart: (attachments: unknown) => attachments,
   groupSequentialToolCalls: jest.fn(),
   hasPendingApprovalInPart: jest.requireActual('~/utils/groupToolCalls').hasPendingApprovalInPart,
+  getPartKeyIndex: jest.requireActual('~/utils/messages').getPartKeyIndex,
 }));
 
 jest.mock('~/Providers', () => {

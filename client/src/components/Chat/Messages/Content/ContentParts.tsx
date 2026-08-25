@@ -8,7 +8,12 @@ import type {
 } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
-import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
+import {
+  mapAttachments,
+  getPartKeyIndex,
+  filterAttachmentsForPart,
+  groupSequentialToolCalls,
+} from '~/utils';
 import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceChanges';
 import { groupActivityPhases, lastCursorContentIdx } from '~/utils/activityLabels';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
@@ -37,13 +42,6 @@ const isEmptyTextPart = (part: TMessageContentParts | undefined): boolean => {
 
 const getToolCallId = (part: TMessageContentParts): string =>
   (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
-
-/** Render-identity index for keys: `finalHandler` stamps the position a part
- * streamed at onto the persisted (compacted) content, so keying by the stamp
- * keeps the settled message's parts mounted across the sparse→compact swap.
- * Coordinate logic (bounds, edits, cursor) stays on the live index. */
-const getPartKeyIndex = (part: TMessageContentParts | undefined, idx: number): number =>
-  part?.streamedIndex ?? idx;
 
 const getPartAgentId = (part: TMessageContentParts): string | undefined =>
   (part as { agentId?: string })?.agentId ??

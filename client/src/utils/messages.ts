@@ -278,6 +278,7 @@ export const preserveStreamedContentIdentity = (
       return finalContent;
     }
     let matchedIndex = -1;
+    let matchedPart: TMessageContentParts | null = null;
     while (cursor < streamedContent.length) {
       const streamedPart = streamedContent[cursor];
       if (streamedPart == null) {
@@ -293,22 +294,36 @@ export const preserveStreamedContentIdentity = (
       }
       if (isSameStreamedPart(streamedPart, finalPart)) {
         matchedIndex = cursor;
+        matchedPart = streamedPart;
         cursor += 1;
       }
       break;
     }
-    if (matchedIndex === -1) {
+    if (matchedIndex === -1 || matchedPart == null) {
       return finalContent;
     }
-    if (matchedIndex !== index && stamped == null) {
+    /** A settled message can be re-delivered by a LATER final event (e.g. an
+     *  Assistants run resyncing prior turns): both sides arrive compact, but
+     *  the current parts already carry stamps from their own settle. Carrying
+     *  them forward keeps their keys stable forever, instead of silently
+     *  reverting the identity this stamp exists to preserve. */
+    const stampIndex = matchedPart.streamedIndex ?? matchedIndex;
+    if (stampIndex !== index && stamped == null) {
       stamped = [...finalContent];
     }
-    if (stamped != null && matchedIndex !== index) {
-      stamped[index] = { ...finalPart, streamedIndex: matchedIndex };
+    if (stamped != null && stampIndex !== index) {
+      stamped[index] = { ...finalPart, streamedIndex: stampIndex };
     }
   }
   return stamped ?? finalContent;
 };
+
+/** Render-identity index for content-part keys: the streamed position stamped
+ * by the final handler survives the sparse→compact swap; everything else keys
+ * by the live index. Coordinate logic (edit indexes, phase bounds, cursor)
+ * must keep using the live index. */
+export const getPartKeyIndex = (part: TMessageContentParts | undefined, idx: number): number =>
+  part?.streamedIndex ?? idx;
 
 /**
  * Whether a draft message has enough content to submit: non-whitespace

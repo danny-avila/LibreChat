@@ -118,6 +118,34 @@ describe('preserveStreamedContentIdentity', () => {
     expect(preserveStreamedContentIdentity([], final)).toBe(final);
   });
 
+  it('carries existing stamps forward when a settled message is re-delivered compact', () => {
+    const streamedSparse = [undefined, tool('call_a'), label('first'), undefined, text('answer')];
+    const settled = preserveStreamedContentIdentity(streamedSparse, [
+      tool('call_a'),
+      label('first'),
+      text('answer'),
+    ]);
+    expect(streamedIndexes(settled)).toEqual([1, 2, 4]);
+
+    const redelivered = [tool('call_a'), label('first'), text('answer')];
+    const result = preserveStreamedContentIdentity(settled, redelivered);
+
+    expect(streamedIndexes(result)).toEqual([1, 2, 4]);
+  });
+
+  it('carries a partially stamped message forward without stamping its aligned prefix', () => {
+    const streamedSparse = [text('intro'), undefined, tool('call_a')];
+    const settled = preserveStreamedContentIdentity(streamedSparse, [
+      text('intro'),
+      tool('call_a'),
+    ]);
+    expect(streamedIndexes(settled)).toEqual([undefined, 2]);
+
+    const result = preserveStreamedContentIdentity(settled, [text('intro'), tool('call_a')]);
+
+    expect(streamedIndexes(result)).toEqual([undefined, 2]);
+  });
+
   it('pairs id-less tool calls by name', () => {
     const streamed = [undefined, tool(undefined, 'execute_code')];
     const final = [tool(undefined, 'execute_code')];
