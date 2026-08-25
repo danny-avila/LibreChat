@@ -1204,9 +1204,52 @@ export function createAgentTriggerDeliveryMethods(
     id: string,
     availableAt: Date,
   ): Promise<AgentTriggerDeliveryRecord | null> {
+    const candidate = await Delivery()
+      .findOne({ _id: id, status: 'dead', batchRootId: { $exists: false } })
+      .lean<IAgentTriggerDelivery>();
+    if (candidate?._id == null) {
+      return null;
+    }
+    const requeueCount = (candidate.requeueCount ?? 0) + 1;
+    const memberIds = candidate.batchMemberIds ?? [];
+    if (memberIds.length > 0) {
+      await Delivery().updateMany(
+        { _id: { $in: memberIds }, orderingKey: candidate.orderingKey },
+        {
+          $set: {
+            status: 'batched',
+            attempts: 0,
+            batchRootId: candidate._id,
+            batchRootRequeueCount: requeueCount,
+          },
+          $unset: {
+            lastError: 1,
+            result: 1,
+            settledAt: 1,
+            expiresAt: 1,
+          },
+        },
+      );
+      const preparedCount = await Delivery().countDocuments({
+        _id: { $in: memberIds },
+        orderingKey: candidate.orderingKey,
+        status: 'batched',
+        batchRootId: candidate._id,
+        batchRootRequeueCount: requeueCount,
+      });
+      if (preparedCount !== memberIds.length) {
+        throw new Error('Not every agent trigger batch receipt could be prepared for requeue');
+      }
+    }
+
     const staged = await Delivery()
       .findOneAndUpdate(
-        { _id: id, status: 'dead', batchRootId: { $exists: false } },
+        {
+          _id: candidate._id,
+          status: 'dead',
+          batchRootId: { $exists: false },
+          requeueCount: candidate.requeueCount ?? 0,
+        },
         {
           $set: {
             status: 'staging',
@@ -1233,26 +1276,6 @@ export function createAgentTriggerDeliveryMethods(
       .lean<IAgentTriggerDelivery>();
     if (staged == null) {
       return null;
-    }
-
-    if (staged._id != null && (staged.batchMemberIds?.length ?? 0) > 0) {
-      await Delivery().updateMany(
-        { _id: { $in: staged.batchMemberIds }, orderingKey: staged.orderingKey },
-        {
-          $set: {
-            status: 'batched',
-            attempts: 0,
-            batchRootId: staged._id,
-            batchRootRequeueCount: staged.requeueCount ?? 0,
-          },
-          $unset: {
-            lastError: 1,
-            result: 1,
-            settledAt: 1,
-            expiresAt: 1,
-          },
-        },
-      );
     }
 
     // Requeue is a new lane admission. Retaining the dead letter's original

@@ -629,6 +629,65 @@ describe('agent trigger delivery methods', () => {
     expect((await Delivery.findById(root!._id).lean())?.batchMembersSettledAt).toBeUndefined();
   });
 
+  it('retries safely when batch requeue stops after preparing its members', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const coalesceUntil = new Date(Date.now() + 60_000);
+    const shared = {
+      user,
+      orderingKey: 'batch-requeue-recovery-lane',
+      coalesceKey: 'trigger_batch_requeue_recovery',
+      coalesceFrom: new Date(coalesceUntil.getTime() - 750),
+      coalesceUntil,
+      availableAt: coalesceUntil,
+      envelopeBytes: 128,
+    };
+    await Promise.all(
+      Array.from({ length: 2 }, () => methods.enqueueAgentTriggerDelivery(enqueueInput(shared))),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: coalesceUntil,
+      leaseUntil: new Date(coalesceUntil.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: coalesceUntil,
+    });
+    await methods.deadLetterAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: attempt!,
+      error: transientFailure({ retryable: false }),
+      settledAt: coalesceUntil,
+    });
+    const transition = jest.spyOn(Delivery, 'findOneAndUpdate').mockImplementationOnce(() => {
+      throw new Error('process interrupted before root transition');
+    });
+
+    await expect(methods.requeueAgentTriggerDelivery(claim!.id, coalesceUntil)).rejects.toThrow(
+      'process interrupted before root transition',
+    );
+    transition.mockRestore();
+    await expect(Delivery.findById(claim!.id).lean()).resolves.toMatchObject({
+      status: 'dead',
+      requeueCount: 0,
+    });
+    const preparedMember = await Delivery.findOne({ batchRootId: claim!.id }).lean();
+    expect(preparedMember).toMatchObject({ status: 'batched', batchRootRequeueCount: 1 });
+
+    await expect(
+      methods.requeueAgentTriggerDelivery(claim!.id, coalesceUntil),
+    ).resolves.toMatchObject({ status: 'pending', requeueCount: 1 });
+    await expect(Delivery.findById(preparedMember!._id).lean()).resolves.toMatchObject({
+      status: 'batched',
+      batchRootRequeueCount: 1,
+    });
+  });
+
   it('publishes an abandoned lane owner before allocating the next sequence', async () => {
     const user = new mongoose.Types.ObjectId();
     const orderingKey = 'publication-race';
