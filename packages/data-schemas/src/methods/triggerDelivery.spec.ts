@@ -569,7 +569,7 @@ describe('agent trigger delivery methods', () => {
     expect(rows.find((row) => row.status === 'batched')?.batchRootRequeueCount).toBe(1);
   });
 
-  it('does not let stale batch recovery overwrite a receipt from a newer generation', async () => {
+  it('does not let stale batch operations overwrite a receipt from a newer generation', async () => {
     const user = new mongoose.Types.ObjectId();
     const coalesceUntil = new Date(Date.now() + 60_000);
     const shared = {
@@ -619,6 +619,13 @@ describe('agent trigger delivery methods', () => {
       },
     );
 
+    await expect(methods.requeueAgentTriggerDelivery(claim!.id, coalesceUntil)).rejects.toThrow(
+      'Not every agent trigger batch receipt could be prepared for requeue',
+    );
+    await expect(Delivery.findById(memberId).lean()).resolves.toMatchObject({
+      status: 'succeeded',
+      batchRootRequeueCount: 1,
+    });
     await expect(methods.recoverAgentTriggerBatchReceipts()).rejects.toThrow(
       'Not every agent trigger batch receipt could be settled',
     );

@@ -1210,11 +1210,22 @@ export function createAgentTriggerDeliveryMethods(
     if (candidate?._id == null) {
       return null;
     }
-    const requeueCount = (candidate.requeueCount ?? 0) + 1;
+    const previousRequeueCount = candidate.requeueCount ?? 0;
+    const requeueCount = previousRequeueCount + 1;
     const memberIds = candidate.batchMemberIds ?? [];
     if (memberIds.length > 0) {
       await Delivery().updateMany(
-        { _id: { $in: memberIds }, orderingKey: candidate.orderingKey },
+        {
+          _id: { $in: memberIds },
+          orderingKey: candidate.orderingKey,
+          batchRootId: candidate._id,
+          status: { $in: ['staging', 'batched', 'succeeded', 'dead'] },
+          ...(previousRequeueCount === 0
+            ? {
+                $or: [{ batchRootRequeueCount: 0 }, { batchRootRequeueCount: { $exists: false } }],
+              }
+            : { batchRootRequeueCount: previousRequeueCount }),
+        },
         {
           $set: {
             status: 'batched',
@@ -1248,7 +1259,7 @@ export function createAgentTriggerDeliveryMethods(
           _id: candidate._id,
           status: 'dead',
           batchRootId: { $exists: false },
-          requeueCount: candidate.requeueCount ?? 0,
+          requeueCount: previousRequeueCount,
         },
         {
           $set: {
