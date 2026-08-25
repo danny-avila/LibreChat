@@ -187,6 +187,8 @@ jobs:
       REDIS_URI: redis://127.0.0.1:6379
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Use Node.js 24.16.0
         uses: actions/setup-node@v5
@@ -402,6 +404,8 @@ jobs:
       E2E_REPLICAS: ${{ matrix.replicas }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4

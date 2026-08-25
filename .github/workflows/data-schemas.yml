@@ -23,6 +23,8 @@ jobs:
       skip: ${{ steps.check.outputs.skip }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Use Node.js
         uses: actions/setup-node@v5

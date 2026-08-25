@@ -29,6 +29,8 @@ jobs:
     
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: dequelabs/axe-linter-action@v2
         with:
           api_key: ${{ secrets.AXE_LINTER_API_KEY }}

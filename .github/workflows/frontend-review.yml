@@ -145,6 +145,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Use Node.js 24.16.0
         uses: actions/setup-node@v5
@@ -209,6 +211,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Use Node.js 24.16.0
         uses: actions/setup-node@v5
@@ -256,6 +260,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Use Node.js 24.16.0
         uses: actions/setup-node@v5
@@ -324,6 +330,8 @@ jobs:
         shard: [1, 2]
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Use Node.js 24.16.0
         uses: actions/setup-node@v5
@@ -386,6 +394,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Use Node.js 24.16.0
         uses: actions/setup-node@v5

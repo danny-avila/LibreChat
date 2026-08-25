@@ -21,6 +21,8 @@ jobs:
       # checkout the repo
       - name: 'Checkout GitHub Action'
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: 'Login via Azure CLI'
         uses: azure/login@v3

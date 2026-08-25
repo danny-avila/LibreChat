@@ -25,6 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          persist-credentials: false
           ref: ${{ github.event_name == 'schedule' && 'dev' || github.sha }}
 
       - name: Capture source SHA
@@ -100,6 +101,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          persist-credentials: false
           ref: ${{ needs.build.outputs.source-sha }}
 
       - name: Use Node.js 24.16.0

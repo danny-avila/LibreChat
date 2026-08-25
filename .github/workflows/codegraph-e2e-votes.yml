@@ -52,6 +52,8 @@ jobs:
       E2E_STREAM_STORE: memory
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Use Node.js 24.16.0
         uses: actions/setup-node@v5
