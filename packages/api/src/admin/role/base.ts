@@ -3,6 +3,7 @@ import { RoleConflictError, logger } from '@librechat/data-schemas';
 import type { PrincipalModel, PrincipalType, TCustomConfig } from 'librechat-data-provider';
 import type { ClientSession, Model, Mongoose, Types } from 'mongoose';
 import type { IConfig, IRole } from '@librechat/data-schemas';
+import type { RoleAdminService } from './service';
 import { createRoleAdminService } from './service';
 
 const baseFilter = { tenantId: { $in: [null, undefined] } };
@@ -14,7 +15,10 @@ interface BaseRoleServiceDeps {
 }
 
 /** Creates the deployment service for records without a tenant. */
-export function createBaseRoleAdminService(mongoose: Mongoose, deps: BaseRoleServiceDeps) {
+export function createBaseRoleAdminService(
+  mongoose: Mongoose,
+  deps: BaseRoleServiceDeps,
+): RoleAdminService {
   const Role = mongoose.models.Role as Model<IRole>;
   const Config = mongoose.models.Config as Model<IConfig>;
 
