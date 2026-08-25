@@ -317,25 +317,43 @@ function writeLedger(name) {
   );
 }
 
+function freshReplayState(fixture) {
+  return {
+    cursor: 0,
+    ledger: {
+      invocationsTotal: fixture.invocations.length,
+      chunksTotal: fixture.invocations.reduce(
+        (total, invocation) => total + invocation.chunks.length,
+        0,
+      ),
+      invocationsConsumed: 0,
+      chunksConsumed: 0,
+      overruns: [],
+      promptMismatches: [],
+    },
+  };
+}
+
 function getReplayState(fixture) {
   let state = replayState.get(fixture.meta.name);
   if (!state) {
-    state = {
-      cursor: 0,
-      ledger: {
-        invocationsTotal: fixture.invocations.length,
-        chunksTotal: fixture.invocations.reduce(
-          (total, invocation) => total + invocation.chunks.length,
-          0,
-        ),
-        invocationsConsumed: 0,
-        chunksConsumed: 0,
-        overruns: [],
-        promptMismatches: [],
-      },
-    };
+    state = freshReplayState(fixture);
     replayState.set(fixture.meta.name, state);
   }
+  return state;
+}
+
+/**
+ * Start the fixture over for a new conversation. The web server outlives a
+ * Playwright retry, so without this a consumed cursor would leave the retry
+ * unable to bind its first prompt — it would fall through to marker routing
+ * and fail deterministically, burning every configured retry. The ledger
+ * resets with the cursor so the new attempt is judged on its own consumption
+ * rather than accumulating the previous one's counts.
+ */
+function restartReplayState(fixture) {
+  const state = freshReplayState(fixture);
+  replayState.set(fixture.meta.name, state);
   return state;
 }
 
@@ -443,9 +461,15 @@ function tryBindReplay({ graph, agents, text, modelCallbacks }) {
   }
   const registry = loadFixtureRegistry();
   for (const fixture of registry.values()) {
-    const state = getReplayState(fixture);
+    let state = getReplayState(fixture);
+    /** Continuing an in-progress binding outranks restarting, so a fixture
+     * whose first prompt repeats later in the script still advances rather
+     * than rewinding to the top. */
     if (fixture.invocations[state.cursor]?.userText !== text) {
-      continue;
+      if (state.cursor === 0 || fixture.invocations[0]?.userText !== text) {
+        continue;
+      }
+      state = restartReplayState(fixture);
     }
     ensureReplayProviderRegistered();
     const model = initializeModel({
