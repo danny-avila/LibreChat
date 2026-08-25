@@ -1045,6 +1045,8 @@ export const agentsEndpointSchema = baseEndpointSchema
         .object({
           childTurns: z.boolean().optional(),
           completionWakeups: z.boolean().optional(),
+          /** Enable only after every API worker can consume coalesced deliveries. */
+          coalescing: z.boolean().optional(),
           /** Optional trusted origin for in-process trigger delivery. The bound
            *  listener remains the default and is safer for most deployments. */
           selfUrl: z.string().url().optional(),

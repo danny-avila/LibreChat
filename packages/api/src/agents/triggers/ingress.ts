@@ -13,6 +13,7 @@ import type { AgentTriggerService } from './service';
 import { AgentTriggerEnvelopeError, createAgentTriggerEnvelope } from './envelope';
 import { AgentTriggerServiceUnavailableError } from './service';
 import { AgentTriggerDeliveryError } from './delivery';
+import { isEnabled } from '../../utils/common';
 
 const IDEMPOTENCY_HEADER = 'idempotency-key';
 const MAX_IDEMPOTENCY_KEY_LENGTH = 256;
@@ -38,6 +39,7 @@ interface AgentTriggerIngressBody {
   target?: AgentContinueTarget | AgentFireTarget | AgentSteerTarget;
   input?: string;
   orderingKey?: string;
+  coalesce?: { key?: string };
 }
 
 export interface AgentTriggerIngressDependencies {
@@ -45,6 +47,7 @@ export interface AgentTriggerIngressDependencies {
   getDeliveryStatus: AgentTriggerService['getDeliveryStatus'];
   now?: () => number;
   createRequestId?: () => string;
+  coalescingEnabled?: () => boolean;
 }
 
 class AgentTriggerIngressError extends TypeError {
@@ -129,11 +132,30 @@ function requireBody(value: object | null | undefined): AgentTriggerIngressBody 
   return value as AgentTriggerIngressBody;
 }
 
-function enqueueOptions(body: AgentTriggerIngressBody): AgentTriggerEnqueueOptions {
+function enqueueOptions(
+  body: AgentTriggerIngressBody,
+  coalescingEnabled: boolean,
+): AgentTriggerEnqueueOptions {
   if (body.orderingKey != null && typeof body.orderingKey !== 'string') {
     throw new AgentTriggerIngressError('orderingKey must be a string');
   }
-  return body.orderingKey == null ? {} : { orderingKey: body.orderingKey };
+  let coalesce: AgentTriggerEnqueueOptions['coalesce'];
+  if (body.coalesce != null) {
+    if (!coalescingEnabled) {
+      throw new AgentTriggerIngressError('Agent event coalescing is not enabled on this server');
+    }
+    if (typeof body.coalesce !== 'object' || Array.isArray(body.coalesce)) {
+      throw new AgentTriggerIngressError('coalesce must be an object');
+    }
+    if (typeof body.coalesce.key !== 'string') {
+      throw new AgentTriggerIngressError('coalesce.key must be a string');
+    }
+    coalesce = { key: body.coalesce.key };
+  }
+  return {
+    ...(body.orderingKey != null && { orderingKey: body.orderingKey }),
+    ...(coalesce != null && { coalesce }),
+  };
 }
 
 function toPublicDelivery(delivery: Awaited<ReturnType<AgentTriggerService['getDeliveryStatus']>>) {
@@ -192,6 +214,8 @@ export function createAgentTriggerIngressHandlers(deps: AgentTriggerIngressDepen
 } {
   const now = deps.now ?? Date.now;
   const createRequestId = deps.createRequestId ?? randomUUID;
+  const coalescingEnabled =
+    deps.coalescingEnabled ?? (() => isEnabled(process.env.ENABLE_AGENT_EVENT_COALESCING));
 
   const enqueueEvent: RequestHandler = async (baseReq, res) => {
     const req = baseReq as AgentTriggerIngressRequest;
@@ -243,7 +267,7 @@ export function createAgentTriggerIngressHandlers(deps: AgentTriggerIngressDepen
           target: body.target as AgentSteerTarget,
         });
       }
-      const receipt = await deps.enqueue(envelope, enqueueOptions(body));
+      const receipt = await deps.enqueue(envelope, enqueueOptions(body, coalescingEnabled()));
 
       logger.info('[agent-trigger-ingress] delivery accepted', {
         delivery_key: receipt.deliveryKey,

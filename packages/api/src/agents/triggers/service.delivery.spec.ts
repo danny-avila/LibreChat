@@ -67,6 +67,7 @@ function deliveryMethods(
     })),
     claimNextAgentTriggerDelivery: jest.fn(async () => null),
     findEarlierAgentTriggerDelivery: jest.fn(async () => null),
+    getAgentTriggerDeliveryBatch: jest.fn(async () => []),
     releaseAgentTriggerDelivery: jest.fn(async () => true),
     beginAgentTriggerDeliveryAttempt: jest.fn(async () => 1),
     deferAgentTriggerDeliveryAttempt: jest.fn(async () => true),
@@ -79,6 +80,7 @@ function deliveryMethods(
     requeueAgentTriggerDelivery: jest.fn(async () => null),
     countActiveAgentTriggerDeliveriesByUser: jest.fn(async () => 0),
     recoverAgentTriggerLanePublications: jest.fn(async () => 0),
+    recoverAgentTriggerBatchReceipts: jest.fn(async () => 0),
     reclaimInactiveAgentTriggerLanes: jest.fn(async () => 0),
     prepareAgentTriggerUserPurge: jest.fn(async () => undefined),
     cancelAgentTriggerUserPurge: jest.fn(async () => true),
@@ -114,6 +116,24 @@ describe('durable agent trigger service', () => {
     await expect(service.enqueue(envelope())).rejects.toBeInstanceOf(
       AgentTriggerServiceUnavailableError,
     );
+    await service.stop();
+  });
+
+  it('rejects coalesced work before persistence unless every worker has the capability', async () => {
+    const methods = deliveryMethods();
+    const service = createAgentTriggerService({
+      methods,
+      coalescingEnabled: () => false,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+
+    await expect(
+      service.enqueue(envelope(), { coalesce: { key: 'championship-commentary' } }),
+    ).rejects.toThrow('Agent event coalescing is not enabled on this server');
+    expect(methods.enqueueAgentTriggerDelivery).not.toHaveBeenCalled();
     await service.stop();
   });
 
@@ -281,6 +301,42 @@ describe('durable agent trigger service', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(recoverAgentTriggerUserPurges.mock.calls.length).toBeGreaterThanOrEqual(2);
+    await service.stop();
+  });
+
+  it('settles interrupted batch receipts before reclaiming their lane', async () => {
+    let finishBatchRecovery: ((count: number) => void) | undefined;
+    const recoverAgentTriggerBatchReceipts = jest.fn(
+      () =>
+        new Promise<number>((resolve) => {
+          finishBatchRecovery = resolve;
+        }),
+    );
+    let observeReclaim: (() => void) | undefined;
+    const reclaimed = new Promise<void>((resolve) => {
+      observeReclaim = resolve;
+    });
+    const reclaimInactiveAgentTriggerLanes = jest.fn(async () => {
+      observeReclaim?.();
+      return 1;
+    });
+    const service = createAgentTriggerService({
+      methods: deliveryMethods({
+        recoverAgentTriggerBatchReceipts,
+        reclaimInactiveAgentTriggerLanes,
+      }),
+      purgeRecoveryIntervalMs: 60_000,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+
+    expect(recoverAgentTriggerBatchReceipts).toHaveBeenCalledTimes(1);
+    expect(reclaimInactiveAgentTriggerLanes).not.toHaveBeenCalled();
+    finishBatchRecovery?.(1);
+    await reclaimed;
+    expect(reclaimInactiveAgentTriggerLanes).toHaveBeenCalledTimes(1);
     await service.stop();
   });
 

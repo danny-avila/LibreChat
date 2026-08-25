@@ -70,6 +70,7 @@ describe('agent event runtime config', () => {
           eventDriven: {
             childTurns: true,
             completionWakeups: false,
+            coalescing: true,
             selfUrl: 'https://triggers.internal',
           },
         },
@@ -86,6 +87,7 @@ describe('agent event runtime config', () => {
     expect(result.data.endpoints?.agents?.eventDriven).toEqual({
       childTurns: true,
       completionWakeups: false,
+      coalescing: true,
       selfUrl: 'https://triggers.internal',
     });
     expect(result.data.rateLimits?.agentEvents).toEqual({
