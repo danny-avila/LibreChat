@@ -104,6 +104,10 @@ export function createRoleAdminService(deps: RoleServiceDeps): RoleAdminService 
     if (updates.description !== undefined) {
       roleUpdates.description = updates.description;
     }
+    if (updates.permissions !== undefined) {
+      validatePermissions(updates.permissions);
+      roleUpdates.permissions = updates.permissions;
+    }
     if (Object.keys(roleUpdates).length === 0) {
       return existing;
     }

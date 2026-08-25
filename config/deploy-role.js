@@ -137,10 +137,10 @@ async function deployRole(definition, service) {
   };
   const existing = await service.getRole(role.name);
   if (existing) {
-    if (role.description !== undefined) {
-      await service.updateRole(role.name, { description: role.description });
-    }
-    await service.updateRolePermissions(role.name, role.permissions);
+    await service.updateRole(role.name, {
+      ...(role.description !== undefined ? { description: role.description } : {}),
+      permissions: role.permissions,
+    });
   } else {
     await service.createRole(role);
   }
@@ -167,12 +167,13 @@ async function main() {
     const scope = getDeploymentScope(args);
     await connect();
     const baseOnly = { baseOnly: true };
-    const permissionOptions = { ...(scope.base ? baseOnly : {}), throwOnError: true };
     const roleDb = scope.base
       ? {
           getRoleByName: (name, fields) => db.getRoleByName(name, fields, baseOnly),
           createRoleByName: (role) => db.createRoleByName(role, baseOnly),
           updateRoleByName: (name, updates) => db.updateRoleByName(name, updates, baseOnly),
+          updateAccessPermissions: (name, permissions, role) =>
+            db.updateAccessPermissions(name, permissions, role, baseOnly),
           findConfigByPrincipal: (type, id, options, session) =>
             db.findConfigByPrincipal(type, id, { ...options, ...baseOnly }, session),
           upsertConfig: (type, id, model, overrides, priority, session, options) =>
@@ -182,13 +183,11 @@ async function main() {
             }),
         }
       : db;
-    const updateAccessPermissions = (name, permissions, role) =>
-      db.updateAccessPermissions(name, permissions, role, permissionOptions);
     const service = createRoleAdminService({
       getRoleByName: roleDb.getRoleByName,
       createRoleByName: roleDb.createRoleByName,
       updateRoleByName: roleDb.updateRoleByName,
-      updateAccessPermissions,
+      updateAccessPermissions: roleDb.updateAccessPermissions,
       findUserIdsByRole: db.findUserIdsByRole,
       updateUsersByRole: db.updateUsersByRole,
       updateUsersRoleByIds: db.updateUsersRoleByIds,

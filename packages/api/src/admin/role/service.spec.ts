@@ -38,6 +38,17 @@ describe('role admin service', () => {
     expect(deps.updateRoleByName).toHaveBeenCalledWith('BETA', { description: 'Beta users' });
   });
 
+  it('replaces permissions supplied to updateRole', async () => {
+    const deps = createDeps();
+    const service = createRoleAdminService(deps);
+
+    await service.updateRole('BETA', { permissions: { AGENTS: { USE: true } } });
+
+    expect(deps.updateRoleByName).toHaveBeenCalledWith('BETA', {
+      permissions: { AGENTS: { USE: true } },
+    });
+  });
+
   it('migrates members when renaming a role', async () => {
     const deps = createDeps();
     deps.getRoleByName.mockResolvedValueOnce(role).mockResolvedValueOnce(null);

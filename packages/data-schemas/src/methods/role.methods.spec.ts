@@ -214,25 +214,6 @@ describe('findRolesByNames', () => {
 });
 
 describe('updateAccessPermissions', () => {
-  it('propagates write failures when requested by a non-API caller', async () => {
-    const role = await new Role({
-      name: 'BETA',
-      permissions: { [PermissionTypes.PROMPTS]: { USE: false } },
-    }).save();
-    jest.spyOn(Role, 'findOneAndUpdate').mockImplementationOnce(() => {
-      throw new Error('database unavailable');
-    });
-
-    await expect(
-      updateAccessPermissions(
-        'BETA',
-        { [PermissionTypes.PROMPTS]: { USE: true } },
-        role.toObject(),
-        { throwOnError: true },
-      ),
-    ).rejects.toThrow('database unavailable');
-  });
-
   it('should update permissions when changes are needed', async () => {
     await new Role({
       name: SystemRoles.USER,

@@ -63,7 +63,7 @@ export function createRoleMethods(
     roleName: string,
     permissionsUpdate: Record<string, Record<string, boolean>>,
     roleData?: IRole,
-    options?: { baseOnly?: boolean; throwOnError?: boolean },
+    options?: { baseOnly?: boolean },
   ) => Promise<void>;
   migrateRoleSchema: (roleName?: string) => Promise<number>;
   createRoleByName: (roleData: Partial<IRole>, options?: { baseOnly?: boolean }) => Promise<IRole>;
@@ -323,7 +323,7 @@ export function createRoleMethods(
     roleName: string,
     permissionsUpdate: Record<string, Record<string, boolean>>,
     roleData?: IRole,
-    options?: { baseOnly?: boolean; throwOnError?: boolean },
+    options?: { baseOnly?: boolean },
   ): Promise<void> {
     const updates: Record<string, Record<string, boolean>> = {};
     for (const [permissionType, permissions] of Object.entries(permissionsUpdate)) {
@@ -475,9 +475,6 @@ export function createRoleMethods(
       }
     } catch (error) {
       logger.error(`Failed to update ${roleName} role permissions:`, error);
-      if (options?.throwOnError) {
-        throw error;
-      }
     }
   }
 

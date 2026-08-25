@@ -7,7 +7,7 @@ const {
 } = require('../deploy-role');
 
 describe('deploy role script', () => {
-  it('does not deploy config after an existing-role permission write fails', async () => {
+  it('does not deploy config after an existing-role replacement fails', async () => {
     const green = console.green;
     console.green = jest.fn();
     const service = {
@@ -15,9 +15,8 @@ describe('deploy role script', () => {
         .fn()
         .mockResolvedValueOnce({ name: 'USER', permissions: {} })
         .mockResolvedValueOnce({ name: 'BETA', permissions: {} }),
-      updateRole: jest.fn(async () => undefined),
-      updateRolePermissions: jest.fn(async () => {
-        throw new Error('permission write failed');
+      updateRole: jest.fn(async () => {
+        throw new Error('role replacement failed');
       }),
       upsertRoleConfig: jest.fn(async () => undefined),
     };
@@ -33,7 +32,8 @@ describe('deploy role script', () => {
           },
           service,
         ),
-      ).rejects.toThrow('permission write failed');
+      ).rejects.toThrow('role replacement failed');
+      expect(service.updateRole).toHaveBeenCalledWith('BETA', { permissions: {} });
       expect(service.upsertRoleConfig).not.toHaveBeenCalled();
     } finally {
       console.green = green;
