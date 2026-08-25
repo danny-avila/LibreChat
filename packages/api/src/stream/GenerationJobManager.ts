@@ -2035,8 +2035,15 @@ class GenerationJobManagerClass {
     const tenantId = getTenantId();
     const safeTenantId = tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
     const creationAttemptId = randomUUID();
+    const sanitizedMetadata = sanitizeJobMetadata(options.initialMetadata ?? {});
+    /** Translate the transient capability assertion into its execution-bound
+     * marker: valid only while `providerExecutionId` still names this owner,
+     * so a legacy replica winning a later HITL resume (which rewrites the
+     * execution id without knowing this field) self-invalidates it. */
+    const { steerQuotesCapable, ...storedMetadata } = sanitizedMetadata;
     const initialMetadata = {
-      ...sanitizeJobMetadata(options.initialMetadata ?? {}),
+      ...storedMetadata,
+      ...(steerQuotesCapable === true && { steerQuotesExecutionId: creationAttemptId }),
       providerExecutionId: creationAttemptId,
       providerDrained: true,
     };
@@ -2566,6 +2573,9 @@ class GenerationJobManagerClass {
         // Surface the owning replica's seal capability so the steer route can
         // honour it instead of probing its own (possibly older) SDK.
         preemptCapable: jobData.preemptCapable,
+        // Same owner-recorded pattern for quote handling, execution-bound so a
+        // legacy resume's execution rewrite invalidates a stale assertion.
+        steerQuotesExecutionId: jobData.steerQuotesExecutionId,
         providerExecutionId: jobData.providerExecutionId,
         providerDrained: jobData.providerDrained,
         steersClosed: jobData.steersClosed,

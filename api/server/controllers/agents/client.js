@@ -58,6 +58,7 @@ const {
   isSteeringSupported,
   isSteerPreemptSupported,
   buildSteerMedia,
+  collectSteerStampTargets,
   stampSteerPartMedia,
   createActivityLabelWiring,
   createActivityPhaseWiring,
@@ -387,6 +388,9 @@ class AgentClient extends BaseClient {
       ...(item.clientSteerId && { clientSteerId: item.clientSteerId }),
       createdAt: item.createdAt,
       ...(item.files?.length && { files: item.files }),
+      // Persisted separately from the text (mirroring `message.quotes`) so the
+      // UI renders reference blocks and replay re-merges them per turn.
+      ...(item.quotes?.length && { quotes: item.quotes }),
     };
     this.contentParts.push(part);
     this.steerOffsetState.offset += 1;
@@ -1693,12 +1697,15 @@ class AgentClient extends BaseClient {
     let hasFileContext = false;
     let promptTokenTotal = 0;
     const encoding = this.getEncoding();
-    const formattedMessages = orderedMessages.map((message, i) => {
-      const formattedMessage = formatMessage({
-        message,
-        userName: this.options?.name,
-        assistantName: this.options?.modelLabel,
-      });
+    /**
+     * Rebuilds the memory-side copy of one source row: the same formatting and
+     * per-message merges as the prompt copy, minus the fileContext prepend.
+     * Only materialized when something actually consumes it — the canonical
+     * recount of a fileContext row, or the memory payload once any row proves
+     * to carry fileContext — instead of unconditionally formatting every row
+     * twice per turn.
+     */
+    const buildMemoryFormattedMessage = (message) => {
       const memoryFormattedMessage = formatMessage({
         message,
         userName: this.options?.name,
@@ -1706,8 +1713,27 @@ class AgentClient extends BaseClient {
       });
       const sourceMessageId = message.messageId ?? message.id;
       if (typeof sourceMessageId === 'string' && sourceMessageId.length > 0) {
-        formattedMessage.messageId = sourceMessageId;
         memoryFormattedMessage.messageId = sourceMessageId;
+      }
+      if (Array.isArray(message.quotes) && message.quotes.length > 0) {
+        prependQuotes(memoryFormattedMessage, message.quotes);
+      }
+      const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
+      applyAttachmentOnlyText(memoryFormattedMessage, turnFiles);
+      return memoryFormattedMessage;
+    };
+    /** Memory copies built for canonical recounts, reused by the memory payload pass. */
+    const memoryFormattedMessages = [];
+
+    const formattedMessages = orderedMessages.map((message, i) => {
+      const formattedMessage = formatMessage({
+        message,
+        userName: this.options?.name,
+        assistantName: this.options?.modelLabel,
+      });
+      const sourceMessageId = message.messageId ?? message.id;
+      if (typeof sourceMessageId === 'string' && sourceMessageId.length > 0) {
+        formattedMessage.messageId = sourceMessageId;
       }
 
       /**
@@ -1732,7 +1758,6 @@ class AgentClient extends BaseClient {
        */
       if (Array.isArray(message.quotes) && message.quotes.length > 0) {
         prependQuotes(formattedMessage, message.quotes);
-        prependQuotes(memoryFormattedMessage, message.quotes);
       }
 
       /**
@@ -1746,9 +1771,6 @@ class AgentClient extends BaseClient {
        */
       const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
       applyAttachmentOnlyText(formattedMessage, turnFiles);
-      applyAttachmentOnlyText(memoryFormattedMessage, turnFiles);
-
-      memoryPayload.push(memoryFormattedMessage);
 
       const dbTokenCount = Number(orderedMessages[i].tokenCount);
       const hasDbTokenCount = Number.isFinite(dbTokenCount) && dbTokenCount > 0;
@@ -1766,7 +1788,15 @@ class AgentClient extends BaseClient {
 
       let canonicalTokenCount = hasDbTokenCount ? dbTokenCount : 0;
       if (needsCanonicalTokenCount) {
-        canonicalTokenCount = countFormattedMessageTokens(memoryFormattedMessage, encoding);
+        /** Without fileContext the memory copy is content-identical to the
+         *  prompt copy, so the prompt copy is the counting surface; with it,
+         *  the canonical count must exclude the prepended context. */
+        let countSurface = formattedMessage;
+        if (message.fileContext) {
+          memoryFormattedMessages[i] = buildMemoryFormattedMessage(message);
+          countSurface = memoryFormattedMessages[i];
+        }
+        canonicalTokenCount = countFormattedMessageTokens(countSurface, encoding);
       }
 
       const promptMessageTokenCount = message.fileContext
@@ -1866,22 +1896,33 @@ class AgentClient extends BaseClient {
 
     payload = formattedMessages;
     this.modelBoundSteerFileIdsBySourceMessageId = new Map();
-    if (this.options.resendFiles) {
-      /** Persisted steer parts of past turns replay with their attachments:
-       *  one batched owner-scoped fetch, re-encoded per turn and stamped as a
-       *  transient `media` array (same resend semantics as message files).
-       *  The stamp lands after the loop above finalized its counts, so the
-       *  re-encoded media (minus the text part the steer part already counted)
-       *  is folded into the budget here — large steered attachments must
-       *  shrink the window like any other resent media. */
+    /** Persisted steer parts of past turns replay with their attachments and
+     *  quotes: one batched owner-scoped fetch, re-encoded per turn and
+     *  stamped as a transient `media` array (same resend semantics as
+     *  message files). Runs regardless of `resendFiles` because quote-bearing
+     *  parts must re-merge their excerpts every turn (mirroring
+     *  `prependQuotes` above); file encoding stays gated on the setting via
+     *  the flag. The stamp lands after the loop above finalized its counts,
+     *  so the re-encoded media (minus the text part the steer part already
+     *  counted) is folded into the budget here — large steered attachments
+     *  and quote blocks must shrink the window like any other resent media.
+     *  The synchronous collection keeps steer-free histories on the
+     *  zero-await path to the parallel context kickoff below, and the
+     *  collected targets feed the stamp directly so the history is scanned
+     *  once. */
+    const resendSteerFiles = this.options.resendFiles === true;
+    const steerStampTargets = collectSteerStampTargets(payload, resendSteerFiles);
+    if (steerStampTargets.length > 0) {
       const stamped = await stampSteerPartMedia({
         client: this,
         user: this.options.req?.user,
         payload,
+        targets: steerStampTargets,
         // addPreviousAttachments already fetched steer-part refs in its single
         // per-turn historical-files query — no second round trip.
         docsById: this.authorizedHistoricalFiles,
         getFiles: db.getFiles,
+        resendFiles: resendSteerFiles,
       });
       for (const { sourceMessageId, fileIds } of stamped) {
         if (typeof sourceMessageId !== 'string' || sourceMessageId.length === 0) {
@@ -1901,8 +1942,8 @@ class AgentClient extends BaseClient {
       for (const { index, media, steerText } of stamped) {
         /** Count the FULL stamped content and subtract only the steer body
          *  (already counted inside the assistant message): extracted file
-         *  context prepended into the text part must hit the budget too, or
-         *  large steered documents bypass pruning. */
+         *  context and merged quote blocks prepended into the text part must
+         *  hit the budget too, or large steered documents bypass pruning. */
         const fullTokens = countFormattedMessageTokens({ role: 'user', content: media }, encoding);
         const bodyTokens = steerText
           ? countFormattedMessageTokens(
@@ -1915,6 +1956,32 @@ class AgentClient extends BaseClient {
           indexTokenCountMap[index] = (indexTokenCountMap[index] ?? 0) + mediaTokens;
           promptTokenTotal += mediaTokens;
         }
+      }
+    }
+    if (hasFileContext) {
+      for (let i = 0; i < orderedMessages.length; i++) {
+        memoryPayload.push(
+          memoryFormattedMessages[i] ?? buildMemoryFormattedMessage(orderedMessages[i]),
+        );
+      }
+      /** The memory copy feeds `processMemory` through the same
+       *  `formatAgentMessages` replay, which reads `part.media`/`part.steer`
+       *  and ignores `part.quotes` — so a steer whose substance lives in its
+       *  quote must be quote-merged here too or memory extraction never sees
+       *  it. Quote merge only (`resendFiles: false`): file media is exactly
+       *  what the memory copy exists to exclude, and text-only stamps touch
+       *  no file fetch or encode. Runs after the fill above so late-built
+       *  copies are stamped too. */
+      const memorySteerTargets = collectSteerStampTargets(memoryPayload, false);
+      if (memorySteerTargets.length > 0) {
+        await stampSteerPartMedia({
+          client: this,
+          user: this.options.req?.user,
+          payload: memoryPayload,
+          targets: memorySteerTargets,
+          getFiles: db.getFiles,
+          resendFiles: false,
+        });
       }
     }
     this.memoryPayload = hasFileContext ? memoryPayload : null;
@@ -3288,13 +3355,15 @@ class AgentClient extends BaseClient {
         manualSkillPrimes,
         alwaysApplySkillPrimes,
       });
+      const useLegacyContent = this.options.agent?.useLegacyContent === true;
       const formatOptions =
-        needsReasoningContentFormat || freshSkillPrimeNames.size > 0
+        needsReasoningContentFormat || freshSkillPrimeNames.size > 0 || useLegacyContent
           ? {
               ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
               ...(freshSkillPrimeNames.size > 0
                 ? { skipSkillBodyNames: freshSkillPrimeNames }
                 : {}),
+              ...(useLegacyContent ? { legacyContent: true } : {}),
             }
           : undefined;
       let {

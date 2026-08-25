@@ -301,7 +301,7 @@ describe('setupGracefulShutdown', () => {
     expect(order).toEqual(['generation streams', 'default-first', 'default-second', 'telemetry']);
   });
 
-  it('continues subsequent tasks and still exits if one task throws', async () => {
+  it('continues subsequent tasks and exits nonzero if one task throws', async () => {
     const calls: string[] = [];
     jest.spyOn(server, 'close').mockImplementation((cb?: (err?: Error) => void) => {
       if (cb) {
@@ -324,7 +324,7 @@ describe('setupGracefulShutdown', () => {
     await flush();
     await flush();
     expect(calls).toEqual(['ok-before', 'throws', 'ok-after']);
-    expect(exitSpy).toHaveBeenCalledWith(0);
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
   it('awaits async tasks before exiting', async () => {

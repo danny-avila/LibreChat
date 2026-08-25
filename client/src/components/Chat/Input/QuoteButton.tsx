@@ -2,18 +2,15 @@ import { memo, useRef, useState, useEffect, useCallback, useLayoutEffect } from 
 import { createPortal } from 'react-dom';
 import { TextQuote } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
+import { cn, MAX_QUOTE_COUNT } from '~/utils';
 import { mainTextareaId } from '~/common';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 import store from '~/store';
 
 /** Only selections fully inside a rendered chat message get the popup. */
 const MESSAGE_SELECTOR = '.message-render';
 /** Max characters captured per excerpt (backend re-caps as defense-in-depth). */
 const MAX_QUOTE_LENGTH = 1500;
-/** Max excerpts queued at once; mirrors the backend `QUOTE_MAX_COUNT` cap so
- *  the composer never shows more quotes than the model actually receives. */
-const MAX_QUOTE_COUNT = 10;
 /** Vertical gap (px) between the selection and the popup. */
 const POPUP_OFFSET = 8;
 /** Keep the popup this far (px) from the viewport edges. */

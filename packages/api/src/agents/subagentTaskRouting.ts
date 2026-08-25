@@ -36,6 +36,7 @@ const MAX_PROGRESS_LABEL_CHARS = 1_024;
 /** Bounds the model-facing task list, per owner reply and across the merged result. */
 export const MAX_TASK_SNAPSHOTS = 200;
 const MAX_CANCEL_THREAD_IDS = 200;
+const MAX_REMOVED_CONVERSATION_IDS = MAX_CANCEL_THREAD_IDS + 1;
 /** Matches the deletion drain so bounded fan-out stays well inside the lease TTL. */
 const ROUTING_FANOUT_CONCURRENCY = 32;
 /** Contains every bounded response even when JSON escapes each retained character. */
@@ -97,7 +98,13 @@ type RoutedRequest = RoutedRequestBase &
         invocationId: string;
       }
     | { operation: 'list' }
-    | { operation: 'cancel'; threadIds: string[] | null }
+    | {
+        operation: 'cancel';
+        threadIds: string[] | null;
+        /** Rows already committed as deleted by the requester. Owners must drop
+         * receipt retry work for these exact conversations after cancellation. */
+        removedConversationIds?: string[];
+      }
   );
 
 type RoutedRequestPayload =
@@ -110,7 +117,12 @@ type RoutedRequestPayload =
       invocationId: string;
     }
   | { operation: 'list'; scopeId: string }
-  | { operation: 'cancel'; scopeId: string; threadIds: string[] | null };
+  | {
+      operation: 'cancel';
+      scopeId: string;
+      threadIds: string[] | null;
+      removedConversationIds?: string[];
+    };
 
 interface RoutedResponse {
   version: typeof PROTOCOL_VERSION;
@@ -172,9 +184,16 @@ export interface SubagentTaskControlHandler {
     taskId: string,
     command: SubagentTaskControlCommand,
     invocationId: string,
-  ): SubagentTaskControlResult;
+  ): Promise<SubagentTaskControlResult> | SubagentTaskControlResult;
   list(scopeId: string): SubagentTaskSnapshot[];
-  cancelScope(scopeId: string, threadIds: string[] | null): number;
+  /** Receipt retry work can outlive the SDK task/result buckets. Keep its owner
+   * addressable so deletion can revoke work whose durable target was removed. */
+  retainsTaskOwnership(scopeId: string, taskId: string): boolean;
+  cancelScope(
+    scopeId: string,
+    threadIds: string[] | null,
+    removedConversationIds?: string[],
+  ): number;
 }
 
 /** Optional host transport for reaching the process that owns a live child task. */
@@ -190,7 +209,11 @@ export interface SubagentTaskControlTransport {
     invocationId: string,
   ): Promise<SubagentTaskControlResult | undefined>;
   list(scopeId: string): Promise<SubagentTaskSnapshot[]>;
-  cancelScope(scopeId: string, threadIds: string[] | null): Promise<number>;
+  cancelScope(
+    scopeId: string,
+    threadIds: string[] | null,
+    removedConversationIds?: string[],
+  ): Promise<number>;
   destroy(): Promise<void>;
 }
 
@@ -547,6 +570,7 @@ function parseRequest(value: unknown): RoutedRequest | undefined {
     taskId?: unknown;
     command?: unknown;
     threadIds?: unknown;
+    removedConversationIds?: unknown;
     invocationId?: unknown;
     expiresAt?: unknown;
   };
@@ -579,6 +603,14 @@ function parseRequest(value: unknown): RoutedRequest | undefined {
     if (candidate.threadIds !== null && !isCancelThreadIds(candidate.threadIds)) {
       return undefined;
     }
+    if (
+      candidate.removedConversationIds !== undefined &&
+      (!Array.isArray(candidate.removedConversationIds) ||
+        candidate.removedConversationIds.length > MAX_REMOVED_CONVERSATION_IDS ||
+        !candidate.removedConversationIds.every((id) => isBoundedString(id, MAX_THREAD_ID_CHARS)))
+    ) {
+      return undefined;
+    }
     return {
       version: PROTOCOL_VERSION,
       kind: 'request',
@@ -588,6 +620,9 @@ function parseRequest(value: unknown): RoutedRequest | undefined {
       operation: 'cancel',
       scopeId: candidate.scopeId,
       threadIds: candidate.threadIds,
+      ...(candidate.removedConversationIds === undefined
+        ? {}
+        : { removedConversationIds: candidate.removedConversationIds }),
     };
   }
   if (!isBoundedString(candidate.taskId, MAX_TASK_ID_CHARS)) {
@@ -852,7 +887,11 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
    * predicate to its complete local task set, so deletion never depends on the
    * bounded model-facing list and cannot miss a task beyond that cap.
    */
-  async cancelScope(scopeId: string, threadIds: string[] | null): Promise<number> {
+  async cancelScope(
+    scopeId: string,
+    threadIds: string[] | null,
+    removedConversationIds: string[] = [],
+  ): Promise<number> {
     this.assertScope(scopeId);
     if (threadIds != null && threadIds.length === 0) {
       return 0;
@@ -880,11 +919,24 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     }
     const cancelSlot = createConcurrencyLimiter(ROUTING_FANOUT_CONCURRENCY);
     const requests: Array<Promise<unknown>> = [];
+    const allTargetThreadIds = threadIds == null ? null : new Set(threadIds);
     for (const ownerId of owners) {
       for (const batch of batches) {
+        const batchThreadIds = batch == null ? null : new Set(batch);
+        const removedForBatch = removedConversationIds.filter(
+          (conversationId) =>
+            allTargetThreadIds == null ||
+            !allTargetThreadIds.has(conversationId) ||
+            batchThreadIds?.has(conversationId) === true,
+        );
         requests.push(
           cancelSlot(() =>
-            this.sendRequest(ownerId, { operation: 'cancel', scopeId, threadIds: batch }),
+            this.sendRequest(ownerId, {
+              operation: 'cancel',
+              scopeId,
+              threadIds: batch,
+              ...(removedForBatch.length === 0 ? {} : { removedConversationIds: removedForBatch }),
+            }),
           ),
         );
       }
@@ -1014,14 +1066,25 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
           truncated: tasks.length > bounded.length,
         };
       } else if (request.operation === 'cancel') {
-        result = { cancelled: handler.cancelScope(request.scopeId, request.threadIds) };
+        result = {
+          cancelled: handler.cancelScope(
+            request.scopeId,
+            request.threadIds,
+            request.removedConversationIds,
+          ),
+        };
       } else if (request.operation === 'claim') {
         const claim = boundedClaim(handler.claim(request.scopeId, request.taskId));
         replayable = consumesResult(claim);
         result = claim;
       } else {
         result = boundedControlResult(
-          handler.control(request.scopeId, request.taskId, request.command, request.invocationId),
+          await handler.control(
+            request.scopeId,
+            request.taskId,
+            request.command,
+            request.invocationId,
+          ),
         );
       }
       const serializedResult = JSON.stringify(result);
@@ -1281,7 +1344,8 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
        * address outlives the task itself until the result is acknowledged. */
       if (
         localTaskIds.has(taskId) ||
-        this.claimReplays.entries.has(this.claimReplayKey(scopeId, taskId))
+        this.claimReplays.entries.has(this.claimReplayKey(scopeId, taskId)) ||
+        handler.retainsTaskOwnership(scopeId, taskId)
       ) {
         retained.push(registration);
         continue;

@@ -1,7 +1,13 @@
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
-import type { ParentSubagentIndex, SubagentThreadView } from 'librechat-data-provider';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Constants, MutationKeys, QueryKeys, dataService } from 'librechat-data-provider';
+import type {
+  ParentSubagentIndex,
+  SubagentControlReceipt,
+  SubagentControlRequest,
+  SubagentControlResponse,
+  SubagentThreadView,
+} from 'librechat-data-provider';
 import type { UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
 
 export const ACTIVE_THREAD_REFRESH_MS = 2_000;
@@ -117,4 +123,71 @@ export const useSubagentThreadQuery = (
     ...query,
     isReadinessPending: isSubagentReadinessPending(query.error, readiness.deadline),
   };
+};
+
+export type SubagentControlVariables = {
+  parentConversationId: string;
+  threadId: string;
+  command: SubagentControlRequest;
+  /** Client-only timestamp retained across retries; never sent to the API. */
+  submittedAt: string;
+};
+
+type SubagentControlMutationOptions = {
+  onSuccess?: (data: SubagentControlResponse, variables: SubagentControlVariables) => void;
+  onError?: (error: Error, variables: SubagentControlVariables) => void;
+};
+
+const isTerminalControlReceipt = (receipt: SubagentControlReceipt): boolean =>
+  receipt.status === 'applied' || receipt.status === 'rejected' || receipt.status === 'failed';
+
+/** Reconciles a mutation response without allowing an older accepted projection
+ * to replace a terminal receipt delivered by the concurrent activity refresh. */
+export const reconcileSubagentControlReceipts = (
+  receipts: SubagentControlReceipt[],
+  incoming: SubagentControlReceipt,
+): SubagentControlReceipt[] => {
+  const index = receipts.findIndex((candidate) => candidate.invocationId === incoming.invocationId);
+  if (index === -1) return [...receipts, incoming];
+  const current = receipts[index];
+  const currentUpdatedAt = Date.parse(current.updatedAt);
+  const incomingUpdatedAt = Date.parse(incoming.updatedAt);
+  if (
+    (isTerminalControlReceipt(current) && !isTerminalControlReceipt(incoming)) ||
+    (Number.isFinite(currentUpdatedAt) &&
+      Number.isFinite(incomingUpdatedAt) &&
+      currentUpdatedAt > incomingUpdatedAt)
+  ) {
+    return receipts;
+  }
+  return receipts.map((candidate, candidateIndex) =>
+    candidateIndex === index ? incoming : candidate,
+  );
+};
+
+export const useSubagentControlMutation = (options: SubagentControlMutationOptions = {}) => {
+  const queryClient = useQueryClient();
+  return useMutation<SubagentControlResponse, Error, SubagentControlVariables>(
+    ({ parentConversationId, threadId, command }) =>
+      dataService.controlSubagentTask(parentConversationId, threadId, command),
+    {
+      mutationKey: [MutationKeys.subagentControl],
+      onSuccess: ({ receipt }, { parentConversationId, threadId, command, submittedAt }) => {
+        const key = [QueryKeys.subagentThread, parentConversationId, threadId, command.taskId];
+        queryClient.setQueryData<SubagentThreadView | undefined>(key, (current) => {
+          if (current == null) return current;
+          return {
+            ...current,
+            controlReceipts: reconcileSubagentControlReceipts(
+              current.controlReceipts ?? [],
+              receipt,
+            ),
+          };
+        });
+        void queryClient.invalidateQueries(key);
+        options.onSuccess?.({ receipt }, { parentConversationId, threadId, command, submittedAt });
+      },
+      onError: (error, variables) => options.onError?.(error, variables),
+    },
+  );
 };

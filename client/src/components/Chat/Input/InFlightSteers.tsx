@@ -16,6 +16,7 @@ import {
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
 import { supportsGenerationProtocolV2, useArmSteerMutation } from '~/data-provider';
 import { steerOverlayHeightFamily, escalatingSteerFamily } from '~/store/steer';
+import MessageQuotes from '~/components/Chat/Messages/Content/MessageQuotes';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { useSteerCancel, useSteerReclaim, useLocalize } from '~/hooks';
@@ -482,6 +483,9 @@ const InFlightSteer = memo(function InFlightSteer({
             {localize(preempting ? 'com_ui_steer_in_flight_preempt' : 'com_ui_steer_in_flight')}
           </span>
           <div className="flex min-w-0 flex-col items-start gap-1">
+            {/* Same reference blocks the applied `SteerPart` shows, outside the
+             *  collapse so the excerpts stay visible while a long steer clips. */}
+            <MessageQuotes quotes={steer.quotes} />
             <div
               ref={contentRef}
               id={contentId}

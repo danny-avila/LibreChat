@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
-import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { Constants, RetentionMode } from 'librechat-data-provider';
 import type { IMessage } from '..';
 import {
   createMessageMethods,
@@ -39,6 +39,15 @@ let updateMessageText: ReturnType<typeof createMessageMethods>['updateMessageTex
 let deleteMessagesSince: ReturnType<typeof createMessageMethods>['deleteMessagesSince'];
 let recordMessage: ReturnType<typeof createMessageMethods>['recordMessage'];
 let claimSubagentTaskResult: ReturnType<typeof createMessageMethods>['claimSubagentTaskResult'];
+let recordSubagentTaskControlReceipt: ReturnType<
+  typeof createMessageMethods
+>['recordSubagentTaskControlReceipt'];
+let getSubagentTaskControlReceipt: ReturnType<
+  typeof createMessageMethods
+>['getSubagentTaskControlReceipt'];
+let getSubagentTaskControlReplay: ReturnType<
+  typeof createMessageMethods
+>['getSubagentTaskControlReplay'];
 let releaseSubagentTaskResultClaim: ReturnType<
   typeof createMessageMethods
 >['releaseSubagentTaskResultClaim'];
@@ -64,6 +73,9 @@ beforeAll(async () => {
   deleteMessagesSince = methods.deleteMessagesSince;
   recordMessage = methods.recordMessage;
   claimSubagentTaskResult = methods.claimSubagentTaskResult;
+  recordSubagentTaskControlReceipt = methods.recordSubagentTaskControlReceipt;
+  getSubagentTaskControlReceipt = methods.getSubagentTaskControlReceipt;
+  getSubagentTaskControlReplay = methods.getSubagentTaskControlReplay;
   releaseSubagentTaskResultClaim = methods.releaseSubagentTaskResultClaim;
 
   await mongoose.connect(mongoUri);
@@ -93,6 +105,7 @@ describe('Message Operations', () => {
 
     // Clear database
     await Message.deleteMany({});
+    await mongoose.models.Conversation.deleteMany({});
 
     mockCtx = {
       userId: 'user123',
@@ -2298,6 +2311,677 @@ describe('Message Operations', () => {
       expect((doc as Record<string, unknown> | null)?.unknownPipelineField).toBeUndefined();
     });
   });
+  describe('recordSubagentTaskControlReceipt', () => {
+    const createTaskInput = async (conversationId: string, taskId = 'task-1') => {
+      await Message.create({
+        user: 'user123',
+        conversationId,
+        messageId: `${taskId}:user`,
+        parentMessageId: Constants.NO_PARENT,
+        sender: 'User',
+        text: 'Do the work',
+        endpoint: 'agents',
+        isCreatedByUser: true,
+        subagentTask: {
+          attemptKey: `attempt-${taskId}`,
+          status: 'running',
+        },
+      });
+    };
+
+    it('advances one invocation monotonically and enforces ownership', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      const accepted = {
+        invocationId: 'invocation-1',
+        fingerprint: 'fingerprint-1',
+        controlId: 'control-1',
+        action: 'steer' as const,
+        status: 'accepted' as const,
+        createdAt: new Date('2026-08-24T12:00:00.000Z'),
+        updatedAt: new Date('2026-08-24T12:00:00.000Z'),
+        message: 'Use the primary source.',
+      };
+
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: { ...accepted, controlId: undefined, status: 'reserved' },
+        }),
+      ).resolves.toBe(true);
+      /** A reservation fences competing owners but is not public evidence that
+       * the command was accepted or applied. */
+      await expect(
+        getSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          invocationId: 'invocation-1',
+        }),
+      ).resolves.toBeNull();
+
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: accepted,
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: {
+            ...accepted,
+            status: 'applied',
+            boundary: 'tool',
+            updatedAt: new Date('2026-08-24T12:00:01.000Z'),
+          },
+        }),
+      ).resolves.toBe(true);
+      /** A delayed accepted replay cannot downgrade the durable terminal receipt. */
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: accepted,
+        }),
+      ).resolves.toBe('unchanged');
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'another-user',
+          conversationId,
+          taskId: 'task-1',
+          receipt: accepted,
+        }),
+      ).resolves.toBe(false);
+
+      const stored = await Message.findOne({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:user',
+      })
+        .select('+subagentTask')
+        .lean<IMessage>();
+      expect(stored).not.toBeNull();
+      if (stored == null) throw new Error('Expected the durable task input.');
+      expect(stored.subagentTask?.status).toBe('running');
+      expect(stored.subagentTask?.controlReceipts).toEqual([
+        expect.objectContaining({
+          invocationId: 'invocation-1',
+          action: 'steer',
+          status: 'applied',
+          boundary: 'tool',
+        }),
+      ]);
+    });
+
+    it('updates only the authorized tenant when message identities collide', async () => {
+      const conversationId = uuidv4();
+      const taskId = 'tenant-task';
+      await Promise.all(
+        ['tenant-a', 'tenant-b'].map((tenantId) =>
+          Message.create({
+            user: 'user123',
+            tenantId,
+            conversationId,
+            messageId: `${taskId}:user`,
+            parentMessageId: Constants.NO_PARENT,
+            sender: 'User',
+            text: 'Do the tenant work',
+            endpoint: 'agents',
+            isCreatedByUser: true,
+            subagentTask: { attemptKey: `attempt-${tenantId}`, status: 'running' },
+          }),
+        ),
+      );
+      const now = new Date('2026-08-24T12:00:00.000Z');
+
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          tenantId: 'tenant-b',
+          conversationId,
+          taskId,
+          receipt: {
+            invocationId: 'tenant-invocation',
+            fingerprint: 'tenant-fingerprint',
+            controlId: 'tenant-control',
+            action: 'queue',
+            status: 'accepted',
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ).resolves.toBe(true);
+
+      const [tenantA, tenantB] = await Promise.all(
+        ['tenant-a', 'tenant-b'].map((tenantId) =>
+          Message.findOne({
+            user: 'user123',
+            tenantId,
+            conversationId,
+            messageId: `${taskId}:user`,
+          })
+            .select('+subagentTask')
+            .lean<IMessage>(),
+        ),
+      );
+      expect(tenantA?.subagentTask?.controlReceipts).toBeUndefined();
+      expect(tenantB?.subagentTask?.controlReceipts).toEqual([
+        expect.objectContaining({ invocationId: 'tenant-invocation' }),
+      ]);
+    });
+
+    it('reads an exact authorized receipt and persists a new terminal rejection', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      await mongoose.models.Conversation.create({
+        user: 'user123',
+        conversationId,
+        title: 'Child thread',
+        endpoint: 'agents',
+        subagentThread: {
+          rootConversationId: 'parent-conversation',
+          parentConversationId: 'parent-conversation',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      await Message.create({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:assistant',
+        parentMessageId: 'task-1:user',
+        sender: 'researcher',
+        text: 'Done.',
+        endpoint: 'agents',
+        isCreatedByUser: false,
+        subagentTask: {
+          attemptKey: 'task-1-attempt',
+          parentRunId: 'parent-message',
+          status: 'completed',
+          resultClaim: {
+            kind: 'manual',
+            claimId: 'poll-1',
+            claimedAt: new Date('2026-08-24T12:00:02.000Z'),
+          },
+        },
+      });
+      const now = new Date('2026-08-24T12:00:00.000Z');
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: {
+            invocationId: 'terminal-invocation',
+            fingerprint: 'terminal-fingerprint',
+            action: 'cancel',
+            status: 'rejected',
+            reason: 'task_not_running',
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ).resolves.toBe(true);
+
+      await expect(
+        getSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          invocationId: 'terminal-invocation',
+        }),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          invocationId: 'terminal-invocation',
+          fingerprint: 'terminal-fingerprint',
+          status: 'rejected',
+          reason: 'task_not_running',
+        }),
+      );
+      await expect(
+        getSubagentTaskControlReceipt({
+          userId: 'another-user',
+          conversationId,
+          taskId: 'task-1',
+          invocationId: 'terminal-invocation',
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        getSubagentTaskControlReplay({
+          userId: 'user123',
+          parentConversationId: 'parent-conversation',
+          taskId: 'task-1',
+          invocationId: 'terminal-invocation',
+        }),
+      ).resolves.toEqual({
+        receipt: expect.objectContaining({ invocationId: 'terminal-invocation' }),
+        task: expect.objectContaining({
+          taskId: 'task-1',
+          threadId: conversationId,
+          subagentType: 'researcher',
+          status: 'completed',
+          resultAvailable: true,
+          resultClaimed: true,
+        }),
+      });
+      await expect(
+        getSubagentTaskControlReplay({
+          userId: 'user123',
+          parentConversationId: 'different-parent',
+          taskId: 'task-1',
+          invocationId: 'terminal-invocation',
+        }),
+      ).resolves.toBeNull();
+
+      const ordinaryConversationId = uuidv4();
+      await Message.create({
+        user: 'user123',
+        conversationId: ordinaryConversationId,
+        messageId: 'ordinary-task:user',
+        parentMessageId: Constants.NO_PARENT,
+        sender: 'User',
+        text: 'An ordinary message with a colliding id.',
+        endpoint: 'agents',
+        isCreatedByUser: true,
+      });
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId: ordinaryConversationId,
+          taskId: 'ordinary-task',
+          receipt: {
+            invocationId: 'terminal-invocation',
+            fingerprint: 'terminal-fingerprint',
+            action: 'cancel',
+            status: 'rejected',
+            reason: 'task_not_running',
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ).resolves.toBe(false);
+    });
+
+    it('replays an applied cancellation as cancelled before its terminal row exists', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      await mongoose.models.Conversation.create({
+        user: 'user123',
+        conversationId,
+        title: 'Cancelling child thread',
+        endpoint: 'agents',
+        subagentThread: {
+          rootConversationId: 'parent-conversation',
+          parentConversationId: 'parent-conversation',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      const now = new Date('2026-08-24T12:00:00.000Z');
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: {
+            invocationId: 'cancel-invocation',
+            fingerprint: 'cancel-fingerprint',
+            action: 'cancel',
+            status: 'applied',
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ).resolves.toBe(true);
+
+      await expect(
+        getSubagentTaskControlReplay({
+          userId: 'user123',
+          parentConversationId: 'parent-conversation',
+          taskId: 'task-1',
+          invocationId: 'cancel-invocation',
+        }),
+      ).resolves.toEqual({
+        receipt: expect.objectContaining({ invocationId: 'cancel-invocation' }),
+        task: expect.objectContaining({
+          taskId: 'task-1',
+          threadId: conversationId,
+          status: 'cancelled',
+          resultAvailable: false,
+          resultClaimed: false,
+          updatedAt: now,
+        }),
+      });
+    });
+
+    it('reports every accepted control when replaying one durable invocation', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      await mongoose.models.Conversation.create({
+        user: 'user123',
+        conversationId,
+        title: 'Controlled child thread',
+        endpoint: 'agents',
+        subagentThread: {
+          rootConversationId: 'parent-conversation',
+          parentConversationId: 'parent-conversation',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      const now = new Date('2026-08-24T12:00:00.000Z');
+      for (const index of [1, 2]) {
+        await expect(
+          recordSubagentTaskControlReceipt({
+            userId: 'user123',
+            conversationId,
+            taskId: 'task-1',
+            receipt: {
+              invocationId: `pending-invocation-${index}`,
+              fingerprint: `pending-fingerprint-${index}`,
+              controlId: `pending-control-${index}`,
+              action: 'queue',
+              status: 'accepted',
+              createdAt: now,
+              updatedAt: now,
+            },
+          }),
+        ).resolves.toBe(true);
+      }
+
+      await expect(
+        getSubagentTaskControlReplay({
+          userId: 'user123',
+          parentConversationId: 'parent-conversation',
+          taskId: 'task-1',
+          invocationId: 'pending-invocation-1',
+        }),
+      ).resolves.toEqual({
+        receipt: expect.objectContaining({ invocationId: 'pending-invocation-1' }),
+        task: expect.objectContaining({ pendingControls: 2 }),
+      });
+    });
+
+    it('rejects an invocation fingerprint conflict without reporting persistence', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      const now = new Date('2026-08-24T12:00:00.000Z');
+      const receipt = {
+        invocationId: 'conflicting-invocation',
+        fingerprint: 'first-fingerprint',
+        controlId: 'first-control',
+        action: 'queue' as const,
+        status: 'accepted' as const,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt,
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: { ...receipt, fingerprint: 'different-fingerprint' },
+        }),
+      ).resolves.toBe('conflict');
+    });
+
+    it('retains concurrent receipts without requiring an aggregation-pipeline update', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      const createdAt = new Date('2026-08-24T12:00:00.000Z');
+
+      const invocationIds = Array.from({ length: 32 }, (_, index) => `concurrent-${index}`);
+      await Promise.all(
+        invocationIds.map((invocationId, index) =>
+          recordSubagentTaskControlReceipt({
+            userId: 'user123',
+            conversationId,
+            taskId: 'task-1',
+            receipt: {
+              invocationId,
+              fingerprint: `${invocationId}-fingerprint`,
+              controlId: `${invocationId}-control`,
+              action: 'queue',
+              status: 'accepted',
+              createdAt: new Date(createdAt.getTime() + index),
+              updatedAt: new Date(createdAt.getTime() + index),
+            },
+          }),
+        ),
+      );
+
+      const stored = await Message.findOne({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:user',
+      })
+        .select('+subagentTask')
+        .lean<IMessage>();
+      expect(stored?.subagentTask?.controlReceipts).toEqual(
+        expect.arrayContaining(
+          invocationIds.map((invocationId) => expect.objectContaining({ invocationId })),
+        ),
+      );
+    });
+
+    it('retains accepted commands while bounding terminal receipt history', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      const createdAt = new Date('2026-08-24T12:00:00.000Z');
+      await recordSubagentTaskControlReceipt({
+        userId: 'user123',
+        conversationId,
+        taskId: 'task-1',
+        receipt: {
+          invocationId: 'pending',
+          fingerprint: 'pending-fingerprint',
+          controlId: 'pending-control',
+          action: 'queue',
+          status: 'accepted',
+          createdAt,
+          updatedAt: createdAt,
+        },
+      });
+      for (let index = 0; index < 70; index += 1) {
+        await recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: {
+            invocationId: `terminal-${index}`,
+            fingerprint: `fingerprint-${index}`,
+            controlId: `control-${index}`,
+            action: 'steer',
+            status: 'applied',
+            createdAt: new Date(createdAt.getTime() + index + 1),
+            updatedAt: new Date(createdAt.getTime() + index + 1),
+            boundary: 'tool',
+          },
+        });
+      }
+
+      const stored = await Message.findOne({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:user',
+      })
+        .select('+subagentTask')
+        .lean<IMessage>();
+      expect(stored).not.toBeNull();
+      if (stored == null) throw new Error('Expected the durable task input.');
+      expect(stored.subagentTask?.controlReceipts).toHaveLength(64);
+      expect(stored.subagentTask?.controlReceipts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ invocationId: 'pending', status: 'accepted' }),
+          expect.objectContaining({ invocationId: 'terminal-69', status: 'applied' }),
+        ]),
+      );
+      expect(stored.subagentTask?.controlReceipts).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ invocationId: 'terminal-0' })]),
+      );
+
+      /** An old idempotent retry retains its original occurrence ordering and
+       * cannot evict newer terminal history merely by arriving again. */
+      await recordSubagentTaskControlReceipt({
+        userId: 'user123',
+        conversationId,
+        taskId: 'task-1',
+        receipt: {
+          invocationId: 'terminal-0',
+          fingerprint: 'fingerprint-0',
+          controlId: 'control-0',
+          action: 'steer',
+          status: 'applied',
+          createdAt: new Date(createdAt.getTime() + 1),
+          updatedAt: new Date(createdAt.getTime() + 1),
+          boundary: 'tool',
+        },
+      });
+      const afterReplay = await Message.findOne({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:user',
+      })
+        .select('+subagentTask')
+        .lean<IMessage>();
+      expect(afterReplay?.subagentTask?.controlReceipts).toHaveLength(64);
+      expect(afterReplay?.subagentTask?.controlReceipts).toEqual(
+        expect.arrayContaining([expect.objectContaining({ invocationId: 'terminal-7' })]),
+      );
+      expect(afterReplay?.subagentTask?.controlReceipts).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ invocationId: 'terminal-0' })]),
+      );
+    });
+
+    it('refuses to evict active receipt fences at durable capacity', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      const createdAt = new Date('2026-08-24T12:00:00.000Z');
+      const results: Array<boolean | 'unchanged' | 'conflict'> = [];
+      for (let index = 0; index < 70; index += 1) {
+        results.push(
+          await recordSubagentTaskControlReceipt({
+            userId: 'user123',
+            conversationId,
+            taskId: 'task-1',
+            receipt: {
+              invocationId: `accepted-${index}`,
+              fingerprint: `fingerprint-${index}`,
+              controlId: `control-${index}`,
+              action: 'queue',
+              status: 'accepted',
+              createdAt: new Date(createdAt.getTime() + index),
+              updatedAt: new Date(createdAt.getTime() + index),
+            },
+          }),
+        );
+      }
+      expect(results.slice(0, 64)).toEqual(Array.from({ length: 64 }, () => true));
+      expect(results.slice(64)).toEqual(Array.from({ length: 6 }, () => false));
+
+      const stored = await Message.findOne({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:user',
+      })
+        .select('+subagentTask')
+        .lean<IMessage>();
+      expect(stored?.subagentTask?.controlReceipts).toHaveLength(64);
+      expect(stored?.subagentTask?.controlReceipts?.[0]?.invocationId).toBe('accepted-0');
+      expect(stored?.subagentTask?.controlReceipts?.[63]?.invocationId).toBe('accepted-63');
+
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: {
+            invocationId: 'terminal-with-no-allowance',
+            fingerprint: 'terminal-fingerprint',
+            controlId: 'terminal-control',
+            action: 'queue',
+            status: 'applied',
+            createdAt: new Date(createdAt.getTime() + 100),
+            updatedAt: new Date(createdAt.getTime() + 100),
+            boundary: 'turn',
+          },
+        }),
+      ).resolves.toBe(false);
+      const afterTerminal = await Message.findOne({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:user',
+      })
+        .select('+subagentTask')
+        .lean<IMessage>();
+      expect(afterTerminal?.subagentTask?.controlReceipts).toHaveLength(64);
+      expect(afterTerminal?.subagentTask?.controlReceipts).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ invocationId: 'terminal-with-no-allowance' }),
+        ]),
+      );
+
+      /** Completing an existing active fence always frees its own slot and wins
+       * over terminal history, even though its occurrence timestamp is oldest. */
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: {
+            invocationId: 'accepted-0',
+            fingerprint: 'fingerprint-0',
+            controlId: 'control-0',
+            action: 'queue',
+            status: 'applied',
+            createdAt,
+            updatedAt: new Date(createdAt.getTime() + 101),
+            boundary: 'turn',
+          },
+        }),
+      ).resolves.toBe(true);
+      const afterTransition = await Message.findOne({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:user',
+      })
+        .select('+subagentTask')
+        .lean<IMessage>();
+      expect(afterTransition?.subagentTask?.controlReceipts).toHaveLength(64);
+      expect(afterTransition?.subagentTask?.controlReceipts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ invocationId: 'accepted-0', status: 'applied' }),
+          expect.objectContaining({ invocationId: 'accepted-63', status: 'accepted' }),
+        ]),
+      );
+    });
+  });
+
   describe('claimSubagentTaskResult', () => {
     const terminalResult = async (taskId: string, conversationId: string, status: string) =>
       saveMessage({ userId: 'user123' }, {

@@ -106,6 +106,74 @@ describe('ThemeProvider', () => {
     expect(localStorage.getItem('theme-source')).toBe('definition');
   });
 
+  it('applies a controlled definition without replacing stored theme preferences', async () => {
+    const storedDefinition = {
+      version: 1 as const,
+      name: 'stored',
+      modes: { light: { colors: { 'rgb-accent-primary': '1 2 3' } } },
+    };
+    const storedColors = { 'rgb-accent-primary': '1 2 3' };
+    localStorage.setItem('theme-definition', JSON.stringify(storedDefinition));
+    localStorage.setItem('theme-colors', JSON.stringify(storedColors));
+    localStorage.setItem('theme-name', 'stored');
+    localStorage.setItem('theme-source', 'legacy');
+
+    const { rerender, unmount } = render(
+      <ThemeProvider
+        initialTheme="light"
+        persistThemeDefinition={false}
+        themeDefinition={{
+          version: 1,
+          name: 'deployment',
+          modes: { light: { colors: { 'rgb-accent-primary': '4 5 6' } } },
+        }}
+      >
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('deployment');
+    });
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('4 5 6');
+    expect(JSON.parse(localStorage.getItem('theme-definition') ?? '{}')).toEqual(storedDefinition);
+    expect(JSON.parse(localStorage.getItem('theme-colors') ?? '{}')).toEqual(storedColors);
+    expect(localStorage.getItem('theme-name')).toBe('stored');
+    expect(localStorage.getItem('theme-source')).toBe('legacy');
+
+    rerender(
+      <ThemeProvider
+        initialTheme="light"
+        persistThemeDefinition={false}
+        themeDefinition={{
+          version: 1,
+          name: 'deployment-next',
+          modes: { light: { colors: { 'rgb-accent-primary': '7 8 9' } } },
+        }}
+      >
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('deployment-next');
+    });
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('7 8 9');
+    expect(JSON.parse(localStorage.getItem('theme-definition') ?? '{}')).toEqual(storedDefinition);
+
+    unmount();
+    render(
+      <ThemeProvider initialTheme="light">
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('stored');
+    });
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('1 2 3');
+  });
+
   it('keeps valid legacy overrides when another token is malformed', async () => {
     render(
       <ThemeProvider

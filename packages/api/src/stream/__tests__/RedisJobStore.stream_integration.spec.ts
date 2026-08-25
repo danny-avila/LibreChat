@@ -3118,7 +3118,7 @@ describe('RedisJobStore Integration Tests', () => {
         undefined,
         undefined,
         undefined,
-        { text: 'kept', fileIds: [] },
+        { text: 'kept', fileIds: [], quotes: [] },
       );
       expect(await store.claimParkedSteers(streamId, 'steer-user')).toBeUndefined();
       expect(await ioredisClient.exists(`stream:{${streamId}}:parked`)).toBe(1);
@@ -3145,7 +3145,7 @@ describe('RedisJobStore Integration Tests', () => {
         undefined,
         undefined,
         undefined,
-        { text: 'kept', fileIds: [] },
+        { text: 'kept', fileIds: [], quotes: [] },
       );
       expect(
         await store.consumeParkedSteer(
@@ -3163,8 +3163,12 @@ describe('RedisJobStore Integration Tests', () => {
     });
 
     test.each([
-      ['changed text', { text: 'forged words', fileIds: ['file-a', 'file-b'] }],
-      ['changed files', { text: 'original words', fileIds: ['file-a', 'file-c'] }],
+      ['changed text', { text: 'forged words', fileIds: ['file-a', 'file-b'], quotes: [] }],
+      ['changed files', { text: 'original words', fileIds: ['file-a', 'file-c'], quotes: [] }],
+      [
+        'changed quotes',
+        { text: 'original words', fileIds: ['file-a', 'file-b'], quotes: ['forged excerpt'] },
+      ],
     ])('atomically refuses parked recovery with %s', async (_label, proof) => {
       if (!ioredisClient) {
         return;
@@ -4177,6 +4181,7 @@ describe('RedisJobStore Integration Tests', () => {
           {
             text: item.text,
             fileIds: (item.files ?? []).flatMap((file) => file.file_id ?? []).sort(),
+            quotes: item.quotes ?? [],
           },
         );
 
@@ -4267,6 +4272,7 @@ describe('RedisJobStore Integration Tests', () => {
           {
             text: item.text,
             fileIds: (item.files ?? []).flatMap((file) => file.file_id ?? []).sort(),
+            quotes: item.quotes ?? [],
           },
         );
         await expect(

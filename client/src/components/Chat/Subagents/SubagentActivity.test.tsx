@@ -1,8 +1,8 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { Agents } from 'librechat-data-provider';
 import type { ChildActivity } from './adapters';
-import SubagentActivity from './SubagentActivity';
+import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -216,6 +216,12 @@ describe('SubagentActivity', () => {
     },
   );
 
+  it('reports when the durable control history is bounded', () => {
+    render(<SubagentActivity activity={{ ...base, controlsTruncated: true }} />);
+
+    expect(screen.getByText('com_ui_subagent_control_history_truncated')).toBeInTheDocument();
+  });
+
   it('preserves question input-validation failure for the regular renderer', () => {
     render(
       <SubagentActivity
@@ -326,6 +332,100 @@ describe('SubagentActivity', () => {
     expect(screen.getByText('Prepared the release')).toBeInTheDocument();
   });
 
+  it('renders command receipts separately from child status and allows an accepted withdrawal', () => {
+    const onCancelControl = jest.fn();
+    render(
+      <SubagentActivity
+        activity={{
+          ...base,
+          status: 'running',
+          controls: [
+            {
+              invocationId: 'submitted',
+              action: 'steer',
+              status: 'submitted',
+              createdAt: '2026-08-24T12:00:00.000Z',
+              updatedAt: '2026-08-24T12:00:00.000Z',
+              message: 'Check the source.',
+            },
+            {
+              invocationId: 'accepted',
+              controlId: 'control-1',
+              action: 'queue',
+              status: 'accepted',
+              createdAt: '2026-08-24T12:00:01.000Z',
+              updatedAt: '2026-08-24T12:00:01.000Z',
+              message: 'Add a citation.',
+              messageTruncated: true,
+            },
+            {
+              invocationId: 'applied',
+              action: 'interrupt',
+              status: 'applied',
+              createdAt: '2026-08-24T12:00:02.000Z',
+              updatedAt: '2026-08-24T12:00:03.000Z',
+              boundary: 'preempt',
+            },
+            {
+              invocationId: 'rejected',
+              action: 'steer',
+              status: 'rejected',
+              createdAt: '2026-08-24T12:00:04.000Z',
+              updatedAt: '2026-08-24T12:00:05.000Z',
+              reason: 'task_completed',
+            },
+          ],
+        }}
+        onCancelControl={onCancelControl}
+      />,
+    );
+
+    expect(screen.getByText('com_ui_subagent_thread_status_running')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_subagent_control_status_submitted')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_subagent_control_status_accepted')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_subagent_control_status_applied')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_subagent_control_status_rejected')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_subagent_control_message_truncated')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_subagent_control_reason_task_completed')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_control_withdraw' }));
+    expect(onCancelControl).toHaveBeenCalledWith('control-1');
+  });
+
+  it('renders storage-prioritized control receipts in chronological order', () => {
+    render(
+      <SubagentActivity
+        activity={{
+          ...base,
+          controls: [
+            {
+              invocationId: 'new-accepted',
+              controlId: 'control-2',
+              action: 'queue',
+              status: 'accepted',
+              createdAt: '2026-08-24T12:00:02.000Z',
+              updatedAt: '2026-08-24T12:00:02.000Z',
+            },
+            {
+              invocationId: 'old-applied',
+              controlId: 'control-1',
+              action: 'steer',
+              status: 'applied',
+              createdAt: '2026-08-24T12:00:01.000Z',
+              updatedAt: '2026-08-24T12:00:03.000Z',
+            },
+          ],
+        }}
+      />,
+    );
+
+    const applied = screen.getByText('com_ui_subagent_control_status_applied');
+    const accepted = screen.getByText('com_ui_subagent_control_status_accepted');
+    expect(
+      applied.compareDocumentPosition(accepted) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('scopes regular-chat renderer state to the selected child activity', () => {
     render(<SubagentActivity activity={base} activityId="parent:tool:child" />);
 
@@ -333,6 +433,44 @@ describe('SubagentActivity', () => {
       'data-message-id',
       'parent:tool:child',
     );
+  });
+
+  it('renders an embedded turn without creating a nested scroll surface', () => {
+    const { container } = render(<SubagentActivity activity={base} embedded />);
+
+    expect(container.querySelector('[data-subagent-thread-turn]')).toBeInTheDocument();
+    expect(container.querySelector('.overflow-y-auto')).not.toBeInTheDocument();
+    expect(screen.getByText('Final answer.')).toBeInTheDocument();
+  });
+
+  it('keeps the shared scroll surface pinned when activity grows at the bottom', () => {
+    let resize!: ResizeObserverCallback;
+    const resizeObserver = window.ResizeObserver as unknown as jest.Mock;
+    const originalImplementation = resizeObserver.getMockImplementation();
+    resizeObserver.mockImplementation((callback: ResizeObserverCallback) => {
+      resize = callback;
+      return { observe: jest.fn(), disconnect: jest.fn(), unobserve: jest.fn() };
+    });
+
+    const { container, unmount } = render(
+      <SubagentActivityScrollSurface padded={false}>
+        {/* eslint-disable-next-line i18next/no-literal-string */}
+        <div>Growing timeline</div>
+      </SubagentActivityScrollSurface>,
+    );
+    const surface = container.querySelector<HTMLElement>('[data-subagent-activity-scroll-surface]');
+    expect(surface).not.toBeNull();
+    Object.defineProperty(surface, 'scrollHeight', { configurable: true, value: 640 });
+
+    act(() => resize([], {} as ResizeObserver));
+    expect(surface?.scrollTop).toBe(640);
+
+    unmount();
+    if (originalImplementation == null) {
+      resizeObserver.mockReset();
+    } else {
+      resizeObserver.mockImplementation(originalImplementation);
+    }
   });
 
   it('renders a sanitized reasoning marker through regular ContentParts', () => {
@@ -382,11 +520,13 @@ describe('SubagentActivity', () => {
     expect(screen.queryByText('com_ui_subagent_waiting')).not.toBeInTheDocument();
   });
 
-  it.each([
-    ['error', 'com_ui_subagent_thread_load_error'],
-    ['ready', 'com_ui_subagent_empty_result'],
-  ] as const)('renders the %s state', (state, label) => {
-    render(<SubagentActivity activity={{ ...base, items: [] }} state={state} />);
-    expect(screen.getByText(label)).toBeInTheDocument();
+  it('renders the load error state', () => {
+    render(<SubagentActivity activity={{ ...base, items: [] }} state="error" />);
+    expect(screen.getByText('com_ui_subagent_thread_load_error')).toBeInTheDocument();
+  });
+
+  it('does not describe a completed tool-only child as missing a result', () => {
+    render(<SubagentActivity activity={{ ...base, status: 'completed', items: [] }} />);
+    expect(screen.queryByText('com_ui_subagent_empty_result')).not.toBeInTheDocument();
   });
 });

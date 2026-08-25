@@ -165,4 +165,25 @@ describe('SteerPart presentation', () => {
     fireEvent.click(screen.getByTestId('steer-file'));
     expect(screen.getByTestId('steer-file-preview')).toHaveTextContent('notes.pdf');
   });
+
+  it('renders quoted excerpts as reference blocks inside the bubble', () => {
+    render(
+      <RecoilRoot initializeState={({ set }) => set(store.user, SEEDED_USER as never)}>
+        <SteerPart
+          steer="steered words"
+          steerId="s1"
+          createdAt={1}
+          quotes={['the selected excerpt']}
+        />
+      </RecoilRoot>,
+    );
+    const quotes = screen.getByTestId('message-quotes');
+    expect(quotes).toHaveTextContent('the selected excerpt');
+    expect(quotes.closest('.bg-surface-tertiary')).not.toBeNull();
+  });
+
+  it('renders no quote block when the steer carried none', () => {
+    renderPart();
+    expect(screen.queryByTestId('message-quotes')).toBeNull();
+  });
 });

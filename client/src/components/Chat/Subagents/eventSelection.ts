@@ -7,6 +7,7 @@ export const eventTaskProgressKey = (threadId: string, taskId: string) =>
 export const eventSubagentSelection = (
   parentConversationId: string,
   child: ParentSubagentSummary,
+  siblingParentMessageIds?: string[],
 ): ActiveSubagentPanel | null => {
   const taskId = child.latestTaskId;
   if (child.origin !== 'event' || child.actorId == null || taskId == null) return null;
@@ -20,6 +21,10 @@ export const eventSubagentSelection = (
     initialProgress: child.status === 'completed' ? 1 : 0,
     isSubmitting: child.status === 'running',
     durable: { threadId: child.threadId, taskId },
-    event: { actorId: child.actorId, progressKey: eventTaskProgressKey(child.threadId, taskId) },
+    event: {
+      actorId: child.actorId,
+      progressKey: eventTaskProgressKey(child.threadId, taskId),
+      ...(siblingParentMessageIds == null ? {} : { siblingParentMessageIds }),
+    },
   };
 };

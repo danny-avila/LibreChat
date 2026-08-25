@@ -738,6 +738,7 @@ describe('ResumableAgentController resume metadata', () => {
           model: 'gpt-3.5-turbo',
           /** The OWNING replica's seal capability, read by the steer route. */
           preemptCapable: true,
+          steerQuotesCapable: true,
           agent_id: undefined,
           isTemporary: true,
           responseMessageId: expect.stringMatching(/^[0-9a-f-]{36}$/),

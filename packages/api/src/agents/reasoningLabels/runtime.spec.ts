@@ -91,21 +91,21 @@ function createHarness(
           type: StepTypes.MESSAGE_CREATION,
           message_creation: { content_type: ContentTypes.THINK },
         },
-      },
+      } as never,
       metadata,
     );
   };
   const append = async (text: string, id = 'reasoning-1') => {
     await wrapped[GraphEvents.ON_REASONING_DELTA].handle(
       GraphEvents.ON_REASONING_DELTA,
-      reasoningDelta(id, text),
+      reasoningDelta(id, text) as never,
     );
   };
   const close = async (id = 'reasoning-1') => {
     await wrapped[GraphEvents.ON_RUN_STEP_CLOSED].handle(GraphEvents.ON_RUN_STEP_CLOSED, {
       id,
       status: 'completed',
-    });
+    } as never);
   };
   const settle = async () => {
     for (let i = 0; i < 5; i += 1) {

@@ -103,27 +103,6 @@ export enum IconContext {
   message = 'message',
 }
 
-export type IconMapProps = {
-  className?: string;
-  iconURL?: string;
-  context?: 'landing' | 'menu-item' | 'nav' | 'message';
-  endpoint?: string | null;
-  endpointType?: string;
-  assistantName?: string;
-  agentName?: string;
-  avatar?: string;
-  size?: number;
-};
-
-export type IconComponent = React.ComponentType<IconMapProps>;
-export type AgentIconComponent = React.ComponentType<AgentIconMapProps>;
-export type IconComponentTypes = IconComponent | AgentIconComponent;
-export type IconsRecord = {
-  [key in t.EModelEndpoint | 'unknown' | string]: IconComponentTypes | null | undefined;
-};
-
-export type AgentIconMapProps = IconMapProps & { agentName?: string };
-
 export type NavLink = {
   title: TranslationKeys;
   label?: string;
@@ -537,6 +516,7 @@ export type IconProps = Pick<t.TMessage, 'isCreatedByUser' | 'model'> &
     iconClassName?: string;
     endpoint?: t.EModelEndpoint | string | null;
     endpointType?: t.EModelEndpoint | null;
+    endpointsConfig?: t.TEndpointsConfig | null;
     assistantName?: string;
     agentName?: string;
     error?: boolean;
