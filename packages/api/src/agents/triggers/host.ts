@@ -615,6 +615,15 @@ async function startRun(
           isRegenerate: false,
           clientRequestId: context.idempotencyKey,
           generationProtocolVersion: 2,
+          ...(envelope.mode === 'continue' &&
+            envelope.target.bindingId != null && {
+              agentEventDelivery: {
+                deliveryKey: context.idempotencyKey,
+                ...(envelope.expectedAction != null && {
+                  expectedAction: envelope.expectedAction,
+                }),
+              },
+            }),
           ...(envelope.mode === 'fire' && {
             agentTrigger: {
               version: envelope.version,

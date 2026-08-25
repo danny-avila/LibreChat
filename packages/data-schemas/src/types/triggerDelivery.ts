@@ -9,6 +9,20 @@ export type AgentTriggerDeliveryStatus =
   | 'dead';
 export type AgentTriggerDeliveryOutcome = 'succeeded' | 'retry' | 'dead';
 
+export interface AgentTriggerHandlingState {
+  status: 'started' | 'applied' | 'completed_no_action' | 'failed' | 'cancelled';
+  conversationId: string;
+  streamId: string;
+  generationCreatedAt: number;
+  startedAt: Date;
+  settledAt?: Date;
+  error?: string;
+  action?: {
+    toolName: string;
+    toolCallId?: string;
+  };
+}
+
 export interface AgentTriggerDeliveryFailure {
   code: string;
   message: string;
@@ -49,6 +63,7 @@ export interface IAgentTriggerDelivery {
   batchRootId?: Types.ObjectId;
   batchRootRequeueCount?: number;
   batchMembersSettledAt?: Date;
+  handling?: AgentTriggerHandlingState;
   leaseBy?: string;
   leaseUntil?: Date;
   claimToken?: string;
@@ -87,6 +102,7 @@ export type AgentTriggerDeliveryStatusRecord = Pick<
   | 'settledAt'
   | 'result'
   | 'lastError'
+  | 'handling'
 >;
 
 export interface IAgentTriggerLaneSequence {

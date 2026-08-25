@@ -1243,6 +1243,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
     return recorded;
   };
+  /** The loopback trigger host binds this lifecycle identity to the same
+   * idempotency key that owns generation admission. Ignore mismatched or
+   * direct-chat metadata rather than letting callers relabel another run. */
+  const rawAgentEventDelivery = req.body?.agentEventDelivery;
+  const agentEventDelivery =
+    isTriggerContinuation &&
+    rawAgentEventDelivery != null &&
+    typeof rawAgentEventDelivery === 'object' &&
+    rawAgentEventDelivery.deliveryKey === clientRequestId
+      ? rawAgentEventDelivery
+      : undefined;
 
   try {
     logger.debug(`[ResumableAgentController] Creating job`, {
@@ -1288,6 +1299,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // Persist temporary-chat state so a HITL resume keeps the resumed response
         // non-persisted instead of trusting the resume request to re-send the flag.
         isTemporary: req._agentEventBindingRetention?.isTemporary ?? req.body?.isTemporary,
+        ...(agentEventDelivery != null && {
+          agentEventDeliveryKey: agentEventDelivery.deliveryKey,
+          ...(agentEventDelivery.expectedAction != null && {
+            agentEventExpectedAction: agentEventDelivery.expectedAction,
+          }),
+        }),
         ...(isRegenerate && { isRegenerate: true }),
         ...(scheduleId
           ? {

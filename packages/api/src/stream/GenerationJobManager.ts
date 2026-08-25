@@ -488,6 +488,12 @@ export type ApprovalExpiredHandler = (
   job: SerializableJobData,
 ) => void | Promise<void>;
 
+export type TerminalHostActionHandler = (
+  streamId: string,
+  job: SerializableJobData,
+  runSteps: Agents.RunStep[],
+) => void | Promise<void>;
+
 export interface CreateGenerationJobOptions {
   startupTelemetry?: AgentStartupTelemetry;
   initialMetadata?: Partial<t.GenerationJobMetadata>;
@@ -741,6 +747,7 @@ class GenerationJobManagerClass {
   /** Optional host hook; the generic stream runtime does not know what external
    * durable work (scheduled chats, webhooks, etc.) a generation represents. */
   private approvalExpiredHandler: ApprovalExpiredHandler | undefined;
+  private terminalHostActionHandler: TerminalHostActionHandler | undefined;
 
   constructor(options?: GenerationJobManagerOptions) {
     const jobStore =
@@ -874,6 +881,11 @@ class GenerationJobManagerClass {
    * stream package to any particular trigger/scheduler implementation. */
   setApprovalExpiredHandler(handler?: ApprovalExpiredHandler): void {
     this.approvalExpiredHandler = handler;
+  }
+
+  /** Installs a durable, generation-fenced terminal lifecycle adapter. */
+  setTerminalHostActionHandler(handler?: TerminalHostActionHandler): void {
+    this.terminalHostActionHandler = handler;
   }
 
   private get storeLabel(): GenerationJobStore {
@@ -3327,6 +3339,12 @@ class GenerationJobManagerClass {
     const runtime = observedRuntime?.createdAt === createdAt ? observedRuntime : undefined;
     const terminalError = status === 'error' ? (error ?? 'Generation failed') : undefined;
     await this.flushCoalescedStreamBuffers(streamId);
+    if (jobData.agentEventDeliveryKey != null) {
+      const buffered = this.runStepBuffers?.get(streamId);
+      if (buffered?.createdAt === createdAt && this.jobStore.saveRunSteps != null) {
+        await this.jobStore.saveRunSteps(streamId, buffered.steps, createdAt);
+      }
+    }
     const completedAt = Date.now();
     const drainedSteers = await this.jobStore.transitionStatusAndDrainSteers(streamId, {
       from: sourceStatus,
@@ -3340,6 +3358,10 @@ class GenerationJobManagerClass {
       patch: {
         completedAt,
         ...(terminalError != null && { error: terminalError }),
+        ...(jobData.agentEventDeliveryKey != null &&
+          this.terminalHostActionHandler != null && {
+            terminalHostActionPending: true,
+          }),
         ...(options.persistencePending === true && {
           terminalPersistencePending: true,
           terminalPersistenceStartedAt: completedAt,
@@ -3539,6 +3561,13 @@ class GenerationJobManagerClass {
     // Error jobs stay durable long enough for late subscribers to receive the
     // stored error. A publication failure must never bypass the finally cleanup.
     try {
+      const claimedTerminalJob = await this.jobStore.getJob(streamId);
+      if (
+        claimedTerminalJob?.createdAt === createdAt &&
+        claimedTerminalJob.terminalHostActionPending === true
+      ) {
+        await this.runTerminalHostActionHandler(streamId, claimedTerminalJob);
+      }
       if (status === 'error' && !this.terminalErrorPublicationSuppressions.has(claim)) {
         const terminalError = error ?? 'Generation failed';
         if (runtime) {
@@ -3578,6 +3607,7 @@ class GenerationJobManagerClass {
           !retainForTerminalReplay &&
           terminalJob?.providerDrained !== false &&
           terminalJob?.preserveForScheduleReconcile !== true &&
+          terminalJob?.terminalHostActionPending !== true &&
           (terminalJob?.createdAt !== createdAt || terminalJob.terminalPersistencePending !== true)
         ) {
           // A same-stream replacement created after the claim makes this a safe
@@ -7155,7 +7185,10 @@ class GenerationJobManagerClass {
       expectedCreatedAt ?? observedJob?.createdAt,
       // Only retain a durable host-action marker when a host adapter is installed to
       // consume it — a store with no handler owes no action and accumulates nothing.
-      { markHostActionPending: this.approvalExpiredHandler != null },
+      {
+        markHostActionPending:
+          this.approvalExpiredHandler != null || this.terminalHostActionHandler != null,
+      },
     );
     if (expiredJob == null) {
       return false;
@@ -7172,6 +7205,13 @@ class GenerationJobManagerClass {
   ): Promise<void> {
     try {
       await this.approvalExpiredHandler?.(streamId, job);
+      if (job.agentEventDeliveryKey != null) {
+        await this.terminalHostActionHandler?.(
+          streamId,
+          job,
+          await this.getTerminalRunSteps(streamId, job),
+        );
+      }
       // Success: the durable host action is settled. Clear its pending marker, fenced to
       // this exact generation so a replacement at the same streamId keeps its own state.
       // A no-op handler (or none) clears harmlessly, so non-scheduled jobs never linger.
@@ -7183,6 +7223,39 @@ class GenerationJobManagerClass {
       // idempotent hook until it acknowledges.
       logger.error(`[GenerationJobManager] Approval-expiry host hook failed: ${streamId}`, err);
     }
+  }
+
+  private async runTerminalHostActionHandler(
+    streamId: string,
+    job: SerializableJobData,
+  ): Promise<void> {
+    try {
+      if (job.agentEventDeliveryKey != null) {
+        await this.terminalHostActionHandler?.(
+          streamId,
+          job,
+          await this.getTerminalRunSteps(streamId, job),
+        );
+      }
+      await this.jobStore.clearTerminalHostAction?.(streamId, job.createdAt);
+    } catch (err) {
+      logger.error(`[GenerationJobManager] Terminal host hook failed: ${streamId}`, err);
+    }
+  }
+
+  private async getTerminalRunSteps(
+    streamId: string,
+    job: Pick<SerializableJobData, 'createdAt'>,
+  ): Promise<Agents.RunStep[]> {
+    const persistedRunSteps = await this.jobStore.getRunSteps(streamId, job.createdAt);
+    const buffered = this.runStepBuffers?.get(streamId);
+    const runStepsById = new Map(persistedRunSteps.map((step) => [step.id, step]));
+    if (buffered?.createdAt === job.createdAt) {
+      for (const step of buffered.steps) {
+        runStepsById.set(step.id, step);
+      }
+    }
+    return [...runStepsById.values()].sort((left, right) => left.index - right.index);
   }
 
   private async notifyApprovalExpiredRuntime(
@@ -7281,6 +7354,16 @@ class GenerationJobManagerClass {
           await this.runApprovalExpiredHandler(streamId, job);
         }
         await this.notifyApprovalExpiredRuntime(streamId, job.createdAt, runtime);
+        changed = this.releaseJobOwnership(streamId, job.createdAt) || changed;
+        continue;
+      }
+      if (
+        job != null &&
+        job.status !== 'running' &&
+        job.status !== 'requires_action' &&
+        job.terminalHostActionPending === true
+      ) {
+        await this.runTerminalHostActionHandler(streamId, job);
         changed = this.releaseJobOwnership(streamId, job.createdAt) || changed;
         continue;
       }

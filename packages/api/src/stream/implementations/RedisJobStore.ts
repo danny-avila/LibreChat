@@ -4590,6 +4590,10 @@ export class RedisJobStore implements IJobStoreV2 {
       promptTokens: data.promptTokens ? parseInt(data.promptTokens, 10) : undefined,
       agent_id: data.agent_id || undefined,
       isTemporary: data.isTemporary != null ? data.isTemporary === '1' : undefined,
+      agentEventDeliveryKey: data.agentEventDeliveryKey || undefined,
+      agentEventExpectedAction: data.agentEventExpectedAction
+        ? JSON.parse(data.agentEventExpectedAction)
+        : undefined,
       scheduleId: data.scheduleId || undefined,
       scheduledFor: data.scheduledFor || undefined,
       scheduleConfigRevision: data.scheduleConfigRevision

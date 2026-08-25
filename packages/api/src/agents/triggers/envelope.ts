@@ -5,6 +5,7 @@ import { cloneJsonValue } from '../json';
 
 export const AGENT_TRIGGER_ENVELOPE_VERSION = 1 as const;
 export const AGENT_TRIGGER_IDEMPOTENCY_PREFIX = 'trigger_';
+const MAX_EXPECTED_ACTION_TOOL_NAME_LENGTH = 256;
 
 export type AgentTriggerMode = 'continue' | 'fire' | 'steer';
 
@@ -24,6 +25,14 @@ export interface AgentTriggerEvent {
   /** Sanitized source data; adapters must omit credentials and transport secrets. */
   payload?: JsonValue;
   source: AgentTriggerSource;
+}
+
+/** Optional source-declared proof the generation is expected to produce. The
+ * host evaluates this against completed tool evidence; it never trusts a model
+ * assertion that work happened. */
+export interface AgentTriggerExpectedAction {
+  toolName: string;
+  argumentSubset?: Record<string, JsonValue>;
 }
 
 interface AgentTriggerTarget {
@@ -84,6 +93,7 @@ interface AgentTriggerEnvelopeBase {
   event: AgentTriggerEvent;
   /** Host-rendered agent input; source payload remains available in `event.payload`. */
   input: string;
+  expectedAction?: AgentTriggerExpectedAction;
 }
 
 export interface AgentFireTriggerEnvelope extends AgentTriggerEnvelopeBase {
@@ -114,6 +124,7 @@ interface CreateAgentTriggerEnvelopeBase {
   principal: AgentRunPrincipalInput | null | undefined;
   event: AgentTriggerEvent;
   input: string;
+  expectedAction?: AgentTriggerExpectedAction;
 }
 
 export type CreateAgentTriggerEnvelopeInput =
@@ -191,6 +202,33 @@ function createEvent(input: AgentTriggerEvent | null | undefined): AgentTriggerE
   };
 }
 
+function createExpectedAction(
+  input: AgentTriggerExpectedAction | null | undefined,
+): AgentTriggerExpectedAction | undefined {
+  if (input == null) {
+    return undefined;
+  }
+  const action = requireRecord(input, 'expectedAction');
+  const argumentSubset =
+    action.argumentSubset == null
+      ? undefined
+      : (cloneJsonValue(
+          requireRecord(action.argumentSubset, 'expectedAction.argumentSubset'),
+          'expectedAction.argumentSubset',
+          error,
+        ) as Record<string, JsonValue>);
+  const toolName = requireString(action.toolName, 'expectedAction.toolName');
+  if (toolName.length > MAX_EXPECTED_ACTION_TOOL_NAME_LENGTH) {
+    throw error(
+      `expectedAction.toolName must not exceed ${MAX_EXPECTED_ACTION_TOOL_NAME_LENGTH} characters`,
+    );
+  }
+  return {
+    toolName,
+    ...(argumentSubset != null && { argumentSubset }),
+  };
+}
+
 function createFireRunContext(
   input: AgentFireRunContext | null | undefined,
 ): AgentFireRunContext | undefined {
@@ -224,6 +262,7 @@ export function createAgentTriggerEnvelope(
   input: CreateAgentTriggerEnvelopeInput,
 ): AgentTriggerEnvelope {
   const receivedMode: string = input.mode;
+  const expectedAction = createExpectedAction(input.expectedAction);
   const base: AgentTriggerEnvelopeBase = {
     version: AGENT_TRIGGER_ENVELOPE_VERSION,
     requestId: requireString(input.requestId, 'requestId'),
@@ -232,6 +271,7 @@ export function createAgentTriggerEnvelope(
     principal: createPrincipal(input.principal),
     event: createEvent(input.event),
     input: requireString(input.input, 'input'),
+    ...(expectedAction != null && { expectedAction }),
   };
 
   if (input.mode === 'fire') {
@@ -329,6 +369,10 @@ export function parseAgentTriggerEnvelope(input: unknown): AgentTriggerEnvelope 
     ...(eventInput.payload !== undefined && { payload: eventInput.payload as JsonValue }),
   };
 
+  const expectedAction = createExpectedAction(
+    envelope.expectedAction as AgentTriggerExpectedAction | null | undefined,
+  );
+
   const base: AgentTriggerEnvelopeBase = {
     version: AGENT_TRIGGER_ENVELOPE_VERSION,
     requestId: requireString(envelope.requestId, 'requestId'),
@@ -337,6 +381,7 @@ export function parseAgentTriggerEnvelope(input: unknown): AgentTriggerEnvelope 
     principal,
     event,
     input: requireString(envelope.input, 'input'),
+    ...(expectedAction != null && { expectedAction }),
   };
   const target = requireRecord(envelope.target, 'target');
 

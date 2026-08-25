@@ -3888,11 +3888,20 @@ describe('ResumableAgentController resume metadata', () => {
       body: {
         text: 'Continue from event.',
         messageId: 'user-msg',
+        parentMessageId: 'response-previous',
         clientRequestId: 'req-event',
+        agentEventDelivery: {
+          deliveryKey: 'req-event',
+          expectedAction: {
+            toolName: 'submit_move',
+            argumentSubset: { gameId: 'game-1', expectedPly: 7 },
+          },
+        },
         conversationId: 'child-conversation',
         endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
       },
       config: {},
+      _isAgentTrigger: true,
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
       _agentEventBindingTenantId: 'tenant-1',
@@ -3915,6 +3924,11 @@ describe('ResumableAgentController resume metadata', () => {
       expect.objectContaining({
         responseMessageId: 'req-event:assistant',
         userMessage: expect.objectContaining({ messageId: 'req-event:user' }),
+        agentEventDeliveryKey: 'req-event',
+        agentEventExpectedAction: {
+          toolName: 'submit_move',
+          argumentSubset: { gameId: 'game-1', expectedPly: 7 },
+        },
       }),
     );
   });

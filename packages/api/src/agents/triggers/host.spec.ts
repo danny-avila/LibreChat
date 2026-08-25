@@ -577,8 +577,15 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
 
   it('carries server-resolved binding identity only on bound child continuations', async () => {
     const base = createContinueEnvelope();
+    if (base.mode !== 'continue') {
+      throw new Error('Expected a continue envelope');
+    }
     const envelope = {
       ...base,
+      expectedAction: {
+        toolName: 'submit_move',
+        argumentSubset: { gameId: 'game-1', expectedPly: 7 },
+      },
       target: {
         ...base.target,
         bindingId: `evtbind_${'a'.repeat(48)}`,
@@ -598,6 +605,12 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
     const headers = fetcher.mock.calls[0][1]?.headers as Record<string, string>;
     expect(headers['x-lc-agent-event-binding']).toBe(`evtbind_${'a'.repeat(48)}`);
     expect(headers['x-lc-agent-event-source-key']).toBe('source-key');
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toMatchObject({
+      agentEventDelivery: {
+        deliveryKey: getAgentTriggerIdempotencyKey(envelope),
+        expectedAction: envelope.expectedAction,
+      },
+    });
   });
 
   it.each(['PARENT_NOT_READY', 'EVENT_ACTOR_NOT_READY'])(

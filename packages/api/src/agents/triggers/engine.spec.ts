@@ -84,6 +84,56 @@ describe('createAgentTriggerDeliveryEngine', () => {
     });
   });
 
+  it('persists generation identity when a bound continuation starts', async () => {
+    const envelope = createAgentTriggerEnvelope({
+      mode: 'continue',
+      requestId: 'request-1',
+      deliveryId: 'delivery-1',
+      receivedAt: 10,
+      principal: { id: 'user-1' },
+      target: {
+        agentId: 'agent-1',
+        conversationId: 'conversation-1',
+        parentMessageId: 'response-1',
+        bindingId: `evtbind_${'a'.repeat(48)}`,
+        sourceKeyId: 'source-key',
+      },
+      event: {
+        id: 'event-1',
+        type: 'turn.ready',
+        occurredAt: 9,
+        source: { id: 'source-key', type: 'remote_api_key' },
+      },
+      input: 'Take the turn.',
+    });
+    const store = storeWith({ claimNext: jest.fn(async () => delivery({ envelope })) });
+    const result: AgentTriggerExecutionResult = {
+      mode: 'continue',
+      status: 'started',
+      conversationId: 'conversation-1',
+      streamId: 'conversation-1',
+      generationCreatedAt: 1_787_000_000_000,
+    };
+    const engine = createAgentTriggerDeliveryEngine(
+      { store, dispatch: jest.fn(async () => result), now: () => START, workerId: 'worker-1' },
+      { concurrency: 1 },
+    );
+
+    await engine.runTick();
+
+    expect(store.complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        handling: {
+          status: 'started',
+          conversationId: 'conversation-1',
+          streamId: 'conversation-1',
+          generationCreatedAt: 1_787_000_000_000,
+          startedAt: START,
+        },
+      }),
+    );
+  });
+
   it('dispatches one structured invocation for every member of a claimed batch', async () => {
     const envelope = createAgentTriggerEnvelope({
       mode: 'continue',

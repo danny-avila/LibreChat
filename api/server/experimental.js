@@ -34,6 +34,7 @@ const {
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
   GenerationJobManager,
+  createAgentEventTerminalHandler,
   waitForKeyvRedisClient,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
@@ -65,6 +66,7 @@ const staticCache = require('./utils/staticCache');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const agentEventMethods = require('~/models');
 
 /** Route admin file-config MIME patterns through a linear-time engine (ReDoS-safe) on upload. */
 configureFileConfigRegexEngine();
@@ -290,6 +292,9 @@ if (cluster.isMaster) {
   // but an already-fired scheduled generation can still reach HITL here. Settle
   // its durable run when the generic approval runtime expires it.
   GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);
+  GenerationJobManager.setTerminalHostActionHandler(
+    createAgentEventTerminalHandler(agentEventMethods),
+  );
   GenerationJobManager.initialize();
   /**
    * The master may assign the sweep worker before or after this worker has

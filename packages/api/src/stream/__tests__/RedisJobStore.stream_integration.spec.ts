@@ -1180,6 +1180,11 @@ describe('RedisJobStore Integration Tests', () => {
       await store.createJob(streamId, 'user-1', streamId, undefined, {
         agent_id: 'saved-agent-1',
         isTemporary: true,
+        agentEventDeliveryKey: 'trigger_1',
+        agentEventExpectedAction: {
+          toolName: 'submit_move',
+          argumentSubset: { gameId: 'game-1', expectedPly: 7 },
+        },
         discoveredTools: ['deep_tool'],
         userSubmittedPaths: ['/content/0/tool_call/args'],
         userSubmittedMessageFieldPaths: [{ path: '/content/0/tool_call/output', field: 'answer' }],
@@ -1187,6 +1192,11 @@ describe('RedisJobStore Integration Tests', () => {
       const turn1 = await store.getJob(streamId);
       expect(turn1?.agent_id).toBe('saved-agent-1');
       expect(turn1?.isTemporary).toBe(true);
+      expect(turn1?.agentEventDeliveryKey).toBe('trigger_1');
+      expect(turn1?.agentEventExpectedAction).toEqual({
+        toolName: 'submit_move',
+        argumentSubset: { gameId: 'game-1', expectedPly: 7 },
+      });
       expect(turn1?.discoveredTools).toEqual(['deep_tool']);
       expect(turn1?.userSubmittedPaths).toEqual(['/content/0/tool_call/args']);
       expect(turn1?.userSubmittedMessageFieldPaths).toEqual([
@@ -1202,6 +1212,8 @@ describe('RedisJobStore Integration Tests', () => {
       const turn2 = await store.getJob(streamId);
       expect(turn2?.agent_id).toBeUndefined();
       expect(turn2?.isTemporary).toBeUndefined();
+      expect(turn2?.agentEventDeliveryKey).toBeUndefined();
+      expect(turn2?.agentEventExpectedAction).toBeUndefined();
       expect(turn2?.discoveredTools).toBeUndefined();
       expect(turn2?.userSubmittedPaths).toBeUndefined();
       expect(turn2?.userSubmittedMessageFieldPaths).toBeUndefined();

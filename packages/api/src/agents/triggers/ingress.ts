@@ -6,6 +6,7 @@ import type {
   AgentContinueTarget,
   AgentSteerTarget,
   AgentTriggerEvent,
+  AgentTriggerExpectedAction,
   AgentTriggerMode,
 } from './envelope';
 import type { AgentTriggerEnqueueOptions } from './delivery';
@@ -40,6 +41,7 @@ interface AgentTriggerIngressBody {
   input?: string;
   orderingKey?: string;
   coalesce?: { key?: string };
+  expectedAction?: AgentTriggerExpectedAction;
 }
 
 export interface AgentTriggerIngressDependencies {
@@ -180,6 +182,15 @@ function toPublicDelivery(delivery: Awaited<ReturnType<AgentTriggerService['getD
         ...(delivery.lastError.status != null && { status: delivery.lastError.status }),
       },
     }),
+    ...(delivery.handling != null && {
+      handling: {
+        ...delivery.handling,
+        startedAt: delivery.handling.startedAt.toISOString(),
+        ...(delivery.handling.settledAt != null && {
+          settledAt: delivery.handling.settledAt.toISOString(),
+        }),
+      },
+    }),
   };
 }
 
@@ -241,6 +252,7 @@ export function createAgentTriggerIngressHandlers(deps: AgentTriggerIngressDepen
           source: { id: sourceKeyId, type: 'remote_api_key' },
         },
         input: body.input as string,
+        ...(body.expectedAction != null && { expectedAction: body.expectedAction }),
       };
       if (body.mode === 'continue' && req._agentEventBindingResolved !== true) {
         throw new AgentTriggerIngressError(

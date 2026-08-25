@@ -273,6 +273,8 @@ export interface SerializableJobData {
    * resume request can't be trusted to re-send the flag.
    */
   isTemporary?: boolean;
+  agentEventDeliveryKey?: string;
+  agentEventExpectedAction?: import('~/agents/triggers/envelope').AgentTriggerExpectedAction;
 
   /**
    * Set when status is `requires_action`. Describes the human review the
@@ -390,6 +392,8 @@ export type JobMetadataPatch = Partial<
     | 'model'
     | 'agent_id'
     | 'isTemporary'
+    | 'agentEventDeliveryKey'
+    | 'agentEventExpectedAction'
     | 'scheduleId'
     | 'scheduledFor'
     | 'scheduleConfigRevision'

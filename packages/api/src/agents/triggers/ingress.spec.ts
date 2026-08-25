@@ -317,16 +317,17 @@ describe('agent trigger event ingress', () => {
     const deps = dependencies({
       getDeliveryStatus: jest.fn(async () =>
         delivery({
-          status: 'dead',
+          status: 'succeeded',
           attempts: 3,
           settledAt,
-          lastError: {
-            code: 'FORBIDDEN',
-            message: 'Agent access was revoked',
-            certainty: 'definite',
-            retryable: false,
-            attemptedAt,
-            status: 403,
+          handling: {
+            status: 'failed',
+            conversationId: 'conversation-1',
+            streamId: 'conversation-1',
+            generationCreatedAt: 1_787_000_000_000,
+            startedAt: attemptedAt,
+            settledAt,
+            error: 'Agent access was revoked',
           },
         }),
       ),
@@ -337,18 +338,19 @@ describe('agent trigger event ingress', () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       id: DELIVERY_KEY,
-      status: 'dead',
+      status: 'succeeded',
       attempts: 3,
       availableAt: AVAILABLE_AT.toISOString(),
       createdAt: CREATED_AT.toISOString(),
       settledAt: settledAt.toISOString(),
-      error: {
-        code: 'FORBIDDEN',
-        message: 'Agent access was revoked',
-        certainty: 'definite',
-        retryable: false,
-        attemptedAt: attemptedAt.toISOString(),
-        status: 403,
+      handling: {
+        status: 'failed',
+        conversationId: 'conversation-1',
+        streamId: 'conversation-1',
+        generationCreatedAt: 1_787_000_000_000,
+        startedAt: attemptedAt.toISOString(),
+        settledAt: settledAt.toISOString(),
+        error: 'Agent access was revoked',
       },
     });
     expect(response.body).not.toHaveProperty('envelope');

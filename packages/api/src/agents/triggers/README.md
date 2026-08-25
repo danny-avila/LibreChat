@@ -108,6 +108,14 @@ results include the conversation and generation identity needed for a later `ste
 responses never expose the stored source payload, ordering key, retry history, or worker identity.
 Callers must sanitize `event.payload`; credentials and transport secrets must not be persisted.
 
+For a bound `continue`, `succeeded` means generation admission succeeded, not that the requested
+work finished. The status response therefore also exposes a durable `handling` lifecycle:
+`started`, followed by exactly one of `applied`, `completed_no_action`, `failed`, or `cancelled`.
+Action-aware bound-child sources may send an `expectedAction` containing a tool name and optional
+argument subset. LibreChat reports `applied` only when the exact generation completes with
+host-observed tool evidence matching that contract; model-authored prose is never accepted as
+proof. Fire, steer, and unbound continue deliveries reject this contract.
+
 ### Event-driven child actors
 
 Register a direct child agent once under the same Remote Agents API key that will deliver events.
@@ -201,4 +209,6 @@ the batch or create another branch.
 Coalescing is intentionally accepted only for authenticated bound-child `continue` deliveries.
 The source must not set `coalesce` for a player turn, command, fence, approval, HITL request, or any
 event whose individual timing or acknowledgment is actionable. `fire`, `steer`, and unbound
-`continue` deliveries reject the option instead of silently weakening their semantics.
+`continue` deliveries reject the option instead of silently weakening their semantics. Deliveries
+with `expectedAction` also reject coalescing because one generation cannot prove several distinct
+action fences.

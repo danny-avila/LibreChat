@@ -49,6 +49,7 @@ const {
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
   configureAgentEventRuntime,
+  createAgentEventTerminalHandler,
   createScheduleWriteGate,
   waitForKeyvRedisClient,
 } = require('@librechat/api');
@@ -77,6 +78,7 @@ const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const agentEventMethods = require('~/models');
 
 /** Route admin file-config MIME patterns through a linear-time engine (ReDoS-safe) on upload. */
 configureFileConfigRegexEngine();
@@ -123,6 +125,9 @@ const configureGenerationStreams = () => {
     cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
   });
   GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);
+  GenerationJobManager.setTerminalHostActionHandler(
+    createAgentEventTerminalHandler(agentEventMethods),
+  );
   GenerationJobManager.initialize();
   // Stop active generations and close their SSE streams while the HTTP server drains.
   registerShutdownTask(
