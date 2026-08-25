@@ -245,20 +245,23 @@ describe('checkBan middleware', () => {
       expect(denyRequest).not.toHaveBeenCalled();
     });
 
-    it('returns JSON for a banned browser agent control request', async () => {
-      mockBanCacheGet.mockResolvedValueOnce({ expiresAt: Date.now() + 60000 });
-      const req = createReq({
-        method: 'POST',
-        baseUrl: '/api/agents',
-        originalUrl: '/api/agents/chat/abort',
-      });
-      const res = createRes();
+    it.each(['abort', 'Abort', 'STEER', 'sTeEr'])(
+      'returns JSON for a banned browser agent control request: %s',
+      async (route) => {
+        mockBanCacheGet.mockResolvedValueOnce({ expiresAt: Date.now() + 60000 });
+        const req = createReq({
+          method: 'POST',
+          baseUrl: '/api/agents',
+          originalUrl: `/api/agents/chat/${route}`,
+        });
+        const res = createRes();
 
-      await checkBan(req, res, jest.fn());
+        await checkBan(req, res, jest.fn());
 
-      expect(res.status).toHaveBeenCalledWith(403);
-      expect(denyRequest).not.toHaveBeenCalled();
-    });
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(denyRequest).not.toHaveBeenCalled();
+      },
+    );
 
     it('keeps non-browser agent chat denial as JSON', async () => {
       uap.mockReturnValueOnce({ browser: {} });

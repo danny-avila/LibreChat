@@ -35,7 +35,11 @@ const isInteractiveAgentChatRequest = (req) => {
   }
 
   const route = pathname.slice(`${AGENT_CHAT_PATH}/`.length);
-  return route.length > 0 && !route.includes('/') && !AGENT_CHAT_POST_CONTROL_ROUTES.has(route);
+  return (
+    route.length > 0 &&
+    !route.includes('/') &&
+    !AGENT_CHAT_POST_CONTROL_ROUTES.has(route.toLowerCase())
+  );
 };
 
 /**
