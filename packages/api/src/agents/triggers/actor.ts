@@ -48,8 +48,9 @@ export interface ExecuteAgentEventActorResult<T> {
 }
 
 export interface AgentEventActorDependencies {
-  getState: ConversationMethods['getAgentEventActorState'];
+  getSnapshot: ConversationMethods['getAgentEventActorSnapshot'];
   commitState: ConversationMethods['commitAgentEventActorState'];
+  recordReconciliation: ConversationMethods['recordAgentEventActorReconciliation'];
 }
 
 function toHead(actorThreadId: string, state: IAgentEventActorState | null): EventActorHead {
@@ -60,6 +61,18 @@ function toHead(actorThreadId: string, state: IAgentEventActorState | null): Eve
 
 function asError(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value));
+}
+
+function checkpointMatches(
+  state: IAgentEventActorState,
+  checkpoint: { threadId: string; checkpointId?: string; checkpointNs: string },
+): boolean {
+  return (
+    typeof checkpoint.checkpointId === 'string' &&
+    state.checkpoint.threadId === checkpoint.threadId &&
+    state.checkpoint.checkpointId === checkpoint.checkpointId &&
+    state.checkpoint.checkpointNs === checkpoint.checkpointNs
+  );
 }
 
 /**
@@ -78,14 +91,20 @@ export async function executeAgentEventActor<T>(
       if (context.signal.aborted) {
         throw context.signal.reason;
       }
-      const state = await deps.getState({
+      const snapshot = await deps.getSnapshot({
         user: input.user,
         conversationId: input.conversationId,
         ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
       });
-      if (state === undefined) {
+      if (snapshot === undefined) {
         throw new Error('Event actor binding is no longer active');
       }
+      if (snapshot.reconciliation != null) {
+        throw new Error(
+          `Event actor is blocked on ${snapshot.reconciliation.status} reconciliation`,
+        );
+      }
+      const state = snapshot.state;
       const head = toHead(input.conversationId, state);
       if (state == null) {
         return { status: 'checkpoint_unavailable', head };
@@ -249,7 +268,7 @@ export async function executeAgentEventActor<T>(
     maxDepth: 1,
     dormantCheckpointTtlMs: getApprovalTtlMs(input.checkpointer),
   });
-  const execution = await executor.execute({
+  let execution: EventActorExecutionResult<EventActorResult> = await executor.execute({
     actorThreadId: input.conversationId,
     invocationId: input.invocationId,
     event: input.event,
@@ -262,15 +281,78 @@ export async function executeAgentEventActor<T>(
   if (execution.status === 'cancelled') {
     throw asError(input.signal.reason ?? 'Event actor invocation cancelled');
   }
+  if (
+    execution.status === 'commit_indeterminate' &&
+    typeof execution.checkpoint.checkpointId === 'string'
+  ) {
+    let snapshot: Awaited<ReturnType<AgentEventActorDependencies['getSnapshot']>>;
+    try {
+      snapshot = await deps.getSnapshot({
+        user: input.user,
+        conversationId: input.conversationId,
+        ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+      });
+    } catch (error) {
+      logger.warn('[event-actor] Could not verify an indeterminate checkpoint commit', {
+        conversationId: input.conversationId,
+        invocationId: input.invocationId,
+        error: asError(error).message,
+      });
+    }
+    if (
+      snapshot?.reconciliation == null &&
+      snapshot?.state != null &&
+      checkpointMatches(snapshot.state, execution.checkpoint) &&
+      execution.result != null
+    ) {
+      execution = {
+        status: 'applied',
+        result: execution.result,
+        head: toHead(input.conversationId, snapshot.state),
+        continuation: execution.continuation,
+      };
+    }
+  }
   if (execution.status === 'commit_conflict' || execution.status === 'commit_indeterminate') {
-    logger.error('[event-actor] Applied action requires checkpoint reconciliation', {
+    const action = execution.result?.action ?? input.readAppliedAction();
+    if (action == null) {
+      throw new Error(`Event actor ${execution.status} did not retain applied-action evidence`);
+    }
+    const error =
+      execution.status === 'commit_indeterminate'
+        ? execution.error.message
+        : 'A competing checkpoint advanced the actor head';
+    const recorded = await deps.recordReconciliation({
+      user: input.user,
+      conversationId: input.conversationId,
+      ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+      reconciliation: {
+        invocationId: input.invocationId,
+        status: execution.status,
+        checkpoint: {
+          threadId: execution.checkpoint.threadId,
+          checkpointNs: execution.checkpoint.checkpointNs,
+          ...(execution.checkpoint.checkpointId == null
+            ? {}
+            : { checkpointId: execution.checkpoint.checkpointId }),
+        },
+        action,
+        error: error.slice(0, 1024),
+        observedAt: new Date(),
+      },
+    });
+    if (!recorded) {
+      throw new Error(`Failed to persist event actor ${execution.status} reconciliation`);
+    }
+    logger.error('[event-actor] Applied action blocked the actor pending reconciliation', {
       conversationId: input.conversationId,
       invocationId: input.invocationId,
       status: execution.status,
-      ...(execution.status === 'commit_indeterminate' ? { error: execution.error.message } : {}),
+      error,
     });
+    throw new Error(`Event actor action requires ${execution.status} reconciliation`);
   }
-  if (invocationError != null && execution.status !== 'applied') {
+  if (invocationError != null) {
     throw invocationError;
   }
   return { value: value as T, execution };

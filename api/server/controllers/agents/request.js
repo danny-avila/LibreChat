@@ -47,8 +47,9 @@ const {
   saveConvo,
   getMessages,
   getConvo,
-  getAgentEventActorState,
+  getAgentEventActorSnapshot,
   commitAgentEventActorState,
+  recordAgentEventActorReconciliation,
   isAgentTriggerPrincipalActive,
   isSubagentOwnerAdmissible,
 } = require('~/models');
@@ -1887,11 +1888,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         const checkpointForksEnabled =
           req.config?.endpoints?.[EModelEndpoint.agents]?.eventDriven?.checkpointForks === true;
         const agentsConfig = req.config?.endpoints?.[EModelEndpoint.agents];
+        const eventActorAgents = [
+          client?.options?.agent,
+          ...(client?.agentConfigs?.values?.() ?? []),
+        ].filter(Boolean);
         const eventActorMayPause =
           isHITLEnabled(agentsConfig?.toolApproval) ||
-          agentRequestsAskUserQuestion(client?.options?.agent ?? {});
+          eventActorAgents.some(agentRequestsAskUserQuestion);
         const canUseEventActorFork =
           checkpointForksEnabled &&
+          agentsConfig?.checkpointer?.type !== 'memory' &&
           !eventActorMayPause &&
           agentEventDelivery?.event != null &&
           agentEventDelivery.expectedAction != null &&
@@ -1922,8 +1928,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   ),
               },
               {
-                getState: getAgentEventActorState,
+                getSnapshot: getAgentEventActorSnapshot,
                 commitState: commitAgentEventActorState,
+                recordReconciliation: recordAgentEventActorReconciliation,
               },
             ).then(({ value, execution }) => {
               logger.info('[event-actor] Bound child event completed', {

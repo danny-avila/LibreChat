@@ -74,8 +74,9 @@ const mockIsScheduleLive = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn();
 const mockExecuteAgentEventActor = jest.fn();
 const mockFindAgentEventAppliedAction = jest.fn();
-const mockGetAgentEventActorState = jest.fn();
+const mockGetAgentEventActorSnapshot = jest.fn();
 const mockCommitAgentEventActorState = jest.fn();
+const mockRecordAgentEventActorReconciliation = jest.fn();
 const mockStartupTelemetry = {
   mark: jest.fn(),
   setStreamId: jest.fn(),
@@ -237,8 +238,10 @@ jest.mock('~/models', () => ({
   saveConvo: (...args) => mockSaveConvo(...args),
   getMessages: (...args) => mockGetMessages(...args),
   getConvo: (...args) => mockGetConvo(...args),
-  getAgentEventActorState: (...args) => mockGetAgentEventActorState(...args),
+  getAgentEventActorSnapshot: (...args) => mockGetAgentEventActorSnapshot(...args),
   commitAgentEventActorState: (...args) => mockCommitAgentEventActorState(...args),
+  recordAgentEventActorReconciliation: (...args) =>
+    mockRecordAgentEventActorReconciliation(...args),
   isAgentTriggerPrincipalActive: (...args) => mockIsAgentTriggerPrincipalActive(...args),
   isSubagentOwnerAdmissible: (...args) => mockIsSubagentOwnerAdmissible(...args),
 }));
@@ -354,8 +357,9 @@ describe('ResumableAgentController resume metadata', () => {
     mockSaveMessage.mockResolvedValue({});
     mockSaveConvo.mockResolvedValue({});
     mockDeleteAgentCheckpoint.mockResolvedValue(undefined);
-    mockGetAgentEventActorState.mockResolvedValue(null);
+    mockGetAgentEventActorSnapshot.mockResolvedValue({ state: null });
     mockCommitAgentEventActorState.mockResolvedValue({ status: 'stale' });
+    mockRecordAgentEventActorReconciliation.mockResolvedValue(true);
   });
 
   it.each([
@@ -4016,8 +4020,9 @@ describe('ResumableAgentController resume metadata', () => {
         event,
       }),
       {
-        getState: expect.any(Function),
+        getSnapshot: expect.any(Function),
         commitState: expect.any(Function),
+        recordReconciliation: expect.any(Function),
       },
     );
     expect(client).toMatchObject({
@@ -4033,15 +4038,29 @@ describe('ResumableAgentController resume metadata', () => {
       'tool approval',
       { toolDefinitions: [] },
       { toolApproval: { enabled: true }, eventDriven: { checkpointForks: true } },
+      undefined,
     ],
     [
-      'ask_user_question',
+      'primary ask_user_question',
       { toolDefinitions: [{ name: 'ask_user_question' }] },
       { eventDriven: { checkpointForks: true } },
+      undefined,
+    ],
+    [
+      'added-agent ask_user_question',
+      { toolDefinitions: [] },
+      { eventDriven: { checkpointForks: true } },
+      new Map([['added-agent', { toolDefinitions: [{ name: 'ask_user_question' }] }]]),
+    ],
+    [
+      'memory-checkpointer',
+      { toolDefinitions: [] },
+      { eventDriven: { checkpointForks: true }, checkpointer: { type: 'memory' } },
+      undefined,
     ],
   ])(
-    'keeps %s-capable event actors on the existing resumable path',
-    async (_label, agent, config) => {
+    'keeps %s event actors on the existing resumable path',
+    async (_label, agent, config, agentConfigs) => {
       mockGenerationJobManager.claimGeneration.mockResolvedValue(
         wonGenerationClaim({
           streamId: 'child-conversation',
@@ -4055,6 +4074,7 @@ describe('ResumableAgentController resume metadata', () => {
       });
       const client = {
         options: { agent },
+        agentConfigs,
         sendMessage: jest.fn(async () => {
           throw new Error('stop after legacy event invocation started');
         }),

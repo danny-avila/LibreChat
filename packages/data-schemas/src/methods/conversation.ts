@@ -3,6 +3,8 @@ import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
 import type {
   IAgentEventActorCheckpoint,
+  IAgentEventActorReconciliation,
+  IAgentEventActorSnapshot,
   IAgentEventActorState,
   IAgentEventBindingRecord,
   AppConfig,
@@ -221,11 +223,11 @@ export interface ConversationMethods {
     sourceKeyId: string;
     tenantId?: string;
   }): Promise<IAgentEventBindingRecord | null>;
-  getAgentEventActorState(input: {
+  getAgentEventActorSnapshot(input: {
     user: string;
     conversationId: string;
     tenantId?: string;
-  }): Promise<IAgentEventActorState | null | undefined>;
+  }): Promise<IAgentEventActorSnapshot | undefined>;
   commitAgentEventActorState(input: {
     user: string;
     conversationId: string;
@@ -233,6 +235,12 @@ export interface ConversationMethods {
     expected?: IAgentEventActorState;
     checkpoint: IAgentEventActorCheckpoint;
   }): Promise<AgentEventActorCommitResult>;
+  recordAgentEventActorReconciliation(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    reconciliation: IAgentEventActorReconciliation;
+  }): Promise<boolean>;
   reserveSubagentThread(input: {
     user: string;
     conversationId: string;
@@ -436,12 +444,12 @@ export function createConversationMethods(
     };
   }
 
-  /** Reads the committed actor head without exposing it through ordinary conversation queries. */
-  async function getAgentEventActorState(input: {
+  /** Reads the private actor head and any fail-closed reconciliation marker. */
+  async function getAgentEventActorSnapshot(input: {
     user: string;
     conversationId: string;
     tenantId?: string;
-  }): Promise<IAgentEventActorState | null | undefined> {
+  }): Promise<IAgentEventActorSnapshot | undefined> {
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
     const conversation = await Conversation.findOne({
       user: input.user,
@@ -451,9 +459,16 @@ export function createConversationMethods(
       ...subagentLeaseTenantFilter(input.tenantId),
       ...activeExpirationFilter<IConversation>(),
     })
-      .select('+agentEventActor')
+      .select('+agentEventActor +agentEventActorReconciliation')
       .lean<IConversation>();
-    return conversation == null ? undefined : (conversation.agentEventActor ?? null);
+    return conversation == null
+      ? undefined
+      : {
+          state: conversation.agentEventActor ?? null,
+          ...(conversation.agentEventActorReconciliation == null
+            ? {}
+            : { reconciliation: conversation.agentEventActorReconciliation }),
+        };
   }
 
   /** Advances one actor head only when its complete prior identity still matches. */
@@ -488,6 +503,7 @@ export function createConversationMethods(
         conversationId: input.conversationId,
         subagentThread: { $exists: true },
         agentEventBinding: { $exists: true },
+        agentEventActorReconciliation: { $exists: false },
         ...subagentLeaseTenantFilter(input.tenantId),
         ...activeExpirationFilter<IConversation>(),
         ...expectedFilter,
@@ -515,11 +531,46 @@ export function createConversationMethods(
           : { prunableCheckpoint: previous.agentEventActor.previousCheckpoint }),
       };
     }
-    const current = await getAgentEventActorState(input);
+    const current = await getAgentEventActorSnapshot(input);
     return {
       status: 'stale',
-      ...(current == null ? {} : { state: current }),
+      ...(current?.state == null ? {} : { state: current.state }),
     };
+  }
+
+  /** Persists the first unresolved applied checkpoint conflict and blocks later commits. */
+  async function recordAgentEventActorReconciliation(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    reconciliation: IAgentEventActorReconciliation;
+  }): Promise<boolean> {
+    if (input.reconciliation.checkpoint.threadId !== input.conversationId) {
+      throw new Error('Event actor reconciliation changed its logical thread');
+    }
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const ownership = {
+      user: input.user,
+      conversationId: input.conversationId,
+      subagentThread: { $exists: true },
+      agentEventBinding: { $exists: true },
+      ...subagentLeaseTenantFilter(input.tenantId),
+      ...activeExpirationFilter<IConversation>(),
+    };
+    const recorded = await Conversation.findOneAndUpdate(
+      { ...ownership, agentEventActorReconciliation: { $exists: false } },
+      { $set: { agentEventActorReconciliation: input.reconciliation } },
+      { new: true, timestamps: false },
+    )
+      .select('+agentEventActorReconciliation')
+      .lean<IConversation>();
+    if (recorded?.agentEventActorReconciliation != null) {
+      return true;
+    }
+    const existing = await Conversation.findOne(ownership)
+      .select('+agentEventActorReconciliation')
+      .lean<IConversation>();
+    return existing?.agentEventActorReconciliation != null;
   }
 
   /** Creates immutable child lineage exactly once without overwriting a concurrent winner. */
@@ -1894,8 +1945,9 @@ export function createConversationMethods(
     getSubagentThreadForParent,
     listSubagentThreadsForParent,
     getAgentEventBinding,
-    getAgentEventActorState,
+    getAgentEventActorSnapshot,
     commitAgentEventActorState,
+    recordAgentEventActorReconciliation,
     reserveSubagentThread,
     acquireSubagentThreadLease,
     renewSubagentThreadLease,

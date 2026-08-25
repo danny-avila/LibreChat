@@ -71,6 +71,7 @@ export const excludedKeys = new Set([
   'conversationId',
   'agentEventBinding',
   'agentEventActor',
+  'agentEventActorReconciliation',
   'subagentThread',
   'title',
   'iconURL',
@@ -1070,6 +1071,15 @@ export const agentsEndpointSchema = baseEndpointSchema
       checkpointer: checkpointerSchema,
     }),
   )
+  .superRefine((config, ctx) => {
+    if (config.eventDriven?.checkpointForks === true && config.checkpointer?.type === 'memory') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['eventDriven', 'checkpointForks'],
+        message: 'Event actor checkpoint forks require the Mongo checkpointer',
+      });
+    }
+  })
   .default({
     disableBuilder: false,
     capabilities: defaultAgentCapabilities,

@@ -43,7 +43,7 @@ describe('event actor host adapter', () => {
   });
 
   const deps = () => ({
-    getState: jest.fn(async () => state),
+    getSnapshot: jest.fn(async () => ({ state })),
     commitState: jest.fn(async ({ expected, checkpoint }) => {
       if (
         (state == null && expected != null) ||
@@ -62,6 +62,7 @@ describe('event actor host adapter', () => {
       };
       return { status: 'committed' as const, state };
     }),
+    recordReconciliation: jest.fn(async () => true),
   });
 
   it('cold-starts once, then forks and warm-continues only the next event', async () => {
@@ -144,22 +145,23 @@ describe('event actor host adapter', () => {
 
   it('preserves action evidence when the provider fails after the tool completed', async () => {
     const dependencies = deps();
-    const result = await executeAgentEventActor(
-      {
-        user: 'user-1',
-        conversationId,
-        invocationId: 'event-action-then-error',
-        event: { id: 'event-action-then-error' },
-        signal: new AbortController().signal,
-        invoke: async () => {
-          throw new Error('provider stream failed after tool');
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId: 'event-action-then-error',
+          event: { id: 'event-action-then-error' },
+          signal: new AbortController().signal,
+          invoke: async () => {
+            throw new Error('provider stream failed after tool');
+          },
+          readAppliedAction: () => ({ toolName: 'submit_move' }),
         },
-        readAppliedAction: () => ({ toolName: 'submit_move' }),
-      },
-      dependencies,
-    );
+        dependencies,
+      ),
+    ).rejects.toThrow('provider stream failed after tool');
 
-    expect(result.execution.status).toBe('applied');
     expect(dependencies.commitState).toHaveBeenCalledTimes(1);
     expect(mockedDelete).not.toHaveBeenCalled();
   });
@@ -167,12 +169,52 @@ describe('event actor host adapter', () => {
   it('retains an applied fork when its terminal checkpoint cannot be observed', async () => {
     mockedCapture.mockResolvedValueOnce(null);
     const dependencies = deps();
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId: 'event-checkpoint-indeterminate',
+          event: { id: 'event-checkpoint-indeterminate' },
+          signal: new AbortController().signal,
+          invoke: async () => 'response',
+          readAppliedAction: () => ({ toolName: 'submit_move' }),
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('requires commit_indeterminate reconciliation');
+
+    expect(dependencies.commitState).not.toHaveBeenCalled();
+    expect(dependencies.recordReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reconciliation: expect.objectContaining({ status: 'commit_indeterminate' }),
+      }),
+    );
+    expect(mockedDelete).not.toHaveBeenCalled();
+  });
+
+  it('recovers an indeterminate cleanup after the actor head was committed', async () => {
+    state = {
+      generation: 2,
+      checkpoint: {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-base',
+        checkpointNs: 'event-actor/base',
+      },
+      previousCheckpoint: {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-old',
+        checkpointNs: 'event-actor/old',
+      },
+    };
+    mockedDelete.mockRejectedValueOnce(new Error('checkpoint cleanup unavailable'));
+    const dependencies = deps();
     const result = await executeAgentEventActor(
       {
         user: 'user-1',
         conversationId,
-        invocationId: 'event-checkpoint-indeterminate',
-        event: { id: 'event-checkpoint-indeterminate' },
+        invocationId: 'event-commit-then-cleanup-error',
+        event: { id: 'event-commit-then-cleanup-error' },
         signal: new AbortController().signal,
         invoke: async () => 'response',
         readAppliedAction: () => ({ toolName: 'submit_move' }),
@@ -180,15 +222,139 @@ describe('event actor host adapter', () => {
       dependencies,
     );
 
-    expect(result.execution.status).toBe('commit_indeterminate');
-    expect(dependencies.commitState).not.toHaveBeenCalled();
+    expect(result.execution.status).toBe('applied');
+    expect(dependencies.recordReconciliation).not.toHaveBeenCalled();
+    expect(state.generation).toBe(3);
+  });
+
+  it('persists and surfaces a checkpoint conflict after the action was applied', async () => {
+    state = {
+      generation: 1,
+      checkpoint: {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-base',
+        checkpointNs: 'event-actor/base',
+      },
+    };
+    const dependencies = deps();
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId: 'event-conflict',
+          event: { id: 'event-conflict' },
+          signal: new AbortController().signal,
+          invoke: async () => {
+            state = {
+              generation: 2,
+              checkpoint: {
+                threadId: conversationId,
+                checkpointId: 'checkpoint-competing',
+                checkpointNs: 'event-actor/competing',
+              },
+            };
+            return 'response';
+          },
+          readAppliedAction: () => ({ toolName: 'submit_move', toolCallId: 'call-conflict' }),
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('requires commit_conflict reconciliation');
+
+    expect(dependencies.recordReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reconciliation: expect.objectContaining({
+          invocationId: 'event-conflict',
+          status: 'commit_conflict',
+          action: { toolName: 'submit_move', toolCallId: 'call-conflict' },
+        }),
+      }),
+    );
     expect(mockedDelete).not.toHaveBeenCalled();
+  });
+
+  it('still records reconciliation when an indeterminate commit cannot be read back', async () => {
+    const baseState: IAgentEventActorState = {
+      generation: 1,
+      checkpoint: {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-base',
+        checkpointNs: 'event-actor/base',
+      },
+    };
+    const dependencies = {
+      getSnapshot: jest
+        .fn()
+        .mockResolvedValueOnce({ state: baseState })
+        .mockRejectedValueOnce(new Error('readback unavailable')),
+      commitState: jest.fn(async () => {
+        throw new Error('commit result unavailable');
+      }),
+      recordReconciliation: jest.fn(async () => true),
+    };
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId: 'event-ambiguous-commit',
+          event: { id: 'event-ambiguous-commit' },
+          signal: new AbortController().signal,
+          invoke: async () => 'response',
+          readAppliedAction: () => ({ toolName: 'submit_move' }),
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('requires commit_indeterminate reconciliation');
+
+    expect(dependencies.recordReconciliation).toHaveBeenCalledTimes(1);
+    expect(mockedDelete).not.toHaveBeenCalled();
+  });
+
+  it('blocks new invocations while a prior applied fork needs reconciliation', async () => {
+    const dependencies = {
+      getSnapshot: jest.fn(async () => ({
+        state: null,
+        reconciliation: {
+          invocationId: 'event-conflict',
+          status: 'commit_conflict' as const,
+          checkpoint: {
+            threadId: conversationId,
+            checkpointNs: 'event-actor/conflict',
+          },
+          action: { toolName: 'submit_move' },
+          observedAt: new Date(),
+        },
+      })),
+      commitState: jest.fn(),
+      recordReconciliation: jest.fn(),
+    };
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId: 'event-after-conflict',
+          event: { id: 'event-after-conflict' },
+          signal: new AbortController().signal,
+          invoke: async () => 'response',
+          readAppliedAction: () => ({ toolName: 'submit_move' }),
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('blocked on commit_conflict reconciliation');
+    expect(mockedGetCheckpointer).not.toHaveBeenCalled();
   });
 
   it('refuses a cold start after its bound child disappeared', async () => {
     const dependencies = {
-      getState: jest.fn(async () => undefined),
+      getSnapshot: jest.fn(async () => undefined),
       commitState: jest.fn(),
+      recordReconciliation: jest.fn(),
     };
 
     await expect(

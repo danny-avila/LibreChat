@@ -27,6 +27,20 @@ export interface IAgentEventActorState {
   previousCheckpoint?: IAgentEventActorCheckpoint;
 }
 
+export interface IAgentEventActorReconciliation {
+  invocationId: string;
+  status: 'commit_conflict' | 'commit_indeterminate';
+  checkpoint: Omit<IAgentEventActorCheckpoint, 'checkpointId'> & { checkpointId?: string };
+  action: { toolName: string; toolCallId?: string };
+  error?: string;
+  observedAt: Date;
+}
+
+export interface IAgentEventActorSnapshot {
+  state: IAgentEventActorState | null;
+  reconciliation?: IAgentEventActorReconciliation;
+}
+
 export interface IAgentEventBindingRecord {
   conversationId: string;
   agentId: string;
@@ -90,6 +104,8 @@ export interface IConversation extends Document {
   agentEventBinding?: IAgentEventBinding;
   /** Internal event-actor checkpoint head. Excluded from ordinary conversation reads. */
   agentEventActor?: IAgentEventActorState;
+  /** Applied action whose checkpoint authority requires reconciliation. */
+  agentEventActorReconciliation?: IAgentEventActorReconciliation;
   assistant_id?: string;
   instructions?: string;
   stop?: string[];

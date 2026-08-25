@@ -4008,14 +4008,14 @@ describe('Conversation Operations', () => {
         prunableCheckpoint: checkpoint('one'),
       });
       await expect(
-        methods.getAgentEventActorState({
+        methods.getAgentEventActorSnapshot({
           user: 'actor-head-user',
           tenantId: 'tenant-a',
           conversationId,
         }),
-      ).resolves.toEqual(third.state);
+      ).resolves.toEqual({ state: third.state });
       await expect(
-        methods.getAgentEventActorState({
+        methods.getAgentEventActorSnapshot({
           user: 'actor-head-user',
           tenantId: 'tenant-a',
           conversationId: 'missing-actor-thread',
@@ -4024,6 +4024,87 @@ describe('Conversation Operations', () => {
       expect(await methods.getConvo('actor-head-user', conversationId)).not.toHaveProperty(
         'agentEventActor',
       );
+    });
+
+    it('persists the first actor reconciliation marker and blocks later head commits', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'actor-reconcile-user',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: {
+          bindingId: `evtbind_${'d'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      const checkpoint = {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-one',
+        checkpointNs: 'event-actor/one',
+      };
+      const first = await methods.commitAgentEventActorState({
+        user: 'actor-reconcile-user',
+        conversationId,
+        checkpoint,
+      });
+      expect(first.status).toBe('committed');
+      const observedAt = new Date('2026-08-25T00:00:00.000Z');
+      const reconciliation = {
+        invocationId: 'event-conflict',
+        status: 'commit_conflict' as const,
+        checkpoint: {
+          threadId: conversationId,
+          checkpointId: 'checkpoint-conflict',
+          checkpointNs: 'event-actor/conflict',
+        },
+        action: { toolName: 'submit_move', toolCallId: 'call-1' },
+        error: 'A competing checkpoint advanced the actor head',
+        observedAt,
+      };
+
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          user: 'actor-reconcile-user',
+          conversationId,
+          reconciliation,
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          user: 'actor-reconcile-user',
+          conversationId,
+          reconciliation: { ...reconciliation, invocationId: 'event-later' },
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.getAgentEventActorSnapshot({
+          user: 'actor-reconcile-user',
+          conversationId,
+        }),
+      ).resolves.toEqual({ state: first.state, reconciliation });
+      await expect(
+        methods.commitAgentEventActorState({
+          user: 'actor-reconcile-user',
+          conversationId,
+          expected: first.state,
+          checkpoint: { ...checkpoint, checkpointId: 'checkpoint-two' },
+        }),
+      ).resolves.toEqual({ status: 'stale', state: first.state });
+      const visible = await methods.getConvo('actor-reconcile-user', conversationId);
+      expect(visible).not.toHaveProperty('agentEventActor');
+      expect(visible).not.toHaveProperty('agentEventActorReconciliation');
     });
 
     it('admits one cross-replica owner and fences renewal and release by token', async () => {
