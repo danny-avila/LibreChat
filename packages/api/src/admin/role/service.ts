@@ -24,6 +24,15 @@ export interface RoleAdminService {
   upsertRoleConfig: (name: string, config: Pick<Config, 'priority' | 'overrides'>) => Promise<void>;
 }
 
+/** Applies the existing Admin API validation rules without performing a write. */
+export function validateRoleMetadata(name: string, description?: string): void {
+  const nameError = validateRoleName(name, true);
+  if (nameError) {
+    throw new TypeError(nameError);
+  }
+  validateRoleDescription(description);
+}
+
 function normalizeRoleName(name: string): string {
   const error = validateRoleName(name, true);
   if (error) {
@@ -47,8 +56,8 @@ function validatePermissions(permissions: CreateRoleRequest['permissions']): voi
 
 export function createRoleAdminService(deps: RoleServiceDeps): RoleAdminService {
   async function createRole(role: CreateRoleRequest): Promise<IRole> {
-    const name = normalizeRoleName(role.name);
-    validateRoleDescription(role.description);
+    validateRoleMetadata(role.name, role.description);
+    const name = role.name.trim();
     validatePermissions(role.permissions);
     return await deps.createRoleByName({ ...role, name });
   }

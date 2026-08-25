@@ -1,5 +1,5 @@
 import type { IRole } from '@librechat/data-schemas';
-import { createRoleAdminService } from './service';
+import { createRoleAdminService, validateRoleMetadata } from './service';
 
 const role = { name: 'BETA', permissions: {} } as IRole;
 
@@ -16,6 +16,13 @@ function createDeps() {
 }
 
 describe('role admin service', () => {
+  it('reuses Admin API metadata validation for deployment preflight', () => {
+    expect(() => validateRoleMetadata('members')).toThrow('reserved path segment');
+    expect(() => validateRoleMetadata('BETA', 'x'.repeat(2001))).toThrow(
+      'description must not exceed 2000 characters',
+    );
+  });
+
   it('creates a normalized role', async () => {
     const deps = createDeps();
     const service = createRoleAdminService(deps);

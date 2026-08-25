@@ -1,10 +1,18 @@
 const {
   deployRole,
   getDeploymentScope,
-  loadRoleDefinitions,
+  loadRoleDefinitions: parseRoleDefinitions,
   mergePermissions,
-  validateRoleDefinitions,
+  validateRoleDefinitions: parseAndValidateRoleDefinitions,
 } = require('../deploy-role');
+
+const validateMetadata = jest.fn();
+const loadRoleDefinitions = (args) => parseRoleDefinitions(args, validateMetadata);
+const validateRoleDefinitions = (input) => parseAndValidateRoleDefinitions(input, validateMetadata);
+
+beforeEach(() => {
+  validateMetadata.mockReset();
+});
 
 describe('deploy role script', () => {
   it('does not deploy config after an existing-role replacement fails', async () => {
@@ -245,6 +253,28 @@ describe('deploy role script', () => {
     expect(() => validateRoleDefinitions([definition, definition])).toThrow(
       'defined more than once',
     );
+  });
+
+  it('validates every role description before deployment starts', () => {
+    const definition = {
+      inheritPermissionsFrom: 'USER',
+      permissionOverrides: {},
+      config: { priority: 10, overrides: {} },
+    };
+
+    validateMetadata.mockImplementation((name, description) => {
+      if (description?.length > 2000) {
+        throw new TypeError('description must not exceed 2000 characters');
+      }
+    });
+
+    expect(() =>
+      validateRoleDefinitions([
+        { ...definition, name: 'ALPHA', description: 'valid' },
+        { ...definition, name: 'BETA', description: 'x'.repeat(2001) },
+      ]),
+    ).toThrow('description must not exceed 2000 characters');
+    expect(validateMetadata).toHaveBeenCalledTimes(2);
   });
 
   it('does not add config defaults inside arrays', () => {

@@ -116,9 +116,12 @@ function rejectUnknownFields(parsed, input, fieldPath = 'definitions') {
   }
 }
 
-function validateRoleDefinitions(input) {
+function validateRoleDefinitions(input, validateMetadata) {
   const parsed = roleDefinitionsSchema.parse(input);
   rejectUnknownFields(parsed, input);
+  for (const definition of parsed) {
+    validateMetadata(definition.name, definition.description);
+  }
   const definitions = parsed.map((definition, index) => ({
     ...definition,
     config: {
@@ -157,7 +160,7 @@ function getFlagValue(args, name) {
   return index === -1 ? undefined : args[index + 1];
 }
 
-function loadRoleDefinitions(args) {
+function loadRoleDefinitions(args, validateMetadata) {
   const inline = getFlagValue(args, '--roles') ?? process.env.ROLE_DEFINITIONS_JSON;
   const file =
     getFlagValue(args, '--file') ??
@@ -171,7 +174,7 @@ function loadRoleDefinitions(args) {
   }
 
   const source = inline ?? fs.readFileSync(path.resolve(process.cwd(), file), 'utf8');
-  const definitions = validateRoleDefinitions(JSON.parse(source));
+  const definitions = validateRoleDefinitions(JSON.parse(source), validateMetadata);
   console.log(
     `Loaded role definitions from ${inline ? 'the inline parameter' : path.resolve(process.cwd(), file)}`,
   );
@@ -232,7 +235,11 @@ async function main() {
   require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
   const mongoose = require('mongoose');
   const { createModels, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
-  const { createBaseRoleAdminService, createRoleAdminService } = require('@librechat/api');
+  const {
+    createBaseRoleAdminService,
+    createRoleAdminService,
+    validateRoleMetadata,
+  } = require('@librechat/api');
   const { invalidateConfigCaches } = require('~/server/services/Config');
   const getLogStores = require('~/cache/getLogStores');
   const db = require('~/models');
@@ -244,7 +251,7 @@ async function main() {
   let exitCode = 0;
   try {
     const args = process.argv.slice(2);
-    const definitions = loadRoleDefinitions(args);
+    const definitions = loadRoleDefinitions(args, validateRoleMetadata);
     const scope = getDeploymentScope(args);
     await connect();
     const invalidateCaches = () => invalidateConfigCaches(scope.tenantId);
