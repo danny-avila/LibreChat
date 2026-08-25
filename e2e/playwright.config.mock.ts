@@ -40,6 +40,9 @@ if (modelFixtureRecording && !process.env.E2E_MODEL_FIXTURE_NAME) {
   throw new Error('E2E_MODEL_FIXTURES=record requires E2E_MODEL_FIXTURE_NAME');
 }
 /**
+ * Playwright documents `-c` as an alias for `--config`, so both spellings are
+ * parsed — recognising only the long form would let the short one slip past.
+ *
  * Derived configs (`playwright.config.redis.ts`, `.mermaid.ts`) spread this
  * config and then replace `testMatch`, discarding the record-mode restriction
  * below — their specs would reach the paid provider and rewrite the selected
@@ -50,12 +53,13 @@ if (modelFixtureRecording) {
   /** Only the process that parsed the CLI carries `--config`; Playwright
    *  workers do not, and must not be judged on an argument they never saw. */
   const configFlagIndex = process.argv.findIndex(
-    (arg) => arg === '--config' || arg.startsWith('--config='),
+    (arg) =>
+      arg === '--config' || arg === '-c' || arg.startsWith('--config=') || arg.startsWith('-c='),
   );
   const configFlag = configFlagIndex === -1 ? undefined : process.argv[configFlagIndex];
   let configPath: string | undefined;
-  if (configFlag?.startsWith('--config=')) {
-    configPath = configFlag.slice('--config='.length);
+  if (configFlag?.includes('=')) {
+    configPath = configFlag.slice(configFlag.indexOf('=') + 1);
   } else if (configFlag) {
     configPath = process.argv[configFlagIndex + 1];
   }

@@ -38,9 +38,21 @@ const RECORDING = process.env.E2E_MODEL_FIXTURES === 'record';
  * elsewhere — and because these prompts are fixed, the stale answers could
  * still match and pass a recording run that produced nothing verified.
  */
-const FIXTURE = RECORDING
-  ? (process.env.E2E_MODEL_FIXTURE_NAME ?? COMMITTED_FIXTURE)
-  : COMMITTED_FIXTURE;
+/**
+ * This spec drives one fixed prompt pair, so recording under a different name
+ * would leave two fixtures sharing those prompts: the server-side ambiguity
+ * check then refuses to bind either and the keyless lane stops working. A
+ * successful recording run must therefore replace the committed fixture
+ * rather than sit beside it.
+ */
+if (RECORDING && process.env.E2E_MODEL_FIXTURE_NAME !== COMMITTED_FIXTURE) {
+  throw new Error(
+    `This spec records only ${COMMITTED_FIXTURE}; E2E_MODEL_FIXTURE_NAME=` +
+      `${process.env.E2E_MODEL_FIXTURE_NAME} would leave two fixtures sharing its prompts ` +
+      'and make replay ambiguous',
+  );
+}
+const FIXTURE = COMMITTED_FIXTURE;
 const RECORD_ENDPOINT = {
   label: 'Replay Record Provider',
   model: process.env.E2E_RECORD_PROVIDER_MODEL || 'deepseek-chat',
