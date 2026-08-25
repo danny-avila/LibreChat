@@ -312,12 +312,16 @@ export function ThemeProvider({
   const initialAppearance =
     initialTheme && isAppearanceMode(initialTheme) ? initialTheme : getInitialTheme();
   const [theme, setThemeState] = useState<AppearanceMode>(initialAppearance);
-  const [resolvedMode, setResolvedMode] = useState<ThemeMode>(() =>
-    isDark(initialAppearance) ? 'dark' : 'light',
+  /**
+   * Seeded from the mode string alone, never from a media query, so a server
+   * render and the first client render agree. `system` therefore starts at the
+   * light palette with no contrast override on both sides, and `applyThemeMode`
+   * publishes the OS-resolved values in its effect, after hydration.
+   */
+  const [resolvedMode, setResolvedMode] = useState<ThemeMode>(
+    initialAppearance !== 'system' && isDark(initialAppearance) ? 'dark' : 'light',
   );
-  const [highContrast, setHighContrast] = useState<boolean>(() =>
-    resolvesToHighContrast(initialAppearance),
-  );
+  const [highContrast, setHighContrast] = useState<boolean>(isHighContrast(initialAppearance));
   const [themeDefinition, setThemeDefinitionState] = useState<ThemeDefinition | undefined>(
     initialThemeState.current.definition,
   );

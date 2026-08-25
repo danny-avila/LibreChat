@@ -977,4 +977,33 @@ describe('ThemeProvider', () => {
       window.matchMedia = restore;
     }
   });
+
+  /** A media query read during render would make the server's markup and the
+   *  first client render disagree, so the seed comes from the mode string only
+   *  and the OS-resolved values arrive from the effect. */
+  it('seeds the published values from the mode alone, not from a media query', () => {
+    const matchMediaSpy = jest.fn(() => matchMedia(true));
+    window.matchMedia = matchMediaSpy;
+
+    /** An explicit mode needs no query to resolve, so it is published at once. */
+    const explicit = render(
+      <ThemeProvider initialTheme="high-contrast-dark">
+        <Controls />
+      </ThemeProvider>,
+    );
+    expect(screen.getByTestId('resolved-mode')).toHaveTextContent('dark');
+    expect(screen.getByTestId('high-contrast')).toHaveTextContent('true');
+    explicit.unmount();
+
+    /** `system` cannot resolve without a query, so it seeds light with no
+     *  contrast and the effect corrects it, which is what keeps hydration
+     *  deterministic even though this environment reports dark and more. */
+    render(
+      <ThemeProvider initialTheme="system">
+        <Controls />
+      </ThemeProvider>,
+    );
+    expect(screen.getByTestId('resolved-mode')).toHaveTextContent('dark');
+    expect(matchMediaSpy).toHaveBeenCalled();
+  });
 });
