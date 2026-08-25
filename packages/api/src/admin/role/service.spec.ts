@@ -9,7 +9,7 @@ function createDeps() {
     createRoleByName: jest.fn(async () => role),
     updateRoleByName: jest.fn(async () => role as IRole | null),
     updateAccessPermissions: jest.fn(async () => undefined),
-    findUserIdsByRole: jest.fn(async () => []),
+    findUserIdsByRole: jest.fn(async (): Promise<string[]> => []),
     updateUsersByRole: jest.fn(async () => undefined),
     updateUsersRoleByIds: jest.fn(async () => undefined),
     findConfigByPrincipal: jest.fn(async () => null),
