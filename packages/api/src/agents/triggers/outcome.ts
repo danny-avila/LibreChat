@@ -102,14 +102,14 @@ export function createAgentEventTerminalHandler(methods: {
         ? undefined
         : evidence.find((item) => matchesExpectedAction(item, job.agentEventExpectedAction!));
     const settledAt = new Date(job.completedAt ?? Date.now());
-    const status =
-      action != null
-        ? 'applied'
-        : job.status === 'error'
-          ? 'failed'
-          : job.status === 'aborted'
-            ? 'cancelled'
-            : 'completed_no_action';
+    let status: SettleAgentTriggerHandlingOutcomeInput['status'] = 'completed_no_action';
+    if (action != null) {
+      status = 'applied';
+    } else if (job.status === 'error') {
+      status = 'failed';
+    } else if (job.status === 'aborted') {
+      status = 'cancelled';
+    }
     const settled = await methods.settleAgentTriggerHandlingOutcome({
       deliveryKey: job.agentEventDeliveryKey,
       conversationId: job.conversationId ?? streamId,
