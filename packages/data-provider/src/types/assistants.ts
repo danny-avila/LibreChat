@@ -687,6 +687,10 @@ export type SteerContentPart = {
   /** Attachments steered with the message; re-encoded per turn on replay
    *  like any other user-message media (refs only, never encoded data). */
   files?: Partial<TFile>[];
+  /** Quoted excerpts steered with the message, persisted separately from the
+   *  typed text (mirroring `TMessage.quotes`) so the UI renders them as
+   *  reference blocks; merged into the model-bound user turn on every replay. */
+  quotes?: string[];
 };
 
 export type TMessageContentParts =

@@ -1585,6 +1585,12 @@ export class InMemoryJobStore implements IJobStoreV2 {
         ...(job.preemptCapable === true && { preempt: true }),
       }),
     };
+    if (
+      persisted.quotes != null &&
+      (job.steerQuotesExecutionId == null || job.steerQuotesExecutionId !== job.providerExecutionId)
+    ) {
+      delete persisted.quotes;
+    }
     queue.push(persisted);
     return { item: { ...persisted }, position: queue.length };
   }
@@ -1703,6 +1709,12 @@ export class InMemoryJobStore implements IJobStoreV2 {
         ...(job.preemptCapable === true && { preempt: true }),
       }),
     };
+    if (
+      persisted.quotes != null &&
+      (job.steerQuotesExecutionId == null || job.steerQuotesExecutionId !== job.providerExecutionId)
+    ) {
+      delete persisted.quotes;
+    }
     queue.push(persisted);
     const receipt: SteerReceipt = {
       ...receiptInput,

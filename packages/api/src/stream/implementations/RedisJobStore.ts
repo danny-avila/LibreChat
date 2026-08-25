@@ -203,6 +203,7 @@ const JOB_CAS_LUA =
   'local clientItem = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
   'if item.clientSteerId then clientItem.clientSteerId = item.clientSteerId end ' +
   'if item.files then clientItem.files = item.files end ' +
+  'if item.quotes then clientItem.quotes = item.quotes end ' +
   'if item.preempt then clientItem.preempt = item.preempt end ' +
   'if item.preemptRevision then clientItem.preemptRevision = item.preemptRevision end ' +
   'projected[#projected + 1] = clientItem ' +
@@ -460,10 +461,20 @@ const JOB_CREATE_LUA =
   'local expectedSeen = {} for i = 1, #decoded.fileIds do local fileId = decoded.fileIds[i] ' +
   'if type(fileId) ~= "string" or fileId == "" or expectedSeen[fileId] then ' +
   'return { "", "", "0", "recovery_payload_mismatch" } end expectedSeen[fileId] = true end ' +
+  'if decoded.quotes ~= nil then if not isDenseArray(decoded.quotes) then ' +
+  'return { "", "", "0", "recovery_payload_mismatch" } end ' +
+  'for i = 1, #decoded.quotes do if type(decoded.quotes[i]) ~= "string" or decoded.quotes[i] == "" then ' +
+  'return { "", "", "0", "recovery_payload_mismatch" } end end end ' +
   'expectedRecovery = decoded elseif ARGV[9] ~= "" then ' +
   'return { "", "", "0", "recovery_payload_mismatch" } end ' +
   'local function recoveryMatches(item, expected) ' +
   'if not expected or type(item.text) ~= "string" or item.text ~= expected.text then return false end ' +
+  // Quotes are model-bound like the text: order-significant identity, with a
+  // missing array on either side reading as empty (pre-quotes compatibility).
+  'local expectedQuotes = expected.quotes or {} local itemQuotes = item.quotes ' +
+  'if itemQuotes ~= nil and not isDenseArray(itemQuotes) then return false end ' +
+  'itemQuotes = itemQuotes or {} if #itemQuotes ~= #expectedQuotes then return false end ' +
+  'for i = 1, #itemQuotes do if itemQuotes[i] ~= expectedQuotes[i] then return false end end ' +
   'local actualSeen = {} local actualCount = 0 local files = item.files ' +
   'if files then if not isDenseArray(files) then return false end ' +
   'for i = 1, #files do local file = files[i] ' +
@@ -505,7 +516,8 @@ const JOB_CREATE_LUA =
   'if ok and item.steerId and not seen[item.steerId] then seen[item.steerId] = true ' +
   'local projected = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
   'if item.clientSteerId then projected.clientSteerId = item.clientSteerId end ' +
-  'if item.files then projected.files = item.files end if item.preempt then projected.preempt = item.preempt end ' +
+  'if item.files then projected.files = item.files end if item.quotes then projected.quotes = item.quotes end ' +
+  'if item.preempt then projected.preempt = item.preempt end ' +
   'if item.preemptRevision then projected.preemptRevision = item.preemptRevision end ' +
   'merged[#merged + 1] = projected receiptUpdates[#receiptUpdates + 1] = item end end end end ' +
   'local recoveryOwnerMatches = parkedUserId == ARGV[6] and ' +
@@ -682,7 +694,8 @@ const STALE_JOB_DELETE_LUA =
   'if item.steerId and not seen[item.steerId] then seen[item.steerId] = true fullItems[#fullItems + 1] = item ' +
   'local clientItem = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
   'if item.clientSteerId then clientItem.clientSteerId = item.clientSteerId end ' +
-  'if item.files then clientItem.files = item.files end if item.preempt then clientItem.preempt = item.preempt end ' +
+  'if item.files then clientItem.files = item.files end if item.quotes then clientItem.quotes = item.quotes end ' +
+  'if item.preempt then clientItem.preempt = item.preempt end ' +
   'if item.preemptRevision then clientItem.preemptRevision = item.preemptRevision end ' +
   'projected[#projected + 1] = clientItem end ' +
   'if generationProtocol == 2 and item.clientSteerId then local raw = redis.call("HGET", KEYS[8], item.clientSteerId) ' +
@@ -932,6 +945,7 @@ const STEER_ENQUEUE_VERSIONED_LUA =
   'if redis.call("HGET", KEYS[1], "steersClosed") == "1" then return -1 end ' +
   'if redis.call("LLEN", KEYS[2]) >= tonumber(ARGV[3]) then return -2 end ' +
   'local item = cjson.decode(ARGV[1]) ' +
+  'if item.quotes then local qexec = redis.call("HGET", KEYS[1], "steerQuotesExecutionId") if not qexec or qexec == "" or qexec ~= redis.call("HGET", KEYS[1], "providerExecutionId") then item.quotes = nil end end ' +
   'if ARGV[5] == "1" then item.preemptRevision = 1 ' +
   'if redis.call("HGET", KEYS[1], "preemptCapable") == "1" then item.preempt = true end end ' +
   'local itemJson = cjson.encode(item) ' +
@@ -969,7 +983,10 @@ const STEER_ENQUEUE_RECEIPT_LUA =
   'if redis.call("HGET", KEYS[1], "status") ~= "running" then return -1 end ' +
   'if redis.call("HGET", KEYS[1], "steersClosed") == "1" then return -1 end ' +
   'if redis.call("LLEN", KEYS[2]) >= tonumber(ARGV[3]) then return -2 end ' +
-  'local legacyItem = cjson.decode(ARGV[1]) if ARGV[7] == "1" then legacyItem.preemptRevision = 1 ' +
+  'local legacyItem = cjson.decode(ARGV[1]) ' +
+  'if legacyItem.quotes then local qexec = redis.call("HGET", KEYS[1], "steerQuotesExecutionId") ' +
+  'if not qexec or qexec == "" or qexec ~= redis.call("HGET", KEYS[1], "providerExecutionId") then legacyItem.quotes = nil end end ' +
+  'if ARGV[7] == "1" then legacyItem.preemptRevision = 1 ' +
   'if redis.call("HGET", KEYS[1], "preemptCapable") == "1" then legacyItem.preempt = true end end ' +
   'redis.call("RPUSH", KEYS[2], cjson.encode(legacyItem)) ' +
   'redis.call("EXPIRE", KEYS[2], tonumber(ARGV[2])) ' +
@@ -980,6 +997,7 @@ const STEER_ENQUEUE_RECEIPT_LUA =
   'if redis.call("LLEN", KEYS[2]) >= tonumber(ARGV[3]) then return -2 end ' +
   'if redis.call("ZCARD", KEYS[4]) >= tonumber(ARGV[9]) then return -3 end ' +
   'local item = cjson.decode(ARGV[1]) ' +
+  'if item.quotes then local qexec = redis.call("HGET", KEYS[1], "steerQuotesExecutionId") if not qexec or qexec == "" or qexec ~= redis.call("HGET", KEYS[1], "providerExecutionId") then item.quotes = nil end end ' +
   'if ARGV[7] == "1" then ' +
   'item.preemptRevision = 1 ' +
   'if redis.call("HGET", KEYS[1], "preemptCapable") == "1" then item.preempt = true end ' +
@@ -1475,6 +1493,7 @@ const STEER_CLOSE_DRAIN_LUA =
   'local projected = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
   'if item.clientSteerId then projected.clientSteerId = item.clientSteerId end ' +
   'if item.files then projected.files = item.files end ' +
+  'if item.quotes then projected.quotes = item.quotes end ' +
   'if item.preempt then projected.preempt = item.preempt end ' +
   'if item.preemptRevision then projected.preemptRevision = item.preemptRevision end ' +
   'currentProjected[#currentProjected + 1] = projected end ' +
@@ -4602,6 +4621,10 @@ export class RedisJobStore implements IJobStoreV2 {
        *  `preemptArmed: false` and silently degrade interrupt-steer to
        *  tool-boundary steering in EVERY Redis deployment. */
       preemptCapable: data.preemptCapable != null ? data.preemptCapable === '1' : undefined,
+      /** Same explicit-mapper trap as `preemptCapable`: without this line every
+       *  Redis read reports the owner quote-incapable, so admission would drop
+       *  all steer quotes (and their echo) in EVERY Redis deployment. */
+      steerQuotesExecutionId: data.steerQuotesExecutionId || undefined,
       providerAbortReady:
         data.providerAbortReady != null ? data.providerAbortReady === '1' : undefined,
       providerExecutionId: data.providerExecutionId || undefined,

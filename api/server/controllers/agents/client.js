@@ -58,6 +58,7 @@ const {
   isSteeringSupported,
   isSteerPreemptSupported,
   buildSteerMedia,
+  collectSteerStampTargets,
   stampSteerPartMedia,
   createActivityLabelWiring,
   createActivityPhaseWiring,
@@ -387,6 +388,9 @@ class AgentClient extends BaseClient {
       ...(item.clientSteerId && { clientSteerId: item.clientSteerId }),
       createdAt: item.createdAt,
       ...(item.files?.length && { files: item.files }),
+      // Persisted separately from the text (mirroring `message.quotes`) so the
+      // UI renders reference blocks and replay re-merges them per turn.
+      ...(item.quotes?.length && { quotes: item.quotes }),
     };
     this.contentParts.push(part);
     this.steerOffsetState.offset += 1;
@@ -1892,22 +1896,33 @@ class AgentClient extends BaseClient {
 
     payload = formattedMessages;
     this.modelBoundSteerFileIdsBySourceMessageId = new Map();
-    if (this.options.resendFiles) {
-      /** Persisted steer parts of past turns replay with their attachments:
-       *  one batched owner-scoped fetch, re-encoded per turn and stamped as a
-       *  transient `media` array (same resend semantics as message files).
-       *  The stamp lands after the loop above finalized its counts, so the
-       *  re-encoded media (minus the text part the steer part already counted)
-       *  is folded into the budget here — large steered attachments must
-       *  shrink the window like any other resent media. */
+    /** Persisted steer parts of past turns replay with their attachments and
+     *  quotes: one batched owner-scoped fetch, re-encoded per turn and
+     *  stamped as a transient `media` array (same resend semantics as
+     *  message files). Runs regardless of `resendFiles` because quote-bearing
+     *  parts must re-merge their excerpts every turn (mirroring
+     *  `prependQuotes` above); file encoding stays gated on the setting via
+     *  the flag. The stamp lands after the loop above finalized its counts,
+     *  so the re-encoded media (minus the text part the steer part already
+     *  counted) is folded into the budget here — large steered attachments
+     *  and quote blocks must shrink the window like any other resent media.
+     *  The synchronous collection keeps steer-free histories on the
+     *  zero-await path to the parallel context kickoff below, and the
+     *  collected targets feed the stamp directly so the history is scanned
+     *  once. */
+    const resendSteerFiles = this.options.resendFiles === true;
+    const steerStampTargets = collectSteerStampTargets(payload, resendSteerFiles);
+    if (steerStampTargets.length > 0) {
       const stamped = await stampSteerPartMedia({
         client: this,
         user: this.options.req?.user,
         payload,
+        targets: steerStampTargets,
         // addPreviousAttachments already fetched steer-part refs in its single
         // per-turn historical-files query — no second round trip.
         docsById: this.authorizedHistoricalFiles,
         getFiles: db.getFiles,
+        resendFiles: resendSteerFiles,
       });
       for (const { sourceMessageId, fileIds } of stamped) {
         if (typeof sourceMessageId !== 'string' || sourceMessageId.length === 0) {
@@ -1927,8 +1942,8 @@ class AgentClient extends BaseClient {
       for (const { index, media, steerText } of stamped) {
         /** Count the FULL stamped content and subtract only the steer body
          *  (already counted inside the assistant message): extracted file
-         *  context prepended into the text part must hit the budget too, or
-         *  large steered documents bypass pruning. */
+         *  context and merged quote blocks prepended into the text part must
+         *  hit the budget too, or large steered documents bypass pruning. */
         const fullTokens = countFormattedMessageTokens({ role: 'user', content: media }, encoding);
         const bodyTokens = steerText
           ? countFormattedMessageTokens(
@@ -1948,6 +1963,25 @@ class AgentClient extends BaseClient {
         memoryPayload.push(
           memoryFormattedMessages[i] ?? buildMemoryFormattedMessage(orderedMessages[i]),
         );
+      }
+      /** The memory copy feeds `processMemory` through the same
+       *  `formatAgentMessages` replay, which reads `part.media`/`part.steer`
+       *  and ignores `part.quotes` — so a steer whose substance lives in its
+       *  quote must be quote-merged here too or memory extraction never sees
+       *  it. Quote merge only (`resendFiles: false`): file media is exactly
+       *  what the memory copy exists to exclude, and text-only stamps touch
+       *  no file fetch or encode. Runs after the fill above so late-built
+       *  copies are stamped too. */
+      const memorySteerTargets = collectSteerStampTargets(memoryPayload, false);
+      if (memorySteerTargets.length > 0) {
+        await stampSteerPartMedia({
+          client: this,
+          user: this.options.req?.user,
+          payload: memoryPayload,
+          targets: memorySteerTargets,
+          getFiles: db.getFiles,
+          resendFiles: false,
+        });
       }
     }
     this.memoryPayload = hasFileContext ? memoryPayload : null;

@@ -350,10 +350,12 @@ export type PendingSteer = {
   createdAt: number;
   /** Attachments steered with the message (refs; already uploaded). */
   files?: TMessage['files'];
-  /** Quote chips carried by a queued-origin steer (client-only; never sent to
-   *  the server), restored onto the queued item if the run ends first. */
+  /** Quoted excerpts riding this steer (also sent on the POST — the server
+   *  merges them into the injected turn); kept on the chip so a steer that
+   *  never injects restores onto the queued item with them intact. */
   quotes?: string[];
-  /** Manual skill picks carried the same way as `quotes`. */
+  /** Manual skill picks, carried for restoration only (a skill pick
+   *  configures a NEW turn's run, so it never rides the steer POST). */
   manualSkills?: string[];
   /** Asked the run to seal generation at the next safe boundary rather than
    *  wait for a tool step. Labelling only — the server owns the behaviour and

@@ -20,6 +20,7 @@ import {
   clearAllDrafts,
   getPendingDraftId,
   insertQueuedOrigin,
+  mergeRestagedQuotes,
 } from '~/utils';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useSetFilesToDelete } from '~/hooks/Files';
@@ -622,6 +623,69 @@ export default function useSteering({
     [conversationId],
   );
 
+  /** Quotes-only drain for composer-origin steers: the excerpts ride the steer
+   *  POST into the live run, while manual skill picks stay staged — a skill
+   *  pick configures a NEW turn's agent run and cannot apply to a mid-run
+   *  injection, so it keeps waiting for the next full submission. */
+  const takeComposerQuotes = useRecoilCallback(
+    ({ snapshot, reset }) =>
+      (): QueuedMessageContext => {
+        const quotes = snapshot
+          .getLoadable(store.pendingQuotesByConvoId(conversationId))
+          .getValue();
+        if (quotes.length === 0) {
+          return {};
+        }
+        reset(store.pendingQuotesByConvoId(conversationId));
+        return { quotes };
+      },
+    [conversationId],
+  );
+
+  /** Returns rejected excerpts to the composer chips from the SURVIVING steer
+   *  chip — used ONLY for a settled receipt replay, where the steer already
+   *  injected in the source generation and no future applied event or
+   *  terminal conversion will ever re-home the chip's quotes. An ordinary
+   *  no-echo ACK deliberately does NOT reclaim: its steer is still queued, so
+   *  the quotes stay carried on the pending chip — the applied-event
+   *  reconciliation re-stages them at the actual moment of loss, while a
+   *  terminal leftover conversion moves them onto the recovered row, which
+   *  sends via `ask` where quotes work on any server. When no chip remains,
+   *  another path already owns the excerpts and re-staging would
+   *  double-deliver. The chip is stripped in the same update (including its
+   *  captured queue-origin copy) so the restaged composer chips stay their
+   *  single representation. */
+  const reclaimRejectedChipQuotes = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (convoId: string, steerIds: string[]) => {
+        const chips = snapshot.getLoadable(store.pendingSteersByConvoId(convoId)).getValue();
+        const chip = chips.find((steer) => steerIds.includes(steer.steerId));
+        const quotes = chip?.quotes ?? chip?.queuedOrigin?.item.quotes;
+        if (quotes == null || quotes.length === 0) {
+          return;
+        }
+        set(store.pendingQuotesByConvoId(convoId), (prev) => mergeRestagedQuotes(prev, quotes));
+        set(store.pendingSteersByConvoId(convoId), (prev) => {
+          let changed = false;
+          const next = prev.map((steer) => {
+            const originHasQuotes = steer.queuedOrigin?.item.quotes != null;
+            if (!steerIds.includes(steer.steerId) || (steer.quotes == null && !originHasQuotes)) {
+              return steer;
+            }
+            changed = true;
+            const { quotes: _quotes, ...rest } = steer;
+            if (!originHasQuotes || rest.queuedOrigin == null) {
+              return rest;
+            }
+            const { quotes: _originQuotes, ...originItem } = rest.queuedOrigin.item;
+            return { ...rest, queuedOrigin: { ...rest.queuedOrigin, item: originItem } };
+          });
+          return changed ? next : prev;
+        });
+      },
+    [],
+  );
+
   /** Consumes the composer's autosaved draft once its text has been taken into
    *  a steer or queued item. The composer clears via the form's `reset()`,
    *  which is programmatic and never fires the `input` event `useAutoSave`
@@ -853,11 +917,12 @@ export default function useSteering({
     [index, queueKey, activeGenerationCreatedAt],
   );
 
-  /** POSTs a steer (text + files only; the server never carries quotes or
-   *  skill picks). `context` is the RESTORE payload for a queued-origin steer:
-   *  every degradation path threads it back into the requeue/send fallback so
-   *  the item's quotes and manual skills survive. Composer-origin steers pass
-   *  nothing, leaving their context staged in the composer atoms. */
+  /** POSTs a steer (text + files + quotes; the server merges the quotes into
+   *  the model-bound turn at the injection boundary). `context` doubles as the
+   *  RESTORE payload: every degradation path threads it back into the
+   *  requeue/send fallback so the item's quotes and manual skills survive.
+   *  Skill picks never ride the POST — they configure a NEW turn's run, so a
+   *  queued-origin steer only carries them for restoration. */
   const submitSteer = useCallback(
     (
       text: string,
@@ -951,6 +1016,7 @@ export default function useSteering({
             clientSteerId: localId,
             text: trimmed,
             ...(files && { files }),
+            ...(carried.quotes && { quotes: carried.quotes }),
             ...(preempt && { preempt }),
             ...(targetGenerationCreatedAt != null && {
               generationCreatedAt: targetGenerationCreatedAt,
@@ -959,6 +1025,16 @@ export default function useSteering({
           {
             onSuccess: (response) => {
               try {
+                /** A 202 without the echo means a pre-quotes replica queued
+                 *  the words without their excerpts. The quotes are NOT
+                 *  re-staged here — the steer has not injected yet, so they
+                 *  stay carried on the pending chip: a quote-less applied
+                 *  event re-stages them at the actual loss, and a terminal
+                 *  leftover conversion carries them onto the recovered row
+                 *  instead (its normal send delivers quotes on any server).
+                 *  Only a settled replay — an already-injected steer with no
+                 *  future event to re-home the chip — reclaims immediately. */
+                const quotesRejected = carried.quotes != null && response.quotesAccepted !== true;
                 const canUseV2Receipt =
                   targetGenerationProtocolVersion === 2 && supportsGenerationProtocolV2(response);
                 if (canUseV2Receipt && response.settled === true) {
@@ -978,6 +1054,9 @@ export default function useSteering({
                       ...carried,
                     });
                   } else {
+                    if (quotesRejected) {
+                      reclaimRejectedChipQuotes(conversationId, [localId, response.steerId]);
+                    }
                     settleReceiptReplay(conversationId, localId, response.steerId);
                   }
                   return;
@@ -1005,6 +1084,9 @@ export default function useSteering({
                   ...carried,
                 } satisfies PendingSteer;
                 if (acknowledgeSteer(conversationId, localId, acknowledged)) {
+                  /** Terminal conversion re-homes the words as a queued
+                   *  follow-up that sends via `ask` — the carried quotes ride
+                   *  it there, so nothing is re-staged. */
                   queueRecoveredSteer(acknowledged);
                 }
               } finally {
@@ -1128,6 +1210,7 @@ export default function useSteering({
       acknowledgeSteer,
       settleReceiptReplay,
       queueRecoveredSteer,
+      reclaimRejectedChipQuotes,
       steerMessage,
       sendNow,
       enqueue,
@@ -1143,22 +1226,26 @@ export default function useSteering({
     ],
   );
 
-  /** Composer-originated steer: consumes the composer's attachments so they
-   *  ride the steer as one unit (the server re-fetches + encodes them at the
-   *  injection boundary). Files are taken only after the guards pass. */
+  /** Composer-originated steer: consumes the composer's attachments and quote
+   *  chips so they ride the steer as one unit (the server re-fetches + encodes
+   *  files and merges quotes at the injection boundary). Both are taken only
+   *  after the guards pass — with `canSteer` true, `submitSteer` cannot
+   *  refuse, so the drained context can never be stranded. */
   const steerFromComposer = useCallback(
     (text: string, preempt = false): boolean => {
       const trimmed = text.trim();
       if (trimmed.length === 0 || filesLoading || !canSteer) {
         return false;
       }
-      const consumed = submitSteer(trimmed, takeComposerFiles(), undefined, { preempt });
+      const consumed = submitSteer(trimmed, takeComposerFiles(), takeComposerQuotes(), {
+        preempt,
+      });
       if (consumed) {
         takeComposerDraft();
       }
       return consumed;
     },
-    [filesLoading, canSteer, takeComposerFiles, takeComposerDraft, submitSteer],
+    [filesLoading, canSteer, takeComposerFiles, takeComposerQuotes, takeComposerDraft, submitSteer],
   );
 
   /** Composer-originated queue: carries the composer's attachments, quote
@@ -1398,7 +1485,9 @@ export default function useSteering({
       if (!hasRealConvoId) {
         return interruptAndSend(trimmed);
       }
-      const consumed = submitSteer(trimmed, takeComposerFiles(), undefined, { preempt: true });
+      const consumed = submitSteer(trimmed, takeComposerFiles(), takeComposerQuotes(), {
+        preempt: true,
+      });
       if (consumed) {
         takeComposerDraft();
       }
@@ -1411,6 +1500,7 @@ export default function useSteering({
       hasRealConvoId,
       interruptAndSend,
       takeComposerFiles,
+      takeComposerQuotes,
       takeComposerDraft,
       submitSteer,
     ],

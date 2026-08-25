@@ -1222,6 +1222,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         pendingAction.actionId,
         {
           preemptCapable: isSteerPreemptSupported(),
+          // The handover owner's quote handling replaces the previous
+          // replica's flag, mirroring `preemptCapable` above.
+          steerQuotesCapable: true,
           providerExecutionId,
           providerDrained: true,
           ...(resolvedAskUserQuestion && { resolvedAskUserQuestions }),

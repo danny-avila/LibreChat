@@ -185,6 +185,19 @@ describe('InFlightSteers', () => {
     expect(screen.queryByTestId('in-flight-steers')).toBeNull();
   });
 
+  it('renders carried quotes as the same reference blocks the applied part shows', () => {
+    renderSteers([
+      {
+        steerId: 's-quoted',
+        text: 'about the selection',
+        status: 'pending',
+        createdAt: 1,
+        quotes: ['the selected excerpt'],
+      },
+    ]);
+    expect(screen.getByTestId('message-quotes')).toHaveTextContent('the selected excerpt');
+  });
+
   it('shows the menu at rest on every pointer, without hover-gating', () => {
     renderSteers([
       { steerId: 's-ack', text: 'waiting on boundary', status: 'pending', createdAt: 1 },

@@ -444,7 +444,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   const isRecoveredSteerRequest = recoveredSteerId != null;
   const recoveryUserMessageId = rawOverrideUserMessageId;
   const recoveredSteerPayload = isRecoveredSteerRequest
-    ? buildRecoveredSteerPayload(text, req.body?.files)
+    ? buildRecoveredSteerPayload(text, req.body?.files, req.body?.quotes)
     : undefined;
   /** A recovered steer is handed off as a new ordinary user turn. Edit,
    * regenerate, continue, and arbitrary override-id shapes can reuse an
@@ -1106,6 +1106,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // route may land on a different replica whose own SDK probe would
         // answer for the wrong process during a rolling deploy.
         preemptCapable: isSteerPreemptSupported(),
+        // Same owner-recorded pattern: this build's drain merges queued steer
+        // quotes into the injected turn. Admission on another replica must
+        // not store/acknowledge quotes an older owner would drop.
+        steerQuotesCapable: true,
         // Persist the originating agent so a HITL resume can refuse to rebuild this
         // paused run on a different agent (see resume.js).
         agent_id: endpointOption.agent_id ?? req.body?.agent_id,

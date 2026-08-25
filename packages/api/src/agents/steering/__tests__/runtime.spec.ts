@@ -6,10 +6,9 @@ import type {
 } from '@librechat/agents';
 import type { SteerQueueItem } from '~/stream/interfaces/IJobStore';
 
-/** Mirrors runtime.ts's local extension — the field predates the SDK pin bump. */
-type SteerDrainOutput = PostToolBatchHookOutput & {
-  injectedMessages?: Array<{ role: string; content: string; source: string }>;
-};
+/** The pinned SDK's hook output declares `injectedMessages` natively; a
+ *  narrower local re-declaration would no longer be assignable from it. */
+type SteerDrainOutput = PostToolBatchHookOutput;
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
@@ -201,6 +200,54 @@ describe('createSteerDrainHook', () => {
     expect(output.injectedMessages).toEqual([
       { role: 'user', content: media.content, source: 'steer' },
       { role: 'user', content: 'text only', source: 'steer' },
+    ]);
+  });
+
+  it('merges quoted excerpts into text-only injections (media path merges its own)', async () => {
+    const streamId = `drain-quotes-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1', undefined, {
+      initialMetadata: { steerQuotesCapable: true },
+    });
+    await GenerationJobManager.steering.enqueue(streamId, {
+      ...buildSteer('s1', 'what does this mean?'),
+      quotes: ['selected passage'],
+    });
+
+    const hook = createSteerDrainHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer: jest.fn(),
+    });
+
+    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    expect(output.injectedMessages).toEqual([
+      { role: 'user', content: '> selected passage\n\nwhat does this mean?', source: 'steer' },
+    ]);
+  });
+
+  it('keeps quotes in the injection when media encoding degrades to text', async () => {
+    const streamId = `drain-quotes-degrade-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1', undefined, {
+      initialMetadata: { steerQuotesCapable: true },
+    });
+    await GenerationJobManager.steering.enqueue(streamId, {
+      ...buildSteer('s1', 'and the doc?'),
+      files: [{ file_id: 'f1', type: 'image/png' }],
+      quotes: ['quoted context'],
+    });
+
+    const hook = createSteerDrainHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer: jest.fn(),
+      buildMedia: jest.fn(async () => {
+        throw new Error('encode failed');
+      }),
+    });
+
+    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    expect(output.injectedMessages).toEqual([
+      { role: 'user', content: '> quoted context\n\nand the doc?', source: 'steer' },
     ]);
   });
 

@@ -348,6 +348,18 @@ export class ApprovalLifecycle {
       await this.expire(streamId, expectedActionId ?? job.pendingAction.actionId, job.createdAt);
       return false;
     }
+    /** Translate the resuming owner's transient quote-capability assertion
+     * into its execution-bound marker (see `steerQuotesExecutionId`). A
+     * legacy resumer never reaches this code — its execution rewrite alone
+     * invalidates the previous owner's marker. */
+    const { steerQuotesCapable, ...ownerPatch } = resumePatch ?? {};
+    const boundPatch = {
+      ...ownerPatch,
+      ...(steerQuotesCapable === true &&
+        typeof ownerPatch.providerExecutionId === 'string' && {
+          steerQuotesExecutionId: ownerPatch.providerExecutionId,
+        }),
+    };
     const resumed = await this.store.transitionStatus(streamId, {
       from: 'requires_action',
       to: 'running',
@@ -357,7 +369,7 @@ export class ApprovalLifecycle {
       /** Ownership can move across replicas on resume. Owner-specific fields
        *  must change in this SAME CAS: once status is `running`, steering
        *  routes are live and may atomically inspect them. */
-      patch: { lastActiveAt: Date.now(), ...resumePatch },
+      patch: { lastActiveAt: Date.now(), ...boundPatch },
       expectActionId: expectedActionId,
       expectCreatedAt: job.createdAt,
     });

@@ -63,6 +63,34 @@ describe('submitted content adapters', () => {
     });
   });
 
+  it('inspects persisted steer-part quotes as quote fragments', () => {
+    // Steer parts persist their excerpts under `content[i].quotes`, mirroring
+    // the top-level `message.quotes` — import and share preflights must see
+    // them or blocked data could ride in on a quoted steer.
+    const message = {
+      role: 'assistant',
+      content: [
+        {
+          type: 'steer',
+          steer: 'about the selection',
+          steerId: 's1',
+          quotes: ['quoted secret excerpt'],
+        },
+      ],
+    };
+
+    expect(fieldValues(extractStoredMessageContent(message))).toEqual(
+      expect.arrayContaining([
+        {
+          source: 'message',
+          field: 'quote',
+          text: 'quoted secret excerpt',
+          path: '/content/0/quotes/0',
+        },
+      ]),
+    );
+  });
+
   it('classifies persisted and imported summary content parts as message summaries', () => {
     const message = {
       content: [{ type: 'summary', text: 'persisted summary text' }],
