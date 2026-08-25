@@ -39,16 +39,16 @@ jobs:
       BOMBADIL_TIME_LIMIT: '300s'
       E2E_CHROMIUM_CHANNEL: chrome
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Use Node.js 24.16.0
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             node_modules
@@ -66,7 +66,7 @@ jobs:
 
       - name: Restore data-provider build cache
         id: cache-data-provider
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: packages/data-provider/dist
           key: build-data-provider-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
@@ -77,7 +77,7 @@ jobs:
 
       - name: Restore data-schemas build cache
         id: cache-data-schemas
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: packages/data-schemas/dist
           key: build-data-schemas-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'packages/data-schemas/src/**', 'packages/data-schemas/tsconfig*.json', 'packages/data-schemas/tsdown.config.mjs', 'packages/data-schemas/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
@@ -88,7 +88,7 @@ jobs:
 
       - name: Restore api build cache
         id: cache-api
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: packages/api/dist
           key: build-api-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'packages/api/src/**', 'packages/api/tsconfig*.json', 'packages/api/tsdown.config.mjs', 'packages/api/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json', 'packages/data-schemas/src/**', 'packages/data-schemas/tsconfig*.json', 'packages/data-schemas/tsdown.config.mjs', 'packages/data-schemas/package.json') }}
@@ -99,7 +99,7 @@ jobs:
 
       - name: Restore client-package build cache
         id: cache-client-package
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: packages/client/dist
           key: build-client-package-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'packages/client/src/**', 'packages/client/tsconfig*.json', 'packages/client/tsdown.config.mjs', 'packages/client/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
@@ -110,7 +110,7 @@ jobs:
 
       - name: Restore client app build cache
         id: cache-client-app
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: client/dist
           key: build-client-app-e2e-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'client/src/**', 'client/public/**', 'client/scripts/post-build.cjs', 'client/index.html', 'client/package.json', 'client/vite.config.*', 'client/tsconfig*.json', 'client/tailwind.config.*', 'client/postcss.config.*', 'packages/client/src/**', 'packages/client/tailwind.preset.cjs', 'packages/client/tsconfig*.json', 'packages/client/tsdown.config.mjs', 'packages/client/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
@@ -146,7 +146,7 @@ jobs:
       - name: Upload Bombadil reproduction trace
         id: bombadil-reproduction
         if: steps.bombadil.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: bombadil-reproduction-${{ github.run_id }}-${{ github.run_attempt }}
           path: e2e/.generated/bombadil-output/**
@@ -157,7 +157,7 @@ jobs:
       - name: Upload Bombadil diagnostics
         id: bombadil-diagnostics
         if: steps.bombadil.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: bombadil-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
