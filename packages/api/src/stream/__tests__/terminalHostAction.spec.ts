@@ -33,13 +33,15 @@ describe('GenerationJobManager terminal host actions', () => {
     await manager.emitChunk('conversation-1', {
       event: 'on_run_step_completed',
       data: {
-        id: 'step-1',
-        index: 0,
-        type: 'tool_calls',
-        status: 'completed',
-        stepDetails: {
+        result: {
+          id: 'step-1',
+          index: 0,
           type: 'tool_calls',
-          tool_calls: [{ id: 'call-1', name: 'submit_move', output: 'ok' }],
+          status: 'completed',
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [{ id: 'call-1', name: 'submit_move', output: 'ok' }],
+          },
         },
       },
     });
@@ -73,13 +75,15 @@ describe('GenerationJobManager terminal host actions', () => {
     await manager.emitChunk('conversation-2', {
       event: 'on_run_step_completed',
       data: {
-        id: 'step-2',
-        index: 0,
-        type: 'tool_calls',
-        status: 'completed',
-        stepDetails: {
+        result: {
+          id: 'step-2',
+          index: 0,
           type: 'tool_calls',
-          tool_calls: [{ id: 'call-2', name: 'submit_move', output: 'ok' }],
+          status: 'completed',
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [{ id: 'call-2', name: 'submit_move', output: 'ok' }],
+          },
         },
       },
     });
@@ -103,6 +107,88 @@ describe('GenerationJobManager terminal host actions', () => {
     );
     await expect(store.getJob('conversation-2')).resolves.not.toHaveProperty(
       'terminalHostActionPending',
+    );
+  });
+
+  it('retains completed run-step evidence through repeated host-action failures', async () => {
+    const handler = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('mongo down'))
+      .mockRejectedValueOnce(new Error('mongo still down'))
+      .mockResolvedValue(undefined);
+    manager.setTerminalHostActionHandler(handler);
+    const job = await manager.createJob('conversation-retry', 'user-1', 'conversation-retry', {
+      initialMetadata: { agentEventDeliveryKey: 'trigger_retry' },
+    });
+    await manager.emitChunk('conversation-retry', {
+      event: 'on_run_step_completed',
+      data: {
+        result: {
+          id: 'step-retry',
+          index: 0,
+          type: 'tool_calls',
+          status: 'completed',
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [{ id: 'call-retry', name: 'submit_move', output: 'ok' }],
+          },
+        },
+      },
+    });
+    await manager.completeJob('conversation-retry', undefined, job.createdAt);
+
+    const cleanup = () =>
+      (
+        manager as unknown as {
+          cleanup: () => Promise<void>;
+        }
+      ).cleanup();
+    await cleanup();
+    await expect(store.getJob('conversation-retry')).resolves.toMatchObject({
+      terminalHostActionPending: true,
+    });
+
+    await cleanup();
+
+    expect(handler).toHaveBeenLastCalledWith(
+      'conversation-retry',
+      expect.objectContaining({ agentEventDeliveryKey: 'trigger_retry' }),
+      [expect.objectContaining({ id: 'step-retry', status: 'completed' })],
+    );
+    await expect(store.getJob('conversation-retry')).resolves.not.toHaveProperty(
+      'terminalHostActionPending',
+    );
+  });
+
+  it('does not let a stale buffered step replace completed durable evidence', async () => {
+    const handler = jest.fn().mockResolvedValue(undefined);
+    manager.setTerminalHostActionHandler(handler);
+    const streamId = 'conversation-completed-evidence';
+    const job = await manager.createJob(streamId, 'user-1', streamId, {
+      initialMetadata: { agentEventDeliveryKey: 'trigger_completed' },
+    });
+    const completedStep = {
+      id: 'step-shared',
+      index: 0,
+      type: 'tool_calls',
+      status: 'completed',
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'call-shared', name: 'submit_move', output: 'ok' }],
+      },
+    };
+    store.setGraph(streamId, { contentData: [completedStep] } as never, job.createdAt);
+    await manager.emitChunk(streamId, {
+      event: 'on_run_step',
+      data: { ...completedStep, status: 'in_progress' },
+    });
+
+    await manager.completeJob(streamId, undefined, job.createdAt);
+
+    expect(handler).toHaveBeenCalledWith(
+      streamId,
+      expect.objectContaining({ agentEventDeliveryKey: 'trigger_completed' }),
+      [expect.objectContaining({ id: 'step-shared', status: 'completed' })],
     );
   });
 

@@ -4161,8 +4161,10 @@ class GenerationJobManagerClass {
       };
     } finally {
       try {
-        if (options?.awaitProviderDrain) {
+        const mustDrainForTerminalEvidence = jobData.agentEventDeliveryKey != null;
+        if (options?.awaitProviderDrain || mustDrainForTerminalEvidence) {
           await this.waitForProviderDrainIfRequired(streamId, jobData);
+          await this.persistAgentEventRunStepEvidence(streamId, jobData);
         }
       } finally {
         await this.finishTerminalJob(terminalClaim);
@@ -5592,7 +5594,12 @@ class GenerationJobManagerClass {
       eventData != null &&
       typeof eventData === 'object'
     ) {
-      this.saveRunStepFromEvent(streamId, eventData as Record<string, unknown>, runtime.createdAt);
+      this.saveRunStepFromEvent(
+        streamId,
+        eventType,
+        eventData as Record<string, unknown>,
+        runtime.createdAt,
+      );
     }
 
     /**
@@ -6180,22 +6187,28 @@ class GenerationJobManagerClass {
   }
 
   /**
-   * Extract and save run step from event data.
-   * The data is already the run step object from the event payload.
+   * Extract and save a run step from its wire envelope. Completed events wrap
+   * the authoritative step under `result`; live step events carry it directly.
    */
   private saveRunStepFromEvent(
     streamId: string,
+    eventType: 'on_run_step' | 'on_run_step_completed',
     data: Record<string, unknown>,
     expectedCreatedAt: number,
   ): void {
-    // The data IS the run step object
-    const runStep = data as Agents.RunStep;
-    if (!runStep.id) {
+    const candidate = eventType === 'on_run_step_completed' ? data.result : data;
+    if (
+      candidate == null ||
+      typeof candidate !== 'object' ||
+      !('id' in candidate) ||
+      typeof candidate.id !== 'string' ||
+      candidate.id.length === 0
+    ) {
       return;
     }
 
     // Fire and forget - accumulate run steps
-    this.accumulateRunStep(streamId, runStep, expectedCreatedAt);
+    this.accumulateRunStep(streamId, candidate as Agents.RunStep, expectedCreatedAt);
   }
 
   /**
@@ -6554,6 +6567,7 @@ class GenerationJobManagerClass {
       job.providerDrained === true &&
       job.preserveForScheduleReconcile !== true &&
       job.terminalPersistencePending !== true &&
+      job.terminalHostActionPending !== true &&
       (job.status === 'complete' || job.status === 'aborted')
     ) {
       await this.jobStore.deleteJob(streamId, expectedCreatedAt);
@@ -7279,7 +7293,12 @@ class GenerationJobManagerClass {
     const runStepsById = new Map(persistedRunSteps.map((step) => [step.id, step]));
     if (buffered?.createdAt === job.createdAt) {
       for (const step of buffered.steps) {
-        runStepsById.set(step.id, step);
+        const persisted = runStepsById.get(step.id);
+        // A stale/in-progress event must never erase authoritative completed
+        // evidence recovered from the durable owner.
+        if (persisted?.status !== 'completed' || step.status === 'completed') {
+          runStepsById.set(step.id, step);
+        }
       }
     }
     return [...runStepsById.values()].sort((left, right) => left.index - right.index);
@@ -7472,6 +7491,14 @@ class GenerationJobManagerClass {
         }
 
         const currentJob = await this.jobStore.getJob(streamId);
+        if (
+          currentJob?.createdAt === observedRuntime.createdAt &&
+          currentJob.terminalHostActionPending === true
+        ) {
+          // The callback retry still owns this generation's evidence. Retain
+          // runtime buffers until it acknowledges and clears the durable marker.
+          continue;
+        }
         const isRetainedTerminal =
           currentJob?.createdAt === observedRuntime.createdAt &&
           currentJob.status !== 'running' &&

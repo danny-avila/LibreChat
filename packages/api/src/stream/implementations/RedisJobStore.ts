@@ -876,8 +876,9 @@ const CHUNK_APPEND_BATCH_LUA =
  * still-live approval after that window loses the tool/run-step timeline even though the
  * approval remains resumable. Reads the paused window from the job key (which
  * `transitionStatus` set); a normally-running job keeps the short running TTL. The write
- * also requires an active status so a late provider event cannot recreate run steps after
- * a same-epoch terminal transition deleted or retained the final timeline.
+ * also requires either an active status or the exact terminal host-action marker. That
+ * narrow terminal window lets a draining provider owner commit its final evidence before
+ * the host callback acknowledges; after acknowledgement, late writes are fenced out.
  *
  *   KEYS: [runSteps, job]
  *   ARGV: [runStepsJson, runningTtl, expectCreatedAt | ""]
@@ -887,11 +888,12 @@ const RUNSTEPS_SAVE_LUA =
   'if not currentCreatedAt then return 0 end ' +
   'if ARGV[3] ~= "" and currentCreatedAt ~= ARGV[3] then return 0 end ' +
   'local currentStatus = redis.call("HGET", KEYS[2], "status") ' +
-  'if currentStatus ~= "running" and currentStatus ~= "requires_action" then return 0 end ' +
+  'local terminalHostActionPending = redis.call("HGET", KEYS[2], "terminalHostActionPending") ' +
+  'if currentStatus ~= "running" and currentStatus ~= "requires_action" and terminalHostActionPending ~= "1" then return 0 end ' +
   'redis.call("SET", KEYS[1], ARGV[1]) ' +
   'local run = tonumber(ARGV[2]) ' +
   'local target = run ' +
-  'if redis.call("HGET", KEYS[2], "status") == "requires_action" then ' +
+  'if currentStatus == "requires_action" or terminalHostActionPending == "1" then ' +
   'local jt = redis.call("TTL", KEYS[2]) ' +
   'if jt > target then target = jt end ' +
   'end ' +
@@ -2486,6 +2488,13 @@ export class RedisJobStore implements IJobStoreV2 {
       // longer than the running TTL — otherwise Redis evicts it before a
       // decision can resume it.
       ttl = this.pauseTtlSeconds(patch?.pendingAction);
+    }
+    // Redis Cluster cannot atomically update the same-slot job hash and this
+    // global retry index. Arm the retry hint before the terminal CAS: a losing
+    // CAS leaves only a harmless stale hint that enumeration self-heals, while
+    // a winning CAS can never become terminal without already being discoverable.
+    if (terminal && patch?.terminalHostActionPending === true) {
+      await this.redis.sadd(KEYS.terminalHostActionJobs, streamId);
     }
     const terminalJob = terminal ? await this.getJob(streamId) : null;
 

@@ -327,10 +327,7 @@ describe('agent trigger delivery methods', () => {
     expect(terminal.every((row) => row.handling?.status === 'completed_no_action')).toBe(true);
 
     const recoveringMember = terminal.find((row) => String(row._id) !== String(root!._id));
-    await Delivery.updateOne(
-      { _id: recoveringMember!._id },
-      { $unset: { handling: 1 } },
-    );
+    await Delivery.updateOne({ _id: recoveringMember!._id }, { $unset: { handling: 1 } });
     await expect(
       methods.settleAgentTriggerHandlingOutcome({
         deliveryKey: root!.deliveryKey,

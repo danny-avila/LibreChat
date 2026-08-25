@@ -90,7 +90,11 @@ describe('agent event terminal outcomes', () => {
     if (step.stepDetails.type !== 'tool_calls' || !step.stepDetails.tool_calls?.[0]) {
       throw new Error('Expected tool evidence');
     }
-    step.stepDetails.tool_calls[0].args = {
+    const call = step.stepDetails.tool_calls[0];
+    if ('function' in call) {
+      throw new Error('Expected legacy tool evidence');
+    }
+    call.args = {
       gameId: 'game-1',
       moves: ['e4', { replies: ['c5', 'Nf3'] }],
     };
@@ -118,7 +122,11 @@ describe('agent event terminal outcomes', () => {
     if (step.stepDetails.type !== 'tool_calls' || !step.stepDetails.tool_calls?.[0]) {
       throw new Error('Expected tool evidence');
     }
-    step.stepDetails.tool_calls[0].output = JSON.stringify({
+    const call = step.stepDetails.tool_calls[0];
+    if ('function' in call) {
+      throw new Error('Expected legacy tool evidence');
+    }
+    call.output = JSON.stringify({
       status: 'running',
       background_task_id: 'task-1',
     });
@@ -126,6 +134,42 @@ describe('agent event terminal outcomes', () => {
     await handler(
       'conversation-1',
       job({ agentEventExpectedAction: { toolName: 'submit_move' } }),
+      [step],
+    );
+
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'completed_no_action' }),
+    );
+  });
+
+  it('does not treat a function-shaped call rejected by input validation as applied', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({ settleAgentTriggerHandlingOutcome });
+    const step = completedToolStep();
+    if (step.stepDetails.type !== 'tool_calls') {
+      throw new Error('Expected tool evidence');
+    }
+    step.stepDetails.tool_calls = [
+      {
+        id: 'call-invalid',
+        type: 'function',
+        function: {
+          name: 'submit_move_mcp_speed-chess',
+          arguments: { gameId: 'game-1', expectedPly: 7 },
+          output: '{"rejected":true}',
+        },
+        inputValidationError: true,
+      } as Agents.AgentToolCall,
+    ];
+
+    await handler(
+      'conversation-1',
+      job({
+        agentEventExpectedAction: {
+          toolName: 'submit_move',
+          argumentSubset: { gameId: 'game-1', expectedPly: 7 },
+        },
+      }),
       [step],
     );
 

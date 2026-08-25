@@ -825,10 +825,7 @@ export function createAgentTriggerDeliveryMethods(
         orderingKey: root.orderingKey,
         $or:
           status === 'started'
-            ? [
-                { 'handling.status': 'started' },
-                { 'handling.status': { $exists: false } },
-              ]
+            ? [{ 'handling.status': 'started' }, { 'handling.status': { $exists: false } }]
             : [
                 { 'handling.status': { $in: ['started', status] } },
                 { 'handling.status': { $exists: false } },

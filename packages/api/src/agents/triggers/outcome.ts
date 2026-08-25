@@ -36,6 +36,9 @@ function toolEvidence(step: Agents.RunStep): CompletedToolEvidence[] {
     return [];
   }
   return (step.stepDetails.tool_calls ?? []).flatMap((call) => {
+    if ('inputValidationError' in call && call.inputValidationError === true) {
+      return [];
+    }
     if ('function' in call) {
       if (call.function.output == null || isBackgroundLaunchReceipt(call.function.output)) {
         return [];
@@ -48,11 +51,7 @@ function toolEvidence(step: Agents.RunStep): CompletedToolEvidence[] {
         },
       ];
     }
-    if (
-      call.output == null ||
-      call.inputValidationError === true ||
-      isBackgroundLaunchReceipt(call.output)
-    ) {
+    if (call.output == null || isBackgroundLaunchReceipt(call.output)) {
       return [];
     }
     return [

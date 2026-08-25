@@ -1069,6 +1069,44 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('saveRunSteps accepts final provider evidence only while a terminal host action is pending', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      await store.initialize();
+
+      const streamId = `terminal-runsteps-${Date.now()}`;
+      const job = await store.createJob(streamId, 'user-1', streamId);
+      await expect(
+        store.transitionStatus(streamId, {
+          from: 'running',
+          to: 'aborted',
+          expectCreatedAt: job.createdAt,
+          patch: { completedAt: Date.now(), terminalHostActionPending: true },
+        }),
+      ).resolves.toBe(true);
+
+      const completedStep = {
+        id: 'step-terminal',
+        index: 0,
+        type: StepTypes.TOOL_CALLS,
+        status: 'completed',
+        stepDetails: { type: StepTypes.TOOL_CALLS, tool_calls: [] },
+      } as Agents.RunStep;
+      await store.saveRunSteps(streamId, [completedStep], job.createdAt);
+      await expect(store.getRunSteps(streamId, job.createdAt)).resolves.toEqual([completedStep]);
+
+      await store.clearTerminalHostAction?.(streamId, job.createdAt);
+      const lateStep = { ...completedStep, id: 'step-too-late' };
+      await store.saveRunSteps(streamId, [lateStep], job.createdAt);
+      await expect(store.getRunSteps(streamId, job.createdAt)).resolves.toEqual([completedStep]);
+
+      await store.destroy();
+    });
+
     test('appendChunk gives the approval TTL when the chunk key did not exist at pause time', async () => {
       if (!ioredisClient) {
         return;

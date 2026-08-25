@@ -915,7 +915,7 @@ describe('RedisJobStore', () => {
     ]);
   });
 
-  test('guards run-step saves with the expected epoch and active status inside Redis Lua', async () => {
+  test('guards run-step saves with the expected epoch and pending host-action window inside Redis Lua', async () => {
     const evalCommand = jest.fn().mockResolvedValue(0);
     const redis = {
       isCluster: true,
@@ -930,6 +930,10 @@ describe('RedisJobStore', () => {
     expect(saveCall[0]).toContain('currentCreatedAt ~= ARGV[3]');
     expect(saveCall[0]).toContain('currentStatus ~= "running"');
     expect(saveCall[0]).toContain('currentStatus ~= "requires_action"');
+    expect(saveCall[0]).toContain('terminalHostActionPending ~= "1"');
+    expect(saveCall[0]).toContain(
+      'currentStatus == "requires_action" or terminalHostActionPending == "1"',
+    );
     expect(saveCall.slice(1)).toEqual([
       2,
       'stream:{stream-runstep-guarded}:runsteps',
@@ -938,6 +942,54 @@ describe('RedisJobStore', () => {
       '1500',
       '100',
     ]);
+  });
+
+  test('arms terminal host-action discovery before committing the terminal hash', async () => {
+    const evalTransition = jest.fn().mockResolvedValue(1);
+    const sadd = jest.fn().mockResolvedValue(1);
+    const redis = {
+      isCluster: true,
+      eval: evalTransition,
+      sadd,
+      srem: jest.fn().mockResolvedValue(1),
+      expire: jest.fn().mockResolvedValue(1),
+      hgetall: jest
+        .fn()
+        .mockResolvedValueOnce({
+          streamId: 'stream-host-action-prearm',
+          userId: 'user-1',
+          status: 'running',
+          createdAt: '100',
+          syncSent: '0',
+        })
+        .mockResolvedValue({
+          streamId: 'stream-host-action-prearm',
+          userId: 'user-1',
+          status: 'complete',
+          createdAt: '100',
+          completedAt: '200',
+          terminalHostActionPending: '1',
+          syncSent: '0',
+        }),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(
+      store.transitionStatus('stream-host-action-prearm', {
+        from: 'running',
+        to: 'complete',
+        expectCreatedAt: 100,
+        patch: { completedAt: 200, terminalHostActionPending: true },
+      }),
+    ).resolves.toBe(true);
+
+    expect(sadd.mock.calls[0]).toEqual([
+      'stream:terminal_host_action',
+      'stream-host-action-prearm',
+    ]);
+    expect(sadd.mock.invocationCallOrder[0]).toBeLessThan(
+      evalTransition.mock.invocationCallOrder[0],
+    );
   });
 
   test('guards asynchronous content cleanup against a replacement epoch', async () => {
