@@ -108,6 +108,36 @@ describe('retained file deletions', () => {
     expect(reloaded.isPasteSubmitted('other-file-id')).toBe(false);
   });
 
+  it('makes submitted paste IDs readable by another tab', async () => {
+    /** The tab that retries a retained deletion is rarely the tab that sent the message. Keeping
+     * this evidence in `sessionStorage` left published tab presence as the only cross-tab record,
+     * and that ages out on a fixed window, so a retry resuming after it deleted a sent file. */
+    const { markPasteSubmitted } = await import('../files');
+    markPasteSubmitted('sent-in-another-tab');
+
+    /** A second tab shares `localStorage` and nothing else, so dropping this tab's session is what
+     * standing in another tab looks like here. */
+    sessionStorage.clear();
+    jest.resetModules();
+    const otherTab = await import('../files');
+
+    expect(otherTab.isPasteSubmitted('sent-in-another-tab')).toBe(true);
+  });
+
+  it('forgets submitted paste IDs once the durable horizon has passed', async () => {
+    const { markPasteSubmitted, isPasteSubmitted } = await import('../files');
+    markPasteSubmitted('long-ago');
+    const stored = JSON.parse(
+      localStorage.getItem('librechat-submitted-paste-file-ids') ?? '{}',
+    ) as Record<string, number>;
+    localStorage.setItem(
+      'librechat-submitted-paste-file-ids',
+      JSON.stringify({ ...stored, 'long-ago': Date.now() - 172_800_000 }),
+    );
+
+    expect(isPasteSubmitted('long-ago')).toBe(false);
+  });
+
   it('persists marked pasted text IDs across reloads', async () => {
     const { markPastedTextFile, isPastedTextFileMarked } = await import('../files');
     markPastedTextFile('paste-upload-id');

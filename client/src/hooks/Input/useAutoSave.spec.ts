@@ -798,6 +798,66 @@ describe('useAutoSave — file cache updates', () => {
     expect(mockSetValue).toHaveBeenLastCalledWith('text', 'later edit');
     jest.useRealTimers();
   });
+  it('does not migrate blocked pending drafts to an unrelated conversation', () => {
+    const pendingTextKey = `${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`;
+    localStorage.setItem(pendingTextKey, encodeBase64('draft for conversation C'));
+    markTabLive('other-tab');
+    (hasInFlightUpload as jest.Mock).mockReturnValue(true);
+    setFilesDraft(Constants.PENDING_CONVO, {
+      fileIds: ['pending-file'],
+      pendingPastes: {
+        'pending-file': { text: 'pending paste', selectionStart: 0 },
+      },
+    });
+    setFilesDraft('conversation-c', {
+      fileIds: ['other-tab-file'],
+      pendingPastes: {},
+      tabId: 'other-tab',
+    });
+
+    const { rerender } = renderHook(
+      ({ conversationId, isSubmitting }: { conversationId: string; isSubmitting: boolean }) =>
+        useAutoSave({
+          conversationId,
+          isSubmitting,
+          textAreaRef: makeTextAreaRef(),
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      {
+        initialProps: {
+          conversationId: 'conversation-c',
+          isSubmitting: true,
+        },
+      },
+    );
+
+    act(() => {
+      rerender({ conversationId: 'conversation-c', isSubmitting: false });
+    });
+    act(() => {
+      rerender({ conversationId: 'conversation-d', isSubmitting: false });
+    });
+
+    expect(localStorage.getItem(pendingTextKey)).toBe(encodeBase64('draft for conversation C'));
+    expect(localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}conversation-d`)).toBeNull();
+    expect(getFilesDraft(Constants.PENDING_CONVO).pendingPastes['pending-file']?.text).toBe(
+      'pending paste',
+    );
+    expect(getFilesDraft('conversation-d')).toEqual({ fileIds: [], pendingPastes: {} });
+    markTabGone('other-tab');
+    act(() => {
+      rerender({ conversationId: 'conversation-c', isSubmitting: false });
+    });
+
+    expect(localStorage.getItem(pendingTextKey)).toBeNull();
+    expect(localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}conversation-c`)).toBe(
+      encodeBase64('draft for conversation C'),
+    );
+    expect(getFilesDraft('conversation-c').pendingPastes['pending-file']?.text).toBe(
+      'pending paste',
+    );
+  });
   it('restores a files draft whose owning tab has closed', () => {
     /** A closed tab's id can never be presented again, so without reclaiming it the draft and
      * the text saved beside it would stay unreachable for the rest of the profile's life. */

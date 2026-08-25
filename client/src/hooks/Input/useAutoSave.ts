@@ -255,6 +255,7 @@ export const useAutoSave = ({
   }, [conversationId, currentConversationId, saveDrafts, textAreaRef]);
 
   const prevConversationIdRef = useRef<string | null>(null);
+  const pendingDestinationRef = useRef<string | null>(null);
 
   useEffect(() => {
     // This useEffect is responsible for saving the current conversation's draft and
@@ -285,10 +286,13 @@ export const useAutoSave = ({
       // the answer-phase swap-back is supposed to restore.
       /** A reload has no previous key to report, but an owned pending draft still needs to remain
        * active when the destination is blocked by another live tab. */
+      const pendingDestination = pendingDestinationRef.current;
       const pendingStorageActive =
-        prevConversationIdRef.current === pendingDraftId ||
-        currentConversationId === pendingDraftId ||
-        currentConversationId == null;
+        (prevConversationIdRef.current === pendingDraftId ||
+          currentConversationId === pendingDraftId ||
+          currentConversationId == null ||
+          pendingDestination === conversationId) &&
+        (pendingDestination == null || pendingDestination === conversationId);
       if (
         pendingStorageActive &&
         conversationId !== pendingDraftId &&
@@ -310,10 +314,12 @@ export const useAutoSave = ({
         if (pendingOwned && !destinationWritable) {
           /** Ours to move but nowhere to move it to. Keep both the draft and the active storage key
            * on the pending id until the destination can be written without clobbering its owner. */
+          pendingDestinationRef.current = conversationId;
           filesDraftId = pendingDraftId;
           textDraftId = pendingDraftId;
           nextConversationId = pendingDraftId;
         } else if (pendingOwned) {
+          pendingDestinationRef.current = null;
           // Move the pending text draft to the new conversationId, falling back to the current
           // text area value when there was no pending draft to carry over
           if (!migrateTextDraft(pendingDraftId, conversationId) && textAreaRef?.current?.value) {

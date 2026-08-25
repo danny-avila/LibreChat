@@ -4,9 +4,15 @@ const mockDeleteFiles = jest.fn();
 const mockSetFiles = jest.fn();
 const mockRemoveTabAttachmentPresence = jest.fn();
 const mockCollectForeignAttachmentClaims = jest.fn(
-  (_excludeDraftIds: string[]) => new Set(mockForeignClaims),
+  (_excludeDraftIds: string[], _excludeOwnPane?: number | 'tab') => new Set(mockForeignClaims),
 );
 const mockForeignClaims = new Set<string>();
+const mockMarkedPasteIds = new Set<string>();
+const mockPendingDiscardIds = new Set<string>();
+const mockStorePendingDiscardIds = jest.fn((_index: number, ids: string[]) => {
+  mockPendingDiscardIds.clear();
+  ids.forEach((id) => mockPendingDiscardIds.add(id));
+});
 const mockFiles = new Map<
   string,
   {
@@ -15,6 +21,8 @@ const mockFiles = new Map<
     filepath?: string;
     source?: string;
     embedded?: boolean;
+    attached?: boolean;
+    progress?: number;
   }
 >();
 
@@ -52,13 +60,16 @@ jest.mock('~/utils', () => ({
   getDefaultEndpoint: () => undefined,
   getModelSpecPreset: jest.fn(),
   hasModelSelection: () => false,
+  isPastedTextFileMarked: (fileId?: string | null) =>
+    fileId != null && mockMarkedPasteIds.has(fileId),
+  collectForeignAttachmentClaims: (excludeDraftIds: string[], excludeOwnPane?: number | 'tab') =>
+    mockCollectForeignAttachmentClaims(excludeDraftIds, excludeOwnPane),
   getNewConversationDraftId: (index = 0) => (index === 0 ? 'new' : `new:${index}`),
   getPendingDraftId: (index = 0) => (index === 0 ? 'pending' : `pending:${index}`),
   renewNewConversationDraftToken: jest.fn(),
   removeTabAttachmentPresence: (...args: unknown[]) => mockRemoveTabAttachmentPresence(...args),
-  collectForeignAttachmentClaims: (excludeDraftIds: string[]) =>
-    mockCollectForeignAttachmentClaims(excludeDraftIds),
-  isPastedTextFileMarked: () => false,
+  loadPendingDiscardIds: () => [...mockPendingDiscardIds],
+  storePendingDiscardIds: (index: number, ids: string[]) => mockStorePendingDiscardIds(index, ids),
   scheduleRetainedFileDeletionRetry: jest.fn(),
   retainFileDeletion: jest.fn(),
   failedFileIdsFrom: () => [],
@@ -109,6 +120,8 @@ describe('useNewConvo reset cleanup', () => {
     jest.clearAllMocks();
     mockDeleteFiles.mockResolvedValue({});
     mockForeignClaims.clear();
+    mockMarkedPasteIds.clear();
+    mockPendingDiscardIds.clear();
     mockFiles.clear();
     mockFiles.set('claimed-file', {
       file_id: 'claimed-file',
@@ -132,7 +145,7 @@ describe('useNewConvo reset cleanup', () => {
       result.current.newConversation();
     });
 
-    expect(mockCollectForeignAttachmentClaims).toHaveBeenCalledWith(['new:2', 'pending:2']);
+    expect(mockCollectForeignAttachmentClaims).toHaveBeenCalledWith(['new:2', 'pending:2'], 2);
     expect(mockRemoveTabAttachmentPresence).toHaveBeenCalledWith(expect.any(Array), 2);
 
     expect(mockDeleteFiles).toHaveBeenCalledWith({
@@ -145,5 +158,26 @@ describe('useNewConvo reset cleanup', () => {
         },
       ],
     });
+  });
+
+  it('defers an in-flight generated paste when drafts are disabled', () => {
+    /** Direct `newConversation()` callers never pass through useNewChat, so this reset is the only
+     * thing that can remember an upload with no filepath yet: nothing else would be left to delete
+     * the server record once the request finally lands. */
+    mockFiles.clear();
+    mockFiles.set('inflight-paste', {
+      file_id: 'inflight-paste',
+      attached: false,
+      progress: 0,
+    });
+    mockMarkedPasteIds.add('inflight-paste');
+    const { result } = renderHook(() => useNewConvo());
+
+    act(() => {
+      result.current.newConversation();
+    });
+
+    expect(mockStorePendingDiscardIds).toHaveBeenCalledWith(0, ['inflight-paste']);
+    expect(mockPendingDiscardIds).toEqual(new Set(['inflight-paste']));
   });
 });

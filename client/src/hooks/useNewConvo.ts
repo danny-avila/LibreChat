@@ -37,6 +37,8 @@ import {
   getNewConversationDraftId,
   getPendingDraftId,
   isPastedTextFileMarked,
+  loadPendingDiscardIds,
+  storePendingDiscardIds,
   removeTabAttachmentPresence,
   collectForeignAttachmentClaims,
   scheduleRetainedFileDeletionRetry,
@@ -416,6 +418,27 @@ const useNewConvo = (index = 0) => {
             },
           ];
         });
+        if (!saveDrafts) {
+          /** An upload still in flight has no filepath or source yet, so filesToDelete cannot build a
+           * deletion payload for it. Direct newConversation callers need to persist its id before
+           * clearing the composer map. Merge with the existing store because useNewChat may already
+           * have recorded the same id. */
+          const inFlightPasteIds: string[] = [];
+          files.forEach((file, key) => {
+            const isMarkedPaste = [key, file.file_id, file.temp_file_id].some((id) =>
+              isPastedTextFileMarked(id),
+            );
+            if (file.attached !== true && file.progress < 1 && isMarkedPaste) {
+              inFlightPasteIds.push(file.file_id);
+            }
+          });
+          if (inFlightPasteIds.length > 0) {
+            const pendingDiscardIds = new Set(loadPendingDiscardIds(index));
+            inFlightPasteIds.forEach((fileId) => pendingDiscardIds.add(fileId));
+            storePendingDiscardIds(index, Array.from(pendingDiscardIds));
+          }
+        }
+
         const discardedFileIds = Array.from(
           new Set([
             ...filesToDelete.map((f) => f.file_id),

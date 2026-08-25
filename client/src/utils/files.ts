@@ -515,12 +515,11 @@ const PASTED_TEXT_FILENAME_PATTERN = /^pasted-text(-([2-9]|[1-9]\d+))?\.txt$/;
 export const isPastedTextFilename = (filename?: string | null): boolean =>
   filename != null && PASTED_TEXT_FILENAME_PATTERN.test(filename);
 
-/** Both paste registries have to outlive a reload. They are per-tab session state rather than
- * account data, which is exactly what `sessionStorage` holds: it survives this tab's reloads and
- * never reaches another tab. Losing them on reload is what let an already-sent paste be
- * reclassified as unsent, because the files draft it gets restored from does survive. */
+/** Paste provenance is genuinely per-tab: it decides which chips offer the paste affordances, and
+ * `sessionStorage` is exactly that scope, surviving this tab's reloads without reaching another.
+ * It has to survive a reload or an already-sent paste would be reclassified as unsent, because the
+ * files draft it gets restored from does survive. */
 const PASTED_TEXT_STORAGE_KEY = 'librechat-pasted-text-file-ids';
-const SUBMITTED_PASTES_STORAGE_KEY = 'librechat-submitted-paste-file-ids';
 
 const readStoredPasteIds = (key: string): string[] => {
   try {
@@ -544,7 +543,6 @@ const persistPasteIds = (key: string, ids: Set<string>): void => {
 };
 
 const pastedTextFileIds = new Set<string>(readStoredPasteIds(PASTED_TEXT_STORAGE_KEY));
-const submittedPasteFileIds = new Set<string>(readStoredPasteIds(SUBMITTED_PASTES_STORAGE_KEY));
 
 /** Records that a file id belongs to a paste the composer generated, so its chip can offer the
  * paste affordances. Persisted per tab, so a reload does not strip those affordances off a chip
@@ -557,20 +555,87 @@ export const markPastedTextFile = (fileId: string): void => {
 export const isPastedTextFileMarked = (fileId?: string | null): boolean =>
   fileId != null && pastedTextFileIds.has(fileId);
 
+/** Submitted-use evidence, unlike paste provenance, has to be readable by every tab and outlive
+ * any of them, so it lives in `localStorage` rather than this tab's session.
+ *
+ * The tab that deletes is rarely the tab that sent. A retained deletion is retried by whichever
+ * tab is holding it, possibly long after being frozen and resumed, while the message referencing
+ * the file was sent somewhere else entirely. Published tab presence used to be the only
+ * cross-tab evidence, and it ages out on a fixed ten-minute window, so a retry resuming after that
+ * classified a sent file as abandoned and deleted it out of its message. Timestamped here instead,
+ * with a horizon wide enough to outlast any plausible freeze, and a hard cap so a long-lived
+ * profile cannot grow this without bound. */
+const SUBMITTED_PASTES_STORAGE_KEY = 'librechat-submitted-paste-file-ids';
+const SUBMITTED_PASTE_WINDOW_MS = 86_400_000;
+const SUBMITTED_PASTE_LIMIT = 2000;
+
+type SubmittedPastes = Record<string, number>;
+
+let submittedPastesCache: { raw: string | null; ids: SubmittedPastes } | null = null;
+
+/** Read through a raw-string cache: another tab's write changes the string, so this stays current
+ * without re-parsing on every lookup, and lookups happen per file per cleanup pass. */
+const readSubmittedPastes = (): SubmittedPastes => {
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(SUBMITTED_PASTES_STORAGE_KEY);
+  } catch {
+    return submittedPastesCache?.ids ?? {};
+  }
+  if (submittedPastesCache != null && submittedPastesCache.raw === raw) {
+    return submittedPastesCache.ids;
+  }
+  const ids: SubmittedPastes = {};
+  try {
+    const parsed = JSON.parse(raw ?? 'null') as unknown;
+    if (parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      for (const [id, seenAt] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof seenAt === 'number') {
+          ids[id] = seenAt;
+        }
+      }
+    }
+  } catch {
+    // An unreadable record protects nothing, which is the same as having none.
+  }
+  submittedPastesCache = { raw, ids };
+  return ids;
+};
+
 /** Records that a paste left the composer on a message. Submitting empties the file map but the
  * draft keeps its provenance, and the run ending (including by Stop or an error) is not evidence
  * the paste is unsent: only this is. Without it, discarding afterwards would delete a file the
- * sent turn already references. It persists for the same reason the draft does: a reload that
- * restored the draft but forgot the paste was consumed would delete the sent turn's file. */
+ * sent turn already references. */
 export const markPasteSubmitted = (fileId?: string | null): void => {
-  if (fileId != null && fileId !== '') {
-    submittedPasteFileIds.add(fileId);
-    persistPasteIds(SUBMITTED_PASTES_STORAGE_KEY, submittedPasteFileIds);
+  if (fileId == null || fileId === '') {
+    return;
+  }
+  const now = Date.now();
+  const ids: SubmittedPastes = { ...readSubmittedPastes(), [fileId]: now };
+  let entries = Object.entries(ids).filter(
+    ([, seenAt]) => now - seenAt <= SUBMITTED_PASTE_WINDOW_MS,
+  );
+  if (entries.length > SUBMITTED_PASTE_LIMIT) {
+    entries = entries.sort((a, b) => b[1] - a[1]).slice(0, SUBMITTED_PASTE_LIMIT);
+  }
+  const pruned = Object.fromEntries(entries);
+  try {
+    localStorage.setItem(SUBMITTED_PASTES_STORAGE_KEY, JSON.stringify(pruned));
+    submittedPastesCache = null;
+  } catch {
+    /** The write is the protection, so a failure has to be remembered in memory at least: this
+     * tab's own cleanup must not turn around and delete what it just sent. */
+    submittedPastesCache = { raw: submittedPastesCache?.raw ?? null, ids: pruned };
   }
 };
 
-export const isPasteSubmitted = (fileId?: string | null): boolean =>
-  fileId != null && submittedPasteFileIds.has(fileId);
+export const isPasteSubmitted = (fileId?: string | null): boolean => {
+  if (fileId == null || fileId === '') {
+    return false;
+  }
+  const seenAt = readSubmittedPastes()[fileId];
+  return seenAt != null && Date.now() - seenAt <= SUBMITTED_PASTE_WINDOW_MS;
+};
 
 /** A file deletion whose request failed, kept with everything needed to retry it: the chip it
  * came from is already gone, so the payload cannot be rebuilt from the composer. */
