@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TMessage } from 'librechat-data-provider';
-import { useGetMessagesByConvoId } from '~/data-provider';
+// 배럴(~/data-provider)이 아니라 서브패스 — jsPDF 등 무거운 의존을 안 끌어온다.
+import { useGetMessagesByConvoId } from '~/data-provider/Messages';
 import { useConversationSources } from '~/data-provider/Sources';
 import type { BklSource } from '~/components/Chat/Messages/Content/ChunkModal';
 
