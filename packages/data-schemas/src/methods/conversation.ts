@@ -235,6 +235,11 @@ export interface ConversationMethods {
     expected?: IAgentEventActorState;
     checkpoint: IAgentEventActorCheckpoint;
   }): Promise<AgentEventActorCommitResult>;
+  invalidateAgentEventActorState(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+  }): Promise<boolean>;
   recordAgentEventActorReconciliation(input: {
     user: string;
     conversationId: string;
@@ -246,8 +251,8 @@ export interface ConversationMethods {
     conversationId: string;
     tenantId?: string;
     invocationId: string;
-    checkpoint: IAgentEventActorCheckpoint;
-    resolution: 'checkpoint_verified' | 'action_compensated';
+    checkpoint: IAgentEventActorReconciliation['checkpoint'];
+    resolution: 'checkpoint_verified' | 'action_compensated' | 'history_repaired';
   }): Promise<boolean>;
   reserveSubagentThread(input: {
     user: string;
@@ -544,6 +549,39 @@ export function createConversationMethods(
     };
   }
 
+  /** Makes a previously committed head cold-start after any legacy-path event. */
+  async function invalidateAgentEventActorState(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+  }): Promise<boolean> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const invalidated = await Conversation.findOneAndUpdate(
+      {
+        user: input.user,
+        conversationId: input.conversationId,
+        subagentThread: { $exists: true },
+        agentEventBinding: { $exists: true },
+        agentEventActor: { $exists: true },
+        'agentEventActorReconciliations.0': { $exists: false },
+        ...subagentLeaseTenantFilter(input.tenantId),
+        ...activeExpirationFilter<IConversation>(),
+      },
+      { $set: { 'agentEventActor.requiresColdStart': true } },
+      { new: true, timestamps: false },
+    )
+      .select('+agentEventActor')
+      .lean<IConversation>();
+    if (invalidated != null) {
+      return true;
+    }
+    const current = await getAgentEventActorSnapshot(input);
+    if (current != null && current.reconciliations.length > 0) {
+      throw new Error('Event actor has unresolved applied-action reconciliation');
+    }
+    return false;
+  }
+
   /** Persists every unresolved applied checkpoint conflict and blocks later commits. */
   async function recordAgentEventActorReconciliation(input: {
     user: string;
@@ -595,8 +633,8 @@ export function createConversationMethods(
     conversationId: string;
     tenantId?: string;
     invocationId: string;
-    checkpoint: IAgentEventActorCheckpoint;
-    resolution: 'checkpoint_verified' | 'action_compensated';
+    checkpoint: IAgentEventActorReconciliation['checkpoint'];
+    resolution: 'checkpoint_verified' | 'action_compensated' | 'history_repaired';
   }): Promise<boolean> {
     if (input.checkpoint.threadId !== input.conversationId) {
       throw new Error('Event actor reconciliation changed its logical thread');
@@ -605,9 +643,18 @@ export function createConversationMethods(
     const checkpointFilter = {
       invocationId: input.invocationId,
       'checkpoint.threadId': input.checkpoint.threadId,
-      'checkpoint.checkpointId': input.checkpoint.checkpointId,
       'checkpoint.checkpointNs': input.checkpoint.checkpointNs,
+      ...(input.checkpoint.checkpointId == null
+        ? { 'checkpoint.checkpointId': { $exists: false } }
+        : { 'checkpoint.checkpointId': input.checkpoint.checkpointId }),
     };
+    if (
+      input.resolution === 'checkpoint_verified' &&
+      (typeof input.checkpoint.checkpointId !== 'string' ||
+        input.checkpoint.checkpointId.length === 0)
+    ) {
+      return false;
+    }
     const resolved = await Conversation.findOneAndUpdate(
       {
         user: input.user,
@@ -620,7 +667,7 @@ export function createConversationMethods(
         ...(input.resolution === 'checkpoint_verified'
           ? {
               'agentEventActor.checkpoint.threadId': input.checkpoint.threadId,
-              'agentEventActor.checkpoint.checkpointId': input.checkpoint.checkpointId,
+              'agentEventActor.checkpoint.checkpointId': input.checkpoint.checkpointId!,
               'agentEventActor.checkpoint.checkpointNs': input.checkpoint.checkpointNs,
             }
           : {}),
@@ -2007,6 +2054,7 @@ export function createConversationMethods(
     getAgentEventBinding,
     getAgentEventActorSnapshot,
     commitAgentEventActorState,
+    invalidateAgentEventActorState,
     recordAgentEventActorReconciliation,
     resolveAgentEventActorReconciliation,
     reserveSubagentThread,

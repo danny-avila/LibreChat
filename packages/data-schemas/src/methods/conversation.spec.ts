@@ -4015,6 +4015,23 @@ describe('Conversation Operations', () => {
         }),
       ).resolves.toEqual({ state: third.state, reconciliations: [] });
       await expect(
+        methods.invalidateAgentEventActorState({
+          user: 'actor-head-user',
+          tenantId: 'tenant-a',
+          conversationId,
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.getAgentEventActorSnapshot({
+          user: 'actor-head-user',
+          tenantId: 'tenant-a',
+          conversationId,
+        }),
+      ).resolves.toEqual({
+        state: { ...third.state, requiresColdStart: true },
+        reconciliations: [],
+      });
+      await expect(
         methods.getAgentEventActorSnapshot({
           user: 'actor-head-user',
           tenantId: 'tenant-a',
@@ -4098,6 +4115,12 @@ describe('Conversation Operations', () => {
         reconciliations: [reconciliation, { ...reconciliation, invocationId: 'event-later' }],
       });
       await expect(
+        methods.invalidateAgentEventActorState({
+          user: 'actor-reconcile-user',
+          conversationId,
+        }),
+      ).rejects.toThrow('unresolved applied-action reconciliation');
+      await expect(
         methods.commitAgentEventActorState({
           user: 'actor-reconcile-user',
           conversationId,
@@ -4128,6 +4151,30 @@ describe('Conversation Operations', () => {
             checkpointId: 'checkpoint-conflict',
             checkpointNs: 'event-actor/conflict',
           },
+          resolution: 'action_compensated',
+        }),
+      ).resolves.toBe(true);
+      const checkpointless = {
+        ...reconciliation,
+        invocationId: 'event-checkpointless',
+        checkpoint: {
+          threadId: conversationId,
+          checkpointNs: 'event-actor/checkpointless',
+        },
+      };
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          user: 'actor-reconcile-user',
+          conversationId,
+          reconciliation: checkpointless,
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.resolveAgentEventActorReconciliation({
+          user: 'actor-reconcile-user',
+          conversationId,
+          invocationId: checkpointless.invocationId,
+          checkpoint: checkpointless.checkpoint,
           resolution: 'action_compensated',
         }),
       ).resolves.toBe(true);

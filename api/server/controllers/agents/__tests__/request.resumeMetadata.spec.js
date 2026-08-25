@@ -76,6 +76,7 @@ const mockExecuteAgentEventActor = jest.fn();
 const mockFindAgentEventAppliedAction = jest.fn();
 const mockGetAgentEventActorSnapshot = jest.fn();
 const mockCommitAgentEventActorState = jest.fn();
+const mockInvalidateAgentEventActorState = jest.fn();
 const mockRecordAgentEventActorReconciliation = jest.fn();
 const mockResolveAgentEventActorReconciliation = jest.fn();
 const mockStartupTelemetry = {
@@ -241,6 +242,7 @@ jest.mock('~/models', () => ({
   getConvo: (...args) => mockGetConvo(...args),
   getAgentEventActorSnapshot: (...args) => mockGetAgentEventActorSnapshot(...args),
   commitAgentEventActorState: (...args) => mockCommitAgentEventActorState(...args),
+  invalidateAgentEventActorState: (...args) => mockInvalidateAgentEventActorState(...args),
   recordAgentEventActorReconciliation: (...args) =>
     mockRecordAgentEventActorReconciliation(...args),
   resolveAgentEventActorReconciliation: (...args) =>
@@ -362,6 +364,7 @@ describe('ResumableAgentController resume metadata', () => {
     mockDeleteAgentCheckpoint.mockResolvedValue(undefined);
     mockGetAgentEventActorSnapshot.mockResolvedValue({ state: null, reconciliations: [] });
     mockCommitAgentEventActorState.mockResolvedValue({ status: 'stale' });
+    mockInvalidateAgentEventActorState.mockResolvedValue(false);
     mockRecordAgentEventActorReconciliation.mockResolvedValue(true);
   });
 
@@ -3960,7 +3963,6 @@ describe('ResumableAgentController resume metadata', () => {
     mockGetConvo.mockResolvedValue({
       conversationId: 'parent-conversation',
       agent_id: 'parent-agent',
-      tenantId: 'tenant-1',
     });
     const client = {
       options: {},
@@ -3985,7 +3987,7 @@ describe('ResumableAgentController resume metadata', () => {
       payload: { gameId: 'game-1', expectedPly: 8 },
     };
     const req = {
-      user: { id: 'user-123', tenantId: 'tenant-1' },
+      user: { id: 'user-123', tenantId: '' },
       body: {
         text: 'Play the next move.',
         clientRequestId: 'req-event-fork',
@@ -4003,7 +4005,7 @@ describe('ResumableAgentController resume metadata', () => {
       _isAgentTrigger: true,
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
-      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingTenantId: undefined,
       _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
     };
 
@@ -4029,11 +4031,100 @@ describe('ResumableAgentController resume metadata', () => {
         resolveReconciliation: expect.any(Function),
       },
     );
+    expect(mockExecuteAgentEventActor.mock.calls[0][0]).not.toHaveProperty('tenantId');
     expect(client).toMatchObject({
       checkpointNamespace: 'event-actor/fork',
       eventActorCheckpointId: 'checkpoint-base',
       eventActorInvocationId: 'req-event-fork',
       eventActorContinuation: 'warm',
+    });
+  });
+
+  it('records reconciliation when persistence fails after an event action commits', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    const checkpoint = {
+      threadId: 'child-conversation',
+      checkpointId: 'checkpoint-applied',
+      checkpointNs: 'event-actor/applied',
+    };
+    mockExecuteAgentEventActor.mockResolvedValueOnce({
+      value: {
+        messageId: 'req-event-persistence:assistant',
+        databasePromise: Promise.resolve().then(() => {
+          throw new Error('response persistence unavailable');
+        }),
+      },
+      execution: {
+        status: 'applied',
+        continuation: 'warm',
+        head: { actorThreadId: 'child-conversation', generation: 2, checkpoint },
+        result: { action: { toolName: 'submit_move', toolCallId: 'call-move' } },
+      },
+    });
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Play the next move.',
+        clientRequestId: 'req-event-persistence',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-persistence',
+          event: {
+            id: 'event-persistence',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+          expectedAction: { toolName: 'submit_move' },
+        },
+      },
+      config: { endpoints: { agents: { eventDriven: { checkpointForks: true } } } },
+      _isAgentTrigger: true,
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client: { options: {} } }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockRecordAgentEventActorReconciliation.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+
+    expect(mockExecuteAgentEventActor).toHaveBeenCalledTimes(1);
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      '[event-actor] Bound child event completed',
+      expect.any(Object),
+    );
+    expect(mockRecordAgentEventActorReconciliation).toHaveBeenCalledWith({
+      user: 'user-123',
+      tenantId: 'tenant-1',
+      conversationId: 'child-conversation',
+      reconciliation: expect.objectContaining({
+        invocationId: 'req-event-persistence',
+        status: 'persistence_failed',
+        checkpoint,
+        action: { toolName: 'submit_move', toolCallId: 'call-move' },
+      }),
     });
   });
 
@@ -4120,6 +4211,11 @@ describe('ResumableAgentController resume metadata', () => {
       await nextTick();
 
       expect(mockExecuteAgentEventActor).not.toHaveBeenCalled();
+      expect(mockInvalidateAgentEventActorState).toHaveBeenCalledWith({
+        user: 'user-123',
+        tenantId: 'tenant-1',
+        conversationId: 'child-conversation',
+      });
       expect(client.sendMessage).toHaveBeenCalledTimes(1);
     },
   );

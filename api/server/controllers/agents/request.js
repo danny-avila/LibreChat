@@ -49,6 +49,7 @@ const {
   getConvo,
   getAgentEventActorSnapshot,
   commitAgentEventActorState,
+  invalidateAgentEventActorState,
   recordAgentEventActorReconciliation,
   resolveAgentEventActorReconciliation,
   isAgentTriggerPrincipalActive,
@@ -1790,6 +1791,30 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         });
         return titleEventPromise;
       };
+      const eventActorTenantId = req._agentEventBindingTenantId;
+      let appliedEventActor;
+      let eventActorPersistenceComplete = false;
+      const recordEventActorPersistenceFailure = async (error) => {
+        if (appliedEventActor == null || eventActorPersistenceComplete) {
+          return;
+        }
+        const recorded = await recordAgentEventActorReconciliation({
+          user: userId,
+          conversationId,
+          ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+          reconciliation: {
+            invocationId: appliedEventActor.invocationId,
+            status: 'persistence_failed',
+            checkpoint: appliedEventActor.checkpoint,
+            action: appliedEventActor.action,
+            error: String(error?.message ?? error).slice(0, 1024),
+            observedAt: new Date(),
+          },
+        });
+        if (!recorded) {
+          throw new Error('Failed to preserve applied event actor persistence reconciliation');
+        }
+      };
 
       try {
         const onStart = (userMsg, respMsgId, _isNewConvo) => {
@@ -1908,7 +1933,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           ? executeAgentEventActor(
               {
                 user: userId,
-                ...(tenantId == null ? {} : { tenantId }),
+                ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
                 conversationId,
                 invocationId: eventTaskId,
                 event: agentEventDelivery.event,
@@ -1935,6 +1960,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 resolveReconciliation: resolveAgentEventActorReconciliation,
               },
             ).then(({ value, execution }) => {
+              if (execution.status === 'applied') {
+                appliedEventActor = {
+                  invocationId: eventTaskId,
+                  checkpoint: execution.head.checkpoint,
+                  action: execution.result.action,
+                };
+              }
               logger.info('[event-actor] Bound child event completed', {
                 conversationId,
                 invocationId: eventTaskId,
@@ -1943,7 +1975,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               });
               return value;
             })
-          : client.sendMessage(text, messageOptions);
+          : (async () => {
+              if (
+                agentEventDelivery?.event != null &&
+                req._agentEventBindingParentConversationId != null
+              ) {
+                await invalidateAgentEventActorState({
+                  user: userId,
+                  conversationId,
+                  ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+                });
+              }
+              return client.sendMessage(text, messageOptions);
+            })();
 
         if (titleEligible && titleTiming === 'immediate') {
           immediateTitlePromise = addTitle(req, {
@@ -2177,6 +2221,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
           acceptsTitleEvents = false;
           resolveConvoReady();
+          await recordEventActorPersistenceFailure(
+            new Error('Event actor terminal persistence claim was replaced'),
+          );
           await finishResumableRequest(req, userId);
           disposeBackgroundClient();
           startupTelemetry?.end(job.abortController.signal.aborted ? 'aborted' : 'replaced');
@@ -2250,6 +2297,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               : 'Response message could not be persisted before terminal publication',
           );
         }
+        eventActorPersistenceComplete = true;
 
         // If the user stopped this turn — or an empty preempt boundary truncated
         // it, which persists under the same honest `unfinished` contract — cancel
@@ -2388,6 +2436,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
         acceptsTitleEvents = false;
         resolveConvoReady();
+        try {
+          await recordEventActorPersistenceFailure(error);
+        } catch (reconciliationError) {
+          logger.error(
+            '[event-actor] Failed to preserve terminal persistence reconciliation',
+            reconciliationError,
+          );
+        }
 
         // Once this controller owns terminal persistence, no competing error
         // transition can win. Settle its pending marker with conservative

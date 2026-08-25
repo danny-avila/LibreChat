@@ -103,6 +103,7 @@ export async function executeAgentEventActor<T>(
       const verified = snapshot.reconciliations.filter(
         (item) =>
           snapshot?.state != null &&
+          item.status !== 'persistence_failed' &&
           typeof item.checkpoint.checkpointId === 'string' &&
           checkpointMatches(snapshot.state, item.checkpoint),
       );
@@ -139,7 +140,7 @@ export async function executeAgentEventActor<T>(
       }
       const state = snapshot.state;
       const head = toHead(input.conversationId, state);
-      if (state == null) {
+      if (state == null || state.requiresColdStart === true) {
         return { status: 'checkpoint_unavailable', head };
       }
       const fork = await forkAgentEventCheckpoint(
@@ -175,6 +176,7 @@ export async function executeAgentEventActor<T>(
         fork: {
           threadId: input.conversationId,
           checkpointNs: request.checkpointNs,
+          ...(head.checkpoint == null ? {} : { checkpointId: head.checkpoint.checkpointId }),
           invocationId: request.invocationId,
         },
       };

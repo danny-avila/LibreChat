@@ -25,11 +25,13 @@ export interface IAgentEventActorState {
   generation: number;
   checkpoint: IAgentEventActorCheckpoint;
   previousCheckpoint?: IAgentEventActorCheckpoint;
+  /** Forces the next qualifying event to rebuild from durable message history. */
+  requiresColdStart?: boolean;
 }
 
 export interface IAgentEventActorReconciliation {
   invocationId: string;
-  status: 'commit_conflict' | 'commit_indeterminate';
+  status: 'commit_conflict' | 'commit_indeterminate' | 'persistence_failed';
   checkpoint: Omit<IAgentEventActorCheckpoint, 'checkpointId'> & { checkpointId?: string };
   action: { toolName: string; toolCallId?: string };
   error?: string;

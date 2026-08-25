@@ -89,6 +89,7 @@ const convoSchema: Schema<IConversation> = new Schema(
           _id: false,
           default: undefined,
         },
+        requiresColdStart: { type: Boolean, default: undefined },
       },
       _id: false,
       default: undefined,
@@ -102,7 +103,7 @@ const convoSchema: Schema<IConversation> = new Schema(
           invocationId: { type: String, required: true },
           status: {
             type: String,
-            enum: ['commit_conflict', 'commit_indeterminate'],
+            enum: ['commit_conflict', 'commit_indeterminate', 'persistence_failed'],
             required: true,
           },
           checkpoint: {

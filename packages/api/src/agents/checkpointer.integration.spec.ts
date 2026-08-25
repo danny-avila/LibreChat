@@ -207,6 +207,50 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
     expect(committedBase?.checkpoint.channel_values.events).toEqual(['event-1', 'seen:event-1']);
   });
 
+  it('cold-rebuilds in a fresh namespace when an invalidated head id is not copied', async () => {
+    const { StateGraph, START, END, Annotation } = await import('@langchain/langgraph');
+    const saver = await getAgentCheckpointer(MONGO_CFG);
+    const threadId = `actor-${new mongoose.Types.ObjectId().toString()}`;
+    const State = Annotation.Root({
+      events: Annotation<string[]>({
+        reducer: (left, right) => [...left, ...right],
+        default: () => [],
+      }),
+    });
+    const graph = new StateGraph(State)
+      .addNode('observe', (state: { events: string[] }) => ({
+        events: [`seen:${state.events[state.events.length - 1]}`],
+      }))
+      .addEdge(START, 'observe')
+      .addEdge('observe', END)
+      .compile({ checkpointer: saver as never });
+    const config = (checkpointNamespace: string, invocationId: string, checkpointId?: string) => ({
+      configurable: {
+        thread_id: threadId,
+        checkpoint_ns: '',
+        [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: checkpointNamespace,
+        [LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY]: invocationId,
+        ...(checkpointId == null ? {} : { checkpoint_id: checkpointId }),
+      },
+      durability: 'exit' as const,
+    });
+
+    await graph.invoke({ events: ['legacy-before'] }, config('event-actor/base', 'event-1'));
+    const base = await captureAgentEventCheckpoint(
+      threadId,
+      'event-actor/base',
+      'event-1',
+      MONGO_CFG,
+    );
+    expect(base).not.toBeNull();
+
+    const rebuilt = await graph.invoke(
+      { events: ['event-after-legacy'] },
+      config('event-actor/cold', 'event-2', base!.checkpointId),
+    );
+    expect(rebuilt.events).toEqual(['event-after-legacy', 'seen:event-after-legacy']);
+  });
+
   it('deleteAgentCheckpoint prunes a thread’s persisted checkpoint', async () => {
     const saver = await getAgentCheckpointer(MONGO_CFG);
     expect(saver).toBeDefined();

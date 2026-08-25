@@ -113,6 +113,42 @@ describe('event actor host adapter', () => {
     expect(state).toMatchObject({ generation: 2, checkpoint: { checkpointId: 'checkpoint-2' } });
   });
 
+  it('cold-starts after a legacy fallback invalidates the committed head', async () => {
+    state = {
+      generation: 1,
+      checkpoint: {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-before-legacy',
+        checkpointNs: 'event-actor/before-legacy',
+      },
+      requiresColdStart: true,
+    };
+    const dependencies = deps();
+    let continuation: 'warm' | 'cold' | undefined;
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId: 'event-after-legacy',
+          event: { id: 'event-after-legacy' },
+          signal: new AbortController().signal,
+          invoke: async (context) => {
+            continuation = context.continuation;
+            return 'response';
+          },
+          readAppliedAction: () => ({ toolName: 'submit_move' }),
+        },
+        dependencies,
+      ),
+    ).resolves.toMatchObject({ execution: { status: 'applied', continuation: 'cold' } });
+
+    expect(continuation).toBe('cold');
+    expect(mockedFork).not.toHaveBeenCalled();
+    expect(state?.requiresColdStart).toBeUndefined();
+  });
+
   it('discards a no-action fork without advancing the actor head', async () => {
     state = {
       generation: 1,
@@ -366,6 +402,48 @@ describe('event actor host adapter', () => {
         resolution: 'checkpoint_verified',
       }),
     );
+  });
+
+  it('does not clear a persistence failure merely because its checkpoint is authoritative', async () => {
+    const authoritative: IAgentEventActorState = {
+      generation: 1,
+      checkpoint: {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-with-missing-history',
+        checkpointNs: 'event-actor/missing-history',
+      },
+    };
+    const dependencies = {
+      ...deps(),
+      getSnapshot: jest.fn(async () => ({
+        state: authoritative,
+        reconciliations: [
+          {
+            invocationId: 'event-persistence-failed',
+            status: 'persistence_failed' as const,
+            checkpoint: authoritative.checkpoint,
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        ],
+      })),
+    };
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId: 'event-after-persistence-failure',
+          event: { id: 'event-after-persistence-failure' },
+          signal: new AbortController().signal,
+          invoke: async () => 'response',
+          readAppliedAction: () => ({ toolName: 'submit_move' }),
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('blocked on persistence_failed reconciliation');
+    expect(dependencies.resolveReconciliation).not.toHaveBeenCalled();
   });
 
   it('blocks new invocations while a prior applied fork needs reconciliation', async () => {
