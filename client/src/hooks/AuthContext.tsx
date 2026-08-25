@@ -31,6 +31,7 @@ import {
   isSafeRedirect,
   getPostLoginRedirect,
   clearRetainedFileDeletions,
+  openFileDeletionRetention,
 } from '~/utils';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import useTimeout from './useTimeout';
@@ -82,6 +83,10 @@ const AuthContextProvider = ({
         setIsAuthenticated(isAuthenticated);
         if (isAuthenticated) {
           setQueriesEnabled(true);
+          /** The clear on the way out latches retention shut so a DELETE that settles afterwards
+           * cannot write the departing account's payload back in. This is the only place that
+           * knows a new session exists to reopen it for. */
+          openFileDeletionRetention();
         } else {
           /** Cleanup still queued from a failed delete belongs to the account that uploaded
            * those files, and losing the session passes through here every way it can happen: the

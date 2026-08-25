@@ -678,10 +678,18 @@ export const endRetainedDeletionPass = (): void => {
   retainedPassInFlight = false;
 };
 
-/** Drops the queue outright. The payloads belong to the account that uploaded them, so carrying
- * them across a sign-out would retry another user's credentials against files they do not own,
- * failing the ownership check forever instead of cleaning anything up. */
+/** Whether this session may still record deletions. A DELETE that was already in flight when the
+ * session ended settles after the queue was dropped, and its handler is the last reference to
+ * that payload, so it writes the previous account's records straight back in. The latch is what
+ * makes the clear stick: retention reopens only when a session is established again. */
+let retentionOpen = true;
+
+/** Drops the queue outright and refuses further records until the next sign-in. The payloads
+ * belong to the account that uploaded them, so carrying them across a sign-out would retry
+ * another user's credentials against files they do not own, failing the ownership check forever
+ * instead of cleaning anything up. */
 export const clearRetainedFileDeletions = (): void => {
+  retentionOpen = false;
   retainedFileDeletions.clear();
   persistRetainedFileDeletions();
   retainedRetryDelayMs = RETAINED_RETRY_BASE_DELAY_MS;
@@ -691,7 +699,16 @@ export const clearRetainedFileDeletions = (): void => {
   }
 };
 
+/** Reopens retention for a newly established session. Records already in the store are this
+ * account's own, carried across a reload by `sessionStorage`, so the queue is left alone. */
+export const openFileDeletionRetention = (): void => {
+  retentionOpen = true;
+};
+
 export const retainFileDeletion = (record: PendingFileDeletion): void => {
+  if (!retentionOpen) {
+    return;
+  }
   retainedFileDeletions.set(record.file_id, record);
   persistRetainedFileDeletions();
   retainedRetryDelayMs = RETAINED_RETRY_BASE_DELAY_MS;

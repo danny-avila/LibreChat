@@ -359,6 +359,44 @@ describe('useTextarea long-paste fallback', () => {
     expect(getFilesDraft('convo-1').pendingPastes['file-1']?.text).toBe(pastedText);
   });
 
+  it('reinserts a failed paste at its anchor when another tab owns the draft', async () => {
+    /** The ownership guard skips the only durable copy of the paste, so this callback is all that
+     * is left holding it: refusing because the composer moved on would lose the text outright. */
+    localStorage.setItem('librechat-live-tab:other-tab', JSON.stringify({ seenAt: Date.now() }));
+    localStorage.setItem(
+      'filesDraft_convo-1',
+      JSON.stringify({ fileIds: ['other-tab-file'], pendingPastes: {}, tabId: 'other-tab' }),
+    );
+    let insertOffset = -1;
+    mockInsertTextAtCursor.mockImplementationOnce((element: HTMLTextAreaElement) => {
+      insertOffset = element.selectionStart;
+    });
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        return Promise.resolve(true);
+      },
+    );
+    const { result, textArea } = renderTextareaHook();
+    textArea.value = 'draft at paste time';
+    textArea.setSelectionRange('draft at paste time'.length, 'draft at paste time'.length);
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(uploadLifecycle).toBeDefined());
+    expect(getFilesDraft('convo-1').pendingPastes).toEqual({});
+    textArea.value = 'draft at paste time and more';
+
+    act(() => uploadLifecycle?.onError?.('file-1'));
+
+    expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, pastedText);
+    expect(insertOffset).toBe('draft at paste time'.length);
+  });
+
   it('forwards upload recovery through the assistants route', async () => {
     mockConversation = { endpoint: 'assistants' };
     let uploadLifecycle: UploadLifecycleCallbacks | undefined;
