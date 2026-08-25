@@ -40,6 +40,28 @@ export function parseCitedNumbers(text: string): number[] {
   return [...ns].sort((a, b) => a - b);
 }
 
+/**
+ * 답변 텍스트 추출 — msg.text 우선, 비어 있으면 content parts 를 이어붙인다.
+ *
+ * Resumable Stream 경로에서는 답변이 `content: [{type:'text', text:{value}}]`
+ * 로 저장되고 `text` 는 빈 문자열이다 (2026-08-25 사용자 진단: 이 때문에
+ * 인용 파싱이 0건이 되어 패널이 "인용 없음" 으로 비어 보였다).
+ */
+export function messageText(msg: TMessage): string {
+  const direct = msg.text ?? '';
+  if (direct) return direct;
+  const parts = (msg as { content?: unknown }).content;
+  if (!Array.isArray(parts)) return '';
+  return parts
+    .map((p) => {
+      if (!p || typeof p !== 'object') return '';
+      const part = p as { type?: string; text?: string | { value?: string } };
+      if (part.type && part.type !== 'text') return '';
+      return typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
+    })
+    .join('');
+}
+
 export function extractFileName(source: BklSource): string {
   const meta = source.metadata?.[0];
   const raw = String(meta?.name ?? meta?.file_name ?? '출처 문서').normalize('NFC');
@@ -172,8 +194,7 @@ export function useConversationCitations(conversationId: string | null | undefin
 
     for (const msg of (messages ?? []) as TMessage[]) {
       if (msg.isCreatedByUser || !msg.messageId) continue;
-      const text = msg.text ?? '';
-      const citedNs = parseCitedNumbers(text);
+      const citedNs = parseCitedNumbers(messageText(msg));
       if (citedNs.length === 0) continue;
       const sources = sourcesForMessage(apiByMessage, msg.messageId);
       if (!sources || sources.length === 0) continue;

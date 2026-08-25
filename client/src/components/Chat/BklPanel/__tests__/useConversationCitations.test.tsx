@@ -11,7 +11,11 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
-import { parseCitedNumbers, useConversationCitations } from '../useConversationCitations';
+import {
+  messageText,
+  parseCitedNumbers,
+  useConversationCitations,
+} from '../useConversationCitations';
 
 jest.mock('~/data-provider/Sources', () => ({
   useConversationSources: jest.fn(() => ({
@@ -85,6 +89,27 @@ describe('parseCitedNumbers', () => {
   });
 });
 
+describe('messageText — Resumable Stream content parts', () => {
+  it('text 가 비면 content[].text.value 를 이어붙인다', () => {
+    const m = msg({
+      messageId: 'a1',
+      text: '',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      content: [
+        { type: 'text', text: { value: '인용 [1]' } },
+        { type: 'text', text: ' 그리고 [4]' },
+      ] as any,
+    });
+    expect(messageText(m)).toBe('인용 [1] 그리고 [4]');
+    expect(parseCitedNumbers(messageText(m))).toEqual([1, 4]);
+  });
+
+  it('text 가 있으면 그대로 쓰고, content 없으면 빈 문자열', () => {
+    expect(messageText(msg({ text: '본문 [2]' }))).toBe('본문 [2]');
+    expect(messageText(msg({ text: '' }))).toBe('');
+  });
+});
+
 describe('useConversationCitations — API 미배포 폴백', () => {
   const answer = msg({
     messageId: 'a1',
@@ -116,6 +141,21 @@ describe('useConversationCitations — API 미배포 폴백', () => {
       '별지.pdf',
     ]);
     expect(result.current.files).toHaveLength(2);
+  });
+
+  it('resumable stream(content parts) 답변도 집계한다 — 회귀 재현', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__bklSources = { a2: [makeSource('감독규정.pdf')] };
+    const partsMsg = msg({
+      messageId: 'a2',
+      text: '',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      content: [{ type: 'text', text: { value: '별표 6에서 정합니다 [1].' } }] as any,
+    });
+    const { result } = setup([userMsg, partsMsg]);
+    expect(result.current.turns).toHaveLength(1);
+    expect(result.current.turns[0].chunks.map((c) => c.n)).toEqual([1]);
+    expect(result.current.files[0].fileName).toBe('감독규정.pdf');
   });
 
   it('출처가 어디에도 없으면 빈 결과 (isLoading 아님)', () => {
