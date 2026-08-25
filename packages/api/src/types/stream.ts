@@ -1,7 +1,8 @@
-import type { Agents } from 'librechat-data-provider';
+import type { Agents, UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { EventEmitter } from 'events';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '../agents/hitl/resume';
+import type { MCPRuntimeRequestBody } from '../mcp/types';
 import type { ServerSentEvent } from './events';
 
 export interface GenerationJobMetadata {
@@ -17,6 +18,15 @@ export interface GenerationJobMetadata {
   userMessage?: Agents.UserMessageMeta;
   /** Response message ID for tracking */
   responseMessageId?: string;
+  /** Whether this generation replaces an existing assistant branch. */
+  isRegenerate?: boolean;
+  /** Exact normalized MCP placeholder identity for this turn. Persisted so HITL
+   * resume does not reconstruct a different parent or overridden conversation. */
+  mcpRequestBody?: MCPRuntimeRequestBody;
+  /** Exact assistant-message fields authored by the user during this running job. */
+  userSubmittedPaths?: string[];
+  /** Exact HITL message-filter fields embedded at those assistant-message paths. */
+  userSubmittedMessageFieldPaths?: UserSubmittedMessageFieldPath[];
   /** Sender label for the response (e.g., "GPT-4.1", "Claude") */
   sender?: string;
   /** Endpoint identifier for abort handling */
@@ -31,6 +41,20 @@ export interface GenerationJobMetadata {
   agent_id?: string;
   /** Whether the originating turn was a temporary chat; a HITL resume keeps it so. */
   isTemporary?: boolean;
+  /** Trusted scheduled-occurrence identity. These fields are accepted only from a
+   * verified agent-trigger request and let pause/resume/reconciliation keep the
+   * occurrence attached to the exact generation that owns it. */
+  scheduleId?: string;
+  scheduledFor?: string;
+  scheduleConfigRevision?: number;
+  scheduleManual?: boolean;
+  /** Intended terminal classification retained when Mongo outcome persistence
+   * fails. The scheduler reconciler consumes this evidence before clearing the job. */
+  scheduleOutcome?: 'success' | 'error' | 'interrupted' | 'skipped_balance';
+  scheduleOutcomeError?: string;
+  /** Prevent normal terminal cleanup until schedule reconciliation has consumed
+   * the retained outcome evidence. */
+  preserveForScheduleReconcile?: boolean;
   /**
    * Deferred-tool names discovered (via `tool_search`) before a HITL pause. A resume
    * replays these into `createRun` because the rebuilt graph uses `messages: []`, so
@@ -41,6 +65,10 @@ export interface GenerationJobMetadata {
   activityPhaseSnapshot?: ActivityPhaseSnapshot;
   /** See `SerializableJobData.preemptCapable`. */
   preemptCapable?: boolean;
+  /** See `SerializableJobData.steerQuotesCapable`. */
+  steerQuotesCapable?: boolean;
+  /** See `SerializableJobData.steerQuotesExecutionId`. */
+  steerQuotesExecutionId?: string;
   /** Exact provider segment whose completion gates destructive user cleanup. */
   providerExecutionId?: string;
   /** False only while that exact provider segment can still mutate user data. */

@@ -36,6 +36,7 @@ import {
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
   findConversationInInfinite,
+  preserveStreamedContentIdentity,
 } from '~/utils';
 import {
   startupConfigKey,
@@ -185,6 +186,35 @@ export const getExistingConversationAbortMessages = ({
   return [...sourceMessages];
 };
 
+export const mergeErrorMessages = ({
+  messages,
+  regenerateMessages,
+  userMessage,
+  errorMessage,
+  isRegenerate = false,
+}: Pick<EventSubmission, 'messages' | 'regenerateMessages' | 'userMessage' | 'isRegenerate'> & {
+  errorMessage: TMessage;
+}): TMessage[] => {
+  if (isRegenerate) {
+    const finalMessages: TMessage[] = [];
+    let replaced = false;
+    for (const message of regenerateMessages ?? messages) {
+      if (message.messageId === errorMessage.messageId) {
+        finalMessages.push(errorMessage);
+        replaced = true;
+      } else {
+        finalMessages.push(message);
+      }
+    }
+    if (!replaced) {
+      finalMessages.push(errorMessage);
+    }
+    return finalMessages;
+  }
+
+  return [...messages, userMessage, errorMessage];
+};
+
 export type EventHandlerParams = {
   isAddedRequest?: boolean;
   runIndex?: number;
@@ -313,6 +343,11 @@ export default function useEventHandlers({
   const { announcePolite } = useLiveAnnouncer();
   const applyAgentTemplate = useApplyAgentTemplate();
   const setAbortScroll = useSetRecoilState(store.abortScroll);
+  /** Cleared on every terminal path below: the elapsed anchor must not outlive
+   *  its generation, or a later externally-started run attached at this index
+   *  would inherit a stale baseline. Navigation teardown deliberately does not
+   *  clear it — a reattach to a still-live run keeps its original start. */
+  const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(runIndex));
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -346,6 +381,8 @@ export default function useEventHandlers({
     stepHandler,
     clearStepMaps,
     resetSubagentAtoms,
+    resetPtcAtoms,
+    prunePtcTraces,
     syncStepMessage,
     cancelPendingDeltaFlush,
     flushPendingDeltas,
@@ -391,8 +428,12 @@ export default function useEventHandlers({
       shouldResetSubagentAtomsOnConversationChange(previous, paramId, preserveNewConversationId)
     ) {
       resetSubagentAtoms();
+      /** PTC traces are live-only for the same reason and share the boundary:
+       *  keep them through a run so a finished program stays auditable, drop
+       *  them when the conversation changes. */
+      resetPtcAtoms();
     }
-  }, [paramId, resetSubagentAtoms]);
+  }, [paramId, resetSubagentAtoms, resetPtcAtoms]);
 
   /** Final cleanup on component unmount. `useStepHandler` keeps the
    *  set of known atom keys in a ref; when the hook unmounts (user
@@ -403,8 +444,9 @@ export default function useEventHandlers({
   useEffect(
     () => () => {
       resetSubagentAtoms();
+      resetPtcAtoms();
     },
-    [resetSubagentAtoms],
+    [resetSubagentAtoms, resetPtcAtoms],
   );
 
   const messageHandler = useCallback(
@@ -481,7 +523,7 @@ export default function useEventHandlers({
   const syncHandler = useCallback(
     (data: TSyncData, submission: EventSubmission) => {
       const { conversationId, thread_id, responseMessage, requestMessage } = data;
-      const { initialResponse, messages: _messages, userMessage } = submission;
+      const { initialResponse, messages: _messages, userMessage, isTemporary = false } = submission;
       /** Swap the optimistic user row for the server-stamped one IN PLACE.
        *  Filtering it out and re-appending at the tail would order any of its
        *  already-present children (abandoned responses from preempted
@@ -525,14 +567,16 @@ export default function useEventHandlers({
           return update;
         });
 
-        if (requestMessage.parentMessageId === Constants.NO_PARENT) {
-          upsertConvoInAllQueries(queryClient, update);
-        } else {
-          updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
-        }
-        if (update.chatProjectId) {
-          queryClient.invalidateQueries([QueryKeys.projects]);
-          queryClient.invalidateQueries([QueryKeys.project, update.chatProjectId]);
+        if (!isTemporary) {
+          if (requestMessage.parentMessageId === Constants.NO_PARENT) {
+            upsertConvoInAllQueries(queryClient, update);
+          } else {
+            updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
+          }
+          if (update.chatProjectId) {
+            queryClient.invalidateQueries([QueryKeys.projects]);
+            queryClient.invalidateQueries([QueryKeys.project, update.chatProjectId]);
+          }
         }
       } else if (setConversation) {
         setConversation((prevState) => {
@@ -696,6 +740,7 @@ export default function useEventHandlers({
         isTemporary: _isTemporary = false,
       } = submission;
       const serverConversation = conversation as TConversation;
+      setSubmissionStart(null);
 
       try {
         // Handle early abort - aborted before any response message was saved.
@@ -826,19 +871,29 @@ export default function useEventHandlers({
           finalMessages = [...messages, requestMessage, responseMessage];
         }
 
-        /* Preserve files from current messages when server response lacks them */
+        /* Preserve files and streamed content identity from current messages:
+         * files fill in when the server response lacks them, and the persisted
+         * (compacted) content is stamped with the indexes it streamed at so
+         * index-keyed renders don't remount the settled message. */
         if (finalMessages.length > 0) {
-          const currentMsgMap = new Map(
-            currentMessages
-              .filter((m) => m.files && m.files.length > 0)
-              .map((m) => [m.messageId, m.files]),
-          );
+          const currentMsgMap = new Map(currentMessages.map((m) => [m.messageId, m]));
           for (let i = 0; i < finalMessages.length; i++) {
             const msg = finalMessages[i];
-            const preservedFiles = currentMsgMap.get(msg.messageId);
-            if (msg.files == null && preservedFiles) {
-              finalMessages[i] = { ...msg, files: preservedFiles };
+            const currentMsg = currentMsgMap.get(msg.messageId);
+            if (!currentMsg) {
+              continue;
             }
+            const preservedFiles =
+              msg.files == null && currentMsg.files?.length ? currentMsg.files : undefined;
+            const content = preserveStreamedContentIdentity(currentMsg.content, msg.content);
+            if (preservedFiles == null && content === msg.content) {
+              continue;
+            }
+            finalMessages[i] = {
+              ...msg,
+              ...(preservedFiles != null ? { files: preservedFiles } : {}),
+              ...(content !== msg.content ? { content } : {}),
+            };
           }
         }
 
@@ -937,20 +992,22 @@ export default function useEventHandlers({
       location.pathname,
       applyAgentTemplate,
       attachmentHandler,
+      setSubmissionStart,
       restorePendingQuotes,
     ],
   );
 
   const errorHandler = useCallback(
     ({ data, submission }: { data?: TResData; submission: EventSubmission }) => {
-      const { messages, userMessage, initialResponse } = submission;
+      const { userMessage, initialResponse } = submission;
       setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
+      setSubmissionStart(null);
 
       const conversationId =
         userMessage.conversationId ?? submission.conversation?.conversationId ?? '';
 
       const setErrorMessages = (convoId: string, errorMessage: TMessage) => {
-        const finalMessages: TMessage[] = [...messages, userMessage, errorMessage];
+        const finalMessages = mergeErrorMessages({ ...submission, errorMessage });
         setMessages(finalMessages);
         queryClient.setQueryData<TMessage[]>([QueryKeys.messages, convoId], finalMessages);
       };
@@ -1037,6 +1094,7 @@ export default function useEventHandlers({
       paramId,
       newConversation,
       setIsSubmitting,
+      setSubmissionStart,
       getMessages,
       queryClient,
     ],
@@ -1084,6 +1142,7 @@ export default function useEventHandlers({
           console.error('Error in finalHandler during abort:', error);
           setShowStopButton(false);
           setIsSubmitting(false);
+          setSubmissionStart(null);
         }
         return;
       } else if (!isAssistantsEndpoint(endpoint)) {
@@ -1160,6 +1219,7 @@ export default function useEventHandlers({
       newConversation,
       setIsSubmitting,
       setShowStopButton,
+      setSubmissionStart,
     ],
   );
 
@@ -1174,6 +1234,7 @@ export default function useEventHandlers({
     createdHandler,
     titleHandler,
     syncStepMessage,
+    prunePtcTraces,
     cancelPendingDeltaFlush,
     flushPendingDeltas,
     attachmentHandler,

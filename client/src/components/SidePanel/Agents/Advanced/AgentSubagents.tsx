@@ -1,7 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { Switch } from '@librechat/client';
 import { Network, Users } from 'lucide-react';
-import { MAX_SUBAGENTS } from 'librechat-data-provider';
 import type { ControllerRenderProps } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import { StaticAgentRow, AddAgentSelect, ListMeta, useSelectableAgents } from './AgentList';
@@ -12,11 +11,11 @@ import { ToggleSetting } from './ui';
 interface AgentSubagentsProps {
   field: ControllerRenderProps<AgentForm, 'subagents'>;
   currentAgentId: string;
+  maxSubagents: number;
 }
 
-const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }) => {
+const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId, maxSubagents }) => {
   const localize = useLocalize();
-  const [newAgentId, setNewAgentId] = useState('');
 
   const fieldValue = field.value;
   const value = useMemo(() => fieldValue ?? {}, [fieldValue]);
@@ -65,14 +64,19 @@ const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }
     [field, value],
   );
 
-  useEffect(() => {
-    if (newAgentId && agentIds.length < MAX_SUBAGENTS && !agentIds.includes(newAgentId)) {
-      setAgentIds([...agentIds, newAgentId]);
-      setNewAgentId('');
-    } else if (newAgentId) {
-      setNewAgentId('');
-    }
-  }, [newAgentId, agentIds, setAgentIds]);
+  const addAgent = useCallback(
+    (agentId: string) => {
+      if (!agentId || agentIds.length >= maxSubagents || agentIds.includes(agentId)) {
+        return;
+      }
+
+      /** Commit the selection directly to react-hook-form. Deferring this
+       * through component state and an effect allowed an immediate form submit
+       * to persist the enable toggles before the selected roster. */
+      setAgentIds([...agentIds, agentId]);
+    },
+    [agentIds, maxSubagents, setAgentIds],
+  );
 
   const removeAgentAt = (index: number) => {
     setAgentIds(agentIds.filter((_, i) => i !== index));
@@ -119,7 +123,7 @@ const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }
             <ListMeta
               label={localize('com_ui_agent_subagents_agents')}
               count={agentIds.length}
-              max={MAX_SUBAGENTS}
+              max={maxSubagents}
             />
 
             {agentIds.map((agentId, idx) => {
@@ -137,18 +141,18 @@ const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }
               );
             })}
 
-            {agentIds.length < MAX_SUBAGENTS && (
+            {agentIds.length < maxSubagents && (
               <AddAgentSelect
                 options={options}
-                onSelect={setNewAgentId}
+                onSelect={addAgent}
                 placeholder={localize('com_ui_agent_subagents_add')}
                 ariaLabel={localize('com_ui_agent_subagents_add')}
               />
             )}
 
-            {agentIds.length >= MAX_SUBAGENTS && (
+            {agentIds.length >= maxSubagents && (
               <p className="pt-1 text-center text-xs italic text-text-tertiary">
-                {localize('com_ui_agent_subagents_max', { 0: MAX_SUBAGENTS })}
+                {localize('com_ui_agent_subagents_max', { 0: maxSubagents })}
               </p>
             )}
           </div>

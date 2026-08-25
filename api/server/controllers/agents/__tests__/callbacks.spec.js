@@ -1,4 +1,4 @@
-const { Tools } = require('librechat-data-provider');
+const { Tools, StepEvents } = require('librechat-data-provider');
 
 // Mock all dependencies before requiring the module
 jest.mock('nanoid', () => ({
@@ -70,6 +70,17 @@ jest.mock('~/server/services/Files/Code/process', () => ({
   },
 }));
 
+jest.mock('~/server/services/Files/Code/preflight', () => ({
+  preflightCodeOutputBatch: jest.fn(async ({ artifact }) =>
+    (artifact.files ?? [])
+      .filter((file) => file.inherited !== true)
+      .map((file) => ({
+        file,
+        sessionId: file.storage_session_id ?? artifact.session_id,
+      })),
+  ),
+}));
+
 jest.mock('~/server/services/Tools/credentials', () => ({
   loadAuthValues: jest.fn(),
 }));
@@ -113,6 +124,76 @@ describe('resumable event generation fencing', () => {
     );
   });
 
+  it('publishes root event-child progress through the child activity transport', async () => {
+    const { nanoid } = require('nanoid');
+    nanoid.mockReturnValueOnce('invocation-1').mockReturnValueOnce('invocation-2');
+    const { GraphEvents } = jest.requireActual('@librechat/agents');
+    const { getDefaultHandlers } = require('../callbacks');
+    const publish = jest.fn().mockResolvedValue(undefined);
+    const data = {
+      id: 'step-1',
+      index: 0,
+      stepDetails: { type: 'message_creation' },
+    };
+    const handlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      aggregateContent: jest.fn(),
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      streamId: 'event-thread',
+      jobCreatedAt: 1234,
+      eventChildActivity: {
+        runId: 'event-thread',
+        parentRunId: 'parent-conversation',
+        subagentRunId: 'delivery-1',
+        subagentType: 'agent-1',
+        subagentAgentId: 'agent-1',
+        parentAgentId: 'director',
+        publish,
+      },
+    });
+
+    await handlers[GraphEvents.ON_RUN_STEP].handle(GraphEvents.ON_RUN_STEP, data);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const firstUpdate = publish.mock.calls[0][0];
+    expect(firstUpdate).toEqual(
+      expect.objectContaining({
+        runId: 'event-thread',
+        parentRunId: 'parent-conversation',
+        subagentRunId: 'delivery-1',
+        phase: 'run_step',
+        activityEventId: expect.stringMatching(/^delivery-1:.+:0$/),
+        data,
+      }),
+    );
+    expect(firstUpdate).not.toHaveProperty('activitySequence');
+
+    const resumedPublish = jest.fn().mockResolvedValue(undefined);
+    const resumedHandlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      aggregateContent: jest.fn(),
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      streamId: 'event-thread',
+      jobCreatedAt: 1234,
+      eventChildActivity: {
+        runId: 'event-thread',
+        parentRunId: 'parent-conversation',
+        subagentRunId: 'delivery-1',
+        subagentType: 'agent-1',
+        subagentAgentId: 'agent-1',
+        parentAgentId: 'director',
+        publish: resumedPublish,
+      },
+    });
+    await resumedHandlers[GraphEvents.ON_RUN_STEP].handle(GraphEvents.ON_RUN_STEP, data);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(resumedPublish.mock.calls[0][0].activityEventId).not.toBe(firstUpdate.activityEventId);
+  });
+
   it('forwards the originating job epoch with deferred attachments', () => {
     const { GenerationJobManager } = require('@librechat/api');
     const { createAttachmentEmitter } = require('../callbacks');
@@ -130,6 +211,82 @@ describe('resumable event generation fencing', () => {
       { event: 'attachment', data: attachment },
       { expectedCreatedAt: 1234 },
     );
+  });
+});
+
+describe('createPtcProgressEmitter', () => {
+  const ptcEvent = {
+    tool_call_id: 'call_ptc',
+    call_id: 'call_ptc:0',
+    name: 'read_file',
+    status: 'running',
+    args: 'path=a.ts',
+  };
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it('emits the inner tool-call event on the resumable job stream', () => {
+    const { GenerationJobManager } = require('@librechat/api');
+    const { createPtcProgressEmitter } = require('../callbacks');
+    const emit = createPtcProgressEmitter({
+      res: { write: jest.fn() },
+      streamId: 'conversation-1',
+      jobCreatedAt: 1234,
+    });
+
+    emit(ptcEvent);
+
+    expect(GenerationJobManager.emitChunk).toHaveBeenCalledWith(
+      'conversation-1',
+      { event: StepEvents.ON_PTC_TOOL_CALL, data: ptcEvent },
+      { expectedCreatedAt: 1234 },
+    );
+  });
+
+  it('writes to the live response when no stream id is in play', () => {
+    const { sendEvent } = require('@librechat/api');
+    const { createPtcProgressEmitter } = require('../callbacks');
+    const res = { write: jest.fn(), headersSent: true, writableEnded: false };
+    const emit = createPtcProgressEmitter({ res });
+
+    emit(ptcEvent);
+
+    expect(sendEvent).toHaveBeenCalledWith(res, {
+      event: StepEvents.ON_PTC_TOOL_CALL,
+      data: ptcEvent,
+    });
+  });
+
+  it('absorbs a rejected resumable emit instead of leaving an unhandled rejection', async () => {
+    const { GenerationJobManager } = require('@librechat/api');
+    const { createPtcProgressEmitter } = require('../callbacks');
+    GenerationJobManager.emitChunk.mockRejectedValueOnce(new Error('transport down'));
+    const unhandled = jest.fn();
+    process.on('unhandledRejection', unhandled);
+
+    const emit = createPtcProgressEmitter({
+      res: { write: jest.fn() },
+      streamId: 'conversation-1',
+      jobCreatedAt: 1234,
+    });
+
+    expect(() => emit(ptcEvent)).not.toThrow();
+    await new Promise((resolve) => setImmediate(resolve));
+    process.off('unhandledRejection', unhandled);
+
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it('drops the event once the response has closed', () => {
+    const { sendEvent } = require('@librechat/api');
+    const { createPtcProgressEmitter } = require('../callbacks');
+    const emit = createPtcProgressEmitter({
+      res: { write: jest.fn(), headersSent: true, writableEnded: true },
+    });
+
+    emit(ptcEvent);
+
+    expect(sendEvent).not.toHaveBeenCalled();
   });
 });
 
@@ -436,6 +593,7 @@ describe('createToolEndCallback', () => {
      * message slot, leaving the current turn's pending chip stuck. */
 
     const { processCodeOutput } = require('~/server/services/Files/Code/process');
+    const { preflightCodeOutputBatch } = require('~/server/services/Files/Code/preflight');
 
     function makeCodeExecutionEvent({
       runId,
@@ -865,6 +1023,50 @@ describe('createToolEndCallback', () => {
       await Promise.all(artifactPromises);
 
       expect(processCodeOutput).not.toHaveBeenCalled();
+      expect(res.write).not.toHaveBeenCalled();
+    });
+
+    it('rejects blocked generated bytes before queuing any persistence', async () => {
+      const blocked = new Error('Generated file content blocked');
+      preflightCodeOutputBatch.mockRejectedValueOnce(blocked);
+      const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+      const event = makeCodeExecutionEvent({
+        runId: 'run-blocked',
+        threadId: 'thread-1',
+        toolCallId: 'tool-blocked',
+        fileId: 'fid-blocked',
+        name: 'blocked.txt',
+      });
+
+      await expect(toolEndCallback({ output: event.output }, event.metadata)).rejects.toBe(blocked);
+
+      expect(processCodeOutput).not.toHaveBeenCalled();
+      expect(artifactPromises).toHaveLength(0);
+      expect(res.write).not.toHaveBeenCalled();
+    });
+
+    it('rejects blocked generated bytes in the Responses callback before persistence', async () => {
+      const blocked = new Error('Generated file content blocked');
+      preflightCodeOutputBatch.mockRejectedValueOnce(blocked);
+      const { createResponsesToolEndCallback } = require('../callbacks');
+      const callback = createResponsesToolEndCallback({
+        req,
+        res,
+        tracker: { nextSequence: jest.fn(() => 1) },
+        artifactPromises,
+      });
+      const event = makeCodeExecutionEvent({
+        runId: 'run-responses-blocked',
+        threadId: 'thread-1',
+        toolCallId: 'tool-responses-blocked',
+        fileId: 'fid-responses-blocked',
+        name: 'blocked.txt',
+      });
+
+      await expect(callback({ output: event.output }, event.metadata)).rejects.toBe(blocked);
+
+      expect(processCodeOutput).not.toHaveBeenCalled();
+      expect(artifactPromises).toHaveLength(0);
       expect(res.write).not.toHaveBeenCalled();
     });
   });

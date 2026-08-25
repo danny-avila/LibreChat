@@ -1,4 +1,6 @@
+import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
+import { ensureHandler } from '@langchain/core/callbacks/manager';
 import { Run, Providers, Constants, HookRegistry } from '@librechat/agents';
 import {
   KnownEndpoints,
@@ -22,6 +24,7 @@ import type {
   SubagentConfigEntry,
   HookCallback,
   AgentInputs,
+  FallbackConfig,
   GenericTool,
   RunConfig,
   IState,
@@ -37,10 +40,14 @@ import type {
   ReasoningResponseKey,
   SummarizationConfig,
 } from 'librechat-data-provider';
+import type { CallbackHandlerMethods } from '@langchain/core/callbacks/base';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
+import type { Callbacks } from '@langchain/core/callbacks/manager';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
+import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
 import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { ResolvedAlwaysApplySkill } from '~/agents/skills';
+import type { MCPToolAlias } from '~/tools/classification';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
 import {
@@ -50,10 +57,18 @@ import {
   stripBackgroundFromToolDefinitions,
 } from '~/agents/background';
 import {
+  resolveToolApprovalPolicy,
+  healToolApprovalPolicy,
+  exemptAskUserQuestionFromApproval,
+} from '~/agents/hitl/policy';
+import {
   ASK_USER_QUESTION_TOOL_NAME,
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
-import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
+import {
+  createSubagentWakeupHandleHook,
+  usesSubagentCompletionWakeups,
+} from '~/agents/subagentDelivery';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
 import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
@@ -374,6 +389,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled */
   hasDeferredTools?: boolean;
+  /** Both-direction identity aliases for MCP tools whose key spelling changed */
+  mcpToolAliases?: MCPToolAlias[];
   /** Names of tools injected with the `run_in_background` param (excluded from eager execution). */
   backgroundToolNames?: string[];
   /** Names of tools with the host-injected `intent` param (stripped from self-spawn inputs). */
@@ -773,6 +790,55 @@ function computeEffectiveMaxContextTokens(
   }
   const ratioComputed = Math.max(1024, Math.round(baseContextTokens * (1 - reserveRatio)));
   return Math.min(maxContextTokens ?? ratioComputed, ratioComputed);
+}
+
+type CallbackClientOptions = {
+  callbacks?: Callbacks;
+  fallbacks?: FallbackConfig[];
+};
+
+/**
+ * Installs run-stable callbacks on the model client itself. Subagent child
+ * graphs intentionally replace invocation callbacks with their own event
+ * forwarders, while intrinsic client callbacks survive root, child, detached,
+ * and summarization calls.
+ */
+function withModelCallbacks<T extends object>(
+  options: T,
+  modelCallbacks: readonly ModelBoundChatModelCallback[] | undefined,
+): T {
+  if (!modelCallbacks?.length) {
+    return options;
+  }
+
+  const callbackOptions = options as T & CallbackClientOptions;
+  const existingCallbacks = callbackOptions.callbacks;
+  /** The domain callback consumes only the model-bound message prefix of
+   *  LangChain's callback arguments; the trailing run metadata is ignored. */
+  const modelHandlers = modelCallbacks as unknown as readonly CallbackHandlerMethods[];
+  let callbacks: CallbackClientOptions['callbacks'];
+  if (existingCallbacks == null || Array.isArray(existingCallbacks)) {
+    callbacks = [...(existingCallbacks ?? []), ...modelHandlers];
+  } else {
+    const manager = existingCallbacks.copy();
+    for (const callback of modelHandlers) {
+      manager.addHandler(ensureHandler(callback), true);
+    }
+    callbacks = manager;
+  }
+  const withCallbacks = {
+    ...callbackOptions,
+    callbacks,
+  } as T & CallbackClientOptions;
+
+  if (Array.isArray(callbackOptions.fallbacks)) {
+    withCallbacks.fallbacks = callbackOptions.fallbacks.map((fallback) => ({
+      ...fallback,
+      clientOptions: withModelCallbacks({ ...(fallback.clientOptions ?? {}) }, modelCallbacks),
+    }));
+  }
+
+  return withCallbacks;
 }
 
 /** Identifier for the self-spawn subagent (reuses parent's AgentInputs in an isolated child graph). */
@@ -1248,6 +1314,7 @@ export async function createRun({
   initialSessions,
   summarizationConfig,
   initialSummary,
+  modelCallbacks,
   calibrationRatio,
   appConfig,
   subagentUsageSink,
@@ -1289,6 +1356,8 @@ export async function createRun({
   summarizationConfig?: SummarizationConfig;
   /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
   initialSummary?: { text: string; tokenCount: number };
+  /** Model-level guards inherited by root, summary, fallback, and subagent clients. */
+  modelCallbacks?: readonly ModelBoundChatModelCallback[];
   /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
   calibrationRatio?: number;
   /**
@@ -1393,7 +1462,7 @@ export async function createRun({
       ] as unknown as Providers) ?? agent.provider;
     const selfModel = agent.model_parameters?.model ?? (agent.model as string | undefined);
 
-    const summarization = shapeSummarizationConfig(
+    const shapedSummarization = shapeSummarizationConfig(
       agent.summarization ?? summarizationConfig,
       provider as string,
       selfModel,
@@ -1401,20 +1470,35 @@ export async function createRun({
       agent.endpoint ?? undefined,
       { user, requestBody },
     );
+    const summarization = modelCallbacks?.length
+      ? {
+          ...shapedSummarization,
+          config: {
+            ...shapedSummarization.config,
+            parameters: withModelCallbacks(
+              { ...(shapedSummarization.config.parameters ?? {}) },
+              modelCallbacks,
+            ),
+          },
+        }
+      : shapedSummarization;
 
     const modelParameters = normalizeAgentModelParameters(agent.model_parameters);
     const hasExplicitStreamUsage = Object.prototype.hasOwnProperty.call(
       modelParameters ?? {},
       'streamUsage',
     );
-    const llmConfig = Object.assign(
-      {
-        provider,
-        streaming,
-        streamUsage,
-      },
-      modelParameters,
-    ) as t.RunLLMConfig;
+    const llmConfig = withModelCallbacks(
+      Object.assign(
+        {
+          provider,
+          streaming,
+          streamUsage,
+        },
+        modelParameters,
+      ) as t.RunLLMConfig,
+      modelCallbacks,
+    );
 
     const joinInstructionMap = (map?: Record<string, unknown>) =>
       Object.values(map ?? {})
@@ -1632,6 +1716,7 @@ export async function createRun({
       agentInput.toolDefinitions = registerBackgroundTaskTool({
         toolRegistry: agentInput.toolRegistry,
         toolDefinitions: agentInput.toolDefinitions,
+        subagentCompletionWakeups: usesSubagentCompletionWakeups(subagentTasks),
       }).toolDefinitions;
     }
     agentInputs.push(agentInput);
@@ -1689,18 +1774,29 @@ export async function createRun({
   // would pause with no approval surface or resume endpoint, and the route would emit a
   // normal final response / `[DONE]` with the tool call dangling. Only AgentClient (chat +
   // resume) passes `hitlCapable`; without it the run is identical to the no-HITL path.
+  /** Both-direction key-spelling aliases collected at tool classification —
+   *  identical in instance and event-driven loading modes. */
+  const mcpToolAliases = agents.flatMap((agent) => agent.mcpToolAliases ?? []);
   const hitl = hitlCapable
     ? buildHITLRunWiring(
         // The ask tool is exempt from the approval prompt (unless explicitly
         // listed by the admin) — approving the right to ask a question is a
-        // pure double-pause; the tool has no side effects to gate.
-        exemptAskUserQuestionFromApproval(toolApprovalPolicy, ASK_USER_QUESTION_TOOL_NAME),
+        // pure double-pause; the tool has no side effects to gate. Pattern
+        // lists are healed against the tools' other key spellings first, so
+        // admin globs written for pre-strip upstream names keep applying (a
+        // non-matching deny would fail OPEN), and rules written against
+        // current catalog names reach legacy-named instances.
+        exemptAskUserQuestionFromApproval(
+          healToolApprovalPolicy(toolApprovalPolicy, mcpToolAliases),
+          ASK_USER_QUESTION_TOOL_NAME,
+        ),
         {
           userId: user?.id,
           conversationId: requestBody?.conversationId,
           tenantId: tenantId ?? user?.tenantId,
           appConfig,
         },
+        mcpToolAliases,
       )
     : undefined;
   /**
@@ -1729,6 +1825,14 @@ export async function createRun({
    * this guard is defense in depth).
    */
   let hooks = hitl?.hooks;
+  if (usesSubagentCompletionWakeups(subagentTasks)) {
+    hooks = hooks ?? new HookRegistry();
+    hooks.register('PostToolUse', {
+      pattern: String(Constants.SUBAGENT),
+      hooks: [createSubagentWakeupHandleHook()],
+      internal: true,
+    });
+  }
   /** Activity labels register BEFORE the steer drain: the label must claim
    *  its slot while the batch's tool parts are still the content tail. If a
    *  steer drained first, its injected part would flush the tool block in
@@ -1780,6 +1884,7 @@ export async function createRun({
   }
 
   const streamLimits = resolveStreamLimits(agentsEndpointConfig);
+  const resolvedRunId = runId ?? randomUUID();
 
   /**
    * Built as a variable (not an inline literal) so the extra
@@ -1789,7 +1894,7 @@ export async function createRun({
    * the field at the call site once the dependency is bumped.
    */
   const runConfig = {
-    runId,
+    runId: resolvedRunId,
     graphConfig,
     tokenCounter,
     customHandlers,
@@ -1856,7 +1961,7 @@ export async function createRun({
     // tracing is enabled. Requires @librechat/agents >= 3.2.21.
     langfuse: buildLangfuseConfig({
       appConfig,
-      runId,
+      runId: resolvedRunId,
       tenantId: tenantId ?? user?.tenantId,
       centralTraceExportEnabled,
     }),
@@ -1886,6 +1991,6 @@ export async function createRun({
   const run = await Run.create(runConfig);
 
   applyCustomHandoffPromptKeyCompatibility(run, runConfig.graphConfig);
-  applyTestRunHook(run, { messages, agents });
+  applyTestRunHook(run, { messages, agents, modelCallbacks });
   return run;
 }

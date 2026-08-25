@@ -4,9 +4,11 @@ import { InfoHoverCard, ESide } from '@librechat/client';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
 import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
+import MessageQuotes from '~/components/Chat/Messages/Content/MessageQuotes';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Image from '~/components/Chat/Messages/Content/Image';
+import CollapsibleText from './CollapsibleText';
 import { useShareContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -24,11 +26,15 @@ import store from '~/store';
 const SteerPart = memo(function SteerPart({
   steer,
   files,
+  quotes,
   steerId,
   createdAt,
 }: {
   steer: string;
   files?: TMessage['files'];
+  /** Quoted excerpts steered with the message; rendered as the same reference
+   *  blocks a user bubble shows for `message.quotes`. */
+  quotes?: string[];
   /** Anchors the part for the message-nav rail (`#steer-<id>` rib target). */
   steerId?: string;
   createdAt?: number;
@@ -40,6 +46,7 @@ const SteerPart = memo(function SteerPart({
   const { isSharedConvo } = useShareContext();
   const usernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
   const enableUserMsgMarkdown = useRecoilValue<boolean>(store.enableUserMsgMarkdown);
+  const collapseLongUserMessages = useRecoilValue<boolean>(store.collapseLongUserMessages);
 
   /** The share surface must never label the SHARER's steers with the
    *  viewer's identity; always the generic user label there. */
@@ -81,6 +88,7 @@ const SteerPart = memo(function SteerPart({
       <div className="user-turn relative flex w-fit max-w-[90%] flex-col items-end sm:max-w-[85%]">
         <h2 className="sr-only">{label}</h2>
         <div className="flex max-w-full flex-col items-start gap-2 rounded-theme-surface rounded-br-theme-control bg-surface-tertiary px-theme-normal py-2.5">
+          <MessageQuotes quotes={quotes} />
           {(imageFiles.length > 0 || otherFiles.length > 0) && (
             <div className="flex flex-wrap gap-2">
               {otherFiles.map((file) => (
@@ -101,15 +109,17 @@ const SteerPart = memo(function SteerPart({
               ))}
             </div>
           )}
-          <div
-            className={cn(
-              'markdown prose message-content dark:prose-invert light w-full break-words',
-              !enableUserMsgMarkdown && 'whitespace-pre-wrap',
-              'text-text-primary',
-            )}
-          >
-            {enableUserMsgMarkdown ? <MarkdownLite content={steer} /> : steer}
-          </div>
+          <CollapsibleText enabled={collapseLongUserMessages}>
+            <div
+              className={cn(
+                'markdown prose message-content dark:prose-invert light w-full break-words',
+                !enableUserMsgMarkdown && 'whitespace-pre-wrap',
+                'text-text-primary',
+              )}
+            >
+              {enableUserMsgMarkdown ? <MarkdownLite content={steer} /> : steer}
+            </div>
+          </CollapsibleText>
         </div>
         <div className="mt-1 flex min-h-8 items-center justify-end text-text-secondary">
           <span
@@ -129,6 +139,7 @@ const SteerPart = memo(function SteerPart({
           fileId={selectedFile?.file_id}
           filePath={selectedFile?.filepath}
           fileType={selectedFile?.type ?? undefined}
+          fileSource={selectedFile?.source}
           fileSize={(selectedFile as TFile | null)?.bytes}
         />
       )}

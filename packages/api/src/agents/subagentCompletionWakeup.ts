@@ -21,6 +21,13 @@ const EVENT_TYPE = 'subagent.completion';
 const MESSAGE_SELECT = 'messageId parentMessageId isCreatedByUser createdAt';
 const TASK_SELECT =
   'messageId conversationId parentMessageId sender text error createdAt updatedAt +subagentTask';
+const ORCHESTRATION_TASK_SELECT =
+  'messageId conversationId sender isCreatedByUser createdAt updatedAt +subagentTask';
+const MAX_ORCHESTRATION_TASKS = 16;
+const MAX_ORCHESTRATION_CANDIDATES = MAX_ORCHESTRATION_TASKS * 2 + 1;
+const MAX_ORCHESTRATION_ACTIVE_LEASES = 200;
+const MAX_ORCHESTRATION_SNAPSHOT_BYTES = 8 * 1_024;
+const MAX_ORCHESTRATION_SCALAR_CHARS = 256;
 
 export type EnqueueAgentTrigger = (
   envelope: unknown,
@@ -28,6 +35,7 @@ export type EnqueueAgentTrigger = (
 ) => Promise<unknown>;
 
 type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
+  Pick<ConversationMethods, 'listActiveSubagentThreadLeases'> &
   Pick<
     MessageMethods,
     'claimSubagentTaskResult' | 'getMessages' | 'releaseSubagentTaskResultClaim'
@@ -39,6 +47,34 @@ interface GenerationState {
     idempotencyClientRequestId?: unknown;
     terminalPersistencePending?: unknown;
   };
+}
+
+type SubagentTaskStatus = NonNullable<IMessage['subagentTask']>['status'];
+
+interface OrchestrationTaskCandidate {
+  attemptKey: string;
+  taskId: string;
+  threadId: string;
+  status: SubagentTaskStatus;
+  updatedAt: number;
+  resultClaimed: boolean;
+  sender?: string;
+}
+
+interface OrchestrationTaskSnapshot {
+  background_task_id: string;
+  subagent_thread_id: string;
+  subagent_type: string;
+  status: SubagentTaskStatus;
+  result_state: 'pending' | 'available' | 'claimed';
+  current_completion: boolean;
+}
+
+interface OrchestrationSnapshotResolution {
+  tasks: OrchestrationTaskSnapshot[];
+  candidateLimitReached: boolean;
+  lineageUncertain: boolean;
+  readUncertain: boolean;
 }
 
 export interface SubagentCompletionWakeupResolverDeps {
@@ -116,6 +152,370 @@ function timestamp(message: Pick<IMessage, 'createdAt'>): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function updatedTimestamp(message: Pick<IMessage, 'createdAt' | 'updatedAt'>): number {
+  const value = message.updatedAt;
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  const parsed = value == null ? Number.NaN : new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : timestamp(message);
+}
+
+function taskIdFromMessage(message: Pick<IMessage, 'messageId'>): string | undefined {
+  let suffix: ':assistant' | ':user';
+  if (message.messageId.endsWith(':assistant')) {
+    suffix = ':assistant';
+  } else if (message.messageId.endsWith(':user')) {
+    suffix = ':user';
+  } else {
+    return;
+  }
+  const taskId = message.messageId.slice(0, -suffix.length);
+  return taskId.length > 0 && taskId.length <= 256 ? taskId : undefined;
+}
+
+function candidateFromMessage(message: IMessage): OrchestrationTaskCandidate | undefined {
+  const taskId = taskIdFromMessage(message);
+  const threadId = message.conversationId;
+  const status = message.subagentTask?.status;
+  const attemptKey = message.subagentTask?.attemptKey;
+  if (
+    taskId == null ||
+    typeof threadId !== 'string' ||
+    threadId.length === 0 ||
+    threadId.length > 256 ||
+    typeof attemptKey !== 'string' ||
+    attemptKey.length === 0 ||
+    attemptKey.length > 256 ||
+    status == null
+  ) {
+    return;
+  }
+  const terminal = status !== 'running';
+  if (
+    (terminal && !message.messageId.endsWith(':assistant')) ||
+    (!terminal && !message.messageId.endsWith(':user'))
+  ) {
+    return;
+  }
+  return {
+    attemptKey,
+    taskId,
+    threadId,
+    status,
+    updatedAt: updatedTimestamp(message),
+    resultClaimed: terminal && message.subagentTask?.resultClaim != null,
+    ...(typeof message.sender === 'string' && message.sender.length > 0
+      ? { sender: message.sender }
+      : {}),
+  };
+}
+
+function preferCandidate(
+  current: OrchestrationTaskCandidate | undefined,
+  candidate: OrchestrationTaskCandidate,
+): OrchestrationTaskCandidate {
+  if (current == null || (current.status === 'running' && candidate.status !== 'running')) {
+    return candidate;
+  }
+  return candidate.updatedAt > current.updatedAt ? candidate : current;
+}
+
+function resultState(
+  candidate: OrchestrationTaskCandidate,
+): OrchestrationTaskSnapshot['result_state'] {
+  if (candidate.status === 'running') {
+    return 'pending';
+  }
+  return candidate.resultClaimed ? 'claimed' : 'available';
+}
+
+async function resolveOrchestrationSnapshot(
+  methods: WakeupMethods,
+  input: {
+    userId: string;
+    tenantId?: string;
+    parentConversationId: string;
+    parentMessageId: string;
+    parentAgentId: string;
+    currentThread: NonNullable<Awaited<ReturnType<WakeupMethods['getConvo']>>>;
+    currentTaskId: string;
+    currentTerminal: IMessage;
+  },
+): Promise<OrchestrationSnapshotResolution> {
+  const currentCandidate = candidateFromMessage(input.currentTerminal);
+  if (currentCandidate == null) {
+    return {
+      tasks: [],
+      candidateLimitReached: false,
+      lineageUncertain: true,
+      readUncertain: true,
+    };
+  }
+
+  let readUncertain = false;
+  let activeLeases: Awaited<ReturnType<WakeupMethods['listActiveSubagentThreadLeases']>> = [];
+  /** Snapshot leases before terminal rows: a child settling between these reads is
+   * then visible either through its earlier lease or through its later terminal. */
+  try {
+    activeLeases = (
+      await methods.listActiveSubagentThreadLeases({
+        user: input.userId,
+        now: new Date(),
+        ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+      })
+    ).filter((lease) => lease.parentConversationId === input.parentConversationId);
+  } catch {
+    readUncertain = true;
+  }
+  const boundedActiveLeases = activeLeases.slice(0, MAX_ORCHESTRATION_ACTIVE_LEASES);
+  const leaseEvidenceRead =
+    boundedActiveLeases.length === 0
+      ? Promise.resolve([])
+      : methods.getMessages(
+          {
+            user: input.userId,
+            messageId: {
+              $in: boundedActiveLeases.flatMap(({ taskId }) => [
+                `${taskId}:user`,
+                `${taskId}:assistant`,
+              ]),
+            },
+            'subagentTask.status': { $in: ['running', 'completed', 'error', 'cancelled'] },
+          },
+          ORCHESTRATION_TASK_SELECT,
+          { sort: false, limit: MAX_ORCHESTRATION_ACTIVE_LEASES * 2 },
+        );
+  const [terminalResult, leaseEvidenceResult] = await Promise.allSettled([
+    methods.getMessages(
+      {
+        user: input.userId,
+        'subagentTask.parentRunId': input.parentMessageId,
+        'subagentTask.status': { $in: ['completed', 'error', 'cancelled'] },
+      },
+      ORCHESTRATION_TASK_SELECT,
+      { sort: { updatedAt: -1, _id: -1 }, limit: MAX_ORCHESTRATION_CANDIDATES },
+    ),
+    leaseEvidenceRead,
+  ]);
+  readUncertain ||=
+    terminalResult.status === 'rejected' || leaseEvidenceResult.status === 'rejected';
+  const terminalMessages = terminalResult.status === 'fulfilled' ? terminalResult.value : [];
+  const leaseEvidenceMessages =
+    leaseEvidenceResult.status === 'fulfilled' ? leaseEvidenceResult.value : [];
+  const validLeaseEvidence = leaseEvidenceMessages.flatMap((message) => {
+    const candidate = candidateFromMessage(message);
+    return candidate == null ? [] : [{ message, candidate }];
+  });
+  const activeMessages = validLeaseEvidence
+    .filter(
+      ({ message, candidate }) =>
+        candidate.status === 'running' &&
+        message.subagentTask?.parentRunId === input.parentMessageId,
+    )
+    .map(({ message }) => message);
+  const leaseTerminalMessages = validLeaseEvidence
+    .filter(
+      ({ message, candidate }) =>
+        candidate.status !== 'running' &&
+        message.subagentTask?.parentRunId === input.parentMessageId,
+    )
+    .map(({ message }) => message);
+  if (leaseEvidenceResult.status === 'fulfilled') {
+    const resolvedLeaseTaskIds = new Set(
+      validLeaseEvidence
+        .filter(({ message }) => typeof message.subagentTask?.parentRunId === 'string')
+        .map(({ candidate }) => candidate.taskId),
+    );
+    /** A retry can acquire a replacement task lease before persisting its terminal
+     * assistant row, while retaining only the abandoned attempt's seed. A valid
+     * seed from another parent run excludes that lease from this branch, and a
+     * visible same-task terminal resolves the lease during post-settlement cleanup.
+     * Anything left unmatched is an identity gap, not permission to invent one. */
+    readUncertain ||= boundedActiveLeases.some(({ taskId }) => !resolvedLeaseTaskIds.has(taskId));
+  }
+  if (
+    terminalMessages.length === 0 &&
+    activeMessages.length === 0 &&
+    leaseTerminalMessages.length === 0 &&
+    readUncertain
+  ) {
+    const lineage = input.currentThread.subagentThread;
+    if (lineage == null) {
+      return {
+        tasks: [],
+        candidateLimitReached: false,
+        lineageUncertain: true,
+        readUncertain: true,
+      };
+    }
+    return {
+      tasks: [
+        {
+          background_task_id: input.currentTaskId,
+          subagent_thread_id: input.currentThread.conversationId,
+          subagent_type: lineage.subagentType,
+          status: currentCandidate.status,
+          result_state: resultState(currentCandidate),
+          current_completion: true,
+        },
+      ],
+      candidateLimitReached: false,
+      lineageUncertain: false,
+      readUncertain: true,
+    };
+  }
+
+  const byAttemptKey = new Map<string, OrchestrationTaskCandidate>();
+  for (const message of [...activeMessages, ...terminalMessages, ...leaseTerminalMessages]) {
+    const candidate = candidateFromMessage(message);
+    if (candidate == null) {
+      continue;
+    }
+    byAttemptKey.set(
+      candidate.attemptKey,
+      preferCandidate(byAttemptKey.get(candidate.attemptKey), candidate),
+    );
+  }
+  byAttemptKey.set(currentCandidate.attemptKey, currentCandidate);
+
+  const candidates = [...byAttemptKey.values()].sort((left, right) => {
+    if (left.taskId === input.currentTaskId) {
+      return -1;
+    }
+    if (right.taskId === input.currentTaskId) {
+      return 1;
+    }
+    if (left.status === 'running' && right.status !== 'running') {
+      return -1;
+    }
+    if (right.status === 'running' && left.status !== 'running') {
+      return 1;
+    }
+    const time = right.updatedAt - left.updatedAt;
+    return time === 0 ? left.taskId.localeCompare(right.taskId) : time;
+  });
+  const selected = candidates.slice(0, MAX_ORCHESTRATION_TASKS);
+  const siblingThreadIds = [
+    ...new Set(
+      selected
+        .filter((candidate) => candidate.threadId !== input.currentThread.conversationId)
+        .map((candidate) => candidate.threadId),
+    ),
+  ];
+  const siblingThreads = await Promise.all(
+    siblingThreadIds.map(async (threadId) => {
+      try {
+        return await methods.getConvo(input.userId, threadId);
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const threads = new Map([
+    [input.currentThread.conversationId, input.currentThread],
+    ...siblingThreads
+      .filter((thread): thread is NonNullable<typeof thread> => thread != null)
+      .map((thread) => [thread.conversationId, thread] as const),
+  ]);
+  let lineageUncertain = siblingThreads.some((thread) => thread == null);
+  const tasks: OrchestrationTaskSnapshot[] = [];
+  for (const candidate of selected) {
+    const conversation = threads.get(candidate.threadId);
+    const lineage = conversation?.subagentThread;
+    if (
+      conversation == null ||
+      lineage == null ||
+      !sameTenant(conversation.tenantId, input.tenantId) ||
+      lineage.parentConversationId !== input.parentConversationId ||
+      lineage.parentAgentId !== input.parentAgentId ||
+      (candidate.status !== 'running' && candidate.sender !== lineage.subagentType)
+    ) {
+      lineageUncertain = true;
+      continue;
+    }
+    tasks.push({
+      background_task_id: candidate.taskId,
+      subagent_thread_id: candidate.threadId,
+      subagent_type: lineage.subagentType,
+      status: candidate.status,
+      result_state: resultState(candidate),
+      current_completion: candidate.taskId === input.currentTaskId,
+    });
+  }
+  return {
+    tasks,
+    candidateLimitReached:
+      terminalMessages.length === MAX_ORCHESTRATION_CANDIDATES ||
+      activeLeases.length > MAX_ORCHESTRATION_ACTIVE_LEASES ||
+      activeMessages.length > MAX_ORCHESTRATION_TASKS ||
+      candidates.length > MAX_ORCHESTRATION_TASKS,
+    lineageUncertain,
+    readUncertain,
+  };
+}
+
+function renderOrchestrationSnapshot(
+  parentMessageId: string,
+  resolution: OrchestrationSnapshotResolution,
+): string {
+  const knownChildren = resolution.tasks.slice(0, MAX_ORCHESTRATION_TASKS);
+  let omitted = resolution.tasks.length - knownChildren.length;
+  const boundedParentMessageId = parentMessageId.slice(0, MAX_ORCHESTRATION_SCALAR_CHARS);
+  const parentMessageIdTruncated = boundedParentMessageId !== parentMessageId;
+  const completeness = (): 'complete' | 'bounded' | 'uncertain' => {
+    if (resolution.readUncertain || resolution.lineageUncertain) {
+      return 'uncertain';
+    }
+    return resolution.candidateLimitReached || omitted > 0 ? 'bounded' : 'complete';
+  };
+  const note = (): string => {
+    if (completeness() === 'uncertain') {
+      return 'Some sibling state could not be read or verified. Do not infer that no other children ran.';
+    }
+    if (completeness() === 'bounded') {
+      return 'Additional durable child tasks may exist outside this bounded snapshot.';
+    }
+    return 'This lists the known durable child tasks for this exact parent run.';
+  };
+  const serialize = () =>
+    JSON.stringify({
+      scope: 'current_parent_branch',
+      parent_message_id: boundedParentMessageId,
+      ...(parentMessageIdTruncated ? { parent_message_id_truncated: true } : {}),
+      completeness: completeness(),
+      known_children: knownChildren,
+      omitted_known_children: omitted,
+      additional_children_may_exist:
+        resolution.candidateLimitReached ||
+        resolution.readUncertain ||
+        resolution.lineageUncertain ||
+        omitted > 0,
+      note: note(),
+    });
+  let rendered = serialize();
+  while (
+    Buffer.byteLength(rendered, 'utf8') > MAX_ORCHESTRATION_SNAPSHOT_BYTES &&
+    knownChildren.length > 0
+  ) {
+    knownChildren.pop();
+    omitted += 1;
+    rendered = serialize();
+  }
+  if (Buffer.byteLength(rendered, 'utf8') > MAX_ORCHESTRATION_SNAPSHOT_BYTES) {
+    return JSON.stringify({
+      scope: 'current_parent_branch',
+      completeness: 'uncertain',
+      known_children: [],
+      omitted_known_children: resolution.tasks.length,
+      additional_children_may_exist: true,
+      current_completion_in_preceding_result: true,
+      note: 'Snapshot metadata exceeded its byte budget. Do not infer that no other children ran.',
+    });
+  }
+  return rendered;
+}
+
 /** Selects the newest persisted assistant on the branch below the original
  * parent. Re-resolving for every ordered delivery serializes sibling child
  * completions onto the branch produced by the preceding wakeup. */
@@ -155,6 +555,7 @@ function renderWakeupInput(
   registration: Pick<SubagentTaskWakeupRegistration, 'threadId' | 'subagentType'>,
   resultTaskId: string,
   terminal: IMessage,
+  orchestrationSnapshot: string,
 ): string {
   const status = terminal.subagentTask?.status ?? 'error';
   return [
@@ -166,6 +567,8 @@ function renderWakeupInput(
       status,
       result: boundedSubagentTaskResult(terminal.text ?? ''),
     }),
+    'Host-authored bounded orchestration snapshot:',
+    orchestrationSnapshot,
   ].join('\n');
 }
 
@@ -359,10 +762,23 @@ export function createSubagentCompletionWakeupResolver({
       }
       return { status: 'settled' };
     }
+    const orchestrationSnapshot = renderOrchestrationSnapshot(
+      envelope.target.parentMessageId,
+      await resolveOrchestrationSnapshot(methods, {
+        userId,
+        tenantId,
+        parentConversationId: envelope.target.conversationId,
+        parentMessageId: envelope.target.parentMessageId,
+        parentAgentId: envelope.target.agentId,
+        currentThread: child,
+        currentTaskId: resultTaskId,
+        currentTerminal: claim.message,
+      }),
+    );
     return {
       status: 'ready',
       parentMessageId,
-      input: renderWakeupInput(registration, resultTaskId, claim.message),
+      input: renderWakeupInput(registration, resultTaskId, claim.message, orchestrationSnapshot),
       releaseOnDefiniteFailure: async () => {
         await methods.releaseSubagentTaskResultClaim({
           userId,

@@ -1,6 +1,12 @@
 import type { Document, Types } from 'mongoose';
 
-export type AgentTriggerDeliveryStatus = 'staging' | 'pending' | 'leased' | 'succeeded' | 'dead';
+export type AgentTriggerDeliveryStatus =
+  | 'staging'
+  | 'batched'
+  | 'pending'
+  | 'leased'
+  | 'succeeded'
+  | 'dead';
 export type AgentTriggerDeliveryOutcome = 'succeeded' | 'retry' | 'dead';
 
 export interface AgentTriggerDeliveryFailure {
@@ -33,6 +39,16 @@ export interface IAgentTriggerDelivery {
   status: AgentTriggerDeliveryStatus;
   attempts: number;
   availableAt: Date;
+  envelopeBytes?: number;
+  coalesceKey?: string;
+  coalesceFrom?: Date;
+  coalesceUntil?: Date;
+  batchSize?: number;
+  batchBytes?: number;
+  batchMemberIds?: Types.ObjectId[];
+  batchRootId?: Types.ObjectId;
+  batchRootRequeueCount?: number;
+  batchMembersSettledAt?: Date;
   leaseBy?: string;
   leaseUntil?: Date;
   claimToken?: string;
@@ -59,6 +75,19 @@ export interface AgentTriggerDeliveryRecord
   id: string;
   createdAt: Date;
 }
+
+/** Owner-scoped projection safe for public delivery-status reads. */
+export type AgentTriggerDeliveryStatusRecord = Pick<
+  AgentTriggerDeliveryRecord,
+  | 'deliveryKey'
+  | 'status'
+  | 'attempts'
+  | 'availableAt'
+  | 'createdAt'
+  | 'settledAt'
+  | 'result'
+  | 'lastError'
+>;
 
 export interface IAgentTriggerLaneSequence {
   _id: string;

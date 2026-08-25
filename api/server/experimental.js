@@ -14,9 +14,14 @@ const { logger, runAsSystem } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
+  issueCsp,
   apiNotFound,
+  applyCspNonce,
+  createCspPolicy,
+  shellCacheHeaders,
   ErrorController,
   QUERY_DEVTOOLS_HEADER,
+  createSecurityHeaders,
   performStartupChecks,
   handleJsonParseError,
   initializeFileStorage,
@@ -28,6 +33,7 @@ const {
   setupGracefulShutdown,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
+  GenerationJobManager,
   waitForKeyvRedisClient,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
@@ -37,6 +43,10 @@ const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { initializeAgentTriggerService } = require('./services/Agents/triggers');
+const {
+  recordExpiredScheduleApproval,
+  initializeScheduleErasureSweep,
+} = require('./services/Schedules');
 const { configureSubagentTaskRouting } = require('./services/Endpoints/agents/subagentThreadStore');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { updateInterfacePermissions: updateInterfacePerms } = require('@librechat/api');
@@ -276,6 +286,11 @@ if (cluster.isMaster) {
    * Each worker runs a full Express server instance
    */
   const app = express();
+  // The clustered entrypoint deliberately does not arm the v1 schedule engine,
+  // but an already-fired scheduled generation can still reach HITL here. Settle
+  // its durable run when the generic approval runtime expires it.
+  GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);
+  GenerationJobManager.initialize();
   /**
    * The master may assign the sweep worker before or after this worker has
    * loaded app config. These flags join the IPC assignment with config
@@ -284,6 +299,17 @@ if (cluster.isMaster) {
   let shouldStartExpiredFileSweep = false;
   let expiredFileSweepOptions = null;
   let expiredFileSweepStarted = false;
+  const SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'DELETE']);
+
+  const rejectScheduleWritesUntilReady = (req, res, next) => {
+    if (SCHEDULE_ENGINE_OPTIONAL_METHODS.has(req.method)) {
+      return next();
+    }
+    return res.status(501).json({
+      code: 'SCHEDULES_NOT_SUPPORTED',
+      error: 'Scheduled chats are not available in clustered mode.',
+    });
+  };
 
   const startExpiredFileSweepOnce = () => {
     if (!shouldStartExpiredFileSweep || expiredFileSweepStarted || !expiredFileSweepOptions) {
@@ -322,8 +348,21 @@ if (cluster.isMaster) {
       logger.error(`[Worker ${process.pid}][indexSync] Background sync failed:`, err);
     });
 
+    // This entrypoint deliberately does not arm the schedule engine, but DELETE stays
+    // open — so soft-deleted rows still accrue with no reconciler to erase them. Start
+    // the erasure-ONLY sweep (Mongo is up, GenerationJobManager was initialized above):
+    // it never claims, fires, advances, or infers owner death from a process-local
+    // missing job, and its idempotent guard makes this safe once per worker.
+    initializeScheduleErasureSweep();
+
     app.disable('x-powered-by');
     app.set('trust proxy', trusted_proxy);
+
+    /* Registered ahead of every route so health checks carry the headers too. */
+    const securityHeaders = createSecurityHeaders();
+    if (securityHeaders) {
+      app.use(securityHeaders);
+    }
 
     if (isEnabled(process.env.TRUST_TENANT_HEADER)) {
       logger.warn(
@@ -382,18 +421,24 @@ if (cluster.isMaster) {
       }
     }
 
+    const cspPolicy = createCspPolicy();
+    const shellCache = shellCacheHeaders(cspPolicy != null);
+
     const sendIndexHtml = (req, res) => {
-      res.set({
-        'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
-        Pragma: process.env.INDEX_PRAGMA || 'no-cache',
-        Expires: process.env.INDEX_EXPIRES || '0',
-      });
+      res.set(shellCache);
       res.vary(QUERY_DEVTOOLS_HEADER);
 
       const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
       const saneLang = lang.replace(/"/g, '&quot;');
       let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
       updatedIndexHtml = maybeInjectQueryDevtoolsBootstrap(updatedIndexHtml, req);
+
+      /* Nonce last: every injected script above must be stamped too. */
+      if (cspPolicy) {
+        const csp = issueCsp(cspPolicy);
+        res.set(csp.headerName, csp.headerValue);
+        updatedIndexHtml = applyCspNonce(updatedIndexHtml, csp.nonce);
+      }
 
       res.type('html');
       res.send(updatedIndexHtml);
@@ -488,6 +533,7 @@ if (cluster.isMaster) {
     app.use('/api/agents', routes.agents);
     app.use('/api/banner', routes.banner);
     app.use('/api/memories', routes.memories);
+    app.use('/api/schedules', rejectScheduleWritesUntilReady, routes.schedules);
     app.use('/api/permissions', routes.accessPermissions);
     app.use('/api/tags', routes.tags);
     app.use('/api/mcp', routes.mcp);

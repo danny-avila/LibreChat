@@ -83,8 +83,8 @@ export class ServerConfigsCacheRedis
       'scan',
       async () => {
         const scannedKeys: string[] = [];
-        for await (const key of redisClient.scanIterator({ MATCH: pattern })) {
-          scannedKeys.push(key);
+        for await (const page of redisClient.scanIterator({ MATCH: pattern })) {
+          scannedKeys.push(...page);
         }
         return scannedKeys;
       },

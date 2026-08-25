@@ -15,8 +15,10 @@ import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
+import type { ProviderId } from './providers';
 
 export * from './schemas';
+export * from './types/subagents';
 
 export type TMessages = TMessage[];
 
@@ -533,6 +535,8 @@ export type TConfig = {
   plugins?: Record<string, string>;
   name?: string;
   iconURL?: string;
+  /** Canonical provider identity resolved at config load, used for branding. */
+  providerId?: ProviderId;
   version?: string;
   modelDisplayLabel?: string;
   userProvide?: boolean | null;
@@ -547,6 +551,8 @@ export type TConfig = {
   statefulCodeSessions?: {
     allowedEnvironments: StatefulCodeEnvironment[];
   };
+  /** Effective subagents-per-agent cap served from `endpoints.agents.maxSubagents`. */
+  maxSubagents?: number;
   customParams?: {
     defaultParamsEndpoint?: string;
     reasoningFormat?: ReasoningParameterFormat;

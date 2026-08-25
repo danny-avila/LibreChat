@@ -2052,6 +2052,7 @@ describe('useSteering', () => {
           chips: useRecoilValue(store.pendingSteersByConvoId(CONVO_ID)),
           pendingQuotes: useRecoilValue(store.pendingQuotesByConvoId(CONVO_ID)),
           pendingSkills: useRecoilValue(store.pendingManualSkillsByConvoId(CONVO_ID)),
+          markApplied: useSetRecoilState(store.appliedSteerIdsByConvoId(CONVO_ID)),
         }),
         { wrapper },
       );
@@ -2100,14 +2101,53 @@ describe('useSteering', () => {
       expect(result.current.pendingSkills).toEqual([]);
     });
 
-    it('leaves staged context untouched on the steer path (steers do not carry it)', () => {
+    it('steerFromComposer drains the quote chips into the POST, leaving skill picks staged', () => {
       const { result } = setupWithContext({}, stageContext);
       act(() => {
         result.current.steering.steerFromComposer('steer text');
       });
-      expect(mockMutate).toHaveBeenCalledTimes(1);
-      expect(result.current.pendingQuotes).toEqual(['quoted excerpt']);
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'steer text', quotes: ['quoted excerpt'] }),
+        expect.anything(),
+      );
+      expect(mockMutate.mock.calls[0][0]).not.toHaveProperty('manualSkills');
+      // Consumed like a normal send's quotes; the excerpts now ride the steer.
+      expect(result.current.pendingQuotes).toEqual([]);
+      expect(result.current.chips[0]).toMatchObject({ quotes: ['quoted excerpt'] });
+      // A skill pick configures a NEW turn's run — it keeps waiting for one.
       expect(result.current.pendingSkills).toEqual(['skill-1']);
+    });
+
+    it('interruptSteer carries the staged quotes the same way', () => {
+      const { result } = setupWithContext({}, stageContext);
+      act(() => {
+        result.current.steering.interruptSteer('stop and use this');
+      });
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ quotes: ['quoted excerpt'], preempt: true }),
+        expect.anything(),
+      );
+      expect(result.current.pendingQuotes).toEqual([]);
+      expect(result.current.pendingSkills).toEqual(['skill-1']);
+    });
+
+    it("sendQueuedNow posts a queued item's quotes when steering it into the live run", () => {
+      const item: QueuedMessage = {
+        id: 'q-live',
+        text: 'queued with quotes',
+        createdAt: 1_000,
+        quotes: ['queued excerpt'],
+      };
+      const { result } = setupWithContext({}, ({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [item]);
+      });
+      act(() => {
+        result.current.steering.sendQueuedNow(item);
+      });
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'queued with quotes', quotes: ['queued excerpt'] }),
+        expect.anything(),
+      );
     });
 
     it('queues without quotes/skills fields when nothing is staged', () => {
@@ -2207,7 +2247,13 @@ describe('useSteering', () => {
 
     it('carries a queued-origin context onto the sending chip and the 202 ACK chip', () => {
       mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
-        onSuccess({ steerId: 'srv-ctx', status: 'queued', position: 1, conversationId: CONVO_ID });
+        onSuccess({
+          steerId: 'srv-ctx',
+          status: 'queued',
+          position: 1,
+          conversationId: CONVO_ID,
+          quotesAccepted: true,
+        });
       });
       const { result } = setupWithContext();
       act(() => {
@@ -2224,6 +2270,145 @@ describe('useSteering', () => {
           manualSkills: ['carried-skill'],
         }),
       ]);
+    });
+
+    it('keeps rejected quotes carried on the pending chip (old-server ACK)', () => {
+      // A pre-quotes replica 202s the words without their excerpts, but the
+      // steer has NOT injected yet — the quotes must stay attached to the
+      // words: a later quote-less applied event re-stages them at the actual
+      // loss, while a terminal leftover conversion carries them onto the
+      // recovered row (whose normal send delivers quotes on any server).
+      // Re-staging at the ACK would let that leftover auto-send bare text
+      // while the excerpts glue onto an unrelated composer draft.
+      mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
+        onSuccess({ steerId: 'srv-old', status: 'queued', position: 1, conversationId: CONVO_ID });
+      });
+      const { result } = setupWithContext({}, stageContext);
+      act(() => {
+        result.current.steering.steerFromComposer('quoted for an old server');
+      });
+      expect(result.current.pendingQuotes).toEqual([]);
+      expect(result.current.chips).toEqual([
+        expect.objectContaining({
+          steerId: 'srv-old',
+          status: 'pending',
+          quotes: ['quoted excerpt'],
+        }),
+      ]);
+    });
+
+    it('keeps quotes drained when the ACK confirms they were accepted', () => {
+      mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
+        onSuccess({
+          steerId: 'srv-new',
+          status: 'queued',
+          position: 1,
+          conversationId: CONVO_ID,
+          quotesAccepted: true,
+        });
+      });
+      const { result } = setupWithContext({}, stageContext);
+      act(() => {
+        result.current.steering.steerFromComposer('quoted for a new server');
+      });
+      expect(result.current.pendingQuotes).toEqual([]);
+      expect(result.current.chips[0]).toMatchObject({
+        steerId: 'srv-new',
+        quotes: ['quoted excerpt'],
+      });
+    });
+
+    it("keeps a queued item's quotes on its chip when Send now hits an old server", () => {
+      // The pending chip and its captured origin retain the quotes so every
+      // later outcome preserves them with the words: a quote-less applied
+      // event re-stages, a leftover conversion restores the exact row, and a
+      // reclaim hands them back to the composer.
+      mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
+        onSuccess({
+          steerId: 'srv-q-old',
+          status: 'queued',
+          position: 1,
+          conversationId: CONVO_ID,
+        });
+      });
+      const item: QueuedMessage = {
+        id: 'q-old-server',
+        text: 'queued quoted words',
+        createdAt: 1_000,
+        quotes: ['queued excerpt'],
+      };
+      const { result } = setupWithContext({}, ({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [item]);
+      });
+      act(() => {
+        result.current.steering.sendQueuedNow(item);
+      });
+      expect(result.current.queue).toEqual([]);
+      expect(result.current.pendingQuotes).toEqual([]);
+      const chip = result.current.chips[0];
+      expect(chip).toMatchObject({
+        steerId: 'srv-q-old',
+        status: 'pending',
+        quotes: ['queued excerpt'],
+      });
+      expect(chip.queuedOrigin?.item.quotes).toEqual(['queued excerpt']);
+    });
+
+    it('never re-stages quotes a terminal conversion already moved to the queue', () => {
+      // A pre-quotes server's run-end leftover event converts the chip (with
+      // its quotes) into a queued follow-up and marks the ids applied BEFORE
+      // the delayed no-echo 202 lands. The reclaim must find no surviving chip
+      // and leave the queued copy as the single owner of the excerpts.
+      let deferredOnSuccess: ((response: unknown) => void) | undefined;
+      mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
+        deferredOnSuccess = onSuccess;
+      });
+      const { result } = setupWithContext({}, stageContext);
+      act(() => {
+        result.current.steering.steerFromComposer('converted before ACK');
+      });
+      const localId = result.current.chips[0].steerId;
+      act(() => {
+        result.current.markApplied((prev) => [...prev, localId]);
+        result.current.steering.convertSteerToQueue(localId, 'converted before ACK', undefined, {
+          quotes: ['quoted excerpt'],
+        });
+      });
+      expect(result.current.queue[0]).toMatchObject({ quotes: ['quoted excerpt'] });
+      act(() => {
+        deferredOnSuccess?.({
+          steerId: 'srv-converted',
+          status: 'queued',
+          position: 1,
+          conversationId: CONVO_ID,
+        });
+      });
+      // No re-mint, no re-stage: the queued follow-up remains the only copy.
+      expect(result.current.chips).toEqual([]);
+      expect(result.current.pendingQuotes).toEqual([]);
+      expect(result.current.queue).toHaveLength(1);
+    });
+
+    it('re-stages quotes on a settled receipt replay that never carried them', () => {
+      // Lost first ACK against an old replica; the retry's receipt replay
+      // (settled, already injected) proves the excerpts never attached.
+      mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
+        onSuccess({
+          steerId: 'srv-replayed',
+          status: 'queued',
+          position: 1,
+          conversationId: CONVO_ID,
+          settled: true,
+          replayed: true,
+          generationProtocolVersion: 2,
+        });
+      });
+      const { result } = setupWithContext({}, stageContext);
+      act(() => {
+        result.current.steering.steerFromComposer('replayed without quotes');
+      });
+      expect(result.current.pendingQuotes).toEqual(['quoted excerpt']);
+      expect(result.current.chips).toEqual([]);
     });
 
     it('restores the carried context when a late ACK converts straight to queued', () => {
@@ -2325,6 +2510,7 @@ describe('useSteering', () => {
           status: 'queued',
           position: 1,
           conversationId: CONVO_ID,
+          quotesAccepted: true,
         });
       });
       act(() => {
@@ -2346,7 +2532,7 @@ describe('useSteering', () => {
       ]);
     });
 
-    it('leaves composer atoms staged when a composer-origin steer degrades', () => {
+    it('requeues a degraded composer-origin steer with its drained quotes', () => {
       mockMutate.mockImplementationOnce((_params, { onError }) => {
         onError({ response: { data: { code: 'RUN_PAUSED' } } });
       });
@@ -2354,12 +2540,14 @@ describe('useSteering', () => {
       act(() => {
         result.current.steering.steerFromComposer('degraded steer');
       });
-      // Degrades to a text-only queued item; the staged chips stay put for
-      // the user's next composer send.
-      expect(result.current.queue).toEqual([expect.objectContaining({ text: 'degraded steer' })]);
-      expect(result.current.queue[0].quotes).toBeUndefined();
+      // The quotes were consumed into the steer, so its queued fallback must
+      // carry them — dropping them here would lose the user's references.
+      expect(result.current.queue).toEqual([
+        expect.objectContaining({ text: 'degraded steer', quotes: ['quoted excerpt'] }),
+      ]);
       expect(result.current.queue[0].manualSkills).toBeUndefined();
-      expect(result.current.pendingQuotes).toEqual(['quoted excerpt']);
+      expect(result.current.pendingQuotes).toEqual([]);
+      // Skill picks were never consumed and stay staged for the next send.
       expect(result.current.pendingSkills).toEqual(['skill-1']);
     });
   });

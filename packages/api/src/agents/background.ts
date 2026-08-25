@@ -56,10 +56,12 @@ import {
   warnUnmatchedSelectionNames,
   synthesizeSelectionToolOptions,
 } from './selection';
+import { SUBAGENT_WAKEUP_GUIDANCE, usesSubagentCompletionWakeups } from './subagentDelivery';
 import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
 import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from './tools';
+import { normalizeActionToolName } from '~/actions/tools';
 import { truncateMiddle } from '~/utils';
 
 /** Argument the model sets on a tool call to dispatch it in the background. */
@@ -123,6 +125,36 @@ const EXCLUDED_BACKGROUND_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   'image_gen_oai',
   'image_edit_oai',
 ]);
+
+/**
+ * Agents persist action tool names with the raw encoded domain (`---` for short
+ * hostnames), while the runtime definitions those names must match against are
+ * always `_`-collapsed. The builder writes `tool_options` keyed by the persisted
+ * name, so alias every action-shaped key to its normalized form; without this
+ * the opt-in silently never resolves for short-hostname actions. Merge the raw
+ * background option into any normalized entry while keeping an explicit
+ * normalized background value authoritative.
+ */
+function expandActionToolOptions(toolOptions: AgentToolOptions): AgentToolOptions {
+  let expanded: AgentToolOptions | undefined;
+  for (const [name, options] of Object.entries(toolOptions)) {
+    const normalized = normalizeActionToolName(name);
+    const runInBackground = options?.run_in_background;
+    if (
+      normalized === name ||
+      runInBackground == null ||
+      toolOptions[normalized]?.run_in_background != null
+    ) {
+      continue;
+    }
+    expanded = expanded ?? { ...toolOptions };
+    expanded[normalized] = {
+      ...toolOptions[normalized],
+      run_in_background: runInBackground,
+    };
+  }
+  return expanded ?? toolOptions;
+}
 
 /**
  * Whether a tool may be dispatched in the background. Handoff tools
@@ -307,6 +339,16 @@ const CHECK_BACKGROUND_TASK_DESCRIPTION = `Check, control, and retrieve tool or 
 
 Provide a background_task_id to poll one task; omit it to list every background task in this thread. A task is only finished when its status is "completed", "error", or "cancelled" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. Subagent tasks additionally accept steer, queue, interrupt, cancel, and cancel_message actions while running. Live subagent controls route across API replicas but do not survive a restart of the process that owns the executor. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
 
+const CHECK_BACKGROUND_TASK_WAKEUP_DESCRIPTION = `Check, control, and retrieve tool or subagent tasks previously dispatched in the background (with run_in_background: true).
+
+Provide a background_task_id to inspect one task; omit it to list every background task in this thread. Ordinary background tool tasks require polling to retrieve their results. Detached subagent tasks use automatic completion delivery: continue independent work or end the turn instead of repeatedly polling an unchanged running task, and the host will resume you when one finishes. Use this tool for explicit status, steer, queue, interrupt, cancel, or cancel_message actions, or as a fallback if automatic delivery is unavailable. Live subagent controls route across API replicas but do not survive a restart of the process that owns the executor. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
+
+function checkBackgroundTaskDescription(subagentCompletionWakeups: boolean): string {
+  return subagentCompletionWakeups
+    ? CHECK_BACKGROUND_TASK_WAKEUP_DESCRIPTION
+    : CHECK_BACKGROUND_TASK_DESCRIPTION;
+}
+
 /**
  * `maxLength` is valid JSON Schema and is honored by providers, but the SDK's
  * `JsonSchemaType` does not declare it, so the model-facing bounds are typed here.
@@ -357,11 +399,13 @@ const CHECK_BACKGROUND_TASK_PARAMETERS = Object.freeze<CheckBackgroundTaskParame
   required: [],
 });
 
-const CHECK_BACKGROUND_TASK_DEF: LCTool = Object.freeze<LCTool>({
-  name: CHECK_BACKGROUND_TASK_NAME,
-  description: CHECK_BACKGROUND_TASK_DESCRIPTION,
-  parameters: CHECK_BACKGROUND_TASK_PARAMETERS,
-});
+function buildCheckBackgroundTaskDefinition(subagentCompletionWakeups: boolean): LCTool {
+  return {
+    name: CHECK_BACKGROUND_TASK_NAME,
+    description: checkBackgroundTaskDescription(subagentCompletionWakeups),
+    parameters: CHECK_BACKGROUND_TASK_PARAMETERS,
+  };
+}
 
 /**
  * Idempotently registers the `check_background_task` poll tool into the run's
@@ -370,17 +414,23 @@ const CHECK_BACKGROUND_TASK_DEF: LCTool = Object.freeze<LCTool>({
 export function registerBackgroundTaskTool(params: {
   toolRegistry: LCToolRegistry | undefined;
   toolDefinitions: LCTool[] | undefined;
+  subagentCompletionWakeups?: boolean;
 }): { toolDefinitions: LCTool[] } {
-  const { toolRegistry, toolDefinitions } = params;
+  const { toolRegistry, toolDefinitions, subagentCompletionWakeups = false } = params;
   const defs = toolDefinitions ?? [];
+  const desiredDescription = checkBackgroundTaskDescription(subagentCompletionWakeups);
   const isOurs = (tool?: { description?: string }): boolean =>
-    tool?.description === CHECK_BACKGROUND_TASK_DESCRIPTION;
+    tool?.description === CHECK_BACKGROUND_TASK_DESCRIPTION ||
+    tool?.description === CHECK_BACKGROUND_TASK_WAKEUP_DESCRIPTION;
 
   const existingDef = defs.find((d) => d.name === CHECK_BACKGROUND_TASK_NAME);
   const existingRegistry = toolRegistry?.get(CHECK_BACKGROUND_TASK_NAME);
 
   /** Already registered by us — idempotent no-op. */
-  if (isOurs(existingDef) || isOurs(existingRegistry)) {
+  if (
+    existingDef?.description === desiredDescription &&
+    (existingRegistry == null || existingRegistry.description === desiredDescription)
+  ) {
     return { toolDefinitions: defs };
   }
 
@@ -392,21 +442,29 @@ export function registerBackgroundTaskTool(params: {
    * and warn that the colliding tool is shadowed.
    */
   const collides = existingDef != null || existingRegistry != null;
-  if (collides) {
+  const foreignCollision =
+    (existingDef != null && !isOurs(existingDef)) ||
+    (existingRegistry != null && !isOurs(existingRegistry));
+  if (foreignCollision) {
     logger.warn(
       `[background] A tool named "${CHECK_BACKGROUND_TASK_NAME}" collides with the reserved background poll tool; the host poll tool takes precedence and the colliding tool is shadowed for this run.`,
     );
   }
   toolRegistry?.set(CHECK_BACKGROUND_TASK_NAME, {
     name: CHECK_BACKGROUND_TASK_NAME,
-    description: CHECK_BACKGROUND_TASK_DESCRIPTION,
+    description: desiredDescription,
     parameters: CHECK_BACKGROUND_TASK_PARAMETERS,
     allowed_callers: ['direct'],
   });
   const withoutCollision = collides
     ? defs.filter((d) => d.name !== CHECK_BACKGROUND_TASK_NAME)
     : defs;
-  return { toolDefinitions: [...withoutCollision, CHECK_BACKGROUND_TASK_DEF] };
+  return {
+    toolDefinitions: [
+      ...withoutCollision,
+      buildCheckBackgroundTaskDefinition(subagentCompletionWakeups),
+    ],
+  };
 }
 
 /**
@@ -439,7 +497,8 @@ export function applyBackgroundToolCalls(params: {
    */
   excludeTool?: (toolName: string) => boolean;
 }): { toolDefinitions: LCTool[]; backgroundToolNames: string[] } {
-  const { toolRegistry, toolOptions, capabilityToolNames, excludeTool } = params;
+  const { toolRegistry, capabilityToolNames, excludeTool } = params;
+  const toolOptions = params.toolOptions && expandActionToolOptions(params.toolOptions);
   const defs = params.toolDefinitions ?? [];
   const selectionNames = getSelectionNames(toolOptions, 'run_in_background');
   const effectiveSources = new Set<string>();
@@ -559,8 +618,12 @@ export interface BackgroundTask {
    * the ORIGINAL tool-call identity.
    */
   harvestStarted?: boolean;
+  /** True until completion-time file inspection/persistence accepts or rejects the artifact. */
+  harvestPending?: boolean;
   /** True once the artifact has been handed to a live poll turn's callback. */
   artifactDelivered?: boolean;
+  /** Terminal policy rejection: blocked artifact bytes must never be restored or claimed. */
+  artifactBlocked?: boolean;
   /** Error message when status === 'error'. */
   error?: string;
   createdAt: number;
@@ -771,7 +834,7 @@ export class BackgroundTaskRegistryClass {
       toolCallId: params.toolCallId,
       messageId: params.messageId,
       agentId: params.agentId,
-      ...(params.harvestStarted === true ? { harvestStarted: true } : {}),
+      ...(params.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
       status: 'running',
       createdAt: nextDispatchStamp(now),
       updatedAt: now,
@@ -789,7 +852,7 @@ export class BackgroundTaskRegistryClass {
   ): void {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task) {
+    if (!task || (task.artifactBlocked === true && patch.artifactBlocked !== true)) {
       return;
     }
     Object.assign(task, patch, { updatedAt: Date.now() });
@@ -805,7 +868,7 @@ export class BackgroundTaskRegistryClass {
       status: 'completed',
       result: toStoredContent(result.content),
       artifact: toStoredArtifact(taskId, result.artifact),
-      ...(result.harvestStarted === true ? { harvestStarted: true } : {}),
+      ...(result.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
       /** Marks that an artifact existed even after `claimArtifact` clears it,
        *  so re-polls keep the "produced an artifact" note. */
       artifactDelivered: false,
@@ -828,6 +891,19 @@ export class BackgroundTaskRegistryClass {
       return;
     }
     this.update(userId, conversationId, taskId, { attachments });
+  }
+
+  /** Marks completion-time inspection/persistence successful, unlocking artifact collection. */
+  finishHarvest(
+    userId: string,
+    conversationId: string,
+    taskId: string,
+    attachments: unknown[] = [],
+  ): void {
+    this.update(userId, conversationId, taskId, {
+      harvestPending: false,
+      ...(attachments.length > 0 ? { attachments } : {}),
+    });
   }
 
   /**
@@ -855,7 +931,13 @@ export class BackgroundTaskRegistryClass {
     | undefined {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task || task.status !== 'completed' || task.artifact == null || task.artifactDelivered) {
+    if (
+      !task ||
+      task.status !== 'completed' ||
+      task.harvestPending === true ||
+      task.artifact == null ||
+      task.artifactDelivered
+    ) {
       return undefined;
     }
     const artifact = task.artifact;
@@ -879,7 +961,7 @@ export class BackgroundTaskRegistryClass {
   restoreArtifact(userId: string, conversationId: string, taskId: string, artifact: unknown): void {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task || task.artifact != null) {
+    if (!task || task.artifactBlocked === true || task.artifact != null) {
       return;
     }
     /** Same size bound as `complete()` — a restore path must not resurrect
@@ -898,7 +980,22 @@ export class BackgroundTaskRegistryClass {
     this.update(userId, conversationId, taskId, {
       status: 'error',
       error,
-      ...(options?.harvestStarted === true ? { harvestStarted: true } : {}),
+      ...(options?.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
+    });
+  }
+
+  /** Permanently removes a policy-rejected artifact and exposes only the raw-free policy error. */
+  blockArtifact(userId: string, conversationId: string, taskId: string, error: string): void {
+    this.update(userId, conversationId, taskId, {
+      status: 'error',
+      error,
+      result: undefined,
+      artifact: undefined,
+      attachments: undefined,
+      harvestStarted: undefined,
+      harvestPending: undefined,
+      artifactDelivered: false,
+      artifactBlocked: true,
     });
   }
 
@@ -911,10 +1008,11 @@ export class BackgroundTaskRegistryClass {
   revokeHarvest(userId: string, conversationId: string, taskId: string, artifact?: unknown): void {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task) {
+    if (!task || task.artifactBlocked === true) {
       return;
     }
     task.harvestStarted = undefined;
+    task.harvestPending = undefined;
     if (task.artifact == null && artifact != null) {
       task.artifact = artifact;
       task.artifactDelivered = false;
@@ -1053,7 +1151,12 @@ interface SerializedSubagentTask {
 
 function serializeSubagentSnapshot(
   task: SubagentTaskSnapshot,
-  options: { includeResult?: string; status?: string; controlId?: string } = {},
+  options: {
+    includeResult?: string;
+    status?: string;
+    controlId?: string;
+    completionWakeups?: boolean;
+  } = {},
 ): SerializedSubagentTask {
   return {
     background_task_id: task.taskId,
@@ -1069,10 +1172,16 @@ function serializeSubagentSnapshot(
     ...(task.pendingControls > 0 ? { pending_controls: task.pendingControls } : {}),
     ...(task.error == null ? {} : { error: task.error }),
     ...(options.controlId == null ? {} : { control_id: options.controlId }),
+    ...(options.completionWakeups === true && task.status === 'running'
+      ? { message: SUBAGENT_WAKEUP_GUIDANCE }
+      : {}),
   };
 }
 
-function serializeSubagentClaim(claim: SubagentTaskClaim): SerializedSubagentTask | undefined {
+function serializeSubagentClaim(
+  claim: SubagentTaskClaim,
+  completionWakeups: boolean,
+): SerializedSubagentTask | undefined {
   if (claim.status === 'not_found') {
     return undefined;
   }
@@ -1085,7 +1194,7 @@ function serializeSubagentClaim(claim: SubagentTaskClaim): SerializedSubagentTas
       error: claim.error,
     };
   }
-  return serializeSubagentSnapshot(claim.task, { status: claim.status });
+  return serializeSubagentSnapshot(claim.task, { status: claim.status, completionWakeups });
 }
 
 function serializeSubagentControl(
@@ -1216,7 +1325,10 @@ export async function runCheckBackgroundTask(params: {
             routedStore == null
               ? subagentTasks.store.claim(subagentTasks.scopeId, taskId)
               : await routedStore.claimTask(subagentTasks.scopeId, taskId, invocationId);
-          const claimed = serializeSubagentClaim(claim);
+          const claimed = serializeSubagentClaim(
+            claim,
+            usesSubagentCompletionWakeups(subagentTasks),
+          );
           if (claimed != null) {
             return JSON.stringify(claimed);
           }
@@ -1267,6 +1379,7 @@ export async function runCheckBackgroundTask(params: {
   const tasks = backgroundTaskRegistry.list(userId, conversationId);
   let subagentTasks: SerializedSubagentTask[] = [];
   let listWarning: string | undefined;
+  const completionWakeups = usesSubagentCompletionWakeups(params.subagentTasks);
   if (params.subagentTasks != null) {
     try {
       const routedStore = routedSubagentStore(params.subagentTasks.store);
@@ -1297,8 +1410,32 @@ export async function runCheckBackgroundTask(params: {
       ...tasks.map((task) => serializeTask(task, { includeResult: false })),
       ...subagentTasks,
     ],
+    ...(completionWakeups && subagentTasks.some((task) => task.status === 'running')
+      ? { message: SUBAGENT_WAKEUP_GUIDANCE }
+      : {}),
     ...(listWarning != null && { partial: true, warning: listWarning }),
   });
+}
+
+/** Returns a read-only snapshot of the specifically requested task, if any. */
+export function getBackgroundTaskSnapshot(params: {
+  userId: string;
+  conversationId: string;
+  args: unknown;
+}): Readonly<BackgroundTask> | undefined {
+  const rawId = coerceArgsObject(params.args)?.background_task_id;
+  const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
+  if (!taskId) {
+    return undefined;
+  }
+  const task = backgroundTaskRegistry.get(params.userId, params.conversationId, taskId);
+  if (!task) {
+    return undefined;
+  }
+  return {
+    ...task,
+    ...(task.attachments != null ? { attachments: [...task.attachments] } : {}),
+  };
 }
 
 /**
@@ -1374,7 +1511,11 @@ export function getBackgroundCodeDelivery(params: {
     return undefined;
   }
   const task = backgroundTaskRegistry.get(params.userId, params.conversationId, taskId);
-  if (!task || task.harvestStarted !== true) {
+  if (
+    !task ||
+    task.harvestStarted !== true ||
+    (task.status === 'completed' && task.harvestPending === true)
+  ) {
     return undefined;
   }
   return {

@@ -228,6 +228,12 @@ describe('MCP Routes', () => {
     currentUser = undefined;
     mockResolveAllMcpConfigs.mockResolvedValue({});
     mockResolveMcpConfigNames.mockResolvedValue([]);
+    // `clearAllMocks` preserves queued `mockReturnValueOnce` entries. A callback
+    // test can legitimately leave one unconsumed, which then masks a later test's
+    // default implementation when this file shares a CI shard with other suites.
+    // Reset the cache accessor itself so every test starts from a deterministic
+    // default and can opt into a one-shot value deliberately.
+    require('~/cache').getLogStores.mockReset().mockReturnValue({});
     const { MCPOAuthHandler } = require('@librechat/api');
     const { getTenantId } = require('@librechat/data-schemas');
     getTenantId.mockReturnValue(undefined);
@@ -2745,6 +2751,33 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(200);
       expect(getServerConnectionStatus).toHaveBeenCalledTimes(2);
+    });
+
+    it('preserves request-scoped metadata when an individual status check fails', async () => {
+      getMCPSetupData.mockResolvedValue({
+        mcpConfig: {
+          server1: {
+            source: 'config',
+            headers: { 'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}' },
+            customUserVars: { API_KEY: { title: 'API key' } },
+          },
+        },
+        appConnections: new Map(),
+        userConnections: new Map(),
+        oauthServers: new Set(),
+      });
+      getServerConnectionStatus.mockRejectedValueOnce(new Error('status unavailable'));
+
+      const response = await request(app).get('/api/mcp/connection/status');
+
+      expect(response.status).toBe(200);
+      expect(response.body.connectionStatus.server1).toEqual(
+        expect.objectContaining({
+          connectionState: 'error',
+          requestScoped: true,
+          configurationState: 'needs_configuration',
+        }),
+      );
     });
 
     it('should return 500 when connection status check fails', async () => {

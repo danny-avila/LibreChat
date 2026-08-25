@@ -1,6 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import { InMemorySubagentTaskStore } from '@librechat/agents';
-import type { LCTool, LCToolRegistry, SubagentTaskConfig } from '@librechat/agents';
+import type {
+  LCTool,
+  LCToolRegistry,
+  SubagentTaskConfig,
+  SubagentTaskRuntime,
+} from '@librechat/agents';
+import type { HostSubagentTaskConfig } from './subagentDelivery';
 import {
   isBackgroundEligibleToolName,
   isBackgroundRequested,
@@ -19,6 +25,7 @@ import {
   CHECK_BACKGROUND_TASK_NAME,
   RUN_IN_BACKGROUND_ARG,
 } from './background';
+import { SUBAGENT_COMPLETION_DELIVERY, SUBAGENT_WAKEUP_GUIDANCE } from './subagentDelivery';
 import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { TOOL_SELECTION_WILDCARD } from './selection';
 import { toolOptionsSchema } from './validation';
@@ -230,6 +237,88 @@ describe('applyBackgroundToolCalls', () => {
     ).toBeUndefined();
   });
 
+  it('resolves an action opt-in stored with the raw `---` domain against the collapsed def name', () => {
+    /** Agents persist `swapi---tech`; the runtime def is named `swapi_tech`. */
+    const defs = [mcpDef('getPerson_action_swapi_tech')];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: { 'getPerson_action_swapi---tech': { run_in_background: true } },
+    });
+    expect(result.backgroundToolNames).toEqual(['getPerson_action_swapi_tech']);
+    expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(true);
+  });
+
+  it('merges a raw action opt-in into an existing normalized option entry', () => {
+    const defs = [mcpDef('getPerson_action_swapi_tech')];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: {
+        'getPerson_action_swapi---tech': { run_in_background: true },
+        getPerson_action_swapi_tech: { defer_loading: true },
+      },
+    });
+    expect(result.backgroundToolNames).toEqual(['getPerson_action_swapi_tech']);
+  });
+
+  it('keeps an explicit normalized action background option authoritative', () => {
+    const defs = [mcpDef('getPerson_action_swapi_tech')];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: {
+        'getPerson_action_swapi---tech': { run_in_background: true },
+        getPerson_action_swapi_tech: { run_in_background: false },
+      },
+    });
+    expect(result.backgroundToolNames).toEqual([]);
+  });
+
+  it('does not collapse hyphens in the operationId when normalizing an action key', () => {
+    const defs = [
+      mcpDef('get_foo---bar_action_swapi_tech'),
+      mcpDef('get_foo_bar_action_swapi_tech'),
+    ];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: { 'get_foo---bar_action_swapi---tech': { run_in_background: true } },
+    });
+    expect(result.backgroundToolNames).toEqual(['get_foo---bar_action_swapi_tech']);
+  });
+
+  it('injects an opted-in action tool but not one the OAuth excludeTool rejects', () => {
+    const oauthActionNames = new Set(['sendMail_action_mail---example---com']);
+    const defs = [
+      mcpDef('getWeather_action_weather---com'),
+      mcpDef('sendMail_action_mail---example---com'),
+    ];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: {
+        'getWeather_action_weather---com': { run_in_background: true },
+        'sendMail_action_mail---example---com': { run_in_background: true },
+      },
+      excludeTool: (name) => oauthActionNames.has(name),
+    });
+    expect(result.backgroundToolNames).toEqual(['getWeather_action_weather---com']);
+    const oauthDef = result.toolDefinitions.find(
+      (d) => d.name === 'sendMail_action_mail---example---com',
+    );
+    expect(
+      (oauthDef?.parameters as { properties?: Record<string, unknown> }).properties?.[
+        RUN_IN_BACKGROUND_ARG
+      ],
+    ).toBeUndefined();
+  });
+
   it('skips a non-object (string-input) schema without rewriting it', () => {
     const defs = [{ name: 'legacy_tool', parameters: { type: 'string' } } as unknown as LCTool];
     const result = applyBackgroundToolCalls({
@@ -304,6 +393,26 @@ describe('registerBackgroundTaskTool', () => {
     expect(matching[0].description).not.toBe(collidingDef.description);
     expect(registry.get(CHECK_BACKGROUND_TASK_NAME)?.description).not.toBe(
       collidingDef.description,
+    );
+  });
+
+  it('advertises automatic delivery only for wakeup-enabled subagents', () => {
+    const registry: LCToolRegistry = new Map();
+    const manual = registerBackgroundTaskTool({ toolRegistry: registry, toolDefinitions: [] });
+    const manualDescription = manual.toolDefinitions[0].description ?? '';
+    expect(manualDescription).toContain('Results are not pushed to you');
+
+    const automatic = registerBackgroundTaskTool({
+      toolRegistry: registry,
+      toolDefinitions: manual.toolDefinitions,
+      subagentCompletionWakeups: true,
+    });
+    expect(automatic.toolDefinitions).toHaveLength(1);
+    expect(automatic.toolDefinitions[0].description).toContain(
+      'Detached subagent tasks use automatic completion delivery',
+    );
+    expect(automatic.toolDefinitions[0].description).toContain(
+      'Ordinary background tool tasks require polling',
     );
   });
 });
@@ -730,6 +839,7 @@ describe('BackgroundTaskRegistryClass', () => {
       artifact: { session_id: 'exec-1', files: [{ id: 'f1' }] },
       harvestStarted: true,
     });
+    registry.finishHarvest('u1', 'c1', created.task.id);
 
     const claimed = registry.claimArtifact('u1', 'c1', created.task.id);
     expect(claimed).toEqual({
@@ -749,7 +859,7 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.get('u1', 'c1', created.task.id)?.attachments).toEqual(attachments);
   });
 
-  it('revokeHarvest hands delivery back to the fallback path, restoring a claimed artifact', () => {
+  it('revokeHarvest hands a pending artifact to the fallback path', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
       userId: 'u1',
@@ -767,15 +877,71 @@ describe('BackgroundTaskRegistryClass', () => {
       harvestStarted: true,
     });
 
-    /** Poll claimed the artifact while the harvest was in flight… */
-    expect(registry.claimArtifact('u1', 'c1', created.task.id)?.harvestStarted).toBe(true);
-    /** …then the harvest failed: revoke restores the artifact for the
-     *  legacy fallback and clears the suppression flag. */
+    /** Pending inspection prevents poll delivery until the harvest settles. */
+    expect(registry.claimArtifact('u1', 'c1', created.task.id)).toBeUndefined();
+    /** A transient harvest failure unlocks the artifact for the legacy
+     *  fallback and clears the suppression flag. */
     registry.revokeHarvest('u1', 'c1', created.task.id, artifact);
     const task = registry.get('u1', 'c1', created.task.id);
     expect(task?.harvestStarted).toBeUndefined();
     expect(task?.artifact).toEqual(artifact);
     expect(registry.claimArtifact('u1', 'c1', created.task.id)?.harvestStarted).toBeUndefined();
+  });
+
+  it('keeps a policy-blocked artifact terminal across later registry mutations', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_code_blocked',
+      toolName: 'execute_code',
+      harvestStarted: true,
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    const artifact = {
+      session_id: 'exec-blocked',
+      files: [{ id: 'f1', opaqueBytes: 'PROTECTED-REGISTRY-BYTES' }],
+    };
+    registry.complete('u1', 'c1', created.task.id, {
+      content: 'safe stdout',
+      artifact,
+      harvestStarted: true,
+    });
+    registry.blockArtifact(
+      'u1',
+      'c1',
+      created.task.id,
+      'Submitted content could not be completely inspected before processing.',
+    );
+
+    registry.restoreArtifact('u1', 'c1', created.task.id, artifact);
+    registry.revokeHarvest('u1', 'c1', created.task.id, artifact);
+    registry.finishHarvest('u1', 'c1', created.task.id, [{ opaqueBytes: artifact }]);
+    registry.attachHarvest('u1', 'c1', created.task.id, [{ opaqueBytes: artifact }]);
+    registry.complete('u1', 'c1', created.task.id, {
+      content: 'unsafe replacement',
+      artifact,
+      harvestStarted: true,
+    });
+    registry.fail('u1', 'c1', created.task.id, 'raw failure');
+
+    const task = registry.get('u1', 'c1', created.task.id);
+    expect(task).toEqual(
+      expect.objectContaining({
+        status: 'error',
+        error: 'Submitted content could not be completely inspected before processing.',
+        artifactBlocked: true,
+      }),
+    );
+    expect(task?.result).toBeUndefined();
+    expect(task?.artifact).toBeUndefined();
+    expect(task?.attachments).toBeUndefined();
+    expect(task?.harvestStarted).toBeUndefined();
+    expect(registry.claimArtifact('u1', 'c1', created.task.id)).toBeUndefined();
+    expect(JSON.stringify(task)).not.toContain('PROTECTED-REGISTRY-BYTES');
+    expect(JSON.stringify(task)).not.toContain('raw failure');
   });
 
   it('exposes reaped (timed-out) tasks to the heal path when harvest was armed at dispatch', () => {
@@ -1003,7 +1169,7 @@ describe('getBackgroundCodeDelivery (singleton)', () => {
       artifact: { session_id: 'exec-1' },
       harvestStarted: true,
     });
-    backgroundTaskRegistry.attachHarvest('delivery_user', 'delivery_convo', created.task.id, [
+    backgroundTaskRegistry.finishHarvest('delivery_user', 'delivery_convo', created.task.id, [
       { file_id: 'f1' },
     ]);
 
@@ -1289,6 +1455,97 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
     expect(second).toEqual(expect.objectContaining({ status: 'claimed', result_claimed: true }));
     expect(second.result).toBeUndefined();
+  });
+
+  it('tells a wakeup-enabled parent to yield on an unchanged running subagent', async () => {
+    const store = new InMemorySubagentTaskStore();
+    const subagentTasks: HostSubagentTaskConfig = {
+      store,
+      scopeId: 'owner:wakeup-parent',
+      completionDelivery: SUBAGENT_COMPLETION_DELIVERY,
+    };
+    const started = store.start({
+      scopeId: subagentTasks.scopeId,
+      idempotencyKey: 'parent-run:parent-agent:call-wakeup',
+      parentRunId: 'parent-run',
+      parentAgentId: 'parent-agent',
+      parentToolCallId: 'call-wakeup',
+      input: 'Research this.',
+      subagentKind: 'agent',
+      subagentType: 'researcher',
+      run: (runtime: SubagentTaskRuntime) =>
+        new Promise((_, reject) => {
+          runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
+            once: true,
+          });
+        }),
+    });
+    if (!started.accepted) {
+      throw new Error('Expected subagent task to start.');
+    }
+
+    const polled = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'wakeup-parent',
+        args: { background_task_id: started.task.taskId },
+        subagentTasks,
+      }),
+    );
+    expect(polled).toMatchObject({
+      status: 'running',
+      message: SUBAGENT_WAKEUP_GUIDANCE,
+    });
+
+    const listed = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'wakeup-parent',
+        args: {},
+        subagentTasks,
+      }),
+    );
+    expect(listed.message).toBe(SUBAGENT_WAKEUP_GUIDANCE);
+    expect(listed.tasks[0].message).toBeUndefined();
+
+    store.control(subagentTasks.scopeId, started.task.taskId, { action: 'cancel' });
+  });
+
+  it('preserves poll-first running status when automatic delivery is disabled', async () => {
+    const store = new InMemorySubagentTaskStore();
+    const subagentTasks: SubagentTaskConfig = { store, scopeId: 'owner:manual-parent' };
+    const started = store.start({
+      scopeId: subagentTasks.scopeId,
+      idempotencyKey: 'parent-run:parent-agent:call-manual',
+      parentRunId: 'parent-run',
+      parentAgentId: 'parent-agent',
+      parentToolCallId: 'call-manual',
+      input: 'Research this.',
+      subagentKind: 'agent',
+      subagentType: 'researcher',
+      run: (runtime: SubagentTaskRuntime) =>
+        new Promise((_, reject) => {
+          runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
+            once: true,
+          });
+        }),
+    });
+    if (!started.accepted) {
+      throw new Error('Expected subagent task to start.');
+    }
+
+    const polled = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'manual-parent',
+        args: { background_task_id: started.task.taskId },
+        subagentTasks,
+      }),
+    );
+    expect(polled).toMatchObject({ status: 'running' });
+    expect(polled.message).toBeUndefined();
+
+    store.control(subagentTasks.scopeId, started.task.taskId, { action: 'cancel' });
   });
 
   it('routes parent control actions only to detached subagent tasks', async () => {

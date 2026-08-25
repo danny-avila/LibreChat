@@ -7,6 +7,23 @@ export interface ISubagentThreadLease {
   expiresAt: Date;
 }
 
+/** Server-private route from one authenticated event source to a child actor thread. */
+export interface IAgentEventBinding {
+  bindingId: string;
+  sourceKeyId: string;
+  actorId: string;
+}
+
+export interface IAgentEventBindingRecord {
+  conversationId: string;
+  agentId: string;
+  tenantId?: string;
+  isTemporary?: boolean;
+  expiredAt?: Date;
+  binding: IAgentEventBinding;
+  lineage: TSubagentThreadLineage;
+}
+
 export interface IActiveSubagentThreadLease {
   conversationId: string;
   parentConversationId: string;
@@ -56,6 +73,8 @@ export interface IConversation extends Document {
   subagentThread?: TSubagentThreadLineage;
   /** Internal execution fence. Excluded from ordinary conversation reads. */
   subagentThreadLease?: ISubagentThreadLease;
+  /** Internal event-source identity. Excluded from ordinary conversation reads. */
+  agentEventBinding?: IAgentEventBinding;
   assistant_id?: string;
   instructions?: string;
   stop?: string[];

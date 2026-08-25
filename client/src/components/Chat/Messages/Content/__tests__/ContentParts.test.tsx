@@ -2,6 +2,7 @@ import React from 'react';
 import { ContentTypes, Tools } from 'librechat-data-provider';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
+import { preserveStreamedContentIdentity } from '~/utils/messages';
 import { groupSequentialToolCalls } from '~/utils';
 
 jest.mock('~/utils', () => ({
@@ -10,6 +11,7 @@ jest.mock('~/utils', () => ({
   filterAttachmentsForPart: (attachments: unknown) => attachments,
   groupSequentialToolCalls: jest.fn(),
   hasPendingApprovalInPart: jest.requireActual('~/utils/groupToolCalls').hasPendingApprovalInPart,
+  getPartKeyIndex: jest.requireActual('~/utils/messages').getPartKeyIndex,
 }));
 
 jest.mock('~/Providers', () => {
@@ -115,8 +117,20 @@ jest.mock('../Container', () => ({
 
 jest.mock('../Part', () => ({
   __esModule: true,
-  default: ({ part, idx }: { part: TMessageContentParts; idx: number }) => (
-    <div data-testid={`real-part-${part.type}`} data-index={idx} />
+  default: ({
+    part,
+    idx,
+    showCursor,
+  }: {
+    part: TMessageContentParts;
+    idx: number;
+    showCursor?: boolean;
+  }) => (
+    <div
+      data-testid={`real-part-${part.type}`}
+      data-index={idx}
+      data-show-cursor={String(showCursor === true)}
+    />
   ),
 }));
 
@@ -453,6 +467,25 @@ describe('ContentParts — post-steer author re-attribution', () => {
 });
 
 describe('ContentParts — activity phase state', () => {
+  it('keeps a streaming cursor on visible text when a provider appends an empty placeholder', () => {
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[
+          { type: ContentTypes.TEXT, text: 'Visible answer' } as TMessageContentParts,
+          { type: ContentTypes.TEXT, text: '' } as TMessageContentParts,
+        ]}
+        isLast
+        isSubmitting
+        isLatestMessage
+      />,
+    );
+
+    const textParts = screen.getAllByTestId(`real-part-${ContentTypes.TEXT}`);
+    expect(textParts[0]).toHaveAttribute('data-show-cursor', 'true');
+    expect(textParts[1]).toHaveAttribute('data-show-cursor', 'false');
+  });
+
   it('renders a completion-appended parent before the final root text', () => {
     const tool = {
       type: ContentTypes.TOOL_CALL,
@@ -618,5 +651,71 @@ describe('ContentParts — activity phase state', () => {
       'data-animate-entrance',
       'false',
     );
+  });
+});
+
+describe('ContentParts — settled content identity across compaction', () => {
+  /** Mirrors a captured run: the aggregator leaves holes at the source indexes
+   *  of steps that produced nothing, and `finalHandler` swaps in the server's
+   *  compacted array. Without the streamed-index stamp every index-derived key
+   *  shifts and the settled message remounts wholesale. */
+  const toolPart = {
+    type: ContentTypes.TOOL_CALL,
+    [ContentTypes.TOOL_CALL]: { id: 'call_a', name: 'search', args: {}, output: 'one' },
+  } as unknown as TMessageContentParts;
+  const batchLabel = {
+    type: ContentTypes.ACTIVITY_LABEL,
+    [ContentTypes.ACTIVITY_LABEL]: 'Recorded the fact',
+    tool_call_ids: ['call_a'],
+  } as unknown as TMessageContentParts;
+  const answer = { type: ContentTypes.TEXT, text: 'done' } as unknown as TMessageContentParts;
+  const phaseLabel = (bounds: { start: number; end: number }) =>
+    ({
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Researched the question',
+      activity_label_type: 'phase',
+      activity_start_index: bounds.start,
+      activity_end_index: bounds.end,
+      activity_count: 1,
+      pending: false,
+    }) as unknown as TMessageContentParts;
+
+  const streamed: Array<TMessageContentParts | undefined> = [
+    undefined,
+    toolPart,
+    batchLabel,
+    undefined,
+    answer,
+    phaseLabel({ start: 1, end: 4 }),
+  ];
+  const compacted = [toolPart, batchLabel, answer, phaseLabel({ start: 0, end: 2 })];
+
+  const renderStreaming = () =>
+    render(<ContentParts {...baseProps} content={streamed} isLast isSubmitting isLatestMessage />);
+
+  it('keeps every part and the phase group mounted when the final content is stamped', () => {
+    const { rerender } = renderStreaming();
+    const phaseNode = screen.getByTestId('activity-phase-group');
+    const toolNode = screen.getByTestId('real-part-tool_call');
+    const textNode = screen.getByTestId('real-part-text');
+
+    const finalContent = preserveStreamedContentIdentity(streamed, compacted);
+    rerender(<ContentParts {...baseProps} content={finalContent} isLast />);
+
+    expect(screen.getByTestId('activity-phase-group')).toBe(phaseNode);
+    expect(screen.getByTestId('real-part-tool_call')).toBe(toolNode);
+    expect(screen.getByTestId('real-part-text')).toBe(textNode);
+    expect(phaseNode).toHaveAttribute('data-animate-entrance', 'false');
+  });
+
+  it('remounts and replays the phase entrance without the stamp (regression control)', () => {
+    const { rerender } = renderStreaming();
+    const phaseNode = screen.getByTestId('activity-phase-group');
+
+    rerender(<ContentParts {...baseProps} content={compacted} isLast />);
+
+    const settledPhase = screen.getByTestId('activity-phase-group');
+    expect(settledPhase).not.toBe(phaseNode);
+    expect(settledPhase).toHaveAttribute('data-animate-entrance', 'true');
   });
 });

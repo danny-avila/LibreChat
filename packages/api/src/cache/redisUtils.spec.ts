@@ -1,5 +1,6 @@
 import IoRedis from 'ioredis';
-import { duplicateIoRedisClient } from './redisUtils';
+import type { RedisClientType } from '@redis/client';
+import { duplicateIoRedisClient, scanKeys } from './redisUtils';
 
 describe('duplicateIoRedisClient', () => {
   it('applies overrides to a single-node duplicate', () => {
@@ -77,5 +78,18 @@ describe('duplicateIoRedisClient', () => {
       duplicate.disconnect();
       client.disconnect();
     }
+  });
+});
+
+describe('scanKeys', () => {
+  it('flattens node-redis v5 scan pages', async () => {
+    const client = {
+      scanIterator: async function* () {
+        yield ['first', 'second'];
+        yield ['third'];
+      },
+    } as unknown as RedisClientType;
+
+    await expect(scanKeys(client, 'cache:*')).resolves.toEqual(['first', 'second', 'third']);
   });
 });

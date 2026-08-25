@@ -81,7 +81,7 @@ export function __resetShutdownStateForTests(): void {
   clearForceExitTimer();
 }
 
-async function runShutdownTasks(phase: ShutdownPhase): Promise<void> {
+async function runShutdownTasks(phase: ShutdownPhase): Promise<boolean> {
   const orderedTasks = tasks
     .filter((task) => task.phase === phase)
     .sort(
@@ -89,14 +89,17 @@ async function runShutdownTasks(phase: ShutdownPhase): Promise<void> {
         right.priority - left.priority || left.registrationOrder - right.registrationOrder,
     );
 
+  let failed = false;
   for (const task of orderedTasks) {
     try {
       logger.info(`Running ${phase} shutdown task: ${task.name}`);
       await task.fn();
     } catch (err) {
+      failed = true;
       logger.error(`Shutdown task "${task.name}" failed:`, err);
     }
   }
+  return failed;
 }
 
 function clearForceExitTimer(): void {
@@ -130,9 +133,9 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
       exitCode = 1;
     });
 
-    await runShutdownTasks('pre-drain');
+    if (await runShutdownTasks('pre-drain')) exitCode = 1;
     await serverClosePromise;
-    await runShutdownTasks('post-drain');
+    if (await runShutdownTasks('post-drain')) exitCode = 1;
   } finally {
     clearTimeout(forceExit);
     if (forceExitTimer === forceExit) {

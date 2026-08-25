@@ -1,7 +1,9 @@
 import type { ThemeDefinition } from './types';
 import {
   defaultAppearance,
+  defaultBrands,
   fromLegacyTheme,
+  libreChatTheme,
   resolveTheme,
   themeColorTokens,
   validateThemeDefinition,
@@ -46,6 +48,68 @@ describe('theme registry', () => {
     expect(light.appearance.fontFamily).toBe(defaultAppearance.fontFamily);
     expect(dark.colors['rgb-text-primary']).toBe(darkTheme['rgb-text-primary']);
     expect(dark.appearance).toEqual(defaultAppearance);
+  });
+
+  it('resolves provider brand tokens and lets a theme override them', () => {
+    const defaults = resolveTheme(libreChatTheme, 'light');
+    expect(defaults.brands['provider-anthropic']).toBe('#d09a74');
+    expect(defaults.brands['provider-openai']).toBe(defaultBrands['provider-openai']);
+
+    const custom = resolveTheme(
+      {
+        version: 1,
+        name: 'white-label',
+        modes: { light: {} },
+        brands: { 'provider-anthropic': '#ffffff' },
+      },
+      'light',
+    );
+    expect(custom.brands['provider-anthropic']).toBe('#ffffff');
+    expect(custom.brands['provider-openai']).toBe(defaultBrands['provider-openai']);
+  });
+
+  it('rejects CSS appended to a provider gradient', () => {
+    expect(
+      validateThemeDefinition({
+        version: 1,
+        name: 'invalid',
+        modes: {},
+        brands: {
+          'provider-azure': 'linear-gradient(#000,#000), url(https://example.com/pixel)',
+        },
+      }),
+    ).toContain(
+      'Invalid brand value for provider-azure: linear-gradient(#000,#000), url(https://example.com/pixel)',
+    );
+  });
+
+  it('rejects stacked CSS after a balanced gradient', () => {
+    expect(
+      validateThemeDefinition({
+        version: 1,
+        name: 'invalid',
+        modes: {},
+        brands: {
+          'provider-azure':
+            'linear-gradient(#000,#000), -webkit-image-set("https://example.com/pixel" 1x)',
+        },
+      }),
+    ).toEqual(
+      expect.arrayContaining([expect.stringContaining('Invalid brand value for provider-azure')]),
+    );
+  });
+
+  it('rejects a gradient for the provider foreground token', () => {
+    expect(
+      validateThemeDefinition({
+        version: 1,
+        name: 'invalid',
+        modes: {},
+        brands: {
+          'provider-foreground': 'linear-gradient(#fff,#fff)',
+        },
+      }),
+    ).toContain('Invalid brand value for provider-foreground: linear-gradient(#fff,#fff)');
   });
 
   it('preserves hover overrides from themes created before the composer hover token', () => {

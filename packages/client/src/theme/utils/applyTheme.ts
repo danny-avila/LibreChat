@@ -1,11 +1,13 @@
-import type { IThemeAppearance, IThemeRGB, ResolvedThemeDefinition } from '../types';
-import { themeAppearanceProperties, themeColorTokens } from '../registry';
+import type { IThemeAppearance, IThemeBrands, IThemeRGB, ResolvedThemeDefinition } from '../types';
+import { themeAppearanceProperties, themeBrandTokens, themeColorTokens } from '../registry';
 
 const colorProperty = (token: keyof IThemeRGB): `--${string}` => `--${token.slice(4)}`;
+const brandProperty = (token: keyof IThemeBrands): `--${string}` => `--${token}`;
 
 export const themeOwnedProperties: readonly string[] = Object.freeze([
   ...themeColorTokens.map(colorProperty),
   ...Object.values(themeAppearanceProperties),
+  ...themeBrandTokens.map(brandProperty),
 ]);
 
 const rgbPattern = /^(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})$/;
@@ -50,7 +52,13 @@ export function applyResolvedTheme(
   theme: ResolvedThemeDefinition,
   root: HTMLElement = document.documentElement,
 ): void {
-  const variables = [...mapColors(theme.colors), ...mapAppearance(theme.appearance)];
+  const variables = [
+    ...mapColors(theme.colors),
+    ...mapAppearance(theme.appearance),
+    ...themeBrandTokens.map(
+      (token) => [brandProperty(token), theme.brands[token]] as [string, string],
+    ),
+  ];
 
   variables.forEach(([property, value]) => root.style.setProperty(property, value));
   root.dataset.theme = theme.name;

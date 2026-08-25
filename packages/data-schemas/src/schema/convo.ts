@@ -54,6 +54,18 @@ const convoSchema: Schema<IConversation> = new Schema(
       default: undefined,
       select: false,
     },
+    /** Authenticated event sources address child actors through this opaque binding.
+     * The source never supplies the stored agent/thread target during delivery. */
+    agentEventBinding: {
+      type: {
+        bindingId: { type: String, required: true },
+        sourceKeyId: { type: String, required: true },
+        actorId: { type: String, required: true },
+      },
+      _id: false,
+      default: undefined,
+      select: false,
+    },
     tags: {
       type: [String],
       default: [],
@@ -106,6 +118,10 @@ convoSchema.index({ user: 1, isTemporary: 1, expiredAt: 1 });
 /** Owner-scoped child-thread cascade lookup used when a parent is deleted. */
 convoSchema.index({ user: 1, 'subagentThread.parentConversationId': 1 });
 convoSchema.index({ user: 1, 'subagentThreadLease.expiresAt': 1 });
+convoSchema.index(
+  { 'agentEventBinding.bindingId': 1 },
+  { unique: true, sparse: true, name: 'agent_event_binding_unique' },
+);
 // index for MeiliSearch sync operations
 convoSchema.index({ _meiliIndex: 1, isTemporary: 1, expiredAt: 1 });
 

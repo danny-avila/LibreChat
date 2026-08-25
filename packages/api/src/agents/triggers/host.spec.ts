@@ -12,6 +12,13 @@ const createFireEnvelope = () =>
     receivedAt: 20,
     principal: { id: 'user-1', role: 'member', tenantId: 'tenant-1' },
     target: { agentId: 'agent-1' },
+    run: {
+      conversationId: 'scheduled-conversation-1',
+      timezone: 'Europe/Paris',
+      chatProjectId: 'project-1',
+      files: [{ file_id: 'file-1' }],
+      metadata: { manual: false },
+    },
     event: {
       id: 'event-1',
       type: 'resource.ready',
@@ -154,7 +161,21 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
       isRegenerate: false,
       clientRequestId: idempotencyKey,
       generationProtocolVersion: 2,
-      timezone: 'America/New_York',
+      agentTrigger: {
+        version: envelope.version,
+        deliveryId: envelope.deliveryId,
+        event: {
+          id: envelope.event.id,
+          type: envelope.event.type,
+          occurredAt: envelope.event.occurredAt,
+          source: envelope.event.source,
+        },
+        metadata: { manual: false },
+      },
+      newConversationId: 'scheduled-conversation-1',
+      chatProjectId: 'project-1',
+      files: [{ file_id: 'file-1' }],
+      timezone: 'Europe/Paris',
     });
     expect(mintToken).toHaveBeenCalledWith(envelope.principal, envelope);
   });
@@ -554,30 +575,55 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
     });
   });
 
-  it('retries without consuming the logical delivery when the parent is not settled', async () => {
-    expect.hasAssertions();
-    const host = createAgentTriggerExecutionHost(
-      deps(
-        fetchMock(async () =>
-          response(
-            { code: 'PARENT_NOT_READY', error: 'The parent is still running.' },
-            { status: 409 },
-          ),
-        ),
-      ),
+  it('carries server-resolved binding identity only on bound child continuations', async () => {
+    const base = createContinueEnvelope();
+    const envelope = {
+      ...base,
+      target: {
+        ...base.target,
+        bindingId: `evtbind_${'a'.repeat(48)}`,
+        sourceKeyId: 'source-key',
+      },
+    };
+    const fetcher = fetchMock(async () =>
+      response({
+        streamId: 'conversation-1',
+        conversationId: 'conversation-1',
+        status: 'started',
+      }),
     );
 
-    await host.dispatch(createContinueEnvelope()).catch((error: unknown) => {
-      expectExecutionError(error, {
-        mode: 'continue',
-        certainty: 'definite',
-        retryable: true,
-        deferWithoutAttempt: true,
-        code: 'PARENT_NOT_READY',
-        status: 409,
-      });
-    });
+    await createAgentTriggerExecutionHost(deps(fetcher)).dispatch(envelope);
+
+    const headers = fetcher.mock.calls[0][1]?.headers as Record<string, string>;
+    expect(headers['x-lc-agent-event-binding']).toBe(`evtbind_${'a'.repeat(48)}`);
+    expect(headers['x-lc-agent-event-source-key']).toBe('source-key');
   });
+
+  it.each(['PARENT_NOT_READY', 'EVENT_ACTOR_NOT_READY'])(
+    'retries without consuming the logical delivery for temporary admission code %s',
+    async (code) => {
+      expect.hasAssertions();
+      const host = createAgentTriggerExecutionHost(
+        deps(
+          fetchMock(async () =>
+            response({ code, error: 'The actor is still busy.' }, { status: 409 }),
+          ),
+        ),
+      );
+
+      await host.dispatch(createContinueEnvelope()).catch((error: unknown) => {
+        expectExecutionError(error, {
+          mode: 'continue',
+          certainty: 'definite',
+          retryable: true,
+          deferWithoutAttempt: true,
+          code,
+          status: 409,
+        });
+      });
+    },
+  );
 
   it('releases a prepared durable result after a definite admission rejection', async () => {
     const releaseOnDefiniteFailure = jest.fn(async () => undefined);

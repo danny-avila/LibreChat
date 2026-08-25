@@ -545,6 +545,11 @@ function App() {
 remain synchronized when they change. Only pass theme props when the parent should control those
 values; otherwise use the context setters and allow stored preferences to remain authoritative.
 
+Set `persistThemeDefinition={false}` when a parent controls a deployment or embedded theme that
+must not replace the user's stored theme definition, legacy colors, name, or source. Appearance
+mode changes remain independently persisted through `color-theme`; leave `initialTheme` undefined
+when the stored light, dark, or system preference should remain authoritative.
+
 ## Contributing
 
 When adding new theme colors:

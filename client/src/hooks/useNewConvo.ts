@@ -42,6 +42,7 @@ import {
   logger,
 } from '~/utils';
 import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
+import { supersedeNavigation } from './Conversations/useNavigateToConvo';
 import useGetConversation from './Conversations/useGetConversation';
 import useAssistantListMap from './Assistants/useAssistantListMap';
 import { clearUploadRecovery } from './Files/useFileHandling';
@@ -445,6 +446,19 @@ const useNewConvo = (index = 0) => {
             })
             .catch(() => retainAll(filesToDelete));
         }
+      }
+
+      /** A first visit to another conversation may still be waiting on its
+       * record. Starting a new chat keeps the pathname, so nothing the route
+       * check sees changes — without this, that record lands and pulls the user
+       * into the conversation they just abandoned.
+       *
+       * `keepComposerState` marks a call that re-renders a composer an earlier
+       * call already opened, such as agent metadata arriving late. The user did
+       * not ask for anything there, so it must not cancel a conversation they
+       * clicked while it was in flight. */
+      if (!keepComposerState) {
+        supersedeNavigation();
       }
 
       switchToConversation(

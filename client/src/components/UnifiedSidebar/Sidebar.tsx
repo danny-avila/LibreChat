@@ -7,6 +7,9 @@ import { cn } from '~/utils';
 function Sidebar({
   links,
   expanded,
+  width,
+  minWidth,
+  maxWidth,
   onCollapse,
   onExpand,
   onLeaveInsights,
@@ -15,6 +18,9 @@ function Sidebar({
 }: {
   links: NavLink[];
   expanded: boolean;
+  width: number;
+  minWidth: number;
+  maxWidth: number;
   onCollapse: () => void;
   onExpand: () => void;
   onLeaveInsights: () => void;
@@ -46,6 +52,9 @@ function Sidebar({
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize sidebar"
+        aria-valuenow={Math.round(width)}
+        aria-valuemin={Math.round(minWidth)}
+        aria-valuemax={Math.round(maxWidth)}
         tabIndex={expanded ? 0 : -1}
         className={cn(
           'absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize transition-colors hover:bg-border-medium active:bg-border-heavy',

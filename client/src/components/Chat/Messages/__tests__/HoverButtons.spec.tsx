@@ -34,6 +34,7 @@ function renderHoverButtons({
   isLast = false,
   latestMessageId = 'assistant-1',
   getCanCopy = () => hasCopyableText({ text: message.text, content: message.content }),
+  handleFeedback,
 }: {
   isSubmitting: boolean;
   message?: TMessage;
@@ -41,6 +42,7 @@ function renderHoverButtons({
   isLast?: boolean;
   latestMessageId?: string;
   getCanCopy?: () => boolean;
+  handleFeedback?: () => void;
 }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -65,6 +67,7 @@ function renderHoverButtons({
             copyToClipboard={jest.fn()}
             getCanCopy={getCanCopy}
             latestMessageId={latestMessageId}
+            handleFeedback={handleFeedback}
           />
         </MemoryRouter>
       </RecoilRoot>
@@ -210,5 +213,40 @@ describe('HoverButtons edit affordance', () => {
     expect(container.querySelector(`#edit-${assistantMessage.messageId}`)).toBeNull();
     expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
     expect(screen.queryByTestId('continue-generation-button')).toBeNull();
+  });
+});
+
+describe('HoverButtons feedback affordance', () => {
+  const assistantMessage = {
+    ...userMessage,
+    messageId: 'assistant-1',
+    isCreatedByUser: false,
+    text: 'Here is the answer',
+  } as TMessage;
+
+  const renderSettledResponse = (handleFeedback?: () => void) =>
+    renderHoverButtons({
+      isSubmitting: false,
+      message: assistantMessage,
+      isLast: true,
+      latestMessageId: 'assistant-2',
+      handleFeedback,
+    });
+
+  it('offers feedback on a settled response when a handler is supplied', () => {
+    renderSettledResponse(jest.fn());
+
+    expect(screen.getByTitle('Love this')).toBeInTheDocument();
+    expect(screen.getByTitle('Needs improvement')).toBeInTheDocument();
+  });
+
+  /** `useMessageActions` withholds the handler when `interface.feedback` is false, so
+   *  this is how a deployment that disabled feedback reaches the action row. */
+  it('hides feedback when no handler is supplied', () => {
+    renderSettledResponse();
+
+    expect(screen.queryByTitle('Love this')).toBeNull();
+    expect(screen.queryByTitle('Needs improvement')).toBeNull();
+    expect(screen.getByTestId('copy-response-button')).toBeInTheDocument();
   });
 });

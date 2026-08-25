@@ -165,6 +165,8 @@ export type TFile = {
      */
     codeEnvRef?: CodeEnvRef;
     codeEnvRefs?: CodeEnvRefMap;
+    /** Dispatch-order stamp for the current source artifact generation. */
+    sourceDispatchedAt?: number;
   };
   createdAt?: string | Date;
   updatedAt?: string | Date;

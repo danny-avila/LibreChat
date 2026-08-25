@@ -33,6 +33,11 @@ const {
   purgeAgentTriggerDeliveriesForUser,
 } = require('~/server/services/Agents/triggers');
 const { getAppConfig } = require('~/server/services/Config');
+const { randomUUID } = require('node:crypto');
+const {
+  quiesceUserSchedules,
+  restoreUserSchedulesFromDeletion,
+} = require('~/server/services/Schedules');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
@@ -360,6 +365,7 @@ const updateUserPluginsController = async (req, res) => {
 const deleteUserController = async (req, res) => {
   const { user } = req;
   let triggerDeletionFence;
+  let scheduleSuspensionToken;
   let userDeleted = false;
 
   try {
@@ -395,6 +401,14 @@ const deleteUserController = async (req, res) => {
     }
     await drainAgentTriggerDeliveriesForUser(user.id);
     await subagentThreadTaskStore.cancelAndDrainForOwner(user.id, user.tenantId);
+    // Reversibly suspend the user's schedules under a per-attempt token BEFORE draining.
+    // A later cascade step (or this drain) can still fail and cancel the deletion, and the
+    // catch below restores exactly this attempt's rows — so a failed deletion never leaves
+    // a live user with silently disabled, erasure-eligible schedules.
+    scheduleSuspensionToken = randomUUID();
+    if (!(await quiesceUserSchedules(user.id, scheduleSuspensionToken))) {
+      throw new Error('Scheduled executions could not be confirmed stopped');
+    }
     const activeAgentRuns = await GenerationJobManager.getCleanupBlockingJobIdsForUser(
       user.id,
       user.tenantId,
@@ -446,6 +460,7 @@ const deleteUserController = async (req, res) => {
     await db.deleteTokens({ userId: user.id });
     await db.removeUserFromAllGroups(user.id);
     await db.deleteAclEntries({ principalId: user._id });
+    await db.deleteSchedulesByUser(user.id);
     const deleteResult = await db.deleteUserById(user.id);
     if (deleteResult.deletedCount !== 1) {
       throw new Error('User disappeared before account deletion could commit');
@@ -455,6 +470,33 @@ const deleteUserController = async (req, res) => {
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
+    // The account survives this failed attempt, so its schedules must too: restore the
+    // exact rows this attempt suspended (re-enabled/re-armed from their snapshot). Fenced
+    // to the token, so a schedule the owner deleted meanwhile is not resurrected. A
+    // successful deletion never reaches here (userDeleted short-circuits it).
+    //
+    // RESTORE BEFORE RELEASING THE DELETION FENCE. That fence is what refuses new schedule
+    // writes/claims for this user; releasing it first opens a window where an owner PATCH
+    // could edit a still-suspended row and then have its enabled/next-run state overwritten
+    // by this older snapshot, and where a second deletion attempt could re-suspend these
+    // rows under a new token — making this restore a no-op and stranding the disabled
+    // snapshot permanently.
+    if (scheduleSuspensionToken != null && !userDeleted) {
+      try {
+        await restoreUserSchedulesFromDeletion(user.id, scheduleSuspensionToken);
+      } catch (restoreError) {
+        // Every retry is exhausted at this point. The fence is still released below on
+        // purpose: retaining it would refuse this live account's schedule writes AND make
+        // `beginAgentTriggerUserDeletion` report `in_progress` forever, blocking the retry
+        // that is the convergence path — a later attempt re-suspends by ADOPTING this
+        // snapshot, so its cancel restores these exact rows. Log the token so the state is
+        // recoverable directly if that never happens.
+        logger.error(
+          `[deleteUserController] Failed to restore suspended schedules after a cancelled deletion; they remain disabled for user ${user.id} under suspension token ${scheduleSuspensionToken}`,
+          restoreError,
+        );
+      }
+    }
     if (triggerDeletionFence != null && !userDeleted) {
       try {
         await cancelAgentTriggerUserPurge(user.id, triggerDeletionFence);

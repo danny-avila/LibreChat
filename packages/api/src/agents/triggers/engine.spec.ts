@@ -1,6 +1,7 @@
 import type { AgentTriggerDeliveryRecord, AgentTriggerDeliveryStore } from './engine';
 import type { AgentTriggerExecutionResult } from './host';
 import { AgentTriggerDeliveryDeferredError, createAgentTriggerDeliveryEngine } from './engine';
+import { createAgentTriggerEnvelope } from './envelope';
 import { AgentTriggerDispatchError } from './dispatch';
 import { AgentTriggerExecutionError } from './host';
 
@@ -44,6 +45,7 @@ function storeWith(overrides: Partial<AgentTriggerDeliveryStore> = {}): AgentTri
   return {
     claimNext: jest.fn(async () => delivery()),
     findEarlierUnsettled: jest.fn(async () => null),
+    getBatch: jest.fn(async () => []),
     release: jest.fn(async () => true),
     beginAttempt: jest.fn(async () => 1),
     defer: jest.fn(async () => true),
@@ -79,6 +81,76 @@ describe('createAgentTriggerDeliveryEngine', () => {
       attempt: 1,
       result: successResult(),
       settledAt: START,
+    });
+  });
+
+  it('dispatches one structured invocation for every member of a claimed batch', async () => {
+    const envelope = createAgentTriggerEnvelope({
+      mode: 'continue',
+      requestId: 'request-1',
+      deliveryId: 'delivery-1',
+      receivedAt: 10,
+      principal: { id: 'user-1' },
+      target: {
+        agentId: 'agent-1',
+        conversationId: 'thread-1',
+        parentMessageId: 'placeholder',
+        bindingId: `evtbind_${'a'.repeat(48)}`,
+        sourceKeyId: 'source-key',
+      },
+      event: {
+        id: 'event-1',
+        type: 'notification.ready',
+        occurredAt: 10,
+        source: { id: 'source-key', type: 'remote_api_key' },
+      },
+      input: 'Handle event 1.',
+    });
+    const root = delivery({ envelope, batchMemberIds: ['row-2'] });
+    const member = delivery({
+      id: 'row-2',
+      deliveryKey: 'trigger_2',
+      claimToken: undefined,
+      leaseBy: undefined,
+      leaseUntil: undefined,
+      status: 'batched',
+      envelope: createAgentTriggerEnvelope({
+        mode: 'continue',
+        requestId: 'request-2',
+        deliveryId: 'delivery-2',
+        receivedAt: 11,
+        principal: { id: 'user-1' },
+        target: {
+          agentId: 'agent-1',
+          conversationId: 'thread-1',
+          parentMessageId: 'placeholder',
+          bindingId: `evtbind_${'a'.repeat(48)}`,
+          sourceKeyId: 'source-key',
+        },
+        event: { ...envelope.event, id: 'event-2', occurredAt: 11 },
+        input: 'Handle event 2.',
+      }),
+    });
+    const store = storeWith({
+      claimNext: jest.fn(async () => root),
+      getBatch: jest.fn(async () => [member]),
+    });
+    const dispatch = jest.fn<
+      Promise<AgentTriggerExecutionResult>,
+      [unknown, { signal?: AbortSignal }?]
+    >(async () => successResult());
+    const engine = createAgentTriggerDeliveryEngine(
+      { store, dispatch, now: () => START, workerId: 'worker-1' },
+      { concurrency: 1 },
+    );
+
+    await engine.runTick();
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    const dispatched = dispatch.mock.calls[0]?.[0] as { input: string };
+    expect(JSON.parse(dispatched.input)).toMatchObject({
+      kind: 'librechat.agent_event_batch',
+      count: 2,
     });
   });
 
@@ -455,6 +527,218 @@ describe('createAgentTriggerDeliveryEngine', () => {
     expect(dispatch).toHaveBeenCalledTimes(2);
     releaseDispatch?.();
     await tick;
+  });
+
+  it('backs off polling while idle and snaps back on a wake', async () => {
+    jest.useFakeTimers();
+    try {
+      const store = storeWith({ claimNext: jest.fn(async () => null) });
+      const dispatch = jest.fn(async () => successResult());
+      const engine = createAgentTriggerDeliveryEngine(
+        { store, dispatch, now: () => START, workerId: 'worker-1' },
+        { concurrency: 1, tickMs: 1_000, maxIdleTickMs: 8_000 },
+      );
+
+      engine.start();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(store.claimNext).toHaveBeenCalledTimes(1);
+
+      /** Idle polls land at +1s, +5s, +13s (doubling, capped at 8s): 3 more claims in 15s, not 15. */
+      await jest.advanceTimersByTimeAsync(15_000);
+      expect(store.claimNext).toHaveBeenCalledTimes(4);
+
+      /** A wake — an enqueue nudge or a finished delivery — claims immediately and
+       *  re-arms the base cadence, so the next idle poll is one second out again. */
+      engine.wake();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(store.claimNext).toHaveBeenCalledTimes(5);
+      await jest.advanceTimersByTimeAsync(1_000);
+      expect(store.claimNext).toHaveBeenCalledTimes(6);
+
+      await engine.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('returns to the base cadence after a claimed delivery interrupts an idle stretch', async () => {
+    jest.useFakeTimers();
+    try {
+      const responses: Array<AgentTriggerDeliveryRecord | null> = [
+        null,
+        null,
+        delivery(),
+        null,
+        null,
+      ];
+      const store = storeWith({
+        claimNext: jest.fn(async () => (responses.length > 0 ? (responses.shift() ?? null) : null)),
+      });
+      const dispatch = jest.fn(async () => successResult());
+      const engine = createAgentTriggerDeliveryEngine(
+        { store, dispatch, now: () => START, workerId: 'worker-1' },
+        { concurrency: 1, tickMs: 1_000, maxIdleTickMs: 8_000 },
+      );
+
+      engine.start();
+      /** start (null) -> +1s (null) -> +5s: the third claim finds work. */
+      await jest.advanceTimersByTimeAsync(5_000);
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      const claimsAfterWork = (store.claimNext as jest.Mock).mock.calls.length;
+
+      /** The completed delivery wakes the engine, so polling resumes at one-second steps. */
+      await jest.advanceTimersByTimeAsync(1_000);
+      expect((store.claimNext as jest.Mock).mock.calls.length).toBeGreaterThan(claimsAfterWork);
+
+      await engine.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps polling at the base cadence while claims are failing', async () => {
+    jest.useFakeTimers();
+    try {
+      const store = storeWith({
+        claimNext: jest.fn(async () => {
+          throw new Error('mongo unavailable');
+        }),
+      });
+      const dispatch = jest.fn(async () => successResult());
+      const engine = createAgentTriggerDeliveryEngine(
+        { store, dispatch, now: () => START, workerId: 'worker-1' },
+        { concurrency: 1, tickMs: 1_000, maxIdleTickMs: 8_000 },
+      );
+
+      engine.start();
+      /** A failed claim proves nothing about the queue, so recovery attempts stay
+       *  one second apart instead of stretching toward the idle ceiling. */
+      await jest.advanceTimersByTimeAsync(10_000);
+      expect((store.claimNext as jest.Mock).mock.calls.length).toBeGreaterThanOrEqual(10);
+
+      await engine.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('claims a scheduled retry when it becomes eligible instead of waiting out the idle backoff', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(START);
+    try {
+      let handedFirst = false;
+      let handedRetry = false;
+      const store = storeWith({
+        claimNext: jest.fn(async () => {
+          if (!handedFirst) {
+            handedFirst = true;
+            return delivery();
+          }
+          if (!handedRetry && Date.now() >= START.getTime() + 20_000) {
+            handedRetry = true;
+            return delivery({ claimToken: 'claim-2', attempts: 1 });
+          }
+          return null;
+        }),
+      });
+      const retryable = new AgentTriggerExecutionError('busy', {
+        mode: 'fire',
+        certainty: 'definite',
+        retryable: true,
+        code: 'RATE_LIMITED',
+        status: 429,
+        retryAfter: '20',
+      });
+      const dispatch = jest
+        .fn()
+        .mockRejectedValueOnce(retryable)
+        .mockImplementation(async () => successResult());
+      const engine = createAgentTriggerDeliveryEngine(
+        { store, dispatch, now: () => new Date(), workerId: 'worker-1' },
+        { concurrency: 1, tickMs: 1_000, maxIdleTickMs: 60_000 },
+      );
+
+      engine.start();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(store.retry).toHaveBeenCalledWith(
+        expect.objectContaining({ availableAt: new Date(START.getTime() + 20_000) }),
+      );
+
+      /** The idle backoff alone would next poll at +31s; the recorded eligibility
+       *  caps the sleep so the retry is claimed on time. */
+      await jest.advanceTimersByTimeAsync(21_000);
+      expect(dispatch).toHaveBeenCalledTimes(2);
+
+      await engine.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('tracks several eligibility deadlines and interrupts a capped idle sleep for a new earliest', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(START);
+    try {
+      const handed = new Set<string>();
+      const pendingAt = new Map<string, number>([
+        ['claim-1', 0],
+        ['claim-2', 0],
+        ['retry-1', START.getTime() + 5_000],
+        ['retry-2', START.getTime() + 23_000],
+      ]);
+      const store = storeWith({
+        claimNext: jest.fn(async () => {
+          for (const [token, at] of pendingAt) {
+            if (!handed.has(token) && Date.now() >= at) {
+              handed.add(token);
+              return delivery({ claimToken: token });
+            }
+          }
+          return null;
+        }),
+      });
+      const retryable = (retryAfter: string) =>
+        new AgentTriggerExecutionError('busy', {
+          mode: 'fire',
+          certainty: 'definite',
+          retryable: true,
+          code: 'RATE_LIMITED',
+          status: 429,
+          retryAfter,
+        });
+      const dispatch = jest
+        .fn()
+        .mockRejectedValueOnce(retryable('5'))
+        .mockRejectedValueOnce(retryable('23'))
+        .mockImplementation(async () => successResult());
+      const engine = createAgentTriggerDeliveryEngine(
+        { store, dispatch, now: () => new Date(), workerId: 'worker-1' },
+        { concurrency: 2, tickMs: 1_000, maxIdleTickMs: 60_000 },
+      );
+
+      engine.start();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(dispatch).toHaveBeenCalledTimes(2);
+
+      /** Both retry deadlines are tracked: the +5s one fires on time, and the +23s one
+       *  survives it — a single-slot tracker would discard it and idle to the cap. */
+      await jest.advanceTimersByTimeAsync(6_000);
+      expect(dispatch).toHaveBeenCalledTimes(3);
+      await jest.advanceTimersByTimeAsync(18_000);
+      expect(dispatch).toHaveBeenCalledTimes(4);
+
+      /** And a deadline learned while the timer already sleeps toward the idle cap
+       *  re-arms it: nothing new until the engine has idled well past base cadence. */
+      await jest.advanceTimersByTimeAsync(40_000);
+      pendingAt.set('late-arrival', Date.now() + 3_000);
+      engine.noteEligibleAt(new Date(Date.now() + 3_000));
+      await jest.advanceTimersByTimeAsync(4_000);
+      expect(dispatch).toHaveBeenCalledTimes(5);
+
+      await engine.stop();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('coalesces overlapping ticks into one claim pass', async () => {

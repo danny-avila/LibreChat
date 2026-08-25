@@ -505,7 +505,11 @@ function canReleasePreparedResult(error: AgentTriggerExecutionError): boolean {
   if (error.code === 'START_ABORTED' || error.status == null) {
     return true;
   }
-  if (error.code === 'PARENT_NOT_READY' || error.code === 'PARENT_STATE_UNAVAILABLE') {
+  if (
+    error.code === 'PARENT_NOT_READY' ||
+    error.code === 'PARENT_STATE_UNAVAILABLE' ||
+    error.code === 'EVENT_ACTOR_NOT_READY'
+  ) {
     return true;
   }
   return error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 409;
@@ -554,9 +558,10 @@ async function startRun(
         conversationId: envelope.target.conversationId,
       };
     }
-    const input = preparation?.status === 'ready' ? preparation.input : envelope.input;
+    const readyPreparation = preparation?.status === 'ready' ? preparation : undefined;
+    const input = readyPreparation?.input ?? envelope.input;
     const parentMessageId = resolveParentMessageId(preparation, envelope);
-    const [token, timezone, baseUrl] = await Promise.all([
+    const [token, resolvedTimezone, baseUrl] = await Promise.all([
       setupValue(
         () => deps.mintToken(envelope.principal, envelope),
         mode,
@@ -574,6 +579,8 @@ async function startRun(
       scope.abort();
       throw error;
     });
+    const run = envelope.mode === 'fire' ? envelope.run : undefined;
+    const timezone = run?.timezone ?? resolvedTimezone;
     const url = mode === 'fire' ? fireUrl(baseUrl) : continueUrl(baseUrl);
     const fetcher: AgentTriggerFetch = deps.fetch ?? globalThis.fetch;
     let response: Response;
@@ -588,6 +595,12 @@ async function startRun(
           'User-Agent': TRIGGER_USER_AGENT,
           'x-lc-agent-trigger': '1',
           'x-request-id': context.idempotencyKey,
+          ...(envelope.mode === 'continue' && envelope.target.bindingId != null
+            ? {
+                'x-lc-agent-event-binding': envelope.target.bindingId,
+                'x-lc-agent-event-source-key': envelope.target.sourceKeyId!,
+              }
+            : {}),
           [GENERATION_PROTOCOL_HEADER]: '2',
         },
         body: JSON.stringify({
@@ -602,6 +615,26 @@ async function startRun(
           isRegenerate: false,
           clientRequestId: context.idempotencyKey,
           generationProtocolVersion: 2,
+          ...(envelope.mode === 'fire' && {
+            agentTrigger: {
+              version: envelope.version,
+              deliveryId: envelope.deliveryId,
+              event: {
+                id: envelope.event.id,
+                type: envelope.event.type,
+                occurredAt: envelope.event.occurredAt,
+                source: envelope.event.source,
+              },
+              ...(run?.metadata !== undefined && {
+                metadata: run.metadata,
+              }),
+            },
+          }),
+          ...(run?.conversationId != null && {
+            newConversationId: run.conversationId,
+          }),
+          ...(run?.chatProjectId != null && { chatProjectId: run.chatProjectId }),
+          ...(run?.files != null && { files: run.files }),
           ...(typeof timezone === 'string' && timezone.trim().length > 0
             ? { timezone: timezone.trim() }
             : {}),
@@ -644,18 +677,15 @@ async function startRun(
     if (!response.ok) {
       const message =
         errorMessage(payload) ?? (boundedBody.text.slice(0, 300) || 'request rejected');
+      const deferredContinue =
+        mode === 'continue' &&
+        response.status === 409 &&
+        ['PARENT_NOT_READY', 'EVENT_ACTOR_NOT_READY'].includes(errorCode(payload) ?? '');
       throw executionError(`Agent trigger ${mode} was rejected (${response.status}): ${message}`, {
         mode,
         certainty: 'definite',
-        retryable:
-          isRetryableStatus(response.status) ||
-          (mode === 'continue' &&
-            response.status === 409 &&
-            errorCode(payload) === 'PARENT_NOT_READY'),
-        deferWithoutAttempt:
-          mode === 'continue' &&
-          response.status === 409 &&
-          errorCode(payload) === 'PARENT_NOT_READY',
+        retryable: isRetryableStatus(response.status) || deferredContinue,
+        deferWithoutAttempt: deferredContinue,
         code: errorCode(payload) ?? (mode === 'fire' ? 'FIRE_REJECTED' : 'CONTINUE_REJECTED'),
         status: response.status,
         ...(response.headers.get('retry-after') != null && {

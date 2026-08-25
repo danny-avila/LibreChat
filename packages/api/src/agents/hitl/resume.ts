@@ -324,7 +324,7 @@ type ResumableRunStep = {
 
 export function normalizeResumeRunStepIndices<T extends ResumableRunStep>(
   runSteps: readonly T[],
-  seedContent: readonly { type?: string; tool_call?: { id?: string } }[] = [],
+  seedContent: readonly ({ type?: string; tool_call?: { id?: string } } | undefined)[] = [],
 ): T[] {
   const toolCallIndices = new Map<string, number>();
   seedContent.forEach((part, index) => {
@@ -361,7 +361,7 @@ export function hydrateResumeRunSteps(
   runSteps: readonly RunStep[],
   stepMap: Map<string, RunStep | undefined> | undefined,
   graph: { toolCallStepIds?: Map<string, string> } | null | undefined,
-  seedContent: readonly { type?: string; tool_call?: { id?: string } }[] = [],
+  seedContent: readonly ({ type?: string; tool_call?: { id?: string } } | undefined)[] = [],
 ): void {
   for (const runStep of normalizeResumeRunStepIndices(runSteps, seedContent)) {
     if (!runStep?.id) {
@@ -491,7 +491,7 @@ export function createContentIndexOffsetHandlers(
  * already carry their answers).
  */
 function findAskPartIndex<
-  TPart extends { type?: string; tool_call?: { id?: string; name?: string } },
+  TPart extends { type?: string; tool_call?: { id?: unknown; name?: unknown } },
 >(content: TPart[], toolCallId: string | undefined, isStampable: (part: TPart) => boolean): number {
   for (let i = content.length - 1; i >= 0; i--) {
     const part = content[i];
@@ -564,7 +564,7 @@ export function findAskUserQuestionContentIndex<
  * array when nothing matched.
  */
 export function attachAskUserQuestionAnswer<
-  TPart extends { type?: string; tool_call?: { id?: string; name?: string; output?: unknown } },
+  TPart extends { type?: string; tool_call?: { id?: unknown; name?: unknown; output?: unknown } },
 >(
   content: TPart[],
   request: Agents.AskUserQuestionRequest | Agents.AskUserQuestionsRequest,
@@ -601,7 +601,7 @@ export function attachAskUserQuestionAnswer<
 
 /** Apply retained ask answers in one content pass for Redis reconstruction. */
 export function attachAskUserQuestionAnswers<
-  TPart extends { type?: string; tool_call?: { id?: string; name?: string; output?: unknown } },
+  TPart extends { type?: string; tool_call?: { id?: unknown; name?: unknown; output?: unknown } },
 >(content: TPart[], answers: readonly ResolvedAskUserQuestion[]): TPart[] {
   if (answers.length === 0) {
     return content;
@@ -637,7 +637,8 @@ export function attachAskUserQuestionAnswers<
     if (part?.type !== 'tool_call' || toolCall?.name !== ASK_USER_QUESTION_TOOL_NAME) {
       continue;
     }
-    const exactAnswer = toolCall.id != null ? exactAnswers.get(toolCall.id) : undefined;
+    const toolCallId = typeof toolCall.id === 'string' ? toolCall.id : undefined;
+    const exactAnswer = toolCallId != null ? exactAnswers.get(toolCallId) : undefined;
     const indexedAnswer = indexedAnswers.get(index);
     const legacyCandidate = legacyAnswers[legacyIndex];
     if (
@@ -673,8 +674,8 @@ export function attachAskUserQuestionAnswers<
     if (answer == null) {
       continue;
     }
-    if (exactAnswer != null && toolCall.id != null) {
-      exactAnswers.delete(toolCall.id);
+    if (exactAnswer != null && toolCallId != null) {
+      exactAnswers.delete(toolCallId);
     }
     if (indexedAnswer != null) {
       indexedAnswers.delete(index);

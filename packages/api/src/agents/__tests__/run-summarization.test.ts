@@ -1,4 +1,5 @@
 import { encryptV3, logger } from '@librechat/data-schemas';
+import { CallbackManager } from '@langchain/core/callbacks/manager';
 import {
   EModelEndpoint,
   FileSources,
@@ -9,6 +10,7 @@ import type { SummarizationConfig, TEndpoint } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { SubagentTaskConfig } from '@librechat/agents';
 import type { AppConfig } from '@librechat/data-schemas';
+import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
 import { createRun } from '~/agents/run';
 
 // Mock winston logger — `format` must be callable so @librechat/data-schemas
@@ -164,6 +166,7 @@ async function callAndCapture(
     messages?: BaseMessage[];
     discoveredToolNames?: string[];
     subagentTasks?: SubagentTaskConfig;
+    modelCallbacks?: readonly ModelBoundChatModelCallback[];
   } = {},
 ) {
   const agents = opts.agents ?? [makeAgent()];
@@ -178,6 +181,7 @@ async function callAndCapture(
     messages: opts.messages,
     discoveredToolNames: opts.discoveredToolNames,
     subagentTasks: opts.subagentTasks,
+    modelCallbacks: opts.modelCallbacks,
     streaming: true,
     streamUsage: true,
   });
@@ -273,6 +277,142 @@ describe('custom endpoint stream usage defaults', () => {
 
     expect(clientOptions.streamUsage).toBe(true);
     expect(clientOptions.usage).toBe(true);
+  });
+});
+
+describe('model-level callbacks', () => {
+  it('propagates guards through root, fallback, summary, eager, lazy, and graph clients', async () => {
+    const modelCallback: ModelBoundChatModelCallback = {
+      name: 'librechat-model-bound-content-filter',
+      raiseError: true,
+      awaitHandlers: true,
+      handleChatModelStart: jest.fn(),
+    };
+    const eagerChild = makeAgent({ id: 'agent_eager', name: 'Eager child' });
+    const lazyResolve = jest
+      .fn()
+      .mockResolvedValue(makeAgent({ id: 'agent_lazy', name: 'Lazy child' }));
+    const graphMember = makeAgent({ id: 'agent_graph', name: 'Graph member' });
+    const graphDefinition = {
+      type: 'guarded_team',
+      name: 'Guarded team',
+      description: 'Exercises graph member client options',
+      agent_ids: [graphMember.id],
+      edges: [],
+      entry_agent_id: graphMember.id,
+      result_agent_id: graphMember.id,
+    };
+    const agents = await callAndCapture({
+      modelCallbacks: [modelCallback],
+      summarizationConfig: {
+        provider: 'anthropic',
+        model: 'claude-test',
+        parameters: {
+          fallbacks: [{ provider: 'openAI', clientOptions: { temperature: 0 } }],
+        } as unknown as SummarizationConfig['parameters'],
+      },
+      agents: [
+        makeAgent({
+          model_parameters: {
+            model: 'gpt-4o',
+            fallbacks: [{ provider: 'anthropic', clientOptions: { temperature: 0 } }],
+          },
+          subagents: {
+            enabled: true,
+            allowSelf: false,
+            agent_ids: [eagerChild.id, 'agent_lazy'],
+            graphs: [graphDefinition],
+          },
+          subagentAgentConfigs: [eagerChild],
+          lazySubagentConfigs: [
+            {
+              id: 'agent_lazy',
+              name: 'Lazy child',
+              description: 'Resolves only when selected',
+              configId: 'agent_lazy:1:fingerprint',
+              resolve: lazyResolve,
+            },
+          ],
+          subagentGraphConfigs: [{ definition: graphDefinition, memberConfigs: [graphMember] }],
+        }),
+      ],
+    });
+
+    const root = agents[0];
+    const rootOptions = root.clientOptions as Record<string, unknown>;
+    expect(rootOptions.callbacks).toEqual([modelCallback]);
+    expect(
+      (
+        (rootOptions.fallbacks as Array<Record<string, unknown>>)[0].clientOptions as Record<
+          string,
+          unknown
+        >
+      ).callbacks,
+    ).toEqual([modelCallback]);
+
+    const summary = root.summarizationConfig as Record<string, unknown>;
+    const summaryParameters = summary.parameters as Record<string, unknown>;
+    expect(summaryParameters.callbacks).toEqual([modelCallback]);
+    expect(
+      (
+        (summaryParameters.fallbacks as Array<Record<string, unknown>>)[0].clientOptions as Record<
+          string,
+          unknown
+        >
+      ).callbacks,
+    ).toEqual([modelCallback]);
+
+    const configs = root.subagentConfigs as Array<Record<string, unknown>>;
+    const eager = configs.find((config) => config.type === 'agent_eager');
+    expect(
+      ((eager?.agentInputs as Record<string, unknown>).clientOptions as Record<string, unknown>)
+        .callbacks,
+    ).toEqual([modelCallback]);
+
+    const lazy = configs.find((config) => config.type === 'agent_lazy');
+    const lazyInputs = await (
+      lazy?.resolveAgentInputs as (context: never) => Promise<Record<string, unknown>>
+    )({ signal: new AbortController().signal } as never);
+    expect((lazyInputs.clientOptions as Record<string, unknown>).callbacks).toEqual([
+      modelCallback,
+    ]);
+
+    const graph = configs.find((config) => config.type === 'guarded_team');
+    const [member] = graph?.agents as Array<Record<string, unknown>>;
+    expect((member.clientOptions as Record<string, unknown>).callbacks).toEqual([modelCallback]);
+  });
+
+  it('preserves a pre-existing callback manager when installing model guards', async () => {
+    const existingLLMStart = jest.fn();
+    const existingManager = CallbackManager.fromHandlers({ handleLLMStart: existingLLMStart });
+    const modelCallback: ModelBoundChatModelCallback = {
+      name: 'librechat-model-bound-content-filter',
+      raiseError: true,
+      awaitHandlers: true,
+      handleChatModelStart: jest.fn(),
+    };
+    const agents = await callAndCapture({
+      modelCallbacks: [modelCallback],
+      agents: [
+        makeAgent({
+          model_parameters: {
+            model: 'gpt-4o',
+            callbacks: existingManager,
+          },
+        }),
+      ],
+    });
+
+    const callbacks = (agents[0].clientOptions as { callbacks: CallbackManager }).callbacks;
+    expect(callbacks).toBeInstanceOf(CallbackManager);
+    expect(callbacks).not.toBe(existingManager);
+    expect(callbacks.handlers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ handleLLMStart: existingLLMStart }),
+        modelCallback,
+      ]),
+    );
+    expect(existingManager.handlers).toHaveLength(1);
   });
 });
 
@@ -1109,6 +1249,70 @@ describe('subagentConfigs', () => {
     )({ signal: new AbortController().signal } as never);
     expect(resolve).toHaveBeenCalledTimes(1);
     expect(childInputs.name).toBe('Researcher');
+  });
+
+  it.each([
+    ['foreground', undefined],
+    [
+      'detached',
+      {
+        store: new InMemorySubagentTaskStore(),
+        scopeId: 'file-context-task-scope',
+      } satisfies SubagentTaskConfig,
+    ],
+  ])("preserves a lazy child's prepared File Context in %s execution", async (_mode, tasks) => {
+    const fileContext = 'Attached document(s):\n```md\n# "child.txt"\nChild-only facts\n\n```';
+    const resolve = jest.fn().mockResolvedValue(
+      makeAgent({
+        id: 'agent_child',
+        name: 'Researcher',
+        additional_instructions: fileContext,
+      }),
+    );
+    const agents = await callAndCapture({
+      subagentTasks: tasks,
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          lazySubagentConfigs: [
+            {
+              id: 'agent_child',
+              name: 'Researcher',
+              description: 'Uses private File Context',
+              configId: 'agent_child:3:fingerprint',
+              resolve,
+            },
+          ],
+        }),
+      ],
+    });
+    const [config] = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    const childInputs = await (
+      config.resolveAgentInputs as (context: never) => Promise<Record<string, unknown>>
+    )({ signal: new AbortController().signal } as never);
+
+    expect(childInputs.additional_instructions).toBe(fileContext);
+  });
+
+  it('preserves prepared File Context for an eager legacy subagent', async () => {
+    const fileContext = 'Attached document(s):\n```md\n# "child.txt"\nLegacy child facts\n\n```';
+    const child = makeAgent({
+      id: 'agent_child',
+      name: 'Researcher',
+      additional_instructions: fileContext,
+    });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+    const [config] = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    const childInputs = config.agentInputs as Record<string, unknown>;
+
+    expect(childInputs.additional_instructions).toBe(fileContext);
   });
 
   it('uses a fresh expansion budget for each lazy descriptor resolution', async () => {
