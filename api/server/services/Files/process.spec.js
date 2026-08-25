@@ -128,6 +128,28 @@ jest.mock('@librechat/api', () => {
       res.status(200).json({ message, ...result });
     }),
     getStorageMetadata: jest.fn(() => ({})),
+    /* Seam stand-in. It keeps the two properties these upload paths are asserted on —
+     * the row is written with the scope's tenant, and a rejection runs the caller's
+     * rollback — while the quota arithmetic itself is covered against the real module
+     * in `packages/api/src/files/quota.spec.ts`. */
+    resolveStorageScope: (req) => ({
+      userId: req.user?.id,
+      tenantId: req.tenantId ?? req.user?.tenantId,
+    }),
+    persistFileWithQuota: async ({ scope, row, write, rollback }, onRollbackError) => {
+      const scopedRow = { ...row, tenantId: scope.tenantId };
+      if (!global.__mockQuotaRejection) {
+        return write(scopedRow);
+      }
+      if (rollback) {
+        try {
+          await rollback();
+        } catch (error) {
+          onRollbackError(error);
+        }
+      }
+      throw global.__mockQuotaRejection;
+    },
     getRetentionExpiry,
     getAgentFileRetentionExpiry: jest.fn(({ req, messageAttachment, toolResource }) => {
       const interfaceConfig = req?.config?.interfaceConfig;
@@ -1396,6 +1418,7 @@ describe('processFileURL', () => {
       basePath: 'images',
       context: FileContext.image_generation,
       tenantId: 'tenant-a',
+      req: { user: { id: 'user-123', tenantId: 'tenant-a' } },
     });
 
     expect(getFileURL).not.toHaveBeenCalled();
@@ -1538,6 +1561,7 @@ describe('processFileURL', () => {
       basePath: 'images',
       context: FileContext.image_generation,
       tenantId: 'tenant-a',
+      req: { user: { id: 'user-123', tenantId: 'tenant-a' } },
     });
 
     expect(getFileURL).toHaveBeenCalledWith({
@@ -1571,6 +1595,7 @@ describe('processFileURL', () => {
       basePath: 'images',
       context: FileContext.image_generation,
       tenantId: 'tenant-a',
+      req: { user: { id: 'user-123', tenantId: 'tenant-a' } },
     });
 
     expect(getFileURL).toHaveBeenCalledWith({

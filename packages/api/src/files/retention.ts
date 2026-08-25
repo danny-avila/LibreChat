@@ -1,8 +1,11 @@
 import { RetentionMode } from 'librechat-data-provider';
 import { createFallbackRetentionDate } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
+import type { StorageScope } from './quota';
+import { resolveStorageScope } from './quota';
 
 type InterfaceConfig = AppConfig['interfaceConfig'];
+type FileConfig = NonNullable<AppConfig['fileConfig']>;
 
 const retentionExpiryCache = new WeakMap<
   RetentionRequest,
@@ -17,6 +20,7 @@ export type RetentionConversation = {
 };
 
 export type RetentionRequest = {
+  tenantId?: string;
   user?: {
     id?: string;
     tenantId?: string;
@@ -27,6 +31,8 @@ export type RetentionRequest = {
   };
   config?: {
     interfaceConfig?: InterfaceConfig;
+    /** Carries the storage cap so a snapshot can resolve the same scope the live request would. */
+    fileConfig?: FileConfig;
   };
 };
 
@@ -241,14 +247,26 @@ export async function getSharedLinkExpiration(
   }
 }
 
+/**
+ * Snapshot of the request that image-generation tools keep for later writes.
+ *
+ * `storageScope` is required, so a snapshot cannot be assembled from whichever fields
+ * happen to be at hand — the resolved tenant and cap travel with it. Rebuilding a
+ * request without them is what silently billed generated images to a second ledger.
+ */
+export type MinimalFileRequest = RetentionRequest & { storageScope: StorageScope };
+
 export const createMinimalRetentionRequest = (
-  req?: RetentionRequest | null,
-): RetentionRequest | undefined => {
-  if (!req) {
+  req?: (RetentionRequest & { storageScope?: StorageScope }) | null,
+): MinimalFileRequest | undefined => {
+  /* No authenticated user means no ledger to charge, so there is no snapshot to make;
+   * callers already treat `undefined` as "no retention/persistence context". */
+  if (!req?.user?.id) {
     return undefined;
   }
 
   return {
+    storageScope: resolveStorageScope(req),
     user: req.user
       ? {
           id: req.user.id,
@@ -261,6 +279,7 @@ export const createMinimalRetentionRequest = (
     },
     config: {
       interfaceConfig: req.config?.interfaceConfig,
+      ...(req.config?.fileConfig ? { fileConfig: req.config.fileConfig } : {}),
     },
   };
 };
