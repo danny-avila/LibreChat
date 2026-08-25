@@ -155,6 +155,41 @@ describe('markdown artifacts', () => {
       expect(contrastLight).toContain('color: #0000cc');
     });
 
+    /** Anything the base sheet colours inside the media query has to be answered
+     *  by the appended block, or an explicit contrast choice keeps a GitHub
+     *  palette value wherever the override forgot to reach. */
+    it('answers every media-query colour in the contrast block', () => {
+      const styleOf = (html: string) =>
+        html.slice(html.indexOf('<style>') + '<style>'.length, html.indexOf('</style>'));
+      const baseStyle = styleOf(getMarkdownFiles('# Test')['index.html']);
+      const override = styleOf(getMarkdownFiles('# Test', true, true)['index.html']).slice(
+        baseStyle.length,
+      );
+
+      /** `selector -> property` pairs, one per selector in a comma-separated list. */
+      const declarations = (css: string): string[] =>
+        [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].flatMap(([, selectors, body]) =>
+          selectors.split(',').flatMap((selector) =>
+            body
+              .split(';')
+              .map((declaration) => declaration.split(':')[0].trim())
+              .filter(Boolean)
+              .map((property) => `${selector.trim()} -> ${property}`),
+          ),
+        );
+
+      const answered = new Set(declarations(override));
+      const mediaBlocks = [
+        ...baseStyle.matchAll(/@media \(prefers-color-scheme: dark\) \{([\s\S]*?)\n\}/g),
+      ];
+      expect(mediaBlocks.length).toBeGreaterThan(0);
+
+      const unanswered = mediaBlocks
+        .flatMap(([, block]) => declarations(block))
+        .filter((declaration) => !answered.has(declaration));
+      expect(unanswered).toEqual([]);
+    });
+
     describe('content escaping', () => {
       it('should escape backticks in markdown content', () => {
         const markdown = 'Here is some `inline code`';

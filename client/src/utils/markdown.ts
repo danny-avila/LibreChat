@@ -262,7 +262,11 @@ const isSafeUrl = (url) => {
  * The stylesheet above is a fixed GitHub palette selected by the iframe's own
  * `prefers-color-scheme`, which no app token reaches. In a contrast mode this
  * block is appended unconditionally, so it also overrides that media query and
- * an explicit contrast choice is honoured whatever the OS is set to.
+ * an explicit contrast choice is honoured whatever the OS is set to. Every
+ * colour the media query sets has to be answered here, including the `thead`
+ * tint: leaving it would strand #f6f8fa or #161b22 under the new ink. Contrast
+ * palettes collapse subtle fills onto the canvas, so the header reads through
+ * its bold cells and its border rather than a tint of its own.
  */
 function contrastMarkdownCSS(isDarkMode: boolean): string {
   const palette = isDarkMode ? highContrastDarkTheme : highContrastLightTheme;
@@ -286,6 +290,7 @@ body { background-color: ${canvas}; }
 .markdown-body h1, .markdown-body h2 { border-bottom-color: ${border}; }
 .markdown-body a, .markdown-body a:hover { color: ${link}; text-decoration: underline; }
 .markdown-body table th, .markdown-body table td { border-color: ${border}; }
+.markdown-body table thead { background-color: ${canvas}; }
 .markdown-body blockquote { border-left-color: ${border}; color: ${ink}; }
 .markdown-body hr { background-color: ${border}; }
 .markdown-body code, .markdown-body pre { color: ${ink}; background-color: ${codeFill}; }
