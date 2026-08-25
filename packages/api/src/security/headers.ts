@@ -3,6 +3,8 @@ import { logger } from '@librechat/data-schemas';
 
 import type { RequestHandler } from 'express';
 
+import { parseEnvSwitch, normalizeEnvValue, isFalsyEnvValue } from './env';
+
 const DEFAULT_HSTS_MAX_AGE = 31536000;
 
 export type FrameOptionsAction = 'deny' | 'sameorigin';
@@ -37,9 +39,6 @@ export interface SecurityHeaderOptions {
   referrerPolicy: { policy: ReferrerPolicyToken } | false;
 }
 
-const TRUTHY = new Set(['true', '1', 'yes', 'on', 'enabled']);
-const FALSY = new Set(['false', '0', 'no', 'off', 'disabled', 'none']);
-
 const FRAME_ACTIONS = new Set<FrameOptionsAction>(['deny', 'sameorigin']);
 const OPENER_POLICIES = new Set<OpenerPolicy>([
   'same-origin',
@@ -59,27 +58,8 @@ const REFERRER_TOKENS = new Set<ReferrerPolicyToken>([
   'unsafe-url',
 ]);
 
-function normalize(value: string | undefined): string {
-  return value == null ? '' : value.trim().toLowerCase();
-}
-
-function parseSwitch(name: string, value: string | undefined, fallback: boolean): boolean {
-  const normalized = normalize(value);
-  if (normalized === '') {
-    return fallback;
-  }
-  if (TRUTHY.has(normalized)) {
-    return true;
-  }
-  if (FALSY.has(normalized)) {
-    return false;
-  }
-  logger.warn(`[SecurityHeaders] Ignoring invalid ${name}="${value}"; using ${fallback}.`);
-  return fallback;
-}
-
 function parseMaxAge(value: string | undefined, fallback: number): number {
-  const normalized = normalize(value);
+  const normalized = normalizeEnvValue(value);
   if (normalized === '') {
     return fallback;
   }
@@ -101,11 +81,11 @@ function parsePolicy<T extends string>(
   allowed: ReadonlySet<T>,
   fallback: T,
 ): T | false {
-  const normalized = normalize(value);
+  const normalized = normalizeEnvValue(value);
   if (normalized === '') {
     return fallback;
   }
-  if (FALSY.has(normalized)) {
+  if (isFalsyEnvValue(normalized)) {
     return false;
   }
   if (allowed.has(normalized as T)) {
@@ -116,7 +96,7 @@ function parsePolicy<T extends string>(
 }
 
 function buildHsts(env: NodeJS.ProcessEnv): HstsOptions | false {
-  if (!parseSwitch('HSTS_ENABLED', env.HSTS_ENABLED, true)) {
+  if (!parseEnvSwitch('HSTS_ENABLED', env.HSTS_ENABLED, true)) {
     return false;
   }
   return {
@@ -125,8 +105,12 @@ function buildHsts(env: NodeJS.ProcessEnv): HstsOptions | false {
      * deployment would otherwise pin every sibling subdomain to HTTPS for a year in
      * every visitor's browser, and reversing that means serving `max-age=0` from each
      * affected host. */
-    includeSubDomains: parseSwitch('HSTS_INCLUDE_SUBDOMAINS', env.HSTS_INCLUDE_SUBDOMAINS, false),
-    preload: parseSwitch('HSTS_PRELOAD', env.HSTS_PRELOAD, false),
+    includeSubDomains: parseEnvSwitch(
+      'HSTS_INCLUDE_SUBDOMAINS',
+      env.HSTS_INCLUDE_SUBDOMAINS,
+      false,
+    ),
+    preload: parseEnvSwitch('HSTS_PRELOAD', env.HSTS_PRELOAD, false),
   };
 }
 
@@ -138,7 +122,7 @@ function buildHsts(env: NodeJS.ProcessEnv): HstsOptions | false {
 export function buildSecurityHeaderOptions(
   env: NodeJS.ProcessEnv = process.env,
 ): SecurityHeaderOptions | null {
-  if (!parseSwitch('SECURITY_HEADERS', env.SECURITY_HEADERS, true)) {
+  if (!parseEnvSwitch('SECURITY_HEADERS', env.SECURITY_HEADERS, true)) {
     return null;
   }
 
