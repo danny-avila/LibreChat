@@ -14,6 +14,13 @@ export type FixtureTurn = {
   userText: string;
   finalText: string;
   chunkCount: number;
+  /**
+   * Chunks carrying assistant text, as distinct from the empty
+   * initialization and usage-metadata chunks a provider also emits. Only
+   * these prove incremental content streaming — a total chunk count above one
+   * is satisfied by a single content delta wrapped in empty frames.
+   */
+  contentChunkCount: number;
 };
 
 export type ReplayLedger = {
@@ -61,12 +68,17 @@ export function fixtureTurns(name: string): FixtureTurn[] {
         userText: entry.userText as string,
         finalText: '',
         chunkCount: 0,
+        contentChunkCount: 0,
       };
     } else if (entry.type === 'chunk') {
       const turn = turns[entry.invocation as number];
       if (turn) {
+        const text = (entry.text as string) ?? '';
         turn.chunkCount += 1;
-        turn.finalText += (entry.text as string) ?? '';
+        turn.finalText += text;
+        if (text !== '') {
+          turn.contentChunkCount += 1;
+        }
       }
     } else if (entry.type === 'error') {
       throw new Error(`Fixture ${name} recorded a provider error: ${String(entry.message)}`);

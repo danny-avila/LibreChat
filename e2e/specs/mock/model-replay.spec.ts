@@ -46,9 +46,15 @@ const RECORD_ENDPOINT = {
   model: process.env.E2E_RECORD_PROVIDER_MODEL || 'deepseek-chat',
 };
 
+/**
+ * The closing prompt deliberately asks for prose: a one-token answer streams
+ * as a single content delta wrapped in empty initialization and usage frames,
+ * which cannot demonstrate incremental content streaming however many chunks
+ * the provider emits around it.
+ */
 const TURN_PROMPTS = [
   'Name the two prime numbers between 20 and 30, comma separated, and nothing else.',
-  'Now add those two primes together and reply with just the sum.',
+  'Now add those two primes together, then explain the arithmetic in two short sentences.',
 ];
 
 test.describe('recorded model fixture replay', () => {
@@ -132,9 +138,16 @@ test.describe('recorded model fixture replay', () => {
           },
         )
         .toBe(true);
-      for (const turn of fixtureTurns(FIXTURE)) {
-        expect(turn.chunkCount, 'recording should capture incremental chunks').toBeGreaterThan(1);
+      const recorded = fixtureTurns(FIXTURE);
+      for (const turn of recorded) {
+        expect(turn.contentChunkCount, 'each turn should record assistant content').toBeGreaterThan(
+          0,
+        );
       }
+      expect(
+        recorded[recorded.length - 1].contentChunkCount,
+        'the prose turn should record several content deltas, not one delta padded with empty frames',
+      ).toBeGreaterThan(1);
     } else {
       const turns = fixtureTurns(FIXTURE);
       expect(
@@ -153,6 +166,10 @@ test.describe('recorded model fixture replay', () => {
        * through the live SSE wire before the durable completion barrier. */
       const ledger = readReplayLedger(FIXTURE);
       expect(ledger.chunksConsumed).toBe(ledger.chunksTotal);
+      expect(
+        turns[turns.length - 1].contentChunkCount,
+        'replay should stream several content deltas for the prose turn',
+      ).toBeGreaterThan(1);
       assertFixtureConsumed(FIXTURE);
     }
 

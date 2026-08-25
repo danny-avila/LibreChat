@@ -528,13 +528,18 @@ function tryBindReplay({ graph, agents, text, messages, modelCallbacks }) {
   const matches = [];
   for (const fixture of registry.values()) {
     let state = getReplayState(fixture);
-    /** A conversation boundary outranks an in-progress cursor. Consecutive
-     * invocations can share a prompt — a tool call produces exactly that — so
-     * an attempt stopping mid-turn leaves the cursor on an invocation whose
-     * text still equals the opening prompt; matching that first would let a
-     * retry's fresh conversation resume after the tool call instead of
-     * rewinding, silently replaying a different script than was recorded. */
-    if (state.cursor !== 0 && fixture.turns[0] === text && isConversationStart(messages)) {
+    /** A conversation boundary outranks an in-progress cursor: a fresh
+     * conversation may only rewind a partly consumed fixture, never continue
+     * it. Continuing would be wrong in both directions — a retry stopping
+     * mid-turn leaves the cursor on an invocation still carrying the opening
+     * prompt (a tool call produces exactly that), and an unrelated new
+     * conversation opening with a later invocation's prompt would otherwise
+     * receive that recorded response and advance the shared cursor despite
+     * never having driven the turns before it. */
+    if (state.cursor !== 0 && isConversationStart(messages)) {
+      if (fixture.turns[0] !== text) {
+        continue;
+      }
       state = restartReplayState(fixture);
     } else if (fixture.invocations[state.cursor]?.userText !== text) {
       /** Continuing an in-progress binding otherwise outranks restarting,
