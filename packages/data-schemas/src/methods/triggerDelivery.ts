@@ -24,7 +24,6 @@ const MAX_DEAD_LETTER_LIMIT = 200;
 const DEFAULT_PURGE_RECOVERY_LIMIT = 25;
 const MAX_PURGE_RECOVERY_LIMIT = 200;
 const HISTORY_LIMIT = 64;
-const BATCH_WINDOW_MS = 750;
 const MAX_BATCH_SIZE = 8;
 const MAX_BATCH_BYTES = 512 * 1024;
 
@@ -47,6 +46,7 @@ export interface EnqueueAgentTriggerDeliveryInput {
   availableAt: Date;
   envelopeBytes?: number;
   coalesceKey?: string;
+  coalesceFrom?: Date;
   coalesceUntil?: Date;
 }
 
@@ -172,6 +172,7 @@ function toRecord(delivery: IAgentTriggerDelivery): AgentTriggerDeliveryRecord {
     ...(delivery.updatedAt != null && { updatedAt: delivery.updatedAt }),
     ...(delivery.envelopeBytes != null && { envelopeBytes: delivery.envelopeBytes }),
     ...(delivery.coalesceKey != null && { coalesceKey: delivery.coalesceKey }),
+    ...(delivery.coalesceFrom != null && { coalesceFrom: delivery.coalesceFrom }),
     ...(delivery.coalesceUntil != null && { coalesceUntil: delivery.coalesceUntil }),
     ...(delivery.batchSize != null && { batchSize: delivery.batchSize }),
     ...(delivery.batchBytes != null && { batchBytes: delivery.batchBytes }),
@@ -266,6 +267,7 @@ export function createAgentTriggerDeliveryMethods(
         .lean<IAgentTriggerDelivery>();
       if (
         batchRoot == null &&
+        staged.coalesceFrom != null &&
         staged.coalesceUntil != null &&
         staged.coalesceUntil.getTime() > Date.now() &&
         staged.envelopeBytes != null &&
@@ -278,10 +280,10 @@ export function createAgentTriggerDeliveryMethods(
               orderingKey: lane._id,
               coalesceKey: staged.coalesceKey,
               status: 'pending',
+              coalesceFrom: { $lte: staged.coalesceUntil },
               coalesceUntil: {
                 $gt: new Date(),
-                $gte: new Date(staged.coalesceUntil.getTime() - BATCH_WINDOW_MS),
-                $lte: staged.coalesceUntil,
+                $gte: staged.coalesceFrom,
               },
               batchMemberIds: { $ne: staged._id },
               batchSize: { $lt: MAX_BATCH_SIZE },
@@ -289,6 +291,11 @@ export function createAgentTriggerDeliveryMethods(
             },
             {
               $inc: { batchSize: 1, batchBytes: staged.envelopeBytes },
+              $max: { coalesceFrom: staged.coalesceFrom },
+              $min: {
+                coalesceUntil: staged.coalesceUntil,
+                availableAt: staged.coalesceUntil,
+              },
               $push: { batchMemberIds: staged._id },
             },
             { new: true, sort: { laneSequence: -1, _id: -1 } },

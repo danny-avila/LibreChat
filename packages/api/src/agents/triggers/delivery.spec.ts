@@ -113,6 +113,7 @@ describe('prepareAgentTriggerDelivery', () => {
 
     expect(prepared).toMatchObject({
       coalesceKey: expect.stringMatching(/^trigger_batch_[a-f0-9]{64}$/),
+      coalesceFrom: availableAt,
       coalesceUntil: new Date(availableAt.getTime() + AGENT_TRIGGER_COALESCE_WINDOW_MS),
       availableAt: new Date(availableAt.getTime() + AGENT_TRIGGER_COALESCE_WINDOW_MS),
       envelopeBytes: expect.any(Number),

@@ -213,6 +213,7 @@ describe('agent trigger delivery methods', () => {
   it('coalesces a concurrent replica burst behind one claimable root and settles every receipt', async () => {
     const user = new mongoose.Types.ObjectId();
     const coalesceUntil = new Date(Date.now() + 60_000);
+    const coalesceFrom = new Date(coalesceUntil.getTime() - 750);
     const replicas = [
       createAgentTriggerDeliveryMethods(mongoose),
       createAgentTriggerDeliveryMethods(mongoose),
@@ -222,6 +223,7 @@ describe('agent trigger delivery methods', () => {
         user,
         orderingKey: 'commentary-lane',
         coalesceKey: 'trigger_batch_commentary',
+        coalesceFrom,
         coalesceUntil,
         availableAt: coalesceUntil,
         envelopeBytes: 128,
@@ -299,6 +301,7 @@ describe('agent trigger delivery methods', () => {
   it('recovers batch receipts and lane cleanup after root settlement was interrupted', async () => {
     const user = new mongoose.Types.ObjectId();
     const coalesceUntil = new Date(Date.now() + 60_000);
+    const coalesceFrom = new Date(coalesceUntil.getTime() - 750);
     await Promise.all(
       Array.from({ length: 2 }, (_, index) =>
         methods.enqueueAgentTriggerDelivery(
@@ -306,6 +309,7 @@ describe('agent trigger delivery methods', () => {
             user,
             orderingKey: 'batch-recovery-lane',
             coalesceKey: 'trigger_batch_recovery',
+            coalesceFrom,
             coalesceUntil,
             availableAt: coalesceUntil,
             envelopeBytes: 128,
@@ -362,11 +366,13 @@ describe('agent trigger delivery methods', () => {
   it('starts the next linear batch outside the collection window and enforces the size cap', async () => {
     const user = new mongoose.Types.ObjectId();
     const openUntil = new Date(Date.now() + 60_000);
+    const openFrom = new Date(openUntil.getTime() - 750);
     const inputs = Array.from({ length: 9 }, () =>
       enqueueInput({
         user,
         orderingKey: 'bounded-lane',
         coalesceKey: 'trigger_batch_bounded',
+        coalesceFrom: openFrom,
         coalesceUntil: openUntil,
         availableAt: openUntil,
         envelopeBytes: 64,
@@ -382,11 +388,13 @@ describe('agent trigger delivery methods', () => {
     );
 
     const closedUntil = new Date(Date.now() - 1);
+    const closedFrom = new Date(closedUntil.getTime() - 750);
     await methods.enqueueAgentTriggerDelivery(
       enqueueInput({
         user,
         orderingKey: 'closed-lane',
         coalesceKey: 'trigger_batch_closed',
+        coalesceFrom: closedFrom,
         coalesceUntil: closedUntil,
         availableAt: closedUntil,
         envelopeBytes: 64,
@@ -397,6 +405,7 @@ describe('agent trigger delivery methods', () => {
         user,
         orderingKey: 'closed-lane',
         coalesceKey: 'trigger_batch_closed',
+        coalesceFrom: closedFrom,
         coalesceUntil: closedUntil,
         availableAt: closedUntil,
         envelopeBytes: 64,
@@ -408,11 +417,14 @@ describe('agent trigger delivery methods', () => {
 
     const nearUntil = new Date(Date.now() + 60_000);
     const distantUntil = new Date(nearUntil.getTime() + 24 * 60 * 60_000);
+    const nearFrom = new Date(nearUntil.getTime() - 750);
+    const distantFrom = new Date(distantUntil.getTime() - 750);
     await methods.enqueueAgentTriggerDelivery(
       enqueueInput({
         user,
         orderingKey: 'scheduled-lane',
         coalesceKey: 'trigger_batch_scheduled',
+        coalesceFrom: nearFrom,
         coalesceUntil: nearUntil,
         availableAt: nearUntil,
         envelopeBytes: 64,
@@ -423,6 +435,7 @@ describe('agent trigger delivery methods', () => {
         user,
         orderingKey: 'scheduled-lane',
         coalesceKey: 'trigger_batch_scheduled',
+        coalesceFrom: distantFrom,
         coalesceUntil: distantUntil,
         availableAt: distantUntil,
         envelopeBytes: 64,
@@ -433,13 +446,57 @@ describe('agent trigger delivery methods', () => {
     ).toBe(2);
   });
 
+  it('intersects overlapping batch windows regardless of publication order', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const earlierFrom = new Date(Date.now() + 60_000);
+    const earlierUntil = new Date(earlierFrom.getTime() + 750);
+    const laterFrom = new Date(earlierFrom.getTime() + 250);
+    const laterUntil = new Date(laterFrom.getTime() + 750);
+    const shared = {
+      user,
+      orderingKey: 'overlapping-window-lane',
+      coalesceKey: 'trigger_batch_overlapping',
+      envelopeBytes: 64,
+    };
+
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        ...shared,
+        coalesceFrom: laterFrom,
+        coalesceUntil: laterUntil,
+        availableAt: laterUntil,
+      }),
+    );
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        ...shared,
+        coalesceFrom: earlierFrom,
+        coalesceUntil: earlierUntil,
+        availableAt: earlierUntil,
+      }),
+    );
+
+    const rows = await Delivery.find({ orderingKey: shared.orderingKey }).lean();
+    const root = rows.find((row) => row.status === 'pending');
+    expect(rows.filter((row) => row.status === 'pending')).toHaveLength(1);
+    expect(rows.filter((row) => row.status === 'batched')).toHaveLength(1);
+    expect(root).toMatchObject({
+      batchSize: 2,
+      coalesceFrom: laterFrom,
+      coalesceUntil: earlierUntil,
+      availableAt: earlierUntil,
+    });
+  });
+
   it('requeues a dead batch as a root instead of nesting it under a newer batch', async () => {
     const user = new mongoose.Types.ObjectId();
     const coalesceUntil = new Date(Date.now() + 60_000);
+    const coalesceFrom = new Date(coalesceUntil.getTime() - 750);
     const shared = {
       user,
       orderingKey: 'batch-requeue-lane',
       coalesceKey: 'trigger_batch_requeue',
+      coalesceFrom,
       coalesceUntil,
       availableAt: coalesceUntil,
       envelopeBytes: 128,

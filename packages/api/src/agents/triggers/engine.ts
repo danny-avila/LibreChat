@@ -59,6 +59,7 @@ export interface AgentTriggerDeliveryRecord {
   createdAt: Date;
   envelopeBytes?: number;
   coalesceKey?: string;
+  coalesceFrom?: Date;
   coalesceUntil?: Date;
   batchSize?: number;
   batchBytes?: number;

@@ -44,6 +44,7 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     availableAt: { type: Date, required: true },
     envelopeBytes: { type: Number, min: 0 },
     coalesceKey: { type: String, maxlength: 128 },
+    coalesceFrom: { type: Date },
     coalesceUntil: { type: Date },
     batchSize: { type: Number, min: 1 },
     batchBytes: { type: Number, min: 0 },

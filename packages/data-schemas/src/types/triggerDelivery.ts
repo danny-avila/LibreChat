@@ -41,6 +41,7 @@ export interface IAgentTriggerDelivery {
   availableAt: Date;
   envelopeBytes?: number;
   coalesceKey?: string;
+  coalesceFrom?: Date;
   coalesceUntil?: Date;
   batchSize?: number;
   batchBytes?: number;

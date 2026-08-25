@@ -33,6 +33,7 @@ export interface PreparedAgentTriggerDelivery {
   availableAt: Date;
   envelopeBytes: number;
   coalesceKey?: string;
+  coalesceFrom?: Date;
   coalesceUntil?: Date;
 }
 
@@ -171,6 +172,11 @@ export function prepareAgentTriggerDelivery(
     ...(envelope.principal.tenantId != null && { tenantId: envelope.principal.tenantId }),
     availableAt: coalesceUntil ?? requestedAvailableAt,
     envelopeBytes: bytes,
-    ...(coalesceKey != null && coalesceUntil != null && { coalesceKey, coalesceUntil }),
+    ...(coalesceKey != null &&
+      coalesceUntil != null && {
+        coalesceKey,
+        coalesceFrom: requestedAvailableAt,
+        coalesceUntil,
+      }),
   };
 }
