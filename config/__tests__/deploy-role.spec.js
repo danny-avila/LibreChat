@@ -1,4 +1,5 @@
 const {
+  deployRole,
   getDeploymentScope,
   loadRoleDefinitions,
   mergePermissions,
@@ -6,6 +7,39 @@ const {
 } = require('../deploy-role');
 
 describe('deploy role script', () => {
+  it('does not deploy config after an existing-role permission write fails', async () => {
+    const green = console.green;
+    console.green = jest.fn();
+    const service = {
+      getRole: jest
+        .fn()
+        .mockResolvedValueOnce({ name: 'USER', permissions: {} })
+        .mockResolvedValueOnce({ name: 'BETA', permissions: {} }),
+      updateRole: jest.fn(async () => undefined),
+      updateRolePermissions: jest.fn(async () => {
+        throw new Error('permission write failed');
+      }),
+      upsertRoleConfig: jest.fn(async () => undefined),
+    };
+
+    try {
+      await expect(
+        deployRole(
+          {
+            name: 'BETA',
+            inheritPermissionsFrom: 'USER',
+            permissionOverrides: {},
+            config: { priority: 10, overrides: {} },
+          },
+          service,
+        ),
+      ).rejects.toThrow('permission write failed');
+      expect(service.upsertRoleConfig).not.toHaveBeenCalled();
+    } finally {
+      console.green = green;
+    }
+  });
+
   it('requires an explicit base or tenant scope', () => {
     expect(getDeploymentScope(['--base'])).toEqual({ base: true });
     expect(getDeploymentScope(['--tenant', 'tenant-123'])).toEqual({ tenantId: 'tenant-123' });
