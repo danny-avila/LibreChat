@@ -710,6 +710,10 @@ class GenerationJobManagerClass {
    * reconnect can replay that authoritative final payload. */
   private terminalPublicationFailures = new WeakSet<TerminalJobClaim>();
 
+  /** Persistence-pending error claims whose terminal output was already
+   * reconciled by a competing owner or stale-owner recovery. */
+  private terminalErrorPublicationSuppressions = new WeakSet<TerminalJobClaim>();
+
   private cleanupInterval: NodeJS.Timeout | null = null;
 
   /** Generation-scoped retirement callbacks must not outlive the configured
@@ -3535,7 +3539,7 @@ class GenerationJobManagerClass {
     // Error jobs stay durable long enough for late subscribers to receive the
     // stored error. A publication failure must never bypass the finally cleanup.
     try {
-      if (status === 'error') {
+      if (status === 'error' && !this.terminalErrorPublicationSuppressions.has(claim)) {
         const terminalError = error ?? 'Generation failed';
         if (runtime) {
           runtime.errorEvent = terminalError;
@@ -3606,6 +3610,7 @@ class GenerationJobManagerClass {
 
       this.releaseJobOwnership(streamId, createdAt);
       this.terminalPublicationFailures.delete(claim);
+      this.terminalErrorPublicationSuppressions.delete(claim);
       let metricStatus: 'completed' | 'error' | 'aborted' = 'aborted';
       if (status === 'complete') {
         metricStatus = 'completed';
@@ -3640,16 +3645,55 @@ class GenerationJobManagerClass {
     streamId: string,
     error?: string,
     expectedCreatedAt?: number,
+    options: { beforeErrorPublication?: () => Promise<void> } = {},
   ): Promise<boolean> {
+    const beforeErrorPublication = error ? options.beforeErrorPublication : undefined;
     const claim = await this.claimTerminalJob(
       streamId,
       error ? 'error' : 'complete',
       error,
       expectedCreatedAt,
+      beforeErrorPublication ? { persistencePending: true } : undefined,
     );
     if (!claim) {
       return false;
     }
+
+    if (beforeErrorPublication) {
+      let persistenceFinalized = false;
+      try {
+        await beforeErrorPublication();
+        persistenceFinalized = await this.jobStore.finalizeTerminalPersistence(
+          streamId,
+          claim.createdAt,
+          JSON.stringify(
+            buildTerminalPersistenceReconcile({
+              createdAt: claim.createdAt,
+              conversationId: claim.conversationId,
+              status: claim.status,
+            }),
+          ),
+        );
+      } catch (persistenceError) {
+        logger.error(
+          `[GenerationJobManager] Failed required error persistence for ${streamId}:`,
+          persistenceError,
+        );
+        try {
+          await this.publishTerminalClaim(claim, null);
+        } catch (publishError) {
+          logger.error(
+            `[GenerationJobManager] Failed to publish error persistence reconciliation for ${streamId}:`,
+            publishError,
+          );
+        }
+      }
+
+      if (!persistenceFinalized) {
+        this.terminalErrorPublicationSuppressions.add(claim);
+      }
+    }
+
     await this.finishTerminalJob(claim);
     return true;
   }

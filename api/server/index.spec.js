@@ -170,6 +170,22 @@ describe('Startup readiness wiring', () => {
     expect(timeoutConfigIndex).toBeLessThan(shutdownIndex);
   });
 
+  it('registers security headers ahead of the health endpoints in both server entries', () => {
+    const experimental = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
+
+    for (const [name, contents] of [
+      ['index.js', source],
+      ['experimental.js', experimental],
+    ]) {
+      const headersIndex = contents.indexOf('const securityHeaders = createSecurityHeaders();');
+      const healthIndex = contents.indexOf("app.get('/health'");
+
+      expect([name, headersIndex > -1]).toEqual([name, true]);
+      expect([name, healthIndex > -1]).toEqual([name, true]);
+      expect([name, headersIndex < healthIndex]).toEqual([name, true]);
+    }
+  });
+
   it('mounts the chat-start readiness gate before agent routes', () => {
     const readinessGateIndex = source.indexOf(
       "app.use('/api/agents/chat', rejectChatStartsUntilReady);",
@@ -248,6 +264,27 @@ describe('Server Configuration', () => {
     const response = await request(app).get('/health');
     expect(response.status).toBe(200);
     expect(response.text).toBe('OK');
+  });
+
+  it('should set baseline security headers on health checks', async () => {
+    const response = await request(app).get('/health');
+
+    expect(response.headers['strict-transport-security']).toBe('max-age=31536000');
+    expect(response.headers['x-frame-options']).toBe('SAMEORIGIN');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['cross-origin-opener-policy']).toBe('same-origin');
+    expect(response.headers['cross-origin-resource-policy']).toBe('same-origin');
+    expect(response.headers['referrer-policy']).toBe('no-referrer');
+  });
+
+  it('should set baseline security headers on the index page without a CSP', async () => {
+    const response = await request(app).get('/');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['x-frame-options']).toBe('SAMEORIGIN');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['content-security-policy']).toBeUndefined();
+    expect(response.headers['content-security-policy-report-only']).toBeUndefined();
   });
 
   it('should not cache index page', async () => {

@@ -61,6 +61,7 @@ import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
 import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from './tools';
+import { normalizeActionToolName } from '~/actions/tools';
 import { truncateMiddle } from '~/utils';
 
 /** Argument the model sets on a tool call to dispatch it in the background. */
@@ -124,6 +125,36 @@ const EXCLUDED_BACKGROUND_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   'image_gen_oai',
   'image_edit_oai',
 ]);
+
+/**
+ * Agents persist action tool names with the raw encoded domain (`---` for short
+ * hostnames), while the runtime definitions those names must match against are
+ * always `_`-collapsed. The builder writes `tool_options` keyed by the persisted
+ * name, so alias every action-shaped key to its normalized form; without this
+ * the opt-in silently never resolves for short-hostname actions. Merge the raw
+ * background option into any normalized entry while keeping an explicit
+ * normalized background value authoritative.
+ */
+function expandActionToolOptions(toolOptions: AgentToolOptions): AgentToolOptions {
+  let expanded: AgentToolOptions | undefined;
+  for (const [name, options] of Object.entries(toolOptions)) {
+    const normalized = normalizeActionToolName(name);
+    const runInBackground = options?.run_in_background;
+    if (
+      normalized === name ||
+      runInBackground == null ||
+      toolOptions[normalized]?.run_in_background != null
+    ) {
+      continue;
+    }
+    expanded = expanded ?? { ...toolOptions };
+    expanded[normalized] = {
+      ...toolOptions[normalized],
+      run_in_background: runInBackground,
+    };
+  }
+  return expanded ?? toolOptions;
+}
 
 /**
  * Whether a tool may be dispatched in the background. Handoff tools
@@ -466,7 +497,8 @@ export function applyBackgroundToolCalls(params: {
    */
   excludeTool?: (toolName: string) => boolean;
 }): { toolDefinitions: LCTool[]; backgroundToolNames: string[] } {
-  const { toolRegistry, toolOptions, capabilityToolNames, excludeTool } = params;
+  const { toolRegistry, capabilityToolNames, excludeTool } = params;
+  const toolOptions = params.toolOptions && expandActionToolOptions(params.toolOptions);
   const defs = params.toolDefinitions ?? [];
   const selectionNames = getSelectionNames(toolOptions, 'run_in_background');
   const effectiveSources = new Set<string>();

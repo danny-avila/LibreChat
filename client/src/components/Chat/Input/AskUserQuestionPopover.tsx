@@ -51,7 +51,7 @@ function AskUserQuestionsPopoverPanel({ ask }: { ask: ReturnType<typeof useAskAn
 
   return (
     <div className="absolute bottom-28 z-10 w-full">
-      <div className="popover border-token-border-light flex max-h-[70vh] flex-col rounded-2xl border bg-surface-secondary shadow-lg">
+      <div className="popover border-token-border-light flex max-h-[70vh] flex-col rounded-2xl border bg-surface-primary-alt shadow-lg">
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border-light px-3 py-2">
           <p className="text-sm font-medium text-text-primary">
             {localize(
@@ -156,7 +156,7 @@ function AskUserQuestionPopoverPanel({
           scroll region: the panel is absolutely positioned, so anything that
           overflows it is unreachable by page scroll. */}
       <div
-        className="popover border-token-border-light flex max-h-[60vh] flex-col rounded-2xl border bg-surface-secondary p-2 shadow-lg"
+        className="popover border-token-border-light flex max-h-[60vh] flex-col rounded-2xl border bg-surface-primary-alt p-2 shadow-lg"
         onKeyDown={handlePopoverKeyDown}
       >
         <div className="flex shrink-0 items-start justify-between gap-2 p-2">

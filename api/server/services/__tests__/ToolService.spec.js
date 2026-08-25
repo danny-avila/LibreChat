@@ -3348,6 +3348,41 @@ describe('ToolService - Action Capability Gating', () => {
       expect(callArgs.requestBuilder.path).toBe('/echo');
     });
 
+    it('definitions-only loading emits the selected legacy action name', async () => {
+      mockLoadActionSets.mockResolvedValue([actionA]);
+      const legacyToolName = `echoMessage${actionDelimiter}${LEGACY_ENCODED_DOMAIN}`;
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.actions];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      mockLoadToolDefinitions.mockImplementationOnce(async (_options, dependencies) => {
+        const definitions = await dependencies.getActionToolDefinitions('agent_legacy', [
+          legacyToolName,
+        ]);
+        expect(definitions).toEqual([
+          expect.objectContaining({ name: legacyToolName, description: 'Mock echoMessage' }),
+        ]);
+        return {
+          toolDefinitions: definitions,
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        };
+      });
+
+      await loadAgentTools({
+        req,
+        res: {},
+        agent: {
+          id: 'agent_legacy',
+          tools: [legacyToolName],
+          tool_options: { [legacyToolName]: { run_in_background: true } },
+        },
+        definitionsOnly: true,
+      });
+
+      expect(mockLoadToolDefinitions).toHaveBeenCalledTimes(1);
+    });
+
     it('loadAgentTools distinguishes operationIds that differ only by `---` vs `_`', async () => {
       // `openapiToFunction` uses the user-supplied operationId verbatim
       // and only sanitizes the synthetic `<method>_<path>` fallback, and
