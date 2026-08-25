@@ -7,6 +7,7 @@ import type { ExtendedFile, GenericSetter } from '~/common';
 import {
   deletePreview,
   failedFileIdsFrom,
+  removeTabAttachmentPresence,
   retainFileDeletion,
   scheduleRetainedFileDeletionRetry,
 } from '~/utils';
@@ -107,7 +108,7 @@ const useFileDeletion = ({
       if (temp_file_id) {
         clearUploadRecovery(temp_file_id);
       }
-
+      removeTabAttachmentPresence([file_id, temp_file_id].filter(Boolean));
       const progress = _file['progress'] ?? 1;
 
       if (progress < 1) {
@@ -184,6 +185,9 @@ const useFileDeletion = ({
           deletePreview(temp_file_id);
         }
       }
+      removeTabAttachmentPresence(
+        batchFiles.flatMap((f) => [f.file_id, f.temp_file_id].filter(Boolean) as string[]),
+      );
 
       if (setFiles) {
         setFiles((currentFiles) => {

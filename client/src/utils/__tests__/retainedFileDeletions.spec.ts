@@ -95,4 +95,28 @@ describe('retained file deletions', () => {
 
     expect(takeRetainedFileDeletions()).toEqual([]);
   });
+
+  it('persists submitted paste IDs across reloads', async () => {
+    const { markPasteSubmitted, isPasteSubmitted } = await import('../files');
+    markPasteSubmitted('submitted-file-id');
+    expect(isPasteSubmitted('submitted-file-id')).toBe(true);
+
+    // Simulate reload with a fresh import
+    jest.resetModules();
+    const reloaded = await import('../files');
+    expect(reloaded.isPasteSubmitted('submitted-file-id')).toBe(true);
+    expect(reloaded.isPasteSubmitted('other-file-id')).toBe(false);
+  });
+
+  it('persists marked pasted text IDs across reloads', async () => {
+    const { markPastedTextFile, isPastedTextFileMarked } = await import('../files');
+    markPastedTextFile('paste-upload-id');
+    expect(isPastedTextFileMarked('paste-upload-id')).toBe(true);
+
+    // Simulate reload with a fresh import
+    jest.resetModules();
+    const reloaded = await import('../files');
+    expect(reloaded.isPastedTextFileMarked('paste-upload-id')).toBe(true);
+    expect(reloaded.isPastedTextFileMarked('other-paste-id')).toBe(false);
+  });
 });

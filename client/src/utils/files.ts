@@ -515,26 +515,57 @@ const PASTED_TEXT_FILENAME_PATTERN = /^pasted-text(-([2-9]|[1-9]\d+))?\.txt$/;
 export const isPastedTextFilename = (filename?: string | null): boolean =>
   filename != null && PASTED_TEXT_FILENAME_PATTERN.test(filename);
 
-const pastedTextFileIds = new Set<string>();
+/** Both paste registries have to outlive a reload. They are per-tab session state rather than
+ * account data, which is exactly what `sessionStorage` holds: it survives this tab's reloads and
+ * never reaches another tab. Losing them on reload is what let an already-sent paste be
+ * reclassified as unsent, because the files draft it gets restored from does survive. */
+const PASTED_TEXT_STORAGE_KEY = 'librechat-pasted-text-file-ids';
+const SUBMITTED_PASTES_STORAGE_KEY = 'librechat-submitted-paste-file-ids';
+
+const readStoredPasteIds = (key: string): string[] => {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(key) ?? 'null') as unknown;
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+};
+
+const persistPasteIds = (key: string, ids: Set<string>): void => {
+  try {
+    if (ids.size === 0) {
+      sessionStorage.removeItem(key);
+      return;
+    }
+    sessionStorage.setItem(key, JSON.stringify(Array.from(ids)));
+  } catch {
+    // The in-memory copy still drives this session.
+  }
+};
+
+const pastedTextFileIds = new Set<string>(readStoredPasteIds(PASTED_TEXT_STORAGE_KEY));
+const submittedPasteFileIds = new Set<string>(readStoredPasteIds(SUBMITTED_PASTES_STORAGE_KEY));
 
 /** Records that a file id belongs to a paste the composer generated, so its chip can offer the
- * paste affordances. The registry lives for the session; the files draft persists the ids. */
+ * paste affordances. Persisted per tab, so a reload does not strip those affordances off a chip
+ * the autosaved draft restores. */
 export const markPastedTextFile = (fileId: string): void => {
   pastedTextFileIds.add(fileId);
+  persistPasteIds(PASTED_TEXT_STORAGE_KEY, pastedTextFileIds);
 };
 
 export const isPastedTextFileMarked = (fileId?: string | null): boolean =>
   fileId != null && pastedTextFileIds.has(fileId);
 
-const submittedPasteFileIds = new Set<string>();
-
 /** Records that a paste left the composer on a message. Submitting empties the file map but the
  * draft keeps its provenance, and the run ending (including by Stop or an error) is not evidence
  * the paste is unsent: only this is. Without it, discarding afterwards would delete a file the
- * sent turn already references. */
+ * sent turn already references. It persists for the same reason the draft does: a reload that
+ * restored the draft but forgot the paste was consumed would delete the sent turn's file. */
 export const markPasteSubmitted = (fileId?: string | null): void => {
   if (fileId != null && fileId !== '') {
     submittedPasteFileIds.add(fileId);
+    persistPasteIds(SUBMITTED_PASTES_STORAGE_KEY, submittedPasteFileIds);
   }
 };
 

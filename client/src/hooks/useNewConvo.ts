@@ -35,6 +35,7 @@ import {
   requestChatFocus,
   renewNewConversationDraftToken,
   isPastedTextFileMarked,
+  removeTabAttachmentPresence,
   scheduleRetainedFileDeletionRetry,
   retainFileDeletion,
   failedFileIdsFrom,
@@ -411,10 +412,18 @@ const useNewConvo = (index = 0) => {
             },
           ];
         });
-
+        const discardedFileIds = Array.from(
+          new Set([
+            ...filesToDelete.map((f) => f.file_id),
+            ...Array.from(files.keys()),
+            ...Array.from(files.values()).flatMap(
+              (f) => [f.file_id, f.temp_file_id].filter(Boolean) as string[],
+            ),
+          ]),
+        );
+        removeTabAttachmentPresence(discardedFileIds);
         setFiles(new Map());
         localStorage.setItem(LocalStorageKeys.FILES_TO_DELETE, JSON.stringify({}));
-
         if (!saveDrafts && filesToDelete.length > 0) {
           /** The map is already cleared above, so a lost request leaves nothing that could
            * rebuild these payloads. Whatever the server did not delete is retained for the

@@ -375,6 +375,10 @@ export default function usePastedTextEdit({
           settleAction();
           restoreEdits();
         },
+        onAbort: () => {
+          settleAction();
+          restoreEdits();
+        },
       });
       if (!accepted) {
         settleAction();

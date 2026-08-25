@@ -117,6 +117,10 @@ jest.mock('~/utils', () => ({
   isPastedTextFileMarked: (fileId: string) => mockState.markedPasteIds.includes(fileId),
   isPasteSubmitted: (fileId: string) => mockState.submittedPasteIds.includes(fileId),
   collectLiveAttachmentIds: () => new Set<string>(mockState.liveAttachmentIds),
+  removeTabAttachmentPresence: (ids: string[]) => {
+    const idSet = new Set(ids);
+    mockState.liveAttachmentIds = mockState.liveAttachmentIds.filter((id) => !idSet.has(id));
+  },
   beginRetainedDeletionPass: () => {
     if (mockState.retainedPassInFlight) {
       return false;

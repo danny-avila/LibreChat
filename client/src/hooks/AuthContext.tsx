@@ -139,15 +139,17 @@ const AuthContextProvider = ({
   const logoutUser = useLogoutUserMutation({
     onSuccess: (data) => {
       if (data.redirect) {
-        /** data.redirect is the IdP's end_session_endpoint URL — an absolute URL generated
+        /** data.redirect is the IdP's end_session_endpoint URL: an absolute URL generated
          * server-side from trusted IdP metadata (not user input), so isSafeRedirect is bypassed.
          * setUserContext is debounced (50ms) and won't fire before page unload, so clear the
-         * axios Authorization header synchronously to prevent in-flight requests. */
+         * axios Authorization header and deletion state synchronously to prevent in-flight requests. */
         isExternalRedirectRef.current = true;
         setTokenHeader(undefined);
+        clearRetainedFileDeletions();
         window.location.replace(data.redirect);
         return;
       }
+      clearRetainedFileDeletions();
       setUserContext({
         token: undefined,
         isAuthenticated: false,
@@ -156,6 +158,7 @@ const AuthContextProvider = ({
       });
     },
     onError: (error) => {
+      clearRetainedFileDeletions();
       doSetError((error as Error).message);
       setUserContext({
         token: undefined,
@@ -214,6 +217,7 @@ const AuthContextProvider = ({
           return;
         }
         console.log('Token is not present. User is not authenticated.');
+        clearRetainedFileDeletions();
         if (authConfig?.test === true) {
           return;
         }
@@ -224,6 +228,7 @@ const AuthContextProvider = ({
           return;
         }
         console.log('refreshToken mutation error:', error);
+        clearRetainedFileDeletions();
         if (authConfig?.test === true) {
           return;
         }
@@ -240,6 +245,7 @@ const AuthContextProvider = ({
     if (userQuery.data) {
       setUser(userQuery.data);
     } else if (userQuery.isError) {
+      clearRetainedFileDeletions();
       doSetError((userQuery.error as Error).message);
       navigate(buildLoginRedirectUrl(), { replace: true });
     }

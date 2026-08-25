@@ -653,6 +653,70 @@ export const publishTabAttachmentIds = (index: number, ids: string[]): void => {
   });
 };
 
+/** Withdraws attachment ids from every tab's presence, so a chip that left a composer stops
+ * reading as live. A discarded or deleted file otherwise keeps its `recent` entry for the whole
+ * window, and the retry sweep reads that as evidence the file was reattached: it cancels its own
+ * cleanup and leaves the failed upload orphaned on the server. Only this tab's `attachments` are
+ * touched, because another tab's on-screen chips are its own to report. A record whose heartbeat
+ * cannot be read is skipped rather than rewritten: handing it a fresh `seenAt` would revive a
+ * dead tab's claims over every id it was holding. */
+export const removeTabAttachmentPresence = (ids: string[]): void => {
+  if (ids.length === 0) {
+    return;
+  }
+  const idSet = new Set(ids);
+  try {
+    const ownTabId = getBrowserTabId();
+    const tabIds: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key != null && key.startsWith(TAB_PRESENCE_KEY_PREFIX)) {
+        tabIds.push(key.slice(TAB_PRESENCE_KEY_PREFIX.length));
+      }
+    }
+    for (const tabId of tabIds) {
+      const presence = readTabPresence(tabId);
+      if (presence == null) {
+        continue;
+      }
+      let modified = false;
+      const recent = { ...presence.recent };
+      for (const id of idSet) {
+        if (recent[id] != null) {
+          delete recent[id];
+          modified = true;
+        }
+      }
+      const attachments = { ...presence.attachments };
+      if (tabId === ownTabId) {
+        for (const [pane, paneIds] of Object.entries(attachments)) {
+          const kept = paneIds.filter((id) => !idSet.has(id));
+          if (kept.length === paneIds.length) {
+            continue;
+          }
+          if (kept.length === 0) {
+            delete attachments[pane];
+          } else {
+            attachments[pane] = kept;
+          }
+          modified = true;
+        }
+      }
+      if (!modified) {
+        continue;
+      }
+      writeTabPresence(tabId, {
+        seenAt: presence.seenAt,
+        ...(presence.suspended === true ? { suspended: true } : {}),
+        ...(Object.keys(attachments).length > 0 ? { attachments } : {}),
+        ...(Object.keys(recent).length > 0 ? { recent } : {}),
+      });
+    }
+  } catch {
+    // An unreadable store only ever leaves the existing claims in place.
+  }
+};
+
 /** Every attachment id any live tab's composers are currently showing. */
 export const collectLiveAttachmentIds = (): Set<string> => {
   const ids = new Set<string>();

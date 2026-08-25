@@ -22,6 +22,7 @@ import {
   isPastedTextFileMarked,
   isPasteSubmitted,
   loadPendingDiscardIds,
+  removeTabAttachmentPresence,
   scheduleRetainedFileDeletionRetry,
   storePendingDiscardIds,
   subscribePendingDiscardIds,
@@ -180,6 +181,10 @@ export default function useNewChat({
     }
     let cancelled = false;
     const attempt = async () => {
+      removeTabAttachmentPresence([
+        ...pendingDiscardIds,
+        ...retained.map((record) => record.file_id),
+      ]);
       /** An id that came back, as a live chip or inside any draft, is no longer the discarded
        * draft's to delete. Every persisted draft is consulted, not just this pane's keys: after
        * a reload the `files` map is empty until the autosave restore renders, and a second tab
@@ -418,6 +423,16 @@ export default function useNewChat({
     if (isFilesDraftOwnedByThisTab(idleDraft)) {
       clearAllDrafts(draftId);
     }
+    const discardedFileIds = Array.from(
+      new Set([
+        ...inFlightPasteIds,
+        ...Array.from(files.keys()),
+        ...Array.from(files.values()).flatMap(
+          (f) => [f.file_id, f.temp_file_id].filter(Boolean) as string[],
+        ),
+      ]),
+    );
+    removeTabAttachmentPresence(discardedFileIds);
     newConversation();
     onNewChat?.();
   }, [

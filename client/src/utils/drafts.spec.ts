@@ -18,6 +18,7 @@ import {
   isTabLive,
   publishTabAttachmentIds,
   collectLiveAttachmentIds,
+  removeTabAttachmentPresence,
   migrateFilesDraft,
   migrateTextDraft,
   renewNewConversationDraftToken,
@@ -433,6 +434,31 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     publishTabAttachmentIds(0, []);
 
     expect(collectLiveAttachmentIds().has('sent-file')).toBe(true);
+  });
+
+  it('stops protecting an id when it is explicitly removed from presence', () => {
+    publishTabAttachmentIds(0, ['discarded-file']);
+    expect(collectLiveAttachmentIds().has('discarded-file')).toBe(true);
+
+    removeTabAttachmentPresence(['discarded-file']);
+    expect(collectLiveAttachmentIds().has('discarded-file')).toBe(false);
+  });
+
+  it('leaves a heartbeatless record expired instead of reviving its claims', () => {
+    /** A record with no readable heartbeat is already gone as far as every other reader is
+     * concerned. Rewriting it to drop one id would hand it a fresh `seenAt`, and every other id
+     * it was still holding would come back as live and stall its own cleanup. The heartbeat is
+     * started first on purpose: its own sweep would otherwise reap the record before the removal
+     * ever looked at it, which is not the case once this tab has been beating for a while. */
+    getBrowserTabId();
+    localStorage.setItem(
+      'librechat-live-tab:broken-tab',
+      JSON.stringify({ recent: { 'discarded-file': Date.now(), 'other-file': Date.now() } }),
+    );
+
+    removeTabAttachmentPresence(['discarded-file']);
+
+    expect(collectLiveAttachmentIds().has('other-file')).toBe(false);
   });
 
   it('forgets a held id once the window has passed', () => {
