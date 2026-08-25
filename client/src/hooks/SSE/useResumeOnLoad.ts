@@ -463,6 +463,7 @@ export default function useResumeOnLoad(
 
   const {
     data: streamStatus,
+    dataUpdatedAt: streamStatusUpdatedAt,
     isSuccess,
     isFetching,
   } = useStreamStatus(conversationId, shouldCheck);
@@ -609,9 +610,23 @@ export default function useResumeOnLoad(
     const messages = getMessages() || [];
     /** Fill the elapsed baseline only when none survives: a reattach to the run
      *  this session already anchored keeps its original start (the atom outlives
-     *  the submission), while a run it never anchored — another client's, or any
-     *  attach after the previous run's terminal clear — counts from attach. */
-    setSubmissionStart((prev) => prev ?? Date.now());
+     *  the submission). A run it never anchored — after a reload, or started by
+     *  another client — rebuilds the real baseline from the server-computed
+     *  generation age, which keeps both clocks comparing only to themselves.
+     *  The age is subtracted from the moment the status RESPONSE arrived
+     *  (`dataUpdatedAt`), not from now: this effect trails the response behind
+     *  `messagesLoaded`, and a slow history fetch would silently shrink the
+     *  reading. Raw `createdAt` (an older server) still beats counting from
+     *  attach; the indicator clamps whatever skew that carries. */
+    setSubmissionStart((prev) => {
+      if (prev != null) {
+        return prev;
+      }
+      if (streamStatus.elapsedMs != null) {
+        return (streamStatusUpdatedAt || Date.now()) - streamStatus.elapsedMs;
+      }
+      return streamStatus.createdAt ?? Date.now();
+    });
 
     // Build submission from resume state if available
     if (streamStatus.resumeState) {
@@ -679,6 +694,7 @@ export default function useResumeOnLoad(
     isSuccess,
     isFetching,
     streamStatus,
+    streamStatusUpdatedAt,
     getMessages,
     setSubmission,
     setSubmissionStart,

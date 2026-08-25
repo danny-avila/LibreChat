@@ -40,6 +40,7 @@ const { logViolation } = require('~/cache');
 const { recordScheduleOutcome, isScheduleLive } = require('~/server/services/Schedules');
 const {
   saveMessage,
+  saveConvo,
   getMessages,
   getConvo,
   isAgentTriggerPrincipalActive,
@@ -105,6 +106,18 @@ async function attachConversationCreatedAt(req, conversationId, conversationAnch
   if (resolved.conversation !== undefined) {
     req.resolvedConversation = resolved.conversation ?? null;
   }
+}
+
+function getPreliminaryResponseMessageId({ messageId, responseMessageId }) {
+  if (typeof responseMessageId === 'string' && responseMessageId.length > 0) {
+    return responseMessageId;
+  }
+
+  if (typeof messageId !== 'string' || messageId.length === 0) {
+    return null;
+  }
+
+  return `${messageId.replace(/_+$/, '')}_`;
 }
 
 function getPreliminaryUserMessage(
@@ -187,6 +200,165 @@ async function finishResumableRequest(req, userId) {
     if (req._scheduleConcurrencyExempt !== true) {
       await decrementPendingRequest(userId);
     }
+  }
+}
+
+async function saveErrorTurn(
+  req,
+  {
+    conversationId,
+    endpointOption,
+    isNewConvo,
+    errorText,
+    liveUserMessage,
+    liveResponseMessageId,
+    sender,
+  },
+) {
+  try {
+    const { isContinued, isRegenerate, editedContent, responseMessageId, overrideParentMessageId } =
+      req.body ?? {};
+    if (
+      isContinued ||
+      editedContent != null ||
+      (responseMessageId && !isRegenerate) ||
+      req.body?.recoverySteerId != null ||
+      req.body?.clientRequestId?.startsWith?.('steer-recovery:') === true
+    ) {
+      return;
+    }
+
+    let userMessage = null;
+    let errorMessageId = null;
+    let errorParentMessageId = null;
+    if (isRegenerate) {
+      errorMessageId =
+        typeof responseMessageId === 'string' && responseMessageId.length > 0
+          ? responseMessageId
+          : null;
+      errorParentMessageId = liveUserMessage?.messageId ?? overrideParentMessageId ?? null;
+    } else {
+      userMessage =
+        liveUserMessage != null
+          ? {
+              ...liveUserMessage,
+              ...(liveUserMessage.files == null &&
+                Array.isArray(req.body?.files) &&
+                req.body.files.length > 0 && { files: req.body.files }),
+              ...(liveUserMessage.manualSkills == null &&
+                Array.isArray(req.body?.manualSkills) &&
+                req.body.manualSkills.length > 0 && { manualSkills: req.body.manualSkills }),
+              ...(liveUserMessage.alwaysAppliedSkills == null &&
+                Array.isArray(req.body?.alwaysAppliedSkills) &&
+                req.body.alwaysAppliedSkills.length > 0 && {
+                  alwaysAppliedSkills: req.body.alwaysAppliedSkills,
+                }),
+            }
+          : getPreliminaryUserMessage(req.body, conversationId);
+      if (!userMessage) {
+        return;
+      }
+      errorMessageId = getPreliminaryResponseMessageId(
+        liveUserMessage != null ? { messageId: liveUserMessage.messageId } : req.body,
+      );
+      errorParentMessageId = userMessage.messageId;
+    }
+    if (!errorMessageId || !errorParentMessageId) {
+      return;
+    }
+
+    const userId = req.user.id;
+    const existing = await getMessages(
+      { user: userId, messageId: errorMessageId, conversationId },
+      '_id',
+    );
+    if (existing.length > 0) {
+      return;
+    }
+    if (liveResponseMessageId != null && liveResponseMessageId !== errorMessageId) {
+      const partial = await getMessages(
+        { user: userId, messageId: liveResponseMessageId, conversationId },
+        '_id',
+      );
+      if (partial.length > 0) {
+        return;
+      }
+    }
+
+    const reqCtx = {
+      userId,
+      isTemporary: req?._agentEventBindingRetention?.isTemporary ?? req?.body?.isTemporary,
+      expiredAt: req?._agentEventBindingRetention?.expiredAt,
+      interfaceConfig: req?.config?.interfaceConfig,
+    };
+    const context = 'api/server/controllers/agents/request.js - failed turn';
+    const endpoint = endpointOption?.endpoint;
+    const model = getAgentResponseModel(req, endpointOption);
+    const iconURL = getEndpointIconURL(req, endpointOption);
+
+    if (userMessage) {
+      const savedUserMessage = await saveMessage(
+        reqCtx,
+        {
+          ...userMessage,
+          user: userId,
+          sender: 'User',
+          isCreatedByUser: true,
+          error: false,
+          unfinished: false,
+        },
+        { context },
+      );
+      if (!savedUserMessage) {
+        throw new Error('Failed user message could not be persisted');
+      }
+    }
+    const savedErrorMessage = await saveMessage(
+      reqCtx,
+      {
+        messageId: errorMessageId,
+        conversationId,
+        parentMessageId: errorParentMessageId,
+        sender: sender ?? 'AI',
+        ...(endpoint != null && { endpoint }),
+        ...(model != null && { model }),
+        ...(iconURL != null && { iconURL }),
+        user: userId,
+        text: errorText,
+        error: true,
+        unfinished: false,
+        isCreatedByUser: false,
+      },
+      { context },
+    );
+    if (!savedErrorMessage) {
+      throw new Error('Failed response message could not be persisted');
+    }
+
+    const agentId = endpointOption?.agent_id ?? req.body?.agent_id;
+    const chatProjectId = endpointOption?.chatProjectId ?? req.body?.chatProjectId;
+    const seedConvo = isNewConvo || req.resolvedConversation === null;
+    const convoFields = seedConvo
+      ? {
+          ...(endpoint != null && { endpoint }),
+          ...(endpointOption?.endpointType != null && {
+            endpointType: endpointOption.endpointType,
+          }),
+          ...(model != null && { model }),
+          ...(iconURL != null && { iconURL }),
+          ...(endpointOption?.spec != null && { spec: endpointOption.spec }),
+          ...(agentId != null && { agent_id: agentId }),
+          ...(typeof chatProjectId === 'string' && chatProjectId.length > 0 && { chatProjectId }),
+        }
+      : {};
+    await saveConvo(
+      reqCtx,
+      { conversationId, ...convoFields },
+      seedConvo ? { context } : { context, noUpsert: true },
+    );
+  } catch (err) {
+    logger.error('[AgentController] Failed to persist error turn', err);
+    throw err;
   }
 }
 
@@ -1450,10 +1622,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
 
     let userMessage;
+    let liveResponseMessageId = preallocatedResponseMessageId;
 
     const getReqData = (data = {}) => {
       if (data.userMessage) {
         userMessage = data.userMessage;
+      }
+      if (data.responseMessageId) {
+        liveResponseMessageId = data.responseMessageId;
       }
       // conversationId is pre-generated, no need to update from callback
     };
@@ -1593,6 +1769,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       try {
         const onStart = (userMsg, respMsgId, _isNewConvo) => {
           userMessage = userMsg;
+          liveResponseMessageId = respMsgId;
 
           // Store userMessage and responseMessageId upfront for resume capability
           GenerationJobManager.updateMetadata(
@@ -2179,8 +2356,18 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             // completeJob first wins running -> error and atomically parks
             // steers, then publishes. A competing abort/pause emits nothing.
             ownsScheduledFailure =
-              (await GenerationJobManager.completeJob(streamId, generationError, jobCreatedAt)) ===
-              true;
+              (await GenerationJobManager.completeJob(streamId, generationError, jobCreatedAt, {
+                beforeErrorPublication: () =>
+                  saveErrorTurn(req, {
+                    conversationId,
+                    endpointOption,
+                    isNewConvo,
+                    errorText: generationError,
+                    liveUserMessage: userMessage,
+                    liveResponseMessageId,
+                    sender: client?.sender,
+                  }),
+              })) === true;
           } catch (completeErr) {
             logger.warn(
               '[ResumableAgentController] completeJob failed during generation-error cleanup',
@@ -2262,6 +2449,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   } catch (error) {
     logger.error('[ResumableAgentController] Initialization error:', error);
     const initializationFailure = getInitializationFailure(error);
+    const streamStarted = res.headersSent;
     try {
       if (!res.headersSent) {
         if (error?.code === 'GENERATION_PREDECESSOR_MISMATCH') {
@@ -2354,16 +2542,25 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       const initializationError = initializationFailure
         ? JSON.stringify(initializationFailure)
         : error.message || 'Failed to start generation';
+      const completionPromise = streamStarted
+        ? GenerationJobManager.completeJob(streamId, initializationError, jobCreatedAt, {
+            beforeErrorPublication: () =>
+              saveErrorTurn(req, {
+                conversationId,
+                endpointOption,
+                isNewConvo,
+                errorText: initializationError,
+              }),
+          })
+        : GenerationJobManager.completeJob(streamId, initializationError, jobCreatedAt);
       initializationFinalized =
-        (await GenerationJobManager.completeJob(streamId, initializationError, jobCreatedAt).catch(
-          (completeErr) => {
-            logger.warn(
-              '[ResumableAgentController] completeJob failed during init-error cleanup',
-              completeErr,
-            );
-            return false;
-          },
-        )) === true;
+        (await completionPromise.catch((completeErr) => {
+          logger.warn(
+            '[ResumableAgentController] completeJob failed during init-error cleanup',
+            completeErr,
+          );
+          return false;
+        })) === true;
     }
     if (initializationFinalized && !scheduleTerminalOutcomeRecorded) {
       await settleScheduledRun(classifyScheduledFailure(error));

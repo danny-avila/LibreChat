@@ -75,6 +75,8 @@ function renderUseResumeOnLoad({
   pendingSteers,
   onPendingSteers,
   onQueuedMessages,
+  submissionStart,
+  onSubmissionStart,
 }: {
   messages?: TMessage[];
   getMessages?: () => TMessage[] | undefined;
@@ -87,6 +89,8 @@ function renderUseResumeOnLoad({
   pendingSteers?: PendingSteer[];
   onPendingSteers?: (steers: PendingSteer[]) => void;
   onQueuedMessages?: (queued: QueuedMessage[]) => void;
+  submissionStart?: number;
+  onSubmissionStart?: (submissionStart: number | null) => void;
 }) {
   const getMessages = jest.fn(getMessagesOverride ?? (() => messages));
   const queryClient = new QueryClient({
@@ -96,6 +100,9 @@ function renderUseResumeOnLoad({
   const initializeState = (snapshot: MutableSnapshot) => {
     snapshot.set(store.conversationByIndex(0), buildConversation(conversationId));
     snapshot.set(store.submissionByIndex(0), submission);
+    if (submissionStart != null) {
+      snapshot.set(store.submissionStartFamily(0), submissionStart);
+    }
     if (pendingSteers) {
       snapshot.set(store.pendingSteersByConvoId(conversationId), pendingSteers);
     }
@@ -105,6 +112,11 @@ function renderUseResumeOnLoad({
     const currentSubmission = useRecoilValue(store.submissionByIndex(0));
     setSubmissionState = useSetRecoilState(store.submissionByIndex(0));
     onSubmission?.(currentSubmission);
+    return null;
+  };
+  const SubmissionStartProbe = () => {
+    const currentStart = useRecoilValue(store.submissionStartFamily(0));
+    onSubmissionStart?.(currentStart);
     return null;
   };
   const PendingSteersProbe = () => {
@@ -129,6 +141,7 @@ function renderUseResumeOnLoad({
     <QueryClientProvider client={queryClient}>
       <RecoilRoot initializeState={initializeState}>
         <SubmissionProbe />
+        <SubmissionStartProbe />
         <SiblingIndexProbe />
         <PendingSteersProbe />
         <QueuedMessagesProbe />
@@ -288,6 +301,97 @@ describe('useResumeOnLoad', () => {
         | null;
       expect(attached?.resumeStreamId).toBe(CONVERSATION_ID);
       expect(attached?.resumeGenerationCreatedAt).toBe(4242);
+    });
+
+    /** The elapsed indicator's baseline must be the generation's real start:
+     *  an attach with no surviving anchor (a reload, or a run another client
+     *  started) rebuilds it clock-locally from the server-computed generation
+     *  age, subtracted from the moment the status response ARRIVED — so
+     *  neither cross-machine clock skew nor a slow history fetch between
+     *  receipt and apply can distort the reading. */
+    it('anchors the elapsed baseline via the server-computed generation age', async () => {
+      const observedStarts: Array<number | null> = [];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+
+      const { rerender } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        onSubmissionStart: (start) => observedStarts.push(start),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(observedStarts[observedStarts.length - 1]).toBeNull();
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
+      mockUseStreamStatus.mockReturnValue({
+        ...ACTIVE_STATUS,
+        dataUpdatedAt: 1_000_000,
+        data: { ...ACTIVE_STATUS.data, elapsedMs: 30_000 },
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(observedStarts[observedStarts.length - 1]).toBe(1_000_000 - 30_000);
+    });
+
+    /** An older server without `elapsedMs` still beats counting from attach:
+     *  the raw server start is adopted and the indicator clamps its skew. */
+    it('falls back to the server-recorded generation start without elapsedMs', async () => {
+      const observedStarts: Array<number | null> = [];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+
+      const { rerender } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        onSubmissionStart: (start) => observedStarts.push(start),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
+      mockUseStreamStatus.mockReturnValue(ACTIVE_STATUS);
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(observedStarts[observedStarts.length - 1]).toBe(4242);
+    });
+
+    /** A reattach to the run this session already anchored must keep the ask
+     *  baseline — the atom deliberately outlives the submission it timed. */
+    it('preserves a surviving elapsed baseline over the server-recorded start', async () => {
+      const observedStarts: Array<number | null> = [];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+
+      const { rerender } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        submissionStart: 1111,
+        onSubmissionStart: (start) => observedStarts.push(start),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
+      mockUseStreamStatus.mockReturnValue(ACTIVE_STATUS);
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(observedStarts[observedStarts.length - 1]).toBe(1111);
     });
 
     it('restores an externally started regeneration after history refreshes', async () => {

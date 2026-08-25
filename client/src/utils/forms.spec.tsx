@@ -1,10 +1,6 @@
 import { getDefaultAgentFormValues } from './forms';
 
 describe('getDefaultAgentFormValues', () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
   it('uses the scalable user workspace by default', () => {
     expect(getDefaultAgentFormValues().stateful_code_environment).toBe('user');
   });

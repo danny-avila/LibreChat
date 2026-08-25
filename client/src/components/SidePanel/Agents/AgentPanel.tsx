@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useRef, useState } from 'react';
+import React, { useMemo, useCallback, useEffect, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import isEqual from 'lodash/isEqual';
 import { Button, useToastContext } from '@librechat/client';
@@ -10,6 +10,7 @@ import {
   SystemRoles,
   ResourceType,
   EModelEndpoint,
+  LocalStorageKeys,
   PermissionBits,
   removeCodeExecutionCaller,
   resolveStatefulCodeEnvironment,
@@ -26,7 +27,11 @@ import {
   useGetExpandedAgentByIdQuery,
   useUploadAgentAvatarMutation,
 } from '~/data-provider';
-import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
+import {
+  createProviderOption,
+  getAvailableAgentSelection,
+  getDefaultAgentFormValues,
+} from '~/utils';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
 import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
@@ -314,7 +319,15 @@ export default function AgentPanel() {
 
   const agentQuery = canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
 
-  const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
+  const modelsReady = modelsQuery.isFetchedAfterMount && !modelsQuery.isFetching;
+  const modelsError = modelsQuery.isFetchedAfterMount && !modelsQuery.isSuccess;
+  /** The models query is seeded with a static fallback config, so its entries only describe the
+   *  active server once the fetch issued on mount has resolved. Until then there is nothing
+   *  authoritative to offer, and an outright failure must not fall back to the seed either. */
+  const models = useMemo(
+    () => (modelsQuery.isFetchedAfterMount && !modelsError ? (modelsQuery.data ?? {}) : {}),
+    [modelsError, modelsQuery.isFetchedAfterMount, modelsQuery.data],
+  );
   const methods = useForm<AgentForm>({
     defaultValues: getDefaultAgentFormValues(defaultStatefulCodeEnvironment),
     mode: 'onChange',
@@ -329,6 +342,7 @@ export default function AgentPanel() {
     formState: { dirtyFields },
   } = methods;
   const [isAvatarUploadInFlight, setIsAvatarUploadInFlight] = useState(false);
+
   const uploadAvatarMutation = useUploadAgentAvatarMutation({
     onSuccess: (updatedAgent) => {
       showToast({ message: localize('com_ui_upload_agent_avatar') });
@@ -394,6 +408,56 @@ export default function AgentPanel() {
         .map((provider) => createProviderOption(provider)),
     [endpointsConfig, allowedProviders],
   );
+  useEffect(() => {
+    if (endpointsConfig == null || !modelsReady || !modelsQuery.isSuccess) {
+      return;
+    }
+
+    const storedProvider = localStorage.getItem(LocalStorageKeys.LAST_AGENT_PROVIDER) ?? '';
+    const storedModel = localStorage.getItem(LocalStorageKeys.LAST_AGENT_MODEL) ?? '';
+    const storedSelection = getAvailableAgentSelection({
+      provider: storedProvider,
+      model: storedModel,
+      providers,
+      models,
+    });
+
+    if (storedSelection.provider !== storedProvider) {
+      localStorage.removeItem(LocalStorageKeys.LAST_AGENT_PROVIDER);
+      localStorage.removeItem(LocalStorageKeys.LAST_AGENT_MODEL);
+    } else if (storedSelection.model !== storedModel) {
+      localStorage.removeItem(LocalStorageKeys.LAST_AGENT_MODEL);
+    }
+
+    if (current_agent_id || dirtyFields.provider === true || dirtyFields.model === true) {
+      return;
+    }
+
+    const selectedProviderOption = getValues('provider');
+    const selectedProvider =
+      (typeof selectedProviderOption === 'string'
+        ? selectedProviderOption
+        : (selectedProviderOption as StringOption | undefined)?.value) ?? '';
+    const selectedModel = getValues('model') ?? '';
+
+    if (storedSelection.provider !== selectedProvider) {
+      setValue('provider', createProviderOption(storedSelection.provider));
+    }
+    if (storedSelection.model !== selectedModel) {
+      setValue('model', storedSelection.model);
+    }
+  }, [
+    current_agent_id,
+    dirtyFields.model,
+    dirtyFields.provider,
+    endpointsConfig,
+    getValues,
+    models,
+    modelsQuery.isSuccess,
+    modelsReady,
+    providers,
+    setValue,
+  ]);
 
   /* Mutations */
   const update = useUpdateAgentMutation({
@@ -543,6 +607,18 @@ export default function AgentPanel() {
           status: 'error',
         });
       }
+      if (!modelsReady || modelsError) {
+        return showToast({
+          message: localize('com_error_models_not_loaded'),
+          status: 'error',
+        });
+      }
+      if (!(models[provider] ?? []).includes(model)) {
+        return showToast({
+          message: localize('com_error_model_not_found'),
+          status: 'error',
+        });
+      }
       if (!data.name) {
         return showToast({
           message: localize('com_agents_missing_name'),
@@ -552,7 +628,18 @@ export default function AgentPanel() {
 
       create.mutate({ ...basePayload, model, tools, provider });
     },
-    [agent_id, create, dirtyFields, handleAvatarUpload, update, showToast, localize],
+    [
+      agent_id,
+      create,
+      dirtyFields,
+      handleAvatarUpload,
+      models,
+      modelsError,
+      modelsReady,
+      update,
+      showToast,
+      localize,
+    ],
   );
 
   const handleSelectAgent = useCallback(() => {
@@ -633,7 +720,13 @@ export default function AgentPanel() {
             </div>
           )}
           {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.model && (
-            <ModelPanel models={models} providers={providers} setActivePanel={setActivePanel} />
+            <ModelPanel
+              models={models}
+              providers={providers}
+              modelsError={modelsError}
+              modelsReady={modelsReady}
+              setActivePanel={setActivePanel}
+            />
           )}
           {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
             <AgentConfig />

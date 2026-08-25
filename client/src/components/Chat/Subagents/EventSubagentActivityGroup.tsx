@@ -155,7 +155,11 @@ function EventSubagentRows({
   return (
     <section
       aria-label={localize('com_ui_subagent_activity')}
-      className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary/40"
+      /** `text-text-primary` on the root, like `SubagentActivity` and
+       *  `SubagentThreadPanel`: the child rows are raw buttons that inherit
+       *  their label color, and without a themed ancestor they bottom out at
+       *  the unthemed black body color — invisible on the dark surface. */
+      className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary/40 text-text-primary"
       data-event-subagent-group={eventChildren[0]?.parentMessageId}
     >
       <Button
