@@ -2,7 +2,7 @@ import type { IConversation } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
 import { controlFingerprint, SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
-import { createSubagentControlHandler } from './control';
+import { createSubagentControlHandler, isValidSubagentControlRequest } from './control';
 
 const parentConversationId = 'parent-conversation';
 const threadId = 'child-thread';
@@ -58,6 +58,34 @@ const dependencies = (controlTask = jest.fn()) => ({
 });
 
 describe('subagent control handler', () => {
+  it('rejects fields outside the action-specific public control contract', () => {
+    expect(
+      isValidSubagentControlRequest({
+        taskId,
+        invocationId: 'invocation-1',
+        action: 'queue',
+        message: 'Check the primary source.',
+      }),
+    ).toBe(true);
+    expect(
+      isValidSubagentControlRequest({
+        taskId,
+        invocationId: 'invocation-1',
+        action: 'queue',
+        message: 'Check the primary source.',
+        answers: ['unrelated moderation input'],
+      }),
+    ).toBe(false);
+    expect(
+      isValidSubagentControlRequest({
+        taskId,
+        invocationId: 'invocation-1',
+        action: 'cancel',
+        message: 'unused',
+      }),
+    ).toBe(false);
+  });
+
   it('returns one bounded public accepted receipt from the authorized live owner', async () => {
     const controlTask = jest.fn().mockResolvedValue({
       status: 'accepted',

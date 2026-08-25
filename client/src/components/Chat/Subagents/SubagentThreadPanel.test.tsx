@@ -44,8 +44,15 @@ jest.mock('~/data-provider', () => ({
     mutate: (payload: unknown) => mockForkMutate(payload, options),
     isLoading: false,
   }),
-  useSubagentControlMutation: () => ({
-    mutate: mockControlMutate,
+  useSubagentControlMutation: (options: {
+    onSuccess: (result: unknown, variables: unknown) => void;
+    onError: (error: unknown, variables: unknown) => void;
+  }) => ({
+    mutate: (variables: unknown) =>
+      mockControlMutate(variables, {
+        onSuccess: (result: unknown) => options.onSuccess(result, variables),
+        onError: (error: unknown) => options.onError(error, variables),
+      }),
     isLoading: false,
   }),
 }));
@@ -243,6 +250,7 @@ const completedView: SubagentThreadView = {
 
 describe('SubagentThreadPanel', () => {
   beforeEach(() => {
+    window.sessionStorage.clear();
     mockIsMobile = false;
     mockApprovalProviderMounted.mockClear();
     mockApprovalProviderUnmounted.mockClear();
@@ -336,6 +344,7 @@ describe('SubagentThreadPanel', () => {
     expect(variables).toEqual({
       parentConversationId: 'parent-conversation',
       threadId: 'child-thread',
+      submittedAt: expect.any(String),
       command: {
         taskId: 'task',
         invocationId: expect.any(String),
@@ -458,6 +467,79 @@ describe('SubagentThreadPanel', () => {
     expect(mockControlMutate.mock.calls[1][0].command).toEqual(firstCommand);
   });
 
+  it('retains an ambiguous invocation across a full page-state reload', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const first = render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+      target: { value: 'Keep the same invocation.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_queue' }));
+    const firstCommand = mockControlMutate.mock.calls[0][0].command;
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
+    });
+    first.unmount();
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+    expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+    expect(mockControlMutate.mock.calls[1][0].command).toEqual(firstCommand);
+  });
+
+  it('records an ambiguous result after the panel closes before the mutation settles', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const PanelHost = () => {
+      const current = useRecoilValue(activeSubagentPanel);
+      const setCurrent = useSetRecoilState(activeSubagentPanel);
+      return current == null ? (
+        <button type="button" onClick={() => setCurrent(selection)}>
+          {selection.subagentType}
+        </button>
+      ) : (
+        <SubagentThreadPanel selection={current} />
+      );
+    };
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <PanelHost />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+      target: { value: 'Retry after closing.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_queue' }));
+    const firstCommand = mockControlMutate.mock.calls[0][0].command;
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
+    });
+    fireEvent.click(screen.getByRole('button', { name: selection.subagentType }));
+
+    expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+    expect(mockControlMutate.mock.calls[1][0].command).toEqual(firstCommand);
+  });
+
   it('keeps an unavailable-owner retry visible if the child settles before the receipt appears', () => {
     mockUseSubagentThreadQuery.mockReturnValue({
       data: { ...completedView, status: 'running', controlReceipts: [] },
@@ -566,6 +648,7 @@ describe('SubagentThreadPanel', () => {
       mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
     });
     expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeInTheDocument();
+    expect(window.sessionStorage.length).toBe(1);
 
     mockUseSubagentThreadQuery.mockReturnValue({
       data: {
@@ -597,6 +680,7 @@ describe('SubagentThreadPanel', () => {
     expect(
       screen.queryByText('com_ui_subagent_control_reason_owner_unavailable'),
     ).not.toBeInTheDocument();
+    expect(window.sessionStorage.length).toBe(0);
   });
 
   it('closes stale running controls after task cancellation is applied', () => {

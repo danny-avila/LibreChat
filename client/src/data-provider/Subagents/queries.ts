@@ -129,6 +129,13 @@ export type SubagentControlVariables = {
   parentConversationId: string;
   threadId: string;
   command: SubagentControlRequest;
+  /** Client-only timestamp retained across retries; never sent to the API. */
+  submittedAt: string;
+};
+
+type SubagentControlMutationOptions = {
+  onSuccess?: (data: SubagentControlResponse, variables: SubagentControlVariables) => void;
+  onError?: (error: Error, variables: SubagentControlVariables) => void;
 };
 
 const isTerminalControlReceipt = (receipt: SubagentControlReceipt): boolean =>
@@ -158,14 +165,14 @@ export const reconcileSubagentControlReceipts = (
   );
 };
 
-export const useSubagentControlMutation = () => {
+export const useSubagentControlMutation = (options: SubagentControlMutationOptions = {}) => {
   const queryClient = useQueryClient();
   return useMutation<SubagentControlResponse, Error, SubagentControlVariables>(
     ({ parentConversationId, threadId, command }) =>
       dataService.controlSubagentTask(parentConversationId, threadId, command),
     {
       mutationKey: [MutationKeys.subagentControl],
-      onSuccess: ({ receipt }, { parentConversationId, threadId, command }) => {
+      onSuccess: ({ receipt }, { parentConversationId, threadId, command, submittedAt }) => {
         const key = [QueryKeys.subagentThread, parentConversationId, threadId, command.taskId];
         queryClient.setQueryData<SubagentThreadView | undefined>(key, (current) => {
           if (current == null) return current;
@@ -178,7 +185,9 @@ export const useSubagentControlMutation = () => {
           };
         });
         void queryClient.invalidateQueries(key);
+        options.onSuccess?.({ receipt }, { parentConversationId, threadId, command, submittedAt });
       },
+      onError: (error, variables) => options.onError?.(error, variables),
     },
   );
 };

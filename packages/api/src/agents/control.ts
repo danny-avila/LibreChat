@@ -49,6 +49,13 @@ const validAction = (value: unknown): value is SubagentControlAction =>
   value === 'cancel' ||
   value === 'cancel_message';
 
+const requestKeysForAction = (action: SubagentControlAction): Set<string> => {
+  const keys = new Set(['taskId', 'invocationId', 'action']);
+  if (action === 'cancel_message') keys.add('controlId');
+  else if (action !== 'cancel') keys.add('message');
+  return keys;
+};
+
 const commandFromRequest = (
   body: SubagentControlRequest,
 ): SubagentTaskControlCommand | undefined => {
@@ -74,7 +81,10 @@ const commandFromRequest = (
 export const isValidSubagentControlRequest = (value: unknown): value is SubagentControlRequest => {
   if (value == null || typeof value !== 'object') return false;
   const body = value as Partial<SubagentControlRequest>;
+  if (!validAction(body.action)) return false;
+  const allowedKeys = requestKeysForAction(body.action);
   return (
+    Object.keys(body).every((key) => allowedKeys.has(key)) &&
     validId(body.taskId, MAX_TASK_ID_BYTES) &&
     validId(body.invocationId, MAX_INVOCATION_ID_BYTES) &&
     commandFromRequest(body as SubagentControlRequest) != null

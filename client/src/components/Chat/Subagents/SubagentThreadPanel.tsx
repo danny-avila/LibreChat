@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
 import { ForkOptions } from 'librechat-data-provider';
 import { Bot, CornerDownRight, ListEnd, MessagesSquare, OctagonX, X, Zap } from 'lucide-react';
-import { useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
+import {
+  useRecoilCallback,
+  useRecoilState,
+  useRecoilValue,
+  useResetRecoilState,
+  useSetRecoilState,
+} from 'recoil';
 import {
   Button,
   Alert,
@@ -22,7 +28,7 @@ import type {
   SubagentControlRequest,
 } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import type { ActiveSubagentPanel } from '~/store/subagents';
+import type { ActiveSubagentPanel, SubagentControlUiState } from '~/store/subagents';
 import {
   ACTIVE_THREAD_REFRESH_MS,
   subagentThreadHasTaskEvidence,
@@ -115,6 +121,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const controlIdentity = subagentControlStateKey(selection.parentConversationId, threadId, taskId);
   const [controlState, setControlState] = useRecoilState(
     subagentControlStateByTask(controlIdentity),
+  );
+  const setControlStateForIdentity = useRecoilCallback(
+    ({ set }) =>
+      (identity: string, state: SubagentControlUiState | null) =>
+        set(subagentControlStateByTask(identity), state),
+    [],
   );
   const transientControl = controlState?.receipt ?? null;
   const retryControl = controlState?.retry ?? null;
@@ -224,7 +236,6 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       showToast({ message: localize('com_ui_continue_chat_error'), status: 'error' });
     },
   });
-  const controlTask = useSubagentControlMutation();
   const [controlMessage, setControlMessage] = useState('');
   const [controlInaccessible, setControlInaccessible] = useState(false);
   const [controlsClosed, setControlsClosed] = useState(false);
@@ -236,7 +247,60 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     setControlInaccessible(false);
     setControlsClosed(false);
     controlInFlightRef.current = false;
+    return () => {
+      controlSelectionRef.current = '';
+    };
   }, [controlIdentity]);
+
+  const controlTask = useSubagentControlMutation({
+    onSuccess: ({ receipt }, variables) => {
+      const submittedSelection = subagentControlStateKey(
+        variables.parentConversationId,
+        variables.threadId,
+        variables.command.taskId,
+      );
+      setControlStateForIdentity(submittedSelection, { receipt });
+      if (controlSelectionRef.current !== submittedSelection) return;
+      controlInFlightRef.current = false;
+      if (closesTaskControls(receipt)) setControlsClosed(true);
+      if (
+        variables.command.action !== 'cancel_message' &&
+        (receipt.status === 'accepted' || receipt.status === 'applied')
+      ) {
+        setControlMessage('');
+      }
+    },
+    onError: (error, variables) => {
+      const status = responseStatus(error);
+      const inaccessible = status === 404;
+      const retryable = status == null || status >= 500;
+      const command = variables.command;
+      const submittedSelection = subagentControlStateKey(
+        variables.parentConversationId,
+        variables.threadId,
+        command.taskId,
+      );
+      setControlStateForIdentity(submittedSelection, {
+        receipt: {
+          invocationId: command.invocationId,
+          ...(command.controlId == null ? {} : { controlId: command.controlId }),
+          action: command.action,
+          status: 'failed',
+          createdAt: variables.submittedAt,
+          updatedAt: new Date().toISOString(),
+          ...(command.message == null ? {} : { message: command.message }),
+          reason: failedControlReason(inaccessible, retryable),
+        },
+        ...(retryable ? { retry: command } : {}),
+      });
+      if (controlSelectionRef.current !== submittedSelection) return;
+      controlInFlightRef.current = false;
+      if (inaccessible) {
+        setControlInaccessible(true);
+        setControlsClosed(true);
+      }
+    },
+  });
 
   useEffect(() => {
     if (transientControl == null) return;
@@ -320,57 +384,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         retry: command,
       });
       controlInFlightRef.current = true;
-      const submittedSelection = subagentControlStateKey(
-        selection.parentConversationId,
-        selection.durable.threadId,
-        selection.durable.taskId,
-      );
-      controlTask.mutate(
-        {
-          parentConversationId: selection.parentConversationId,
-          threadId: selection.durable.threadId,
-          command,
-        },
-        {
-          onSuccess: ({ receipt }) => {
-            setControlState({ receipt });
-            if (controlSelectionRef.current !== submittedSelection) return;
-            controlInFlightRef.current = false;
-            if (closesTaskControls(receipt)) setControlsClosed(true);
-            if (
-              command.action !== 'cancel_message' &&
-              (receipt.status === 'accepted' || receipt.status === 'applied')
-            ) {
-              setControlMessage('');
-            }
-          },
-          onError: (error) => {
-            const status = responseStatus(error);
-            const inaccessible = status === 404;
-            const retryable = status == null || status >= 500;
-            const failedReceipt = {
-              invocationId: command.invocationId,
-              ...(command.controlId == null ? {} : { controlId: command.controlId }),
-              action: command.action,
-              status: 'failed' as const,
-              createdAt: now,
-              updatedAt: new Date().toISOString(),
-              ...(command.message == null ? {} : { message: command.message }),
-              reason: failedControlReason(inaccessible, retryable),
-            };
-            setControlState({
-              receipt: failedReceipt,
-              ...(retryable ? { retry: command } : {}),
-            });
-            if (controlSelectionRef.current !== submittedSelection) return;
-            controlInFlightRef.current = false;
-            if (inaccessible) {
-              setControlInaccessible(true);
-              setControlsClosed(true);
-            }
-          },
-        },
-      );
+      controlTask.mutate({
+        parentConversationId: selection.parentConversationId,
+        threadId: selection.durable.threadId,
+        command,
+        submittedAt: now,
+      });
     },
     [
       controlMessage,

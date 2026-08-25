@@ -54,6 +54,11 @@ module.exports = {
     createSubagentControlHandler: jest.fn(() => (_req, res) => res.status(200).json({})),
     isValidSubagentControlRequest: jest.fn((body) => {
       if (body == null || typeof body !== 'object') return false;
+      const commonKeys = ['taskId', 'invocationId', 'action'];
+      let allowedKeys = [...commonKeys, 'message'];
+      if (body.action === 'cancel_message') allowedKeys = [...commonKeys, 'controlId'];
+      if (body.action === 'cancel') allowedKeys = commonKeys;
+      if (Object.keys(body).some((key) => !allowedKeys.includes(key))) return false;
       if (typeof body.taskId !== 'string' || body.taskId.length === 0 || body.taskId.length > 256) {
         return false;
       }

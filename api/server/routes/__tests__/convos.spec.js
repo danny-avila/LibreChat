@@ -169,10 +169,23 @@ describe('Convos Routes', () => {
       taskId: 'task-1',
       invocationId: 'invocation-4',
       action: 'cancel',
-      text: 'This unused field must not reach moderation.',
     });
 
     expect(cancelled.status).toBe(200);
+    expect(moderateText).not.toHaveBeenCalled();
+
+    const crafted = await request(app)
+      .post('/api/convos/parent/subagents/child/control')
+      .send({
+        taskId: 'task-1',
+        invocationId: 'invocation-5',
+        action: 'queue',
+        message: 'Use only this bounded guidance.',
+        answers: ['This unrelated field must not reach moderation.'],
+      });
+
+    expect(crafted.status).toBe(400);
+    expect(crafted.body).toEqual({ error: 'Invalid subagent control request' });
     expect(moderateText).not.toHaveBeenCalled();
   });
 
