@@ -171,6 +171,7 @@
     "@langchain/langgraph-checkpoint-mongodb": "^1.4.0",
     "cluster-key-slot": "^1.1.2",
     "croner": "^10.0.1",
+    "helmet": "^8.3.0",
     "proxy-from-env": "^2.1.0",
     "re2js": "^2.8.6"
   }

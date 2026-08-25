@@ -18,6 +18,7 @@ const {
   createMetrics,
   ErrorController,
   memoryDiagnostics,
+  createSecurityHeaders,
   performStartupChecks,
   handleJsonParseError,
   GenerationJobManager,
@@ -154,6 +155,12 @@ const startServer = async () => {
 
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
+
+  /* Registered ahead of every route so health checks carry the headers too. */
+  const securityHeaders = createSecurityHeaders();
+  if (securityHeaders) {
+    app.use(securityHeaders);
+  }
 
   if (isEnabled(process.env.TRUST_TENANT_HEADER)) {
     logger.warn(
