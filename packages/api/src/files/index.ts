@@ -16,6 +16,7 @@ export * from './preflight';
 export * from './provision';
 export * from './upload/routing';
 export * from './upload/diagnostics';
+export * from './quota';
 export * from './rag';
 export * from './regexEngine';
 export * from './retention';
