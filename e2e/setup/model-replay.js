@@ -43,6 +43,7 @@ const { AIMessageChunk } = require('@langchain/core/messages');
 const FIXTURES_DIR = path.resolve(__dirname, '../fixtures/model-replay');
 const LEDGER_DIR = path.resolve(__dirname, '../specs/.test-results/model-replay');
 const RECORDER_HANDLER_NAME = 'librechat-e2e-model-recorder';
+const SUMMARIZATION_GUARD_NAME = 'librechat-e2e-summarization-guard';
 const REPLAY_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
 
 function extractText(content) {
@@ -329,15 +330,56 @@ function installRecorder({ graph, messages, conversationId }) {
       context.clientOptions = {};
     }
     attachRecorder(context.clientOptions);
-    /** Summarization runs on its own model with its own callback list, so a
-     * scenario crossing the context-pruning threshold would otherwise record
-     * the agent's invocations but not the summary provider's — leaving a
-     * fixture that cannot reproduce the pruned context or the response that
-     * followed it. */
-    const summarizationParameters = context.summarizationConfig?.config?.parameters;
+    /** Summarization runs on its own model with its own callback list.
+     * Recording those invocations without replaying them is worse than
+     * ignoring them: they would take slots in the fixture sequence that
+     * replay never consumes, so the next primary call would read the
+     * summariser's chunks. Replay routes only the agent model
+     * (`graph.overrideModel`) and subagents, so the honest boundary is to
+     * refuse a recording the lane could not reproduce. */
+    const summarizationParameters =
+      context.summarizationConfig?.parameters ?? context.summarizationConfig?.config?.parameters;
     if (summarizationParameters) {
-      attachRecorder(summarizationParameters);
+      attachSummarizationGuard(summarizationParameters);
     }
+  }
+}
+
+/**
+ * Fails a recording the moment the summarization model runs. Its invocations
+ * would otherwise enter the fixture sequence unreplayable — see
+ * `installRecorder`. Summarization fixtures need replay routing for that model
+ * before they can be supported.
+ */
+function attachSummarizationGuard(options) {
+  const handler = {
+    name: SUMMARIZATION_GUARD_NAME,
+    raiseError: true,
+    awaitHandlers: true,
+    handleChatModelStart() {
+      throw new Error(
+        '[e2e model-replay] summarization ran during recording, and replay cannot route the ' +
+          'summarization model — its invocations would desynchronise the fixture. Record a ' +
+          'scenario that stays under the context-pruning threshold.',
+      );
+    },
+  };
+  const existing = options.callbacks;
+  if (Array.isArray(existing)) {
+    if (!existing.some((entry) => entry?.name === SUMMARIZATION_GUARD_NAME)) {
+      options.callbacks = [...existing, handler];
+    }
+    return;
+  }
+  if (existing == null) {
+    options.callbacks = [handler];
+    return;
+  }
+  if (
+    typeof existing.addHandler === 'function' &&
+    !existing.handlers?.some((entry) => entry?.name === SUMMARIZATION_GUARD_NAME)
+  ) {
+    existing.addHandler(handler);
   }
 }
 

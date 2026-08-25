@@ -47,10 +47,18 @@ if (modelFixtureRecording && !process.env.E2E_MODEL_FIXTURE_NAME) {
  * overwrite, so record mode refuses any config but this one.
  */
 if (modelFixtureRecording) {
-  const configArg = process.argv.find((arg) => arg.startsWith('--config'));
-  const configPath = configArg?.includes('=')
-    ? configArg.split('=')[1]
-    : process.argv[process.argv.indexOf(configArg ?? '') + 1];
+  /** Only the process that parsed the CLI carries `--config`; Playwright
+   *  workers do not, and must not be judged on an argument they never saw. */
+  const configFlagIndex = process.argv.findIndex(
+    (arg) => arg === '--config' || arg.startsWith('--config='),
+  );
+  const configFlag = configFlagIndex === -1 ? undefined : process.argv[configFlagIndex];
+  let configPath: string | undefined;
+  if (configFlag?.startsWith('--config=')) {
+    configPath = configFlag.slice('--config='.length);
+  } else if (configFlag) {
+    configPath = process.argv[configFlagIndex + 1];
+  }
   if (configPath && !/playwright\.config\.mock\.ts$/.test(configPath)) {
     throw new Error(
       `E2E_MODEL_FIXTURES=record only runs under playwright.config.mock.ts, not ${configPath}; ` +
