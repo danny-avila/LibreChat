@@ -67,7 +67,9 @@ describe('ActionBackground', () => {
     const options = JSON.parse(screen.getByTestId('options').textContent ?? 'null');
     expect(options).toEqual({
       'getWeather_action_weather---com': { run_in_background: true },
+      getWeather_action_weather_com: { run_in_background: true },
       'getForecast_action_weather---com': { run_in_background: true },
+      getForecast_action_weather_com: { run_in_background: true },
     });
   });
 
@@ -109,6 +111,7 @@ describe('ActionBackground', () => {
     const options = JSON.parse(screen.getByTestId('options').textContent ?? 'null');
     expect(options).toEqual({
       'getWeather_action_api---example---com': { run_in_background: true },
+      getWeather_action_api_example_com: { run_in_background: true },
     });
   });
 
@@ -126,6 +129,42 @@ describe('ActionBackground', () => {
 
   test('hidden for OAuth actions', () => {
     mockAction = { action_id: 'act123', metadata: { auth: { type: AuthTypeEnum.OAuth } } };
+    renderActionBackground();
+    expect(screen.queryByTestId('action-background-tools')).toBeNull();
+  });
+
+  test('hidden when every operation owns the run_in_background parameter', () => {
+    mockAgent = {
+      id: 'agent_abc',
+      tools: ['getWeather_action_weather---com'],
+      actions: ['weather---com_action_act123'],
+    };
+    mockAction = {
+      action_id: 'act123',
+      metadata: {
+        raw_spec: JSON.stringify({
+          openapi: '3.0.0',
+          info: { title: 'Weather', version: '1.0.0' },
+          servers: [{ url: 'https://weather.com' }],
+          paths: {
+            '/weather': {
+              get: {
+                operationId: 'getWeather',
+                parameters: [
+                  {
+                    name: 'run_in_background',
+                    in: 'query',
+                    schema: { type: 'boolean' },
+                  },
+                ],
+                responses: { '200': { description: 'ok' } },
+              },
+            },
+          },
+        }),
+      },
+    };
+
     renderActionBackground();
     expect(screen.queryByTestId('action-background-tools')).toBeNull();
   });

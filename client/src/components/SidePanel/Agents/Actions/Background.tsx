@@ -59,13 +59,22 @@ export default function ActionBackground({ agentId }: { agentId: string }) {
     if (!parsed?.spec) {
       return sharesDomain ? [] : domainTools;
     }
-    const operationIds = new Set(
-      openapiToFunction(parsed.spec).functionSignatures.map((sig) => sig.name),
+    const functionSignatures = openapiToFunction(parsed.spec).functionSignatures;
+    const operationIds = new Set(functionSignatures.map((sig) => sig.name));
+    const backgroundOperationIds = new Set(
+      functionSignatures
+        .filter((sig) => sig.parameters.properties.run_in_background == null)
+        .map((sig) => sig.name),
     );
     const ownTools = domainTools.filter((tool) =>
       operationIds.has(tool.slice(0, tool.length - suffix.length)),
     );
-    return ownTools.length > 0 || sharesDomain ? ownTools : domainTools;
+    if (ownTools.length === 0) {
+      return sharesDomain ? [] : domainTools;
+    }
+    return ownTools.filter((tool) =>
+      backgroundOperationIds.has(tool.slice(0, tool.length - suffix.length)),
+    );
   }, [action?.action_id, action?.metadata.raw_spec, agent]);
 
   if (action?.metadata.auth?.type === AuthTypeEnum.OAuth) {

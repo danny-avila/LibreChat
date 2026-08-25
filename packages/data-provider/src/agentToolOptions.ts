@@ -1,6 +1,7 @@
 import {
   actionDelimiter,
   actionDomainSeparator,
+  isActionTool,
   type AgentToolOptions,
   type AllowedCaller,
 } from './types/assistants';
@@ -12,10 +13,10 @@ const actionDomainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
  * by runtime tool definitions. The operation id is deliberately preserved.
  */
 export function normalizeActionToolName(toolName: string): string {
-  const delimiterIndex = toolName.lastIndexOf(actionDelimiter);
-  if (delimiterIndex === -1) {
+  if (!isActionTool(toolName)) {
     return toolName;
   }
+  const delimiterIndex = toolName.lastIndexOf(actionDelimiter);
   const prefixEnd = delimiterIndex + actionDelimiter.length;
   const encodedDomain = toolName.slice(prefixEnd);
   return toolName.slice(0, prefixEnd) + encodedDomain.replace(actionDomainSeparatorRegex, '_');

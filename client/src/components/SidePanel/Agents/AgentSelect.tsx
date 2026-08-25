@@ -27,7 +27,13 @@ function AgentSelect({
 }) {
   const localize = useLocalize();
   const lastSelectedAgent = useRef<string | null>(null);
-  const { control, reset } = useFormContext();
+  const {
+    control,
+    reset,
+    /** Subscribing dirtyFields is required for reset({ keepDirtyValues: true })
+     * to preserve edits when an action mutation refreshes the agent query. */
+    formState: { dirtyFields: _dirtyFields },
+  } = useFormContext();
   const permissionLevel = useAgentDefaultPermissionLevel();
 
   const { data: agents = null } = useListAgentsQuery(
@@ -46,7 +52,7 @@ function AgentSelect({
   );
 
   const resetAgentForm = useCallback(
-    (fullAgent: Agent) => {
+    (fullAgent: Agent, preserveDirtyValues = false) => {
       const isGlobal = fullAgent.isPublic ?? false;
       const update = {
         ...fullAgent,
@@ -168,7 +174,7 @@ function AgentSelect({
         formValues.skills_enabled = true;
       }
 
-      reset(formValues);
+      reset(formValues, { keepDirtyValues: preserveDirtyValues });
     },
     [reset],
   );
@@ -207,7 +213,7 @@ function AgentSelect({
 
   useEffect(() => {
     if (agentQuery.data && agentQuery.isSuccess) {
-      resetAgentForm(agentQuery.data);
+      resetAgentForm(agentQuery.data, true);
     }
   }, [agentQuery.data, agentQuery.isSuccess, resetAgentForm]);
 

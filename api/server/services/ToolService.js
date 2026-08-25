@@ -1184,12 +1184,16 @@ async function loadToolDefinitionsWrapper({
       for (const sig of functionSignatures) {
         const toolName = `${sig.name}${actionDelimiter}${normalizedDomain}`;
         const legacyToolName = `${sig.name}${actionDelimiter}${legacyNormalized}`;
-        if (!normalizedToolNames.has(toolName) && !normalizedToolNames.has(legacyToolName)) {
+        const matchesCurrentName = normalizedToolNames.has(toolName);
+        const matchesLegacyName = normalizedToolNames.has(legacyToolName);
+        if (!matchesCurrentName && !matchesLegacyName) {
           continue;
         }
 
         definitions.push({
-          name: toolName,
+          /** Keep the selected legacy spelling when that is the only match so
+           * persisted tool_options resolve against the emitted definition. */
+          name: matchesCurrentName ? toolName : legacyToolName,
           description: sig.description,
           parameters: sig.parameters,
           oauth: action.metadata.auth?.type === AuthTypeEnum.OAuth,

@@ -10,6 +10,9 @@ describe('normalizeActionToolName', () => {
 
   it('leaves non-action tool names unchanged', () => {
     expect(normalizeActionToolName('search_mcp_docs---server')).toBe('search_mcp_docs---server');
+    expect(normalizeActionToolName('get_action_data---x_mcp_srv')).toBe(
+      'get_action_data---x_mcp_srv',
+    );
   });
 });
 
