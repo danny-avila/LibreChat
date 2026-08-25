@@ -85,7 +85,7 @@ export default function PublicSharingToggle({
         </div>
       </div>
 
-      <Collapse open={isPublic} className="pt-4">
+      <Collapse open={isPublic} overflowVisibleWhenOpen className="pt-4">
         <div className="flex items-center justify-between bg-transparent">
           <div className="flex items-center gap-3">
             <div className="text-status-info">
