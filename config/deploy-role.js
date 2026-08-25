@@ -37,9 +37,18 @@ const roleDefinitionsSchema = z
   )
   .min(1, 'Role definitions must be a non-empty array')
   .superRefine((definitions, context) => {
-    const byName = new Map(
-      definitions.map((definition, index) => [definition.name, { definition, index }]),
-    );
+    const byName = new Map();
+    for (const [index, definition] of definitions.entries()) {
+      if (byName.has(definition.name)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Role "${definition.name}" is defined more than once`,
+          path: [index, 'name'],
+        });
+        return;
+      }
+      byName.set(definition.name, { definition, index });
+    }
     const state = new Map();
 
     function visit(name) {
@@ -110,13 +119,33 @@ function rejectUnknownFields(parsed, input, fieldPath = 'definitions') {
 function validateRoleDefinitions(input) {
   const parsed = roleDefinitionsSchema.parse(input);
   rejectUnknownFields(parsed, input);
-  return parsed.map((definition, index) => ({
+  const definitions = parsed.map((definition, index) => ({
     ...definition,
     config: {
       ...definition.config,
       overrides: input[index].config.overrides,
     },
   }));
+  const byName = new Map(definitions.map((definition) => [definition.name, definition]));
+  const visited = new Set();
+  const ordered = [];
+
+  function addWithDependencies(definition) {
+    if (visited.has(definition.name)) {
+      return;
+    }
+    const inheritedDefinition = byName.get(definition.inheritPermissionsFrom);
+    if (inheritedDefinition) {
+      addWithDependencies(inheritedDefinition);
+    }
+    visited.add(definition.name);
+    ordered.push(definition);
+  }
+
+  for (const definition of definitions) {
+    addWithDependencies(definition);
+  }
+  return ordered;
 }
 
 function getFlagValue(args, name) {

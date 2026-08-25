@@ -215,6 +215,38 @@ describe('deploy role script', () => {
     ).toThrow('cannot contain a cycle');
   });
 
+  it('orders declared baselines before roles that inherit from them', () => {
+    const definitions = validateRoleDefinitions([
+      {
+        name: 'CHILD',
+        inheritPermissionsFrom: 'PARENT',
+        permissionOverrides: {},
+        config: { priority: 20, overrides: {} },
+      },
+      {
+        name: 'PARENT',
+        inheritPermissionsFrom: 'USER',
+        permissionOverrides: {},
+        config: { priority: 10, overrides: {} },
+      },
+    ]);
+
+    expect(definitions.map(({ name }) => name)).toEqual(['PARENT', 'CHILD']);
+  });
+
+  it('rejects duplicate role definitions', () => {
+    const definition = {
+      name: 'BETA',
+      inheritPermissionsFrom: 'USER',
+      permissionOverrides: {},
+      config: { priority: 10, overrides: {} },
+    };
+
+    expect(() => validateRoleDefinitions([definition, definition])).toThrow(
+      'defined more than once',
+    );
+  });
+
   it('does not add config defaults inside arrays', () => {
     const [definition] = validateRoleDefinitions([
       {
