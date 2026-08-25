@@ -36,8 +36,25 @@ const recordProviderModel = process.env.E2E_RECORD_PROVIDER_MODEL || 'deepseek-c
 if (modelFixtureRecording && !process.env.E2E_RECORD_PROVIDER_API_KEY) {
   throw new Error('E2E_MODEL_FIXTURES=record requires E2E_RECORD_PROVIDER_API_KEY');
 }
+/**
+ * Each fixture belongs to exactly one spec, and a spec records only its own.
+ * Accepting an arbitrary name would leave a second fixture beside the
+ * committed one carrying the same prompts, and the server-side ambiguity
+ * check would then refuse to bind either — a successful recording run would
+ * disable the keyless lane.
+ */
+const RECORDABLE_FIXTURES = ['deepseek-two-turn', 'deepseek-tool-call'];
 if (modelFixtureRecording && !process.env.E2E_MODEL_FIXTURE_NAME) {
   throw new Error('E2E_MODEL_FIXTURES=record requires E2E_MODEL_FIXTURE_NAME');
+}
+if (
+  modelFixtureRecording &&
+  !RECORDABLE_FIXTURES.includes(process.env.E2E_MODEL_FIXTURE_NAME ?? '')
+) {
+  throw new Error(
+    `E2E_MODEL_FIXTURE_NAME must be one of ${RECORDABLE_FIXTURES.join(', ')}; ` +
+      `received ${process.env.E2E_MODEL_FIXTURE_NAME}`,
+  );
 }
 /**
  * Playwright documents `-c` as an alias for `--config`, so both spellings are
@@ -253,7 +270,7 @@ export default defineConfig({
    * endpoint, and each fresh conversation would truncate and rewrite the one
    * selected fixture, leaving whichever scenario ran last. Without this an
    * unfiltered entry point (`npm run e2e:mock`) does exactly that. */
-  ...(modelFixtureRecording ? { testMatch: /model-replay\.spec\.ts$/ } : {}),
+  ...(modelFixtureRecording ? { testMatch: /model-replay[a-z-]*\.spec\.ts$/ } : {}),
   outputDir: 'specs/.test-results',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,

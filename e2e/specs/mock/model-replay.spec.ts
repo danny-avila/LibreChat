@@ -32,26 +32,13 @@ import {
 const COMMITTED_FIXTURE = 'deepseek-two-turn';
 const RECORDING = process.env.E2E_MODEL_FIXTURES === 'record';
 /**
- * Record mode writes to whatever `E2E_MODEL_FIXTURE_NAME` selects, so the
- * assertions have to inspect that artifact. Reading the committed fixture
- * instead would validate a pre-existing file while the recorder wrote
- * elsewhere — and because these prompts are fixed, the stale answers could
- * still match and pass a recording run that produced nothing verified.
+ * Record mode collects every replay spec, so each one records only the fixture
+ * it owns and stands down for the others. A spec must never write a fixture
+ * other than its own: two fixtures carrying the same prompts would make the
+ * server-side binding ambiguous and refuse both.
  */
-/**
- * This spec drives one fixed prompt pair, so recording under a different name
- * would leave two fixtures sharing those prompts: the server-side ambiguity
- * check then refuses to bind either and the keyless lane stops working. A
- * successful recording run must therefore replace the committed fixture
- * rather than sit beside it.
- */
-if (RECORDING && process.env.E2E_MODEL_FIXTURE_NAME !== COMMITTED_FIXTURE) {
-  throw new Error(
-    `This spec records only ${COMMITTED_FIXTURE}; E2E_MODEL_FIXTURE_NAME=` +
-      `${process.env.E2E_MODEL_FIXTURE_NAME} would leave two fixtures sharing its prompts ` +
-      'and make replay ambiguous',
-  );
-}
+const RECORDING_THIS_FIXTURE =
+  RECORDING && process.env.E2E_MODEL_FIXTURE_NAME === COMMITTED_FIXTURE;
 const FIXTURE = COMMITTED_FIXTURE;
 const RECORD_ENDPOINT = {
   label: 'Replay Record Provider',
@@ -73,6 +60,10 @@ test.describe('recorded model fixture replay', () => {
   test('a recorded conversation replays deterministically through the real pipeline', async ({
     page,
   }) => {
+    test.skip(
+      RECORDING && !RECORDING_THIS_FIXTURE,
+      `recording ${process.env.E2E_MODEL_FIXTURE_NAME}`,
+    );
     test.setTimeout(180_000);
     const pageErrors: string[] = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));

@@ -21,6 +21,10 @@ export type FixtureTurn = {
    * is satisfied by a single content delta wrapped in empty frames.
    */
   contentChunkCount: number;
+  /** Chunks carrying `tool_call_chunks`, i.e. the streamed tool invocation. */
+  toolCallChunkCount: number;
+  /** Tool names streamed by this invocation, in order of first appearance. */
+  toolNames: string[];
 };
 
 export type ReplayLedger = {
@@ -69,6 +73,8 @@ export function fixtureTurns(name: string): FixtureTurn[] {
         finalText: '',
         chunkCount: 0,
         contentChunkCount: 0,
+        toolCallChunkCount: 0,
+        toolNames: [],
       };
     } else if (entry.type === 'chunk') {
       const turn = turns[entry.invocation as number];
@@ -78,6 +84,18 @@ export function fixtureTurns(name: string): FixtureTurn[] {
         turn.finalText += text;
         if (text !== '') {
           turn.contentChunkCount += 1;
+        }
+        const message = entry.message as
+          | { tool_call_chunks?: Array<{ name?: string }> }
+          | undefined;
+        const toolCallChunks = message?.tool_call_chunks ?? [];
+        if (toolCallChunks.length > 0) {
+          turn.toolCallChunkCount += 1;
+          for (const call of toolCallChunks) {
+            if (call.name && !turn.toolNames.includes(call.name)) {
+              turn.toolNames.push(call.name);
+            }
+          }
         }
       }
     } else if (entry.type === 'error') {
