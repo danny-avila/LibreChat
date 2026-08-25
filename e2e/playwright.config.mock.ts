@@ -217,6 +217,12 @@ export default defineConfig({
   globalSetup: require.resolve('./setup/global-setup'),
   globalTeardown: require.resolve('./setup/global-teardown.mock'),
   testDir: 'specs/mock/',
+  /** Record mode swaps the fake model for a real provider, so it must never
+   * run the whole mock suite: every spec's prompts would reach the paid
+   * endpoint, and each fresh conversation would truncate and rewrite the one
+   * selected fixture, leaving whichever scenario ran last. Without this an
+   * unfiltered entry point (`npm run e2e:mock`) does exactly that. */
+  ...(modelFixtureRecording ? { testMatch: /model-replay\.spec\.ts$/ } : {}),
   outputDir: 'specs/.test-results',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
