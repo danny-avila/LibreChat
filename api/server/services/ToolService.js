@@ -35,6 +35,7 @@ const {
   getSafeErrorMetadata,
   isContentFilterError,
   isFileAuthoringToolDefinition,
+  normalizeActionToolName,
   ASK_USER_QUESTION_TOOL_NAME,
   splitMCPToolKey,
   buildServerNameAliases,
@@ -53,6 +54,7 @@ const {
   ErrorTypes,
   ContentTypes,
   imageGenTools,
+  AuthTypeEnum,
   EModelEndpoint,
   EToolResources,
   isActionTool,
@@ -200,32 +202,6 @@ const prepareActionSnapshotForTools = async ({ agentId, toolNames, filters, decr
     decrypt,
   });
   return { storedActions, actionSets };
-};
-
-/**
- * Collapse every `actionDomainSeparator` sequence in the encoded-domain
- * suffix of a fully-qualified action tool name to an underscore. Agents
- * can store tool names in the raw `domainParser(..., true)` output,
- * which for short hostnames is a `---`-separated string (e.g.
- * `medium---com`). The lookup maps below are always keyed with the
- * `_`-collapsed domain, so every read must normalize that suffix or
- * short-hostname tools silently fail to resolve.
- *
- * The operationId portion (everything before the last `actionDelimiter`)
- * is deliberately left untouched: `openapiToFunction` preserves hyphens
- * in generated operationIds, so two specs can legitimately produce
- * operationIds that differ only in hyphens-vs-underscores (e.g.
- * `get_foo---bar` vs `get_foo_bar`). Collapsing the operationId would
- * merge those into a single map slot and silently drop one tool.
- */
-const normalizeActionToolName = (toolName) => {
-  const delimiterIndex = toolName.lastIndexOf(actionDelimiter);
-  if (delimiterIndex === -1) {
-    return toolName;
-  }
-  const prefixEnd = delimiterIndex + actionDelimiter.length;
-  const encodedDomain = toolName.slice(prefixEnd);
-  return toolName.slice(0, prefixEnd) + encodedDomain.replace(domainSeparatorRegex, '_');
 };
 
 /**
@@ -1208,14 +1184,19 @@ async function loadToolDefinitionsWrapper({
       for (const sig of functionSignatures) {
         const toolName = `${sig.name}${actionDelimiter}${normalizedDomain}`;
         const legacyToolName = `${sig.name}${actionDelimiter}${legacyNormalized}`;
-        if (!normalizedToolNames.has(toolName) && !normalizedToolNames.has(legacyToolName)) {
+        const matchesCurrentName = normalizedToolNames.has(toolName);
+        const matchesLegacyName = normalizedToolNames.has(legacyToolName);
+        if (!matchesCurrentName && !matchesLegacyName) {
           continue;
         }
 
         definitions.push({
-          name: toolName,
+          /** Keep the selected legacy spelling when that is the only match so
+           * persisted tool_options resolve against the emitted definition. */
+          name: matchesCurrentName ? toolName : legacyToolName,
           description: sig.description,
           parameters: sig.parameters,
+          oauth: action.metadata.auth?.type === AuthTypeEnum.OAuth,
         });
       }
     }
@@ -1223,28 +1204,34 @@ async function loadToolDefinitionsWrapper({
     return definitions;
   };
 
-  let { toolDefinitions, toolRegistry, hasDeferredTools, mcpToolAliases, mcpResolution } =
-    await loadToolDefinitions(
-      {
-        userId: req.user.id,
-        agentId: agent.id,
-        tools: defsFilteredTools,
-        toolOptions: agent.tool_options,
-        deferredToolsEnabled,
-        programmaticToolsEnabled,
-        codeExecutionEnabled,
-        provider: agent.provider,
-        mcpServerNames,
-        rawServerNames: mcpRawServerNames,
-        accessibleServerNames: defsAccessibleServerNames,
-      },
-      {
-        isBuiltInTool,
-        getOrFetchMCPServerTools,
-        refreshMCPServerTools,
-        getActionToolDefinitions,
-      },
-    );
+  let {
+    toolDefinitions,
+    toolRegistry,
+    hasDeferredTools,
+    mcpToolAliases,
+    mcpResolution,
+    oauthActionToolNames,
+  } = await loadToolDefinitions(
+    {
+      userId: req.user.id,
+      agentId: agent.id,
+      tools: defsFilteredTools,
+      toolOptions: agent.tool_options,
+      deferredToolsEnabled,
+      programmaticToolsEnabled,
+      codeExecutionEnabled,
+      provider: agent.provider,
+      mcpServerNames,
+      rawServerNames: mcpRawServerNames,
+      accessibleServerNames: defsAccessibleServerNames,
+    },
+    {
+      isBuiltInTool,
+      getOrFetchMCPServerTools,
+      refreshMCPServerTools,
+      getActionToolDefinitions,
+    },
+  );
 
   /** OAuth discovery must not reconnect (or prompt for) a server whose
    *  definitions the collision filter deliberately rejected. */
@@ -1338,6 +1325,7 @@ async function loadToolDefinitionsWrapper({
       hasDeferredTools = reloadResult.hasDeferredTools;
       mcpToolAliases = reloadResult.mcpToolAliases;
       mcpResolution = reloadResult.mcpResolution;
+      oauthActionToolNames = reloadResult.oauthActionToolNames;
     }
   }
 
@@ -1454,6 +1442,7 @@ async function loadToolDefinitionsWrapper({
     mcpToolAliases,
     actionsEnabled,
     primedCodeFiles,
+    oauthActionToolNames,
   };
 }
 
