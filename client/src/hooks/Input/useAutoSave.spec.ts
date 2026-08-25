@@ -798,6 +798,28 @@ describe('useAutoSave — file cache updates', () => {
     expect(mockSetValue).toHaveBeenLastCalledWith('text', 'later edit');
     jest.useRealTimers();
   });
+
+  it('leaves an ordinary conversation on its own key when the pending draft is empty', () => {
+    /** Mounting straight onto a conversation reports no previous key, and treating that alone as
+     * the awaited pending transition ran the migration on every such load: the conversation was
+     * put on the pending key and a just-sent attachment came back into the composer. A reload with
+     * real queued work still has to be recognised, so the pending record has to hold something. */
+    mockGetDraft.mockImplementation((id: string) =>
+      id === 'convo-9' ? 'text that belongs to convo-9' : '',
+    );
+
+    renderHook(() =>
+      useAutoSave({
+        isSubmitting: false,
+        conversationId: 'convo-9',
+        textAreaRef: makeTextAreaRef(),
+        files: new Map(),
+        setFiles: jest.fn(),
+      }),
+    );
+
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'text that belongs to convo-9');
+  });
   it('does not migrate blocked pending drafts to an unrelated conversation', () => {
     const pendingTextKey = `${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`;
     localStorage.setItem(pendingTextKey, encodeBase64('draft for conversation C'));

@@ -201,11 +201,18 @@ export const useAutoSave = ({
     },
     [textAreaRef],
   );
+  /** The key this composer reads and writes right now. It is the conversation, except while the
+   * switch effect has parked storage on the pending key because the destination is not writable.
+   * `currentConversationId` alone will not do: it lags `conversationId` by a render on every
+   * transition, so keying off it restored the previous conversation's draft into the composer,
+   * which after a send put the just-sent attachment straight back as a chip. */
+  const activeStorageId =
+    currentConversationId === pendingDraftId ? pendingDraftId : conversationId;
   useEffect(() => {
     // This useEffect is responsible for setting up and cleaning up the auto-save functionality
     // for the text area input. It saves the text to localStorage with a debounce to prevent
     // excessive writes.
-    const draftStorageId = currentConversationId ?? conversationId;
+    const draftStorageId = activeStorageId;
     if (!saveDrafts || draftStorageId == null || draftStorageId === '') {
       return;
     }
@@ -252,7 +259,7 @@ export const useAutoSave = ({
       handleInputFast.cancel();
       handleInputSlow.cancel();
     };
-  }, [conversationId, currentConversationId, saveDrafts, textAreaRef]);
+  }, [activeStorageId, saveDrafts, textAreaRef]);
 
   const prevConversationIdRef = useRef<string | null>(null);
   const pendingDestinationRef = useRef<string | null>(null);
@@ -284,13 +291,22 @@ export const useAutoSave = ({
       // An ask-answer key is excluded: it is a temporary overlay, not the
       // pending draft's destination. Migrating would delete the very draft
       // the answer-phase swap-back is supposed to restore.
-      /** A reload has no previous key to report, but an owned pending draft still needs to remain
-       * active when the destination is blocked by another live tab. */
+      /** A reload reports no previous key, so the pending draft has to be able to speak for
+       * itself: this is only the awaited transition when this tab actually owns a pending record
+       * that still holds something. Treating any first mount as the transition put an ordinary
+       * conversation on the pending key, which then restored a just-sent attachment back into the
+       * composer. */
+      const pendingDraftRecord = getFilesDraft(pendingDraftId);
+      const pendingDraftHasContent =
+        isFilesDraftOwnedByThisTab(pendingDraftRecord) &&
+        (pendingDraftRecord.fileIds.length > 0 ||
+          Object.keys(pendingDraftRecord.pendingPastes).length > 0 ||
+          (getDraft(pendingDraftId) ?? '') !== '');
       const pendingDestination = pendingDestinationRef.current;
       const pendingStorageActive =
         (prevConversationIdRef.current === pendingDraftId ||
           currentConversationId === pendingDraftId ||
-          currentConversationId == null ||
+          (currentConversationId == null && pendingDraftHasContent) ||
           pendingDestination === conversationId) &&
         (pendingDestination == null || pendingDestination === conversationId);
       if (
@@ -376,7 +392,7 @@ export const useAutoSave = ({
   ]);
 
   useEffect(() => {
-    const draftStorageId = currentConversationId ?? conversationId;
+    const draftStorageId = activeStorageId;
     if (!saveDrafts || draftStorageId == null || draftStorageId === '' || fileList == null) {
       return;
     }
@@ -385,7 +401,7 @@ export const useAutoSave = ({
     if (pendingPastes.length > 0) {
       restoreText(draftStorageId, pendingPastes);
     }
-  }, [conversationId, currentConversationId, fileList, restoreFiles, restoreText, saveDrafts]);
+  }, [activeStorageId, fileList, restoreFiles, restoreText, saveDrafts]);
 
   useEffect(() => {
     // This useEffect is responsible for saving or removing the current conversation's file drafts
