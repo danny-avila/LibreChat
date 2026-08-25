@@ -305,9 +305,9 @@ describe('useResumeOnLoad', () => {
 
     /** The elapsed indicator's baseline must be the generation's real start:
      *  an attach with no surviving anchor (a reload, or a run another client
-     *  started) adopts the server-recorded `createdAt` rather than counting
-     *  from the moment this pane happened to attach. */
-    it('anchors the elapsed baseline at the server-recorded generation start', async () => {
+     *  started) rebuilds it clock-locally from the server-computed generation
+     *  age, so cross-machine clock skew never enters the reading. */
+    it('anchors the elapsed baseline via the server-computed generation age', async () => {
       const observedStarts: Array<number | null> = [];
       mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
 
@@ -319,6 +319,40 @@ describe('useResumeOnLoad', () => {
         await Promise.resolve();
       });
       expect(observedStarts[observedStarts.length - 1]).toBeNull();
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
+      mockUseStreamStatus.mockReturnValue({
+        ...ACTIVE_STATUS,
+        data: { ...ACTIVE_STATUS.data, elapsedMs: 30_000 },
+      });
+      const before = Date.now();
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const after = Date.now();
+
+      const anchored = observedStarts[observedStarts.length - 1];
+      expect(anchored).toBeGreaterThanOrEqual(before - 30_000);
+      expect(anchored).toBeLessThanOrEqual(after - 30_000);
+    });
+
+    /** An older server without `elapsedMs` still beats counting from attach:
+     *  the raw server start is adopted and the indicator clamps its skew. */
+    it('falls back to the server-recorded generation start without elapsedMs', async () => {
+      const observedStarts: Array<number | null> = [];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+
+      const { rerender } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        onSubmissionStart: (start) => observedStarts.push(start),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
 
       mockUseActiveJobs.mockReturnValue({
         data: { activeJobIds: [CONVERSATION_ID] },

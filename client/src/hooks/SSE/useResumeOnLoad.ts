@@ -610,9 +610,17 @@ export default function useResumeOnLoad(
     /** Fill the elapsed baseline only when none survives: a reattach to the run
      *  this session already anchored keeps its original start (the atom outlives
      *  the submission). A run it never anchored — after a reload, or started by
-     *  another client — anchors at the server-recorded generation start, so the
-     *  reading reports real elapsed time rather than time since this attach. */
-    setSubmissionStart((prev) => prev ?? streamStatus.createdAt ?? Date.now());
+     *  another client — rebuilds the real baseline from the server-computed
+     *  generation age, which keeps both clocks comparing only to themselves.
+     *  Raw `createdAt` (an older server) still beats counting from attach; the
+     *  indicator clamps whatever skew that carries. */
+    setSubmissionStart(
+      (prev) =>
+        prev ??
+        (streamStatus.elapsedMs != null
+          ? Date.now() - streamStatus.elapsedMs
+          : (streamStatus.createdAt ?? Date.now())),
+    );
 
     // Build submission from resume state if available
     if (streamStatus.resumeState) {
