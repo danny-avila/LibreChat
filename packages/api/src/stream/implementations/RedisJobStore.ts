@@ -1588,6 +1588,38 @@ const KEYS = {
   idempotency: (key: string) => `stream:idem:${key}`,
 };
 
+interface TerminalHostActionMember {
+  streamId: string;
+  createdAt?: number;
+}
+
+/** The retry index is global (and therefore outside the per-stream Redis
+ * Cluster slot), so its members must carry generation identity. Otherwise an
+ * acknowledgement for generation A can remove generation B's pre-armed hint. */
+function terminalHostActionMember(streamId: string, createdAt: number): string {
+  return JSON.stringify([streamId, createdAt]);
+}
+
+function parseTerminalHostActionMember(member: string): TerminalHostActionMember {
+  try {
+    const parsed = JSON.parse(member) as unknown;
+    if (
+      Array.isArray(parsed) &&
+      parsed.length === 2 &&
+      typeof parsed[0] === 'string' &&
+      typeof parsed[1] === 'number' &&
+      Number.isSafeInteger(parsed[1]) &&
+      parsed[1] >= 0
+    ) {
+      return { streamId: parsed[0], createdAt: parsed[1] };
+    }
+  } catch {
+    // Older releases indexed the bare stream id. Enumeration migrates any
+    // still-live legacy member to the generation-scoped representation.
+  }
+  return { streamId: member };
+}
+
 /**
  * Default TTL values in seconds.
  * Can be overridden via constructor options.
@@ -2278,8 +2310,21 @@ export class RedisJobStore implements IJobStoreV2 {
       job && (statusKey != null || job.providerDrained === false)
         ? KEYS.userJobs(job.userId, job.tenantId)
         : null;
+    const terminalMember = job == null ? null : terminalHostActionMember(streamId, job.createdAt);
 
     if (this.isCluster) {
+      let terminalMembershipOperation: Promise<unknown>;
+      if (job?.terminalHostActionPending === true) {
+        terminalMembershipOperation = this.redis.sadd(KEYS.terminalHostActionJobs, terminalMember!);
+      } else if (terminalMember == null) {
+        terminalMembershipOperation = this.redis.srem(KEYS.terminalHostActionJobs, streamId);
+      } else {
+        terminalMembershipOperation = this.redis.srem(
+          KEYS.terminalHostActionJobs,
+          streamId,
+          terminalMember,
+        );
+      }
       const operations: Promise<unknown>[] = [
         statusKey === KEYS.runningJobs
           ? this.redis.sadd(KEYS.runningJobs, streamId)
@@ -2289,9 +2334,7 @@ export class RedisJobStore implements IJobStoreV2 {
           : this.redis.srem(KEYS.requiresActionJobs, streamId),
         // Terminal host-action membership follows the durable hash field, not status, so
         // an aborted approval-expiry job stays enumerable for hook retry until acked.
-        job?.terminalHostActionPending === true
-          ? this.redis.sadd(KEYS.terminalHostActionJobs, streamId)
-          : this.redis.srem(KEYS.terminalHostActionJobs, streamId),
+        terminalMembershipOperation,
       ];
       for (const userJobsKey of observedUserKeys) {
         if (userJobsKey !== activeUserKey) {
@@ -2324,7 +2367,10 @@ export class RedisJobStore implements IJobStoreV2 {
       pipeline.srem(KEYS.requiresActionJobs, streamId);
     }
     if (job?.terminalHostActionPending === true) {
-      pipeline.sadd(KEYS.terminalHostActionJobs, streamId);
+      pipeline.sadd(KEYS.terminalHostActionJobs, terminalMember!);
+      pipeline.srem(KEYS.terminalHostActionJobs, streamId);
+    } else if (terminalMember != null) {
+      pipeline.srem(KEYS.terminalHostActionJobs, streamId, terminalMember);
     } else {
       pipeline.srem(KEYS.terminalHostActionJobs, streamId);
     }
@@ -2501,14 +2547,18 @@ export class RedisJobStore implements IJobStoreV2 {
       // decision can resume it.
       ttl = this.pauseTtlSeconds(patch?.pendingAction);
     }
-    // Redis Cluster cannot atomically update the same-slot job hash and this
-    // global retry index. Arm the retry hint before the terminal CAS: a losing
-    // CAS leaves only a harmless stale hint that enumeration self-heals, while
-    // a winning CAS can never become terminal without already being discoverable.
-    if (terminal && patch?.terminalHostActionPending === true) {
-      await this.redis.sadd(KEYS.terminalHostActionJobs, streamId);
-    }
     const terminalJob = terminal ? await this.getJob(streamId) : null;
+    // Redis Cluster cannot atomically update the same-slot job hash and this
+    // global retry index. Arm a generation-scoped retry hint before the
+    // terminal CAS. A predecessor acknowledgement can remove only its own
+    // member, regardless of how a successor's SADD and CAS interleave.
+    const terminalMemberCreatedAt = expectCreatedAt ?? terminalJob?.createdAt;
+    if (terminal && patch?.terminalHostActionPending === true && terminalMemberCreatedAt != null) {
+      await this.redis.sadd(
+        KEYS.terminalHostActionJobs,
+        terminalHostActionMember(streamId, terminalMemberCreatedAt),
+      );
+    }
 
     // 1) Single-winner decision: an atomic CAS on the single-slot job hash.
     //    Works identically on cluster and single-node, so two concurrent
@@ -2763,20 +2813,33 @@ export class RedisJobStore implements IJobStoreV2 {
   }
 
   async getTerminalHostActionJobs(): Promise<SerializableJobData[]> {
-    const streamIds = await this.redis.smembers(KEYS.terminalHostActionJobs);
-    if (streamIds.length === 0) {
+    const members = await this.redis.smembers(KEYS.terminalHostActionJobs);
+    if (members.length === 0) {
       return [];
     }
-    const jobs = await Promise.all(streamIds.map((streamId) => this.getJob(streamId)));
+    const indexed = members.map((member) => ({ member, ...parseTerminalHostActionMember(member) }));
+    const jobs = await Promise.all(indexed.map(({ streamId }) => this.getJob(streamId)));
     // The durable hash field is the source of truth; a stale set entry (job reaped, or the
-    // marker already cleared) is filtered out and self-heals via reconcileJobMembership.
+    // marker/generation already replaced) is filtered out. Bare legacy members
+    // are migrated while they are still live.
     const stale: string[] = [];
-    const held: SerializableJobData[] = [];
-    const ready: SerializableJobData[] = [];
+    const legacy: string[] = [];
+    const migrate: string[] = [];
+    const heldByGeneration = new Map<string, SerializableJobData>();
+    const readyByGeneration = new Map<string, SerializableJobData>();
     const providerLossCutoff = Date.now() - PROVIDER_DRAIN_TIMEOUT_MS;
-    for (let i = 0; i < streamIds.length; i++) {
+    for (let i = 0; i < indexed.length; i++) {
+      const indexedMember = indexed[i];
       let job = jobs[i];
-      if (job != null && job.terminalHostActionPending === true) {
+      if (
+        job != null &&
+        job.terminalHostActionPending === true &&
+        (indexedMember.createdAt == null || indexedMember.createdAt === job.createdAt)
+      ) {
+        if (indexedMember.createdAt == null) {
+          legacy.push(indexedMember.member);
+          migrate.push(terminalHostActionMember(job.streamId, job.createdAt));
+        }
         if (
           job.providerDrained === false &&
           job.completedAt != null &&
@@ -2796,15 +2859,25 @@ export class RedisJobStore implements IJobStoreV2 {
             job = { ...job, providerDrained: true };
           }
         }
-        held.push(job);
+        const generationKey = terminalHostActionMember(job.streamId, job.createdAt);
+        heldByGeneration.set(generationKey, job);
         // A terminal provider can still be committing its last tool result.
         // The provider owner persists the complete run-step snapshot before it
         // flips this fence, so another replica must not settle earlier.
         if (job.providerDrained !== false) {
-          ready.push(job);
+          readyByGeneration.set(generationKey, job);
         }
       } else {
-        stale.push(streamIds[i]);
+        stale.push(indexedMember.member);
+      }
+    }
+    if (migrate.length > 0) {
+      try {
+        await this.redis.sadd(KEYS.terminalHostActionJobs, ...migrate);
+        await this.redis.srem(KEYS.terminalHostActionJobs, ...legacy);
+      } catch {
+        // Preserve the legacy hint if migration cannot prove the replacement
+        // member was written. A duplicate hint is safer than lost discovery.
       }
     }
     if (stale.length > 0) {
@@ -2813,6 +2886,7 @@ export class RedisJobStore implements IJobStoreV2 {
     // Enumerating IS the retry attempt: extend each pending job's TTL so unacknowledged
     // host-action evidence outlives a host dependency (e.g. Mongo) that stays unreachable
     // longer than the retention window. A deployment that stops sweeping lets it age out.
+    const held = [...heldByGeneration.values()];
     if (held.length > 0 && this.ttl.requiresAction > 0) {
       await Promise.all(
         held.flatMap((job) =>
@@ -2822,14 +2896,14 @@ export class RedisJobStore implements IJobStoreV2 {
         ),
       );
     }
-    return ready;
+    return [...readyByGeneration.values()];
   }
 
   async clearTerminalHostAction(streamId: string, expectedCreatedAt?: number): Promise<void> {
     // Identity-fenced: only clear when the hash still holds this exact generation, so a
     // replacement at the same streamId is never cleared through its predecessor. The HDEL
-    // and configured evidence-TTL reset happen atomically. Global membership cannot share
-    // this hash slot, so removal is followed by a successor-aware repair read.
+    // and configured evidence-TTL reset happen atomically. The global retry
+    // member includes this generation, so removing it cannot affect a successor.
     const cleared = (await this.redis.eval(
       'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
         'redis.call("HDEL", KEYS[1], "terminalHostActionPending") ' +
@@ -2846,24 +2920,10 @@ export class RedisJobStore implements IJobStoreV2 {
       String(this.ttl.chunksAfterComplete),
       String(this.ttl.runStepsAfterComplete),
     )) as number;
-    if (cleared === 1) {
-      await this.redis.srem(KEYS.terminalHostActionJobs, streamId).catch(() => undefined);
-      // A successor can terminalize between the same-slot acknowledgement and
-      // the cross-slot SREM. Repair after removal (not before): whether its
-      // pre-arm SADD ran before or after the removal, the successor finishes
-      // with discoverable membership.
-      let current: SerializableJobData | null;
-      try {
-        current = await this.getJob(streamId);
-      } catch {
-        // A stale hint is self-healing; a missing successor hint is not. Fail
-        // toward rediscovery when the repair read itself is ambiguous.
-        await this.redis.sadd(KEYS.terminalHostActionJobs, streamId).catch(() => undefined);
-        return;
-      }
-      if (current?.terminalHostActionPending === true) {
-        await this.redis.sadd(KEYS.terminalHostActionJobs, streamId).catch(() => undefined);
-      }
+    if (cleared === 1 && expectedCreatedAt != null) {
+      await this.redis
+        .srem(KEYS.terminalHostActionJobs, terminalHostActionMember(streamId, expectedCreatedAt))
+        .catch(() => undefined);
     }
   }
 
