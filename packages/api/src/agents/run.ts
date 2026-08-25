@@ -74,11 +74,11 @@ import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/a
 import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { resolveStreamLimits, resolveSubagentMaxTurns } from '~/agents/config';
+import { resolveHeaders, createSafeUser, createSafeAgent } from '~/utils/env';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
-import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
 import { getPluginHookSource } from '~/agents/hooks/source';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
@@ -566,7 +566,7 @@ interface SummarizationClientOverrides {
 function resolveSummarizationProvider(
   rawProvider: string,
   appConfig: AppConfig | undefined,
-  headerContext: { user?: IUser; requestBody?: t.RequestBody },
+  headerContext: { user?: IUser; requestBody?: t.RequestBody; agent?: Partial<Agent> },
 ): {
   provider: string;
   clientOverrides?: SummarizationClientOverrides;
@@ -623,6 +623,7 @@ function resolveSummarizationProvider(
             headers: customEndpointConfig.headers as Record<string, string>,
             user: createSafeUser(headerContext.user),
             body: headerContext.requestBody,
+            agent: headerContext.agent,
             stripUnresolved: true,
           })
         : undefined;
@@ -714,7 +715,7 @@ function shapeSummarizationConfig(
   fallbackModel: string | undefined,
   appConfig: AppConfig | undefined,
   agentEndpoint: string | undefined,
-  headerContext: { user?: IUser; requestBody?: t.RequestBody },
+  headerContext: { user?: IUser; requestBody?: t.RequestBody; agent?: Partial<Agent> },
 ) {
   const rawProvider = config?.provider ?? fallbackProvider;
   /**
@@ -1454,6 +1455,9 @@ export async function createRun({
   /** Admin kill switch for the ask tool — see {@link isAskUserQuestionAdminDisabled}. */
   const askToolAdminDisabled = isAskUserQuestionAdminDisabled(appConfig);
 
+  /** Resolves `{{LIBRECHAT_AGENT_ID}}`; derived once so subagent steps share the turn's id. */
+  const safePrimaryAgent = createSafeAgent(agents[0]);
+
   const buildAgentInput = (agent: RunAgent, opts: { isSubagent?: boolean } = {}): AgentInputs => {
     const isSubagent = opts.isSubagent === true;
     const provider =
@@ -1468,7 +1472,7 @@ export async function createRun({
       selfModel,
       appConfig,
       agent.endpoint ?? undefined,
-      { user, requestBody },
+      { user, requestBody, agent: safePrimaryAgent },
     );
     const summarization = modelCallbacks?.length
       ? {
@@ -1526,6 +1530,7 @@ export async function createRun({
       llmConfig,
       user: createSafeUser(user),
       body: requestBody,
+      agent: safePrimaryAgent,
     });
 
     /** Resolves issues with new OpenAI usage field */

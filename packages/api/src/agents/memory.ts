@@ -33,6 +33,7 @@ import type {
 } from '@librechat/data-schemas';
 import type { TAttachment, FiltersConfig, MemoryArtifact } from 'librechat-data-provider';
 import type { BaseMessage, ToolMessage } from '@librechat/agents/langchain/messages';
+import type { Agent, TAttachment, MemoryArtifact } from 'librechat-data-provider';
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { Response as ServerResponse } from 'express';
 import type { ServerRequest, RunLLMConfig } from '~/types';
@@ -758,6 +759,7 @@ export async function processMemory({
   streamId = null,
   jobCreatedAt,
   user,
+  primaryAgent,
 }: {
   res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
@@ -765,6 +767,7 @@ export async function processMemory({
   userId: string | ObjectId;
   /** Agent partition; omit for the shared personal pool */
   agentId?: string;
+  primaryAgent?: Partial<Agent>;
   memory: string;
   messageId: string;
   conversationId: string;
@@ -908,6 +911,7 @@ ${memory ?? 'No existing memories'}`;
       llmConfig: finalLLMConfig as unknown as RunLLMConfig,
       user: user ? createSafeUser(user) : undefined,
       body: { conversationId, messageId },
+      agent: primaryAgent,
     });
 
     const artifactPromises: Promise<TAttachment | null>[] = [];
@@ -1019,6 +1023,7 @@ export async function createMemoryProcessor({
   streamId = null,
   jobCreatedAt,
   user,
+  primaryAgent,
 }: {
   res: ServerResponse;
   messageId: string;
@@ -1026,6 +1031,8 @@ export async function createMemoryProcessor({
   userId: string | ObjectId;
   /** Agent partition; omit for the shared personal pool */
   agentId?: string;
+  /** The primary agent whose turn triggered extraction — see {@link processMemory}. */
+  primaryAgent?: Partial<Agent>;
   memoryMethods: RequiredMemoryMethods;
   config?: MemoryConfig;
   filters?: FiltersConfig;
@@ -1082,6 +1089,7 @@ export async function createMemoryProcessor({
           setMemory: memoryMethods.setMemory,
           deleteMemory: memoryMethods.deleteMemory,
           user,
+          primaryAgent,
         });
       } catch (error) {
         logger.error('Memory Agent failed to process memory', getSafeErrorMetadata(error));

@@ -10,6 +10,7 @@ const {
   sanitizeTitle,
   payloadParser,
   createSafeUser,
+  createSafeAgent,
   initializeAgent,
   resolveConfigHeaders,
   countTokens,
@@ -2467,6 +2468,7 @@ class AgentClient extends BaseClient {
       },
       res: this.options.res,
       user: createSafeUser(this.options.req.user),
+      primaryAgent: createSafeAgent(this.options.agent),
     });
 
     this.processMemory = processMemory;
@@ -4456,6 +4458,7 @@ class AgentClient extends BaseClient {
         conversationId: this.conversationId,
         parentMessageId: this.parentMessageId,
       },
+      agent: createSafeAgent(this.options.agent),
     });
 
     try {
