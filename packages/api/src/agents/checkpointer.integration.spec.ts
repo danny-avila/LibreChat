@@ -123,7 +123,6 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
     await saver!.put(config, checkpoint, {
       source: 'input',
       step: -1,
-      writes: null,
       parents: {},
     });
 
@@ -165,7 +164,7 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
     });
     const graph = new StateGraph(State)
       .addNode('observe', (state: { events: string[] }) => ({
-        events: [`seen:${state.events.at(-1)}`],
+        events: [`seen:${state.events[state.events.length - 1]}`],
       }))
       .addEdge(START, 'observe')
       .addEdge('observe', END)

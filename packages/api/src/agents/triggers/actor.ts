@@ -19,7 +19,7 @@ import {
 
 interface EventActorResult extends Record<string, EventActorEvent> {
   action: AgentEventAppliedAction;
-  checkpointCaptureError?: string;
+  checkpointCaptureError: string | null;
 }
 
 export interface AgentEventActorInvocationContext {
@@ -194,7 +194,7 @@ export async function executeAgentEventActor<T>(
       }
       return {
         status: 'applied',
-        result: { action },
+        result: { action, checkpointCaptureError: null },
         checkpoint: { ...checkpoint, invocationId: invocation.invocationId },
       };
     },
@@ -220,7 +220,7 @@ export async function executeAgentEventActor<T>(
               generation: request.expectedHead.generation,
               checkpoint: {
                 threadId: request.expectedHead.checkpoint.threadId,
-                checkpointId: expectedCheckpointId,
+                checkpointId: expectedCheckpointId!,
                 checkpointNs: request.expectedHead.checkpoint.checkpointNs,
               },
             };

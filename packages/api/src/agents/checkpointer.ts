@@ -664,7 +664,7 @@ export async function forkAgentEventCheckpoint(
   const tuple = await saver.getTuple(
     eventActorRunnableConfig(source, invocationId, source.checkpointId),
   );
-  if (!tuple || tuple.pendingWrites.length > 0) {
+  if (!tuple || tuple.metadata == null || (tuple.pendingWrites?.length ?? 0) > 0) {
     return null;
   }
   const target = { threadId: source.threadId, checkpointNs };
