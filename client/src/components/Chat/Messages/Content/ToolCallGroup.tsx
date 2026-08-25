@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
+import { Button } from '@librechat/client';
 import { ChevronDown, MessageCircleQuestion, Users } from 'lucide-react';
 import { Tools, Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type {
@@ -9,11 +10,17 @@ import type {
   FunctionToolCall,
 } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
+import {
+  cn,
+  getToolDisplayLabel,
+  hasPendingApprovalInPart,
+  getBatchActivityLabelPart,
+  getActivityLabelText,
+} from '~/utils';
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
-import { cn, getToolDisplayLabel } from '~/utils';
 import { StackedToolIcons } from './ToolOutput';
 import { AttachmentGroup } from './Parts';
 import store from '~/store';
@@ -22,27 +29,6 @@ interface ToolMeta {
   name: string;
   iconName: string;
   hasOutput: boolean;
-}
-
-type ToolCallWithNestedContent = Agents.ToolCall & {
-  subagent_content?: TMessageContentParts[];
-};
-
-function hasPendingApprovalInPart(part: TMessageContentParts): boolean {
-  if (part.type !== ContentTypes.TOOL_CALL) {
-    return false;
-  }
-  const toolCall = part[ContentTypes.TOOL_CALL] as ToolCallWithNestedContent | undefined;
-  if (!toolCall) {
-    return false;
-  }
-  if (toolCall.approval != null && (toolCall.output?.length ?? 0) === 0) {
-    return true;
-  }
-  return (
-    Array.isArray(toolCall.subagent_content) &&
-    toolCall.subagent_content.some(hasPendingApprovalInPart)
-  );
 }
 
 function getToolMeta(part: TMessageContentParts): ToolMeta | null {
@@ -107,6 +93,9 @@ interface ToolCallGroupProps {
   groupAttachments?: TAttachment[];
   initialExpansionState?: ToolCallGroupExpansionState;
   onExpansionChange?: (state: ToolCallGroupExpansionState) => void;
+  /** Activity-label part terminating this block; when it carries generated
+   *  text the header shows that text instead of the default tool summary. */
+  labelPart?: PartWithIndex;
 }
 
 export type ToolCallGroupExpansionState = {
@@ -123,6 +112,7 @@ export default function ToolCallGroup({
   groupAttachments,
   initialExpansionState,
   onExpansionChange,
+  labelPart,
 }: ToolCallGroupProps) {
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
@@ -130,19 +120,39 @@ export default function ToolCallGroup({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
   const retainedForPendingApprovalRef = useRef(false);
-  const count = parts.length;
 
-  const toolMetadata = useMemo(() => parts.map((p) => getToolMeta(p.part)), [parts]);
+  /** Labeled activity blocks also contain THINK parts, which yield null
+   *  metadata. Narrow to tool entries once: they alone drive the count, the
+   *  completion check, and the icon strip — passing a null-derived empty
+   *  name to StackedToolIcons would render a phantom generic tool icon. */
+  const toolMetadata = useMemo(
+    () => parts.map((p) => getToolMeta(p.part)).filter((m): m is ToolMeta => m != null),
+    [parts],
+  );
+  const count = toolMetadata.length;
+  /** Approval state is read from the RAW parts, not `toolMetadata`: a pending
+   *  call can be nested inside a subagent's content, which never surfaces as
+   *  a tool entry here. */
   const hasPendingApproval = useMemo(
     () => parts.some(({ part }) => hasPendingApprovalInPart(part)),
     [parts],
   );
+  const activityLabel = getBatchActivityLabelPart(labelPart?.part);
+  const activityLabelText = getActivityLabelText(activityLabel);
+  const activityFailed = activityLabel?.status === 'failed' || activityLabel?.status === 'partial';
+  /** A settled, filled label is itself a completion proof: the PostToolBatch
+   *  claim only happens after every output in the batch returned. Without
+   *  it, a tool that legitimately returns an empty string reads as
+   *  `hasOutput: false` forever and its labeled group never auto-collapses. */
+  const labelSettled =
+    activityLabelText.length > 0 &&
+    (labelPart?.part as { pending?: boolean } | undefined)?.pending !== true;
   const allCompleted = useMemo(
-    () => toolMetadata.every((m) => m?.hasOutput === true),
-    [toolMetadata],
+    () => labelSettled || toolMetadata.every((m) => m.hasOutput === true),
+    [toolMetadata, labelSettled],
   );
-  const toolNames = useMemo(() => toolMetadata.map((m) => m?.name ?? ''), [toolMetadata]);
-  const iconToolNames = useMemo(() => toolMetadata.map((m) => m?.iconName ?? ''), [toolMetadata]);
+  const toolNames = useMemo(() => toolMetadata.map((m) => m.name), [toolMetadata]);
+  const iconToolNames = useMemo(() => toolMetadata.map((m) => m.iconName), [toolMetadata]);
 
   /** Subagent tool calls get their own label verb ("Running/Ran N agents")
    *  since "Used N tools" reads oddly when the "tools" are actually child
@@ -193,7 +203,10 @@ export default function ToolCallGroup({
   }, [toolNames, localize, mcpServerNames]);
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
-  const autoCollapse = !autoExpand && count >= 2 && allCompleted;
+  /** A labeled activity block is summarized by its header, so it collapses
+   *  even at a single tool call — agent runs are full of one-call batches,
+   *  and leaving those expanded defeats the grouping. */
+  const autoCollapse = !autoExpand && allCompleted && (count >= 2 || activityLabelText.length > 0);
   const initialState = initialExpansionState?.userOverride === true ? initialExpansionState : null;
   const [isExpanded, setIsExpanded] = useState(
     initialState?.isExpanded ?? (autoExpand || !autoCollapse),
@@ -296,7 +309,10 @@ export default function ToolCallGroup({
     }
     return localize('com_ui_used_n_tools', { 0: String(count) });
   };
-  const groupLabel = resolveGroupLabel();
+  /** The generated line wins over the generic category verb — but only once
+   *  it exists. An unfilled label part leaves the block rendering exactly as
+   *  it would without the feature. */
+  const groupLabel = activityLabelText.length > 0 ? activityLabelText : resolveGroupLabel();
   /** Single category glyph for homogeneous groups (else StackedToolIcons). */
   const CategoryIcon = allSubagents ? Users : MessageCircleQuestion;
 
@@ -314,9 +330,10 @@ export default function ToolCallGroup({
 
   return (
     <div className="mb-2 mt-1" ref={rootRef}>
-      <button
+      <Button
+        variant="ghost"
         type="button"
-        className="inline-flex w-full items-center gap-2 py-1 text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+        className="inline-flex h-auto w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-text-secondary hover:bg-transparent hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy focus-visible:ring-offset-0"
         onClick={handleToggle}
         aria-expanded={isExpanded}
         aria-label={groupLabel}
@@ -330,7 +347,7 @@ export default function ToolCallGroup({
           <div
             className={cn(
               'flex h-5 w-5 shrink-0 items-center justify-center text-text-secondary',
-              !allCompleted && isSubmitting && 'animate-pulse text-primary',
+              !allCompleted && isSubmitting && 'animate-pulse text-text-primary',
             )}
             aria-hidden="true"
           >
@@ -344,12 +361,23 @@ export default function ToolCallGroup({
             isAnimating={!allCompleted && isSubmitting}
           />
         )}
-        <span className="tool-status-text font-medium">{groupLabel}</span>
+        <span
+          className={cn(
+            'tool-status-text min-w-0 truncate font-medium',
+            activityFailed && 'text-text-warning',
+          )}
+          role="status"
+          title={groupLabel}
+        >
+          {groupLabel}
+        </span>
         {/** Hide the tool-name summary for pure-category groups (subagents /
          *   questions) — every entry deduplicates to the same token, which
          *   adds noise without info. Mixed groups keep the summary. */}
         {toolNameSummary && !allSubagents && !allAskQuestions && (
-          <span className="text-xs font-normal text-text-secondary">— {toolNameSummary}</span>
+          <span className="min-w-0 max-w-[40%] truncate text-xs font-normal text-text-secondary">
+            · {toolNameSummary}
+          </span>
         )}
         <ChevronDown
           className={cn(
@@ -358,7 +386,7 @@ export default function ToolCallGroup({
           )}
           aria-hidden="true"
         />
-      </button>
+      </Button>
       <div
         style={expandStyle}
         onTransitionEnd={handleTransitionEnd}

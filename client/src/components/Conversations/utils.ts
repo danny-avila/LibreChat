@@ -31,6 +31,8 @@ export function areConversationListItemFieldsEqual(
     prevConversation.conversationId === nextConversation.conversationId &&
     prevConversation.title === nextConversation.title &&
     prevConversation.chatProjectId === nextConversation.chatProjectId &&
+    prevConversation.pinned === nextConversation.pinned &&
+    prevConversation.isShared === nextConversation.isShared &&
     prevConversation.createdAt === nextConversation.createdAt &&
     prevConversation.updatedAt === nextConversation.updatedAt
   );

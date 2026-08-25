@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import { atom, useRecoilState } from 'recoil';
 import { Constants } from 'librechat-data-provider';
+import { atom, useRecoilState, useRecoilValue } from 'recoil';
 import type { Agents } from 'librechat-data-provider';
 import {
   useSubmitToolApprovalMutation,
@@ -10,6 +10,7 @@ import {
 import { resolveAskUserQuestionPart } from '~/utils/approval';
 import { ChatContext } from '~/Providers/ChatContext';
 import { useGetEphemeralAgent } from '~/store/agents';
+import store from '~/store';
 
 /** Per-action submission lifecycle, surfaced to the cards so they can disable
  *  controls and explain a terminal outcome. */
@@ -83,6 +84,10 @@ interface ApprovalContextValue {
   getStatus: (actionId: string) => ActionStatus;
   /** Set an action's submission status (driven by the cards' submit via `useResumeSubmit`). */
   setStatus: (actionId: string, status: ActionStatus) => void;
+  /** Restore a free-form question answer after transient phase-slice remounts. */
+  getAskAnswerDraft: (actionId: string) => string;
+  /** Retain a free-form question answer for this response message's lifetime. */
+  setAskAnswerDraft: (actionId: string, answer: string) => void;
 }
 
 const ApprovalContext = createContext<ApprovalContextValue | null>(null);
@@ -106,6 +111,8 @@ const FALLBACK: ApprovalContextValue = {
   isReady: () => false,
   getStatus: () => 'idle',
   setStatus: () => undefined,
+  getAskAnswerDraft: () => '',
+  setAskAnswerDraft: () => undefined,
 };
 
 const isExpiredError = (error: unknown): boolean => {
@@ -135,6 +142,7 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
    *  never propagate past the memoized value). */
   const decisionsRef = useRef(new Map<string, Map<string, Agents.ToolApprovalResolution>>());
   const registeredRef = useRef(new Map<string, Set<string>>());
+  const askAnswerDraftsRef = useRef(new Map<string, string>());
   const [version, bump] = useState(0);
   const rerender = useCallback(() => bump((v) => v + 1), []);
   const [statusByAction, setStatusByAction] = useState<Record<string, ActionStatus>>({});
@@ -161,12 +169,14 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
         return;
       }
       set.delete(toolCallId);
-      // Also drop any decision it held so a stale entry can't linger.
-      decisionsRef.current.get(actionId)?.delete(toolCallId);
       if (set.size === 0) {
         registeredRef.current.delete(actionId);
-        decisionsRef.current.delete(actionId);
       }
+      /** Keep the decision for the provider's message-scoped lifetime. A
+       *  phase label can resolve while an approval card is visible, moving
+       *  that card through a nested phase segment; its transient unmount must
+       *  not erase the user's selection. Unregistered decisions are excluded
+       *  from submit/readiness and disappear with this provider. */
       rerender();
     },
     [rerender],
@@ -201,10 +211,17 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
     [],
   );
 
-  const getDecisions = useCallback(
-    (actionId: string) => Array.from(decisionsRef.current.get(actionId)?.values() ?? []),
-    [],
-  );
+  const getDecisions = useCallback((actionId: string) => {
+    const registered = registeredRef.current.get(actionId);
+    const decisions = decisionsRef.current.get(actionId);
+    if (registered == null || decisions == null) {
+      return [];
+    }
+    return [...registered].flatMap((toolCallId) => {
+      const decision = decisions.get(toolCallId);
+      return decision == null ? [] : [decision];
+    });
+  }, []);
 
   const isReady = useCallback((actionId: string) => {
     const registered = registeredRef.current.get(actionId);
@@ -229,6 +246,19 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
     setStatusByAction((prev) => ({ ...prev, [actionId]: status }));
   }, []);
 
+  const getAskAnswerDraft = useCallback(
+    (actionId: string) => askAnswerDraftsRef.current.get(actionId) ?? '',
+    [],
+  );
+
+  const setAskAnswerDraft = useCallback((actionId: string, answer: string) => {
+    if (answer.length === 0) {
+      askAnswerDraftsRef.current.delete(actionId);
+      return;
+    }
+    askAnswerDraftsRef.current.set(actionId, answer);
+  }, []);
+
   const value = useMemo<ApprovalContextValue>(
     () => ({
       version,
@@ -242,6 +272,8 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
       isReady,
       getStatus,
       setStatus,
+      getAskAnswerDraft,
+      setAskAnswerDraft,
     }),
     [
       version,
@@ -255,6 +287,8 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
       isReady,
       getStatus,
       setStatus,
+      getAskAnswerDraft,
+      setAskAnswerDraft,
     ],
   );
 
@@ -269,7 +303,7 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
  *
  * Reads `ChatContext` / the agent store / React Query. The cards render it from
  * live chat views but ALSO from contexts without a `ChatContext.Provider` (e.g. a
- * subagent tool paused inside a portaled dialog, or a search/citation render that
+ * subagent tool paused inside an isolated activity surface, or a search/citation render that
  * passes chat context as a prop), so it reads the context non-throwingly: with no
  * conversation, `buildResumeFields` returns null and the controls are inert rather
  * than crashing.
@@ -284,17 +318,26 @@ export function useResumeSubmit() {
   /** React state cannot lock a second click in the same browser task. Keep a
    *  synchronous action-id guard alongside the rendered submission status. */
   const submittingToolActionIdsRef = useRef(new Set<string>());
+  const submittingAskActionIdsRef = useRef(new Set<string>());
   /** Ask status lives in Recoil so it works from the composer (outside the
    *  provider); tool-approval status stays on the context. */
   const { setAskStatus } = useAskSubmitStatus();
+  const activeGenerationCreatedAt = useRecoilValue(
+    store.activeGenerationCreatedAtByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
+  );
 
   const buildResumeFields = useCallback((): ResumeAgentFields | null => {
     const conversationId = conversation?.conversationId;
-    if (!conversationId || conversationId === Constants.NEW_CONVO) {
+    if (
+      !conversationId ||
+      conversationId === Constants.NEW_CONVO ||
+      activeGenerationCreatedAt == null
+    ) {
       return null;
     }
     return {
       conversationId,
+      generationCreatedAt: activeGenerationCreatedAt,
       endpoint: conversation?.endpoint,
       endpointType: conversation?.endpointType,
       agent_id: conversation?.agent_id,
@@ -305,7 +348,7 @@ export function useResumeSubmit() {
       promptPrefix: conversation?.promptPrefix,
       ephemeralAgent: getEphemeralAgent(conversationId),
     };
-  }, [conversation, getEphemeralAgent]);
+  }, [conversation, getEphemeralAgent, activeGenerationCreatedAt]);
 
   const submitToolApproval = useCallback(
     (actionId: string) => {
@@ -338,14 +381,28 @@ export function useResumeSubmit() {
   );
 
   const submitAskAnswer = useCallback(
-    (actionId: string, answer: string, opts?: { onSuccess?: () => void }) => {
+    (
+      actionId: string,
+      resolution: string | Record<string, string>,
+      opts?: { onSuccess?: () => void },
+    ) => {
       const fields = buildResumeFields();
-      if (!fields || answer.length === 0) {
+      const isBatch = typeof resolution !== 'string';
+      const hasAnswer = isBatch ? Object.keys(resolution).length > 0 : resolution.length > 0;
+      if (!fields || !hasAnswer) {
         return;
       }
+      if (submittingAskActionIdsRef.current.has(actionId)) {
+        return;
+      }
+      submittingAskActionIdsRef.current.add(actionId);
       setAskStatus(actionId, 'submitting');
       askMutation.mutate(
-        { ...fields, actionId, answer },
+        {
+          ...fields,
+          actionId,
+          ...(isBatch ? { answers: resolution } : { answer: resolution }),
+        },
         {
           onSuccess: () => {
             setAskStatus(actionId, 'submitted');
@@ -361,7 +418,7 @@ export function useResumeSubmit() {
             if (messages && chatContext?.setMessages) {
               let changed = false;
               const next = messages.map((message) => {
-                const resolved = resolveAskUserQuestionPart(message, actionId, answer);
+                const resolved = resolveAskUserQuestionPart(message, actionId, resolution);
                 if (resolved !== message) {
                   changed = true;
                 }
@@ -379,7 +436,13 @@ export function useResumeSubmit() {
              */
             opts?.onSuccess?.();
           },
-          onError: (error) => setAskStatus(actionId, isExpiredError(error) ? 'expired' : 'error'),
+          onError: (error) => {
+            const expired = isExpiredError(error);
+            if (!expired) {
+              submittingAskActionIdsRef.current.delete(actionId);
+            }
+            setAskStatus(actionId, expired ? 'expired' : 'error');
+          },
         },
       );
     },

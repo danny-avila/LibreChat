@@ -1,9 +1,17 @@
-import { Tools } from 'librechat-data-provider';
 import { useState, useRef, useMemo, useLayoutEffect, useEffect } from 'react';
+import { Tools } from 'librechat-data-provider';
 import type { MemoryArtifact, TAttachment } from 'librechat-data-provider';
 import MemoryInfo from './MemoryInfo';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+
+/** Layout-gate predicate for callers that arrange around this component
+ * (e.g. the thinking-dot nudge). Must stay in agreement with the memo's
+ * collection condition inside the component — both key on
+ * `attachment[Tools.memory]`. The component itself guards on its memoized
+ * list instead, avoiding a second pass per render. */
+export const hasMemoryArtifacts = (attachments?: TAttachment[]): boolean =>
+  attachments?.some((attachment) => attachment?.[Tools.memory] != null) ?? false;
 
 export default function MemoryArtifacts({ attachments }: { attachments?: TAttachment[] }) {
   const localize = useLocalize();
@@ -77,7 +85,7 @@ export default function MemoryArtifacts({ attachments }: { attachments?: TAttach
     };
   }, [showInfo, isAnimating]);
 
-  if (!memoryArtifacts || memoryArtifacts.length === 0) {
+  if (memoryArtifacts.length === 0) {
     return null;
   }
 
@@ -87,10 +95,8 @@ export default function MemoryArtifacts({ attachments }: { attachments?: TAttach
         <div className="inline-block">
           <button
             className={cn(
-              'outline-hidden my-1 flex items-center gap-1 text-sm font-semibold transition-colors',
-              hasErrors
-                ? 'text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-500'
-                : 'text-text-secondary-alt hover:text-text-primary',
+              'my-1 flex items-center gap-1 text-sm font-semibold transition-colors',
+              hasErrors ? 'text-status-error' : 'text-text-secondary-alt hover:text-text-primary',
             )}
             type="button"
             onClick={() => setShowInfo((prev) => !prev)}

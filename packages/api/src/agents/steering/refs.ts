@@ -1,5 +1,9 @@
 import type { TFile } from 'librechat-data-provider';
-import type { SteerRequestUser } from './request';
+
+export interface SteerRequestUser {
+  id?: string;
+  tenantId?: string;
+}
 
 /**
  * Copies the display-metadata fields a steer attachment ref may carry,

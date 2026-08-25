@@ -19,6 +19,8 @@ const INDEX_HTML =
   '</head><body><div id="root"></div></body></html>';
 
 jest.mock('~/server/services/Config', () => ({
+  syncStaticTools: jest.fn().mockResolvedValue(undefined),
+  mergeAppTools: jest.fn().mockResolvedValue(undefined),
   loadCustomConfig: jest.fn(() => Promise.resolve({})),
   getAppConfig: jest.fn().mockResolvedValue({
     paths: {
@@ -31,6 +33,14 @@ jest.mock('~/server/services/Config', () => ({
     imageOutputType: 'PNG',
   }),
   setCachedTools: jest.fn(),
+}));
+
+jest.mock('~/server/services/Agents/triggers', () => ({
+  initializeAgentTriggerService: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('~/server/services/Schedules', () => ({
+  initializeScheduleEngine: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('~/app/clients/tools', () => ({

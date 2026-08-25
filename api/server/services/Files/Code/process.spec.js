@@ -29,7 +29,7 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
-const { FileContext } = require('librechat-data-provider');
+const { ErrorTypes, FileContext, ResourceType } = require('librechat-data-provider');
 
 // Mock uuid
 jest.mock('uuid', () => ({
@@ -42,6 +42,11 @@ mockAxios.post = jest.fn();
 mockAxios.isAxiosError = jest.fn(() => false);
 
 const mockClassifyCodeArtifact = jest.fn(() => 'other');
+const mockExtractCodeArtifactRawText = jest.fn(() => null);
+const mockExtractCodeArtifactInspectionText = jest.fn(async () => ({
+  text: null,
+  complete: false,
+}));
 const mockExtractCodeArtifactText = jest.fn(async () => null);
 const mockGetExtractedTextFormat = jest.fn((_name, _mime, text) => (text == null ? null : 'text'));
 /* `hasOfficeHtmlPath` gates the persist-then-render split: when true, processCodeOutput
@@ -63,6 +68,10 @@ jest.mock('@librechat/api', () => {
     flattenArtifactPath: jest.fn((name) => name.replace(/\//g, '__')),
     createAxiosInstance: jest.fn(() => mockAxios),
     getCodeApiAuthHeaders: jest.fn(async () => ({})),
+    getCodeExecutionBaseUrl: jest.fn((profile) =>
+      profile === 'stateful' ? 'https://code-stateful.example.com' : 'https://code-api.example.com',
+    ),
+    CODE_API_EXPECTED_PROFILE_HEADER: 'X-CodeAPI-Expected-Profile',
     withTimeout: (...args) => passthroughWithTimeout(...args),
     hasOfficeHtmlPath: (...args) => mockHasOfficeHtmlPath(...args),
     /**
@@ -75,7 +84,13 @@ jest.mock('@librechat/api', () => {
      * direct-`jest.fn()` mocks below stay constant per file.
      */
     classifyCodeArtifact: (...args) => mockClassifyCodeArtifact(...args),
+    extractCodeArtifactRawText: (...args) => mockExtractCodeArtifactRawText(...args),
+    extractCodeArtifactInspectionText: (...args) => mockExtractCodeArtifactInspectionText(...args),
     extractCodeArtifactText: (...args) => mockExtractCodeArtifactText(...args),
+    getBoundedCodeOutputByteLimit: (configured) =>
+      typeof configured === 'number' && Number.isFinite(configured) && configured > 0
+        ? Math.min(configured, 64 * 1024 * 1024)
+        : 64 * 1024 * 1024,
     /* `processCodeOutput` derives the `textFormat` trust flag for
      * `IMongoFile` from this helper — Codex P1 review on PR #12934.
      * The mock returns 'text' for non-null extractor output and null
@@ -164,6 +179,7 @@ const {
 
 const {
   processCodeOutput,
+  prepareCodeOutputForInspection,
   getSessionInfo,
   readSandboxFile,
   readSandboxImage,
@@ -194,6 +210,7 @@ describe('Code Process', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    fileSizeLimitConfig.value = 20 * 1024 * 1024;
     // Default mock: atomic claim returns a new file record (no existing file)
     mockClaimCodeFile.mockResolvedValue({
       file_id: 'mock-uuid-1234',
@@ -205,6 +222,106 @@ describe('Code Process', () => {
       saveBuffer: jest.fn().mockResolvedValue('/uploads/mock-file-path.txt'),
     });
     determineFileType.mockResolvedValue({ mime: 'text/plain' });
+  });
+
+  describe('code output inspection preflight', () => {
+    it('derives file content from downloaded bytes without persisting anything', async () => {
+      const buffer = Buffer.from('safe raw content');
+      mockAxios.mockResolvedValue({ data: buffer });
+      mockClassifyCodeArtifact.mockReturnValueOnce('utf8-text');
+      mockExtractCodeArtifactRawText.mockReturnValueOnce('safe raw content');
+      mockExtractCodeArtifactInspectionText.mockResolvedValueOnce({
+        text: 'safe extracted content',
+        complete: true,
+      });
+
+      const prepared = await prepareCodeOutputForInspection(baseParams);
+
+      expect(prepared).toEqual({
+        buffer,
+        extractedTextComplete: true,
+        file: {
+          name: 'test-file.txt',
+          filename: 'test-file.txt',
+          type: 'text/plain',
+          content: 'safe raw content',
+          extractedText: 'safe extracted content',
+        },
+      });
+      expect(mockClaimCodeFile).not.toHaveBeenCalled();
+      expect(createFile).not.toHaveBeenCalled();
+      expect(getStrategyFunctions).not.toHaveBeenCalled();
+    });
+
+    it('persists the exact preflight buffer without downloading it again', async () => {
+      const preparedBuffer = Buffer.from('already inspected');
+
+      await processCodeOutput({ ...baseParams, preparedBuffer });
+
+      expect(mockAxios).not.toHaveBeenCalled();
+      expect(mockClaimCodeFile).toHaveBeenCalledTimes(1);
+      expect(createFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('enforces a caller-provided aggregate inspection budget while downloading', async () => {
+      mockAxios.mockResolvedValue({ data: Buffer.from('too large') });
+
+      await expect(
+        prepareCodeOutputForInspection({
+          ...baseParams,
+          maxBytes: 4,
+        }),
+      ).rejects.toThrow('Generated file exceeds the 4-byte transport limit');
+
+      expect(mockAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          maxContentLength: 4,
+          maxBodyLength: 4,
+        }),
+      );
+      expect(mockClaimCodeFile).not.toHaveBeenCalled();
+      expect(createFile).not.toHaveBeenCalled();
+    });
+
+    it('extracts text bytes even when the generated filename spoofs an image extension', async () => {
+      const buffer = Buffer.from('PRIVATE-SECRET');
+      mockAxios.mockResolvedValue({ data: buffer });
+      determineFileType.mockResolvedValueOnce(undefined);
+      mockClassifyCodeArtifact.mockReturnValueOnce('utf8-text');
+      mockExtractCodeArtifactRawText.mockReturnValueOnce('PRIVATE-SECRET');
+      mockExtractCodeArtifactInspectionText.mockResolvedValueOnce({
+        text: 'PRIVATE-SECRET',
+        complete: true,
+      });
+
+      const prepared = await prepareCodeOutputForInspection({
+        ...baseParams,
+        name: 'secret.png',
+      });
+
+      expect(mockExtractCodeArtifactRawText).toHaveBeenCalledWith(buffer, 'utf8-text');
+      expect(prepared.file).toMatchObject({
+        name: 'secret.png',
+        type: 'text/plain',
+        content: 'PRIVATE-SECRET',
+        extractedText: 'PRIVATE-SECRET',
+      });
+    });
+
+    it('returns the explicit bounded fallback without a second download or persistence', async () => {
+      const result = await processCodeOutput({
+        ...baseParams,
+        downloadFallback: true,
+      });
+
+      expect(result.file).toMatchObject({
+        filename: 'test-file.txt',
+        filepath: '/api/files/code/download/session-123/file-id-123',
+      });
+      expect(mockAxios).not.toHaveBeenCalled();
+      expect(mockClaimCodeFile).not.toHaveBeenCalled();
+      expect(createFile).not.toHaveBeenCalled();
+    });
   });
 
   describe('atomic file claim (via processCodeOutput)', () => {
@@ -800,6 +917,22 @@ describe('Code Process', () => {
     });
 
     describe('file size limit enforcement', () => {
+      it('treats a zero configured limit as unlimited within the hard transport ceiling', async () => {
+        fileSizeLimitConfig.value = 0;
+        mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+        await processCodeOutput(baseParams);
+
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({
+            maxContentLength: 64 * 1024 * 1024,
+            maxBodyLength: 64 * 1024 * 1024,
+          }),
+        );
+        expect(mockClaimCodeFile).toHaveBeenCalledTimes(1);
+        expect(createFile).toHaveBeenCalledTimes(1);
+      });
+
       it('should fallback to download URL when file exceeds size limit', async () => {
         // Set a small file size limit for this test
         fileSizeLimitConfig.value = 1000; // 1KB limit
@@ -809,6 +942,12 @@ describe('Code Process', () => {
 
         const { file: result } = await processCodeOutput(baseParams);
 
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({
+            maxContentLength: 1000,
+            maxBodyLength: 1000,
+          }),
+        );
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('exceeds size limit'));
         expect(result.filepath).toContain('/api/files/code/download/session-123/file-id-123');
         expect(result.expiresAt).toBeDefined();
@@ -818,9 +957,43 @@ describe('Code Process', () => {
         // Reset to default for other tests
         fileSizeLimitConfig.value = 20 * 1024 * 1024;
       });
+
+      it('uses the existing download fallback when Axios stops an oversized response', async () => {
+        fileSizeLimitConfig.value = 1000;
+        mockAxios.mockRejectedValue(new Error('maxContentLength size of 1000 exceeded'));
+
+        const { file: result } = await processCodeOutput(baseParams);
+
+        expect(result.filepath).toContain('/api/files/code/download/session-123/file-id-123');
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('Generated file exceeds size limit'),
+        );
+        expect(mockClaimCodeFile).not.toHaveBeenCalled();
+        expect(createFile).not.toHaveBeenCalled();
+
+        fileSizeLimitConfig.value = 20 * 1024 * 1024;
+      });
     });
 
     describe('fallback behavior', () => {
+      it('preserves the stateful route in generated downloads and fallbacks', async () => {
+        mockAxios.mockRejectedValue(new Error('Network error'));
+
+        const { file: result } = await processCodeOutput({
+          ...baseParams,
+          codeApiBaseUrl: 'https://code-stateful.example.com',
+          executionProfile: 'stateful',
+        });
+
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({
+            url: expect.stringContaining('https://code-stateful.example.com/download/'),
+            headers: expect.objectContaining({ 'X-CodeAPI-Expected-Profile': 'stateful' }),
+          }),
+        );
+        expect(result.filepath).toContain('execution_profile=stateful');
+      });
+
       it('should fallback to download URL when saveBuffer is not available', async () => {
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });
@@ -901,9 +1074,31 @@ describe('Code Process', () => {
             id: 'user-123',
             storage_session_id: 'session-123',
             file_id: 'file-id-123',
+            executionProfile: 'default',
+          },
+          codeEnvRefs: {
+            default: {
+              kind: 'user',
+              id: 'user-123',
+              storage_session_id: 'session-123',
+              file_id: 'file-id-123',
+              executionProfile: 'default',
+            },
           },
           sourceDispatchedAt: expect.any(Number),
         });
+      });
+
+      it('persists the originating profile on a stateful artifact ref', async () => {
+        mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+        const { file: result } = await processCodeOutput({
+          ...baseParams,
+          codeApiBaseUrl: 'https://code-stateful.example.com',
+          executionProfile: 'stateful',
+        });
+
+        expect(result.metadata.codeEnvRef.executionProfile).toBe('stateful');
       });
 
       /* Phase C lock-in: outputs are ALWAYS user-scoped, never skill-scoped.
@@ -935,12 +1130,14 @@ describe('Code Process', () => {
           id: 'user-A',
           storage_session_id: 'session-123',
           file_id: 'file-id-123',
+          executionProfile: 'default',
         });
         expect(outputB.metadata.codeEnvRef).toEqual({
           kind: 'user',
           id: 'user-B',
           storage_session_id: 'session-123',
           file_id: 'file-id-123',
+          executionProfile: 'default',
         });
 
         // No skill identity leaks into the output ref under any property.
@@ -1204,6 +1401,35 @@ describe('Code Process', () => {
             headers: expect.objectContaining({
               Authorization: 'Bearer freshness-token',
               'User-Agent': 'LibreChat/1.0',
+            }),
+          }),
+        );
+      });
+
+      it('checks freshness against the trusted stateful endpoint and profile', async () => {
+        mockAxios.mockResolvedValue({
+          data: { lastModified: '2026-08-15T00:00:00Z' },
+        });
+
+        await getSessionInfo(
+          {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'session-123',
+            file_id: 'file-123',
+          },
+          mockReq,
+          {
+            baseUrl: 'https://stateful-code.example.com',
+            executionProfile: 'stateful',
+          },
+        );
+
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({
+            url: expect.stringMatching(/^https:\/\/stateful-code\.example\.com\/sessions\//),
+            headers: expect.objectContaining({
+              'X-CodeAPI-Expected-Profile': 'stateful',
             }),
           }),
         );
@@ -1610,6 +1836,22 @@ describe('Code Process', () => {
         expect(call.data.lang).toBe('bash');
       });
 
+      it('routes to the selected profile endpoint and asserts the expected profile', async () => {
+        mockAxios.mockResolvedValueOnce({ data: { stdout: 'ok', stderr: '' } });
+
+        await readSandboxFile({
+          file_path: '/mnt/data/x.txt',
+          codeApiBaseUrl: 'https://stateful-code.example.com',
+          executionProfile: 'stateful',
+          runtime_session_hint: 'v1:user',
+        });
+
+        const call = mockAxios.mock.calls[0][0];
+        expect(call.url).toBe('https://stateful-code.example.com/exec');
+        expect(call.headers['X-CodeAPI-Expected-Profile']).toBe('stateful');
+        expect(call.data.runtime_session_hint).toBe('v1:user');
+      });
+
       it('omits session_id and files when not provided', async () => {
         mockAxios.mockResolvedValueOnce({ data: { stdout: '', stderr: '' } });
 
@@ -1899,6 +2141,136 @@ describe('Code Process', () => {
       return { handleFileUpload, getDownloadStream };
     }
 
+    it('uses the permission resource type established by the calling route', async () => {
+      const files = [
+        {
+          file_id: 'owner-file',
+          filename: 'owner.txt',
+          user: 'agent-owner',
+          metadata: {},
+        },
+      ];
+      getFiles.mockResolvedValue(files);
+      filterFilesByAgentAccess.mockImplementation(({ files: authorizedFiles }) =>
+        Promise.resolve(authorizedFiles),
+      );
+
+      await primeFiles({
+        req: { user: { id: 'remote-viewer', role: 'USER' } },
+        agentId: 'agent-123',
+        agentResourceType: ResourceType.REMOTE_AGENT,
+        tool_resources: { execute_code: { file_ids: ['owner-file'] } },
+      });
+
+      expect(filterFilesByAgentAccess).toHaveBeenCalledWith({
+        files,
+        userId: 'remote-viewer',
+        role: 'USER',
+        agentId: 'agent-123',
+        resourceType: ResourceType.REMOTE_AGENT,
+      });
+      expect(JSON.stringify(logger.debug.mock.calls)).not.toContain(files[0].filename);
+    });
+
+    it('does not read a runtime file record that has no authorized database record', async () => {
+      const getDownloadStream = jest.fn().mockResolvedValue('forged-stream');
+      const handleFileUpload = jest.fn();
+      getStrategyFunctions.mockImplementation((source) => {
+        if (source === 'execute_code') return { handleFileUpload };
+        return { getDownloadStream };
+      });
+      getFiles.mockResolvedValue([]);
+      mockAxios.mockResolvedValue({ data: null });
+
+      const result = await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: {
+          execute_code: {
+            files: [
+              {
+                file_id: 'forged-file',
+                filename: 'secrets.txt',
+                filepath: '/etc/passwd',
+                source: 'local',
+                metadata: {
+                  codeEnvRef: {
+                    kind: 'user',
+                    id: 'user-123',
+                    storage_session_id: 'missing-session',
+                    file_id: 'missing-file',
+                  },
+                },
+              },
+            ],
+          },
+        },
+        agentId: 'agent-id',
+      });
+
+      expect(result.files).toEqual([]);
+      expect(getDownloadStream).not.toHaveBeenCalled();
+      expect(handleFileUpload).not.toHaveBeenCalled();
+    });
+
+    it('rehydrates a runtime file by ID before using its storage metadata', async () => {
+      const trustedFile = {
+        file_id: 'runtime-file',
+        filename: 'trusted.txt',
+        filepath: '/uploads/trusted.txt',
+        source: 'local',
+        context: 'execute_code',
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'trusted-session',
+            file_id: 'trusted-file',
+          },
+        },
+      };
+      const getDownloadStream = jest.fn().mockResolvedValue('trusted-stream');
+      const handleFileUpload = jest
+        .fn()
+        .mockResolvedValue({ storage_session_id: 'new-session', file_id: 'new-file' });
+      getStrategyFunctions.mockImplementation((source) => {
+        if (source === 'execute_code') return { handleFileUpload };
+        return { getDownloadStream };
+      });
+      getFiles.mockResolvedValue([trustedFile]);
+      mockAxios.mockResolvedValue({ data: null });
+
+      await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: {
+          execute_code: {
+            files: [
+              {
+                ...trustedFile,
+                filepath: '/etc/passwd',
+                source: 'forged-source',
+                metadata: {
+                  codeEnvRef: {
+                    kind: 'user',
+                    id: 'attacker',
+                    storage_session_id: 'forged-session',
+                    file_id: 'forged-file',
+                  },
+                },
+              },
+            ],
+          },
+        },
+        agentId: 'agent-id',
+      });
+
+      expect(getDownloadStream).toHaveBeenCalledTimes(1);
+      expect(getDownloadStream).toHaveBeenCalledWith(
+        { user: { id: 'user-123', role: 'USER' } },
+        '/uploads/trusted.txt',
+      );
+      expect(handleFileUpload).toHaveBeenCalledTimes(1);
+    });
+
     it('seed receives FRESH (storage_session_id, file_id) from the reupload response', async () => {
       const dbFile = {
         file_id: 'librechat-file-id',
@@ -1988,6 +2360,83 @@ describe('Code Process', () => {
       expect(uploadArgs.version).toBe(4);
     });
 
+    it('reuploads instead of reusing a ref from the other execution profile', async () => {
+      const dbFile = {
+        file_id: 'librechat-file-id',
+        filename: 'sentinel.txt',
+        filepath: '/uploads/sentinel.txt',
+        source: 'local',
+        context: 'execute_code',
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'DEFAULT_SESSION',
+            file_id: 'DEFAULT_ID',
+            executionProfile: 'default',
+          },
+        },
+      };
+      getFiles.mockResolvedValue([dbFile]);
+      const { handleFileUpload } = setupReuploadMocks({
+        storage_session_id: 'STATEFUL_SESSION',
+        file_id: 'STATEFUL_ID',
+      });
+
+      await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: {
+          execute_code: { file_ids: ['librechat-file-id'], files: [] },
+        },
+        agentId: 'agent-id',
+        codeApiBaseUrl: 'https://stateful-code.example.com',
+        executionProfile: 'stateful',
+      });
+
+      expect(mockAxios).not.toHaveBeenCalled();
+      expect(handleFileUpload).toHaveBeenCalledWith(
+        expect.objectContaining({
+          codeApiBaseUrl: 'https://stateful-code.example.com',
+          executionProfile: 'stateful',
+        }),
+      );
+      expect(updateFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'metadata.codeEnvRef': expect.objectContaining({ executionProfile: 'default' }),
+          'metadata.codeEnvRefs.stateful': expect.objectContaining({
+            executionProfile: 'stateful',
+          }),
+        }),
+      );
+
+      const persistedMetadata = {
+        ...dbFile.metadata,
+        codeEnvRef: updateFile.mock.calls[0][0]['metadata.codeEnvRef'],
+        codeEnvRefs: {
+          default: dbFile.metadata.codeEnvRef,
+          stateful: updateFile.mock.calls[0][0]['metadata.codeEnvRefs.stateful'],
+        },
+      };
+      getFiles.mockResolvedValue([{ ...dbFile, metadata: persistedMetadata }]);
+      mockAxios.mockResolvedValue({ data: { lastModified: new Date().toISOString() } });
+
+      await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: {
+          execute_code: { file_ids: ['librechat-file-id'], files: [] },
+        },
+        agentId: 'agent-id',
+        executionProfile: 'default',
+      });
+
+      expect(handleFileUpload).toHaveBeenCalledTimes(1);
+      expect(mockAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: expect.stringContaining('/sessions/DEFAULT_SESSION/objects/DEFAULT_ID'),
+        }),
+      );
+    });
+
     it('persists fresh codeEnvRef (kind/id preserved) on the DB record after reupload', async () => {
       const dbFile = {
         file_id: 'librechat-file-id',
@@ -2019,14 +2468,20 @@ describe('Code Process', () => {
       expect(updateFile).toHaveBeenCalledWith(
         expect.objectContaining({
           file_id: 'librechat-file-id',
-          metadata: expect.objectContaining({
-            codeEnvRef: {
-              kind: 'user',
-              id: 'user-123',
-              storage_session_id: 'NEW_SESSION',
-              file_id: 'NEW_ID',
-            },
-          }),
+          'metadata.codeEnvRef': {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'NEW_SESSION',
+            file_id: 'NEW_ID',
+            executionProfile: 'default',
+          },
+          'metadata.codeEnvRefs.default': {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'NEW_SESSION',
+            file_id: 'NEW_ID',
+            executionProfile: 'default',
+          },
         }),
       );
     });
@@ -2075,6 +2530,74 @@ describe('Code Process', () => {
         },
       ]);
     });
+
+    it.each([
+      ['Axios/CloudFront 404', { response: { status: 404 } }, 'missing_backing_object'],
+      [
+        'AWS SDK NoSuchKey',
+        { name: 'NoSuchKey', $metadata: { httpStatusCode: 404 } },
+        'missing_backing_object',
+      ],
+      ['Azure BlobNotFound', { code: 'BlobNotFound', statusCode: 404 }, 'missing_backing_object'],
+      ['storage access denied', { code: 'AccessDenied', status: 403 }, 'resource_access_denied'],
+    ])(
+      'fails with a typed recovery error for %s',
+      async (_errorShape, downloadError, expectedCategory) => {
+        const dbFile = {
+          file_id: 'librechat-file-id',
+          filename: 'cross-region-report.png',
+          filepath: 'https://storage.us-east.example.test/missing-object',
+          source: 'local',
+          context: 'execute_code',
+          metadata: {
+            codeEnvRef: {
+              kind: 'user',
+              id: 'user-123',
+              storage_session_id: 'US_EAST_SESSION',
+              file_id: 'MISSING_OBJECT',
+            },
+          },
+        };
+        const getDownloadStream = jest.fn().mockRejectedValue(downloadError);
+        getFiles.mockResolvedValue([dbFile]);
+        getStrategyFunctions.mockImplementation((source) =>
+          source === 'execute_code' ? { handleFileUpload: jest.fn() } : { getDownloadStream },
+        );
+        mockAxios.mockResolvedValue({ data: null });
+
+        await expect(
+          primeFiles({
+            req: {
+              id: 'request-123',
+              body: { messageId: 'run-123' },
+              user: { id: 'user-123', role: 'USER' },
+            },
+            tool_resources: {
+              execute_code: { file_ids: ['librechat-file-id'], files: [] },
+            },
+            agentId: 'agent-id',
+          }),
+        ).rejects.toMatchObject({
+          code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+          status: 409,
+          statusCode: 409,
+          details: { required: 1, primed: 0, failed: 1 },
+          required: 1,
+          primed: 0,
+          failed: 1,
+        });
+
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining(
+            `resource-recovery-required requestId=request-123 runId=run-123 required=1 primed=0 failed=1 category=${expectedCategory}`,
+          ),
+        );
+        const failureLogs = logger.error.mock.calls.map(([message]) => message).join('\n');
+        expect(failureLogs).toContain(`category=${expectedCategory}`);
+        expect(failureLogs).not.toContain(dbFile.filename);
+        expect(failureLogs).not.toContain(dbFile.filepath);
+      },
+    );
   });
 
   describe('primeFiles toolContext for model-visible code files', () => {

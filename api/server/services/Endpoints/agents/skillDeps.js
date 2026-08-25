@@ -10,6 +10,7 @@ const {
 } = require('~/server/services/Files/Code/process');
 const {
   checkAccess,
+  isMemoryEnabled,
   getStorageMetadata,
   resolveRequestTenantId,
   enrichWithSkillConfigurable,
@@ -26,6 +27,7 @@ const {
   AccessRoleIds,
   PrincipalType,
   PermissionTypes,
+  AgentCapabilities,
   isEphemeralAgentId,
 } = require('librechat-data-provider');
 const { checkPermission, grantPermission } = require('~/server/services/PermissionService');
@@ -280,19 +282,39 @@ function buildAgentToolContext({ agent, config }) {
     endpointTokenConfig: config.endpointTokenConfig,
     toolRegistry: config.toolRegistry,
     backgroundToolNames: config.backgroundToolNames,
+    intentToolNames: config.intentToolNames,
     mcpAvailableTools: config.mcpAvailableTools,
     requestScopedConnections: config.requestScopedConnections,
     userMCPAuthMap: config.userMCPAuthMap,
     tool_resources: config.tool_resources,
     actionsEnabled: config.actionsEnabled,
+    accessibleMcpServerNames: config.accessibleMcpServerNames,
     accessibleSkillIds: config.accessibleSkillIds,
     activeSkillNames: config.activeSkillNames,
     codeEnvAvailable: config.codeEnvAvailable,
+    codeExecutionContext: config.codeExecutionContext,
     skillAuthoringAvailable: config.skillAuthoringAvailable,
     fileAuthoringToolNames: config.fileAuthoringToolNames,
     skillPrimedIdsByName:
       buildSkillPrimedIdsByName(config.manualSkillPrimes, config.alwaysApplySkillPrimes) ?? {},
   };
+}
+
+/** Resolves the full run-level gate used to expose inline memory tools. */
+function resolveMemoryAvailability({ enabledCapabilities, memoryConfig, user, getRoleByName }) {
+  if (
+    !enabledCapabilities.has(AgentCapabilities.memory) ||
+    !isMemoryEnabled(memoryConfig) ||
+    user?.personalization?.memories === false
+  ) {
+    return false;
+  }
+  return checkAccess({
+    user,
+    permissionType: PermissionTypes.MEMORIES,
+    permissions: [Permissions.USE, Permissions.CREATE, Permissions.UPDATE],
+    getRoleByName,
+  });
 }
 
 function hasOwn(value, key) {
@@ -382,5 +404,6 @@ module.exports = {
   enrichWithSkillConfigurable,
   buildSkillPrimedIdsByName,
   buildAgentToolContext,
+  resolveMemoryAvailability,
   enrichLoadedToolsWithAgentContext,
 };

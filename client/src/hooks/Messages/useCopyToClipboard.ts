@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import copy from 'copy-to-clipboard';
 import { ContentTypes, SearchResultData } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import {
   SPAN_REGEX,
   CLEANUP_REGEX,
@@ -27,13 +27,65 @@ const refTypeMap: Record<string, string> = {
   video: 'videos',
 };
 
-export default function useCopyToClipboard({
+type ClipboardSource = Partial<Pick<TMessage, 'text' | 'content'>> & {
+  searchResults?: { [key: string]: SearchResultData };
+};
+
+function getPartText(part: TMessageContentParts): string {
+  if (part?.type !== ContentTypes.TEXT) {
+    return '';
+  }
+
+  return typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
+}
+
+export function serializeMessageForClipboard({
   text,
   content,
-  searchResults,
-}: Partial<Pick<TMessage, 'text' | 'content'>> & {
-  searchResults?: { [key: string]: SearchResultData };
-}) {
+}: Partial<Pick<TMessage, 'text' | 'content'>>): string {
+  if (!Array.isArray(content) || content.length === 0) {
+    return text ?? '';
+  }
+
+  const parts: string[] = [];
+  for (const part of content) {
+    const partText = getPartText(part);
+    if (partText.length > 0) {
+      parts.push(partText);
+    }
+  }
+
+  return parts.join('\n');
+}
+
+function buildClipboardText({ text, content, searchResults }: ClipboardSource): string {
+  const messageText = serializeMessageForClipboard({ text, content });
+
+  if (!searchResults || Object.keys(searchResults).length === 0) {
+    return messageText.replace(INVALID_CITATION_REGEX, '').replace(CLEANUP_REGEX, '');
+  }
+
+  const citationManager = processCitations(messageText, searchResults);
+
+  if (citationManager.citations.size === 0) {
+    return citationManager.formattedText;
+  }
+
+  const sortedCitations = Array.from(citationManager.citations.entries()).sort(
+    (a, b) => a[1].referenceNumber - b[1].referenceNumber,
+  );
+  const citationList = sortedCitations
+    .map(([, citation]) => `[${citation.referenceNumber}] ${citation.link}\n`)
+    .join('');
+
+  return `${citationManager.formattedText}\n\nCitations:\n${citationList}`;
+}
+
+export function hasCopyableText(source: ClipboardSource): boolean {
+  return buildClipboardText(source).trim().length > 0;
+}
+
+export default function useCopyToClipboard({ text, content, searchResults }: ClipboardSource) {
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -45,60 +97,27 @@ export default function useCopyToClipboard({
   }, []);
 
   const copyToClipboard = useCallback(
-    (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => {
+    (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>): boolean => {
+      const clipboardText = buildClipboardText({ text, content, searchResults });
+
+      if (clipboardText.trim().length === 0) {
+        return false;
+      }
+
+      if (!copy(clipboardText, { format: 'text/plain' })) {
+        return false;
+      }
+
       if (copyTimeoutRef.current) {
         clearTimeout(copyTimeoutRef.current);
       }
+
       setIsCopied(true);
-
-      // Get the message text from content or text
-      let messageText = text ?? '';
-      if (content) {
-        messageText = content.reduce((acc, curr, i) => {
-          if (curr.type === ContentTypes.TEXT) {
-            const text = typeof curr.text === 'string' ? curr.text : (curr.text?.value ?? '');
-            return acc + text + (i === content.length - 1 ? '' : '\n');
-          }
-          return acc;
-        }, '');
-      }
-
-      // Early return if no search data
-      if (!searchResults || Object.keys(searchResults).length === 0) {
-        // Clean up any citation markers before returning
-        const cleanedText = messageText
-          .replace(INVALID_CITATION_REGEX, '')
-          .replace(CLEANUP_REGEX, '');
-
-        copy(cleanedText, { format: 'text/plain' });
-        copyTimeoutRef.current = setTimeout(() => {
-          setIsCopied(false);
-        }, 3000);
-        return;
-      }
-
-      // Process citations and build a citation manager
-      const citationManager = processCitations(messageText, searchResults);
-      let processedText = citationManager.formattedText;
-
-      // Add citations list at the end if we have any
-      if (citationManager.citations.size > 0) {
-        processedText += '\n\nCitations:\n';
-        // Sort citations by their reference number
-        const sortedCitations = Array.from(citationManager.citations.entries()).sort(
-          (a, b) => a[1].referenceNumber - b[1].referenceNumber,
-        );
-
-        // Add each citation to the text
-        for (const [_, citation] of sortedCitations) {
-          processedText += `[${citation.referenceNumber}] ${citation.link}\n`;
-        }
-      }
-
-      copy(processedText, { format: 'text/plain' });
       copyTimeoutRef.current = setTimeout(() => {
         setIsCopied(false);
       }, 3000);
+
+      return true;
     },
     [text, content, searchResults],
   );

@@ -23,21 +23,18 @@ jest.mock('librechat-data-provider', () => ({
   },
 }));
 
-jest.mock(
-  '@librechat/client',
-  () => ({
-    OGDialogContent: ({ children }: { children: React.ReactNode }) => (
-      <div data-testid="dialog-content">{children}</div>
-    ),
-    Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-      <button {...props}>{children}</button>
-    ),
-    useToastContext: () => ({
-      showToast: jest.fn(),
-    }),
+jest.mock('@librechat/client', () => ({
+  OGDialogContent: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-content">{children}</div>
+  ),
+  Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+    <button {...props}>{children}</button>
+  ),
+  TooltipAnchor: ({ render }: { render: React.ReactNode }) => render,
+  useToastContext: () => ({
+    showToast: jest.fn(),
   }),
-  { virtual: true },
-);
+}));
 
 jest.mock('~/hooks', () => ({
   useDefaultConvo: () => jest.fn((value) => value.conversation),
@@ -101,7 +98,7 @@ describe('AgentDetailContent', () => {
           {
             ...baseAgent,
             support_contact: { name: 'Support Team', email: 'support@example.com' },
-            owner_contact: { name: 'Owner User', email: 'owner@example.com' },
+            owner_contact: { name: 'Owner User' },
           } as any
         }
       />,
@@ -121,15 +118,13 @@ describe('AgentDetailContent', () => {
         agent={
           {
             ...baseAgent,
-            owner_contact: { name: 'Owner User', email: 'owner@example.com' },
+            owner_contact: { name: 'Owner User' },
           } as any
         }
       />,
     );
 
-    expect(screen.getByRole('link', { name: 'Owner User' })).toHaveAttribute(
-      'href',
-      'mailto:owner@example.com',
-    );
+    expect(screen.getByText('Owner User')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Owner User' })).not.toBeInTheDocument();
   });
 });

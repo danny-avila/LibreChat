@@ -10,9 +10,11 @@ import {
   OGDialogTitle,
   OGDialogContent,
 } from '@librechat/client';
+import type { MermaidDimensions } from '~/utils/diagram/export';
 import useMermaidZoom from './useMermaidZoom';
 import ZoomControls from './ZoomControls';
 import { useLocalize } from '~/hooks';
+import MermaidExport from './Export';
 import cn from '~/utils/cn';
 
 interface MermaidDialogProps {
@@ -21,10 +23,22 @@ interface MermaidDialogProps {
   triggerRef: React.RefObject<HTMLButtonElement>;
   blobUrl: string;
   codeContent: string;
+  exportSvg: string | null;
+  exportDimensions: MermaidDimensions | null;
+  exportFilename: string;
 }
 
 const MermaidDialog: React.FC<MermaidDialogProps> = memo(
-  ({ open, onOpenChange, triggerRef, blobUrl, codeContent }) => {
+  ({
+    open,
+    onOpenChange,
+    triggerRef,
+    blobUrl,
+    codeContent,
+    exportSvg,
+    exportDimensions,
+    exportFilename,
+  }) => {
     const localize = useLocalize();
     const [showCode, setShowCode] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
@@ -70,30 +84,48 @@ const MermaidDialog: React.FC<MermaidDialogProps> = memo(
       <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
         <OGDialogContent
           showCloseButton={false}
-          className="h-[85vh] max-h-[85vh] w-[90vw] max-w-[90vw] gap-0 overflow-hidden border-border-light bg-surface-primary-alt p-0"
+          className="h-[85vh] max-h-[85vh] w-[90vw] max-w-[90vw] gap-0 overflow-hidden border-border-light bg-surface-dialog p-0"
         >
           <OGDialogTitle className="flex h-10 items-center justify-between border-b border-border-light bg-surface-secondary px-4 font-sans text-xs text-text-secondary">
             <span>{localize('com_ui_mermaid')}</span>
-            <div className="flex gap-2">
+            <div className="flex gap-1 sm:gap-2">
+              <MermaidExport
+                svg={exportSvg}
+                dimensions={exportDimensions}
+                filename={exportFilename}
+                buttonClassName="h-8 w-8 p-0"
+              />
               <Button
                 ref={showCodeButtonRef}
                 variant="ghost"
                 size="sm"
-                className="h-auto min-w-[6rem] gap-1 rounded-sm px-1 py-0 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-border-heavy focus-visible:ring-offset-0"
+                aria-label={showCode ? localize('com_ui_hide_code') : localize('com_ui_show_code')}
+                className="size-8 min-w-0 gap-1 rounded-sm p-0 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-border-heavy focus-visible:ring-offset-0 sm:h-auto sm:w-auto sm:min-w-[6rem] sm:px-1 sm:py-0"
                 onClick={handleToggleCode}
               >
-                {showCode ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                {showCode ? localize('com_ui_hide_code') : localize('com_ui_show_code')}
+                {showCode ? (
+                  <ChevronUp className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                )}
+                <span className="hidden sm:inline">
+                  {showCode ? localize('com_ui_hide_code') : localize('com_ui_show_code')}
+                </span>
               </Button>
               <Button
                 ref={copyButtonRef}
                 variant="ghost"
                 size="sm"
-                className="h-auto gap-1 rounded-sm px-1 py-0 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-border-heavy focus-visible:ring-offset-0"
+                aria-label={localize('com_ui_copy_code')}
+                className="size-8 min-w-0 gap-1 rounded-sm p-0 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-border-heavy focus-visible:ring-offset-0 sm:h-auto sm:w-auto sm:px-1 sm:py-0"
                 onClick={handleCopy}
               >
-                {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
-                {localize('com_ui_copy_code')}
+                {isCopied ? (
+                  <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
+                ) : (
+                  <Clipboard className="size-4" aria-hidden="true" />
+                )}
+                <span className="hidden sm:inline">{localize('com_ui_copy_code')}</span>
               </Button>
               <OGDialogClose className="rounded-sm p-1 text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy">
                 <X className="h-4 w-4" />
@@ -126,7 +158,7 @@ const MermaidDialog: React.FC<MermaidDialogProps> = memo(
             >
               <img
                 src={blobUrl}
-                alt="Mermaid diagram"
+                alt={localize('com_ui_mermaid_diagram')}
                 className="max-h-full max-w-full select-none object-contain"
                 style={{
                   transform: `scale(${zoom})`,

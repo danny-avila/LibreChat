@@ -1,7 +1,14 @@
-import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
+import mongoose, { type FilterQuery } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EModelEndpoint, RetentionMode } from 'librechat-data-provider';
+import type {
+  Document,
+  Filter,
+  FindOneAndUpdateOptions,
+  UpdateFilter,
+  UpdateResult,
+} from 'mongodb';
 import type { IChatProject, IConversation } from '../types';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
@@ -70,6 +77,8 @@ afterAll(async () => {
 
 const saveConvo = (...args: Parameters<ConversationMethods['saveConvo']>) =>
   methods.saveConvo(...args) as Promise<IConversation | null>;
+const setConvoPinned = (...args: Parameters<ConversationMethods['setConvoPinned']>) =>
+  methods.setConvoPinned(...args);
 const getConvo = (...args: Parameters<ConversationMethods['getConvo']>) =>
   methods.getConvo(...args);
 const getConvoRetention = (...args: Parameters<ConversationMethods['getConvoRetention']>) =>
@@ -80,6 +89,8 @@ const getConvoFiles = (...args: Parameters<ConversationMethods['getConvoFiles']>
   methods.getConvoFiles(...args);
 const deleteConvos = (...args: Parameters<ConversationMethods['deleteConvos']>) =>
   methods.deleteConvos(...args);
+const archiveAllConvos = (...args: Parameters<ConversationMethods['archiveAllConvos']>) =>
+  methods.archiveAllConvos(...args);
 const getConvosByCursor = (...args: Parameters<ConversationMethods['getConvosByCursor']>) =>
   methods.getConvosByCursor(...args);
 const getConvosQueried = (...args: Parameters<ConversationMethods['getConvosQueried']>) =>
@@ -90,10 +101,20 @@ const deleteNullOrEmptyConversations = (
 const searchConversation = (...args: Parameters<ConversationMethods['searchConversation']>) =>
   methods.searchConversation(...args);
 
+/** The archive sweep discovers projects either by a bounded id list or by its own
+ * `archivedAt` marker, and the tests below assert which of the two a call used. */
+type ArchiveDistinctFilter = {
+  _id?: { $in?: unknown[] };
+  user?: string;
+  isArchived?: boolean;
+  archivedAt?: Date;
+};
+
 describe('Conversation Operations', () => {
   let mockCtx: {
     userId: string;
     isTemporary?: boolean;
+    expiredAt?: Date;
     interfaceConfig?: { temporaryChatRetention?: number; retentionMode?: RetentionMode };
   };
   let mockConversationData: {
@@ -389,6 +410,634 @@ describe('Conversation Operations', () => {
       expect(new Date(secondSave?.createdAt ?? 0).toISOString()).toBe(firstAnchor.toISOString());
       expect(secondSave?.title).toBe('Updated title');
     });
+
+    it('preserves insert defaults and suppressed timestamps for an archive pipeline upsert', async () => {
+      const conversationId = uuidv4();
+      const firstAnchor = new Date('2024-02-03T04:05:06.000Z');
+      const secondAnchor = new Date('2025-02-03T04:05:06.000Z');
+
+      const firstSave = await saveConvo(
+        { userId: 'user123' },
+        { conversationId, isArchived: true },
+        { createdAtOnInsert: firstAnchor, preserveUpdatedAt: true },
+      );
+      const secondSave = await saveConvo(
+        { userId: 'user123' },
+        { conversationId, isArchived: true },
+        { createdAtOnInsert: secondAnchor, preserveUpdatedAt: true },
+      );
+
+      expect(firstSave?.title).toBe('New Chat');
+      expect(firstSave?.isTemporary).toBe(false);
+      expect(firstSave?.updatedAt ?? null).toBeNull();
+      expect(new Date(firstSave?.createdAt ?? 0).toISOString()).toBe(firstAnchor.toISOString());
+      expect(secondSave?.updatedAt ?? null).toBeNull();
+      expect(new Date(secondSave?.createdAt ?? 0).toISOString()).toBe(firstAnchor.toISOString());
+      expect(secondSave?.archivedAt).toEqual(firstSave?.archivedAt);
+    });
+
+    describe('preserveUpdatedAt', () => {
+      const anchor = new Date('2026-02-11T15:28:18.561Z');
+
+      const seedAgedConvo = async () => {
+        const conversationId = uuidv4();
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Date And Time Test',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: anchor,
+          updatedAt: anchor,
+        });
+        return conversationId;
+      };
+
+      /** Archiving files a chat away rather than touching it, and unarchiving has to
+       * restore it to its real place in the date groups. */
+      it('leaves updatedAt untouched across an archive and unarchive round trip', async () => {
+        const conversationId = await seedAgedConvo();
+
+        const archived = await saveConvo(
+          { userId: 'user123' },
+          { conversationId, isArchived: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+        const unarchived = await saveConvo(
+          { userId: 'user123' },
+          { conversationId, isArchived: false },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(archived?.isArchived).toBe(true);
+        expect(unarchived?.isArchived).toBe(false);
+        expect(new Date(archived?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+        expect(new Date(unarchived?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+      });
+
+      /** Opening an archived chat and hitting the archive shortcut (or a retried
+       * POST) sends isArchived: true again. That must not move Date Archived. */
+      it('keeps the original archivedAt when the chat is already archived', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Already filed away',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: true,
+          archivedAt: original,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        const again = await saveConvo(
+          { userId: 'user123' },
+          {
+            conversationId,
+            isArchived: true,
+            archivedAt: new Date('2026-08-15T21:00:00.000Z'),
+          },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(new Date(again?.archivedAt ?? 0).toISOString()).toBe(original.toISOString());
+      });
+
+      /** DocumentDB documents no support for pipeline-form updates on any engine
+       * version (`misc/documentdb/documentdb-compat.md`), so both archive transitions
+       * have to stay on plain update operators. */
+      it('archives with plain update operators rather than an aggregation pipeline', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Plain operators only',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        const findOneAndUpdate = Conversation.collection.findOneAndUpdate.bind(
+          Conversation.collection,
+        );
+        const updates: Array<UpdateFilter<Document> | Document[]> = [];
+        const writeSpy = jest
+          .spyOn(Conversation.collection, 'findOneAndUpdate')
+          .mockImplementation(
+            async (
+              filter: Filter<Document>,
+              update: UpdateFilter<Document> | Document[],
+              options?: FindOneAndUpdateOptions,
+            ) => {
+              updates.push(update);
+              return findOneAndUpdate(filter, update, options ?? {});
+            },
+          );
+
+        try {
+          const archived = await saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: true },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+          const unarchived = await saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: false },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+
+          expect(archived?.archivedAt).toBeInstanceOf(Date);
+          expect(unarchived?.archivedAt ?? null).toBeNull();
+          expect(updates.length).toBeGreaterThan(0);
+          for (const update of updates) {
+            expect(Array.isArray(update)).toBe(false);
+          }
+        } finally {
+          writeSpy.mockRestore();
+        }
+      });
+
+      /** Both conditional writes of the compare-and-set miss when an unarchive lands
+       * between them. The conversation still exists, so the route must not 404. */
+      it('does not report a missing chat when an unarchive splits the archive writes', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Split archive',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: true,
+          archivedAt: original,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        const findOneAndUpdate = Conversation.collection.findOneAndUpdate.bind(
+          Conversation.collection,
+        );
+        let writeCount = 0;
+        const writeSpy = jest
+          .spyOn(Conversation.collection, 'findOneAndUpdate')
+          .mockImplementation(
+            async (
+              filter: Filter<Document>,
+              update: UpdateFilter<Document> | Document[],
+              options?: FindOneAndUpdateOptions,
+            ) => {
+              writeCount += 1;
+              const result = await findOneAndUpdate(filter, update, options ?? {});
+              /** The transition write has just missed on an already archived chat.
+               * Unarchive it now so the already-archived write misses too. */
+              if (writeCount === 1) {
+                await Conversation.collection.updateOne(
+                  { conversationId },
+                  { $set: { isArchived: false, archivedAt: null } },
+                );
+              }
+              return result;
+            },
+          );
+
+        try {
+          const archived = await saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: true },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+
+          expect(archived).not.toBeNull();
+          expect(archived?.isArchived).toBe(true);
+          expect(archived?.archivedAt).toBeInstanceOf(Date);
+        } finally {
+          writeSpy.mockRestore();
+        }
+      });
+
+      /** Alternating requests can split every retry, and exhausting them still proves
+       * nothing about whether the chat exists, so it must not become a 404 either. */
+      it('does not report a missing chat when every archive retry is split', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Perpetually split',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: true,
+          archivedAt: original,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        const findOneAndUpdate = Conversation.collection.findOneAndUpdate.bind(
+          Conversation.collection,
+        );
+        const writeSpy = jest
+          .spyOn(Conversation.collection, 'findOneAndUpdate')
+          .mockImplementation(
+            async (
+              filter: Filter<Document>,
+              update: UpdateFilter<Document> | Document[],
+              options?: FindOneAndUpdateOptions,
+            ) => {
+              const result = await findOneAndUpdate(filter, update, options ?? {});
+              /** Flip the flag after every write so no transition write and no
+               * already-archived write can ever match. */
+              const archived = await Conversation.collection.findOne({ conversationId });
+              await Conversation.collection.updateOne(
+                { conversationId },
+                { $set: { isArchived: archived?.isArchived !== true } },
+              );
+              return result;
+            },
+          );
+
+        try {
+          const archived = await saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: true },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+
+          expect(archived).not.toBeNull();
+          expect(archived?.conversationId).toBe(conversationId);
+        } finally {
+          writeSpy.mockRestore();
+        }
+      });
+
+      it('stamps again when unarchive lands before a pending repeated archive write', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Archive race',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: true,
+          archivedAt: original,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        let markArchiveWriteReached = () => {};
+        const archiveWriteReached = new Promise<void>((resolve) => {
+          markArchiveWriteReached = resolve;
+        });
+        let releaseArchiveWrite = () => {};
+        const archiveWriteBlocked = new Promise<void>((resolve) => {
+          releaseArchiveWrite = resolve;
+        });
+        const findOneAndUpdate = Conversation.collection.findOneAndUpdate.bind(
+          Conversation.collection,
+        );
+        let writeCount = 0;
+        const writeSpy = jest
+          .spyOn(Conversation.collection, 'findOneAndUpdate')
+          .mockImplementation(
+            async (
+              filter: Filter<Document>,
+              update: UpdateFilter<Document> | Document[],
+              options?: FindOneAndUpdateOptions,
+            ) => {
+              writeCount += 1;
+              if (writeCount === 1) {
+                markArchiveWriteReached();
+                await archiveWriteBlocked;
+              }
+              return findOneAndUpdate(filter, update, options ?? {});
+            },
+          );
+
+        try {
+          const archive = saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: true },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+          await archiveWriteReached;
+
+          const unarchived = await saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: false },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+          releaseArchiveWrite();
+          const archived = await archive;
+
+          expect(unarchived?.isArchived).toBe(false);
+          expect(archived?.isArchived).toBe(true);
+          expect(archived?.archivedAt).toBeInstanceOf(Date);
+          expect(new Date(archived?.archivedAt ?? 0).toISOString()).not.toBe(
+            original.toISOString(),
+          );
+        } finally {
+          releaseArchiveWrite();
+          writeSpy.mockRestore();
+        }
+      });
+
+      it('stamps archivedAt on the first archive when the caller omits it', async () => {
+        const conversationId = await seedAgedConvo();
+        const before = Date.now();
+
+        const archived = await saveConvo(
+          { userId: 'user123' },
+          { conversationId, isArchived: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(archived?.archivedAt).toBeInstanceOf(Date);
+        expect(new Date(archived?.archivedAt ?? 0).getTime()).toBeGreaterThanOrEqual(before);
+      });
+
+      it('clears archivedAt on unarchive when the caller omits it', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'To restore',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: true,
+          archivedAt: original,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        const unarchived = await saveConvo(
+          { userId: 'user123' },
+          { conversationId, isArchived: false },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(unarchived?.archivedAt ?? null).toBeNull();
+      });
+
+      /** A pin carries a preserved older timestamp, so the project it belongs to must
+       * not be dragged back to it while the project holds newer conversations. */
+      it('does not drag a project pointer back when only metadata changes', async () => {
+        const project = await ChatProject.create({
+          user: 'user123',
+          name: 'Pinned project',
+          conversationCount: 0,
+          lastConversationAt: null,
+          lastConversationId: null,
+        });
+        const newer = uuidv4();
+        const older = uuidv4();
+        const newerAt = new Date('2026-08-01T00:00:00.000Z');
+        for (const [id, when] of [
+          [newer, newerAt],
+          [older, anchor],
+        ] as Array<[string, Date]>) {
+          await Conversation.collection.insertOne({
+            conversationId: id,
+            user: 'user123',
+            title: id,
+            endpoint: EModelEndpoint.openAI,
+            expiredAt: null,
+            isArchived: false,
+            chatProjectId: String(project._id),
+            createdAt: when,
+            updatedAt: when,
+          });
+        }
+
+        await saveConvo(
+          { userId: 'user123' },
+          { conversationId: older, pinned: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        const after = await ChatProject.findById(project._id).lean<{
+          lastConversationAt: Date;
+          lastConversationId: string;
+        }>();
+        expect(new Date(after?.lastConversationAt ?? 0).toISOString()).toBe(newerAt.toISOString());
+        expect(after?.lastConversationId).toBe(newer);
+      });
+
+      /** Under RetentionMode.ALL a legacy chat also gets an isTemporary backfill after
+       * the main write; that second update has to stay silent too. */
+      it('keeps updatedAt through the retention backfill', async () => {
+        const conversationId = uuidv4();
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'legacy chat with no isTemporary',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: anchor,
+          updatedAt: anchor,
+        });
+
+        const result = await saveConvo(
+          {
+            userId: 'user123',
+            interfaceConfig: { retentionMode: RetentionMode.ALL, temporaryChatRetention: 24 },
+          },
+          { conversationId, isArchived: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(result?.isArchived).toBe(true);
+        const stored = await Conversation.findOne({ conversationId }).lean<IConversation>();
+        expect(new Date(stored?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+      });
+
+      it('still bumps updatedAt for an ordinary save', async () => {
+        const conversationId = await seedAgedConvo();
+
+        const result = await saveConvo({ userId: 'user123' }, { conversationId, title: 'Renamed' });
+
+        expect(new Date(result?.updatedAt ?? 0).getTime()).toBeGreaterThan(anchor.getTime());
+      });
+
+      it('does not insert a timestampless conversation for an unknown id', async () => {
+        const result = await saveConvo(
+          { userId: 'user123' },
+          { conversationId: uuidv4(), isArchived: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(result).toBeNull();
+      });
+    });
+
+    describe('setConvoPinned', () => {
+      const anchor = new Date('2026-03-05T22:17:14.997Z');
+
+      const seedAgedConvo = async (user = 'user123') => {
+        const conversationId = uuidv4();
+        await Conversation.collection.insertOne({
+          conversationId,
+          user,
+          title: 'Living Room Light And Temperature',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          messages: [],
+          createdAt: anchor,
+          updatedAt: anchor,
+        });
+        return conversationId;
+      };
+
+      it('pins a conversation without disturbing its timestamps', async () => {
+        const conversationId = await seedAgedConvo();
+
+        const result = await setConvoPinned('user123', conversationId, true);
+
+        expect(result?.pinned).toBe(true);
+        expect(result?.title).toBe('Living Room Light And Temperature');
+        expect(new Date(result?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+        expect(new Date(result?.createdAt ?? 0).toISOString()).toBe(anchor.toISOString());
+      });
+
+      it('unpins a conversation without disturbing its timestamps', async () => {
+        const conversationId = await seedAgedConvo();
+        await setConvoPinned('user123', conversationId, true);
+
+        const result = await setConvoPinned('user123', conversationId, false);
+
+        expect(result?.pinned).toBe(false);
+        expect(new Date(result?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+      });
+
+      /** The whole point of the dedicated method: a one-field toggle should not pay for
+       * `saveConvo`'s message-id read, nor rewrite the array it returns. */
+      it('does not read the conversation messages', async () => {
+        const conversationId = await seedAgedConvo();
+
+        await setConvoPinned('user123', conversationId, true);
+
+        expect(getMessages).not.toHaveBeenCalled();
+      });
+
+      it('leaves the stored message list alone', async () => {
+        const conversationId = await seedAgedConvo();
+        await Conversation.collection.updateOne(
+          { conversationId },
+          { $set: { messages: ['message-a', 'message-b'] } },
+        );
+
+        await setConvoPinned('user123', conversationId, true);
+
+        const stored = await Conversation.findOne({ conversationId }).lean<IConversation>();
+        expect(stored?.messages).toEqual(['message-a', 'message-b']);
+      });
+
+      it('returns null for an unknown id rather than inserting one', async () => {
+        const conversationId = uuidv4();
+
+        const result = await setConvoPinned('user123', conversationId, true);
+
+        expect(result).toBeNull();
+        expect(await Conversation.countDocuments({ conversationId })).toBe(0);
+      });
+
+      it('cannot pin another user’s conversation', async () => {
+        const conversationId = await seedAgedConvo('other-user');
+
+        const result = await setConvoPinned('user123', conversationId, true);
+
+        expect(result).toBeNull();
+        const stored = await Conversation.findOne({ conversationId }).lean<IConversation>();
+        expect(stored?.pinned).toBeUndefined();
+      });
+    });
+  });
+
+  describe('saveConvo appendMessageIds', () => {
+    const ctx = { userId: 'append-user' };
+    const conversationId = 'append-conversation';
+
+    beforeEach(async () => {
+      await Conversation.deleteMany({ user: ctx.userId });
+      getMessages.mockClear();
+    });
+
+    it('appends the provided ids without reading the messages collection', async () => {
+      const seeded = [new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId()];
+      getMessages.mockResolvedValueOnce(seeded.map((_id) => ({ _id })));
+      await saveConvo(ctx, { conversationId, title: 'seeded' });
+      expect(getMessages).toHaveBeenCalledTimes(1);
+
+      const appended = new mongoose.Types.ObjectId();
+      const result = await saveConvo(
+        ctx,
+        { conversationId, title: 'appended' },
+        { appendMessageIds: [appended] },
+      );
+
+      expect(getMessages).toHaveBeenCalledTimes(1);
+      expect(result?.title).toBe('appended');
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual([...seeded, appended].map(String));
+    });
+
+    it('does not duplicate an id that is already recorded', async () => {
+      const id = new mongoose.Types.ObjectId();
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [id] });
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [id] });
+
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual([String(id)]);
+      expect(getMessages).not.toHaveBeenCalled();
+    });
+
+    it('creates the conversation with the appended id when it does not exist yet', async () => {
+      const id = new mongoose.Types.ObjectId();
+      const result = await saveConvo(
+        ctx,
+        { conversationId, title: 'first turn' },
+        { appendMessageIds: [id] },
+      );
+
+      expect(result?.conversationId).toBe(conversationId);
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual([String(id)]);
+      expect(getMessages).not.toHaveBeenCalled();
+    });
+
+    it('ignores a caller-supplied messages field so $set cannot conflict with the append', async () => {
+      const kept = new mongoose.Types.ObjectId();
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [kept] });
+
+      const appended = new mongoose.Types.ObjectId();
+      await saveConvo(
+        ctx,
+        { conversationId, messages: [new mongoose.Types.ObjectId()] },
+        { appendMessageIds: [appended] },
+      );
+
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual([kept, appended].map(String));
+    });
+
+    it('still rebuilds the array from the database when the option is absent', async () => {
+      const rebuilt = [new mongoose.Types.ObjectId()];
+      getMessages.mockResolvedValueOnce(rebuilt.map((_id) => ({ _id })));
+
+      await saveConvo(ctx, { conversationId, title: 'rebuild' });
+
+      expect(getMessages).toHaveBeenCalledWith({ conversationId, user: ctx.userId }, '_id');
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual(rebuilt.map(String));
+    });
   });
 
   describe('isTemporary conversation handling', () => {
@@ -413,6 +1062,18 @@ describe('Conversation Operations', () => {
       expect(actualExpirationTime.getTime()).toBeLessThanOrEqual(
         new Date(afterSave.getTime() + 24 * 60 * 60 * 1000 + 1000).getTime(),
       );
+    });
+
+    it('preserves an exact inherited expiration instead of recomputing retention', async () => {
+      const inheritedExpiration = new Date('2026-08-22T03:04:05.000Z');
+      mockCtx.isTemporary = true;
+      mockCtx.expiredAt = inheritedExpiration;
+      mockCtx.interfaceConfig = { temporaryChatRetention: 48 };
+
+      const result = await saveConvo(mockCtx, mockConversationData);
+
+      expect(result?.isTemporary).toBe(true);
+      expect(result?.expiredAt).toEqual(inheritedExpiration);
     });
 
     it('should save a conversation without expiredAt when isTemporary is false', async () => {
@@ -823,6 +1484,52 @@ describe('Conversation Operations', () => {
       expect(result?.convoMap[expiredRetainedConvo.conversationId]).toBeUndefined();
       expect(result?.convoMap[tempConvo.conversationId]).toBeUndefined();
     });
+
+    it('hides durable subagent threads from conversation lists and search results', async () => {
+      const parentId = uuidv4();
+      const childId = uuidv4();
+      const messageId = 'message-1';
+      const normalConversation = await Conversation.create({
+        conversationId: parentId,
+        user: 'user123',
+        endpoint: EModelEndpoint.agents,
+        title: 'Parent conversation',
+      });
+      await Conversation.create({
+        conversationId: childId,
+        user: 'user123',
+        endpoint: EModelEndpoint.agents,
+        title: 'Subagent: implementation',
+        subagentThread: {
+          rootConversationId: parentId,
+          parentConversationId: parentId,
+          parentMessageId: messageId,
+          parentToolCallId: 'tool-1',
+          subagentType: 'agent-child',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      Object.assign(Conversation, {
+        meiliSearch: jest.fn().mockResolvedValue({
+          hits: [{ conversationId: parentId }, { conversationId: childId }],
+        }),
+      });
+
+      const listed = await getConvosByCursor('user123', { search: 'implementation' });
+      const queried = await getConvosQueried('user123', [
+        { conversationId: parentId },
+        { conversationId: childId },
+      ]);
+
+      expect(listed.conversations.map((convo) => convo.conversationId)).toEqual([
+        normalConversation.conversationId,
+      ]);
+      expect(queried.conversations.map((convo) => convo.conversationId)).toEqual([
+        normalConversation.conversationId,
+      ]);
+      expect(queried.convoMap[childId]).toBeUndefined();
+    });
   });
 
   describe('searchConversation', () => {
@@ -867,6 +1574,110 @@ describe('Conversation Operations', () => {
     it('should return null if conversation not found', async () => {
       const result = await getConvo('user123', 'non-existent-id');
       expect(result).toBeNull();
+    });
+  });
+
+  describe('getConvoOwnership', () => {
+    it('resolves only the owning user id, without the preset or message list', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        tenantId: 'tenant-a',
+        title: 'Test Conversation',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      const result = await methods.getConvoOwnership(
+        'user123',
+        mockConversationData.conversationId,
+      );
+
+      expect(result?.user).toBe('user123');
+      expect(result?.tenantId).toBe('tenant-a');
+      expect(result).not.toHaveProperty('title');
+      expect(result).not.toHaveProperty('messages');
+      expect(result).not.toHaveProperty('endpoint');
+    });
+
+    it('returns null for another user or a missing conversation', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        title: 'Test Conversation',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      expect(
+        await methods.getConvoOwnership('someone-else', mockConversationData.conversationId),
+      ).toBeNull();
+      expect(await methods.getConvoOwnership('user123', 'non-existent-id')).toBeNull();
+    });
+
+    it('hides retention-expired conversations before TTL cleanup', async () => {
+      await Conversation.create({
+        conversationId: 'expired-owner',
+        user: 'user123',
+        endpoint: EModelEndpoint.agents,
+        expiredAt: new Date(Date.now() - 60_000),
+      });
+
+      await expect(methods.getConvoOwnership('user123', 'expired-owner')).resolves.toBeNull();
+    });
+
+    it('includes child-thread identity without materializing conversation content', async () => {
+      await Conversation.create({
+        conversationId: 'child-conversation',
+        user: 'user123',
+        title: 'Internal child',
+        endpoint: EModelEndpoint.agents,
+        subagentThread: {
+          rootConversationId: 'root-conversation',
+          parentConversationId: 'parent-conversation',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool-call',
+          subagentType: 'child-agent',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+
+      const result = await methods.getConvoOwnership('user123', 'child-conversation');
+
+      expect(result).toMatchObject({
+        user: 'user123',
+        subagentThread: { parentConversationId: 'parent-conversation' },
+      });
+      expect(result).not.toHaveProperty('title');
+    });
+
+    it('selects the exact tenant when conversation identifiers collide', async () => {
+      await runAsSystem(async () => {
+        await Conversation.create([
+          {
+            conversationId: 'shared-conversation-id',
+            user: 'user123',
+            title: 'Tenantless parent',
+            endpoint: EModelEndpoint.agents,
+          },
+          {
+            conversationId: 'shared-conversation-id',
+            user: 'user123',
+            tenantId: 'tenant-a',
+            title: 'Tenant parent',
+            endpoint: EModelEndpoint.agents,
+          },
+        ]);
+      });
+
+      const tenantless = await methods.getConvoOwnership('user123', 'shared-conversation-id', null);
+      const tenant = await methods.getConvoOwnership(
+        'user123',
+        'shared-conversation-id',
+        'tenant-a',
+      );
+
+      expect(tenantless?.tenantId).toBeUndefined();
+      expect(tenant?.tenantId).toBe('tenant-a');
     });
   });
 
@@ -977,6 +1788,168 @@ describe('Conversation Operations', () => {
         conversationId: mockConversationData.conversationId,
       });
       expect(deletedConvo).toBeNull();
+    });
+
+    it('cascades parent deletion through owner-scoped child-thread lineage', async () => {
+      const parentId = uuidv4();
+      const childId = uuidv4();
+      const grandchildId = uuidv4();
+      const otherUsersChildId = uuidv4();
+      const lineage = (
+        parentConversationId: string,
+        rootConversationId: string,
+        depth: number,
+      ) => ({
+        rootConversationId,
+        parentConversationId,
+        parentMessageId: `message-${depth}`,
+        parentToolCallId: `tool-${depth}`,
+        subagentType: 'agent-child',
+        subagentKind: 'agent',
+        depth,
+      });
+      await Conversation.create([
+        { conversationId: parentId, user: 'user123', endpoint: EModelEndpoint.agents },
+        {
+          conversationId: childId,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage(parentId, parentId, 1),
+        },
+        {
+          conversationId: grandchildId,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage(childId, parentId, 2),
+        },
+        {
+          conversationId: otherUsersChildId,
+          user: 'other-user',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage(parentId, parentId, 1),
+        },
+      ]);
+      deleteMessages.mockResolvedValue({ acknowledged: true, deletedCount: 3 });
+      const beforeDelete = jest.fn(async (conversationIds: string[]) => {
+        expect(
+          await Conversation.countDocuments({ conversationId: { $in: conversationIds } }),
+        ).toBe(conversationIds.length);
+      });
+
+      const result = await deleteConvos('user123', { conversationId: parentId }, { beforeDelete });
+
+      expect(result.deletedCount).toBe(3);
+      expect(result.conversationIds).toEqual([parentId, childId, grandchildId]);
+      expect(beforeDelete.mock.calls).toEqual([[[parentId]], [[childId]], [[grandchildId]]]);
+      expect(deleteMessages).toHaveBeenCalledWith({
+        conversationId: { $in: [parentId, childId, grandchildId] },
+        user: 'user123',
+      });
+      expect(await Conversation.find({ user: 'user123' })).toHaveLength(0);
+      expect(await Conversation.findOne({ conversationId: otherUsersChildId })).not.toBeNull();
+    });
+
+    it('reports a partial cascade failure instead of silently succeeding', async () => {
+      const parentId = uuidv4();
+      const childId = uuidv4();
+      const project = await ChatProject.create({
+        user: 'user123',
+        name: 'Partial Cascade',
+        conversationCount: 1,
+        lastConversationId: parentId,
+      });
+      await ConversationTag.create({ user: 'user123', tag: 'work', count: 1, position: 1 });
+      await Conversation.create([
+        {
+          conversationId: parentId,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          chatProjectId: project._id!.toString(),
+          tags: ['work'],
+        },
+        {
+          conversationId: childId,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            rootConversationId: parentId,
+            parentConversationId: parentId,
+            parentMessageId: 'message-1',
+            parentToolCallId: 'tool-1',
+            subagentType: 'agent-child',
+            subagentKind: 'agent',
+            depth: 1,
+          },
+        },
+      ]);
+      const realFind = Conversation.find.bind(Conversation);
+      const findSpy = jest.spyOn(Conversation, 'find').mockImplementation(((filter) => {
+        if (
+          filter != null &&
+          Object.prototype.hasOwnProperty.call(filter, 'subagentThread.parentConversationId')
+        ) {
+          return {
+            select: () => ({ lean: () => Promise.reject(new Error('stepdown')) }),
+          };
+        }
+        return realFind(filter as FilterQuery<IConversation>);
+      }) as typeof Conversation.find);
+
+      await expect(deleteConvos('user123', { conversationId: parentId })).rejects.toThrow(
+        'stepdown',
+      );
+      expect(findSpy).toHaveBeenCalledTimes(4);
+      expect(await Conversation.findOne({ conversationId: parentId })).toBeNull();
+      expect(await Conversation.findOne({ conversationId: childId })).not.toBeNull();
+      expect(deleteMessages).not.toHaveBeenCalled();
+      expect((await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean())?.count).toBe(
+        0,
+      );
+      expect(
+        (await ChatProject.findById(project._id).lean<IChatProject>())?.conversationCount,
+      ).toBe(0);
+
+      findSpy.mockRestore();
+      deleteMessages.mockResolvedValue({ acknowledged: true, deletedCount: 2 });
+      const recovered = await deleteConvos('user123', { conversationId: parentId });
+
+      expect(recovered.conversationIds).toEqual([parentId, childId]);
+      expect(await Conversation.findOne({ conversationId: childId })).toBeNull();
+      expect(deleteMessages).toHaveBeenCalledWith({
+        conversationId: { $in: [parentId, childId] },
+        user: 'user123',
+      });
+      expect((await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean())?.count).toBe(
+        0,
+      );
+      findSpy.mockRestore();
+    });
+
+    it('does not delete a parent when deleting one child thread', async () => {
+      const parentId = uuidv4();
+      const childId = uuidv4();
+      await Conversation.create([
+        { conversationId: parentId, user: 'user123', endpoint: EModelEndpoint.agents },
+        {
+          conversationId: childId,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            rootConversationId: parentId,
+            parentConversationId: parentId,
+            parentMessageId: 'message-1',
+            parentToolCallId: 'tool-1',
+            subagentType: 'agent-child',
+            subagentKind: 'agent',
+            depth: 1,
+          },
+        },
+      ]);
+
+      const result = await deleteConvos('user123', { conversationId: childId });
+
+      expect(result.conversationIds).toEqual([childId]);
+      expect(await Conversation.findOne({ conversationId: parentId })).not.toBeNull();
     });
 
     it('should throw error if no conversations found', async () => {
@@ -1137,6 +2110,751 @@ describe('Conversation Operations', () => {
     });
   });
 
+  describe('archiveAllConvos', () => {
+    it('defines an index for the user-scoped ObjectId batch scan', () => {
+      const indexFields = Conversation.schema.indexes().map(([fields]) => fields);
+
+      expect(indexFields).toContainEqual({ user: 1, _id: 1 });
+    });
+
+    it('archives every unarchived conversation for the user only', async () => {
+      const first = uuidv4();
+      const second = uuidv4();
+      const otherUsers = uuidv4();
+      const childThread = uuidv4();
+      await Conversation.create([
+        { conversationId: first, user: 'user123', endpoint: EModelEndpoint.openAI },
+        { conversationId: second, user: 'user123', endpoint: EModelEndpoint.openAI },
+        { conversationId: otherUsers, user: 'user456', endpoint: EModelEndpoint.openAI },
+        {
+          conversationId: childThread,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            rootConversationId: first,
+            parentConversationId: first,
+            parentMessageId: 'parent-message',
+            parentToolCallId: 'parent-tool-call',
+            subagentType: 'agent-child',
+            subagentKind: 'agent',
+            depth: 1,
+          },
+        },
+      ]);
+
+      const result = await archiveAllConvos('user123');
+
+      expect(result.archivedCount).toBe(2);
+      const archived = await Conversation.find({
+        user: 'user123',
+        conversationId: { $in: [first, second] },
+      }).lean<IConversation[]>();
+      expect(archived.every((convo) => convo.isArchived === true)).toBe(true);
+      const untouched = await Conversation.findOne({
+        conversationId: otherUsers,
+      }).lean<IConversation>();
+      expect(untouched?.isArchived).not.toBe(true);
+      const child = await Conversation.findOne({
+        conversationId: childThread,
+      }).lean<IConversation>();
+      expect(child?.isArchived).not.toBe(true);
+    });
+
+    it('archives large snapshots in bounded batches', async () => {
+      const conversations = Array.from({ length: 501 }, (_, index) => ({
+        conversationId: `archive-batch-${index}`,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      }));
+      await Conversation.insertMany(conversations);
+      const updateManySpy = jest.spyOn(Conversation, 'updateMany');
+
+      try {
+        const result = await archiveAllConvos('user123');
+        expect(result.archivedCount).toBe(conversations.length);
+        expect(updateManySpy).toHaveBeenCalledTimes(2);
+      } finally {
+        updateManySpy.mockRestore();
+      }
+
+      const unarchivedCount = await Conversation.countDocuments({
+        user: 'user123',
+        isArchived: { $ne: true },
+      });
+      expect(unarchivedCount).toBe(0);
+    });
+
+    it('recovers destination projects from the sweep marker, not a per-conversation id list', async () => {
+      const conversations = Array.from({ length: 501 }, (_, index) => ({
+        conversationId: `archive-recovery-batch-${index}`,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      }));
+      await Conversation.insertMany(conversations);
+
+      const distinct = Conversation.distinct.bind(Conversation);
+      const distinctFilters: ArchiveDistinctFilter[] = [];
+      const distinctSpy = jest.spyOn(Conversation, 'distinct').mockImplementation(((
+        field,
+        filter,
+      ) => {
+        distinctFilters.push((filter ?? {}) as ArchiveDistinctFilter);
+        return distinct(field, filter);
+      }) as typeof Conversation.distinct);
+
+      try {
+        const result = await archiveAllConvos('user123');
+        expect(result.archivedCount).toBe(conversations.length);
+      } finally {
+        distinctSpy.mockRestore();
+      }
+
+      /** Every id list stays within one batch, so nothing accumulates across the sweep. */
+      const idListSizes = distinctFilters
+        .map((filter) => filter._id?.$in?.length)
+        .filter((size): size is number => size !== undefined);
+      expect(idListSizes.length).toBeGreaterThan(0);
+      expect(Math.max(...idListSizes)).toBeLessThanOrEqual(500);
+
+      const recoveryFilters = distinctFilters.filter((filter) => filter.archivedAt instanceof Date);
+      expect(recoveryFilters).toHaveLength(1);
+      expect(recoveryFilters[0]._id).toBeUndefined();
+      expect(recoveryFilters[0]).toMatchObject({ user: 'user123', isArchived: true });
+    });
+
+    it('recovers a batch-sized destination move from the marker alone', async () => {
+      const destinationProject = await ChatProject.create({ user: 'user123', name: 'Destination' });
+      const conversations = Array.from({ length: 501 }, (_, index) => ({
+        conversationId: `archive-recovery-scale-${index}`,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      }));
+      await Conversation.insertMany(conversations);
+
+      /** The chats carry no project when the sweep captures them, so the destination is
+       * reachable only through the marker: nothing in the loop ever saw it. */
+      const updateMany = Conversation.updateMany.bind(Conversation);
+      const updateManySpy = jest.spyOn(Conversation, 'updateMany').mockImplementationOnce((async (
+        filter,
+        update,
+        options,
+      ) => {
+        const result = await updateMany(filter, update, options);
+        await Conversation.updateMany(
+          { user: 'user123' },
+          { $set: { chatProjectId: destinationProject._id!.toString() } },
+          { timestamps: false },
+        );
+        await ChatProject.findByIdAndUpdate(destinationProject._id, {
+          conversationCount: conversations.length,
+          lastConversationId: conversations[conversations.length - 1].conversationId,
+        });
+        return result;
+      }) as typeof Conversation.updateMany);
+      const distinct = Conversation.distinct.bind(Conversation);
+      const distinctSpy = jest
+        .spyOn(Conversation, 'distinct')
+        .mockRejectedValueOnce(new Error('project discovery failed'))
+        .mockRejectedValueOnce(new Error('project discovery failed'))
+        .mockRejectedValueOnce(new Error('project discovery failed'))
+        .mockImplementation(((...args) => distinct(...args)) as typeof Conversation.distinct);
+
+      try {
+        await expect(archiveAllConvos('user123')).rejects.toThrow('project discovery failed');
+      } finally {
+        updateManySpy.mockRestore();
+        distinctSpy.mockRestore();
+      }
+
+      const archived = await Conversation.countDocuments({ user: 'user123', isArchived: true });
+      expect(archived).toBe(500);
+      const refreshed = await ChatProject.findById(destinationProject._id).lean<IChatProject>();
+      expect(refreshed?.conversationCount).toBe(1);
+    });
+
+    it('replays a failed project refresh without abandoning the rest of the run', async () => {
+      const projects = await ChatProject.insertMany(
+        Array.from({ length: 11 }, (_, index) => ({
+          user: 'user123',
+          name: `Project ${index}`,
+          conversationCount: 1,
+          lastConversationId: `project-conversation-${index}`,
+        })),
+      );
+      await Conversation.insertMany(
+        projects.map((project, index) => ({
+          conversationId: `project-conversation-${index}`,
+          user: 'user123',
+          endpoint: EModelEndpoint.openAI,
+          chatProjectId: project._id!.toString(),
+        })),
+      );
+      const countDocumentsSpy = jest
+        .spyOn(Conversation, 'countDocuments')
+        .mockRejectedValueOnce(new Error('transient project refresh failure'));
+
+      try {
+        const result = await archiveAllConvos('user123');
+        expect(result.archivedCount).toBe(projects.length);
+        /** Ten in the first batch and one in the second, then a replay of the one that
+         * failed: nothing else in the run is still competing with it by then. */
+        expect(countDocumentsSpy).toHaveBeenCalledTimes(projects.length + 1);
+      } finally {
+        countDocumentsSpy.mockRestore();
+      }
+
+      const refreshed = await ChatProject.find({ user: 'user123' }).lean<IChatProject[]>();
+      expect(refreshed).toHaveLength(projects.length);
+      for (const project of refreshed) {
+        expect(project.conversationCount).toBe(0);
+        expect(project.lastConversationId).toBeNull();
+      }
+    });
+
+    it('leaves already-archived conversations untouched', async () => {
+      const alreadyArchived = uuidv4();
+      await Conversation.create({
+        conversationId: alreadyArchived,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        isArchived: true,
+      });
+
+      const result = await archiveAllConvos('user123');
+
+      expect(result.archivedCount).toBe(0);
+    });
+
+    it('skips temporary and retention-expired conversations', async () => {
+      const temporary = uuidv4();
+      const expired = uuidv4();
+      const visible = uuidv4();
+      await Conversation.create([
+        {
+          conversationId: temporary,
+          user: 'user123',
+          endpoint: EModelEndpoint.openAI,
+          isTemporary: true,
+          expiredAt: new Date(Date.now() + 60 * 60 * 1000),
+        },
+        {
+          conversationId: expired,
+          user: 'user123',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: new Date(Date.now() - 60 * 60 * 1000),
+        },
+        { conversationId: visible, user: 'user123', endpoint: EModelEndpoint.openAI },
+      ]);
+
+      const result = await archiveAllConvos('user123');
+
+      expect(result.archivedCount).toBe(1);
+      const temporaryConvo = await Conversation.findOne({
+        conversationId: temporary,
+      }).lean<IConversation>();
+      const expiredConvo = await Conversation.findOne({
+        conversationId: expired,
+      }).lean<IConversation>();
+      expect(temporaryConvo?.isArchived).not.toBe(true);
+      expect(expiredConvo?.isArchived).not.toBe(true);
+    });
+
+    it('preserves each conversation updatedAt so the archived view keeps its order', async () => {
+      const convoId = uuidv4();
+      const updatedAt = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      await Conversation.create({
+        conversationId: convoId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        createdAt: updatedAt,
+        updatedAt,
+      });
+
+      await archiveAllConvos('user123');
+
+      const archived = await Conversation.findOne({
+        conversationId: convoId,
+      }).lean<IConversation>();
+      expect(archived?.updatedAt?.toISOString()).toBe(updatedAt.toISOString());
+    });
+
+    it('stamps archivedAt so the sweep is dated and sorted as archived now', async () => {
+      const before = Date.now();
+      const convoIds = [uuidv4(), uuidv4()];
+      await Conversation.insertMany(
+        convoIds.map((conversationId) => ({
+          conversationId,
+          user: 'user123',
+          endpoint: EModelEndpoint.openAI,
+          createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        })),
+      );
+
+      await archiveAllConvos('user123');
+
+      const archived = await Conversation.find({ conversationId: { $in: convoIds } }).lean<
+        IConversation[]
+      >();
+      expect(archived).toHaveLength(2);
+      for (const conversation of archived) {
+        expect(conversation.archivedAt).toBeInstanceOf(Date);
+        expect(new Date(conversation.archivedAt ?? 0).getTime()).toBeGreaterThanOrEqual(before);
+      }
+      expect(new Date(archived[0].archivedAt ?? 0).toISOString()).toBe(
+        new Date(archived[1].archivedAt ?? 0).toISOString(),
+      );
+    });
+
+    it('leaves the archivedAt of an already-archived chat alone', async () => {
+      const original = new Date('2026-01-01T00:00:00.000Z');
+      const archivedId = uuidv4();
+      await Conversation.create({
+        conversationId: archivedId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        isArchived: true,
+        archivedAt: original,
+      });
+
+      await archiveAllConvos('user123');
+
+      const untouched = await Conversation.findOne({
+        conversationId: archivedId,
+      }).lean<IConversation>();
+      expect(new Date(untouched?.archivedAt ?? 0).toISOString()).toBe(original.toISOString());
+    });
+
+    it('refreshes stats for every project the archived conversations belonged to', async () => {
+      const project = await ChatProject.create({ user: 'user123', name: 'Project' });
+      const projectId = project._id!.toString();
+      const convoId = uuidv4();
+      await Conversation.create({
+        conversationId: convoId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: projectId,
+      });
+      await ChatProject.findByIdAndUpdate(project._id, {
+        conversationCount: 1,
+        lastConversationId: convoId,
+      });
+
+      await archiveAllConvos('user123');
+
+      const refreshed = await ChatProject.findById(project._id).lean<IChatProject>();
+      expect(refreshed?.conversationCount).toBe(0);
+      expect(refreshed?.lastConversationId).toBeNull();
+    });
+
+    it('does not archive a project conversation created after the initial snapshot', async () => {
+      const project = await ChatProject.create({ user: 'user123', name: 'Project' });
+      const projectId = project._id!.toString();
+      const initialConversationId = uuidv4();
+      const concurrentConversationId = uuidv4();
+      await Conversation.create({
+        conversationId: initialConversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      const updateMany = Conversation.updateMany.bind(Conversation);
+      const updateManySpy = jest.spyOn(Conversation, 'updateMany').mockImplementationOnce((async (
+        filter,
+        update,
+        options,
+      ) => {
+        await Conversation.create({
+          conversationId: concurrentConversationId,
+          user: 'user123',
+          endpoint: EModelEndpoint.openAI,
+          chatProjectId: projectId,
+        });
+        await ChatProject.findByIdAndUpdate(project._id, {
+          conversationCount: 1,
+          lastConversationId: concurrentConversationId,
+        });
+        return await updateMany(filter, update, options);
+      }) as typeof Conversation.updateMany);
+
+      try {
+        const result = await archiveAllConvos('user123');
+        expect(result.archivedCount).toBe(1);
+      } finally {
+        updateManySpy.mockRestore();
+      }
+
+      const concurrentConversation = await Conversation.findOne({
+        conversationId: concurrentConversationId,
+      }).lean<IConversation>();
+      const refreshed = await ChatProject.findById(project._id).lean<IChatProject>();
+      expect(concurrentConversation?.isArchived).not.toBe(true);
+      expect(refreshed?.conversationCount).toBe(1);
+      expect(refreshed?.lastConversationId).toBe(concurrentConversationId);
+    });
+
+    it('retries destination-project discovery after a transient distinct failure', async () => {
+      const sourceProject = await ChatProject.create({ user: 'user123', name: 'Source' });
+      const destinationProject = await ChatProject.create({ user: 'user123', name: 'Destination' });
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: sourceProject._id!.toString(),
+      });
+      await ChatProject.findByIdAndUpdate(sourceProject._id, {
+        conversationCount: 1,
+        lastConversationId: conversationId,
+      });
+
+      const updateMany = Conversation.updateMany.bind(Conversation);
+      const updateManySpy = jest.spyOn(Conversation, 'updateMany').mockImplementationOnce((async (
+        filter,
+        update,
+        options,
+      ) => {
+        await Conversation.updateOne(
+          { conversationId },
+          { $set: { chatProjectId: destinationProject._id!.toString() } },
+        );
+        await ChatProject.findByIdAndUpdate(sourceProject._id, {
+          conversationCount: 0,
+          lastConversationId: null,
+        });
+        await ChatProject.findByIdAndUpdate(destinationProject._id, {
+          conversationCount: 1,
+          lastConversationId: conversationId,
+        });
+        return await updateMany(filter, update, options);
+      }) as typeof Conversation.updateMany);
+      const distinct = Conversation.distinct.bind(Conversation);
+      const distinctSpy = jest
+        .spyOn(Conversation, 'distinct')
+        .mockRejectedValueOnce(new Error('transient project discovery failure'))
+        .mockImplementation(((...args) => distinct(...args)) as typeof Conversation.distinct);
+
+      try {
+        const result = await archiveAllConvos('user123');
+        expect(result.archivedCount).toBe(1);
+      } finally {
+        updateManySpy.mockRestore();
+        distinctSpy.mockRestore();
+      }
+
+      const refreshed = await ChatProject.findById(destinationProject._id).lean<IChatProject>();
+      expect(refreshed?.conversationCount).toBe(0);
+      expect(refreshed?.lastConversationId).toBeNull();
+    });
+
+    it('reconciles the destination project when discovery retries exhaust after a move', async () => {
+      const sourceProject = await ChatProject.create({ user: 'user123', name: 'Source' });
+      const destinationProject = await ChatProject.create({ user: 'user123', name: 'Destination' });
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: sourceProject._id!.toString(),
+      });
+      await ChatProject.findByIdAndUpdate(sourceProject._id, {
+        conversationCount: 1,
+        lastConversationId: conversationId,
+      });
+
+      const updateMany = Conversation.updateMany.bind(Conversation);
+      const updateManySpy = jest.spyOn(Conversation, 'updateMany').mockImplementationOnce((async (
+        filter,
+        update,
+        options,
+      ) => {
+        await Conversation.updateOne(
+          { conversationId },
+          { $set: { chatProjectId: destinationProject._id!.toString() } },
+        );
+        await ChatProject.findByIdAndUpdate(sourceProject._id, {
+          conversationCount: 0,
+          lastConversationId: null,
+        });
+        await ChatProject.findByIdAndUpdate(destinationProject._id, {
+          conversationCount: 1,
+          lastConversationId: conversationId,
+        });
+        return await updateMany(filter, update, options);
+      }) as typeof Conversation.updateMany);
+      const distinct = Conversation.distinct.bind(Conversation);
+      const distinctSpy = jest
+        .spyOn(Conversation, 'distinct')
+        .mockRejectedValueOnce(new Error('project discovery failed'))
+        .mockRejectedValueOnce(new Error('project discovery failed'))
+        .mockRejectedValueOnce(new Error('project discovery failed'))
+        .mockImplementation(((...args) => distinct(...args)) as typeof Conversation.distinct);
+
+      try {
+        await expect(archiveAllConvos('user123')).rejects.toThrow('project discovery failed');
+      } finally {
+        updateManySpy.mockRestore();
+        distinctSpy.mockRestore();
+      }
+
+      const archived = await Conversation.findOne({ conversationId }).lean<IConversation>();
+      const refreshed = await ChatProject.findById(destinationProject._id).lean<IChatProject>();
+      expect(archived?.isArchived).toBe(true);
+      expect(refreshed?.conversationCount).toBe(0);
+      expect(refreshed?.lastConversationId).toBeNull();
+    });
+
+    it('refreshes the destination project when a captured conversation moves before archiving', async () => {
+      const sourceProject = await ChatProject.create({ user: 'user123', name: 'Source' });
+      const destinationProject = await ChatProject.create({ user: 'user123', name: 'Destination' });
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: sourceProject._id!.toString(),
+      });
+      await ChatProject.findByIdAndUpdate(sourceProject._id, {
+        conversationCount: 1,
+        lastConversationId: conversationId,
+      });
+
+      const updateMany = Conversation.updateMany.bind(Conversation);
+      const updateManySpy = jest.spyOn(Conversation, 'updateMany').mockImplementationOnce((async (
+        filter,
+        update,
+        options,
+      ) => {
+        await Conversation.updateOne(
+          { conversationId },
+          { $set: { chatProjectId: destinationProject._id!.toString() } },
+        );
+        await ChatProject.findByIdAndUpdate(sourceProject._id, {
+          conversationCount: 0,
+          lastConversationId: null,
+        });
+        await ChatProject.findByIdAndUpdate(destinationProject._id, {
+          conversationCount: 1,
+          lastConversationId: conversationId,
+        });
+        return await updateMany(filter, update, options);
+      }) as typeof Conversation.updateMany);
+
+      try {
+        const result = await archiveAllConvos('user123');
+        expect(result.archivedCount).toBe(1);
+      } finally {
+        updateManySpy.mockRestore();
+      }
+
+      const refreshed = await ChatProject.findById(destinationProject._id).lean<IChatProject>();
+      expect(refreshed?.conversationCount).toBe(0);
+      expect(refreshed?.lastConversationId).toBeNull();
+    });
+
+    it('refreshes project stats for committed batches when a later batch fails', async () => {
+      const project = await ChatProject.create({ user: 'user123', name: 'Project' });
+      const projectId = project._id!.toString();
+      const conversations = Array.from({ length: 501 }, (_, index) => ({
+        conversationId: `archive-partial-fail-${index}`,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: projectId,
+      }));
+      await Conversation.insertMany(conversations);
+      await ChatProject.findByIdAndUpdate(project._id, {
+        conversationCount: conversations.length,
+        lastConversationId: conversations[conversations.length - 1].conversationId,
+      });
+
+      const updateMany = Conversation.updateMany.bind(Conversation);
+      const updateManySpy = jest
+        .spyOn(Conversation, 'updateMany')
+        .mockImplementationOnce(((...args) =>
+          updateMany(...args)) as typeof Conversation.updateMany)
+        .mockImplementationOnce(() => {
+          throw new Error('later batch update failed');
+        });
+
+      try {
+        await expect(archiveAllConvos('user123')).rejects.toThrow('later batch update failed');
+      } finally {
+        updateManySpy.mockRestore();
+      }
+
+      const archivedCount = await Conversation.countDocuments({
+        user: 'user123',
+        isArchived: true,
+      });
+      expect(archivedCount).toBe(500);
+
+      const remaining = await Conversation.findOne({
+        user: 'user123',
+        isArchived: { $ne: true },
+      }).lean<IConversation>();
+      const refreshed = await ChatProject.findById(project._id).lean<IChatProject>();
+      expect(refreshed?.conversationCount).toBe(1);
+      expect(refreshed?.lastConversationId).toBe(remaining?.conversationId);
+    });
+
+    it('reconciles projects when an archive write commits but its result is lost', async () => {
+      const destinationProject = await ChatProject.create({ user: 'user123', name: 'Destination' });
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      /** The chat carries no project when the sweep captures it and the write never
+       * reports a modified count, so the marker is the only thing left that knows the
+       * archive happened at all. */
+      const updateMany = Conversation.updateMany.bind(Conversation);
+      const updateManySpy = jest.spyOn(Conversation, 'updateMany').mockImplementationOnce((async (
+        filter,
+        update,
+        options,
+        /** Annotated because a mock that only ever throws infers `Promise<never>`, which
+         * the cast back to the real signature rejects. */
+      ): Promise<UpdateResult> => {
+        await updateMany(filter, update, options);
+        await Conversation.updateOne(
+          { conversationId },
+          { $set: { chatProjectId: destinationProject._id!.toString() } },
+        );
+        await ChatProject.findByIdAndUpdate(destinationProject._id, {
+          conversationCount: 1,
+          lastConversationId: conversationId,
+        });
+        throw new Error('connection reset before the write acknowledged');
+      }) as typeof Conversation.updateMany);
+
+      try {
+        await expect(archiveAllConvos('user123')).rejects.toThrow(
+          'connection reset before the write acknowledged',
+        );
+      } finally {
+        updateManySpy.mockRestore();
+      }
+
+      const archived = await Conversation.findOne({ conversationId }).lean<IConversation>();
+      expect(archived?.isArchived).toBe(true);
+      const refreshed = await ChatProject.findById(destinationProject._id).lean<IChatProject>();
+      expect(refreshed?.conversationCount).toBe(0);
+      expect(refreshed?.lastConversationId).toBeNull();
+    });
+
+    it('does not let a save in flight restore the project pointer it just cleared', async () => {
+      const project = await ChatProject.create({ user: 'user123', name: 'Project' });
+      const projectId = project._id!.toString();
+      const conversationId = uuidv4();
+      const anchor = new Date('2026-01-01T00:00:00.000Z');
+      await Conversation.collection.insertOne({
+        conversationId,
+        user: 'user123',
+        title: 'legacy chat with no isTemporary',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: projectId,
+        expiredAt: null,
+        isArchived: false,
+        createdAt: anchor,
+        updatedAt: anchor,
+      });
+      await ChatProject.findByIdAndUpdate(project._id, {
+        conversationCount: 1,
+        lastConversationAt: anchor,
+        lastConversationId: conversationId,
+      });
+
+      /** The sweep lands after the save's own write has returned, so the save carries a
+       * document that still says the chat is visible. Re-sending the unchanged
+       * `chatProjectId`, as a client saving into an open project chat does, is what puts
+       * the tail on the pointer branch instead of the recompute one. */
+      const findOneAndUpdate = Conversation.findOneAndUpdate.bind(Conversation);
+      const findOneAndUpdateSpy = jest
+        .spyOn(Conversation, 'findOneAndUpdate')
+        .mockImplementationOnce((async (filter, update, options) => {
+          const result = await findOneAndUpdate(filter, update, options);
+          await archiveAllConvos('user123');
+          return result;
+        }) as typeof Conversation.findOneAndUpdate);
+
+      try {
+        await saveConvo(
+          { userId: 'user123' },
+          { conversationId, chatProjectId: projectId, title: 'Renamed while the sweep ran' },
+          { noUpsert: true },
+        );
+      } finally {
+        findOneAndUpdateSpy.mockRestore();
+      }
+
+      const archived = await Conversation.findOne({ conversationId }).lean<IConversation>();
+      expect(archived?.isArchived).toBe(true);
+      const refreshed = await ChatProject.findById(project._id).lean<IChatProject>();
+      expect(refreshed?.lastConversationId).toBeNull();
+      expect(refreshed?.lastConversationAt).toBeNull();
+      expect(refreshed?.conversationCount).toBe(0);
+    });
+
+    it('repairs the project when the sweep lands while the pointer write is in flight', async () => {
+      const project = await ChatProject.create({ user: 'user123', name: 'Project' });
+      const projectId = project._id!.toString();
+      const conversationId = uuidv4();
+      const anchor = new Date('2026-01-01T00:00:00.000Z');
+      await Conversation.collection.insertOne({
+        conversationId,
+        user: 'user123',
+        title: 'chat being saved',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: projectId,
+        expiredAt: null,
+        isArchived: false,
+        createdAt: anchor,
+        updatedAt: anchor,
+      });
+      await ChatProject.findByIdAndUpdate(project._id, {
+        conversationCount: 1,
+        lastConversationAt: anchor,
+        lastConversationId: conversationId,
+      });
+
+      /** The sweep runs after the save has decided the chat is visible and immediately
+       * before its pointer write commits, which is the one window a check taken before
+       * that write cannot cover. */
+      const updateOne = ChatProject.updateOne.bind(ChatProject);
+      const updateOneSpy = jest.spyOn(ChatProject, 'updateOne').mockImplementationOnce((async (
+        filter,
+        update,
+        options,
+      ) => {
+        await archiveAllConvos('user123');
+        return await updateOne(filter, update, options);
+      }) as typeof ChatProject.updateOne);
+
+      try {
+        await saveConvo(
+          { userId: 'user123' },
+          { conversationId, chatProjectId: projectId, title: 'Renamed while the sweep ran' },
+          { noUpsert: true },
+        );
+      } finally {
+        updateOneSpy.mockRestore();
+      }
+
+      const archived = await Conversation.findOne({ conversationId }).lean<IConversation>();
+      expect(archived?.isArchived).toBe(true);
+      const refreshed = await ChatProject.findById(project._id).lean<IChatProject>();
+      expect(refreshed?.lastConversationId).toBeNull();
+      expect(refreshed?.lastConversationAt).toBeNull();
+      expect(refreshed?.conversationCount).toBe(0);
+    });
+
+    it('returns zero when the user has no conversations', async () => {
+      const result = await archiveAllConvos('user123');
+      expect(result.archivedCount).toBe(0);
+    });
+  });
+
   describe('deleteNullOrEmptyConversations', () => {
     it('should delete conversations with null, empty, or missing conversationIds', async () => {
       // Since conversationId is required by the schema, we can't create documents with null/missing IDs
@@ -1197,6 +2915,156 @@ describe('Conversation Operations', () => {
       });
       return Conversation.findOne({ conversationId }).lean<IConversation>();
     };
+
+    it('should flag conversations that have an active shared link', async () => {
+      const SharedLink = mongoose.models.SharedLink as mongoose.Model<{
+        conversationId: string;
+        user: string;
+        shareId: string;
+        expiredAt?: Date | null;
+      }>;
+      const baseTime = new Date('2026-03-01T00:00:00.000Z');
+      const shared = await createConvoWithTimestamps(1, baseTime, baseTime);
+      const unshared = await createConvoWithTimestamps(2, baseTime, baseTime);
+      const expiredShare = await createConvoWithTimestamps(3, baseTime, baseTime);
+
+      await SharedLink.create([
+        {
+          conversationId: shared!.conversationId,
+          user: 'user123',
+          shareId: `share-${uuidv4()}`,
+        },
+        {
+          conversationId: expiredShare!.conversationId,
+          user: 'user123',
+          shareId: `share-${uuidv4()}`,
+          expiredAt: new Date('2020-01-01T00:00:00.000Z'),
+        },
+      ]);
+
+      const result = await methods.getConvosByCursor('user123', { limit: 25 });
+      const byId = new Map(result.conversations.map((convo) => [convo.conversationId, convo]));
+
+      expect(byId.get(shared!.conversationId)?.isShared).toBe(true);
+      expect(byId.get(unshared!.conversationId)?.isShared).toBe(false);
+      expect(byId.get(expiredShare!.conversationId)?.isShared).toBe(false);
+
+      await SharedLink.deleteMany({ user: 'user123' });
+      await Conversation.deleteMany({ user: 'user123' });
+    });
+
+    it('should skip the shared lookup when shared links are disabled', async () => {
+      const SharedLink = mongoose.models.SharedLink as mongoose.Model<{
+        conversationId: string;
+        user: string;
+        shareId: string;
+      }>;
+      const baseTime = new Date('2026-03-02T00:00:00.000Z');
+      const shared = await createConvoWithTimestamps(1, baseTime, baseTime);
+      await SharedLink.create({
+        conversationId: shared!.conversationId,
+        user: 'user123',
+        shareId: `share-${uuidv4()}`,
+      });
+
+      process.env.ALLOW_SHARED_LINKS = 'false';
+      try {
+        const result = await methods.getConvosByCursor('user123', { limit: 25 });
+        expect(result.conversations[0].isShared).toBeUndefined();
+      } finally {
+        delete process.env.ALLOW_SHARED_LINKS;
+      }
+
+      await SharedLink.deleteMany({ user: 'user123' });
+      await Conversation.deleteMany({ user: 'user123' });
+    });
+
+    it('should page through titles that share a timestamp', async () => {
+      // Imports land with identical titles and timestamps, so (title, updatedAt)
+      // alone cannot mark where the previous page stopped.
+      const sameTime = new Date('2026-04-01T00:00:00.000Z');
+      for (let index = 0; index < 6; index++) {
+        await Conversation.collection.insertOne({
+          conversationId: uuidv4(),
+          user: 'user123',
+          title: 'Imported chat',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: sameTime,
+          updatedAt: sameTime,
+        });
+      }
+
+      const seen = new Set<string>();
+      let cursor: string | null = null;
+      for (let page = 0; page < 6; page++) {
+        const result = await methods.getConvosByCursor('user123', {
+          limit: 2,
+          sortBy: 'title',
+          sortDirection: 'asc',
+          cursor,
+        });
+        result.conversations.forEach((convo) => seen.add(convo.conversationId));
+        cursor = result.nextCursor;
+        if (!cursor) {
+          break;
+        }
+      }
+
+      expect(seen.size).toBe(6);
+
+      await Conversation.deleteMany({ user: 'user123' });
+    });
+
+    it('should page past conversations that have no title', async () => {
+      const sameTime = new Date('2026-04-15T00:00:00.000Z');
+      for (let index = 0; index < 3; index++) {
+        await Conversation.collection.insertOne({
+          conversationId: uuidv4(),
+          user: 'user123',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: sameTime,
+          updatedAt: sameTime,
+        });
+        await Conversation.collection.insertOne({
+          conversationId: uuidv4(),
+          user: 'user123',
+          title: `Named ${index}`,
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: sameTime,
+          updatedAt: sameTime,
+        });
+      }
+
+      // Missing titles sort before every string, and comparison operators never cross
+      // that type boundary, so the group needs cursor clauses of its own.
+      for (const sortDirection of ['asc', 'desc']) {
+        const seen = new Set<string>();
+        let cursor: string | null = null;
+        for (let page = 0; page < 6; page++) {
+          const result = await methods.getConvosByCursor('user123', {
+            limit: 2,
+            sortBy: 'title',
+            sortDirection,
+            cursor,
+          });
+          result.conversations.forEach((convo) => seen.add(convo.conversationId));
+          cursor = result.nextCursor;
+          if (!cursor) {
+            break;
+          }
+        }
+
+        expect(seen.size).toBe(6);
+      }
+
+      await Conversation.deleteMany({ user: 'user123' });
+    });
 
     it('should not skip conversations at page boundaries', async () => {
       // Create 30 conversations to ensure pagination (limit is 25)
@@ -1439,6 +3307,746 @@ describe('Conversation Operations', () => {
 
       expect(result?.conversations).toHaveLength(25);
       expect(result?.nextCursor).toBeNull(); // No next page
+    });
+  });
+
+  describe('getConvosByCursor archivedAt sorting', () => {
+    const insertArchived = async (title: string, archivedAt: Date | null, updatedAt: Date) => {
+      const conversationId = uuidv4();
+      await Conversation.collection.insertOne({
+        conversationId,
+        user: 'user123',
+        title,
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: null,
+        isArchived: true,
+        createdAt: updatedAt,
+        updatedAt,
+        ...(archivedAt === null ? {} : { archivedAt }),
+      });
+      return conversationId;
+    };
+
+    it('accepts archivedAt as a sort field', async () => {
+      const base = new Date('2026-06-01T00:00:00.000Z');
+      const older = await insertArchived('older', new Date(base.getTime() - 60000), base);
+      const newer = await insertArchived('newer', new Date(base.getTime() + 60000), base);
+
+      const result = await getConvosByCursor('user123', {
+        isArchived: true,
+        sortBy: 'archivedAt',
+        sortDirection: 'desc',
+      });
+
+      expect(result.conversations.map((convo) => convo.conversationId)).toEqual([newer, older]);
+    });
+
+    /* Everything archived before the field existed has no stamp, so the missing-value
+       group is the common case here, not an edge case. A cursor that collapsed a null
+       stamp to the epoch would restart paging from 1970 and replay the whole archive. */
+    it('pages across stamped and unstamped chats without repeating or dropping any', async () => {
+      const base = new Date('2026-06-01T00:00:00.000Z');
+      const expected = new Set<string>();
+      for (let index = 0; index < 4; index++) {
+        expected.add(
+          await insertArchived(`stamped ${index}`, new Date(base.getTime() + index * 60000), base),
+        );
+      }
+      for (let index = 0; index < 4; index++) {
+        expected.add(
+          await insertArchived(`legacy ${index}`, null, new Date(base.getTime() + index * 60000)),
+        );
+      }
+
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < 10; page++) {
+        const result = await getConvosByCursor('user123', {
+          isArchived: true,
+          sortBy: 'archivedAt',
+          sortDirection: 'desc',
+          limit: 3,
+          cursor,
+        });
+        seen.push(...result.conversations.map((convo) => convo.conversationId));
+        cursor = result.nextCursor;
+        if (!cursor) {
+          break;
+        }
+      }
+
+      expect(new Set(seen)).toEqual(expected);
+      expect(seen.length).toBe(expected.size);
+    });
+
+    it('orders unstamped chats last when sorting newest first', async () => {
+      const base = new Date('2026-06-01T00:00:00.000Z');
+      const stamped = await insertArchived('stamped', base, base);
+      const legacy = await insertArchived('legacy', null, base);
+
+      const result = await getConvosByCursor('user123', {
+        isArchived: true,
+        sortBy: 'archivedAt',
+        sortDirection: 'desc',
+      });
+
+      expect(result.conversations.map((convo) => convo.conversationId)).toEqual([stamped, legacy]);
+    });
+
+    /** Ascending takes the other null branch: the unstamped group comes first and the
+     * page that leaves it has to pick up every stamped chat behind it. */
+    it('pages across stamped and unstamped chats when sorting oldest first', async () => {
+      const base = new Date('2026-06-01T00:00:00.000Z');
+      const expected = new Set<string>();
+      for (let index = 0; index < 3; index++) {
+        expected.add(
+          await insertArchived(`stamped ${index}`, new Date(base.getTime() + index * 60000), base),
+        );
+      }
+      for (let index = 0; index < 3; index++) {
+        expected.add(
+          await insertArchived(`legacy ${index}`, null, new Date(base.getTime() + index * 60000)),
+        );
+      }
+
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < 10; page++) {
+        const result = await getConvosByCursor('user123', {
+          isArchived: true,
+          sortBy: 'archivedAt',
+          sortDirection: 'asc',
+          limit: 2,
+          cursor,
+        });
+        seen.push(...result.conversations.map((convo) => convo.conversationId));
+        cursor = result.nextCursor;
+        if (!cursor) {
+          break;
+        }
+      }
+
+      expect(new Set(seen)).toEqual(expected);
+      expect(seen.length).toBe(expected.size);
+    });
+
+    /** The cell renders `archivedAt ?? createdAt`, so the legacy group has to come back
+     * in that same createdAt order; ordering it by last activity read out of order. */
+    it('orders the legacy group by the createdAt it displays, not last activity', async () => {
+      const base = new Date('2026-06-01T00:00:00.000Z');
+      const olderCreated = uuidv4();
+      const newerCreated = uuidv4();
+      /* createdAt and updatedAt deliberately disagree: ordering by activity would
+         invert these two relative to the dates the dialog shows. */
+      await Conversation.collection.insertOne({
+        conversationId: olderCreated,
+        user: 'user123',
+        title: 'created first, touched last',
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: null,
+        isArchived: true,
+        createdAt: new Date(base.getTime() - 60000),
+        updatedAt: new Date(base.getTime() + 60000),
+      });
+      await Conversation.collection.insertOne({
+        conversationId: newerCreated,
+        user: 'user123',
+        title: 'created last, touched first',
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: null,
+        isArchived: true,
+        createdAt: new Date(base.getTime() + 60000),
+        updatedAt: new Date(base.getTime() - 60000),
+      });
+
+      const result = await getConvosByCursor('user123', {
+        isArchived: true,
+        sortBy: 'archivedAt',
+        sortDirection: 'desc',
+      });
+
+      expect(result.conversations.map((convo) => convo.conversationId)).toEqual([
+        newerCreated,
+        olderCreated,
+      ]);
+    });
+
+    it('still rejects a sort field that is not allowed', async () => {
+      await expect(getConvosByCursor('user123', { sortBy: 'pinned' })).rejects.toThrow(
+        /Invalid sortBy field/,
+      );
+    });
+  });
+
+  describe('getConvosByCursor pinned filter', () => {
+    const insertConvo = async ({
+      user = 'user123',
+      title,
+      updatedAt,
+      pinned,
+      isArchived = false,
+    }: {
+      user?: string;
+      title: string;
+      updatedAt: Date;
+      pinned?: boolean;
+      isArchived?: boolean;
+    }) => {
+      const conversationId = uuidv4();
+      await Conversation.collection.insertOne({
+        conversationId,
+        user,
+        title,
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: null,
+        isArchived,
+        createdAt: updatedAt,
+        updatedAt,
+        ...(pinned === undefined ? {} : { pinned }),
+      });
+      return conversationId;
+    };
+
+    it('returns only pinned conversations when pinned is requested', async () => {
+      const baseTime = new Date('2026-05-01T00:00:00.000Z');
+      const pinnedId = await insertConvo({
+        title: 'Pinned chat',
+        updatedAt: baseTime,
+        pinned: true,
+      });
+      await insertConvo({ title: 'Unpinned chat', updatedAt: baseTime, pinned: false });
+      await insertConvo({ title: 'Never pinned chat', updatedAt: baseTime });
+
+      const result = await getConvosByCursor('user123', { pinned: true });
+
+      expect(result.conversations.map((convo) => convo.conversationId)).toEqual([pinnedId]);
+    });
+
+    /** The sidebar's pinned section used to filter the paginated chats list, so a pin
+     * older than the first page stayed hidden until that list scrolled far enough. */
+    it('returns a pin that falls outside the first page of the unfiltered list', async () => {
+      const baseTime = new Date('2026-05-01T00:00:00.000Z');
+      const pinnedId = await insertConvo({
+        title: 'Initial Greeting',
+        updatedAt: baseTime,
+        pinned: true,
+      });
+      for (let index = 0; index < 30; index++) {
+        await insertConvo({
+          title: `Newer chat ${index}`,
+          updatedAt: new Date(baseTime.getTime() + (index + 1) * 60000),
+        });
+      }
+
+      const firstPage = await getConvosByCursor('user123', { limit: 25 });
+      expect(firstPage.conversations.map((convo) => convo.conversationId)).not.toContain(pinnedId);
+
+      const pinnedResult = await getConvosByCursor('user123', { pinned: true });
+      expect(pinnedResult.conversations.map((convo) => convo.conversationId)).toEqual([pinnedId]);
+    });
+
+    it('excludes archived pins and other users’ pins', async () => {
+      const baseTime = new Date('2026-05-01T00:00:00.000Z');
+      const visibleId = await insertConvo({
+        title: 'Visible pin',
+        updatedAt: baseTime,
+        pinned: true,
+      });
+      await insertConvo({
+        title: 'Archived pin',
+        updatedAt: baseTime,
+        pinned: true,
+        isArchived: true,
+      });
+      await insertConvo({
+        user: 'other-user',
+        title: 'Someone else’s pin',
+        updatedAt: baseTime,
+        pinned: true,
+      });
+
+      const result = await getConvosByCursor('user123', { pinned: true });
+
+      expect(result.conversations.map((convo) => convo.conversationId)).toEqual([visibleId]);
+    });
+
+    it('leaves the list unfiltered when pinned is not requested', async () => {
+      const baseTime = new Date('2026-05-01T00:00:00.000Z');
+      await insertConvo({ title: 'Pinned chat', updatedAt: baseTime, pinned: true });
+      await insertConvo({ title: 'Unpinned chat', updatedAt: baseTime });
+
+      const result = await getConvosByCursor('user123', {});
+
+      expect(result.conversations).toHaveLength(2);
+    });
+  });
+
+  describe('subagent thread leases', () => {
+    it('reserves child lineage once without overwriting a concurrent winner', async () => {
+      await Conversation.init();
+      const conversationId = uuidv4();
+      const lineage = {
+        rootConversationId: 'root',
+        parentConversationId: 'parent',
+        parentMessageId: 'parent-message',
+        parentToolCallId: 'parent-tool',
+        parentAgentId: 'parent-agent',
+        subagentType: 'researcher',
+        subagentKind: 'agent' as const,
+        depth: 1,
+      };
+      const reservations = await Promise.all(
+        ['First title', 'Second title'].map((title) =>
+          methods.reserveSubagentThread({
+            user: 'reservation-user',
+            conversationId,
+            conversation: { endpoint: EModelEndpoint.agents, title, subagentThread: lineage },
+          }),
+        ),
+      );
+
+      expect(reservations.filter((reservation) => reservation.created)).toHaveLength(1);
+      const saved = await methods.getConvo('reservation-user', conversationId);
+      expect(saved?.title).toBe(
+        reservations.find((reservation) => reservation.created)?.conversation.title,
+      );
+      expect(saved?.subagentThread).toEqual(lineage);
+    });
+
+    it('reads a child only through its exact parent and tenant with the private lease', async () => {
+      const parentConversationId = uuidv4();
+      const conversationId = uuidv4();
+      await Conversation.create([
+        {
+          conversationId: parentConversationId,
+          user: 'view-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+        },
+        {
+          conversationId,
+          user: 'view-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            rootConversationId: parentConversationId,
+            parentConversationId,
+            parentMessageId: 'parent-message',
+            parentToolCallId: 'parent-tool',
+            subagentType: 'researcher',
+            subagentKind: 'agent',
+            depth: 1,
+          },
+          subagentThreadLease: {
+            token: 'private-token',
+            taskId: 'task-1',
+            expiresAt: new Date('2099-08-21T12:00:00.000Z'),
+          },
+        },
+      ]);
+
+      await expect(
+        methods.getSubagentThreadForParent({
+          user: 'view-user',
+          parentConversationId,
+          conversationId,
+          tenantId: 'tenant-a',
+        }),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          conversationId,
+          subagentThreadLease: expect.objectContaining({ taskId: 'task-1' }),
+        }),
+      );
+      await expect(
+        methods.getSubagentThreadForParent({
+          user: 'view-user',
+          parentConversationId: 'another-parent',
+          conversationId,
+          tenantId: 'tenant-a',
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        methods.getSubagentThreadForParent({
+          user: 'view-user',
+          parentConversationId,
+          conversationId,
+          tenantId: 'tenant-b',
+        }),
+      ).resolves.toBeNull();
+      expect(await methods.getConvo('view-user', conversationId)).not.toHaveProperty(
+        'subagentThreadLease',
+      );
+    });
+
+    it('lists bounded child metadata while collapsing private event bindings to actor identity', async () => {
+      const parentConversationId = uuidv4();
+      const eventThreadId = uuidv4();
+      const toolThreadId = uuidv4();
+      const lineage = (parentToolCallId: string) => ({
+        rootConversationId: parentConversationId,
+        parentConversationId,
+        parentMessageId: 'parent-message',
+        parentToolCallId,
+        subagentType: 'researcher',
+        subagentKind: 'agent' as const,
+        depth: 1,
+      });
+      await Conversation.create([
+        {
+          conversationId: eventThreadId,
+          user: 'index-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          agent_id: 'agent-event',
+          subagentThread: lineage('event-binding:private'),
+          subagentThreadLease: {
+            token: 'private-token',
+            taskId: 'task-live',
+            expiresAt: new Date('2099-08-21T12:00:00.000Z'),
+          },
+          agentEventBinding: {
+            bindingId: `evtbind_${'b'.repeat(48)}`,
+            sourceKeyId: 'private-key',
+            actorId: 'actor-a',
+          },
+        },
+        {
+          conversationId: toolThreadId,
+          user: 'index-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('tool-call-a'),
+        },
+        {
+          conversationId: uuidv4(),
+          user: 'index-user',
+          tenantId: 'tenant-b',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('wrong-tenant'),
+        },
+        {
+          conversationId: uuidv4(),
+          user: 'different-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('wrong-user'),
+        },
+        {
+          conversationId: uuidv4(),
+          user: 'index-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            ...lineage('wrong-parent'),
+            parentConversationId: uuidv4(),
+          },
+        },
+      ]);
+
+      const records = await methods.listSubagentThreadsForParent({
+        user: 'index-user',
+        tenantId: 'tenant-a',
+        parentConversationId,
+        limit: 10,
+      });
+
+      expect(records.map((record) => record.conversationId).sort()).toEqual(
+        [eventThreadId, toolThreadId].sort(),
+      );
+      expect(records.find((record) => record.conversationId === eventThreadId)).toEqual(
+        expect.objectContaining({
+          actorId: 'actor-a',
+          subagentThreadLease: expect.objectContaining({ taskId: 'task-live' }),
+        }),
+      );
+      expect(records).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ agentEventBinding: expect.anything() })]),
+      );
+      expect(JSON.stringify(records)).not.toContain('private-key');
+      expect(JSON.stringify(records)).not.toContain(`evtbind_${'b'.repeat(48)}`);
+    });
+
+    it('hides retention-expired children before TTL cleanup', async () => {
+      const parentConversationId = uuidv4();
+      const expiredThreadId = uuidv4();
+      await Conversation.create({
+        conversationId: expiredThreadId,
+        user: 'expired-child-user',
+        endpoint: EModelEndpoint.agents,
+        expiredAt: new Date(Date.now() - 60_000),
+        subagentThread: {
+          rootConversationId: parentConversationId,
+          parentConversationId,
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+
+      await expect(
+        methods.getSubagentThreadForParent({
+          user: 'expired-child-user',
+          parentConversationId,
+          conversationId: expiredThreadId,
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        methods.listSubagentThreadsForParent({
+          user: 'expired-child-user',
+          parentConversationId,
+          limit: 10,
+        }),
+      ).resolves.toEqual([]);
+    });
+
+    it('keeps an older child with a live lease inside the bounded parent index', async () => {
+      const parentConversationId = uuidv4();
+      const activeThreadId = uuidv4();
+      const recentThreadId = uuidv4();
+      const lineage = (parentToolCallId: string) => ({
+        rootConversationId: parentConversationId,
+        parentConversationId,
+        parentMessageId: 'parent-message',
+        parentToolCallId,
+        subagentType: 'researcher',
+        subagentKind: 'agent' as const,
+        depth: 1,
+      });
+      await Conversation.create([
+        {
+          conversationId: activeThreadId,
+          user: 'active-index-user',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('active-tool'),
+        },
+        {
+          conversationId: recentThreadId,
+          user: 'active-index-user',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('recent-tool'),
+        },
+      ]);
+      await Conversation.updateOne(
+        { conversationId: activeThreadId },
+        { $set: { updatedAt: new Date('2026-08-20T10:00:00.000Z') } },
+        { timestamps: false },
+      );
+      await Conversation.updateOne(
+        { conversationId: recentThreadId },
+        { $set: { updatedAt: new Date('2026-08-21T10:00:00.000Z') } },
+        { timestamps: false },
+      );
+      await methods.acquireSubagentThreadLease({
+        user: 'active-index-user',
+        conversationId: activeThreadId,
+        token: 'private-token',
+        taskId: 'active-task',
+        now: new Date('2026-08-22T10:00:00.000Z'),
+        expiresAt: new Date('2026-08-22T10:00:30.000Z'),
+      });
+
+      const records = await methods.listSubagentThreadsForParent({
+        user: 'active-index-user',
+        parentConversationId,
+        limit: 1,
+      });
+
+      expect(records).toEqual([
+        expect.objectContaining({
+          conversationId: activeThreadId,
+          subagentThreadLease: expect.objectContaining({ taskId: 'active-task' }),
+        }),
+      ]);
+    });
+
+    it('resolves an event binding only through its owner, tenant, and API key', async () => {
+      const conversationId = uuidv4();
+      const bindingId = `evtbind_${'a'.repeat(48)}`;
+      await Conversation.create({
+        conversationId,
+        user: 'binding-user',
+        tenantId: 'tenant-a',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: { bindingId, sourceKeyId: 'key-a', actorId: 'player-a' },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+
+      await expect(
+        methods.getAgentEventBinding({
+          user: 'binding-user',
+          tenantId: 'tenant-a',
+          bindingId,
+          sourceKeyId: 'key-a',
+        }),
+      ).resolves.toMatchObject({
+        conversationId,
+        agentId: 'agent-player',
+        binding: { bindingId, sourceKeyId: 'key-a', actorId: 'player-a' },
+      });
+      await expect(
+        methods.getAgentEventBinding({
+          user: 'binding-user',
+          tenantId: 'tenant-a',
+          bindingId,
+          sourceKeyId: 'key-b',
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        methods.getAgentEventBinding({
+          user: 'binding-user',
+          tenantId: 'tenant-b',
+          bindingId,
+          sourceKeyId: 'key-a',
+        }),
+      ).resolves.toBeNull();
+      await Conversation.updateOne({ conversationId }, { expiredAt: new Date(0) });
+      await expect(
+        methods.getAgentEventBinding({
+          user: 'binding-user',
+          tenantId: 'tenant-a',
+          bindingId,
+          sourceKeyId: 'key-a',
+        }),
+      ).resolves.toBeNull();
+      expect(await methods.getConvo('binding-user', conversationId)).not.toHaveProperty(
+        'agentEventBinding',
+      );
+    });
+
+    it('admits one cross-replica owner and fences renewal and release by token', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'lease-user',
+        endpoint: EModelEndpoint.agents,
+        subagentThread: {
+          rootConversationId: 'root',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool',
+          parentAgentId: 'parent-agent',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      const now = new Date('2026-08-18T00:00:00.000Z');
+      const expiresAt = new Date(now.getTime() + 30_000);
+
+      const claims = await Promise.all(
+        ['token-a', 'token-b'].map((token) =>
+          methods.acquireSubagentThreadLease({
+            user: 'lease-user',
+            conversationId,
+            token,
+            taskId: `task-${token}`,
+            now,
+            expiresAt,
+          }),
+        ),
+      );
+      expect(claims.filter(Boolean)).toHaveLength(1);
+      const winner = claims[0] ? 'token-a' : 'token-b';
+      const loser = winner === 'token-a' ? 'token-b' : 'token-a';
+      expect(await methods.countActiveSubagentThreadLeases({ user: 'lease-user', now })).toBe(1);
+      await expect(
+        methods.listActiveSubagentThreadLeases({ user: 'lease-user', now }),
+      ).resolves.toEqual([
+        {
+          conversationId,
+          parentConversationId: 'parent',
+          taskId: `task-${winner}`,
+        },
+      ]);
+      expect(await methods.getConvo('lease-user', conversationId)).not.toHaveProperty(
+        'subagentThreadLease',
+      );
+      await expect(
+        methods.renewSubagentThreadLease({
+          user: 'lease-user',
+          conversationId,
+          token: loser,
+          now,
+          expiresAt: new Date(expiresAt.getTime() + 30_000),
+        }),
+      ).resolves.toBe(false);
+      await expect(
+        methods.releaseSubagentThreadLease({
+          user: 'lease-user',
+          conversationId,
+          token: loser,
+        }),
+      ).resolves.toBe(false);
+      await expect(
+        methods.releaseSubagentThreadLease({
+          user: 'lease-user',
+          conversationId,
+          token: winner,
+        }),
+      ).resolves.toBe(true);
+      expect(await methods.countActiveSubagentThreadLeases({ user: 'lease-user', now })).toBe(0);
+    });
+
+    it('allows takeover only after the prior lease expires', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'takeover-user',
+        endpoint: EModelEndpoint.agents,
+        subagentThread: {
+          rootConversationId: 'root',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool',
+          subagentType: 'graph',
+          subagentKind: 'graph',
+          depth: 1,
+        },
+      });
+      const startedAt = new Date('2026-08-18T00:00:00.000Z');
+      const firstExpiry = new Date(startedAt.getTime() + 1_000);
+      await methods.acquireSubagentThreadLease({
+        user: 'takeover-user',
+        conversationId,
+        token: 'first',
+        taskId: 'task-first',
+        now: startedAt,
+        expiresAt: firstExpiry,
+      });
+
+      await expect(
+        methods.acquireSubagentThreadLease({
+          user: 'takeover-user',
+          conversationId,
+          token: 'second',
+          taskId: 'task-second',
+          now: new Date(firstExpiry.getTime() - 1),
+          expiresAt: new Date(firstExpiry.getTime() + 1_000),
+        }),
+      ).resolves.toBe(false);
+      await expect(
+        methods.acquireSubagentThreadLease({
+          user: 'takeover-user',
+          conversationId,
+          token: 'second',
+          taskId: 'task-second',
+          now: firstExpiry,
+          expiresAt: new Date(firstExpiry.getTime() + 1_000),
+        }),
+      ).resolves.toBe(true);
     });
   });
 

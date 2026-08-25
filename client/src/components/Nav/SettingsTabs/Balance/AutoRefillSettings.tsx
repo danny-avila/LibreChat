@@ -5,7 +5,7 @@ import { getRefillEligibilityDate } from 'librechat-data-provider';
 import type { RefillIntervalUnit, TBalanceResponse } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
 
-import { useLocalize } from '~/hooks';
+import { useLocalize, useClockFormat } from '~/hooks';
 
 function ensureExhaustive(value: never): void {
   void value;
@@ -25,6 +25,7 @@ const AutoRefillSettings: React.FC<AutoRefillSettingsProps> = ({
   refillIntervalValue,
 }) => {
   const localize = useLocalize();
+  const hour12 = useClockFormat();
 
   const lastRefillDate = lastRefill ? new Date(lastRefill) : null;
   const refillEligibilityDate = lastRefillDate
@@ -65,7 +66,7 @@ const AutoRefillSettings: React.FC<AutoRefillSettingsProps> = ({
       <h3 className="text-lg font-medium">{localize('com_nav_balance_auto_refill_settings')}</h3>
       <div className="mb-1 flex justify-between text-sm">
         <span>{localize('com_nav_balance_last_refill')}</span>
-        <span>{lastRefillDate ? lastRefillDate.toLocaleString() : '-'}</span>
+        <span>{lastRefillDate ? lastRefillDate.toLocaleString(undefined, { hour12 }) : '-'}</span>
       </div>
       <div className="mb-1 flex justify-between text-sm">
         <span>{localize('com_nav_balance_refill_amount')}</span>
@@ -84,8 +85,10 @@ const AutoRefillSettings: React.FC<AutoRefillSettingsProps> = ({
           <InfoHoverCard side={ESide.Bottom} text={localize('com_nav_balance_next_refill_info')} />
         </div>
 
-        <span className="text-sm font-medium text-gray-800 dark:text-gray-200" role="note">
-          {refillEligibilityDate ? refillEligibilityDate.toLocaleString() : '-'}
+        <span className="text-sm font-medium text-text-primary" role="note">
+          {refillEligibilityDate
+            ? refillEligibilityDate.toLocaleString(undefined, { hour12 })
+            : '-'}
         </span>
       </div>
     </div>

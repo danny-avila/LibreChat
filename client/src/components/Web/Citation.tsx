@@ -11,6 +11,7 @@ import { useLocalize } from '~/hooks';
 interface FileCitationMetadata {
   fileBytes?: number;
   fileType?: string;
+  storageType?: string;
 }
 
 interface FileCitationSource {
@@ -282,6 +283,7 @@ export function CompositeCitation(props: CompositeCitationProps) {
           pages={filePages}
           pageRelevance={filePageRelevance}
           fileType={fileMeta?.fileType}
+          fileSource={fileMeta?.storageType}
           fileSize={fileMeta?.fileBytes}
         />
       )}
@@ -358,6 +360,7 @@ export function Citation(props: CitationComponentProps) {
           pages={filePages}
           pageRelevance={filePageRelevance}
           fileType={fileMeta?.fileType}
+          fileSource={fileMeta?.storageType}
           fileSize={fileMeta?.fileBytes}
         />
       )}

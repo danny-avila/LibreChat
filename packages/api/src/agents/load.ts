@@ -4,6 +4,7 @@ import {
   Constants,
   isAgentsEndpoint,
   isEphemeralAgentId,
+  getEphemeralSender,
   encodeEphemeralAgentId,
 } from 'librechat-data-provider';
 import type {
@@ -14,9 +15,12 @@ import type {
   Agent,
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import type { ParsedServerConfig } from '~/mcp/types';
+import { requiresEphemeralUserConnection, validateMCPServerConfig } from '~/mcp/utils';
 import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
 import { synthesizeBackgroundToolOptions } from '~/agents/background';
-import { requiresEphemeralUserConnection } from '~/mcp/utils';
+import { mergeSynthesizedToolOptions } from '~/agents/selection';
+import { synthesizeIntentToolOptions } from '~/agents/intent';
 import { getCustomEndpointConfig } from '~/app/config';
 
 const { mcp_all, mcp_delimiter } = Constants;
@@ -27,6 +31,7 @@ export interface LoadAgentDeps {
   getMCPServerTools: (
     userId: string,
     serverName: string,
+    serverConfig?: ParsedServerConfig,
   ) => Promise<Record<string, unknown> | null>;
 }
 
@@ -92,13 +97,16 @@ export async function loadEphemeralAgent(
       if (addedServers.has(mcpServer)) {
         continue;
       }
-      /** Request-tier overlays are invisible to the cache service's registry
-       *  resolver — overlay-scoped servers expand fresh via `mcp_all` instead */
-      const overlayConfig = req.config?.mcpConfig?.[mcpServer];
+      /** Address durable catalogs by the effective request overlay; request-scoped
+       *  overlays still expand fresh through `mcp_all`. */
+      const rawOverlayConfig = req.config?.mcpConfig?.[mcpServer];
+      const overlayConfig = rawOverlayConfig
+        ? validateMCPServerConfig(rawOverlayConfig)
+        : undefined;
       const serverTools =
         overlayConfig && requiresEphemeralUserConnection(overlayConfig)
           ? null
-          : await deps.getMCPServerTools(userId, mcpServer);
+          : await deps.getMCPServerTools(userId, mcpServer, overlayConfig);
       if (!serverTools) {
         tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
         addedServers.add(mcpServer);
@@ -127,19 +135,18 @@ export async function loadEphemeralAgent(
     }
   }
 
-  // For ephemeral agents, use modelLabel if provided, then model spec's label,
-  // then modelDisplayLabel from endpoint config, otherwise empty string to show model name
-  const sender =
-    (model_parameters as AgentModelParameters & { modelLabel?: string })?.modelLabel ??
-    modelSpec?.label ??
-    (endpointConfig as { modelDisplayLabel?: string } | undefined)?.modelDisplayLabel ??
-    '';
+  const sender = getEphemeralSender({
+    modelLabel: (model_parameters as AgentModelParameters & { modelLabel?: string })?.modelLabel,
+    specLabel: modelSpec?.label,
+    modelDisplayLabel: (endpointConfig as { modelDisplayLabel?: string } | undefined)
+      ?.modelDisplayLabel,
+  });
 
   // Encode ephemeral agent ID with endpoint, model, and computed sender for display
   const ephemeralId = encodeEphemeralAgentId({
     endpoint,
     model: model as string,
-    sender: sender as string,
+    sender,
   });
 
   const result: Partial<Agent> = {
@@ -151,12 +158,19 @@ export async function loadEphemeralAgent(
     tools,
   };
 
-  const backgroundToolOptions: AgentToolOptions | undefined = synthesizeBackgroundToolOptions(
-    tools,
-    { ephemeralAgent, modelSpec },
-  );
+  const backgroundToolOptions: AgentToolOptions | undefined = synthesizeBackgroundToolOptions({
+    ephemeralAgent,
+    modelSpec,
+  });
   if (backgroundToolOptions) {
     result.tool_options = backgroundToolOptions;
+  }
+  const intentToolOptions: AgentToolOptions | undefined = synthesizeIntentToolOptions({
+    ephemeralAgent,
+    modelSpec,
+  });
+  if (intentToolOptions) {
+    result.tool_options = mergeSynthesizedToolOptions(result.tool_options, intentToolOptions);
   }
 
   if (ephemeralAgent?.artifacts) {

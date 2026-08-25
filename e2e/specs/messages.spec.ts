@@ -100,7 +100,7 @@ test.describe('Messaging suite', () => {
     await page.getByRole('button', { name: 'edit' }).click();
     const editResponsePromise = [
       page.waitForResponse(waitForServerStream),
-      await page.getByRole('button', { name: 'Save & Submit' }).click(),
+      await page.getByRole('button', { name: 'Update & rerun' }).click(),
     ];
 
     const [editResponse] = (await Promise.all(editResponsePromise)) as [Response];

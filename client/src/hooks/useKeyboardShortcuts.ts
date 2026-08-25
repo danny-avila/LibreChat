@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import copy from 'copy-to-clipboard';
 import { useToastContext } from '@librechat/client';
-import { useQueryClient } from '@tanstack/react-query';
 import { useMatch, useNavigate } from 'react-router-dom';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
-import { PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
 import type { ShortcutBinding } from '~/utils/shortcuts';
 import type { ShortcutOverride } from '~/store/misc';
 import {
@@ -16,10 +15,10 @@ import {
   parseBinding,
 } from '~/utils/shortcuts';
 import { mainTextareaId, NotificationSeverity } from '~/common';
+import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { useArchiveConvoMutation } from '~/data-provider';
 import { useHasAccess, useLocalize } from '~/hooks';
-import { clearMessagesCache } from '~/utils';
-import useNewConvo from './useNewConvo';
+import useNewChat from '~/hooks/Chat/useNewChat';
 import store from '~/store';
 
 const isMac = isMacPlatform;
@@ -114,6 +113,14 @@ export const shortcutDefinitions = {
     displayOther: 'Ctrl+Shift+X',
     ariaMac: 'Meta+Shift+X',
     ariaOther: 'Control+Shift+X',
+  },
+  escalateSteer: {
+    labelKey: 'com_ui_interrupt_steer_now',
+    groupKey: 'com_shortcut_group_chat',
+    displayMac: '⌘ ⇧ .',
+    displayOther: 'Ctrl+Shift+.',
+    ariaMac: 'Meta+Shift+.',
+    ariaOther: 'Control+Shift+.',
   },
   regenerateResponse: {
     labelKey: 'com_shortcut_regenerate_response',
@@ -278,6 +285,22 @@ export const shortcutDefinitions = {
 } as const satisfies Record<string, ShortcutDefinition>;
 
 export type ShortcutActionId = keyof typeof shortcutDefinitions;
+
+/**
+ * Shortcuts the window-level handler still runs while an input, textarea, or
+ * contenteditable has focus. The composer yields chords bound to these by
+ * leaving the keypress unclaimed (no `preventDefault`), so only one handler
+ * acts on it.
+ */
+export const EDITING_ALLOWED_SHORTCUTS: ReadonlySet<ShortcutActionId> = new Set([
+  'focusChat',
+  'focusSearch',
+  'showShortcuts',
+  'submitMessage',
+  'escalateSteer',
+  'uploadFile',
+]);
+
 export type ShortcutAction = ShortcutDefinition & {
   id: ShortcutActionId;
   /** Returns `false` when the action was a no-op so the native key event is not prevented. */
@@ -354,6 +377,70 @@ function defaultAria(actionId: ShortcutActionId): string {
   return isMac ? def.ariaMac : def.ariaOther;
 }
 
+/**
+ * Resolves one owner per chord, with persisted user choices ahead of defaults.
+ *
+ * This ordering matters when a release adds a new default chord that was
+ * previously free: an existing custom binding must keep working instead of
+ * being silently shadowed by the new action. Losers resolve to `null`, so the
+ * dispatcher, shortcut dialog, tooltips, and `aria-keyshortcuts` all describe
+ * the same effective ownership.
+ */
+export function resolveShortcutBindings(
+  overrides: Record<string, ShortcutOverride>,
+): Map<ShortcutActionId, ShortcutBinding | null> {
+  const resolved = new Map<ShortcutActionId, ShortcutBinding | null>();
+  const claimed = new Set<string>();
+  const explicit = new Set<ShortcutActionId>();
+
+  for (const id of shortcutActionIds) {
+    const override = overrides[id];
+    let platformValue: string | null | undefined;
+    if (override != null) {
+      platformValue = isMac ? override.mac : override.other;
+    }
+    /** Editing the other platform stores this platform's default alongside it.
+     *  That copied default is not a user claim here and must still yield to a
+     *  genuinely custom binding on the current platform. */
+    if (platformValue === undefined || platformValue === defaultAria(id)) {
+      continue;
+    }
+    explicit.add(id);
+    const binding = parseBinding(platformValue);
+    if (binding == null) {
+      resolved.set(id, null);
+      continue;
+    }
+    const hash = bindingHash(binding);
+    if (claimed.has(hash)) {
+      resolved.set(id, null);
+      continue;
+    }
+    claimed.add(hash);
+    resolved.set(id, binding);
+  }
+
+  for (const id of shortcutActionIds) {
+    if (explicit.has(id)) {
+      continue;
+    }
+    const binding = parseBinding(defaultAria(id));
+    if (binding == null) {
+      resolved.set(id, null);
+      continue;
+    }
+    const hash = bindingHash(binding);
+    if (claimed.has(hash)) {
+      resolved.set(id, null);
+      continue;
+    }
+    claimed.add(hash);
+    resolved.set(id, binding);
+  }
+
+  return resolved;
+}
+
 function readOverridesFromStorage(): Record<string, ShortcutOverride> {
   if (typeof window === 'undefined') {
     return {};
@@ -368,29 +455,12 @@ function readOverridesFromStorage(): Record<string, ShortcutOverride> {
   }
 }
 
-function effectiveBindingString(
-  actionId: ShortcutActionId,
-  overrides: Record<string, ShortcutOverride>,
-): string | null {
-  const override = overrides[actionId];
-  if (override) {
-    const platformValue = isMac ? override.mac : override.other;
-    if (platformValue === null) {
-      return null;
-    }
-    if (typeof platformValue === 'string') {
-      return platformValue;
-    }
-  }
-  return defaultAria(actionId);
-}
-
 export function effectiveBinding(
   actionId: ShortcutActionId,
   overrides?: Record<string, ShortcutOverride>,
 ): ShortcutBinding | null {
   const map = overrides ?? readOverridesFromStorage();
-  return parseBinding(effectiveBindingString(actionId, map));
+  return resolveShortcutBindings(map).get(actionId) ?? null;
 }
 
 export function getShortcutDisplay(actionId: ShortcutActionId): string {
@@ -425,14 +495,14 @@ export function isOverridden(actionId: ShortcutActionId, override?: ShortcutOver
 export function useShortcutActions(): ShortcutAction[] {
   const navigate = useNavigate();
   const localize = useLocalize();
-  const queryClient = useQueryClient();
-  const { newConversation } = useNewConvo();
+  const { startNewChat, newConversation } = useNewChat();
   const { showToast } = useToastContext();
   const routeMatch = useMatch('/c/:conversationId');
   const routeConvoId = routeMatch?.params.conversationId ?? null;
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(0));
-  const [sidebarExpanded, setSidebarExpanded] = useRecoilState(store.sidebarExpanded);
+  const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
+  const { setSidebarOpen, toggleSidebar } = useSidebarToggle();
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
   const setIsTemporary = useSetRecoilState(store.isTemporary);
   const setDeleteTarget = useSetRecoilState(store.keyboardDeleteTarget);
@@ -449,11 +519,9 @@ export function useShortcutActions(): ShortcutAction[] {
   }, [setShowShortcutsDialog]);
 
   const handleNewChat = useCallback(() => {
-    clearMessagesCache(queryClient, conversation?.conversationId);
-    queryClient.invalidateQueries([QueryKeys.messages]);
-    newConversation();
+    startNewChat();
     return true;
-  }, [queryClient, conversation?.conversationId, newConversation]);
+  }, [startNewChat]);
 
   const handleFocusChatInput = useCallback(() => {
     const textarea = document.getElementById(mainTextareaId) as HTMLTextAreaElement | null;
@@ -465,9 +533,9 @@ export function useShortcutActions(): ShortcutAction[] {
   }, []);
 
   const handleToggleSidebar = useCallback(() => {
-    setSidebarExpanded((prev) => !prev);
+    toggleSidebar();
     return true;
-  }, [setSidebarExpanded]);
+  }, [toggleSidebar]);
 
   const handleOpenModelSelector = useCallback(
     () => clickElement('[data-testid="model-selector-button"]'),
@@ -500,16 +568,23 @@ export function useShortcutActions(): ShortcutAction[] {
     }
 
     if (!sidebarExpanded) {
-      setSidebarExpanded(true);
+      /** The focus rides `afterSlide` + a zero timer: it must queue behind
+       * the deferred flip's commit (which un-inerts the drawer), where a
+       * fixed 350ms guess could fire into the still-inert drawer and be
+       * silently ignored. */
+      setSidebarOpen(true, () => {
+        setTimeout(focusSearchInput, 0);
+      });
+      return true;
     }
 
-    if (!sidebarExpanded || switchedPanel) {
+    if (switchedPanel) {
       setTimeout(focusSearchInput, 350);
       return true;
     }
 
     return focusSearchInput();
-  }, [sidebarExpanded, setSidebarExpanded]);
+  }, [sidebarExpanded, setSidebarOpen]);
 
   const handleCopyLastResponse = useCallback(() => {
     return clickLastElement('[data-testid="copy-response-button"]');
@@ -537,6 +612,30 @@ export function useShortcutActions(): ShortcutAction[] {
     () => clickElement('[data-testid="regenerate-generation-button"]'),
     [],
   );
+
+  /** Escalate the newest waiting message to an interrupt by pressing its own
+   *  visible arrow control, so the shortcut can never diverge from the
+   *  button's semantics. A waiting steer bubble beats a queued follow-up (it
+   *  is closer to the run); newest-last matches how both stacks append. */
+  const handleEscalateSteer = useCallback(() => {
+    const active = document.querySelector<HTMLButtonElement>('[data-escalate-steer-active="true"]');
+    if (clickTarget(active)) {
+      return true;
+    }
+
+    const pick = (surface: string) => {
+      const list = document.querySelectorAll<HTMLButtonElement>(
+        `[data-escalate-steer="${surface}"]`,
+      );
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (!isUnavailableElement(list[i])) {
+          return list[i];
+        }
+      }
+      return null;
+    };
+    return clickTarget(pick('bubble') ?? pick('queued'));
+  }, []);
 
   const handleEditLastMessage = useCallback(() => {
     const userTurns = document.querySelectorAll('.user-turn');
@@ -706,14 +805,18 @@ export function useShortcutActions(): ShortcutAction[] {
       }
 
       if (!sidebarExpanded) {
-        setSidebarExpanded(true);
-        setTimeout(activatePanel, 350);
+        /** Queued behind the deferred flip's commit, like the search focus
+         * above — the panel button is unreachable while the drawer is
+         * inert. */
+        setSidebarOpen(true, () => {
+          setTimeout(activatePanel, 0);
+        });
         return true;
       }
 
       return activatePanel();
     },
-    [sidebarExpanded, setSidebarExpanded],
+    [sidebarExpanded, setSidebarOpen],
   );
 
   const handleOpenAssistants = useCallback(() => handleOpenPanel('assistants'), [handleOpenPanel]);
@@ -737,6 +840,7 @@ export function useShortcutActions(): ShortcutAction[] {
       focusSearch: handleFocusSearch,
       openSettings: handleOpenSettings,
       stopGenerating: handleStopGenerating,
+      escalateSteer: handleEscalateSteer,
       regenerateResponse: handleRegenerateResponse,
       editLastMessage: handleEditLastMessage,
       copyLastCode: handleCopyLastCode,
@@ -766,6 +870,7 @@ export function useShortcutActions(): ShortcutAction[] {
       handleUploadFile,
       handleToggleSidebar,
       handleOpenModelSelector,
+      handleEscalateSteer,
       handleFocusSearch,
       handleOpenSettings,
       handleStopGenerating,
@@ -805,20 +910,22 @@ export function useShortcutActions(): ShortcutAction[] {
 
 export function useShortcutDisplay(actionId?: ShortcutActionId): string {
   const overrides = useRecoilValue(store.customShortcuts);
+  const enabled = useRecoilValue(store.shortcutsEnabled);
   return useMemo(() => {
-    if (!actionId) return '';
-    const binding = parseBinding(effectiveBindingString(actionId, overrides));
+    if (!actionId || !enabled) return '';
+    const binding = resolveShortcutBindings(overrides).get(actionId) ?? null;
     return binding ? bindingDisplayString(binding, isMac) : '';
-  }, [actionId, overrides]);
+  }, [actionId, overrides, enabled]);
 }
 
 export function useShortcutAriaKey(actionId?: ShortcutActionId): string | undefined {
   const overrides = useRecoilValue(store.customShortcuts);
+  const enabled = useRecoilValue(store.shortcutsEnabled);
   return useMemo(() => {
-    if (!actionId) return undefined;
-    const binding = parseBinding(effectiveBindingString(actionId, overrides));
+    if (!actionId || !enabled) return undefined;
+    const binding = resolveShortcutBindings(overrides).get(actionId) ?? null;
     return binding ? (bindingToString(binding) ?? undefined) : undefined;
-  }, [actionId, overrides]);
+  }, [actionId, overrides, enabled]);
 }
 
 export function useShortcutHint(actionId: ShortcutActionId | undefined, label: string): string {
@@ -843,12 +950,14 @@ export function useShortcutBindings(): {
 } {
   const [overrides, setOverrides] = useRecoilState(store.customShortcuts);
 
+  const resolvedBindings = useMemo(() => resolveShortcutBindings(overrides), [overrides]);
+
   const bindings = useMemo<ShortcutBindingInfo[]>(
     () =>
       shortcutActionIds.map((id) => {
         const def = shortcutDefinitions[id];
         const override = overrides[id];
-        const binding = parseBinding(effectiveBindingString(id, overrides));
+        const binding = resolvedBindings.get(id) ?? null;
         return {
           id,
           binding,
@@ -857,7 +966,7 @@ export function useShortcutBindings(): {
           labelKey: def.labelKey,
         };
       }),
-    [overrides],
+    [overrides, resolvedBindings],
   );
 
   const bindingMap = useMemo<Map<string, ShortcutActionId>>(() => {
@@ -899,18 +1008,6 @@ export function useShortcutBindings(): {
         if (!prev[id]) return prev;
         const next = { ...prev };
         delete next[id];
-
-        const restored = parseBinding(effectiveBindingString(id, next));
-        if (restored) {
-          const restoredHash = bindingHash(restored);
-          const platformKey: keyof ShortcutOverride = isMac ? 'mac' : 'other';
-          for (const otherId of Object.keys(next) as ShortcutActionId[]) {
-            const otherBinding = parseBinding(effectiveBindingString(otherId, next));
-            if (otherBinding && bindingHash(otherBinding) === restoredHash) {
-              next[otherId] = { ...next[otherId], [platformKey]: null };
-            }
-          }
-        }
         return next;
       });
     },
@@ -928,23 +1025,34 @@ export default function useKeyboardShortcuts() {
   const actions = useShortcutActions();
   const overrides = useRecoilValue(store.customShortcuts);
   const shortcutsDialogOpen = useRecoilValue(store.showShortcutsDialog);
+  const shortcutsEnabled = useRecoilValue(store.shortcutsEnabled);
 
   const actionMap = useMemo(() => new Map(actions.map((action) => [action.id, action])), [actions]);
+
+  const resolvedBindings = useMemo(() => resolveShortcutBindings(overrides), [overrides]);
 
   const bindingMap = useMemo<Map<string, ShortcutActionId>>(() => {
     const map = new Map<string, ShortcutActionId>();
     for (const id of shortcutActionIds) {
-      const binding = parseBinding(effectiveBindingString(id, overrides));
+      const binding = resolvedBindings.get(id) ?? null;
       if (binding) {
         map.set(bindingHash(binding), id);
       }
     }
     return map;
-  }, [overrides]);
+  }, [resolvedBindings]);
 
   const handler = useCallback(
     (e: KeyboardEvent) => {
+      if (!shortcutsEnabled) {
+        return;
+      }
+
       if (e.repeat) {
+        return;
+      }
+
+      if (e.defaultPrevented) {
         return;
       }
 
@@ -982,13 +1090,7 @@ export default function useKeyboardShortcuts() {
         return;
       }
 
-      const allowedWhileEditing: ShortcutActionId[] = [
-        'focusChat',
-        'focusSearch',
-        'showShortcuts',
-        'submitMessage',
-      ];
-      if (isEditing && !allowedWhileEditing.includes(matchedId)) {
+      if (isEditing && !EDITING_ALLOWED_SHORTCUTS.has(matchedId)) {
         return;
       }
 
@@ -997,12 +1099,15 @@ export default function useKeyboardShortcuts() {
         e.preventDefault();
       }
     },
-    [actionMap, bindingMap, shortcutsDialogOpen],
+    [actionMap, bindingMap, shortcutsDialogOpen, shortcutsEnabled],
   );
 
   useEffect(() => {
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
+    /** window, not document: every element- and document-level owner sits
+     *  earlier in the bubble path, so their `preventDefault` claims are
+     *  visible here regardless of mount or registration order. */
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, [handler]);
 }
 

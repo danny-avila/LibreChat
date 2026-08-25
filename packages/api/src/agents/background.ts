@@ -17,22 +17,47 @@
  * are lost on restart and are not shared across replicas (durable follow-up),
  * and ephemeral request-scoped MCP tools (runtime `{{LIBRECHAT_BODY_*}}`
  * placeholders) are never backgrounded — their connection is torn down at
- * request end, so the executor runs them in the foreground instead.
+ * request end, so the executor runs them in the foreground instead. Detached
+ * subagents use the separate host task store; Redis-backed hosts may route
+ * their poll/control operations to the owning process without moving the live
+ * executor or making ordinary background tool results durable.
  *
  * Opt-in mirrors `deferred_tools`: an admin capability
  * (`AgentCapabilities.run_in_background`) gates the feature, and a per-tool
  * `tool_options[name].run_in_background` flag turns it on for a given tool,
- * which injects a `run_in_background` boolean into that tool's schema.
+ * which injects a `run_in_background` boolean into that tool's schema. The
+ * code-execution pair (`execute_code`/`bash_tool`) is background-NATIVE:
+ * while the capability is enabled it defaults on without a per-tool flag, and
+ * an explicit `run_in_background: false` opts it out.
  *
  * @module packages/api/src/agents/background
  */
 
-import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
+import { createHash, randomUUID } from 'node:crypto';
 import { Constants as AgentConstants } from '@librechat/agents';
 import { Tools, Constants, imageGenTools } from 'librechat-data-provider';
-import type { LCTool, LCToolRegistry, JsonSchemaType } from '@librechat/agents';
+import type {
+  LCTool,
+  LCToolRegistry,
+  JsonSchemaType,
+  SubagentTaskClaim,
+  SubagentTaskConfig,
+  SubagentTaskSnapshot,
+  SubagentTaskControlCommand,
+  SubagentTaskControlResult,
+  SubagentTaskStore,
+} from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
+import type { CapabilityToolNames } from './selection';
+import {
+  resolveToolOption,
+  getSelectionNames,
+  warnUnmatchedSelectionNames,
+  synthesizeSelectionToolOptions,
+} from './selection';
+import { SUBAGENT_WAKEUP_GUIDANCE, usesSubagentCompletionWakeups } from './subagentDelivery';
+import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
 import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from './tools';
@@ -40,6 +65,12 @@ import { truncateMiddle } from '~/utils';
 
 /** Argument the model sets on a tool call to dispatch it in the background. */
 export const RUN_IN_BACKGROUND_ARG = 'run_in_background';
+
+/** Log prefix for selection diagnostics, phrased in the spec's own field name. */
+const BACKGROUND_SELECTION_LABEL = '[background] runInBackground';
+const MAX_BACKGROUND_TASK_ID_CHARS = 256;
+const MAX_BACKGROUND_CONTROL_ID_CHARS = 256;
+const MAX_BACKGROUND_CONTROL_MESSAGE_CHARS = 64 * 1024;
 
 /**
  * `type` of the synthetic attachment emitted on a poll turn when a harvested
@@ -95,37 +126,6 @@ const EXCLUDED_BACKGROUND_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
 ]);
 
 /**
- * The `execute_code` capability marker expands into the `bash_tool` definition
- * at load time (there is one code-execution tool path end-to-end), so a code
- * background opt-in keyed by EITHER name covers the pair. Synthesized
- * ephemeral/model-spec options and hand-edited agents typically carry only the
- * `execute_code` key; without this the actual runtime def (`bash_tool`) would
- * silently never receive the injected param.
- */
-function expandCodeToolOptions(toolOptions?: AgentToolOptions): AgentToolOptions | undefined {
-  if (!toolOptions) {
-    return toolOptions;
-  }
-  const codeOptIn =
-    toolOptions[AgentConstants.EXECUTE_CODE]?.run_in_background === true ||
-    toolOptions[AgentConstants.BASH_TOOL]?.run_in_background === true;
-  if (!codeOptIn) {
-    return toolOptions;
-  }
-  return {
-    ...toolOptions,
-    [AgentConstants.EXECUTE_CODE]: {
-      ...toolOptions[AgentConstants.EXECUTE_CODE],
-      run_in_background: true,
-    },
-    [AgentConstants.BASH_TOOL]: {
-      ...toolOptions[AgentConstants.BASH_TOOL],
-      run_in_background: true,
-    },
-  };
-}
-
-/**
  * Whether a tool may be dispatched in the background. Handoff tools
  * (`lc_transfer_to_*`) run through the direct path and are excluded by prefix.
  */
@@ -135,6 +135,20 @@ export function isBackgroundEligibleToolName(name: string): boolean {
   }
   return !name.startsWith(AgentConstants.LC_TRANSFER_TO_);
 }
+
+/**
+ * Tools that are background-NATIVE: they default INTO background dispatch
+ * while the capability is enabled, and an explicit `run_in_background: false`
+ * opts one out. Code executions are the paradigmatic slow, detachable call —
+ * they flow through the generic execute path and their completion is
+ * harvested onto the dispatch turn — so they carry the param without
+ * per-agent opt-in, the same way the SDK's coding tools carry `intent`
+ * natively. Mirrors `NATIVE_INTENT_TOOL_NAMES` in `intent.ts`.
+ */
+export const NATIVE_BACKGROUND_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
+  String(AgentConstants.EXECUTE_CODE),
+  String(AgentConstants.BASH_TOOL),
+]);
 
 /**
  * Coerces tool-call args to an object, parsing a stringified JSON object (some
@@ -290,27 +304,77 @@ export function stripBackgroundFromToolRegistry(
   return next;
 }
 
-const CHECK_BACKGROUND_TASK_DESCRIPTION = `Check the status and retrieve the result of tool calls previously dispatched in the background (with run_in_background: true).
+const CHECK_BACKGROUND_TASK_DESCRIPTION = `Check, control, and retrieve tool or subagent tasks previously dispatched in the background (with run_in_background: true).
 
-Provide a background_task_id to poll one task; omit it to list every background task in this conversation. A task is only finished when its status is "completed" or "error" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. Background tasks persist on this server across turns, so you can collect a result in a later turn; they do not survive a server restart.`;
+Provide a background_task_id to poll one task; omit it to list every background task in this thread. A task is only finished when its status is "completed", "error", or "cancelled" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. Subagent tasks additionally accept steer, queue, interrupt, cancel, and cancel_message actions while running. Live subagent controls route across API replicas but do not survive a restart of the process that owns the executor. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
 
-const CHECK_BACKGROUND_TASK_PARAMETERS: JsonSchemaType = Object.freeze<JsonSchemaType>({
+const CHECK_BACKGROUND_TASK_WAKEUP_DESCRIPTION = `Check, control, and retrieve tool or subagent tasks previously dispatched in the background (with run_in_background: true).
+
+Provide a background_task_id to inspect one task; omit it to list every background task in this thread. Ordinary background tool tasks require polling to retrieve their results. Detached subagent tasks use automatic completion delivery: continue independent work or end the turn instead of repeatedly polling an unchanged running task, and the host will resume you when one finishes. Use this tool for explicit status, steer, queue, interrupt, cancel, or cancel_message actions, or as a fallback if automatic delivery is unavailable. Live subagent controls route across API replicas but do not survive a restart of the process that owns the executor. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
+
+function checkBackgroundTaskDescription(subagentCompletionWakeups: boolean): string {
+  return subagentCompletionWakeups
+    ? CHECK_BACKGROUND_TASK_WAKEUP_DESCRIPTION
+    : CHECK_BACKGROUND_TASK_DESCRIPTION;
+}
+
+/**
+ * `maxLength` is valid JSON Schema and is honored by providers, but the SDK's
+ * `JsonSchemaType` does not declare it, so the model-facing bounds are typed here.
+ * Runtime argument validation enforces the same limits as defense in depth.
+ */
+interface BoundedStringSchema {
+  type: 'string';
+  maxLength: number;
+  description: string;
+}
+
+interface CheckBackgroundTaskParameters {
+  type: 'object';
+  properties: {
+    background_task_id: BoundedStringSchema;
+    action: { type: 'string'; enum: string[]; description: string };
+    message: BoundedStringSchema;
+    control_id: BoundedStringSchema;
+  };
+  required: string[];
+}
+
+const CHECK_BACKGROUND_TASK_PARAMETERS = Object.freeze<CheckBackgroundTaskParameters>({
   type: 'object',
   properties: {
     background_task_id: {
       type: 'string',
+      maxLength: MAX_BACKGROUND_TASK_ID_CHARS,
       description:
-        'The id returned when the tool call was dispatched. Omit to list the status of all background tasks in this conversation.',
+        'The id returned when the tool or subagent was dispatched. Omit to list all background tasks in this thread.',
+    },
+    action: {
+      type: 'string',
+      enum: ['poll', 'steer', 'queue', 'interrupt', 'cancel', 'cancel_message'],
+      description: 'Defaults to poll. Control actions apply only to a running subagent task.',
+    },
+    message: {
+      type: 'string',
+      maxLength: MAX_BACKGROUND_CONTROL_MESSAGE_CHARS,
+      description: 'Required for steer, queue, or interrupt.',
+    },
+    control_id: {
+      type: 'string',
+      maxLength: MAX_BACKGROUND_CONTROL_ID_CHARS,
+      description: 'Required for cancel_message; use the id returned by a prior control action.',
     },
   },
   required: [],
 });
 
-const CHECK_BACKGROUND_TASK_DEF: LCTool = Object.freeze<LCTool>({
-  name: CHECK_BACKGROUND_TASK_NAME,
-  description: CHECK_BACKGROUND_TASK_DESCRIPTION,
-  parameters: CHECK_BACKGROUND_TASK_PARAMETERS,
-});
+function buildCheckBackgroundTaskDefinition(subagentCompletionWakeups: boolean): LCTool {
+  return {
+    name: CHECK_BACKGROUND_TASK_NAME,
+    description: checkBackgroundTaskDescription(subagentCompletionWakeups),
+    parameters: CHECK_BACKGROUND_TASK_PARAMETERS,
+  };
+}
 
 /**
  * Idempotently registers the `check_background_task` poll tool into the run's
@@ -319,17 +383,23 @@ const CHECK_BACKGROUND_TASK_DEF: LCTool = Object.freeze<LCTool>({
 export function registerBackgroundTaskTool(params: {
   toolRegistry: LCToolRegistry | undefined;
   toolDefinitions: LCTool[] | undefined;
+  subagentCompletionWakeups?: boolean;
 }): { toolDefinitions: LCTool[] } {
-  const { toolRegistry, toolDefinitions } = params;
+  const { toolRegistry, toolDefinitions, subagentCompletionWakeups = false } = params;
   const defs = toolDefinitions ?? [];
+  const desiredDescription = checkBackgroundTaskDescription(subagentCompletionWakeups);
   const isOurs = (tool?: { description?: string }): boolean =>
-    tool?.description === CHECK_BACKGROUND_TASK_DESCRIPTION;
+    tool?.description === CHECK_BACKGROUND_TASK_DESCRIPTION ||
+    tool?.description === CHECK_BACKGROUND_TASK_WAKEUP_DESCRIPTION;
 
   const existingDef = defs.find((d) => d.name === CHECK_BACKGROUND_TASK_NAME);
   const existingRegistry = toolRegistry?.get(CHECK_BACKGROUND_TASK_NAME);
 
   /** Already registered by us — idempotent no-op. */
-  if (isOurs(existingDef) || isOurs(existingRegistry)) {
+  if (
+    existingDef?.description === desiredDescription &&
+    (existingRegistry == null || existingRegistry.description === desiredDescription)
+  ) {
     return { toolDefinitions: defs };
   }
 
@@ -341,35 +411,53 @@ export function registerBackgroundTaskTool(params: {
    * and warn that the colliding tool is shadowed.
    */
   const collides = existingDef != null || existingRegistry != null;
-  if (collides) {
+  const foreignCollision =
+    (existingDef != null && !isOurs(existingDef)) ||
+    (existingRegistry != null && !isOurs(existingRegistry));
+  if (foreignCollision) {
     logger.warn(
       `[background] A tool named "${CHECK_BACKGROUND_TASK_NAME}" collides with the reserved background poll tool; the host poll tool takes precedence and the colliding tool is shadowed for this run.`,
     );
   }
   toolRegistry?.set(CHECK_BACKGROUND_TASK_NAME, {
     name: CHECK_BACKGROUND_TASK_NAME,
-    description: CHECK_BACKGROUND_TASK_DESCRIPTION,
+    description: desiredDescription,
     parameters: CHECK_BACKGROUND_TASK_PARAMETERS,
     allowed_callers: ['direct'],
   });
   const withoutCollision = collides
     ? defs.filter((d) => d.name !== CHECK_BACKGROUND_TASK_NAME)
     : defs;
-  return { toolDefinitions: [...withoutCollision, CHECK_BACKGROUND_TASK_DEF] };
+  return {
+    toolDefinitions: [
+      ...withoutCollision,
+      buildCheckBackgroundTaskDefinition(subagentCompletionWakeups),
+    ],
+  };
 }
 
 /**
  * Injects the `run_in_background` param into every opted-in, eligible tool and
  * registers the poll tool when at least one tool became backgroundable.
  *
- * Opt-in is per tool via `tool_options[name].run_in_background`. Both saved
- * agents and ephemeral/model-spec agents reach this with `tool_options`
- * populated, so the logic is written once.
+ * Opt-in resolves per FINAL definition via {@link resolveToolOption}
+ * (explicit name → capability marker projection → wildcard), so a saved
+ * agent's `execute_code` entry reaches `bash_tool` and a spec selection
+ * reaches lazily-registered definitions. When no policy speaks at all, the
+ * background-native code pair defaults IN — so this pass runs on every
+ * capability-enabled request, not just explicitly opted-in agents. Both
+ * saved agents and ephemeral/model-spec agents reach this with the same
+ * `tool_options` shape, so the logic is written once. When a narrowing
+ * selection is present, names that never took effect — including markers
+ * whose every runtime definition is background-excluded, like `memory` —
+ * are warned about here.
  */
 export function applyBackgroundToolCalls(params: {
   toolDefinitions: LCTool[] | undefined;
   toolRegistry: LCToolRegistry | undefined;
   toolOptions: AgentToolOptions | undefined;
+  /** Capability marker → registered definition names, from `initializeAgent`. */
+  capabilityToolNames?: CapabilityToolNames;
   /**
    * Extra host-context exclusion (e.g. tools of ephemeral request-scoped MCP
    * servers, whose connection dies at request end): a `true` return skips the
@@ -378,16 +466,20 @@ export function applyBackgroundToolCalls(params: {
    */
   excludeTool?: (toolName: string) => boolean;
 }): { toolDefinitions: LCTool[]; backgroundToolNames: string[] } {
-  const { toolRegistry, excludeTool } = params;
-  const toolOptions = expandCodeToolOptions(params.toolOptions);
+  const { toolRegistry, toolOptions, capabilityToolNames, excludeTool } = params;
   const defs = params.toolDefinitions ?? [];
-  if (!toolOptions || !Object.values(toolOptions).some((o) => o?.run_in_background === true)) {
-    return { toolDefinitions: defs, backgroundToolNames: [] };
-  }
+  const selectionNames = getSelectionNames(toolOptions, 'run_in_background');
+  const effectiveSources = new Set<string>();
 
   const backgroundToolNames: string[] = [];
   const nextDefs = defs.map((def) => {
-    const optedIn = toolOptions[def.name]?.run_in_background === true;
+    const resolved = resolveToolOption(
+      def.name,
+      'run_in_background',
+      toolOptions,
+      capabilityToolNames,
+    );
+    const optedIn = resolved != null ? resolved.value : NATIVE_BACKGROUND_TOOL_NAMES.has(def.name);
     if (!optedIn || !isBackgroundEligibleToolName(def.name) || excludeTool?.(def.name) === true) {
       return def;
     }
@@ -396,6 +488,9 @@ export function applyBackgroundToolCalls(params: {
         `[background] Skipping run_in_background for "${def.name}": non-object schema or the tool already declares the parameter.`,
       );
       return def;
+    }
+    if (resolved != null) {
+      effectiveSources.add(resolved.source);
     }
     backgroundToolNames.push(def.name);
     const injected = injectRunInBackgroundParam(def);
@@ -409,6 +504,8 @@ export function applyBackgroundToolCalls(params: {
     return injected;
   });
 
+  warnUnmatchedSelectionNames(selectionNames, effectiveSources, BACKGROUND_SELECTION_LABEL);
+
   if (backgroundToolNames.length === 0) {
     return { toolDefinitions: defs, backgroundToolNames: [] };
   }
@@ -418,36 +515,41 @@ export function applyBackgroundToolCalls(params: {
 }
 
 /**
- * Builds `tool_options` marking each eligible tool as backgroundable. Ephemeral
- * and model-spec agents carry no `tool_options`, so the blanket spec/ephemeral
- * toggle is expanded per-tool here to reuse the same per-tool opt-in the saved
- * agent path uses. Returns undefined when disabled or nothing is eligible.
+ * Records the background selection for ephemeral and model-spec agents, which
+ * carry no per-tool options of their own. Returns undefined when disabled.
  *
- * Note: MCP servers that expand lazily (via the `mcp_all` placeholder for
- * overlay/user-connection servers) are not known by name at this point, so
- * their tools are not marked; standard cached MCP servers push real names and
- * are covered.
+ * A model spec's `runInBackground` selects the scope: `true` opts in every
+ * eligible tool, while a string array opts in ONLY the named ones. Selecting
+ * per tool matters more here than for intent labels — backgrounding changes
+ * execution semantics, so an admin may want it on one slow MCP call without
+ * letting the model detach every other tool in the spec. The ephemeral toggle
+ * stays boolean and never narrows; it has no per-tool UI to drive it.
+ *
+ * A spec's `runInBackground: false` is the boolean spelling of the empty
+ * list — an explicit "none" that also opts the background-native code pair
+ * out. Pre-native, `false` was behaviorally identical to omitting the field,
+ * so a config that wrote it must not silently flip to backgrounding code.
+ * The EPHEMERAL toggle's `false` stays no-policy — a badge default, not a
+ * decision — so the native default holds for ephemeral chats.
+ *
+ * The selection is recorded as policy (wildcard default + verbatim names)
+ * and resolved against the FINAL definition set in
+ * `applyBackgroundToolCalls`, so capability markers and lazily-expanded MCP
+ * servers are governed, and names that never take effect — a typo, or a
+ * marker like `memory` whose runtime definitions are all
+ * background-excluded — are diagnosed where the real definitions are known.
  */
-export function synthesizeBackgroundToolOptions(
-  tools: string[],
-  sources: {
-    ephemeralAgent?: { run_in_background?: boolean } | null;
-    modelSpec?: { runInBackground?: boolean } | null;
-  },
-): AgentToolOptions | undefined {
-  const enabled =
-    sources.ephemeralAgent?.run_in_background === true ||
-    sources.modelSpec?.runInBackground === true;
-  if (!enabled) {
-    return undefined;
-  }
-  const toolOptions: AgentToolOptions = {};
-  for (const name of tools) {
-    if (isBackgroundEligibleToolName(name)) {
-      toolOptions[name] = { run_in_background: true };
-    }
-  }
-  return Object.keys(toolOptions).length > 0 ? toolOptions : undefined;
+export function synthesizeBackgroundToolOptions(sources: {
+  ephemeralAgent?: { run_in_background?: boolean } | null;
+  modelSpec?: { runInBackground?: boolean | string[] } | null;
+}): AgentToolOptions | undefined {
+  const specSelection = sources.modelSpec?.runInBackground;
+  return synthesizeSelectionToolOptions(
+    'run_in_background',
+    specSelection === false ? [] : specSelection,
+    sources.ephemeralAgent?.run_in_background === true,
+    BACKGROUND_SELECTION_LABEL,
+  );
 }
 
 export type BackgroundTaskStatus = 'running' | 'completed' | 'error';
@@ -484,8 +586,12 @@ export interface BackgroundTask {
    * the ORIGINAL tool-call identity.
    */
   harvestStarted?: boolean;
+  /** True until completion-time file inspection/persistence accepts or rejects the artifact. */
+  harvestPending?: boolean;
   /** True once the artifact has been handed to a live poll turn's callback. */
   artifactDelivered?: boolean;
+  /** Terminal policy rejection: blocked artifact bytes must never be restored or claimed. */
+  artifactBlocked?: boolean;
   /** Error message when status === 'error'. */
   error?: string;
   createdAt: number;
@@ -696,7 +802,7 @@ export class BackgroundTaskRegistryClass {
       toolCallId: params.toolCallId,
       messageId: params.messageId,
       agentId: params.agentId,
-      ...(params.harvestStarted === true ? { harvestStarted: true } : {}),
+      ...(params.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
       status: 'running',
       createdAt: nextDispatchStamp(now),
       updatedAt: now,
@@ -714,7 +820,7 @@ export class BackgroundTaskRegistryClass {
   ): void {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task) {
+    if (!task || (task.artifactBlocked === true && patch.artifactBlocked !== true)) {
       return;
     }
     Object.assign(task, patch, { updatedAt: Date.now() });
@@ -730,7 +836,7 @@ export class BackgroundTaskRegistryClass {
       status: 'completed',
       result: toStoredContent(result.content),
       artifact: toStoredArtifact(taskId, result.artifact),
-      ...(result.harvestStarted === true ? { harvestStarted: true } : {}),
+      ...(result.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
       /** Marks that an artifact existed even after `claimArtifact` clears it,
        *  so re-polls keep the "produced an artifact" note. */
       artifactDelivered: false,
@@ -753,6 +859,19 @@ export class BackgroundTaskRegistryClass {
       return;
     }
     this.update(userId, conversationId, taskId, { attachments });
+  }
+
+  /** Marks completion-time inspection/persistence successful, unlocking artifact collection. */
+  finishHarvest(
+    userId: string,
+    conversationId: string,
+    taskId: string,
+    attachments: unknown[] = [],
+  ): void {
+    this.update(userId, conversationId, taskId, {
+      harvestPending: false,
+      ...(attachments.length > 0 ? { attachments } : {}),
+    });
   }
 
   /**
@@ -780,7 +899,13 @@ export class BackgroundTaskRegistryClass {
     | undefined {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task || task.status !== 'completed' || task.artifact == null || task.artifactDelivered) {
+    if (
+      !task ||
+      task.status !== 'completed' ||
+      task.harvestPending === true ||
+      task.artifact == null ||
+      task.artifactDelivered
+    ) {
       return undefined;
     }
     const artifact = task.artifact;
@@ -804,7 +929,7 @@ export class BackgroundTaskRegistryClass {
   restoreArtifact(userId: string, conversationId: string, taskId: string, artifact: unknown): void {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task || task.artifact != null) {
+    if (!task || task.artifactBlocked === true || task.artifact != null) {
       return;
     }
     /** Same size bound as `complete()` — a restore path must not resurrect
@@ -823,7 +948,22 @@ export class BackgroundTaskRegistryClass {
     this.update(userId, conversationId, taskId, {
       status: 'error',
       error,
-      ...(options?.harvestStarted === true ? { harvestStarted: true } : {}),
+      ...(options?.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
+    });
+  }
+
+  /** Permanently removes a policy-rejected artifact and exposes only the raw-free policy error. */
+  blockArtifact(userId: string, conversationId: string, taskId: string, error: string): void {
+    this.update(userId, conversationId, taskId, {
+      status: 'error',
+      error,
+      result: undefined,
+      artifact: undefined,
+      attachments: undefined,
+      harvestStarted: undefined,
+      harvestPending: undefined,
+      artifactDelivered: false,
+      artifactBlocked: true,
     });
   }
 
@@ -836,10 +976,11 @@ export class BackgroundTaskRegistryClass {
   revokeHarvest(userId: string, conversationId: string, taskId: string, artifact?: unknown): void {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task) {
+    if (!task || task.artifactBlocked === true) {
       return;
     }
     task.harvestStarted = undefined;
+    task.harvestPending = undefined;
     if (task.artifact == null && artifact != null) {
       task.artifact = artifact;
       task.artifactDelivered = false;
@@ -959,33 +1100,310 @@ function serializeTask(
   };
 }
 
+interface SerializedSubagentTask {
+  background_task_id: string;
+  subagent_thread_id?: string;
+  tool: string;
+  subagent_type: string;
+  status: string;
+  progress: number;
+  progress_detail?: SubagentTaskSnapshot['progress'];
+  result?: string;
+  result_available?: boolean;
+  result_claimed?: boolean;
+  pending_controls?: number;
+  error?: string;
+  control_id?: string;
+  message?: string;
+}
+
+function serializeSubagentSnapshot(
+  task: SubagentTaskSnapshot,
+  options: {
+    includeResult?: string;
+    status?: string;
+    controlId?: string;
+    completionWakeups?: boolean;
+  } = {},
+): SerializedSubagentTask {
+  return {
+    background_task_id: task.taskId,
+    ...(task.threadId == null ? {} : { subagent_thread_id: task.threadId }),
+    tool: String(AgentConstants.SUBAGENT),
+    subagent_type: task.subagentType,
+    status: options.status ?? task.status,
+    progress: task.status === 'running' ? 0 : 1,
+    ...(task.progress == null ? {} : { progress_detail: task.progress }),
+    ...(options.includeResult == null ? {} : { result: options.includeResult }),
+    ...(task.resultAvailable ? { result_available: true } : {}),
+    ...(task.resultClaimed ? { result_claimed: true } : {}),
+    ...(task.pendingControls > 0 ? { pending_controls: task.pendingControls } : {}),
+    ...(task.error == null ? {} : { error: task.error }),
+    ...(options.controlId == null ? {} : { control_id: options.controlId }),
+    ...(options.completionWakeups === true && task.status === 'running'
+      ? { message: SUBAGENT_WAKEUP_GUIDANCE }
+      : {}),
+  };
+}
+
+function serializeSubagentClaim(
+  claim: SubagentTaskClaim,
+  completionWakeups: boolean,
+): SerializedSubagentTask | undefined {
+  if (claim.status === 'not_found') {
+    return undefined;
+  }
+  if (claim.status === 'completed') {
+    return serializeSubagentSnapshot(claim.task, { includeResult: claim.result });
+  }
+  if (claim.status === 'error' || claim.status === 'cancelled') {
+    return {
+      ...serializeSubagentSnapshot(claim.task, { status: claim.status }),
+      error: claim.error,
+    };
+  }
+  return serializeSubagentSnapshot(claim.task, { status: claim.status, completionWakeups });
+}
+
+function serializeSubagentControl(
+  result: SubagentTaskControlResult,
+): SerializedSubagentTask | { status: string; message?: string } | undefined {
+  if (result.status === 'not_found') {
+    return undefined;
+  }
+  if (result.status === 'invalid') {
+    return { status: result.status, message: result.message };
+  }
+  return serializeSubagentSnapshot(result.task, {
+    status: result.status,
+    ...(result.status === 'accepted' && result.controlId != null
+      ? { controlId: result.controlId }
+      : {}),
+  });
+}
+
+function buildSubagentControlCommand(
+  args: Record<string, unknown>,
+  action: string,
+): SubagentTaskControlCommand | undefined {
+  if (action === 'cancel') {
+    return { action: 'cancel' };
+  }
+  if (action === 'cancel_message') {
+    return typeof args.control_id === 'string' &&
+      args.control_id.length <= MAX_BACKGROUND_CONTROL_ID_CHARS
+      ? { action: 'cancel_message', controlId: args.control_id }
+      : undefined;
+  }
+  if (action === 'steer' || action === 'queue' || action === 'interrupt') {
+    return typeof args.message === 'string' &&
+      args.message.length <= MAX_BACKGROUND_CONTROL_MESSAGE_CHARS
+      ? { action, message: args.message }
+      : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * One tool call is one invocation, of a control or of the poll that collects a result.
+ * A provider tool-call id such as `call_0` repeats across runs and agents, so the
+ * identity also carries the run and executing agent; replaying that same call stays
+ * idempotent while a later run's identical id is a new invocation. Hashing keeps every
+ * derived identity inside the routed bound.
+ */
+function controlInvocationId(params: {
+  toolCallId?: string;
+  agentId?: string;
+  runId?: string;
+}): string {
+  const toolCallId = params.toolCallId?.trim();
+  if (toolCallId == null || toolCallId === '') {
+    return randomUUID();
+  }
+  return createHash('sha256')
+    .update(`${params.runId ?? ''}\u0000${params.agentId ?? ''}\u0000${toolCallId}`)
+    .digest('base64url')
+    .slice(0, 32);
+}
+
 /** Executes a `check_background_task` call and returns the ToolMessage content. */
-export function runCheckBackgroundTask(params: {
+interface RoutedSubagentTaskStore {
+  claimTask(scopeId: string, taskId: string, invocationId: string): Promise<SubagentTaskClaim>;
+  controlTask(
+    scopeId: string,
+    taskId: string,
+    command: SubagentTaskControlCommand,
+    invocationId: string,
+  ): Promise<SubagentTaskControlResult>;
+  listTasks(scopeId: string): Promise<SubagentTaskSnapshot[]>;
+}
+
+function routedSubagentStore(store: SubagentTaskStore): RoutedSubagentTaskStore | undefined {
+  const candidate = store as SubagentTaskStore & Partial<RoutedSubagentTaskStore>;
+  return typeof candidate.claimTask === 'function' &&
+    typeof candidate.controlTask === 'function' &&
+    typeof candidate.listTasks === 'function'
+    ? (candidate as RoutedSubagentTaskStore)
+    : undefined;
+}
+
+export async function runCheckBackgroundTask(params: {
   userId: string;
   conversationId: string;
   args: unknown;
-}): string {
+  /** The provider's tool-call id: one control invocation, stable across replays. */
+  toolCallId?: string;
+  /** Scopes that tool-call id, whose provider ids repeat across runs and agents. */
+  agentId?: string;
+  runId?: string;
+  subagentTasks?: SubagentTaskConfig;
+}): Promise<string> {
   const { userId, conversationId } = params;
-  const rawId = coerceArgsObject(params.args)?.background_task_id;
+  const args = coerceArgsObject(params.args) ?? {};
+  const rawId = args.background_task_id;
+  if (typeof rawId === 'string' && rawId.trim().length > MAX_BACKGROUND_TASK_ID_CHARS) {
+    return JSON.stringify({
+      status: 'invalid',
+      message: `A background_task_id cannot exceed ${MAX_BACKGROUND_TASK_ID_CHARS} characters.`,
+    });
+  }
   const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
+  const action = typeof args.action === 'string' && args.action !== '' ? args.action : 'poll';
+  const invocationId = controlInvocationId(params);
 
   if (taskId) {
     const task = backgroundTaskRegistry.get(userId, conversationId, taskId);
-    if (!task) {
-      return JSON.stringify({
-        status: 'not_found',
-        background_task_id: taskId,
-        message: 'No background task with that id exists in this conversation.',
-      });
+    if (task != null) {
+      if (action !== 'poll') {
+        return JSON.stringify({
+          status: 'invalid',
+          background_task_id: taskId,
+          message: 'Control actions are supported only for subagent tasks.',
+        });
+      }
+      return JSON.stringify(serializeTask(task, { includeResult: true }));
     }
-    return JSON.stringify(serializeTask(task, { includeResult: true }));
+
+    const subagentTasks = params.subagentTasks;
+    if (subagentTasks != null) {
+      try {
+        const routedStore = routedSubagentStore(subagentTasks.store);
+        if (action === 'poll') {
+          const claim =
+            routedStore == null
+              ? subagentTasks.store.claim(subagentTasks.scopeId, taskId)
+              : await routedStore.claimTask(subagentTasks.scopeId, taskId, invocationId);
+          const claimed = serializeSubagentClaim(
+            claim,
+            usesSubagentCompletionWakeups(subagentTasks),
+          );
+          if (claimed != null) {
+            return JSON.stringify(claimed);
+          }
+        } else {
+          const command = buildSubagentControlCommand(args, action);
+          if (command == null) {
+            return JSON.stringify({
+              status: 'invalid',
+              background_task_id: taskId,
+              message: 'This subagent control action is unknown or missing its required argument.',
+            });
+          }
+          const result =
+            routedStore == null
+              ? subagentTasks.store.control(subagentTasks.scopeId, taskId, command)
+              : await routedStore.controlTask(subagentTasks.scopeId, taskId, command, invocationId);
+          const controlled = serializeSubagentControl(result);
+          if (controlled != null) {
+            return JSON.stringify(controlled);
+          }
+        }
+      } catch (error) {
+        if (error instanceof SubagentTaskOwnerUnavailableError) {
+          return JSON.stringify({
+            status: 'unavailable',
+            background_task_id: taskId,
+            message: error.message,
+          });
+        }
+        throw error;
+      }
+    }
+
+    return JSON.stringify({
+      status: 'not_found',
+      background_task_id: taskId,
+      message: 'No background task with that id exists in this thread.',
+    });
+  }
+
+  if (action !== 'poll') {
+    return JSON.stringify({
+      status: 'invalid',
+      message: 'A background_task_id is required for control actions.',
+    });
   }
 
   const tasks = backgroundTaskRegistry.list(userId, conversationId);
-  logger.debug(`[background] check_background_task listed ${tasks.length} task(s)`);
+  let subagentTasks: SerializedSubagentTask[] = [];
+  let listWarning: string | undefined;
+  const completionWakeups = usesSubagentCompletionWakeups(params.subagentTasks);
+  if (params.subagentTasks != null) {
+    try {
+      const routedStore = routedSubagentStore(params.subagentTasks.store);
+      const snapshots =
+        routedStore == null
+          ? params.subagentTasks.store.list(params.subagentTasks.scopeId)
+          : await routedStore.listTasks(params.subagentTasks.scopeId);
+      subagentTasks = snapshots.map((task) => serializeSubagentSnapshot(task));
+    } catch (error) {
+      if (error instanceof SubagentTaskOwnerUnavailableError) {
+        /** Cross-replica discovery is an additive source. A Redis outage must not
+         * hide ordinary tasks or subagents owned by this process; surface the
+         * incomplete view explicitly so the caller can retry for remote tasks. */
+        subagentTasks = params.subagentTasks.store
+          .list(params.subagentTasks.scopeId)
+          .map((task) => serializeSubagentSnapshot(task));
+        listWarning = `Cross-replica subagent tasks could not be listed: ${error.message}`;
+      } else {
+        throw error;
+      }
+    }
+  }
+  logger.debug(
+    `[background] check_background_task listed ${tasks.length + subagentTasks.length} task(s)`,
+  );
   return JSON.stringify({
-    tasks: tasks.map((task) => serializeTask(task, { includeResult: false })),
+    tasks: [
+      ...tasks.map((task) => serializeTask(task, { includeResult: false })),
+      ...subagentTasks,
+    ],
+    ...(completionWakeups && subagentTasks.some((task) => task.status === 'running')
+      ? { message: SUBAGENT_WAKEUP_GUIDANCE }
+      : {}),
+    ...(listWarning != null && { partial: true, warning: listWarning }),
   });
+}
+
+/** Returns a read-only snapshot of the specifically requested task, if any. */
+export function getBackgroundTaskSnapshot(params: {
+  userId: string;
+  conversationId: string;
+  args: unknown;
+}): Readonly<BackgroundTask> | undefined {
+  const rawId = coerceArgsObject(params.args)?.background_task_id;
+  const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
+  if (!taskId) {
+    return undefined;
+  }
+  const task = backgroundTaskRegistry.get(params.userId, params.conversationId, taskId);
+  if (!task) {
+    return undefined;
+  }
+  return {
+    ...task,
+    ...(task.attachments != null ? { attachments: [...task.attachments] } : {}),
+  };
 }
 
 /**
@@ -1061,7 +1479,11 @@ export function getBackgroundCodeDelivery(params: {
     return undefined;
   }
   const task = backgroundTaskRegistry.get(params.userId, params.conversationId, taskId);
-  if (!task || task.harvestStarted !== true) {
+  if (
+    !task ||
+    task.harvestStarted !== true ||
+    (task.status === 'completed' && task.harvestPending === true)
+  ) {
     return undefined;
   }
   return {
