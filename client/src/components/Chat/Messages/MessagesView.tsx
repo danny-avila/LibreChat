@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useCallback, useState, useRef } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { CSSTransition } from 'react-transition-group';
@@ -34,13 +34,27 @@ function MessagesViewContent({
 
   const { conversationId } = conversation ?? {};
 
+  // BKL: 스크롤 활동 감지 — 스크롤 중일 때만 스크롤바를 보이게 한다
+  // (style.css 의 .scrollbar-autohide + .is-scrolling). 멈추고 0.8초 뒤 숨김.
+  const [isScrolling, setIsScrolling] = useState(false);
+  const scrollIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleScrollWithActivity = useCallback(() => {
+    setIsScrolling(true);
+    if (scrollIdleTimer.current) clearTimeout(scrollIdleTimer.current);
+    scrollIdleTimer.current = setTimeout(() => setIsScrolling(false), 800);
+    debouncedHandleScroll();
+  }, [debouncedHandleScroll]);
+
   return (
     <>
       <div className="relative flex-1 overflow-hidden overflow-y-auto">
         <div className="relative h-full">
           <div
-            className="scrollbar-gutter-stable"
-            onScroll={debouncedHandleScroll}
+            className={cn(
+              'scrollbar-gutter-stable scrollbar-autohide',
+              isScrolling && 'is-scrolling',
+            )}
+            onScroll={handleScrollWithActivity}
             ref={scrollableRef}
             style={{
               height: '100%',

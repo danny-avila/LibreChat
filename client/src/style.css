@@ -1511,6 +1511,28 @@ button {
   transition-delay: 0s;
 }
 
+/* BKL: 스크롤 중일 때만 스크롤바 표시 — 채팅 메시지 영역용.
+   is-scrolling 클래스는 MessagesView 가 스크롤 이벤트로 토글하고,
+   멈추면 잠시 후 제거해 스크롤바가 사라진다. */
+.scrollbar-autohide {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.scrollbar-autohide.is-scrolling {
+  scrollbar-color: var(--border-medium) transparent;
+}
+
+.scrollbar-autohide::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  transition: background-color 0.3s ease 0.4s;
+}
+
+.scrollbar-autohide.is-scrolling::-webkit-scrollbar-thumb {
+  background-color: var(--border-medium);
+  transition-delay: 0s;
+}
+
 body,
 html {
   height: 100%;

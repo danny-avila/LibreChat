@@ -52,11 +52,14 @@ const SidePanelGroup = memo(
         const navSize = defaultLayout.length === 2 ? defaultLayout[1] : defaultLayout[2];
         return [100 - navSize, navSize];
       } else {
+        // BKL: 저장된 3열 레이아웃(사용자 리사이즈)이 있으면 복원하고,
+        // 없으면 우측 패널 기본 20% (기존 50/50 은 대화 패널 상시 표시에 과함)
+        if (defaultLayout.length === 3) {
+          return defaultLayout;
+        }
         const navSize = 0;
-        const remainingSpace = 100 - navSize;
-        const newMainSize = Math.floor(remainingSpace / 2);
-        const artifactsSize = remainingSpace - newMainSize;
-        return [newMainSize, artifactsSize, navSize];
+        const artifactsSize = 20;
+        return [100 - navSize - artifactsSize, artifactsSize, navSize];
       }
     }, [artifacts, defaultLayout]);
 
@@ -66,7 +69,8 @@ const SidePanelGroup = memo(
       () =>
         throttle((sizes: number[]) => {
           const normalizedSizes = normalizeLayout(sizes);
-          localStorage.setItem('react-resizable-panels:layout', JSON.stringify(normalizedSizes));
+          // BKL: v2 — 우측 패널 상시 표시 이전(50/50 기본)에 저장된 값과 분리
+          localStorage.setItem('react-resizable-panels:layout:v2', JSON.stringify(normalizedSizes));
         }, 350),
       [],
     );
@@ -88,6 +92,15 @@ const SidePanelGroup = memo(
     }, [isSmallScreen, defaultCollapsed, navCollapsedSize, fullPanelCollapse]);
 
     const minSizeMain = useMemo(() => (artifacts != null ? 15 : 30), [artifacts]);
+
+    // BKL: 우측 패널 최소 픽셀 보장 — react-resizable-panels 는 % 단위만
+    // 받으므로 마운트 시점 화면폭 기준으로 300px 을 % 로 환산한다.
+    const artifactsMinSize = useMemo(() => {
+      if (typeof window === 'undefined' || !window.innerWidth) {
+        return 15;
+      }
+      return Math.min(40, Math.max(15, Math.ceil((300 / window.innerWidth) * 100)));
+    }, []);
 
     /** Memoized close button handler to prevent re-creating it */
     const handleClosePanel = useCallback(() => {
@@ -121,7 +134,7 @@ const SidePanelGroup = memo(
             <ArtifactsPanel
               artifacts={artifacts}
               currentLayout={currentLayout}
-              minSizeMain={minSizeMain}
+              minSizeMain={artifactsMinSize}
               shouldRender={shouldRenderArtifacts}
               onRenderChange={setShouldRenderArtifacts}
             />

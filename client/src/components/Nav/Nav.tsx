@@ -262,9 +262,13 @@ const Nav = memo(
     }
 
     // Desktop: Inline sidebar with width transition
+    // BKL: 사이드바와 채팅 영역 사이 명시적 구분선 (접히면 선도 숨김)
     return (
       <div
-        className="flex-shrink-0 overflow-hidden"
+        className={cn(
+          'flex-shrink-0 overflow-hidden',
+          navVisible && 'border-r border-border-light',
+        )}
         style={{ width: navVisible ? sidebarWidth : 0, transition: 'width 0.2s ease-out' }}
       >
         <motion.div

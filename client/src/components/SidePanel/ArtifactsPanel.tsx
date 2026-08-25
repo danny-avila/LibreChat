@@ -55,7 +55,8 @@ const ArtifactsPanel = memo(function ArtifactsPanel({
         order={2}
         id="artifacts-panel"
       >
-        <div className="h-full min-w-[400px] overflow-hidden">{artifacts}</div>
+        {/* BKL: 패널 % 최소치(≈300px)와 맞춘다 — 400px 이면 좁은 패널에서 잘림 */}
+        <div className="h-full min-w-[300px] overflow-hidden">{artifacts}</div>
       </ResizablePanel>
     </>
   );

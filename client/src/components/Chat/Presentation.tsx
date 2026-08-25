@@ -50,7 +50,8 @@ export default function Presentation({ children }: { children: React.ReactNode }
   }, [mutateAsync]);
 
   const defaultLayout = useMemo(() => {
-    const resizableLayout = localStorage.getItem('react-resizable-panels:layout');
+    // BKL: v2 키 — 우측 패널 상시 표시 이전(50/50 기본) 저장값을 무시한다
+    const resizableLayout = localStorage.getItem('react-resizable-panels:layout:v2');
     return typeof resizableLayout === 'string' ? JSON.parse(resizableLayout) : undefined;
   }, []);
   const defaultCollapsed = useMemo(() => {
