@@ -17,10 +17,11 @@ import type { BoundAddress } from '../../app/origin';
 import { AgentTriggerDeliveryDeferredError, createAgentTriggerDeliveryEngine } from './engine';
 import { isShutdownInProgress, registerShutdownTask } from '../../app/shutdown';
 import { generateAgentTriggerToken } from '../../crypto/jwt';
+import { AgentTriggerDeliveryError, prepareAgentTriggerDelivery } from './delivery';
 import { selfOriginFromAddress } from '../../app/origin';
-import { prepareAgentTriggerDelivery } from './delivery';
 import { createAgentTriggerExecutionHost } from './host';
 import { parseAgentTriggerEnvelope } from './envelope';
+import { isEnabled } from '../../utils/common';
 
 export const AGENT_TRIGGER_TOKEN_TTL = '60s';
 const DEFAULT_USER_DRAIN_TIMEOUT_MS = 35_000;
@@ -45,6 +46,7 @@ export interface AgentTriggerServiceDeps {
   userDrainPollMs?: number;
   purgeRecoveryIntervalMs?: number;
   purgeRecoveryLimit?: number;
+  coalescingEnabled?: () => boolean;
 }
 
 export interface AgentTriggerDeliveryReceipt {
@@ -191,6 +193,8 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   const purgeRecoveryIntervalMs =
     deps.purgeRecoveryIntervalMs ?? DEFAULT_PURGE_RECOVERY_INTERVAL_MS;
   const purgeRecoveryLimit = deps.purgeRecoveryLimit ?? DEFAULT_PURGE_RECOVERY_LIMIT;
+  const coalescingEnabled =
+    deps.coalescingEnabled ?? (() => isEnabled(process.env.ENABLE_AGENT_EVENT_COALESCING));
   if (!Number.isSafeInteger(userDrainTimeoutMs) || userDrainTimeoutMs <= 0) {
     throw new TypeError('userDrainTimeoutMs must be a positive integer');
   }
@@ -295,12 +299,12 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     }
     const methods = deps.methods;
     const current = runAsSystem(async () => {
-      const [purgedUsers, publishedLanes, recoveredBatches, reclaimedLanes] = await Promise.all([
+      const [purgedUsers, publishedLanes, recoveredBatches] = await Promise.all([
         methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit),
         methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
         methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit),
-        methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit),
       ]);
+      const reclaimedLanes = await methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit);
       if (publishedLanes > 0) {
         deliveryEngine?.wake();
       }
@@ -398,6 +402,9 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     dispatch: dispatchForActivePrincipal,
     enqueue: async (envelope, options) => {
       const methods = requireMethods();
+      if (options?.coalesce != null && !coalescingEnabled()) {
+        throw new AgentTriggerDeliveryError('Agent event coalescing is not enabled on this server');
+      }
       const prepared = prepareAgentTriggerDelivery(envelope, options);
       await requireActivePrincipal(String(prepared.user));
       const queued = await runAsSystem(async () => methods.enqueueAgentTriggerDelivery(prepared));

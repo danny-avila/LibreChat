@@ -267,6 +267,7 @@ export function createAgentTriggerDeliveryMethods(
         .lean<IAgentTriggerDelivery>();
       if (
         batchRoot == null &&
+        lane.tailDeliveryId != null &&
         staged.coalesceFrom != null &&
         staged.coalesceUntil != null &&
         staged.coalesceUntil.getTime() > Date.now() &&
@@ -277,6 +278,7 @@ export function createAgentTriggerDeliveryMethods(
           .findOneAndUpdate(
             {
               _id: { $ne: staged._id },
+              $or: [{ _id: lane.tailDeliveryId }, { batchMemberIds: lane.tailDeliveryId }],
               orderingKey: lane._id,
               coalesceKey: staged.coalesceKey,
               status: 'pending',
@@ -314,7 +316,10 @@ export function createAgentTriggerDeliveryMethods(
         $set: {
           status: batchRoot == null ? 'pending' : 'batched',
           laneSequence: lane.value,
-          ...(batchRoot?._id != null && { batchRootId: batchRoot._id }),
+          ...(batchRoot?._id != null && {
+            batchRootId: batchRoot._id,
+            batchRootRequeueCount: batchRoot.requeueCount ?? 0,
+          }),
         },
         $unset: { stagingRecoveryAt: 1 },
       },
@@ -336,7 +341,13 @@ export function createAgentTriggerDeliveryMethods(
       ) {
         await Delivery().updateOne(
           { _id: publisherDeliveryId, orderingKey: lane._id, status: current.status },
-          { $set: { laneSequence: lane.value, batchRootId: batchRoot._id } },
+          {
+            $set: {
+              laneSequence: lane.value,
+              batchRootId: batchRoot._id,
+              batchRootRequeueCount: batchRoot.requeueCount ?? 0,
+            },
+          },
         );
         current = await Delivery()
           .findById(publisherDeliveryId)
@@ -788,7 +799,7 @@ export function createAgentTriggerDeliveryMethods(
   async function settleBatchMembers(
     root: Pick<
       IAgentTriggerDelivery,
-      '_id' | 'orderingKey' | 'batchMemberIds' | 'batchMembersSettledAt'
+      '_id' | 'orderingKey' | 'batchMemberIds' | 'batchMembersSettledAt' | 'requeueCount'
     >,
     input: {
       attempt: number;
@@ -805,6 +816,7 @@ export function createAgentTriggerDeliveryMethods(
     const memberIds = root.batchMemberIds ?? [];
     if (memberIds.length > 0) {
       const error = input.error == null ? undefined : normalizeFailure(input.error);
+      const batchRootRequeueCount = root.requeueCount ?? 0;
       const settlement =
         input.status === 'succeeded'
           ? {
@@ -826,7 +838,12 @@ export function createAgentTriggerDeliveryMethods(
         {
           _id: { $in: memberIds },
           orderingKey: root.orderingKey,
-          status: { $ne: input.status },
+          status: { $in: ['staging', 'batched'] },
+          ...(batchRootRequeueCount === 0
+            ? {
+                $or: [{ batchRootRequeueCount: 0 }, { batchRootRequeueCount: { $exists: false } }],
+              }
+            : { batchRootRequeueCount }),
         },
         {
           $set: settlement,
@@ -989,7 +1006,9 @@ export function createAgentTriggerDeliveryMethods(
         },
         { new: true },
       )
-      .select('_id orderingKey laneCleanupPendingAt batchMemberIds batchMembersSettledAt')
+      .select(
+        '_id orderingKey laneCleanupPendingAt batchMemberIds batchMembersSettledAt requeueCount',
+      )
       .lean<
         Pick<
           IAgentTriggerDelivery,
@@ -998,6 +1017,7 @@ export function createAgentTriggerDeliveryMethods(
           | 'laneCleanupPendingAt'
           | 'batchMemberIds'
           | 'batchMembersSettledAt'
+          | 'requeueCount'
         >
       >();
     if (completed?._id == null) {
@@ -1084,11 +1104,11 @@ export function createAgentTriggerDeliveryMethods(
         },
         { new: true },
       )
-      .select('_id orderingKey batchMemberIds batchMembersSettledAt')
+      .select('_id orderingKey batchMemberIds batchMembersSettledAt requeueCount')
       .lean<
         Pick<
           IAgentTriggerDelivery,
-          '_id' | 'orderingKey' | 'batchMemberIds' | 'batchMembersSettledAt'
+          '_id' | 'orderingKey' | 'batchMemberIds' | 'batchMembersSettledAt' | 'requeueCount'
         >
       >();
     if (dead?._id == null) {
@@ -1219,7 +1239,12 @@ export function createAgentTriggerDeliveryMethods(
       await Delivery().updateMany(
         { _id: { $in: staged.batchMemberIds }, orderingKey: staged.orderingKey },
         {
-          $set: { status: 'batched', attempts: 0, batchRootId: staged._id },
+          $set: {
+            status: 'batched',
+            attempts: 0,
+            batchRootId: staged._id,
+            batchRootRequeueCount: staged.requeueCount ?? 0,
+          },
           $unset: {
             lastError: 1,
             result: 1,

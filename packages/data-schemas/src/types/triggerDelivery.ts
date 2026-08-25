@@ -47,6 +47,7 @@ export interface IAgentTriggerDelivery {
   batchBytes?: number;
   batchMemberIds?: Types.ObjectId[];
   batchRootId?: Types.ObjectId;
+  batchRootRequeueCount?: number;
   batchMembersSettledAt?: Date;
   leaseBy?: string;
   leaseUntil?: Date;

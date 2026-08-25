@@ -171,6 +171,11 @@ Sources that can prove several bound `continue` events are interchangeable obser
 those deliveries into one bounded child turn. Add the same source-defined compatibility key to each
 compatible request:
 
+Set `endpoints.agents.eventDriven.coalescing: true` only after every API replica runs a release
+that understands batched deliveries. It defaults to false so a rolling deployment cannot let an
+older worker consume only the root event while silently acknowledging the remaining members. The
+`ENABLE_AGENT_EVENT_COALESCING` environment override remains available for compatibility.
+
 ```json
 {
   "mode": "continue",

@@ -119,6 +119,24 @@ describe('durable agent trigger service', () => {
     await service.stop();
   });
 
+  it('rejects coalesced work before persistence unless every worker has the capability', async () => {
+    const methods = deliveryMethods();
+    const service = createAgentTriggerService({
+      methods,
+      coalescingEnabled: () => false,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+
+    await expect(
+      service.enqueue(envelope(), { coalesce: { key: 'championship-commentary' } }),
+    ).rejects.toThrow('Agent event coalescing is not enabled on this server');
+    expect(methods.enqueueAgentTriggerDelivery).not.toHaveBeenCalled();
+    await service.stop();
+  });
+
   it('refuses to arm without a reachable self origin', async () => {
     const service = createAgentTriggerService({ methods: deliveryMethods() });
 
@@ -283,6 +301,42 @@ describe('durable agent trigger service', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(recoverAgentTriggerUserPurges.mock.calls.length).toBeGreaterThanOrEqual(2);
+    await service.stop();
+  });
+
+  it('settles interrupted batch receipts before reclaiming their lane', async () => {
+    let finishBatchRecovery: ((count: number) => void) | undefined;
+    const recoverAgentTriggerBatchReceipts = jest.fn(
+      () =>
+        new Promise<number>((resolve) => {
+          finishBatchRecovery = resolve;
+        }),
+    );
+    let observeReclaim: (() => void) | undefined;
+    const reclaimed = new Promise<void>((resolve) => {
+      observeReclaim = resolve;
+    });
+    const reclaimInactiveAgentTriggerLanes = jest.fn(async () => {
+      observeReclaim?.();
+      return 1;
+    });
+    const service = createAgentTriggerService({
+      methods: deliveryMethods({
+        recoverAgentTriggerBatchReceipts,
+        reclaimInactiveAgentTriggerLanes,
+      }),
+      purgeRecoveryIntervalMs: 60_000,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+
+    expect(recoverAgentTriggerBatchReceipts).toHaveBeenCalledTimes(1);
+    expect(reclaimInactiveAgentTriggerLanes).not.toHaveBeenCalled();
+    finishBatchRecovery?.(1);
+    await reclaimed;
+    expect(reclaimInactiveAgentTriggerLanes).toHaveBeenCalledTimes(1);
     await service.stop();
   });
 

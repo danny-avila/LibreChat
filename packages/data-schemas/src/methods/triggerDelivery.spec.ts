@@ -488,6 +488,36 @@ describe('agent trigger delivery methods', () => {
     });
   });
 
+  it('starts a new batch when another delivery has taken the lane tail', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const coalesceFrom = new Date(Date.now() + 60_000);
+    const coalesceUntil = new Date(coalesceFrom.getTime() + 750);
+    const shared = {
+      user,
+      orderingKey: 'intervening-delivery-lane',
+      coalesceFrom,
+      coalesceUntil,
+      availableAt: coalesceUntil,
+      envelopeBytes: 64,
+    };
+
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ ...shared, coalesceKey: 'trigger_batch_first' }),
+    );
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ ...shared, coalesceKey: 'trigger_batch_intervening' }),
+    );
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ ...shared, coalesceKey: 'trigger_batch_first' }),
+    );
+
+    const rows = await Delivery.find({ orderingKey: shared.orderingKey })
+      .sort({ laneSequence: 1 })
+      .lean();
+    expect(rows.map(({ status }) => status)).toEqual(['pending', 'pending', 'pending']);
+    expect(rows.map(({ batchSize }) => batchSize)).toEqual([1, 1, 1]);
+  });
+
   it('requeues a dead batch as a root instead of nesting it under a newer batch', async () => {
     const user = new mongoose.Types.ObjectId();
     const coalesceUntil = new Date(Date.now() + 60_000);
@@ -529,12 +559,74 @@ describe('agent trigger delivery methods', () => {
     const requeued = await methods.requeueAgentTriggerDelivery(claim!.id, coalesceUntil);
 
     expect(requeued).toMatchObject({ status: 'pending', batchSize: 2 });
+    expect(requeued?.requeueCount).toBe(1);
     expect(requeued?.batchRootId).toBeUndefined();
     const rows = await Delivery.find({ orderingKey: 'batch-requeue-lane' }).lean();
     expect(rows.filter((row) => row.status === 'pending')).toHaveLength(2);
     expect(
       rows.filter((row) => row.batchRootId != null && String(row.batchRootId) === claim!.id),
     ).toHaveLength(1);
+    expect(rows.find((row) => row.status === 'batched')?.batchRootRequeueCount).toBe(1);
+  });
+
+  it('does not let stale batch recovery overwrite a receipt from a newer generation', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const coalesceUntil = new Date(Date.now() + 60_000);
+    const shared = {
+      user,
+      orderingKey: 'batch-generation-lane',
+      coalesceKey: 'trigger_batch_generation',
+      coalesceFrom: new Date(coalesceUntil.getTime() - 750),
+      coalesceUntil,
+      availableAt: coalesceUntil,
+      envelopeBytes: 128,
+    };
+    await Promise.all(
+      Array.from({ length: 2 }, () => methods.enqueueAgentTriggerDelivery(enqueueInput(shared))),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: coalesceUntil,
+      leaseUntil: new Date(coalesceUntil.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: coalesceUntil,
+    });
+    await methods.deadLetterAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: attempt!,
+      error: transientFailure({ retryable: false }),
+      settledAt: coalesceUntil,
+    });
+    const root = await Delivery.findById(claim!.id).lean();
+    const memberId = root!.batchMemberIds![0];
+    await Delivery.updateOne({ _id: root!._id }, { $unset: { batchMembersSettledAt: 1 } });
+    await Delivery.updateOne(
+      { _id: memberId },
+      {
+        $set: {
+          status: 'succeeded',
+          batchRootRequeueCount: 1,
+          settledAt: new Date(coalesceUntil.getTime() + 1_000),
+        },
+        $unset: { lastError: 1 },
+      },
+    );
+
+    await expect(methods.recoverAgentTriggerBatchReceipts()).rejects.toThrow(
+      'Not every agent trigger batch receipt could be settled',
+    );
+    await expect(Delivery.findById(memberId).lean()).resolves.toMatchObject({
+      status: 'succeeded',
+      batchRootRequeueCount: 1,
+    });
+    expect((await Delivery.findById(root!._id).lean())?.batchMembersSettledAt).toBeUndefined();
   });
 
   it('publishes an abandoned lane owner before allocating the next sequence', async () => {
