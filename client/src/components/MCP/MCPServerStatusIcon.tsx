@@ -118,7 +118,10 @@ interface CompactStatusDotProps {
 function CompactStatusDot({ serverStatus, isInitializing }: CompactStatusDotProps) {
   if (isInitializing) {
     return (
-      <div className="flex size-3.5 items-center justify-center rounded-full border-2 border-surface-secondary bg-status-info-strong">
+      /** `status-info` rather than `-strong`: the strong slot is a neutral grey
+       *  in both standard palettes, so using it turned this blue dot grey. The
+       *  pulse takes the on-status ink so it inverts with the fill. */
+      <div className="flex size-3.5 items-center justify-center rounded-full border-2 border-surface-secondary bg-status-info">
         <div className="size-1.5 animate-pulse rounded-full bg-text-on-status" />
       </div>
     );

@@ -124,6 +124,8 @@ export const contrastMermaidVariables = (
   const palette = isDarkMode ? highContrastDarkTheme : highContrastLightTheme;
   const canvas = tokenHex(palette['rgb-surface-primary'], isDarkMode ? '#000000' : '#ffffff');
   const ink = tokenHex(palette['rgb-text-primary'], isDarkMode ? '#ffffff' : '#000000');
+  /** The label colour for anything drawn on a solid fill rather than the canvas. */
+  const onFill = tokenHex(palette['rgb-text-on-status'], isDarkMode ? '#000000' : '#ffffff');
 
   return {
     background: canvas,
@@ -156,7 +158,14 @@ export const contrastMermaidVariables = (
     pieStrokeColor: ink,
     pieOuterStrokeColor: ink,
     pieTitleTextColor: ink,
-    pieSectionTextColor: ink,
+    /**
+     * Labels drawn inside a slice sit on a series colour, not on the canvas, and
+     * the series ramp deliberately lives on the far side of the canvas so the
+     * slices are visible. So this one takes the opposing ink, the same
+     * `text-on-status` the palette uses for a label on a solid fill. Title and
+     * legend stay on the canvas ink, since they are drawn on the canvas.
+     */
+    pieSectionTextColor: onFill,
     pieLegendTextColor: ink,
   };
 };

@@ -344,4 +344,19 @@ describe('high contrast mermaid palette', () => {
       });
     }
   });
+
+  /** Slice labels sit on a series colour, and the ramp lives on the far side of
+   *  the canvas so the slices are visible, so the canvas ink is the wrong ink
+   *  for them. Title and legend are drawn on the canvas and keep it. */
+  it('labels slices with the opposing ink and titles with the canvas ink', () => {
+    const light = contrastMermaidVariables(false, true)!;
+    expect(light.pieSectionTextColor).toBe('#ffffff');
+    expect(light.pieTitleTextColor).toBe('#000000');
+    expect(light.pieLegendTextColor).toBe('#000000');
+
+    const dark = contrastMermaidVariables(true, true)!;
+    expect(dark.pieSectionTextColor).toBe('#000000');
+    expect(dark.pieTitleTextColor).toBe('#ffffff');
+    expect(dark.pieLegendTextColor).toBe('#ffffff');
+  });
 });
