@@ -26,6 +26,7 @@ import {
   setFilesDraft,
   setPendingTextAttachmentDraft,
 } from './drafts';
+import { markPasteSubmitted } from './files';
 
 describe('new-conversation draft tokens', () => {
   it('keeps tokens independent across composer indexes', () => {
@@ -459,6 +460,35 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
 
     expect(collectLiveAttachmentIds().has('shared-file')).toBe(true);
     expect(collectLiveAttachmentIds({ excludeSelf: true }).has('shared-file')).toBe(true);
+  });
+
+  it('keeps a submitted id protected when a later chip of it is removed', () => {
+    /** The same file can be sent on one message and reattached afterwards. Removing that later
+     * chip is not evidence the file is unused, and once the composer and draft have cleared this
+     * entry is the only cross-tab record that a message still references it. */
+    markPasteSubmitted('sent-then-reattached');
+    publishTabAttachmentIds(0, ['sent-then-reattached']);
+
+    removeTabAttachmentPresence(['sent-then-reattached']);
+
+    expect(collectLiveAttachmentIds().has('sent-then-reattached')).toBe(true);
+  });
+
+  it('keeps its own published ids through a heartbeat that resumes past the window', () => {
+    /** Timers pause while the machine sleeps, so a live tab can beat again with its own record
+     * already stale. Sweeping before reading it published an empty presence, and nothing would
+     * republish it because the file map had not changed. */
+    const tabId = getBrowserTabId();
+    publishTabAttachmentIds(0, ['on-screen-file']);
+    const presence = JSON.parse(localStorage.getItem(`librechat-live-tab:${tabId}`) ?? '{}');
+    localStorage.setItem(
+      `librechat-live-tab:${tabId}`,
+      JSON.stringify({ ...presence, seenAt: Date.now() - 600_000 }),
+    );
+
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: false }));
+
+    expect(collectLiveAttachmentIds().has('on-screen-file')).toBe(true);
   });
 
   it('forgets a held id once the window has passed', () => {

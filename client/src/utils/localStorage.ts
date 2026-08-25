@@ -27,6 +27,19 @@ export function getLocalStorageItems() {
 export function clearLocalStorage(skipFirst?: boolean) {
   const keys = Object.keys(localStorage);
   keys.forEach((key) => {
+    /** Composer drafts hold whatever the user typed, and a paste held as a file keeps its entire
+     * text in the files draft. Both outlive a sign-out otherwise, and the browser tab keeps its
+     * identity across an in-app account switch, so the ordinary draft restore could hand the next
+     * account the previous one's text. Taken before `skipFirst` is consulted: that exception
+     * exists to preserve the first pane's settings, and a shared browser is no place to make an
+     * exception for someone else's writing. */
+    if (
+      key.startsWith(LocalStorageKeys.FILES_DRAFT) ||
+      key.startsWith(LocalStorageKeys.TEXT_DRAFT)
+    ) {
+      localStorage.removeItem(key);
+      return;
+    }
     if (skipFirst === true && key.endsWith('0')) {
       return;
     }

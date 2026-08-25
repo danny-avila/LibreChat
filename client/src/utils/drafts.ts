@@ -1,5 +1,6 @@
 import debounce from 'lodash/debounce';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
+import { isPasteSubmitted } from './files';
 
 export type PendingTextAttachmentDraft = {
   text: string;
@@ -607,11 +608,16 @@ const readLiveTabs = (): Map<string, TabPresence> => {
 /** Marks this tab as present. Only ever writes this tab's own key, so concurrent beats cannot
  * overwrite one another. */
 const recordTabPresence = (tabId: string, suspended = false): void => {
+  /** Read before sweeping, never after. Timers pause while the machine sleeps, so a perfectly
+   * live tab can come back with its own record already past the liveness window; letting the
+   * sweep reap it first and then rewriting from nothing published an empty presence, and because
+   * the file map had not changed there was nothing to make `useAutoSave` republish it. Another
+   * tab's retry would then see no claim on chips this one still has on screen. */
+  const existing = readTabPresence(tabId);
   /** The beat is the only thing guaranteed to run, so it is where the sweep belongs. Hanging it
    * off cleanup meant a profile that never had a failed deletion accumulated a record for every
    * tab it had ever opened, until the origin quota ran out and draft writes began failing. */
   readLiveTabs();
-  const existing = readTabPresence(tabId);
   writeTabPresence(tabId, {
     seenAt: Date.now(),
     ...(suspended ? { suspended: true } : {}),
@@ -679,10 +685,19 @@ export const removeTabAttachmentPresence = (ids: string[]): void => {
   let modified = false;
   const recent = { ...presence.recent };
   for (const id of idSet) {
-    if (recent[id] != null) {
-      delete recent[id];
-      modified = true;
+    if (recent[id] == null) {
+      continue;
     }
+    /** A chip leaving is not evidence the file is unused: this tab may have sent the same file on
+     * an earlier message and only now be removing a later reattachment of it. The `recent` entry
+     * is the only cross-tab record of that submitted use once the composer and draft have cleared,
+     * so an id a submission already consumed keeps its entry and ages out on the ordinary window
+     * instead of being withdrawn here. */
+    if (isPasteSubmitted(id)) {
+      continue;
+    }
+    delete recent[id];
+    modified = true;
   }
   const attachments = { ...presence.attachments };
   for (const [pane, paneIds] of Object.entries(attachments)) {

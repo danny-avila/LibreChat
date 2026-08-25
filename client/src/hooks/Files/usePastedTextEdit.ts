@@ -15,6 +15,7 @@ import {
   failedFileIdsFrom,
   forceResize,
   isFilesDraftOwnedByThisTab,
+  isPasteSubmitted,
   getComposerDraftId,
   getFilesDraftCached,
   markPastedTextFile,
@@ -222,6 +223,12 @@ export default function usePastedTextEdit({
       if (!restored || file.progress < 1) {
         return;
       }
+      /** A submitted paste is still referenced by the message that consumed it. Stop and error
+       * paths intentionally leave its draft provenance behind, so detaching a restored chip must
+       * not mistake that stale claim for ownership and delete the server record. */
+      if ([file.file_id, file.temp_file_id].some((id) => isPasteSubmitted(id))) {
+        return;
+      }
       const draftOwned = [isSubmitting, !isSubmitting].some((submitting) => {
         const draft = getFilesDraftCached(
           getComposerDraftId(index, conversationIdRef.current, submitting),
@@ -356,6 +363,7 @@ export default function usePastedTextEdit({
       };
       const accepted = await routeFiles([replacement], toolResource, {
         fileId: uploadId,
+        replacesFileId: sourceId,
         shouldCommit: () =>
           isOriginatingComposer(editConversationId, editDraftToken) && isAttachedToComposer(file),
         onSuccess: () => {

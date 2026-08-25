@@ -36,6 +36,7 @@ const mockState = {
   tabId: 'this-tab',
   fileList: [] as TFile[],
   draftsById: {} as Record<string, FilesDraft>,
+  submittedPasteIds: new Set<string>(),
 };
 
 type TFile = { file_id: string; text?: string };
@@ -95,6 +96,8 @@ jest.mock('~/utils', () => ({
   /** The other tab in these scenarios is open, so a stamp that is not ours is a live claim. */
   isFilesDraftOwnedByThisTab: (draft: { tabId?: string }) =>
     draft.tabId == null || draft.tabId === mockState.tabId,
+  isPasteSubmitted: (fileId?: string | null) =>
+    fileId != null && mockState.submittedPasteIds.has(fileId),
   markPastedTextFile: (...args: unknown[]) => mockMarkPastedTextFile(...args),
   retainFileDeletion: (...args: unknown[]) => mockRetainFileDeletion(...args),
   addPastedTextDraftFile: (...args: unknown[]) => mockAddPastedTextDraftFile(...args),
@@ -136,6 +139,7 @@ describe('usePastedTextEdit', () => {
     mockState.tabId = 'this-tab';
     mockState.fileList = [];
     mockState.draftsById = {};
+    mockState.submittedPasteIds.clear();
     mockRouteFiles.mockImplementation(
       (_files: unknown, _toolResource: unknown, lifecycle: UploadLifecycleCallbacks) => {
         capturedLifecycle = lifecycle;
@@ -180,6 +184,11 @@ describe('usePastedTextEdit', () => {
     });
 
     expect(mockRouteFiles).toHaveBeenCalledTimes(1);
+    expect(mockRouteFiles).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.anything(),
+      expect.objectContaining({ replacesFileId: 'pasted-file' }),
+    );
     expect(mockDeleteFile).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -731,6 +740,33 @@ describe('usePastedTextEdit', () => {
     });
 
     expect(mockDeleteFile).toHaveBeenCalledTimes(1);
+  });
+  it('does not delete a submitted restored paste when detaching its replacement', async () => {
+    const restored = pastedFile({
+      file_id: 'server-id',
+      temp_file_id: 'submitted-temp-id',
+      attached: true,
+    });
+    mockState.submittedPasteIds.add('submitted-temp-id');
+    mockState.draftsById['conversation-a:0:idle'] = {
+      fileIds: [],
+      pendingPastes: {},
+      pastedTextIds: ['server-id'],
+      tabId: 'this-tab',
+    };
+    const editor = renderEditor(new Map([['server-id', restored]]));
+
+    await act(async () => {
+      await editor.result.current.openEditor(restored);
+    });
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+    await act(async () => {
+      capturedLifecycle?.onSuccess?.('replacement-file');
+    });
+    expect(mockDeleteFile).toHaveBeenCalledTimes(1);
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
   });
 
   it('abandons the queued replacement when its composer is gone by commit time', async () => {

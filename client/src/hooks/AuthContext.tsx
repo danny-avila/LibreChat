@@ -260,6 +260,9 @@ const AuthContextProvider = ({
     if (token == null || !token || !isAuthenticated) {
       silentRefresh();
     }
+    /** `doSetError` is `useTimeout`'s inner closure, rebuilt every render, and this effect calls
+     * `silentRefresh`: depending on it would re-fire the refresh mutation on every render. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     token,
     isAuthenticated,
@@ -306,6 +309,9 @@ const AuthContextProvider = ({
       isAuthenticated,
     }),
 
+    /** `login` is a plain function rebuilt every render, so depending on it would rebuild this
+     * context value every render and re-render every consumer of auth state. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       user,
       error,
