@@ -1,11 +1,11 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
-const { logger, ResourceCapabilityMap } = require('@librechat/data-schemas');
+const { logger, ResourceCapabilityMap, getTenantId, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const { isEnabled, getBasePath } = require('@librechat/api');
 const { ResourceType, PermissionBits } = require('librechat-data-provider');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { checkPermission } = require('~/server/services/PermissionService');
-const { getAgent } = require('~/models');
+const { findSession, getAgent, getUserById } = require('~/models');
 
 const OBJECT_ID_LENGTH = 24;
 const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/i;
@@ -31,7 +31,7 @@ function isValidObjectId(id) {
  * @param {string} refreshToken - The refresh token to validate
  * @returns {{valid: boolean, userId?: string, error?: string}} - Validation result
  */
-function validateToken(refreshToken) {
+async function validateToken(refreshToken, requireActiveSession = true) {
   try {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
 
@@ -44,7 +44,11 @@ function validateToken(refreshToken) {
       return { valid: false, error: 'Refresh token expired' };
     }
 
-    return { valid: true, userId: payload.id };
+    if (!requireActiveSession) {
+      return { valid: true, userId: payload.id };
+    }
+    const session = await runAsSystem(() => findSession({ userId: payload.id, refreshToken }));
+    return session ? { valid: true, userId: payload.id } : { valid: false, error: 'Inactive session' };
   } catch (err) {
     logger.warn('[validateToken]', err);
     return { valid: false, error: 'Invalid token' };
@@ -83,8 +87,12 @@ function createValidateImageRequest(secureImageLinks = true) {
           logger.warn('[validateImageRequest] No OpenID user ID cookie found');
           return res.status(403).send('Access Denied');
         }
+        if (parsedCookies.refreshToken !== req.session?.openidTokens?.refreshToken) {
+          logger.warn('[validateImageRequest] Inactive OpenID session');
+          return res.status(403).send('Access Denied');
+        }
 
-        const validationResult = validateToken(openidUserId);
+        const validationResult = await validateToken(openidUserId, false);
         if (!validationResult.valid) {
           logger.warn(`[validateImageRequest] ${validationResult.error}`);
           return res.status(403).send('Access Denied');
@@ -102,7 +110,7 @@ function createValidateImageRequest(secureImageLinks = true) {
           return res.status(401).send('Unauthorized');
         }
 
-        const validationResult = validateToken(refreshToken);
+        const validationResult = await validateToken(refreshToken);
         if (!validationResult.valid) {
           logger.warn(`[validateImageRequest] ${validationResult.error}`);
           return res.status(403).send('Access Denied');
@@ -157,27 +165,39 @@ function createValidateImageRequest(secureImageLinks = true) {
         return res.status(403).send('Access Denied');
       }
 
-      const agent = await getAgent({ id: agentId });
-      if (!agent) {
-        logger.warn('[validateImageRequest] Agent not found for avatar request');
+      const user = await runAsSystem(() => getUserById(userIdForPath, 'role tenantId'));
+      if (!user) {
+        logger.warn('[validateImageRequest] User not found for avatar request');
         return res.status(403).send('Access Denied');
       }
-
-      const user = { id: userIdForPath };
-      let managesAgents = false;
-      try {
-        managesAgents = await hasCapability(user, ResourceCapabilityMap[ResourceType.AGENT]);
-      } catch (error) {
-        logger.warn('[validateImageRequest] Agent capability check failed', error);
-      }
-      const canViewAgent =
-        managesAgents ||
-        (await checkPermission({
-          userId: userIdForPath,
-          resourceType: ResourceType.AGENT,
-          resourceId: agent._id,
-          requiredPermission: PermissionBits.VIEW,
-        }));
+      const authorizeAvatar = async () => {
+        const agent = await getAgent({ id: agentId });
+        if (!agent) {
+          return false;
+        }
+        let managesAgents = false;
+        try {
+          managesAgents = await hasCapability(
+            { id: userIdForPath, role: user.role },
+            ResourceCapabilityMap[ResourceType.AGENT],
+          );
+        } catch (error) {
+          logger.warn('[validateImageRequest] Agent capability check failed', error);
+        }
+        return (
+          managesAgents ||
+          (await checkPermission({
+            userId: userIdForPath,
+            role: user.role,
+            resourceType: ResourceType.AGENT,
+            resourceId: agent._id,
+            requiredPermission: PermissionBits.VIEW,
+          }))
+        );
+      };
+      const canViewAgent = user.tenantId && getTenantId() == null
+        ? await tenantStorage.run({ tenantId: user.tenantId, userId: userIdForPath }, authorizeAvatar)
+        : await authorizeAvatar();
       if (!canViewAgent) {
         logger.warn('[validateImageRequest] User lacks agent avatar access');
         return res.status(403).send('Access Denied');

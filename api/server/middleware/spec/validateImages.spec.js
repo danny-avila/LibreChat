@@ -6,12 +6,12 @@ jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   isEnabled: jest.fn(),
 }));
-jest.mock('~/models', () => ({ getAgent: jest.fn() }));
+jest.mock('~/models', () => ({ findSession: jest.fn(), getAgent: jest.fn(), getUserById: jest.fn() }));
 jest.mock('~/server/services/PermissionService', () => ({ checkPermission: jest.fn() }));
 jest.mock('~/server/middleware/roles/capabilities', () => ({ hasCapability: jest.fn() }));
 
 const { isEnabled } = require('@librechat/api');
-const { getAgent } = require('~/models');
+const { findSession, getAgent, getUserById } = require('~/models');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 
@@ -37,6 +37,8 @@ describe('validateImageRequest middleware', () => {
     // Default: OpenID token reuse disabled
     isEnabled.mockReturnValue(false);
     getAgent.mockResolvedValue(null);
+    getUserById.mockResolvedValue({ role: 'USER' });
+    findSession.mockResolvedValue({ _id: 'session' });
     hasCapability.mockResolvedValue(false);
     checkPermission.mockResolvedValue(false);
   });
@@ -126,6 +128,7 @@ describe('validateImageRequest middleware', () => {
       expect(next).toHaveBeenCalled();
       expect(checkPermission).toHaveBeenCalledWith({
         userId: validObjectId,
+        role: 'USER',
         resourceType: 'agent',
         resourceId: '65cfb246f7ecadb8b1e8036c',
         requiredPermission: 1,
@@ -203,6 +206,7 @@ describe('validateImageRequest middleware', () => {
       // Enable OpenID token reuse
       isEnabled.mockReturnValue(true);
       process.env.OPENID_REUSE_TOKENS = 'true';
+      req.session = { openidTokens: { refreshToken: 'dummy-token' } };
     });
 
     test('should return 403 if no OpenID user ID cookie when token_provider is openid', async () => {
@@ -514,6 +518,7 @@ describe('validateImageRequest middleware', () => {
         process.env.JWT_REFRESH_SECRET,
       );
       req.headers.cookie = `refreshToken=${validToken}; token_provider=openid; openid_user_id=${validToken}`;
+      req.session = { openidTokens: { refreshToken: validToken } };
       req.originalUrl = `/librechat/images/${validObjectId}/test.jpg`;
 
       await validateImageRequest(req, res, next);
