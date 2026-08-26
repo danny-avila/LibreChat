@@ -1673,6 +1673,20 @@ describe('agent trigger delivery methods', () => {
     await expect(methods.hasAgentEventActorActionAdmission(successorAdmission)).resolves.toBe(true);
     await expect(methods.releaseAgentEventActorAction(successorAdmission)).resolves.toBe(true);
     await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(false);
+    /** A pre-token worker's live admission must remain opaque but protected
+     * throughout a rolling upgrade. New workers may observe the fence, but
+     * cannot replace or release it without its (unavailable) owner token. */
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      { $set: { actorActionAdmittedAt: actionAdmission.admittedAt } },
+    );
+    await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(true);
+    await expect(methods.admitAgentEventActorAction(successorAdmission)).resolves.toBe(false);
+    await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(false);
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      { $unset: { actorActionAdmittedAt: 1 } },
+    );
     await methods.completeAgentTriggerDelivery({
       id: claimed!.id,
       workerId: 'worker-1',

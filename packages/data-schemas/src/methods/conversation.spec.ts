@@ -5022,7 +5022,8 @@ describe('Conversation Operations', () => {
       ).resolves.toMatchObject({ updatedAt: updatedAtBeforeExpiry });
     });
 
-    it('advances past protected legacy receipts within the bounded cleanup page', async () => {
+    it('pages raw conversations before filtering and advances past protected receipts', async () => {
+      const freshConversationId = uuidv4();
       const protectedConversationId = uuidv4();
       const removableConversationId = uuidv4();
       const userId = new mongoose.Types.ObjectId();
@@ -5036,6 +5037,14 @@ describe('Conversation Operations', () => {
         observedAt: new Date(now.getTime() - 91 * 24 * 60 * 60_000),
       });
       await Conversation.create([
+        {
+          conversationId: freshConversationId,
+          user: userId.toString(),
+          endpoint: EModelEndpoint.agents,
+          agentEventActorReconciliations: [
+            { ...oldReceipt('fresh-first', freshConversationId), observedAt: now },
+          ],
+        },
         {
           conversationId: protectedConversationId,
           user: userId.toString(),
@@ -5063,6 +5072,9 @@ describe('Conversation Operations', () => {
         awaitTerminalHandling: true,
       });
 
+      /** The first raw page contains no expired receipt. The second contains
+       * a protected receipt, and only the third reaches removable work. */
+      await expect(methods.expireLegacyAgentEventActorReceipts(now, 1)).resolves.toBe(0);
       await expect(methods.expireLegacyAgentEventActorReceipts(now, 1)).resolves.toBe(0);
       await expect(methods.expireLegacyAgentEventActorReceipts(now, 1)).resolves.toBe(1);
       await expect(

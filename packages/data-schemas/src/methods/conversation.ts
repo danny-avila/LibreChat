@@ -1135,9 +1135,6 @@ export function createConversationMethods(
      * enter the next sweep without making any one pass collection-wide. */
     const candidates = await Conversation.find({
       ...(legacyReceiptExpiryCursor == null ? {} : { _id: { $gt: legacyReceiptExpiryCursor } }),
-      agentEventActorReconciliations: {
-        $elemMatch: { status: 'settled', observedAt: { $lte: cutoff } },
-      },
     })
       .select('_id +agentEventActorReconciliations')
       .sort({ _id: 1 })

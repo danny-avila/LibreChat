@@ -1594,12 +1594,23 @@ export function createAgentTriggerDeliveryMethods(
         status: { $in: ['leased', 'succeeded', 'dead'] },
         'envelope.target.bindingId': input.bindingId,
         actorReceipt: { $exists: false },
-        actorActionAdmissionId: { $ne: input.admissionId },
-        $or: [
-          { handling: { $exists: false } },
+        $and: [
           {
-            'handling.status': 'started',
-            'handling.conversationId': input.conversationId,
+            $or: [
+              { actorActionAdmittedAt: { $exists: false } },
+              {
+                actorActionAdmissionId: { $exists: true, $ne: input.admissionId },
+              },
+            ],
+          },
+          {
+            $or: [
+              { handling: { $exists: false } },
+              {
+                'handling.status': 'started',
+                'handling.conversationId': input.conversationId,
+              },
+            ],
           },
         ],
       },
@@ -1648,13 +1659,25 @@ export function createAgentTriggerDeliveryMethods(
         user: input.user,
         ...tenantScope,
         'envelope.target.bindingId': input.bindingId,
-        $or: [
-          { handling: { $exists: false } },
-          { 'handling.conversationId': input.conversationId },
+        $and: [
+          {
+            $or: [
+              { handling: { $exists: false } },
+              { 'handling.conversationId': input.conversationId },
+            ],
+          },
+          {
+            $or: [
+              { actorActionAdmissionId: input.admissionId },
+              /** A tokenless admission belongs to a pre-token worker. During
+               * a rolling upgrade its lifecycle must remain protected until
+               * that owner settles or releases it. */
+              { actorActionAdmissionId: { $exists: false } },
+            ],
+          },
         ],
         actorReceipt: { $exists: false },
         actorActionAdmittedAt: { $exists: true },
-        actorActionAdmissionId: input.admissionId,
       })) != null
     );
   }
