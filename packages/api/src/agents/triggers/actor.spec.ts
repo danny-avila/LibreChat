@@ -80,6 +80,8 @@ describe('event actor host adapter', () => {
     }),
     recordReconciliation: jest.fn(async () => true),
     resolveReconciliation: jest.fn(async () => true),
+    admitAction: jest.fn(async () => true),
+    releaseAction: jest.fn(async () => true),
   });
 
   it('cold-starts once, then forks and warm-continues only the next event', async () => {
@@ -816,26 +818,13 @@ describe('event actor host adapter', () => {
     expect(dependencies.recordReconciliation).not.toHaveBeenCalled();
   });
 
-  it('abandons admission when a terminal receipt lands after preparation', async () => {
-    const checkpoint = {
-      threadId: conversationId,
-      checkpointId: 'checkpoint-terminal',
-      checkpointNs: 'event-actor/event-race',
-    };
+  it('abandons the lifecycle when delivery-owned action admission already settled', async () => {
     const invoke = jest.fn(async () => 'must not run');
     const resolveReconciliation = jest.fn(async () => true);
     const dependencies = {
       ...deps(),
-      getReceipt: jest
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          bindingId: 'binding-1',
-          resolution: 'checkpoint_verified' as const,
-          checkpoint,
-          action: { toolName: 'submit_move' },
-          settledAt: new Date(),
-        }),
+      getReceipt: jest.fn().mockResolvedValue(null),
+      admitAction: jest.fn().mockResolvedValue(false),
       resolveReconciliation,
     };
 
@@ -853,9 +842,16 @@ describe('event actor host adapter', () => {
         },
         dependencies,
       ),
-    ).rejects.toThrow('already has a terminal receipt');
+    ).rejects.toThrow('action admission was already consumed or settled');
 
     expect(dependencies.recordReconciliation).toHaveBeenCalledTimes(1);
+    expect(dependencies.admitAction).toHaveBeenCalledWith({
+      deliveryKey: 'event-race',
+      user: 'user-1',
+      bindingId: 'binding-1',
+      conversationId,
+      admittedAt: expect.any(Date),
+    });
     expect(resolveReconciliation).toHaveBeenCalledWith({
       user: 'user-1',
       conversationId,
@@ -864,5 +860,35 @@ describe('event actor host adapter', () => {
       resolution: 'invocation_abandoned',
     });
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('releases delivery admission when the actor completes without an external action', async () => {
+    const dependencies = {
+      ...deps(),
+      getReceipt: jest.fn().mockResolvedValue(null),
+    };
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          bindingId: 'binding-1',
+          invocationId: 'event-no-action',
+          event: { id: 'event-no-action' },
+          signal: new AbortController().signal,
+          invoke: async () => 'no action',
+          readAppliedAction: () => undefined,
+        },
+        dependencies,
+      ),
+    ).resolves.toMatchObject({ execution: { status: 'completed_no_action' } });
+
+    expect(dependencies.releaseAction).toHaveBeenCalledWith({
+      deliveryKey: 'event-no-action',
+      user: 'user-1',
+      bindingId: 'binding-1',
+      conversationId,
+    });
   });
 });

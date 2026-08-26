@@ -119,6 +119,7 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     awaitTerminalHandling: { type: Boolean },
     handling: { type: handlingSchema },
     actorReceipt: { type: actorReceiptSchema, select: false },
+    actorActionAdmittedAt: { type: Date, select: false },
     leaseBy: { type: String },
     leaseUntil: { type: Date },
     claimToken: { type: String },

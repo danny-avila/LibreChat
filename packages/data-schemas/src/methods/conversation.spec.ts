@@ -4844,6 +4844,112 @@ describe('Conversation Operations', () => {
       expect(stored?.agentEventActor).toBeUndefined();
     });
 
+    it('clears an exact settled legacy receipt after delivery-ledger migration', async () => {
+      const conversationId = uuidv4();
+      const checkpoint = {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-migrated',
+        checkpointNs: 'event-actor/migrated',
+      };
+      await Conversation.create({
+        conversationId,
+        user: 'actor-migrated-clear-user',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: {
+          bindingId: `evtbind_${'c'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+        agentEventActor: { generation: 1, checkpoint },
+        agentEventActorReconciliations: [
+          {
+            invocationId: 'migrated',
+            status: 'settled',
+            resolution: 'checkpoint_verified',
+            checkpoint,
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        ],
+      });
+
+      await expect(
+        methods.clearAgentEventActorReconciliation({
+          user: 'actor-migrated-clear-user',
+          conversationId,
+          invocationId: 'migrated',
+          checkpoint,
+          resolution: 'checkpoint_verified',
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.getAgentEventActorSnapshot({
+          user: 'actor-migrated-clear-user',
+          conversationId,
+        }),
+      ).resolves.toMatchObject({ reconciliations: [] });
+    });
+
+    it('does not compensate an action that has not passed invocation admission', async () => {
+      const conversationId = uuidv4();
+      const checkpoint = {
+        threadId: conversationId,
+        checkpointNs: 'event-actor/not-admitted',
+      };
+      await Conversation.create({
+        conversationId,
+        user: 'actor-unadmitted-user',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: {
+          bindingId: `evtbind_${'b'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+        agentEventActorReconciliations: [
+          {
+            invocationId: 'not-admitted',
+            actionAdmitted: true,
+            status: 'invocation_pending',
+            checkpoint,
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        ],
+      });
+
+      await expect(
+        methods.resolveAgentEventActorReconciliation({
+          user: 'actor-unadmitted-user',
+          conversationId,
+          invocationId: 'not-admitted',
+          checkpoint,
+          resolution: 'action_compensated',
+        }),
+      ).resolves.toBe(false);
+    });
+
     it('versions every legacy invalidation so a stale prepared fork cannot commit past it', async () => {
       const conversationId = uuidv4();
       await Conversation.create({

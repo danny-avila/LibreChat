@@ -1687,6 +1687,7 @@ describe('agent trigger delivery methods', () => {
       generationCreatedAt,
       status: 'applied' as const,
       settledAt: new Date(generationCreatedAt + 1_000),
+      requiresActionAdmission: true as const,
       receipt: {
         resolution: actorReceipt.resolution,
         checkpoint: actorReceipt.checkpoint,
@@ -1694,7 +1695,21 @@ describe('agent trigger delivery methods', () => {
       },
     };
 
+    await expect(methods.settleAgentEventActorReceipt(settlement)).resolves.toBe(false);
+    const actionAdmission = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      tenantId: 'tenant-1',
+      bindingId: 'binding-1',
+      conversationId: 'conversation-1',
+      admittedAt: new Date(generationCreatedAt + 500),
+    };
+    await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(true);
+    await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(false);
+    await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(true);
+    await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(true);
     await expect(methods.settleAgentEventActorReceipt(settlement)).resolves.toBe(true);
+    await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(false);
     await expect(methods.settleAgentEventActorReceipt(settlement)).resolves.toBe(true);
     for (const conflict of [
       { ...settlement, user: new mongoose.Types.ObjectId() },
@@ -2352,6 +2367,67 @@ describe('agent trigger delivery methods', () => {
     await expect(methods.getAgentTriggerDeadLetters(Number.NaN)).rejects.toThrow(
       'Agent trigger dead-letter limit must be a positive integer',
     );
+  });
+
+  it('retires a dead letter when its admitted actor action later settles', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-late-terminal' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const generationCreatedAt = START.getTime() + 1_000;
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      {
+        $set: {
+          status: 'dead',
+          attempts: 3,
+          actorActionAdmittedAt: START,
+          handling: {
+            status: 'started',
+            conversationId: 'conversation-late-terminal',
+            streamId: 'conversation-late-terminal',
+            generationCreatedAt,
+            startedAt: START,
+          },
+        },
+      },
+    );
+
+    await expect(
+      methods.settleAgentEventActorReceipt({
+        deliveryKey: queued.delivery.deliveryKey,
+        user,
+        tenantId: 'tenant-1',
+        bindingId: 'binding-late-terminal',
+        conversationId: 'conversation-late-terminal',
+        generationCreatedAt,
+        status: 'applied',
+        settledAt: new Date(generationCreatedAt + 1_000),
+        requiresActionAdmission: true,
+        receipt: {
+          resolution: 'checkpoint_verified',
+          checkpoint: {
+            threadId: 'conversation-late-terminal',
+            checkpointId: 'checkpoint-late-terminal',
+            checkpointNs: 'event-actor/late-terminal',
+          },
+          action: { toolName: 'submit_move' },
+        },
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      methods.getAgentTriggerDelivery(queued.delivery.deliveryKey),
+    ).resolves.toMatchObject({ status: 'succeeded', handling: { status: 'applied' } });
+    await expect(
+      methods.requeueAgentTriggerDelivery(queued.delivery.id, START),
+    ).resolves.toBeNull();
   });
 
   it('counts only live leases while an account deletion drains', async () => {

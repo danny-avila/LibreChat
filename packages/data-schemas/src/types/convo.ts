@@ -31,6 +31,9 @@ export interface IAgentEventActorState {
 
 export interface IAgentEventActorReconciliation {
   invocationId: string;
+  /** New-protocol executions acquire the delivery-owned action admission CAS
+   * before the external action may run. Absent only on mixed-version rows. */
+  actionAdmitted?: boolean;
   status:
     | 'invocation_pending'
     | 'persistence_pending'

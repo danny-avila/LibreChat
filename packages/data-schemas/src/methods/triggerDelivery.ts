@@ -103,7 +103,14 @@ export interface SettleAgentEventActorReceiptInput {
   status: 'applied' | 'failed';
   settledAt: Date;
   error?: string;
+  /** Present for executions that acquired the delivery-owned action CAS.
+   * Absent only for mixed-version terminal rows created before this field. */
+  requiresActionAdmission?: true;
   receipt: Omit<AgentEventActorReceipt, 'bindingId' | 'settledAt'>;
+}
+
+export interface AdmitAgentEventActorActionInput extends GetAgentEventActorReceiptInput {
+  admittedAt: Date;
 }
 
 export interface GetAgentEventActorReceiptInput {
@@ -161,6 +168,8 @@ export interface AgentTriggerDeliveryMethods {
   settleAgentTriggerHandlingOutcome: (
     input: SettleAgentTriggerHandlingOutcomeInput,
   ) => Promise<boolean>;
+  admitAgentEventActorAction: (input: AdmitAgentEventActorActionInput) => Promise<boolean>;
+  releaseAgentEventActorAction: (input: GetAgentEventActorReceiptInput) => Promise<boolean>;
   settleAgentEventActorReceipt: (input: SettleAgentEventActorReceiptInput) => Promise<boolean>;
   getAgentEventActorReceipt: (
     input: GetAgentEventActorReceiptInput,
@@ -1356,9 +1365,14 @@ export function createAgentTriggerDeliveryMethods(
           'handling.conversationId': input.conversationId,
           'handling.generationCreatedAt': input.generationCreatedAt,
           actorReceipt: { $exists: false },
+          ...(input.requiresActionAdmission === true
+            ? { actorActionAdmittedAt: { $exists: true } }
+            : { actorActionAdmittedAt: { $exists: false } }),
         },
         {
           $set: {
+            status: 'succeeded',
+            settledAt: input.settledAt,
             'handling.status': input.status,
             'handling.settledAt': input.settledAt,
             ...(applied && { 'handling.action': input.receipt.action }),
@@ -1440,6 +1454,55 @@ export function createAgentTriggerDeliveryMethods(
       resolution: input.receipt.resolution,
     });
     return true;
+  }
+
+  async function admitAgentEventActorAction(
+    input: AdmitAgentEventActorActionInput,
+  ): Promise<boolean> {
+    if (Number.isNaN(input.admittedAt.getTime())) {
+      throw new TypeError('admittedAt must be a valid date');
+    }
+    const tenantScope =
+      input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId };
+    const admitted = await Delivery().updateOne(
+      {
+        deliveryKey: input.deliveryKey,
+        user: input.user,
+        ...tenantScope,
+        'envelope.target.bindingId': input.bindingId,
+        actorReceipt: { $exists: false },
+        actorActionAdmittedAt: { $exists: false },
+        $or: [
+          { handling: { $exists: false } },
+          { 'handling.conversationId': input.conversationId },
+        ],
+      },
+      { $set: { actorActionAdmittedAt: input.admittedAt } },
+    );
+    return admitted.modifiedCount === 1;
+  }
+
+  async function releaseAgentEventActorAction(
+    input: GetAgentEventActorReceiptInput,
+  ): Promise<boolean> {
+    const tenantScope =
+      input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId };
+    const released = await Delivery().updateOne(
+      {
+        deliveryKey: input.deliveryKey,
+        user: input.user,
+        ...tenantScope,
+        'envelope.target.bindingId': input.bindingId,
+        $or: [
+          { handling: { $exists: false } },
+          { 'handling.conversationId': input.conversationId },
+        ],
+        actorReceipt: { $exists: false },
+        actorActionAdmittedAt: { $exists: true },
+      },
+      { $unset: { actorActionAdmittedAt: 1 } },
+    );
+    return released.modifiedCount === 1;
   }
 
   async function getAgentEventActorReceipt(
@@ -1563,11 +1626,13 @@ export function createAgentTriggerDeliveryMethods(
         attempts: { $gt: 0 },
         'envelope.target.bindingId': { $exists: true },
         'handling.status': 'started',
+        actorReceipt: { $exists: false },
       }),
       Delivery().countDocuments({
         status: 'dead',
         'envelope.target.bindingId': { $exists: true },
         'handling.status': 'started',
+        actorReceipt: { $exists: false },
       }),
     ]);
     const retainedByResolution: AgentEventActorReceiptStorageMetrics['retainedByResolution'] = {
@@ -1755,7 +1820,12 @@ export function createAgentTriggerDeliveryMethods(
     availableAt: Date,
   ): Promise<AgentTriggerDeliveryRecord | null> {
     const candidate = await Delivery()
-      .findOne({ _id: id, status: 'dead', batchRootId: { $exists: false } })
+      .findOne({
+        _id: id,
+        status: 'dead',
+        batchRootId: { $exists: false },
+        actorReceipt: { $exists: false },
+      })
       .lean<IAgentTriggerDelivery>();
     if (candidate?._id == null) {
       return null;
@@ -1809,6 +1879,7 @@ export function createAgentTriggerDeliveryMethods(
           _id: candidate._id,
           status: 'dead',
           batchRootId: { $exists: false },
+          actorReceipt: { $exists: false },
           requeueCount: previousRequeueCount,
         },
         {
@@ -1959,6 +2030,8 @@ export function createAgentTriggerDeliveryMethods(
     deferAgentTriggerDeliveryAttempt,
     completeAgentTriggerDelivery,
     settleAgentTriggerHandlingOutcome,
+    admitAgentEventActorAction,
+    releaseAgentEventActorAction,
     settleAgentEventActorReceipt,
     getAgentEventActorReceipt,
     backfillAgentEventActorReceipt,

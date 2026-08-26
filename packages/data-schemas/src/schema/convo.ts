@@ -102,6 +102,7 @@ const convoSchema: Schema<IConversation> = new Schema(
       type: [
         {
           invocationId: { type: String, required: true },
+          actionAdmitted: { type: Boolean, default: undefined },
           status: {
             type: String,
             enum: [

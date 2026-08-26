@@ -81,6 +81,9 @@ export interface IAgentTriggerDelivery {
   awaitTerminalHandling?: boolean;
   handling?: AgentTriggerHandlingState;
   actorReceipt?: AgentEventActorReceipt;
+  /** Delivery-owned serialization point acquired exactly once before an event
+   * actor may invoke an external action. */
+  actorActionAdmittedAt?: Date;
   leaseBy?: string;
   leaseUntil?: Date;
   claimToken?: string;

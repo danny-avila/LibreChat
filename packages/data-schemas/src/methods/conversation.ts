@@ -726,6 +726,7 @@ export function createConversationMethods(
           input.reconciliation.status === 'history_persisted');
       const sameIdentity =
         current?.status === input.reconciliation.status &&
+        current.actionAdmitted === input.reconciliation.actionAdmitted &&
         current.checkpoint.threadId === input.reconciliation.checkpoint.threadId &&
         current.checkpoint.checkpointId === input.reconciliation.checkpoint.checkpointId &&
         current.checkpoint.checkpointNs === input.reconciliation.checkpoint.checkpointNs &&
@@ -870,7 +871,17 @@ export function createConversationMethods(
       ...exactCheckpoint,
       ...(input.resolution === 'invocation_abandoned'
         ? { status: 'invocation_pending' }
-        : { status: { $ne: 'settled' } }),
+        : {
+            status: {
+              $in: [
+                'persistence_pending',
+                'history_persisted',
+                'commit_conflict',
+                'commit_indeterminate',
+                'persistence_failed',
+              ],
+            },
+          }),
     };
     const ownership = {
       ...owner,
@@ -967,7 +978,7 @@ export function createConversationMethods(
       ...subagentLeaseTenantFilter(input.tenantId),
       ...activeExpirationFilter<IConversation>(),
     };
-    const allowedStatuses =
+    const activeStatuses =
       input.resolution === 'checkpoint_verified'
         ? ['history_persisted']
         : [
@@ -977,7 +988,13 @@ export function createConversationMethods(
             'commit_indeterminate',
             'persistence_failed',
           ];
-    const lifecycle = { ...exactCheckpoint, status: { $in: allowedStatuses } };
+    const lifecycle = {
+      ...exactCheckpoint,
+      $or: [
+        { status: { $in: activeStatuses } },
+        { status: 'settled', resolution: input.resolution },
+      ],
+    };
     const clearedWithHead = await Conversation.findOneAndUpdate(
       {
         ...owner,

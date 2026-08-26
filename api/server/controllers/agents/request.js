@@ -55,6 +55,8 @@ const {
   recordAgentEventActorReconciliation,
   resolveAgentEventActorReconciliation,
   clearAgentEventActorReconciliation,
+  admitAgentEventActorAction,
+  releaseAgentEventActorAction,
   getAgentEventActorReceipt,
   isAgentTriggerPrincipalActive,
   isSubagentOwnerAdmissible,
@@ -1839,6 +1841,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
           reconciliation: {
             invocationId: appliedEventActor.invocationId,
+            ...(appliedEventActor.actionAdmitted === true && { actionAdmitted: true }),
             status: 'persistence_failed',
             checkpoint: appliedEventActor.checkpoint,
             action: appliedEventActor.action,
@@ -2040,6 +2043,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 commitState: commitAgentEventActorState,
                 recordReconciliation: recordAgentEventActorReconciliation,
                 resolveReconciliation: resolveAgentEventActorReconciliation,
+                admitAction: admitAgentEventActorAction,
+                releaseAction: releaseAgentEventActorAction,
                 getReceipt: getAgentEventActorReceipt,
                 clearReconciliation: clearAgentEventActorReconciliation,
               },
@@ -2047,6 +2052,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               if (execution.status === 'applied') {
                 appliedEventActor = {
                   invocationId: eventTaskId,
+                  actionAdmitted: typeof admitAgentEventActorAction === 'function',
                   checkpoint: execution.head.checkpoint,
                   action: execution.result.action,
                 };
@@ -2426,6 +2432,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
             reconciliation: {
               invocationId: appliedEventActor.invocationId,
+              ...(appliedEventActor.actionAdmitted === true && { actionAdmitted: true }),
               status: 'history_persisted',
               checkpoint: appliedEventActor.checkpoint,
               action: appliedEventActor.action,

@@ -507,6 +507,7 @@ export function createAgentEventTerminalHandler(methods: {
           generationCreatedAt: job.createdAt,
           status: 'applied',
           settledAt,
+          ...(lifecycle.actionAdmitted === true && { requiresActionAdmission: true }),
           receipt: {
             resolution: 'checkpoint_verified',
             checkpoint: lifecycle.checkpoint,

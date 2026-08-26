@@ -575,6 +575,7 @@ describe('agent event terminal outcomes', () => {
         reconciliations: [
           {
             invocationId: 'trigger_1',
+            actionAdmitted: true,
             status: 'history_persisted',
             checkpoint,
             action: { toolName: 'submit_move' },
@@ -643,6 +644,7 @@ describe('agent event terminal outcomes', () => {
         reconciliations: [
           {
             invocationId: 'trigger_1',
+            actionAdmitted: true,
             status: 'history_persisted',
             checkpoint,
             action: { toolName: 'submit_move', toolCallId: 'call-1' },
@@ -675,6 +677,7 @@ describe('agent event terminal outcomes', () => {
       generationCreatedAt: 1_787_000_000_000,
       status: 'applied',
       settledAt: new Date(1_787_000_001_000),
+      requiresActionAdmission: true,
       receipt: {
         resolution: 'checkpoint_verified',
         checkpoint,
@@ -727,6 +730,7 @@ describe('agent event terminal outcomes', () => {
         reconciliations: [
           {
             invocationId: 'trigger_1',
+            actionAdmitted: true,
             status: 'history_persisted',
             checkpoint,
             action: receipt.action,

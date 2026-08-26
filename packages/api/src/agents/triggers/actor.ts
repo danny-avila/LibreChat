@@ -62,6 +62,8 @@ export interface AgentEventActorDependencies {
   commitState: ConversationMethods['commitAgentEventActorState'];
   recordReconciliation: ConversationMethods['recordAgentEventActorReconciliation'];
   resolveReconciliation: ConversationMethods['resolveAgentEventActorReconciliation'];
+  admitAction?: AgentTriggerDeliveryMethods['admitAgentEventActorAction'];
+  releaseAction?: AgentTriggerDeliveryMethods['releaseAgentEventActorAction'];
   getReceipt?: AgentTriggerDeliveryMethods['getAgentEventActorReceipt'];
   clearReconciliation?: ConversationMethods['clearAgentEventActorReconciliation'];
 }
@@ -99,6 +101,7 @@ export async function executeAgentEventActor<T>(
 ): Promise<ExecuteAgentEventActorResult<T>> {
   let value: T | undefined;
   let invocationError: unknown;
+  let ownsActionAdmission = false;
   let observedState: IAgentEventActorState | null | undefined;
   let observedEpoch: number | undefined;
   const adapter: EventActorHostAdapter<EventActorEvent, EventActorResult> = {
@@ -209,6 +212,7 @@ export async function executeAgentEventActor<T>(
         ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
         reconciliation: {
           invocationId: invocation.invocationId,
+          ...(input.bindingId != null && deps.admitAction != null ? { actionAdmitted: true } : {}),
           status: 'invocation_pending',
           checkpoint: {
             threadId: invocation.fork.threadId,
@@ -224,19 +228,19 @@ export async function executeAgentEventActor<T>(
       if (!fenced) {
         throw new Error('Event actor invocation could not acquire its durable lifecycle fence');
       }
-      /** Receipt settlement and the conversation lifecycle live in separate
-       * documents. Recheck only after owning the lifecycle fence so a terminal
-       * writer that won between preparation and admission cannot be followed
-       * by a duplicate external action. */
-      if (input.bindingId != null && deps.getReceipt != null) {
-        const receipt = await deps.getReceipt({
+      /** The delivery row is the serialization point between action admission
+       * and terminal settlement. A plain receipt read cannot close the final
+       * read-before-invoke race across two Mongo documents. */
+      if (input.bindingId != null && deps.admitAction != null) {
+        const admitted = await deps.admitAction({
           deliveryKey: input.invocationId,
           user: input.user,
           ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
           bindingId: input.bindingId,
           conversationId: input.conversationId,
+          admittedAt: new Date(),
         });
-        if (receipt != null) {
+        if (!admitted) {
           const abandoned = await deps.resolveReconciliation({
             user: input.user,
             conversationId: input.conversationId,
@@ -254,8 +258,9 @@ export async function executeAgentEventActor<T>(
           if (!abandoned) {
             throw new Error('Event actor duplicate lifecycle fence could not be abandoned');
           }
-          throw new Error('Event actor invocation already has a terminal receipt');
+          throw new Error('Event actor action admission was already consumed or settled');
         }
+        ownsActionAdmission = true;
       }
       try {
         value = await input.invoke({
@@ -419,6 +424,28 @@ export async function executeAgentEventActor<T>(
           throw new Error('Event actor invocation lifecycle fence could not be released');
         }
       }
+      if (ownsActionAdmission && input.bindingId != null && deps.releaseAction != null) {
+        const releasedAction = await deps.releaseAction({
+          deliveryKey: input.invocationId,
+          user: input.user,
+          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+          bindingId: input.bindingId,
+          conversationId: input.conversationId,
+        });
+        if (!releasedAction) {
+          const receipt = await deps.getReceipt?.({
+            deliveryKey: input.invocationId,
+            user: input.user,
+            ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+            bindingId: input.bindingId,
+            conversationId: input.conversationId,
+          });
+          if (receipt == null) {
+            throw new Error('Event actor action admission could not be released');
+          }
+        }
+        ownsActionAdmission = false;
+      }
     },
   };
 
@@ -488,6 +515,7 @@ export async function executeAgentEventActor<T>(
       ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
       reconciliation: {
         invocationId: input.invocationId,
+        ...(input.bindingId != null && deps.admitAction != null ? { actionAdmitted: true } : {}),
         status: execution.status,
         checkpoint: {
           threadId: execution.checkpoint.threadId,
