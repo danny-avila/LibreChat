@@ -244,5 +244,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "websocket-driver": "0.7.5"
   }
 }
