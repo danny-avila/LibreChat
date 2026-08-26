@@ -852,6 +852,7 @@ describe('event actor host adapter', () => {
       bindingId: 'binding-1',
       conversationId,
       admittedAt: expect.any(Date),
+      admissionId: expect.any(String),
     });
     expect(resolveReconciliation).toHaveBeenNthCalledWith(1, {
       user: 'user-1',
@@ -891,6 +892,7 @@ describe('event actor host adapter', () => {
       user: 'user-1',
       bindingId: 'binding-1',
       conversationId,
+      admissionId: expect.any(String),
     });
     expect(dependencies.releaseAction.mock.invocationCallOrder[0]).toBeLessThan(
       dependencies.resolveReconciliation.mock.invocationCallOrder[0],
@@ -944,6 +946,7 @@ describe('event actor host adapter', () => {
       user: 'user-1',
       bindingId: 'binding-1',
       conversationId,
+      admissionId: expect.any(String),
     });
     expect(dependencies.resolveReconciliation).toHaveBeenNthCalledWith(1, {
       user: 'user-1',
@@ -987,14 +990,12 @@ describe('event actor host adapter', () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 
-  it('releases an orphaned admission after abandoning its replacement marker', async () => {
+  it('does not clear an admission it failed to acquire', async () => {
     const invoke = jest.fn(async () => 'must not run');
     const dependencies = {
       ...deps(),
       recordReconciliation: jest.fn().mockResolvedValue(true),
       admitAction: jest.fn().mockResolvedValue(false),
-      hasActionAdmission: jest.fn().mockResolvedValue(true),
-      releaseAction: jest.fn().mockResolvedValue(true),
       getReceipt: jest.fn().mockResolvedValue(null),
     };
 
@@ -1021,8 +1022,7 @@ describe('event actor host adapter', () => {
         resolution: 'invocation_abandoned',
       }),
     );
-    expect(dependencies.hasActionAdmission).toHaveBeenCalledTimes(1);
-    expect(dependencies.releaseAction).toHaveBeenCalledTimes(1);
+    expect(dependencies.releaseAction).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();
   });
 

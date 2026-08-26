@@ -84,6 +84,8 @@ export interface IAgentTriggerDelivery {
   /** Delivery-owned serialization point acquired exactly once before an event
    * actor may invoke an external action. */
   actorActionAdmittedAt?: Date;
+  /** Attempt identity that fences admission takeover and release. */
+  actorActionAdmissionId?: string;
   leaseBy?: string;
   leaseUntil?: Date;
   claimToken?: string;

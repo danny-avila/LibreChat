@@ -111,6 +111,11 @@ export interface SettleAgentEventActorReceiptInput {
 
 export interface AdmitAgentEventActorActionInput extends GetAgentEventActorReceiptInput {
   admittedAt: Date;
+  admissionId: string;
+}
+
+export interface AgentEventActorActionAdmissionInput extends GetAgentEventActorReceiptInput {
+  admissionId: string;
 }
 
 export interface GetAgentEventActorReceiptInput {
@@ -169,8 +174,10 @@ export interface AgentTriggerDeliveryMethods {
     input: SettleAgentTriggerHandlingOutcomeInput,
   ) => Promise<boolean>;
   admitAgentEventActorAction: (input: AdmitAgentEventActorActionInput) => Promise<boolean>;
-  releaseAgentEventActorAction: (input: GetAgentEventActorReceiptInput) => Promise<boolean>;
-  hasAgentEventActorActionAdmission: (input: GetAgentEventActorReceiptInput) => Promise<boolean>;
+  releaseAgentEventActorAction: (input: AgentEventActorActionAdmissionInput) => Promise<boolean>;
+  hasAgentEventActorActionAdmission: (
+    input: AgentEventActorActionAdmissionInput,
+  ) => Promise<boolean>;
   settleAgentEventActorReceipt: (input: SettleAgentEventActorReceiptInput) => Promise<boolean>;
   getAgentEventActorReceipt: (
     input: GetAgentEventActorReceiptInput,
@@ -1569,6 +1576,9 @@ export function createAgentTriggerDeliveryMethods(
     if (Number.isNaN(input.admittedAt.getTime())) {
       throw new TypeError('admittedAt must be a valid date');
     }
+    if (input.admissionId.length === 0 || input.admissionId.length > 64) {
+      throw new TypeError('admissionId must contain at most 64 characters');
+    }
     const tenantScope =
       input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId };
     const admitted = await Delivery().updateOne(
@@ -1584,7 +1594,7 @@ export function createAgentTriggerDeliveryMethods(
         status: { $in: ['leased', 'succeeded', 'dead'] },
         'envelope.target.bindingId': input.bindingId,
         actorReceipt: { $exists: false },
-        actorActionAdmittedAt: { $exists: false },
+        actorActionAdmissionId: { $ne: input.admissionId },
         $or: [
           { handling: { $exists: false } },
           {
@@ -1593,13 +1603,18 @@ export function createAgentTriggerDeliveryMethods(
           },
         ],
       },
-      { $set: { actorActionAdmittedAt: input.admittedAt } },
+      {
+        $set: {
+          actorActionAdmittedAt: input.admittedAt,
+          actorActionAdmissionId: input.admissionId,
+        },
+      },
     );
     return admitted.modifiedCount === 1;
   }
 
   async function releaseAgentEventActorAction(
-    input: GetAgentEventActorReceiptInput,
+    input: AgentEventActorActionAdmissionInput,
   ): Promise<boolean> {
     const tenantScope =
       input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId };
@@ -1615,14 +1630,15 @@ export function createAgentTriggerDeliveryMethods(
         ],
         actorReceipt: { $exists: false },
         actorActionAdmittedAt: { $exists: true },
+        actorActionAdmissionId: input.admissionId,
       },
-      { $unset: { actorActionAdmittedAt: 1 } },
+      { $unset: { actorActionAdmittedAt: 1, actorActionAdmissionId: 1 } },
     );
     return released.modifiedCount === 1;
   }
 
   async function hasAgentEventActorActionAdmission(
-    input: GetAgentEventActorReceiptInput,
+    input: AgentEventActorActionAdmissionInput,
   ): Promise<boolean> {
     const tenantScope =
       input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId };
@@ -1638,6 +1654,7 @@ export function createAgentTriggerDeliveryMethods(
         ],
         actorReceipt: { $exists: false },
         actorActionAdmittedAt: { $exists: true },
+        actorActionAdmissionId: input.admissionId,
       })) != null
     );
   }

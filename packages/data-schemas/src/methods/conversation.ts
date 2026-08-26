@@ -350,6 +350,8 @@ export function createConversationMethods(
   mongoose: typeof import('mongoose'),
   messageMethods?: Pick<MessageMethods, 'getMessages' | 'deleteMessages'>,
 ): ConversationMethods {
+  let legacyReceiptExpiryCursor: Types.ObjectId | undefined;
+
   function getMessageMethods() {
     if (!messageMethods) {
       throw new Error('Message methods not injected into conversation methods');
@@ -1128,85 +1130,69 @@ export function createConversationMethods(
     if (Delivery == null) {
       return 0;
     }
-    const pluralize = mongoose.pluralize();
-    const deliveryCollectionName =
-      typeof pluralize === 'function' ? pluralize(Delivery.modelName) : Delivery.modelName;
-    /** Join before applying the bound so protected rows cannot monopolize every
-     * maintenance page. A mixed-version owner may have committed conversation
-     * proof but crashed before terminalizing delivery; that proof remains until
-     * the corresponding delivery leaves absent/started handling. */
-    const candidates = await Conversation.aggregate<{
-      _id: Types.ObjectId;
-      invocationIds: string[];
-    }>([
-      {
-        $match: {
-          agentEventActorReconciliations: {
-            $elemMatch: { status: 'settled', observedAt: { $lte: cutoff } },
-          },
-        },
+    /** Advance a bounded candidate page before querying delivery protection.
+     * Reaching the end resets the cursor so newly expiry-eligible older rows
+     * enter the next sweep without making any one pass collection-wide. */
+    const candidates = await Conversation.find({
+      ...(legacyReceiptExpiryCursor == null ? {} : { _id: { $gt: legacyReceiptExpiryCursor } }),
+      agentEventActorReconciliations: {
+        $elemMatch: { status: 'settled', observedAt: { $lte: cutoff } },
       },
-      { $unwind: '$agentEventActorReconciliations' },
-      {
-        $match: {
-          'agentEventActorReconciliations.status': 'settled',
-          'agentEventActorReconciliations.observedAt': { $lte: cutoff },
-        },
-      },
-      {
-        $lookup: {
-          from: deliveryCollectionName,
-          let: {
-            deliveryKey: '$agentEventActorReconciliations.invocationId',
-            user: '$user',
-            tenantId: '$tenantId',
-          },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$deliveryKey', '$$deliveryKey'] },
-                    { $eq: [{ $toString: '$user' }, { $toString: '$$user' }] },
-                    {
-                      $eq: [{ $ifNull: ['$tenantId', null] }, { $ifNull: ['$$tenantId', null] }],
-                    },
-                  ],
-                },
-                $or: [{ handling: { $exists: false } }, { 'handling.status': 'started' }],
-              },
-            },
-            { $limit: 1 },
-          ],
-          as: 'blockingDelivery',
-        },
-      },
-      { $match: { 'blockingDelivery.0': { $exists: false } } },
-      {
-        $group: {
-          _id: '$_id',
-          invocationIds: { $addToSet: '$agentEventActorReconciliations.invocationId' },
-        },
-      },
-      { $limit: boundedLimit },
-    ]);
-    const operations = candidates.map(
-      (candidate) =>
-        ({
-          updateOne: {
-            filter: { _id: candidate._id },
-            update: {
-              $pull: {
-                agentEventActorReconciliations: {
-                  invocationId: { $in: candidate.invocationIds },
-                  status: 'settled',
-                  observedAt: { $lte: cutoff },
-                },
-              },
-            },
-          },
-        }) as unknown as AnyBulkWriteOperation,
+    })
+      .select('_id +agentEventActorReconciliations')
+      .sort({ _id: 1 })
+      .limit(boundedLimit)
+      .lean<
+        Array<Pick<IConversation, 'agentEventActorReconciliations'> & { _id: Types.ObjectId }>
+      >();
+    if (candidates.length === 0) {
+      legacyReceiptExpiryCursor = undefined;
+      return 0;
+    }
+    legacyReceiptExpiryCursor = candidates[candidates.length - 1]._id;
+    const expiredInvocationIds = [
+      ...new Set(
+        candidates.flatMap((candidate) =>
+          (candidate.agentEventActorReconciliations ?? [])
+            .filter((receipt) => receipt.status === 'settled' && receipt.observedAt <= cutoff)
+            .map((receipt) => receipt.invocationId),
+        ),
+      ),
+    ];
+    const protectedInvocationIds = new Set(
+      await Delivery.find({
+        deliveryKey: { $in: expiredInvocationIds },
+        $or: [{ handling: { $exists: false } }, { 'handling.status': 'started' }],
+      }).distinct<string>('deliveryKey'),
     );
+    const operations = candidates.flatMap((candidate) => {
+      const removable = (candidate.agentEventActorReconciliations ?? [])
+        .filter(
+          (receipt) =>
+            receipt.status === 'settled' &&
+            receipt.observedAt <= cutoff &&
+            !protectedInvocationIds.has(receipt.invocationId),
+        )
+        .map((receipt) => receipt.invocationId);
+      return removable.length === 0
+        ? []
+        : [
+            {
+              updateOne: {
+                filter: { _id: candidate._id },
+                update: {
+                  $pull: {
+                    agentEventActorReconciliations: {
+                      invocationId: { $in: removable },
+                      status: 'settled',
+                      observedAt: { $lte: cutoff },
+                    },
+                  },
+                },
+              },
+            },
+          ];
+    }) as unknown as AnyBulkWriteOperation[];
     if (operations.length === 0) {
       return 0;
     }

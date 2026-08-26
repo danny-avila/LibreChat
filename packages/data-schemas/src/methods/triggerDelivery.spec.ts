@@ -1658,6 +1658,7 @@ describe('agent trigger delivery methods', () => {
       bindingId: 'binding-1',
       conversationId: 'conversation-1',
       admittedAt: new Date(generationCreatedAt + 500),
+      admissionId: 'admission-1',
     };
     /** The loopback child starts after the HTTP `started` response but before
      * the delivery engine commits that result, so admission must work while
@@ -1665,7 +1666,12 @@ describe('agent trigger delivery methods', () => {
     await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(true);
     await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(true);
     await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(false);
-    await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(true);
+    const successorAdmission = { ...actionAdmission, admissionId: 'admission-2' };
+    await expect(methods.admitAgentEventActorAction(successorAdmission)).resolves.toBe(true);
+    await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(false);
+    await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(false);
+    await expect(methods.hasAgentEventActorActionAdmission(successorAdmission)).resolves.toBe(true);
+    await expect(methods.releaseAgentEventActorAction(successorAdmission)).resolves.toBe(true);
     await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(false);
     await methods.completeAgentTriggerDelivery({
       id: claimed!.id,
@@ -1844,6 +1850,7 @@ describe('agent trigger delivery methods', () => {
       bindingId: 'binding-1',
       conversationId: 'conversation-1',
       admittedAt: new Date(generationCreatedAt + 500),
+      admissionId: 'admission-1',
     };
     const noAction = {
       deliveryKey: queued.delivery.deliveryKey,

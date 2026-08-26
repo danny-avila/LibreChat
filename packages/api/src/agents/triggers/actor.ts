@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
 import {
   createEventActorExecutor,
@@ -91,6 +92,21 @@ function checkpointMatches(
   );
 }
 
+function actionAdmissionId(
+  invocationId: string,
+  checkpoint: { threadId: string; checkpointId?: string; checkpointNs: string },
+): string {
+  return createHash('sha256')
+    .update(invocationId)
+    .update('\0')
+    .update(checkpoint.threadId)
+    .update('\0')
+    .update(checkpoint.checkpointNs)
+    .update('\0')
+    .update(checkpoint.checkpointId ?? '')
+    .digest('hex');
+}
+
 /**
  * Executes one authenticated bound-child event through the SDK's checkpoint-fork lifecycle.
  * The request controller still owns generation admission and terminal receipts; this adapter owns
@@ -102,7 +118,7 @@ export async function executeAgentEventActor<T>(
 ): Promise<ExecuteAgentEventActorResult<T>> {
   let value: T | undefined;
   let invocationError: unknown;
-  let ownsActionAdmission = false;
+  let ownedActionAdmissionId: string | undefined;
   let observedState: IAgentEventActorState | null | undefined;
   let observedEpoch: number | undefined;
   const adapter: EventActorHostAdapter<EventActorEvent, EventActorResult> = {
@@ -161,12 +177,17 @@ export async function executeAgentEventActor<T>(
         (item) => item.invocationId === input.invocationId && item.status === 'invocation_pending',
       );
       if (pendingInvocation != null && input.bindingId != null && deps.hasActionAdmission != null) {
+        const pendingAdmissionId = actionAdmissionId(
+          input.invocationId,
+          pendingInvocation.checkpoint,
+        );
         const actionAdmitted = await deps.hasActionAdmission({
           deliveryKey: input.invocationId,
           user: input.user,
           ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
           bindingId: input.bindingId,
           conversationId: input.conversationId,
+          admissionId: pendingAdmissionId,
         });
         if (pendingInvocation.actionAdmitted !== true || !actionAdmitted) {
           /** Abandoning the conversation marker fences a paused pre-admission
@@ -191,6 +212,7 @@ export async function executeAgentEventActor<T>(
               ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
               bindingId: input.bindingId,
               conversationId: input.conversationId,
+              admissionId: pendingAdmissionId,
             });
             if (!released) {
               throw new Error('Event actor orphaned action admission could not be released');
@@ -287,6 +309,7 @@ export async function executeAgentEventActor<T>(
        * and terminal settlement. A plain receipt read cannot close the final
        * read-before-invoke race across two Mongo documents. */
       if (input.bindingId != null && deps.admitAction != null) {
+        const admissionId = actionAdmissionId(input.invocationId, invocation.fork);
         const admitted = await deps.admitAction({
           deliveryKey: input.invocationId,
           user: input.user,
@@ -294,6 +317,7 @@ export async function executeAgentEventActor<T>(
           bindingId: input.bindingId,
           conversationId: input.conversationId,
           admittedAt: new Date(),
+          admissionId,
         });
         if (!admitted) {
           const abandoned = await deps.resolveReconciliation({
@@ -313,40 +337,6 @@ export async function executeAgentEventActor<T>(
           });
           if (!abandoned) {
             throw new Error('Event actor duplicate lifecycle fence could not be abandoned');
-          }
-          /** If the prior recovery crashed after abandoning its marker but
-           * before releasing delivery admission, this retry has recreated and
-           * now removed the same pre-admission fence. No confirmed lifecycle
-           * can own that admission, so releasing it is safe and retryable. */
-          if (deps.hasActionAdmission != null && deps.releaseAction != null) {
-            const orphanedAdmission = await deps.hasActionAdmission({
-              deliveryKey: input.invocationId,
-              user: input.user,
-              ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
-              bindingId: input.bindingId,
-              conversationId: input.conversationId,
-            });
-            if (orphanedAdmission) {
-              const released = await deps.releaseAction({
-                deliveryKey: input.invocationId,
-                user: input.user,
-                ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
-                bindingId: input.bindingId,
-                conversationId: input.conversationId,
-              });
-              if (
-                !released &&
-                (await deps.hasActionAdmission({
-                  deliveryKey: input.invocationId,
-                  user: input.user,
-                  ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
-                  bindingId: input.bindingId,
-                  conversationId: input.conversationId,
-                }))
-              ) {
-                throw new Error('Event actor orphaned action admission could not be released');
-              }
-            }
           }
           throw new Error('Event actor action admission was already consumed or settled');
         }
@@ -376,6 +366,7 @@ export async function executeAgentEventActor<T>(
             ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
             bindingId: input.bindingId,
             conversationId: input.conversationId,
+            admissionId,
           });
           if (!released) {
             throw new Error(
@@ -384,7 +375,7 @@ export async function executeAgentEventActor<T>(
           }
           throw new Error('Event actor action admission lifecycle was superseded before invoke');
         }
-        ownsActionAdmission = true;
+        ownedActionAdmissionId = admissionId;
       }
       try {
         value = await input.invoke({
@@ -520,13 +511,14 @@ export async function executeAgentEventActor<T>(
        * the fork or its conversation-side lifecycle evidence. A crash after
        * this release is retryable; the inverse order can orphan admission
        * forever with no durable marker left to recover it from. */
-      if (ownsActionAdmission && input.bindingId != null && deps.releaseAction != null) {
+      if (ownedActionAdmissionId != null && input.bindingId != null && deps.releaseAction != null) {
         const releasedAction = await deps.releaseAction({
           deliveryKey: input.invocationId,
           user: input.user,
           ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
           bindingId: input.bindingId,
           conversationId: input.conversationId,
+          admissionId: ownedActionAdmissionId,
         });
         if (!releasedAction) {
           const receipt = await deps.getReceipt?.({
@@ -540,7 +532,7 @@ export async function executeAgentEventActor<T>(
             throw new Error('Event actor action admission could not be released');
           }
         }
-        ownsActionAdmission = false;
+        ownedActionAdmissionId = undefined;
       }
       await deleteAgentCheckpoint(request.invocation.fork.threadId, input.checkpointer, undefined, {
         throwOnError: true,

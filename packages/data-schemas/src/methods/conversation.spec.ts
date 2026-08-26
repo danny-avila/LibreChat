@@ -5013,6 +5013,9 @@ describe('Conversation Operations', () => {
       const updatedAtBeforeExpiry = (
         await Conversation.findOne({ conversationId }).select('updatedAt').lean()
       )?.updatedAt;
+      /** The first call reaches the end of the protected page and resets the
+       * cursor; the next bounded sweep revisits it after handling is terminal. */
+      await expect(methods.expireLegacyAgentEventActorReceipts(now)).resolves.toBe(0);
       await expect(methods.expireLegacyAgentEventActorReceipts(now)).resolves.toBe(1);
       await expect(
         Conversation.findOne({ conversationId }).select('updatedAt').lean(),
@@ -5060,6 +5063,7 @@ describe('Conversation Operations', () => {
         awaitTerminalHandling: true,
       });
 
+      await expect(methods.expireLegacyAgentEventActorReceipts(now, 1)).resolves.toBe(0);
       await expect(methods.expireLegacyAgentEventActorReceipts(now, 1)).resolves.toBe(1);
       await expect(
         Conversation.findOne({ conversationId: protectedConversationId })
