@@ -238,6 +238,7 @@ export function createAgentEventTerminalHandler(methods: {
     const conversationId = job.conversationId ?? streamId;
     const outcome = classifyAgentEventRunOutcome(job, runSteps, content);
     let committedAction: AgentEventAppliedAction | undefined;
+    let compensated = false;
     const snapshot = await methods.getAgentEventActorSnapshot({
       user: job.userId,
       conversationId,
@@ -248,7 +249,15 @@ export function createAgentEventTerminalHandler(methods: {
     );
     if (lifecycle != null) {
       if (lifecycle.status === 'settled') {
-        committedAction = lifecycle.action;
+        /** A compensated receipt still tombstones its invocation id, but its
+         * external effect was explicitly undone — replaying it as applied
+         * would tell the source the operation stands and suppress the
+         * new-invocation retry that compensation requires. */
+        if (lifecycle.resolution === 'action_compensated') {
+          compensated = true;
+        } else {
+          committedAction = lifecycle.action;
+        }
       } else if (lifecycle.status !== 'history_persisted') {
         throw new Error(
           `Agent event actor ${job.agentEventDeliveryKey} requires ${lifecycle.status} reconciliation`,
@@ -281,8 +290,12 @@ export function createAgentEventTerminalHandler(methods: {
         committedAction = lifecycle.action;
       }
     }
-    const settlementOutcome: AgentEventRunOutcome =
-      committedAction == null ? outcome : { status: 'applied', action: committedAction };
+    let settlementOutcome: AgentEventRunOutcome = outcome;
+    if (compensated) {
+      settlementOutcome = { status: 'failed' };
+    } else if (committedAction != null) {
+      settlementOutcome = { status: 'applied', action: committedAction };
+    }
     const settledAt = new Date(job.completedAt ?? Date.now());
     const settled = await methods.settleAgentTriggerHandlingOutcome({
       deliveryKey: job.agentEventDeliveryKey,
@@ -291,7 +304,9 @@ export function createAgentEventTerminalHandler(methods: {
       status: settlementOutcome.status,
       settledAt,
       ...(settlementOutcome.status === 'failed' && {
-        error: job.error ?? 'Generation failed',
+        error: compensated
+          ? 'Applied event actor action was explicitly compensated'
+          : (job.error ?? 'Generation failed'),
       }),
       ...(settlementOutcome.action != null && { action: settlementOutcome.action }),
     });

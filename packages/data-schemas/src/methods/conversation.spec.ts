@@ -4511,6 +4511,112 @@ describe('Conversation Operations', () => {
       expect(visible).not.toHaveProperty('agentEventActorReconciliations');
     });
 
+    it('prunes only settled receipts older than the retention window on admission', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'actor-retention-user',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: {
+          bindingId: `evtbind_${'e'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      const settleReceipt = async (invocationId: string) => {
+        const checkpoint = {
+          threadId: conversationId,
+          checkpointId: `checkpoint-${invocationId}`,
+          checkpointNs: `event-actor/${invocationId}`,
+        };
+        const base = {
+          invocationId,
+          checkpoint,
+          action: { toolName: 'submit_move' },
+          observedAt: new Date(),
+        };
+        await expect(
+          methods.recordAgentEventActorReconciliation({
+            user: 'actor-retention-user',
+            conversationId,
+            reconciliation: { ...base, status: 'invocation_pending' },
+          }),
+        ).resolves.toBe(true);
+        await expect(
+          methods.recordAgentEventActorReconciliation({
+            user: 'actor-retention-user',
+            conversationId,
+            reconciliation: { ...base, status: 'commit_conflict', error: 'conflict' },
+          }),
+        ).resolves.toBe(true);
+        await expect(
+          methods.resolveAgentEventActorReconciliation({
+            user: 'actor-retention-user',
+            conversationId,
+            invocationId,
+            checkpoint,
+            resolution: 'action_compensated',
+          }),
+        ).resolves.toBe(true);
+      };
+      await settleReceipt('event-old');
+      await settleReceipt('event-recent');
+      await Conversation.updateOne(
+        { conversationId },
+        {
+          $set: {
+            'agentEventActorReconciliations.$[receipt].observedAt': new Date(
+              Date.now() - 8 * 24 * 60 * 60 * 1000,
+            ),
+          },
+        },
+        { arrayFilters: [{ 'receipt.invocationId': 'event-old' }], timestamps: false },
+      );
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          user: 'actor-retention-user',
+          conversationId,
+          reconciliation: {
+            invocationId: 'event-next',
+            status: 'invocation_pending',
+            checkpoint: {
+              threadId: conversationId,
+              checkpointId: 'checkpoint-next',
+              checkpointNs: 'event-actor/next',
+            },
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        }),
+      ).resolves.toBe(true);
+      /** The expired tombstone is evicted by age; the recent receipt and the
+       * newly admitted fence survive, and the expired id becomes admissible
+       * again only because its whole stale-owner window has passed. */
+      await expect(
+        methods.getAgentEventActorSnapshot({
+          user: 'actor-retention-user',
+          conversationId,
+        }),
+      ).resolves.toEqual({
+        state: null,
+        reconciliations: [
+          expect.objectContaining({ invocationId: 'event-recent', status: 'settled' }),
+          expect.objectContaining({ invocationId: 'event-next', status: 'invocation_pending' }),
+        ],
+      });
+    });
+
     it('admits one cross-replica owner and fences renewal and release by token', async () => {
       const conversationId = uuidv4();
       await Conversation.create({

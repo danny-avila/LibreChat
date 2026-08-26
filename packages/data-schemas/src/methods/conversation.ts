@@ -67,15 +67,25 @@ export type AgentEventActorCommitResult =
   | { status: 'stale'; state?: IAgentEventActorState };
 
 /**
- * Bounds the private invocation journal so a long-lived actor cannot grow its
- * conversation document without limit. Only `settled` receipts can be evicted:
- * a new fence is admitted exclusively when no active lifecycle row exists, and
- * the appended row is always the newest. Eviction therefore costs same-id
- * duplicate protection only after this many later invocations have themselves
- * settled, well beyond the window in which generation admission can still
- * replay a delivery key.
+ * How long a settled receipt keeps tombstoning its invocation id. A stale
+ * same-id owner is bounded by time, not by how many newer invocations settle,
+ * so eviction is primarily age-based: a receipt becomes prunable only once no
+ * delayed duplicate of its invocation could still be admitted — far beyond any
+ * generation, job, or delivery-retry lifetime.
  */
-const AGENT_EVENT_ACTOR_RECEIPT_LIMIT = 256;
+const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Absolute size backstop for the private invocation journal so a pathological
+ * actor cannot grow its conversation document toward Mongo's document limit.
+ * Only `settled` receipts can ever be evicted: a new fence is admitted
+ * exclusively when no active lifecycle row exists, and the appended row is
+ * always the newest. When this cap overrides the retention window it trades
+ * the tail of same-id duplicate protection for document integrity; at any
+ * plausible event rate the retained span still dwarfs every stale-owner
+ * lifetime.
+ */
+const AGENT_EVENT_ACTOR_RECEIPT_LIMIT = 1024;
 
 const ARCHIVE_CONVERSATION_BATCH_SIZE = 500;
 const PROJECT_STATS_REFRESH_CONCURRENCY = 10;
@@ -632,16 +642,12 @@ export function createConversationMethods(
       ...subagentLeaseTenantFilter(input.tenantId),
       ...activeExpirationFilter<IConversation>(),
     };
-    const existing = await Conversation.findOne({
-      ...ownership,
-      'agentEventActorReconciliations.invocationId': input.reconciliation.invocationId,
-    })
+    const existing = await Conversation.findOne(ownership)
       .select('+agentEventActorReconciliations')
       .lean<IConversation>();
-    if (existing != null) {
-      const current = existing.agentEventActorReconciliations?.find(
-        (item) => item.invocationId === input.reconciliation.invocationId,
-      );
+    const journal = existing?.agentEventActorReconciliations ?? [];
+    const current = journal.find((item) => item.invocationId === input.reconciliation.invocationId);
+    if (current != null) {
       const canTransition =
         (current?.status === 'invocation_pending' &&
           input.reconciliation.status !== 'invocation_pending') ||
@@ -686,6 +692,25 @@ export function createConversationMethods(
      * Never recreate a marker after terminal recovery has already removed it. */
     if (input.reconciliation.status !== 'invocation_pending') {
       return false;
+    }
+    const receiptCutoff = new Date(Date.now() - AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS);
+    if (
+      journal.some(
+        (item) => item.status === 'settled' && item.observedAt.getTime() < receiptCutoff.getTime(),
+      )
+    ) {
+      await Conversation.updateOne(
+        ownership,
+        {
+          $pull: {
+            agentEventActorReconciliations: {
+              status: 'settled',
+              observedAt: { $lt: receiptCutoff },
+            },
+          },
+        },
+        { timestamps: false },
+      );
     }
     const recorded = await Conversation.findOneAndUpdate(
       {

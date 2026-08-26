@@ -615,6 +615,51 @@ describe('agent event terminal outcomes', () => {
     expect(resolveAgentEventActorReconciliation).not.toHaveBeenCalled();
   });
 
+  it('never replays a compensated receipt as applied even over fresh run evidence', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const resolveAgentEventActorReconciliation = jest.fn().mockResolvedValue(true);
+    const checkpoint = {
+      threadId: 'conversation-1',
+      checkpointId: 'checkpoint-1',
+      checkpointNs: 'event-actor/trigger_1',
+    };
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+        state: { generation: 1, checkpoint, requiresColdStart: true },
+        reconciliations: [
+          {
+            invocationId: 'trigger_1',
+            status: 'settled',
+            resolution: 'action_compensated',
+            checkpoint,
+            action: { toolName: 'submit_move', toolCallId: 'call-1' },
+            observedAt: new Date(),
+          },
+        ],
+      }),
+      resolveAgentEventActorReconciliation,
+    });
+
+    /** The replayed generation still carries the original applied run step,
+     * but compensation explicitly undid that effect: the public outcome must
+     * not tell the source the operation stands. */
+    await handler(
+      'conversation-1',
+      job({ status: 'error', agentEventExpectedAction: { toolName: 'submit_move' } }),
+      [completedToolStep()],
+    );
+
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        error: 'Applied event actor action was explicitly compensated',
+      }),
+    );
+    expect(settleAgentTriggerHandlingOutcome.mock.calls[0][0]).not.toHaveProperty('action');
+    expect(resolveAgentEventActorReconciliation).not.toHaveBeenCalled();
+  });
+
   it('preserves an ambiguous pre-action fence when terminal evidence is incomplete', async () => {
     const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
     const resolveAgentEventActorReconciliation = jest.fn().mockResolvedValue(true);
