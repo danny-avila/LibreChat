@@ -2514,6 +2514,33 @@ describe('agent trigger delivery methods', () => {
     });
   });
 
+  it('does not requeue ambiguous legacy started handling', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(enqueueInput());
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      {
+        $set: {
+          status: 'dead',
+          handling: {
+            status: 'started',
+            conversationId: 'legacy-started-conversation',
+            streamId: 'legacy-started-conversation',
+            generationCreatedAt: START.getTime(),
+            startedAt: START,
+          },
+        },
+      },
+    );
+
+    await expect(
+      methods.requeueAgentTriggerDelivery(queued.delivery.id, START),
+    ).resolves.toBeNull();
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'dead',
+      handling: { status: 'started' },
+    });
+  });
+
   it('counts only live leases while an account deletion drains', async () => {
     const user = new mongoose.Types.ObjectId();
     await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));

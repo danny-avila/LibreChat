@@ -1998,7 +1998,7 @@ export function createAgentTriggerDeliveryMethods(
         batchRootId: { $exists: false },
         actorReceipt: { $exists: false },
         actorActionAdmittedAt: { $exists: false },
-        $or: [{ handling: { $exists: false } }, { 'handling.status': 'started' }],
+        handling: { $exists: false },
       })
       .lean<IAgentTriggerDelivery>();
     if (candidate?._id == null) {
@@ -2016,7 +2016,7 @@ export function createAgentTriggerDeliveryMethods(
           batchRootId: { $exists: false },
           actorReceipt: { $exists: false },
           actorActionAdmittedAt: { $exists: false },
-          $or: [{ handling: { $exists: false } }, { 'handling.status': 'started' }],
+          handling: { $exists: false },
           requeueCount: previousRequeueCount,
         },
         {
