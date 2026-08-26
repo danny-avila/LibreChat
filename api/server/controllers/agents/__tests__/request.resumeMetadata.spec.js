@@ -169,6 +169,7 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  isEnabled: (value) => value === true || value === 'true' || value === '1',
   isScheduleFireRequest: (...args) => mockIsScheduleFireRequest(...args),
   exemptFromConcurrencyLimiter: (...args) => mockExemptFromConcurrencyLimiter(...args),
   toPendingSteer: jest.fn((item) => item),
@@ -320,6 +321,7 @@ function nextTick() {
 describe('ResumableAgentController resume metadata', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.ENABLE_AGENT_EVENT_DURABLE_RECEIPTS = 'true';
     mockMCPContexts = new WeakMap();
     mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: true });
     mockDecrementPendingRequest.mockResolvedValue(undefined);
@@ -4388,6 +4390,7 @@ describe('ResumableAgentController resume metadata', () => {
       { eventDriven: { checkpointForks: true } },
       undefined,
       undefined,
+      false,
     ],
     [
       'tool approval',
@@ -4453,7 +4456,8 @@ describe('ResumableAgentController resume metadata', () => {
     ],
   ])(
     'keeps %s event actors on the existing resumable path',
-    async (_label, agent, config, agentConfigs, clientOptions) => {
+    async (_label, agent, config, agentConfigs, clientOptions, durableReceiptsEnabled = true) => {
+      process.env.ENABLE_AGENT_EVENT_DURABLE_RECEIPTS = String(durableReceiptsEnabled);
       mockGenerationJobManager.claimGeneration.mockResolvedValue(
         wonGenerationClaim({
           streamId: 'child-conversation',

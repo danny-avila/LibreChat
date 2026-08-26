@@ -33,6 +33,7 @@ const {
   executeAgentEventActor,
   findAgentEventAppliedAction,
   createAgentEventActionRecorder,
+  isEnabled,
   isHITLEnabled,
   agentRequestsAskUserQuestion,
 } = require('@librechat/api');
@@ -1952,8 +1953,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         const checkpointForksEnabled =
           req.config?.endpoints?.[EModelEndpoint.agents]?.eventDriven?.checkpointForks === true;
-        const durableActorReceiptsEnabled =
-          req.config?.endpoints?.[EModelEndpoint.agents]?.eventDriven?.durableReceipts === true;
+        /** This is a deployment barrier, not a principal-scoped feature. It is
+         * populated from the base config before the listener starts; reading
+         * merged req.config here would let a user/role/tenant override bypass
+         * the mixed-version rollout fence. */
+        const durableActorReceiptsEnabled = isEnabled(
+          process.env.ENABLE_AGENT_EVENT_DURABLE_RECEIPTS,
+        );
         const agentsConfig = req.config?.endpoints?.[EModelEndpoint.agents];
         const eventActorAgents = [
           client?.options?.agent,

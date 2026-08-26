@@ -188,7 +188,10 @@ token-fenced delivery receipt implementation and all pre-upgrade bound-actor del
 drained. It defaults to false so a rolling deployment cannot overlap token-unaware admission
 release with a newer token-owned action. Keep it false during the binary rollout, then enable it
 deployment-wide together with `checkpointForks` after the old workers and their deliveries are
-gone.
+gone. LibreChat projects this base-only setting into
+`ENABLE_AGENT_EVENT_DURABLE_RECEIPTS` before accepting requests; the controller deliberately does
+not read the merged per-principal config, so tenant, role, and user overrides cannot bypass the
+barrier.
 
 ### Coalescing observational child events
 
