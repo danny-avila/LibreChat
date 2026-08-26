@@ -4483,6 +4483,14 @@ describe('ResumableAgentController resume metadata', () => {
       expect(mockBeginAgentEventActorLegacyTurn.mock.invocationCallOrder[0]).toBeLessThan(
         client.sendMessage.mock.invocationCallOrder[0],
       );
+      expect(mockGenerationJobManager.updateMetadata).toHaveBeenCalledWith(
+        'child-conversation',
+        { agentEventLegacyTurnToken: fenceToken },
+        1000,
+      );
+      expect(mockGenerationJobManager.updateMetadata.mock.invocationCallOrder[0]).toBeLessThan(
+        client.sendMessage.mock.invocationCallOrder[0],
+      );
       expect(mockCompleteAgentEventActorLegacyTurn).toHaveBeenCalledWith({
         user: 'user-123',
         tenantId: 'tenant-1',
@@ -4494,6 +4502,219 @@ describe('ResumableAgentController resume metadata', () => {
       );
     },
   );
+
+  it('does not execute a legacy event turn when its durable fence is not acquired', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    mockBeginAgentEventActorLegacyTurn.mockResolvedValueOnce(false);
+    const client = {
+      options: {
+        agent: {
+          toolDefinitions: [],
+          manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }],
+        },
+      },
+      sendMessage: jest.fn(async () => ({ messageId: 'must-not-run' })),
+    };
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Do not run without the fence.',
+        clientRequestId: 'req-event-fence-lost',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-fence-lost',
+          expectedAction: { toolName: 'submit_move' },
+          event: {
+            id: 'event-fence-lost',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+        },
+      },
+      config: { endpoints: { agents: { eventDriven: { checkpointForks: true } } } },
+      _isAgentTrigger: true,
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockBeginAgentEventActorLegacyTurn.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+
+    expect(mockBeginAgentEventActorLegacyTurn).toHaveBeenCalledTimes(1);
+    expect(client.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('keeps the legacy event fence open when failed-turn persistence cannot complete', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    mockGenerationJobManager.completeJob.mockRejectedValueOnce(new Error('job store unavailable'));
+    const client = {
+      options: {
+        agent: {
+          toolDefinitions: [],
+          manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }],
+        },
+      },
+      sendMessage: jest.fn(async () => {
+        throw new Error('provider failed');
+      }),
+    };
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Persist the failed turn before releasing the fence.',
+        clientRequestId: 'req-event-error-persistence',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-error-persistence',
+          expectedAction: { toolName: 'submit_move' },
+          event: {
+            id: 'event-error-persistence',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+        },
+      },
+      config: { endpoints: { agents: { eventDriven: { checkpointForks: true } } } },
+      _isAgentTrigger: true,
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockGenerationJobManager.completeJob.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+    await nextTick();
+
+    expect(mockBeginAgentEventActorLegacyTurn).toHaveBeenCalledTimes(1);
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledTimes(1);
+    expect(mockCompleteAgentEventActorLegacyTurn).not.toHaveBeenCalled();
+  });
+
+  it('reclaims a stale legacy fence before executing the next legacy-only turn', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    mockBeginAgentEventActorLegacyTurn.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    mockGetAgentEventActorSnapshot.mockResolvedValueOnce({
+      state: null,
+      reconciliations: [],
+      epoch: 0,
+      legacyTurn: {
+        token: 'crashed-legacy-turn',
+        startedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      },
+    });
+    const client = {
+      options: {
+        agent: {
+          toolDefinitions: [],
+          manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }],
+        },
+      },
+      sendMessage: jest.fn(async () => {
+        throw new Error('stop after recovered execution starts');
+      }),
+    };
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Recover the abandoned legacy fence.',
+        clientRequestId: 'req-event-stale-legacy',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-stale-legacy',
+          expectedAction: { toolName: 'submit_move' },
+          event: {
+            id: 'event-stale-legacy',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+        },
+      },
+      config: { endpoints: { agents: { eventDriven: { checkpointForks: true } } } },
+      _isAgentTrigger: true,
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    for (let attempt = 0; attempt < 20 && client.sendMessage.mock.calls.length === 0; attempt++) {
+      await nextTick();
+    }
+
+    expect(mockReclaimAgentEventActorLegacyTurn).toHaveBeenCalledWith({
+      user: 'user-123',
+      tenantId: 'tenant-1',
+      conversationId: 'child-conversation',
+      token: 'crashed-legacy-turn',
+      startedBefore: expect.any(Date),
+    });
+    expect(mockBeginAgentEventActorLegacyTurn).toHaveBeenCalledTimes(2);
+    expect(client.sendMessage).toHaveBeenCalledTimes(1);
+  });
 
   it('uses the guard-normalized tenant for a legacy untenanted event actor', async () => {
     const expiredAt = new Date(Date.now() + 60_000);

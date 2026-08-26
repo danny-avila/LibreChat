@@ -2070,12 +2070,51 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 const token = crypto.randomUUID();
                 /** Open the fence BEFORE execution so a fork can neither run
                  * nor commit while this turn's messages are not yet durable. */
-                await beginAgentEventActorLegacyTurn({
+                const legacyTurnOwner = {
                   user: userId,
                   conversationId,
                   ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+                };
+                let acquiredLegacyTurn = await beginAgentEventActorLegacyTurn({
+                  ...legacyTurnOwner,
                   token,
                 });
+                if (!acquiredLegacyTurn) {
+                  /** Legacy-only actors must be able to recover their own
+                   * crashed fence; otherwise a skills/HITL actor that never
+                   * enters the fork executor would stay blocked forever. */
+                  const snapshot = await getAgentEventActorSnapshot(legacyTurnOwner);
+                  const staleBefore = new Date(Date.now() - LEGACY_EVENT_TURN_STALE_MS);
+                  if (
+                    snapshot?.legacyTurn != null &&
+                    new Date(snapshot.legacyTurn.startedAt).getTime() < staleBefore.getTime() &&
+                    (await reclaimAgentEventActorLegacyTurn({
+                      ...legacyTurnOwner,
+                      token: snapshot.legacyTurn.token,
+                      startedBefore: staleBefore,
+                    }))
+                  ) {
+                    acquiredLegacyTurn = await beginAgentEventActorLegacyTurn({
+                      ...legacyTurnOwner,
+                      token,
+                    });
+                  }
+                }
+                if (!acquiredLegacyTurn) {
+                  throw Object.assign(new Error('The event actor is temporarily unavailable'), {
+                    code: 'EVENT_ACTOR_NOT_READY',
+                    status: 409,
+                  });
+                }
+                /** The same exact token must survive a HITL pause so the
+                 * resume controller can seal this fence only after its final
+                 * response is durable. Persist it before provider execution;
+                 * a metadata failure leaves the fence closed and aborts safely. */
+                await GenerationJobManager.updateMetadata(
+                  streamId,
+                  { agentEventLegacyTurnToken: token },
+                  jobCreatedAt,
+                );
                 legacyEventActorTurnToken = token;
               }
               return client.sendMessage(text, messageOptions);
@@ -2326,7 +2365,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               reconciliationError,
             );
           }
-          await sealLegacyEventActorTurn();
+          /** This controller lost terminal persistence ownership, so it cannot
+           * prove the winning Stop/replacement has written the unfinished
+           * response yet. Keep the conversation fence closed; a HITL resume
+           * carries the exact token, while every other orphan is handled by
+           * bounded stale reclaim. */
           await finishResumableRequest(req, userId);
           disposeBackgroundClient();
           startupTelemetry?.end(job.abortController.signal.aborted ? 'aborted' : 'replaced');
@@ -2571,6 +2614,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // reconciliation on any required-write/final-construction failure,
         // then release exactly that claim.
         let ownsScheduledFailure = false;
+        let legacyEventActorErrorHistoryDurable = false;
         if (terminalClaim && !terminalClaimFinished) {
           ownsScheduledFailure = true;
           try {
@@ -2627,6 +2671,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                     sender: client?.sender,
                   }),
               })) === true;
+            /** A true completion means this owner won the terminal CAS and
+             * the beforeErrorPublication barrier above finished. Only that
+             * combination proves the failed-turn rows are durable enough to
+             * let a checkpoint fork rebuild past this legacy turn. */
+            legacyEventActorErrorHistoryDurable = ownsScheduledFailure;
           } catch (completeErr) {
             logger.warn(
               '[ResumableAgentController] completeJob failed during generation-error cleanup',
@@ -2637,10 +2686,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           }
         }
 
-        /** Seal only AFTER this turn's error history is durable: an earlier
-         * seal would let a fork rebuild between the seal and the error rows,
-         * reproducing the incomplete-history race the fence exists to stop. */
-        await sealLegacyEventActorTurn();
+        /** Leave the fence set when terminal persistence loses ownership or
+         * fails. Its bounded stale-reclaim path is safer than admitting a fork
+         * against history that may not contain this turn. */
+        if (legacyEventActorErrorHistoryDurable) {
+          await sealLegacyEventActorTurn();
+        }
 
         if (ownsScheduledFailure && !scheduleTerminalOutcomeRecorded) {
           const scheduledFailure = classifyScheduledFailure(

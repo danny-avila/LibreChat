@@ -280,6 +280,8 @@ export interface SerializableJobData {
   isTemporary?: boolean;
   agentEventDeliveryKey?: string;
   agentEventExpectedAction?: import('~/agents/triggers/types').AgentTriggerExpectedAction;
+  /** Exact durable legacy-turn fence carried across a HITL pause/resume. */
+  agentEventLegacyTurnToken?: string;
 
   /**
    * Set when status is `requires_action`. Describes the human review the
@@ -399,6 +401,7 @@ export type JobMetadataPatch = Partial<
     | 'isTemporary'
     | 'agentEventDeliveryKey'
     | 'agentEventExpectedAction'
+    | 'agentEventLegacyTurnToken'
     | 'scheduleId'
     | 'scheduledFor'
     | 'scheduleConfigRevision'

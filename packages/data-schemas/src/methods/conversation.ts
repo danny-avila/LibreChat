@@ -615,10 +615,12 @@ export function createConversationMethods(
   }
 
   /**
-   * Opens the durable fence for one legacy-path turn BEFORE it executes. A
-   * single update-pipeline write sets the token and, only when a head exists,
-   * marks it cold — no two-write gap a concurrent fork could slip through.
-   * Overwrites an abandoned token: the new turn's own completion seals it.
+   * Opens the durable fence for one legacy-path turn BEFORE it executes. One
+   * mutually exclusive classic update sets the token and, only when a valid
+   * head exists, marks it cold — no partial fence state is externally visible.
+   * Refuses while another legacy turn or fork lifecycle is active. Abandoned
+   * legacy tokens are reclaimed through the bounded recovery operation before
+   * admission is retried.
    */
   async function beginAgentEventActorLegacyTurn(input: {
     user: string;
@@ -627,32 +629,42 @@ export function createConversationMethods(
     token: string;
   }): Promise<boolean> {
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
-    const opened = await Conversation.findOneAndUpdate(
-      {
-        user: input.user,
-        conversationId: input.conversationId,
-        subagentThread: { $exists: true },
-        agentEventBinding: { $exists: true },
-        ...subagentLeaseTenantFilter(input.tenantId),
-        ...activeExpirationFilter<IConversation>(),
+    const ownership: FilterQuery<IConversation> = {
+      user: input.user,
+      conversationId: input.conversationId,
+      subagentThread: { $exists: true },
+      agentEventBinding: { $exists: true },
+      agentEventActorLegacyTurn: { $exists: false },
+      agentEventActorReconciliations: {
+        $not: { $elemMatch: { status: { $ne: 'settled' } } },
       },
-      [
-        {
-          $set: {
-            agentEventActorLegacyTurn: { token: input.token, startedAt: '$$NOW' },
-            agentEventActor: {
-              $cond: [
-                { $ifNull: ['$agentEventActor', false] },
-                { $mergeObjects: ['$agentEventActor', { requiresColdStart: true }] },
-                '$$REMOVE',
-              ],
-            },
-          },
+      ...subagentLeaseTenantFilter(input.tenantId),
+      ...activeExpirationFilter<IConversation>(),
+    };
+    const legacyTurn = { token: input.token, startedAt: new Date() };
+    /** DocumentDB does not support aggregation-pipeline updates. Split the
+     * headful/headless shapes into mutually exclusive classic updates. A head
+     * cannot appear between them without first creating an unresolved fork
+     * lifecycle, which the shared ownership filter rejects. */
+    const openedWithHead = await Conversation.findOneAndUpdate(
+      { ...ownership, 'agentEventActor.generation': { $exists: true } },
+      {
+        $set: {
+          agentEventActorLegacyTurn: legacyTurn,
+          'agentEventActor.requiresColdStart': true,
         },
-      ],
+      },
       { new: true, timestamps: false },
     ).lean<IConversation>();
-    return opened != null;
+    if (openedWithHead != null) {
+      return true;
+    }
+    const openedHeadless = await Conversation.findOneAndUpdate(
+      { ...ownership, 'agentEventActor.generation': { $exists: false } },
+      { $set: { agentEventActorLegacyTurn: legacyTurn } },
+      { new: true, timestamps: false },
+    ).lean<IConversation>();
+    return openedHeadless != null;
   }
 
   /**
@@ -702,35 +714,37 @@ export function createConversationMethods(
     startedBefore: Date;
   }): Promise<boolean> {
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
-    const reclaimed = await Conversation.findOneAndUpdate(
+    const staleFence: FilterQuery<IConversation> = {
+      user: input.user,
+      conversationId: input.conversationId,
+      subagentThread: { $exists: true },
+      agentEventBinding: { $exists: true },
+      'agentEventActorLegacyTurn.token': input.token,
+      'agentEventActorLegacyTurn.startedAt': { $lt: input.startedBefore },
+      ...subagentLeaseTenantFilter(input.tenantId),
+      ...activeExpirationFilter<IConversation>(),
+    };
+    const reclaimedWithHead = await Conversation.findOneAndUpdate(
+      { ...staleFence, 'agentEventActor.generation': { $exists: true } },
       {
-        user: input.user,
-        conversationId: input.conversationId,
-        subagentThread: { $exists: true },
-        agentEventBinding: { $exists: true },
-        'agentEventActorLegacyTurn.token': input.token,
-        'agentEventActorLegacyTurn.startedAt': { $lt: input.startedBefore },
-        ...subagentLeaseTenantFilter(input.tenantId),
-        ...activeExpirationFilter<IConversation>(),
+        $set: { 'agentEventActor.requiresColdStart': true },
+        $unset: { agentEventActorLegacyTurn: 1 },
+        $inc: { agentEventActorEpoch: 1 },
       },
-      [
-        {
-          $set: {
-            agentEventActorEpoch: { $add: [{ $ifNull: ['$agentEventActorEpoch', 0] }, 1] },
-            agentEventActorLegacyTurn: '$$REMOVE',
-            agentEventActor: {
-              $cond: [
-                { $ifNull: ['$agentEventActor', false] },
-                { $mergeObjects: ['$agentEventActor', { requiresColdStart: true }] },
-                '$$REMOVE',
-              ],
-            },
-          },
-        },
-      ],
       { new: true, timestamps: false },
     ).lean<IConversation>();
-    return reclaimed != null;
+    if (reclaimedWithHead != null) {
+      return true;
+    }
+    const reclaimedHeadless = await Conversation.findOneAndUpdate(
+      { ...staleFence, 'agentEventActor.generation': { $exists: false } },
+      {
+        $unset: { agentEventActorLegacyTurn: 1 },
+        $inc: { agentEventActorEpoch: 1 },
+      },
+      { new: true, timestamps: false },
+    ).lean<IConversation>();
+    return reclaimedHeadless != null;
   }
 
   /** Acquires or advances one invocation lifecycle fence and blocks competing turns. */
@@ -841,6 +855,7 @@ export function createConversationMethods(
     const recorded = await Conversation.findOneAndUpdate(
       {
         ...ownership,
+        agentEventActorLegacyTurn: { $exists: false },
         agentEventActorReconciliations: {
           $not: { $elemMatch: { status: { $ne: 'settled' } } },
         },

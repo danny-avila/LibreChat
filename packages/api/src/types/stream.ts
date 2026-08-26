@@ -46,6 +46,8 @@ export interface GenerationJobMetadata {
   agentEventDeliveryKey?: string;
   /** Optional action evidence contract declared by the authenticated event source. */
   agentEventExpectedAction?: AgentTriggerExpectedAction;
+  /** Exact durable legacy-turn fence carried across a HITL pause/resume. */
+  agentEventLegacyTurnToken?: string;
   /** Trusted scheduled-occurrence identity. These fields are accepted only from a
    * verified agent-trigger request and let pause/resume/reconciliation keep the
    * occurrence attached to the exact generation that owns it. */

@@ -4810,9 +4810,9 @@ describe('Conversation Operations', () => {
           checkpoint: checkpoint('stale-rebuild'),
         }),
       ).resolves.toMatchObject({ status: 'committed', state: { generation: 2 } });
-      /** Sealing a completed legacy turn must advance the epoch even while
-       * another invocation's fence is active — that is exactly the mid-turn
-       * race it exists to defeat — where the begin invalidation fails closed. */
+      /** Sealing a completed legacy turn advances the epoch. Fork admission
+       * and legacy admission are mutually exclusive, so neither executor can
+       * begin its external work while the other owns the actor. */
       await expect(
         methods.recordAgentEventActorReconciliation({
           ...owner,
@@ -4836,8 +4836,7 @@ describe('Conversation Operations', () => {
       await expect(
         methods.beginAgentEventActorLegacyTurn({ ...owner, token: 'legacy-d' }),
       ).resolves.toBe(true);
-      /** An open fence refuses a commit outright, even at the exact epoch the
-       * fork prepared against — the turn's messages are not durable yet. */
+      /** An open legacy fence refuses fork-lifecycle admission outright. */
       await expect(
         methods.recordAgentEventActorReconciliation({
           ...owner,
@@ -4849,8 +4848,10 @@ describe('Conversation Operations', () => {
             observedAt: new Date(),
           },
         }),
-      ).resolves.toBe(true);
+      ).resolves.toBe(false);
       const beforeSeal = await methods.getAgentEventActorSnapshot(owner);
+      /** Defense in depth: a commit without an admitted invocation is stale,
+       * even at the exact epoch observed while the legacy turn is open. */
       await expect(
         methods.commitAgentEventActorState({
           ...owner,
@@ -4861,8 +4862,7 @@ describe('Conversation Operations', () => {
           checkpoint: checkpoint('during-legacy'),
         }),
       ).resolves.toMatchObject({ status: 'stale' });
-      /** Sealing must succeed while that fork fence is active — exactly the
-       * mid-turn race the durable fence exists to defeat. */
+      /** The legacy owner can now seal its exact token and advance the epoch. */
       await expect(
         methods.completeAgentEventActorLegacyTurn({ ...owner, token: 'legacy-d' }),
       ).resolves.toBe(true);
@@ -4895,6 +4895,117 @@ describe('Conversation Operations', () => {
         legacyTurn: null,
         epoch: 5,
       });
+    });
+
+    it('serializes legacy-turn and fork-lifecycle acquisition before either can execute', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'actor-mutual-exclusion-user',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: {
+          bindingId: `evtbind_${'m'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      const owner = { user: 'actor-mutual-exclusion-user', conversationId };
+      const checkpoint = {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-mutual-exclusion',
+        checkpointNs: 'event-actor/mutual-exclusion',
+      };
+      const pending = (invocationId: string) => ({
+        invocationId,
+        status: 'invocation_pending' as const,
+        checkpoint,
+        action: { toolName: 'submit_move' },
+        observedAt: new Date(),
+      });
+
+      await expect(
+        methods.beginAgentEventActorLegacyTurn({ ...owner, token: 'legacy-wins' }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          ...owner,
+          reconciliation: pending('fork-loses'),
+        }),
+      ).resolves.toBe(false);
+      await expect(
+        methods.completeAgentEventActorLegacyTurn({ ...owner, token: 'legacy-wins' }),
+      ).resolves.toBe(true);
+
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          ...owner,
+          reconciliation: pending('fork-wins'),
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.beginAgentEventActorLegacyTurn({ ...owner, token: 'legacy-loses' }),
+      ).resolves.toBe(false);
+    });
+
+    it('uses DocumentDB-compatible classic updates for legacy fence open and reclaim', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'actor-documentdb-fence-user',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: {
+          bindingId: `evtbind_${'d'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      const owner = { user: 'actor-documentdb-fence-user', conversationId };
+      const updateSpy = jest.spyOn(Conversation, 'findOneAndUpdate');
+      try {
+        await expect(
+          methods.beginAgentEventActorLegacyTurn({ ...owner, token: 'documentdb-token' }),
+        ).resolves.toBe(true);
+        await Conversation.updateOne(
+          owner,
+          { $set: { 'agentEventActorLegacyTurn.startedAt': new Date(Date.now() - 120_000) } },
+          { timestamps: false },
+        );
+        await expect(
+          methods.reclaimAgentEventActorLegacyTurn({
+            ...owner,
+            token: 'documentdb-token',
+            startedBefore: new Date(Date.now() - 60_000),
+          }),
+        ).resolves.toBe(true);
+        expect(updateSpy.mock.calls.length).toBeGreaterThan(0);
+        for (const [, update] of updateSpy.mock.calls) {
+          expect(Array.isArray(update)).toBe(false);
+        }
+      } finally {
+        updateSpy.mockRestore();
+      }
     });
 
     it('refuses new invocations rather than evicting unexpired receipts at the cap', async () => {
