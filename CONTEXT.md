@@ -1,6 +1,7 @@
 # Domain language
 
 - **Agent run envelope**: the versioned, JSON-safe request contract created after ingress authentication and protocol validation but before agent, provider, tool, or MCP initialization. It carries only the validated protocol payload and the minimum trusted principal identifiers. The execution host rehydrates all runtime state from those identifiers.
+- **Effective agent selection**: the resolved endpoint and agent identity after an enforced model spec is applied. Authorization and agent loading must consume this same identity before the Agent run envelope is initialized.
 - **MCP runtime request body**: trusted chat identifiers supplied only while an MCP server handles an agent request. It enables request-scoped header placeholders without retaining user-specific request data on a shared server definition.
 - **Caller Capability Projection**: the versioned, SDK-owned classification of currently active tools by direct and programmatic callers. Event-driven execution transports this projection as data; LibreChat intersects it with its trusted registry and never recomputes deferred-tool discovery policy or treats the projection as authorization.
 - **Subagent thread**: a durable, view-only child conversation owned by one parent conversation and subagent identity. A parent agent may continue it by stable `threadId`; each continuation uses a fresh execution lease restored from the canonical child transcript. It is not an ordinary human-writable chat.
