@@ -542,6 +542,32 @@ function mergeParameters(
   return merged;
 }
 
+/** Converts LibreChat's scalar effort setting to the object OpenRouter consumes. */
+function normalizeSummarizationParameters(
+  provider: string,
+  parameters: SummarizationConfig['parameters'] | Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (provider.toLowerCase() !== Providers.OPENROUTER || parameters == null) {
+    return parameters;
+  }
+
+  const reasoningEffort = parameters.reasoning_effort;
+  if (!isNonEmptyString(reasoningEffort)) {
+    return parameters;
+  }
+
+  const normalized = { ...parameters };
+  delete normalized.reasoning_effort;
+  const reasoning = isPlainObject(normalized.reasoning) ? normalized.reasoning : {};
+  return {
+    ...normalized,
+    reasoning: {
+      ...reasoning,
+      effort: reasoningEffort,
+    },
+  };
+}
+
 /**
  * Mirrors `getOpenAIConfig`'s `llmConfig` shape (plus its `configOptions`
  * assigned to `configuration`). Index signature covers fields that the
@@ -753,10 +779,11 @@ function shapeSummarizationConfig(
    * adding e.g. `configuration.defaultQuery` keeps the resolved `baseURL`
    * and `defaultHeaders` rather than replacing the whole object.
    */
-  const parameters =
+  const mergedParameters =
     clientOverrides != null
       ? mergeParameters(clientOverrides, config?.parameters)
       : config?.parameters;
+  const parameters = normalizeSummarizationParameters(provider, mergedParameters);
 
   return {
     enabled: config?.enabled !== false && isNonEmptyString(provider) && isNonEmptyString(model),

@@ -86,7 +86,15 @@ jest.mock('~/agents/checkpointer', () => ({
   getAgentCheckpointer: jest.fn().mockResolvedValue({}),
 }));
 
-import { Run, buildChildInputs, InMemorySubagentTaskStore } from '@librechat/agents';
+import {
+  Run,
+  Providers,
+  ChatOpenRouter,
+  buildChildInputs,
+  InMemorySubagentTaskStore,
+} from '@librechat/agents';
+
+const LUNA_MODEL = 'openai/gpt-5.6-luna';
 
 /** Minimal RunAgent factory */
 function makeAgent(
@@ -602,6 +610,52 @@ describe('summarizationConfig field passthrough', () => {
     const config = agents[0].summarizationConfig as Record<string, unknown>;
     expect(config.trigger).toEqual({ type: 'token_ratio', value: 0 });
   });
+
+  it.each(['medium', 'low'])(
+    'overrides OpenRouter main max reasoning with %s for summarization only',
+    async (reasoningEffort) => {
+      const agents = await callAndCapture({
+        agents: [
+          makeAgent({
+            provider: Providers.OPENROUTER,
+            endpoint: 'OpenRouter',
+            model: LUNA_MODEL,
+            model_parameters: {
+              model: LUNA_MODEL,
+              modelKwargs: { reasoning: { effort: 'max' } },
+            },
+          }),
+        ],
+        summarizationConfig: {
+          provider: 'OpenRouter',
+          model: LUNA_MODEL,
+          parameters: { reasoning_effort: reasoningEffort },
+        },
+      });
+
+      const mainClientOptions = agents[0].clientOptions as {
+        modelKwargs: { reasoning: { effort: string } };
+      };
+      const summaryConfig = agents[0].summarizationConfig as {
+        model: string;
+        parameters: Record<string, unknown>;
+      };
+
+      expect(mainClientOptions.modelKwargs.reasoning).toEqual({ effort: 'max' });
+      expect(summaryConfig.parameters).toEqual({ reasoning: { effort: reasoningEffort } });
+
+      const summaryModel = new ChatOpenRouter({
+        ...mainClientOptions,
+        ...summaryConfig.parameters,
+        apiKey: 'test-key',
+        model: summaryConfig.model,
+      });
+      const request = summaryModel.invocationParams();
+
+      expect(request.reasoning).toEqual({ effort: reasoningEffort });
+      expect(request.reasoning_effort).toBeUndefined();
+    },
+  );
 
   it.each([
     ['remaining_tokens', 500],
