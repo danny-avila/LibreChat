@@ -115,6 +115,7 @@ librechat:
         - https://mcp.atlassian.com
         - https://auth.atlassian.com
         - https://api.atlassian.com
+        - https://business-cards-mcp.wittygrass-e1b1e1df.swedencentral.azurecontainerapps.io
     mcpServers:
       # BilleDeck — Azure Web App MCP (Easy Auth / Entra). OBO exchanges the
       # signed-in user's OpenID token for a token audience-scoped to the app.
@@ -147,6 +148,15 @@ librechat:
       atlassian:
         type: streamable-http
         url: https://mcp.atlassian.com/v1/mcp/authv2
+      business-cards:
+        type: streamable-http
+        url: https://business-cards-mcp.wittygrass-e1b1e1df.swedencentral.azurecontainerapps.io/mcp
+        headers:
+          Authorization: "Bearer ${BUSINESS_CARDS_MCP_API_KEY}"
+        chatMenu: true
+        serverInstructions: true
+        timeout: 120000
+        initTimeout: 120000
     fileConfig:
       endpoints:
         default:
