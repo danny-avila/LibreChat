@@ -47,6 +47,7 @@ describe('event actor host adapter', () => {
       checkpointNs,
       checkpointId: `checkpoint-${nextCheckpoint++}`,
     }));
+    mockedDelete.mockReset();
     mockedDelete.mockResolvedValue();
   });
 
@@ -813,5 +814,55 @@ describe('event actor host adapter', () => {
     });
     expect(invoke).not.toHaveBeenCalled();
     expect(dependencies.recordReconciliation).not.toHaveBeenCalled();
+  });
+
+  it('abandons admission when a terminal receipt lands after preparation', async () => {
+    const checkpoint = {
+      threadId: conversationId,
+      checkpointId: 'checkpoint-terminal',
+      checkpointNs: 'event-actor/event-race',
+    };
+    const invoke = jest.fn(async () => 'must not run');
+    const resolveReconciliation = jest.fn(async () => true);
+    const dependencies = {
+      ...deps(),
+      getReceipt: jest
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          bindingId: 'binding-1',
+          resolution: 'checkpoint_verified' as const,
+          checkpoint,
+          action: { toolName: 'submit_move' },
+          settledAt: new Date(),
+        }),
+      resolveReconciliation,
+    };
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          bindingId: 'binding-1',
+          invocationId: 'event-race',
+          event: { id: 'event-race' },
+          signal: new AbortController().signal,
+          invoke,
+          readAppliedAction: () => undefined,
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('already has a terminal receipt');
+
+    expect(dependencies.recordReconciliation).toHaveBeenCalledTimes(1);
+    expect(resolveReconciliation).toHaveBeenCalledWith({
+      user: 'user-1',
+      conversationId,
+      invocationId: 'event-race',
+      checkpoint: expect.objectContaining({ threadId: conversationId }),
+      resolution: 'invocation_abandoned',
+    });
+    expect(invoke).not.toHaveBeenCalled();
   });
 });

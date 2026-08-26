@@ -751,7 +751,21 @@ describe('agent event terminal outcomes', () => {
     );
     await handler('conversation-1', actorJob, []);
 
-    expect(settleAgentEventActorReceipt).toHaveBeenCalledTimes(1);
+    expect(settleAgentEventActorReceipt).toHaveBeenCalledTimes(2);
+    expect(settleAgentEventActorReceipt).toHaveBeenLastCalledWith({
+      deliveryKey: 'trigger_1',
+      user: 'user-1',
+      bindingId: 'binding-1',
+      conversationId: 'conversation-1',
+      generationCreatedAt: 1_787_000_000_000,
+      status: 'applied',
+      settledAt: receipt.settledAt,
+      receipt: {
+        resolution: 'checkpoint_verified',
+        checkpoint,
+        action: receipt.action,
+      },
+    });
     expect(clearAgentEventActorReconciliation).toHaveBeenCalledTimes(2);
     expect(settleAgentTriggerHandlingOutcome).not.toHaveBeenCalled();
   });

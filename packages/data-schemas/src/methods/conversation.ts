@@ -30,6 +30,8 @@ import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
 import logger from '~/config/winston';
 
+const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 90 * 24 * 60 * 60_000;
+
 type ConversationUpdateResult = {
   value:
     | (IConversation & {
@@ -284,6 +286,7 @@ export interface ConversationMethods {
   getAgentEventActorReconciliationStorageMetrics(
     now: Date,
   ): Promise<AgentEventActorReconciliationStorageMetrics>;
+  expireLegacyAgentEventActorReceipts(now: Date, limit?: number): Promise<number>;
   reserveSubagentThread(input: {
     user: string;
     conversationId: string;
@@ -975,9 +978,10 @@ export function createConversationMethods(
             'persistence_failed',
           ];
     const lifecycle = { ...exactCheckpoint, status: { $in: allowedStatuses } };
-    const cleared = await Conversation.findOneAndUpdate(
+    const clearedWithHead = await Conversation.findOneAndUpdate(
       {
         ...owner,
+        agentEventActor: { $exists: true },
         ...(input.resolution === 'checkpoint_verified' && {
           'agentEventActor.checkpoint.threadId': input.checkpoint.threadId,
           'agentEventActor.checkpoint.checkpointId': input.checkpoint.checkpointId,
@@ -995,8 +999,24 @@ export function createConversationMethods(
     )
       .select('+agentEventActorReconciliations')
       .lean<IConversation>();
-    if (cleared != null) {
+    if (clearedWithHead != null) {
       return true;
+    }
+    if (input.resolution !== 'checkpoint_verified') {
+      const clearedWithoutHead = await Conversation.findOneAndUpdate(
+        {
+          ...owner,
+          agentEventActor: { $exists: false },
+          agentEventActorReconciliations: { $elemMatch: lifecycle },
+        },
+        { $pull: { agentEventActorReconciliations: lifecycle } },
+        { new: true, timestamps: false },
+      )
+        .select('+agentEventActorReconciliations')
+        .lean<IConversation>();
+      if (clearedWithoutHead != null) {
+        return true;
+      }
     }
     const conflict = await Conversation.exists({
       ...owner,
@@ -1038,6 +1058,42 @@ export function createConversationMethods(
           ? 0
           : Math.max(0, (now.getTime() - oldestObservedAt.getTime()) / 1000),
     };
+  }
+
+  /** Bounded mixed-version cleanup for terminal receipts embedded by older
+   * builds. New receipts expire through the delivery collection TTL index,
+   * but dormant legacy conversations need an independent retirement path. */
+  async function expireLegacyAgentEventActorReceipts(now: Date, limit = 100): Promise<number> {
+    if (Number.isNaN(now.getTime())) {
+      throw new TypeError('now must be a valid date');
+    }
+    const boundedLimit = Math.max(1, Math.min(Math.trunc(limit), 1_000));
+    const cutoff = new Date(now.getTime() - AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS);
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const candidates = await Conversation.find({
+      agentEventActorReconciliations: {
+        $elemMatch: { status: 'settled', observedAt: { $lte: cutoff } },
+      },
+    })
+      .select('_id')
+      .limit(boundedLimit)
+      .lean<Array<{ _id: Types.ObjectId }>>();
+    if (candidates.length === 0) {
+      return 0;
+    }
+    const result = await Conversation.updateMany(
+      { _id: { $in: candidates.map((candidate) => candidate._id) } },
+      {
+        $pull: {
+          agentEventActorReconciliations: {
+            status: 'settled',
+            observedAt: { $lte: cutoff },
+          },
+        },
+      },
+      { timestamps: false },
+    );
+    return result.modifiedCount;
   }
 
   /** Creates immutable child lineage exactly once without overwriting a concurrent winner. */
@@ -2420,6 +2476,7 @@ export function createConversationMethods(
     resolveAgentEventActorReconciliation,
     clearAgentEventActorReconciliation,
     getAgentEventActorReconciliationStorageMetrics,
+    expireLegacyAgentEventActorReceipts,
     reserveSubagentThread,
     acquireSubagentThreadLease,
     renewSubagentThreadLease,

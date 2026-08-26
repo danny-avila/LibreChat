@@ -382,6 +382,32 @@ export function createAgentEventTerminalHandler(methods: {
           });
     if (durableReceipt != null) {
       actorReceiptSettled = true;
+      /** Settlement owns public batch propagation and lane cleanup as well as
+       * the private receipt. Replaying the exact settlement repairs a crash
+       * after the atomic root write but before either idempotent side effect. */
+      const finalized = await methods.settleAgentEventActorReceipt({
+        deliveryKey: job.agentEventDeliveryKey,
+        user: job.userId,
+        ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+        bindingId: durableReceipt.bindingId,
+        conversationId,
+        generationCreatedAt: job.createdAt,
+        status: durableReceipt.resolution === 'action_compensated' ? 'failed' : 'applied',
+        settledAt: durableReceipt.settledAt,
+        ...(durableReceipt.resolution === 'action_compensated' && {
+          error: 'Applied event actor action was explicitly compensated',
+        }),
+        receipt: {
+          resolution: durableReceipt.resolution,
+          checkpoint: durableReceipt.checkpoint,
+          action: durableReceipt.action,
+        },
+      });
+      if (!finalized) {
+        throw new Error(
+          `Agent event actor ${job.agentEventDeliveryKey} terminal receipt could not be finalized`,
+        );
+      }
       if (durableReceipt.resolution === 'action_compensated') {
         compensated = true;
       } else {

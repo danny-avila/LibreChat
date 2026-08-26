@@ -224,6 +224,39 @@ export async function executeAgentEventActor<T>(
       if (!fenced) {
         throw new Error('Event actor invocation could not acquire its durable lifecycle fence');
       }
+      /** Receipt settlement and the conversation lifecycle live in separate
+       * documents. Recheck only after owning the lifecycle fence so a terminal
+       * writer that won between preparation and admission cannot be followed
+       * by a duplicate external action. */
+      if (input.bindingId != null && deps.getReceipt != null) {
+        const receipt = await deps.getReceipt({
+          deliveryKey: input.invocationId,
+          user: input.user,
+          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+          bindingId: input.bindingId,
+          conversationId: input.conversationId,
+        });
+        if (receipt != null) {
+          const abandoned = await deps.resolveReconciliation({
+            user: input.user,
+            conversationId: input.conversationId,
+            ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+            invocationId: invocation.invocationId,
+            checkpoint: {
+              threadId: invocation.fork.threadId,
+              checkpointNs: invocation.fork.checkpointNs,
+              ...(invocation.fork.checkpointId == null
+                ? {}
+                : { checkpointId: invocation.fork.checkpointId }),
+            },
+            resolution: 'invocation_abandoned',
+          });
+          if (!abandoned) {
+            throw new Error('Event actor duplicate lifecycle fence could not be abandoned');
+          }
+          throw new Error('Event actor invocation already has a terminal receipt');
+        }
+      }
       try {
         value = await input.invoke({
           checkpointNamespace: invocation.fork.checkpointNs,

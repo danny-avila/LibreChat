@@ -4738,6 +4738,112 @@ describe('Conversation Operations', () => {
       });
     });
 
+    it('expires dormant legacy settled receipts independently of matching delivery replay', async () => {
+      const oldConversationId = uuidv4();
+      const recentConversationId = uuidv4();
+      const settled = (invocationId: string, observedAt: Date) => ({
+        invocationId,
+        status: 'settled' as const,
+        resolution: 'action_compensated' as const,
+        checkpoint: {
+          threadId: invocationId === 'old' ? oldConversationId : recentConversationId,
+          checkpointNs: `event-actor/${invocationId}`,
+        },
+        action: { toolName: 'submit_move' },
+        observedAt,
+      });
+      const now = new Date();
+      await Conversation.create([
+        {
+          conversationId: oldConversationId,
+          user: 'actor-legacy-expiry-user',
+          endpoint: EModelEndpoint.agents,
+          agentEventActorReconciliations: [
+            settled('old', new Date(now.getTime() - 91 * 24 * 60 * 60_000)),
+          ],
+        },
+        {
+          conversationId: recentConversationId,
+          user: 'actor-legacy-expiry-user',
+          endpoint: EModelEndpoint.agents,
+          agentEventActorReconciliations: [
+            settled('recent', new Date(now.getTime() - 89 * 24 * 60 * 60_000)),
+          ],
+        },
+      ]);
+
+      await expect(methods.expireLegacyAgentEventActorReceipts(now, 1)).resolves.toBe(1);
+      await expect(
+        Conversation.findOne({ conversationId: oldConversationId })
+          .select('+agentEventActorReconciliations')
+          .lean(),
+      ).resolves.toMatchObject({ agentEventActorReconciliations: [] });
+      await expect(
+        Conversation.findOne({ conversationId: recentConversationId })
+          .select('+agentEventActorReconciliations')
+          .lean(),
+      ).resolves.toMatchObject({
+        agentEventActorReconciliations: [expect.objectContaining({ invocationId: 'recent' })],
+      });
+    });
+
+    it('clears a compensated headless lifecycle without creating a partial actor head', async () => {
+      const conversationId = uuidv4();
+      const checkpoint = {
+        threadId: conversationId,
+        checkpointNs: 'event-actor/headless-compensation',
+      };
+      await Conversation.create({
+        conversationId,
+        user: 'actor-headless-clear-user',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: {
+          bindingId: `evtbind_${'d'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+        agentEventActorReconciliations: [
+          {
+            invocationId: 'headless-compensation',
+            status: 'commit_conflict',
+            checkpoint,
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        ],
+      });
+
+      await expect(
+        methods.clearAgentEventActorReconciliation({
+          user: 'actor-headless-clear-user',
+          conversationId,
+          invocationId: 'headless-compensation',
+          checkpoint,
+          resolution: 'action_compensated',
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        Conversation.findOne({ conversationId })
+          .select('+agentEventActor +agentEventActorReconciliations')
+          .lean(),
+      ).resolves.toMatchObject({ agentEventActorReconciliations: [] });
+      const stored = await Conversation.findOne({ conversationId })
+        .select('+agentEventActor')
+        .lean();
+      expect(stored?.agentEventActor).toBeUndefined();
+    });
+
     it('versions every legacy invalidation so a stale prepared fork cannot commit past it', async () => {
       const conversationId = uuidv4();
       await Conversation.create({

@@ -1561,13 +1561,13 @@ export function createAgentTriggerDeliveryMethods(
       Delivery().countDocuments({
         status: 'pending',
         attempts: { $gt: 0 },
-        awaitTerminalHandling: true,
         'envelope.target.bindingId': { $exists: true },
+        'handling.status': 'started',
       }),
       Delivery().countDocuments({
         status: 'dead',
-        awaitTerminalHandling: true,
         'envelope.target.bindingId': { $exists: true },
+        'handling.status': 'started',
       }),
     ]);
     const retainedByResolution: AgentEventActorReceiptStorageMetrics['retainedByResolution'] = {

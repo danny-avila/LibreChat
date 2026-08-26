@@ -1969,6 +1969,46 @@ describe('agent trigger delivery methods', () => {
         },
       }),
     ).resolves.toBe(false);
+    await Delivery.insertMany([
+      {
+        deliveryKey: 'actor-retry-without-mailbox-flag',
+        fingerprint: 'actor-retry-without-mailbox-flag',
+        orderingKey: 'actor-retry-lane',
+        laneSequence: 1,
+        envelope: { mode: 'continue', target: { bindingId: 'binding-retry' } },
+        user,
+        tenantId: 'tenant-1',
+        status: 'pending',
+        attempts: 2,
+        availableAt: START,
+        handling: {
+          status: 'started',
+          conversationId: 'conversation-retry',
+          streamId: 'conversation-retry',
+          generationCreatedAt: START.getTime(),
+          startedAt: START,
+        },
+      },
+      {
+        deliveryKey: 'actor-dead-without-mailbox-flag',
+        fingerprint: 'actor-dead-without-mailbox-flag',
+        orderingKey: 'actor-dead-lane',
+        laneSequence: 1,
+        envelope: { mode: 'continue', target: { bindingId: 'binding-dead' } },
+        user,
+        tenantId: 'tenant-1',
+        status: 'dead',
+        attempts: 3,
+        availableAt: START,
+        handling: {
+          status: 'started',
+          conversationId: 'conversation-dead',
+          streamId: 'conversation-dead',
+          generationCreatedAt: START.getTime(),
+          startedAt: START,
+        },
+      },
+    ]);
     await expect(
       methods.getAgentEventActorReceiptStorageMetrics(new Date(START.getTime() + 20_000)),
     ).resolves.toMatchObject({
@@ -1978,6 +2018,8 @@ describe('agent trigger delivery methods', () => {
         history_repaired: 0,
       },
       expiryEligible: 0,
+      retryDeliveries: 1,
+      deadDeliveries: 1,
     });
   });
 
