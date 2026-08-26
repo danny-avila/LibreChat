@@ -561,7 +561,7 @@ describe('createAgentTriggerDeliveryEngine', () => {
     await engine.runTick();
 
     expect(store.release).toHaveBeenCalledWith(
-      expect.objectContaining({ availableAt: new Date(START.getTime() + 1_000) }),
+      expect.objectContaining({ availableAt: new Date(START.getTime() + 5_000) }),
     );
     expect(store.beginAttempt).not.toHaveBeenCalled();
     expect(dispatch).not.toHaveBeenCalled();

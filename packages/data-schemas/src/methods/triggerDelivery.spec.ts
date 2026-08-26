@@ -226,6 +226,7 @@ describe('agent trigger delivery methods', () => {
         coalesceFrom,
         coalesceUntil,
         availableAt: coalesceUntil,
+        awaitTerminalHandling: true,
         envelopeBytes: 128,
         envelope: {
           mode: 'continue',
@@ -313,6 +314,25 @@ describe('agent trigger delivery methods', () => {
     expect(receipts.every((receipt) => receipt?.status === 'succeeded')).toBe(true);
     expect(receipts.every((receipt) => receipt?.handling?.status === 'started')).toBe(true);
 
+    const later = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        orderingKey: 'commentary-lane',
+        awaitTerminalHandling: true,
+        availableAt: coalesceUntil,
+      }),
+    );
+    const laterClaim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-later',
+      claimToken: 'claim-later',
+      now: coalesceUntil,
+      leaseUntil: new Date(coalesceUntil.getTime() + 60_000),
+    });
+    expect(laterClaim?.id).toBe(later.delivery.id);
+    await expect(methods.findEarlierAgentTriggerDelivery(laterClaim!)).resolves.toMatchObject({
+      reason: 'active_handling',
+    });
+
     await expect(
       methods.settleAgentTriggerHandlingOutcome({
         deliveryKey: root!.deliveryKey,
@@ -322,11 +342,19 @@ describe('agent trigger delivery methods', () => {
         settledAt: new Date(coalesceUntil.getTime() + 1_000),
       }),
     ).resolves.toBe(true);
+    await expect(methods.findEarlierAgentTriggerDelivery(laterClaim!)).resolves.toBeNull();
 
     let terminal = await Delivery.find({ orderingKey: 'commentary-lane' }).lean();
-    expect(terminal.every((row) => row.handling?.status === 'completed_no_action')).toBe(true);
+    const batchIds = new Set(queued.map(({ delivery }) => delivery.id));
+    expect(
+      terminal
+        .filter((row) => batchIds.has(String(row._id)))
+        .every((row) => row.handling?.status === 'completed_no_action'),
+    ).toBe(true);
 
-    const recoveringMember = terminal.find((row) => String(row._id) !== String(root!._id));
+    const recoveringMember = terminal.find(
+      (row) => batchIds.has(String(row._id)) && String(row._id) !== String(root!._id),
+    );
     await Delivery.updateOne({ _id: recoveringMember!._id }, { $unset: { handling: 1 } });
     await expect(
       methods.settleAgentTriggerHandlingOutcome({
@@ -338,7 +366,11 @@ describe('agent trigger delivery methods', () => {
       }),
     ).resolves.toBe(true);
     terminal = await Delivery.find({ orderingKey: 'commentary-lane' }).lean();
-    expect(terminal.every((row) => row.handling?.status === 'completed_no_action')).toBe(true);
+    expect(
+      terminal
+        .filter((row) => batchIds.has(String(row._id)))
+        .every((row) => row.handling?.status === 'completed_no_action'),
+    ).toBe(true);
   });
 
   it('recovers batch receipts and lane cleanup after root settlement was interrupted', async () => {
