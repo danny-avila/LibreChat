@@ -465,7 +465,6 @@ export interface MessageMethods {
     tenantId?: string;
     limit: number;
     textCodePointLimit: number;
-    taskId?: string;
   }): Promise<SubagentThreadViewMessageRecord[]>;
   listSubagentTasksForThreads(input: {
     user: string;
@@ -1428,12 +1427,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     tenantId?: string;
     limit: number;
     textCodePointLimit: number;
-    taskId?: string;
   }): Promise<SubagentThreadViewMessageRecord[]> {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const selectedAssistantMessageId =
-        input.taskId == null ? undefined : `${input.taskId}:assistant`;
       const transcriptJsonBytes = {
         $strLenBytes: {
           $convert: {
@@ -1455,27 +1451,16 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             ...(input.tenantId == null
               ? { tenantId: { $exists: false } }
               : { tenantId: input.tenantId }),
-            ...(input.taskId == null
-              ? {}
-              : {
-                  messageId: {
-                    $in: [`${input.taskId}:user`, `${input.taskId}:assistant`],
-                  },
-                }),
           },
         },
         { $sort: { createdAt: -1, _id: -1 } },
         { $limit: input.limit },
-        ...(input.taskId == null
-          ? []
-          : [
-              {
-                $addFields: {
-                  _subagentTranscriptSourceBytes: transcriptJsonBytes,
-                  _subagentTranscriptSourceIsString: transcriptIsString,
-                },
-              },
-            ]),
+        {
+          $addFields: {
+            _subagentTranscriptSourceBytes: transcriptJsonBytes,
+            _subagentTranscriptSourceIsString: transcriptIsString,
+          },
+        },
         {
           $project: {
             _id: 0,
@@ -1491,57 +1476,49 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             createdAt: 1,
             error: 1,
             unfinished: 1,
-            ...(input.taskId == null
-              ? {}
-              : {
-                  subagentTranscript: {
-                    $cond: [
-                      {
-                        $and: [
-                          { $eq: ['$messageId', selectedAssistantMessageId] },
-                          '$_subagentTranscriptSourceIsString',
-                          {
-                            $lte: [
-                              '$_subagentTranscriptSourceBytes',
-                              SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
-                            ],
-                          },
-                        ],
-                      },
-                      {
-                        taskId: '$subagentTranscript.taskId',
-                        mode: '$subagentTranscript.mode',
-                        messagesJson: '$subagentTranscript.messagesJson',
-                      },
-                      '$$REMOVE',
-                    ],
-                  },
-                  subagentTranscriptProjectionTruncated: {
-                    $cond: [
-                      {
-                        $and: [
-                          { $eq: ['$messageId', selectedAssistantMessageId] },
-                          {
-                            $ne: [{ $type: '$subagentTranscript.messagesJson' }, 'missing'],
-                          },
-                          {
-                            $or: [
-                              { $eq: ['$_subagentTranscriptSourceIsString', false] },
-                              {
-                                $gt: [
-                                  '$_subagentTranscriptSourceBytes',
-                                  SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
-                                ],
-                              },
-                            ],
-                          },
-                        ],
-                      },
-                      true,
-                      '$$REMOVE',
-                    ],
-                  },
-                }),
+            subagentTranscript: {
+              $cond: [
+                {
+                  $and: [
+                    '$_subagentTranscriptSourceIsString',
+                    {
+                      $lte: [
+                        '$_subagentTranscriptSourceBytes',
+                        SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+                      ],
+                    },
+                  ],
+                },
+                {
+                  taskId: '$subagentTranscript.taskId',
+                  mode: '$subagentTranscript.mode',
+                  messagesJson: '$subagentTranscript.messagesJson',
+                },
+                '$$REMOVE',
+              ],
+            },
+            subagentTranscriptProjectionTruncated: {
+              $cond: [
+                {
+                  $and: [
+                    { $ne: [{ $type: '$subagentTranscript.messagesJson' }, 'missing'] },
+                    {
+                      $or: [
+                        { $eq: ['$_subagentTranscriptSourceIsString', false] },
+                        {
+                          $gt: [
+                            '$_subagentTranscriptSourceBytes',
+                            SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+                true,
+                '$$REMOVE',
+              ],
+            },
             subagentTask: 1,
           },
         },

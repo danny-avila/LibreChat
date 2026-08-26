@@ -122,12 +122,34 @@ describe('subagent thread parent-scoped view', () => {
       parentToolCallId: 'parent-tool-call',
       subagentType: 'researcher',
       subagentKind: 'agent',
+      depth: 1,
       agentId: 'agent-1',
       title: 'Research child',
       status: 'completed',
       activity: [],
       activityTruncated: false,
       controlReceipts: [],
+      turns: [
+        {
+          taskId: 'task-1',
+          trigger: {
+            kind: 'parent_dispatch',
+            summary: 'Investigate this.',
+            createdAt: '2026-08-21T11:00:00.000Z',
+          },
+          status: 'completed',
+          activity: [],
+          activityTruncated: false,
+          controlReceipts: [],
+          messages: [
+            expect.objectContaining({
+              messageId: 'task-1:assistant',
+              role: 'assistant',
+              textTruncated: true,
+            }),
+          ],
+        },
+      ],
       messages: [
         expect.objectContaining({ messageId: 'task-1:user', role: 'user' }),
         expect.objectContaining({
@@ -146,6 +168,81 @@ describe('subagent thread parent-scoped view', () => {
       SUBAGENT_THREAD_VIEW_LIMITS.responseBytes,
     );
     expect(json.mock.calls[0][0].messages[1]).not.toHaveProperty('subagentTask');
+    expect(JSON.stringify(json.mock.calls[0][0])).not.toMatch(
+      /subagentTranscript|messagesJson|attemptKey|lease-token/,
+    );
+  });
+
+  it('returns branch-selected child turns as one chronological conversation', async () => {
+    const firstInput = {
+      ...message('task-1:user', 'running', true),
+      parentMessageId: '00000000-0000-0000-0000-000000000000',
+    } as IMessage;
+    const firstAssistant = {
+      ...message('task-1:assistant', 'completed'),
+      parentMessageId: 'task-1:user',
+      subagentTranscript: {
+        taskId: 'task-1',
+        mode: 'append' as const,
+        messagesJson: JSON.stringify([{ type: 'ai', data: { content: 'First answer.' } }]),
+      },
+    } as IMessage;
+    const secondInput = {
+      ...message('task-2:user', 'running', true),
+      parentMessageId: 'task-1:assistant',
+      text: 'Continue with the new event.',
+      createdAt: new Date('2026-08-21T11:02:00.000Z'),
+    } as IMessage;
+    const secondAssistant = {
+      ...message('task-2:assistant', 'completed'),
+      parentMessageId: 'task-2:user',
+      createdAt: new Date('2026-08-21T11:03:00.000Z'),
+      subagentTranscript: {
+        taskId: 'task-2',
+        mode: 'append' as const,
+        messagesJson: JSON.stringify([{ type: 'ai', data: { content: 'Second answer.' } }]),
+      },
+    } as IMessage;
+    const abandoned = {
+      ...message('abandoned:assistant', 'error'),
+      parentMessageId: 'task-1:user',
+      createdAt: new Date('2026-08-21T11:01:30.000Z'),
+    } as IMessage;
+    const handler = createSubagentThreadViewHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
+      getSubagentThreadForParent: jest.fn().mockResolvedValue({
+        ...child,
+        subagentThreadLease: undefined,
+      }),
+      getMessagesForSubagentThreadView: jest
+        .fn()
+        .mockResolvedValue([secondAssistant, secondInput, abandoned, firstAssistant, firstInput]),
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest({}, { taskId: 'task-2' }), response);
+
+    const view = json.mock.calls[0][0];
+    expect(view.turns).toEqual([
+      expect.objectContaining({
+        taskId: 'task-1',
+        trigger: expect.objectContaining({
+          kind: 'parent_dispatch',
+          summary: 'Investigate this.',
+        }),
+        activity: [{ type: 'writing', text: 'First answer.' }],
+      }),
+      expect.objectContaining({
+        taskId: 'task-2',
+        trigger: expect.objectContaining({
+          kind: 'parent_continuation',
+          summary: 'Continue with the new event.',
+        }),
+        activity: [{ type: 'writing', text: 'Second answer.' }],
+      }),
+    ]);
+    expect(JSON.stringify(view)).not.toContain('abandoned');
+    expect(view.historyTruncated).toBe(true);
   });
 
   it("returns only the selected task's sanitized bounded activity", async () => {
@@ -187,7 +284,9 @@ describe('subagent thread parent-scoped view', () => {
 
     await handler(createRequest({}, { taskId: 'task-1' }), response);
 
-    expect(getMessages).toHaveBeenCalledWith(expect.objectContaining({ taskId: 'task-1' }));
+    expect(getMessages).toHaveBeenCalledWith(
+      expect.not.objectContaining({ taskId: expect.anything() }),
+    );
     const view = json.mock.calls[0][0];
     expect(view.activity).toEqual([
       { type: 'reasoning' },
@@ -492,8 +591,16 @@ describe('subagent thread parent-scoped view', () => {
 
   it('keeps the newest bounded tail and marks older history as truncated', async () => {
     const getConvoOwnership = jest.fn().mockResolvedValue(parent);
-    const messages = Array.from({ length: SUBAGENT_THREAD_VIEW_LIMITS.messages + 1 }, (_, index) =>
-      message(`task-${index}:assistant`, 'completed'),
+    const messages = Array.from(
+      { length: SUBAGENT_THREAD_VIEW_LIMITS.messages + 1 },
+      (_, index) =>
+        ({
+          ...message(`task-${index}:assistant`, 'completed'),
+          parentMessageId:
+            index === SUBAGENT_THREAD_VIEW_LIMITS.messages
+              ? '00000000-0000-0000-0000-000000000000'
+              : `task-${index + 1}:assistant`,
+        }) as IMessage,
     );
     const handler = createSubagentThreadViewHandler({
       getConvoOwnership,
@@ -511,6 +618,34 @@ describe('subagent thread parent-scoped view', () => {
       `task-${SUBAGENT_THREAD_VIEW_LIMITS.messages - 1}:assistant`,
     );
     expect(view.messages.at(-1).messageId).toBe('task-0:assistant');
+  });
+
+  it('marks a retained branch whose older task ancestor is unavailable as truncated', async () => {
+    const input = {
+      ...message('task-2:user', 'running', true),
+      parentMessageId: 'task-1:assistant',
+    } as IMessage;
+    const assistant = {
+      ...message('task-2:assistant', 'completed'),
+      parentMessageId: 'task-2:user',
+    } as IMessage;
+    const handler = createSubagentThreadViewHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
+      getSubagentThreadForParent: jest
+        .fn()
+        .mockResolvedValue({ ...child, subagentThreadLease: undefined }),
+      getMessagesForSubagentThreadView: jest.fn().mockResolvedValue([assistant, input]),
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest({}, { taskId: 'task-2' }), response);
+
+    expect(json.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        historyTruncated: true,
+        turns: [expect.objectContaining({ taskId: 'task-2' })],
+      }),
+    );
   });
 
   it.each([
@@ -830,9 +965,19 @@ describe('parent child-thread index', () => {
 
     await handler(createRequest({ threadId: 'event-thread' }, { taskId: 'delivery-1' }), response);
 
-    expect(json.mock.calls[0][0]).toEqual(expect.objectContaining({ status: 'completed' }));
+    expect(json.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        status: 'completed',
+        turns: [
+          expect.objectContaining({
+            taskId: 'delivery-1',
+            trigger: expect.objectContaining({ kind: 'external_event' }),
+          }),
+        ],
+      }),
+    );
     expect(getMessagesForSubagentThreadView).toHaveBeenCalledWith(
-      expect.objectContaining({ taskId: 'delivery-1' }),
+      expect.not.objectContaining({ taskId: expect.anything() }),
     );
   });
 
