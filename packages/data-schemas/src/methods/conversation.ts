@@ -510,6 +510,8 @@ export function createConversationMethods(
             'agentEventActor.checkpoint.threadId': input.expected.checkpoint.threadId,
             'agentEventActor.checkpoint.checkpointId': input.expected.checkpoint.checkpointId,
             'agentEventActor.checkpoint.checkpointNs': input.expected.checkpoint.checkpointNs,
+            'agentEventActor.requiresColdStart':
+              input.expected.requiresColdStart === true ? true : { $ne: true },
           };
     const nextState: IAgentEventActorState = {
       generation: (input.expected?.generation ?? 0) + 1,
@@ -523,7 +525,6 @@ export function createConversationMethods(
         subagentThread: { $exists: true },
         agentEventBinding: { $exists: true },
         agentEventActorReconciliations: {
-          $size: 1,
           $elemMatch: {
             invocationId: input.invocationId,
             status: 'invocation_pending',
@@ -577,7 +578,9 @@ export function createConversationMethods(
         subagentThread: { $exists: true },
         agentEventBinding: { $exists: true },
         agentEventActor: { $exists: true },
-        'agentEventActorReconciliations.0': { $exists: false },
+        agentEventActorReconciliations: {
+          $not: { $elemMatch: { status: { $ne: 'settled' } } },
+        },
         ...subagentLeaseTenantFilter(input.tenantId),
         ...activeExpirationFilter<IConversation>(),
       },
@@ -590,7 +593,10 @@ export function createConversationMethods(
       return true;
     }
     const current = await getAgentEventActorSnapshot(input);
-    if (current != null && current.reconciliations.length > 0) {
+    if (
+      current != null &&
+      current.reconciliations.some((reconciliation) => reconciliation.status !== 'settled')
+    ) {
       throw new Error('Event actor has unresolved applied-action reconciliation');
     }
     return false;
@@ -629,7 +635,10 @@ export function createConversationMethods(
         (current?.status === 'invocation_pending' &&
           input.reconciliation.status !== 'invocation_pending') ||
         (current?.status === 'persistence_pending' &&
-          input.reconciliation.status === 'persistence_failed');
+          (input.reconciliation.status === 'persistence_failed' ||
+            input.reconciliation.status === 'history_persisted')) ||
+        (current?.status === 'persistence_failed' &&
+          input.reconciliation.status === 'history_persisted');
       const sameIdentity =
         current?.status === input.reconciliation.status &&
         current.checkpoint.threadId === input.reconciliation.checkpoint.threadId &&
@@ -670,7 +679,9 @@ export function createConversationMethods(
     const recorded = await Conversation.findOneAndUpdate(
       {
         ...ownership,
-        'agentEventActorReconciliations.0': { $exists: false },
+        agentEventActorReconciliations: {
+          $not: { $elemMatch: { status: { $ne: 'settled' } } },
+        },
         'agentEventActorReconciliations.invocationId': { $ne: input.reconciliation.invocationId },
       },
       { $push: { agentEventActorReconciliations: input.reconciliation } },
@@ -689,7 +700,7 @@ export function createConversationMethods(
     return false;
   }
 
-  /** Clears exactly one lifecycle after durable acknowledgement, abandonment, or repair. */
+  /** Resolves exactly one lifecycle after settlement, abandonment, or repair. */
   async function resolveAgentEventActorReconciliation(input: {
     user: string;
     conversationId: string;
@@ -706,24 +717,13 @@ export function createConversationMethods(
       throw new Error('Event actor reconciliation changed its logical thread');
     }
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
-    let statusFilter: Record<string, unknown> = {};
-    if (input.resolution === 'checkpoint_verified') {
-      statusFilter = {
-        status: {
-          $in: ['persistence_pending', 'persistence_failed', 'commit_indeterminate'],
-        },
-      };
-    } else if (input.resolution === 'invocation_abandoned') {
-      statusFilter = { status: 'invocation_pending' };
-    }
-    const checkpointFilter: Record<string, unknown> = {
+    const exactCheckpoint: Record<string, unknown> = {
       invocationId: input.invocationId,
       'checkpoint.threadId': input.checkpoint.threadId,
       'checkpoint.checkpointNs': input.checkpoint.checkpointNs,
       ...(input.checkpoint.checkpointId == null
         ? { 'checkpoint.checkpointId': { $exists: false } }
         : { 'checkpoint.checkpointId': input.checkpoint.checkpointId }),
-      ...statusFilter,
     };
     if (
       input.resolution === 'checkpoint_verified' &&
@@ -732,13 +732,58 @@ export function createConversationMethods(
     ) {
       return false;
     }
-    const ownership = {
+    const owner = {
       user: input.user,
       conversationId: input.conversationId,
       subagentThread: { $exists: true },
       agentEventBinding: { $exists: true },
       ...subagentLeaseTenantFilter(input.tenantId),
       ...activeExpirationFilter<IConversation>(),
+    };
+    if (input.resolution === 'checkpoint_verified') {
+      const settled = await Conversation.findOneAndUpdate(
+        {
+          ...owner,
+          'agentEventActor.checkpoint.threadId': input.checkpoint.threadId,
+          'agentEventActor.checkpoint.checkpointId': input.checkpoint.checkpointId!,
+          'agentEventActor.checkpoint.checkpointNs': input.checkpoint.checkpointNs,
+          agentEventActorReconciliations: {
+            $elemMatch: { ...exactCheckpoint, status: 'history_persisted' },
+          },
+        },
+        {
+          $set: {
+            'agentEventActorReconciliations.$.status': 'settled',
+            'agentEventActorReconciliations.$.observedAt': new Date(),
+          },
+          $unset: { 'agentEventActorReconciliations.$.error': 1 },
+        },
+        { new: true, timestamps: false },
+      )
+        .select('+agentEventActorReconciliations')
+        .lean<IConversation>();
+      if (settled != null) {
+        return true;
+      }
+      const replay = await Conversation.exists({
+        ...owner,
+        'agentEventActor.checkpoint.threadId': input.checkpoint.threadId,
+        'agentEventActor.checkpoint.checkpointId': input.checkpoint.checkpointId!,
+        'agentEventActor.checkpoint.checkpointNs': input.checkpoint.checkpointNs,
+        agentEventActorReconciliations: {
+          $elemMatch: { ...exactCheckpoint, status: 'settled' },
+        },
+      });
+      return replay != null;
+    }
+    const checkpointFilter: Record<string, unknown> = {
+      ...exactCheckpoint,
+      ...(input.resolution === 'invocation_abandoned'
+        ? { status: 'invocation_pending' }
+        : { status: { $ne: 'settled' } }),
+    };
+    const ownership = {
+      ...owner,
       agentEventActorReconciliations: { $elemMatch: checkpointFilter },
     };
     const mustRebuild =
@@ -747,13 +792,6 @@ export function createConversationMethods(
       {
         ...ownership,
         ...(mustRebuild ? { agentEventActor: { $exists: true } } : {}),
-        ...(input.resolution === 'checkpoint_verified'
-          ? {
-              'agentEventActor.checkpoint.threadId': input.checkpoint.threadId,
-              'agentEventActor.checkpoint.checkpointId': input.checkpoint.checkpointId!,
-              'agentEventActor.checkpoint.checkpointNs': input.checkpoint.checkpointNs,
-            }
-          : {}),
       },
       {
         $pull: { agentEventActorReconciliations: checkpointFilter },

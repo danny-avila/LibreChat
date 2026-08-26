@@ -89,6 +89,7 @@ export async function executeAgentEventActor<T>(
 ): Promise<ExecuteAgentEventActorResult<T>> {
   let value: T | undefined;
   let invocationError: unknown;
+  let observedState: IAgentEventActorState | null | undefined;
   const adapter: EventActorHostAdapter<EventActorEvent, EventActorResult> = {
     async prepare(request, context) {
       if (context.signal.aborted) {
@@ -102,12 +103,14 @@ export async function executeAgentEventActor<T>(
       if (snapshot === undefined) {
         throw new Error('Event actor binding is no longer active');
       }
-      if (snapshot.reconciliations.length > 0) {
+      const unresolved = snapshot.reconciliations.filter((item) => item.status !== 'settled');
+      if (unresolved.length > 0) {
         throw new Error(
-          `Event actor is blocked on ${snapshot.reconciliations.map((item) => item.status).join(', ')} reconciliation`,
+          `Event actor is blocked on ${unresolved.map((item) => item.status).join(', ')} reconciliation`,
         );
       }
       const state = snapshot.state;
+      observedState = state;
       const head = toHead(input.conversationId, state);
       if (state == null || state.requiresColdStart === true) {
         return { status: 'checkpoint_unavailable', head };
@@ -238,16 +241,27 @@ export async function executeAgentEventActor<T>(
       if (typeof appliedCheckpointId !== 'string' || appliedCheckpointId.length === 0) {
         throw new Error('Applied event actor checkpoint is missing its id');
       }
+      if (observedState === undefined) {
+        throw new Error('Event actor commit is missing its prepared host state');
+      }
+      const expectedHeadCheckpoint = request.expectedHead.checkpoint;
+      if (observedState != null && expectedHeadCheckpoint == null) {
+        throw new Error('Event actor commit lost its prepared checkpoint head');
+      }
+      /** The SDK head intentionally contains only portable checkpoint identity.
+       * Retain the host-private cold-start observation from prepare so the CAS
+       * cannot clear a legacy-path invalidation that races before acquisition. */
       const expected =
-        request.expectedHead.checkpoint == null
+        observedState == null
           ? undefined
           : {
               generation: request.expectedHead.generation,
               checkpoint: {
-                threadId: request.expectedHead.checkpoint.threadId,
+                threadId: expectedHeadCheckpoint!.threadId,
                 checkpointId: expectedCheckpointId!,
-                checkpointNs: request.expectedHead.checkpoint.checkpointNs,
+                checkpointNs: expectedHeadCheckpoint!.checkpointNs,
               },
+              ...(observedState.requiresColdStart === true ? { requiresColdStart: true } : {}),
             };
       const committed = await deps.commitState({
         user: input.user,
@@ -263,11 +277,14 @@ export async function executeAgentEventActor<T>(
         },
       });
       if (committed.status === 'stale') {
+        /** A host-private cold marker can invalidate the CAS without advancing
+         * the portable SDK head. Omit that non-advanced head so the SDK reports
+         * an ordinary conflict instead of misclassifying it as indeterminate. */
+        const advanced =
+          committed.state != null && committed.state.generation > request.expectedHead.generation;
         return {
           status: 'stale',
-          ...(committed.state == null
-            ? {}
-            : { head: toHead(input.conversationId, committed.state) }),
+          ...(advanced ? { head: toHead(input.conversationId, committed.state!) } : {}),
         };
       }
       if (committed.prunableCheckpoint != null) {

@@ -2299,16 +2299,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           );
         }
         if (appliedEventActor != null) {
-          const resolved = await resolveAgentEventActorReconciliation({
+          const recorded = await recordAgentEventActorReconciliation({
             user: userId,
             conversationId,
             ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
-            invocationId: appliedEventActor.invocationId,
-            checkpoint: appliedEventActor.checkpoint,
-            resolution: 'checkpoint_verified',
+            reconciliation: {
+              invocationId: appliedEventActor.invocationId,
+              status: 'history_persisted',
+              checkpoint: appliedEventActor.checkpoint,
+              action: appliedEventActor.action,
+              observedAt: new Date(),
+            },
           });
-          if (!resolved) {
-            throw new Error('Applied event actor lifecycle could not be durably acknowledged');
+          if (!recorded) {
+            throw new Error('Applied event actor history barrier could not be durably recorded');
           }
         }
         eventActorPersistenceComplete = true;

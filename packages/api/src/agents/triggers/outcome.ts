@@ -250,24 +250,9 @@ export function createAgentEventTerminalHandler(methods: {
       (item) => item.invocationId === job.agentEventDeliveryKey,
     );
     if (lifecycle != null) {
-      if (lifecycle.status === 'invocation_pending' && outcome.action == null) {
-        const abandoned = await methods.resolveAgentEventActorReconciliation({
-          user: job.userId,
-          conversationId,
-          ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
-          invocationId: lifecycle.invocationId,
-          checkpoint: lifecycle.checkpoint,
-          resolution: 'invocation_abandoned',
-        });
-        if (!abandoned) {
-          throw new Error(
-            `Agent event actor ${job.agentEventDeliveryKey} has unresolved lifecycle state`,
-          );
-        }
-      } else if (
-        lifecycle.status !== 'persistence_pending' &&
-        lifecycle.status !== 'persistence_failed'
-      ) {
+      if (lifecycle.status === 'settled') {
+        committedAction = lifecycle.action;
+      } else if (lifecycle.status !== 'history_persisted') {
         throw new Error(
           `Agent event actor ${job.agentEventDeliveryKey} requires ${lifecycle.status} reconciliation`,
         );
@@ -286,28 +271,16 @@ export function createAgentEventTerminalHandler(methods: {
           userMessage?.conversationId !== conversationId ||
           userMessage.isCreatedByUser !== true ||
           responseMessage?.conversationId !== conversationId ||
-          responseMessage.isCreatedByUser !== false
+          responseMessage.isCreatedByUser !== false ||
+          responseMessage.parentMessageId !== userMessage.messageId
         ) {
           throw new Error(
-            `Agent event actor ${job.agentEventDeliveryKey} is awaiting durable message history`,
-          );
-        }
-        const resolved = await methods.resolveAgentEventActorReconciliation({
-          user: job.userId,
-          conversationId,
-          ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
-          invocationId: lifecycle.invocationId,
-          checkpoint: lifecycle.checkpoint,
-          resolution: 'checkpoint_verified',
-        });
-        if (!resolved) {
-          throw new Error(
-            `Agent event actor ${job.agentEventDeliveryKey} has unresolved lifecycle state`,
+            `Agent event actor ${job.agentEventDeliveryKey} has invalid durable message history`,
           );
         }
         /** The persistence lifecycle was created by the same CAS that advanced
-         * the actor head. Once its history is verified, that committed action
-         * is more authoritative than incomplete reconstructed run evidence. */
+         * the actor head, and history_persisted is written only after the
+         * controller's post-commit message barrier. */
         committedAction = lifecycle.action;
       }
     }
@@ -327,6 +300,21 @@ export function createAgentEventTerminalHandler(methods: {
     });
     if (!settled) {
       throw new Error(`Failed to settle agent event delivery ${job.agentEventDeliveryKey}`);
+    }
+    if (lifecycle?.status === 'history_persisted') {
+      const resolved = await methods.resolveAgentEventActorReconciliation({
+        user: job.userId,
+        conversationId,
+        ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+        invocationId: lifecycle.invocationId,
+        checkpoint: lifecycle.checkpoint,
+        resolution: 'checkpoint_verified',
+      });
+      if (!resolved) {
+        throw new Error(
+          `Agent event actor ${job.agentEventDeliveryKey} settlement receipt was not retained`,
+        );
+      }
     }
   };
 }

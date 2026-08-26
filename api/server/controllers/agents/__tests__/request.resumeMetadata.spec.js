@@ -4130,7 +4130,7 @@ describe('ResumableAgentController resume metadata', () => {
     });
   });
 
-  it('acknowledges an applied actor lifecycle only after both deterministic messages persist', async () => {
+  it('records the applied actor history barrier only after both deterministic messages persist', async () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue(
       wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
     );
@@ -4215,7 +4215,7 @@ describe('ResumableAgentController resume metadata', () => {
     );
     for (
       let attempt = 0;
-      attempt < 20 && mockResolveAgentEventActorReconciliation.mock.calls.length === 0;
+      attempt < 20 && mockRecordAgentEventActorReconciliation.mock.calls.length === 0;
       attempt++
     ) {
       await nextTick();
@@ -4231,17 +4231,21 @@ describe('ResumableAgentController resume metadata', () => {
       expect.objectContaining({ messageId: 'req-event-success:assistant' }),
       expect.any(Object),
     );
-    expect(mockResolveAgentEventActorReconciliation).toHaveBeenCalledWith({
+    expect(mockRecordAgentEventActorReconciliation).toHaveBeenCalledWith({
       user: 'user-123',
       tenantId: 'tenant-1',
       conversationId: 'child-conversation',
-      invocationId: 'req-event-success',
-      checkpoint,
-      resolution: 'checkpoint_verified',
+      reconciliation: {
+        invocationId: 'req-event-success',
+        status: 'history_persisted',
+        checkpoint,
+        action: { toolName: 'submit_move', toolCallId: 'call-move' },
+        observedAt: expect.any(Date),
+      },
     });
     const lastMessageWrite = Math.max(...mockSaveMessage.mock.invocationCallOrder);
     expect(lastMessageWrite).toBeLessThan(
-      mockResolveAgentEventActorReconciliation.mock.invocationCallOrder[0],
+      mockRecordAgentEventActorReconciliation.mock.invocationCallOrder[0],
     );
   });
 

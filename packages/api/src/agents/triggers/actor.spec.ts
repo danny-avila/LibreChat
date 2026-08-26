@@ -56,7 +56,8 @@ describe('event actor host adapter', () => {
         (state != null &&
           (expected == null ||
             expected.generation !== state.generation ||
-            expected.checkpoint.checkpointId !== state.checkpoint.checkpointId))
+            expected.checkpoint.checkpointId !== state.checkpoint.checkpointId ||
+            (expected.requiresColdStart === true) !== (state.requiresColdStart === true)))
       ) {
         return { status: 'stale' as const, ...(state == null ? {} : { state }) };
       }
@@ -146,7 +147,55 @@ describe('event actor host adapter', () => {
 
     expect(continuation).toBe('cold');
     expect(mockedFork).not.toHaveBeenCalled();
+    expect(dependencies.commitState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expected: expect.objectContaining({ requiresColdStart: true }),
+      }),
+    );
     expect(state?.requiresColdStart).toBeUndefined();
+  });
+
+  it('cannot clear a cold-start marker written after warm preparation', async () => {
+    state = {
+      generation: 1,
+      checkpoint: {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-warm',
+        checkpointNs: 'event-actor/warm',
+      },
+    };
+    const dependencies = deps();
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId: 'event-raced-by-legacy',
+          event: { id: 'event-raced-by-legacy' },
+          signal: new AbortController().signal,
+          invoke: async () => {
+            state = { ...state!, requiresColdStart: true };
+            return 'response';
+          },
+          readAppliedAction: () => ({ toolName: 'submit_move' }),
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('requires commit_conflict reconciliation');
+
+    expect(dependencies.recordReconciliation).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        reconciliation: expect.objectContaining({ status: 'commit_conflict' }),
+      }),
+    );
+
+    expect(dependencies.commitState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expected: expect.not.objectContaining({ requiresColdStart: true }),
+      }),
+    );
+    expect(state?.requiresColdStart).toBe(true);
   });
 
   it('discards a no-action fork without advancing the actor head', async () => {

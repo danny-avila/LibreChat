@@ -3926,7 +3926,7 @@ describe('Conversation Operations', () => {
       );
     });
 
-    it('commits event actor heads with full checkpoint CAS and bounded retention', async () => {
+    it('commits event actor heads with full checkpoint CAS and two-checkpoint retention', async () => {
       const conversationId = uuidv4();
       await Conversation.create({
         conversationId,
@@ -3968,11 +3968,26 @@ describe('Conversation Operations', () => {
             observedAt: new Date(),
           },
         });
-      const finishInvocation = (
+      const finishInvocation = async (
         invocationId: string,
         actorCheckpoint: ReturnType<typeof checkpoint>,
-      ) =>
-        methods.resolveAgentEventActorReconciliation({
+      ) => {
+        const historyRecorded = await methods.recordAgentEventActorReconciliation({
+          user: 'actor-head-user',
+          tenantId: 'tenant-a',
+          conversationId,
+          reconciliation: {
+            invocationId,
+            status: 'history_persisted',
+            checkpoint: actorCheckpoint,
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        });
+        if (!historyRecorded) {
+          return false;
+        }
+        return methods.resolveAgentEventActorReconciliation({
           user: 'actor-head-user',
           tenantId: 'tenant-a',
           conversationId,
@@ -3980,6 +3995,7 @@ describe('Conversation Operations', () => {
           checkpoint: actorCheckpoint,
           resolution: 'checkpoint_verified',
         });
+      };
 
       await expect(beginInvocation('one')).resolves.toBe(true);
       await expect(beginInvocation('one')).resolves.toBe(false);
@@ -4045,6 +4061,7 @@ describe('Conversation Operations', () => {
           },
         }),
       ).resolves.toBe(false);
+      await expect(beginInvocation('one', checkpoint('one'))).resolves.toBe(false);
 
       const stale = await methods.commitAgentEventActorState({
         user: 'actor-head-user',
@@ -4102,12 +4119,44 @@ describe('Conversation Operations', () => {
           tenantId: 'tenant-a',
           conversationId,
         }),
-      ).resolves.toEqual({ state: third.state, reconciliations: [] });
+      ).resolves.toMatchObject({
+        state: third.state,
+        reconciliations: [
+          { invocationId: 'one', status: 'settled' },
+          { invocationId: 'two', status: 'settled' },
+          { invocationId: 'three', status: 'settled' },
+        ],
+      });
       await expect(
         methods.invalidateAgentEventActorState({
           user: 'actor-head-user',
           tenantId: 'tenant-a',
           conversationId,
+        }),
+      ).resolves.toBe(true);
+      await expect(beginInvocation('stale-warm', checkpoint('three'))).resolves.toBe(true);
+      await expect(
+        methods.commitAgentEventActorState({
+          user: 'actor-head-user',
+          tenantId: 'tenant-a',
+          conversationId,
+          invocationId: 'stale-warm',
+          action: { toolName: 'submit_move' },
+          expected: third.state,
+          checkpoint: checkpoint('stale-warm'),
+        }),
+      ).resolves.toEqual({
+        status: 'stale',
+        state: { ...third.state!, requiresColdStart: true },
+      });
+      await expect(
+        methods.resolveAgentEventActorReconciliation({
+          user: 'actor-head-user',
+          tenantId: 'tenant-a',
+          conversationId,
+          invocationId: 'stale-warm',
+          checkpoint: checkpoint('three'),
+          resolution: 'invocation_abandoned',
         }),
       ).resolves.toBe(true);
       await expect(
@@ -4118,7 +4167,11 @@ describe('Conversation Operations', () => {
         }),
       ).resolves.toEqual({
         state: { ...third.state, requiresColdStart: true },
-        reconciliations: [],
+        reconciliations: expect.arrayContaining([
+          expect.objectContaining({ invocationId: 'one', status: 'settled' }),
+          expect.objectContaining({ invocationId: 'two', status: 'settled' }),
+          expect.objectContaining({ invocationId: 'three', status: 'settled' }),
+        ]),
       });
       await expect(beginInvocation('four', checkpoint('three'))).resolves.toBe(true);
       const fourth = await methods.commitAgentEventActorState({
@@ -4160,7 +4213,7 @@ describe('Conversation Operations', () => {
       );
     });
 
-    it('transitions one actor lifecycle and clears only the exact resolved marker', async () => {
+    it('transitions one actor lifecycle and retains exact settled receipts', async () => {
       const conversationId = uuidv4();
       await Conversation.create({
         conversationId,
@@ -4207,6 +4260,17 @@ describe('Conversation Operations', () => {
         checkpoint,
       });
       expect(first.status).toBe('committed');
+      await methods.recordAgentEventActorReconciliation({
+        user: 'actor-reconcile-user',
+        conversationId,
+        reconciliation: {
+          invocationId: 'event-one',
+          status: 'history_persisted',
+          checkpoint,
+          action: { toolName: 'submit_move' },
+          observedAt: new Date(),
+        },
+      });
       await methods.resolveAgentEventActorReconciliation({
         user: 'actor-reconcile-user',
         conversationId,
@@ -4249,7 +4313,10 @@ describe('Conversation Operations', () => {
         }),
       ).resolves.toEqual({
         state: first.state,
-        reconciliations: [reconciliation],
+        reconciliations: [
+          expect.objectContaining({ invocationId: 'event-one', status: 'settled' }),
+          reconciliation,
+        ],
       });
       await expect(
         methods.invalidateAgentEventActorState({
@@ -4321,7 +4388,7 @@ describe('Conversation Operations', () => {
       const verified = {
         ...reconciliation,
         invocationId: 'event-verified',
-        status: 'persistence_pending' as const,
+        status: 'history_persisted' as const,
         checkpoint,
       };
       await expect(beginReconciliation(verified)).resolves.toBe(true);
@@ -4357,7 +4424,11 @@ describe('Conversation Operations', () => {
         }),
       ).resolves.toEqual({
         state: { ...first.state!, requiresColdStart: true },
-        reconciliations: [later],
+        reconciliations: [
+          expect.objectContaining({ invocationId: 'event-one', status: 'settled' }),
+          expect.objectContaining({ invocationId: 'event-verified', status: 'settled' }),
+          later,
+        ],
       });
       await expect(
         methods.resolveAgentEventActorReconciliation({
@@ -4375,7 +4446,10 @@ describe('Conversation Operations', () => {
         }),
       ).resolves.toEqual({
         state: { ...first.state!, requiresColdStart: true },
-        reconciliations: [],
+        reconciliations: [
+          expect.objectContaining({ invocationId: 'event-one', status: 'settled' }),
+          expect.objectContaining({ invocationId: 'event-verified', status: 'settled' }),
+        ],
       });
       const visible = await methods.getConvo('actor-reconcile-user', conversationId);
       expect(visible).not.toHaveProperty('agentEventActor');

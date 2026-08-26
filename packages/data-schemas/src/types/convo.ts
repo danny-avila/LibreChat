@@ -34,9 +34,11 @@ export interface IAgentEventActorReconciliation {
   status:
     | 'invocation_pending'
     | 'persistence_pending'
+    | 'history_persisted'
     | 'commit_conflict'
     | 'commit_indeterminate'
-    | 'persistence_failed';
+    | 'persistence_failed'
+    | 'settled';
   checkpoint: Omit<IAgentEventActorCheckpoint, 'checkpointId'> & { checkpointId?: string };
   action: { toolName: string; toolCallId?: string };
   error?: string;
@@ -111,7 +113,7 @@ export interface IConversation extends Document {
   agentEventBinding?: IAgentEventBinding;
   /** Internal event-actor checkpoint head. Excluded from ordinary conversation reads. */
   agentEventActor?: IAgentEventActorState;
-  /** Private invocation lifecycles retained until checkpoint and history are authoritative. */
+  /** Private invocation proof: active lifecycle fences plus settled same-ID receipts. */
   agentEventActorReconciliations?: IAgentEventActorReconciliation[];
   assistant_id?: string;
   instructions?: string;
