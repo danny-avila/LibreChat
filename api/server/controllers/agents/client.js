@@ -3640,6 +3640,9 @@ class AgentClient extends BaseClient {
           // plus the one new event), so those indices address different
           // messages and the pruner would never recount them. Hand it an empty
           // map so every count is derived from the messages actually in state.
+          // `initialSummary` deliberately stays: it rides the system tail, and
+          // the pre-boundary turns it summarizes were excluded from the very
+          // history the committed checkpoint was built from.
           indexTokenCountMap: this.eventActorContinuation === 'warm' ? {} : indexTokenCountMap,
           initialSummary,
           initialSessions,

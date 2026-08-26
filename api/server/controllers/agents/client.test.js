@@ -999,7 +999,7 @@ describe('AgentClient - startup telemetry', () => {
     mockFormatAgentMessages.mockReturnValueOnce({
       messages: [history, currentEvent],
       indexTokenCountMap: { 0: 11, 1: 22 },
-      summary: undefined,
+      summary: { text: 'summary of earlier turns', tokenCount: 40 },
       boundaryTokenAdjustment: undefined,
     });
     const processStream = jest.fn().mockResolvedValue();
@@ -1046,8 +1046,11 @@ describe('AgentClient - startup telemetry', () => {
         eventActorCheckpointing: true,
         /** The DB-derived token map is positional over full history, which a
          * checkpoint-restored graph state no longer matches. It must be blank
-         * so the pruner recounts against the messages actually in state. */
+         * so the pruner recounts against the messages actually in state. The
+         * cross-run summary stays: it summarizes pre-boundary turns that were
+         * excluded from the history the committed checkpoint was built from. */
         indexTokenCountMap: {},
+        initialSummary: { text: 'summary of earlier turns', tokenCount: 40 },
       }),
     );
     expect(processStream).toHaveBeenCalledWith(
