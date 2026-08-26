@@ -1,12 +1,12 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
-import { MCPUIResourceCarousel } from '../MCPUIResourceCarousel';
+import { render, screen } from '@testing-library/react';
 import {
   useMessageContext,
   useOptionalMessagesConversation,
   useOptionalMessagesOperations,
 } from '~/Providers';
+import { MCPUIResourceCarousel } from '../MCPUIResourceCarousel';
 
 // Mock dependencies
 jest.mock('~/Providers');

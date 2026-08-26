@@ -1,8 +1,8 @@
 import React from 'react';
 import '@testing-library/jest-dom/extend-expect';
-import { render, fireEvent } from 'test/layout-test-utils';
-import CloudBrowserVoicesSwitch from '../CloudBrowserVoicesSwitch';
 import { RecoilRoot } from 'recoil';
+import CloudBrowserVoicesSwitch from '../CloudBrowserVoicesSwitch';
+import { render, fireEvent } from 'test/layout-test-utils';
 
 describe('CloudBrowserVoicesSwitch', () => {
   /**

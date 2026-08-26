@@ -1,7 +1,7 @@
 import React, { memo, useState, useCallback, useRef, useEffect } from 'react';
 import copy from 'copy-to-clipboard';
-import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { Clipboard, CheckMark } from '@librechat/client';
+import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { MIN_ZOOM, MAX_ZOOM } from './useMermaidZoom';
 import { useLocalize } from '~/hooks';
 import cn from '~/utils/cn';

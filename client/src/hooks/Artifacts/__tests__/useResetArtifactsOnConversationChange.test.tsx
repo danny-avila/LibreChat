@@ -1,9 +1,9 @@
 import React from 'react';
 import { act, render } from '@testing-library/react';
 import { RecoilRoot, useRecoilCallback, useSetRecoilState } from 'recoil';
+import type { TConversation } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { Artifact } from '~/common';
-import type { TConversation } from 'librechat-data-provider';
 import useResetArtifactsOnConversationChange from '../useResetArtifactsOnConversationChange';
 import store from '~/store';
 

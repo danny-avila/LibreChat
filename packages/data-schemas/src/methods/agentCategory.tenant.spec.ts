@@ -2,8 +2,8 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IAgentCategory } from '..';
 import { createAgentCategoryMethods } from './agentCategory';
-import { createModels } from '../models';
 import { tenantStorage } from '../config/tenantContext';
+import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),

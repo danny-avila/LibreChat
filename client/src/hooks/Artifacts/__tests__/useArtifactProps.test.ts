@@ -1,7 +1,7 @@
 import { renderHook } from '@testing-library/react';
-import useArtifactProps from '../useArtifactProps';
-import { TOOL_ARTIFACT_TYPES, wrapAsFencedCodeBlock } from '~/utils/artifacts';
 import type { Artifact } from '~/common';
+import { TOOL_ARTIFACT_TYPES, wrapAsFencedCodeBlock } from '~/utils/artifacts';
+import useArtifactProps from '../useArtifactProps';
 
 describe('useArtifactProps', () => {
   const createArtifact = (partial: Partial<Artifact>): Artifact => ({

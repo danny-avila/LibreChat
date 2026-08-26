@@ -1,6 +1,6 @@
-import { mcpUIResourcePlugin, UI_RESOURCE_MARKER } from '../plugin';
 import type { Node } from 'unist';
 import type { UIResourceNode } from '../types';
+import { mcpUIResourcePlugin, UI_RESOURCE_MARKER } from '../plugin';
 
 describe('mcpUIResourcePlugin', () => {
   const createTextNode = (value: string): UIResourceNode => ({

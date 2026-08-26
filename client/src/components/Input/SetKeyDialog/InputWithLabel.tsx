@@ -1,8 +1,8 @@
 import { forwardRef } from 'react';
 import { Input, Label, SecretInput } from '@librechat/client';
 import type { ChangeEvent, FC, Ref } from 'react';
-import { cn } from '~/utils/';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils/';
 
 interface InputWithLabelProps {
   id: string;

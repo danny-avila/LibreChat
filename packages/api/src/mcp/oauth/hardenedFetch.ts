@@ -1,6 +1,6 @@
 import { Agent } from 'undici';
-import type { Dispatcher } from 'undici';
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
+import type { Dispatcher } from 'undici';
 import { createSSRFSafeUndiciConnect, isOAuthUrlAllowed } from '~/auth';
 import { getOAuthUrlPort } from './url';
 

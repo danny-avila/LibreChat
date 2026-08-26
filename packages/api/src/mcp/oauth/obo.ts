@@ -1,8 +1,8 @@
 import { logger } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
-import { extractOpenIDTokenInfo, isOpenIDTokenValid } from '~/utils/oidc';
 import type { MCPOAuthTokens } from './types';
+import { extractOpenIDTokenInfo, isOpenIDTokenValid } from '~/utils/oidc';
 
 export interface OboConfig {
   scopes: string;

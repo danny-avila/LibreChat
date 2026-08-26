@@ -10,8 +10,8 @@ import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
 import { isSSRFTarget, resolveHostnameSSRF, isOAuthUrlAllowed } from '~/auth';
 import { probeResourceMetadataHint } from './resourceHint';
 import { createHardenedOAuthFetch } from './hardenedFetch';
-import { getOAuthUrlPort } from './url';
 import { mcpConfig } from '../mcpConfig';
+import { getOAuthUrlPort } from './url';
 
 export interface OAuthDetectionResult {
   requiresOAuth: boolean;

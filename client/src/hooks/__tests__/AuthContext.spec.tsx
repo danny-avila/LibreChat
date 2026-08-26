@@ -2,13 +2,11 @@
  * @jest-environment @happy-dom/jest-environment
  */
 import React from 'react';
-import { render, act } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-
+import { render, act } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TAuthConfig } from '~/common';
-
 import { AuthContextProvider, useAuthContext } from '../AuthContext';
 import { SESSION_KEY } from '~/utils';
 

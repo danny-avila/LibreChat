@@ -1,11 +1,11 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
+import type { TableColumn } from './DataTable.types';
 import {
   useDebounced,
   useOptimizedRowSelection,
   useColumnStyles,
   useKeyboardNavigation,
 } from './DataTable.hooks';
-import type { TableColumn } from './DataTable.types';
 
 describe('DataTable Hooks', () => {
   describe('useDebounced', () => {

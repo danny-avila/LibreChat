@@ -1,5 +1,5 @@
-import throttle from 'lodash/throttle';
 import { useEffect, useRef, useMemo } from 'react';
+import throttle from 'lodash/throttle';
 import type { TMessage } from 'librechat-data-provider';
 import { useMessagesViewContext } from '~/Providers';
 import { logger } from '~/utils';

@@ -6,9 +6,9 @@
  * per test suite and MCPConnection talks to it through a genuine HTTP stack.
  */
 import http from 'http';
-import { randomUUID } from 'crypto';
-import express from 'express';
 import { z } from 'zod';
+import express from 'express';
+import { randomUUID } from 'crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';

@@ -1,5 +1,5 @@
-import { useSprings, animated, SpringConfig } from '@react-spring/web';
 import { useEffect, useRef, useState } from 'react';
+import { useSprings, animated, SpringConfig } from '@react-spring/web';
 
 interface SegmenterOptions {
   granularity?: 'grapheme' | 'word' | 'sentence';

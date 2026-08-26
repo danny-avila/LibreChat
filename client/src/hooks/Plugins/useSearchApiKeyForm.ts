@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
-import useAuthSearchTool from '~/hooks/Plugins/useAuthSearchTool';
 import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
+import useAuthSearchTool from '~/hooks/Plugins/useAuthSearchTool';
 
 export default function useSearchApiKeyForm({
   onSubmit,

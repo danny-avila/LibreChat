@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { ObjectId } from 'mongodb';
+import { logger, createModels } from '..';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import {
   SystemRoles,
@@ -10,7 +11,6 @@ import {
 } from 'librechat-data-provider';
 import type { IPromptGroup, AccessRole as TAccessRole, AclEntry as TAclEntry } from '..';
 import { createAclEntryMethods } from './aclEntry';
-import { logger, createModels } from '..';
 import { createMethods } from './index';
 
 // Disable console for tests

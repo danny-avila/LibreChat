@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { context, SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
-import type { Response } from 'express';
 import type { Span, Tracer } from '@opentelemetry/api';
+import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
 import { createSseStreamTelemetry } from './stream';
 

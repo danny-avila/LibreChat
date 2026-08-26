@@ -1,13 +1,13 @@
 import { Types } from 'mongoose';
+import { permissionBitSupersets, tenantStorage } from '@librechat/data-schemas';
 import {
   ResourceType,
   PrincipalType,
   PermissionBits,
   AccessRoleIds,
 } from 'librechat-data-provider';
-import { permissionBitSupersets, tenantStorage } from '@librechat/data-schemas';
-import { enrichRemoteAgentPrincipals } from './permissions';
 import type { EnricherDependencies, Principal } from './permissions';
+import { enrichRemoteAgentPrincipals } from './permissions';
 
 /**
  * Tests for `enrichRemoteAgentPrincipals`.

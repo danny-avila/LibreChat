@@ -1,5 +1,5 @@
-import { isEnabled } from './common';
 import type { AzureOptions, GenericClient } from '~/types';
+import { isEnabled } from './common';
 
 /**
  * Sanitizes the model name to be used in the URL by removing or replacing disallowed characters.

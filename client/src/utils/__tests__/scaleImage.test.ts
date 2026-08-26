@@ -1,5 +1,5 @@
-import { scaleImage } from '~/utils/scaleImage';
 import type { RefObject } from 'react';
+import { scaleImage } from '~/utils/scaleImage';
 
 function makeContainerRef(clientWidth: number): RefObject<HTMLDivElement> {
   return {

@@ -1,5 +1,5 @@
-import { createSSRFSafeUndiciConnect, isOAuthUrlAllowed } from '~/auth';
 import { createHardenedOAuthFetch, resetHardenedOAuthFetchDispatchers } from './hardenedFetch';
+import { createSSRFSafeUndiciConnect, isOAuthUrlAllowed } from '~/auth';
 
 jest.mock('~/auth', () => ({
   createSSRFSafeUndiciConnect: jest.fn(() => ({ lookup: jest.fn() })),

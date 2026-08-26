@@ -1,10 +1,9 @@
 import { EModelEndpoint } from 'librechat-data-provider';
-import type { TModelSelectProps } from '~/common';
 import type { FC } from 'react';
-
+import type { TModelSelectProps } from '~/common';
+import Anthropic from './Anthropic';
 import OpenAI from './OpenAI';
 import Google from './Google';
-import Anthropic from './Anthropic';
 
 export const options: { [key: string]: FC<TModelSelectProps> } = {
   [EModelEndpoint.openAI]: OpenAI,

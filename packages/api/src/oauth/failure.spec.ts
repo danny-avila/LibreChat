@@ -1,5 +1,5 @@
-import { buildOAuthFailureLog, getOAuthFailureMessage, isOAuthProtocolFailure } from './failure';
 import type { OAuthFailureRequest } from './failure';
+import { buildOAuthFailureLog, getOAuthFailureMessage, isOAuthProtocolFailure } from './failure';
 
 function createRequest(overrides: Partial<OAuthFailureRequest> = {}): OAuthFailureRequest {
   return {

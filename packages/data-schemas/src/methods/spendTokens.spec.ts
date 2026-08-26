@@ -1,12 +1,12 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { matchModelName, findMatchingPattern } from './test-helpers';
-import { createModels } from '~/models';
+import type { IBalance } from '..';
+import type { ITransaction } from '~/schema/transaction';
 import { createTxMethods, tokenValues, premiumTokenValues } from './tx';
+import { matchModelName, findMatchingPattern } from './test-helpers';
 import { createTransactionMethods } from './transaction';
 import { createSpendTokensMethods } from './spendTokens';
-import type { ITransaction } from '~/schema/transaction';
-import type { IBalance } from '..';
+import { createModels } from '~/models';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),

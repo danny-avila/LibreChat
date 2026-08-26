@@ -1,8 +1,8 @@
 import React from 'react';
 import '@testing-library/jest-dom/extend-expect';
+import { RecoilRoot } from 'recoil';
 import { render, fireEvent } from 'test/layout-test-utils';
 import CacheTTSSwitch from '../CacheTTSSwitch';
-import { RecoilRoot } from 'recoil';
 
 describe('CacheTTSSwitch', () => {
   /**

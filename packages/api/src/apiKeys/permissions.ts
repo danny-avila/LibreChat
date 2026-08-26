@@ -1,11 +1,11 @@
 import { Types } from 'mongoose';
+import { SYSTEM_TENANT_ID, getTenantId, permissionBitSupersets } from '@librechat/data-schemas';
 import {
   ResourceType,
   PrincipalType,
   PermissionBits,
   AccessRoleIds,
 } from 'librechat-data-provider';
-import { SYSTEM_TENANT_ID, getTenantId, permissionBitSupersets } from '@librechat/data-schemas';
 import type { PipelineStage, AnyBulkWriteOperation } from 'mongoose';
 
 export interface Principal {

@@ -1,12 +1,12 @@
 import mongoose, { Types } from 'mongoose';
+import { ErrorTypes } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { logger, createMethods, createModels } from '@librechat/data-schemas';
-import { ErrorTypes } from 'librechat-data-provider';
 import type { IUser, UserMethods } from '@librechat/data-schemas';
 import type { CommandStartedEvent } from 'mongodb';
 import type { FilterQuery } from 'mongoose';
-import { recordOpenIDUserLookup } from '~/app/metrics';
 import { findOpenIDUser, getOpenIdEmail, getOpenIdIssuer, normalizeOpenIdIssuer } from './openid';
+import { recordOpenIDUserLookup } from '~/app/metrics';
 
 function newId() {
   return new Types.ObjectId();

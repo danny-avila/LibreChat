@@ -1,7 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import type { TConversation, TMessage } from 'librechat-data-provider';
-import { useChatContext } from '~/Providers';
 import useMemoizedChatContext from '../useMemoizedChatContext';
+import { useChatContext } from '~/Providers';
 
 jest.mock('~/Providers', () => ({
   useChatContext: jest.fn(),

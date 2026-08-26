@@ -1,8 +1,8 @@
 import React from 'react';
 import '@testing-library/jest-dom/extend-expect';
-import { render, fireEvent } from 'test/layout-test-utils';
-import AutomaticPlaybackSwitch from '../AutomaticPlaybackSwitch';
 import { RecoilRoot } from 'recoil';
+import AutomaticPlaybackSwitch from '../AutomaticPlaybackSwitch';
+import { render, fireEvent } from 'test/layout-test-utils';
 
 describe('AutomaticPlaybackSwitch', () => {
   /**

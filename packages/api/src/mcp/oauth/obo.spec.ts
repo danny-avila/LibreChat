@@ -1,5 +1,5 @@
-import type { IUser } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
+import type { IUser } from '@librechat/data-schemas';
 import type { OboTokenResolver } from './obo';
 import { isOboConfigStillTrusted, resolveOboToken } from './obo';
 

@@ -1,6 +1,6 @@
 import React from 'react';
-import VectorStoreSidePanel from './VectorStore/VectorStoreSidePanel';
 import { Outlet, useNavigate, useParams } from 'react-router-dom';
+import VectorStoreSidePanel from './VectorStore/VectorStoreSidePanel';
 import { Button } from '../ui';
 
 const FileDashboardView = () => {

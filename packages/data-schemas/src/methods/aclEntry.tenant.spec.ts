@@ -2,9 +2,9 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { PrincipalType, PrincipalModel, PermissionBits } from 'librechat-data-provider';
 import type { IAclEntry } from '..';
+import { tenantStorage } from '../config/tenantContext';
 import { createAclEntryMethods } from './aclEntry';
 import { createModels } from '../models';
-import { tenantStorage } from '../config/tenantContext';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),

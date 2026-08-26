@@ -1,5 +1,5 @@
-import { getRefillEligibilityDate } from './balance';
 import type { RefillIntervalUnit } from './balance';
+import { getRefillEligibilityDate } from './balance';
 
 describe('getRefillEligibilityDate', () => {
   it.each([

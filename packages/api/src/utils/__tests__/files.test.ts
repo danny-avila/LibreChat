@@ -1,6 +1,6 @@
+import { Readable } from 'stream';
 import { createReadStream } from 'fs';
 import { readFile, stat } from 'fs/promises';
-import { Readable } from 'stream';
 import { readFileAsString, readFileAsBuffer, readJsonFile } from '../files';
 
 jest.mock('fs');

@@ -16,7 +16,6 @@
  */
 
 import { Keyv } from 'keyv';
-import { FlowStateManager, PENDING_STALE_MS } from '~/flow/manager';
 import type { Request, Response } from 'express';
 import {
   generateOAuthCsrfToken,
@@ -25,6 +24,7 @@ import {
   OAUTH_CSRF_COOKIE,
   validateOAuthCsrf,
 } from '~/oauth/csrf';
+import { FlowStateManager, PENDING_STALE_MS } from '~/flow/manager';
 import { MockKeyv } from './helpers/oauthTestServer';
 
 jest.mock('@librechat/data-schemas', () => ({

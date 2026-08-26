@@ -1,5 +1,5 @@
-import { formatToolContent } from '../parsers';
 import type * as t from '../types';
+import { formatToolContent } from '../parsers';
 
 describe('formatToolContent', () => {
   describe('unrecognized providers', () => {

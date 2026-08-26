@@ -2,13 +2,12 @@
  * @jest-environment @happy-dom/jest-environment
  */
 import React from 'react';
-import { Provider as JotaiProvider, createStore } from 'jotai';
 import { renderHook, act } from '@testing-library/react';
+import { Provider as JotaiProvider, createStore } from 'jotai';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-
-import { favoritesAtom } from '~/store';
-import useFavorites from '../useFavorites';
 import type { Favorite } from '~/store/favorites';
+import useFavorites from '../useFavorites';
+import { favoritesAtom } from '~/store';
 
 const mockMutateAsync = jest.fn();
 const mockShowToast = jest.fn();
