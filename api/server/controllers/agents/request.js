@@ -1921,10 +1921,21 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         const eventActorMayPause =
           isHITLEnabled(agentsConfig?.toolApproval) ||
           eventActorAgents.some(agentRequestsAskUserQuestion);
+        /** Skill primes are spliced into the message list ahead of the newest
+         * message, and a warm continuation forwards only that newest message —
+         * a checkpoint-restored actor would keep serving prime bodies baked in
+         * at its last cold start and never observe an edited or newly attached
+         * skill. Until the actor head carries a context fingerprint that
+         * forces a cold rebuild on skill changes, skill-bearing actors stay on
+         * the legacy path, which re-primes fresh bodies every turn. */
+        const eventActorHasSkillPrimes =
+          (client?.options?.agent?.alwaysApplySkillPrimes?.length ?? 0) > 0 ||
+          (client?.options?.agent?.manualSkillPrimes?.length ?? 0) > 0;
         const canUseEventActorFork =
           checkpointForksEnabled &&
           agentsConfig?.checkpointer?.type !== 'memory' &&
           !eventActorMayPause &&
+          !eventActorHasSkillPrimes &&
           agentEventDelivery?.event != null &&
           agentEventDelivery.expectedAction != null &&
           typeof eventTaskId === 'string' &&

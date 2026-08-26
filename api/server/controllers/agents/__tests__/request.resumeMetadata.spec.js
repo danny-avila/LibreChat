@@ -4274,6 +4274,18 @@ describe('ResumableAgentController resume metadata', () => {
       { eventDriven: { checkpointForks: true }, checkpointer: { type: 'memory' } },
       undefined,
     ],
+    [
+      'always-apply skill prime',
+      { toolDefinitions: [], alwaysApplySkillPrimes: [{ name: 'playbook', body: '# playbook' }] },
+      { eventDriven: { checkpointForks: true } },
+      undefined,
+    ],
+    [
+      'manual skill prime',
+      { toolDefinitions: [], manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }] },
+      { eventDriven: { checkpointForks: true } },
+      undefined,
+    ],
   ])(
     'keeps %s event actors on the existing resumable path',
     async (_label, agent, config, agentConfigs) => {
