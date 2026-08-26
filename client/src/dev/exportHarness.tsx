@@ -1,10 +1,9 @@
 /* eslint-disable i18next/no-literal-string */
 /**
- * 개발 전용 하네스 — 2026-08-26 사용자 피드백 2건 검증.
+ * 개발 전용 하네스 — PDF 내보내기(인쇄 문서) + 북마크 다이얼로그 검증.
  *
- * 1. PDF 내보내기 빈 화면: html-to-image 가 캡처 대상 노드의 인라인
- *    위치 스타일(fixed, -10000px)까지 복제해 빈 캔버스가 나오는 버그를
- *    구(舊)/신(新) 방식으로 나란히 캡처해 비교한다.
+ * 1. PDF 내보내기 (2026-08-26 재작성): 마크다운 렌더링·인용 [N] 파일명 치환·
+ *    본문 .md 스트립이 반영된 인쇄 문서 HTML 을 보이는 iframe 으로 렌더한다.
  * 2. 북마크 관리 다이얼로그: BookmarkMenu 에 새로 노출한 관리 다이얼로그
  *    (BookmarkPanel — 수정·삭제 버튼 포함)를 렌더해 확인한다.
  *
@@ -16,148 +15,80 @@ import { createRoot } from 'react-dom/client';
 import { RecoilRoot } from 'recoil';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { toCanvas } from 'html-to-image';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
 import { OGDialog, OGDialogTemplate } from '@librechat/client';
 import '../locales/i18n';
 import '../style.css';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
+import { getBklDisplayText } from '~/utils';
+import {
+  buildPrintHtml,
+  renderMarkdownToHtml,
+  replaceCitationsWithFilenames,
+} from '~/utils/exportPrint';
+import type { BklSource } from '~/components/Chat/Messages/Content/ChunkModal';
 
-// ── 1. PDF 캡처 검증 ─────────────────────────────────────────────────
+// ── 1. PDF 인쇄 문서 프리뷰 ─────────────────────────────────────────
 
-function buildConversationNode(): HTMLDivElement {
-  const container = document.createElement('div');
-  container.style.width = '794px';
-  container.style.boxSizing = 'border-box';
-  container.style.padding = '48px';
-  container.style.backgroundColor = '#ffffff';
-  container.style.color = '#111827';
-  container.style.fontFamily =
-    "'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', 'Segoe UI', system-ui, sans-serif";
-  container.style.fontSize = '14px';
-  container.style.lineHeight = '1.6';
+const SOURCES: BklSource[] = [
+  { document: [''], metadata: [{ name: '『도로점용허가신청서 보완1차.hwp.md』 p.2' }] },
+  { document: [''], metadata: [{ name: 'RE_ [법무법인(유한) 태평양] 접수증 송부.msg.md' }] },
+  { document: [''], metadata: [{ name: '(2024_05_11)_지엘옥정_감사제보 별지.docx.md' }] },
+];
 
-  const title = document.createElement('h1');
-  title.textContent = '계약서 검토 대화 (PDF 내보내기 테스트)';
-  title.style.fontSize = '22px';
-  container.appendChild(title);
+const ASSISTANT_MD = `신세계건설의 경기도 양주시 관련 자료는 주로 **'양주옥정 물류센터 신축공사'** 사업 문서들이 다수 확인됩니다.
 
-  for (const [sender, text] of [
-    ['사용자', '손해배상 조항을 검토해줘.'],
-    [
-      'BKL AI',
-      '계약서 제5조에 따르면 [1] 손해배상 책임이 발생합니다. 위약벌 조항과의 관계는 [2]를 참고하세요.',
-    ],
-  ]) {
-    const block = document.createElement('div');
-    block.style.marginBottom = '20px';
-    const s = document.createElement('div');
-    s.textContent = sender;
-    s.style.fontWeight = '600';
-    block.appendChild(s);
-    const b = document.createElement('div');
-    b.textContent = text;
-    block.appendChild(b);
-    container.appendChild(block);
-  }
-  return container;
-}
+## 1. 양주옥정 물류센터 신축공사 관련 주요 자료
 
-function nonWhiteRatio(canvas: HTMLCanvasElement): number {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    return -1;
-  }
-  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  let nonWhite = 0;
-  const total = data.length / 4;
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i] < 250 || data[i + 1] < 250 || data[i + 2] < 250) {
-      nonWhite += 1;
-    }
-  }
-  return nonWhite / total;
-}
+### 가. 도로점용허가 신청서 및 사업계획서
+- **내용**: 신세계건설이 공사장 진출입로 조성을 위해 양주시에 제출한 서류입니다 [[1]](https://km.example/1).
+- **행정처분**: 반려처분 취소 소송 제기 사실이 기재되어 있습니다 [2, 3].
 
-/** 구 방식: 캡처 대상 노드 자체에 fixed + (-10000px) 인라인 스타일 */
-async function captureOldWay(): Promise<HTMLCanvasElement> {
-  const node = buildConversationNode();
-  node.style.position = 'fixed';
-  node.style.top = '-10000px';
-  node.style.left = '-10000px';
-  document.body.appendChild(node);
-  try {
-    return await toCanvas(node, { backgroundColor: '#ffffff', pixelRatio: 1 });
-  } finally {
-    document.body.removeChild(node);
-  }
-}
+## 검색 문서 리스트
 
-/** 신 방식: 위치 스타일은 래퍼에만 — 캡처 대상 노드는 깨끗하게 유지 */
-async function captureNewWay(): Promise<HTMLCanvasElement> {
-  const node = buildConversationNode();
-  const wrapper = document.createElement('div');
-  wrapper.style.position = 'fixed';
-  wrapper.style.top = '-10000px';
-  wrapper.style.left = '-10000px';
-  wrapper.appendChild(node);
-  document.body.appendChild(wrapper);
-  try {
-    return await toCanvas(node, { backgroundColor: '#ffffff', pixelRatio: 1 });
-  } finally {
-    document.body.removeChild(wrapper);
-  }
-}
+| # | 날짜 | 파일명 | 인용 |
+|---|------|--------|------|
+| 1 | 2022년 10월 | 『도로점용허가신청서 보완1차.hwp.md』 | ○ |
+| 2 | 2024년 6월 | RE_ [법무법인(유한) 태평양] 접수증 송부.msg.md | ○ |
+| 3 | 2024년 5월 | (2024_05_11)_지엘옥정_감사제보 별지.docx.md | ○ |
+`;
 
-function PdfCaptureTest() {
-  const oldRef = useRef<HTMLDivElement>(null);
-  const newRef = useRef<HTMLDivElement>(null);
-  const [result, setResult] = useState('실행 중…');
-  const ran = useRef(false);
-
+function PrintPreview() {
+  const [html, setHtml] = useState('');
   useEffect(() => {
-    if (ran.current) {
-      return;
-    }
-    ran.current = true;
     (async () => {
-      const oldCanvas = await captureOldWay();
-      const newCanvas = await captureNewWay();
-      const oldRatio = nonWhiteRatio(oldCanvas);
-      const newRatio = nonWhiteRatio(newCanvas);
-      for (const c of [oldCanvas, newCanvas]) {
-        c.style.width = '397px';
-        c.style.border = '1px solid #d1d5db';
-      }
-      oldRef.current?.appendChild(oldCanvas);
-      newRef.current?.appendChild(newCanvas);
-      const oldBlank = oldRatio < 0.001;
-      const newHasContent = newRatio > 0.005;
-      setResult(
-        `구 방식 non-white ${(oldRatio * 100).toFixed(3)}% (${oldBlank ? '빈 화면 재현됨' : '재현 안 됨'})` +
-          ` / 신 방식 non-white ${(newRatio * 100).toFixed(3)}% (${newHasContent ? '내용 있음' : '빈 화면'})` +
-          ` → ${oldBlank && newHasContent ? 'PASS' : 'FAIL'}`,
+      // 실제 exportPDF 경로와 동일한 변환 순서: 표시 텍스트 → 인용 치환 → 마크다운 렌더
+      const userText = getBklDisplayText('신세계건설 양주시 관련 자료가 있나?');
+      const asstText = replaceCitationsWithFilenames(getBklDisplayText(ASSISTANT_MD), SOURCES);
+      const blocks = [
+        { sender: 'User', isUser: true, html: await renderMarkdownToHtml(userText) },
+        { sender: 'BKL DB AI', isUser: false, html: await renderMarkdownToHtml(asstText) },
+      ];
+      setHtml(
+        buildPrintHtml({
+          title: '신세계건설 양주시 자료 검색',
+          documentTitle: '내보내기-미리보기',
+          metaLines: ['대화 ID: harness-demo', `내보낸 시각: ${new Date().toLocaleString('ko-KR')}`],
+          blocks,
+        }),
       );
     })();
   }, []);
 
   return (
     <section className="mb-8">
-      <h2 className="mb-2 text-base font-semibold">1. PDF 캡처 (구 vs 신)</h2>
-      <div id="pdf-test-result" className="mb-3 font-mono text-sm">
-        {result}
+      <h2 className="mb-2 text-base font-semibold">
+        1. PDF 인쇄 문서 프리뷰 (마크다운 렌더 · 인용 파일명 치환 · .md 스트립)
+      </h2>
+      <div className="mb-2 font-mono text-xs text-text-secondary">
+        기대: 헤딩·표가 실제 렌더링 / [[1]](url)·[2, 3] → 『파일명』 / 표의 .hwp.md → .hwp
       </div>
-      <div className="flex gap-4">
-        <div>
-          <div className="mb-1 font-mono text-xs">구 방식 (fixed -10000px 를 노드에 직접)</div>
-          <div ref={oldRef} />
-        </div>
-        <div>
-          <div className="mb-1 font-mono text-xs">신 방식 (위치 스타일은 래퍼에만)</div>
-          <div ref={newRef} />
-        </div>
-      </div>
+      <iframe
+        title="print-preview"
+        srcDoc={html}
+        style={{ width: 794, height: 720, border: '1px solid #d1d5db', background: '#fff' }}
+      />
     </section>
   );
 }
@@ -203,7 +134,7 @@ function Harness() {
   return (
     <div className="min-h-screen bg-surface-secondary p-6 text-text-primary">
       <h1 className="mb-4 text-lg font-semibold">내보내기·북마크 수정 검증 하네스</h1>
-      <PdfCaptureTest />
+      <PrintPreview />
       <BookmarkManageDialogPreview />
     </div>
   );

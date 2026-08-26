@@ -117,7 +117,7 @@ export type MentionedFile = {
  * (window.__bklSources) → localStorage(bkl_src_*, BklCitation 이 쓰는 것과
  * 동일 키) 순으로 폴백한다. API 미배포·재접속 직후에도 패널이 차도록.
  */
-function sourcesForMessage(
+export function sourcesForMessage(
   apiByMessage: Map<string, BklSource[]>,
   messageId: string,
 ): BklSource[] | null {

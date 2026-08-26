@@ -1,7 +1,5 @@
-import { jsPDF } from 'jspdf';
 import download from 'downloadjs';
 import { useCallback } from 'react';
-import { toCanvas } from 'html-to-image';
 import { useParams } from 'react-router-dom';
 import exportFromJSON from 'export-from-json';
 import { useQueryClient } from '@tanstack/react-query';
@@ -21,7 +19,17 @@ import type {
 } from 'librechat-data-provider';
 import useBuildMessageTree from '~/hooks/Messages/useBuildMessageTree';
 import { useScreenshot } from '~/hooks/ScreenshotContext';
+import { useConversationSources } from '~/data-provider/Sources';
 import { cleanupPreset, getBklDisplayText } from '~/utils';
+import {
+  buildPrintHtml,
+  printHtmlDocument,
+  renderMarkdownToHtml,
+  replaceCitationsWithFilenames,
+} from '~/utils/exportPrint';
+import type { PrintBlock } from '~/utils/exportPrint';
+import { sourcesForMessage } from '~/components/Chat/BklPanel/useConversationCitations';
+import type { BklSource } from '~/components/Chat/Messages/Content/ChunkModal';
 
 export default function useExportConversation({
   conversation,
@@ -41,6 +49,8 @@ export default function useExportConversation({
   const queryClient = useQueryClient();
   const { captureScreenshot } = useScreenshot();
   const buildMessageTree = useBuildMessageTree();
+  // PDF 인용 치환용 — 답변별 저장 출처(bkl_chat_sources). 실패해도 내보내기는 진행.
+  const sourcesQuery = useConversationSources(conversation?.conversationId);
 
   const { conversationId: paramId } = useParams();
 
@@ -385,84 +395,11 @@ export default function useExportConversation({
   };
 
   /**
-   * Build an off-screen DOM representation of the conversation for PDF rendering.
-   * Korean glyphs are rendered by the browser's own fonts and captured to a raster
-   * image (see `exportPDF`), so no Hangul-capable font binary needs to be embedded.
+   * PDF 내보내기 (2026-08-26 재작성) — 래스터 캡처(jsPDF+html-to-image, 2페이지
+   * 14MB) 대신 마크다운을 실제 렌더링한 인쇄 문서를 만들어 브라우저 네이티브
+   * 인쇄 대화상자(→ PDF 저장)를 띄운다. 벡터 텍스트라 용량이 작고 선택·검색이
+   * 되며, 답변의 인용 [N] 은 저장된 출처(bkl_chat_sources)로 실제 파일명 치환.
    */
-  const buildPDFNode = (messages: (Partial<TMessage> | undefined)[]): HTMLDivElement => {
-    // 주의: 이 노드에는 위치 지정 스타일(position/top/left)을 넣으면 안 된다.
-    // html-to-image 가 노드를 복제할 때 인라인 스타일까지 복사하므로,
-    // fixed + (-10000px) 가 있으면 복제본이 캡처 뷰포트 밖으로 밀려나
-    // 흰 페이지만 찍힌다 (PDF 빈 화면 버그의 원인). 화면 밖 배치는
-    // exportPDF 의 래퍼가 담당한다.
-    const container = document.createElement('div');
-    container.style.width = '794px';
-    container.style.boxSizing = 'border-box';
-    container.style.padding = '48px';
-    container.style.backgroundColor = '#ffffff';
-    container.style.color = '#111827';
-    container.style.fontFamily =
-      "'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', 'Segoe UI', system-ui, sans-serif";
-    container.style.fontSize = '14px';
-    container.style.lineHeight = '1.6';
-
-    const title = document.createElement('h1');
-    title.textContent = conversation?.title ?? 'Conversation';
-    title.style.fontSize = '22px';
-    title.style.fontWeight = '700';
-    title.style.margin = '0 0 12px';
-    container.appendChild(title);
-
-    const meta = document.createElement('div');
-    meta.style.fontSize = '12px';
-    meta.style.color = '#6b7280';
-    meta.style.marginBottom = '24px';
-    meta.style.paddingBottom = '16px';
-    meta.style.borderBottom = '1px solid #e5e7eb';
-    const metaLines = [
-      `conversationId: ${conversation?.conversationId ?? ''}`,
-      `endpoint: ${conversation?.endpoint ?? ''}`,
-      `exportAt: ${new Date().toString()}`,
-    ];
-    for (const line of metaLines) {
-      const row = document.createElement('div');
-      row.textContent = line;
-      meta.appendChild(row);
-    }
-    container.appendChild(meta);
-
-    for (const message of messages) {
-      if (!message) {
-        continue;
-      }
-      const text = getDisplayMessageText(message);
-      if (text.length === 0) {
-        continue;
-      }
-      const isUser = message.isCreatedByUser === true;
-
-      const block = document.createElement('div');
-      block.style.marginBottom = '20px';
-
-      const sender = document.createElement('div');
-      sender.textContent = getDisplaySender(message);
-      sender.style.fontWeight = '600';
-      sender.style.marginBottom = '4px';
-      sender.style.color = isUser ? '#1d4ed8' : '#047857';
-      block.appendChild(sender);
-
-      const body = document.createElement('div');
-      body.textContent = text;
-      body.style.whiteSpace = 'pre-wrap';
-      body.style.wordBreak = 'break-word';
-      block.appendChild(body);
-
-      container.appendChild(block);
-    }
-
-    return container;
-  };
-
   const exportPDF = async () => {
     const messages = await buildMessageTree({
       messageId: conversation?.conversationId,
@@ -473,46 +410,43 @@ export default function useExportConversation({
     });
 
     const list = Array.isArray(messages) ? messages : [messages];
-    const node = buildPDFNode(list);
-    // 화면 밖 배치는 래퍼가 담당 — 캡처 대상(node)에는 위치 스타일이 없어
-    // 복제본이 캡처 영역 안에 정상적으로 그려진다.
-    const wrapper = document.createElement('div');
-    wrapper.style.position = 'fixed';
-    wrapper.style.top = '-10000px';
-    wrapper.style.left = '-10000px';
-    wrapper.appendChild(node);
-    document.body.appendChild(wrapper);
 
-    try {
-      // 캔버스 크기 한도(한 변 ~32k px)를 넘으면 toDataURL 이 빈 이미지를
-      // 반환한다 — 긴 대화는 배율을 낮춰 한도 안에 들어오게 한다.
-      const nodeHeight = Math.max(node.scrollHeight, 1);
-      const pixelRatio = Math.min(2, Math.max(0.5, 30000 / nodeHeight));
-      const canvas = await toCanvas(node, { backgroundColor: '#ffffff', pixelRatio });
-      const imgData = canvas.toDataURL('image/png');
-
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      let heightLeft = imgHeight;
-      let position = 0;
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-
-      while (heightLeft > 0) {
-        position -= pageHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-      }
-
-      pdf.save(`${filename}.pdf`);
-    } finally {
-      document.body.removeChild(wrapper);
+    const apiByMessage = new Map<string, BklSource[]>();
+    for (const row of sourcesQuery.data?.messages ?? []) {
+      apiByMessage.set(row.message_id, (row.sources ?? []) as BklSource[]);
     }
+
+    const blocks: PrintBlock[] = [];
+    for (const message of list) {
+      if (!message) {
+        continue;
+      }
+      let text = getDisplayMessageText(message);
+      if (text.length === 0) {
+        continue;
+      }
+      const isUser = message.isCreatedByUser === true;
+      if (!isUser && message.messageId) {
+        const sources = sourcesForMessage(apiByMessage, message.messageId);
+        text = replaceCitationsWithFilenames(text, sources);
+      }
+      blocks.push({
+        sender: getDisplaySender(message),
+        isUser,
+        html: await renderMarkdownToHtml(text),
+      });
+    }
+
+    const html = buildPrintHtml({
+      title: conversation?.title ?? 'Conversation',
+      documentTitle: filename,
+      metaLines: [
+        `대화 ID: ${conversation?.conversationId ?? ''}`,
+        `내보낸 시각: ${new Date().toLocaleString('ko-KR')}`,
+      ],
+      blocks,
+    });
+    await printHtmlDocument(html);
   };
 
   const exportConversation = () => {
