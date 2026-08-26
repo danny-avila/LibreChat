@@ -126,6 +126,7 @@ if (typeof (global as { PointerEvent?: unknown }).PointerEvent === 'undefined') 
 import type { TMessage } from 'librechat-data-provider';
 import MessageNav, {
   buildEntry,
+  previewTextFor,
   buildSteerEntry,
   buildFallbackEntry,
   magnifyFalloff,
@@ -2213,12 +2214,66 @@ describe('MessageNav', () => {
       );
     });
 
+    it('reads the body, not the row chrome, so a pending row stays pending', () => {
+      // An assistant row renders a VISIBLE h2 naming the sender before its
+      // first token lands. Reading the whole row hands back that name, which
+      // both invents a preview and masks the pending state entirely.
+      const node = document.createElement('div');
+      node.className = 'message-render';
+      const header = document.createElement('h2');
+      header.textContent = 'Claude';
+      const body = document.createElement('div');
+      body.setAttribute('data-testid', 'message-body');
+      node.append(header, body);
+
+      const entry = buildEntry(
+        'a',
+        asTMessage(buildMessage({ messageId: 'a', text: '', content: [] })),
+        node,
+      );
+      expect(entry.preview).toBe('');
+      expect(previewTextFor(entry, (k: string) => k, true)).toBe('com_ui_generating');
+    });
+
+    it('does not call the user turn generating while the reply has yet to mount', () => {
+      // Between sending and the response's row mounting, the user's own turn is
+      // the last entry; a submission in flight is not evidence that it is the
+      // thing being generated.
+      mockUseMessagesSubmission.mockReturnValue({ isSubmitting: true });
+      const { container } = renderNav([
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        /** An image-only turn the reader just sent: no text part at all. */
+        buildMessage({ messageId: 'c', text: '', content: [], isCreatedByUser: true }),
+      ]);
+      const last = container.querySelector('[data-msg-id="c"]');
+      expect(last?.getAttribute('aria-label')).toContain('com_ui_message_nav_no_preview');
+      expect(last?.getAttribute('aria-label')).not.toContain('com_ui_generating');
+    });
+
     it('reads the rendered row when the message itself carries no text part', () => {
       // A tool card still says something on screen; that is a better preview
       // than any placeholder.
       const node = document.createElement('div');
       node.className = 'message-render';
       node.textContent = 'Searched the web';
+      const entry = buildEntry(
+        'a',
+        asTMessage(buildMessage({ messageId: 'a', text: '', content: [] })),
+        node,
+      );
+      expect(entry.preview).toBe('Searched the web');
+    });
+
+    it('prefers the body over the header when the row has both', () => {
+      const node = document.createElement('div');
+      node.className = 'message-render';
+      const header = document.createElement('h2');
+      header.textContent = 'Claude';
+      const body = document.createElement('div');
+      body.setAttribute('data-testid', 'message-body');
+      body.textContent = 'Searched the web';
+      node.append(header, body);
       const entry = buildEntry(
         'a',
         asTMessage(buildMessage({ messageId: 'a', text: '', content: [] })),
@@ -2331,6 +2386,44 @@ describe('MessageNav', () => {
         fireEvent.keyDown(column, { key: 'ArrowDown' });
       });
       expect(document.activeElement).toBe(ribs[ribs.length - 1]);
+    });
+
+    it('redoes the hit test when the rail scrolls under a stationary pointer', () => {
+      // Wheeling an overflowing rail moves the ribs without moving the pointer.
+      // A cached content-space coordinate goes stale the moment it does, so the
+      // preview — and the id a click in the gaps follows — stays on the rib that
+      // used to be there.
+      const messages = Array.from({ length: 10 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}` }),
+      );
+      const restoreLayout = stubRibLayout(messages.map((m) => m.messageId));
+      const { container } = renderNav(messages);
+      const column = getColumn(container);
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 40, height: 40 }) as DOMRect;
+      Object.defineProperty(column, 'scrollTop', { value: 0, writable: true, configurable: true });
+
+      act(() => {
+        fireEvent.pointerMove(column, { pointerId: 1, clientY: 15 });
+        jest.advanceTimersByTime(80);
+      });
+      expect(document.body.querySelector('[role="tooltip"]')).toHaveTextContent('message 1');
+
+      /** The pointer has not moved; the rail has scrolled two ribs under it. */
+      column.scrollTop = 24;
+      act(() => {
+        fireEvent.scroll(column);
+        jest.advanceTimersByTime(80);
+      });
+      expect(document.body.querySelector('[role="tooltip"]')).toHaveTextContent('message 3');
+
+      /** And a click in the gaps follows the rib now under the pointer. */
+      const getById = jest.spyOn(document, 'getElementById');
+      act(() => {
+        fireEvent.click(column);
+      });
+      expect(getById.mock.calls.map((c) => c[0])).toContain('m-3');
+      getById.mockRestore();
+      restoreLayout();
     });
 
     it('holds the rail still while the pointer is working it, and follows again after', () => {

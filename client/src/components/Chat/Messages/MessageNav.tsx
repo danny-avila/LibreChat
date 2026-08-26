@@ -44,18 +44,37 @@ export function extractPreviewFromContent(content?: TMessageContentParts[]): str
   return '';
 }
 
+const PREVIEW_LIMIT = 80;
+
+function truncatePreview(text: string): string {
+  return text.slice(0, PREVIEW_LIMIT) + (text.length > PREVIEW_LIMIT ? '...' : '');
+}
+
+/** The row's message body, without its header or footer. An assistant row
+ *  renders a VISIBLE `h2` naming the sender, so reading the whole row hands
+ *  back "Claude" for a response that has not produced a token yet — chrome
+ *  masquerading as content, and worse, masking the pending state entirely. */
+const MESSAGE_BODY_SELECTOR = '[data-testid="message-body"]';
+
+/** What a row actually says on screen, for entries whose message carries no
+ *  text part of its own. */
+function rowText(node: HTMLElement): string {
+  const body = node.querySelector(MESSAGE_BODY_SELECTOR);
+  return ((body ?? node).textContent ?? '').trim();
+}
+
 export function buildEntry(id: string, msg: TMessage, node?: HTMLElement): MessageEntry {
   const raw = msg.text?.trim() ? msg.text : extractPreviewFromContent(msg.content);
   const trimmed = raw.trim();
   /** Image-, tool-call- and reasoning-only messages carry no text part at all,
-   *  so the message alone yields nothing to say. Their rendered row does say
+   *  so the message alone yields nothing to say. Their rendered body does say
    *  something, and reading it is what keeps a settled message from being
    *  mistaken for one that is still generating. */
-  const preview = trimmed !== '' ? trimmed : (node?.textContent ?? '').trim();
+  const preview = trimmed === '' && node ? rowText(node) : trimmed;
   return {
     id,
     isUser: !!msg.isCreatedByUser,
-    preview: preview.slice(0, 80) + (preview.length > 80 ? '...' : ''),
+    preview: truncatePreview(preview),
   };
 }
 
@@ -83,11 +102,10 @@ function containsEntryNode(node: HTMLElement): boolean {
 
 export function buildFallbackEntry(node: HTMLElement, id: string): MessageEntry {
   const isUser = node.querySelector(USER_TURN_SELECTOR) != null;
-  const trimmed = (node.textContent ?? '').trim();
   return {
     id,
     isUser,
-    preview: trimmed.slice(0, 80) + (trimmed.length > 80 ? '...' : ''),
+    preview: truncatePreview(rowText(node)),
   };
 }
 
@@ -102,7 +120,7 @@ export function buildSteerEntry(node: HTMLElement, id: string): MessageEntry {
   return {
     id,
     isUser: true,
-    preview: raw.slice(0, 80) + (raw.length > 80 ? '...' : ''),
+    preview: truncatePreview(raw),
   };
 }
 
@@ -391,7 +409,12 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   >([]);
   const measuredCountRef = useRef(-1);
   const measuredCurrentRef = useRef<string | null | undefined>(undefined);
-  const pointerYRef = useRef<number | null>(null);
+  /** The pointer's VIEWPORT y, converted to the column's content space only at
+   *  the moment it is used. Caching the converted value goes stale the instant
+   *  the rail is wheel-scrolled under a stationary pointer, leaving the preview
+   *  — and the id a click in the gaps follows — on the rib that used to be
+   *  there. */
+  const pointerClientYRef = useRef<number | null>(null);
   const magRafRef = useRef<number | null>(null);
   const reducedMotionRef = useRef(false);
   const focusedIdRef = useRef<string | null>(null);
@@ -764,7 +787,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         window.removeEventListener('blur', onBlur);
         dragCleanupRef.current = null;
         isDraggingRef.current = false;
-        if (pointerYRef.current == null) {
+        if (pointerClientYRef.current == null) {
           interactingRef.current = false;
         }
         if (wasDragging) {
@@ -948,13 +971,14 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     ensureRibLayout();
     const col = columnRef.current;
     const layout = ribLayoutRef.current;
-    const py = pointerYRef.current;
-    if (!col || py == null || layout.length === 0) {
+    const clientY = pointerClientYRef.current;
+    if (!col || clientY == null || layout.length === 0) {
       return;
     }
     const reduce = reducedMotionRef.current;
     const colRect = col.getBoundingClientRect();
     const scrollTop = col.scrollTop;
+    const py = clientY - colRect.top + scrollTop;
     let nearestId: string | null = null;
     let nearestD = Number.POSITIVE_INFINITY;
     let nearestCenter = 0;
@@ -1004,9 +1028,8 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (!col) {
         return;
       }
-      const rect = col.getBoundingClientRect();
       interactingRef.current = true;
-      pointerYRef.current = e.clientY - rect.top + col.scrollTop;
+      pointerClientYRef.current = e.clientY;
       if (magRafRef.current == null) {
         magRafRef.current = requestAnimationFrame(applyMagnify);
       }
@@ -1014,8 +1037,20 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     [applyMagnify],
   );
 
+  /** Wheeling the rail moves the ribs without moving the pointer, so the hit
+   *  test has to be redone from the same viewport coordinate against the new
+   *  scroll offset. */
+  const handleColumnScroll = useCallback(() => {
+    if (pointerClientYRef.current == null) {
+      return;
+    }
+    if (magRafRef.current == null) {
+      magRafRef.current = requestAnimationFrame(applyMagnify);
+    }
+  }, [applyMagnify]);
+
   const handlePointerLeave = useCallback(() => {
-    pointerYRef.current = null;
+    pointerClientYRef.current = null;
     if (!isDraggingRef.current) {
       interactingRef.current = false;
     }
@@ -1037,7 +1072,8 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       }
       setFocusedRibId(id);
       interactingRef.current = true;
-      pointerYRef.current = target.offsetTop + target.offsetHeight / 2;
+      const rect = target.getBoundingClientRect();
+      pointerClientYRef.current = rect.top + rect.height / 2;
       if (magRafRef.current == null) {
         magRafRef.current = requestAnimationFrame(applyMagnify);
       }
@@ -1527,10 +1563,12 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     return null;
   }
 
-  /** Only the tail of a live submission is actually generating. Every other
-   *  entry with no preview is a settled message whose content simply has no
-   *  text part. */
-  const pendingId = isSubmitting ? messageEntries[messageEntries.length - 1].id : null;
+  /** Only a response at the tail of a live submission is actually generating.
+   *  Every other entry with no preview is a settled message whose content
+   *  simply has no text part — including the user's own turn, which is what
+   *  sits last for the frames between sending and the reply's row mounting. */
+  const lastEntry = messageEntries[messageEntries.length - 1];
+  const pendingId = isSubmitting && !lastEntry.isUser ? lastEntry.id : null;
 
   const tipEntry = tip ? entryById.get(tip.id) : undefined;
   let tipText = '';
@@ -1603,6 +1641,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         onBlur={handleColumnBlur}
         onClick={handleColumnClick}
         onKeyDown={handleColumnKeyDown}
+        onScroll={handleColumnScroll}
         data-message-nav-column=""
         className="relative flex min-h-0 w-14 cursor-pointer touch-none select-none flex-col items-stretch gap-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
