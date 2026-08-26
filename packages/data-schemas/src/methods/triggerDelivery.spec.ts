@@ -316,6 +316,7 @@ describe('agent trigger delivery methods', () => {
         attempt: attempt!,
         result,
         settledAt: coalesceUntil,
+        awaitTerminalHandling: true,
         handling: {
           status: 'started',
           conversationId: 'child-thread',
@@ -339,6 +340,11 @@ describe('agent trigger delivery methods', () => {
     expect(receipts).toHaveLength(4);
     expect(receipts.every((receipt) => receipt?.status === 'succeeded')).toBe(true);
     expect(receipts.every((receipt) => receipt?.handling?.status === 'started')).toBe(true);
+    expect(
+      (
+        await Delivery.find({ _id: { $in: queued.map(({ delivery }) => delivery.id) } }).lean()
+      ).every((row) => row.expiresAt == null),
+    ).toBe(true);
 
     const later = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({
@@ -402,6 +408,39 @@ describe('agent trigger delivery methods', () => {
         .filter((row) => batchIds.has(String(row._id)))
         .every((row) => row.handling?.status === 'completed_no_action'),
     ).toBe(true);
+    expect(
+      terminal
+        .filter((row) => batchIds.has(String(row._id)))
+        .every(
+          (row) =>
+            row.expiresAt?.getTime() === coalesceUntil.getTime() + 1_000 + 90 * 24 * 60 * 60_000,
+        ),
+    ).toBe(true);
+  });
+
+  it('promotes mailbox semantics when an enabled delivery joins an unmarked batch root', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const coalesceUntil = new Date(Date.now() + 60_000);
+    const shared = {
+      user,
+      orderingKey: 'mixed-rollout-batch',
+      coalesceKey: 'trigger_batch_mixed_rollout',
+      coalesceFrom: new Date(coalesceUntil.getTime() - 750),
+      coalesceUntil,
+      availableAt: coalesceUntil,
+      envelopeBytes: 128,
+    };
+    const first = await methods.enqueueAgentTriggerDelivery(enqueueInput(shared));
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ ...shared, awaitTerminalHandling: true }),
+    );
+
+    const root = await Delivery.findById(first.delivery.id).lean();
+    expect(root).toMatchObject({
+      status: 'pending',
+      awaitTerminalHandling: true,
+      batchSize: 2,
+    });
   });
 
   it('recovers batch receipts and lane cleanup after root settlement was interrupted', async () => {
@@ -1257,6 +1296,7 @@ describe('agent trigger delivery methods', () => {
         generationCreatedAt,
       },
       settledAt: new Date(generationCreatedAt),
+      awaitTerminalHandling: true,
       handling: {
         status: 'started',
         conversationId: 'actor-thread',
@@ -1281,6 +1321,9 @@ describe('agent trigger delivery methods', () => {
       availableAt: START,
       reason: 'active_handling',
     });
+    await expect(Delivery.findById(first.delivery.id).lean()).resolves.not.toHaveProperty(
+      'expiresAt',
+    );
 
     await expect(
       methods.settleAgentTriggerHandlingOutcome({
@@ -1292,6 +1335,9 @@ describe('agent trigger delivery methods', () => {
         action: { toolName: 'submit_action' },
       }),
     ).resolves.toBe(true);
+    await expect(Delivery.findById(first.delivery.id).lean()).resolves.toMatchObject({
+      expiresAt: new Date(generationCreatedAt + 1_000 + 90 * 24 * 60 * 60_000),
+    });
     await expect(methods.findEarlierAgentTriggerDelivery(secondClaim!)).resolves.toBeNull();
   });
 
@@ -1325,6 +1371,7 @@ describe('agent trigger delivery methods', () => {
         generationCreatedAt,
       },
       settledAt: new Date(generationCreatedAt),
+      awaitTerminalHandling: true,
       handling: {
         status: 'started',
         conversationId: 'actor-thread',

@@ -106,7 +106,9 @@ describe('createAgentTriggerDeliveryEngine', () => {
       },
       input: 'Take the turn.',
     });
-    const store = storeWith({ claimNext: jest.fn(async () => delivery({ envelope })) });
+    const store = storeWith({
+      claimNext: jest.fn(async () => delivery({ envelope, awaitTerminalHandling: true })),
+    });
     const result: AgentTriggerExecutionResult = {
       mode: 'continue',
       status: 'started',
@@ -123,6 +125,7 @@ describe('createAgentTriggerDeliveryEngine', () => {
 
     expect(store.complete).toHaveBeenCalledWith(
       expect.objectContaining({
+        awaitTerminalHandling: true,
         handling: {
           status: 'started',
           conversationId: 'conversation-1',

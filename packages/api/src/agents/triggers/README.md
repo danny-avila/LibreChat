@@ -180,7 +180,8 @@ enabled, a bound actor's next delivery stays queued after the current delivery r
 success and does not dispatch until that child generation records `applied`,
 `completed_no_action`, `failed`, or `cancelled`. Different bindings remain independent and can run
 in parallel. Existing coalesced batches occupy one mailbox position and retain each member's
-individual receipt.
+individual receipt. An active mailbox record does not receive its normal success TTL; the 90-day
+retention window begins only after terminal handling is recorded.
 
 ### Coalescing observational child events
 

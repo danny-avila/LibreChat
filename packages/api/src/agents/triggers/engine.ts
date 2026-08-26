@@ -98,6 +98,7 @@ export interface AgentTriggerDeliveryRecord {
   batchMemberIds?: Array<{ toString(): string } | string>;
   batchRootId?: { toString(): string } | string;
   batchMembersSettledAt?: Date;
+  awaitTerminalHandling?: boolean;
   leaseBy?: string;
   leaseUntil?: Date;
   lastError?: AgentTriggerDeliveryFailure;
@@ -159,6 +160,7 @@ export interface AgentTriggerDeliveryStore {
     result: AgentTriggerExecutionResult;
     settledAt: Date;
     handling?: AgentTriggerDeliveryRecord['handling'];
+    awaitTerminalHandling?: true;
   }) => Promise<boolean>;
   retry: (input: {
     id: string;
@@ -510,6 +512,7 @@ export function createAgentTriggerDeliveryEngine(
           attempt,
           result,
           settledAt,
+          ...(delivery.awaitTerminalHandling === true && { awaitTerminalHandling: true }),
           ...(handling != null && { handling }),
         });
       } catch (error) {
