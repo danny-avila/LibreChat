@@ -362,6 +362,7 @@ describe('retention helpers', () => {
         tenantId: 'request-tenant',
         user: { id: 'user-1' },
         body: { conversationId: 'convo-1' },
+        config: {},
       })?.storageScope,
     ).toEqual(expect.objectContaining({ userId: 'user-1', tenantId: 'request-tenant' }));
 
