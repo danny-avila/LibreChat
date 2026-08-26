@@ -295,6 +295,7 @@ const SUBAGENT_ACTIVITY_PROJECTION_SOURCE_BYTE_LIMIT = 64 * 1024;
  * most four 256 KiB private transcripts during a rolling deployment.
  */
 export const SUBAGENT_TRANSCRIPT_PAGE_LIMIT: number = 4;
+const SUBAGENT_ACTIVITY_SOURCE_CANDIDATE_LIMIT = SUBAGENT_TRANSCRIPT_PAGE_LIMIT * 2;
 
 /**
  * Ordinary persisted message content is the authoritative refresh source when
@@ -1670,6 +1671,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         },
         subagentTask: 1,
       };
+      const sourceMetadataProjection = {
+        _subagentTranscriptSourceBytes: transcriptJsonBytes,
+        _subagentTranscriptSourceIsString: transcriptIsString,
+        _subagentActivityProjectionSourceBytes: activityProjectionJsonBytes,
+        _subagentActivityProjectionSourceIsString: activityProjectionIsString,
+      };
       const [projection] = await Message.aggregate<{
         messages: SubagentThreadViewMessageRecord[];
         selectedMessages: SubagentThreadViewMessageRecord[];
@@ -1686,14 +1693,6 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           },
         },
         { $sort: { createdAt: -1, _id: -1 } },
-        {
-          $addFields: {
-            _subagentTranscriptSourceBytes: transcriptJsonBytes,
-            _subagentTranscriptSourceIsString: transcriptIsString,
-            _subagentActivityProjectionSourceBytes: activityProjectionJsonBytes,
-            _subagentActivityProjectionSourceIsString: activityProjectionIsString,
-          },
-        },
         {
           $facet: {
             messages: [{ $limit: input.limit }, { $project: boundedMessageProjection }],
@@ -1721,6 +1720,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                     {
                       $match: {
                         messageId: `${input.selectedTaskId}:assistant`,
+                      },
+                    },
+                    { $limit: 1 },
+                    { $addFields: sourceMetadataProjection },
+                    {
+                      $match: {
                         $or: [
                           {
                             'subagentActivityProjection.taskId': input.selectedTaskId,
@@ -1740,7 +1745,6 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                         ],
                       },
                     },
-                    { $limit: 1 },
                     {
                       $project: {
                         _id: 0,
@@ -1779,6 +1783,16 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                   ...(input.selectedTaskId == null
                     ? {}
                     : { messageId: { $ne: `${input.selectedTaskId}:assistant` } }),
+                  $or: [
+                    { 'subagentActivityProjection.activityJson': { $exists: true } },
+                    { 'subagentTranscript.messagesJson': { $exists: true } },
+                  ],
+                },
+              },
+              { $limit: SUBAGENT_ACTIVITY_SOURCE_CANDIDATE_LIMIT },
+              { $addFields: sourceMetadataProjection },
+              {
+                $match: {
                   $expr: {
                     $or: [
                       {
