@@ -614,7 +614,7 @@ export default function AgentPanel() {
           status: 'error',
         });
       }
-      if (!(models[resolveModelCatalogKey(provider)] ?? []).includes(model)) {
+      if (!(models[resolveModelCatalogKey(provider, models)] ?? []).includes(model)) {
         return showToast({
           message: localize('com_error_model_not_found'),
           status: 'error',

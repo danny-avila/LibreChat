@@ -18,7 +18,7 @@ export function getAvailableAgentSelection({
   models: Record<string, string[] | undefined>;
 }): { provider: string; model: string } {
   const providerExists =
-    models[resolveModelCatalogKey(provider)] != null &&
+    models[resolveModelCatalogKey(provider, models)] != null &&
     providers.some((option) =>
       typeof option === 'string' ? option === provider : option.value === provider,
     );
@@ -29,6 +29,6 @@ export function getAvailableAgentSelection({
 
   return {
     provider,
-    model: getAvailableModelSelection(model, models[resolveModelCatalogKey(provider)] ?? []),
+    model: getAvailableModelSelection(model, models[resolveModelCatalogKey(provider, models)] ?? []),
   };
 }

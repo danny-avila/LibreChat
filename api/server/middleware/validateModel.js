@@ -43,7 +43,7 @@ const validateModel = async (req, res, next) => {
     return handleError(res, { text: 'Models not loaded' });
   }
 
-  const availableModels = modelsConfig[resolveModelCatalogKey(endpoint)];
+  const availableModels = modelsConfig[resolveModelCatalogKey(endpoint, modelsConfig)];
   if (!availableModels) {
     return handleError(res, { text: 'Endpoint models not loaded' });
   }

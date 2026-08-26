@@ -375,6 +375,22 @@ describe('validateAgentModel', () => {
     expect(logViolation).not.toHaveBeenCalled();
   });
 
+  it('uses an exact Vertex AI catalog when configured', async () => {
+    const result = await validateAgentModel({
+      req: request,
+      res: response,
+      agent: { provider: Providers.VERTEXAI, model: 'custom-vertex-model' } as Agent,
+      modelsConfig: {
+        [EModelEndpoint.google]: ['gemini-3.7-flash'],
+        [Providers.VERTEXAI]: ['custom-vertex-model'],
+      },
+      logViolation,
+    });
+
+    expect(result).toEqual({ isValid: true });
+    expect(logViolation).not.toHaveBeenCalled();
+  });
+
   it('rejects a model absent from the shared Google catalog', async () => {
     const result = await validateAgentModel({
       req: request,

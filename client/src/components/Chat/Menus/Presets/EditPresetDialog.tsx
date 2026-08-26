@@ -82,7 +82,9 @@ const EditPresetDialog = ({
       return;
     }
 
-    const models = modelsConfig[resolveModelCatalogKey(presetEndpoint)] as string[] | undefined;
+    const models = modelsConfig[resolveModelCatalogKey(presetEndpoint, modelsConfig)] as
+      | string[]
+      | undefined;
     if (!models) {
       return;
     }

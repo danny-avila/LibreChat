@@ -85,6 +85,15 @@ describe('resolveModelCatalogKey', () => {
     expect(resolveModelCatalogKey(Providers.VERTEXAI)).toBe(EModelEndpoint.google);
   });
 
+  it('preserves an exact Vertex AI catalog over the native fallback', () => {
+    expect(
+      resolveModelCatalogKey(Providers.VERTEXAI, {
+        [EModelEndpoint.google]: ['gemini-3.7-flash'],
+        [Providers.VERTEXAI]: ['custom-vertex-model'],
+      }),
+    ).toBe(Providers.VERTEXAI);
+  });
+
   it('preserves providers that own their own catalog', () => {
     expect(resolveModelCatalogKey(EModelEndpoint.google)).toBe(EModelEndpoint.google);
     expect(resolveModelCatalogKey('custom-provider')).toBe('custom-provider');

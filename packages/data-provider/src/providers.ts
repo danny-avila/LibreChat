@@ -101,7 +101,11 @@ export function resolveProviderId(input?: string | null): ProviderId | null {
   return providerByNormalizedId[key] ?? providerAliases[key] ?? null;
 }
 
-/** Resolves a runtime provider to the endpoint that owns its model catalog. */
-export function resolveModelCatalogKey(provider?: string | null): string {
-  return modelCatalogAliases[provider ?? ''] ?? provider ?? '';
+/** Resolves a runtime provider to its model catalog, using a native alias only when needed. */
+export function resolveModelCatalogKey<T>(
+  provider?: string | null,
+  catalogs?: Partial<Record<string, T>>,
+): string {
+  const key = provider ?? '';
+  return catalogs?.[key] != null ? key : (modelCatalogAliases[key] ?? key);
 }

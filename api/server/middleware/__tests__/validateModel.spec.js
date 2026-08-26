@@ -170,6 +170,20 @@ describe('validateModel', () => {
       expect(handleError).not.toHaveBeenCalled();
     });
 
+    it('accepts a model from an exact Vertex AI catalog', async () => {
+      req.body = { model: 'custom-vertex-model', endpoint: Providers.VERTEXAI };
+      getEndpointsConfig.mockResolvedValue({ [Providers.VERTEXAI]: { userProvide: false } });
+      getModelsConfig.mockResolvedValue({
+        [EModelEndpoint.google]: ['gemini-3.7-flash'],
+        [Providers.VERTEXAI]: ['custom-vertex-model'],
+      });
+
+      await validateModel(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(handleError).not.toHaveBeenCalled();
+    });
+
     it('rejects a Vertex model absent from the shared Google catalog', async () => {
       req.body = { model: 'gemini-not-available', endpoint: Providers.VERTEXAI };
       getEndpointsConfig.mockResolvedValue({ [Providers.VERTEXAI]: { userProvide: false } });

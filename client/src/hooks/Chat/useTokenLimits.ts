@@ -46,7 +46,7 @@ export default function useTokenLimits(conversation: TConversation | null): Toke
       lookupEndpoint = specPreset.endpoint ?? lookupEndpoint;
       lookupModel = lookupModel || (specPreset.model ?? '');
     }
-    lookupEndpoint = resolveModelCatalogKey(lookupEndpoint);
+    lookupEndpoint = resolveModelCatalogKey(lookupEndpoint, tokenConfig);
 
     const rates = tokenConfig?.[lookupEndpoint]?.[lookupModel];
     const maxContextTokens =
