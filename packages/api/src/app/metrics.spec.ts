@@ -182,19 +182,20 @@ describe('createMetrics', () => {
   it('collects truthful event actor receipt, reconciliation, retry, and TTL gauges', async () => {
     const app = express();
     process.env.METRICS_SECRET = 'test-secret';
+    const collectAgentEventActorStorageMetrics = jest.fn(async () => ({
+      retainedByResolution: {
+        checkpoint_verified: 7,
+        action_compensated: 2,
+        history_repaired: 1,
+      },
+      expiryEligible: 3,
+      retryDeliveries: 4,
+      deadDeliveries: 5,
+      pendingReconciliations: 6,
+      oldestPendingAgeSeconds: 91,
+    }));
     const { metricsRouter } = createMetrics({
-      collectAgentEventActorStorageMetrics: async () => ({
-        retainedByResolution: {
-          checkpoint_verified: 7,
-          action_compensated: 2,
-          history_repaired: 1,
-        },
-        expiryEligible: 3,
-        retryDeliveries: 4,
-        deadDeliveries: 5,
-        pendingReconciliations: 6,
-        oldestPendingAgeSeconds: 91,
-      }),
+      collectAgentEventActorStorageMetrics,
     });
     app.use('/metrics', metricsRouter);
 
@@ -211,6 +212,8 @@ describe('createMetrics', () => {
     expect(response.text).toContain('agent_event_actor_oldest_reconciliation_age_seconds 91');
     expect(response.text).toContain('agent_event_actor_deliveries{state="retry"} 4');
     expect(response.text).toContain('agent_event_actor_deliveries{state="dead"} 5');
+    await request(app).get('/metrics').set('Authorization', 'Bearer test-secret').expect(200);
+    expect(collectAgentEventActorStorageMetrics).toHaveBeenCalledTimes(1);
   });
 
   it('tracks SSE stream counts, active gauges, and stream duration', async () => {

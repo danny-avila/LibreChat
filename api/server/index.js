@@ -149,18 +149,19 @@ const startServer = async () => {
   await waitForKeyvRedisClient();
   await configureSubagentTaskRouting();
   const { metricsMiddleware, metricsRouter } = createMetrics({
-    collectAgentEventActorStorageMetrics: async () => {
-      const now = new Date();
-      const [receiptMetrics, reconciliationMetrics] = await Promise.all([
-        agentEventMethods.getAgentEventActorReceiptStorageMetrics(now),
-        agentEventMethods.getAgentEventActorReconciliationStorageMetrics(now),
-      ]);
-      return {
-        ...receiptMetrics,
-        pendingReconciliations: reconciliationMetrics.pending,
-        oldestPendingAgeSeconds: reconciliationMetrics.oldestPendingAgeSeconds,
-      };
-    },
+    collectAgentEventActorStorageMetrics: () =>
+      runAsSystem(async () => {
+        const now = new Date();
+        const [receiptMetrics, reconciliationMetrics] = await Promise.all([
+          agentEventMethods.getAgentEventActorReceiptStorageMetrics(now),
+          agentEventMethods.getAgentEventActorReconciliationStorageMetrics(now),
+        ]);
+        return {
+          ...receiptMetrics,
+          pendingReconciliations: reconciliationMetrics.pending,
+          oldestPendingAgeSeconds: reconciliationMetrics.oldestPendingAgeSeconds,
+        };
+      }),
   });
   if (!process.env.METRICS_SECRET) {
     logger.warn('[metrics] METRICS_SECRET is not set - /metrics will return 401 for all requests');

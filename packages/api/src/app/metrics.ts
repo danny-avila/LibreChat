@@ -145,6 +145,8 @@ export interface MetricsOptions {
   collectAgentEventActorStorageMetrics?: () => Promise<AgentEventActorStorageMetricsSnapshot>;
 }
 
+const AGENT_EVENT_ACTOR_STORAGE_METRICS_CACHE_MS = 60_000;
+
 export type OpenIDUserLookupResult = 'found' | 'not_found' | 'migration' | 'auth_failed' | 'error';
 export type GenerationJobStore = 'memory' | 'redis';
 export type GenerationJobResult = 'created' | 'completed' | 'error' | 'aborted' | 'abort_failed';
@@ -699,6 +701,35 @@ export function createMetrics(options: MetricsOptions = {}): PrometheusMetrics {
     });
   });
 
+  let actorStorageMetricsCache:
+    | { snapshot: AgentEventActorStorageMetricsSnapshot; expiresAt: number }
+    | undefined;
+  let actorStorageMetricsCollection: Promise<
+    AgentEventActorStorageMetricsSnapshot | undefined
+  > | null = null;
+  const collectActorStorageMetrics = async () => {
+    const now = Date.now();
+    if (actorStorageMetricsCache != null && actorStorageMetricsCache.expiresAt > now) {
+      return actorStorageMetricsCache.snapshot;
+    }
+    actorStorageMetricsCollection ??= Promise.resolve(
+      options.collectAgentEventActorStorageMetrics?.(),
+    )
+      .then((snapshot) => {
+        if (snapshot != null) {
+          actorStorageMetricsCache = {
+            snapshot,
+            expiresAt: Date.now() + AGENT_EVENT_ACTOR_STORAGE_METRICS_CACHE_MS,
+          };
+        }
+        return snapshot;
+      })
+      .finally(() => {
+        actorStorageMetricsCollection = null;
+      });
+    return actorStorageMetricsCollection;
+  };
+
   generationJobMetrics = {
     recordJob: (store, result) => generationJobs.inc({ store, result }),
     setJobsInFlight: (store, count) => generationJobsInFlight.set({ store }, count),
@@ -839,7 +870,7 @@ export function createMetrics(options: MetricsOptions = {}): PrometheusMetrics {
 
     void Promise.resolve()
       .then(async () => {
-        const snapshot = await options.collectAgentEventActorStorageMetrics?.();
+        const snapshot = await collectActorStorageMetrics();
         if (snapshot == null) {
           return;
         }

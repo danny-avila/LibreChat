@@ -1667,8 +1667,10 @@ describe('agent trigger delivery methods', () => {
     await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(true);
     await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(false);
     const successorAdmission = { ...actionAdmission, admissionId: 'admission-2' };
+    await expect(methods.admitAgentEventActorAction(successorAdmission)).resolves.toBe(false);
+    await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(true);
     await expect(methods.admitAgentEventActorAction(successorAdmission)).resolves.toBe(true);
-    await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(false);
+    /** The predecessor's delayed release cannot clear its successor. */
     await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(false);
     await expect(methods.hasAgentEventActorActionAdmission(successorAdmission)).resolves.toBe(true);
     await expect(methods.releaseAgentEventActorAction(successorAdmission)).resolves.toBe(true);
@@ -1683,9 +1685,19 @@ describe('agent trigger delivery methods', () => {
     await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(true);
     await expect(methods.admitAgentEventActorAction(successorAdmission)).resolves.toBe(false);
     await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(false);
+    /** An old worker can also leave a newer worker's stale token behind, then
+     * write a fresh token-unaware timestamp. Timestamp ownership remains the
+     * admission fence even when that retained token does not identify it. */
     await Delivery.updateOne(
       { deliveryKey: queued.delivery.deliveryKey },
-      { $unset: { actorActionAdmittedAt: 1 } },
+      { $set: { actorActionAdmissionId: 'stale-new-worker-token' } },
+    );
+    await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(true);
+    await expect(methods.admitAgentEventActorAction(successorAdmission)).resolves.toBe(false);
+    await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(false);
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      { $unset: { actorActionAdmittedAt: 1, actorActionAdmissionId: 1 } },
     );
     await methods.completeAgentTriggerDelivery({
       id: claimed!.id,
