@@ -52,17 +52,17 @@ import {
   subagentProgressByToolCallId,
   subagentProgressKey,
 } from '~/store/subagents';
-import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
-import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
-import SubagentConversation from './SubagentConversation';
 import {
   adaptDurableThreadActivity,
   adaptDurableThreadConversation,
   adaptLivePersistedActivity,
 } from './adapters';
+import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
+import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
 import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useParentSubagents } from './ParentSubagentsProvider';
+import SubagentConversation from './SubagentConversation';
 import { eventSubagentSelection } from './eventSelection';
 import { useAgentsMapContext } from '~/Providers';
 

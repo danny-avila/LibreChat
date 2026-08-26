@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useRecoilValue, useResetRecoilState } from 'recoil';
 import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle } from '@librechat/client';
-import { activeSubagentPanel } from '~/store/subagents';
-import { adaptLivePersistedActivity } from './adapters';
 import { SubagentActivityScrollSurface } from './SubagentActivity';
 import SubagentConversation from './SubagentConversation';
+import { activeSubagentPanel } from '~/store/subagents';
+import { adaptLivePersistedActivity } from './adapters';
 import { useLocalize } from '~/hooks';
 
 /** Public-share fallback for subagent activity already embedded in the shared message payload. */
