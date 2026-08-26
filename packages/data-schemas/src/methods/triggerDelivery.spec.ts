@@ -1797,6 +1797,69 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toBeNull();
   });
 
+  it('serializes no-action settlement against renewed action admission', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        awaitTerminalHandling: true,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-1' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const claimed = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claimed!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+    });
+    const generationCreatedAt = START.getTime() + 1_000;
+    await methods.completeAgentTriggerDelivery({
+      id: claimed!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: attempt!,
+      result: { status: 'started' },
+      settledAt: new Date(generationCreatedAt),
+      awaitTerminalHandling: true,
+      handling: {
+        status: 'started',
+        conversationId: 'conversation-1',
+        streamId: 'conversation-1',
+        generationCreatedAt,
+        startedAt: new Date(generationCreatedAt),
+      },
+    });
+    const admission = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      tenantId: 'tenant-1',
+      bindingId: 'binding-1',
+      conversationId: 'conversation-1',
+      admittedAt: new Date(generationCreatedAt + 500),
+    };
+    const noAction = {
+      deliveryKey: queued.delivery.deliveryKey,
+      conversationId: 'conversation-1',
+      generationCreatedAt,
+      status: 'completed_no_action' as const,
+      settledAt: new Date(generationCreatedAt + 1_000),
+    };
+
+    await expect(methods.admitAgentEventActorAction(admission)).resolves.toBe(true);
+    await expect(methods.settleAgentTriggerHandlingOutcome(noAction)).resolves.toBe(false);
+    await expect(methods.releaseAgentEventActorAction(admission)).resolves.toBe(true);
+    await expect(methods.settleAgentTriggerHandlingOutcome(noAction)).resolves.toBe(true);
+    await expect(methods.admitAgentEventActorAction(admission)).resolves.toBe(false);
+  });
+
   it('lazily backfills one exact legacy receipt and rejects conflicting identities', async () => {
     const queued = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({

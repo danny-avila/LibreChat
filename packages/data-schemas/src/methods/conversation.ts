@@ -1,5 +1,5 @@
 import { RetentionMode } from 'librechat-data-provider';
-import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
+import type { AnyBulkWriteOperation, FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
 import type {
   IAgentEventActorCheckpoint,
@@ -7,6 +7,7 @@ import type {
   IAgentEventActorSnapshot,
   IAgentEventActorState,
   IAgentEventBindingRecord,
+  IAgentTriggerDeliveryDocument,
   AppConfig,
   IChatProjectDocument,
   IActiveSubagentThreadLease,
@@ -269,6 +270,7 @@ export interface ConversationMethods {
     tenantId?: string;
     invocationId: string;
     checkpoint: IAgentEventActorReconciliation['checkpoint'];
+    expectedActionAdmitted?: boolean;
     resolution:
       | 'checkpoint_verified'
       | 'action_compensated'
@@ -716,7 +718,18 @@ export function createConversationMethods(
     const journal = existing?.agentEventActorReconciliations ?? [];
     const current = journal.find((item) => item.invocationId === input.reconciliation.invocationId);
     if (current != null) {
+      const confirmsActionAdmission =
+        current.status === 'invocation_pending' &&
+        current.actionAdmitted !== true &&
+        input.reconciliation.status === 'invocation_pending' &&
+        input.reconciliation.actionAdmitted === true &&
+        current.checkpoint.threadId === input.reconciliation.checkpoint.threadId &&
+        current.checkpoint.checkpointId === input.reconciliation.checkpoint.checkpointId &&
+        current.checkpoint.checkpointNs === input.reconciliation.checkpoint.checkpointNs &&
+        current.action.toolName === input.reconciliation.action.toolName &&
+        current.action.toolCallId === input.reconciliation.action.toolCallId;
       const canTransition =
+        confirmsActionAdmission ||
         (current?.status === 'invocation_pending' &&
           input.reconciliation.status !== 'invocation_pending') ||
         (current?.status === 'persistence_pending' &&
@@ -734,7 +747,7 @@ export function createConversationMethods(
         current.action.toolCallId === input.reconciliation.action.toolCallId;
       /** A pending record is an exclusive ownership fence, not an idempotent
        * receipt. A second executor must not inherit the first owner's claim. */
-      if (input.reconciliation.status === 'invocation_pending') {
+      if (input.reconciliation.status === 'invocation_pending' && !confirmsActionAdmission) {
         return false;
       }
       if (!canTransition) {
@@ -747,6 +760,7 @@ export function createConversationMethods(
             $elemMatch: {
               invocationId: input.reconciliation.invocationId,
               status: current!.status,
+              ...(confirmsActionAdmission && { actionAdmitted: { $ne: true } }),
             },
           },
         },
@@ -794,6 +808,7 @@ export function createConversationMethods(
     tenantId?: string;
     invocationId: string;
     checkpoint: IAgentEventActorReconciliation['checkpoint'];
+    expectedActionAdmitted?: boolean;
     resolution:
       | 'checkpoint_verified'
       | 'action_compensated'
@@ -867,10 +882,19 @@ export function createConversationMethods(
       });
       return replay != null;
     }
+    let expectedAdmissionFilter: Record<string, unknown> = {};
+    if (input.expectedActionAdmitted != null) {
+      expectedAdmissionFilter = input.expectedActionAdmitted
+        ? { actionAdmitted: true }
+        : { actionAdmitted: { $ne: true } };
+    }
     const checkpointFilter: Record<string, unknown> = {
       ...exactCheckpoint,
       ...(input.resolution === 'invocation_abandoned'
-        ? { status: 'invocation_pending' }
+        ? {
+            status: 'invocation_pending',
+            ...expectedAdmissionFilter,
+          }
         : {
             status: {
               $in: [
@@ -1092,24 +1116,70 @@ export function createConversationMethods(
         $elemMatch: { status: 'settled', observedAt: { $lte: cutoff } },
       },
     })
-      .select('_id')
+      .select('_id +agentEventActorReconciliations')
       .limit(boundedLimit)
-      .lean<Array<{ _id: Types.ObjectId }>>();
+      .lean<
+        Array<Pick<IConversation, 'agentEventActorReconciliations'> & { _id: Types.ObjectId }>
+      >();
     if (candidates.length === 0) {
       return 0;
     }
-    const result = await Conversation.updateMany(
-      { _id: { $in: candidates.map((candidate) => candidate._id) } },
-      {
-        $pull: {
-          agentEventActorReconciliations: {
-            status: 'settled',
-            observedAt: { $lte: cutoff },
-          },
-        },
-      },
-      { timestamps: false },
+    /** A mixed-version owner may have committed this conversation receipt but
+     * crashed before terminalizing the delivery. That embedded proof must not
+     * expire while the corresponding transport row can still block its lane. */
+    const expiredInvocationIds = [
+      ...new Set(
+        candidates.flatMap((candidate) =>
+          (candidate.agentEventActorReconciliations ?? [])
+            .filter((receipt) => receipt.status === 'settled' && receipt.observedAt <= cutoff)
+            .map((receipt) => receipt.invocationId),
+        ),
+      ),
+    ];
+    const Delivery = mongoose.models.AgentTriggerDelivery as
+      | Model<IAgentTriggerDeliveryDocument>
+      | undefined;
+    if (Delivery == null) {
+      return 0;
+    }
+    const protectedInvocationIds = new Set(
+      await Delivery.find({
+        deliveryKey: { $in: expiredInvocationIds },
+        $or: [{ handling: { $exists: false } }, { 'handling.status': 'started' }],
+      }).distinct<string>('deliveryKey'),
     );
+    const operations = candidates.flatMap((candidate) => {
+      const removable = (candidate.agentEventActorReconciliations ?? [])
+        .filter(
+          (receipt) =>
+            receipt.status === 'settled' &&
+            receipt.observedAt <= cutoff &&
+            !protectedInvocationIds.has(receipt.invocationId),
+        )
+        .map((receipt) => receipt.invocationId);
+      return removable.length === 0
+        ? []
+        : [
+            {
+              updateOne: {
+                filter: { _id: candidate._id },
+                update: {
+                  $pull: {
+                    agentEventActorReconciliations: {
+                      invocationId: { $in: removable },
+                      status: 'settled',
+                      observedAt: { $lte: cutoff },
+                    },
+                  },
+                },
+              },
+            },
+          ];
+    }) as unknown as AnyBulkWriteOperation[];
+    if (operations.length === 0) {
+      return 0;
+    }
+    const result = await tenantSafeBulkWrite(Conversation, operations, { ordered: false });
     return result.modifiedCount;
   }
 

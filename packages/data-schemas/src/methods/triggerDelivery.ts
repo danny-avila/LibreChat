@@ -1353,6 +1353,7 @@ export function createAgentTriggerDeliveryMethods(
           'handling.status': 'started',
           'handling.conversationId': input.conversationId,
           'handling.generationCreatedAt': input.generationCreatedAt,
+          actorActionAdmittedAt: { $exists: false },
         },
         {
           $set: terminalHandling,
@@ -1586,7 +1587,10 @@ export function createAgentTriggerDeliveryMethods(
         actorActionAdmittedAt: { $exists: false },
         $or: [
           { handling: { $exists: false } },
-          { 'handling.conversationId': input.conversationId },
+          {
+            'handling.status': 'started',
+            'handling.conversationId': input.conversationId,
+          },
         ],
       },
       { $set: { actorActionAdmittedAt: input.admittedAt } },

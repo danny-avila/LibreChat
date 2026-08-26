@@ -853,11 +853,12 @@ describe('event actor host adapter', () => {
       conversationId,
       admittedAt: expect.any(Date),
     });
-    expect(resolveReconciliation).toHaveBeenCalledWith({
+    expect(resolveReconciliation).toHaveBeenNthCalledWith(1, {
       user: 'user-1',
       conversationId,
       invocationId: 'event-race',
       checkpoint: expect.objectContaining({ threadId: conversationId }),
+      expectedActionAdmitted: false,
       resolution: 'invocation_abandoned',
     });
     expect(invoke).not.toHaveBeenCalled();
@@ -944,13 +945,45 @@ describe('event actor host adapter', () => {
       bindingId: 'binding-1',
       conversationId,
     });
-    expect(dependencies.resolveReconciliation).toHaveBeenCalledWith({
+    expect(dependencies.resolveReconciliation).toHaveBeenNthCalledWith(1, {
       user: 'user-1',
       conversationId,
       invocationId: 'event-orphaned-no-action',
       checkpoint,
+      expectedActionAdmitted: true,
       resolution: 'invocation_abandoned',
     });
     expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('never invokes after a retry supersedes its pre-admission lifecycle', async () => {
+    const invoke = jest.fn(async () => 'must not run');
+    const dependencies = {
+      ...deps(),
+      recordReconciliation: jest.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false),
+      admitAction: jest.fn().mockResolvedValue(true),
+      releaseAction: jest.fn().mockResolvedValue(true),
+      getReceipt: jest.fn().mockResolvedValue(null),
+    };
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          bindingId: 'binding-1',
+          invocationId: 'event-pre-admission-race',
+          event: { id: 'event-pre-admission-race' },
+          signal: new AbortController().signal,
+          invoke,
+          readAppliedAction: () => undefined,
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('admission lifecycle was superseded before invoke');
+
+    expect(dependencies.admitAction).toHaveBeenCalledTimes(1);
+    expect(dependencies.releaseAction).toHaveBeenCalledTimes(1);
+    expect(invoke).not.toHaveBeenCalled();
   });
 });
