@@ -2389,7 +2389,6 @@ describe('agent trigger delivery methods', () => {
       enqueueInput({
         user,
         orderingKey,
-        awaitTerminalHandling: true,
         envelope: {
           mode: 'continue',
           target: { bindingId: 'binding-late-terminal' },

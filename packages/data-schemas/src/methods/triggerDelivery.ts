@@ -1024,20 +1024,14 @@ export function createAgentTriggerDeliveryMethods(
   async function finalizeAgentEventActorDelivery(
     root: Pick<
       IAgentTriggerDelivery,
-      | '_id'
-      | 'orderingKey'
-      | 'batchMemberIds'
-      | 'status'
-      | 'settledAt'
-      | 'awaitTerminalHandling'
-      | 'handling'
+      '_id' | 'orderingKey' | 'batchMemberIds' | 'status' | 'settledAt' | 'handling'
     >,
     settledAt: Date,
   ): Promise<void> {
     await propagateBatchHandling(root);
-    if (root.awaitTerminalHandling !== true) {
-      return;
-    }
+    /** Actor receipt finalization is terminal regardless of the mailbox
+     * rollout flag. Publishing cleanup unconditionally is safe because the
+     * lane reclaimer independently refuses any still-active lane. */
     await LaneSequence().updateOne(
       { _id: root.orderingKey },
       { $set: { cleanupRequestedAt: settledAt } },
