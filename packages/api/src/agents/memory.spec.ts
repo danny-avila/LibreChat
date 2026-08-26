@@ -712,6 +712,60 @@ describe('createMemoryTool tokenLimit enforcement', () => {
     expect(setMemory).toHaveBeenCalledTimes(2);
   });
 
+  it('treats the first rewrite of a stored key as a replacement, not an addition', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    /** totalTokens already includes k1 (100). Without priming the per-key map,
+     *  rewriting k1 with ~100 tokens would look like 200 and hit would_exceed. */
+    const value = 'word '.repeat(100).trim();
+    const tool = createMemoryTool({
+      userId: 'user-1',
+      setMemory,
+      tokenLimit: 150,
+      totalTokens: 100,
+      existingTokensByKey: { k1: 100 },
+    });
+
+    await tool.invoke({ key: 'k1', value });
+
+    expect(setMemory).toHaveBeenCalledTimes(1);
+  });
+
+  it('still rejects a stored-key rewrite that exceeds remaining capacity after subtracting the old value', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    /** Same setup as the replacement case, but the new value (~200) is larger
+     *  than tokenLimit even after k1's stored 100 is subtracted. */
+    const value = 'word '.repeat(200).trim();
+    const tool = createMemoryTool({
+      userId: 'user-1',
+      setMemory,
+      tokenLimit: 150,
+      totalTokens: 100,
+      existingTokensByKey: { k1: 100 },
+    });
+
+    await tool.invoke({ key: 'k1', value });
+
+    expect(setMemory).not.toHaveBeenCalled();
+  });
+
+  it('still adds a new key on top of totalTokens from other stored keys', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    /** k1 already accounts for the full total; writing a new key k2 must not
+     *  subtract k1 and therefore exceeds the 150 cap. */
+    const value = 'word '.repeat(100).trim();
+    const tool = createMemoryTool({
+      userId: 'user-1',
+      setMemory,
+      tokenLimit: 150,
+      totalTokens: 100,
+      existingTokensByKey: { k1: 100 },
+    });
+
+    await tool.invoke({ key: 'k2', value });
+
+    expect(setMemory).not.toHaveBeenCalled();
+  });
+
   it('fires onWrite after a successful set, but not when the write fails', async () => {
     const onWrite = jest.fn();
     const okTool = createMemoryTool({
@@ -804,6 +858,55 @@ describe('buildInlineMemoryTool content filtering', () => {
         value: 'Keep ORG-SECRET',
       }),
     );
+  });
+
+  it('seeds stored key tokens so rewriting an existing key does not double-count', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    const value = 'word '.repeat(100).trim();
+    const req = {
+      config: {
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            capabilities: [AgentCapabilities.memory],
+          },
+        },
+        memory: {
+          disabled: false,
+          tokenLimit: 150,
+        },
+      },
+      user: {
+        id: 'user-1',
+        personalization: {
+          memories: true,
+        },
+      },
+    } as ServerRequest;
+
+    const memoryTool = await buildInlineMemoryTool({
+      toolName: 'set_memory',
+      req,
+      agent: {
+        tools: [AgentCapabilities.memory],
+      },
+      userId: 'user-1',
+      memoryMethods: {
+        setMemory,
+        deleteMemory: jest.fn(),
+        getFormattedMemories: jest.fn().mockResolvedValue({
+          withKeys: '',
+          withoutKeys: '',
+          totalTokens: 100,
+          tokensByKey: { k1: 100 },
+        }),
+      },
+      getRoleByName: jest.fn(),
+    });
+
+    expect(memoryTool).not.toBeNull();
+    await memoryTool?.func({ key: 'k1', value });
+
+    expect(setMemory).toHaveBeenCalledTimes(1);
   });
 });
 

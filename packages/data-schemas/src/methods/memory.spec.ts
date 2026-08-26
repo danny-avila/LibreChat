@@ -245,11 +245,13 @@ describe('memory partitions', () => {
 
     const personal = await methods.getFormattedMemories({ userId });
     expect(personal.totalTokens).toBe(5);
+    expect(personal.tokensByKey).toEqual({ one: 5 });
     expect(personal.withoutKeys).toContain('personal one');
     expect(personal.withoutKeys).not.toContain('agent two');
 
     const partitionA = await methods.getFormattedMemories({ userId, agentId });
     expect(partitionA.totalTokens).toBe(7);
+    expect(partitionA.tokensByKey).toEqual({ two: 7 });
     expect(partitionA.withKeys).toContain('"key": "two"');
     expect(partitionA.withKeys).not.toContain('personal one');
   });

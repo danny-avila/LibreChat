@@ -130,6 +130,7 @@ export const createMemoryTool = ({
   charLimit,
   tokenLimit,
   totalTokens = 0,
+  existingTokensByKey,
   filters,
   onWrite,
 }: {
@@ -141,6 +142,9 @@ export const createMemoryTool = ({
   charLimit?: number;
   tokenLimit?: number;
   totalTokens?: number;
+  /** Stored token count per key. Primed into the in-instance map so the first
+   *  rewrite of a pre-existing key is measured as a replacement, not an add. */
+  existingTokensByKey?: Record<string, number>;
   filters?: FiltersConfig;
   onWrite?: () => void;
 }): DynamicStructuredTool => {
@@ -150,10 +154,10 @@ export const createMemoryTool = ({
    *  check against the same stale total and collectively exceed `tokenLimit`. */
   let currentTotalTokens = totalTokens;
   let writeChain: Promise<unknown> = Promise.resolve();
-  /** Tokens this instance has already committed per key. `set_memory` upserts,
-   *  so a repeat write to the same key REPLACES its value — the running total
-   *  must swap the prior contribution for the new one, not add both. */
-  const writtenTokensByKey = new Map<string, number>();
+  /** Tokens already attributed to each key: stored entries at construction,
+   *  then this instance's successful writes. `set_memory` upserts, so a
+   *  rewrite must swap the prior contribution rather than add both. */
+  const writtenTokensByKey = new Map<string, number>(Object.entries(existingTokensByKey ?? {}));
 
   return tool(
     async ({ key, value }) => {
@@ -188,8 +192,8 @@ export const createMemoryTool = ({
           }
 
           const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
-          /** Total excluding this key's prior in-instance write, so a same-key
-           *  rewrite is measured as a replacement rather than an addition. */
+          /** Total excluding this key's stored or in-instance contribution, so a
+           *  same-key rewrite is measured as a replacement rather than an addition. */
           const baseTotalTokens = currentTotalTokens - (writtenTokensByKey.get(key) ?? 0);
           const remainingTokens = tokenLimit ? tokenLimit - baseTotalTokens : Infinity;
 
@@ -680,6 +684,7 @@ export async function buildInlineMemoryTool({
   const charLimit = memoryConfig?.charLimit as number | undefined;
   const tokenLimit = memoryConfig?.tokenLimit as number | undefined;
   let totalTokens = 0;
+  let existingTokensByKey: Record<string, number> | undefined;
   if (tokenLimit) {
     try {
       const formatted = await getRequestMemories({
@@ -689,6 +694,7 @@ export async function buildInlineMemoryTool({
         getFormattedMemories: memoryMethods.getFormattedMemories,
       });
       totalTokens = formatted?.totalTokens ?? 0;
+      existingTokensByKey = formatted?.tokensByKey;
     } catch (error) {
       logger.error(
         '[memory] Failed to load memory token count for set_memory',
@@ -708,6 +714,7 @@ export async function buildInlineMemoryTool({
     charLimit,
     tokenLimit,
     totalTokens,
+    existingTokensByKey,
     filters: req.config?.filters,
     onWrite: () => invalidateRequestMemories(req, memoryAgentId),
   });
@@ -754,6 +761,7 @@ export async function processMemory({
   llmConfig,
   tokenLimit,
   totalTokens = 0,
+  existingTokensByKey,
   filters,
   streamId = null,
   jobCreatedAt,
@@ -780,6 +788,7 @@ export async function processMemory({
   }[];
   tokenLimit?: number;
   totalTokens?: number;
+  existingTokensByKey?: Record<string, number>;
   filters?: FiltersConfig;
   llmConfig?: Partial<LLMConfig>;
   streamId?: string | null;
@@ -813,6 +822,7 @@ export async function processMemory({
       setMemory,
       validKeys,
       totalTokens,
+      existingTokensByKey,
       filters,
     });
     const deleteMemoryTool = createDeleteMemoryTool({
@@ -1044,7 +1054,7 @@ export async function createMemoryProcessor({
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
   const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
 
-  const [{ withKeys, withoutKeys, totalTokens }, memoryEntries] = await Promise.all([
+  const [{ withKeys, withoutKeys, totalTokens, tokensByKey }, memoryEntries] = await Promise.all([
     memoryMethods.getFormattedMemories({
       userId,
       agentId,
@@ -1077,6 +1087,7 @@ export async function createMemoryProcessor({
           memory: withKeys,
           memoryEntries,
           totalTokens: totalTokens || 0,
+          existingTokensByKey: tokensByKey,
           filters,
           instructions: finalInstructions,
           setMemory: memoryMethods.setMemory,

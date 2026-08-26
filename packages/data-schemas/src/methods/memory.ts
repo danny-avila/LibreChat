@@ -271,15 +271,18 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
       const memories = await getUserMemories({ userId, agentId });
 
       if (!memories || memories.length === 0) {
-        return { withKeys: '', withoutKeys: '', totalTokens: 0 };
+        return { withKeys: '', withoutKeys: '', totalTokens: 0, tokensByKey: {} };
       }
 
       const sortedMemories = memories.sort(
         (a, b) => new Date(a.updated_at!).getTime() - new Date(b.updated_at!).getTime(),
       );
 
+      const tokensByKey: Record<string, number> = {};
       const totalTokens = sortedMemories.reduce((sum, memory) => {
-        return sum + (memory.tokenCount || 0);
+        const count = memory.tokenCount || 0;
+        tokensByKey[memory.key] = count;
+        return sum + count;
       }, 0);
 
       const withKeys = sortedMemories
@@ -297,10 +300,10 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
         })
         .join('\n\n');
 
-      return { withKeys, withoutKeys, totalTokens };
+      return { withKeys, withoutKeys, totalTokens, tokensByKey };
     } catch (error) {
       logger.error('Failed to get formatted memories:', error);
-      return { withKeys: '', withoutKeys: '', totalTokens: 0 };
+      return { withKeys: '', withoutKeys: '', totalTokens: 0, tokensByKey: {} };
     }
   }
 

@@ -76,4 +76,6 @@ export interface FormattedMemoriesResult {
   withKeys: string;
   withoutKeys: string;
   totalTokens?: number;
+  /** Stored token count per key; used so `set_memory` rewrites replace, not add. */
+  tokensByKey?: Record<string, number>;
 }
