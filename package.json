@@ -244,5 +244,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "js-cookie": "3.0.7"
   }
 }
