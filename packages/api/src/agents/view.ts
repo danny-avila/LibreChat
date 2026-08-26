@@ -331,7 +331,7 @@ const publicThreadTurns = (
           kind: triggerKind,
           summary: eventThread ? '' : (input?.text ?? ''),
           ...(input?.createdAt == null ? {} : { createdAt: input.createdAt }),
-          ...(input?.textTruncated === true ? { summaryTruncated: true } : {}),
+          ...(!eventThread && input?.textTruncated === true ? { summaryTruncated: true } : {}),
         },
         status: publicStatus(
           [record.assistant, record.input].filter(
@@ -614,9 +614,23 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
       for (const record of selectedRecords) {
         if (!publicSourceIds.has(record.messageId)) publicSource.push(record);
       }
-      const projectedNewestFirst: SubagentThreadMessage[] = [];
-      let remainingTextBytes = MAX_RESPONSE_TEXT_BYTES;
+      const selectedAssistantRecord = selectedRecords.find(
+        (message) => message.messageId === `${requestedTaskId}:assistant`,
+      );
+      const selectedAssistantProjection =
+        selectedAssistantRecord == null
+          ? undefined
+          : publicMessage(selectedAssistantRecord, MAX_MESSAGE_TEXT_BYTES);
+      const projectedById = new Map<string, SubagentThreadMessage>();
+      if (selectedAssistantProjection != null) {
+        projectedById.set(
+          selectedAssistantProjection.message.messageId,
+          selectedAssistantProjection.message,
+        );
+      }
+      let remainingTextBytes = MAX_RESPONSE_TEXT_BYTES - (selectedAssistantProjection?.bytes ?? 0);
       for (const message of [...publicSource].reverse()) {
+        if (projectedById.has(message.messageId)) continue;
         if (remainingTextBytes === 0) {
           break;
         }
@@ -625,14 +639,17 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
           remainingTextBytes,
           eventThread && message.isCreatedByUser,
         );
-        projectedNewestFirst.push(projected.message);
+        projectedById.set(projected.message.messageId, projected.message);
         remainingTextBytes -= projected.bytes;
       }
       const projectedControls =
         requestedTaskId == null
           ? { receipts: [], truncated: false }
           : publicControlReceipts(selectedRecords, requestedTaskId);
-      const projectedMessages = projectedNewestFirst.reverse();
+      const projectedMessages = publicSource.flatMap((message) => {
+        const projected = projectedById.get(message.messageId);
+        return projected == null ? [] : [projected];
+      });
       const projectedMessagesById = new Map(
         projectedMessages.map((message) => [message.messageId, message]),
       );
@@ -670,14 +687,19 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         historyTruncated: historyTruncated || projectedMessages.length < publicSource.length,
         ...(isoDate(child.updatedAt) == null ? {} : { updatedAt: isoDate(child.updatedAt) }),
       };
+      const selectedAssistantId =
+        requestedTaskId == null ? undefined : `${requestedTaskId}:assistant`;
       while (Buffer.byteLength(JSON.stringify(view), 'utf8') > MAX_RESPONSE_BYTES) {
         if ((view.turns?.length ?? 0) > 1) {
           view.turns?.shift();
           view.historyTruncated = true;
           continue;
         }
-        if (view.messages.length > 0) {
-          view.messages.shift();
+        const removableMessageIndex = view.messages.findIndex(
+          (message) => message.messageId !== selectedAssistantId,
+        );
+        if (removableMessageIndex >= 0) {
+          view.messages.splice(removableMessageIndex, 1);
           view.historyTruncated = true;
           continue;
         }
@@ -686,9 +708,7 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
           view.historyTruncated = true;
           continue;
         }
-        if (view.messages.length === 0) {
-          throw new Error('Subagent thread projection exceeded its response limit');
-        }
+        throw new Error('Subagent thread projection exceeded its response limit');
       }
       res.status(200).json(view);
     } catch (error) {

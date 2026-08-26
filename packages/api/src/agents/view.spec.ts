@@ -337,6 +337,7 @@ describe('subagent thread parent-scoped view', () => {
       (_, index) =>
         ({
           ...message(`recent-${index}:assistant`, 'completed'),
+          text: '🧵'.repeat(SUBAGENT_THREAD_VIEW_LIMITS.messageTextBytes),
           createdAt: new Date(Date.UTC(2026, 7, 22, 12, index)),
         }) as IMessage,
     );
@@ -561,6 +562,44 @@ describe('subagent thread parent-scoped view', () => {
     );
     expect(view.historyTruncated).toBe(true);
     expect(view.messages.at(-1).messageId).toBe('task-0:assistant');
+  });
+
+  it('preserves the selected assistant while trimming a large chronological response', async () => {
+    const chronological = Array.from({ length: 8 }, (_, index) => {
+      const input = {
+        ...message(`task-${index}:user`, 'running', true),
+        parentMessageId:
+          index === 0 ? '00000000-0000-0000-0000-000000000000' : `task-${index - 1}:assistant`,
+        text: '🧵'.repeat(SUBAGENT_THREAD_VIEW_LIMITS.messageTextBytes),
+        createdAt: new Date(Date.UTC(2026, 7, 21, 12, index * 2)),
+      } as IMessage;
+      const assistant = {
+        ...message(`task-${index}:assistant`, 'completed'),
+        parentMessageId: `task-${index}:user`,
+        text: '🧵'.repeat(SUBAGENT_THREAD_VIEW_LIMITS.messageTextBytes),
+        createdAt: new Date(Date.UTC(2026, 7, 21, 12, index * 2 + 1)),
+      } as IMessage;
+      return [input, assistant];
+    }).flat();
+    const handler = createSubagentThreadViewHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
+      getSubagentThreadForParent: jest
+        .fn()
+        .mockResolvedValue({ ...child, subagentThreadLease: undefined }),
+      getMessagesForSubagentThreadView: jest.fn().mockResolvedValue([...chronological].reverse()),
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest({}, { taskId: 'task-0' }), response);
+
+    const view = json.mock.calls[0][0];
+    expect(view.messages).toEqual(
+      expect.arrayContaining([expect.objectContaining({ messageId: 'task-0:assistant' })]),
+    );
+    expect(Buffer.byteLength(JSON.stringify(view), 'utf8')).toBeLessThanOrEqual(
+      SUBAGENT_THREAD_VIEW_LIMITS.responseBytes,
+    );
+    expect(view.historyTruncated).toBe(true);
   });
 
   it('requires tenantless messages when the authenticated request has no tenant', async () => {
@@ -1049,6 +1088,7 @@ describe('parent child-thread index', () => {
         parentMessageId: null,
         isCreatedByUser: true,
         text: 'Safe instruction. {"privateRoutingKey":"must-not-leak"}',
+        textProjectionTruncated: true,
         createdAt: new Date('2026-08-21T11:00:00.000Z'),
       },
     ]);
@@ -1086,6 +1126,7 @@ describe('parent child-thread index', () => {
         expect.objectContaining({ messageId: 'delivery-1:assistant', text: 'Event result' }),
       ]),
     );
+    expect(json.mock.calls[0][0].turns[0].trigger).not.toHaveProperty('summaryTruncated');
     expect(JSON.stringify(json.mock.calls[0][0])).not.toContain('privateRoutingKey');
     expect(getMessagesForSubagentThreadView).toHaveBeenCalledWith(
       expect.not.objectContaining({ taskId: expect.anything() }),

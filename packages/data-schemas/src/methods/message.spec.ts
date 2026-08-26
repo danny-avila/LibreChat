@@ -1198,6 +1198,7 @@ describe('Message Operations', () => {
 
     it('bounds transcript materialization while retaining the exact selected task', async () => {
       const conversationId = uuidv4();
+      const aggregateSpy = jest.spyOn(Message, 'aggregate');
       for (let index = 0; index < SUBAGENT_TRANSCRIPT_PAGE_LIMIT + 6; index += 1) {
         await saveMessage(mockCtx, {
           messageId: `task-${index}:assistant`,
@@ -1239,6 +1240,24 @@ describe('Message Operations', () => {
             message.subagentTranscriptProjectionTruncated === true,
         ),
       ).toHaveLength(1);
+      expect(aggregateSpy).toHaveBeenCalledTimes(2);
+      const recentPipeline = aggregateSpy.mock.calls[0][0] as unknown as Array<
+        Record<string, unknown>
+      >;
+      const selectedPipeline = aggregateSpy.mock.calls[1][0] as unknown as Array<
+        Record<string, unknown>
+      >;
+      expect(recentPipeline[2]).toEqual({ $limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT });
+      expect(selectedPipeline[0]).toEqual(
+        expect.objectContaining({
+          $match: expect.objectContaining({
+            messageId: {
+              $in: ['task-0:user', 'task-0:assistant'],
+            },
+          }),
+        }),
+      );
+      aggregateSpy.mockRestore();
     });
 
     it('omits an oversized private transcript before returning the application result', async () => {

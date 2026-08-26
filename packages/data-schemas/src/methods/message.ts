@@ -1677,107 +1677,50 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         _subagentActivityProjectionSourceBytes: activityProjectionJsonBytes,
         _subagentActivityProjectionSourceIsString: activityProjectionIsString,
       };
-      const [projection] = await Message.aggregate<{
+      const activitySourceProjection = {
+        _id: 0,
+        messageId: 1,
+        subagentActivityProjectionJson: {
+          $cond: [
+            activityProjectionAvailable,
+            '$subagentActivityProjection.activityJson',
+            '$$REMOVE',
+          ],
+        },
+        subagentActivityProjectionTruncated: {
+          $cond: [activityProjectionAvailable, '$subagentActivityProjection.truncated', '$$REMOVE'],
+        },
+        subagentTranscript: {
+          $cond: [
+            activityProjectionAvailable,
+            '$$REMOVE',
+            {
+              taskId: '$subagentTranscript.taskId',
+              mode: '$subagentTranscript.mode',
+              messagesJson: '$subagentTranscript.messagesJson',
+            },
+          ],
+        },
+      };
+      const baseMatch = {
+        user: input.user,
+        conversationId: input.conversationId,
+        ...(input.tenantId == null
+          ? { tenantId: { $exists: false } }
+          : { tenantId: input.tenantId }),
+      };
+      const recentProjectionPromise = Message.aggregate<{
         messages: SubagentThreadViewMessageRecord[];
-        selectedMessages: SubagentThreadViewMessageRecord[];
-        selectedSources: ActivitySourceProjection[];
         recentSources: ActivitySourceProjection[];
       }>([
-        {
-          $match: {
-            user: input.user,
-            conversationId: input.conversationId,
-            ...(input.tenantId == null
-              ? { tenantId: { $exists: false } }
-              : { tenantId: input.tenantId }),
-          },
-        },
+        { $match: baseMatch },
         { $sort: { createdAt: -1, _id: -1 } },
+        { $limit: input.limit },
         {
           $facet: {
-            messages: [{ $limit: input.limit }, { $project: boundedMessageProjection }],
-            selectedMessages:
-              input.selectedTaskId == null
-                ? [{ $match: { _id: { $exists: false } } }]
-                : [
-                    {
-                      $match: {
-                        messageId: {
-                          $in: [
-                            `${input.selectedTaskId}:user`,
-                            `${input.selectedTaskId}:assistant`,
-                          ],
-                        },
-                      },
-                    },
-                    { $limit: 2 },
-                    { $project: boundedMessageProjection },
-                  ],
-            selectedSources:
-              input.selectedTaskId == null
-                ? [{ $match: { _id: { $exists: false } } }]
-                : [
-                    {
-                      $match: {
-                        messageId: `${input.selectedTaskId}:assistant`,
-                      },
-                    },
-                    { $limit: 1 },
-                    { $addFields: sourceMetadataProjection },
-                    {
-                      $match: {
-                        $or: [
-                          {
-                            'subagentActivityProjection.taskId': input.selectedTaskId,
-                            'subagentActivityProjection.version': 1,
-                            _subagentActivityProjectionSourceIsString: true,
-                            _subagentActivityProjectionSourceBytes: {
-                              $lte: SUBAGENT_ACTIVITY_PROJECTION_SOURCE_BYTE_LIMIT,
-                            },
-                          },
-                          {
-                            'subagentTranscript.taskId': input.selectedTaskId,
-                            _subagentTranscriptSourceIsString: true,
-                            _subagentTranscriptSourceBytes: {
-                              $lte: SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
-                            },
-                          },
-                        ],
-                      },
-                    },
-                    {
-                      $project: {
-                        _id: 0,
-                        messageId: 1,
-                        subagentActivityProjectionJson: {
-                          $cond: [
-                            activityProjectionAvailable,
-                            '$subagentActivityProjection.activityJson',
-                            '$$REMOVE',
-                          ],
-                        },
-                        subagentActivityProjectionTruncated: {
-                          $cond: [
-                            activityProjectionAvailable,
-                            '$subagentActivityProjection.truncated',
-                            '$$REMOVE',
-                          ],
-                        },
-                        subagentTranscript: {
-                          $cond: [
-                            activityProjectionAvailable,
-                            '$$REMOVE',
-                            {
-                              taskId: '$subagentTranscript.taskId',
-                              mode: '$subagentTranscript.mode',
-                              messagesJson: '$subagentTranscript.messagesJson',
-                            },
-                          ],
-                        },
-                      },
-                    },
-                  ],
+            messages: [{ $project: boundedMessageProjection }],
             recentSources: [
+              { $limit: SUBAGENT_ACTIVITY_SOURCE_CANDIDATE_LIMIT },
               {
                 $match: {
                   ...(input.selectedTaskId == null
@@ -1789,7 +1732,6 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                   ],
                 },
               },
-              { $limit: SUBAGENT_ACTIVITY_SOURCE_CANDIDATE_LIMIT },
               { $addFields: sourceMetadataProjection },
               {
                 $match: {
@@ -1827,50 +1769,80 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                 $limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT - (input.selectedTaskId == null ? 0 : 1),
               },
               {
-                $project: {
-                  _id: 0,
-                  messageId: 1,
-                  subagentActivityProjectionJson: {
-                    $cond: [
-                      activityProjectionAvailable,
-                      '$subagentActivityProjection.activityJson',
-                      '$$REMOVE',
-                    ],
-                  },
-                  subagentActivityProjectionTruncated: {
-                    $cond: [
-                      activityProjectionAvailable,
-                      '$subagentActivityProjection.truncated',
-                      '$$REMOVE',
-                    ],
-                  },
-                  subagentTranscript: {
-                    $cond: [
-                      activityProjectionAvailable,
-                      '$$REMOVE',
-                      {
-                        taskId: '$subagentTranscript.taskId',
-                        mode: '$subagentTranscript.mode',
-                        messagesJson: '$subagentTranscript.messagesJson',
-                      },
-                    ],
-                  },
-                },
+                $project: activitySourceProjection,
               },
             ],
           },
         },
       ]);
-      if (projection == null) return [];
+      const selectedProjectionPromise =
+        input.selectedTaskId == null
+          ? Promise.resolve([
+              {
+                selectedMessages: [] as SubagentThreadViewMessageRecord[],
+                selectedSources: [] as ActivitySourceProjection[],
+              },
+            ])
+          : Message.aggregate<{
+              selectedMessages: SubagentThreadViewMessageRecord[];
+              selectedSources: ActivitySourceProjection[];
+            }>([
+              {
+                $match: {
+                  ...baseMatch,
+                  messageId: {
+                    $in: [`${input.selectedTaskId}:user`, `${input.selectedTaskId}:assistant`],
+                  },
+                },
+              },
+              { $limit: 2 },
+              {
+                $facet: {
+                  selectedMessages: [{ $project: boundedMessageProjection }],
+                  selectedSources: [
+                    { $match: { messageId: `${input.selectedTaskId}:assistant` } },
+                    { $limit: 1 },
+                    { $addFields: sourceMetadataProjection },
+                    {
+                      $match: {
+                        $or: [
+                          {
+                            'subagentActivityProjection.taskId': input.selectedTaskId,
+                            'subagentActivityProjection.version': 1,
+                            _subagentActivityProjectionSourceIsString: true,
+                            _subagentActivityProjectionSourceBytes: {
+                              $lte: SUBAGENT_ACTIVITY_PROJECTION_SOURCE_BYTE_LIMIT,
+                            },
+                          },
+                          {
+                            'subagentTranscript.taskId': input.selectedTaskId,
+                            _subagentTranscriptSourceIsString: true,
+                            _subagentTranscriptSourceBytes: {
+                              $lte: SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+                            },
+                          },
+                        ],
+                      },
+                    },
+                    { $project: activitySourceProjection },
+                  ],
+                },
+              },
+            ]);
+      const [[projection], [selectedProjection]] = await Promise.all([
+        recentProjectionPromise,
+        selectedProjectionPromise,
+      ]);
+      if (projection == null || selectedProjection == null) return [];
       const sourcesByMessageId = new Map(
-        [...projection.selectedSources, ...projection.recentSources].map((record) => [
+        [...selectedProjection.selectedSources, ...projection.recentSources].map((record) => [
           record.messageId,
           record,
         ]),
       );
       const messages = [...projection.messages];
       const retainedMessageIds = new Set(messages.map((message) => message.messageId));
-      for (const message of projection.selectedMessages) {
+      for (const message of selectedProjection.selectedMessages) {
         if (retainedMessageIds.has(message.messageId)) continue;
         messages.push(message);
         retainedMessageIds.add(message.messageId);
