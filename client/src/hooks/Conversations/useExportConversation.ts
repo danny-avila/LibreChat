@@ -390,10 +390,12 @@ export default function useExportConversation({
    * image (see `exportPDF`), so no Hangul-capable font binary needs to be embedded.
    */
   const buildPDFNode = (messages: (Partial<TMessage> | undefined)[]): HTMLDivElement => {
+    // 주의: 이 노드에는 위치 지정 스타일(position/top/left)을 넣으면 안 된다.
+    // html-to-image 가 노드를 복제할 때 인라인 스타일까지 복사하므로,
+    // fixed + (-10000px) 가 있으면 복제본이 캡처 뷰포트 밖으로 밀려나
+    // 흰 페이지만 찍힌다 (PDF 빈 화면 버그의 원인). 화면 밖 배치는
+    // exportPDF 의 래퍼가 담당한다.
     const container = document.createElement('div');
-    container.style.position = 'fixed';
-    container.style.top = '-10000px';
-    container.style.left = '-10000px';
     container.style.width = '794px';
     container.style.boxSizing = 'border-box';
     container.style.padding = '48px';
@@ -472,10 +474,21 @@ export default function useExportConversation({
 
     const list = Array.isArray(messages) ? messages : [messages];
     const node = buildPDFNode(list);
-    document.body.appendChild(node);
+    // 화면 밖 배치는 래퍼가 담당 — 캡처 대상(node)에는 위치 스타일이 없어
+    // 복제본이 캡처 영역 안에 정상적으로 그려진다.
+    const wrapper = document.createElement('div');
+    wrapper.style.position = 'fixed';
+    wrapper.style.top = '-10000px';
+    wrapper.style.left = '-10000px';
+    wrapper.appendChild(node);
+    document.body.appendChild(wrapper);
 
     try {
-      const canvas = await toCanvas(node, { backgroundColor: '#ffffff', pixelRatio: 2 });
+      // 캔버스 크기 한도(한 변 ~32k px)를 넘으면 toDataURL 이 빈 이미지를
+      // 반환한다 — 긴 대화는 배율을 낮춰 한도 안에 들어오게 한다.
+      const nodeHeight = Math.max(node.scrollHeight, 1);
+      const pixelRatio = Math.min(2, Math.max(0.5, 30000 / nodeHeight));
+      const canvas = await toCanvas(node, { backgroundColor: '#ffffff', pixelRatio });
       const imgData = canvas.toDataURL('image/png');
 
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
@@ -498,7 +511,7 @@ export default function useExportConversation({
 
       pdf.save(`${filename}.pdf`);
     } finally {
-      document.body.removeChild(node);
+      document.body.removeChild(wrapper);
     }
   };
 
