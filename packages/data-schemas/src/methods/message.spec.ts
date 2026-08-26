@@ -1162,6 +1162,12 @@ describe('Message Operations', () => {
               inputValidationError: true,
             },
           },
+          {
+            type: 'activity_label',
+            activity_label: 'Coordinating agents',
+            tool_call_ids: Array.from({ length: 32 }, (_, index) => `tool-${index}`),
+            agent_ids: Array.from({ length: 32 }, (_, index) => `agent-${index}`),
+          },
         ],
       });
 
@@ -1175,7 +1181,9 @@ describe('Message Operations', () => {
       expect(messages).toHaveLength(1);
       expect(messages[0].subagentActivity).toHaveLength(SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT);
       expect(messages[0].subagentActivityProjectionTruncated).toBe(true);
-      const retainedTool = messages[0].subagentActivity?.slice(-1)[0] as {
+      const retainedTool = messages[0].subagentActivity?.find(
+        (activity) => (activity as { type?: string }).type === 'tool',
+      ) as {
         input: string;
         output: string;
       };
@@ -1191,9 +1199,81 @@ describe('Message Operations', () => {
       );
       expect(retainedTool.input.length).toBeLessThan(2_000);
       expect(retainedTool.output.length).toBeLessThan(4_000);
+      const retainedLabel = messages[0].subagentActivity?.find(
+        (activity) => (activity as { type?: string }).type === 'activity_label',
+      ) as { agentIds: string[]; labelTruncated: boolean; toolCallIds: string[] };
+      expect(retainedLabel.toolCallIds).toHaveLength(8);
+      expect(retainedLabel.agentIds).toHaveLength(8);
+      expect(retainedLabel.labelTruncated).toBe(true);
       expect(JSON.stringify(messages[0])).not.toContain('activity-0');
       expect(JSON.stringify(messages[0])).not.toContain('x'.repeat(1_000));
       expect(JSON.stringify(messages[0])).not.toContain('y'.repeat(2_000));
+    });
+
+    it('bounds public control receipts before materializing the message page', async () => {
+      const conversationId = uuidv4();
+      const createdAt = new Date('2026-08-21T12:00:00.000Z');
+      const accepted = Array.from({ length: 16 }, (_, index) => ({
+        invocationId: `accepted-${index}`,
+        fingerprint: `private-fingerprint-${index}`,
+        action: 'steer' as const,
+        status: 'accepted' as const,
+        createdAt,
+        updatedAt: createdAt,
+        message: 'a'.repeat(4_096),
+      }));
+      const terminal = Array.from({ length: 48 }, (_, index) => ({
+        invocationId: `applied-${index}`,
+        fingerprint: `private-fingerprint-terminal-${index}`,
+        action: 'queue' as const,
+        status: 'applied' as const,
+        createdAt,
+        updatedAt: createdAt,
+        message: 't'.repeat(4_096),
+      }));
+      await saveMessage(mockCtx, {
+        messageId: 'task-controls:user',
+        conversationId,
+        text: 'Control the child.',
+        user: 'user123',
+        subagentTask: {
+          attemptKey: 'private-attempt-key',
+          requestFingerprint: 'private-request-fingerprint',
+          status: 'running',
+          controlReceipts: [...accepted, ...terminal],
+        },
+      });
+
+      const [message] = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+      });
+
+      expect(message.subagentTask?.status).toBe('running');
+      expect(message.subagentTask?.controlReceipts).toHaveLength(32);
+      expect(message.subagentTask?.controlReceipts?.slice(0, 16)).toEqual(
+        expect.arrayContaining(
+          accepted.map((receipt) =>
+            expect.objectContaining({ invocationId: receipt.invocationId, status: 'accepted' }),
+          ),
+        ),
+      );
+      expect(message.subagentTask?.controlReceipts?.slice(16)).toEqual(
+        terminal
+          .slice(-16)
+          .map((receipt) =>
+            expect.objectContaining({ invocationId: receipt.invocationId, status: 'applied' }),
+          ),
+      );
+      for (const receipt of message.subagentTask?.controlReceipts ?? []) {
+        expect(Buffer.byteLength(receipt.message ?? '', 'utf8')).toBeLessThanOrEqual(512);
+        expect(receipt.messageTruncated).toBe(true);
+        expect(receipt).not.toHaveProperty('fingerprint');
+      }
+      expect(message.subagentTask).not.toHaveProperty('attemptKey');
+      expect(message.subagentTask).not.toHaveProperty('requestFingerprint');
     });
 
     it('bounds transcript materialization while retaining the exact selected task', async () => {
@@ -1240,14 +1320,23 @@ describe('Message Operations', () => {
             message.subagentTranscriptProjectionTruncated === true,
         ),
       ).toHaveLength(1);
-      expect(aggregateSpy).toHaveBeenCalledTimes(2);
-      const recentPipeline = aggregateSpy.mock.calls[0][0] as unknown as Array<
+      expect(aggregateSpy).toHaveBeenCalledTimes(3);
+      const messagesPipeline = aggregateSpy.mock.calls[0][0] as unknown as Array<
         Record<string, unknown>
       >;
-      const selectedPipeline = aggregateSpy.mock.calls[1][0] as unknown as Array<
+      const recentSourcesPipeline = aggregateSpy.mock.calls[1][0] as unknown as Array<
         Record<string, unknown>
       >;
-      expect(recentPipeline[2]).toEqual({ $limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT });
+      const selectedPipeline = aggregateSpy.mock.calls[2][0] as unknown as Array<
+        Record<string, unknown>
+      >;
+      expect(messagesPipeline[2]).toEqual({ $limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT });
+      expect(messagesPipeline).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ $facet: expect.anything() })]),
+      );
+      expect(recentSourcesPipeline[2]).toEqual({
+        $limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT * 2,
+      });
       expect(selectedPipeline[0]).toEqual(
         expect.objectContaining({
           $match: expect.objectContaining({

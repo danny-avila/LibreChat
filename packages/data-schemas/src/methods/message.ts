@@ -306,9 +306,11 @@ export const SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT: number = 16;
 const SUBAGENT_MESSAGE_ACTIVITY_TEXT_CODE_POINT_LIMIT = 2048;
 const SUBAGENT_MESSAGE_ACTIVITY_TOOL_INPUT_CODE_POINT_LIMIT = 512;
 const SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT = 1024;
-const SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT = 256;
+const SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT = 128;
 const SUBAGENT_MESSAGE_ACTIVITY_LABEL_CODE_POINT_LIMIT = 512;
-const SUBAGENT_MESSAGE_ACTIVITY_LABEL_IDS_LIMIT = 32;
+const SUBAGENT_MESSAGE_ACTIVITY_LABEL_IDS_LIMIT = 8;
+const SUBAGENT_VIEW_CONTROL_RECEIPT_LIMIT = 32;
+const SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT = 128;
 
 /**
  * Exclusion projection for message reads that feed the chat client (the
@@ -364,7 +366,6 @@ export type SubagentThreadViewMessageRecord = Pick<
   | 'error'
   | 'unfinished'
   | 'subagentTranscript'
-  | 'subagentTask'
 > & {
   textProjectionTruncated?: boolean;
   subagentTranscriptProjectionTruncated?: boolean;
@@ -372,6 +373,13 @@ export type SubagentThreadViewMessageRecord = Pick<
   subagentActivity?: unknown[];
   subagentActivityProjectionJson?: string;
   subagentActivityProjectionTruncated?: boolean;
+  /** Storage-bounded task state; private replay and execution fields never cross this seam. */
+  subagentTask?: {
+    status?: NonNullable<IMessage['subagentTask']>['status'];
+    controlReceipts?: Array<
+      Omit<StoredSubagentControlReceipt, 'fingerprint'> & { fingerprint?: never }
+    >;
+  };
 };
 
 export type ParentSubagentTaskRecord = {
@@ -1535,6 +1543,130 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           in: boundedString('$$value', SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT),
         },
       });
+      const boundedControlReceipt = {
+        invocationId: boundedString(
+          '$$receipt.invocationId',
+          SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT,
+        ),
+        controlId: {
+          $cond: [
+            { $eq: [{ $type: '$$receipt.controlId' }, 'string'] },
+            boundedString('$$receipt.controlId', SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT),
+            '$$REMOVE',
+          ],
+        },
+        action: '$$receipt.action',
+        status: '$$receipt.status',
+        createdAt: '$$receipt.createdAt',
+        updatedAt: '$$receipt.updatedAt',
+        boundary: '$$receipt.boundary',
+        reason: {
+          $cond: [
+            { $eq: [{ $type: '$$receipt.reason' }, 'string'] },
+            boundedString('$$receipt.reason', SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT),
+            '$$REMOVE',
+          ],
+        },
+        message: {
+          $cond: [
+            { $eq: [{ $type: '$$receipt.message' }, 'string'] },
+            boundedString('$$receipt.message', SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT),
+            '$$REMOVE',
+          ],
+        },
+        messageTruncated: {
+          $or: [
+            { $eq: ['$$receipt.messageTruncated', true] },
+            stringProjectionTruncated(
+              '$$receipt.message',
+              SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT,
+            ),
+          ],
+        },
+      };
+      const boundedSubagentTask = {
+        $cond: [
+          { $eq: [{ $type: '$subagentTask' }, 'object'] },
+          {
+            status: '$subagentTask.status',
+            controlReceipts: {
+              $let: {
+                vars: {
+                  visible: {
+                    $filter: {
+                      input: {
+                        $cond: [
+                          { $isArray: '$subagentTask.controlReceipts' },
+                          '$subagentTask.controlReceipts',
+                          [],
+                        ],
+                      },
+                      as: 'receipt',
+                      cond: { $ne: ['$$receipt.status', 'reserved'] },
+                    },
+                  },
+                },
+                in: {
+                  $let: {
+                    vars: {
+                      accepted: {
+                        $slice: [
+                          {
+                            $filter: {
+                              input: '$$visible',
+                              as: 'receipt',
+                              cond: { $eq: ['$$receipt.status', 'accepted'] },
+                            },
+                          },
+                          SUBAGENT_VIEW_CONTROL_RECEIPT_LIMIT,
+                        ],
+                      },
+                      terminal: {
+                        $filter: {
+                          input: '$$visible',
+                          as: 'receipt',
+                          cond: { $ne: ['$$receipt.status', 'accepted'] },
+                        },
+                      },
+                    },
+                    in: {
+                      $map: {
+                        input: {
+                          $concatArrays: [
+                            '$$accepted',
+                            {
+                              $let: {
+                                vars: {
+                                  allowance: {
+                                    $subtract: [
+                                      SUBAGENT_VIEW_CONTROL_RECEIPT_LIMIT,
+                                      { $size: '$$accepted' },
+                                    ],
+                                  },
+                                },
+                                in: {
+                                  $cond: [
+                                    { $gt: ['$$allowance', 0] },
+                                    { $slice: ['$$terminal', { $multiply: [-1, '$$allowance'] }] },
+                                    [],
+                                  ],
+                                },
+                              },
+                            },
+                          ],
+                        },
+                        as: 'receipt',
+                        in: boundedControlReceipt,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          '$$REMOVE',
+        ],
+      };
       const boundedActivityContent = {
         $filter: {
           input: {
@@ -1583,10 +1715,42 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                         agentIds: boundedStringArray('$$part.agent_ids'),
                         status: '$$part.status',
                         pending: '$$part.pending',
-                        labelTruncated: stringProjectionTruncated(
-                          '$$part.activity_label',
-                          SUBAGENT_MESSAGE_ACTIVITY_LABEL_CODE_POINT_LIMIT,
-                        ),
+                        labelTruncated: {
+                          $or: [
+                            stringProjectionTruncated(
+                              '$$part.activity_label',
+                              SUBAGENT_MESSAGE_ACTIVITY_LABEL_CODE_POINT_LIMIT,
+                            ),
+                            {
+                              $gt: [
+                                {
+                                  $size: {
+                                    $cond: [
+                                      { $isArray: '$$part.tool_call_ids' },
+                                      '$$part.tool_call_ids',
+                                      [],
+                                    ],
+                                  },
+                                },
+                                SUBAGENT_MESSAGE_ACTIVITY_LABEL_IDS_LIMIT,
+                              ],
+                            },
+                            {
+                              $gt: [
+                                {
+                                  $size: {
+                                    $cond: [
+                                      { $isArray: '$$part.agent_ids' },
+                                      '$$part.agent_ids',
+                                      [],
+                                    ],
+                                  },
+                                },
+                                SUBAGENT_MESSAGE_ACTIVITY_LABEL_IDS_LIMIT,
+                              ],
+                            },
+                          ],
+                        },
                       },
                     },
                     {
@@ -1669,7 +1833,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
           ],
         },
-        subagentTask: 1,
+        subagentTask: boundedSubagentTask,
       };
       const sourceMetadataProjection = {
         _subagentTranscriptSourceBytes: transcriptJsonBytes,
@@ -1709,71 +1873,63 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           ? { tenantId: { $exists: false } }
           : { tenantId: input.tenantId }),
       };
-      const recentProjectionPromise = Message.aggregate<{
-        messages: SubagentThreadViewMessageRecord[];
-        recentSources: ActivitySourceProjection[];
-      }>([
+      /** Keep rows as independent MongoDB results. A `$facet` would combine the
+       * complete page into one BSON document and could exceed MongoDB's 16 MiB
+       * document limit before the API applies its smaller public byte budget. */
+      const messagesPromise = Message.aggregate<SubagentThreadViewMessageRecord>([
         { $match: baseMatch },
         { $sort: { createdAt: -1, _id: -1 } },
         { $limit: input.limit },
+        { $project: boundedMessageProjection },
+      ]);
+      const recentSourcesPromise = Message.aggregate<ActivitySourceProjection>([
+        { $match: baseMatch },
+        { $sort: { createdAt: -1, _id: -1 } },
+        { $limit: SUBAGENT_ACTIVITY_SOURCE_CANDIDATE_LIMIT },
         {
-          $facet: {
-            messages: [{ $project: boundedMessageProjection }],
-            recentSources: [
-              { $limit: SUBAGENT_ACTIVITY_SOURCE_CANDIDATE_LIMIT },
-              {
-                $match: {
-                  ...(input.selectedTaskId == null
-                    ? {}
-                    : { messageId: { $ne: `${input.selectedTaskId}:assistant` } }),
-                  $or: [
-                    { 'subagentActivityProjection.activityJson': { $exists: true } },
-                    { 'subagentTranscript.messagesJson': { $exists: true } },
-                  ],
-                },
-              },
-              { $addFields: sourceMetadataProjection },
-              {
-                $match: {
-                  $expr: {
-                    $or: [
-                      {
-                        $and: [
-                          activityProjectionAvailable,
-                          {
-                            $eq: [
-                              '$messageId',
-                              {
-                                $concat: ['$subagentActivityProjection.taskId', ':assistant'],
-                              },
-                            ],
-                          },
-                        ],
-                      },
-                      {
-                        $and: [
-                          transcriptAvailable,
-                          {
-                            $eq: [
-                              '$messageId',
-                              { $concat: ['$subagentTranscript.taskId', ':assistant'] },
-                            ],
-                          },
-                        ],
-                      },
-                    ],
-                  },
-                },
-              },
-              {
-                $limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT - (input.selectedTaskId == null ? 0 : 1),
-              },
-              {
-                $project: activitySourceProjection,
-              },
+          $match: {
+            ...(input.selectedTaskId == null
+              ? {}
+              : { messageId: { $ne: `${input.selectedTaskId}:assistant` } }),
+            $or: [
+              { 'subagentActivityProjection.activityJson': { $exists: true } },
+              { 'subagentTranscript.messagesJson': { $exists: true } },
             ],
           },
         },
+        { $addFields: sourceMetadataProjection },
+        {
+          $match: {
+            $expr: {
+              $or: [
+                {
+                  $and: [
+                    activityProjectionAvailable,
+                    {
+                      $eq: [
+                        '$messageId',
+                        { $concat: ['$subagentActivityProjection.taskId', ':assistant'] },
+                      ],
+                    },
+                  ],
+                },
+                {
+                  $and: [
+                    transcriptAvailable,
+                    {
+                      $eq: [
+                        '$messageId',
+                        { $concat: ['$subagentTranscript.taskId', ':assistant'] },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        { $limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT - (input.selectedTaskId == null ? 0 : 1) },
+        { $project: activitySourceProjection },
       ]);
       const selectedProjectionPromise =
         input.selectedTaskId == null
@@ -1829,18 +1985,18 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                 },
               },
             ]);
-      const [[projection], [selectedProjection]] = await Promise.all([
-        recentProjectionPromise,
+      const [messages, recentSources, [selectedProjection]] = await Promise.all([
+        messagesPromise,
+        recentSourcesPromise,
         selectedProjectionPromise,
       ]);
-      if (projection == null || selectedProjection == null) return [];
+      if (selectedProjection == null) return [];
       const sourcesByMessageId = new Map(
-        [...selectedProjection.selectedSources, ...projection.recentSources].map((record) => [
+        [...selectedProjection.selectedSources, ...recentSources].map((record) => [
           record.messageId,
           record,
         ]),
       );
-      const messages = [...projection.messages];
       const retainedMessageIds = new Set(messages.map((message) => message.messageId));
       for (const message of selectedProjection.selectedMessages) {
         if (retainedMessageIds.has(message.messageId)) continue;
