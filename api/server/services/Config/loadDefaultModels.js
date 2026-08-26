@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint, Providers } = require('librechat-data-provider');
 const {
   mergeHeaders,
   getAnthropicModels,
@@ -75,6 +75,7 @@ async function loadDefaultModels(req) {
     return {
       [EModelEndpoint.openAI]: openAI,
       [EModelEndpoint.google]: google,
+      [Providers.VERTEXAI]: google,
       [EModelEndpoint.anthropic]: anthropic,
       [EModelEndpoint.azureOpenAI]: azureOpenAI,
       [EModelEndpoint.assistants]: assistants,
