@@ -791,8 +791,8 @@ describe('agent trigger delivery methods', () => {
       status: 'succeeded',
       batchRootRequeueCount: 1,
     });
-    await expect(methods.recoverAgentTriggerBatchReceipts()).rejects.toThrow(
-      'Not every agent trigger batch receipt could be settled',
+    await expect(methods.recoverAgentTriggerLanePublications()).rejects.toThrow(
+      'Not every agent trigger batch receipt could be prepared for requeue',
     );
     await expect(Delivery.findById(memberId).lean()).resolves.toMatchObject({
       status: 'succeeded',
@@ -801,7 +801,7 @@ describe('agent trigger delivery methods', () => {
     expect((await Delivery.findById(root!._id).lean())?.batchMembersSettledAt).toBeUndefined();
   });
 
-  it('retries safely when batch requeue stops after preparing its members', async () => {
+  it('recovers batch requeue after claiming the root before member preparation', async () => {
     const user = new mongoose.Types.ObjectId();
     const coalesceUntil = new Date(Date.now() + 60_000);
     const shared = {
@@ -836,24 +836,26 @@ describe('agent trigger delivery methods', () => {
       error: transientFailure({ retryable: false }),
       settledAt: coalesceUntil,
     });
-    const transition = jest.spyOn(Delivery, 'findOneAndUpdate').mockImplementationOnce(() => {
-      throw new Error('process interrupted before root transition');
+    const transition = jest.spyOn(Delivery, 'updateMany').mockImplementationOnce(() => {
+      throw new Error('process interrupted before member preparation');
     });
 
     await expect(methods.requeueAgentTriggerDelivery(claim!.id, coalesceUntil)).rejects.toThrow(
-      'process interrupted before root transition',
+      'process interrupted before member preparation',
     );
     transition.mockRestore();
     await expect(Delivery.findById(claim!.id).lean()).resolves.toMatchObject({
-      status: 'dead',
-      requeueCount: 0,
+      status: 'staging',
+      requeueCount: 1,
     });
     const preparedMember = await Delivery.findOne({ batchRootId: claim!.id }).lean();
-    expect(preparedMember).toMatchObject({ status: 'batched', batchRootRequeueCount: 1 });
+    expect(preparedMember).toMatchObject({ status: 'dead' });
 
-    await expect(
-      methods.requeueAgentTriggerDelivery(claim!.id, coalesceUntil),
-    ).resolves.toMatchObject({ status: 'pending', requeueCount: 1 });
+    await expect(methods.recoverAgentTriggerLanePublications()).resolves.toBeGreaterThan(0);
+    await expect(Delivery.findById(claim!.id).lean()).resolves.toMatchObject({
+      status: 'pending',
+      requeueCount: 1,
+    });
     await expect(Delivery.findById(preparedMember!._id).lean()).resolves.toMatchObject({
       status: 'batched',
       batchRootRequeueCount: 1,
@@ -1710,7 +1712,17 @@ describe('agent trigger delivery methods', () => {
     await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(true);
     await expect(methods.settleAgentEventActorReceipt(settlement)).resolves.toBe(true);
     await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(false);
+    /** Simulate a receipt written by the pre-normalization build after
+     * transport dead-lettered the root. Exact replay must retire that dead
+     * state instead of leaving a non-requeueable dead letter. */
+    await Delivery.updateOne(
+      { deliveryKey: settlement.deliveryKey },
+      { $set: { status: 'dead', lastError: transientFailure() } },
+    );
     await expect(methods.settleAgentEventActorReceipt(settlement)).resolves.toBe(true);
+    await expect(
+      Delivery.findOne({ deliveryKey: settlement.deliveryKey }).lean(),
+    ).resolves.toMatchObject({ status: 'succeeded' });
     for (const conflict of [
       { ...settlement, user: new mongoose.Types.ObjectId() },
       { ...settlement, tenantId: 'tenant-2' },
@@ -1791,7 +1803,7 @@ describe('agent trigger delivery methods', () => {
       { deliveryKey: queued.delivery.deliveryKey },
       {
         $set: {
-          status: 'succeeded',
+          status: 'dead',
           handling: {
             status: 'applied',
             conversationId: 'conversation-legacy',
@@ -1855,6 +1867,7 @@ describe('agent trigger delivery methods', () => {
       settledAt: input.settledAt,
     });
     const stored = await Delivery.findOne({ deliveryKey: input.deliveryKey }).lean();
+    expect(stored?.status).toBe('succeeded');
     expect(stored?.expiresAt?.getTime()).toBeGreaterThan(START.getTime() + 1_000);
   });
 

@@ -392,6 +392,32 @@ export async function executeAgentEventActor<T>(
       return { status: 'committed', head: toHead(input.conversationId, committed.state) };
     },
     async discard(request) {
+      /** Release the delivery-owned action admission before deleting either
+       * the fork or its conversation-side lifecycle evidence. A crash after
+       * this release is retryable; the inverse order can orphan admission
+       * forever with no durable marker left to recover it from. */
+      if (ownsActionAdmission && input.bindingId != null && deps.releaseAction != null) {
+        const releasedAction = await deps.releaseAction({
+          deliveryKey: input.invocationId,
+          user: input.user,
+          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+          bindingId: input.bindingId,
+          conversationId: input.conversationId,
+        });
+        if (!releasedAction) {
+          const receipt = await deps.getReceipt?.({
+            deliveryKey: input.invocationId,
+            user: input.user,
+            ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+            bindingId: input.bindingId,
+            conversationId: input.conversationId,
+          });
+          if (receipt == null) {
+            throw new Error('Event actor action admission could not be released');
+          }
+        }
+        ownsActionAdmission = false;
+      }
       await deleteAgentCheckpoint(request.invocation.fork.threadId, input.checkpointer, undefined, {
         throwOnError: true,
         checkpointNamespace: request.invocation.fork.checkpointNs,
@@ -423,28 +449,6 @@ export async function executeAgentEventActor<T>(
         ) {
           throw new Error('Event actor invocation lifecycle fence could not be released');
         }
-      }
-      if (ownsActionAdmission && input.bindingId != null && deps.releaseAction != null) {
-        const releasedAction = await deps.releaseAction({
-          deliveryKey: input.invocationId,
-          user: input.user,
-          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
-          bindingId: input.bindingId,
-          conversationId: input.conversationId,
-        });
-        if (!releasedAction) {
-          const receipt = await deps.getReceipt?.({
-            deliveryKey: input.invocationId,
-            user: input.user,
-            ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
-            bindingId: input.bindingId,
-            conversationId: input.conversationId,
-          });
-          if (receipt == null) {
-            throw new Error('Event actor action admission could not be released');
-          }
-        }
-        ownsActionAdmission = false;
       }
     },
   };

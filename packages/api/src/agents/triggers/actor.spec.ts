@@ -890,5 +890,8 @@ describe('event actor host adapter', () => {
       bindingId: 'binding-1',
       conversationId,
     });
+    expect(dependencies.releaseAction.mock.invocationCallOrder[0]).toBeLessThan(
+      dependencies.resolveReconciliation.mock.invocationCallOrder[0],
+    );
   });
 });
