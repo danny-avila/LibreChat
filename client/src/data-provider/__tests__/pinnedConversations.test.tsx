@@ -9,17 +9,18 @@ import type {
 } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import {
+  removeConvoFromAllQueries,
+  updateConvoInAllQueries,
+  upsertConvoInAllQueries,
+  collectPinnedConversations,
+  withoutListFlags,
+} from '~/utils/convos';
+import {
   useConversationTagMutation,
   useDeleteConversationMutation,
   useDeleteConversationTagMutation,
   usePinConversationMutation,
 } from '../mutations';
-import {
-  removeConvoFromAllQueries,
-  updateConvoInAllQueries,
-  upsertConvoInAllQueries,
-  collectPinnedConversations,
-} from '~/utils/convos';
 import { pinnedConversationsPageSize, usePinnedConversationsQuery } from '../queries';
 
 jest.mock('librechat-data-provider', () => {
@@ -313,6 +314,81 @@ describe('pinned list cache synchronization', () => {
         (c) => c.conversationId,
       ),
     ).toEqual(['convo-pinned', 'convo-other']);
+  });
+
+  /** A chat pinned while it is open never hears about the pin in its own conversation
+   * state, so the state the SSE handlers write back still says `pinned: false`. Sending
+   * a message then dropped the chat out of Pinned and back into the date groups. */
+  it('keeps a pin in the section when a new turn writes back stale chat state', () => {
+    const queryClient = createQueryClient();
+    queryClient.setQueryData(
+      [QueryKeys.pinnedConversations, { tags: undefined }],
+      listResponse([pinnedConvo]),
+    );
+
+    const staleChatState = { ...pinnedConvo, title: 'Replied', pinned: false } as TConversation;
+    updateConvoInAllQueries(
+      queryClient,
+      pinnedConversationId,
+      () => withoutListFlags(staleChatState),
+      true,
+    );
+
+    const conversations = readPinnedCache(queryClient)?.conversations;
+    expect(conversations?.map((c) => c.conversationId)).toEqual([pinnedConversationId]);
+    expect(conversations?.[0].pinned).toBe(true);
+    expect(conversations?.[0].title).toBe('Replied');
+  });
+
+  /** The date groups skip pinned chats, so losing the flag on the chats row put the same
+   * conversation back under Today beside the section it had just left. */
+  it('keeps the flag on the chats row when a new turn writes back stale chat state', () => {
+    const queryClient = createQueryClient();
+    queryClient.setQueryData([QueryKeys.allConversations, { tags: undefined }], {
+      pages: [{ conversations: [pinnedConvo], nextCursor: null }],
+      pageParams: [],
+    });
+
+    const staleChatState = { ...pinnedConvo, title: 'Replied', pinned: false } as TConversation;
+    updateConvoInAllQueries(
+      queryClient,
+      pinnedConversationId,
+      () => withoutListFlags(staleChatState),
+      true,
+    );
+
+    const data = queryClient.getQueryData<{
+      pages: Array<{ conversations: TConversation[] }>;
+    }>([QueryKeys.allConversations, { tags: undefined }]);
+    expect(data?.pages[0].conversations[0].pinned).toBe(true);
+  });
+
+  /** The first turn of a chat takes the upsert path, which merges rather than replaces:
+   * stripping the flags is what keeps that merge from writing the stale one back. */
+  it('keeps a pin when the first turn of a chat upserts stale chat state', () => {
+    const queryClient = createQueryClient();
+    queryClient.setQueryData(
+      [QueryKeys.pinnedConversations, { tags: undefined }],
+      listResponse([pinnedConvo]),
+    );
+
+    const staleChatState = { ...pinnedConvo, title: 'Replied', pinned: false } as TConversation;
+    upsertConvoInAllQueries(queryClient, withoutListFlags(staleChatState));
+
+    expect(readPinnedCache(queryClient)?.conversations[0].pinned).toBe(true);
+  });
+
+  it('withoutListFlags drops only the sidebar-owned flags', () => {
+    const stripped = withoutListFlags({
+      ...pinnedConvo,
+      pinned: false,
+      isShared: true,
+    } as TConversation);
+
+    expect('pinned' in stripped).toBe(false);
+    expect('isShared' in stripped).toBe(false);
+    expect(stripped.conversationId).toBe(pinnedConversationId);
+    expect(stripped.title).toBe(pinnedConvo.title);
   });
 
   it('leaves the pinned cache untouched for an unrelated conversation', () => {
