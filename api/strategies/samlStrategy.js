@@ -216,6 +216,15 @@ function createSamlCallback(existingUsersOnly = false) {
         });
       }
 
+      if (user?.samlId && user.samlId !== profile.nameID) {
+        logger.warn(
+          `[samlStrategy] Refused SAML login with a different NameID for user: ${user.email}`,
+        );
+        return done(null, false, {
+          message: ErrorTypes.AUTH_FAILED,
+        });
+      }
+
       const appConfig = user?.tenantId
         ? await resolveAppConfigForUser(getAppConfig, user)
         : baseConfig;

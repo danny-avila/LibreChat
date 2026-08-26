@@ -7,6 +7,7 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: {
     info: jest.fn(),
     debug: jest.fn(),
+    warn: jest.fn(),
     error: jest.fn(),
   },
   hashToken: jest.fn().mockResolvedValue('hashed-token'),
@@ -424,6 +425,23 @@ u7wlOSk+oFzDIO/UILIA
     expect(user.username).toBe(baseProfile.username);
     expect(user.name).toBe(`${baseProfile.given_name} ${baseProfile.family_name}`);
     expect(user.email).toBe(baseProfile.email);
+  });
+
+  it('should reject an email match bound to a different NameID', async () => {
+    const { findUser, updateUser } = require('~/models');
+    const existingUser = {
+      _id: 'existing-user-id',
+      provider: 'saml',
+      email: baseProfile.email,
+      samlId: 'original-name-id',
+    };
+    findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existingUser);
+
+    const result = await validate(baseProfile);
+
+    expect(result.user).toBe(false);
+    expect(result.details.message).toBe(require('librechat-data-provider').ErrorTypes.AUTH_FAILED);
+    expect(updateUser).not.toHaveBeenCalled();
   });
 
   it('should block login when email exists with different provider', async () => {
