@@ -359,7 +359,7 @@ export default function BklSourcesPanel({ onBack }: BklSourcesPanelProps = {}) {
           나눠 각각 독립적으로 줄바꿈/말줄임되게 한다.
             1행 — [뒤로] 출처 [N] + 메타 뱃지(wrap) + [닫기]
             2행 — 파일 아이콘 + 파일명(truncate)
-            3행 — iM 파일 / iM 폴더 / BIMS / 담기 (wrap) */}
+            3행 — iM / BIMS / 담기 (wrap) */}
       <div className="flex flex-shrink-0 flex-col gap-1 border-b border-border-light bg-surface-primary-alt px-3 py-2">
         <div className="flex items-start gap-1">
           {onBack ? (
@@ -476,12 +476,10 @@ function AddToProjectButton({ source }: { source: BklSource | null }) {
 
 function ExternalSystemButtons({ source }: { source: BklSource | null }) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
-  const [folderUrl, setFolderUrl] = useState<string | null>(null);
   const [bimsUrl, setBimsUrl] = useState<string | null>(null);
 
   useEffect(() => {
     setFileUrl(null);
-    setFolderUrl(null);
     setBimsUrl(null);
     if (!source) return;
     const meta = source.metadata?.[0] as Record<string, unknown> | undefined;
@@ -490,18 +488,17 @@ function ExternalSystemButtons({ source }: { source: BklSource | null }) {
       source.source?.imanage_preview_url ??
       (typeof meta?.imanage_url === 'string' ? (meta.imanage_url as string) : null) ??
       (typeof meta?.imanage_preview_url === 'string' ? (meta.imanage_preview_url as string) : null);
-    const directFolder =
-      source.source?.imanage_folder_url ??
-      (typeof meta?.imanage_folder_url === 'string' ? (meta.imanage_folder_url as string) : null);
     const directBims =
       source.source?.bims_url ??
       (typeof meta?.bims_url === 'string' ? (meta.bims_url as string) : null);
     setFileUrl(directFile);
-    setFolderUrl(directFolder);
     setBimsUrl(directBims);
 
+    // PG document_tags 에 iManage 검색 링크(imanage_preview_url)가 전건
+    // 채워져 있으므로, Qdrant payload 값은 임시 표시용이고 API 응답(PG)이
+    // 항상 최종 값으로 덮어쓴다 — 조건부 skip 없이 항상 호출 (2026-08-26).
     const docId = typeof meta?.doc_id === 'string' && meta.doc_id ? (meta.doc_id as string) : null;
-    if (!docId || (directFolder && directBims)) return;
+    if (!docId) return;
     let cancelled = false;
     fetch(`/bkl/v1/imanage-links/${encodeURIComponent(docId)}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -509,7 +506,6 @@ function ExternalSystemButtons({ source }: { source: BklSource | null }) {
         if (cancelled || !data) return;
         const nextFile = data.imanage_url ?? data.imanage_preview_url ?? null;
         if (nextFile) setFileUrl(nextFile);
-        if (data.imanage_folder_url) setFolderUrl(data.imanage_folder_url);
         if (data.bims_url) setBimsUrl(data.bims_url);
       })
       .catch(() => {});
@@ -518,18 +514,13 @@ function ExternalSystemButtons({ source }: { source: BklSource | null }) {
     };
   }, [source]);
 
-  if (!fileUrl && !folderUrl && !bimsUrl) return null;
+  if (!fileUrl && !bimsUrl) return null;
   return (
     <>
       {fileUrl ? (
-        <SourceExternalLink href={fileUrl} label="iM 파일" />
+        <SourceExternalLink href={fileUrl} label="iM" />
       ) : (
-        <SourceDisabledLink label="iM 파일" />
-      )}
-      {folderUrl ? (
-        <SourceExternalLink href={folderUrl} label="iM 폴더" />
-      ) : (
-        <SourceDisabledLink label="iM 폴더" />
+        <SourceDisabledLink label="iM" />
       )}
       {bimsUrl && <SourcePopupLink href={bimsUrl} label="BIMS" popupName="bims_popup" />}
     </>
