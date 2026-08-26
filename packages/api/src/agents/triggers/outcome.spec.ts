@@ -1,7 +1,10 @@
 import { StepTypes } from 'librechat-data-provider';
 import type { Agents } from 'librechat-data-provider';
 import type { SerializableJobData } from '~/stream';
-import { createAgentEventTerminalHandler as createAgentEventTerminalHandlerImpl } from './outcome';
+import {
+  createAgentEventTerminalHandler as createAgentEventTerminalHandlerImpl,
+  createAgentEventActionRecorder,
+} from './outcome';
 
 const createAgentEventTerminalHandler = (
   methods: Pick<
@@ -779,5 +782,72 @@ describe('agent event terminal outcomes', () => {
 
     expect(resolveAgentEventActorReconciliation).not.toHaveBeenCalled();
     expect(settleAgentTriggerHandlingOutcome).not.toHaveBeenCalled();
+  });
+});
+
+describe('createAgentEventActionRecorder', () => {
+  const expectedAction = { toolName: 'submit_move', argumentSubset: { gameId: 'game-1' } };
+  const successEnd = {
+    input: { gameId: 'game-1', move: 'e4' },
+    output: { name: 'submit_move', tool_call_id: 'call-1', content: '{"ok":true}' },
+  };
+
+  it('records the first qualifying execution and keeps it', async () => {
+    const recorder = createAgentEventActionRecorder(expectedAction);
+    expect(recorder.read()).toBeUndefined();
+    recorder.observeToolEnd(successEnd);
+    recorder.observeToolEnd({
+      input: { gameId: 'game-1' },
+      output: { name: 'submit_move', tool_call_id: 'call-2', content: '{"ok":true}' },
+    });
+    expect(recorder.read()).toEqual({ toolName: 'submit_move', toolCallId: 'call-1' });
+  });
+
+  it('accepts the MCP-suffixed form of the expected tool', async () => {
+    const recorder = createAgentEventActionRecorder(expectedAction);
+    recorder.observeToolEnd({
+      ...successEnd,
+      output: { ...successEnd.output, name: 'submit_move_mcp_chess' },
+    });
+    expect(recorder.read()).toEqual({ toolName: 'submit_move_mcp_chess', toolCallId: 'call-1' });
+  });
+
+  it('enforces the fenced argument subset against the execution input', async () => {
+    const recorder = createAgentEventActionRecorder(expectedAction);
+    recorder.observeToolEnd({ ...successEnd, input: { gameId: 'other-game', move: 'e4' } });
+    recorder.observeToolEnd({ ...successEnd, input: undefined });
+    expect(recorder.read()).toBeUndefined();
+  });
+
+  it('never records name mismatches, errored results, or malformed outputs', async () => {
+    const recorder = createAgentEventActionRecorder(expectedAction);
+    recorder.observeToolEnd({ ...successEnd, output: { ...successEnd.output, name: 'resign' } });
+    recorder.observeToolEnd({
+      ...successEnd,
+      output: { ...successEnd.output, status: 'error' },
+    });
+    recorder.observeToolEnd({ ...successEnd, output: { ...successEnd.output, content: null } });
+    recorder.observeToolEnd({ ...successEnd, output: undefined });
+    recorder.observeToolEnd({ input: successEnd.input, output: 'plain-string' });
+    expect(recorder.read()).toBeUndefined();
+  });
+
+  it('excludes background non-execution receipts', async () => {
+    const recorder = createAgentEventActionRecorder({ toolName: 'submit_move' });
+    recorder.observeToolEnd({
+      input: { gameId: 'game-1', run_in_background: true },
+      output: {
+        name: 'submit_move',
+        tool_call_id: 'call-bg',
+        content: JSON.stringify({ status: 'running', background_task_id: 'task-1' }),
+      },
+    });
+    expect(recorder.read()).toBeUndefined();
+  });
+
+  it('records nothing without a declared expected action', async () => {
+    const recorder = createAgentEventActionRecorder(undefined);
+    recorder.observeToolEnd(successEnd);
+    expect(recorder.read()).toBeUndefined();
   });
 });

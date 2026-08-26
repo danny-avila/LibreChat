@@ -8,6 +8,7 @@ import {
   forkAgentEventCheckpoint,
   getAgentCheckpointer,
 } from '../checkpointer';
+import { createAgentEventActionRecorder, findAgentEventAppliedAction } from './outcome';
 import { executeAgentEventActor } from './actor';
 
 jest.mock('../checkpointer', () => ({
@@ -111,6 +112,57 @@ describe('event actor host adapter', () => {
       'event-2',
       undefined,
     );
+    expect(state).toMatchObject({ generation: 2, checkpoint: { checkpointId: 'checkpoint-2' } });
+  });
+
+  it('commits from the execution-time receipt when run steps lag sendMessage', async () => {
+    const dependencies = deps();
+    const expectedAction = { toolName: 'submit_move', argumentSubset: { gameId: 'game-1' } };
+    const invocations: Array<{ continuation: string }> = [];
+    let toolExecutions = 0;
+    const run = async (invocationId: string) => {
+      const recorder = createAgentEventActionRecorder(expectedAction);
+      return executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId,
+          event: { id: invocationId, type: 'turn' },
+          expectedAction,
+          signal: new AbortController().signal,
+          invoke: async (context) => {
+            invocations.push({ continuation: context.continuation });
+            toolExecutions += 1;
+            recorder.observeToolEnd({
+              input: { gameId: 'game-1', move: 'e4' },
+              output: {
+                name: 'submit_move_mcp_chess',
+                tool_call_id: `call-${invocationId}`,
+                content: '{"ok":true}',
+              },
+            });
+            return `response-${invocationId}`;
+          },
+          /** Reproduces the observed race: the run-step collection is still
+           * empty the instant sendMessage resolves, so only the graph-context
+           * receipt carries the applied-action proof. */
+          readAppliedAction: () =>
+            recorder.read() ?? findAgentEventAppliedAction(expectedAction, [], []),
+        },
+        dependencies,
+      );
+    };
+
+    const first = await run('event-1');
+    const second = await run('event-2');
+
+    expect(first.execution).toMatchObject({
+      status: 'applied',
+      result: { action: { toolName: 'submit_move_mcp_chess', toolCallId: 'call-event-1' } },
+    });
+    expect(second.execution).toMatchObject({ status: 'applied' });
+    expect(invocations).toEqual([{ continuation: 'cold' }, { continuation: 'warm' }]);
+    expect(toolExecutions).toBe(2);
     expect(state).toMatchObject({ generation: 2, checkpoint: { checkpointId: 'checkpoint-2' } });
   });
 

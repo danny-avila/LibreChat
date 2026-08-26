@@ -32,6 +32,7 @@ const {
   isAgentEventRetentionActive,
   executeAgentEventActor,
   findAgentEventAppliedAction,
+  createAgentEventActionRecorder,
   isHITLEnabled,
   agentRequestsAskUserQuestion,
 } = require('@librechat/api');
@@ -1944,6 +1945,18 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           agentEventDelivery.expectedAction != null &&
           typeof eventTaskId === 'string' &&
           req._agentEventBindingParentConversationId != null;
+        /** Authoritative action proof is captured in graph context the moment
+         * the expected tool executes (see the observer tee in initialize.js);
+         * run-step inspection stays only as a fallback, because the run-step
+         * collection is populated asynchronously and can still be empty the
+         * instant sendMessage resolves — misreading an applied invocation as
+         * actionless would discard its fork and strand the actor cold. */
+        const eventActorActionRecorder = canUseEventActorFork
+          ? createAgentEventActionRecorder(agentEventDelivery.expectedAction)
+          : undefined;
+        if (eventActorActionRecorder != null) {
+          req._agentEventActionObserver = eventActorActionRecorder.observeToolEnd;
+        }
         const sendPromise = canUseEventActorFork
           ? executeAgentEventActor(
               {
@@ -1963,6 +1976,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   return client.sendMessage(text, messageOptions);
                 },
                 readAppliedAction: () =>
+                  eventActorActionRecorder.read() ??
                   findAgentEventAppliedAction(
                     agentEventDelivery.expectedAction,
                     client?.run?.getRunSteps?.() ?? [],

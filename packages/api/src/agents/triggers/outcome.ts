@@ -213,6 +213,73 @@ function matchesExpectedAction(
   );
 }
 
+export interface AgentEventActionRecorder {
+  observeToolEnd(data: { input?: unknown; output?: unknown }): void;
+  read(): AgentEventAppliedAction | undefined;
+}
+
+/**
+ * Captures qualifying applied-action evidence at tool-execution time, in graph
+ * context, instead of trusting the asynchronously populated run-step
+ * collection to be observable the instant `sendMessage` resolves. The recorder
+ * applies the SAME fences as run-step evidence — exact tool name (with the MCP
+ * suffix form), the declared argument subset, an error-free result, and the
+ * background non-execution receipt exclusion. HITL never reaches the fork path
+ * and non-executed approvals never emit a tool end, so the non-execution id
+ * set has no equivalent here. Only the first qualifying execution is retained;
+ * run-step evidence remains the fallback for paths that bypass the tool-end
+ * chain (e.g. programmatic tool calling).
+ */
+export function createAgentEventActionRecorder(
+  expectedAction: AgentTriggerExpectedAction | undefined,
+): AgentEventActionRecorder {
+  let receipt: AgentEventAppliedAction | undefined;
+  return {
+    observeToolEnd(data) {
+      if (expectedAction == null || receipt != null || data == null) {
+        return;
+      }
+      const output = data.output as
+        | { name?: unknown; tool_call_id?: unknown; content?: unknown; status?: unknown }
+        | null
+        | undefined;
+      if (
+        output == null ||
+        typeof output !== 'object' ||
+        typeof output.name !== 'string' ||
+        output.name.length === 0 ||
+        output.content == null ||
+        output.status === 'error'
+      ) {
+        return;
+      }
+      if (
+        typeof output.content === 'string' &&
+        isBackgroundNonExecutionReceipt(output.content, data.input)
+      ) {
+        return;
+      }
+      const toolCallId =
+        typeof output.tool_call_id === 'string' && output.tool_call_id.length > 0
+          ? output.tool_call_id
+          : undefined;
+      const evidence: CompletedToolEvidence = {
+        toolName: output.name,
+        ...(toolCallId == null ? {} : { toolCallId }),
+        arguments: data.input,
+      };
+      if (!matchesExpectedAction(evidence, expectedAction)) {
+        return;
+      }
+      receipt = {
+        toolName: evidence.toolName.slice(0, MAX_RECEIPT_ID_LENGTH),
+        ...(toolCallId == null ? {} : { toolCallId: toolCallId.slice(0, MAX_RECEIPT_ID_LENGTH) }),
+      };
+    },
+    read: () => receipt,
+  };
+}
+
 export function createAgentEventTerminalHandler(methods: {
   settleAgentTriggerHandlingOutcome: (
     input: SettleAgentTriggerHandlingOutcomeInput,
