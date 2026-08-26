@@ -1253,6 +1253,7 @@ describe('Message Operations', () => {
 
       expect(message.subagentTask?.status).toBe('running');
       expect(message.subagentTask?.controlReceipts).toHaveLength(32);
+      expect(message.subagentTask?.controlReceiptsProjectionTruncated).toBe(true);
       expect(message.subagentTask?.controlReceipts?.slice(0, 16)).toEqual(
         expect.arrayContaining(
           accepted.map((receipt) =>

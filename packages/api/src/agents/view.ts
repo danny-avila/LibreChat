@@ -170,7 +170,12 @@ const publicControlReceipts = (
           : {}),
       };
     });
-  return { receipts: retained, truncated: retained.length < visible.length };
+  return {
+    receipts: retained,
+    truncated:
+      (input?.subagentTask as { controlReceiptsProjectionTruncated?: boolean } | null | undefined)
+        ?.controlReceiptsProjectionTruncated === true || retained.length < visible.length,
+  };
 };
 
 const publicStatus = (

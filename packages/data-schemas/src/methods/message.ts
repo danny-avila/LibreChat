@@ -379,6 +379,7 @@ export type SubagentThreadViewMessageRecord = Pick<
     controlReceipts?: Array<
       Omit<StoredSubagentControlReceipt, 'fingerprint'> & { fingerprint?: never }
     >;
+    controlReceiptsProjectionTruncated?: boolean;
   };
 };
 
@@ -1662,6 +1663,26 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                   },
                 },
               },
+            },
+            controlReceiptsProjectionTruncated: {
+              $gt: [
+                {
+                  $size: {
+                    $filter: {
+                      input: {
+                        $cond: [
+                          { $isArray: '$subagentTask.controlReceipts' },
+                          '$subagentTask.controlReceipts',
+                          [],
+                        ],
+                      },
+                      as: 'receipt',
+                      cond: { $ne: ['$$receipt.status', 'reserved'] },
+                    },
+                  },
+                },
+                SUBAGENT_VIEW_CONTROL_RECEIPT_LIMIT,
+              ],
             },
           },
           '$$REMOVE',
