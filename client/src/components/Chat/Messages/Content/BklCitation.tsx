@@ -3,6 +3,7 @@ import { useSetRecoilState } from 'recoil';
 import { useMessageContext } from '~/Providers';
 import store from '~/store';
 import { FileTypeIcon } from '~/utils';
+import { notifyBklSourcesChanged } from '~/utils/bklSourcesEvent';
 import { type BklSource } from './ChunkModal';
 
 type BklCitationProps = {
@@ -87,6 +88,7 @@ function cacheSources(messageId: string, sources: BklSource[], rid?: string) {
     win.__bklSourcesByRid = win.__bklSourcesByRid ?? {};
     win.__bklSourcesByRid[rid] = sources;
   }
+  notifyBklSourcesChanged();
 
   // Known-empty (e.g. every source was ACL-filtered out) is cached in session
   // memory only: persisting `[]` to localStorage would keep the panel empty

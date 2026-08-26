@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { ExternalLink, X } from 'lucide-react';
+import { notifyBklSourcesChanged } from '~/utils/bklSourcesEvent';
 
 export type BklSource = {
   source?: {
@@ -127,6 +128,7 @@ function cacheSources(
     win.__bklSourcesByRid = win.__bklSourcesByRid ?? {};
     win.__bklSourcesByRid[requestId] = sources;
   }
+  notifyBklSourcesChanged();
   try {
     localStorage.setItem(`${_LS_PREFIX}${messageId}`, JSON.stringify({ s: sources, r: requestId }));
   } catch {

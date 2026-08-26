@@ -3,6 +3,7 @@ import type { TMessage } from 'librechat-data-provider';
 // 배럴(~/data-provider)이 아니라 서브패스 — jsPDF 등 무거운 의존을 안 끌어온다.
 import { useGetMessagesByConvoId } from '~/data-provider/Messages';
 import { useConversationSources } from '~/data-provider/Sources';
+import { BKL_SOURCES_EVENT } from '~/utils/bklSourcesEvent';
 import type { BklSource } from '~/components/Chat/Messages/Content/ChunkModal';
 
 /**
@@ -138,14 +139,16 @@ function sourcesForMessage(
 
 /**
  * window.__bklSources 는 SSE 가 직접 채우는 비반응형 캐시라, 스트리밍이 끝나
- * 출처가 도착해도 React 는 모른다. 값싼 시그니처(메시지 키 + 각 배열 길이)를
- * 주기적으로 비교해 변할 때만 tick 을 올려 집계를 다시 돌린다.
+ * 출처가 도착해도 React 는 모른다. 캐시를 쓰는 모든 지점이 발행하는
+ * BKL_SOURCES_EVENT 를 구독해 즉시 재집계하고, 이벤트를 못 받는 예외 경로
+ * (예: 다른 탭에서 채워진 localStorage) 대비로 1초 폴링을 폴백으로 남긴다.
+ * 값싼 시그니처(메시지 키 + 각 배열 길이)가 변할 때만 tick 을 올린다.
  */
 function useStreamingSourcesTick(): number {
   const [tick, setTick] = useState(0);
   const sigRef = useRef('');
   useEffect(() => {
-    const iv = setInterval(() => {
+    const check = () => {
       const cache = (window as unknown as { __bklSources?: Record<string, unknown[]> })
         .__bklSources;
       const sig = cache
@@ -158,8 +161,13 @@ function useStreamingSourcesTick(): number {
         sigRef.current = sig;
         setTick((t) => t + 1);
       }
-    }, 1000);
-    return () => clearInterval(iv);
+    };
+    window.addEventListener(BKL_SOURCES_EVENT, check);
+    const iv = setInterval(check, 1000);
+    return () => {
+      window.removeEventListener(BKL_SOURCES_EVENT, check);
+      clearInterval(iv);
+    };
   }, []);
   return tick;
 }

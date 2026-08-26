@@ -18,6 +18,7 @@ import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat
 import type { EventHandlerParams } from './useEventHandlers';
 import { useGetStartupConfig, useGetUserBalance, queueTitleGeneration } from '~/data-provider';
 import type { ActiveJobsResponse } from '~/data-provider';
+import { notifyBklSourcesChanged } from '~/utils/bklSourcesEvent';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import store from '~/store';
@@ -224,12 +225,14 @@ export default function useResumableSSE(
               if (win.__bklSources[pendingKey]) {
                 win.__bklSources[_respMsgId] = win.__bklSources[pendingKey];
                 delete win.__bklSources[pendingKey];
+                notifyBklSourcesChanged();
                 console.log('[ResumableSSE] Sources moved to messageId', _respMsgId);
               } else if (_bklRid) {
                 fetch(`http://localhost:8000/v1/sources/${_bklRid}`)
                   .then((r) => r.json())
                   .then((srcData) => {
                     win.__bklSources[_respMsgId] = srcData.sources ?? srcData;
+                    notifyBklSourcesChanged();
                     console.log('[ResumableSSE] Sources fetched for', _respMsgId, Object.keys(srcData));
                   })
                   .catch((err) => console.error('[ResumableSSE] Failed to fetch BKL sources:', err));

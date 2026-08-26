@@ -14,6 +14,7 @@ import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
+import { notifyBklSourcesChanged } from '~/utils/bklSourcesEvent';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import store from '~/store';
@@ -151,6 +152,7 @@ export default function useSSE(
             if (Array.isArray(pre) && pre.length > 0) {
               win.__bklSources = win.__bklSources ?? {};
               win.__bklSources[responseMessageId] = pre;
+              notifyBklSourcesChanged();
             } else {
               // Fallback — hit bkl-api through the same origin as LibreChat.
               // `/api` is not prefixed because LibreChat proxies BKL endpoints
@@ -163,6 +165,7 @@ export default function useSSE(
                   }
                   win.__bklSources = win.__bklSources ?? {};
                   win.__bklSources[responseMessageId] = srcData.sources ?? srcData;
+                  notifyBklSourcesChanged();
                 })
                 .catch((err) => {
                   console.error('[SSE] Failed to fetch BKL sources:', err);
