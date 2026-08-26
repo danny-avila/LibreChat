@@ -1,9 +1,9 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { FileSources } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import FileRow from '../FileRow';
+import FileRow, { FileRowWrapper } from '../FileRow';
 
 jest.mock('~/hooks', () => ({
   useLocalize: jest.fn(),
@@ -58,10 +58,14 @@ describe('FileRow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    mockUseLocalize.mockReturnValue((key: string) => {
+    mockUseLocalize.mockReturnValue((key: string, options?: { count?: number }) => {
       const translations: Record<string, string> = {
         com_ui_deleting_file: 'Deleting file...',
+        com_sources_agent_files: 'Agent Files',
       };
+      if (key === 'com_sources_more_files') {
+        return `+${options?.count} files`;
+      }
       return translations[key] || key;
     });
 
@@ -300,6 +304,87 @@ describe('FileRow', () => {
 
       const images = screen.getAllByTestId('mock-image');
       expect(images).toHaveLength(1);
+    });
+
+    it('limits the inline list and opens all files in a dialog', () => {
+      const filesMap = new Map<string, ExtendedFile>();
+      for (let index = 1; index <= 7; index++) {
+        const file = createMockFile({
+          file_id: `file-${index}`,
+          type: 'application/pdf',
+          filename: `document-${index}.pdf`,
+        });
+        filesMap.set(file.file_id, file);
+      }
+
+      render(
+        <FileRow
+          files={filesMap}
+          setFiles={mockSetFiles}
+          setFilesLoading={mockSetFilesLoading}
+          visibleFileLimit={4}
+          Wrapper={FileRowWrapper}
+        />,
+      );
+
+      expect(screen.getAllByTestId('mock-file-container')).toHaveLength(4);
+
+      fireEvent.click(screen.getByRole('button', { name: '+3 files' }));
+
+      const dialog = screen.getByRole('dialog', { name: 'Agent Files' });
+      expect(within(dialog).getAllByTestId('mock-file-container')).toHaveLength(7);
+      expect(within(dialog).getByText('document-7.pdf')).toBeInTheDocument();
+    });
+
+    it('renders all files inline when the list does not exceed the limit', () => {
+      const filesMap = new Map<string, ExtendedFile>();
+      for (let index = 1; index <= 4; index++) {
+        const file = createMockFile({
+          file_id: `file-${index}`,
+          type: 'application/pdf',
+          filename: `document-${index}.pdf`,
+        });
+        filesMap.set(file.file_id, file);
+      }
+
+      render(<FileRow files={filesMap} setFiles={mockSetFiles} visibleFileLimit={4} />);
+
+      expect(screen.getAllByTestId('mock-file-container')).toHaveLength(4);
+      expect(screen.queryByRole('button', { name: /files$/ })).not.toBeInTheDocument();
+    });
+
+    it('renders one extra file inline when a dialog would not shorten the list', () => {
+      const filesMap = new Map<string, ExtendedFile>();
+      for (let index = 1; index <= 5; index++) {
+        const file = createMockFile({
+          file_id: `file-${index}`,
+          type: 'application/pdf',
+          filename: `document-${index}.pdf`,
+        });
+        filesMap.set(file.file_id, file);
+      }
+
+      render(<FileRow files={filesMap} setFiles={mockSetFiles} visibleFileLimit={4} />);
+
+      expect(screen.getAllByTestId('mock-file-container')).toHaveLength(5);
+      expect(screen.queryByRole('button', { name: '+1 files' })).not.toBeInTheDocument();
+    });
+
+    it('calculates the remaining count after deduplicating files', () => {
+      const filesMap = new Map<string, ExtendedFile>();
+      for (let index = 1; index <= 6; index++) {
+        const file = createMockFile({
+          file_id: `file-${index}`,
+          type: 'application/pdf',
+          filename: `document-${index}.pdf`,
+        });
+        filesMap.set(file.file_id, file);
+      }
+      filesMap.set('duplicate-key', createMockFile({ file_id: 'file-6' }));
+
+      render(<FileRow files={filesMap} setFiles={mockSetFiles} visibleFileLimit={4} />);
+
+      expect(screen.getByRole('button', { name: '+2 files' })).toBeInTheDocument();
     });
   });
 
