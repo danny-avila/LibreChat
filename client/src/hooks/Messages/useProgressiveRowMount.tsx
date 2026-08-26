@@ -222,7 +222,7 @@ export async function completeProgressiveRowMounts(): Promise<void> {
  * before this function returns.
  */
 export function flushProgressiveRowMounts(): void {
-  for (const flush of activeFlushers) {
+  for (const flush of [...activeFlushers]) {
     flush();
   }
 }
