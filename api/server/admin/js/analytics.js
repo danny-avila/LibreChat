@@ -25,9 +25,10 @@
     document.getElementById('range-e-sub').innerHTML =
       '전기간 ' + A.fmtNum(prev?.enhances) + '건' + (prev ? A.fmtDelta(cur.enhances, prev.enhances) : '');
     document.getElementById('convo-sub').textContent = '대화 ' + A.fmtNum(s.conversations_total) + '건';
-    const k = new Date(new Date(s.now).getTime() + 9 * 3600 * 1000);
+    // fmtKST 가 UTC ISO → KST 문자열 변환을 전담한다. (기존 +9h 후
+    // toLocaleString 은 브라우저 로컬(KST)로 또 변환해 9시간이 중복됐다.)
     document.getElementById('analytics-sub').textContent =
-      '마지막 업데이트: ' + k.toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) + ' KST';
+      '마지막 업데이트: ' + A.fmtKST(s.now) + ' KST';
   }
 
   async function loadDaily() {
@@ -128,13 +129,14 @@
     const j = await A.getJSON('/usage/by-user' + range.params('limit=50'));
     data.byUser = j.data;
     const tbody = document.getElementById('topusers-tbody');
-    if (!j.data?.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="6">데이터 없음</td></tr>'; return; }
+    if (!j.data?.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="7">데이터 없음</td></tr>'; return; }
     tbody.innerHTML = j.data.slice(0, 30).map((u) => {
       const name = u.name || u.username || (u.email ? u.email.split('@')[0] : 'ID:' + u.user_id.slice(-6));
       const breakdown = (u.by_model || []).map((m) => `${A.escHtml(m.model)} ${A.fmtNum(m.queries)}건`).join(' · ');
       return `<tr>
         <td><div class="user-cell"><span class="user-name">${A.escHtml(name)}</span><span class="user-email">${A.escHtml(u.email || '')}</span></div></td>
         <td>${u.bkl_user_class != null ? '<span class="badge">class ' + u.bkl_user_class + '</span>' : '—'}</td>
+        <td>${A.escHtml(u.department || '—')}</td>
         <td>${A.fmtNum(u.queries)}</td>
         <td>${A.fmtNum(u.enhances)}</td>
         <td>${A.fmtNum(u.active_days)}</td>
@@ -163,7 +165,8 @@
     body.textContent = 'AI 요약 생성 중... (수십 초 걸릴 수 있습니다)';
     try {
       const j = await A.getJSON('/analytics/ai-summary' + range.params(regenerate ? 'regenerate=true' : ''));
-      body.textContent = j.summary;
+      // LLM 이 마크다운으로 요약을 생성 — 원문 노출 대신 렌더링 (escHtml 선행).
+      body.innerHTML = A.renderMarkdown(j.summary);
       btn.textContent = '재생성';
     } catch (e) {
       body.innerHTML = '<span class="err-text">요약 생성 실패: ' + A.escHtml(e.message) + '</span>';
@@ -175,7 +178,9 @@
   /* ── 엑셀 (항목 4): 화면과 동일한 시트 구성 + 기간 비교 ────── */
   function exportExcel() {
     if (!data.daily?.length && !data.summary) { alert('데이터를 먼저 로드해주세요.'); return; }
-    const range = range.label();
+    // 주의: 지역 변수명이 모듈 스코프 `range`(기간 필터)를 가리면 TDZ
+    // ReferenceError 로 내보내기가 통째로 죽는다 (2026-08-26 버그).
+    const rangeLabel = range.label();
     const wb = XLSX.utils.book_new();
     const s = data.summary || {};
     const cur = s.range || {};
@@ -225,10 +230,11 @@
     }
     if (data.byUser?.length) {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-        ['사용자', '이메일', '그룹', '질의', '강화', '활동일', '모델별 분해'],
+        ['사용자', '이메일', '그룹', '부서', '질의', '강화', '활동일', '모델별 분해'],
         ...data.byUser.map((u) => [
           u.name || u.username || '', u.email || '',
           u.bkl_user_class != null ? 'class ' + u.bkl_user_class : '',
+          u.department || '',
           u.queries, u.enhances, u.active_days,
           (u.by_model || []).map((m) => `${m.model}:${m.queries}`).join(', '),
         ]),
@@ -241,7 +247,7 @@
       ['활성 사용자', cur.active_users ?? '', prev.active_users ?? '', pct(cur.active_users, prev.active_users)],
     ]), '기간 비교');
 
-    XLSX.writeFile(wb, 'bkl_통계_' + range + '.xlsx');
+    XLSX.writeFile(wb, 'bkl_통계_' + rangeLabel + '.xlsx');
   }
 
   async function load() {
@@ -251,7 +257,14 @@
     ]);
   }
 
-  document.getElementById('btn-export-analytics').addEventListener('click', exportExcel);
+  document.getElementById('btn-export-analytics').addEventListener('click', () => {
+    try {
+      exportExcel();
+    } catch (e) {
+      console.error('excel export failed:', e);
+      alert('엑셀 내보내기 실패: ' + e.message);
+    }
+  });
   document.getElementById('btn-ai-summary').addEventListener('click', () => loadAiSummary(true));
 
   A.registerTab('analytics', { load });

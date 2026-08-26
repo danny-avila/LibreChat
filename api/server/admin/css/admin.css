@@ -148,7 +148,29 @@ html, body {
 }
 .ai-summary-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .ai-summary-title { font-size: 13px; font-weight: 600; color: #4338ca; }
-.ai-summary-body { font-size: 13px; color: #374151; white-space: pre-wrap; line-height: 1.7; }
+/* 렌더링된 마크다운 표시 (2026-08-26: pre-wrap 텍스트 → HTML) */
+.ai-summary-body { font-size: 13px; color: #374151; line-height: 1.7; }
+.ai-summary-body p { margin: 6px 0; }
+.ai-summary-body h3, .ai-summary-body h4, .ai-summary-body h5 {
+  margin: 12px 0 4px; color: #312e81; font-size: 13px; font-weight: 700;
+}
+.ai-summary-body ul { margin: 4px 0; padding-left: 18px; }
+.ai-summary-body li { margin: 3px 0; }
+.ai-summary-body hr { border: 0; border-top: 1px solid #e0e7ff; margin: 10px 0; }
+.ai-summary-body code { background: #eef2ff; border-radius: 4px; padding: 0 4px; }
+
+/* ── 질의 이력 탭 ──────────────────────────────────────────── */
+.history-pager {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  padding: 10px 16px; border-top: 1px solid #f3f4f6;
+  font-size: 13px; color: #6b7280;
+}
+.history-row:hover td { background: #f9fafb; }
+.history-full-row td { background: #f8faff; }
+.history-full-text {
+  white-space: pre-wrap; font-size: 13px; color: #374151;
+  line-height: 1.7; padding: 8px 4px; word-break: break-word;
+}
 
 /* ── 요약 카드 ─────────────────────────────────────────────── */
 .cards-row {

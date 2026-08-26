@@ -112,6 +112,46 @@
     const sign = pct >= 0 ? '▲' : '▼';
     return ` <span class="${cls}">${sign}${Math.abs(pct).toFixed(0)}%</span>`;
   }
+
+  /**
+   * 소형 마크다운 렌더러 — AI 통계 요약처럼 자체 LLM 산출물 표시용.
+   * escHtml 을 먼저 통과시킨 뒤 헤딩/굵게/기울임/리스트/구분선/줄바꿈만
+   * 변환한다 (외부 라이브러리·raw HTML 불허 → XSS 없음).
+   */
+  function renderMarkdown(md) {
+    const lines = String(md ?? '').split(/\r?\n/);
+    const out = [];
+    let inList = false;
+    const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+    const inline = (s) =>
+      escHtml(s)
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>');
+    for (const raw of lines) {
+      const line = raw.trimEnd();
+      const h = line.match(/^(#{1,4})\s+(.*)$/);
+      const li = line.match(/^\s*[-*•]\s+(.*)$/);
+      if (h) {
+        closeList();
+        const lvl = Math.min(h[1].length + 2, 5); // #→h3 …
+        out.push(`<h${lvl}>${inline(h[2])}</h${lvl}>`);
+      } else if (li) {
+        if (!inList) { out.push('<ul>'); inList = true; }
+        out.push(`<li>${inline(li[1])}</li>`);
+      } else if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) {
+        closeList();
+        out.push('<hr/>');
+      } else if (line.trim() === '') {
+        closeList();
+      } else {
+        closeList();
+        out.push(`<p>${inline(line)}</p>`);
+      }
+    }
+    closeList();
+    return out.join('');
+  }
   /* ── 기간 필터 컴포넌트 ───────────────────────────────────── */
   const PRESET_DAYS = { today: 1, '7d': 7, '30d': 30, '365d': 365 };
   const PRESET_LABELS = { today: '오늘', '7d': '최근 7일', '30d': '최근 30일', '365d': '최근 1년' };
@@ -301,6 +341,7 @@
     fmtNum,
     fmtDelta,
     escHtml,
+    renderMarkdown,
     createRangeFilter,
     makeChart,
     reloadAll,

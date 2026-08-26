@@ -25,6 +25,7 @@
     <div class="topbar-brand">bkl DB AI <em>어드민</em></div>
     <nav class="topbar-tabs">
       <button class="tab-btn active" data-tab="analytics">통계</button>
+      <button class="tab-btn" data-tab="history">질의 이력</button>
       <button class="tab-btn" data-tab="users">사용자</button>
       <button class="tab-btn" data-tab="deleted">삭제된 채팅</button>
       <button class="tab-btn" data-tab="shares">공유 링크</button>
@@ -111,8 +112,8 @@
         <div class="table-header"><span class="table-title">상위 사용자</span><span class="table-sub">클릭하면 모델별 분해</span></div>
         <div class="table-scroll" style="max-height:380px;">
           <table>
-            <thead><tr><th>사용자</th><th>그룹</th><th>질의</th><th>강화</th><th>활동일</th><th>모델별 분해</th></tr></thead>
-            <tbody id="topusers-tbody"><tr class="empty-row"><td colspan="6">로딩 중...</td></tr></tbody>
+            <thead><tr><th>사용자</th><th>그룹</th><th>부서</th><th>질의</th><th>강화</th><th>활동일</th><th>모델별 분해</th></tr></thead>
+            <tbody id="topusers-tbody"><tr class="empty-row"><td colspan="7">로딩 중...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -126,6 +127,60 @@
             <thead><tr><th>시간 (KST)</th><th>사용자</th><th>그룹</th><th>구분</th><th>질의 내용</th></tr></thead>
             <tbody id="recent-tbody"><tr class="empty-row"><td colspan="5">로딩 중...</td></tr></tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ 질의 이력 탭 (Harvey History 유사 — 전체 사용자 통합 조회) ════ -->
+    <div class="tab-panel" id="panel-history">
+      <div class="page-header">
+        <div>
+          <div class="page-title">질의 이력</div>
+          <div class="page-sub" id="history-sub">전체 사용자의 질의를 통합 조회합니다 (삭제된 채팅은 120자 미리보기로 표시)</div>
+        </div>
+        <div class="page-header-actions">
+          <button class="btn-export" id="btn-export-history">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v8M5 7l3 3 3-3M2 12v1a1 1 0 001 1h10a1 1 0 001-1v-1"/></svg>
+            엑셀 내보내기
+          </button>
+        </div>
+      </div>
+
+      <div class="users-toolbar" style="flex-wrap:wrap;">
+        <!-- 기간 필터 (질의 이력 탭 전용) -->
+        <div id="range-history"></div>
+        <label class="toolbar-label">사용자</label>
+        <select id="history-user-filter" class="toolbar-select" style="max-width:220px;"><option value="">전체</option></select>
+        <label class="toolbar-label">유형</label>
+        <select id="history-kind-filter" class="toolbar-select" style="width:110px;">
+          <option value="">전체</option>
+          <option value="query">질의</option>
+          <option value="query_enhance">강화</option>
+        </select>
+        <label class="toolbar-label">모델</label>
+        <select id="history-model-filter" class="toolbar-select" style="max-width:180px;"><option value="">전체</option></select>
+        <div class="search-wrap">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6.5" cy="6.5" r="4"/><path d="M10 10l3 3"/></svg>
+          <input type="text" class="search-input" id="history-search" placeholder="질의 내용 검색" style="width:200px;" />
+        </div>
+        <button class="btn-refresh" id="btn-history-reset" style="margin-left:auto;">초기화</button>
+      </div>
+
+      <div class="table-panel">
+        <div class="table-header">
+          <span class="table-title">질의 목록</span>
+          <span class="table-sub" id="history-count"></span>
+        </div>
+        <div class="table-scroll" style="max-height:560px;">
+          <table>
+            <thead><tr><th style="white-space:nowrap;">시각 (KST)</th><th>사용자</th><th>그룹</th><th>부서</th><th>유형</th><th>모델</th><th>질의 내용</th></tr></thead>
+            <tbody id="history-tbody"><tr class="empty-row"><td colspan="7">로딩 중...</td></tr></tbody>
+          </table>
+        </div>
+        <div class="history-pager">
+          <button class="btn-refresh" id="history-prev" disabled>← 이전</button>
+          <span id="history-page-info">—</span>
+          <button class="btn-refresh" id="history-next" disabled>다음 →</button>
         </div>
       </div>
     </div>
@@ -532,6 +587,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="/admin/js/core.js"></script>
 <script src="/admin/js/analytics.js"></script>
+<script src="/admin/js/history.js"></script>
 <script src="/admin/js/users.js"></script>
 <script src="/admin/js/deleted.js"></script>
 <script src="/admin/js/shares.js"></script>

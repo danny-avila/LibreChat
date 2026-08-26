@@ -19,6 +19,7 @@ router.get('/users', async (_req, res) => {
             bkl_user_class: 1,
             bkl_user_id: 1,
             bkl_user_nm: 1,
+            bkl_department: 1,
             createdAt: 1,
             bkl_last_login_at: 1,
           },
@@ -197,6 +198,70 @@ router.get('/groups/insights', async (req, res) => {
       .map(([keyword, count]) => ({ keyword, count }));
 
     res.json({ hourly, top_keywords: topKeywords, sample_size: previews.length });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message) });
+  }
+});
+
+/**
+ * 부서 API 응답 → [{ user_id, department }] 매핑.
+ * 실제 부서 API 스펙은 아직 미수령 — 스펙 확정 시 이 함수만 수정하면 된다.
+ * 현재는 흔한 형태를 방어적으로 지원: 배열 또는 { data: [...] } 안의
+ * { userId|user_id|id, deptNm|dept|department|deptName } 항목.
+ */
+function parseDepartmentApiResponse(payload) {
+  const items = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [];
+  const mappings = [];
+  for (const item of items) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+    const userId = item.userId ?? item.user_id ?? item.id;
+    const department = [item.deptNm, item.dept, item.department, item.deptName]
+      .map((v) => (typeof v === 'string' ? v.trim() : ''))
+      .find((v) => v.length > 0);
+    if (userId != null && department) {
+      mappings.push({ user_id: String(userId), department });
+    }
+  }
+  return mappings;
+}
+
+/**
+ * 부서 동기화 훅 — env `BKL_DEPT_API_URL` 이 설정돼 있으면 부서 API 를 호출해
+ * 사번(bkl_user_id) → 부서 매핑을 users.bkl_department 에 일괄 반영한다.
+ * 미설정 시 안내만 반환한다 (API 수령 전 선구축 상태).
+ */
+router.post('/users/sync-departments', async (_req, res) => {
+  try {
+    const apiUrl = process.env.BKL_DEPT_API_URL;
+    if (!apiUrl) {
+      return res.json({
+        synced: 0,
+        message: '부서 API 미연동 (BKL_DEPT_API_URL 미설정). API 수령 후 환경변수를 설정하세요.',
+      });
+    }
+
+    const response = await fetch(apiUrl, { headers: { Accept: 'application/json' } });
+    if (!response.ok) {
+      return res.status(502).json({ error: `부서 API 응답 오류: HTTP ${response.status}` });
+    }
+    const mappings = parseDepartmentApiResponse(await response.json());
+    if (!mappings.length) {
+      return res.json({ synced: 0, message: '부서 API 응답에서 매핑을 찾지 못했습니다.' });
+    }
+
+    const db = getDb();
+    const result = await db.collection('users').bulkWrite(
+      mappings.map(({ user_id: userId, department }) => ({
+        updateMany: {
+          filter: { bkl_user_id: userId },
+          update: { $set: { bkl_department: department } },
+        },
+      })),
+      { ordered: false },
+    );
+    res.json({ synced: result.modifiedCount, mappings: mappings.length });
   } catch (err) {
     res.status(500).json({ error: String(err.message) });
   }
