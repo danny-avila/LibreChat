@@ -129,6 +129,8 @@ export default function FavoritesList({
   const { favorites, reorderFavorites, isLoading: isFavoritesLoading } = useFavorites();
   // BKL 커스텀: 에이전트/워크플로우 엔트리는 좌측 네비에서 숨김.
   const showAgentMarketplace = false;
+  // BKL 커스텀 (2026-08-26): "내 파일" 비활성화 — 코드는 유지, 노출만 차단.
+  const showMyFiles = false;
 
   const { newConversation } = useNewConvo();
   const assistantsMap = useAssistantsMapContext();
@@ -413,27 +415,29 @@ export default function FavoritesList({
               </div>
             </div>
             {/* BKL: 내 파일(라이브러리) row — 새 채팅/문서 검색과 같은 층위·같은 스타일 */}
-            <div
-              role="button"
-              tabIndex={0}
-              aria-label={localize('com_nav_my_files')}
-              className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-active-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
-              onClick={handleMyFiles}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  handleMyFiles();
-                }
-              }}
-              data-testid="nav-my-files-button"
-            >
-              <div className="flex flex-1 items-center truncate pr-6">
-                <div className="mr-2 h-5 w-5">
-                  <FileText className="h-5 w-5 text-text-primary" />
+            {showMyFiles && (
+              <div
+                role="button"
+                tabIndex={0}
+                aria-label={localize('com_nav_my_files')}
+                className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-active-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+                onClick={handleMyFiles}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleMyFiles();
+                  }
+                }}
+                data-testid="nav-my-files-button"
+              >
+                <div className="flex flex-1 items-center truncate pr-6">
+                  <div className="mr-2 h-5 w-5">
+                    <FileText className="h-5 w-5 text-text-primary" />
+                  </div>
+                  <span className="truncate">{localize('com_nav_my_files')}</span>
                 </div>
-                <span className="truncate">{localize('com_nav_my_files')}</span>
               </div>
-            </div>
+            )}
             {isFilesOpen && <MyFilesModal open={isFilesOpen} onOpenChange={setIsFilesOpen} />}
             {/* BKL: 프로젝트 row — 내 파일 아래, 같은 층위·같은 스타일 */}
             <div

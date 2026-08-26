@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { AtSign, Briefcase, Calendar, FileText, FileType, Sparkles } from 'lucide-react';
+import { AtSign, Briefcase, Calendar, FileText, FileType, Library, Sparkles } from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import { cn } from '~/utils';
@@ -9,6 +9,7 @@ interface BklMeta {
   dateFrom?: string;
   dateTo?: string;
   extensionGroups?: string[];
+  library?: string;
   filterMatterUids?: string[];
   filterDocIds?: string[];
   filterDocLabels?: string[];
@@ -38,6 +39,10 @@ const parseBklMeta = (text: string | null | undefined): BklMeta | null => {
       }
       if (payload.extension_groups?.length) {
         meta.extensionGroups = payload.extension_groups;
+        found = true;
+      }
+      if (payload.library && payload.library !== 'all') {
+        meta.library = String(payload.library);
         found = true;
       }
       if (payload.matter_uids) {
@@ -147,6 +152,16 @@ export default function BklMessageMeta({ message }: { message?: TMessage }) {
         key="ext"
         icon={<FileType className="h-3 w-3 shrink-0" aria-hidden="true" />}
         label={`확장자: ${meta.extensionGroups.join(', ')}`}
+      />,
+    );
+  }
+
+  if (meta.library) {
+    chips.push(
+      <Chip
+        key="library"
+        icon={<Library className="h-3 w-3 shrink-0" aria-hidden="true" />}
+        label={`범위: ${meta.library === 'knowledge' ? '지식 DB' : '사건 문서'}`}
       />,
     );
   }

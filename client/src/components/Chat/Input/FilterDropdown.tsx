@@ -6,10 +6,16 @@ import { format, parseISO } from 'date-fns';
 import { DayPicker } from 'react-day-picker';
 import { Briefcase, Check, FileText, Filter, X } from 'lucide-react';
 import { TooltipAnchor } from '@librechat/client';
-import type { ExtensionGroup, PeriodFilterPreset, PeriodFilterState } from '~/store/filters';
+import type {
+  ExtensionGroup,
+  LibraryFilter,
+  PeriodFilterPreset,
+  PeriodFilterState,
+} from '~/store/filters';
 import { DEFAULT_PERIOD_FILTER } from '~/store/filters';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import { stripDisplayExtension } from '~/utils/fileTypeIcon';
 import store from '~/store';
 import type { BklDocSelection, BklMatterSelection } from '~/store/bkl';
 import {
@@ -50,6 +56,13 @@ const EXTENSION_OPTIONS: { id: ExtensionGroup; label: string; hint: string }[] =
   { id: 'other', label: '기타', hint: 'other' },
 ];
 
+// iManage 라이브러리 선택 — matter: 사건 문서(M 라이브러리), knowledge: 지식 DB(DB 라이브러리)
+const LIBRARY_OPTIONS: { id: LibraryFilter; label: string }[] = [
+  { id: 'all', label: '전체' },
+  { id: 'matter', label: '사건 문서' },
+  { id: 'knowledge', label: '지식 DB' },
+];
+
 const DATE_FMT = 'yyyy-MM-dd';
 
 const parseDate = (value: string | null): Date | undefined => {
@@ -65,7 +78,8 @@ const isActiveFilter = (state: PeriodFilterState): boolean =>
   state.preset !== DEFAULT_PERIOD_FILTER.preset ||
   state.startDate !== null ||
   state.endDate !== null ||
-  (state.extensionGroups && state.extensionGroups.length > 0);
+  (state.extensionGroups && state.extensionGroups.length > 0) ||
+  (state.library ?? 'all') !== 'all';
 
 const stopMenuInputEvent = (event: React.SyntheticEvent<HTMLInputElement>) => {
   event.stopPropagation();
@@ -159,6 +173,13 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
         return { ...prev, preset: 'custom', startDate: nextStart, endDate: value };
       });
       setActiveField(null);
+    },
+    [setPeriodFilter],
+  );
+
+  const handleSelectLibrary = useCallback(
+    (id: LibraryFilter) => {
+      setPeriodFilter((prev) => ({ ...prev, library: id }));
     },
     [setPeriodFilter],
   );
@@ -271,7 +292,8 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
     (doc: BklDoc) => {
       const item: BklDocSelection = {
         doc_id: doc.doc_id,
-        label: doc.file_name || doc.imanage_doc_id || doc.doc_id,
+        // 표시용 라벨 — OCR 파생 .md 제거 (doc_id 는 원본 유지)
+        label: stripDisplayExtension(doc.file_name) || doc.imanage_doc_id || doc.doc_id,
       };
       setFilterDocs((prev) =>
         prev.some((p) => p.doc_id === item.doc_id) || prev.length >= 5 ? prev : [...prev, item],
@@ -315,6 +337,38 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
         hideOnHoverOutside={false}
         className="popover-ui z-50 w-[320px] !overflow-visible !p-2"
       >
+        {/* 라이브러리(검색 범위) 세그먼트 — 탭과 무관하게 상시 노출 */}
+        <div className="mb-2 px-0.5">
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
+            검색 범위
+          </div>
+          <div
+            role="radiogroup"
+            aria-label="라이브러리 선택"
+            className="grid grid-cols-3 gap-1 rounded-xl bg-surface-secondary p-1"
+          >
+            {LIBRARY_OPTIONS.map((opt) => {
+              const selected = (periodFilter.library ?? 'all') === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => handleSelectLibrary(opt.id)}
+                  className={cn(
+                    'rounded-lg px-2 py-1.5 text-xs font-medium text-text-secondary transition-colors',
+                    'hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
+                    selected && 'bg-surface-primary text-text-primary shadow-sm',
+                  )}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div
           role="tablist"
           aria-label="필터 범주"
@@ -533,7 +587,9 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
                       onClick={() => addDoc(doc)}
                       className="block w-full px-2 py-1.5 text-left text-xs hover:bg-surface-hover"
                     >
-                      <div className="truncate font-medium">{doc.file_name || doc.doc_id}</div>
+                      <div className="truncate font-medium">
+                        {stripDisplayExtension(doc.file_name) || doc.doc_id}
+                      </div>
                       <div className="truncate text-text-tertiary">
                         {doc.imanage_doc_id || doc.doc_id}
                       </div>

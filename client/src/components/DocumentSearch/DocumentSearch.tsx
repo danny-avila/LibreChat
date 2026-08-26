@@ -38,6 +38,7 @@ function toApiFilters(f: DocumentSearchFilterState): KeywordSearchFilters | unde
   if (from) out.date_from = from;
   if (to) out.date_to = to;
   if (f.extensionGroups.length) out.extension_groups = f.extensionGroups;
+  if (f.library && f.library !== 'all') out.library = f.library;
   return Object.keys(out).length ? out : undefined;
 }
 

@@ -3,6 +3,7 @@ import { useSetRecoilState } from 'recoil';
 import { useMessageContext } from '~/Providers';
 import store from '~/store';
 import { FileTypeIcon } from '~/utils';
+import { getFileExtension, stripDisplayExtension } from '~/utils/fileTypeIcon';
 import { notifyBklSourcesChanged } from '~/utils/bklSourcesEvent';
 import { type BklSource } from './ChunkModal';
 
@@ -16,7 +17,8 @@ const _fetchInflight = new Set<string>();
 
 function extractFileName(metaName: string): string {
   const m = metaName.normalize('NFC').match(/^『(.+?)』/);
-  return m ? m[1] : metaName.normalize('NFC');
+  // OCR 파생 `.md` 는 표시에서 제거 (계약서.pdf.md → 계약서.pdf)
+  return stripDisplayExtension(m ? m[1] : metaName.normalize('NFC'));
 }
 
 function truncateMiddle(str: string, maxLen = 22): string {
@@ -233,9 +235,9 @@ function getSourceFileType(messageId: string, n: number): string | null {
   if (explicit && typeof explicit === 'string') return explicit.toLowerCase().replace(/^\./, '');
   const name: string = src?.metadata?.[0]?.name || src?.source?.name || '';
   if (!name) return null;
-  const inner = extractFileName(name);
-  const dot = inner.lastIndexOf('.');
-  return dot === -1 ? null : inner.slice(dot + 1).toLowerCase();
+  // getFileExtension 은 `*.pdf.md` 이중 확장자에서 원본 타입(pdf)을 꺼낸다 —
+  // 마지막 토큰만 자르면 전부 `md` 로 오인되던 문제 수정.
+  return getFileExtension(extractFileName(name)) || null;
 }
 
 export default function BklCitation({ n }: BklCitationProps) {

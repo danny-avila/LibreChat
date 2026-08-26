@@ -36,6 +36,7 @@ import {
 } from '~/data-provider/Projects';
 import type { ProjectDocument } from '~/data-provider/Projects';
 import { clearMessagesCache, cn } from '~/utils';
+import { stripDisplayExtension } from '~/utils/fileTypeIcon';
 
 const DEFAULT_APP_TITLE = 'BKL DB AI';
 
@@ -144,6 +145,12 @@ const ProjectsPage: React.FC = () => {
                 </Button>
               )}
             </div>
+
+            {/* Harvey 연동 준비 안내 — 연동 오픈 시 제거 */}
+            <p className="-mt-3 mb-6 text-xs leading-relaxed text-text-secondary">
+              Harvey(하비) 연동을 준비 중입니다. 프로젝트에 담은 문서는 연동 후 Harvey로 보낼 수
+              있습니다.
+            </p>
 
             {creating && (
               <div className="mb-5 flex items-center gap-2 rounded-xl border border-border-light bg-surface-primary p-3">
@@ -289,6 +296,8 @@ const EmptyProjects: React.FC<{ onCreate: () => void }> = ({ onCreate }) => (
     <p className="text-sm font-medium text-text-primary">아직 프로젝트가 없습니다</p>
     <p className="max-w-md text-xs leading-relaxed text-text-secondary">
       채팅 답변의 출처 패널이나 문서 검색 결과에서 문서를 담아 프로젝트로 관리할 수 있습니다.
+      <br />
+      Harvey(하비) 연동을 준비 중입니다 — 연동 후 담은 문서를 Harvey로 보낼 수 있습니다.
     </p>
     <Button type="button" size="sm" className="mt-2 gap-1.5" onClick={onCreate}>
       <Plus className="h-4 w-4" aria-hidden="true" />새 프로젝트 만들기
@@ -597,14 +606,17 @@ const ProjectDocRow: React.FC<{
     <li className={cn('flex items-center gap-3 px-4 py-2.5', checked && 'bg-surface-active-alt')}>
       <input
         type="checkbox"
-        aria-label={`${doc.file_name ?? doc.doc_id} 선택`}
+        aria-label={`${stripDisplayExtension(doc.file_name) || doc.doc_id} 선택`}
         checked={checked}
         onChange={onToggle}
         className="h-3.5 w-3.5 cursor-pointer accent-text-primary"
       />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-text-primary" title={doc.file_name ?? doc.doc_id}>
-          {doc.file_name ?? doc.doc_id}
+        <p
+          className="truncate text-sm text-text-primary"
+          title={stripDisplayExtension(doc.file_name) || doc.doc_id}
+        >
+          {stripDisplayExtension(doc.file_name) || doc.doc_id}
         </p>
         {doc.matter_uid && <p className="truncate text-xs text-text-tertiary">{doc.matter_uid}</p>}
       </div>

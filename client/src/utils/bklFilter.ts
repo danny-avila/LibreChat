@@ -1,5 +1,10 @@
 import type { TMessage } from 'librechat-data-provider';
-import type { PeriodFilterState, PeriodFilterPreset, ExtensionGroup } from '~/store/filters';
+import type {
+  PeriodFilterState,
+  PeriodFilterPreset,
+  ExtensionGroup,
+  LibraryFilter,
+} from '~/store/filters';
 
 const BKL_RID_RE = /<!-- bkl_rid:([a-zA-Z0-9_-]+) -->/;
 
@@ -61,6 +66,7 @@ export interface ResolvedPeriodFilter {
   date_from?: string;
   date_to?: string;
   extension_groups?: ExtensionGroup[];
+  library?: LibraryFilter;
 }
 
 export const resolvePeriodFilter = (
@@ -101,6 +107,11 @@ export const resolvePeriodFilter = (
     out.extension_groups = [...state.extensionGroups];
   }
 
+  // 'all' 은 기본 동작이므로 태그에 싣지 않는다.
+  if (state.library && state.library !== 'all') {
+    out.library = state.library;
+  }
+
   return out;
 };
 
@@ -118,6 +129,7 @@ export const buildBklFilterTag = (
     resolved.date_from ||
     resolved.date_to ||
     (resolved.extension_groups && resolved.extension_groups.length > 0) ||
+    resolved.library ||
     matterUidsStr.length > 0 ||
     docIdsStr.length > 0;
   if (!hasAny) return '';

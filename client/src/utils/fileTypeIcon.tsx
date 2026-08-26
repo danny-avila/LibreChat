@@ -30,6 +30,18 @@ const DOUBLE_EXT_INNER = new Set([
   'hwp', 'hwpx', 'doc', 'ppt', 'xls',
 ]);
 
+/**
+ * Strip the OCR-derived `.md` suffix for display only.
+ *
+ * `계약서.pdf.md → 계약서.pdf` — 이중 확장자일 때만 마지막 `.md` 를 제거한다.
+ * 원래 마크다운 문서(`note.md`)는 그대로 둔다. doc_id·URL·React key 등
+ * 식별자에는 절대 쓰지 말 것 (표시 전용).
+ */
+export function stripDisplayExtension(name?: string | null): string {
+  if (!name) return '';
+  return name.replace(/(\.[^./\\]+)\.(?:md|markdown)$/i, '$1');
+}
+
 export function getFileExtension(name?: string | null): string {
   if (!name) return '';
   const cleaned = name.normalize('NFC').replace(/^『(.+?)』.*$/, '$1');
