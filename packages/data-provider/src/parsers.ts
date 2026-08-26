@@ -477,7 +477,7 @@ export function replaceSpecialVars({
   }
 
   if (user && user.department) {
-    result = result.replace(/{{\s*user_department\s*}}/gi, user.department);
+    result = result.replace(/{{\s*user_department\s*}}/gi, () => user.department);
   }
 
   if (user && user.jobTitle) {
