@@ -144,6 +144,14 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
     siblingValue: 'cohere',
   },
   {
+    path: 'webSearch.crwApiKey',
+    previewPath: 'webSearch.crwApiKeyPreview',
+    section: 'webSearch',
+    object: { crwApiKey: SECRET, crwApiUrl: 'https://api.example.com' },
+    siblingPath: 'webSearch.crwApiUrl',
+    siblingValue: 'https://api2.example.com',
+  },
+  {
     path: 'endpoints.assistants.apiKey',
     previewPath: 'endpoints.assistants.apiKeyPreview',
     section: 'endpoints',

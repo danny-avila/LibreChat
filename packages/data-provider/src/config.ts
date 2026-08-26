@@ -1852,12 +1852,14 @@ export enum SearchProviders {
   SERPER = 'serper',
   SEARXNG = 'searxng',
   TAVILY = 'tavily',
+  CRW = 'crw',
 }
 
 export enum ScraperProviders {
   FIRECRAWL = 'firecrawl',
   SERPER = 'serper',
   TAVILY = 'tavily',
+  CRW = 'crw',
 }
 
 export enum RerankerTypes {
@@ -1908,6 +1910,9 @@ export const webSearchSchema = z.object({
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
   cohereApiKeyPreview: apiKeyPreviewSchema,
+  crwApiKey: z.string().optional().default('${CRW_API_KEY}'),
+  crwApiKeyPreview: apiKeyPreviewSchema,
+  crwApiUrl: z.string().optional().default('${CRW_API_URL}'),
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperProvider: z.nativeEnum(ScraperProviders).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
@@ -1955,6 +1960,31 @@ export const webSearchSchema = z.object({
       language: z.string().optional(),
       timeRange: z.enum(['day', 'month', 'year']).optional(),
       timeout: z.number().int().positive().max(120000).optional(),
+    })
+    .optional(),
+  /** fastCRW (`crw`) search options, mirroring `CrwSearchOptions` in `@librechat/agents`. */
+  crwSearchOptions: z
+    .object({
+      maxResults: z.number().int().min(1).max(20).optional(),
+      includeImages: z.boolean().optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
+    })
+    .optional(),
+  /** fastCRW (`crw`) scraper options, mirroring `CrwScraperConfig` in `@librechat/agents`. */
+  crwScraperOptions: z
+    .object({
+      formats: z.array(z.string()).optional(),
+      onlyMainContent: z.boolean().optional(),
+      includeTags: z.array(z.string()).optional(),
+      excludeTags: z.array(z.string()).optional(),
+      headers: z.record(z.string()).optional(),
+      waitFor: z.number().optional(),
+      renderJs: z.boolean().nullable().optional(),
+      cssSelector: z.string().optional(),
+      xpath: z.string().optional(),
+      proxy: z.string().optional(),
+      stealth: z.boolean().optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
     })
     .optional(),
   tavilySearchOptions: z

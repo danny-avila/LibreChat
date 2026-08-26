@@ -1014,6 +1014,9 @@ endpoints:
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
+#   # fastCRW (Firecrawl-compatible; search provider and/or scraper)
+#   crwApiKey: '${CRW_API_KEY}'
+#   crwApiUrl: '${CRW_API_URL}'
 #   # Outbound search and scrape requests are validated at connect time against
 #   # their resolved IP and blocked from reaching private, loopback, link-local,
 #   # or cloud-metadata space. `allowedAddresses` is an SSRF exemption list, NOT a
@@ -1041,6 +1044,22 @@ endpoints:
 #   # allowedAddresses:
 #   #   - 'searxng:8080'
 #   #   - '127.0.0.1:8080'
+#
+# fastCRW as both search and scraper provider example:
+# webSearch:
+#   searchProvider: crw
+#   scraperProvider: crw
+#   crwApiKey: '${CRW_API_KEY}'
+#   # Optional: base URL of a self-hosted fastCRW engine (defaults to the fastCRW cloud
+#   # API). A private address also needs an `allowedAddresses` entry above.
+#   # crwApiUrl: '${CRW_API_URL}'
+#   crwSearchOptions:
+#     maxResults: 8            # 1-20 results per search
+#     includeImages: false     # also request the images source
+#   crwScraperOptions:
+#     formats: ['markdown', 'html']
+#     onlyMainContent: true
+#     renderJs: null           # null/omitted = auto, true = force JS render, false = never
 #
 # Tavily as both search and scraper provider example:
 # webSearch:
