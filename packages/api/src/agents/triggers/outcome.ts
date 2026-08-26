@@ -28,6 +28,25 @@ export type AgentEventAppliedAction = NonNullable<AgentEventRunOutcome['action']
 
 const MAX_RECEIPT_ID_LENGTH = 256;
 
+async function hasDurableAgentEventHistory(input: {
+  getMessage: MessageMethods['getMessage'];
+  user: string;
+  conversationId: string;
+  deliveryKey: string;
+}): Promise<boolean> {
+  const [userMessage, responseMessage] = await Promise.all([
+    input.getMessage({ user: input.user, messageId: `${input.deliveryKey}:user` }),
+    input.getMessage({ user: input.user, messageId: `${input.deliveryKey}:assistant` }),
+  ]);
+  return (
+    userMessage?.conversationId === input.conversationId &&
+    userMessage.isCreatedByUser === true &&
+    responseMessage?.conversationId === input.conversationId &&
+    responseMessage.isCreatedByUser === false &&
+    responseMessage.parentMessageId === userMessage.messageId
+  );
+}
+
 function isBackgroundNonExecutionReceipt(value: unknown, argumentsValue: unknown): boolean {
   const parsedArguments = parseArguments(argumentsValue);
   if (
@@ -357,23 +376,13 @@ export function createAgentEventTerminalHandler(methods: {
           `Agent event actor ${job.agentEventDeliveryKey} requires ${lifecycle.status} reconciliation`,
         );
       } else {
-        const [userMessage, responseMessage] = await Promise.all([
-          methods.getMessage({
-            user: job.userId,
-            messageId: `${job.agentEventDeliveryKey}:user`,
-          }),
-          methods.getMessage({
-            user: job.userId,
-            messageId: `${job.agentEventDeliveryKey}:assistant`,
-          }),
-        ]);
-        if (
-          userMessage?.conversationId !== conversationId ||
-          userMessage.isCreatedByUser !== true ||
-          responseMessage?.conversationId !== conversationId ||
-          responseMessage.isCreatedByUser !== false ||
-          responseMessage.parentMessageId !== userMessage.messageId
-        ) {
+        const historyIsDurable = await hasDurableAgentEventHistory({
+          getMessage: methods.getMessage,
+          user: job.userId,
+          conversationId,
+          deliveryKey: job.agentEventDeliveryKey,
+        });
+        if (!historyIsDurable) {
           throw new Error(
             `Agent event actor ${job.agentEventDeliveryKey} has invalid durable message history`,
           );
@@ -426,6 +435,17 @@ export function createAgentEventTerminalHandler(methods: {
       if (snapshot.legacyTurn.token !== job.agentEventLegacyTurnToken) {
         throw new Error(
           `Legacy event actor turn ${job.agentEventLegacyTurnToken} lost token ownership`,
+        );
+      }
+      const historyIsDurable = await hasDurableAgentEventHistory({
+        getMessage: methods.getMessage,
+        user: job.userId,
+        conversationId,
+        deliveryKey: job.agentEventDeliveryKey,
+      });
+      if (!historyIsDurable) {
+        throw new Error(
+          `Legacy event actor ${job.agentEventDeliveryKey} has invalid durable message history`,
         );
       }
       const sealed = await methods.completeAgentEventActorLegacyTurn({

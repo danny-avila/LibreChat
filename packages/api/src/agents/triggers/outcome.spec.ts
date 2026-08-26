@@ -112,6 +112,22 @@ describe('agent event terminal outcomes', () => {
         reconciliations: [],
         legacyTurn: { token: 'legacy-terminal-token', startedAt: new Date() },
       }),
+      getMessage: jest.fn().mockImplementation(({ messageId }) =>
+        Promise.resolve(
+          messageId.endsWith(':user')
+            ? {
+                messageId,
+                conversationId: 'conversation-1',
+                isCreatedByUser: true,
+              }
+            : {
+                messageId,
+                conversationId: 'conversation-1',
+                parentMessageId: 'trigger_1:user',
+                isCreatedByUser: false,
+              },
+        ),
+      ),
     });
 
     await handler(
@@ -128,6 +144,32 @@ describe('agent event terminal outcomes', () => {
     expect(completeAgentEventActorLegacyTurn.mock.invocationCallOrder[0]).toBeLessThan(
       settleAgentTriggerHandlingOutcome.mock.invocationCallOrder[0],
     );
+  });
+
+  it('keeps a terminal legacy fence closed when required message history is missing', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const completeAgentEventActorLegacyTurn = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      completeAgentEventActorLegacyTurn,
+      getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+        state: null,
+        reconciliations: [],
+        legacyTurn: { token: 'legacy-terminal-token', startedAt: new Date() },
+      }),
+      getMessage: jest.fn().mockResolvedValue(null),
+    });
+
+    await expect(
+      handler(
+        'conversation-1',
+        job({ status: 'aborted', agentEventLegacyTurnToken: 'legacy-terminal-token' }),
+        [],
+      ),
+    ).rejects.toThrow('invalid durable message history');
+
+    expect(completeAgentEventActorLegacyTurn).not.toHaveBeenCalled();
+    expect(settleAgentTriggerHandlingOutcome).not.toHaveBeenCalled();
   });
 
   it('replays terminal settlement after the same legacy token was already sealed', async () => {
