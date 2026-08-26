@@ -6,6 +6,7 @@ import type { IMessage } from '..';
 import {
   createMessageMethods,
   CLIENT_MESSAGE_SELECT,
+  SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
   SUBAGENT_TRANSCRIPT_PAGE_LIMIT,
   SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
 } from './message';
@@ -1136,6 +1137,60 @@ describe('Message Operations', () => {
           }),
         ]),
       );
+    });
+
+    it('bounds ordinary persisted child activity before returning it to the API', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-content:assistant',
+        conversationId,
+        text: '',
+        user: 'user123',
+        content: [
+          {
+            type: 'tool_call',
+            tool_call: {
+              id: 'move-1',
+              name: 'submit_move',
+              args: 'x'.repeat(2_000),
+              output: 'y'.repeat(4_000),
+              progress: 1,
+            },
+          },
+          ...Array.from({ length: SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT + 2 }, (_, index) => ({
+            type: 'text',
+            text: `activity-${index}`,
+          })),
+        ],
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0].subagentActivity).toHaveLength(SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT);
+      expect(messages[0].subagentActivityProjectionTruncated).toBe(true);
+      expect(messages[0].subagentActivity?.[0]).toEqual(
+        expect.objectContaining({
+          type: 'tool',
+          toolCallId: 'move-1',
+          name: 'submit_move',
+          inputTruncated: true,
+          outputTruncated: true,
+        }),
+      );
+      expect((messages[0].subagentActivity?.[0] as { input: string }).input.length).toBeLessThan(
+        2_000,
+      );
+      expect((messages[0].subagentActivity?.[0] as { output: string }).output.length).toBeLessThan(
+        4_000,
+      );
+      expect(JSON.stringify(messages[0])).not.toContain('x'.repeat(1_000));
+      expect(JSON.stringify(messages[0])).not.toContain('y'.repeat(2_000));
     });
 
     it('bounds transcript materialization while retaining the exact selected task', async () => {

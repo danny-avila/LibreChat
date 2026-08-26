@@ -18,7 +18,11 @@ import type {
 } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
-import { projectSubagentActivity, SUBAGENT_ACTIVITY_LIMITS } from './activity';
+import {
+  projectPersistedMessageActivity,
+  projectSubagentActivity,
+  SUBAGENT_ACTIVITY_LIMITS,
+} from './activity';
 
 const MAX_THREAD_MESSAGES = 50;
 const MAX_MESSAGE_TEXT_BYTES = 32 * 1024;
@@ -98,8 +102,9 @@ const truncateUtf8 = (
 const publicMessage = (
   message: SubagentThreadViewMessageRecord,
   byteLimit: number,
+  redactText = false,
 ): { message: SubagentThreadMessage; bytes: number } => {
-  const text = message.text ?? '';
+  const text = redactText ? '' : (message.text ?? '');
   const projected = truncateUtf8(text, Math.min(MAX_MESSAGE_TEXT_BYTES, byteLimit));
   return {
     message: {
@@ -253,7 +258,12 @@ const projectedTaskActivity = (
     return { activity: [], truncated: true };
   }
   const transcript = assistant?.subagentTranscript;
-  if (transcript == null) return { activity: [], truncated: false };
+  if (transcript == null) {
+    return projectPersistedMessageActivity(
+      assistant?.subagentActivity,
+      assistant?.subagentActivityProjectionTruncated === true,
+    );
+  }
   if (transcript.taskId !== taskId) return { activity: [], truncated: true };
   return projectSubagentActivity(
     transcript.messagesJson,
@@ -312,7 +322,7 @@ const publicThreadTurns = (
         taskId,
         trigger: {
           kind: triggerKind,
-          summary: input?.text ?? '',
+          summary: eventThread ? '' : (input?.text ?? ''),
           ...(input?.createdAt == null ? {} : { createdAt: input.createdAt }),
           ...(input?.textTruncated === true ? { summaryTruncated: true } : {}),
         },
@@ -571,6 +581,7 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         child.subagentThreadLease != null && child.subagentThreadLease.expiresAt > now
           ? child.subagentThreadLease.taskId
           : undefined;
+      const eventThread = lineage.parentToolCallId.startsWith('event-binding:');
       const selectedMessage =
         requestedTaskId == null
           ? undefined
@@ -589,7 +600,11 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         if (remainingTextBytes === 0) {
           break;
         }
-        const projected = publicMessage(message, remainingTextBytes);
+        const projected = publicMessage(
+          message,
+          remainingTextBytes,
+          eventThread && message.isCreatedByUser,
+        );
         projectedNewestFirst.push(projected.message);
         remainingTextBytes -= projected.bytes;
       }
@@ -605,7 +620,7 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         branch,
         projectedMessagesById,
         activeLeaseTaskId,
-        lineage.parentToolCallId.startsWith('event-binding:'),
+        eventThread,
       );
       const view: SubagentThreadView = {
         threadId,

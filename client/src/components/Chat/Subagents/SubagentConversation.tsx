@@ -5,7 +5,11 @@ import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { ChildConversationTurn } from './adapters';
 import type { TranslationKeys } from '~/hooks';
-import { SubagentActivityContent, SubagentStatus } from './SubagentActivity';
+import {
+  hasTruncatedActivityDetails,
+  SubagentActivityContent,
+  SubagentStatus,
+} from './SubagentActivity';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
@@ -52,15 +56,19 @@ function TriggerMessage({ turn, fullWidth }: { turn: ChildConversationTurn; full
       timestamp={turn.trigger.createdAt}
       ariaLabel={label}
       headerPrefix=""
-      isCreatedByUser={false}
+      isCreatedByUser={true}
       fullWidth={fullWidth}
     >
+      <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-text-secondary">
+        <TriggerIcon kind={turn.trigger.kind} />
+        <span>{label}</span>
+      </div>
       {content.length > 0 && (
         <ContentParts
           content={content}
           messageId={`${turn.taskId}:trigger`}
           conversationId={null}
-          isCreatedByUser={false}
+          isCreatedByUser={true}
           isLast={false}
           isSubmitting={false}
           isLatestMessage={false}
@@ -122,6 +130,7 @@ function ChildMessage({
         activityId={`${turn.taskId}:assistant`}
         state={state}
         showPrompt={false}
+        showDetailTruncationNotice={false}
         conversationId={conversationId}
         onCancelControl={onCancelControl}
       />
@@ -144,9 +153,16 @@ export default function SubagentConversation({
   controllableTaskId?: string;
   onCancelControl?: (taskId: string, controlId: string) => void;
 }) {
+  const localize = useLocalize();
   const fullWidth = useRecoilValue(store.maximizeChatSpace);
+  const hasShortenedDetails = turns.some((turn) => hasTruncatedActivityDetails(turn.activity));
   return (
     <div className="flex flex-col gap-6 py-4" data-subagent-conversation>
+      {hasShortenedDetails && (
+        <div className="px-4 text-xs italic text-text-secondary">
+          {localize('com_ui_subagent_activity_details_truncated')}
+        </div>
+      )}
       {turns.map((turn) => (
         <section
           key={turn.taskId}

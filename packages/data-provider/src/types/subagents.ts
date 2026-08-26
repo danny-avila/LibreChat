@@ -56,6 +56,18 @@ export type SubagentActivityItem =
       type: 'reasoning';
     }
   | {
+      type: 'activity_label';
+      label: string;
+      labelType?: 'phase';
+      toolCallIds?: string[];
+      activityStartIndex?: number;
+      activityEndIndex?: number;
+      activityCount?: number;
+      agentIds?: string[];
+      status?: 'ok' | 'partial' | 'failed';
+      pending?: boolean;
+    }
+  | {
       type: 'tool';
       toolCallId: string;
       name: string;

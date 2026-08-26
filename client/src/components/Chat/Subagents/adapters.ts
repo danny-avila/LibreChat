@@ -336,14 +336,7 @@ export function adaptDurableThreadActivity(
     items,
     controls: view.controlReceipts ?? [],
     controlsTruncated: view.controlReceiptsTruncated === true,
-    activityTruncated:
-      view.activityTruncated ||
-      view.historyTruncated ||
-      (view.activity ?? []).some(
-        (item) =>
-          (item.type === 'writing' && item.textTruncated === true) ||
-          (item.type === 'tool' && (item.inputTruncated === true || item.outputTruncated === true)),
-      ),
+    activityTruncated: view.activityTruncated,
   };
 }
 
@@ -366,14 +359,7 @@ const adaptDurableTurn = (turn: SubagentThreadTurn, title: string): ChildConvers
       items,
       controls: turn.controlReceipts ?? [],
       controlsTruncated: turn.controlReceiptsTruncated === true,
-      activityTruncated:
-        turn.activityTruncated ||
-        (turn.activity ?? []).some(
-          (item) =>
-            (item.type === 'writing' && item.textTruncated === true) ||
-            (item.type === 'tool' &&
-              (item.inputTruncated === true || item.outputTruncated === true)),
-        ),
+      activityTruncated: turn.activityTruncated,
     },
   };
 };

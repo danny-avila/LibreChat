@@ -979,9 +979,28 @@ describe('parent child-thread index', () => {
     const getMessagesForSubagentThreadView = jest.fn().mockResolvedValue([
       {
         messageId: 'delivery-1:assistant',
+        parentMessageId: 'delivery-1:user',
         isCreatedByUser: false,
         text: 'Event result',
         createdAt: new Date('2026-08-21T11:01:00.000Z'),
+        subagentActivity: [
+          {
+            type: 'tool',
+            toolCallId: 'move-1',
+            name: 'submit_move',
+            input: '{"uci":"e2e4"}',
+            output: '{"accepted":true}',
+            progress: 1,
+          },
+          { type: 'writing', text: 'Move submitted.' },
+        ],
+      },
+      {
+        messageId: 'delivery-1:user',
+        parentMessageId: null,
+        isCreatedByUser: true,
+        text: 'Safe instruction. {"privateRoutingKey":"must-not-leak"}',
+        createdAt: new Date('2026-08-21T11:00:00.000Z'),
       },
     ]);
     const handler = createSubagentThreadViewHandler({
@@ -999,11 +1018,26 @@ describe('parent child-thread index', () => {
         turns: [
           expect.objectContaining({
             taskId: 'delivery-1',
-            trigger: expect.objectContaining({ kind: 'external_event' }),
+            trigger: expect.objectContaining({ kind: 'external_event', summary: '' }),
+            activity: [
+              expect.objectContaining({
+                type: 'tool',
+                toolCallId: 'move-1',
+                status: 'completed',
+              }),
+              { type: 'writing', text: 'Move submitted.' },
+            ],
           }),
         ],
       }),
     );
+    expect(json.mock.calls[0][0].messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ messageId: 'delivery-1:user', text: '' }),
+        expect.objectContaining({ messageId: 'delivery-1:assistant', text: 'Event result' }),
+      ]),
+    );
+    expect(JSON.stringify(json.mock.calls[0][0])).not.toContain('privateRoutingKey');
     expect(getMessagesForSubagentThreadView).toHaveBeenCalledWith(
       expect.not.objectContaining({ taskId: expect.anything() }),
     );

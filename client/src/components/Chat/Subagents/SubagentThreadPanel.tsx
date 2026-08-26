@@ -682,6 +682,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
         activity={activity}
         state={panelState}
+        showPrompt={false}
         onCancelControl={
           controlAvailable && !controlPending
             ? (controlId) => submitControl('cancel_message', controlId)
@@ -906,6 +907,7 @@ function HistoricalEventTaskActivity({
       activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${task.taskId}`}
       activity={activity}
       state={state}
+      showPrompt={false}
       embedded
     />
   );

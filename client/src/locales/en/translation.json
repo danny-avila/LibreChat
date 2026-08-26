@@ -2215,6 +2215,7 @@
   "com_ui_subagent_control_cancel_message": "Withdraw message",
   "com_ui_subagent_control_history": "Control history",
   "com_ui_subagent_control_history_truncated": "Earlier control activity is not shown.",
+  "com_ui_subagent_activity_details_truncated": "Some activity details were shortened.",
   "com_ui_subagent_control_interrupt": "Interrupt",
   "com_ui_subagent_control_message": "Message to subagent",
   "com_ui_subagent_control_message_truncated": "Message shortened for display.",

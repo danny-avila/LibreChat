@@ -278,11 +278,19 @@ function SubagentPrompt({ prompt }: { prompt: string }) {
   );
 }
 
+export const hasTruncatedActivityDetails = (activity: ChildActivity): boolean =>
+  activity.items.some(
+    (item) =>
+      (item.type === 'writing' && item.textTruncated === true) ||
+      (item.type === 'tool' && (item.inputTruncated === true || item.outputTruncated === true)),
+  );
+
 export function SubagentActivityContent({
   activity,
   activityId,
   state = 'ready',
   showPrompt = true,
+  showDetailTruncationNotice = true,
   conversationId = null,
   onCancelControl,
 }: {
@@ -290,6 +298,7 @@ export function SubagentActivityContent({
   activityId?: string;
   state?: 'ready' | 'loading' | 'error';
   showPrompt?: boolean;
+  showDetailTruncationNotice?: boolean;
   conversationId?: string | null;
   onCancelControl?: (controlId: string) => void;
 }) {
@@ -300,13 +309,7 @@ export function SubagentActivityContent({
     () => activity.items.map((item) => toContentPart(item, reasoningMarkerLabel)),
     [activity.items, reasoningMarkerLabel],
   );
-  const activityTruncated =
-    activity.activityTruncated === true ||
-    activity.items.some(
-      (item) =>
-        (item.type === 'writing' && item.textTruncated === true) ||
-        (item.type === 'tool' && (item.inputTruncated === true || item.outputTruncated === true)),
-    );
+  const activityDetailsTruncated = hasTruncatedActivityDetails(activity);
 
   let body: React.ReactNode;
   if (state === 'loading') {
@@ -353,9 +356,14 @@ export function SubagentActivityContent({
           {localize('com_ui_subagent_control_history_truncated')}
         </div>
       )}
-      {activityTruncated && (
+      {activity.activityTruncated === true && (
         <div className="mb-3 text-xs italic text-text-secondary">
           {localize('com_ui_subagent_thread_history_truncated')}
+        </div>
+      )}
+      {showDetailTruncationNotice && activityDetailsTruncated && (
+        <div className="mb-3 text-xs italic text-text-secondary">
+          {localize('com_ui_subagent_activity_details_truncated')}
         </div>
       )}
       {body}
@@ -387,12 +395,14 @@ export default function SubagentActivity({
   activityId,
   state = 'ready',
   embedded = false,
+  showPrompt = true,
   onCancelControl,
 }: {
   activity: ChildActivity;
   activityId?: string;
   state?: 'ready' | 'loading' | 'error';
   embedded?: boolean;
+  showPrompt?: boolean;
   onCancelControl?: (controlId: string) => void;
 }) {
   const statusHeader = (
@@ -405,6 +415,7 @@ export default function SubagentActivity({
       activity={activity}
       activityId={activityId}
       state={state}
+      showPrompt={showPrompt}
       onCancelControl={onCancelControl}
     />
   );

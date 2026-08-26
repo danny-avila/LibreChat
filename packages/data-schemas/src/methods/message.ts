@@ -296,6 +296,19 @@ export const SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT: number = 256 * 1024;
 export const SUBAGENT_TRANSCRIPT_PAGE_LIMIT: number = 4;
 
 /**
+ * Ordinary persisted message content is the authoritative refresh source when
+ * an execution did not write a private subagent transcript. Project only the
+ * visible activity vocabulary and bound it before MongoDB returns the row.
+ */
+export const SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT: number = 16;
+const SUBAGENT_MESSAGE_ACTIVITY_TEXT_CODE_POINT_LIMIT = 2048;
+const SUBAGENT_MESSAGE_ACTIVITY_TOOL_INPUT_CODE_POINT_LIMIT = 512;
+const SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT = 1024;
+const SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT = 256;
+const SUBAGENT_MESSAGE_ACTIVITY_LABEL_CODE_POINT_LIMIT = 512;
+const SUBAGENT_MESSAGE_ACTIVITY_LABEL_IDS_LIMIT = 32;
+
+/**
  * Exclusion projection for message reads that feed the chat client (the
  * conversation GET and shared-link reads). Every excluded field is either
  * server-internal (ids, replay signatures, legacy summarization state) or a
@@ -353,6 +366,9 @@ export type SubagentThreadViewMessageRecord = Pick<
 > & {
   textProjectionTruncated?: boolean;
   subagentTranscriptProjectionTruncated?: boolean;
+  /** Storage-bounded visible content; validated into the public activity type by the API. */
+  subagentActivity?: unknown[];
+  subagentActivityProjectionTruncated?: boolean;
 };
 
 export type ParentSubagentTaskRecord = {
@@ -1452,6 +1468,134 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       const transcriptIsString = {
         $eq: [{ $type: '$subagentTranscript.messagesJson' }, 'string'],
       };
+      const boundedString = (path: string, codePointLimit: number) => ({
+        $substrCP: [
+          {
+            $cond: [{ $eq: [{ $type: path }, 'string'] }, path, ''],
+          },
+          0,
+          codePointLimit,
+        ],
+      });
+      const stringProjectionTruncated = (path: string, codePointLimit: number) => ({
+        $gt: [
+          {
+            $strLenCP: {
+              $cond: [{ $eq: [{ $type: path }, 'string'] }, path, ''],
+            },
+          },
+          codePointLimit,
+        ],
+      });
+      const boundedStringArray = (path: string) => ({
+        $map: {
+          input: {
+            $slice: [
+              { $cond: [{ $isArray: path }, path, []] },
+              SUBAGENT_MESSAGE_ACTIVITY_LABEL_IDS_LIMIT,
+            ],
+          },
+          as: 'value',
+          in: boundedString('$$value', SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT),
+        },
+      });
+      const boundedActivityContent = {
+        $filter: {
+          input: {
+            $map: {
+              input: {
+                $slice: [
+                  { $cond: [{ $isArray: '$content' }, '$content', []] },
+                  SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
+                ],
+              },
+              as: 'part',
+              in: {
+                $switch: {
+                  branches: [
+                    {
+                      case: { $eq: ['$$part.type', 'text'] },
+                      then: {
+                        type: 'writing',
+                        text: boundedString(
+                          '$$part.text',
+                          SUBAGENT_MESSAGE_ACTIVITY_TEXT_CODE_POINT_LIMIT,
+                        ),
+                        textTruncated: stringProjectionTruncated(
+                          '$$part.text',
+                          SUBAGENT_MESSAGE_ACTIVITY_TEXT_CODE_POINT_LIMIT,
+                        ),
+                      },
+                    },
+                    {
+                      case: { $in: ['$$part.type', ['think', 'reasoning']] },
+                      then: { type: 'reasoning' },
+                    },
+                    {
+                      case: { $eq: ['$$part.type', 'activity_label'] },
+                      then: {
+                        type: 'activity_label',
+                        label: boundedString(
+                          '$$part.activity_label',
+                          SUBAGENT_MESSAGE_ACTIVITY_LABEL_CODE_POINT_LIMIT,
+                        ),
+                        labelType: '$$part.activity_label_type',
+                        toolCallIds: boundedStringArray('$$part.tool_call_ids'),
+                        activityStartIndex: '$$part.activity_start_index',
+                        activityEndIndex: '$$part.activity_end_index',
+                        activityCount: '$$part.activity_count',
+                        agentIds: boundedStringArray('$$part.agent_ids'),
+                        status: '$$part.status',
+                        pending: '$$part.pending',
+                        labelTruncated: stringProjectionTruncated(
+                          '$$part.activity_label',
+                          SUBAGENT_MESSAGE_ACTIVITY_LABEL_CODE_POINT_LIMIT,
+                        ),
+                      },
+                    },
+                    {
+                      case: { $eq: ['$$part.type', 'tool_call'] },
+                      then: {
+                        type: 'tool',
+                        toolCallId: boundedString(
+                          '$$part.tool_call.id',
+                          SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT,
+                        ),
+                        name: boundedString(
+                          '$$part.tool_call.name',
+                          SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT,
+                        ),
+                        input: boundedString(
+                          '$$part.tool_call.args',
+                          SUBAGENT_MESSAGE_ACTIVITY_TOOL_INPUT_CODE_POINT_LIMIT,
+                        ),
+                        output: boundedString(
+                          '$$part.tool_call.output',
+                          SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT,
+                        ),
+                        progress: '$$part.tool_call.progress',
+                        runStepStatus: '$$part.tool_call.runStepStatus',
+                        inputValidationError: '$$part.tool_call.inputValidationError',
+                        inputTruncated: stringProjectionTruncated(
+                          '$$part.tool_call.args',
+                          SUBAGENT_MESSAGE_ACTIVITY_TOOL_INPUT_CODE_POINT_LIMIT,
+                        ),
+                        outputTruncated: stringProjectionTruncated(
+                          '$$part.tool_call.output',
+                          SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT,
+                        ),
+                      },
+                    },
+                  ],
+                  default: null,
+                },
+              },
+            },
+          },
+          as: 'activity',
+          cond: { $ne: ['$$activity', null] },
+        },
+      };
       type TranscriptProjection = Pick<
         SubagentThreadViewMessageRecord,
         'messageId' | 'subagentTranscript'
@@ -1501,6 +1645,15 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                       { $ne: [{ $type: '$subagentTranscript.messagesJson' }, 'missing'] },
                       true,
                       '$$REMOVE',
+                    ],
+                  },
+                  subagentActivity: boundedActivityContent,
+                  subagentActivityProjectionTruncated: {
+                    $gt: [
+                      {
+                        $size: { $cond: [{ $isArray: '$content' }, '$content', []] },
+                      },
+                      SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
                     ],
                   },
                   subagentTask: 1,

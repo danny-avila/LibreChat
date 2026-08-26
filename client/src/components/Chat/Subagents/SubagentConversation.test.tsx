@@ -66,7 +66,13 @@ const turns: ChildConversationTurn[] = [
       status: 'completed',
       items: [
         { type: 'reasoning', text: 'Checked the constraints.' },
-        { type: 'tool', toolCallId: 'search-1', name: 'search', status: 'completed' },
+        {
+          type: 'tool',
+          toolCallId: 'search-1',
+          name: 'search',
+          status: 'completed',
+          outputTruncated: true,
+        },
         { type: 'writing', text: 'The release is ready.' },
       ],
     },
@@ -93,8 +99,8 @@ describe('SubagentConversation', () => {
       </RecoilRoot>,
     );
 
-    expect(screen.getByText('com_ui_subagent_trigger_parent_dispatch')).toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_trigger_external_event')).toBeInTheDocument();
+    expect(screen.getAllByText('com_ui_subagent_trigger_parent_dispatch')).toHaveLength(2);
+    expect(screen.getAllByText('com_ui_subagent_trigger_external_event')).toHaveLength(2);
     expect(screen.getByText('Investigate the release.')).toBeInTheDocument();
     expect(screen.getByText('Checked the constraints.')).toBeInTheDocument();
     expect(screen.getByText('search')).toBeInTheDocument();
@@ -103,7 +109,10 @@ describe('SubagentConversation', () => {
     expect(screen.getByText('com_ui_subagent_thread_status_running')).toBeInTheDocument();
     expect(screen.getByTestId('thinking-cursor')).toBeInTheDocument();
     expect(container.querySelectorAll('.message-render')).toHaveLength(4);
+    expect(container.querySelectorAll('.user-turn')).toHaveLength(2);
+    expect(container.querySelectorAll('.agent-turn')).toHaveLength(2);
     expect(container.querySelector('[data-subagent-conversation]')).toBeInTheDocument();
     expect(screen.queryByText('com_ui_prompt')).not.toBeInTheDocument();
+    expect(screen.getAllByText('com_ui_subagent_activity_details_truncated')).toHaveLength(1);
   });
 });
