@@ -7,6 +7,7 @@
  * (client/src/components/Chat/Messages/MessagesView.tsx); reused here
  */
 @media print {
+
   /*
    * `:has()` gates this rule to routes that actually render the print
    * target. Without it, a route lacking `[data-testid='screenshot-target']`
@@ -91,6 +92,21 @@
    */
   .mermaid-pan-zoom {
     transform: none !important;
+  }
+
+  /*
+   * Keeps the whole diagram card — header toolbar plus diagram body —
+   * together rather than letting the page break fall between them or
+   * mid-diagram. Targets `.mermaid-card` (the outer wrapper that contains
+   * both `MermaidHeader` and `.mermaid-viewport`), not `.mermaid-viewport`
+   * alone: `break-inside: avoid` only protects the element it's applied to,
+   * so scoping it to just the diagram body let the header get stranded on
+   * the previous page while the diagram moved to the next. Only takes
+   * effect when the whole card fits within one page — a diagram taller
+   * than a page still has to split somewhere.
+   */
+  .mermaid-card {
+    break-inside: avoid;
   }
 
   [data-testid='screenshot-target'] svg {

@@ -280,7 +280,7 @@ export const MermaidRenderer = memo(function MermaidRenderer({
           )}
           <div
             className={cn(
-              'relative w-full overflow-hidden rounded-lg border transition-all duration-200',
+              'mermaid-card relative w-full overflow-hidden rounded-lg border transition-all duration-200',
               fillContainer && 'h-full rounded-xl',
               showControls ? 'border-border-light' : 'border-transparent',
             )}
@@ -458,7 +458,7 @@ export const MermaidRenderer = memo(function MermaidRenderer({
       )}
       <div
         className={cn(
-          'relative w-full overflow-hidden rounded-lg border border-border-light transition-all duration-200',
+          'mermaid-card relative w-full overflow-hidden rounded-lg border border-border-light transition-all duration-200',
           fillContainer && 'h-full rounded-xl',
         )}
         {...hoverHandlers}
