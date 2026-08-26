@@ -76,16 +76,15 @@ export type AgentEventActorCommitResult =
 const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * Absolute size backstop for the private invocation journal so a pathological
+ * Absolute size bound for the private invocation journal so a pathological
  * actor cannot grow its conversation document toward Mongo's document limit.
- * Only `settled` receipts can ever be evicted: a new fence is admitted
- * exclusively when no active lifecycle row exists, and the appended row is
- * always the newest. When this cap overrides the retention window it trades
- * the tail of same-id duplicate protection for document integrity; at any
- * plausible event rate the retained span still dwarfs every stale-owner
- * lifetime.
+ * Never an eviction quota: a receipt inside its retention window is never
+ * discarded. When the journal holds this many unexpired receipts, admission
+ * of NEW invocations is refused (fail closed) until receipts age out, so
+ * document integrity and same-id duplicate protection are both invariants
+ * rather than a trade.
  */
-const AGENT_EVENT_ACTOR_RECEIPT_LIMIT = 1024;
+export const AGENT_EVENT_ACTOR_RECEIPT_LIMIT = 1024;
 
 const ARCHIVE_CONVERSATION_BATCH_SIZE = 500;
 const PROJECT_STATS_REFRESH_CONCURRENCY = 10;
@@ -712,6 +711,22 @@ export function createConversationMethods(
         { timestamps: false },
       );
     }
+    /** A receipt inside its retention window may NEVER be evicted — a stale
+     * same-id owner is bounded by time, and count-based eviction would reopen
+     * duplicate execution at high event rates. When the journal is full of
+     * unexpired receipts, refuse admission (fail closed) instead of trading
+     * away tombstone protection; the actor resumes once receipts age out.
+     * Admission is serialized by the no-active-row filter, so the journal can
+     * exceed the cap by at most the single row admitted after this check. */
+    const retainedReceipts = journal.filter(
+      (item) => item.status === 'settled' && item.observedAt.getTime() >= receiptCutoff.getTime(),
+    );
+    if (retainedReceipts.length >= AGENT_EVENT_ACTOR_RECEIPT_LIMIT) {
+      logger.error(
+        `[conversation] Event actor receipt journal for ${input.conversationId} is full of unexpired receipts; refusing new invocation ${input.reconciliation.invocationId} until receipts age out`,
+      );
+      return false;
+    }
     const recorded = await Conversation.findOneAndUpdate(
       {
         ...ownership,
@@ -720,14 +735,7 @@ export function createConversationMethods(
         },
         'agentEventActorReconciliations.invocationId': { $ne: input.reconciliation.invocationId },
       },
-      {
-        $push: {
-          agentEventActorReconciliations: {
-            $each: [input.reconciliation],
-            $slice: -AGENT_EVENT_ACTOR_RECEIPT_LIMIT,
-          },
-        },
-      },
+      { $push: { agentEventActorReconciliations: input.reconciliation } },
       { new: true, timestamps: false },
     )
       .select('+agentEventActorReconciliations')
@@ -809,13 +817,16 @@ export function createConversationMethods(
       if (settled != null) {
         return true;
       }
+      /** A verification retry may replay only a receipt that verification
+       * itself settled. A compensated receipt must fail this resolve so the
+       * caller re-reads and honors the compensation instead. */
       const replay = await Conversation.exists({
         ...owner,
         'agentEventActor.checkpoint.threadId': input.checkpoint.threadId,
         'agentEventActor.checkpoint.checkpointId': input.checkpoint.checkpointId!,
         'agentEventActor.checkpoint.checkpointNs': input.checkpoint.checkpointNs,
         agentEventActorReconciliations: {
-          $elemMatch: { ...exactCheckpoint, status: 'settled' },
+          $elemMatch: { ...exactCheckpoint, status: 'settled', resolution: 'checkpoint_verified' },
         },
       });
       return replay != null;

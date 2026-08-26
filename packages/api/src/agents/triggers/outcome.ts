@@ -286,8 +286,40 @@ export function createAgentEventTerminalHandler(methods: {
         }
         /** The persistence lifecycle was created by the same CAS that advanced
          * the actor head, and history_persisted is written only after the
-         * controller's post-commit message barrier. */
-        committedAction = lifecycle.action;
+         * controller's post-commit message barrier. Resolving BEFORE settlement
+         * makes the receipt's status CAS the serialization point against a
+         * concurrent compensation: whichever transition wins determines the
+         * public outcome, and a crash between this resolve and the settle
+         * below converges through the retained receipt's replay. The receipt
+         * keeps its full action proof either way, so nothing is lost if the
+         * settle write never lands. */
+        const resolved = await methods.resolveAgentEventActorReconciliation({
+          user: job.userId,
+          conversationId,
+          ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+          invocationId: lifecycle.invocationId,
+          checkpoint: lifecycle.checkpoint,
+          resolution: 'checkpoint_verified',
+        });
+        if (resolved) {
+          committedAction = lifecycle.action;
+        } else {
+          const reread = await methods.getAgentEventActorSnapshot({
+            user: job.userId,
+            conversationId,
+            ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+          });
+          const raced = reread?.reconciliations.find(
+            (item) => item.invocationId === job.agentEventDeliveryKey,
+          );
+          if (raced?.status === 'settled' && raced.resolution === 'action_compensated') {
+            compensated = true;
+          } else {
+            throw new Error(
+              `Agent event actor ${job.agentEventDeliveryKey} settlement receipt was not retained`,
+            );
+          }
+        }
       }
     }
     let settlementOutcome: AgentEventRunOutcome = outcome;
@@ -312,21 +344,6 @@ export function createAgentEventTerminalHandler(methods: {
     });
     if (!settled) {
       throw new Error(`Failed to settle agent event delivery ${job.agentEventDeliveryKey}`);
-    }
-    if (lifecycle?.status === 'history_persisted') {
-      const resolved = await methods.resolveAgentEventActorReconciliation({
-        user: job.userId,
-        conversationId,
-        ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
-        invocationId: lifecycle.invocationId,
-        checkpoint: lifecycle.checkpoint,
-        resolution: 'checkpoint_verified',
-      });
-      if (!resolved) {
-        throw new Error(
-          `Agent event actor ${job.agentEventDeliveryKey} settlement receipt was not retained`,
-        );
-      }
     }
   };
 }

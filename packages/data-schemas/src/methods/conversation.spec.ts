@@ -10,7 +10,11 @@ import type {
   UpdateResult,
 } from 'mongodb';
 import type { IAgentEventActorReconciliation, IChatProject, IConversation } from '../types';
-import { ConversationMethods, createConversationMethods } from './conversation';
+import {
+  AGENT_EVENT_ACTOR_RECEIPT_LIMIT,
+  ConversationMethods,
+  createConversationMethods,
+} from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
 
@@ -4408,6 +4412,16 @@ describe('Conversation Operations', () => {
           resolution: 'checkpoint_verified',
         }),
       ).resolves.toBe(true);
+      /** A crashed settle retries verification and replays its own receipt. */
+      await expect(
+        methods.resolveAgentEventActorReconciliation({
+          user: 'actor-reconcile-user',
+          conversationId,
+          invocationId: verified.invocationId,
+          checkpoint,
+          resolution: 'checkpoint_verified',
+        }),
+      ).resolves.toBe(true);
       const later = { ...reconciliation, invocationId: 'event-later' };
       await expect(beginReconciliation(later)).resolves.toBe(true);
       await expect(
@@ -4613,6 +4627,104 @@ describe('Conversation Operations', () => {
         reconciliations: [
           expect.objectContaining({ invocationId: 'event-recent', status: 'settled' }),
           expect.objectContaining({ invocationId: 'event-next', status: 'invocation_pending' }),
+        ],
+      });
+    });
+
+    it('refuses new invocations rather than evicting unexpired receipts at the cap', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'actor-cap-user',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: {
+          bindingId: `evtbind_${'f'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      const bulkReceipts = (observedAt: Date) =>
+        Array.from({ length: AGENT_EVENT_ACTOR_RECEIPT_LIMIT }, (_, index) => ({
+          invocationId: `bulk-${index}`,
+          status: 'settled' as const,
+          resolution: 'checkpoint_verified' as const,
+          checkpoint: {
+            threadId: conversationId,
+            checkpointId: `checkpoint-${index}`,
+            checkpointNs: `event-actor/bulk-${index}`,
+          },
+          action: { toolName: 'submit_move' },
+          observedAt,
+        }));
+      await Conversation.updateOne(
+        { conversationId },
+        { $set: { agentEventActorReconciliations: bulkReceipts(new Date()) } },
+        { timestamps: false },
+      );
+      const admit = () =>
+        methods.recordAgentEventActorReconciliation({
+          user: 'actor-cap-user',
+          conversationId,
+          reconciliation: {
+            invocationId: 'event-at-cap',
+            status: 'invocation_pending',
+            checkpoint: {
+              threadId: conversationId,
+              checkpointId: 'checkpoint-cap',
+              checkpointNs: 'event-actor/cap',
+            },
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        });
+      /** A journal full of unexpired receipts fails closed: no receipt inside
+       * its stale-owner window may ever be evicted to make room. */
+      await expect(admit()).resolves.toBe(false);
+      await expect(
+        methods.getAgentEventActorSnapshot({
+          user: 'actor-cap-user',
+          conversationId,
+        }),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          reconciliations: expect.arrayContaining([
+            expect.objectContaining({ invocationId: 'bulk-0' }),
+          ]),
+        }),
+      );
+      await Conversation.updateOne(
+        { conversationId },
+        {
+          $set: {
+            agentEventActorReconciliations: bulkReceipts(
+              new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
+            ),
+          },
+        },
+        { timestamps: false },
+      );
+      /** Once the window passes, expired receipts prune and admission resumes. */
+      await expect(admit()).resolves.toBe(true);
+      await expect(
+        methods.getAgentEventActorSnapshot({
+          user: 'actor-cap-user',
+          conversationId,
+        }),
+      ).resolves.toEqual({
+        state: null,
+        reconciliations: [
+          expect.objectContaining({ invocationId: 'event-at-cap', status: 'invocation_pending' }),
         ],
       });
     });

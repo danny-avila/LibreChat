@@ -516,8 +516,10 @@ describe('agent event terminal outcomes', () => {
       }),
     );
     expect(settleAgentTriggerHandlingOutcome.mock.calls[0][0]).not.toHaveProperty('error');
-    expect(settleAgentTriggerHandlingOutcome.mock.invocationCallOrder[0]).toBeLessThan(
-      resolveAgentEventActorReconciliation.mock.invocationCallOrder[0],
+    /** The receipt's status CAS is the serialization point against concurrent
+     * compensation, so verification must resolve BEFORE the public settle. */
+    expect(resolveAgentEventActorReconciliation.mock.invocationCallOrder[0]).toBeLessThan(
+      settleAgentTriggerHandlingOutcome.mock.invocationCallOrder[0],
     );
   });
 
@@ -532,20 +534,38 @@ describe('agent event terminal outcomes', () => {
       checkpointId: 'checkpoint-1',
       checkpointNs: 'event-actor/trigger_1',
     };
+    const action = { toolName: 'submit_move', toolCallId: 'call-1' };
     const handler = createAgentEventTerminalHandler({
       settleAgentTriggerHandlingOutcome,
-      getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
-        state: { generation: 1, checkpoint },
-        reconciliations: [
-          {
-            invocationId: 'trigger_1',
-            status: 'history_persisted',
-            checkpoint,
-            action: { toolName: 'submit_move', toolCallId: 'call-1' },
-            observedAt: new Date(),
-          },
-        ],
-      }),
+      /** The first attempt resolves the receipt but dies on the settle write;
+       * the retry then observes the already-settled verified receipt. */
+      getAgentEventActorSnapshot: jest
+        .fn()
+        .mockResolvedValueOnce({
+          state: { generation: 1, checkpoint },
+          reconciliations: [
+            {
+              invocationId: 'trigger_1',
+              status: 'history_persisted',
+              checkpoint,
+              action,
+              observedAt: new Date(),
+            },
+          ],
+        })
+        .mockResolvedValue({
+          state: { generation: 1, checkpoint },
+          reconciliations: [
+            {
+              invocationId: 'trigger_1',
+              status: 'settled',
+              resolution: 'checkpoint_verified',
+              checkpoint,
+              action,
+              observedAt: new Date(),
+            },
+          ],
+        }),
       getMessage: jest.fn(async ({ messageId }) => {
         const isUser = messageId.endsWith(':user');
         return {
@@ -561,7 +581,7 @@ describe('agent event terminal outcomes', () => {
     await expect(
       handler('conversation-1', job({ status: 'error', error: 'lost run evidence' }), []),
     ).rejects.toThrow('Failed to settle agent event delivery trigger_1');
-    expect(resolveAgentEventActorReconciliation).not.toHaveBeenCalled();
+    expect(resolveAgentEventActorReconciliation).toHaveBeenCalledTimes(1);
 
     await handler('conversation-1', job({ status: 'error', error: 'lost run evidence' }), []);
 
@@ -573,6 +593,75 @@ describe('agent event terminal outcomes', () => {
       }),
     );
     expect(resolveAgentEventActorReconciliation).toHaveBeenCalledTimes(1);
+  });
+
+  it('honors a compensation that wins the receipt CAS during settlement', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const resolveAgentEventActorReconciliation = jest.fn().mockResolvedValue(false);
+    const checkpoint = {
+      threadId: 'conversation-1',
+      checkpointId: 'checkpoint-1',
+      checkpointNs: 'event-actor/trigger_1',
+    };
+    const action = { toolName: 'submit_move', toolCallId: 'call-1' };
+    const getAgentEventActorSnapshot = jest
+      .fn()
+      .mockResolvedValueOnce({
+        state: { generation: 1, checkpoint },
+        reconciliations: [
+          {
+            invocationId: 'trigger_1',
+            status: 'history_persisted',
+            checkpoint,
+            action,
+            observedAt: new Date(),
+          },
+        ],
+      })
+      .mockResolvedValue({
+        state: { generation: 1, checkpoint, requiresColdStart: true },
+        reconciliations: [
+          {
+            invocationId: 'trigger_1',
+            status: 'settled',
+            resolution: 'action_compensated',
+            checkpoint,
+            action,
+            observedAt: new Date(),
+          },
+        ],
+      });
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      getAgentEventActorSnapshot,
+      getMessage: jest.fn(async ({ messageId }) => {
+        const isUser = messageId.endsWith(':user');
+        return {
+          messageId,
+          conversationId: 'conversation-1',
+          isCreatedByUser: isUser,
+          parentMessageId: isUser ? 'parent-message' : 'trigger_1:user',
+        } as never;
+      }),
+      resolveAgentEventActorReconciliation,
+    });
+
+    await handler(
+      'conversation-1',
+      job({ agentEventExpectedAction: { toolName: 'submit_move' } }),
+      [completedToolStep()],
+    );
+
+    /** Verification lost the receipt CAS to a concurrent compensation, so the
+     * public outcome must honor the compensation, not the stale snapshot. */
+    expect(getAgentEventActorSnapshot).toHaveBeenCalledTimes(2);
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        error: 'Applied event actor action was explicitly compensated',
+      }),
+    );
+    expect(settleAgentTriggerHandlingOutcome.mock.calls[0][0]).not.toHaveProperty('action');
   });
 
   it('replays an applied settlement from its durable resolved lifecycle receipt', async () => {
