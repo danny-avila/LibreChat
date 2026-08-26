@@ -86,7 +86,9 @@ jest.mock('~/agents/checkpointer', () => ({
   getAgentCheckpointer: jest.fn().mockResolvedValue({}),
 }));
 
-import { Run, buildChildInputs, InMemorySubagentTaskStore } from '@librechat/agents';
+import { ChatOpenAI } from '@librechat/agents/llm/openai';
+import { ChatOpenRouter } from '@librechat/agents/llm/openrouter';
+import { Run, Providers, buildChildInputs, InMemorySubagentTaskStore } from '@librechat/agents';
 
 /** Minimal RunAgent factory */
 function makeAgent(
@@ -615,6 +617,223 @@ describe('summarizationConfig field passthrough', () => {
     });
     const config = agents[0].summarizationConfig as Record<string, unknown>;
     expect(config.trigger).toEqual({ type, value });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite: reasoning effort translation
+// ---------------------------------------------------------------------------
+const OPENROUTER_MODEL = 'openai/gpt-5.6';
+const ADAPTIVE_CLAUDE_MODEL = 'anthropic/claude-sonnet-4.6';
+
+/** Agent whose resolved client options already carry a reasoning configuration. */
+function makeReasoningAgent(overrides: {
+  provider: string;
+  endpoint: string;
+  model: string;
+  model_parameters: Record<string, unknown>;
+}) {
+  return makeAgent({
+    provider: overrides.provider as never,
+    endpoint: overrides.endpoint,
+    model: overrides.model,
+    model_parameters: overrides.model_parameters as never,
+  });
+}
+
+describe('summarization reasoning effort', () => {
+  it.each(['medium', 'low'])(
+    'overrides an inherited OpenRouter reasoning object with %s, leaving the agent untouched',
+    async (reasoningEffort) => {
+      const agents = await callAndCapture({
+        agents: [
+          makeReasoningAgent({
+            provider: Providers.OPENROUTER,
+            endpoint: 'OpenRouter',
+            model: OPENROUTER_MODEL,
+            model_parameters: {
+              model: OPENROUTER_MODEL,
+              modelKwargs: { reasoning: { effort: 'max' } },
+            },
+          }),
+        ],
+        summarizationConfig: {
+          provider: 'OpenRouter',
+          model: OPENROUTER_MODEL,
+          parameters: { reasoning_effort: reasoningEffort },
+        },
+      });
+
+      const mainClientOptions = agents[0].clientOptions as Record<string, unknown>;
+      const summaryConfig = agents[0].summarizationConfig as Record<string, unknown>;
+
+      expect(mainClientOptions.modelKwargs).toEqual({ reasoning: { effort: 'max' } });
+      expect(summaryConfig.parameters).toEqual({ reasoning: { effort: reasoningEffort } });
+
+      /** The SDK spreads `parameters` onto the agent's own client options. */
+      const summaryModel = new ChatOpenRouter({
+        ...mainClientOptions,
+        ...(summaryConfig.parameters as Record<string, unknown>),
+        apiKey: 'test-key',
+        model: summaryConfig.model as string,
+      });
+      const request = summaryModel.invocationParams();
+
+      expect(request.reasoning).toEqual({ effort: reasoningEffort });
+      expect(request.reasoning_effort).toBeUndefined();
+    },
+  );
+
+  it('overrides an inherited OpenAI reasoning object', async () => {
+    const agents = await callAndCapture({
+      agents: [
+        makeReasoningAgent({
+          provider: EModelEndpoint.openAI,
+          endpoint: EModelEndpoint.openAI,
+          model: 'gpt-5.6',
+          model_parameters: { model: 'gpt-5.6', reasoning: { effort: 'high' } },
+        }),
+      ],
+      summarizationConfig: {
+        provider: EModelEndpoint.openAI,
+        model: 'gpt-5.6',
+        parameters: { reasoning_effort: 'low' },
+      },
+    });
+
+    const mainClientOptions = agents[0].clientOptions as Record<string, unknown>;
+    const summaryConfig = agents[0].summarizationConfig as Record<string, unknown>;
+
+    expect(mainClientOptions.reasoning).toEqual({ effort: 'high' });
+    expect(summaryConfig.parameters).toEqual({ reasoning: { effort: 'low' } });
+
+    const summaryModel = new ChatOpenAI({
+      ...mainClientOptions,
+      ...(summaryConfig.parameters as Record<string, unknown>),
+      apiKey: 'test-key',
+      model: summaryConfig.model as string,
+    } as never);
+    const request = summaryModel.invocationParams() as Record<string, unknown>;
+
+    /** Chat Completions re-emits the object as the scalar the API expects. */
+    expect(request.reasoning_effort).toBe('low');
+  });
+
+  it('maps effort to verbosity for OpenRouter adaptive Anthropic models', async () => {
+    const agents = await callAndCapture({
+      agents: [
+        makeReasoningAgent({
+          provider: Providers.OPENROUTER,
+          endpoint: 'OpenRouter',
+          model: ADAPTIVE_CLAUDE_MODEL,
+          model_parameters: {
+            model: ADAPTIVE_CLAUDE_MODEL,
+            verbosity: 'max',
+            modelKwargs: { reasoning: { enabled: true } },
+          },
+        }),
+      ],
+      summarizationConfig: {
+        provider: 'OpenRouter',
+        model: ADAPTIVE_CLAUDE_MODEL,
+        parameters: { reasoning_effort: 'low' },
+      },
+    });
+
+    const summaryConfig = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(summaryConfig.parameters).toEqual({
+      verbosity: 'low',
+      reasoning: { enabled: true },
+    });
+  });
+
+  it('turns adaptive thinking off for reasoning_effort "none"', async () => {
+    const agents = await callAndCapture({
+      agents: [
+        makeReasoningAgent({
+          provider: Providers.OPENROUTER,
+          endpoint: 'OpenRouter',
+          model: ADAPTIVE_CLAUDE_MODEL,
+          model_parameters: {
+            model: ADAPTIVE_CLAUDE_MODEL,
+            modelKwargs: { reasoning: { enabled: true } },
+          },
+        }),
+      ],
+      summarizationConfig: {
+        provider: 'OpenRouter',
+        model: ADAPTIVE_CLAUDE_MODEL,
+        parameters: { reasoning_effort: 'none' },
+      },
+    });
+
+    const summaryConfig = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(summaryConfig.parameters).toEqual({ reasoning: { enabled: false } });
+
+    const summaryModel = new ChatOpenRouter({
+      ...(agents[0].clientOptions as Record<string, unknown>),
+      ...(summaryConfig.parameters as Record<string, unknown>),
+      apiKey: 'test-key',
+      model: ADAPTIVE_CLAUDE_MODEL,
+    });
+    expect(summaryModel.invocationParams().reasoning).toEqual({ enabled: false });
+  });
+
+  it('translates for a custom endpoint that resolves to OpenRouter by baseURL', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Router', baseURL: 'https://openrouter.ai/api/v1', apiKey: 'router-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: {
+        provider: 'Router',
+        model: OPENROUTER_MODEL,
+        parameters: { reasoning_effort: 'low' },
+      },
+      appConfig,
+    });
+
+    const summaryConfig = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(summaryConfig.provider).toBe(Providers.OPENROUTER);
+    expect(summaryConfig.parameters).toMatchObject({ reasoning: { effort: 'low' } });
+    expect(summaryConfig.parameters).not.toHaveProperty('reasoning_effort');
+  });
+
+  it('leaves parameters untouched for providers with no reasoning_effort concept', async () => {
+    const agents = await callAndCapture({
+      summarizationConfig: {
+        provider: EModelEndpoint.anthropic,
+        model: 'claude-3-haiku',
+        parameters: { reasoning_effort: 'low' },
+      },
+    });
+
+    const summaryConfig = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(summaryConfig.parameters).toEqual({ reasoning_effort: 'low' });
+  });
+
+  it('leaves unrelated parameters and an unset effort untouched', async () => {
+    const agents = await callAndCapture({
+      agents: [
+        makeReasoningAgent({
+          provider: Providers.OPENROUTER,
+          endpoint: 'OpenRouter',
+          model: OPENROUTER_MODEL,
+          model_parameters: { model: OPENROUTER_MODEL },
+        }),
+      ],
+      summarizationConfig: {
+        provider: 'OpenRouter',
+        model: OPENROUTER_MODEL,
+        parameters: { temperature: 0.2, streaming: false, reasoning_effort: '' },
+      },
+    });
+
+    const summaryConfig = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(summaryConfig.parameters).toEqual({
+      temperature: 0.2,
+      streaming: false,
+      reasoning_effort: '',
+    });
   });
 });
 
