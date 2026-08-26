@@ -10,7 +10,7 @@ import {
   TooltipAnchor,
 } from '@librechat/client';
 import type { VersionRecord } from './types';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useClockFormat } from '~/hooks';
 import { cn } from '~/utils';
 
 type VersionItemProps = {
@@ -45,6 +45,7 @@ export default function VersionItem({
   onRestore,
 }: VersionItemProps) {
   const localize = useLocalize();
+  const hour12 = useClockFormat();
   const [open, setOpen] = useState(false);
 
   const versionNumber = versionsLength - index;
@@ -60,7 +61,7 @@ export default function VersionItem({
       : 'com_ui_agent_version_no_date',
   );
   const relativeLabel = date ? formatDistanceToNow(date, { addSuffix: true }) : fallbackDateLabel;
-  const absoluteLabel = date ? date.toLocaleString() : relativeLabel;
+  const absoluteLabel = date ? date.toLocaleString(undefined, { hour12 }) : relativeLabel;
 
   const toolsCount = countItems(version.tools);
   const capabilitiesCount = countItems(version.capabilities);

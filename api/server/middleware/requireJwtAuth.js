@@ -1,5 +1,4 @@
 const cookies = require('cookie');
-const jwt = require('jsonwebtoken');
 const passport = require('passport');
 const { logger } = require('@librechat/data-schemas');
 const {
@@ -9,30 +8,16 @@ const {
   buildSafeAuthLogContext,
   maybeRefreshCloudFrontAuthCookiesMiddleware,
   recordRumProxyRequest,
+  getValidOpenIdReuseUserId,
 } = require('@librechat/api');
 
 const hasPassportStrategy = (strategy) =>
   typeof passport._strategy === 'function' && passport._strategy(strategy) != null;
 
-const getValidOpenIdReuseUserId = (parsedCookies) => {
-  const openidUserId = parsedCookies.openid_user_id;
-  if (!openidUserId || !process.env.JWT_REFRESH_SECRET) {
-    return null;
-  }
-
-  try {
-    const payload = jwt.verify(openidUserId, process.env.JWT_REFRESH_SECRET);
-    return typeof payload === 'object' && payload != null && typeof payload.id === 'string'
-      ? payload.id
-      : null;
-  } catch {
-    return null;
-  }
-};
-
 const getAuthenticatedUserId = (user) => user?.id?.toString?.() ?? user?._id?.toString?.();
 const refreshCloudFrontCookies =
   maybeRefreshCloudFrontAuthCookiesMiddleware ?? ((_req, _res, next) => next());
+const ACCOUNT_DELETION_CODE = 'ACCOUNT_DELETION_IN_PROGRESS';
 
 const getAuthTokenSource = (req) => {
   const authorization = req.headers.authorization;
@@ -46,7 +31,7 @@ const getAuthStrategies = (req) => {
   const tokenProvider = parsedCookies.token_provider;
   const openidReuseEnabled = isEnabled(process.env.OPENID_REUSE_TOKENS);
   const openidJwtAvailable = openidReuseEnabled && hasPassportStrategy('openidJwt');
-  const openIdReuseUserId = getValidOpenIdReuseUserId(parsedCookies);
+  const openIdReuseUserId = getValidOpenIdReuseUserId(parsedCookies.openid_user_id);
   const useOpenIdJwt =
     tokenProvider === 'openid' && openidJwtAvailable && openIdReuseUserId != null;
 
@@ -182,6 +167,7 @@ const requireJwtAuth = (req, res, next) => {
         logAuthenticationFailure({ strategy, info, status, err });
         return res.status(status || 401).json({
           message: info?.message || 'Unauthorized',
+          ...(info?.code === ACCOUNT_DELETION_CODE && { code: ACCOUNT_DELETION_CODE }),
         });
       }
       if (strategy === 'openidJwt' && getAuthenticatedUserId(user) !== openIdReuseUserId) {

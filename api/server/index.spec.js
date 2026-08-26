@@ -35,6 +35,14 @@ jest.mock('~/config', () => ({
   }),
 }));
 
+jest.mock('~/server/services/Agents/triggers', () => ({
+  initializeAgentTriggerService: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('~/server/services/Schedules', () => ({
+  initializeScheduleEngine: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock(
   '@librechat/api/telemetry',
   () => ({
@@ -132,6 +140,14 @@ describe('Startup readiness wiring', () => {
     expect(streamConfigIndex).toBeLessThan(postListenMcpIndex);
   });
 
+  it('configures subagent task routing before the server accepts requests', () => {
+    const routingIndex = source.indexOf('await configureSubagentTaskRouting();');
+    const listenIndex = source.indexOf('const server = app.listen');
+
+    expect(routingIndex).toBeGreaterThan(-1);
+    expect(listenIndex).toBeGreaterThan(routingIndex);
+  });
+
   it('registers generation stream cleanup with the graceful shutdown coordinator', () => {
     const shutdownRegistrationIndex = source.indexOf(
       "registerShutdownTask('generation job manager'",
@@ -154,6 +170,22 @@ describe('Startup readiness wiring', () => {
     expect(timeoutConfigIndex).toBeLessThan(shutdownIndex);
   });
 
+  it('registers security headers ahead of the health endpoints in both server entries', () => {
+    const experimental = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
+
+    for (const [name, contents] of [
+      ['index.js', source],
+      ['experimental.js', experimental],
+    ]) {
+      const headersIndex = contents.indexOf('const securityHeaders = createSecurityHeaders();');
+      const healthIndex = contents.indexOf("app.get('/health'");
+
+      expect([name, headersIndex > -1]).toEqual([name, true]);
+      expect([name, healthIndex > -1]).toEqual([name, true]);
+      expect([name, headersIndex < healthIndex]).toEqual([name, true]);
+    }
+  });
+
   it('mounts the chat-start readiness gate before agent routes', () => {
     const readinessGateIndex = source.indexOf(
       "app.use('/api/agents/chat', rejectChatStartsUntilReady);",
@@ -163,6 +195,14 @@ describe('Startup readiness wiring', () => {
     expect(readinessGateIndex).toBeGreaterThan(-1);
     expect(agentsRouteIndex).toBeGreaterThan(-1);
     expect(readinessGateIndex).toBeLessThan(agentsRouteIndex);
+  });
+
+  it('awaits durable trigger delivery before reporting readiness', () => {
+    const triggerDeliveryIndex = source.indexOf('await initializeAgentTriggerService(');
+    const readyIndex = source.indexOf('serverReady = true;');
+
+    expect(triggerDeliveryIndex).toBeGreaterThan(-1);
+    expect(readyIndex).toBeGreaterThan(triggerDeliveryIndex);
   });
 });
 
@@ -224,6 +264,27 @@ describe('Server Configuration', () => {
     const response = await request(app).get('/health');
     expect(response.status).toBe(200);
     expect(response.text).toBe('OK');
+  });
+
+  it('should set baseline security headers on health checks', async () => {
+    const response = await request(app).get('/health');
+
+    expect(response.headers['strict-transport-security']).toBe('max-age=31536000');
+    expect(response.headers['x-frame-options']).toBe('SAMEORIGIN');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['cross-origin-opener-policy']).toBe('same-origin');
+    expect(response.headers['cross-origin-resource-policy']).toBe('same-origin');
+    expect(response.headers['referrer-policy']).toBe('no-referrer');
+  });
+
+  it('should set baseline security headers on the index page without a CSP', async () => {
+    const response = await request(app).get('/');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['x-frame-options']).toBe('SAMEORIGIN');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['content-security-policy']).toBeUndefined();
+    expect(response.headers['content-security-policy-report-only']).toBeUndefined();
   });
 
   it('should not cache index page', async () => {

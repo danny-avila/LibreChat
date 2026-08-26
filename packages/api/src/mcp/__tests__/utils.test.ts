@@ -13,7 +13,7 @@ import {
   getMissingCustomUserVars,
   hasCustomUserVars,
   hasRuntimeUrlPlaceholders,
-  hasRuntimeBodyPlaceholders,
+  getMCPRequestScope,
   hasRuntimeContextPlaceholders,
   getRuntimeBodyPlaceholderFields,
   getMissingRuntimeBodyPlaceholderFields,
@@ -401,6 +401,38 @@ describe('redactServerSecrets', () => {
     expect(redacted.customUserVars).toEqual(config.customUserVars);
   });
 
+  it('should expose request-scoped behavior without exposing placeholder-bearing fields', () => {
+    const config: ParsedServerConfig = {
+      type: 'streamable-http',
+      url: 'https://infra.internal/mcp',
+      source: 'yaml',
+      headers: { 'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+    };
+
+    const redacted = redactServerSecrets(config);
+
+    expect(redacted.requestScoped).toBe(true);
+    expect(redacted.url).toBeUndefined();
+    expect((redacted as Record<string, unknown>).headers).toBeUndefined();
+  });
+
+  it('should omit request-scoped metadata for ordinary and unsupported BODY placeholders', () => {
+    expect(
+      redactServerSecrets({
+        type: 'streamable-http',
+        url: 'https://example.com/mcp',
+        source: 'yaml',
+      }).requestScoped,
+    ).toBeUndefined();
+    expect(
+      redactServerSecrets({
+        type: 'streamable-http',
+        url: 'https://example.com/{{LIBRECHAT_BODY_TENANT}}/mcp',
+        source: 'yaml',
+      }).requestScoped,
+    ).toBeUndefined();
+  });
+
   it('should pass URLs through unchanged when caller has edit authority', () => {
     const config: ParsedServerConfig = {
       type: 'sse',
@@ -782,33 +814,66 @@ describe('hasRuntimeUrlPlaceholders', () => {
   });
 });
 
-describe('hasRuntimeBodyPlaceholders', () => {
+describe('getMCPRequestScope', () => {
   it('detects trusted runtime BODY placeholders across connection fields', () => {
     expect(
-      hasRuntimeBodyPlaceholders({
+      getMCPRequestScope({
         source: 'yaml',
         url: 'https://example.com/conversations/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
-      }),
+      }).requestScoped,
     ).toBe(true);
 
     expect(
-      hasRuntimeBodyPlaceholders({
+      getMCPRequestScope({
         source: 'config',
         headers: {
           'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
         },
-      }),
+      }).requestScoped,
     ).toBe(true);
   });
 
   it('ignores BODY placeholders in user-sourced configs', () => {
     expect(
-      hasRuntimeBodyPlaceholders({
+      getMCPRequestScope({
         source: 'user',
         dbId: 'server-123',
         url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
-      }),
+      }).requestScoped,
     ).toBe(false);
+  });
+
+  it('ignores unsupported BODY placeholder names that the resolver leaves literal', () => {
+    const config = {
+      source: 'yaml' as const,
+      url: 'https://example.com/{{LIBRECHAT_BODY_TENANT}}/mcp',
+    };
+
+    expect(hasRuntimeContextPlaceholders(config)).toBe(false);
+    expect(hasRuntimeUrlPlaceholders(config)).toBe(false);
+    expect(getMCPRequestScope(config).requestScoped).toBe(false);
+    expect(getRuntimeBodyPlaceholderFields(config)).toEqual([]);
+    expect(getMissingRuntimeBodyPlaceholderFields(config)).toEqual([]);
+    expect(requiresEphemeralUserConnection(config)).toBe(false);
+    expect(requiresUserScopedConnection(config)).toBe(false);
+  });
+
+  it('ignores BODY and USER literals in plugin-sourced configs', () => {
+    const config = {
+      source: 'plugin' as const,
+      url: 'https://example.com/users/{{LIBRECHAT_USER_ID}}/mcp',
+      headers: {
+        'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      },
+    };
+
+    expect(hasRuntimeContextPlaceholders(config)).toBe(false);
+    expect(hasRuntimeUrlPlaceholders(config)).toBe(false);
+    expect(getMCPRequestScope(config).requestScoped).toBe(false);
+    expect(getRuntimeBodyPlaceholderFields(config)).toEqual([]);
+    expect(getMissingRuntimeBodyPlaceholderFields(config)).toEqual([]);
+    expect(requiresEphemeralUserConnection(config)).toBe(false);
+    expect(requiresUserScopedConnection(config)).toBe(false);
   });
 });
 

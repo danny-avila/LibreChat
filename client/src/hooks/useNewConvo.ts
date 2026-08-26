@@ -33,11 +33,14 @@ import {
   hasModelSelection,
   buildDefaultConvo,
   requestChatFocus,
+  renewNewConversationDraftToken,
   logger,
 } from '~/utils';
 import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
+import { supersedeNavigation } from './Conversations/useNavigateToConvo';
 import useGetConversation from './Conversations/useGetConversation';
 import useAssistantListMap from './Assistants/useAssistantListMap';
+import { clearUploadRecovery } from './Files/useFileHandling';
 import { useResetChatBadges } from './useChatBadges';
 import { useApplyModelSpecEffects } from './Agents';
 import { useAgentsMapContext } from '~/Providers';
@@ -298,6 +301,7 @@ const useNewConvo = (index = 0) => {
       disableFocus,
       buildDefault = true,
       keepAddedConvos = false,
+      keepComposerState = false,
       disableParams,
     }: {
       template?: Partial<TConversation>;
@@ -306,8 +310,21 @@ const useNewConvo = (index = 0) => {
       buildDefault?: boolean;
       disableFocus?: boolean;
       keepAddedConvos?: boolean;
+      /** Set when the call re-renders a composer an earlier call already opened, such as agent
+       * metadata arriving late. The user never left that composer, so its draft identity and its
+       * in-flight attachments outlive the refresh. */
+      keepComposerState?: boolean;
       disableParams?: boolean;
     } = {}) {
+      const nextConversationId = _template.conversationId ?? '';
+      const keepsExistingDraft =
+        keepComposerState ||
+        (nextConversationId !== '' &&
+          nextConversationId !== Constants.NEW_CONVO &&
+          !nextConversationId.startsWith('_'));
+      if (!keepsExistingDraft) {
+        renewNewConversationDraftToken(index);
+      }
       pauseGlobalAudio();
       if (!saveBadgesState) {
         resetBadges();
@@ -354,22 +371,36 @@ const useNewConvo = (index = 0) => {
         prevSpecName: prevConversation?.spec,
       });
 
-      if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
-        const filesToDelete = Array.from(files.values())
-          .filter(
-            (file) =>
-              file.filepath != null &&
-              file.filepath !== '' &&
-              file.source &&
-              !(file.embedded ?? false) &&
-              file.temp_file_id,
-          )
-          .map((file) => ({
-            file_id: file.file_id,
-            embedded: !!(file.embedded ?? false),
-            filepath: file.filepath as string,
-            source: file.source as FileSources, // Ensure that the source is of type FileSources
-          }));
+      if (
+        conversation.conversationId === Constants.NEW_CONVO &&
+        !modelsData &&
+        !keepComposerState
+      ) {
+        const filesToDelete = Array.from(files.entries()).flatMap(([fileId, file]) => {
+          clearUploadRecovery(fileId);
+          if (file.temp_file_id && file.temp_file_id !== fileId) {
+            clearUploadRecovery(file.temp_file_id);
+          }
+
+          if (
+            file.filepath == null ||
+            file.filepath === '' ||
+            !file.source ||
+            (file.embedded ?? false) ||
+            !file.temp_file_id
+          ) {
+            return [];
+          }
+
+          return [
+            {
+              file_id: file.file_id,
+              embedded: false,
+              filepath: file.filepath,
+              source: file.source as FileSources,
+            },
+          ];
+        });
 
         setFiles(new Map());
         localStorage.setItem(LocalStorageKeys.FILES_TO_DELETE, JSON.stringify({}));
@@ -377,6 +408,19 @@ const useNewConvo = (index = 0) => {
         if (!saveDrafts && filesToDelete.length > 0) {
           mutateAsync({ files: filesToDelete });
         }
+      }
+
+      /** A first visit to another conversation may still be waiting on its
+       * record. Starting a new chat keeps the pathname, so nothing the route
+       * check sees changes — without this, that record lands and pulls the user
+       * into the conversation they just abandoned.
+       *
+       * `keepComposerState` marks a call that re-renders a composer an earlier
+       * call already opened, such as agent metadata arriving late. The user did
+       * not ask for anything there, so it must not cancel a conversation they
+       * clicked while it was in flight. */
+      if (!keepComposerState) {
+        supersedeNavigation();
       }
 
       switchToConversation(
@@ -390,6 +434,7 @@ const useNewConvo = (index = 0) => {
       );
     },
     [
+      index,
       files,
       setFiles,
       agentsMap,

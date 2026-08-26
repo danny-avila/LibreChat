@@ -1,6 +1,33 @@
 import { logger } from '@librechat/data-schemas';
+import { Constants } from 'librechat-data-provider';
 
-import type { RequestScopedMCPConnectionStore } from './types';
+import type { MCPRuntimeRequestBody, RequestScopedMCPConnectionStore } from './types';
+
+export type { MCPRuntimeRequestBody } from './types';
+
+/**
+ * Builds the complete request context that runtime MCP placeholders may resolve.
+ * An explicit null parent means a known root turn and becomes the root sentinel.
+ * An omitted parent stays omitted so protocols without parent-message identity
+ * fail closed for configurations that require that BODY placeholder.
+ */
+export function createMCPRuntimeRequestBody({
+  messageId,
+  conversationId,
+  parentMessageId,
+}: {
+  messageId: string;
+  conversationId: string;
+  parentMessageId?: string | null;
+}): MCPRuntimeRequestBody {
+  return {
+    messageId,
+    conversationId,
+    ...(parentMessageId !== undefined && {
+      parentMessageId: parentMessageId ?? Constants.NO_PARENT,
+    }),
+  };
+}
 
 export interface MCPRequestContext extends RequestScopedMCPConnectionStore {
   cleanupStarted: boolean;
@@ -79,8 +106,8 @@ export async function cleanupMCPRequestContext(context?: MCPRequestContext): Pro
         } else {
           await connection.disconnect();
         }
-      } catch (error) {
-        logger.warn('[MCP Request Context] Failed to dispose request-scoped connection', error);
+      } catch {
+        logger.warn('[MCP Request Context] Failed to dispose request-scoped connection');
       }
     }),
   );
@@ -94,8 +121,8 @@ function isResponseFinished(res?: MCPResponseLike): boolean {
 }
 
 function runCleanup(context: MCPRequestContext): void {
-  cleanupMCPRequestContext(context).catch((error) => {
-    logger.warn('[MCP Request Context] Cleanup failed', error);
+  cleanupMCPRequestContext(context).catch(() => {
+    logger.warn('[MCP Request Context] Cleanup failed');
   });
 }
 

@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import copy from 'copy-to-clipboard';
 import { useToastContext } from '@librechat/client';
-import { useQueryClient } from '@tanstack/react-query';
 import { useMatch, useNavigate } from 'react-router-dom';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
-import { PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
 import type { ShortcutBinding } from '~/utils/shortcuts';
 import type { ShortcutOverride } from '~/store/misc';
 import {
@@ -16,10 +15,10 @@ import {
   parseBinding,
 } from '~/utils/shortcuts';
 import { mainTextareaId, NotificationSeverity } from '~/common';
+import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { useArchiveConvoMutation } from '~/data-provider';
 import { useHasAccess, useLocalize } from '~/hooks';
-import { clearMessagesCache } from '~/utils';
-import useNewConvo from './useNewConvo';
+import useNewChat from '~/hooks/Chat/useNewChat';
 import store from '~/store';
 
 const isMac = isMacPlatform;
@@ -299,6 +298,7 @@ export const EDITING_ALLOWED_SHORTCUTS: ReadonlySet<ShortcutActionId> = new Set(
   'showShortcuts',
   'submitMessage',
   'escalateSteer',
+  'uploadFile',
 ]);
 
 export type ShortcutAction = ShortcutDefinition & {
@@ -495,14 +495,14 @@ export function isOverridden(actionId: ShortcutActionId, override?: ShortcutOver
 export function useShortcutActions(): ShortcutAction[] {
   const navigate = useNavigate();
   const localize = useLocalize();
-  const queryClient = useQueryClient();
-  const { newConversation } = useNewConvo();
+  const { startNewChat, newConversation } = useNewChat();
   const { showToast } = useToastContext();
   const routeMatch = useMatch('/c/:conversationId');
   const routeConvoId = routeMatch?.params.conversationId ?? null;
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(0));
-  const [sidebarExpanded, setSidebarExpanded] = useRecoilState(store.sidebarExpanded);
+  const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
+  const { setSidebarOpen, toggleSidebar } = useSidebarToggle();
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
   const setIsTemporary = useSetRecoilState(store.isTemporary);
   const setDeleteTarget = useSetRecoilState(store.keyboardDeleteTarget);
@@ -519,11 +519,9 @@ export function useShortcutActions(): ShortcutAction[] {
   }, [setShowShortcutsDialog]);
 
   const handleNewChat = useCallback(() => {
-    clearMessagesCache(queryClient, conversation?.conversationId);
-    queryClient.invalidateQueries([QueryKeys.messages]);
-    newConversation();
+    startNewChat();
     return true;
-  }, [queryClient, conversation?.conversationId, newConversation]);
+  }, [startNewChat]);
 
   const handleFocusChatInput = useCallback(() => {
     const textarea = document.getElementById(mainTextareaId) as HTMLTextAreaElement | null;
@@ -535,9 +533,9 @@ export function useShortcutActions(): ShortcutAction[] {
   }, []);
 
   const handleToggleSidebar = useCallback(() => {
-    setSidebarExpanded((prev) => !prev);
+    toggleSidebar();
     return true;
-  }, [setSidebarExpanded]);
+  }, [toggleSidebar]);
 
   const handleOpenModelSelector = useCallback(
     () => clickElement('[data-testid="model-selector-button"]'),
@@ -570,16 +568,23 @@ export function useShortcutActions(): ShortcutAction[] {
     }
 
     if (!sidebarExpanded) {
-      setSidebarExpanded(true);
+      /** The focus rides `afterSlide` + a zero timer: it must queue behind
+       * the deferred flip's commit (which un-inerts the drawer), where a
+       * fixed 350ms guess could fire into the still-inert drawer and be
+       * silently ignored. */
+      setSidebarOpen(true, () => {
+        setTimeout(focusSearchInput, 0);
+      });
+      return true;
     }
 
-    if (!sidebarExpanded || switchedPanel) {
+    if (switchedPanel) {
       setTimeout(focusSearchInput, 350);
       return true;
     }
 
     return focusSearchInput();
-  }, [sidebarExpanded, setSidebarExpanded]);
+  }, [sidebarExpanded, setSidebarOpen]);
 
   const handleCopyLastResponse = useCallback(() => {
     return clickLastElement('[data-testid="copy-response-button"]');
@@ -800,14 +805,18 @@ export function useShortcutActions(): ShortcutAction[] {
       }
 
       if (!sidebarExpanded) {
-        setSidebarExpanded(true);
-        setTimeout(activatePanel, 350);
+        /** Queued behind the deferred flip's commit, like the search focus
+         * above — the panel button is unreachable while the drawer is
+         * inert. */
+        setSidebarOpen(true, () => {
+          setTimeout(activatePanel, 0);
+        });
         return true;
       }
 
       return activatePanel();
     },
-    [sidebarExpanded, setSidebarExpanded],
+    [sidebarExpanded, setSidebarOpen],
   );
 
   const handleOpenAssistants = useCallback(() => handleOpenPanel('assistants'), [handleOpenPanel]);
@@ -901,20 +910,22 @@ export function useShortcutActions(): ShortcutAction[] {
 
 export function useShortcutDisplay(actionId?: ShortcutActionId): string {
   const overrides = useRecoilValue(store.customShortcuts);
+  const enabled = useRecoilValue(store.shortcutsEnabled);
   return useMemo(() => {
-    if (!actionId) return '';
+    if (!actionId || !enabled) return '';
     const binding = resolveShortcutBindings(overrides).get(actionId) ?? null;
     return binding ? bindingDisplayString(binding, isMac) : '';
-  }, [actionId, overrides]);
+  }, [actionId, overrides, enabled]);
 }
 
 export function useShortcutAriaKey(actionId?: ShortcutActionId): string | undefined {
   const overrides = useRecoilValue(store.customShortcuts);
+  const enabled = useRecoilValue(store.shortcutsEnabled);
   return useMemo(() => {
-    if (!actionId) return undefined;
+    if (!actionId || !enabled) return undefined;
     const binding = resolveShortcutBindings(overrides).get(actionId) ?? null;
     return binding ? (bindingToString(binding) ?? undefined) : undefined;
-  }, [actionId, overrides]);
+  }, [actionId, overrides, enabled]);
 }
 
 export function useShortcutHint(actionId: ShortcutActionId | undefined, label: string): string {
@@ -1014,6 +1025,7 @@ export default function useKeyboardShortcuts() {
   const actions = useShortcutActions();
   const overrides = useRecoilValue(store.customShortcuts);
   const shortcutsDialogOpen = useRecoilValue(store.showShortcutsDialog);
+  const shortcutsEnabled = useRecoilValue(store.shortcutsEnabled);
 
   const actionMap = useMemo(() => new Map(actions.map((action) => [action.id, action])), [actions]);
 
@@ -1032,6 +1044,10 @@ export default function useKeyboardShortcuts() {
 
   const handler = useCallback(
     (e: KeyboardEvent) => {
+      if (!shortcutsEnabled) {
+        return;
+      }
+
       if (e.repeat) {
         return;
       }
@@ -1083,7 +1099,7 @@ export default function useKeyboardShortcuts() {
         e.preventDefault();
       }
     },
-    [actionMap, bindingMap, shortcutsDialogOpen],
+    [actionMap, bindingMap, shortcutsDialogOpen, shortcutsEnabled],
   );
 
   useEffect(() => {

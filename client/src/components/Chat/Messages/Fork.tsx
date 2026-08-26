@@ -8,7 +8,7 @@ import { GitCommit, GitBranchPlus, ListTree } from 'lucide-react';
 import { Button, Label, Checkbox, useToastContext } from '@librechat/client';
 import { TranslationKeys, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useForkConvoMutation } from '~/data-provider';
-import { cn } from '~/utils';
+import { hoverButtonClasses } from './styles';
 import store from '~/store';
 
 interface PopoverButtonProps {
@@ -216,7 +216,6 @@ export default function Fork({
   const { showToast } = useToastContext();
   const [remember, setRemember] = useState(false);
   const { navigateToConvo } = useNavigateToConvo();
-  const [isActive, setIsActive] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [forkSetting, setForkSetting] = useRecoilState(store.forkSetting);
   const [activeSetting, setActiveSetting] = useState(optionLabels.default);
@@ -225,16 +224,12 @@ export default function Fork({
   const popoverStore = Ariakit.usePopoverStore({
     placement: 'bottom',
   });
+  /** Read the open state from the store rather than mirroring it: Escape and
+   *  outside clicks close the popover without going through the trigger, so a
+   *  hand-kept copy would leave the button reading as active forever. */
+  const isActive = Ariakit.useStoreState(popoverStore, 'open');
 
-  const buttonStyle = cn(
-    'hover-button size-auto rounded-lg p-1.5 text-text-secondary-alt',
-    'hover:text-text-primary hover:bg-surface-hover',
-    'group-hover:visible group-focus-within:visible group-[.final-completion]:visible',
-    !isLast &&
-      'group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:hover)]:opacity-0',
-    'focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:outline-none',
-    isActive && 'active text-text-primary bg-surface-hover',
-  );
+  const buttonStyle = hoverButtonClasses({ isActive, isLast });
 
   const forkConvo = useForkConvoMutation({
     onSuccess: (data) => {
@@ -346,7 +341,6 @@ export default function Fork({
                 });
               } else {
                 popoverStore.toggle();
-                setIsActive(popoverStore.getState().open);
               }
             }}
             type="button"
@@ -367,7 +361,6 @@ export default function Fork({
         }}
         portal={true}
         unmountOnHide={true}
-        onClose={() => setIsActive(false)}
       >
         <div className="flex h-8 w-full items-center justify-center text-sm text-text-primary">
           {localize(activeSetting)}

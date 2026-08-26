@@ -4,15 +4,15 @@ import type { TMessageContentParts, SearchResultData, TAttachment } from 'librec
 import {
   getActivityLabelPart,
   getActivityLabelText,
-  lastVisibleContentIdx,
+  lastCursorContentIdx,
 } from '~/utils/activityLabels';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
+import { cn, getPartKeyIndex } from '~/utils';
 import { SearchContext } from '~/Providers';
 import SiblingHeader from './SiblingHeader';
 import { EmptyText } from './Parts';
 import Container from './Container';
-import { cn } from '~/utils';
 
 export type PartWithIndex = { part: TMessageContentParts; idx: number };
 
@@ -36,6 +36,7 @@ export type ParallelSection = {
 export function groupParallelContent(
   content: Array<TMessageContentParts | undefined> | undefined,
   contentIndexOffset = 0,
+  contentIndices?: ReadonlyArray<number>,
 ): { parallelSections: ParallelSection[]; sequentialParts: PartWithIndex[] } {
   if (!content) {
     return { parallelSections: [], sequentialParts: [] };
@@ -50,7 +51,7 @@ export function groupParallelContent(
     if (!part) {
       return;
     }
-    const idx = localIdx + contentIndexOffset;
+    const idx = contentIndices?.[localIdx] ?? localIdx + contentIndexOffset;
 
     // Read metadata directly from content part (TMessageContentParts includes ContentMetadata)
     const { groupId } = part;
@@ -178,6 +179,7 @@ export const ParallelColumns = memo(function ParallelColumns({
             part?.type !== ContentTypes.ACTIVITY_LABEL ||
             getActivityLabelText(getActivityLabelPart(part)).length > 0,
         );
+        const lastColumnCursorIdx = lastParallelColumnCursorIdx(columnParts);
         // Show loading cursor if column has no content parts yet (empty array from placeholder)
         const showLoadingCursor = isSubmitting && columnParts.length === 0;
 
@@ -199,7 +201,7 @@ export const ParallelColumns = memo(function ParallelColumns({
               </Container>
             ) : (
               columnParts.map(({ part, idx }) => {
-                const isLastInColumn = idx === columnParts[columnParts.length - 1]?.idx;
+                const isLastInColumn = idx === lastColumnCursorIdx;
                 const isLastContent = idx === lastContentIdx;
                 return renderPart(part, idx, isLastInColumn && isLastContent);
               })
@@ -210,6 +212,13 @@ export const ParallelColumns = memo(function ParallelColumns({
     </div>
   );
 });
+
+export function lastParallelColumnCursorIdx(
+  parts: ReadonlyArray<{ part: TMessageContentParts; idx: number }>,
+): number {
+  const relativeIdx = lastCursorContentIdx(parts.map(({ part }) => part));
+  return relativeIdx < 0 ? -1 : (parts[relativeIdx]?.idx ?? -1);
+}
 
 type ParallelContentRendererProps = {
   content?: Array<TMessageContentParts | undefined>;
@@ -226,10 +235,12 @@ type ParallelContentRendererProps = {
    * sequential before/after stretches consult it: column content already
    * carries per-agent identity.
    */
-  renderResumeAttribution?: (idx: number) => React.ReactNode;
+  renderResumeAttribution?: (idx: number, keyIdx?: number) => React.ReactNode;
   showDecorations?: boolean;
   /** Absolute transcript index represented by `content[0]` in a phase slice. */
   contentIndexOffset?: number;
+  /** Absolute transcript index for each compacted sparse segment entry. */
+  contentIndices?: ReadonlyArray<number>;
 };
 
 /**
@@ -248,18 +259,21 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
   renderResumeAttribution,
   showDecorations = true,
   contentIndexOffset = 0,
+  contentIndices,
 }: ParallelContentRendererProps) {
   const { parallelSections, sequentialParts } = useMemo(
-    () => groupParallelContent(content, contentIndexOffset),
-    [content, contentIndexOffset],
+    () => groupParallelContent(content, contentIndexOffset, contentIndices),
+    [content, contentIndexOffset, contentIndices],
   );
 
   /** Same walk-back as `ContentParts`: a trailing BLANK label reservation is
    *  filtered out of every lane, so counting it as last would leave NO
    *  rendered part with the last-part cursor until the label fills. */
-  const relativeLastContentIdx = lastVisibleContentIdx(content);
+  const relativeLastContentIdx = lastCursorContentIdx(content);
   const lastContentIdx =
-    relativeLastContentIdx < 0 ? -1 : relativeLastContentIdx + contentIndexOffset;
+    relativeLastContentIdx < 0
+      ? -1
+      : (contentIndices?.[relativeLastContentIdx] ?? relativeLastContentIdx + contentIndexOffset);
 
   // Split sequential parts into before/after parallel sections
   const { before, after } = useMemo(() => {
@@ -288,7 +302,7 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
 
       {/* Sequential content BEFORE parallel sections */}
       {before.flatMap(({ part, idx }) => {
-        const attribution = renderResumeAttribution?.(idx);
+        const attribution = renderResumeAttribution?.(idx, getPartKeyIndex(part, idx));
         const rendered = renderPart(part, idx, false);
         return attribution != null ? [attribution, rendered] : [rendered];
       })}
@@ -310,7 +324,7 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
 
       {/* Sequential content AFTER parallel sections */}
       {after.flatMap(({ part, idx }) => {
-        const attribution = renderResumeAttribution?.(idx);
+        const attribution = renderResumeAttribution?.(idx, getPartKeyIndex(part, idx));
         const rendered = renderPart(part, idx, idx === lastContentIdx);
         return attribution != null ? [attribution, rendered] : [rendered];
       })}

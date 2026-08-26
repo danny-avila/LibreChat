@@ -114,6 +114,51 @@ describe('createAppConfigService', () => {
       expect(deps.getApplicableConfigs).toHaveBeenCalled();
     });
 
+    it('materializes inferred model-spec endpoints in the base config', async () => {
+      const deps = createDeps({
+        loadBaseConfig: jest.fn().mockResolvedValue({
+          modelSpecs: {
+            enforce: false,
+            prioritize: true,
+            list: [{ name: 'agent-spec', label: 'Agent Spec', preset: { agent_id: 'agent_abc' } }],
+          },
+        }),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const config = await getAppConfig({ baseOnly: true });
+
+      expect(config.modelSpecs?.list?.[0]?.preset?.endpoint).toBe('agents');
+    });
+
+    /**
+     * Admin-panel specs arrive through DB override documents the base config
+     * never saw, so materialization must also run on the merged result.
+     */
+    it('materializes inferred model-spec endpoints contributed by DB overrides', async () => {
+      const deps = createDeps({
+        getApplicableConfigs: jest.fn().mockResolvedValue([
+          {
+            priority: 10,
+            isActive: true,
+            overrides: {
+              modelSpecs: {
+                list: [
+                  { name: 'agent-spec', label: 'Agent Spec', preset: { agent_id: 'agent_abc' } },
+                ],
+              },
+            },
+          },
+        ]),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const config = (await getAppConfig({ role: 'USER' })) as TestConfig;
+
+      expect(config.modelSpecs?.list?.[0]?.preset?.endpoint).toBe('agents');
+      expect(config.modelSpecs?.list?.[0]?.preset?.agent_id).toBe('agent_abc');
+    });
+
     it('caches empty result — does not re-query DB on second call', async () => {
       const deps = createDeps({ getApplicableConfigs: jest.fn().mockResolvedValue([]) });
       const { getAppConfig } = createAppConfigService(deps);

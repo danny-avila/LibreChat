@@ -37,6 +37,8 @@ type SpecFavoriteProps = FavoriteItemBaseProps & {
   item: TModelSpec;
   onSelectSpec?: (spec: TModelSpec) => void;
   endpointsConfig?: TEndpointsConfig;
+  /** Avatar of the agent the spec targets, used when the spec defines no icon of its own. */
+  agentAvatarURL?: string;
 };
 
 type FavoriteItemProps = AgentFavoriteProps | ModelFavoriteProps | SpecFavoriteProps;
@@ -91,7 +93,11 @@ export default function FavoriteItem(props: FavoriteItemProps) {
     if (props.type === 'spec') {
       return (
         <div className="mr-2 h-5 w-5">
-          <SpecIcon currentSpec={props.item} endpointsConfig={props.endpointsConfig} />
+          <SpecIcon
+            currentSpec={props.item}
+            endpointsConfig={props.endpointsConfig}
+            agentAvatarURL={props.agentAvatarURL}
+          />
         </div>
       );
     }

@@ -1,9 +1,13 @@
+import {
+  MAX_CHAT_PROJECT_NAME_LENGTH,
+  MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
+} from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
-import logger from '~/config/winston';
-import { isValidObjectIdString } from '~/utils/objectId';
-import { buildRetentionVisibilityFilter } from '~/utils/retention';
-import { escapeRegExp } from '~/utils/string';
 import type { IChatProject, IChatProjectDocument, IConversation } from '~/types';
+import { buildRetentionVisibilityFilter } from '~/utils/retention';
+import { isValidObjectIdString } from '~/utils/objectId';
+import { escapeRegExp } from '~/utils/string';
+import logger from '~/config/winston';
 
 export type ChatProjectSortBy = 'name' | 'createdAt' | 'lastConversationAt';
 export type ChatProjectSortDirection = 'asc' | 'desc';
@@ -66,8 +70,13 @@ type ProjectCursor = {
 };
 
 type ProjectLean = IChatProject & { _id: Types.ObjectId };
+type ProjectStatsSnapshot = Pick<
+  IChatProject,
+  'conversationCount' | 'lastConversationAt' | 'lastConversationId'
+>;
 
 const VALID_SORT_FIELDS = new Set<ChatProjectSortBy>(['name', 'createdAt', 'lastConversationAt']);
+const PROJECT_STATS_REFRESH_MAX_ATTEMPTS = 8;
 
 function normalizeSortBy(sortBy?: string): ChatProjectSortBy {
   return VALID_SORT_FIELDS.has(sortBy as ChatProjectSortBy)
@@ -88,8 +97,8 @@ function normalizeLimit(limit?: number): number {
 
 function sanitizeProjectInput(input: CreateChatProjectInput): CreateChatProjectInput {
   return {
-    name: input.name.trim().slice(0, 100),
-    description: input.description?.trim().slice(0, 1000) ?? '',
+    name: input.name.trim().slice(0, MAX_CHAT_PROJECT_NAME_LENGTH),
+    description: input.description?.trim().slice(0, MAX_CHAT_PROJECT_DESCRIPTION_LENGTH) ?? '',
   };
 }
 
@@ -190,6 +199,19 @@ function visibleProjectConversationFilter(
   } as FilterQuery<IConversation>;
 }
 
+function projectStatsSnapshotFilter(
+  snapshot: ProjectStatsSnapshot,
+): FilterQuery<IChatProjectDocument> {
+  return {
+    conversationCount:
+      snapshot.conversationCount === undefined ? { $exists: false } : snapshot.conversationCount,
+    lastConversationAt:
+      snapshot.lastConversationAt === undefined ? { $exists: false } : snapshot.lastConversationAt,
+    lastConversationId:
+      snapshot.lastConversationId === undefined ? { $exists: false } : snapshot.lastConversationId,
+  };
+}
+
 export async function refreshChatProjectStatsForUser(
   mongoose: typeof import('mongoose'),
   user: string,
@@ -204,25 +226,44 @@ export async function refreshChatProjectStatsForUser(
   const projectFilter = { _id: new mongoose.Types.ObjectId(projectId), user };
   const conversationFilter = visibleProjectConversationFilter(user, projectId);
 
-  const [conversationCount, latestConversation] = await Promise.all([
-    Conversation.countDocuments(conversationFilter),
-    Conversation.findOne(conversationFilter)
-      .select('conversationId updatedAt createdAt')
-      .sort({ updatedAt: -1, _id: -1 })
-      .lean<IConversation>(),
-  ]);
+  for (let attempt = 0; attempt < PROJECT_STATS_REFRESH_MAX_ATTEMPTS; attempt++) {
+    const snapshot = await ChatProject.findOne(projectFilter)
+      .select('conversationCount lastConversationAt lastConversationId')
+      .lean<ProjectStatsSnapshot>();
+    if (!snapshot) {
+      return null;
+    }
 
-  return await ChatProject.findOneAndUpdate(
-    projectFilter,
-    {
-      $set: {
-        conversationCount,
-        lastConversationAt: latestConversation?.updatedAt ?? latestConversation?.createdAt ?? null,
-        lastConversationId: latestConversation?.conversationId ?? null,
+    const [conversationCount, latestConversation] = await Promise.all([
+      Conversation.countDocuments(conversationFilter),
+      Conversation.findOne(conversationFilter)
+        .select('conversationId updatedAt createdAt')
+        .sort({ updatedAt: -1, _id: -1 })
+        .lean<IConversation>(),
+    ]);
+
+    const updatedProject = await ChatProject.findOneAndUpdate(
+      { ...projectFilter, ...projectStatsSnapshotFilter(snapshot) },
+      {
+        $set: {
+          conversationCount,
+          lastConversationAt:
+            latestConversation?.updatedAt ?? latestConversation?.createdAt ?? null,
+          lastConversationId: latestConversation?.conversationId ?? null,
+        },
       },
-    },
-    { new: true },
-  ).lean<IChatProject>();
+      { new: true },
+    ).lean<IChatProject>();
+    if (updatedProject) {
+      return updatedProject;
+    }
+  }
+
+  logger.warn('[refreshChatProjectStatsForUser] Stats changed during every refresh attempt', {
+    user,
+    projectId,
+  });
+  throw new Error('Failed to refresh chat project stats after concurrent updates');
 }
 
 export async function updateChatProjectLastConversationForUser(
@@ -237,18 +278,49 @@ export async function updateChatProjectLastConversationForUser(
   }
 
   const lastConversationAt = conversation.updatedAt ?? conversation.createdAt ?? new Date();
-  const update: Record<string, unknown> = {
-    $set: {
-      lastConversationAt,
-      lastConversationId: conversation.conversationId,
-    },
+  const lastConversationFields = {
+    lastConversationAt,
+    lastConversationId: conversation.conversationId,
   };
-  if (incrementCount) {
-    update.$inc = { conversationCount: 1 };
+  const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
+  const projectFilter = { _id: new mongoose.Types.ObjectId(projectId), user };
+
+  if (!incrementCount) {
+    await ChatProject.updateOne(projectFilter, { $set: lastConversationFields });
+  } else {
+    /**
+     * Skip `$inc` when a concurrent refresh already recorded this conversation as
+     * `lastConversationId`. The conversation is visible to countDocuments as soon
+     * as it is persisted, so a later increment would double-count it.
+     */
+    const incremented = await ChatProject.updateOne(
+      { ...projectFilter, lastConversationId: { $ne: conversation.conversationId } },
+      { $set: lastConversationFields, $inc: { conversationCount: 1 } },
+    );
+    if ((incremented.matchedCount ?? 0) === 0) {
+      await ChatProject.updateOne(projectFilter, { $set: lastConversationFields });
+    }
   }
 
-  const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
-  await ChatProject.updateOne({ _id: new mongoose.Types.ObjectId(projectId), user }, update);
+  /**
+   * The chat can stop being visible while this pointer write is in flight: an archive-all
+   * sweep, a single archive from another tab, or a retention flip, each of which has
+   * already run its own stats refresh by the time this lands, leaving the project
+   * advertising activity on a chat its workspace hides. Checking first would only move
+   * that race earlier, so the pointer is verified after it is written and the project
+   * recomputed when the chat it names turns out to be hidden. A sweep that lands later
+   * still refreshes the project itself, and `refreshChatProjectStatsForUser` compare-and-
+   * sets, so it cannot commit a count it read before this write. The read is a point
+   * lookup on the unique `conversationId, user` index.
+   */
+  const Conversation = mongoose.models.Conversation as Model<IConversation>;
+  const stillVisible = await Conversation.exists({
+    ...visibleProjectConversationFilter(user, projectId),
+    conversationId: conversation.conversationId,
+  });
+  if (!stillVisible) {
+    await refreshChatProjectStatsForUser(mongoose, user, projectId);
+  }
 }
 
 export function createChatProjectMethods(mongoose: typeof import('mongoose')): ChatProjectMethods {
@@ -296,7 +368,8 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     const filters: FilterQuery<IChatProjectDocument>[] = [{ user }];
 
     if (options.search?.trim()) {
-      filters.push({ name: { $regex: escapeRegExp(options.search.trim()), $options: 'i' } });
+      const searchRegex = { $regex: escapeRegExp(options.search.trim()), $options: 'i' };
+      filters.push({ $or: [{ name: searchRegex }, { description: searchRegex }] });
     }
 
     const cursorFilter = createCursorFilter(
@@ -340,14 +413,15 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
     const update: Partial<Pick<IChatProject, 'name' | 'description'>> = {};
     if (typeof input.name === 'string') {
-      const name = input.name.trim().slice(0, 100);
+      const name = input.name.trim().slice(0, MAX_CHAT_PROJECT_NAME_LENGTH);
       if (!name) {
         throw new Error('Project name is required');
       }
       update.name = name;
     }
     if (input.description !== undefined) {
-      update.description = input.description?.trim().slice(0, 1000) ?? '';
+      update.description =
+        input.description?.trim().slice(0, MAX_CHAT_PROJECT_DESCRIPTION_LENGTH) ?? '';
     }
 
     return await ChatProject.findOneAndUpdate(

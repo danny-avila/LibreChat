@@ -303,7 +303,7 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
  *
  * Reads `ChatContext` / the agent store / React Query. The cards render it from
  * live chat views but ALSO from contexts without a `ChatContext.Provider` (e.g. a
- * subagent tool paused inside a portaled dialog, or a search/citation render that
+ * subagent tool paused inside an isolated activity surface, or a search/citation render that
  * passes chat context as a prop), so it reads the context non-throwingly: with no
  * conversation, `buildResumeFields` returns null and the controls are inert rather
  * than crashing.
@@ -381,9 +381,15 @@ export function useResumeSubmit() {
   );
 
   const submitAskAnswer = useCallback(
-    (actionId: string, answer: string, opts?: { onSuccess?: () => void }) => {
+    (
+      actionId: string,
+      resolution: string | Record<string, string>,
+      opts?: { onSuccess?: () => void },
+    ) => {
       const fields = buildResumeFields();
-      if (!fields || answer.length === 0) {
+      const isBatch = typeof resolution !== 'string';
+      const hasAnswer = isBatch ? Object.keys(resolution).length > 0 : resolution.length > 0;
+      if (!fields || !hasAnswer) {
         return;
       }
       if (submittingAskActionIdsRef.current.has(actionId)) {
@@ -392,7 +398,11 @@ export function useResumeSubmit() {
       submittingAskActionIdsRef.current.add(actionId);
       setAskStatus(actionId, 'submitting');
       askMutation.mutate(
-        { ...fields, actionId, answer },
+        {
+          ...fields,
+          actionId,
+          ...(isBatch ? { answers: resolution } : { answer: resolution }),
+        },
         {
           onSuccess: () => {
             setAskStatus(actionId, 'submitted');
@@ -408,7 +418,7 @@ export function useResumeSubmit() {
             if (messages && chatContext?.setMessages) {
               let changed = false;
               const next = messages.map((message) => {
-                const resolved = resolveAskUserQuestionPart(message, actionId, answer);
+                const resolved = resolveAskUserQuestionPart(message, actionId, resolution);
                 if (resolved !== message) {
                   changed = true;
                 }

@@ -34,7 +34,13 @@ import {
   isTerminalMCPOAuthPollingError,
   shouldUseMCPConnectionStatus,
 } from './polling';
-import { useLocalize, useHasAccess, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
+import {
+  useLocalize,
+  useHasAccess,
+  useMCPSelect,
+  useCatalogReady,
+  useMCPConnectionStatus,
+} from '~/hooks';
 import { useGetStartupConfig, useMCPServersQuery } from '~/data-provider';
 import { mcpServerInitStatesAtom, getServerInitState } from '~/store/mcp';
 import { getMCPReinitializeErrorMessage } from './errors';
@@ -45,6 +51,8 @@ export interface MCPServerDefinition {
   dbId?: string; // MongoDB ObjectId for database servers (used for permissions)
   effectivePermissions: number; // Permission bits (VIEW=1, EDIT=2, DELETE=4, SHARE=8)
   consumeOnly?: boolean;
+  /** True when chat request fields are required before the server can connect. */
+  requestScoped?: boolean;
 }
 
 // Poll intervals are kept local since they're timer references that can't be serialized
@@ -64,12 +72,16 @@ export function useMCPServerManager({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.USE,
   });
+  /** MCP catalogs are background-warmed: the server list powers nav-link
+   * visibility and the chat-menu select, none of which gate first paint. */
+  const mcpServersReady = useCatalogReady('mcpServers');
+  const mcpEnabled = canUseMcp && mcpServersReady;
 
-  const { data: loadedServers, isLoading } = useMCPServersQuery({ enabled: canUseMcp });
+  const { data: loadedServers, isLoading } = useMCPServersQuery({ enabled: mcpEnabled });
 
   // Fetch effective permissions for all MCP servers
   const { data: permissionsMap } = useGetAllEffectivePermissionsQuery(ResourceType.MCPSERVER, {
-    enabled: canUseMcp,
+    enabled: mcpEnabled,
   });
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
@@ -80,7 +92,7 @@ export function useMCPServerManager({
     const definitions: MCPServerDefinition[] = [];
     if (loadedServers) {
       for (const [serverName, metadata] of Object.entries(loadedServers)) {
-        const { dbId, consumeOnly, ...config } = metadata;
+        const { dbId, consumeOnly, requestScoped, ...config } = metadata;
 
         // Get effective permissions from the permissions map using _id
         // Fall back to 1 (VIEW) for YAML-based servers without _id
@@ -91,6 +103,7 @@ export function useMCPServerManager({
           dbId,
           effectivePermissions,
           consumeOnly,
+          requestScoped,
           config,
         });
       }
@@ -166,9 +179,26 @@ export function useMCPServerManager({
   // Poll intervals are kept local (not serializable)
   const pollIntervalsRef = useRef<PollIntervals>({});
 
-  const { connectionStatus } = useMCPConnectionStatus({
+  const { connectionStatus: polledConnectionStatus } = useMCPConnectionStatus({
     enabled: !isLoading && availableMCPServers.length > 0,
   });
+  const connectionStatus = useMemo(() => {
+    if (!polledConnectionStatus) {
+      return polledConnectionStatus;
+    }
+
+    let changed = false;
+    const nextStatus: MCPConnectionStatusResponse['connectionStatus'] = {};
+    for (const [serverName, status] of Object.entries(polledConnectionStatus)) {
+      if (status.requestScoped === true || loadedServers?.[serverName]?.requestScoped !== true) {
+        nextStatus[serverName] = status;
+        continue;
+      }
+      changed = true;
+      nextStatus[serverName] = { ...status, requestScoped: true };
+    }
+    return changed ? nextStatus : polledConnectionStatus;
+  }, [polledConnectionStatus, loadedServers]);
 
   const updateServerInitState = useCallback(
     (serverName: string, updates: Partial<MCPServerInitState>) => {

@@ -138,7 +138,13 @@ describe('RedisJobStore Integration Tests', () => {
       const store = new RedisJobStore(ioredisClient);
       await store.initialize();
       const streamId = `test-replaced-owner-${Date.now()}`;
-      const predecessor = await store.createJob(streamId, 'user-1', streamId);
+      const providerExecutionId = 'provider-before-replacement';
+      const predecessor = await store.createJob(streamId, 'user-1', streamId, undefined, {
+        providerExecutionId,
+      });
+      await expect(
+        store.beginProviderExecution(streamId, predecessor.createdAt, providerExecutionId),
+      ).resolves.toBe(true);
       await store.transitionStatus(streamId, {
         from: 'running',
         to: 'requires_action',
@@ -155,12 +161,20 @@ describe('RedisJobStore Integration Tests', () => {
         status: 'requires_action',
         conversationId: streamId,
       });
+      expect(replacement.replacedJob).toMatchObject({
+        providerExecutionId,
+        providerDrained: false,
+      });
       // The receipt is durably reconstructed for lost-reply recovery, but it
       // remains non-enumerable so ordinary job serializers cannot expose it.
       const durableReplacement = await store.getJob(streamId);
       expect((durableReplacement as typeof replacement).replacedJob).toEqual(
         replacement.replacedJob,
       );
+      expect((durableReplacement as typeof replacement).replacedJob).toMatchObject({
+        providerExecutionId,
+        providerDrained: false,
+      });
       expect(Object.getOwnPropertyDescriptor(durableReplacement!, 'replacedJob')).toMatchObject({
         enumerable: false,
       });
@@ -1152,7 +1166,7 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
-    test('createJob clears stale per-turn identity (agent_id, isTemporary) from a reused hash', async () => {
+    test('createJob clears stale per-turn identity and provenance from a reused hash', async () => {
       if (!ioredisClient) {
         return;
       }
@@ -1167,11 +1181,17 @@ describe('RedisJobStore Integration Tests', () => {
         agent_id: 'saved-agent-1',
         isTemporary: true,
         discoveredTools: ['deep_tool'],
+        userSubmittedPaths: ['/content/0/tool_call/args'],
+        userSubmittedMessageFieldPaths: [{ path: '/content/0/tool_call/output', field: 'answer' }],
       });
       const turn1 = await store.getJob(streamId);
       expect(turn1?.agent_id).toBe('saved-agent-1');
       expect(turn1?.isTemporary).toBe(true);
       expect(turn1?.discoveredTools).toEqual(['deep_tool']);
+      expect(turn1?.userSubmittedPaths).toEqual(['/content/0/tool_call/args']);
+      expect(turn1?.userSubmittedMessageFieldPaths).toEqual([
+        { path: '/content/0/tool_call/output', field: 'answer' },
+      ]);
 
       // Turn 2 on the SAME conversation switches to an ephemeral / non-temporary turn.
       // The hash is keyed by conversationId, so without clearing, the old agent_id and
@@ -1183,6 +1203,8 @@ describe('RedisJobStore Integration Tests', () => {
       expect(turn2?.agent_id).toBeUndefined();
       expect(turn2?.isTemporary).toBeUndefined();
       expect(turn2?.discoveredTools).toBeUndefined();
+      expect(turn2?.userSubmittedPaths).toBeUndefined();
+      expect(turn2?.userSubmittedMessageFieldPaths).toBeUndefined();
 
       await store.destroy();
     });
@@ -1413,12 +1435,23 @@ describe('RedisJobStore Integration Tests', () => {
       expect(jobFromInstance2?.streamId).toBe(streamId);
 
       // Instance 1 updates job
-      await instance1.updateJob(streamId, { sender: 'TestAgent', syncSent: true });
+      await instance1.updateJob(streamId, {
+        sender: 'TestAgent',
+        syncSent: true,
+        userSubmittedPaths: ['/content/0/tool_call/args'],
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/0/tool_call/output', field: 'decision_response' },
+        ],
+      });
 
       // Instance 2 should see the update
       const updatedJob = await instance2.getJob(streamId);
       expect(updatedJob?.sender).toBe('TestAgent');
       expect(updatedJob?.syncSent).toBe(true);
+      expect(updatedJob?.userSubmittedPaths).toEqual(['/content/0/tool_call/args']);
+      expect(updatedJob?.userSubmittedMessageFieldPaths).toEqual([
+        { path: '/content/0/tool_call/output', field: 'decision_response' },
+      ]);
 
       await instance1.destroy();
       await instance2.destroy();
@@ -3085,7 +3118,7 @@ describe('RedisJobStore Integration Tests', () => {
         undefined,
         undefined,
         undefined,
-        { text: 'kept', fileIds: [] },
+        { text: 'kept', fileIds: [], quotes: [] },
       );
       expect(await store.claimParkedSteers(streamId, 'steer-user')).toBeUndefined();
       expect(await ioredisClient.exists(`stream:{${streamId}}:parked`)).toBe(1);
@@ -3112,7 +3145,7 @@ describe('RedisJobStore Integration Tests', () => {
         undefined,
         undefined,
         undefined,
-        { text: 'kept', fileIds: [] },
+        { text: 'kept', fileIds: [], quotes: [] },
       );
       expect(
         await store.consumeParkedSteer(
@@ -3130,8 +3163,12 @@ describe('RedisJobStore Integration Tests', () => {
     });
 
     test.each([
-      ['changed text', { text: 'forged words', fileIds: ['file-a', 'file-b'] }],
-      ['changed files', { text: 'original words', fileIds: ['file-a', 'file-c'] }],
+      ['changed text', { text: 'forged words', fileIds: ['file-a', 'file-b'], quotes: [] }],
+      ['changed files', { text: 'original words', fileIds: ['file-a', 'file-c'], quotes: [] }],
+      [
+        'changed quotes',
+        { text: 'original words', fileIds: ['file-a', 'file-b'], quotes: ['forged excerpt'] },
+      ],
     ])('atomically refuses parked recovery with %s', async (_label, proof) => {
       if (!ioredisClient) {
         return;
@@ -3740,6 +3777,172 @@ describe('RedisJobStore Integration Tests', () => {
 
       await store.destroy();
     });
+
+    test('getContentParts patches the latest reasoning label onto its THINK part', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `reasoning-label-recon-${Date.now()}`;
+      await store.createJob(streamId, 'reasoning-label-user', streamId);
+      const chunks = [
+        {
+          event: 'on_run_step',
+          data: {
+            id: 'reasoning-step-1',
+            index: 0,
+            stepDetails: {
+              type: 'message_creation',
+              message_creation: { content_type: 'think' },
+            },
+          },
+        },
+        {
+          event: 'on_reasoning_delta',
+          data: {
+            id: 'reasoning-step-1',
+            delta: { content: { type: 'think', think: 'Inspecting the resume path.' } },
+          },
+        },
+        {
+          event: 'on_reasoning_label_attempt',
+          data: {
+            index: 0,
+            stepId: 'reasoning-step-1',
+            attempts: 1,
+            submittedChars: 27,
+          },
+        },
+        {
+          event: 'on_reasoning_label',
+          data: {
+            index: 0,
+            stepId: 'reasoning-step-1',
+            revision: 1,
+            label: 'Inspecting the resume path',
+            status: 'streaming',
+          },
+        },
+        {
+          event: 'on_reasoning_label_attempt',
+          data: {
+            index: 0,
+            stepId: 'reasoning-step-1',
+            attempts: 2,
+            submittedChars: 27,
+          },
+        },
+        {
+          event: 'on_reasoning_label',
+          data: {
+            index: 0,
+            stepId: 'reasoning-step-1',
+            revision: 2,
+            label: 'Resolved the resume race',
+            status: 'complete',
+          },
+        },
+        {
+          event: 'on_reasoning_delta',
+          data: {
+            id: 'reasoning-step-1',
+            delta: { content: { type: 'think', think: ' More detail followed.' } },
+          },
+        },
+      ];
+      for (const chunk of chunks) {
+        await store.appendChunk(streamId, chunk);
+      }
+
+      const result = await store.getContentParts(streamId);
+      expect(result?.content).toHaveLength(1);
+      expect(result?.content[0]).toMatchObject({
+        type: 'think',
+        think: 'Inspecting the resume path. More detail followed.',
+        reasoning_label: 'Resolved the resume race',
+        reasoning_label_step_id: 'reasoning-step-1',
+        reasoning_label_attempts: 2,
+        reasoning_label_submitted_chars: 27,
+        reasoning_label_revision: 2,
+        reasoning_label_status: 'complete',
+      });
+
+      await store.destroy();
+    });
+
+    test('getContentParts preserves the attempt cap when a sparse THINK slot is reused', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `reasoning-label-sparse-${Date.now()}`;
+      await store.createJob(streamId, 'reasoning-label-user', streamId);
+      await store.appendChunk(streamId, {
+        event: 'on_run_step',
+        data: {
+          id: 'reasoning-step-sparse',
+          index: 2,
+          stepDetails: {
+            type: 'message_creation',
+            message_creation: { content_type: 'think' },
+          },
+        },
+      });
+      await store.appendChunk(streamId, {
+        event: 'on_reasoning_delta',
+        data: {
+          id: 'reasoning-step-sparse',
+          delta: { content: { type: 'think', think: 'Inspecting a compacted stream.' } },
+        },
+      });
+      await store.appendChunk(streamId, {
+        event: 'on_reasoning_label_attempt',
+        data: {
+          index: 2,
+          stepId: 'reasoning-step-sparse',
+          attempts: 2,
+          submittedChars: 31,
+        },
+      });
+      await store.appendChunk(streamId, {
+        event: 'on_run_step',
+        data: {
+          id: 'reasoning-step-after-pause',
+          index: 2,
+          stepDetails: {
+            type: 'message_creation',
+            message_creation: { content_type: 'think' },
+          },
+        },
+      });
+      await store.appendChunk(streamId, {
+        event: 'on_reasoning_delta',
+        data: {
+          id: 'reasoning-step-after-pause',
+          delta: { content: { type: 'think', think: 'Continuing after the pause.' } },
+        },
+      });
+
+      const result = await store.getContentParts(streamId);
+      expect(result?.content).toHaveLength(1);
+      expect(result?.content[0]).toMatchObject({
+        type: 'think',
+        think: 'Inspecting a compacted stream.Continuing after the pause.',
+        reasoning_label_step_id: 'reasoning-step-after-pause',
+        reasoning_label_attempts: 2,
+      });
+      expect(result?.content[0]).not.toHaveProperty('reasoning_label_submitted_chars');
+
+      await store.destroy();
+    });
   });
 
   describe('Idempotency claims (#14339 duplicate-billing guard)', () => {
@@ -3978,6 +4181,7 @@ describe('RedisJobStore Integration Tests', () => {
           {
             text: item.text,
             fileIds: (item.files ?? []).flatMap((file) => file.file_id ?? []).sort(),
+            quotes: item.quotes ?? [],
           },
         );
 
@@ -4068,6 +4272,7 @@ describe('RedisJobStore Integration Tests', () => {
           {
             text: item.text,
             fileIds: (item.files ?? []).flatMap((file) => file.file_id ?? []).sort(),
+            quotes: item.quotes ?? [],
           },
         );
         await expect(

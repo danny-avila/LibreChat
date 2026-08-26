@@ -185,6 +185,19 @@ describe('InFlightSteers', () => {
     expect(screen.queryByTestId('in-flight-steers')).toBeNull();
   });
 
+  it('renders carried quotes as the same reference blocks the applied part shows', () => {
+    renderSteers([
+      {
+        steerId: 's-quoted',
+        text: 'about the selection',
+        status: 'pending',
+        createdAt: 1,
+        quotes: ['the selected excerpt'],
+      },
+    ]);
+    expect(screen.getByTestId('message-quotes')).toHaveTextContent('the selected excerpt');
+  });
+
   it('shows the menu at rest on every pointer, without hover-gating', () => {
     renderSteers([
       { steerId: 's-ack', text: 'waiting on boundary', status: 'pending', createdAt: 1 },
@@ -670,6 +683,18 @@ describe('InFlightSteers', () => {
     });
     expect(screen.queryByTestId('steer-markdown')).toBeNull();
     expect(screen.getByText('**bold** steer')).toBeInTheDocument();
+  });
+
+  it('hugs the composer edge instead of a narrower cap of its own', () => {
+    renderSteers([{ steerId: 's1', text: 'flush right', status: 'pending', createdAt: 1 }]);
+    const stack = screen.getByTestId('in-flight-steers');
+    // `inset-x-0` inherits the composer's width, so the stack ends where the
+    // composer ends at every desktop width. A cap of its own (the old
+    // `max-w-3xl`) drifts inboard the moment the composer is wider —
+    // `xl:max-w-4xl`, or maximized chat space.
+    expect(stack.className).toContain('inset-x-0');
+    expect(stack.className).toContain('items-end');
+    expect(stack.className).not.toMatch(/\bmax-w-/);
   });
 
   it('floats the stack over the thread instead of displacing it', () => {

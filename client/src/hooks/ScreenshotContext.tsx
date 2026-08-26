@@ -1,6 +1,7 @@
 import { createContext, useRef, useContext, RefObject, ReactNode } from 'react';
 import { toCanvas } from 'html-to-image';
 import { ThemeContext, isDark } from '@librechat/client';
+import { completeProgressiveRowMounts } from '~/hooks/Messages/useProgressiveRowMount';
 
 type ScreenshotContextType = {
   ref?: RefObject<HTMLDivElement>;
@@ -76,6 +77,9 @@ export const useScreenshot = () => {
     if (ref instanceof Function) {
       throw new Error('Ref callback is not supported.');
     }
+    /** A capture taken while a long thread is still progressively mounting
+     *  would clone a truncated DOM; force the remaining rows in first. */
+    await completeProgressiveRowMounts();
     if (ref?.current) {
       return takeScreenShot(ref.current);
     }

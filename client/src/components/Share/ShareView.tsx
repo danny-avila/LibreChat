@@ -2,8 +2,8 @@ import { memo, useState, useCallback, useContext } from 'react';
 import Cookies from 'js-cookie';
 import { buildTree } from 'librechat-data-provider';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useRecoilState, useRecoilCallback } from 'recoil';
 import { CalendarDays, Settings, MessageSquarePlus } from 'lucide-react';
+import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { useGetSharedMessages } from 'librechat-data-provider/react-query';
 import {
   Spinner,
@@ -16,10 +16,12 @@ import {
   OGDialogHeader,
   OGDialogContent,
   OGDialogTrigger,
+  TooltipAnchor,
   useToastContext,
 } from '@librechat/client';
-import { ThemeSelector, LangSelector } from '~/components/Nav/SettingsTabs/General/Selectors';
-import { cn, getResponseStatus, selectActiveBranchTail } from '~/utils';
+import SharedSubagentActivityDialog from '~/components/Chat/Subagents/SharedSubagentActivityDialog';
+import { cn, DEFAULT_APP_TITLE, getResponseStatus, selectActiveBranchTail } from '~/utils';
+import { ThemeSelector, LangSelector } from '~/components/Appearance';
 import { ShareMessagesProvider } from './ShareMessagesProvider';
 import { useForkSharedConvoMutation } from '~/data-provider';
 import { useGetSharedStartupConfig } from '~/data-provider';
@@ -117,8 +119,11 @@ function SharedView() {
   }, [shareId, forkSharedConvo, getActiveTargetIndex, data?.updatedAt]);
 
   // configure document title
+  const chatTitleInTab = useRecoilValue(store.chatTitleInTab);
   let docTitle = '';
-  if (config?.appTitle != null && data?.title != null) {
+  if (!chatTitleInTab) {
+    docTitle = config?.appTitle || DEFAULT_APP_TITLE;
+  } else if (config?.appTitle != null && data?.title != null) {
     docTitle = `${data.title} | ${config.appTitle}`;
   } else {
     docTitle = data?.title ?? config?.appTitle ?? document.title;
@@ -203,7 +208,7 @@ function SharedView() {
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-surface-secondary from-40% to-transparent">
       <Footer
         startupConfig={config ?? null}
-        className="pointer-events-auto relative mx-auto flex max-w-[55rem] flex-wrap items-center justify-center gap-2 px-3 pb-4 pt-6 text-center text-xs text-text-secondary"
+        className="pointer-events-auto relative mx-auto flex max-w-7xl flex-wrap items-center justify-center gap-2 px-3 pb-4 pt-6 text-center text-xs text-text-secondary"
       />
     </div>
   );
@@ -235,7 +240,31 @@ function SharedView() {
           {artifactsContainer}
         </main>
       </div>
+      <SharedSubagentActivityDialog shareId={shareId} />
     </ShareContext.Provider>
+  );
+}
+
+function ShareTitle({ title }: { title?: string }) {
+  if (title == null || title === '') {
+    return null;
+  }
+
+  return (
+    <TooltipAnchor
+      description={title}
+      side="bottom"
+      tabIndex={0}
+      className="block min-w-0 max-w-full cursor-default"
+      render={
+        <h1
+          data-testid="share-title"
+          className="cursor-default truncate text-2xl font-semibold text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary md:text-4xl"
+        >
+          {title}
+        </h1>
+      }
+    />
   );
 }
 
@@ -265,6 +294,7 @@ function ShareHeader({
   onLangChange,
 }: ShareHeaderProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsContent, setSettingsContent] = useState<HTMLDivElement | null>(null);
   const isMobile = useMediaQuery('(max-width: 767px)');
 
   const handleDialogOutside = useCallback((event: Event) => {
@@ -276,12 +306,10 @@ function ShareHeader({
 
   return (
     <section className="mx-auto w-full px-2 pb-3 pt-4 md:px-5 md:pb-4 md:pt-6">
-      <div className="relative mx-auto flex w-full max-w-[60rem] flex-col gap-3 rounded-2xl border border-border-light bg-surface-primary/80 px-4 py-4 shadow-xl backdrop-blur md:gap-4 md:rounded-3xl md:px-6 md:py-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div className="min-w-0 space-y-1.5 md:space-y-2">
-            <h1 className="line-clamp-2 break-words text-2xl font-semibold text-text-primary md:text-4xl">
-              {title}
-            </h1>
+      <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-3 rounded-2xl border border-border-light bg-surface-secondary px-4 py-4 shadow-xl md:gap-4 md:rounded-3xl md:px-6 md:py-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0 flex-1 space-y-1.5 md:space-y-2">
+            <ShareTitle title={title} />
             {formattedDate && (
               <div className="flex items-center gap-2 text-sm text-text-secondary">
                 <CalendarDays className="size-4" aria-hidden="true" />
@@ -324,7 +352,8 @@ function ShareHeader({
                 </Button>
               </OGDialogTrigger>
               <OGDialogContent
-                className="w-11/12 max-w-lg"
+                ref={setSettingsContent}
+                className="w-11/12 max-w-lg overflow-y-visible"
                 showCloseButton={true}
                 onPointerDownOutside={handleDialogOutside}
                 onInteractOutside={handleDialogOutside}
@@ -332,16 +361,18 @@ function ShareHeader({
                 <OGDialogHeader className="text-left">
                   <OGDialogTitle>{settingsLabel}</OGDialogTitle>
                 </OGDialogHeader>
-                <div className="flex flex-col gap-4 pt-2 text-sm">
+                <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto pt-2 text-sm">
                   <ThemeSelector
                     theme={theme}
                     onChange={onThemeChange}
+                    portalElement={settingsContent}
                     popoverClassName="z-[150]"
                   />
                   <Separator orientation="horizontal" className="bg-border-medium/60" />
                   <LangSelector
                     langcode={langcode}
                     onChange={onLangChange}
+                    portalElement={settingsContent}
                     popoverClassName="z-[150]"
                   />
                 </div>

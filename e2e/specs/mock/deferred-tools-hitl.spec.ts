@@ -29,7 +29,7 @@ type MCPToolsResponse = {
 type AskResumeBody = {
   actionId?: string;
   agent_id?: string;
-  answer?: string;
+  answers?: Record<string, string>;
   conversationId?: string;
   endpoint?: string;
 };
@@ -141,19 +141,22 @@ test.describe('deferred tools across HITL resume', () => {
         name: new RegExp(`${escapeRegExp(optionLabel)}$`),
       });
       await expect(option).toBeVisible();
+      await option.click();
+      const submit = page.getByRole('button', { name: 'Submit', exact: true });
+      await expect(submit).toBeEnabled();
       const [resumeRequest, resumeResponse] = await Promise.all([
         page.waitForRequest(isResumeRequest),
         page.waitForResponse(
           (candidate) => isResumeRequest(candidate.request()) && candidate.status() === 200,
         ),
-        option.click(),
+        submit.click(),
       ]);
 
       const conversationId = conversationPath.replace('/c/', '');
       const body = resumeRequest.postDataJSON() as AskResumeBody;
       expect(body.actionId).toBeTruthy();
       expect(body.agent_id).toBe(agentId);
-      expect(body.answer).toBe(answer);
+      expect(body.answers).toEqual({ confirmation: answer });
       expect(body.conversationId).toBe(conversationId);
       expect(body.endpoint).toBe('agents');
       expect(resumeResponse.ok()).toBeTruthy();

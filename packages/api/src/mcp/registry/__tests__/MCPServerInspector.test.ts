@@ -41,7 +41,8 @@ describe('MCPServerInspector', () => {
         type: 'stdio',
         command: 'node',
         args: ['server.js'],
-        serverInstructions: 'instructions for test_server',
+        serverInstructions: true,
+        resolvedInstructions: 'instructions for test_server',
         requiresOAuth: false,
         capabilities:
           '{"tools":{"listChanged":true},"resources":{"listChanged":true},"prompts":{"get":"getPrompts for test_server"}}',
@@ -268,6 +269,8 @@ describe('MCPServerInspector', () => {
       });
     });
 
+    /** The declaration is preserved verbatim: overwriting it in place made a re-inspected
+     * config compare unequal to its own YAML cache entry (issue #14798). */
     it('should handle serverInstructions as string "true" and fetch from server', async () => {
       const rawConfig: t.MCPOptions = {
         type: 'stdio',
@@ -287,7 +290,8 @@ describe('MCPServerInspector', () => {
         type: 'stdio',
         command: 'node',
         args: ['server.js'],
-        serverInstructions: 'instructions for test_server',
+        serverInstructions: 'true',
+        resolvedInstructions: 'instructions for test_server',
         requiresOAuth: false,
         capabilities:
           '{"tools":{"listChanged":true},"resources":{"listChanged":true},"prompts":{"get":"getPrompts for test_server"}}',
@@ -463,7 +467,8 @@ describe('MCPServerInspector', () => {
         type: 'stdio',
         command: 'node',
         args: ['server.js'],
-        serverInstructions: 'instructions for test_server',
+        serverInstructions: true,
+        resolvedInstructions: 'instructions for test_server',
         requiresOAuth: false,
         capabilities:
           '{"tools":{"listChanged":true},"resources":{"listChanged":true},"prompts":{"get":"getPrompts for test_server"}}',
@@ -496,7 +501,7 @@ describe('MCPServerInspector', () => {
     });
   });
 
-  describe('getToolFunctions()', () => {
+  describe('getToolCatalog()', () => {
     it('should convert MCP tools to LibreChat tool functions format', async () => {
       mockConnection.fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
         complete: true,
@@ -523,7 +528,10 @@ describe('MCPServerInspector', () => {
         ],
       });
 
-      const result = await MCPServerInspector.getToolFunctions('my_server', mockConnection);
+      const { tools: result } = await MCPServerInspector.getToolCatalog(
+        'my_server',
+        mockConnection,
+      );
 
       expect(result).toEqual({
         file_read_mcp_my_server: {
@@ -559,7 +567,10 @@ describe('MCPServerInspector', () => {
         .fn()
         .mockResolvedValue({ tools: [], complete: true });
 
-      const result = await MCPServerInspector.getToolFunctions('my_server', mockConnection);
+      const { tools: result } = await MCPServerInspector.getToolCatalog(
+        'my_server',
+        mockConnection,
+      );
 
       expect(result).toEqual({});
     });
@@ -576,11 +587,41 @@ describe('MCPServerInspector', () => {
         ],
       });
 
-      const result = await MCPServerInspector.getToolFunctions('My Server', mockConnection);
+      const { tools: result } = await MCPServerInspector.getToolCatalog(
+        'My Server',
+        mockConnection,
+      );
 
       const key = 'file_read_mcp_My_Server';
       expect(Object.keys(result)).toEqual([key]);
       expect(result[key]['function'].name).toBe(key);
+    });
+
+    it('strips a redundant server-name prefix from keys and records the raw name', async () => {
+      mockConnection.fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
+        complete: true,
+        tools: [
+          {
+            name: 'acme_trace_top_time_consuming_operations',
+            description: 'Trace',
+            inputSchema: { type: 'object', properties: {} },
+          },
+          {
+            name: 'list_services',
+            description: 'List',
+            inputSchema: { type: 'object', properties: {} },
+          },
+        ],
+      });
+
+      const { tools: result } = await MCPServerInspector.getToolCatalog('acme', mockConnection);
+
+      const strippedKey = 'trace_top_time_consuming_operations_mcp_acme';
+      const plainKey = 'list_services_mcp_acme';
+      expect(Object.keys(result).sort()).toEqual([plainKey, strippedKey].sort());
+      expect(result[strippedKey]['function'].name).toBe(strippedKey);
+      expect(result[strippedKey].serverToolName).toBe('acme_trace_top_time_consuming_operations');
+      expect(result[plainKey].serverToolName).toBeUndefined();
     });
 
     it('rejects an incomplete snapshot before it can replace cached tools', async () => {
@@ -589,9 +630,9 @@ describe('MCPServerInspector', () => {
         complete: false,
       });
 
-      await expect(
-        MCPServerInspector.getToolFunctions('my_server', mockConnection),
-      ).rejects.toThrow('Incomplete tools/list snapshot for MCP server my_server');
+      await expect(MCPServerInspector.getToolCatalog('my_server', mockConnection)).rejects.toThrow(
+        'Incomplete tools/list snapshot for MCP server my_server',
+      );
     });
   });
 });

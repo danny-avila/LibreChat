@@ -4,7 +4,9 @@ import { isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ReactElement } from 'react';
 import type { TMessageProps } from '~/common';
+import EventSubagentActivityGroup from '~/components/Chat/Subagents/EventSubagentActivityGroup';
 import MessageContent from '~/components/Messages/MessageContent';
+import { useRowMountWindow } from '~/hooks/Messages';
 import MessageParts from './MessageParts';
 import Message from './Message';
 import store from '~/store';
@@ -21,6 +23,7 @@ function MultiMessage({
   setCurrentEditId,
 }: TMessageProps) {
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
+  const mountWindow = useRowMountWindow();
 
   const setSiblingIdxRev = useCallback(
     (value: number) => {
@@ -165,14 +168,39 @@ function MultiMessage({
     setSiblingIdx: setSiblingIdxRev,
   };
 
-  let row: ReactElement;
-  if (isAssistantsEndpoint(message.endpoint) && message.content) {
+  /** A row outside the progressive mount window renders nothing while the
+   *  recursion continues, so descendants keep their atoms, effects, and
+   *  streaming spine; the window only ever widens, so rows never unmount. */
+  const rowMounted =
+    mountWindow == null ||
+    ((message.depth ?? 0) >= mountWindow.start && (message.depth ?? 0) <= mountWindow.end);
+
+  let row: ReactElement | null = null;
+  if (!rowMounted) {
+    row = null;
+  } else if (isAssistantsEndpoint(message.endpoint) && message.content) {
     row = <MessageParts {...sharedProps} />;
   } else if (message.content) {
     row = <MessageContent {...sharedProps} />;
   } else {
     row = <Message {...sharedProps} />;
   }
+  /** Event children may be persisted against the user request that launched
+   * the Director. Once its assistant response exists, present that activity
+   * after the response instead of interrupting the turn between user and
+   * assistant rows. Exact assistant-owned children remain in the same group. */
+  let activityParentMessageIds: string[] = [];
+  if (message.isCreatedByUser) {
+    if (!message.children?.length) activityParentMessageIds = [message.messageId];
+  } else {
+    activityParentMessageIds = [message.messageId, message.parentMessageId].filter(
+      (id): id is string => typeof id === 'string' && id.length > 0,
+    );
+  }
+  const isEditingActivityAnchor =
+    typeof currentEditId === 'string' && activityParentMessageIds.includes(currentEditId);
+  const hasParallelContent =
+    !message.isCreatedByUser && message.content?.some((part) => part?.groupId != null) === true;
 
   /**
    * The child recursion is a sibling of the row (not rendered inside it), so a
@@ -184,6 +212,15 @@ function MultiMessage({
   return (
     <>
       {row}
+      {rowMounted && !isEditingActivityAnchor && activityParentMessageIds.length > 0 ? (
+        <div className="w-full border-0 bg-transparent">
+          <EventSubagentActivityGroup
+            conversationId={message.conversationId ?? ''}
+            parentMessageIds={activityParentMessageIds}
+            hasParallelContent={hasParallelContent}
+          />
+        </div>
+      ) : null}
       <MemoizedMultiMessage
         messageId={message.messageId}
         messagesTree={message.children ?? []}

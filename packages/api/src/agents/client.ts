@@ -6,12 +6,14 @@ import {
   getTokenCountForMessage,
   estimateOpenAIImageTokens,
   estimateAnthropicImageTokens,
+  markTokenCounterCacheCompatible,
 } from '@librechat/agents';
+import type { MessageContentComplex, TokenCounter } from '@librechat/agents';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
-import type { MessageContentComplex } from '@librechat/agents';
 import type { Agent, TMessage } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
-import { logAxiosError, mergeQuotedText, formatQuotesAsMarkdown } from '~/utils';
+import { getSafeErrorMetadata, mergeQuotedText, formatQuotesAsMarkdown } from '~/utils';
+import { ATTACHMENT_ONLY_TEXT } from '~/files/context';
 import Tokenizer from '~/utils/tokenizer';
 
 export const omitTitleOptions: Set<string> = new Set([
@@ -69,8 +71,36 @@ export type FormattedMessageContentPart = {
 };
 
 export type FormattedMessageWithContent = {
+  role?: string;
   content?: string | FormattedMessageContentPart[];
 };
+
+/**
+ * Substitutes stand-in text for a user turn that carries attachments but has
+ * nothing the provider can see: file search and code environment files reach
+ * the model out-of-band, so the content stays empty and Anthropic rejects the
+ * message outright. Apply after the file-context and quote merges so a turn
+ * that already gained inline content is left alone. The stored `message.text`
+ * keeps its empty value, so the UI still renders the attachment on its own.
+ *
+ * Takes the turn's files rather than the message because the current turn does
+ * not carry them yet: `BaseClient` assigns `userMessage.files` only after
+ * `buildMessages` returns, so callers pass the resolved attachments instead.
+ */
+export function applyAttachmentOnlyText(
+  formattedMessage: FormattedMessageWithContent,
+  files?: TMessage['files'] | null,
+): void {
+  if (formattedMessage.role !== 'user' || !files?.length) {
+    return;
+  }
+
+  if (formattedMessage.content !== '') {
+    return;
+  }
+
+  formattedMessage.content = ATTACHMENT_ONLY_TEXT;
+}
 
 export function prependFileContext(
   formattedMessage: FormattedMessageWithContent,
@@ -349,9 +379,19 @@ export function countFormattedMessageTokens(
   return isClaude ? Math.ceil(numTokens * CLAUDE_TOKEN_CORRECTION) : numTokens;
 }
 
-export function createTokenCounter(encoding: Parameters<typeof Tokenizer.getTokenCount>[1]) {
+export function createTokenCounter(
+  encoding: Parameters<typeof Tokenizer.getTokenCount>[1],
+): TokenCounter {
+  return createMessageTokenCounter(encoding, (text: string) =>
+    Tokenizer.getTokenCount(text, encoding),
+  );
+}
+
+function createMessageTokenCounter(
+  encoding: Parameters<typeof Tokenizer.getTokenCount>[1],
+  countTokens: (text: string) => number,
+): TokenCounter {
   const isClaude = encoding === 'claude';
-  const countTokens = (text: string) => Tokenizer.getTokenCount(text, encoding);
   return function (message: BaseMessage): number {
     const count = getTokenCountForMessage(
       message,
@@ -360,6 +400,13 @@ export function createTokenCounter(encoding: Parameters<typeof Tokenizer.getToke
     );
     return isClaude ? Math.ceil(count * CLAUDE_TOKEN_CORRECTION) : count;
   };
+}
+
+export async function createCachedTokenCounter(
+  encoding: Parameters<typeof Tokenizer.getTokenCount>[1],
+): Promise<TokenCounter> {
+  const countTokens = await Tokenizer.createExactTokenCounter(encoding ?? 'o200k_base');
+  return markTokenCounterCacheCompatible(createMessageTokenCounter(encoding, countTokens));
 }
 
 export function logToolError(_graph: unknown, error: unknown, toolId: string): void {
@@ -373,10 +420,10 @@ export function logToolError(_graph: unknown, error: unknown, toolId: string): v
   if ((error as Error | undefined)?.name === 'GraphInterrupt') {
     return;
   }
-  logAxiosError({
-    error,
-    message: `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,
-  });
+  logger.error(
+    `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,
+    getSafeErrorMetadata(error),
+  );
 }
 
 const AGENT_SUFFIX_PATTERN = /____(\d+)$/;
@@ -493,7 +540,10 @@ export function createMultiAgentMapper(primaryAgent: Agent, agentConfigs?: Map<s
 
       return { ...message, content: finalContent as TMessage['content'] };
     } catch (error) {
-      logger.error('[AgentClient] Error processing multi-agent message:', error);
+      logger.error(
+        '[AgentClient] Error processing multi-agent message:',
+        getSafeErrorMetadata(error),
+      );
       return message;
     }
   };

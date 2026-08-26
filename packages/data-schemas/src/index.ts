@@ -7,6 +7,8 @@ export * from './utils';
 export { createModels } from './models';
 export {
   createMethods,
+  CLIENT_MESSAGE_SELECT,
+  SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
   RoleConflictError,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
   DEFAULT_SESSION_EXPIRY,
@@ -22,6 +24,8 @@ export {
   validateRelativePath,
   inferSkillFileCategory,
   validateSkillFrontmatter,
+  getCanonicalSkillFrontmatterKey,
+  normalizeSkillFrontmatterKeys,
   validateSkillDescription,
   deriveStructuredFrontmatterFields,
   AUDIT_SCHEMA_VERSION,
@@ -29,6 +33,7 @@ export {
   MAX_AUDIT_LOG_LIMIT,
   MAX_AUDIT_VERIFY_ROWS,
   MAX_TOOL_FAVORITES,
+  AgentTriggerDeliveryConflictError,
   MCPAuthorityProofError,
   MAX_MCP_AUTHORITY_TARGETS,
   createMCPAuthorityBootRevision,

@@ -1,4 +1,5 @@
 const { Constants } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
 
 const mockGetConnection = jest.fn();
 const mockDiscoverServerTools = jest.fn();
@@ -123,6 +124,50 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
       serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
       publicationGeneration: 'generation-current',
     });
+  });
+
+  /** An app-level catalog write is dropped unless it carries the ordering reserved before its
+   * own tools/list. When this path forwarded no revision, every publication was discarded and
+   * agents were told the server had no tools at all (#14857). */
+  it('publishes under the ordering its snapshot was fetched with', async () => {
+    mockGetConnection.mockResolvedValue({
+      fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({
+        tools: [{ name: 'search', inputSchema: { type: 'object' } }],
+        complete: true,
+        publicationRevision: '7',
+      }),
+    });
+
+    await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+    });
+
+    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({ serverName, publicationRevision: '7' }),
+    );
+  });
+
+  it('asks the connection to republish a catalog it could not order', async () => {
+    const refreshToolList = jest.fn().mockResolvedValue(undefined);
+    mockGetConnection.mockResolvedValue({
+      refreshToolList,
+      fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({
+        tools: [{ name: 'search', inputSchema: { type: 'object' } }],
+        complete: true,
+        orderingUnavailable: true,
+      }),
+    });
+
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+    });
+
+    expect(refreshToolList).toHaveBeenCalledTimes(1);
+    expect(result.tools).toHaveLength(1);
   });
 
   it('preserves cached tools when live recovery returns an incomplete snapshot', async () => {
@@ -410,5 +455,40 @@ describe('reinitMCPServer — OAuth attempt lifetime', () => {
       oauthUrl: 'https://oauth.example.com/authorize',
       oauthExpiresAt: expiresAt,
     });
+  });
+});
+
+describe('reinitMCPServer — log hygiene', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('keeps user-created server and connection details out of discovery logs', async () => {
+    const serverName = 'PRIVATE-MCP-SERVER-NAME';
+    const privateUrl = 'https://private.example.test/PRIVATE-CONFIG-PATH';
+    const privateError = `PRIVATE-CONNECTION-ERROR for ${privateUrl}`;
+    const logSpies = ['debug', 'info', 'warn', 'error'].map((level) =>
+      jest.spyOn(logger, level).mockImplementation(() => {}),
+    );
+    mockGetConnection.mockRejectedValue(new Error(privateError));
+
+    const result = await reinitMCPServer({
+      user: { id: 'user-123' },
+      serverName,
+      serverConfig: { type: 'streamable-http', url: privateUrl },
+      userMCPAuthMap: undefined,
+    });
+
+    const loggedText = logSpies
+      .flatMap((spy) => spy.mock.calls)
+      .flat()
+      .map((value) => String(value))
+      .join('\n');
+
+    expect(result.message).toContain(serverName);
+    expect(loggedText).not.toContain(serverName);
+    expect(loggedText).not.toContain(privateUrl);
+    expect(loggedText).not.toContain(privateError);
+    expect(logger.error).toHaveBeenCalledWith('[MCP Reinitialize] Error initializing MCP server');
   });
 });

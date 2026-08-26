@@ -43,21 +43,35 @@ export * from './crypto';
 export * from './flow/manager';
 /* Middleware */
 export * from './middleware';
+/* Security */
+export * from './security';
+/* Content protection */
+export * from './protection';
+/* Imports */
+export * from './imports';
 /* Memory */
 export * from './memory';
 /* Model Specs */
 export * from './modelSpecs';
 /* Agents */
 export * from './agents';
+/* Assistants */
+export * from './assistants';
 /* Actions */
 export * from './actions';
 /* Prompts */
 export * from './prompts';
 /* Projects */
 export * from './projects';
+/* Conversations */
+export * from './conversations';
 /* Skills */
+export * from './schedules';
+export * from './schedules/service';
 export * from './skills';
 export * from './favorites';
+/* User */
+export * from './user';
 /* Agent Plugins */
 export * from './plugins';
 /* Endpoints */
@@ -72,6 +86,8 @@ export * from './tools';
 export * from './web';
 /* Langfuse */
 export * from './langfuse';
+/* Insights */
+export * from './insights';
 /* Cache */
 export * from './cache';
 /* Shared Links */
@@ -79,6 +95,7 @@ export * from './shared-links/access';
 export * from './shared-links/service';
 export * from './shared-links/config';
 export * from './shared-links/http';
+export * from './shared-links/protection';
 /* Stream */
 export * from './stream';
 /* Diagnostics */

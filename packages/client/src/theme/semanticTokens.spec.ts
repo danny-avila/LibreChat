@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import type { IThemeRGB } from './types';
+import { createTailwindColors } from './utils/createTailwindColors';
 import { defaultTheme } from './themes/default';
 import { darkTheme } from './themes/dark';
 
@@ -9,6 +10,7 @@ const sharedComponents = [
   'AlertDialog.tsx',
   'Button.tsx',
   'Chip.tsx',
+  'SegmentedMeter.tsx',
   'Dialog.tsx',
   'DialogTemplate.tsx',
   'IconButton.tsx',
@@ -110,12 +112,23 @@ describe('light brand text', () => {
 
 describe('shared field and dropdown interaction styles', () => {
   it('keeps pointer focus stable and keyboard focus visible on text fields', () => {
-    ['Input.tsx', 'Textarea.tsx'].forEach((component) => {
-      const source = readFileSync(join(__dirname, '..', 'components', component), 'utf8');
+    /** The focus treatment lives in the shared field module, so guard it there and
+     *  assert the primitives still compose it rather than restating the classes. */
+    const field = readFileSync(join(__dirname, '..', 'components', 'Field.ts'), 'utf8');
 
-      expect(source).toMatch(/focus-visible:border-border-medium/);
-      expect(source).toMatch(/focus-visible:ring-2/);
-      expect(source).toMatch(/focus-visible:ring-text-primary/);
+    expect(field).toMatch(/focus-visible:border-border-medium/);
+    expect(field).toMatch(/focus-visible:ring-2/);
+    expect(field).toMatch(/focus-visible:ring-text-primary/);
+
+    const composers: Array<[string, RegExp]> = [
+      ['Input.tsx', /\bfieldControl\b/],
+      ['Textarea.tsx', /\bfieldBase\b/],
+      ['Dropdown.tsx', /\bfieldControl\b/],
+      ['ControlCombobox.tsx', /\bfieldControl\b/],
+    ];
+    composers.forEach(([component, token]) => {
+      const source = readFileSync(join(__dirname, '..', 'components', component), 'utf8');
+      expect(source).toMatch(token);
     });
 
     const secretInput = readFileSync(
@@ -226,6 +239,80 @@ describe.each([
         [`rgb-status-${hue}-subtle` as keyof IThemeRGB],
       ),
     );
+    expect(failures).toEqual([]);
+  });
+});
+
+/** The meter paints segments on `surface-tertiary`; the swatch and popover chrome
+ *  sit on `surface-secondary`. Both have to clear the 3:1 mark-contrast floor. */
+const seriesTokens = Array.from(
+  { length: 7 },
+  (_, index) => `rgb-series-${index + 1}` as keyof IThemeRGB,
+);
+const seriesSurfaces: Array<keyof IThemeRGB> = ['rgb-surface-tertiary', 'rgb-surface-secondary'];
+const WCAG_MARK_MIN = 3;
+
+describe('categorical series scale', () => {
+  it('defines every slot in both modes as an "R G B" triplet', () => {
+    seriesTokens.forEach((token) => {
+      expect(() => toRgb(defaultTheme, token)).not.toThrow();
+      expect(() => toRgb(darkTheme, token)).not.toThrow();
+    });
+  });
+
+  it('never reuses a reserved status colour for series identity', () => {
+    const reserved = new Set(
+      statusHues.flatMap((hue) => [
+        defaultTheme[`rgb-status-${hue}` as keyof IThemeRGB],
+        darkTheme[`rgb-status-${hue}` as keyof IThemeRGB],
+      ]),
+    );
+
+    seriesTokens.forEach((token) => {
+      expect(reserved.has(defaultTheme[token])).toBe(false);
+      expect(reserved.has(darkTheme[token])).toBe(false);
+    });
+  });
+
+  it('keeps the app CSS defaults in step with the runtime themes', () => {
+    const appStyles = readFileSync(
+      join(__dirname, '..', '..', '..', '..', 'client', 'src', 'style.css'),
+      'utf8',
+    );
+
+    seriesTokens.forEach((token) => {
+      const property = token.slice(4);
+      const declared = [...appStyles.matchAll(new RegExp(`--${property}:\\s*([^;]+);`, 'g'))].map(
+        (match) => match[1].trim(),
+      );
+
+      /** One declaration for `html`, one for `.dark` — and both must match. */
+      expect(declared).toEqual([defaultTheme[token], darkTheme[token]]);
+    });
+  });
+
+  it('exposes each slot as a Tailwind utility backed by its CSS variable', () => {
+    const colors = createTailwindColors();
+
+    seriesTokens.forEach((token) => {
+      const property = token.slice(4);
+      expect(colors[property]).toBe(`rgb(var(--${property}) / <alpha-value>)`);
+    });
+  });
+});
+
+describe.each([
+  ['default', defaultTheme],
+  ['dark', darkTheme],
+])('%s series contrast', (_name, theme: IThemeRGB) => {
+  it('keeps every series slot at the 3:1 mark floor on the track and the panel', () => {
+    const failures = seriesTokens.flatMap((token) =>
+      seriesSurfaces.flatMap((surface) => {
+        const ratio = contrast(toRgb(theme, token), toRgb(theme, surface));
+        return ratio < WCAG_MARK_MIN ? [`${token} on ${surface}: ${ratio.toFixed(2)}:1`] : [];
+      }),
+    );
+
     expect(failures).toEqual([]);
   });
 });

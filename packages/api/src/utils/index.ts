@@ -5,6 +5,7 @@ export * from './common';
 export * from './content';
 export * from './email';
 export * from './env';
+export * from './errors';
 export * from './events';
 export * from './files';
 export * from './import';

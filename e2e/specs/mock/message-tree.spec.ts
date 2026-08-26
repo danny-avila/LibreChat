@@ -1031,7 +1031,7 @@ test.describe('message tree stream operations', () => {
     await expect(editor).toBeVisible();
     await editor.fill(editedMiddlePrompt);
     await waitForGenerationStart(page, () =>
-      page.getByRole('button', { name: 'Save & Submit' }).click(),
+      page.getByRole('button', { name: 'Update & rerun' }).click(),
     );
     await expect(messagesView(page).getByText(editedMiddleReply)).toBeVisible({ timeout: 30000 });
 

@@ -92,11 +92,12 @@ const countWithin = (
  * render pipeline relies on (GFM tables, container directives like
  * `:::artifact:::`, and `$$` math), so top-level block boundaries match what
  * react-markdown produces. Inline-only transforms (citations, MCP-UI markers,
- * supersub) never cross a top-level block, so they are intentionally omitted.
+ * supersub, single-dollar math) never cross a top-level block, so they are
+ * intentionally omitted.
  */
 const parseToMdast = (content: string): MdastNode =>
   fromMarkdown(content, {
-    extensions: [gfm(), directive(), math()],
+    extensions: [gfm(), directive(), math({ singleDollarTextMath: false })],
     mdastExtensions: [gfmFromMarkdown(), directiveFromMarkdown(), mathFromMarkdown()],
   }) as MdastNode;
 

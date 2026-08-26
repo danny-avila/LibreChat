@@ -77,12 +77,15 @@ beforeAll(async () => {
   await dbMethods.seedDefaultRoles();
 
   serverConfigsDB = new ServerConfigsDB(mongoose);
-});
+  /** Booting a real mongod, resetting the module registry and re-importing
+   *  data-schemas costs more than the 15s global `testTimeout`, once the runner
+   *  is busy enough. Matches `checkpointer.integration.spec.ts`. */
+}, 60000);
 
 afterAll(async () => {
   await mongoose.disconnect();
   await mongoServer.stop();
-});
+}, 60000);
 
 beforeEach(async () => {
   // Clear collections except AccessRole

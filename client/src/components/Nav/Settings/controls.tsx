@@ -4,7 +4,7 @@ import { useRecoilState } from 'recoil';
 import { ThemeContext } from '@librechat/client';
 import type { ComponentType } from 'react';
 import type { TranslationKeys } from '~/hooks';
-import { ThemeSelector, LangSelector } from '../SettingsTabs/General/Selectors';
+import { ThemeSelector, LangSelector } from '~/components/Appearance';
 import ToggleSwitch from '../SettingsTabs/ToggleSwitch';
 import store from '~/store';
 
