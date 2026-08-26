@@ -50,8 +50,9 @@ const {
   getConvo,
   getAgentEventActorSnapshot,
   commitAgentEventActorState,
-  invalidateAgentEventActorState,
-  completeAgentEventActorInvalidation,
+  beginAgentEventActorLegacyTurn,
+  completeAgentEventActorLegacyTurn,
+  reclaimAgentEventActorLegacyTurn,
   recordAgentEventActorReconciliation,
   resolveAgentEventActorReconciliation,
   isAgentTriggerPrincipalActive,
@@ -391,6 +392,10 @@ const JOB_RECORD_WAIT_DELAY_MS = 60;
 // than hand back a stream that would 404). Past it, a missing job means the original
 // already completed and was cleaned up (attach and let the client refetch).
 const IDEMPOTENCY_STARTUP_GRACE_MS = 5000;
+/** A legacy-turn fence still open after this long belongs to a crashed turn:
+ *  generous enough that no live turn is ever reclaimed, bounded so a crash
+ *  cannot disable fork mode for the actor indefinitely. */
+const LEGACY_EVENT_TURN_STALE_MS = 60 * 60 * 1000;
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
 /** New-chat retries do not carry a conversation id, so derive the stream id
  * from their stable per-submission id. This keeps both the dedupe key and the
@@ -1796,25 +1801,34 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       const eventActorTenantId = req._agentEventBindingTenantId;
       let appliedEventActor;
       let eventActorPersistenceComplete = false;
-      let legacyEventActorTurnStarted = false;
-      /** A fork prepared MID-legacy-turn already observed the begin
-       * invalidation, so only a second epoch advance after this turn's
-       * terminal persistence can defeat its commit of an incomplete rebuild.
-       * Sealing never diverts the turn's own exit: on failure the begin bump
-       * still fences everything prepared before the turn. */
+      let legacyEventActorTurnToken;
+      /** Closes the durable legacy-turn fence once this turn's history is
+       * persisted, clearing the token and advancing the epoch in one write. A
+       * failure here leaves the token SET, which keeps blocking forks until it
+       * is reclaimed — the fail-closed state, never a silent completion. */
       const sealLegacyEventActorTurn = async () => {
-        if (!legacyEventActorTurnStarted) {
+        if (legacyEventActorTurnToken == null) {
           return;
         }
-        legacyEventActorTurnStarted = false;
+        const token = legacyEventActorTurnToken;
+        legacyEventActorTurnToken = undefined;
         try {
-          await completeAgentEventActorInvalidation({
+          const sealed = await completeAgentEventActorLegacyTurn({
             user: userId,
             conversationId,
             ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+            token,
           });
+          if (!sealed) {
+            logger.error(
+              `[event-actor] Legacy turn fence ${token} was not sealed; forks stay blocked until it is reclaimed`,
+            );
+          }
         } catch (sealError) {
-          logger.error('[event-actor] Failed to seal a legacy turn invalidation', sealError);
+          logger.error(
+            `[event-actor] Failed to seal legacy turn fence ${token}; forks stay blocked until it is reclaimed`,
+            sealError,
+          );
         }
       };
       const recordEventActorPersistenceFailure = async (error) => {
@@ -2007,6 +2021,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 expectedAction: agentEventDelivery.expectedAction,
                 signal: job.abortController.signal,
                 checkpointer: req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
+                /** A fence older than a full generation lifetime belongs to a
+                 * crashed turn; the actor reclaims it and retries next event. */
+                legacyTurnStaleMs: LEGACY_EVENT_TURN_STALE_MS,
                 invoke: async (actorContext) => {
                   client.checkpointNamespace = actorContext.checkpointNamespace;
                   client.eventActorCheckpointId = actorContext.checkpointId;
@@ -2027,6 +2044,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 commitState: commitAgentEventActorState,
                 recordReconciliation: recordAgentEventActorReconciliation,
                 resolveReconciliation: resolveAgentEventActorReconciliation,
+                reclaimLegacyTurn: reclaimAgentEventActorLegacyTurn,
               },
             ).then(({ value, execution }) => {
               if (execution.status === 'applied') {
@@ -2049,12 +2067,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 agentEventDelivery?.event != null &&
                 req._agentEventBindingParentConversationId != null
               ) {
-                await invalidateAgentEventActorState({
+                const token = crypto.randomUUID();
+                /** Open the fence BEFORE execution so a fork can neither run
+                 * nor commit while this turn's messages are not yet durable. */
+                await beginAgentEventActorLegacyTurn({
                   user: userId,
                   conversationId,
                   ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+                  token,
                 });
-                legacyEventActorTurnStarted = true;
+                legacyEventActorTurnToken = token;
               }
               return client.sendMessage(text, messageOptions);
             })();
@@ -2543,7 +2565,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             reconciliationError,
           );
         }
-        await sealLegacyEventActorTurn();
 
         // Once this controller owns terminal persistence, no competing error
         // transition can win. Settle its pending marker with conservative
@@ -2615,6 +2636,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             startupTelemetry?.end('error', error);
           }
         }
+
+        /** Seal only AFTER this turn's error history is durable: an earlier
+         * seal would let a fork rebuild between the seal and the error rows,
+         * reproducing the incomplete-history race the fence exists to stop. */
+        await sealLegacyEventActorTurn();
 
         if (ownsScheduledFailure && !scheduleTerminalOutcomeRecorded) {
           const scheduledFailure = classifyScheduledFailure(

@@ -28,11 +28,13 @@ describe('event actor host adapter', () => {
   const conversationId = 'actor-thread';
   let state: IAgentEventActorState | null;
   let epoch = 0;
+  let legacyTurn: { token: string; startedAt: Date } | null = null;
   let nextCheckpoint = 1;
 
   beforeEach(() => {
     state = null;
     epoch = 0;
+    legacyTurn = null;
     nextCheckpoint = 1;
     jest.clearAllMocks();
     mockedGetCheckpointer.mockResolvedValue({} as never);
@@ -52,6 +54,7 @@ describe('event actor host adapter', () => {
     getSnapshot: jest.fn(async () => ({
       state,
       reconciliations: [] as IAgentEventActorReconciliation[],
+      legacyTurn,
       epoch,
     })),
     commitState: jest.fn(async ({ expected, expectedEpoch, checkpoint }) => {
@@ -76,6 +79,7 @@ describe('event actor host adapter', () => {
     }),
     recordReconciliation: jest.fn(async () => true),
     resolveReconciliation: jest.fn(async () => true),
+    reclaimLegacyTurn: jest.fn(async () => true),
   });
 
   it('cold-starts once, then forks and warm-continues only the next event', async () => {
@@ -89,6 +93,7 @@ describe('event actor host adapter', () => {
           invocationId,
           event: { id: invocationId, type: 'turn' },
           signal: new AbortController().signal,
+          legacyTurnStaleMs: 60_000,
           invoke: async (context) => {
             invocations.push({
               continuation: context.continuation,
@@ -134,6 +139,7 @@ describe('event actor host adapter', () => {
           event: { id: invocationId, type: 'turn' },
           expectedAction,
           signal: new AbortController().signal,
+          legacyTurnStaleMs: 60_000,
           invoke: async (context) => {
             invocations.push({ continuation: context.continuation });
             toolExecutions += 1;
@@ -170,6 +176,73 @@ describe('event actor host adapter', () => {
     expect(state).toMatchObject({ generation: 2, checkpoint: { checkpointId: 'checkpoint-2' } });
   });
 
+  it('refuses to prepare while a legacy turn fence is open', async () => {
+    state = {
+      generation: 1,
+      checkpoint: {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-fenced',
+        checkpointNs: 'event-actor/fenced',
+      },
+    };
+    legacyTurn = { token: 'legacy-live', startedAt: new Date() };
+    const dependencies = deps();
+    let invoked = false;
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId: 'event-during-legacy',
+          event: { id: 'event-during-legacy' },
+          signal: new AbortController().signal,
+          legacyTurnStaleMs: 60_000,
+          invoke: async () => {
+            invoked = true;
+            return 'response';
+          },
+          readAppliedAction: () => ({ toolName: 'submit_move' }),
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('blocked on an in-flight legacy turn');
+
+    expect(invoked).toBe(false);
+    expect(mockedFork).not.toHaveBeenCalled();
+    expect(dependencies.commitState).not.toHaveBeenCalled();
+    /** A live fence is never reclaimed. */
+    expect(dependencies.reclaimLegacyTurn).not.toHaveBeenCalled();
+  });
+
+  it('reclaims a fence abandoned by a crashed legacy turn', async () => {
+    legacyTurn = { token: 'legacy-crashed', startedAt: new Date(Date.now() - 120_000) };
+    const dependencies = deps();
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId: 'event-after-crash',
+          event: { id: 'event-after-crash' },
+          signal: new AbortController().signal,
+          legacyTurnStaleMs: 60_000,
+          invoke: async () => 'response',
+          readAppliedAction: () => ({ toolName: 'submit_move' }),
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('blocked on an in-flight legacy turn');
+
+    /** Reclaim fails safe rather than resuming across an unknown outcome:
+     * this event still refuses, and the next one rebuilds cold. */
+    expect(dependencies.reclaimLegacyTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ token: 'legacy-crashed' }),
+    );
+    expect(dependencies.commitState).not.toHaveBeenCalled();
+  });
+
   it('cold-starts after a legacy fallback invalidates the committed head', async () => {
     state = {
       generation: 1,
@@ -191,6 +264,7 @@ describe('event actor host adapter', () => {
           invocationId: 'event-after-legacy',
           event: { id: 'event-after-legacy' },
           signal: new AbortController().signal,
+          legacyTurnStaleMs: 60_000,
           invoke: async (context) => {
             continuation = context.continuation;
             return 'response';
@@ -222,6 +296,7 @@ describe('event actor host adapter', () => {
           invocationId: 'event-stale-cold',
           event: { id: 'event-stale-cold' },
           signal: new AbortController().signal,
+          legacyTurnStaleMs: 60_000,
           invoke: async () => {
             /** A concurrent legacy delivery lands after this cold rebuild
              * loaded its history. With no head to mark and nothing else to
@@ -265,6 +340,7 @@ describe('event actor host adapter', () => {
           invocationId: 'event-raced-by-legacy',
           event: { id: 'event-raced-by-legacy' },
           signal: new AbortController().signal,
+          legacyTurnStaleMs: 60_000,
           invoke: async () => {
             state = { ...state!, requiresColdStart: true };
             return 'response';
@@ -306,6 +382,7 @@ describe('event actor host adapter', () => {
         invocationId: 'event-no-action',
         event: { id: 'event-no-action' },
         signal: new AbortController().signal,
+        legacyTurnStaleMs: 60_000,
         invoke: async () => 'response',
         readAppliedAction: () => undefined,
       },
@@ -336,6 +413,7 @@ describe('event actor host adapter', () => {
           invocationId: 'event-action-then-error',
           event: { id: 'event-action-then-error' },
           signal: new AbortController().signal,
+          legacyTurnStaleMs: 60_000,
           invoke: async () => {
             throw new Error('provider stream failed after tool');
           },
@@ -369,6 +447,7 @@ describe('event actor host adapter', () => {
           invocationId: 'event-checkpoint-indeterminate',
           event: { id: 'event-checkpoint-indeterminate' },
           signal: new AbortController().signal,
+          legacyTurnStaleMs: 60_000,
           invoke: async () => 'response',
           readAppliedAction: () => ({ toolName: 'submit_move' }),
         },
@@ -408,6 +487,7 @@ describe('event actor host adapter', () => {
         invocationId: 'event-commit-then-cleanup-error',
         event: { id: 'event-commit-then-cleanup-error' },
         signal: new AbortController().signal,
+        legacyTurnStaleMs: 60_000,
         invoke: async () => 'response',
         readAppliedAction: () => ({ toolName: 'submit_move' }),
       },
@@ -443,6 +523,7 @@ describe('event actor host adapter', () => {
           invocationId: 'event-conflict',
           event: { id: 'event-conflict' },
           signal: new AbortController().signal,
+          legacyTurnStaleMs: 60_000,
           invoke: async () => {
             state = {
               generation: 2,
@@ -484,13 +565,19 @@ describe('event actor host adapter', () => {
     const dependencies = {
       getSnapshot: jest
         .fn()
-        .mockResolvedValueOnce({ state: baseState, reconciliations: [] })
+        .mockResolvedValueOnce({
+          state: baseState,
+          reconciliations: [],
+          legacyTurn: null,
+          epoch: 0,
+        })
         .mockRejectedValueOnce(new Error('readback unavailable')),
       commitState: jest.fn(async () => {
         throw new Error('commit result unavailable');
       }),
       recordReconciliation: jest.fn(async () => true),
       resolveReconciliation: jest.fn(async () => true),
+      reclaimLegacyTurn: jest.fn(async () => true),
     };
 
     await expect(
@@ -501,6 +588,7 @@ describe('event actor host adapter', () => {
           invocationId: 'event-ambiguous-commit',
           event: { id: 'event-ambiguous-commit' },
           signal: new AbortController().signal,
+          legacyTurnStaleMs: 60_000,
           invoke: async () => 'response',
           readAppliedAction: () => ({ toolName: 'submit_move' }),
         },
@@ -538,6 +626,8 @@ describe('event actor host adapter', () => {
     dependencies.getSnapshot.mockResolvedValueOnce({
       state: authoritative,
       reconciliations: [marker],
+      legacyTurn: null,
+      epoch: 0,
     });
 
     await expect(
@@ -548,6 +638,7 @@ describe('event actor host adapter', () => {
           invocationId: 'event-next',
           event: { id: 'event-next' },
           signal: new AbortController().signal,
+          legacyTurnStaleMs: 60_000,
           invoke: async () => 'response',
           readAppliedAction: () => ({ toolName: 'submit_move' }),
         },
@@ -580,6 +671,8 @@ describe('event actor host adapter', () => {
             observedAt: new Date(),
           },
         ],
+        legacyTurn: null,
+        epoch: 0,
       })),
     };
 
@@ -591,6 +684,7 @@ describe('event actor host adapter', () => {
           invocationId: 'event-after-persistence-failure',
           event: { id: 'event-after-persistence-failure' },
           signal: new AbortController().signal,
+          legacyTurnStaleMs: 60_000,
           invoke: async () => 'response',
           readAppliedAction: () => ({ toolName: 'submit_move' }),
         },
@@ -616,10 +710,13 @@ describe('event actor host adapter', () => {
             observedAt: new Date(),
           },
         ],
+        legacyTurn: null,
+        epoch: 0,
       })),
       commitState: jest.fn(),
       recordReconciliation: jest.fn(),
       resolveReconciliation: jest.fn(),
+      reclaimLegacyTurn: jest.fn(async () => true),
     };
 
     await expect(
@@ -630,6 +727,7 @@ describe('event actor host adapter', () => {
           invocationId: 'event-after-conflict',
           event: { id: 'event-after-conflict' },
           signal: new AbortController().signal,
+          legacyTurnStaleMs: 60_000,
           invoke: async () => 'response',
           readAppliedAction: () => ({ toolName: 'submit_move' }),
         },
@@ -645,6 +743,7 @@ describe('event actor host adapter', () => {
       commitState: jest.fn(),
       recordReconciliation: jest.fn(),
       resolveReconciliation: jest.fn(),
+      reclaimLegacyTurn: jest.fn(async () => true),
     };
 
     await expect(
@@ -655,6 +754,7 @@ describe('event actor host adapter', () => {
           invocationId: 'event-after-delete',
           event: { id: 'event-after-delete' },
           signal: new AbortController().signal,
+          legacyTurnStaleMs: 60_000,
           invoke: async () => 'response',
           readAppliedAction: () => ({ toolName: 'submit_move' }),
         },

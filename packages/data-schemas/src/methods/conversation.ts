@@ -258,15 +258,24 @@ export interface ConversationMethods {
     expectedEpoch: number;
     checkpoint: IAgentEventActorCheckpoint;
   }): Promise<AgentEventActorCommitResult>;
-  invalidateAgentEventActorState(input: {
+  beginAgentEventActorLegacyTurn(input: {
     user: string;
     conversationId: string;
     tenantId?: string;
+    token: string;
   }): Promise<boolean>;
-  completeAgentEventActorInvalidation(input: {
+  completeAgentEventActorLegacyTurn(input: {
     user: string;
     conversationId: string;
     tenantId?: string;
+    token: string;
+  }): Promise<boolean>;
+  reclaimAgentEventActorLegacyTurn(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    token: string;
+    startedBefore: Date;
   }): Promise<boolean>;
   recordAgentEventActorReconciliation(input: {
     user: string;
@@ -504,13 +513,16 @@ export function createConversationMethods(
       ...subagentLeaseTenantFilter(input.tenantId),
       ...activeExpirationFilter<IConversation>(),
     })
-      .select('+agentEventActor +agentEventActorReconciliations +agentEventActorEpoch')
+      .select(
+        '+agentEventActor +agentEventActorReconciliations +agentEventActorEpoch +agentEventActorLegacyTurn',
+      )
       .lean<IConversation>();
     return conversation == null
       ? undefined
       : {
           state: conversation.agentEventActor ?? null,
           reconciliations: conversation.agentEventActorReconciliations ?? [],
+          legacyTurn: conversation.agentEventActorLegacyTurn ?? null,
           epoch: conversation.agentEventActorEpoch ?? 0,
         };
   }
@@ -536,6 +548,10 @@ export function createConversationMethods(
      * been invalidated. */
     const expectedFilter: FilterQuery<IConversation> = {
       agentEventActorEpoch: input.expectedEpoch === 0 ? null : input.expectedEpoch,
+      /** A legacy turn in flight has not yet persisted its messages, so no
+       * fork rebuild can be complete — refuse the commit outright rather than
+       * relying on the epoch, which only moves once that turn seals. */
+      agentEventActorLegacyTurn: { $exists: false },
       ...(input.expected == null
         ? { agentEventActor: { $exists: false } }
         : {
@@ -598,104 +614,123 @@ export function createConversationMethods(
     };
   }
 
-  /** Makes a previously committed head cold-start after any legacy-path event. */
-  async function invalidateAgentEventActorState(input: {
+  /**
+   * Opens the durable fence for one legacy-path turn BEFORE it executes. A
+   * single update-pipeline write sets the token and, only when a head exists,
+   * marks it cold — no two-write gap a concurrent fork could slip through.
+   * Overwrites an abandoned token: the new turn's own completion seals it.
+   */
+  async function beginAgentEventActorLegacyTurn(input: {
     user: string;
     conversationId: string;
     tenantId?: string;
+    token: string;
   }): Promise<boolean> {
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
-    const quiescent = {
-      user: input.user,
-      conversationId: input.conversationId,
-      subagentThread: { $exists: true },
-      agentEventBinding: { $exists: true },
-      agentEventActorReconciliations: {
-        $not: { $elemMatch: { status: { $ne: 'settled' } } },
-      },
-      ...subagentLeaseTenantFilter(input.tenantId),
-      ...activeExpirationFilter<IConversation>(),
-    };
-    const invalidated = await Conversation.findOneAndUpdate(
-      { ...quiescent, agentEventActor: { $exists: true } },
+    const opened = await Conversation.findOneAndUpdate(
       {
-        $set: { 'agentEventActor.requiresColdStart': true },
-        $inc: { agentEventActorEpoch: 1 },
+        user: input.user,
+        conversationId: input.conversationId,
+        subagentThread: { $exists: true },
+        agentEventBinding: { $exists: true },
+        ...subagentLeaseTenantFilter(input.tenantId),
+        ...activeExpirationFilter<IConversation>(),
       },
-      { new: true, timestamps: false },
-    )
-      .select('+agentEventActor')
-      .lean<IConversation>();
-    if (invalidated != null) {
-      return true;
-    }
-    /** A headless or already cold-marked actor shows no change through the
-     * head fields, yet a concurrently prepared fork could still commit state
-     * built from history read before this turn. The epoch is the durable,
-     * CAS-visible trace for exactly those invalidations. Setting the marker
-     * on a missing head would create a partial actor state, so only the
-     * epoch advances here. */
-    const epochOnly = await Conversation.findOneAndUpdate(
-      { ...quiescent, agentEventActor: { $exists: false } },
-      { $inc: { agentEventActorEpoch: 1 } },
+      [
+        {
+          $set: {
+            agentEventActorLegacyTurn: { token: input.token, startedAt: '$$NOW' },
+            agentEventActor: {
+              $cond: [
+                { $ifNull: ['$agentEventActor', false] },
+                { $mergeObjects: ['$agentEventActor', { requiresColdStart: true }] },
+                '$$REMOVE',
+              ],
+            },
+          },
+        },
+      ],
       { new: true, timestamps: false },
     ).lean<IConversation>();
-    if (epochOnly != null) {
-      return true;
-    }
-    const current = await getAgentEventActorSnapshot(input);
-    if (
-      current != null &&
-      current.reconciliations.some((reconciliation) => reconciliation.status !== 'settled')
-    ) {
-      throw new Error('Event actor has unresolved applied-action reconciliation');
-    }
-    return false;
+    return opened != null;
   }
 
   /**
-   * Seals a legacy turn after its terminal persistence: advances the epoch a
-   * second time so a fork prepared MID-turn — which already observed the
-   * begin-invalidation's epoch and cold marker, but rebuilt from history that
-   * did not yet contain the turn's messages — fails its commit CAS instead of
-   * making that incomplete rebuild authoritative. Unlike the begin
-   * invalidation this must succeed while a fork fence is active (that is
-   * precisely the race it defends against), so it carries no quiescence
-   * requirement and never throws on unresolved rows. A commit that already
-   * won against the begin epoch is healed the same way: the bump re-marks the
-   * committed head cold, so the next event rebuilds with complete history.
+   * Closes the fence in ONE atomic write once the legacy turn's history is
+   * durable: clears this exact token and advances the epoch together, so a
+   * fork can never observe a cleared fence at an unchanged epoch. Matching the
+   * token keeps a later turn's seal from closing an earlier turn's fence.
    */
-  async function completeAgentEventActorInvalidation(input: {
+  async function completeAgentEventActorLegacyTurn(input: {
     user: string;
     conversationId: string;
     tenantId?: string;
+    token: string;
   }): Promise<boolean> {
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
-    const owner = {
-      user: input.user,
-      conversationId: input.conversationId,
-      subagentThread: { $exists: true },
-      agentEventBinding: { $exists: true },
-      ...subagentLeaseTenantFilter(input.tenantId),
-      ...activeExpirationFilter<IConversation>(),
-    };
     const sealed = await Conversation.findOneAndUpdate(
-      { ...owner, agentEventActor: { $exists: true } },
       {
-        $set: { 'agentEventActor.requiresColdStart': true },
+        user: input.user,
+        conversationId: input.conversationId,
+        subagentThread: { $exists: true },
+        agentEventBinding: { $exists: true },
+        'agentEventActorLegacyTurn.token': input.token,
+        ...subagentLeaseTenantFilter(input.tenantId),
+        ...activeExpirationFilter<IConversation>(),
+      },
+      {
+        $unset: { agentEventActorLegacyTurn: 1 },
         $inc: { agentEventActorEpoch: 1 },
       },
       { new: true, timestamps: false },
     ).lean<IConversation>();
-    if (sealed != null) {
-      return true;
-    }
-    const sealedHeadless = await Conversation.findOneAndUpdate(
-      { ...owner, agentEventActor: { $exists: false } },
-      { $inc: { agentEventActorEpoch: 1 } },
+    return sealed != null;
+  }
+
+  /**
+   * Releases a fence abandoned by a crashed legacy turn. The turn's outcome is
+   * unknown, so this fails safe rather than optimistically: the epoch advances
+   * and any head is marked cold, forcing the next actor turn to rebuild from
+   * whatever history actually became durable. Bounded by `startedBefore` so a
+   * live turn is never reclaimed.
+   */
+  async function reclaimAgentEventActorLegacyTurn(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    token: string;
+    startedBefore: Date;
+  }): Promise<boolean> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const reclaimed = await Conversation.findOneAndUpdate(
+      {
+        user: input.user,
+        conversationId: input.conversationId,
+        subagentThread: { $exists: true },
+        agentEventBinding: { $exists: true },
+        'agentEventActorLegacyTurn.token': input.token,
+        'agentEventActorLegacyTurn.startedAt': { $lt: input.startedBefore },
+        ...subagentLeaseTenantFilter(input.tenantId),
+        ...activeExpirationFilter<IConversation>(),
+      },
+      [
+        {
+          $set: {
+            agentEventActorEpoch: { $add: [{ $ifNull: ['$agentEventActorEpoch', 0] }, 1] },
+            agentEventActorLegacyTurn: '$$REMOVE',
+            agentEventActor: {
+              $cond: [
+                { $ifNull: ['$agentEventActor', false] },
+                { $mergeObjects: ['$agentEventActor', { requiresColdStart: true }] },
+                '$$REMOVE',
+              ],
+            },
+          },
+        },
+      ],
       { new: true, timestamps: false },
     ).lean<IConversation>();
-    return sealedHeadless != null;
+    return reclaimed != null;
   }
 
   /** Acquires or advances one invocation lifecycle fence and blocks competing turns. */
@@ -2346,8 +2381,9 @@ export function createConversationMethods(
     getAgentEventBinding,
     getAgentEventActorSnapshot,
     commitAgentEventActorState,
-    invalidateAgentEventActorState,
-    completeAgentEventActorInvalidation,
+    beginAgentEventActorLegacyTurn,
+    completeAgentEventActorLegacyTurn,
+    reclaimAgentEventActorLegacyTurn,
     recordAgentEventActorReconciliation,
     resolveAgentEventActorReconciliation,
     reserveSubagentThread,

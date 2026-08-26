@@ -4027,6 +4027,7 @@ describe('Conversation Operations', () => {
       ).resolves.toMatchObject({
         state: first.state,
         epoch: 0,
+        legacyTurn: null,
         reconciliations: [
           {
             invocationId: 'one',
@@ -4131,6 +4132,7 @@ describe('Conversation Operations', () => {
       ).resolves.toMatchObject({
         state: third.state,
         epoch: 0,
+        legacyTurn: null,
         reconciliations: [
           { invocationId: 'one', status: 'settled' },
           { invocationId: 'two', status: 'settled' },
@@ -4138,10 +4140,19 @@ describe('Conversation Operations', () => {
         ],
       });
       await expect(
-        methods.invalidateAgentEventActorState({
+        methods.beginAgentEventActorLegacyTurn({
           user: 'actor-head-user',
           tenantId: 'tenant-a',
           conversationId,
+          token: 'legacy-turn-1',
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.completeAgentEventActorLegacyTurn({
+          user: 'actor-head-user',
+          tenantId: 'tenant-a',
+          conversationId,
+          token: 'legacy-turn-1',
         }),
       ).resolves.toBe(true);
       await expect(beginInvocation('stale-warm', checkpoint('three'))).resolves.toBe(true);
@@ -4179,6 +4190,7 @@ describe('Conversation Operations', () => {
       ).resolves.toEqual({
         state: { ...third.state, requiresColdStart: true },
         epoch: 1,
+        legacyTurn: null,
         reconciliations: expect.arrayContaining([
           expect.objectContaining({ invocationId: 'one', status: 'settled' }),
           expect.objectContaining({ invocationId: 'two', status: 'settled' }),
@@ -4328,17 +4340,12 @@ describe('Conversation Operations', () => {
       ).resolves.toEqual({
         state: first.state,
         epoch: 0,
+        legacyTurn: null,
         reconciliations: [
           expect.objectContaining({ invocationId: 'event-one', status: 'settled' }),
           reconciliation,
         ],
       });
-      await expect(
-        methods.invalidateAgentEventActorState({
-          user: 'actor-reconcile-user',
-          conversationId,
-        }),
-      ).rejects.toThrow('unresolved applied-action reconciliation');
       await expect(
         methods.commitAgentEventActorState({
           user: 'actor-reconcile-user',
@@ -4451,6 +4458,7 @@ describe('Conversation Operations', () => {
       ).resolves.toEqual({
         state: { ...first.state!, requiresColdStart: true },
         epoch: 0,
+        legacyTurn: null,
         reconciliations: [
           expect.objectContaining({
             invocationId: 'event-one',
@@ -4495,6 +4503,7 @@ describe('Conversation Operations', () => {
       ).resolves.toEqual({
         state: { ...first.state!, requiresColdStart: true },
         epoch: 0,
+        legacyTurn: null,
         reconciliations: [
           expect.objectContaining({ invocationId: 'event-one', status: 'settled' }),
           expect.objectContaining({ invocationId: 'event-conflict', status: 'settled' }),
@@ -4639,6 +4648,7 @@ describe('Conversation Operations', () => {
       ).resolves.toEqual({
         state: null,
         epoch: 0,
+        legacyTurn: null,
         reconciliations: [
           expect.objectContaining({ invocationId: 'event-recent', status: 'settled' }),
           expect.objectContaining({ invocationId: 'event-next', status: 'invocation_pending' }),
@@ -4680,10 +4690,24 @@ describe('Conversation Operations', () => {
       await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
         state: null,
         epoch: 0,
+        legacyTurn: null,
       });
-      await expect(methods.invalidateAgentEventActorState(owner)).resolves.toBe(true);
+      await expect(
+        methods.beginAgentEventActorLegacyTurn({ ...owner, token: 'legacy-a' }),
+      ).resolves.toBe(true);
+      /** While the fence is open the epoch has NOT moved — the fence itself is
+       * what blocks, so a fork cannot slip through on an unchanged epoch. */
       await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
         state: null,
+        legacyTurn: { token: 'legacy-a' },
+        epoch: 0,
+      });
+      await expect(
+        methods.completeAgentEventActorLegacyTurn({ ...owner, token: 'legacy-a' }),
+      ).resolves.toBe(true);
+      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+        state: null,
+        legacyTurn: null,
         epoch: 1,
       });
       await expect(
@@ -4740,12 +4764,19 @@ describe('Conversation Operations', () => {
       ).resolves.toBe(true);
       /** An already cold-marked head shows no field change from a second
        * invalidation either — the epoch must still advance every time. */
-      await expect(methods.invalidateAgentEventActorState(owner)).resolves.toBe(true);
-      await expect(methods.invalidateAgentEventActorState(owner)).resolves.toBe(true);
+      for (const token of ['legacy-b', 'legacy-c']) {
+        await expect(methods.beginAgentEventActorLegacyTurn({ ...owner, token })).resolves.toBe(
+          true,
+        );
+        await expect(methods.completeAgentEventActorLegacyTurn({ ...owner, token })).resolves.toBe(
+          true,
+        );
+      }
       const snapshot = await methods.getAgentEventActorSnapshot(owner);
       expect(snapshot).toMatchObject({
         state: { generation: 1, requiresColdStart: true },
         epoch: 3,
+        legacyTurn: null,
       });
       await expect(
         methods.recordAgentEventActorReconciliation({
@@ -4782,13 +4813,87 @@ describe('Conversation Operations', () => {
       /** Sealing a completed legacy turn must advance the epoch even while
        * another invocation's fence is active — that is exactly the mid-turn
        * race it exists to defeat — where the begin invalidation fails closed. */
-      await expect(methods.invalidateAgentEventActorState(owner)).rejects.toThrow(
-        'unresolved applied-action reconciliation',
-      );
-      await expect(methods.completeAgentEventActorInvalidation(owner)).resolves.toBe(true);
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          ...owner,
+          reconciliation: {
+            invocationId: 'event-stale-rebuild',
+            status: 'history_persisted',
+            checkpoint: checkpoint('stale-rebuild'),
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.resolveAgentEventActorReconciliation({
+          ...owner,
+          invocationId: 'event-stale-rebuild',
+          checkpoint: checkpoint('stale-rebuild'),
+          resolution: 'checkpoint_verified',
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.beginAgentEventActorLegacyTurn({ ...owner, token: 'legacy-d' }),
+      ).resolves.toBe(true);
+      /** An open fence refuses a commit outright, even at the exact epoch the
+       * fork prepared against — the turn's messages are not durable yet. */
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          ...owner,
+          reconciliation: {
+            invocationId: 'event-during-legacy',
+            status: 'invocation_pending',
+            checkpoint: checkpoint('during-legacy'),
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        }),
+      ).resolves.toBe(true);
+      const beforeSeal = await methods.getAgentEventActorSnapshot(owner);
+      await expect(
+        methods.commitAgentEventActorState({
+          ...owner,
+          invocationId: 'event-during-legacy',
+          action: { toolName: 'submit_move' },
+          expected: beforeSeal!.state!,
+          expectedEpoch: beforeSeal!.epoch,
+          checkpoint: checkpoint('during-legacy'),
+        }),
+      ).resolves.toMatchObject({ status: 'stale' });
+      /** Sealing must succeed while that fork fence is active — exactly the
+       * mid-turn race the durable fence exists to defeat. */
+      await expect(
+        methods.completeAgentEventActorLegacyTurn({ ...owner, token: 'legacy-d' }),
+      ).resolves.toBe(true);
       await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
         state: { generation: 2, requiresColdStart: true },
+        legacyTurn: null,
         epoch: 4,
+      });
+      /** A fence abandoned by a crashed turn is reclaimed only once stale, and
+       * reclaiming fails safe: epoch advances and the head is marked cold. */
+      await expect(
+        methods.beginAgentEventActorLegacyTurn({ ...owner, token: 'legacy-crashed' }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.reclaimAgentEventActorLegacyTurn({
+          ...owner,
+          token: 'legacy-crashed',
+          startedBefore: new Date(Date.now() - 60_000),
+        }),
+      ).resolves.toBe(false);
+      await expect(
+        methods.reclaimAgentEventActorLegacyTurn({
+          ...owner,
+          token: 'legacy-crashed',
+          startedBefore: new Date(Date.now() + 60_000),
+        }),
+      ).resolves.toBe(true);
+      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+        state: { generation: 2, requiresColdStart: true },
+        legacyTurn: null,
+        epoch: 5,
       });
     });
 
@@ -4885,6 +4990,7 @@ describe('Conversation Operations', () => {
       ).resolves.toEqual({
         state: null,
         epoch: 0,
+        legacyTurn: null,
         reconciliations: [
           expect.objectContaining({ invocationId: 'event-at-cap', status: 'invocation_pending' }),
         ],

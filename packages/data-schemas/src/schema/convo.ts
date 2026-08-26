@@ -152,6 +152,17 @@ const convoSchema: Schema<IConversation> = new Schema(
       default: undefined,
       select: false,
     },
+    /** In-flight legacy turn. Blocks fork execution and commit until the
+     * turn's history is durable; a crash leaves it set, failing closed. */
+    agentEventActorLegacyTurn: {
+      type: {
+        token: { type: String, required: true },
+        startedAt: { type: Date, required: true },
+      },
+      _id: false,
+      default: undefined,
+      select: false,
+    },
     tags: {
       type: [String],
       default: [],

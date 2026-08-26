@@ -93,8 +93,9 @@ const mockCreateAgentEventActionRecorder = jest.fn(() => {
 });
 const mockGetAgentEventActorSnapshot = jest.fn();
 const mockCommitAgentEventActorState = jest.fn();
-const mockInvalidateAgentEventActorState = jest.fn();
-const mockCompleteAgentEventActorInvalidation = jest.fn();
+const mockBeginAgentEventActorLegacyTurn = jest.fn();
+const mockCompleteAgentEventActorLegacyTurn = jest.fn();
+const mockReclaimAgentEventActorLegacyTurn = jest.fn();
 const mockRecordAgentEventActorReconciliation = jest.fn();
 const mockResolveAgentEventActorReconciliation = jest.fn();
 const mockStartupTelemetry = {
@@ -261,9 +262,9 @@ jest.mock('~/models', () => ({
   getConvo: (...args) => mockGetConvo(...args),
   getAgentEventActorSnapshot: (...args) => mockGetAgentEventActorSnapshot(...args),
   commitAgentEventActorState: (...args) => mockCommitAgentEventActorState(...args),
-  invalidateAgentEventActorState: (...args) => mockInvalidateAgentEventActorState(...args),
-  completeAgentEventActorInvalidation: (...args) =>
-    mockCompleteAgentEventActorInvalidation(...args),
+  beginAgentEventActorLegacyTurn: (...args) => mockBeginAgentEventActorLegacyTurn(...args),
+  completeAgentEventActorLegacyTurn: (...args) => mockCompleteAgentEventActorLegacyTurn(...args),
+  reclaimAgentEventActorLegacyTurn: (...args) => mockReclaimAgentEventActorLegacyTurn(...args),
   recordAgentEventActorReconciliation: (...args) =>
     mockRecordAgentEventActorReconciliation(...args),
   resolveAgentEventActorReconciliation: (...args) =>
@@ -385,7 +386,9 @@ describe('ResumableAgentController resume metadata', () => {
     mockDeleteAgentCheckpoint.mockResolvedValue(undefined);
     mockGetAgentEventActorSnapshot.mockResolvedValue({ state: null, reconciliations: [] });
     mockCommitAgentEventActorState.mockResolvedValue({ status: 'stale' });
-    mockInvalidateAgentEventActorState.mockResolvedValue(false);
+    mockBeginAgentEventActorLegacyTurn.mockResolvedValue(true);
+    mockCompleteAgentEventActorLegacyTurn.mockResolvedValue(true);
+    mockReclaimAgentEventActorLegacyTurn.mockResolvedValue(true);
     mockRecordAgentEventActorReconciliation.mockResolvedValue(true);
     mockResolveAgentEventActorReconciliation.mockResolvedValue(true);
   });
@@ -4052,6 +4055,7 @@ describe('ResumableAgentController resume metadata', () => {
         commitState: expect.any(Function),
         recordReconciliation: expect.any(Function),
         resolveReconciliation: expect.any(Function),
+        reclaimLegacyTurn: expect.any(Function),
       },
     );
     expect(mockExecuteAgentEventActor.mock.calls[0][0]).not.toHaveProperty('tenantId');
@@ -4466,20 +4470,26 @@ describe('ResumableAgentController resume metadata', () => {
       await nextTick();
 
       expect(mockExecuteAgentEventActor).not.toHaveBeenCalled();
-      expect(mockInvalidateAgentEventActorState).toHaveBeenCalledWith({
+      expect(mockBeginAgentEventActorLegacyTurn).toHaveBeenCalledWith({
         user: 'user-123',
         tenantId: 'tenant-1',
         conversationId: 'child-conversation',
+        token: expect.any(String),
       });
       expect(client.sendMessage).toHaveBeenCalledTimes(1);
-      /** The turn's terminal path must seal the invalidation with a second
-       * epoch advance so a fork prepared mid-turn cannot commit across it. */
-      expect(mockCompleteAgentEventActorInvalidation).toHaveBeenCalledWith({
+      /** The fence must open before execution and close only after this
+       * turn's history is durable, under the same token. */
+      const fenceToken = mockBeginAgentEventActorLegacyTurn.mock.calls[0][0].token;
+      expect(mockBeginAgentEventActorLegacyTurn.mock.invocationCallOrder[0]).toBeLessThan(
+        client.sendMessage.mock.invocationCallOrder[0],
+      );
+      expect(mockCompleteAgentEventActorLegacyTurn).toHaveBeenCalledWith({
         user: 'user-123',
         tenantId: 'tenant-1',
         conversationId: 'child-conversation',
+        token: fenceToken,
       });
-      expect(mockCompleteAgentEventActorInvalidation.mock.invocationCallOrder[0]).toBeGreaterThan(
+      expect(mockCompleteAgentEventActorLegacyTurn.mock.invocationCallOrder[0]).toBeGreaterThan(
         client.sendMessage.mock.invocationCallOrder[0],
       );
     },

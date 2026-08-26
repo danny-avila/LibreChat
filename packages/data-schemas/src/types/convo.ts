@@ -47,9 +47,21 @@ export interface IAgentEventActorReconciliation {
   observedAt: Date;
 }
 
+/**
+ * Durable fence covering one legacy-path turn from before its execution until
+ * its history is persisted. While present, no fork may execute or commit — the
+ * turn's messages are not yet durable, so any rebuild would be incomplete. A
+ * crash leaves the token in place (fail-closed) until it is reclaimed.
+ */
+export interface IAgentEventActorLegacyTurn {
+  token: string;
+  startedAt: Date;
+}
+
 export interface IAgentEventActorSnapshot {
   state: IAgentEventActorState | null;
   reconciliations: IAgentEventActorReconciliation[];
+  legacyTurn: IAgentEventActorLegacyTurn | null;
   /** Durable invalidation epoch. Every legacy-path event bumps it — including
    * for headless or already cold-marked actors, where the marker alone leaves
    * no CAS-visible trace — and the commit CAS requires the epoch observed at
@@ -125,6 +137,8 @@ export interface IConversation extends Document {
   agentEventActorReconciliations?: IAgentEventActorReconciliation[];
   /** Private invalidation epoch; see {@link IAgentEventActorSnapshot.epoch}. */
   agentEventActorEpoch?: number;
+  /** Private in-flight legacy-turn fence; see {@link IAgentEventActorLegacyTurn}. */
+  agentEventActorLegacyTurn?: IAgentEventActorLegacyTurn;
   assistant_id?: string;
   instructions?: string;
   stop?: string[];
