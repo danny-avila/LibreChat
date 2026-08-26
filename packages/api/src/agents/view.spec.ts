@@ -383,6 +383,7 @@ describe('subagent thread parent-scoped view', () => {
 
   it('returns bounded authoritative control receipts without private fingerprints', async () => {
     const input = message('task-1:user', 'running', true);
+    Object.assign(input.subagentTask!, { controlReceiptsProjectionTruncated: true });
     input.subagentTask!.controlReceipts = [
       {
         invocationId: 'private-reservation',
@@ -392,7 +393,7 @@ describe('subagent thread parent-scoped view', () => {
         createdAt: new Date('2026-08-21T09:59:59.000Z'),
         updatedAt: new Date('2026-08-21T09:59:59.000Z'),
       },
-      ...Array.from({ length: 32 }, (_, index) => ({
+      ...Array.from({ length: 31 }, (_, index) => ({
         invocationId: `earlier-${index}`,
         fingerprint: `private-${index}`,
         action: 'queue' as const,
