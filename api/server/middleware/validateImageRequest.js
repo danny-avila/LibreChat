@@ -1,6 +1,12 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
-const { logger, ResourceCapabilityMap, getTenantId, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
+const {
+  logger,
+  ResourceCapabilityMap,
+  getTenantId,
+  runAsSystem,
+  tenantStorage,
+} = require('@librechat/data-schemas');
 const { isEnabled, getBasePath } = require('@librechat/api');
 const { ResourceType, PermissionBits } = require('librechat-data-provider');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
@@ -48,7 +54,9 @@ async function validateToken(refreshToken, requireActiveSession = true) {
       return { valid: true, userId: payload.id };
     }
     const session = await runAsSystem(() => findSession({ userId: payload.id, refreshToken }));
-    return session ? { valid: true, userId: payload.id } : { valid: false, error: 'Inactive session' };
+    return session
+      ? { valid: true, userId: payload.id }
+      : { valid: false, error: 'Inactive session' };
   } catch (err) {
     logger.warn('[validateToken]', err);
     return { valid: false, error: 'Invalid token' };
@@ -195,9 +203,13 @@ function createValidateImageRequest(secureImageLinks = true) {
           }))
         );
       };
-      const canViewAgent = user.tenantId && getTenantId() == null
-        ? await tenantStorage.run({ tenantId: user.tenantId, userId: userIdForPath }, authorizeAvatar)
-        : await authorizeAvatar();
+      const canViewAgent =
+        user.tenantId && getTenantId() == null
+          ? await tenantStorage.run(
+              { tenantId: user.tenantId, userId: userIdForPath },
+              authorizeAvatar,
+            )
+          : await authorizeAvatar();
       if (!canViewAgent) {
         logger.warn('[validateImageRequest] User lacks agent avatar access');
         return res.status(403).send('Access Denied');

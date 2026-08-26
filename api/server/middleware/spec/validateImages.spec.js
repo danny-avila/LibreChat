@@ -6,7 +6,11 @@ jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   isEnabled: jest.fn(),
 }));
-jest.mock('~/models', () => ({ findSession: jest.fn(), getAgent: jest.fn(), getUserById: jest.fn() }));
+jest.mock('~/models', () => ({
+  findSession: jest.fn(),
+  getAgent: jest.fn(),
+  getUserById: jest.fn(),
+}));
 jest.mock('~/server/services/PermissionService', () => ({ checkPermission: jest.fn() }));
 jest.mock('~/server/middleware/roles/capabilities', () => ({ hasCapability: jest.fn() }));
 
