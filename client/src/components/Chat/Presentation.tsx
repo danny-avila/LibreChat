@@ -1,5 +1,6 @@
 import { useRecoilValue } from 'recoil';
 import { useEffect, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 import { useMediaQuery } from '@librechat/client';
 import { FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
@@ -62,6 +63,10 @@ export default function Presentation({ children }: { children: React.ReactNode }
 
   const activeBklSource = useRecoilValue(store.activeBklSource);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  // 새 채팅 대기화면(/c/new)에서는 보여줄 대화 자료가 없으므로 패널을 숨기고,
+  // 쿼리가 제출되어 실제 대화 ID 라우트로 넘어가면 그때부터 상시 표시한다.
+  const { conversationId } = useParams();
+  const hasActiveConvo = conversationId != null && conversationId !== 'new';
 
   /**
    * Memoize artifacts JSX to prevent recreating it on every render
@@ -82,10 +87,12 @@ export default function Presentation({ children }: { children: React.ReactNode }
 
   /**
    * Right-side panel routing:
-   * The BKL thread panel is ALWAYS visible on desktop — it renders the
-   * conversation-level overview (mentioned files + cited chunks) and swaps
-   * to the chunk text view when a `[N]` citation is active. Artifacts (if
-   * any) only take the slot when no citation is open.
+   * The BKL thread panel is always visible on desktop while a conversation
+   * is active — it renders the conversation-level overview (mentioned files
+   * + cited chunks) and swaps to the chunk text view when a `[N]` citation
+   * is active. Artifacts (if any) only take the slot when no citation is
+   * open. On the new-chat landing screen (/c/new) there is nothing to show
+   * yet, so the panel stays hidden until the first query is submitted.
    *
    * On small screens `SidePanelGroup` renders this slot as a `fixed inset-0`
    * overlay, so an always-open panel would cover the whole chat — mobile
@@ -99,8 +106,8 @@ export default function Presentation({ children }: { children: React.ReactNode }
     if (artifactsElement != null) {
       return artifactsElement;
     }
-    return isSmallScreen ? null : <BklThreadPanel />;
-  }, [activeBklSource, artifactsElement, isSmallScreen]);
+    return isSmallScreen || !hasActiveConvo ? null : <BklThreadPanel />;
+  }, [activeBklSource, artifactsElement, isSmallScreen, hasActiveConvo]);
 
   return (
     <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
