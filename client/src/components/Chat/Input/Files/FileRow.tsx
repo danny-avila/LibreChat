@@ -178,7 +178,7 @@ export default function FileRow({
               flexShrink: 0,
             }}
           >
-            <OGDialogTrigger className="h-[52px] w-56 rounded-2xl border border-border-light bg-surface-hover-alt px-3 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary">
+            <OGDialogTrigger className="h-[52px] w-full rounded-2xl border border-border-light bg-surface-hover-alt px-3 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary">
               {localize('com_sources_more_files', { count: remainingFileCount })}
             </OGDialogTrigger>
           </div>
