@@ -665,6 +665,7 @@ export function createAgentTriggerDeliveryMethods(
         { status: { $in: ['staging', 'batched', 'pending', 'leased', 'dead'] } },
         {
           status: 'succeeded',
+          batchRootId: { $exists: false },
           awaitTerminalHandling: true,
           'handling.status': 'started',
         },
@@ -790,6 +791,7 @@ export function createAgentTriggerDeliveryMethods(
           { status: { $in: ['pending', 'leased'] } },
           {
             status: 'succeeded',
+            batchRootId: { $exists: false },
             awaitTerminalHandling: true,
             'handling.status': 'started',
           },

@@ -108,6 +108,7 @@ triggerDeliverySchema.index({
   awaitTerminalHandling: 1,
   status: 1,
   'handling.status': 1,
+  batchRootId: 1,
   laneSequence: 1,
 });
 triggerDeliverySchema.index({ batchRootId: 1 }, { sparse: true });
