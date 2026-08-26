@@ -835,6 +835,29 @@ describe('createAgentEventActionRecorder', () => {
     expect(recorder.read()).toEqual({ toolName: 'submit_move', toolCallId: 'call-1' });
   });
 
+  it('accepts policy-withheld output as proof of a successful foreground execution', async () => {
+    /** Output filtering blanks the returned content AFTER the side effect
+     * happened; reclassifying the turn as actionless would re-execute an
+     * applied external action on retry. */
+    const recorder = createAgentEventActionRecorder(expectedAction);
+    recorder.observeToolEnd({
+      input: { gameId: 'game-1', move: 'e4' },
+      outputFiltered: true,
+      output: { name: 'submit_move', tool_call_id: 'call-filtered', content: '' },
+    });
+    expect(recorder.read()).toEqual({ toolName: 'submit_move', toolCallId: 'call-filtered' });
+  });
+
+  it('never qualifies a withheld output whose call the model detached', async () => {
+    const recorder = createAgentEventActionRecorder({ toolName: 'submit_move' });
+    recorder.observeToolEnd({
+      input: { gameId: 'game-1', run_in_background: true },
+      outputFiltered: true,
+      output: { name: 'submit_move', tool_call_id: 'call-detached', content: '' },
+    });
+    expect(recorder.read()).toBeUndefined();
+  });
+
   it('never lets a background-task delivery impersonate a name-only action', async () => {
     /** The poll turn's delivery callback reports the ORIGINAL tool's name for
      * artifact attribution — evidence of work another turn dispatched, not

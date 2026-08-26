@@ -89,6 +89,13 @@ export interface ToolEndCallbackData {
    * name-only expected action could be impersonated by work another turn
    * dispatched. */
   backgroundDelivery?: boolean;
+  /** True when the tool executed successfully but its returned content was
+   * withheld by post-execution output policy. `output.content` is blank and
+   * no artifact rides the callback — this delivery exists solely so
+   * execution-identity consumers (the event-actor action recorder) can prove
+   * the side effect occurred; a retry of an "actionless" turn would otherwise
+   * repeat an external action whose output was merely filtered. */
+  outputFiltered?: boolean;
   output: {
     name: string;
     tool_call_id: string;
@@ -4908,6 +4915,30 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       errorMessage: handlerResult.errorMessage,
                     });
                     if (filteredOutput != null) {
+                      /** The side effect already happened; only the returned
+                       * content is being withheld. Emit execution identity so
+                       * an applied action is never reclassified as actionless
+                       * and re-executed — the blocked output stays blank. */
+                      if (toolEndCallback && handlerResult.errorMessage == null) {
+                        try {
+                          await toolEndCallback(
+                            {
+                              input: tc.args,
+                              outputFiltered: true,
+                              output: { name: tc.name, tool_call_id: tc.id, content: '' },
+                            },
+                            {
+                              ...(metadata ?? {}),
+                              executingAgentId: agentId,
+                            } as ToolEndCallbackMetadata,
+                          );
+                        } catch (evidenceError) {
+                          logger.warn(
+                            `[ON_TOOL_EXECUTE] Filtered-output evidence delivery failed for ${tc.name}`,
+                            evidenceError,
+                          );
+                        }
+                      }
                       return filteredOutput;
                     }
 
@@ -5162,6 +5193,30 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       },
                     );
                     if (filteredOutput != null) {
+                      /** The side effect already happened; only the returned
+                       * content is being withheld. Emit execution identity so
+                       * an applied action is never reclassified as actionless
+                       * and re-executed — the blocked output stays blank. */
+                      if (toolEndCallback) {
+                        try {
+                          await toolEndCallback(
+                            {
+                              input: tc.args,
+                              outputFiltered: true,
+                              output: { name: tc.name, tool_call_id: tc.id, content: '' },
+                            },
+                            {
+                              ...(metadata ?? {}),
+                              executingAgentId: agentId,
+                            } as ToolEndCallbackMetadata,
+                          );
+                        } catch (evidenceError) {
+                          logger.warn(
+                            `[ON_TOOL_EXECUTE] Filtered-output evidence delivery failed for ${tc.name}`,
+                            evidenceError,
+                          );
+                        }
+                      }
                       return filteredOutput;
                     }
 

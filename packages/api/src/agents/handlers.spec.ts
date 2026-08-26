@@ -661,7 +661,22 @@ describe('createToolExecuteHandler', () => {
       expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedValue);
       expect(result.artifact).toBeUndefined();
-      expect(toolEndCallback).not.toHaveBeenCalled();
+      /** The execution already happened, so identity-only evidence flows —
+       * with blank content and no artifact, never the blocked output. */
+      expect(toolEndCallback).toHaveBeenCalledTimes(1);
+      expect(toolEndCallback).toHaveBeenCalledWith(
+        {
+          input: {},
+          outputFiltered: true,
+          output: {
+            name: 'filtered_output_tool',
+            tool_call_id: 'call_filtered_output',
+            content: '',
+          },
+        },
+        expect.any(Object),
+      );
+      expect(JSON.stringify(toolEndCallback.mock.calls)).not.toContain(protectedValue);
     });
 
     it('supplies the executed arguments alongside the output to the tool end callback', async () => {
@@ -802,7 +817,13 @@ describe('createToolExecuteHandler', () => {
       expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedValue);
       expect(result.artifact).toBeUndefined();
-      expect(toolEndCallback).not.toHaveBeenCalled();
+      /** Execution identity flows despite the blocked output; the protected
+       * content itself never reaches the callback. */
+      expect(toolEndCallback).toHaveBeenCalledWith(
+        expect.objectContaining({ outputFiltered: true }),
+        expect.any(Object),
+      );
+      expect(JSON.stringify(toolEndCallback.mock.calls)).not.toContain(protectedValue);
     });
 
     it('fails closed when tool output cannot be completely traversed', async () => {
@@ -854,7 +875,14 @@ describe('createToolExecuteHandler', () => {
       expect(result.status).toBe('error');
       expect(result.errorMessage).toContain('could not be completely inspected');
       expect(result.artifact).toBeUndefined();
-      expect(toolEndCallback).not.toHaveBeenCalled();
+      /** The tool did execute; only its uninspectable output is withheld. */
+      expect(toolEndCallback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          outputFiltered: true,
+          output: expect.objectContaining({ content: '' }),
+        }),
+        expect.any(Object),
+      );
     });
   });
 

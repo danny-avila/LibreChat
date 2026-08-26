@@ -214,7 +214,12 @@ function matchesExpectedAction(
 }
 
 export interface AgentEventActionRecorder {
-  observeToolEnd(data: { input?: unknown; backgroundDelivery?: boolean; output?: unknown }): void;
+  observeToolEnd(data: {
+    input?: unknown;
+    backgroundDelivery?: boolean;
+    outputFiltered?: boolean;
+    output?: unknown;
+  }): void;
   read(): AgentEventAppliedAction | undefined;
 }
 
@@ -244,6 +249,21 @@ export function createAgentEventActionRecorder(
        * never proof that THIS invocation performed its action. */
       if (data.backgroundDelivery === true) {
         return;
+      }
+      /** Policy-withheld output is still proof of a successful foreground
+       * execution — but with the content blank, a background launch handle
+       * would be indistinguishable from a real result, so a call the model
+       * detached can never qualify through this shape. */
+      if (data.outputFiltered === true) {
+        const parsedInput = parseArguments(data.input);
+        if (
+          parsedInput != null &&
+          typeof parsedInput === 'object' &&
+          !Array.isArray(parsedInput) &&
+          (parsedInput as Record<string, unknown>).run_in_background === true
+        ) {
+          return;
+        }
       }
       const output = data.output as
         | { name?: unknown; tool_call_id?: unknown; content?: unknown; status?: unknown }

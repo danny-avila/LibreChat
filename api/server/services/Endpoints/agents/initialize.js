@@ -319,6 +319,11 @@ const initializeClient = async ({
         logger.warn('[toolEndCallback] Event actor action observer failed', observerError);
       }
     }
+    /** Policy-withheld outputs exist solely as execution evidence for the
+     * observer above; nothing may flow to artifact processing. */
+    if (data?.outputFiltered === true) {
+      return;
+    }
     const node = typeof metadata.langgraph_node === 'string' ? metadata.langgraph_node : '';
     const nodeAgentId = node.startsWith(GraphNodeKeys.TOOLS)
       ? node.slice(GraphNodeKeys.TOOLS.length)

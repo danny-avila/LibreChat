@@ -4398,6 +4398,13 @@ describe('ResumableAgentController resume metadata', () => {
       undefined,
       { primeInvokedSkills: async () => undefined },
     ],
+    [
+      'background-capable expected action',
+      { toolDefinitions: [], backgroundToolNames: ['submit_move_mcp_chess'] },
+      { eventDriven: { checkpointForks: true } },
+      undefined,
+      undefined,
+    ],
   ])(
     'keeps %s event actors on the existing resumable path',
     async (_label, agent, config, agentConfigs, clientOptions) => {

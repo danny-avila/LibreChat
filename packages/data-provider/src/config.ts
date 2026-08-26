@@ -72,6 +72,7 @@ export const excludedKeys = new Set([
   'agentEventBinding',
   'agentEventActor',
   'agentEventActorReconciliations',
+  'agentEventActorEpoch',
   'subagentThread',
   'title',
   'iconURL',

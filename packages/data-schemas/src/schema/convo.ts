@@ -145,6 +145,13 @@ const convoSchema: Schema<IConversation> = new Schema(
       default: undefined,
       select: false,
     },
+    /** Bumped by every legacy-path event so a concurrently prepared fork can
+     * never commit past an invalidation the head fields alone cannot show. */
+    agentEventActorEpoch: {
+      type: Number,
+      default: undefined,
+      select: false,
+    },
     tags: {
       type: [String],
       default: [],

@@ -1936,11 +1936,28 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           client?.options?.primeInvokedSkills != null ||
           (client?.options?.agent?.alwaysApplySkillPrimes?.length ?? 0) > 0 ||
           (client?.options?.agent?.manualSkillPrimes?.length ?? 0) > 0;
+        /** A background-opted expected action can detach: dispatch returns a
+         * launch handle the evidence fences correctly reject, and the later
+         * completion is provenance-marked as another turn's work — so a fork
+         * would classify actionless and settle before the external effect
+         * lands, with no receipt to stop a retry from dispatching it again.
+         * The name comparison mirrors matchesExpectedAction's MCP suffix. */
+        const expectedActionToolName = agentEventDelivery?.expectedAction?.toolName;
+        const eventActorActionMayDetach =
+          typeof expectedActionToolName === 'string' &&
+          eventActorAgents.some((agent) =>
+            (agent.backgroundToolNames ?? []).some(
+              (name) =>
+                name === expectedActionToolName ||
+                name.startsWith(`${expectedActionToolName}_mcp_`),
+            ),
+          );
         const canUseEventActorFork =
           checkpointForksEnabled &&
           agentsConfig?.checkpointer?.type !== 'memory' &&
           !eventActorMayPause &&
           !eventActorHasSkillPrimes &&
+          !eventActorActionMayDetach &&
           agentEventDelivery?.event != null &&
           agentEventDelivery.expectedAction != null &&
           typeof eventTaskId === 'string' &&

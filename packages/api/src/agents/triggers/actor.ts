@@ -90,6 +90,7 @@ export async function executeAgentEventActor<T>(
   let value: T | undefined;
   let invocationError: unknown;
   let observedState: IAgentEventActorState | null | undefined;
+  let observedEpoch: number | undefined;
   const adapter: EventActorHostAdapter<EventActorEvent, EventActorResult> = {
     async prepare(request, context) {
       if (context.signal.aborted) {
@@ -111,6 +112,7 @@ export async function executeAgentEventActor<T>(
       }
       const state = snapshot.state;
       observedState = state;
+      observedEpoch = snapshot.epoch;
       const head = toHead(input.conversationId, state);
       if (state == null || state.requiresColdStart === true) {
         return { status: 'checkpoint_unavailable', head };
@@ -241,7 +243,7 @@ export async function executeAgentEventActor<T>(
       if (typeof appliedCheckpointId !== 'string' || appliedCheckpointId.length === 0) {
         throw new Error('Applied event actor checkpoint is missing its id');
       }
-      if (observedState === undefined) {
+      if (observedState === undefined || observedEpoch === undefined) {
         throw new Error('Event actor commit is missing its prepared host state');
       }
       const expectedHeadCheckpoint = request.expectedHead.checkpoint;
@@ -270,6 +272,10 @@ export async function executeAgentEventActor<T>(
         invocationId: request.invocation.invocationId,
         action: request.result.action,
         ...(expected == null ? {} : { expected }),
+        /** Legacy-path invalidations against headless or already cold-marked
+         * actors are visible ONLY through the epoch; the CAS must require the
+         * exact epoch observed at preparation. */
+        expectedEpoch: observedEpoch,
         checkpoint: {
           threadId: request.checkpoint.threadId,
           checkpointId: appliedCheckpointId,

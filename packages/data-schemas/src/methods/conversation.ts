@@ -255,6 +255,7 @@ export interface ConversationMethods {
     invocationId: string;
     action: IAgentEventActorReconciliation['action'];
     expected?: IAgentEventActorState;
+    expectedEpoch: number;
     checkpoint: IAgentEventActorCheckpoint;
   }): Promise<AgentEventActorCommitResult>;
   invalidateAgentEventActorState(input: {
@@ -498,13 +499,14 @@ export function createConversationMethods(
       ...subagentLeaseTenantFilter(input.tenantId),
       ...activeExpirationFilter<IConversation>(),
     })
-      .select('+agentEventActor +agentEventActorReconciliations')
+      .select('+agentEventActor +agentEventActorReconciliations +agentEventActorEpoch')
       .lean<IConversation>();
     return conversation == null
       ? undefined
       : {
           state: conversation.agentEventActor ?? null,
           reconciliations: conversation.agentEventActorReconciliations ?? [],
+          epoch: conversation.agentEventActorEpoch ?? 0,
         };
   }
 
@@ -516,14 +518,20 @@ export function createConversationMethods(
     invocationId: string;
     action: IAgentEventActorReconciliation['action'];
     expected?: IAgentEventActorState;
+    expectedEpoch: number;
     checkpoint: IAgentEventActorCheckpoint;
   }): Promise<AgentEventActorCommitResult> {
     if (input.checkpoint.threadId !== input.conversationId) {
       throw new Error('Event actor checkpoint changed its logical thread');
     }
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
-    const expectedFilter: FilterQuery<IConversation> =
-      input.expected == null
+    /** A legacy turn against a headless or already cold-marked actor leaves
+     * the head fields unchanged, so the CAS must also require the invalidation
+     * epoch observed at preparation. `null` matches a document that has never
+     * been invalidated. */
+    const expectedFilter: FilterQuery<IConversation> = {
+      agentEventActorEpoch: input.expectedEpoch === 0 ? null : input.expectedEpoch,
+      ...(input.expected == null
         ? { agentEventActor: { $exists: false } }
         : {
             'agentEventActor.generation': input.expected.generation,
@@ -532,7 +540,8 @@ export function createConversationMethods(
             'agentEventActor.checkpoint.checkpointNs': input.expected.checkpoint.checkpointNs,
             'agentEventActor.requiresColdStart':
               input.expected.requiresColdStart === true ? true : { $ne: true },
-          };
+          }),
+    };
     const nextState: IAgentEventActorState = {
       generation: (input.expected?.generation ?? 0) + 1,
       checkpoint: input.checkpoint,
@@ -591,25 +600,42 @@ export function createConversationMethods(
     tenantId?: string;
   }): Promise<boolean> {
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
-    const invalidated = await Conversation.findOneAndUpdate(
-      {
-        user: input.user,
-        conversationId: input.conversationId,
-        subagentThread: { $exists: true },
-        agentEventBinding: { $exists: true },
-        agentEventActor: { $exists: true },
-        agentEventActorReconciliations: {
-          $not: { $elemMatch: { status: { $ne: 'settled' } } },
-        },
-        ...subagentLeaseTenantFilter(input.tenantId),
-        ...activeExpirationFilter<IConversation>(),
+    const quiescent = {
+      user: input.user,
+      conversationId: input.conversationId,
+      subagentThread: { $exists: true },
+      agentEventBinding: { $exists: true },
+      agentEventActorReconciliations: {
+        $not: { $elemMatch: { status: { $ne: 'settled' } } },
       },
-      { $set: { 'agentEventActor.requiresColdStart': true } },
+      ...subagentLeaseTenantFilter(input.tenantId),
+      ...activeExpirationFilter<IConversation>(),
+    };
+    const invalidated = await Conversation.findOneAndUpdate(
+      { ...quiescent, agentEventActor: { $exists: true } },
+      {
+        $set: { 'agentEventActor.requiresColdStart': true },
+        $inc: { agentEventActorEpoch: 1 },
+      },
       { new: true, timestamps: false },
     )
       .select('+agentEventActor')
       .lean<IConversation>();
     if (invalidated != null) {
+      return true;
+    }
+    /** A headless or already cold-marked actor shows no change through the
+     * head fields, yet a concurrently prepared fork could still commit state
+     * built from history read before this turn. The epoch is the durable,
+     * CAS-visible trace for exactly those invalidations. Setting the marker
+     * on a missing head would create a partial actor state, so only the
+     * epoch advances here. */
+    const epochOnly = await Conversation.findOneAndUpdate(
+      { ...quiescent, agentEventActor: { $exists: false } },
+      { $inc: { agentEventActorEpoch: 1 } },
+      { new: true, timestamps: false },
+    ).lean<IConversation>();
+    if (epochOnly != null) {
       return true;
     }
     const current = await getAgentEventActorSnapshot(input);

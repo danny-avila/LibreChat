@@ -50,6 +50,12 @@ export interface IAgentEventActorReconciliation {
 export interface IAgentEventActorSnapshot {
   state: IAgentEventActorState | null;
   reconciliations: IAgentEventActorReconciliation[];
+  /** Durable invalidation epoch. Every legacy-path event bumps it — including
+   * for headless or already cold-marked actors, where the marker alone leaves
+   * no CAS-visible trace — and the commit CAS requires the epoch observed at
+   * preparation, so a stale fork can never commit state built from history
+   * read before an intervening legacy turn. */
+  epoch: number;
 }
 
 export interface IAgentEventBindingRecord {
@@ -117,6 +123,8 @@ export interface IConversation extends Document {
   agentEventActor?: IAgentEventActorState;
   /** Private invocation proof: active lifecycle fences plus settled same-ID receipts. */
   agentEventActorReconciliations?: IAgentEventActorReconciliation[];
+  /** Private invalidation epoch; see {@link IAgentEventActorSnapshot.epoch}. */
+  agentEventActorEpoch?: number;
   assistant_id?: string;
   instructions?: string;
   stop?: string[];

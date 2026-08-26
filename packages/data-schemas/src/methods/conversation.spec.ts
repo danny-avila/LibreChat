@@ -4010,6 +4010,7 @@ describe('Conversation Operations', () => {
         tenantId: 'tenant-a',
         conversationId,
         invocationId: 'one',
+        expectedEpoch: 0,
         action: { toolName: 'submit_move' },
         checkpoint: checkpoint('one'),
       });
@@ -4025,6 +4026,7 @@ describe('Conversation Operations', () => {
         }),
       ).resolves.toMatchObject({
         state: first.state,
+        epoch: 0,
         reconciliations: [
           {
             invocationId: 'one',
@@ -4072,6 +4074,7 @@ describe('Conversation Operations', () => {
         tenantId: 'tenant-a',
         conversationId,
         invocationId: 'stale',
+        expectedEpoch: 0,
         action: { toolName: 'submit_move' },
         checkpoint: checkpoint('stale'),
       });
@@ -4083,6 +4086,7 @@ describe('Conversation Operations', () => {
         tenantId: 'tenant-a',
         conversationId,
         invocationId: 'two',
+        expectedEpoch: 0,
         action: { toolName: 'submit_move' },
         expected: first.state,
         checkpoint: checkpoint('two'),
@@ -4103,6 +4107,7 @@ describe('Conversation Operations', () => {
         tenantId: 'tenant-a',
         conversationId,
         invocationId: 'three',
+        expectedEpoch: 0,
         action: { toolName: 'submit_move' },
         expected: second.state,
         checkpoint: checkpoint('three'),
@@ -4125,6 +4130,7 @@ describe('Conversation Operations', () => {
         }),
       ).resolves.toMatchObject({
         state: third.state,
+        epoch: 0,
         reconciliations: [
           { invocationId: 'one', status: 'settled' },
           { invocationId: 'two', status: 'settled' },
@@ -4145,6 +4151,7 @@ describe('Conversation Operations', () => {
           tenantId: 'tenant-a',
           conversationId,
           invocationId: 'stale-warm',
+          expectedEpoch: 0,
           action: { toolName: 'submit_move' },
           expected: third.state,
           checkpoint: checkpoint('stale-warm'),
@@ -4171,6 +4178,7 @@ describe('Conversation Operations', () => {
         }),
       ).resolves.toEqual({
         state: { ...third.state, requiresColdStart: true },
+        epoch: 1,
         reconciliations: expect.arrayContaining([
           expect.objectContaining({ invocationId: 'one', status: 'settled' }),
           expect.objectContaining({ invocationId: 'two', status: 'settled' }),
@@ -4183,6 +4191,7 @@ describe('Conversation Operations', () => {
         tenantId: 'tenant-a',
         conversationId,
         invocationId: 'four',
+        expectedEpoch: 1,
         action: { toolName: 'submit_move' },
         expected: { ...third.state!, requiresColdStart: true },
         checkpoint: checkpoint('four'),
@@ -4260,6 +4269,7 @@ describe('Conversation Operations', () => {
         user: 'actor-reconcile-user',
         conversationId,
         invocationId: 'event-one',
+        expectedEpoch: 0,
         action: { toolName: 'submit_move' },
         checkpoint,
       });
@@ -4317,6 +4327,7 @@ describe('Conversation Operations', () => {
         }),
       ).resolves.toEqual({
         state: first.state,
+        epoch: 0,
         reconciliations: [
           expect.objectContaining({ invocationId: 'event-one', status: 'settled' }),
           reconciliation,
@@ -4333,6 +4344,7 @@ describe('Conversation Operations', () => {
           user: 'actor-reconcile-user',
           conversationId,
           invocationId: 'event-blocked',
+          expectedEpoch: 0,
           action: { toolName: 'submit_move' },
           expected: first.state,
           checkpoint: { ...checkpoint, checkpointId: 'checkpoint-two' },
@@ -4438,6 +4450,7 @@ describe('Conversation Operations', () => {
         }),
       ).resolves.toEqual({
         state: { ...first.state!, requiresColdStart: true },
+        epoch: 0,
         reconciliations: [
           expect.objectContaining({
             invocationId: 'event-one',
@@ -4481,6 +4494,7 @@ describe('Conversation Operations', () => {
         }),
       ).resolves.toEqual({
         state: { ...first.state!, requiresColdStart: true },
+        epoch: 0,
         reconciliations: [
           expect.objectContaining({ invocationId: 'event-one', status: 'settled' }),
           expect.objectContaining({ invocationId: 'event-conflict', status: 'settled' }),
@@ -4624,11 +4638,147 @@ describe('Conversation Operations', () => {
         }),
       ).resolves.toEqual({
         state: null,
+        epoch: 0,
         reconciliations: [
           expect.objectContaining({ invocationId: 'event-recent', status: 'settled' }),
           expect.objectContaining({ invocationId: 'event-next', status: 'invocation_pending' }),
         ],
       });
+    });
+
+    it('versions every legacy invalidation so a stale prepared fork cannot commit past it', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'actor-epoch-user',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: {
+          bindingId: `evtbind_${'a'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      const owner = { user: 'actor-epoch-user', conversationId };
+      const checkpoint = (id: string) => ({
+        threadId: conversationId,
+        checkpointId: `checkpoint-${id}`,
+        checkpointNs: `event-actor/${id}`,
+      });
+      /** A headless actor has nothing for the cold-start marker to mark, so
+       * the epoch is the invalidation's only durable trace. */
+      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+        state: null,
+        epoch: 0,
+      });
+      await expect(methods.invalidateAgentEventActorState(owner)).resolves.toBe(true);
+      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+        state: null,
+        epoch: 1,
+      });
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          ...owner,
+          reconciliation: {
+            invocationId: 'event-stale-cold',
+            status: 'invocation_pending',
+            checkpoint: checkpoint('stale-cold'),
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        }),
+      ).resolves.toBe(true);
+      /** The stale fork prepared against epoch 0; its expected-absent head
+       * still matches, so only the epoch defeats the commit. */
+      await expect(
+        methods.commitAgentEventActorState({
+          ...owner,
+          invocationId: 'event-stale-cold',
+          action: { toolName: 'submit_move' },
+          expectedEpoch: 0,
+          checkpoint: checkpoint('stale-cold'),
+        }),
+      ).resolves.toEqual({ status: 'stale' });
+      await expect(
+        methods.commitAgentEventActorState({
+          ...owner,
+          invocationId: 'event-stale-cold',
+          action: { toolName: 'submit_move' },
+          expectedEpoch: 1,
+          checkpoint: checkpoint('stale-cold'),
+        }),
+      ).resolves.toMatchObject({ status: 'committed', state: { generation: 1 } });
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          ...owner,
+          reconciliation: {
+            invocationId: 'event-stale-cold',
+            status: 'history_persisted',
+            checkpoint: checkpoint('stale-cold'),
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.resolveAgentEventActorReconciliation({
+          ...owner,
+          invocationId: 'event-stale-cold',
+          checkpoint: checkpoint('stale-cold'),
+          resolution: 'checkpoint_verified',
+        }),
+      ).resolves.toBe(true);
+      /** An already cold-marked head shows no field change from a second
+       * invalidation either — the epoch must still advance every time. */
+      await expect(methods.invalidateAgentEventActorState(owner)).resolves.toBe(true);
+      await expect(methods.invalidateAgentEventActorState(owner)).resolves.toBe(true);
+      const snapshot = await methods.getAgentEventActorSnapshot(owner);
+      expect(snapshot).toMatchObject({
+        state: { generation: 1, requiresColdStart: true },
+        epoch: 3,
+      });
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          ...owner,
+          reconciliation: {
+            invocationId: 'event-stale-rebuild',
+            status: 'invocation_pending',
+            checkpoint: checkpoint('stale-rebuild'),
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.commitAgentEventActorState({
+          ...owner,
+          invocationId: 'event-stale-rebuild',
+          action: { toolName: 'submit_move' },
+          expected: { ...snapshot!.state!, requiresColdStart: true },
+          expectedEpoch: 2,
+          checkpoint: checkpoint('stale-rebuild'),
+        }),
+      ).resolves.toMatchObject({ status: 'stale' });
+      await expect(
+        methods.commitAgentEventActorState({
+          ...owner,
+          invocationId: 'event-stale-rebuild',
+          action: { toolName: 'submit_move' },
+          expected: { ...snapshot!.state!, requiresColdStart: true },
+          expectedEpoch: 3,
+          checkpoint: checkpoint('stale-rebuild'),
+        }),
+      ).resolves.toMatchObject({ status: 'committed', state: { generation: 2 } });
     });
 
     it('refuses new invocations rather than evicting unexpired receipts at the cap', async () => {
@@ -4723,6 +4873,7 @@ describe('Conversation Operations', () => {
         }),
       ).resolves.toEqual({
         state: null,
+        epoch: 0,
         reconciliations: [
           expect.objectContaining({ invocationId: 'event-at-cap', status: 'invocation_pending' }),
         ],

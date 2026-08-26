@@ -27,10 +27,12 @@ const mockedGetCheckpointer = jest.mocked(getAgentCheckpointer);
 describe('event actor host adapter', () => {
   const conversationId = 'actor-thread';
   let state: IAgentEventActorState | null;
+  let epoch = 0;
   let nextCheckpoint = 1;
 
   beforeEach(() => {
     state = null;
+    epoch = 0;
     nextCheckpoint = 1;
     jest.clearAllMocks();
     mockedGetCheckpointer.mockResolvedValue({} as never);
@@ -50,9 +52,11 @@ describe('event actor host adapter', () => {
     getSnapshot: jest.fn(async () => ({
       state,
       reconciliations: [] as IAgentEventActorReconciliation[],
+      epoch,
     })),
-    commitState: jest.fn(async ({ expected, checkpoint }) => {
+    commitState: jest.fn(async ({ expected, expectedEpoch, checkpoint }) => {
       if (
+        expectedEpoch !== epoch ||
         (state == null && expected != null) ||
         (state != null &&
           (expected == null ||
@@ -205,6 +209,41 @@ describe('event actor host adapter', () => {
       }),
     );
     expect(state?.requiresColdStart).toBeUndefined();
+  });
+
+  it('cannot commit a cold rebuild past a legacy turn its history predates', async () => {
+    const dependencies = deps();
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId: 'event-stale-cold',
+          event: { id: 'event-stale-cold' },
+          signal: new AbortController().signal,
+          invoke: async () => {
+            /** A concurrent legacy delivery lands after this cold rebuild
+             * loaded its history. With no head to mark and nothing else to
+             * change, the invalidation epoch is its only durable trace. */
+            epoch += 1;
+            return 'response';
+          },
+          readAppliedAction: () => ({ toolName: 'submit_move' }),
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('commit_conflict reconciliation');
+
+    expect(state).toBeNull();
+    expect(dependencies.commitState).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedEpoch: 0 }),
+    );
+    expect(dependencies.recordReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reconciliation: expect.objectContaining({ status: 'commit_conflict' }),
+      }),
+    );
   });
 
   it('cannot clear a cold-start marker written after warm preparation', async () => {
