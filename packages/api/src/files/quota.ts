@@ -52,6 +52,8 @@ export type StorageScope = {
   readonly storageLimit: number | undefined;
   /** Usage per exclusion scope, so one request re-reads the ledger at most once each. */
   readonly usageByScope: Map<string, StorageUsageEntry>;
+  /** In-flight ledger reads, so concurrent writes share one query per scope. */
+  readonly pendingReads: Map<string, Promise<number>>;
 };
 
 type StorageUsageEntry = {
@@ -62,7 +64,13 @@ type StorageUsageEntry = {
 type ScopeSource = {
   tenantId?: string;
   user?: { id?: string; tenantId?: string };
-  config?: { fileConfig?: Parameters<typeof mergeFileConfig>[0] };
+  /**
+   * Resolved app config. Required, because it is what distinguishes a real request
+   * from a reduced copy of one: without it there is no way to tell "no cap is
+   * configured" from "this object never carried the cap", and the second silently
+   * disables the quota.
+   */
+  config: { fileConfig?: Parameters<typeof mergeFileConfig>[0] };
 };
 
 /** Keyed by request identity so the scope neither mutates the request nor outlives it. */
@@ -85,6 +93,21 @@ function normalizeBytes(bytes: number | null | undefined): number {
 }
 
 /**
+ * Rejects byte counts that cannot be charged. Usage sums only rows with `bytes > 0`,
+ * so persisting a negative or non-numeric count would create a row that is never
+ * counted against anyone — silently uncapped storage rather than a visible failure.
+ */
+function assertChargeableBytes(bytes: number | null | undefined, label: string): void {
+  if (bytes == null) {
+    return;
+  }
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`Refusing to persist ${label} with an uncountable byte size: ${String(bytes)}`);
+  }
+}
+
+/**
  * Resolves — and memoizes on the request — the scope every quota-checked write is
  * charged against. The request tenant outranks the user's own: remote-agent auth
  * authenticates users that carry no tenant of their own and supplies it per request.
@@ -100,11 +123,22 @@ export function resolveStorageScope(req: ScopeSource): StorageScope {
     throw new Error('Cannot resolve file storage scope without an authenticated user');
   }
 
+  /* A stripped request object structurally satisfies the rest of this shape, and
+   * resolving one would mint a scope with no tenant and no cap — re-creating both the
+   * parallel-ledger and quota-disabled failures. Requiring the config makes that a
+   * loud failure at the boundary instead of a silent one at the ledger. */
+  if (req.config == null) {
+    throw new Error(
+      'Cannot resolve file storage scope without request config; pass the request that carries it, or the scope already resolved from it',
+    );
+  }
+
   const scope = {
     userId,
     tenantId: req.tenantId ?? req.user?.tenantId,
     storageLimit: mergeFileConfig(req.config?.fileConfig).storageLimit,
     usageByScope: new Map<string, StorageUsageEntry>(),
+    pendingReads: new Map<string, Promise<number>>(),
   } as StorageScope;
 
   scopesByRequest.set(req, scope);
@@ -158,11 +192,13 @@ function skillFilesMatch(
  * can each pass before either has committed its row, so the cap is approximate under
  * parallel uploads by one user — bounded by their in-flight request count.
  */
-async function assertWithinLimit(
+async function reserveWithinLimit(
   scope: StorageScope,
   incomingBytes: number,
   exclusion: UsageExclusion,
   getUserStorageUsage: GetUserStorageUsage,
+  excludedBytes: number,
+  charge: number,
 ): Promise<void> {
   if (scope.storageLimit === undefined) {
     return;
@@ -174,17 +210,35 @@ async function assertWithinLimit(
     ...exclusion,
   };
   const cacheKey = getUsageCacheKey(params);
-  let entry = scope.usageByScope.get(cacheKey);
-  if (entry === undefined) {
-    entry = { params, currentUsage: await getUserStorageUsage(params) };
-    scope.usageByScope.set(cacheKey, entry);
+
+  if (!scope.usageByScope.has(cacheKey)) {
+    /* Concurrent writes on one scope share a single read rather than each issuing their
+     * own and then all deciding against the same pre-write total. */
+    let inflight = scope.pendingReads.get(cacheKey);
+    if (inflight === undefined) {
+      inflight = getUserStorageUsage(params);
+      scope.pendingReads.set(cacheKey, inflight);
+    }
+    try {
+      const currentUsage = await inflight;
+      if (!scope.usageByScope.has(cacheKey)) {
+        scope.usageByScope.set(cacheKey, { params, currentUsage });
+      }
+    } finally {
+      scope.pendingReads.delete(cacheKey);
+    }
   }
 
-  if (entry.currentUsage + incomingBytes <= scope.storageLimit) {
-    return;
+  /* Nothing may await between reading the total and charging it: that gap is what lets
+   * two writes in one batch each observe the same headroom and both take it. */
+  const entry = scope.usageByScope.get(cacheKey) as StorageUsageEntry;
+  if (entry.currentUsage + incomingBytes > scope.storageLimit) {
+    /* The total omits the row being replaced, so reporting it verbatim would tell an
+     * over-limit user they are under the cap. Add the excluded row back for the message. */
+    throw new FileStorageLimitError(scope.storageLimit, entry.currentUsage + excludedBytes);
   }
 
-  throw new FileStorageLimitError(scope.storageLimit, entry.currentUsage);
+  adjustCommittedBytes(scope, charge, exclusion);
 }
 
 /**
@@ -192,7 +246,7 @@ async function assertWithinLimit(
  * them, so a second write in the same request sees the first without re-querying.
  * Scopes excluding the row just written are left alone — their totals already omit it.
  */
-function recordCommittedBytes(scope: StorageScope, bytes: number, written: UsageExclusion): void {
+function adjustCommittedBytes(scope: StorageScope, bytes: number, written: UsageExclusion): void {
   if (bytes === 0) {
     return;
   }
@@ -268,15 +322,23 @@ async function persistWithQuota<TRow extends LedgerRow, TResult>(
   ownerField: OwnerField,
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {
+  assertChargeableBytes(row.bytes, `${ownerField === 'author' ? 'skill file' : 'file'} row`);
+
   /* Owner and tenant both come from the scope. A row written to a different owner's
    * ledger than the one just checked would leave that owner's usage unenforced, so the
    * queried ledger and the written ledger are made the same by construction. */
   const scopedRow: TRow = { ...row, [ownerField]: scope.userId, tenantId: scope.tenantId };
   const bytes = normalizeBytes(scopedRow.bytes);
   const exclusion = exclusionFor(scopedRow);
+  const replaced = normalizeBytes(replacedBytes);
 
+  /* The charge is reserved as part of the check, so a batch running under `Promise.all`
+   * cannot have both writes observe the same headroom and both take it. The reservation
+   * is released if the write fails, so a failed row does not consume the cap for the
+   * rest of the request. */
+  const charge = bytes - replaced;
   try {
-    await assertWithinLimit(scope, bytes, exclusion, getUserStorageUsage);
+    await reserveWithinLimit(scope, bytes, exclusion, getUserStorageUsage, replaced, charge);
   } catch (error) {
     if (isFileStorageLimitError(error)) {
       await runRollback(rollback, onRollbackError);
@@ -284,9 +346,12 @@ async function persistWithQuota<TRow extends LedgerRow, TResult>(
     throw error;
   }
 
-  const result = await write(scopedRow);
-  recordCommittedBytes(scope, bytes - normalizeBytes(replacedBytes), exclusion);
-  return result;
+  try {
+    return await write(scopedRow);
+  } catch (error) {
+    adjustCommittedBytes(scope, -charge, exclusion);
+    throw error;
+  }
 }
 
 export type FileRow = LedgerRow & {
@@ -332,12 +397,19 @@ export function persistSkillFileWithQuota<TRow extends SkillFileRow, TResult>(
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {
   const { replacing, ...rest } = params;
+  const replacedByRequester =
+    replacing != null && idsMatch(replacing.author as string, params.scope.userId);
+
   return persistWithQuota(
-    rest,
+    {
+      ...rest,
+      /* Only a row already on this ledger may be netted off. Overwriting a file another
+       * author owns leaves their bytes on their ledger, so subtracting them here would
+       * understate — and could drive negative — the requester's own usage. */
+      replacedBytes: replacedByRequester ? rest.replacedBytes : 0,
+    },
     (row) => {
-      const replacedByAuthor =
-        replacing != null && idsMatch(replacing.author as string, params.scope.userId);
-      if (!replacedByAuthor || row.skillId == null || row.relativePath == null) {
+      if (!replacedByRequester || row.skillId == null || row.relativePath == null) {
         return {};
       }
       return {

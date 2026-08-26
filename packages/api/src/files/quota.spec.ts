@@ -14,7 +14,7 @@ const userId = '64f000000000000000000001';
 type TestRequest = {
   tenantId?: string;
   user?: { id?: string; tenantId?: string };
-  config?: { fileConfig?: { storageLimit?: number } };
+  config: { fileConfig?: { storageLimit?: number } };
 };
 
 /** `storageLimit` is authored in MB and merged to bytes, matching librechat.yaml. */
@@ -72,7 +72,16 @@ describe('resolveStorageScope', () => {
   });
 
   it('refuses to resolve without an authenticated user', () => {
-    expect(() => resolveStorageScope({ user: {} })).toThrow(/authenticated user/i);
+    expect(() => resolveStorageScope({ user: {}, config: {} })).toThrow(/authenticated user/i);
+  });
+
+  /* A stripped request structurally satisfies the rest of the shape. Resolving one would
+   * mint a scope with no tenant and no cap, which disables the quota silently — the
+   * failure has to happen at the boundary instead. */
+  it('refuses to resolve a request that carries no config', () => {
+    expect(() => resolveStorageScope({ user: { id: userId } } as unknown as TestRequest)).toThrow(
+      /request config/i,
+    );
   });
 });
 
@@ -308,6 +317,79 @@ describe('persistFileWithQuota', () => {
     expect(write).toHaveBeenCalledWith(expect.objectContaining({ user: userId }));
   });
 
+  /* Two writes on one scope under `Promise.all` would otherwise both measure the same
+   * usage and both pass, since neither has recorded anything when the other checks. */
+  it('reserves bytes so concurrent writes on one scope cannot both fit', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte - 10);
+    const write = jest.fn(async (row: { bytes: number }) => row);
+
+    const results = await Promise.allSettled([
+      persistFileWithQuota(
+        { scope, row: { bytes: 8 }, write, rollback: null, getUserStorageUsage },
+        noRollbackErrors,
+      ),
+      persistFileWithQuota(
+        { scope, row: { bytes: 8 }, write, rollback: null, getUserStorageUsage },
+        noRollbackErrors,
+      ),
+    ]);
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the reservation when the write itself fails', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte - 10);
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 8 },
+          write: async () => {
+            throw new Error('mongo down');
+          },
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toThrow('mongo down');
+
+    /* The failed row must not keep consuming the cap for the rest of the request. */
+    const write = jest.fn(async (row: { bytes: number }) => row);
+    await persistFileWithQuota(
+      { scope, row: { bytes: 8 }, write, rollback: null, getUserStorageUsage },
+      noRollbackErrors,
+    );
+
+    expect(write).toHaveBeenCalled();
+  });
+
+  /* Usage sums only rows with `bytes > 0`, so a negative count would persist a row that
+   * no later quota query can ever see. */
+  it('refuses to persist a row whose byte count cannot be charged', async () => {
+    const write = jest.fn();
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: -5 },
+          write,
+          rollback: null,
+          getUserStorageUsage: usageOf(0),
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toThrow(/uncountable byte size/i);
+
+    expect(write).not.toHaveBeenCalled();
+  });
+
   describe('when the user is already over the limit', () => {
     /* Quotas get switched on, or lowered, for accounts already holding more than the
      * new cap. Everything stops until they free space, and the error has to say by
@@ -330,6 +412,28 @@ describe('persistFileWithQuota', () => {
       expect(error).toMatchObject({ storageLimit: megabyte, currentUsage: 5 * megabyte });
       expect(error.message).toContain('5MB');
       expect(error.message).toContain('1MB');
+    });
+
+    it('reports usage including the row a rejected replacement would have replaced', async () => {
+      /* The check excludes the replaced row, so reporting that view verbatim would tell
+       * an over-limit user they are under the cap. */
+      const error = await persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 4 * megabyte, file_id: 'file-1' },
+          replacedBytes: 2 * megabyte,
+          write: jest.fn(),
+          rollback: null,
+          getUserStorageUsage: usageOf(3 * megabyte),
+        },
+        noRollbackErrors,
+      ).catch((caught: unknown) => caught);
+
+      if (!isFileStorageLimitError(error)) {
+        throw new Error('expected a storage limit rejection');
+      }
+      expect(error.currentUsage).toBe(5 * megabyte);
+      expect(error.message).toContain('5MB');
     });
 
     it('accepts writes again once deletions bring usage back under the cap', async () => {
@@ -426,6 +530,40 @@ describe('persistSkillFileWithQuota', () => {
     );
 
     expect(write).toHaveBeenCalledWith(expect.objectContaining({ author: userId }));
+  });
+
+  it('does not net off bytes owned by another skill author', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte - 10);
+
+    await persistSkillFileWithQuota(
+      {
+        scope,
+        row: { ...skillRow, bytes: 6 },
+        replacing: { author: '64f0000000000000000000ff' },
+        replacedBytes: 6,
+        write: async (row) => row,
+        rollback: null,
+        getUserStorageUsage,
+      },
+      noRollbackErrors,
+    );
+
+    /* The other author's 6 bytes stayed on their ledger, so this request has consumed
+     * the full 6 and the remaining headroom is 4 — not 10. */
+    await expect(
+      persistSkillFileWithQuota(
+        {
+          scope,
+          row: { ...skillRow, bytes: 6, relativePath: 'scripts/b.sh' },
+          replacing: null,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
   });
 
   it('stamps the resolved tenant onto skill rows too', async () => {
