@@ -173,7 +173,7 @@ function SharedView() {
   );
 
   let content: JSX.Element;
-  if (isLoading) {
+  if (!isAuthReady || isLoading) {
     content = (
       <div className="flex h-screen items-center justify-center">
         <Spinner className="" />

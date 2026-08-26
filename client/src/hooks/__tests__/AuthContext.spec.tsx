@@ -134,6 +134,19 @@ function renderOptionalProvider() {
   );
 }
 
+describe('AuthContextProvider — test mode', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('is ready without starting silent refresh', () => {
+    const { getByTestId } = renderProvider();
+
+    expect(getByTestId('consumer')).toHaveAttribute('data-auth-ready', 'true');
+    expect(mockRefreshMutate).not.toHaveBeenCalled();
+  });
+});
+
 describe('AuthContextProvider — login onError redirect handling', () => {
   beforeEach(() => {
     jest.clearAllMocks();

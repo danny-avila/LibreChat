@@ -68,7 +68,7 @@ const AuthContextProvider = ({
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [isAuthReady, setIsAuthReady] = useState<boolean>(false);
+  const [isAuthReady, setIsAuthReady] = useState<boolean>(authConfig?.test === true);
   const setQueriesEnabled = useSetRecoilState<boolean>(store.queriesEnabled);
 
   const userRoleName = user?.role ?? '';
