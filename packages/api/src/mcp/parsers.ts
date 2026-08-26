@@ -94,10 +94,22 @@ function isImageContent(item: t.ToolContentPart): item is t.ImageContent {
   return item.type === 'image';
 }
 
+/**
+ * Serializes `structuredContent` (MCP 2025-06-18 spec) for tools that return
+ * structured output without any `content` entries.
+ */
+function getStructuredContentText(result: t.MCPToolCallResponse): string | undefined {
+  const structured = result?.structuredContent;
+  if (structured != null && typeof structured === 'object') {
+    return JSON.stringify(structured, null, 2);
+  }
+  return undefined;
+}
+
 function parseAsString(result: t.MCPToolCallResponse): string {
   const content = result?.content ?? [];
   if (!content.length) {
-    return '(No response)';
+    return getStructuredContentText(result) ?? '(No response)';
   }
 
   const text = content
@@ -148,7 +160,7 @@ export function formatToolContent(
 
   const content = result?.content ?? [];
   if (!content.length) {
-    return ['(No response)', undefined];
+    return [getStructuredContentText(result) ?? '(No response)', undefined];
   }
 
   const imageUrls: t.FormattedContent[] = [];
