@@ -7,6 +7,7 @@ export * from './config';
 export * from './checkpointer';
 export * from './contact';
 export * from './context';
+export * from './control';
 export * from './conversation';
 export * from './discovery';
 export * from './edges';

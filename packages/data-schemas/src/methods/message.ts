@@ -1,9 +1,9 @@
 import { HITL_MESSAGE_FILTER_FIELDS, RetentionMode } from 'librechat-data-provider';
 import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model, Types } from 'mongoose';
-import type { AppConfig, IMessage } from '~/types';
+import type { AppConfig, IConversation, IMessage } from '~/types';
+import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
-import { createFallbackRetentionDate } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 
@@ -13,6 +13,11 @@ const MAX_STORED_USER_SUBMITTED_PATHS = 256;
 const MAX_NORMALIZED_USER_SUBMITTED_PATHS = MAX_STORED_USER_SUBMITTED_PATHS + 1;
 const MAX_STORED_USER_SUBMITTED_FIELD_PATHS = MAX_NORMALIZED_USER_SUBMITTED_PATHS;
 const MAX_USER_SUBMITTED_PATH_LENGTH = 2048;
+const MAX_SUBAGENT_CONTROL_RECEIPTS = 64;
+const MAX_SUBAGENT_CONTROL_MESSAGE_LENGTH = 4 * 1024;
+/** One owner admits at most 64 terminal control invocations. The optimistic
+ * writer therefore has enough rounds for every admitted receipt to converge. */
+const MAX_SUBAGENT_CONTROL_RECEIPT_CAS_ATTEMPTS = 64;
 const PROVENANCE_PATHS_UNION_FIELD = '__lcProvenancePathsUnion';
 const PROVENANCE_FIELD_PATHS_UNION_FIELD = '__lcProvenanceFieldPathsUnion';
 const HITL_MESSAGE_FILTER_FIELD_SET = new Set<string>(HITL_MESSAGE_FILTER_FIELDS);
@@ -115,6 +120,92 @@ function getStrictPipelineUpdate(Message: Model<IMessage>, update: Record<string
   delete candidate._id;
   delete candidate.tenantId;
   return Message.castObject(candidate) as unknown as Record<string, unknown>;
+}
+
+type StoredSubagentControlReceipt = NonNullable<
+  NonNullable<IMessage['subagentTask']>['controlReceipts']
+>[number];
+
+const terminalControlReceipt = (receipt: StoredSubagentControlReceipt): boolean =>
+  receipt.status === 'applied' || receipt.status === 'rejected' || receipt.status === 'failed';
+
+function retainSubagentControlReceipts(
+  current: StoredSubagentControlReceipt[],
+  receipt: StoredSubagentControlReceipt,
+): {
+  status: 'updated' | 'unchanged' | 'conflict' | 'capacity';
+  receipts: StoredSubagentControlReceipt[];
+} {
+  const existingIndex = current.findIndex(
+    (candidate) => candidate.invocationId === receipt.invocationId,
+  );
+  let merged: StoredSubagentControlReceipt[];
+  if (existingIndex < 0) {
+    merged = [...current, receipt];
+  } else {
+    const existing = current[existingIndex];
+    if (existing.fingerprint !== receipt.fingerprint) {
+      return { status: 'conflict', receipts: current };
+    }
+    if (
+      terminalControlReceipt(existing) ||
+      existing.status === receipt.status ||
+      (existing.status === 'accepted' && receipt.status === 'reserved')
+    ) {
+      return { status: 'unchanged', receipts: current };
+    }
+    merged = current.map((candidate, index) => (index === existingIndex ? receipt : candidate));
+  }
+  const accepted = merged.filter(
+    (candidate) => candidate.status === 'reserved' || candidate.status === 'accepted',
+  );
+  /** Reserved and accepted receipts are idempotency fences for commands that can
+   * still take effect. Never evict one to admit another receipt: report capacity
+   * so the caller refuses the command before mutating the live task. */
+  if (accepted.length > MAX_SUBAGENT_CONTROL_RECEIPTS) {
+    return { status: 'capacity', receipts: current };
+  }
+  const terminalAllowance = Math.max(0, MAX_SUBAGENT_CONTROL_RECEIPTS - accepted.length);
+  let terminal =
+    terminalAllowance === 0
+      ? []
+      : merged
+          .filter((candidate) => candidate.status !== 'reserved' && candidate.status !== 'accepted')
+          .sort(
+            (left, right) =>
+              left.createdAt.getTime() - right.createdAt.getTime() ||
+              left.invocationId.localeCompare(right.invocationId),
+          )
+          .slice(-terminalAllowance);
+  const advancesActiveFence =
+    existingIndex >= 0 &&
+    !terminalControlReceipt(current[existingIndex]) &&
+    terminalControlReceipt(receipt);
+  if (
+    advancesActiveFence &&
+    !terminal.some((candidate) => candidate.invocationId === receipt.invocationId)
+  ) {
+    /** A terminal transition for an active fence must outrank unrelated terminal
+     * history even though it retains the command's older occurrence timestamp. */
+    const otherAllowance = Math.max(0, terminalAllowance - 1);
+    terminal = [
+      ...(otherAllowance === 0
+        ? []
+        : terminal
+            .filter((candidate) => candidate.invocationId !== receipt.invocationId)
+            .slice(-otherAllowance)),
+      receipt,
+    ].sort(
+      (left, right) =>
+        left.createdAt.getTime() - right.createdAt.getTime() ||
+        left.invocationId.localeCompare(right.invocationId),
+    );
+  }
+  const receipts = [...accepted, ...terminal];
+  if (!receipts.some((candidate) => candidate.invocationId === receipt.invocationId)) {
+    return { status: 'capacity', receipts: current };
+  }
+  return { status: 'updated', receipts };
 }
 
 /**
@@ -283,6 +374,40 @@ export interface MessageMethods {
     params: Partial<IMessage> & { newMessageId?: string },
     metadata?: { context?: string },
   ): Promise<IMessage | null | undefined>;
+  recordSubagentTaskControlReceipt(input: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    tenantId?: string;
+    receipt: NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number];
+  }): Promise<boolean | 'unchanged' | 'conflict'>;
+  getSubagentTaskControlReceipt(input: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    invocationId: string;
+    tenantId?: string;
+  }): Promise<NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number] | null>;
+  getSubagentTaskControlReplay(input: {
+    userId: string;
+    parentConversationId: string;
+    taskId: string;
+    invocationId: string;
+    tenantId?: string;
+  }): Promise<{
+    receipt: NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number];
+    task: {
+      taskId: string;
+      threadId: string;
+      subagentType: string;
+      status: NonNullable<IMessage['subagentTask']>['status'];
+      resultAvailable: boolean;
+      resultClaimed: boolean;
+      pendingControls: number;
+      createdAt: Date;
+      updatedAt: Date;
+    };
+  } | null>;
   bulkSaveMessages(
     messages: Array<Partial<IMessage>>,
     overrideTimestamp?: boolean,
@@ -864,6 +989,253 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       }
       throw err;
     }
+  }
+
+  /**
+   * Atomically records one bounded parent-to-child control receipt on the
+   * durable task input. Terminal receipt states are monotonic, and accepted
+   * receipts are retained ahead of older terminal history when the bound fills.
+   */
+  async function recordSubagentTaskControlReceipt({
+    userId,
+    conversationId,
+    taskId,
+    tenantId,
+    receipt,
+  }: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    tenantId?: string;
+    receipt: NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number];
+  }): Promise<boolean | 'unchanged' | 'conflict'> {
+    const validActions = new Set(['steer', 'queue', 'interrupt', 'cancel', 'cancel_message']);
+    const validStatuses = new Set(['reserved', 'accepted', 'applied', 'rejected', 'failed']);
+    if (
+      userId.length === 0 ||
+      conversationId.length === 0 ||
+      conversationId.length > 256 ||
+      taskId.length === 0 ||
+      taskId.length > 256 ||
+      receipt.invocationId.length === 0 ||
+      receipt.invocationId.length > 128 ||
+      receipt.fingerprint.length === 0 ||
+      receipt.fingerprint.length > 128 ||
+      !validActions.has(receipt.action) ||
+      !validStatuses.has(receipt.status) ||
+      (receipt.controlId != null && receipt.controlId.length > 256) ||
+      (receipt.message != null && receipt.message.length > MAX_SUBAGENT_CONTROL_MESSAGE_LENGTH) ||
+      !Number.isFinite(receipt.createdAt.getTime()) ||
+      !Number.isFinite(receipt.updatedAt.getTime())
+    ) {
+      throw new TypeError('Invalid subagent task control receipt');
+    }
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const recordsTerminalRejection =
+      receipt.status === 'rejected' && receipt.reason === 'task_not_running';
+    const identity = {
+      user: userId,
+      conversationId,
+      ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+      messageId: `${taskId}:user`,
+      /** A genuinely new command can arrive after its task settles or its final
+       * lease expires. Persist that authoritative rejection for retries; every
+       * command that could still be applied remains fenced to a running task. */
+      ...(recordsTerminalRejection
+        ? { 'subagentTask.status': { $in: ['running', 'completed', 'error', 'cancelled'] } }
+        : { 'subagentTask.status': 'running' }),
+    };
+    /** Amazon DocumentDB does not support aggregation-pipeline updates. Use a
+     * bounded optimistic compare-and-swap: the read is small, the write uses
+     * only plain operators, and concurrent writers retry rather than overwrite. */
+    for (let attempt = 0; attempt < MAX_SUBAGENT_CONTROL_RECEIPT_CAS_ATTEMPTS; attempt += 1) {
+      const currentMessage = await Message.findOne(identity)
+        .select({ 'subagentTask.controlReceipts': 1, _id: 0 })
+        .lean<Pick<IMessage, 'subagentTask'> | null>();
+      if (currentMessage == null) return false;
+      const current = currentMessage.subagentTask?.controlReceipts ?? [];
+      const retained = retainSubagentControlReceipts(current, receipt);
+      if (retained.status === 'conflict') return 'conflict';
+      if (retained.status === 'unchanged') return 'unchanged';
+      if (retained.status === 'capacity') return false;
+      const next = retained.receipts;
+      const currentFilter =
+        currentMessage.subagentTask?.controlReceipts == null
+          ? { 'subagentTask.controlReceipts': { $exists: false } }
+          : { 'subagentTask.controlReceipts': current };
+      const updated = await Message.findOneAndUpdate(
+        { ...identity, ...currentFilter },
+        { $set: { 'subagentTask.controlReceipts': next } },
+        { new: false, projection: { messageId: 1 } },
+      ).lean<{ messageId: string } | null>();
+      if (updated != null) return true;
+    }
+    throw new Error('Subagent control receipt write contention exceeded its retry bound.');
+  }
+
+  /** Reads one bounded authoritative receipt by its exact durable task identity.
+   * The stored projection is already capped, and no task/runtime metadata leaves
+   * this method. Authorization remains part of the Mongo identity. */
+  async function getSubagentTaskControlReceipt({
+    userId,
+    conversationId,
+    taskId,
+    invocationId,
+    tenantId,
+  }: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    invocationId: string;
+    tenantId?: string;
+  }): Promise<StoredSubagentControlReceipt | null> {
+    if (
+      userId.length === 0 ||
+      conversationId.length === 0 ||
+      conversationId.length > 256 ||
+      taskId.length === 0 ||
+      taskId.length > 256 ||
+      invocationId.length === 0 ||
+      invocationId.length > 128
+    ) {
+      throw new TypeError('Invalid subagent task control receipt identity');
+    }
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const input = await Message.findOne({
+      user: userId,
+      conversationId,
+      ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+      messageId: `${taskId}:user`,
+      'subagentTask.controlReceipts.invocationId': invocationId,
+    })
+      .select({ 'subagentTask.controlReceipts': 1, _id: 0 })
+      .lean<Pick<IMessage, 'subagentTask'> | null>();
+    const receipt = input?.subagentTask?.controlReceipts?.find(
+      (candidate) => candidate.invocationId === invocationId,
+    );
+    /** Reservations are a server-private at-most-once fence, not proof that a
+     * control was applied. Public HTTP callers retry through the owning store. */
+    return receipt?.status === 'reserved' ? null : (receipt ?? null);
+  }
+
+  /** Resolves one authoritative receipt after its live owner disappears. The
+   * child conversation must still belong to the caller's parent thread, so a
+   * task id learned in another chat cannot cross orchestration scopes. */
+  async function getSubagentTaskControlReplay({
+    userId,
+    parentConversationId,
+    taskId,
+    invocationId,
+    tenantId,
+  }: {
+    userId: string;
+    parentConversationId: string;
+    taskId: string;
+    invocationId: string;
+    tenantId?: string;
+  }): Promise<{
+    receipt: StoredSubagentControlReceipt;
+    task: {
+      taskId: string;
+      threadId: string;
+      subagentType: string;
+      status: 'running' | 'completed' | 'error' | 'cancelled';
+      resultAvailable: boolean;
+      resultClaimed: boolean;
+      pendingControls: number;
+      createdAt: Date;
+      updatedAt: Date;
+    };
+  } | null> {
+    if (
+      userId.length === 0 ||
+      parentConversationId.length === 0 ||
+      parentConversationId.length > 256 ||
+      taskId.length === 0 ||
+      taskId.length > 256 ||
+      invocationId.length === 0 ||
+      invocationId.length > 128
+    ) {
+      throw new TypeError('Invalid subagent task control replay identity');
+    }
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const input = await Message.findOne({
+      user: userId,
+      ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+      messageId: `${taskId}:user`,
+      'subagentTask.controlReceipts.invocationId': invocationId,
+    })
+      .select({
+        conversationId: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        'subagentTask.status': 1,
+        'subagentTask.controlReceipts': 1,
+        _id: 0,
+      })
+      .lean<Pick<IMessage, 'conversationId' | 'createdAt' | 'updatedAt' | 'subagentTask'> | null>();
+    const receipt = input?.subagentTask?.controlReceipts?.find(
+      (candidate) => candidate.invocationId === invocationId,
+    );
+    const status = input?.subagentTask?.status;
+    if (
+      input == null ||
+      receipt == null ||
+      status == null ||
+      input.createdAt == null ||
+      input.updatedAt == null
+    ) {
+      return null;
+    }
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const conversationQuery = Conversation.findOne({
+      user: userId,
+      conversationId: input.conversationId,
+      ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+      'subagentThread.parentConversationId': parentConversationId,
+      ...activeExpirationFilter<IConversation>(),
+    })
+      .select({ 'subagentThread.subagentType': 1, _id: 0 })
+      .lean<Pick<IConversation, 'subagentThread'> | null>();
+    const terminalQuery = Message.findOne({
+      user: userId,
+      conversationId: input.conversationId,
+      ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+      messageId: `${taskId}:assistant`,
+      'subagentTask.status': { $in: ['completed', 'error', 'cancelled'] },
+    })
+      .select({ updatedAt: 1, 'subagentTask.status': 1, 'subagentTask.resultClaim': 1, _id: 0 })
+      .lean<Pick<IMessage, 'updatedAt' | 'subagentTask'> | null>();
+    const [conversation, terminal] = await Promise.all([conversationQuery, terminalQuery]);
+    const subagentType = conversation?.subagentThread?.subagentType;
+    if (subagentType == null || subagentType === '') return null;
+    /** A committed cancel receipt is itself the authoritative cancellation
+     * boundary. The terminal row is written asynchronously and may not exist if
+     * the owner exits between those two durable commits. */
+    const replayStatus =
+      terminal?.subagentTask?.status ??
+      (receipt.action === 'cancel' && receipt.status === 'applied' ? 'cancelled' : status);
+    return {
+      receipt,
+      task: {
+        taskId,
+        threadId: input.conversationId,
+        subagentType,
+        status: replayStatus,
+        resultAvailable: terminal != null,
+        resultClaimed: terminal?.subagentTask?.resultClaim != null,
+        pendingControls:
+          input.subagentTask?.controlReceipts?.filter(
+            (candidate) => candidate.status === 'accepted',
+          ).length ?? 0,
+        createdAt: input.createdAt,
+        updatedAt:
+          terminal?.updatedAt ??
+          (receipt.action === 'cancel' && receipt.status === 'applied'
+            ? receipt.updatedAt
+            : input.updatedAt),
+      },
+    };
   }
 
   /** Atomically assigns one durable terminal child result to either its
@@ -1470,6 +1842,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     updateMessageText,
     updateToolCallResult,
     updateMessage,
+    recordSubagentTaskControlReceipt,
+    getSubagentTaskControlReceipt,
+    getSubagentTaskControlReplay,
     claimSubagentTaskResult,
     releaseSubagentTaskResultClaim,
     deleteMessagesSince,

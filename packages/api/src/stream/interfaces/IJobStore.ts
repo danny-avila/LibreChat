@@ -4,11 +4,62 @@ import type {
   TPendingSteer,
   UserSubmittedMessageFieldPath,
 } from 'librechat-data-provider';
-import type { StandardGraph } from '@librechat/agents';
+import type { RunStep, StandardGraph } from '@librechat/agents';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '../SteerRecovery';
 import type { MCPRuntimeRequestBody } from '~/mcp/types';
+
+/**
+ * Rewrites string-enum members to their literal values, recursively. The SDK and
+ * data-provider declare nominally distinct enums (`ContentTypes`, `StepTypes`, ...)
+ * with identical string values; erasing that nominality is what lets the two run-step
+ * contracts be compared structurally.
+ */
+type WireShape<T> = T extends string
+  ? `${T}`
+  : T extends readonly (infer U)[]
+    ? WireShape<U>[]
+    : T extends object
+      ? { [K in keyof T]: WireShape<T[K]> }
+      : T;
+
+type StaticAssert<T extends true> = T;
+
+/**
+ * Compile-time proof that the SDK run step and the wire contract (`Agents.RunStep`)
+ * agree structurally once enum nominality is erased: any added, removed, retyped, or
+ * newly optional SDK field fails these assertions, so drift cannot silently enter
+ * resume state through `toWireRunSteps`.
+ *
+ * `summary.content` is the one deliberately unchecked field: the SDK reuses its full
+ * `MessageContentComplex` union there, while the wire contract narrows it to the plain
+ * text blocks summarization actually emits. That narrowing is the single semantic
+ * judgment this conversion vouches for.
+ */
+type _WireRunStepContractHolds = StaticAssert<
+  WireShape<Omit<RunStep, 'summary'>> extends WireShape<Omit<Agents.RunStep, 'summary'>>
+    ? true
+    : false
+>;
+
+type _WireSummaryContractHolds = StaticAssert<
+  WireShape<Omit<NonNullable<RunStep['summary']>, 'content'>> extends WireShape<
+    Omit<NonNullable<Agents.RunStep['summary']>, 'content'>
+  >
+    ? true
+    : false
+>;
+
+/**
+ * Run steps living on the SDK graph serialize to exactly the wire shape
+ * `Agents.RunStep` describes; the assertion is safe because
+ * `_WireRunStepContractHolds` above proves the contracts identical modulo the
+ * nominally-split enums, which share their string values at runtime.
+ */
+export function toWireRunSteps(steps: readonly RunStep[]): Agents.RunStep[] {
+  return steps as Agents.RunStep[];
+}
 
 /**
  * A pause owner has this long to durably persist the interrupted turn before
@@ -116,6 +167,24 @@ export interface SerializableJobData {
    * preempt shipped, which reads as incapable: the honest outcome.
    */
   preemptCapable?: boolean;
+  /**
+   * Transient owner assertion that this replica's drain merges
+   * `SteerQueueItem.quotes` into the injected turn. Never stored as-is:
+   * createJob and `ApprovalLifecycle.resolve` translate it into
+   * `steerQuotesExecutionId` bound to the asserting owner's execution.
+   */
+  steerQuotesCapable?: boolean;
+  /**
+   * The `providerExecutionId` of the owner that asserted quote capability.
+   * Valid only while it equals the LIVE `providerExecutionId`: a legacy
+   * replica winning a HITL resume rewrites the execution id but cannot know
+   * this field, so its stale assertion self-invalidates — which a bare
+   * boolean could not do (an old resume patch omits rather than clears it).
+   * The fenced enqueue evaluates the equality atomically and strips
+   * `item.quotes` on mismatch, keeping the persisted item and the
+   * `quotesAccepted` echo honest; the client re-stages dropped excerpts.
+   */
+  steerQuotesExecutionId?: string;
 
   /** Explicitly false until the provider-owning replica has installed its
    * generation-fenced abort subscription. Missing is conservative legacy
@@ -332,6 +401,8 @@ export type JobMetadataPatch = Partial<
     | 'discoveredTools'
     | 'activityPhaseSnapshot'
     | 'preemptCapable'
+    | 'steerQuotesCapable'
+    | 'steerQuotesExecutionId'
     | 'providerExecutionId'
     | 'providerDrained'
     | 'generationProtocolVersion'
@@ -376,6 +447,10 @@ export interface SteerQueueItem {
    *  drain re-fetches each file by id scoped to the run's user and encodes
    *  fresh, so nothing here is trusted beyond identifying the file. */
   files?: Partial<TFile>[];
+  /** Quoted excerpts steered with the message, normalized at admission
+   *  (`getReferencedQuotes`). Kept separate from `text` so the persisted
+   *  steer part stays clean; merged into the model-bound turn at injection. */
+  quotes?: string[];
   /** The steer asked to seal the live model stream at the next provider-safe
    *  boundary instead of waiting for a tool step. Durable so a parked,
    *  claimed, or replayed chip keeps its "interrupting" label. */
@@ -391,7 +466,16 @@ export interface SteerQueueItem {
  * the same instruction twice after drain, terminal cleanup, or replacement. */
 export interface SteerReceipt {
   clientSteerId: string;
+  /** Quote-INDEPENDENT content hash (text/files/preempt) — the one shape every
+   * replica version computes, so lost-ACK retries replay across a rolling
+   * deploy in both directions. */
   fingerprint: string;
+  /** Identity of the REQUESTED quotes (pre any owner-capability strip),
+   * recorded beside the fingerprint so quote-aware readers enforce quote
+   * identity without making the fingerprint unreadable to legacy admission.
+   * Absent on receipts written by pre-quotes replicas or for quote-less
+   * requests. */
+  requestedQuotesFingerprint?: string;
   userId: string;
   tenantId?: string;
   agentId?: string;

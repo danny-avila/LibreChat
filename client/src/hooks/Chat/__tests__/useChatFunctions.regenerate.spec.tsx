@@ -49,6 +49,7 @@ jest.mock('~/store', () => ({
   default: {
     isTemporary: 'isTemporary',
     isSubmittingFamily: () => 'isSubmitting',
+    submissionStartFamily: () => 'submissionStart',
     showStopButtonByIndex: () => 'showStopButton',
     pendingManualSkillsByConvoId: () => 'pendingManualSkills',
     pendingQuotesByConvoId: () => 'pendingQuotes',

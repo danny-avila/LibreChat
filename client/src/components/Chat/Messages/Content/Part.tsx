@@ -80,6 +80,7 @@ const Part = memo(function Part({
       <SteerPart
         steer={part[ContentTypes.STEER]}
         files={part.files}
+        quotes={part.quotes}
         steerId={part.steerId}
         createdAt={part.createdAt}
       />

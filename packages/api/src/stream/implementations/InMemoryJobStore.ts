@@ -31,6 +31,7 @@ import {
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   PAUSE_PERSISTENCE_TIMEOUT_MS,
   isPendingActionStale,
+  toWireRunSteps,
 } from '~/stream/interfaces/IJobStore';
 import {
   isRecoveredSteerPayload,
@@ -1466,7 +1467,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
 
     // Dereference WeakRef - may return undefined if GC'd
     const graph = state.graphRef.deref();
-    return graph?.contentData ?? [];
+    return toWireRunSteps(graph?.contentData ?? []);
   }
 
   /**
@@ -1584,6 +1585,12 @@ export class InMemoryJobStore implements IJobStoreV2 {
         ...(job.preemptCapable === true && { preempt: true }),
       }),
     };
+    if (
+      persisted.quotes != null &&
+      (job.steerQuotesExecutionId == null || job.steerQuotesExecutionId !== job.providerExecutionId)
+    ) {
+      delete persisted.quotes;
+    }
     queue.push(persisted);
     return { item: { ...persisted }, position: queue.length };
   }
@@ -1702,6 +1709,12 @@ export class InMemoryJobStore implements IJobStoreV2 {
         ...(job.preemptCapable === true && { preempt: true }),
       }),
     };
+    if (
+      persisted.quotes != null &&
+      (job.steerQuotesExecutionId == null || job.steerQuotesExecutionId !== job.providerExecutionId)
+    ) {
+      delete persisted.quotes;
+    }
     queue.push(persisted);
     const receipt: SteerReceipt = {
       ...receiptInput,

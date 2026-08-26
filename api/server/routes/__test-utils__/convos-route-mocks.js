@@ -4,11 +4,22 @@ const generationJobManager = {
   abortJob: jest.fn().mockResolvedValue({ success: true }),
 };
 const subagentActivityHandlerInputs = [];
+const moderatedTexts = [];
+const moderateText = jest.fn((req, _res, next) => {
+  moderatedTexts.push(req.body?.text);
+  next();
+});
+const messageIpLimiter = jest.fn((_req, _res, next) => next());
+const messageUserLimiter = jest.fn((_req, _res, next) => next());
 
 module.exports = {
   archiveAllHandler,
   generationJobManager,
   subagentActivityHandlerInputs,
+  moderateText,
+  moderatedTexts,
+  messageIpLimiter,
+  messageUserLimiter,
 
   agents: () => ({ sleep: jest.fn() }),
 
@@ -40,6 +51,36 @@ module.exports = {
       return archiveAllHandler;
     }),
     createSubagentThreadViewHandler: jest.fn(() => (_req, res) => res.status(200).json({})),
+    createSubagentControlHandler: jest.fn(() => (_req, res) => res.status(200).json({})),
+    isValidSubagentControlRequest: jest.fn((body) => {
+      if (body == null || typeof body !== 'object') return false;
+      const commonKeys = ['taskId', 'invocationId', 'action'];
+      let allowedKeys = [...commonKeys, 'message'];
+      if (body.action === 'cancel_message') allowedKeys = [...commonKeys, 'controlId'];
+      if (body.action === 'cancel') allowedKeys = commonKeys;
+      if (Object.keys(body).some((key) => !allowedKeys.includes(key))) return false;
+      if (typeof body.taskId !== 'string' || body.taskId.length === 0 || body.taskId.length > 256) {
+        return false;
+      }
+      if (
+        typeof body.invocationId !== 'string' ||
+        body.invocationId.length === 0 ||
+        body.invocationId.length > 128
+      ) {
+        return false;
+      }
+      if (body.action === 'cancel') return true;
+      if (body.action === 'cancel_message') {
+        return typeof body.controlId === 'string' && body.controlId.length > 0;
+      }
+      return (
+        ['steer', 'queue', 'interrupt'].includes(body.action) &&
+        typeof body.message === 'string' &&
+        body.message.trim() !== '' &&
+        body.message.length <= 4 * 1024
+      );
+    }),
+    exemptAgentTriggerFromIpLimiter: jest.fn(() => false),
     createParentSubagentIndexHandler: jest.fn(
       () => (_req, res) => res.status(200).json({ threads: [] }),
     ),
@@ -116,6 +157,9 @@ module.exports = {
       forkUserLimiter: (req, res, next) => next(),
     })),
     configMiddleware: (req, res, next) => next(),
+    moderateText,
+    messageIpLimiter,
+    messageUserLimiter,
     validateConvoAccess: (req, res, next) => next(),
   }),
 

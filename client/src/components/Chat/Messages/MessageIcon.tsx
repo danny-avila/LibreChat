@@ -73,7 +73,6 @@ const MessageIcon = memo(({ iconData, assistant, agent }: MessageIconProps) => {
         context="message"
         assistantAvatar={assistantAvatar}
         agentAvatar={agentAvatar}
-        endpointIconURL={endpointIconURL}
         assistantName={assistantName}
         agentName={agentName}
       />
@@ -85,6 +84,7 @@ const MessageIcon = memo(({ iconData, assistant, agent }: MessageIconProps) => {
       isCreatedByUser={iconData?.isCreatedByUser ?? false}
       endpoint={endpoint}
       iconURL={avatarURL || endpointIconURL}
+      endpointsConfig={endpointsConfig}
       model={iconData?.model}
       assistantName={assistantName}
       agentName={agentName}

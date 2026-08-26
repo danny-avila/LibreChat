@@ -66,6 +66,33 @@ export type SubagentActivityItem =
       outputTruncated?: boolean;
     };
 
+export type SubagentControlAction = 'steer' | 'queue' | 'interrupt' | 'cancel' | 'cancel_message';
+
+export type SubagentControlReceipt = {
+  invocationId: string;
+  controlId?: string;
+  action: SubagentControlAction;
+  status: 'accepted' | 'applied' | 'rejected' | 'failed';
+  createdAt: string;
+  updatedAt: string;
+  boundary?: 'preempt' | 'tool' | 'turn';
+  reason?: string;
+  message?: string;
+  messageTruncated?: boolean;
+};
+
+export type SubagentControlRequest = {
+  taskId: string;
+  invocationId: string;
+  action: SubagentControlAction;
+  message?: string;
+  controlId?: string;
+};
+
+export type SubagentControlResponse = {
+  receipt: SubagentControlReceipt;
+};
+
 export type SubagentThreadMessage = {
   messageId: string;
   parentMessageId: string | null;
@@ -89,6 +116,10 @@ export type SubagentThreadView = {
   /** Activity for the exact task requested by the parent card, when retained. */
   activity: SubagentActivityItem[];
   activityTruncated: boolean;
+  /** Bounded authoritative parent-to-child command receipts for this task. */
+  controlReceipts?: SubagentControlReceipt[];
+  /** True when older authoritative command receipts were omitted from this view. */
+  controlReceiptsTruncated?: boolean;
   messages: SubagentThreadMessage[];
   historyTruncated: boolean;
   updatedAt?: string;

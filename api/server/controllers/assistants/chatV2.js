@@ -6,6 +6,7 @@ const {
   countTokens,
   checkBalance,
   getBalanceConfig,
+  getTransactionsConfig,
   getModelMaxTokens,
   ATTACHMENT_ONLY_TEXT,
   isContentFilterError,
@@ -574,6 +575,7 @@ const chatV2 = async (req, res) => {
           user: req.user.id,
           model: completedRun.model ?? model,
           conversationId,
+          transactions: getTransactionsConfig(req.config),
         });
       }
     } else {
@@ -582,6 +584,7 @@ const chatV2 = async (req, res) => {
         user: req.user.id,
         model: response.run.model ?? model,
         conversationId,
+        transactions: getTransactionsConfig(req.config),
       });
     }
   } catch (error) {

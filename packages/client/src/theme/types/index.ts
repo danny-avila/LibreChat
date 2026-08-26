@@ -304,11 +304,22 @@ export interface ThemeModeDefinition {
   appearance?: Partial<IThemeAppearance>;
 }
 
+export interface IThemeBrands {
+  'provider-openai': string;
+  'provider-openai-gpt4': string;
+  'provider-openai-reasoning': string;
+  'provider-anthropic': string;
+  'provider-azure': string;
+  'provider-bedrock': string;
+  'provider-foreground': string;
+}
+
 /** Versioned, data-only theme input. Missing values resolve against LibreChat defaults. */
 export interface ThemeDefinition {
   version: 1;
   name: string;
   modes: Partial<Record<ThemeMode, ThemeModeDefinition>>;
+  brands?: Partial<IThemeBrands>;
 }
 
 export interface ResolvedThemeDefinition {
@@ -317,4 +328,5 @@ export interface ResolvedThemeDefinition {
   mode: ThemeMode;
   colors: Required<IThemeRGB>;
   appearance: IThemeAppearance;
+  brands: IThemeBrands;
 }

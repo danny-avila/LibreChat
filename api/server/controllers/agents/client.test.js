@@ -3749,6 +3749,60 @@ describe('AgentClient - titleConvo', () => {
       );
     });
 
+    it('quote-merges historical steer parts into the prompt AND the memory copy', async () => {
+      const previousFileContext =
+        'Attached document(s):\n```md\n# "previous.txt"\nPrevious turn file body\n```';
+
+      const result = await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Summarize.',
+            isCreatedByUser: true,
+            fileContext: previousFileContext,
+          },
+          {
+            messageId: 'msg-2',
+            parentMessageId: 'msg-1',
+            sender: 'Assistant',
+            text: '',
+            isCreatedByUser: false,
+            content: [
+              { type: ContentTypes.TEXT, text: 'working on it' },
+              {
+                type: ContentTypes.STEER,
+                [ContentTypes.STEER]: 'remember this',
+                steerId: 's1',
+                quotes: ['the important fact'],
+              },
+            ],
+          },
+          {
+            messageId: 'msg-3',
+            parentMessageId: 'msg-2',
+            sender: 'User',
+            text: 'Continue.',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-3',
+        {},
+      );
+
+      const merged = '> the important fact\n\nremember this';
+      const promptSteer = result.prompt[1].content.find((part) => part.type === ContentTypes.STEER);
+      expect(promptSteer.media).toEqual([{ type: ContentTypes.TEXT, text: merged }]);
+      // The memory copy replays through the same formatter, which ignores
+      // `part.quotes` — it needs its own merged stamp or memory extraction
+      // never sees the excerpt.
+      const memorySteer = client.memoryPayload[1].content.find(
+        (part) => part.type === ContentTypes.STEER,
+      );
+      expect(memorySteer.media).toEqual([{ type: ContentTypes.TEXT, text: merged }]);
+    });
+
     it('persists canonical token counts while counting request file context for the prompt', async () => {
       const { countFormattedMessageTokens } = require('@librechat/api');
       const currentFile = makeTextFile('current-file', 'current.txt', 'Current turn file body');
@@ -3781,6 +3835,44 @@ describe('AgentClient - titleConvo', () => {
       expect(result.promptTokens).toBe(200);
       expect(client.indexTokenCountMap[0]).toBe(200);
       expect(client.memoryPayload[0].content).toBe('What is written here?');
+    });
+
+    it('recounts a quote-bearing history row from quote-merged content and keeps the memory payload unbuilt without file context', async () => {
+      const { countFormattedMessageTokens } = require('@librechat/api');
+      countFormattedMessageTokens.mockImplementation(({ content }) => {
+        const text = Array.isArray(content)
+          ? content.map((part) => part.text ?? part[ContentTypes.TEXT] ?? '').join('\n')
+          : String(content ?? '');
+        return text.includes('quoted excerpt') ? 77 : 11;
+      });
+
+      const result = await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Discuss this.',
+            isCreatedByUser: true,
+            tokenCount: 5,
+            quotes: ['quoted excerpt'],
+          },
+          {
+            messageId: 'msg-2',
+            parentMessageId: 'msg-1',
+            sender: 'Assistant',
+            text: 'Sure.',
+            isCreatedByUser: false,
+            tokenCount: 3,
+          },
+        ],
+        'msg-2',
+        {},
+      );
+
+      expect(result.tokenCountMap['msg-1']).toBe(77);
+      expect(result.tokenCountMap['msg-2']).toBe(3);
+      expect(client.memoryPayload).toBeNull();
     });
 
     it('does not duplicate a file that is both request context and scoped context', async () => {

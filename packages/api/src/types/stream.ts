@@ -65,6 +65,10 @@ export interface GenerationJobMetadata {
   activityPhaseSnapshot?: ActivityPhaseSnapshot;
   /** See `SerializableJobData.preemptCapable`. */
   preemptCapable?: boolean;
+  /** See `SerializableJobData.steerQuotesCapable`. */
+  steerQuotesCapable?: boolean;
+  /** See `SerializableJobData.steerQuotesExecutionId`. */
+  steerQuotesExecutionId?: string;
   /** Exact provider segment whose completion gates destructive user cleanup. */
   providerExecutionId?: string;
   /** False only while that exact provider segment can still mutate user data. */

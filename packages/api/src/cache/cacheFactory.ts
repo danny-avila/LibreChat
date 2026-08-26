@@ -116,10 +116,14 @@ export const tokenConfigCache = (): Keyv =>
  * Creates a cache instance for storing violation data.
  * Uses a file-based fallback store if Redis is not enabled.
  * @param namespace - The cache namespace for violations.
- * @param ttl - Time to live for cache entries.
+ * @param ttl - Time to live for cache entries. Defaults to `cacheConfig.VIOLATION_SCORE_TTL`
+ * so violation scores decay instead of accumulating forever; each write restarts the countdown.
  * @returns Cache instance for violations.
  */
-export const violationCache = (namespace: string, ttl?: number): Keyv => {
+export const violationCache = (
+  namespace: string,
+  ttl: number | undefined = cacheConfig.VIOLATION_SCORE_TTL,
+): Keyv => {
   return standardCache(`violations:${namespace}`, ttl, violationFile);
 };
 

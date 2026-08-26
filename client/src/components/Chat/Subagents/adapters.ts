@@ -3,6 +3,7 @@ import type {
   Agents,
   PartMetadata,
   SubagentActivityItem,
+  SubagentControlReceipt,
   SubagentThreadStatus,
   SubagentThreadView,
   TMessageContentParts,
@@ -51,7 +52,13 @@ export type ChildActivity = {
   prompt?: string;
   status: SubagentThreadStatus;
   items: ChildActivityItem[];
+  controls?: Array<
+    Omit<SubagentControlReceipt, 'status'> & {
+      status: SubagentControlReceipt['status'] | 'submitted';
+    }
+  >;
   activityTruncated?: boolean;
+  controlsTruncated?: boolean;
 };
 
 type ContentToolCall = {
@@ -283,6 +290,7 @@ export function adaptLivePersistedActivity(input: {
     ...(input.prompt == null ? {} : { prompt: input.prompt }),
     status: liveStatus(input),
     items,
+    controls: [],
   };
 }
 
@@ -313,6 +321,8 @@ export function adaptDurableThreadActivity(
     ...(prompt == null ? {} : { prompt }),
     status,
     items,
+    controls: view.controlReceipts ?? [],
+    controlsTruncated: view.controlReceiptsTruncated === true,
     activityTruncated:
       view.activityTruncated ||
       view.historyTruncated ||

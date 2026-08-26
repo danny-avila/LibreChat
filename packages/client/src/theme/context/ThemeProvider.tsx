@@ -66,6 +66,8 @@ export interface ThemeProviderProps {
   children: React.ReactNode;
   themeRGB?: IThemeRGB;
   themeDefinition?: ThemeDefinition;
+  /** Whether theme definition, color, name, and source changes should be persisted. */
+  persistThemeDefinition?: boolean;
   themeName?: string;
   initialTheme?: string;
 }
@@ -222,6 +224,7 @@ export function ThemeProvider({
   children,
   themeRGB: propThemeRGB,
   themeDefinition: propThemeDefinition,
+  persistThemeDefinition = true,
   themeName: propThemeName,
   initialTheme,
 }: ThemeProviderProps): JSX.Element {
@@ -285,6 +288,16 @@ export function ThemeProvider({
   const themeDOMSnapshot = useRef<ThemeDOMSnapshot | undefined>(undefined);
   const themeClassSnapshot = useRef<ThemeClassSnapshot | undefined>(undefined);
 
+  const writeThemeStorage = useCallback(
+    (key: string, value?: string) => {
+      if (!persistThemeDefinition) {
+        return;
+      }
+      writeStorage(key, value);
+    },
+    [persistThemeDefinition],
+  );
+
   const restoreAppliedTheme = useCallback((root = window.document.documentElement) => {
     if (!themeDOMSnapshot.current) {
       return;
@@ -326,19 +339,19 @@ export function ThemeProvider({
     const definition = validPropDefinition ?? legacyDefinition;
     if (!definition) {
       if (propThemeName !== undefined && themeDefinition) {
-        writeStorage(THEME_DEFINITION_KEY, JSON.stringify(themeDefinition));
-        writeStorage(THEME_NAME_KEY, themeDefinition.name);
-        writeStorage(THEME_SOURCE_KEY, legacyThemeRGB ? 'legacy' : 'definition');
+        writeThemeStorage(THEME_DEFINITION_KEY, JSON.stringify(themeDefinition));
+        writeThemeStorage(THEME_NAME_KEY, themeDefinition.name);
+        writeThemeStorage(THEME_SOURCE_KEY, legacyThemeRGB ? 'legacy' : 'definition');
       } else if (propThemeName && !themeDefinition) {
-        writeStorage(THEME_NAME_KEY, propThemeName);
+        writeThemeStorage(THEME_NAME_KEY, propThemeName);
       }
       return;
     }
 
-    writeStorage(THEME_DEFINITION_KEY, JSON.stringify(definition));
-    writeStorage(THEME_NAME_KEY, definition.name);
-    writeStorage(THEME_SOURCE_KEY, legacyDefinition ? 'legacy' : 'definition');
-    writeStorage(
+    writeThemeStorage(THEME_DEFINITION_KEY, JSON.stringify(definition));
+    writeThemeStorage(THEME_NAME_KEY, definition.name);
+    writeThemeStorage(THEME_SOURCE_KEY, legacyDefinition ? 'legacy' : 'definition');
+    writeThemeStorage(
       THEME_COLORS_KEY,
       !propThemeDefinition && legacyDefinition
         ? JSON.stringify(legacyDefinition.modes.light?.colors ?? {})
@@ -351,6 +364,7 @@ export function ThemeProvider({
     propThemeName,
     propThemeRGB,
     themeDefinition,
+    writeThemeStorage,
   ]);
 
   const setTheme = useCallback((newTheme: string) => {
@@ -361,57 +375,66 @@ export function ThemeProvider({
     writeStorage(THEME_KEY, newTheme);
   }, []);
 
-  const setThemeDefinition = useCallback((definition?: ThemeDefinition) => {
-    const errors = definition ? validateThemeDefinition(definition) : [];
-    if (errors.length > 0) {
-      throw new TypeError(errors.join('\n'));
-    }
-    themeDefinitionRef.current = definition;
-    setThemeDefinitionState(definition);
-    legacyThemeRGBRef.current = undefined;
-    setLegacyThemeRGB(undefined);
-    writeStorage(THEME_DEFINITION_KEY, definition ? JSON.stringify(definition) : undefined);
-    writeStorage(THEME_COLORS_KEY);
-    writeStorage(THEME_SOURCE_KEY, definition ? 'definition' : undefined);
-    setThemeNameState(definition?.name);
-    themeNameRef.current = definition?.name;
-    writeStorage(THEME_NAME_KEY, definition?.name);
-  }, []);
+  const setThemeDefinition = useCallback(
+    (definition?: ThemeDefinition) => {
+      const errors = definition ? validateThemeDefinition(definition) : [];
+      if (errors.length > 0) {
+        throw new TypeError(errors.join('\n'));
+      }
+      themeDefinitionRef.current = definition;
+      setThemeDefinitionState(definition);
+      legacyThemeRGBRef.current = undefined;
+      setLegacyThemeRGB(undefined);
+      writeThemeStorage(THEME_DEFINITION_KEY, definition ? JSON.stringify(definition) : undefined);
+      writeThemeStorage(THEME_COLORS_KEY);
+      writeThemeStorage(THEME_SOURCE_KEY, definition ? 'definition' : undefined);
+      setThemeNameState(definition?.name);
+      themeNameRef.current = definition?.name;
+      writeThemeStorage(THEME_NAME_KEY, definition?.name);
+    },
+    [writeThemeStorage],
+  );
 
-  const setThemeRGB = useCallback((colors?: IThemeRGB) => {
-    const definition = colors
-      ? fromLegacyTheme(colors, themeDefinitionRef.current?.name ?? themeNameRef.current)
-      : undefined;
-    const legacyColors = definition?.modes.light?.colors;
-    themeDefinitionRef.current = definition;
-    setThemeDefinitionState(definition);
-    legacyThemeRGBRef.current = legacyColors;
-    setLegacyThemeRGB(legacyColors);
-    setThemeNameState(definition?.name);
-    themeNameRef.current = definition?.name;
-    writeStorage(THEME_DEFINITION_KEY, definition ? JSON.stringify(definition) : undefined);
-    writeStorage(THEME_NAME_KEY, definition?.name);
-    writeStorage(THEME_COLORS_KEY, legacyColors ? JSON.stringify(legacyColors) : undefined);
-    writeStorage(THEME_SOURCE_KEY, definition ? 'legacy' : undefined);
-  }, []);
+  const setThemeRGB = useCallback(
+    (colors?: IThemeRGB) => {
+      const definition = colors
+        ? fromLegacyTheme(colors, themeDefinitionRef.current?.name ?? themeNameRef.current)
+        : undefined;
+      const legacyColors = definition?.modes.light?.colors;
+      themeDefinitionRef.current = definition;
+      setThemeDefinitionState(definition);
+      legacyThemeRGBRef.current = legacyColors;
+      setLegacyThemeRGB(legacyColors);
+      setThemeNameState(definition?.name);
+      themeNameRef.current = definition?.name;
+      writeThemeStorage(THEME_DEFINITION_KEY, definition ? JSON.stringify(definition) : undefined);
+      writeThemeStorage(THEME_NAME_KEY, definition?.name);
+      writeThemeStorage(THEME_COLORS_KEY, legacyColors ? JSON.stringify(legacyColors) : undefined);
+      writeThemeStorage(THEME_SOURCE_KEY, definition ? 'legacy' : undefined);
+    },
+    [writeThemeStorage],
+  );
 
-  const setThemeName = useCallback((name?: string) => {
-    const currentDefinition = themeDefinitionRef.current;
-    const nextName = name?.trim() || (currentDefinition ? 'custom' : undefined);
-    setThemeNameState(nextName);
-    themeNameRef.current = nextName;
-    writeStorage(THEME_NAME_KEY, nextName);
+  const setThemeName = useCallback(
+    (name?: string) => {
+      const currentDefinition = themeDefinitionRef.current;
+      const nextName = name?.trim() || (currentDefinition ? 'custom' : undefined);
+      setThemeNameState(nextName);
+      themeNameRef.current = nextName;
+      writeThemeStorage(THEME_NAME_KEY, nextName);
 
-    if (!nextName || !currentDefinition) {
-      return;
-    }
+      if (!nextName || !currentDefinition) {
+        return;
+      }
 
-    const renamedDefinition = { ...currentDefinition, name: nextName };
-    themeDefinitionRef.current = renamedDefinition;
-    setThemeDefinitionState(renamedDefinition);
-    writeStorage(THEME_DEFINITION_KEY, JSON.stringify(renamedDefinition));
-    writeStorage(THEME_SOURCE_KEY, legacyThemeRGBRef.current ? 'legacy' : 'definition');
-  }, []);
+      const renamedDefinition = { ...currentDefinition, name: nextName };
+      themeDefinitionRef.current = renamedDefinition;
+      setThemeDefinitionState(renamedDefinition);
+      writeThemeStorage(THEME_DEFINITION_KEY, JSON.stringify(renamedDefinition));
+      writeThemeStorage(THEME_SOURCE_KEY, legacyThemeRGBRef.current ? 'legacy' : 'definition');
+    },
+    [writeThemeStorage],
+  );
 
   useEffect(() => {
     if (!synchronizedThemeProps.current) {
@@ -540,9 +563,9 @@ export function ThemeProvider({
   const resetTheme = useCallback(() => {
     setTheme('system');
     setThemeDefinition(undefined);
-    writeStorage(THEME_COLORS_KEY);
+    writeThemeStorage(THEME_COLORS_KEY);
     restoreAppliedTheme();
-  }, [restoreAppliedTheme, setTheme, setThemeDefinition]);
+  }, [restoreAppliedTheme, setTheme, setThemeDefinition, writeThemeStorage]);
 
   const themeRGB = legacyThemeRGB ?? themeDefinition?.modes.light?.colors;
   const value = useMemo(

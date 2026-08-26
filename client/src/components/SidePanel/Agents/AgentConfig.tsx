@@ -1,14 +1,14 @@
 import { Input, Label } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
-import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
-import type { AgentForm, IconComponentTypes } from '~/common';
+import type { AgentForm } from '~/common';
+import { ResolvedProviderIcon } from '~/components/Endpoints/ResolvedProviderIcon';
 import AgentCategorySelector from './AgentCategorySelector';
 import { useLocalize, useAgentCapabilities } from '~/hooks';
-import { validateEmail, getIconKey, cn } from '~/utils';
 import { useAgentFileEntries } from './Tools/hooks';
 import { useAgentPanelContext } from '~/Providers';
+import { useProviderIcon } from '~/hooks/Endpoint';
 import ToolsSection from './Tools/ToolsSection';
-import { icons } from '~/hooks/Endpoint/Icons';
+import { validateEmail, cn } from '~/utils';
 import Instructions from './Instructions';
 import FileContext from './FileContext';
 import AgentAvatar from './AgentAvatar';
@@ -33,22 +33,10 @@ export default function AgentConfig() {
   const { contextFiles } = useAgentFileEntries();
 
   const providerValue = typeof provider === 'string' ? provider : provider?.value;
-  let Icon: IconComponentTypes | null | undefined;
-  let endpointType: EModelEndpoint | undefined;
-  let endpointIconURL: string | undefined;
-  let iconKey: string | undefined;
-
-  if (providerValue !== undefined) {
-    endpointType = getEndpointField(endpointsConfig, providerValue as string, 'type');
-    endpointIconURL = getEndpointField(endpointsConfig, providerValue as string, 'iconURL');
-    iconKey = getIconKey({
-      endpoint: providerValue as string,
-      endpointsConfig,
-      endpointType,
-      endpointIconURL,
-    });
-    Icon = icons[iconKey];
-  }
+  const { provider: providerId, imageURL } = useProviderIcon({
+    endpoint: providerValue as string,
+    endpointsConfig,
+  });
 
   return (
     <div className="h-auto pt-1">
@@ -113,6 +101,7 @@ export default function AgentConfig() {
             {localize('com_ui_model')} <span className="text-red-500">*</span>
           </Label>
           <button
+            id="provider"
             type="button"
             onClick={() => setActivePanel(Panel.model)}
             title={model || undefined}
@@ -122,13 +111,13 @@ export default function AgentConfig() {
             )}
           >
             <div className="flex w-full min-w-0 items-center gap-2">
-              {Icon && (
+              {providerValue !== undefined && (
                 <div className="shadow-stroke relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white text-black dark:bg-white">
-                  <Icon
+                  <ResolvedProviderIcon
+                    provider={providerId}
+                    imageURL={imageURL}
+                    size={16}
                     className="h-2/3 w-2/3"
-                    endpoint={providerValue as string}
-                    endpointType={endpointType}
-                    iconURL={endpointIconURL}
                   />
                 </div>
               )}

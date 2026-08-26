@@ -185,6 +185,22 @@ function MultiMessage({
   } else {
     row = <Message {...sharedProps} />;
   }
+  /** Event children may be persisted against the user request that launched
+   * the Director. Once its assistant response exists, present that activity
+   * after the response instead of interrupting the turn between user and
+   * assistant rows. Exact assistant-owned children remain in the same group. */
+  let activityParentMessageIds: string[] = [];
+  if (message.isCreatedByUser) {
+    if (!message.children?.length) activityParentMessageIds = [message.messageId];
+  } else {
+    activityParentMessageIds = [message.messageId, message.parentMessageId].filter(
+      (id): id is string => typeof id === 'string' && id.length > 0,
+    );
+  }
+  const isEditingActivityAnchor =
+    typeof currentEditId === 'string' && activityParentMessageIds.includes(currentEditId);
+  const hasParallelContent =
+    !message.isCreatedByUser && message.content?.some((part) => part?.groupId != null) === true;
 
   /**
    * The child recursion is a sibling of the row (not rendered inside it), so a
@@ -196,14 +212,13 @@ function MultiMessage({
   return (
     <>
       {row}
-      {rowMounted && currentEditId !== message.messageId ? (
+      {rowMounted && !isEditingActivityAnchor && activityParentMessageIds.length > 0 ? (
         <div className="w-full border-0 bg-transparent">
-          <div className="m-auto justify-center px-4 sm:px-0">
-            <EventSubagentActivityGroup
-              conversationId={message.conversationId ?? ''}
-              parentMessageId={message.messageId}
-            />
-          </div>
+          <EventSubagentActivityGroup
+            conversationId={message.conversationId ?? ''}
+            parentMessageIds={activityParentMessageIds}
+            hasParallelContent={hasParallelContent}
+          />
         </div>
       ) : null}
       <MemoizedMultiMessage
