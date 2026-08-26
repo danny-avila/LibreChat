@@ -53,12 +53,12 @@ const SidePanelGroup = memo(
         return [100 - navSize, navSize];
       } else {
         // BKL: 저장된 3열 레이아웃(사용자 리사이즈)이 있으면 복원하고,
-        // 없으면 우측 패널 기본 20% (기존 50/50 은 대화 패널 상시 표시에 과함)
+        // 없으면 우측 패널 기본 28% (20% 는 너무 좁다는 피드백, 1920px 기준 ≈537px)
         if (defaultLayout.length === 3) {
           return defaultLayout;
         }
         const navSize = 0;
-        const artifactsSize = 20;
+        const artifactsSize = 28;
         return [100 - navSize - artifactsSize, artifactsSize, navSize];
       }
     }, [artifacts, defaultLayout]);
@@ -69,8 +69,8 @@ const SidePanelGroup = memo(
       () =>
         throttle((sizes: number[]) => {
           const normalizedSizes = normalizeLayout(sizes);
-          // BKL: v2 — 우측 패널 상시 표시 이전(50/50 기본)에 저장된 값과 분리
-          localStorage.setItem('react-resizable-panels:layout:v2', JSON.stringify(normalizedSizes));
+          // BKL: v3 — 기본 폭 20%→28% 상향 이전(v2)에 저장된 값과 분리
+          localStorage.setItem('react-resizable-panels:layout:v3', JSON.stringify(normalizedSizes));
         }, 350),
       [],
     );
@@ -94,12 +94,12 @@ const SidePanelGroup = memo(
     const minSizeMain = useMemo(() => (artifacts != null ? 15 : 30), [artifacts]);
 
     // BKL: 우측 패널 최소 픽셀 보장 — react-resizable-panels 는 % 단위만
-    // 받으므로 마운트 시점 화면폭 기준으로 300px 을 % 로 환산한다.
+    // 받으므로 마운트 시점 화면폭 기준으로 360px 을 % 로 환산한다.
     const artifactsMinSize = useMemo(() => {
       if (typeof window === 'undefined' || !window.innerWidth) {
         return 15;
       }
-      return Math.min(40, Math.max(15, Math.ceil((300 / window.innerWidth) * 100)));
+      return Math.min(40, Math.max(15, Math.ceil((360 / window.innerWidth) * 100)));
     }, []);
 
     /** Memoized close button handler to prevent re-creating it */
