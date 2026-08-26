@@ -1,14 +1,18 @@
 import React, { memo, useMemo, useRef, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
+import { Download, Copy } from 'lucide-react';
 import { useToastContext } from '@librechat/client';
 import { PermissionTypes, Permissions, apiBaseUrl } from 'librechat-data-provider';
 import Mermaid, { MermaidErrorBoundary } from '~/components/Messages/Content/Mermaid';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
+import ActionButton from '~/components/Messages/Content/ActionButton';
+import useTableExport from '~/components/Messages/Content/useTableExport';
 import { handleDoubleClick, triggerDownload } from '~/utils';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
 import { useCodeBlockContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
+import cn from '~/utils/cn';
 import store from '~/store';
 
 type TCodeProps = {
@@ -194,9 +198,42 @@ type TTableProps = {
 };
 
 export const table: React.ElementType = memo(function MarkdownTable({ children }: TTableProps) {
+  const tableRef = useRef<HTMLTableElement>(null);
+  const localize = useLocalize();
+  const { isCopied, isDownloaded, copyButtonRef, downloadButtonRef, handleCopy, handleDownload } =
+    useTableExport(tableRef);
+
   return (
-    <div className="markdown-table-wrapper w-full max-w-full">
-      <table>{children}</table>
+    <div className="group relative w-full max-w-full">
+      {/* Action bar sits on the non-scrolling parent so wide tables don't scroll it away */}
+      <div
+        className={cn(
+          'absolute right-2 top-2 z-10 flex gap-1 rounded-md border border-border-light bg-surface-primary p-0.5 opacity-0 shadow-md transition-opacity duration-200',
+          'dark:border-border-dark focus-within:opacity-100 group-hover:opacity-100 dark:bg-surface-secondary',
+        )}
+      >
+        <ActionButton
+          ref={copyButtonRef}
+          icon={Copy}
+          isActive={isCopied}
+          label={localize('com_ui_copy_table')}
+          activeLabel={localize('com_ui_copied')}
+          iconOnly
+          onClick={handleCopy}
+        />
+        <ActionButton
+          ref={downloadButtonRef}
+          icon={Download}
+          isActive={isDownloaded}
+          label={localize('com_ui_download_table')}
+          activeLabel={localize('com_ui_downloaded')}
+          iconOnly
+          onClick={handleDownload}
+        />
+      </div>
+      <div className="markdown-table-wrapper w-full max-w-full">
+        <table ref={tableRef}>{children}</table>
+      </div>
     </div>
   );
 });
