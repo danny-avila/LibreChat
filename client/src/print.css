@@ -43,14 +43,28 @@
    * an inline pixel height — forcing `height: auto` on either collapses
    * the diagram to zero height, and it disappears from the printed page
    * entirely.
+   *
+   * The `overflow` reset is split into its own rule with one more
+   * exclusion, `.mermaid-card` (the diagram's outer wrapper): it relies on
+   * its own `overflow-hidden` to clip `MermaidHeader`'s square corners to
+   * the card's rounded border. Forcing `overflow: visible` there doesn't
+   * clip anything taller (the card has no fixed height), it only lets
+   * those square corners show past the rounded clip in print — so `height`
+   * still resets for it, but `overflow` doesn't.
    */
   html,
   body,
   #root,
   #root *:not(.mermaid-viewport, .mermaid-viewport *) {
-    overflow: visible !important;
     height: auto !important;
     max-height: none !important;
+  }
+
+  html,
+  body,
+  #root,
+  #root *:not(.mermaid-card, .mermaid-viewport, .mermaid-viewport *) {
+    overflow: visible !important;
   }
 
   [data-testid='screenshot-target'] {
