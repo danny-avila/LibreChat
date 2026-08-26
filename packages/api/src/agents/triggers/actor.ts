@@ -8,6 +8,7 @@ import {
 } from '@librechat/agents';
 import type { ConversationMethods, IAgentEventActorState } from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
+import type { AgentTriggerExpectedAction } from './envelope';
 import type { AgentEventAppliedAction } from './outcome';
 import {
   captureAgentEventCheckpoint,
@@ -36,6 +37,7 @@ export interface ExecuteAgentEventActorInput<T> {
   conversationId: string;
   invocationId: string;
   event: EventActorEvent;
+  expectedAction?: AgentTriggerExpectedAction;
   signal: AbortSignal;
   checkpointer?: TCheckpointerConfig;
   invoke(context: AgentEventActorInvocationContext): Promise<T>;
@@ -92,46 +94,13 @@ export async function executeAgentEventActor<T>(
       if (context.signal.aborted) {
         throw context.signal.reason;
       }
-      let snapshot = await deps.getSnapshot({
+      const snapshot = await deps.getSnapshot({
         user: input.user,
         conversationId: input.conversationId,
         ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
       });
       if (snapshot === undefined) {
         throw new Error('Event actor binding is no longer active');
-      }
-      const verified = snapshot.reconciliations.filter(
-        (item) =>
-          snapshot?.state != null &&
-          item.status !== 'persistence_failed' &&
-          typeof item.checkpoint.checkpointId === 'string' &&
-          checkpointMatches(snapshot.state, item.checkpoint),
-      );
-      if (verified.length > 0) {
-        await Promise.all(
-          verified.map((item) =>
-            deps.resolveReconciliation({
-              user: input.user,
-              conversationId: input.conversationId,
-              ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
-              invocationId: item.invocationId,
-              checkpoint: {
-                threadId: item.checkpoint.threadId,
-                checkpointId: item.checkpoint.checkpointId!,
-                checkpointNs: item.checkpoint.checkpointNs,
-              },
-              resolution: 'checkpoint_verified',
-            }),
-          ),
-        );
-        snapshot = await deps.getSnapshot({
-          user: input.user,
-          conversationId: input.conversationId,
-          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
-        });
-        if (snapshot === undefined) {
-          throw new Error('Event actor binding is no longer active');
-        }
       }
       if (snapshot.reconciliations.length > 0) {
         throw new Error(
@@ -182,6 +151,27 @@ export async function executeAgentEventActor<T>(
       };
     },
     async invoke(invocation, context) {
+      const fenced = await deps.recordReconciliation({
+        user: input.user,
+        conversationId: input.conversationId,
+        ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+        reconciliation: {
+          invocationId: invocation.invocationId,
+          status: 'invocation_pending',
+          checkpoint: {
+            threadId: invocation.fork.threadId,
+            checkpointNs: invocation.fork.checkpointNs,
+            ...(invocation.fork.checkpointId == null
+              ? {}
+              : { checkpointId: invocation.fork.checkpointId }),
+          },
+          action: { toolName: input.expectedAction?.toolName ?? 'expected_action' },
+          observedAt: new Date(),
+        },
+      });
+      if (!fenced) {
+        throw new Error('Event actor invocation could not acquire its durable lifecycle fence');
+      }
       try {
         value = await input.invoke({
           checkpointNamespace: invocation.fork.checkpointNs,
@@ -263,6 +253,8 @@ export async function executeAgentEventActor<T>(
         user: input.user,
         conversationId: input.conversationId,
         ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+        invocationId: request.invocation.invocationId,
+        action: request.result.action,
         ...(expected == null ? {} : { expected }),
         checkpoint: {
           threadId: request.checkpoint.threadId,
@@ -296,6 +288,34 @@ export async function executeAgentEventActor<T>(
         throwOnError: true,
         checkpointNamespace: request.invocation.fork.checkpointNs,
       });
+      const released = await deps.resolveReconciliation({
+        user: input.user,
+        conversationId: input.conversationId,
+        ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+        invocationId: request.invocation.invocationId,
+        checkpoint: {
+          threadId: request.invocation.fork.threadId,
+          checkpointNs: request.invocation.fork.checkpointNs,
+          ...(request.invocation.fork.checkpointId == null
+            ? {}
+            : { checkpointId: request.invocation.fork.checkpointId }),
+        },
+        resolution: 'invocation_abandoned',
+      });
+      if (!released) {
+        const snapshot = await deps.getSnapshot({
+          user: input.user,
+          conversationId: input.conversationId,
+          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+        });
+        if (
+          snapshot?.reconciliations.some(
+            (item) => item.invocationId === request.invocation.invocationId,
+          ) === true
+        ) {
+          throw new Error('Event actor invocation lifecycle fence could not be released');
+        }
+      }
     },
   };
 
@@ -335,7 +355,9 @@ export async function executeAgentEventActor<T>(
       });
     }
     if (
-      snapshot?.reconciliations.length === 0 &&
+      snapshot?.reconciliations.some(
+        (item) => item.invocationId === input.invocationId && item.status === 'persistence_pending',
+      ) === true &&
       snapshot?.state != null &&
       checkpointMatches(snapshot.state, execution.checkpoint) &&
       execution.result != null

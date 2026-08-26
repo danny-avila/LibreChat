@@ -95,15 +95,22 @@ const convoSchema: Schema<IConversation> = new Schema(
       default: undefined,
       select: false,
     },
-    /** Fail-closed records for applied actions whose checkpoints did not become
-     * provably authoritative. Later actor turns remain blocked until all are reconciled. */
+    /** Fail-closed invocation lifecycle records. A fence is created before execution and
+     * retained through checkpoint and message persistence; later turns remain blocked
+     * until the exact invocation is durably acknowledged or explicitly reconciled. */
     agentEventActorReconciliations: {
       type: [
         {
           invocationId: { type: String, required: true },
           status: {
             type: String,
-            enum: ['commit_conflict', 'commit_indeterminate', 'persistence_failed'],
+            enum: [
+              'invocation_pending',
+              'persistence_pending',
+              'commit_conflict',
+              'commit_indeterminate',
+              'persistence_failed',
+            ],
             required: true,
           },
           checkpoint: {

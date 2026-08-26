@@ -206,6 +206,15 @@ describe('event actor host adapter', () => {
     ).rejects.toThrow('provider stream failed after tool');
 
     expect(dependencies.commitState).toHaveBeenCalledTimes(1);
+    expect(dependencies.recordReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reconciliation: expect.objectContaining({
+          invocationId: 'event-action-then-error',
+          status: 'invocation_pending',
+        }),
+      }),
+    );
+    expect(dependencies.resolveReconciliation).not.toHaveBeenCalled();
     expect(mockedDelete).not.toHaveBeenCalled();
   });
 
@@ -266,7 +275,12 @@ describe('event actor host adapter', () => {
     );
 
     expect(result.execution.status).toBe('applied');
-    expect(dependencies.recordReconciliation).not.toHaveBeenCalled();
+    expect(dependencies.recordReconciliation).toHaveBeenCalledTimes(1);
+    expect(dependencies.recordReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reconciliation: expect.objectContaining({ status: 'invocation_pending' }),
+      }),
+    );
     expect(state.generation).toBe(3);
   });
 
@@ -354,11 +368,16 @@ describe('event actor host adapter', () => {
       ),
     ).rejects.toThrow('requires commit_indeterminate reconciliation');
 
-    expect(dependencies.recordReconciliation).toHaveBeenCalledTimes(1);
+    expect(dependencies.recordReconciliation).toHaveBeenCalledTimes(2);
+    expect(dependencies.recordReconciliation).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        reconciliation: expect.objectContaining({ status: 'commit_indeterminate' }),
+      }),
+    );
     expect(mockedDelete).not.toHaveBeenCalled();
   });
 
-  it('clears a reconciliation whose checkpoint is already authoritative before continuing', async () => {
+  it('does not clear a checkpoint marker before durable history is verified', async () => {
     const authoritative: IAgentEventActorState = {
       generation: 1,
       checkpoint: {
@@ -376,9 +395,10 @@ describe('event actor host adapter', () => {
       observedAt: new Date(),
     };
     const dependencies = deps();
-    dependencies.getSnapshot
-      .mockResolvedValueOnce({ state: authoritative, reconciliations: [marker] })
-      .mockResolvedValueOnce({ state: authoritative, reconciliations: [] });
+    dependencies.getSnapshot.mockResolvedValueOnce({
+      state: authoritative,
+      reconciliations: [marker],
+    });
 
     await expect(
       executeAgentEventActor(
@@ -393,15 +413,9 @@ describe('event actor host adapter', () => {
         },
         dependencies,
       ),
-    ).resolves.toMatchObject({ execution: { status: 'applied' } });
+    ).rejects.toThrow('blocked on commit_indeterminate reconciliation');
 
-    expect(dependencies.resolveReconciliation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        invocationId: marker.invocationId,
-        checkpoint: authoritative.checkpoint,
-        resolution: 'checkpoint_verified',
-      }),
-    );
+    expect(dependencies.resolveReconciliation).not.toHaveBeenCalled();
   });
 
   it('does not clear a persistence failure merely because its checkpoint is authoritative', async () => {

@@ -1,3 +1,4 @@
+import type { ConversationMethods, MessageMethods } from '@librechat/data-schemas';
 import type { Agents } from 'librechat-data-provider';
 import type { AgentTriggerExpectedAction } from './envelope';
 import type { SerializableJobData } from '~/stream';
@@ -219,6 +220,9 @@ export function createAgentEventTerminalHandler(methods: {
   settleAgentTriggerHandlingOutcome: (
     input: SettleAgentTriggerHandlingOutcomeInput,
   ) => Promise<boolean>;
+  getAgentEventActorSnapshot: ConversationMethods['getAgentEventActorSnapshot'];
+  resolveAgentEventActorReconciliation: ConversationMethods['resolveAgentEventActorReconciliation'];
+  getMessage: MessageMethods['getMessage'];
 }): (
   streamId: string,
   job: SerializableJobData,
@@ -234,11 +238,78 @@ export function createAgentEventTerminalHandler(methods: {
     if (job.agentEventDeliveryKey == null) {
       return;
     }
+    const conversationId = job.conversationId ?? streamId;
     const outcome = classifyAgentEventRunOutcome(job, runSteps, content);
+    const snapshot = await methods.getAgentEventActorSnapshot({
+      user: job.userId,
+      conversationId,
+      ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+    });
+    const lifecycle = snapshot?.reconciliations.find(
+      (item) => item.invocationId === job.agentEventDeliveryKey,
+    );
+    if (lifecycle != null) {
+      if (lifecycle.status === 'invocation_pending' && outcome.action == null) {
+        const abandoned = await methods.resolveAgentEventActorReconciliation({
+          user: job.userId,
+          conversationId,
+          ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+          invocationId: lifecycle.invocationId,
+          checkpoint: lifecycle.checkpoint,
+          resolution: 'invocation_abandoned',
+        });
+        if (!abandoned) {
+          throw new Error(
+            `Agent event actor ${job.agentEventDeliveryKey} has unresolved lifecycle state`,
+          );
+        }
+      } else if (
+        lifecycle.status !== 'persistence_pending' &&
+        lifecycle.status !== 'persistence_failed'
+      ) {
+        throw new Error(
+          `Agent event actor ${job.agentEventDeliveryKey} requires ${lifecycle.status} reconciliation`,
+        );
+      } else {
+        const [userMessage, responseMessage] = await Promise.all([
+          methods.getMessage({
+            user: job.userId,
+            messageId: `${job.agentEventDeliveryKey}:user`,
+          }),
+          methods.getMessage({
+            user: job.userId,
+            messageId: `${job.agentEventDeliveryKey}:assistant`,
+          }),
+        ]);
+        if (
+          userMessage?.conversationId !== conversationId ||
+          userMessage.isCreatedByUser !== true ||
+          responseMessage?.conversationId !== conversationId ||
+          responseMessage.isCreatedByUser !== false
+        ) {
+          throw new Error(
+            `Agent event actor ${job.agentEventDeliveryKey} is awaiting durable message history`,
+          );
+        }
+        const resolved = await methods.resolveAgentEventActorReconciliation({
+          user: job.userId,
+          conversationId,
+          ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+          invocationId: lifecycle.invocationId,
+          checkpoint: lifecycle.checkpoint,
+          resolution: 'checkpoint_verified',
+        });
+        if (!resolved) {
+          throw new Error(
+            `Agent event actor ${job.agentEventDeliveryKey} has unresolved lifecycle state`,
+          );
+        }
+      }
+    }
     const settledAt = new Date(job.completedAt ?? Date.now());
     const settled = await methods.settleAgentTriggerHandlingOutcome({
       deliveryKey: job.agentEventDeliveryKey,
-      conversationId: job.conversationId ?? streamId,
+      conversationId,
       generationCreatedAt: job.createdAt,
       status: outcome.status,
       settledAt,

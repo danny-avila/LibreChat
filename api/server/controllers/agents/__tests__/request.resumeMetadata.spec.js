@@ -366,6 +366,7 @@ describe('ResumableAgentController resume metadata', () => {
     mockCommitAgentEventActorState.mockResolvedValue({ status: 'stale' });
     mockInvalidateAgentEventActorState.mockResolvedValue(false);
     mockRecordAgentEventActorReconciliation.mockResolvedValue(true);
+    mockResolveAgentEventActorReconciliation.mockResolvedValue(true);
   });
 
   it.each([
@@ -4023,6 +4024,7 @@ describe('ResumableAgentController resume metadata', () => {
         conversationId: 'child-conversation',
         invocationId: 'req-event-fork',
         event,
+        expectedAction: { toolName: 'submit_move', argumentSubset: { expectedPly: 8 } },
       }),
       {
         getSnapshot: expect.any(Function),
@@ -4126,6 +4128,121 @@ describe('ResumableAgentController resume metadata', () => {
         action: { toolName: 'submit_move', toolCallId: 'call-move' },
       }),
     });
+  });
+
+  it('acknowledges an applied actor lifecycle only after both deterministic messages persist', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    const checkpoint = {
+      threadId: 'child-conversation',
+      checkpointId: 'checkpoint-applied',
+      checkpointNs: 'event-actor/applied',
+    };
+    const userMessage = {
+      messageId: 'req-event-success:user',
+      parentMessageId: 'parent-message',
+      conversationId: 'child-conversation',
+      text: 'Play the next move.',
+    };
+    const client = {
+      options: {},
+      skipSaveUserMessage: false,
+      sendMessage: jest.fn(async (_text, options) => {
+        options.onStart(userMessage, 'req-event-success:assistant');
+        return {
+          messageId: 'req-event-success:assistant',
+          text: 'Move submitted.',
+          databasePromise: Promise.resolve({
+            conversation: { conversationId: 'child-conversation' },
+          }),
+        };
+      }),
+    };
+    mockExecuteAgentEventActor.mockImplementationOnce(async (input) => ({
+      value: await input.invoke({
+        checkpointNamespace: checkpoint.checkpointNs,
+        checkpointId: checkpoint.checkpointId,
+        invocationId: 'req-event-success',
+        continuation: 'warm',
+        signal: input.signal,
+      }),
+      execution: {
+        status: 'applied',
+        continuation: 'warm',
+        head: { actorThreadId: 'child-conversation', generation: 2, checkpoint },
+        result: { action: { toolName: 'submit_move', toolCallId: 'call-move' } },
+      },
+    }));
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: userMessage.text,
+        clientRequestId: 'req-event-success',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-success',
+          event: {
+            id: 'event-success',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+          expectedAction: { toolName: 'submit_move' },
+        },
+      },
+      config: { endpoints: { agents: { eventDriven: { checkpointForks: true } } } },
+      _isAgentTrigger: true,
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockResolveAgentEventActorReconciliation.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+
+    expect(mockSaveMessage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ messageId: 'req-event-success:user' }),
+      expect.any(Object),
+    );
+    expect(mockSaveMessage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ messageId: 'req-event-success:assistant' }),
+      expect.any(Object),
+    );
+    expect(mockResolveAgentEventActorReconciliation).toHaveBeenCalledWith({
+      user: 'user-123',
+      tenantId: 'tenant-1',
+      conversationId: 'child-conversation',
+      invocationId: 'req-event-success',
+      checkpoint,
+      resolution: 'checkpoint_verified',
+    });
+    const lastMessageWrite = Math.max(...mockSaveMessage.mock.invocationCallOrder);
+    expect(lastMessageWrite).toBeLessThan(
+      mockResolveAgentEventActorReconciliation.mock.invocationCallOrder[0],
+    );
   });
 
   it.each([

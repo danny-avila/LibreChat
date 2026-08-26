@@ -1937,6 +1937,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 conversationId,
                 invocationId: eventTaskId,
                 event: agentEventDelivery.event,
+                expectedAction: agentEventDelivery.expectedAction,
                 signal: job.abortController.signal,
                 checkpointer: req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
                 invoke: async (actorContext) => {
@@ -2296,6 +2297,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               ? 'Terminal response could not be persisted as unfinished'
               : 'Response message could not be persisted before terminal publication',
           );
+        }
+        if (appliedEventActor != null) {
+          const resolved = await resolveAgentEventActorReconciliation({
+            user: userId,
+            conversationId,
+            ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+            invocationId: appliedEventActor.invocationId,
+            checkpoint: appliedEventActor.checkpoint,
+            resolution: 'checkpoint_verified',
+          });
+          if (!resolved) {
+            throw new Error('Applied event actor lifecycle could not be durably acknowledged');
+          }
         }
         eventActorPersistenceComplete = true;
 
