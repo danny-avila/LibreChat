@@ -986,6 +986,14 @@ describe('agent event terminal outcomes', () => {
 
     await handler('conversation-1', job({ agentEventBindingId: 'binding-1' }), []);
 
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledWith({
+      deliveryKey: 'trigger_1',
+      conversationId: 'conversation-1',
+      generationCreatedAt: job().createdAt,
+      status: 'applied',
+      settledAt: observedAt,
+      action: { toolName: 'submit_move', toolCallId: 'call-1' },
+    });
     expect(backfillAgentEventActorReceipt).toHaveBeenCalledWith(
       expect.objectContaining({
         deliveryKey: 'trigger_1',
@@ -1003,7 +1011,45 @@ describe('agent event terminal outcomes', () => {
     expect(backfillAgentEventActorReceipt.mock.invocationCallOrder[0]).toBeLessThan(
       clearAgentEventActorReconciliation.mock.invocationCallOrder[0],
     );
-    expect(settleAgentTriggerHandlingOutcome).not.toHaveBeenCalled();
+    expect(settleAgentTriggerHandlingOutcome.mock.invocationCallOrder[0]).toBeLessThan(
+      backfillAgentEventActorReceipt.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('keeps legacy proof intact when its public outcome cannot be recovered', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(false);
+    const backfillAgentEventActorReceipt = jest.fn();
+    const clearAgentEventActorReconciliation = jest.fn();
+    const checkpoint = {
+      threadId: 'conversation-1',
+      checkpointId: 'checkpoint-1',
+      checkpointNs: 'event-actor/trigger_1',
+    };
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      backfillAgentEventActorReceipt,
+      clearAgentEventActorReconciliation,
+      getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+        state: { generation: 1, checkpoint },
+        reconciliations: [
+          {
+            invocationId: 'trigger_1',
+            status: 'settled',
+            resolution: 'checkpoint_verified',
+            checkpoint,
+            action: { toolName: 'submit_move', toolCallId: 'call-1' },
+            observedAt: new Date('2026-08-25T00:00:00.000Z'),
+          },
+        ],
+      }),
+    });
+
+    await expect(
+      handler('conversation-1', job({ agentEventBindingId: 'binding-1' }), []),
+    ).rejects.toThrow('legacy public outcome could not be recovered');
+
+    expect(backfillAgentEventActorReceipt).not.toHaveBeenCalled();
+    expect(clearAgentEventActorReconciliation).not.toHaveBeenCalled();
   });
 
   it('never replays a compensated receipt as applied even over fresh run evidence', async () => {

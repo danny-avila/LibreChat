@@ -435,6 +435,29 @@ export function createAgentEventTerminalHandler(methods: {
          * outcome agrees, then remove the embedded representation. */
         if (job.agentEventBindingId != null && lifecycle.resolution != null) {
           const legacyCompensated = lifecycle.resolution === 'action_compensated';
+          /** A pre-ledger owner can settle the embedded lifecycle and crash
+           * before publishing the matching delivery outcome. Terminalize that
+           * exact started generation first; replay is idempotent when an older
+           * owner already completed the public write. The resulting terminal
+           * handling is then the delivery-side proof required by migration. */
+          const legacyStatus = legacyCompensated ? 'failed' : 'applied';
+          const legacyError = legacyCompensated
+            ? 'Applied event actor action was explicitly compensated'
+            : undefined;
+          const terminalized = await methods.settleAgentTriggerHandlingOutcome({
+            deliveryKey: job.agentEventDeliveryKey,
+            conversationId,
+            generationCreatedAt: job.createdAt,
+            status: legacyStatus,
+            settledAt: lifecycle.observedAt,
+            ...(legacyError == null ? {} : { error: legacyError }),
+            ...(!legacyCompensated && { action: lifecycle.action }),
+          });
+          if (!terminalized) {
+            throw new Error(
+              `Agent event actor ${job.agentEventDeliveryKey} legacy public outcome could not be recovered`,
+            );
+          }
           const migrated = await methods.backfillAgentEventActorReceipt({
             deliveryKey: job.agentEventDeliveryKey,
             user: job.userId,
@@ -442,11 +465,9 @@ export function createAgentEventTerminalHandler(methods: {
             bindingId: job.agentEventBindingId,
             conversationId,
             generationCreatedAt: job.createdAt,
-            status: legacyCompensated ? 'failed' : 'applied',
+            status: legacyStatus,
             settledAt: lifecycle.observedAt,
-            ...(legacyCompensated && {
-              error: 'Applied event actor action was explicitly compensated',
-            }),
+            ...(legacyError == null ? {} : { error: legacyError }),
             receipt: {
               resolution: lifecycle.resolution,
               checkpoint: lifecycle.checkpoint,
