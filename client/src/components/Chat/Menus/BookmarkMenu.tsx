@@ -1,15 +1,23 @@
 import { useState, useId, useCallback, useMemo, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
-import { BookmarkPlusIcon } from 'lucide-react';
+import { BookmarkPlusIcon, Settings2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
-import { DropdownPopup, TooltipAnchor, Spinner, useToastContext } from '@librechat/client';
+import {
+  OGDialog,
+  OGDialogTemplate,
+  DropdownPopup,
+  TooltipAnchor,
+  Spinner,
+  useToastContext,
+} from '@librechat/client';
 import type { TConversationTag } from 'librechat-data-provider';
 import type { FC } from 'react';
 import type * as t from '~/common';
 import { useConversationTagsQuery, useTagConversationMutation } from '~/data-provider';
+import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
 import { useBookmarkSuccess, useLocalize } from '~/hooks';
@@ -31,6 +39,7 @@ const BookmarkMenu: FC = () => {
   const menuId = useId();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isManageOpen, setIsManageOpen] = useState(false);
 
   const mutation = useTagConversationMutation(conversationId, {
     onSuccess: (newTags: string[], vars) => {
@@ -120,6 +129,15 @@ const BookmarkMenu: FC = () => {
         render: (props) => <button {...props} />,
         onClick: () => setIsDialogOpen(true),
       },
+      {
+        // 북마크 이름 수정·삭제 UI 는 사이드패널(BookmarkPanel)에만 있는데
+        // BKL 배포는 sidePanel 을 꺼두어 접근 불가였다 — 여기서 다이얼로그로 노출.
+        id: '%___manage___bookmarks___%',
+        label: `${localize('com_ui_bookmarks')} ${localize('com_ui_manage')}`,
+        icon: <Settings2 className="size-4" />,
+        render: (props) => <button {...props} />,
+        onClick: () => setIsManageOpen(true),
+      },
     ];
 
     if (data) {
@@ -202,6 +220,15 @@ const BookmarkMenu: FC = () => {
         conversationId={conversationId}
         context="BookmarkMenu - BookmarkEditDialog"
       />
+      <OGDialog open={isManageOpen} onOpenChange={setIsManageOpen}>
+        <OGDialogTemplate
+          title={`${localize('com_ui_bookmarks')} ${localize('com_ui_manage')}`}
+          className="w-11/12 md:max-w-lg"
+          showCloseButton={true}
+          main={<BookmarkPanel />}
+          selection={undefined}
+        />
+      </OGDialog>
     </BookmarkContext.Provider>
   );
 };

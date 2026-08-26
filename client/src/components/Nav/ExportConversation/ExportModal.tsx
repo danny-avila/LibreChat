@@ -49,13 +49,17 @@ export default function ExportModal({
     }
   }, [open, triggerRef]);
 
+  // filenamify 는 내부에서 NFD 정규화를 해 한글이 자모로 분해된다
+  // (예: "계약서" → "ㄱㅖㄱㅅ…"처럼 깨져 보이는 파일명). NFC 로 재조합한다.
+  const toSafeFilename = useCallback((name: string) => filenamify(name).normalize('NFC'), []);
+
   useEffect(() => {
-    setFileName(filenamify(String(conversation?.title ?? 'file')));
+    setFileName(toSafeFilename(String(conversation?.title ?? 'file')));
     setType('screenshot');
     setIncludeOptions(true);
     setExportBranches(false);
     setRecursive(true);
-  }, [conversation?.title, open]);
+  }, [conversation?.title, open, toSafeFilename]);
 
   const handleTypeChange = useCallback((newType: string) => {
     const branches = newType === 'json' || newType === 'csv' || newType === 'webpage';
@@ -76,7 +80,7 @@ export default function ExportModal({
 
   const { exportConversation } = useExportConversation({
     conversation,
-    filename: filenamify(filename),
+    filename: toSafeFilename(filename),
     type,
     includeOptions,
     exportBranches,
