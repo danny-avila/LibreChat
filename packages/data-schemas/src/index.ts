@@ -28,6 +28,7 @@ export {
   normalizeSkillFrontmatterKeys,
   validateSkillDescription,
   deriveStructuredFrontmatterFields,
+  runAfterTransaction,
   AUDIT_SCHEMA_VERSION,
   MAX_AUDIT_EXPORT_ROWS,
   MAX_AUDIT_LOG_LIMIT,
