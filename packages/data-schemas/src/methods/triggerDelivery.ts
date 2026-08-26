@@ -1558,8 +1558,17 @@ export function createAgentTriggerDeliveryMethods(
         { $group: { _id: '$actorReceipt.resolution', count: { $sum: 1 } } },
       ]),
       Delivery().countDocuments({ actorReceipt: { $exists: true }, expiresAt: { $lte: now } }),
-      Delivery().countDocuments({ status: 'pending', attempts: { $gt: 0 } }),
-      Delivery().countDocuments({ status: 'dead' }),
+      Delivery().countDocuments({
+        status: 'pending',
+        attempts: { $gt: 0 },
+        awaitTerminalHandling: true,
+        'envelope.target.bindingId': { $exists: true },
+      }),
+      Delivery().countDocuments({
+        status: 'dead',
+        awaitTerminalHandling: true,
+        'envelope.target.bindingId': { $exists: true },
+      }),
     ]);
     const retainedByResolution: AgentEventActorReceiptStorageMetrics['retainedByResolution'] = {
       checkpoint_verified: 0,
