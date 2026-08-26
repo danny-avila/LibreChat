@@ -1,10 +1,15 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
-const { logger } = require('@librechat/data-schemas');
+const { logger, ResourceCapabilityMap } = require('@librechat/data-schemas');
 const { isEnabled, getBasePath } = require('@librechat/api');
+const { ResourceType, PermissionBits } = require('librechat-data-provider');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
+const { checkPermission } = require('~/server/services/PermissionService');
+const { getAgent } = require('~/models');
 
 const OBJECT_ID_LENGTH = 24;
 const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/i;
+const AGENT_AVATAR_PATTERN = /^agent-(.+)-avatar-\d+\.[^/]+$/;
 
 /**
  * Validates if a string is a valid MongoDB ObjectId
@@ -50,14 +55,14 @@ function validateToken(refreshToken) {
  * Factory to create the `validateImageRequest` middleware with configured secureImageLinks
  * @param {boolean} [secureImageLinks] - Whether secure image links are enabled
  */
-function createValidateImageRequest(secureImageLinks) {
+function createValidateImageRequest(secureImageLinks = true) {
   if (!secureImageLinks) {
     return (_req, _res, next) => next();
   }
   /**
    * Middleware to validate image request.
    * Supports both LibreChat refresh tokens and OpenID JWT tokens.
-   * Must be set by `secureImageLinks` via custom config file.
+   * Image links are protected by default. `secureImageLinks: false` is an explicit legacy opt-out.
    */
   return async function validateImageRequest(req, res, next) {
     try {
@@ -132,14 +137,6 @@ function createValidateImageRequest(secureImageLinks) {
       const basePath = getBasePath();
       const imagesPath = `${basePath}/images`;
 
-      const agentAvatarPattern = new RegExp(
-        `^${imagesPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/[a-f0-9]{24}/agent-[^/]*$`,
-      );
-      if (agentAvatarPattern.test(fullPath)) {
-        logger.debug('[validateImageRequest] Image request validated');
-        return next();
-      }
-
       const escapedUserId = userIdForPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const pathPattern = new RegExp(
         `^${imagesPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/${escapedUserId}/[^/]+$`,
@@ -147,11 +144,47 @@ function createValidateImageRequest(secureImageLinks) {
 
       if (pathPattern.test(fullPath)) {
         logger.debug('[validateImageRequest] Image request validated');
-        next();
-      } else {
-        logger.warn('[validateImageRequest] Invalid image path');
-        res.status(403).send('Access Denied');
+        return next();
       }
+
+      const imagePath = fullPath.split(/[?#]/, 1)[0];
+      const agentAvatarMatch = imagePath.match(
+        new RegExp(`^${imagesPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/[a-f0-9]{24}/([^/]+)$`),
+      );
+      const agentId = agentAvatarMatch?.[1].match(AGENT_AVATAR_PATTERN)?.[1];
+      if (!agentId) {
+        logger.warn('[validateImageRequest] Invalid image path');
+        return res.status(403).send('Access Denied');
+      }
+
+      const agent = await getAgent({ id: agentId });
+      if (!agent) {
+        logger.warn('[validateImageRequest] Agent not found for avatar request');
+        return res.status(403).send('Access Denied');
+      }
+
+      const user = { id: userIdForPath };
+      let managesAgents = false;
+      try {
+        managesAgents = await hasCapability(user, ResourceCapabilityMap[ResourceType.AGENT]);
+      } catch (error) {
+        logger.warn('[validateImageRequest] Agent capability check failed', error);
+      }
+      const canViewAgent =
+        managesAgents ||
+        (await checkPermission({
+          userId: userIdForPath,
+          resourceType: ResourceType.AGENT,
+          resourceId: agent._id,
+          requiredPermission: PermissionBits.VIEW,
+        }));
+      if (!canViewAgent) {
+        logger.warn('[validateImageRequest] User lacks agent avatar access');
+        return res.status(403).send('Access Denied');
+      }
+
+      logger.debug('[validateImageRequest] Agent avatar request validated');
+      return next();
     } catch (error) {
       logger.error('[validateImageRequest] Error:', error);
       res.status(500).send('Internal Server Error');
