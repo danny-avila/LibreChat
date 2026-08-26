@@ -47,6 +47,7 @@ export type ChildActivityItem =
       agentIds?: string[];
       status?: 'ok' | 'partial' | 'failed';
       pending?: boolean;
+      labelTruncated?: boolean;
     };
 
 export type ChildActivity = {
@@ -177,6 +178,7 @@ const publicActivityToChildActivity = (items: SubagentActivityItem[]): ChildActi
     return {
       ...item,
       ...(item.input == null ? {} : { input: item.input }),
+      ...(item.inputValidationError === true ? { inputValidationError: true } : {}),
     };
   });
 

@@ -530,7 +530,8 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   /** During a rolling deployment an older API replica can omit `turns`. Keep
    * that response readable through the same deep activity renderer; every
    * current host otherwise enters the conversation-native rendering seam. */
-  const hasConversationProjection = selection.durable == null || Array.isArray(data?.turns);
+  const hasConversationProjection =
+    selection.durable == null || data == null || Array.isArray(data.turns);
   const taskInaccessible = controlInaccessible || transientControl?.reason === 'task_inaccessible';
   const controlAvailable =
     selection.durable != null && data?.status === 'running' && !taskInaccessible && !controlsClosed;

@@ -20,6 +20,7 @@ import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
 import {
   projectPersistedMessageActivity,
+  projectPersistedMessageActivityJson,
   projectSubagentActivity,
   SUBAGENT_ACTIVITY_LIMITS,
 } from './activity';
@@ -254,6 +255,12 @@ const projectedTaskActivity = (
   input: SubagentThreadViewMessageRecord | undefined,
   taskId: string,
 ): ReturnType<typeof projectSubagentActivity> => {
+  if (assistant?.subagentActivityProjectionJson != null) {
+    return projectPersistedMessageActivityJson(
+      assistant.subagentActivityProjectionJson,
+      assistant.subagentActivityProjectionTruncated === true,
+    );
+  }
   if (assistant?.subagentTranscriptProjectionTruncated === true) {
     return { activity: [], truncated: true };
   }
@@ -570,7 +577,7 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
       });
 
       let historyTruncated = messages.length > MAX_THREAD_MESSAGES;
-      const newestFirst = historyTruncated ? messages.slice(0, MAX_THREAD_MESSAGES) : messages;
+      const newestFirst = messages.slice(0, MAX_THREAD_MESSAGES);
       const branch = canonicalThreadBranch(newestFirst);
       if (branch.length < newestFirst.length) historyTruncated = true;
       const branchRootParentId = branch[0]?.parentMessageId;
@@ -582,21 +589,34 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
           ? child.subagentThreadLease.taskId
           : undefined;
       const eventThread = lineage.parentToolCallId.startsWith('event-binding:');
+      const selectedRecords =
+        requestedTaskId == null
+          ? []
+          : messages.filter(
+              (message) =>
+                message.messageId === `${requestedTaskId}:assistant` ||
+                message.messageId === `${requestedTaskId}:user`,
+            );
       const selectedMessage =
         requestedTaskId == null
           ? undefined
-          : branch.find((message) => message.messageId === `${requestedTaskId}:assistant`);
+          : selectedRecords.find((message) => message.messageId === `${requestedTaskId}:assistant`);
       const selectedInput =
         requestedTaskId == null
           ? undefined
-          : branch.find((message) => message.messageId === `${requestedTaskId}:user`);
+          : selectedRecords.find((message) => message.messageId === `${requestedTaskId}:user`);
       const projectedActivity =
         requestedTaskId == null
           ? { activity: [], truncated: false }
           : projectedTaskActivity(selectedMessage, selectedInput, requestedTaskId);
+      const publicSource = [...branch];
+      const publicSourceIds = new Set(publicSource.map((message) => message.messageId));
+      for (const record of selectedRecords) {
+        if (!publicSourceIds.has(record.messageId)) publicSource.push(record);
+      }
       const projectedNewestFirst: SubagentThreadMessage[] = [];
       let remainingTextBytes = MAX_RESPONSE_TEXT_BYTES;
-      for (const message of [...branch].reverse()) {
+      for (const message of [...publicSource].reverse()) {
         if (remainingTextBytes === 0) {
           break;
         }
@@ -611,7 +631,7 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
       const projectedControls =
         requestedTaskId == null
           ? { receipts: [], truncated: false }
-          : publicControlReceipts(branch, requestedTaskId);
+          : publicControlReceipts(selectedRecords, requestedTaskId);
       const projectedMessages = projectedNewestFirst.reverse();
       const projectedMessagesById = new Map(
         projectedMessages.map((message) => [message.messageId, message]),
@@ -640,14 +660,14 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
           : { agentId: truncateUtf8(child.agent_id, MAX_PUBLIC_ID_BYTES).text }),
         title: truncateUtf8(child.title ?? `Subagent: ${lineage.subagentType}`, MAX_TITLE_BYTES)
           .text,
-        status: publicStatus(branch, activeLeaseTaskId, requestedTaskId),
+        status: publicStatus(messages, activeLeaseTaskId, requestedTaskId),
         activity: projectedActivity.activity,
         activityTruncated: projectedActivity.truncated,
         controlReceipts: projectedControls.receipts,
         ...(projectedControls.truncated ? { controlReceiptsTruncated: true } : {}),
         turns,
         messages: projectedMessages,
-        historyTruncated: historyTruncated || projectedMessages.length < branch.length,
+        historyTruncated: historyTruncated || projectedMessages.length < publicSource.length,
         ...(isoDate(child.updatedAt) == null ? {} : { updatedAt: isoDate(child.updatedAt) }),
       };
       while (Buffer.byteLength(JSON.stringify(view), 'utf8') > MAX_RESPONSE_BYTES) {

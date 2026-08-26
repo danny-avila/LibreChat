@@ -323,7 +323,7 @@ describe('SubagentThreadTaskStore', () => {
     expect(conversation?.subagentThread).not.toHaveProperty('userRunnable');
     const messages = await methods.getMessages(
       { user: userId, conversationId: threadId },
-      '+subagentTranscript',
+      '+subagentTranscript +subagentActivityProjection',
     );
     expect(messages.map((message) => message.text)).toEqual([
       'Investigate the issue.',
@@ -332,6 +332,12 @@ describe('SubagentThreadTaskStore', () => {
     expect(messages[1].subagentTranscript).toMatchObject({
       taskId: requireAccepted(started).task.taskId,
       mode: 'append',
+    });
+    expect(messages[1].subagentActivityProjection).toEqual({
+      taskId: requireAccepted(started).task.taskId,
+      version: 1,
+      activityJson: JSON.stringify([{ type: 'writing', text: 'Completed the investigation.' }]),
+      truncated: false,
     });
   });
 

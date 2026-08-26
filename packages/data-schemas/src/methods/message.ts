@@ -287,11 +287,12 @@ function getSteerUserSubmittedPaths(content: unknown): string[] {
  * being materialized merely to produce a 64 KiB public activity response.
  */
 export const SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT: number = 256 * 1024;
+const SUBAGENT_ACTIVITY_PROJECTION_SOURCE_BYTE_LIMIT = 64 * 1024;
 
 /**
- * Maximum number of private transcript sources materialized for one child-view
- * poll. One exact selected transcript is retained alongside the newest sources,
- * bounding Mongo-to-Node transcript transfer to 1 MiB before sanitization.
+ * Maximum activity sources materialized for one child-view poll. New writers
+ * supply at most four 64 KiB public projections; legacy rows fall back to at
+ * most four 256 KiB private transcripts during a rolling deployment.
  */
 export const SUBAGENT_TRANSCRIPT_PAGE_LIMIT: number = 4;
 
@@ -368,6 +369,7 @@ export type SubagentThreadViewMessageRecord = Pick<
   subagentTranscriptProjectionTruncated?: boolean;
   /** Storage-bounded visible content; validated into the public activity type by the API. */
   subagentActivity?: unknown[];
+  subagentActivityProjectionJson?: string;
   subagentActivityProjectionTruncated?: boolean;
 };
 
@@ -1468,6 +1470,39 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       const transcriptIsString = {
         $eq: [{ $type: '$subagentTranscript.messagesJson' }, 'string'],
       };
+      const activityProjectionJsonBytes = {
+        $strLenBytes: {
+          $convert: {
+            input: '$subagentActivityProjection.activityJson',
+            to: 'string',
+            onError: '',
+            onNull: '',
+          },
+        },
+      };
+      const activityProjectionIsString = {
+        $eq: [{ $type: '$subagentActivityProjection.activityJson' }, 'string'],
+      };
+      const activityProjectionAvailable = {
+        $and: [
+          { $eq: ['$subagentActivityProjection.version', 1] },
+          '$_subagentActivityProjectionSourceIsString',
+          {
+            $lte: [
+              '$_subagentActivityProjectionSourceBytes',
+              SUBAGENT_ACTIVITY_PROJECTION_SOURCE_BYTE_LIMIT,
+            ],
+          },
+        ],
+      };
+      const transcriptAvailable = {
+        $and: [
+          '$_subagentTranscriptSourceIsString',
+          {
+            $lte: ['$_subagentTranscriptSourceBytes', SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT],
+          },
+        ],
+      };
       const boundedString = (path: string, codePointLimit: number) => ({
         $substrCP: [
           {
@@ -1506,7 +1541,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
               input: {
                 $slice: [
                   { $cond: [{ $isArray: '$content' }, '$content', []] },
-                  SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
+                  -SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
                 ],
               },
               as: 'part',
@@ -1596,14 +1631,50 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           cond: { $ne: ['$$activity', null] },
         },
       };
-      type TranscriptProjection = Pick<
+      type ActivitySourceProjection = Pick<
         SubagentThreadViewMessageRecord,
-        'messageId' | 'subagentTranscript'
+        | 'messageId'
+        | 'subagentTranscript'
+        | 'subagentActivityProjectionJson'
+        | 'subagentActivityProjectionTruncated'
       >;
+      const boundedMessageProjection = {
+        _id: 0,
+        messageId: 1,
+        parentMessageId: 1,
+        isCreatedByUser: 1,
+        text: {
+          $substrCP: [{ $ifNull: ['$text', ''] }, 0, input.textCodePointLimit],
+        },
+        textProjectionTruncated: {
+          $gt: [{ $strLenCP: { $ifNull: ['$text', ''] } }, input.textCodePointLimit],
+        },
+        createdAt: 1,
+        error: 1,
+        unfinished: 1,
+        subagentTranscriptProjectionTruncated: {
+          $cond: [
+            { $ne: [{ $type: '$subagentTranscript.messagesJson' }, 'missing'] },
+            true,
+            '$$REMOVE',
+          ],
+        },
+        subagentActivity: boundedActivityContent,
+        subagentActivityProjectionTruncated: {
+          $gt: [
+            {
+              $size: { $cond: [{ $isArray: '$content' }, '$content', []] },
+            },
+            SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
+          ],
+        },
+        subagentTask: 1,
+      };
       const [projection] = await Message.aggregate<{
         messages: SubagentThreadViewMessageRecord[];
-        selectedTranscript: TranscriptProjection[];
-        recentTranscripts: TranscriptProjection[];
+        selectedMessages: SubagentThreadViewMessageRecord[];
+        selectedSources: ActivitySourceProjection[];
+        recentSources: ActivitySourceProjection[];
       }>([
         {
           $match: {
@@ -1615,62 +1686,58 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           },
         },
         { $sort: { createdAt: -1, _id: -1 } },
-        { $limit: input.limit },
         {
           $addFields: {
             _subagentTranscriptSourceBytes: transcriptJsonBytes,
             _subagentTranscriptSourceIsString: transcriptIsString,
+            _subagentActivityProjectionSourceBytes: activityProjectionJsonBytes,
+            _subagentActivityProjectionSourceIsString: activityProjectionIsString,
           },
         },
         {
           $facet: {
-            messages: [
-              {
-                $project: {
-                  _id: 0,
-                  messageId: 1,
-                  parentMessageId: 1,
-                  isCreatedByUser: 1,
-                  text: {
-                    $substrCP: [{ $ifNull: ['$text', ''] }, 0, input.textCodePointLimit],
-                  },
-                  textProjectionTruncated: {
-                    $gt: [{ $strLenCP: { $ifNull: ['$text', ''] } }, input.textCodePointLimit],
-                  },
-                  createdAt: 1,
-                  error: 1,
-                  unfinished: 1,
-                  subagentTranscriptProjectionTruncated: {
-                    $cond: [
-                      { $ne: [{ $type: '$subagentTranscript.messagesJson' }, 'missing'] },
-                      true,
-                      '$$REMOVE',
-                    ],
-                  },
-                  subagentActivity: boundedActivityContent,
-                  subagentActivityProjectionTruncated: {
-                    $gt: [
-                      {
-                        $size: { $cond: [{ $isArray: '$content' }, '$content', []] },
-                      },
-                      SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
-                    ],
-                  },
-                  subagentTask: 1,
-                },
-              },
-            ],
-            selectedTranscript:
+            messages: [{ $limit: input.limit }, { $project: boundedMessageProjection }],
+            selectedMessages:
               input.selectedTaskId == null
                 ? [{ $match: { _id: { $exists: false } } }]
                 : [
                     {
                       $match: {
-                        'subagentTranscript.taskId': input.selectedTaskId,
-                        _subagentTranscriptSourceIsString: true,
-                        _subagentTranscriptSourceBytes: {
-                          $lte: SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+                        messageId: {
+                          $in: [
+                            `${input.selectedTaskId}:user`,
+                            `${input.selectedTaskId}:assistant`,
+                          ],
                         },
+                      },
+                    },
+                    { $limit: 2 },
+                    { $project: boundedMessageProjection },
+                  ],
+            selectedSources:
+              input.selectedTaskId == null
+                ? [{ $match: { _id: { $exists: false } } }]
+                : [
+                    {
+                      $match: {
+                        messageId: `${input.selectedTaskId}:assistant`,
+                        $or: [
+                          {
+                            'subagentActivityProjection.taskId': input.selectedTaskId,
+                            'subagentActivityProjection.version': 1,
+                            _subagentActivityProjectionSourceIsString: true,
+                            _subagentActivityProjectionSourceBytes: {
+                              $lte: SUBAGENT_ACTIVITY_PROJECTION_SOURCE_BYTE_LIMIT,
+                            },
+                          },
+                          {
+                            'subagentTranscript.taskId': input.selectedTaskId,
+                            _subagentTranscriptSourceIsString: true,
+                            _subagentTranscriptSourceBytes: {
+                              $lte: SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+                            },
+                          },
+                        ],
                       },
                     },
                     { $limit: 1 },
@@ -1678,24 +1745,68 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                       $project: {
                         _id: 0,
                         messageId: 1,
+                        subagentActivityProjectionJson: {
+                          $cond: [
+                            activityProjectionAvailable,
+                            '$subagentActivityProjection.activityJson',
+                            '$$REMOVE',
+                          ],
+                        },
+                        subagentActivityProjectionTruncated: {
+                          $cond: [
+                            activityProjectionAvailable,
+                            '$subagentActivityProjection.truncated',
+                            '$$REMOVE',
+                          ],
+                        },
                         subagentTranscript: {
-                          taskId: '$subagentTranscript.taskId',
-                          mode: '$subagentTranscript.mode',
-                          messagesJson: '$subagentTranscript.messagesJson',
+                          $cond: [
+                            activityProjectionAvailable,
+                            '$$REMOVE',
+                            {
+                              taskId: '$subagentTranscript.taskId',
+                              mode: '$subagentTranscript.mode',
+                              messagesJson: '$subagentTranscript.messagesJson',
+                            },
+                          ],
                         },
                       },
                     },
                   ],
-            recentTranscripts: [
+            recentSources: [
               {
                 $match: {
-                  _subagentTranscriptSourceIsString: true,
-                  _subagentTranscriptSourceBytes: {
-                    $lte: SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
-                  },
                   ...(input.selectedTaskId == null
                     ? {}
-                    : { 'subagentTranscript.taskId': { $ne: input.selectedTaskId } }),
+                    : { messageId: { $ne: `${input.selectedTaskId}:assistant` } }),
+                  $expr: {
+                    $or: [
+                      {
+                        $and: [
+                          activityProjectionAvailable,
+                          {
+                            $eq: [
+                              '$messageId',
+                              {
+                                $concat: ['$subagentActivityProjection.taskId', ':assistant'],
+                              },
+                            ],
+                          },
+                        ],
+                      },
+                      {
+                        $and: [
+                          transcriptAvailable,
+                          {
+                            $eq: [
+                              '$messageId',
+                              { $concat: ['$subagentTranscript.taskId', ':assistant'] },
+                            ],
+                          },
+                        ],
+                      },
+                    ],
+                  },
                 },
               },
               {
@@ -1705,10 +1816,30 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                 $project: {
                   _id: 0,
                   messageId: 1,
+                  subagentActivityProjectionJson: {
+                    $cond: [
+                      activityProjectionAvailable,
+                      '$subagentActivityProjection.activityJson',
+                      '$$REMOVE',
+                    ],
+                  },
+                  subagentActivityProjectionTruncated: {
+                    $cond: [
+                      activityProjectionAvailable,
+                      '$subagentActivityProjection.truncated',
+                      '$$REMOVE',
+                    ],
+                  },
                   subagentTranscript: {
-                    taskId: '$subagentTranscript.taskId',
-                    mode: '$subagentTranscript.mode',
-                    messagesJson: '$subagentTranscript.messagesJson',
+                    $cond: [
+                      activityProjectionAvailable,
+                      '$$REMOVE',
+                      {
+                        taskId: '$subagentTranscript.taskId',
+                        mode: '$subagentTranscript.mode',
+                        messagesJson: '$subagentTranscript.messagesJson',
+                      },
+                    ],
                   },
                 },
               },
@@ -1717,18 +1848,36 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         },
       ]);
       if (projection == null) return [];
-      const transcriptsByMessageId = new Map(
-        [...projection.selectedTranscript, ...projection.recentTranscripts].map((record) => [
+      const sourcesByMessageId = new Map(
+        [...projection.selectedSources, ...projection.recentSources].map((record) => [
           record.messageId,
-          record.subagentTranscript,
+          record,
         ]),
       );
-      return projection.messages.map((message) => {
-        const subagentTranscript = transcriptsByMessageId.get(message.messageId);
-        if (subagentTranscript == null) return message;
+      const messages = [...projection.messages];
+      const retainedMessageIds = new Set(messages.map((message) => message.messageId));
+      for (const message of projection.selectedMessages) {
+        if (retainedMessageIds.has(message.messageId)) continue;
+        messages.push(message);
+        retainedMessageIds.add(message.messageId);
+      }
+      return messages.map((message) => {
+        const source = sourcesByMessageId.get(message.messageId);
+        if (source == null) return message;
         const projected = { ...message };
+        if (source.subagentActivityProjectionJson != null) {
+          delete projected.subagentTranscriptProjectionTruncated;
+          return {
+            ...projected,
+            subagentActivityProjectionJson: source.subagentActivityProjectionJson,
+            ...(source.subagentActivityProjectionTruncated === true
+              ? { subagentActivityProjectionTruncated: true }
+              : {}),
+          };
+        }
+        if (source.subagentTranscript == null) return message;
         delete projected.subagentTranscriptProjectionTruncated;
-        return { ...projected, subagentTranscript };
+        return { ...projected, subagentTranscript: source.subagentTranscript };
       });
     } catch (err) {
       logger.error('Error getting bounded subagent thread messages:', err);

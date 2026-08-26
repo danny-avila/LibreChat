@@ -87,6 +87,13 @@ export interface IMessage extends Document {
     mode: 'append' | 'replace';
     messagesJson: string;
   };
+  /** Server-private bounded rendering projection derived once at child settlement. */
+  subagentActivityProjection?: {
+    taskId: string;
+    version: 1;
+    activityJson: string;
+    truncated: boolean;
+  };
   /** Server-private durable idempotency marker for one detached subagent turn. */
   subagentTask?: {
     attemptKey: string;

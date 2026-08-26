@@ -331,6 +331,55 @@ describe('subagent thread parent-scoped view', () => {
     expect(view.messages[0]).not.toHaveProperty('subagentTranscript');
   });
 
+  it('selects an exact older task outside the rolling conversation page', async () => {
+    const recent = Array.from(
+      { length: SUBAGENT_THREAD_VIEW_LIMITS.messages + 1 },
+      (_, index) =>
+        ({
+          ...message(`recent-${index}:assistant`, 'completed'),
+          createdAt: new Date(Date.UTC(2026, 7, 22, 12, index)),
+        }) as IMessage,
+    );
+    const selectedInput = {
+      ...message('selected-old:user', 'running', true),
+      text: 'Original selected prompt.',
+      createdAt: new Date('2026-08-21T10:00:00.000Z'),
+    } as IMessage;
+    const selected = {
+      ...message('selected-old:assistant', 'completed'),
+      text: 'Selected result.',
+      createdAt: new Date('2026-08-21T10:01:00.000Z'),
+      subagentActivityProjectionJson: JSON.stringify([
+        { type: 'writing', text: 'Selected durable result.' },
+      ]),
+    } as IMessage & { subagentActivityProjectionJson: string };
+    const handler = createSubagentThreadViewHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
+      getSubagentThreadForParent: jest
+        .fn()
+        .mockResolvedValue({ ...child, subagentThreadLease: undefined }),
+      getMessagesForSubagentThreadView: jest
+        .fn()
+        .mockResolvedValue([...recent, selected, selectedInput]),
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest({}, { taskId: 'selected-old' }), response);
+
+    const view = json.mock.calls[0][0];
+    expect(view.status).toBe('completed');
+    expect(view.activity).toEqual([{ type: 'writing', text: 'Selected durable result.' }]);
+    expect(view.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          messageId: 'selected-old:assistant',
+          text: 'Selected result.',
+        }),
+      ]),
+    );
+    expect(view.historyTruncated).toBe(true);
+  });
+
   it('returns bounded authoritative control receipts without private fingerprints', async () => {
     const input = message('task-1:user', 'running', true);
     input.subagentTask!.controlReceipts = [

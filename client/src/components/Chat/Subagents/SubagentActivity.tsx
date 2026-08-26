@@ -282,6 +282,7 @@ export const hasTruncatedActivityDetails = (activity: ChildActivity): boolean =>
   activity.items.some(
     (item) =>
       (item.type === 'writing' && item.textTruncated === true) ||
+      (item.type === 'activity_label' && item.labelTruncated === true) ||
       (item.type === 'tool' && (item.inputTruncated === true || item.outputTruncated === true)),
   );
 

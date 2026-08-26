@@ -97,7 +97,7 @@ const fitNewestItemToSerializedBudget = (item: SubagentActivityItem): SubagentAc
   if (item.type === 'reasoning') return item;
   if (item.type === 'activity_label') {
     const withoutAssociations = { ...item, toolCallIds: undefined, agentIds: undefined };
-    return shrinkStringField(withoutAssociations, 'label');
+    return shrinkStringField(withoutAssociations, 'label', 'labelTruncated');
   }
 
   // Preserve the terminal output as long as possible: discard oversized input
@@ -200,6 +200,7 @@ export function projectPersistedMessageActivity(
             ? { status: candidate.status }
             : {}),
           ...(typeof candidate.pending === 'boolean' ? { pending: candidate.pending } : {}),
+          ...(candidate.labelTruncated === true ? { labelTruncated: true } : {}),
         },
       ];
     }
@@ -229,12 +230,25 @@ export function projectPersistedMessageActivity(
           : {}),
         ...(output == null || output === '' ? {} : { output }),
         status,
+        ...(candidate.inputValidationError === true ? { inputValidationError: true } : {}),
         ...(candidate.inputTruncated === true ? { inputTruncated: true } : {}),
         ...(candidate.outputTruncated === true ? { outputTruncated: true } : {}),
       },
     ];
   });
   return boundActivity(activity, truncated);
+}
+
+/** Validates a storage-bounded, settlement-time public activity projection. */
+export function projectPersistedMessageActivityJson(
+  activityJson: string,
+  sourceTruncated = false,
+): Projection {
+  try {
+    return projectPersistedMessageActivity(JSON.parse(activityJson) as unknown, sourceTruncated);
+  } catch {
+    return { activity: [], truncated: true };
+  }
 }
 
 const visibleContent = (value: unknown): { text: string; hasReasoning: boolean } => {

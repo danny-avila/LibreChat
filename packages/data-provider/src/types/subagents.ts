@@ -66,6 +66,7 @@ export type SubagentActivityItem =
       agentIds?: string[];
       status?: 'ok' | 'partial' | 'failed';
       pending?: boolean;
+      labelTruncated?: boolean;
     }
   | {
       type: 'tool';
@@ -74,6 +75,7 @@ export type SubagentActivityItem =
       input?: string;
       output?: string;
       status: 'running' | 'completed' | 'failed' | 'cancelled';
+      inputValidationError?: true;
       inputTruncated?: boolean;
       outputTruncated?: boolean;
     };

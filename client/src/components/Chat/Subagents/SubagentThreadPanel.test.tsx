@@ -1132,8 +1132,8 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-state', 'loading');
-    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-status', 'dispatched');
+    expect(screen.getByTestId('subagent-conversation')).toHaveAttribute('data-state', 'loading');
+    expect(screen.queryByTestId('shared-activity')).not.toBeInTheDocument();
     expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, true);
   });
 
@@ -1252,7 +1252,8 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-state', 'error');
+    expect(screen.getByTestId('subagent-conversation')).toHaveAttribute('data-state', 'error');
+    expect(screen.queryByTestId('shared-activity')).not.toBeInTheDocument();
   });
 
   it('shows live detached activity while its durable view is still becoming ready', () => {
@@ -1290,8 +1291,8 @@ describe('SubagentThreadPanel', () => {
     );
 
     expect(screen.getByText('Live child update.')).toBeInTheDocument();
-    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-state', 'ready');
-    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-status', 'running');
+    expect(screen.getByTestId('subagent-conversation')).toHaveAttribute('data-state', 'ready');
+    expect(screen.queryByTestId('shared-activity')).not.toBeInTheDocument();
   });
 
   it('exposes the focus-trapped mobile overlay as a modal dialog', () => {

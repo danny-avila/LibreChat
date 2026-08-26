@@ -1147,6 +1147,10 @@ describe('Message Operations', () => {
         text: '',
         user: 'user123',
         content: [
+          ...Array.from({ length: SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT + 2 }, (_, index) => ({
+            type: 'text',
+            text: `activity-${index}`,
+          })),
           {
             type: 'tool_call',
             tool_call: {
@@ -1155,12 +1159,9 @@ describe('Message Operations', () => {
               args: 'x'.repeat(2_000),
               output: 'y'.repeat(4_000),
               progress: 1,
+              inputValidationError: true,
             },
           },
-          ...Array.from({ length: SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT + 2 }, (_, index) => ({
-            type: 'text',
-            text: `activity-${index}`,
-          })),
         ],
       });
 
@@ -1174,28 +1175,30 @@ describe('Message Operations', () => {
       expect(messages).toHaveLength(1);
       expect(messages[0].subagentActivity).toHaveLength(SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT);
       expect(messages[0].subagentActivityProjectionTruncated).toBe(true);
-      expect(messages[0].subagentActivity?.[0]).toEqual(
+      const retainedTool = messages[0].subagentActivity?.slice(-1)[0] as {
+        input: string;
+        output: string;
+      };
+      expect(retainedTool).toEqual(
         expect.objectContaining({
           type: 'tool',
           toolCallId: 'move-1',
           name: 'submit_move',
+          inputValidationError: true,
           inputTruncated: true,
           outputTruncated: true,
         }),
       );
-      expect((messages[0].subagentActivity?.[0] as { input: string }).input.length).toBeLessThan(
-        2_000,
-      );
-      expect((messages[0].subagentActivity?.[0] as { output: string }).output.length).toBeLessThan(
-        4_000,
-      );
+      expect(retainedTool.input.length).toBeLessThan(2_000);
+      expect(retainedTool.output.length).toBeLessThan(4_000);
+      expect(JSON.stringify(messages[0])).not.toContain('activity-0');
       expect(JSON.stringify(messages[0])).not.toContain('x'.repeat(1_000));
       expect(JSON.stringify(messages[0])).not.toContain('y'.repeat(2_000));
     });
 
     it('bounds transcript materialization while retaining the exact selected task', async () => {
       const conversationId = uuidv4();
-      for (let index = 0; index < SUBAGENT_TRANSCRIPT_PAGE_LIMIT + 3; index += 1) {
+      for (let index = 0; index < SUBAGENT_TRANSCRIPT_PAGE_LIMIT + 6; index += 1) {
         await saveMessage(mockCtx, {
           messageId: `task-${index}:assistant`,
           conversationId,
@@ -1214,11 +1217,12 @@ describe('Message Operations', () => {
         user: 'user123',
         conversationId,
         selectedTaskId: 'task-0',
-        limit: 20,
+        limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT,
         textCodePointLimit: 8_192,
       });
 
       const materialized = messages.filter((message) => message.subagentTranscript != null);
+      expect(messages).toHaveLength(SUBAGENT_TRANSCRIPT_PAGE_LIMIT + 1);
       expect(materialized).toHaveLength(SUBAGENT_TRANSCRIPT_PAGE_LIMIT);
       expect(materialized).toEqual(
         expect.arrayContaining([
@@ -1234,7 +1238,7 @@ describe('Message Operations', () => {
             message.subagentTranscript == null &&
             message.subagentTranscriptProjectionTruncated === true,
         ),
-      ).toHaveLength(3);
+      ).toHaveLength(1);
     });
 
     it('omits an oversized private transcript before returning the application result', async () => {
@@ -1267,6 +1271,47 @@ describe('Message Operations', () => {
       expect(messages[0].text).toBe('The bounded public answer remains available.');
       expect(messages[0]).not.toHaveProperty('subagentTranscript');
       expect(messages[0].subagentTranscriptProjectionTruncated).toBe(true);
+    });
+
+    it('prefers the bounded settlement projection without materializing its private transcript', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-projected:assistant',
+        conversationId,
+        text: 'The public answer remains available.',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-projected',
+          mode: 'append',
+          messagesJson: JSON.stringify([
+            {
+              type: 'ai',
+              data: { content: 'private'.repeat(SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT) },
+            },
+          ]),
+        },
+        subagentActivityProjection: {
+          taskId: 'task-projected',
+          version: 1,
+          activityJson: JSON.stringify([{ type: 'writing', text: 'Public result.' }]),
+          truncated: false,
+        },
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        selectedTaskId: 'task-projected',
+        limit: 1,
+        textCodePointLimit: 8_192,
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0].subagentActivityProjectionJson).toBe(
+        JSON.stringify([{ type: 'writing', text: 'Public result.' }]),
+      );
+      expect(messages[0]).not.toHaveProperty('subagentTranscript');
+      expect(messages[0]).not.toHaveProperty('subagentTranscriptProjectionTruncated');
     });
   });
 
