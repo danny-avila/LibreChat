@@ -72,12 +72,12 @@ import {
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
 import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
+import { extractDefaultParams, resolveReasoningParams } from '~/endpoints/openai/llm';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { resolveStreamLimits, resolveSubagentMaxTurns } from '~/agents/config';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
 import { getProviderConfig } from '~/endpoints/config/providers';
-import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
 import { getPluginHookSource } from '~/agents/hooks/source';
@@ -666,7 +666,11 @@ function resolveSummarizationProvider(
      * that the main agent relied on. `proxy` is forwarded so outbound proxy
      * dispatchers (`PROXY` env var) apply to cross-endpoint summarization.
      */
-    const { llmConfig, configOptions } = getOpenAIConfig(
+    const {
+      llmConfig,
+      configOptions,
+      provider: detectedProvider,
+    } = getOpenAIConfig(
       apiKey,
       {
         reverseProxyUrl: baseURL,
@@ -694,8 +698,16 @@ function resolveSummarizationProvider(
      */
     delete clientOverrides.model;
     delete clientOverrides.modelName;
+    /**
+     * `getOpenAIConfig` detects OpenRouter from the resolved `baseURL`, which
+     * `getProviderConfig` cannot do for an endpoint whose config name isn't
+     * `openrouter` — it reports `openAI` for those. Prefer the detected
+     * provider so a cross-endpoint summarizer builds the same client the main
+     * agent flow builds for that endpoint (`initializeAgent` applies the same
+     * precedence).
+     */
     return {
-      provider: overrideProvider,
+      provider: detectedProvider ?? overrideProvider,
       clientOverrides,
     };
   } catch (error) {
@@ -753,10 +765,17 @@ function shapeSummarizationConfig(
    * adding e.g. `configuration.defaultQuery` keeps the resolved `baseURL`
    * and `defaultHeaders` rather than replacing the whole object.
    */
-  const parameters =
+  const mergedParameters =
     clientOverrides != null
       ? mergeParameters(clientOverrides, config?.parameters)
       : config?.parameters;
+  /**
+   * A scalar `reasoning_effort` — the only reasoning shape the yaml schema
+   * accepts — is inert as a client option and leaves the summarizer running at
+   * whatever effort the main agent resolved. Translate it the way the main
+   * flow's `getOpenAIConfig` would for the summarization target.
+   */
+  const parameters = resolveReasoningParams({ provider, model, parameters: mergedParameters });
 
   return {
     enabled: config?.enabled !== false && isNonEmptyString(provider) && isNonEmptyString(model),
