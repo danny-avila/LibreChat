@@ -29,6 +29,9 @@ export function getAvailableAgentSelection({
 
   return {
     provider,
-    model: getAvailableModelSelection(model, models[resolveModelCatalogKey(provider, models)] ?? []),
+    model: getAvailableModelSelection(
+      model,
+      models[resolveModelCatalogKey(provider, models)] ?? [],
+    ),
   };
 }
