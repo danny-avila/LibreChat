@@ -78,6 +78,7 @@ describe('agent event runtime config', () => {
             coalescing: true,
             actorMailbox: true,
             checkpointForks: true,
+            durableReceipts: true,
             selfUrl: 'https://triggers.internal',
           },
         },
@@ -97,6 +98,7 @@ describe('agent event runtime config', () => {
       coalescing: true,
       actorMailbox: true,
       checkpointForks: true,
+      durableReceipts: true,
       selfUrl: 'https://triggers.internal',
     });
     expect(result.data.rateLimits?.agentEvents).toEqual({

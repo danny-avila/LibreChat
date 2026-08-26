@@ -1952,6 +1952,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         const checkpointForksEnabled =
           req.config?.endpoints?.[EModelEndpoint.agents]?.eventDriven?.checkpointForks === true;
+        const durableActorReceiptsEnabled =
+          req.config?.endpoints?.[EModelEndpoint.agents]?.eventDriven?.durableReceipts === true;
         const agentsConfig = req.config?.endpoints?.[EModelEndpoint.agents];
         const eventActorAgents = [
           client?.options?.agent,
@@ -1992,6 +1994,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           );
         const canUseEventActorFork =
           checkpointForksEnabled &&
+          durableActorReceiptsEnabled &&
           agentsConfig?.checkpointer?.type !== 'memory' &&
           !eventActorMayPause &&
           !eventActorHasSkillPrimes &&

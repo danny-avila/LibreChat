@@ -183,6 +183,13 @@ in parallel. Existing coalesced batches occupy one mailbox position and retain e
 individual receipt. An active mailbox record does not receive its normal success TTL; the 90-day
 retention window begins only after terminal handling is recorded.
 
+Set `endpoints.agents.eventDriven.durableReceipts: true` only after every API replica runs the
+token-fenced delivery receipt implementation and all pre-upgrade bound-actor deliveries have
+drained. It defaults to false so a rolling deployment cannot overlap token-unaware admission
+release with a newer token-owned action. Keep it false during the binary rollout, then enable it
+deployment-wide together with `checkpointForks` after the old workers and their deliveries are
+gone.
+
 ### Coalescing observational child events
 
 Sources that can prove several bound `continue` events are interchangeable observations may opt
