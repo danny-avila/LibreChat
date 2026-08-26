@@ -2977,6 +2977,49 @@ describe('HITL wiring is gated on hitlCapable', () => {
     const config = await runAndGetConfig({});
     expect(config).not.toHaveProperty('humanInTheLoop');
   });
+
+  it('heals aliases discovered when a lazy subagent resolves', async () => {
+    const alias = { name: 'delete_mcp_acme', aliasName: 'acme_delete_mcp_acme' };
+    const resolvedChild = makeAgent({ id: 'lazy-child', mcpToolAliases: [alias] });
+    const lazyChild = {
+      ...makeAgent({ id: 'lazy-child' }),
+      configId: 'lazy-child:v1',
+      resolve: jest.fn().mockResolvedValue(resolvedChild),
+    };
+    const parent = makeAgent({
+      subagents: { enabled: true, allowSelf: false },
+      lazySubagentConfigs: [lazyChild],
+    });
+    const appConfig = {
+      ...hitlAppConfig,
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          toolApproval: { enabled: true, mode: 'bypass', deny: [alias.aliasName] },
+        },
+      },
+    } as unknown as AppConfig;
+
+    await createRun({
+      agents: [parent] as never,
+      signal: new AbortController().signal,
+      appConfig,
+      streaming: true,
+      streamUsage: true,
+      hitlCapable: true,
+    });
+    const config = (Run.create as jest.Mock).mock.calls[0][0] as Record<string, unknown>;
+    const hooks = config.hooks as { getMatchers: (event: string) => unknown[] };
+    const lazyConfig = (
+      (config.graphConfig as { agents: Array<Record<string, unknown>> }).agents[0]
+        .subagentConfigs as Array<Record<string, unknown>>
+    ).find((entry) => entry.configId === lazyChild.configId);
+
+    expect(hooks.getMatchers('PreToolUse')).toHaveLength(1);
+    await (lazyConfig?.resolveAgentInputs as (context: never) => Promise<unknown>)({
+      signal: new AbortController().signal,
+    } as never);
+    expect(hooks.getMatchers('PreToolUse')).toHaveLength(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
