@@ -4779,6 +4779,17 @@ describe('Conversation Operations', () => {
           checkpoint: checkpoint('stale-rebuild'),
         }),
       ).resolves.toMatchObject({ status: 'committed', state: { generation: 2 } });
+      /** Sealing a completed legacy turn must advance the epoch even while
+       * another invocation's fence is active — that is exactly the mid-turn
+       * race it exists to defeat — where the begin invalidation fails closed. */
+      await expect(methods.invalidateAgentEventActorState(owner)).rejects.toThrow(
+        'unresolved applied-action reconciliation',
+      );
+      await expect(methods.completeAgentEventActorInvalidation(owner)).resolves.toBe(true);
+      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+        state: { generation: 2, requiresColdStart: true },
+        epoch: 4,
+      });
     });
 
     it('refuses new invocations rather than evicting unexpired receipts at the cap', async () => {

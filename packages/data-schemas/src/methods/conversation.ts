@@ -263,6 +263,11 @@ export interface ConversationMethods {
     conversationId: string;
     tenantId?: string;
   }): Promise<boolean>;
+  completeAgentEventActorInvalidation(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+  }): Promise<boolean>;
   recordAgentEventActorReconciliation(input: {
     user: string;
     conversationId: string;
@@ -646,6 +651,51 @@ export function createConversationMethods(
       throw new Error('Event actor has unresolved applied-action reconciliation');
     }
     return false;
+  }
+
+  /**
+   * Seals a legacy turn after its terminal persistence: advances the epoch a
+   * second time so a fork prepared MID-turn — which already observed the
+   * begin-invalidation's epoch and cold marker, but rebuilt from history that
+   * did not yet contain the turn's messages — fails its commit CAS instead of
+   * making that incomplete rebuild authoritative. Unlike the begin
+   * invalidation this must succeed while a fork fence is active (that is
+   * precisely the race it defends against), so it carries no quiescence
+   * requirement and never throws on unresolved rows. A commit that already
+   * won against the begin epoch is healed the same way: the bump re-marks the
+   * committed head cold, so the next event rebuilds with complete history.
+   */
+  async function completeAgentEventActorInvalidation(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+  }): Promise<boolean> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const owner = {
+      user: input.user,
+      conversationId: input.conversationId,
+      subagentThread: { $exists: true },
+      agentEventBinding: { $exists: true },
+      ...subagentLeaseTenantFilter(input.tenantId),
+      ...activeExpirationFilter<IConversation>(),
+    };
+    const sealed = await Conversation.findOneAndUpdate(
+      { ...owner, agentEventActor: { $exists: true } },
+      {
+        $set: { 'agentEventActor.requiresColdStart': true },
+        $inc: { agentEventActorEpoch: 1 },
+      },
+      { new: true, timestamps: false },
+    ).lean<IConversation>();
+    if (sealed != null) {
+      return true;
+    }
+    const sealedHeadless = await Conversation.findOneAndUpdate(
+      { ...owner, agentEventActor: { $exists: false } },
+      { $inc: { agentEventActorEpoch: 1 } },
+      { new: true, timestamps: false },
+    ).lean<IConversation>();
+    return sealedHeadless != null;
   }
 
   /** Acquires or advances one invocation lifecycle fence and blocks competing turns. */
@@ -2297,6 +2347,7 @@ export function createConversationMethods(
     getAgentEventActorSnapshot,
     commitAgentEventActorState,
     invalidateAgentEventActorState,
+    completeAgentEventActorInvalidation,
     recordAgentEventActorReconciliation,
     resolveAgentEventActorReconciliation,
     reserveSubagentThread,

@@ -51,6 +51,7 @@ const {
   getAgentEventActorSnapshot,
   commitAgentEventActorState,
   invalidateAgentEventActorState,
+  completeAgentEventActorInvalidation,
   recordAgentEventActorReconciliation,
   resolveAgentEventActorReconciliation,
   isAgentTriggerPrincipalActive,
@@ -1795,6 +1796,27 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       const eventActorTenantId = req._agentEventBindingTenantId;
       let appliedEventActor;
       let eventActorPersistenceComplete = false;
+      let legacyEventActorTurnStarted = false;
+      /** A fork prepared MID-legacy-turn already observed the begin
+       * invalidation, so only a second epoch advance after this turn's
+       * terminal persistence can defeat its commit of an incomplete rebuild.
+       * Sealing never diverts the turn's own exit: on failure the begin bump
+       * still fences everything prepared before the turn. */
+      const sealLegacyEventActorTurn = async () => {
+        if (!legacyEventActorTurnStarted) {
+          return;
+        }
+        legacyEventActorTurnStarted = false;
+        try {
+          await completeAgentEventActorInvalidation({
+            user: userId,
+            conversationId,
+            ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+          });
+        } catch (sealError) {
+          logger.error('[event-actor] Failed to seal a legacy turn invalidation', sealError);
+        }
+      };
       const recordEventActorPersistenceFailure = async (error) => {
         if (appliedEventActor == null || eventActorPersistenceComplete) {
           return;
@@ -2032,6 +2054,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   conversationId,
                   ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
                 });
+                legacyEventActorTurnStarted = true;
               }
               return client.sendMessage(text, messageOptions);
             })();
@@ -2281,6 +2304,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               reconciliationError,
             );
           }
+          await sealLegacyEventActorTurn();
           await finishResumableRequest(req, userId);
           disposeBackgroundClient();
           startupTelemetry?.end(job.abortController.signal.aborted ? 'aborted' : 'replaced');
@@ -2371,6 +2395,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             throw new Error('Applied event actor history barrier could not be durably recorded');
           }
         }
+        await sealLegacyEventActorTurn();
         eventActorPersistenceComplete = true;
 
         // If the user stopped this turn — or an empty preempt boundary truncated
@@ -2518,6 +2543,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             reconciliationError,
           );
         }
+        await sealLegacyEventActorTurn();
 
         // Once this controller owns terminal persistence, no competing error
         // transition can win. Settle its pending marker with conservative

@@ -94,6 +94,7 @@ const mockCreateAgentEventActionRecorder = jest.fn(() => {
 const mockGetAgentEventActorSnapshot = jest.fn();
 const mockCommitAgentEventActorState = jest.fn();
 const mockInvalidateAgentEventActorState = jest.fn();
+const mockCompleteAgentEventActorInvalidation = jest.fn();
 const mockRecordAgentEventActorReconciliation = jest.fn();
 const mockResolveAgentEventActorReconciliation = jest.fn();
 const mockStartupTelemetry = {
@@ -261,6 +262,8 @@ jest.mock('~/models', () => ({
   getAgentEventActorSnapshot: (...args) => mockGetAgentEventActorSnapshot(...args),
   commitAgentEventActorState: (...args) => mockCommitAgentEventActorState(...args),
   invalidateAgentEventActorState: (...args) => mockInvalidateAgentEventActorState(...args),
+  completeAgentEventActorInvalidation: (...args) =>
+    mockCompleteAgentEventActorInvalidation(...args),
   recordAgentEventActorReconciliation: (...args) =>
     mockRecordAgentEventActorReconciliation(...args),
   resolveAgentEventActorReconciliation: (...args) =>
@@ -4469,6 +4472,16 @@ describe('ResumableAgentController resume metadata', () => {
         conversationId: 'child-conversation',
       });
       expect(client.sendMessage).toHaveBeenCalledTimes(1);
+      /** The turn's terminal path must seal the invalidation with a second
+       * epoch advance so a fork prepared mid-turn cannot commit across it. */
+      expect(mockCompleteAgentEventActorInvalidation).toHaveBeenCalledWith({
+        user: 'user-123',
+        tenantId: 'tenant-1',
+        conversationId: 'child-conversation',
+      });
+      expect(mockCompleteAgentEventActorInvalidation.mock.invocationCallOrder[0]).toBeGreaterThan(
+        client.sendMessage.mock.invocationCallOrder[0],
+      );
     },
   );
 
