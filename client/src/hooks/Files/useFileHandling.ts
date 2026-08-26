@@ -20,7 +20,6 @@ import {
   logger,
   validateFiles,
   cachePreview,
-  validateFileSizes,
   getCachedPreview,
   removePreviewEntry,
   validateFileDuplicates,
@@ -609,18 +608,11 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
 
     let batchIsValid: boolean;
     try {
-      batchIsValid =
-        validateFileDuplicates({
-          files: existingFiles,
-          fileList: processedFileList,
-          setError,
-        }) &&
-        validateFileSizes({
-          files: existingFiles,
-          fileList: processedFileList,
-          setError,
-          endpointFileConfig,
-        });
+      batchIsValid = validateFileDuplicates({
+        files: existingFiles,
+        fileList: processedFileList,
+        setError,
+      });
     } catch (error) {
       console.error('file validation error', error);
       setError('com_error_files_validation');
@@ -632,6 +624,47 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       discardProcessedUploads();
       setFilesLoading(false);
       return false;
+    }
+
+    /**
+     * Drop individually oversized files instead of failing the whole batch.
+     *
+     * The backend enforces `fileSizeLimit` per file, so one oversized file in a
+     * multi-file selection would otherwise reject every valid file in the same
+     * selection. We remove the offending files (and their UI entries) here and
+     * continue uploading the rest. When every file is oversized, fall through
+     * to the shared error path.
+     */
+    const { fileSizeLimit } = endpointFileConfig;
+    if (fileSizeLimit != null && fileSizeLimit > 0) {
+      const keptUploads: ProcessedUpload[] = [];
+      const skippedNames: string[] = [];
+      for (const processed of processedUploads) {
+        const fileSize = processed.extendedFile.file?.size ?? processed.extendedFile.size ?? 0;
+        if (fileSize >= fileSizeLimit) {
+          const { extendedFile, preview } = processed;
+          deleteFileById(extendedFile.file_id);
+          removePreviewEntry(extendedFile.file_id);
+          URL.revokeObjectURL(preview);
+          skippedNames.push(extendedFile.file?.name ?? '');
+          continue;
+        }
+        keptUploads.push(processed);
+      }
+      if (skippedNames.length > 0) {
+        const skippedLabel = skippedNames.filter(Boolean).join(', ');
+        showToast({
+          message: localize('com_error_files_size_limit_skipped', { 0: skippedLabel }),
+          status: 'error',
+          duration: 5000,
+        });
+        processedUploads.splice(0, processedUploads.length, ...keptUploads);
+        if (processedUploads.length === 0) {
+          filesRef.current = existingFiles;
+          setFilesLoading(false);
+          return false;
+        }
+      }
     }
 
     const filesWithProcessedUploads = new Map(existingFiles);
