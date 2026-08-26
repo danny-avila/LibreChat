@@ -1,7 +1,14 @@
-import { memo, useRef, useState } from 'react';
+import { memo, useContext, useRef, useState } from 'react';
 import * as Menu from '@ariakit/react/menu';
-import { Archive, FileText, LogOut } from 'lucide-react';
-import { DropdownMenuSeparator, OGDialog, OGDialogTemplate, Avatar } from '@librechat/client';
+import { Archive, FileText, LogOut, Moon, Sun } from 'lucide-react';
+import {
+  DropdownMenuSeparator,
+  OGDialog,
+  OGDialogTemplate,
+  Avatar,
+  ThemeContext,
+  isDark,
+} from '@librechat/client';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import ArchivedChatsTable from './SettingsTabs/General/ArchivedChatsTable';
@@ -19,6 +26,10 @@ function AccountSettings() {
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
   const [isFilesOpen, setIsFilesOpen] = useState(false);
+  // BKL: 설정 메뉴가 제거된 포크라 채팅 화면에서 테마를 바꿀 곳이 없었다.
+  // 로그인 화면과 같은 라이트↔다크 토글을 마이메뉴에 노출한다.
+  const { theme, setTheme } = useContext(ThemeContext);
+  const darkMode = isDark(theme);
 
   return (
     <Menu.MenuProvider>
@@ -76,6 +87,19 @@ function AccountSettings() {
         >
           <Archive className="icon-md" aria-hidden="true" />
           {localize('com_nav_archived_chats')}
+        </Menu.MenuItem>
+        <Menu.MenuItem
+          hideOnClick={false}
+          onClick={() => setTheme(darkMode ? 'light' : 'dark')}
+          className="select-item text-sm"
+          aria-label="화면 모드 전환"
+        >
+          {darkMode ? (
+            <Sun className="icon-md" aria-hidden="true" />
+          ) : (
+            <Moon className="icon-md" aria-hidden="true" />
+          )}
+          {darkMode ? '라이트 모드로 전환' : '다크 모드로 전환'}
         </Menu.MenuItem>
         <DropdownMenuSeparator />
         <Menu.MenuItem onClick={() => logout()} className="select-item text-sm">
