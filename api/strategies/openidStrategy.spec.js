@@ -15,6 +15,13 @@ const { setupOpenId } = require('./openidStrategy');
 
 const mockCloudfrontFileSource = FileSources.cloudfront ?? 'cloudfront';
 
+/**
+ * Graph calls made to resolve group overage, ignoring the unrelated `/me` profile
+ * lookup that every login performs to read jobTitle and department.
+ */
+const overageFetchCalls = () =>
+  undici.fetch.mock.calls.filter(([url]) => String(url).includes('getMemberObjects'));
+
 // --- Mocks ---
 jest.mock('node-fetch');
 jest.mock('jsonwebtoken/decode');
@@ -812,7 +819,7 @@ describe('setupOpenId', () => {
 
         const { user, details } = await validate(tokenset);
 
-        expect(undici.fetch).not.toHaveBeenCalled();
+        expect(overageFetchCalls()).toHaveLength(0);
         expect(Boolean(user)).toBe(expectedAllowed);
         expect(details?.message).toBe(expectedMessage);
       },
@@ -866,7 +873,7 @@ describe('setupOpenId', () => {
 
       const { user, details } = await validate(tokenset);
 
-      expect(undici.fetch).not.toHaveBeenCalled();
+      expect(overageFetchCalls()).toHaveLength(0);
       expect(user).toBe(false);
       expect(details.message).toBe('You must have "group-required" role to log in.');
       const { logger } = require('@librechat/data-schemas');
@@ -903,7 +910,7 @@ describe('setupOpenId', () => {
       expect(user).toBe(false);
       expect(details.message).toBe('You must have "group-required" role to log in.');
 
-      expect(undici.fetch).not.toHaveBeenCalled();
+      expect(overageFetchCalls()).toHaveLength(0);
       expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining('Access token missing; cannot resolve group overage'),
       );
@@ -1113,11 +1120,10 @@ describe('setupOpenId', () => {
     it('caches the exchanged token and reuses it on subsequent calls', async () => {
       const openidClient = require('openid-client');
       const getLogStores = require('~/cache/getLogStores');
-      const mockSet = jest.fn();
-      const mockGet = jest
-        .fn()
-        .mockResolvedValueOnce(undefined)
-        .mockResolvedValueOnce({ access_token: 'exchanged_graph_token' });
+      /** Map-backed so a cache hit depends on a prior set, not on call ordering. */
+      const store = new Map();
+      const mockSet = jest.fn(async (key, value) => void store.set(key, value));
+      const mockGet = jest.fn(async (key) => store.get(key));
       getLogStores.mockReturnValue({ get: mockGet, set: mockSet });
 
       process.env.OPENID_REQUIRED_ROLE = 'group-required';
@@ -1226,8 +1232,8 @@ describe('setupOpenId', () => {
 
       await validate(tokenset);
 
-      // Graph API should be called only once (for required role), admin role reuses the result
-      expect(undici.fetch).toHaveBeenCalledTimes(1);
+      // Overage resolves once (for required role); the admin check reuses that result
+      expect(overageFetchCalls()).toHaveLength(1);
     });
 
     it('demotes existing admin when overage groups no longer contain admin role', async () => {
@@ -1290,8 +1296,8 @@ describe('setupOpenId', () => {
 
       const { user } = await validate(tokenset);
 
-      // No Graph call since admin uses access token (not id)
-      expect(undici.fetch).not.toHaveBeenCalled();
+      // No overage resolution since admin uses access token (not id)
+      expect(overageFetchCalls()).toHaveLength(0);
       expect(user.role).toBeUndefined();
     });
 
@@ -1314,7 +1320,7 @@ describe('setupOpenId', () => {
 
       const { user } = await validate(tokenset);
       expect(user.role).toBe('ADMIN');
-      expect(undici.fetch).toHaveBeenCalledTimes(1);
+      expect(overageFetchCalls()).toHaveLength(1);
     });
 
     it('denies admin when OPENID_REQUIRED_ROLE is absent and Graph does not contain admin group', async () => {
@@ -1346,7 +1352,7 @@ describe('setupOpenId', () => {
       process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
 
       jwtDecode.mockReturnValue({ hasgroups: true });
-      openidClient.genericGrantRequest.mockRejectedValueOnce(new Error('OBO exchange rejected'));
+      openidClient.genericGrantRequest.mockRejectedValue(new Error('OBO exchange rejected'));
 
       await setupOpenId();
       verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
@@ -1354,7 +1360,7 @@ describe('setupOpenId', () => {
       const { user, details } = await validate(tokenset);
       expect(user).toBe(false);
       expect(details.message).toBe('You must have "group-required" role to log in.');
-      expect(undici.fetch).not.toHaveBeenCalled();
+      expect(overageFetchCalls()).toHaveLength(0);
     });
 
     it('denies login when OBO exchange returns no access_token', async () => {
@@ -1364,7 +1370,7 @@ describe('setupOpenId', () => {
       process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
 
       jwtDecode.mockReturnValue({ hasgroups: true });
-      openidClient.genericGrantRequest.mockResolvedValueOnce({ expires_in: 3600 });
+      openidClient.genericGrantRequest.mockResolvedValue({ expires_in: 3600 });
 
       await setupOpenId();
       verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
@@ -1372,7 +1378,7 @@ describe('setupOpenId', () => {
       const { user, details } = await validate(tokenset);
       expect(user).toBe(false);
       expect(details.message).toBe('You must have "group-required" role to log in.');
-      expect(undici.fetch).not.toHaveBeenCalled();
+      expect(overageFetchCalls()).toHaveLength(0);
     });
   });
 
@@ -1887,7 +1893,7 @@ describe('setupOpenId', () => {
       const { user } = await validate(tokenset);
 
       expect(user.role).toBe('STANDARD-USER');
-      expect(undici.fetch).toHaveBeenCalledTimes(1);
+      expect(overageFetchCalls()).toHaveLength(1);
     });
 
     it('leaves the role unchanged when role-sync group overage cannot be resolved', async () => {
