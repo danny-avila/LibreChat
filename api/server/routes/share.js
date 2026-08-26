@@ -52,7 +52,7 @@ const { createForkLimiters } = require('~/server/middleware/limiters');
 const optionalShareFileAuth = require('~/server/middleware/optionalShareFileAuth');
 const optionalJwtAuth = require('~/server/middleware/optionalJwtAuth');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
-const { hasCapability } = require('~/server/middleware/roles/capabilities');
+const { hasCapability, hasConfigCapability } = require('~/server/middleware/roles/capabilities');
 const configMiddleware = require('~/server/middleware/config/app');
 const { getAppConfig } = require('~/server/services/Config/app');
 const router = express.Router();
@@ -72,16 +72,17 @@ const getSharedLangfuseSessionUrl = async (req) => {
     return null;
   }
 
-  const isAdmin = await hasCapability(
-    {
-      id: userId,
-      role: req.user.role ?? '',
-      tenantId: req.user.tenantId,
-      idOnTheSource: req.user.idOnTheSource ?? null,
-    },
-    SystemCapabilities.ACCESS_ADMIN,
-  );
+  const capabilityUser = {
+    id: userId,
+    role: req.user.role ?? '',
+    tenantId: req.user.tenantId,
+    idOnTheSource: req.user.idOnTheSource ?? null,
+  };
+  const isAdmin = await hasCapability(capabilityUser, SystemCapabilities.ACCESS_ADMIN);
   if (!isAdmin) {
+    return null;
+  }
+  if (!(await hasConfigCapability(capabilityUser, 'langfuse'))) {
     return null;
   }
 
