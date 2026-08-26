@@ -4255,11 +4255,13 @@ describe('ResumableAgentController resume metadata', () => {
       { toolDefinitions: [] },
       { toolApproval: { enabled: true }, eventDriven: { checkpointForks: true } },
       undefined,
+      undefined,
     ],
     [
       'primary ask_user_question',
       { toolDefinitions: [{ name: 'ask_user_question' }] },
       { eventDriven: { checkpointForks: true } },
+      undefined,
       undefined,
     ],
     [
@@ -4267,11 +4269,13 @@ describe('ResumableAgentController resume metadata', () => {
       { toolDefinitions: [] },
       { eventDriven: { checkpointForks: true } },
       new Map([['added-agent', { toolDefinitions: [{ name: 'ask_user_question' }] }]]),
+      undefined,
     ],
     [
       'memory-checkpointer',
       { toolDefinitions: [] },
       { eventDriven: { checkpointForks: true }, checkpointer: { type: 'memory' } },
+      undefined,
       undefined,
     ],
     [
@@ -4279,16 +4283,25 @@ describe('ResumableAgentController resume metadata', () => {
       { toolDefinitions: [], alwaysApplySkillPrimes: [{ name: 'playbook', body: '# playbook' }] },
       { eventDriven: { checkpointForks: true } },
       undefined,
+      undefined,
     ],
     [
       'manual skill prime',
       { toolDefinitions: [], manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }] },
       { eventDriven: { checkpointForks: true } },
       undefined,
+      undefined,
+    ],
+    [
+      'skills-capable (history-derived re-priming)',
+      { toolDefinitions: [] },
+      { eventDriven: { checkpointForks: true } },
+      undefined,
+      { primeInvokedSkills: async () => undefined },
     ],
   ])(
     'keeps %s event actors on the existing resumable path',
-    async (_label, agent, config, agentConfigs) => {
+    async (_label, agent, config, agentConfigs, clientOptions) => {
       mockGenerationJobManager.claimGeneration.mockResolvedValue(
         wonGenerationClaim({
           streamId: 'child-conversation',
@@ -4301,7 +4314,7 @@ describe('ResumableAgentController resume metadata', () => {
         tenantId: 'tenant-1',
       });
       const client = {
-        options: { agent },
+        options: { agent, ...(clientOptions ?? {}) },
         agentConfigs,
         sendMessage: jest.fn(async () => {
           throw new Error('stop after legacy event invocation started');
