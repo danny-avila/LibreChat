@@ -782,6 +782,47 @@ describe('MessageNav', () => {
       expect(current[0]).toHaveAttribute('data-msg-id', 'messages-end');
     });
 
+    it('disables the up chevron at the top even when the rows out-margin the padding', () => {
+      // `.message-render` carries `scroll-margin-top: 4rem` against `pt-14` of
+      // content padding, so the first entry's raw snap point is -8px. Compared
+      // unclamped it reads as "there is still something above you" at the very
+      // top of every conversation.
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: messages });
+      const { scrollable, content } = buildDom(messages);
+      /** Mirror the real layout: content padding 56px, row scroll margin 64px. */
+      for (let i = 0; i < content.children.length; i++) {
+        Object.defineProperty(content.children[i], 'offsetTop', {
+          value: 56 + i * 200,
+          configurable: true,
+        });
+      }
+      const marginSpy = jest
+        .spyOn(window, 'getComputedStyle')
+        .mockImplementation(() => ({ scrollMarginTop: '64px' }) as CSSStyleDeclaration);
+
+      const scrollableRef = { current: scrollable } as RefObject<HTMLDivElement>;
+      const { container } = render(<MessageNav scrollableRef={scrollableRef} />);
+      act(() => {
+        jest.advanceTimersByTime(250);
+        fireEvent.scroll(scrollable);
+        jest.advanceTimersByTime(32);
+      });
+
+      const prev = container.querySelector(
+        'button[aria-label="com_ui_message_nav_previous"]',
+      ) as HTMLButtonElement;
+      expect(prev.disabled).toBe(true);
+      /** And the origin rib reads as reached, not as somewhere still to go. */
+      const origin = container.querySelector('[data-msg-id="messages-start"] span');
+      expect(origin?.className).not.toContain('bg-text-tertiary');
+      marginSpy.mockRestore();
+    });
+
     it('chevron buttons expose a disabled state when there is nothing to navigate to', () => {
       const messages = [
         buildMessage({ messageId: 'a', text: 'one', isCreatedByUser: true }),
@@ -2116,6 +2157,7 @@ describe('MessageNav', () => {
     }
 
     it('names the pending state instead of labelling the rib with nothing', () => {
+      mockUseMessagesSubmission.mockReturnValue({ isSubmitting: true });
       const { container } = renderNav(streamingMessages());
       const pending = container.querySelector('[data-msg-id="d"]') as HTMLElement;
       expect(pending.getAttribute('aria-label')).toBe(
@@ -2124,6 +2166,7 @@ describe('MessageNav', () => {
     });
 
     it('never opens an empty preview beside a rib with no text yet', () => {
+      mockUseMessagesSubmission.mockReturnValue({ isSubmitting: true });
       const messages = streamingMessages();
       const restoreLayout = stubRibLayout(messages.map((m) => m.messageId));
       const { container } = renderNav(messages);
@@ -2139,6 +2182,49 @@ describe('MessageNav', () => {
       expect(tip).not.toBeNull();
       expect(tip).toHaveTextContent('com_ui_generating');
       restoreLayout();
+    });
+
+    it('does not call a settled message generating just because it has no text', () => {
+      // Image-, tool-call- and reasoning-only messages carry no text part, so
+      // reopening a finished thread would otherwise announce "Generating"
+      // against them forever.
+      mockUseMessagesSubmission.mockReturnValue({ isSubmitting: false });
+      const { container } = renderNav(streamingMessages());
+      const settled = container.querySelector('[data-msg-id="d"]') as HTMLElement;
+      expect(settled.getAttribute('aria-label')).toBe(
+        'com_ui_message_nav_go_to_assistant|{"0":"com_ui_message_nav_no_preview"}',
+      );
+    });
+
+    it('only the tail of a live submission is pending, never an earlier gap', () => {
+      mockUseMessagesSubmission.mockReturnValue({ isSubmitting: true });
+      const { container } = renderNav([
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        /** A tool-call-only response part way up the thread. */
+        buildMessage({ messageId: 'b', text: '', content: [] }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+        buildMessage({ messageId: 'd', text: '', content: [] }),
+      ]);
+      expect(container.querySelector('[data-msg-id="b"]')?.getAttribute('aria-label')).toContain(
+        'com_ui_message_nav_no_preview',
+      );
+      expect(container.querySelector('[data-msg-id="d"]')?.getAttribute('aria-label')).toContain(
+        'com_ui_generating',
+      );
+    });
+
+    it('reads the rendered row when the message itself carries no text part', () => {
+      // A tool card still says something on screen; that is a better preview
+      // than any placeholder.
+      const node = document.createElement('div');
+      node.className = 'message-render';
+      node.textContent = 'Searched the web';
+      const entry = buildEntry(
+        'a',
+        asTMessage(buildMessage({ messageId: 'a', text: '', content: [] })),
+        node,
+      );
+      expect(entry.preview).toBe('Searched the web');
     });
   });
 
@@ -2184,6 +2270,49 @@ describe('MessageNav', () => {
         fireEvent.keyDown(column, { key: 'Home' });
       });
       expect(document.activeElement).toBe(ribs[0]);
+    });
+
+    it('moves the tab stop with arrow-key focus so the column keeps one stop', () => {
+      // A roving tab stop left behind on the scroll-spy's current rib gives the
+      // column two stops: Tab re-enters the rail it just left, and Shift+Tab
+      // walks back into it instead of out.
+      const { container } = renderRail();
+      const column = getColumn(container);
+      const ribs = messageRibs(container);
+      expect(ribs[0].getAttribute('tabindex')).toBe('0');
+
+      ribs[0].focus();
+      act(() => {
+        fireEvent.keyDown(column, { key: 'ArrowDown' });
+        fireEvent.keyDown(column, { key: 'ArrowDown' });
+      });
+
+      expect(document.activeElement).toBe(ribs[2]);
+      const stops = messageRibs(container).filter((rib) => rib.getAttribute('tabindex') === '0');
+      expect(stops).toHaveLength(1);
+      expect(stops[0]).toBe(ribs[2]);
+    });
+
+    it('returns the tab stop to the current rib once focus leaves the rail', () => {
+      const { container } = renderRail();
+      const column = getColumn(container);
+      const ribs = messageRibs(container);
+
+      ribs[0].focus();
+      act(() => {
+        fireEvent.keyDown(column, { key: 'End' });
+      });
+      expect(messageRibs(container).filter((r) => r.getAttribute('tabindex') === '0')[0]).toBe(
+        ribs[ribs.length - 1],
+      );
+
+      act(() => {
+        fireEvent.blur(column, { relatedTarget: document.body });
+      });
+
+      const stops = messageRibs(container).filter((rib) => rib.getAttribute('tabindex') === '0');
+      expect(stops).toHaveLength(1);
+      expect(stops[0].getAttribute('aria-current')).toBe('true');
     });
 
     it('does not run off either end of the rail', () => {

@@ -1590,6 +1590,7 @@
   "com_ui_message_nav_go_to_assistant": "Go to assistant message: {{0}}",
   "com_ui_message_nav_go_to_user": "Go to user message: {{0}}",
   "com_ui_message_nav_next": "Navigate to next message",
+  "com_ui_message_nav_no_preview": "No preview",
   "com_ui_message_nav_previous": "Navigate to previous message",
   "com_ui_message_part_empty": "Message content cannot be empty.",
   "com_ui_method": "Method",

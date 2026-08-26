@@ -44,13 +44,18 @@ export function extractPreviewFromContent(content?: TMessageContentParts[]): str
   return '';
 }
 
-export function buildEntry(id: string, msg: TMessage): MessageEntry {
+export function buildEntry(id: string, msg: TMessage, node?: HTMLElement): MessageEntry {
   const raw = msg.text?.trim() ? msg.text : extractPreviewFromContent(msg.content);
   const trimmed = raw.trim();
+  /** Image-, tool-call- and reasoning-only messages carry no text part at all,
+   *  so the message alone yields nothing to say. Their rendered row does say
+   *  something, and reading it is what keeps a settled message from being
+   *  mistaken for one that is still generating. */
+  const preview = trimmed !== '' ? trimmed : (node?.textContent ?? '').trim();
   return {
     id,
     isUser: !!msg.isCreatedByUser,
-    preview: trimmed.slice(0, 80) + (trimmed.length > 80 ? '...' : ''),
+    preview: preview.slice(0, 80) + (preview.length > 80 ? '...' : ''),
   };
 }
 
@@ -107,19 +112,27 @@ type LocalizeFn = ReturnType<typeof useLocalize>;
  * What a rib says it will take you to.
  *
  * A response enters the rail the instant its row mounts, which is one frame
- * before its first token — and a run that is still thinking has no text at all.
- * Falling through to the raw preview there labelled the rib with nothing and
- * opened an empty preview card beside it; naming the pending state instead
- * keeps the rail readable for the whole of a long generation.
+ * before its first token, so falling through to the raw preview there labelled
+ * the rib with nothing and opened an empty preview card beside it. Only the
+ * tail of a live submission earns the pending wording, though: an empty preview
+ * is not evidence of generation, and a reopened thread whose rows are settled
+ * would otherwise announce "Generating" forever.
  */
-export function previewTextFor(entry: MessageEntry, localize: LocalizeFn): string {
+export function previewTextFor(
+  entry: MessageEntry,
+  localize: LocalizeFn,
+  isPending = false,
+): string {
   if (entry.isStart === true) {
     return localize('com_ui_scroll_to_top');
   }
   if (entry.isEnd === true) {
     return localize('com_ui_scroll_to_bottom');
   }
-  return entry.preview !== '' ? entry.preview : localize('com_ui_generating');
+  if (entry.preview !== '') {
+    return entry.preview;
+  }
+  return localize(isPending ? 'com_ui_generating' : 'com_ui_message_nav_no_preview');
 }
 
 function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>): MessageEntry[] {
@@ -138,7 +151,7 @@ function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>
       continue;
     }
     const msg = messagesById.get(id);
-    entries.push(msg ? buildEntry(id, msg) : buildFallbackEntry(node, id));
+    entries.push(msg ? buildEntry(id, msg, node) : buildFallbackEntry(node, id));
   }
   if (entries.length > 0 && root.querySelector('#' + MESSAGES_END_ID)) {
     entries.push({ id: MESSAGES_END_ID, isUser: false, preview: '', isEnd: true });
@@ -161,6 +174,20 @@ function readScrollMargin(el: HTMLElement | null): number {
   }
   const value = parseFloat(getComputedStyle(el).scrollMarginTop);
   return Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * Where the container lands when an entry is snapped to the top, clamped to the
+ * range it can actually reach.
+ *
+ * The rows carry `scroll-margin-top: 4rem` against `pt-14` of content padding,
+ * so the first entry's raw snap point is -8px. Compared unclamped it reads as
+ * "there is still something above you" at the very top of every conversation,
+ * which left the up chevron live with nowhere to go and the origin rib showing
+ * as out of view while the reader sat at the top.
+ */
+function snapPointFor(top: number, scrollMargin: number, maxScrollTop: number): number {
+  return Math.max(0, Math.min(top - scrollMargin, maxScrollTop));
 }
 
 function computeTargetScroll(
@@ -375,6 +402,12 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
   const [tip, setTip] = useState<{ id: string; top: number; right: number } | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  /** The rib the keyboard last landed on. A roving tab stop has to travel with
+   *  focus, not sit on the scroll-spy's current rib: leave it behind and the
+   *  column holds two tab stops, so Tab re-enters the rail it just left and
+   *  Shift+Tab walks back into it instead of out. Distinct from `hoveredId`,
+   *  which the pointer also drives — the tab order must not follow the mouse. */
+  const [focusedRibId, setFocusedRibId] = useState<string | null>(null);
 
   /** The terminus rib is pinned beside the down chevron rather than living in
    *  the scrolling column, so it stays reachable however far the rail scrolls.
@@ -998,9 +1031,11 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     (e: React.FocusEvent<HTMLDivElement>) => {
       const col = columnRef.current;
       const target = e.target as HTMLElement;
-      if (!col || !target.getAttribute?.('data-msg-id')) {
+      const id = target.getAttribute?.('data-msg-id');
+      if (!col || id == null) {
         return;
       }
+      setFocusedRibId(id);
       interactingRef.current = true;
       pointerYRef.current = target.offsetTop + target.offsetHeight / 2;
       if (magRafRef.current == null) {
@@ -1017,6 +1052,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (col && next && col.contains(next)) {
         return;
       }
+      setFocusedRibId(null);
       handlePointerLeave();
     },
     [handlePointerLeave],
@@ -1178,7 +1214,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         if (offsetsTop[i] === Number.POSITIVE_INFINITY) {
           continue;
         }
-        const snap = Math.min(offsetsTop[i] - scrollMargin, containerMaxScrollTop);
+        const snap = snapPointFor(offsetsTop[i], scrollMargin, containerMaxScrollTop);
         if (snap > scrollTop + JUMP_EPS) {
           nextCanDown = true;
           break;
@@ -1391,6 +1427,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       return;
     }
     const scrollTop = container.scrollTop;
+    const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
     const scrollMargin =
       scrollMarginRef.current !== 0
         ? scrollMarginRef.current
@@ -1400,7 +1437,10 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (!el) {
         continue;
       }
-      if (entryTop(el, container) - scrollMargin < scrollTop - JUMP_EPS) {
+      if (
+        snapPointFor(entryTop(el, container), scrollMargin, maxScrollTop) <
+        scrollTop - JUMP_EPS
+      ) {
         scrollToStart(entries[i].id);
         return;
       }
@@ -1414,6 +1454,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       return;
     }
     const scrollTop = container.scrollTop;
+    const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
     const scrollMargin =
       scrollMarginRef.current !== 0
         ? scrollMarginRef.current
@@ -1423,7 +1464,10 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (!el) {
         continue;
       }
-      if (entryTop(el, container) - scrollMargin > scrollTop + JUMP_EPS) {
+      if (
+        snapPointFor(entryTop(el, container), scrollMargin, maxScrollTop) >
+        scrollTop + JUMP_EPS
+      ) {
         scrollToStart(entries[i].id);
         return;
       }
@@ -1483,21 +1527,30 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     return null;
   }
 
+  /** Only the tail of a live submission is actually generating. Every other
+   *  entry with no preview is a settled message whose content simply has no
+   *  text part. */
+  const pendingId = isSubmitting ? messageEntries[messageEntries.length - 1].id : null;
+
   const tipEntry = tip ? entryById.get(tip.id) : undefined;
   let tipText = '';
   if (tipEntry) {
-    tipText = previewTextFor(tipEntry, localize);
+    tipText = previewTextFor(tipEntry, localize, tipEntry.id === pendingId);
   }
 
-  /** One tab stop for the whole column; the arrows move within it. The current
-   *  rib carries it so Tab lands where the reader already is — and at the very
-   *  bottom, where current is the pinned terminus, on the last message rather
-   *  than back at the top of the thread. */
+  /** One tab stop for the whole column; the arrows move within it. It rides the
+   *  focused rib while the keyboard is in the rail, and otherwise the current
+   *  one, so Tab lands where the reader already is — and at the very bottom,
+   *  where current is the pinned terminus, on the last message rather than back
+   *  at the top of the thread. */
   let rovingId = messageEntries[0].id;
   if (currentId === MESSAGES_END_ID) {
     rovingId = messageEntries[messageEntries.length - 1].id;
   } else if (currentId != null && entryById.has(currentId)) {
     rovingId = currentId;
+  }
+  if (focusedRibId != null && !isTerminusId(focusedRibId) && entryById.has(focusedRibId)) {
+    rovingId = focusedRibId;
   }
 
   return (
@@ -1557,7 +1610,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         {messageEntries.map((entry) => {
           const label = localize(
             entry.isUser ? 'com_ui_message_nav_go_to_user' : 'com_ui_message_nav_go_to_assistant',
-            { 0: previewTextFor(entry, localize).slice(0, 30) },
+            { 0: previewTextFor(entry, localize, entry.id === pendingId).slice(0, 30) },
           );
           return (
             <MessageIndicator
