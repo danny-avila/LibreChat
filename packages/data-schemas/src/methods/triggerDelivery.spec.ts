@@ -2371,9 +2371,12 @@ describe('agent trigger delivery methods', () => {
 
   it('retires a dead letter when its admitted actor action later settles', async () => {
     const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'late-terminal-batch';
     const queued = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({
         user,
+        orderingKey,
+        awaitTerminalHandling: true,
         envelope: {
           mode: 'continue',
           target: { bindingId: 'binding-late-terminal' },
@@ -2382,12 +2385,39 @@ describe('agent trigger delivery methods', () => {
       }),
     );
     const generationCreatedAt = START.getTime() + 1_000;
+    const member = await Delivery.create({
+      ...enqueueInput({
+        user,
+        orderingKey,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-late-terminal' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+      laneSequence: 2,
+      status: 'dead',
+      attempts: 3,
+      requeueCount: 0,
+      batchRootId: queued.delivery.id,
+      settledAt: START,
+      lastError: transientFailure(),
+      handling: {
+        status: 'started',
+        conversationId: 'conversation-late-terminal',
+        streamId: 'conversation-late-terminal',
+        generationCreatedAt,
+        startedAt: START,
+      },
+    });
     await Delivery.updateOne(
       { deliveryKey: queued.delivery.deliveryKey },
       {
         $set: {
           status: 'dead',
           attempts: 3,
+          batchMemberIds: [member._id],
+          batchMembersSettledAt: START,
           actorActionAdmittedAt: START,
           handling: {
             status: 'started',
@@ -2425,6 +2455,14 @@ describe('agent trigger delivery methods', () => {
     await expect(
       methods.getAgentTriggerDelivery(queued.delivery.deliveryKey),
     ).resolves.toMatchObject({ status: 'succeeded', handling: { status: 'applied' } });
+    await expect(Delivery.findById(member._id).lean()).resolves.toMatchObject({
+      status: 'succeeded',
+      handling: { status: 'applied' },
+    });
+    await expect(
+      methods.getAgentTriggerDeliveryStatus(member.deliveryKey, user, 'source-key-1', 'tenant-1'),
+    ).resolves.toMatchObject({ status: 'succeeded', handling: { status: 'applied' } });
+    await expect(LaneSequence.findById(orderingKey).lean()).resolves.toBeNull();
     await expect(
       methods.requeueAgentTriggerDelivery(queued.delivery.id, START),
     ).resolves.toBeNull();

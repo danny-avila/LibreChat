@@ -926,16 +926,25 @@ export function createAgentTriggerDeliveryMethods(
   }
 
   async function propagateBatchHandling(
-    root: Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'batchMemberIds' | 'handling'>,
+    root: Pick<
+      IAgentTriggerDelivery,
+      '_id' | 'orderingKey' | 'batchMemberIds' | 'status' | 'settledAt' | 'handling'
+    >,
   ): Promise<void> {
     if (root._id == null || root.handling == null || !root.batchMemberIds?.length) {
       return;
     }
     const status = root.handling.status;
+    const retiresDeadMembers =
+      root.status === 'succeeded' && status !== 'started' && root.handling.settledAt != null;
     await Delivery().updateMany(
       {
         _id: { $in: root.batchMemberIds },
         orderingKey: root.orderingKey,
+        batchRootId: root._id,
+        ...(retiresDeadMembers && {
+          status: { $in: ['staging', 'batched', 'succeeded', 'dead'] },
+        }),
         $or:
           status === 'started'
             ? [{ 'handling.status': 'started' }, { 'handling.status': { $exists: false } }]
@@ -947,11 +956,16 @@ export function createAgentTriggerDeliveryMethods(
       {
         $set: {
           handling: root.handling,
+          ...(retiresDeadMembers && {
+            status: 'succeeded',
+            settledAt: root.settledAt ?? root.handling.settledAt,
+          }),
           ...(status !== 'started' &&
             root.handling.settledAt != null && {
               expiresAt: new Date(root.handling.settledAt.getTime() + SUCCESS_RETENTION_MS),
             }),
         },
+        ...(retiresDeadMembers && { $unset: { lastError: 1 } }),
       },
     );
   }
@@ -1053,9 +1067,12 @@ export function createAgentTriggerDeliveryMethods(
       if (input.status === 'succeeded' && root.handling != null) {
         const authoritative = await Delivery()
           .findById(root._id)
-          .select('_id orderingKey batchMemberIds handling')
+          .select('_id orderingKey batchMemberIds status settledAt handling')
           .lean<
-            Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'batchMemberIds' | 'handling'>
+            Pick<
+              IAgentTriggerDelivery,
+              '_id' | 'orderingKey' | 'batchMemberIds' | 'status' | 'settledAt' | 'handling'
+            >
           >();
         if (authoritative != null) {
           await propagateBatchHandling(authoritative);
@@ -1276,11 +1293,17 @@ export function createAgentTriggerDeliveryMethods(
         },
         { new: true },
       )
-      .select('_id orderingKey batchMemberIds awaitTerminalHandling handling')
+      .select('_id orderingKey batchMemberIds status settledAt awaitTerminalHandling handling')
       .lean<
         Pick<
           IAgentTriggerDelivery,
-          '_id' | 'orderingKey' | 'batchMemberIds' | 'awaitTerminalHandling' | 'handling'
+          | '_id'
+          | 'orderingKey'
+          | 'batchMemberIds'
+          | 'status'
+          | 'settledAt'
+          | 'awaitTerminalHandling'
+          | 'handling'
         >
       >();
 
@@ -1292,11 +1315,17 @@ export function createAgentTriggerDeliveryMethods(
           'handling.conversationId': input.conversationId,
           'handling.generationCreatedAt': input.generationCreatedAt,
         })
-        .select('_id orderingKey batchMemberIds awaitTerminalHandling handling')
+        .select('_id orderingKey batchMemberIds status settledAt awaitTerminalHandling handling')
         .lean<
           Pick<
             IAgentTriggerDelivery,
-            '_id' | 'orderingKey' | 'batchMemberIds' | 'awaitTerminalHandling' | 'handling'
+            | '_id'
+            | 'orderingKey'
+            | 'batchMemberIds'
+            | 'status'
+            | 'settledAt'
+            | 'awaitTerminalHandling'
+            | 'handling'
           >
         >();
       const replayed =
@@ -1360,6 +1389,7 @@ export function createAgentTriggerDeliveryMethods(
           deliveryKey: input.deliveryKey,
           user: input.user,
           ...tenantScope,
+          status: { $in: ['succeeded', 'dead'] },
           'envelope.target.bindingId': input.bindingId,
           'handling.status': 'started',
           'handling.conversationId': input.conversationId,
@@ -1392,13 +1422,17 @@ export function createAgentTriggerDeliveryMethods(
         },
         { new: true },
       )
-      .select('_id orderingKey batchMemberIds awaitTerminalHandling handling +actorReceipt')
+      .select(
+        '_id orderingKey batchMemberIds status settledAt awaitTerminalHandling handling +actorReceipt',
+      )
       .lean<
         Pick<
           IAgentTriggerDelivery,
           | '_id'
           | 'orderingKey'
           | 'batchMemberIds'
+          | 'status'
+          | 'settledAt'
           | 'awaitTerminalHandling'
           | 'handling'
           | 'actorReceipt'
@@ -1418,13 +1452,17 @@ export function createAgentTriggerDeliveryMethods(
           'handling.status': input.status,
           actorReceipt,
         })
-        .select('_id orderingKey batchMemberIds awaitTerminalHandling handling +actorReceipt')
+        .select(
+          '_id orderingKey batchMemberIds status settledAt awaitTerminalHandling handling +actorReceipt',
+        )
         .lean<
           Pick<
             IAgentTriggerDelivery,
             | '_id'
             | 'orderingKey'
             | 'batchMemberIds'
+            | 'status'
+            | 'settledAt'
             | 'awaitTerminalHandling'
             | 'handling'
             | 'actorReceipt'
