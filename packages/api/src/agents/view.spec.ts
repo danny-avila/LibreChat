@@ -245,6 +245,34 @@ describe('subagent thread parent-scoped view', () => {
     expect(view.historyTruncated).toBe(true);
   });
 
+  it('labels a retained continuation honestly when its task ancestor was truncated', async () => {
+    const continuationInput = {
+      ...message('task-2:user', 'running', true),
+      parentMessageId: 'task-1:assistant',
+      text: 'Continue from the missing earlier task.',
+    } as IMessage;
+    const continuationAssistant = {
+      ...message('task-2:assistant', 'completed'),
+      parentMessageId: 'task-2:user',
+    } as IMessage;
+    const handler = createSubagentThreadViewHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
+      getSubagentThreadForParent: jest.fn().mockResolvedValue({
+        ...child,
+        subagentThreadLease: undefined,
+      }),
+      getMessagesForSubagentThreadView: jest
+        .fn()
+        .mockResolvedValue([continuationAssistant, continuationInput]),
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest({}, { taskId: 'task-2' }), response);
+
+    expect(json.mock.calls[0][0].historyTruncated).toBe(true);
+    expect(json.mock.calls[0][0].turns[0].trigger.kind).toBe('parent_continuation');
+  });
+
   it("returns only the selected task's sanitized bounded activity", async () => {
     const selected = {
       ...message('task-1:assistant', 'completed'),

@@ -491,7 +491,29 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const conversationTurns = useMemo(() => {
     const durableTurns = data == null ? [] : adaptDurableThreadConversation(data);
     if (durableTurns.length > 0) {
-      return durableTurns.map((turn) => (turn.taskId === taskId ? { ...turn, activity } : turn));
+      const selectedTurnIndex = durableTurns.findIndex((turn) => turn.taskId === taskId);
+      if (selectedTurnIndex >= 0) {
+        return durableTurns.map((turn, index) =>
+          index === selectedTurnIndex ? { ...turn, activity } : turn,
+        );
+      }
+      // The API keeps the exact selected activity even when its bounded
+      // chronological turn is the first item removed from the response.
+      // Preserve that selection ahead of the retained newer continuation.
+      return [
+        {
+          taskId: taskId || `${selection.parentMessageId}:${selection.toolCallId}`,
+          trigger: {
+            kind:
+              selection.event == null
+                ? ('parent_continuation' as const)
+                : ('external_event' as const),
+            summary: selection.prompt ?? activity.prompt ?? '',
+          },
+          activity,
+        },
+        ...durableTurns,
+      ];
     }
     return [
       {

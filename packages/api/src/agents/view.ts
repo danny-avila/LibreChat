@@ -290,7 +290,7 @@ const publicThreadTurns = (
     if (message.messageId.endsWith(':assistant')) record.assistant = message;
   }
 
-  return taskOrder.flatMap((taskId, index): SubagentThreadTurn[] => {
+  return taskOrder.flatMap((taskId): SubagentThreadTurn[] => {
     const record = records.get(taskId);
     if (record == null) return [];
     const projected = projectedTaskActivity(record.assistant, record.input, taskId);
@@ -300,7 +300,13 @@ const publicThreadTurns = (
     const controls = publicControlReceipts(branch, taskId);
     let triggerKind: SubagentThreadTurn['trigger']['kind'] = 'parent_continuation';
     if (eventThread) triggerKind = 'external_event';
-    else if (index === 0) triggerKind = 'parent_dispatch';
+    else if (
+      record.input != null &&
+      (record.input.parentMessageId == null ||
+        taskIdFromMessageId(record.input.parentMessageId) == null)
+    ) {
+      triggerKind = 'parent_dispatch';
+    }
     return [
       {
         taskId,
@@ -548,6 +554,7 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         conversationId: threadId,
         user: userId,
         ...(tenantId == null ? {} : { tenantId }),
+        ...(requestedTaskId == null ? {} : { selectedTaskId: requestedTaskId }),
         limit: MAX_THREAD_MESSAGES + 1,
         textCodePointLimit: MAX_MESSAGE_TEXT_PROJECTION_CODE_POINTS,
       });

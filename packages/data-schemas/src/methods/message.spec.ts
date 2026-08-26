@@ -6,6 +6,7 @@ import type { IMessage } from '..';
 import {
   createMessageMethods,
   CLIENT_MESSAGE_SELECT,
+  SUBAGENT_TRANSCRIPT_PAGE_LIMIT,
   SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
 } from './message';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
@@ -1135,6 +1136,50 @@ describe('Message Operations', () => {
           }),
         ]),
       );
+    });
+
+    it('bounds transcript materialization while retaining the exact selected task', async () => {
+      const conversationId = uuidv4();
+      for (let index = 0; index < SUBAGENT_TRANSCRIPT_PAGE_LIMIT + 3; index += 1) {
+        await saveMessage(mockCtx, {
+          messageId: `task-${index}:assistant`,
+          conversationId,
+          text: `Answer ${index}`,
+          user: 'user123',
+          createdAt: new Date(Date.UTC(2026, 7, 21, 12, index)),
+          subagentTranscript: {
+            taskId: `task-${index}`,
+            mode: 'append',
+            messagesJson: JSON.stringify([{ type: 'ai', data: { content: `Answer ${index}` } }]),
+          },
+        });
+      }
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        selectedTaskId: 'task-0',
+        limit: 20,
+        textCodePointLimit: 8_192,
+      });
+
+      const materialized = messages.filter((message) => message.subagentTranscript != null);
+      expect(materialized).toHaveLength(SUBAGENT_TRANSCRIPT_PAGE_LIMIT);
+      expect(materialized).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            messageId: 'task-0:assistant',
+            subagentTranscript: expect.objectContaining({ taskId: 'task-0' }),
+          }),
+        ]),
+      );
+      expect(
+        messages.filter(
+          (message) =>
+            message.subagentTranscript == null &&
+            message.subagentTranscriptProjectionTruncated === true,
+        ),
+      ).toHaveLength(3);
     });
 
     it('omits an oversized private transcript before returning the application result', async () => {

@@ -418,6 +418,37 @@ describe('SubagentThreadPanel', () => {
     expect(screen.queryByTestId('shared-activity')).not.toBeInTheDocument();
   });
 
+  it('keeps the exact selected activity when the bounded response retains only newer turns', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: {
+        ...completedView,
+        turns: [
+          {
+            taskId: 'task-newer',
+            trigger: { kind: 'parent_continuation', summary: 'A newer request.' },
+            status: 'completed',
+            activity: [{ type: 'writing', text: 'A newer response.' }],
+            activityTruncated: false,
+            messages: [],
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getAllByTestId('conversation-turn')).toHaveLength(2);
+    expect(screen.getByText('The release is ready.')).toBeInTheDocument();
+    expect(screen.getByText(/A newer request/)).toBeInTheDocument();
+  });
+
   it('submits one command invocation, blocks duplicate clicks, and shows its receipt', async () => {
     mockUseSubagentThreadQuery.mockReturnValue({
       data: { ...completedView, status: 'running', controlReceipts: [] },
