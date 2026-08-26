@@ -42,6 +42,8 @@ export interface IAgentEventActorReconciliation {
   checkpoint: Omit<IAgentEventActorCheckpoint, 'checkpointId'> & { checkpointId?: string };
   action: { toolName: string; toolCallId?: string };
   error?: string;
+  /** How a retained receipt reached `settled`. Absent on active lifecycle rows. */
+  resolution?: 'checkpoint_verified' | 'action_compensated' | 'history_repaired';
   observedAt: Date;
 }
 

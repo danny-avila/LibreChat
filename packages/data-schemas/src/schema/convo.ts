@@ -133,6 +133,11 @@ const convoSchema: Schema<IConversation> = new Schema(
             required: true,
           },
           error: { type: String, default: undefined },
+          resolution: {
+            type: String,
+            enum: ['checkpoint_verified', 'action_compensated', 'history_repaired'],
+            default: undefined,
+          },
           observedAt: { type: Date, required: true },
           _id: false,
         },

@@ -998,7 +998,7 @@ describe('AgentClient - startup telemetry', () => {
     const currentEvent = { _getType: () => 'human', content: 'new event' };
     mockFormatAgentMessages.mockReturnValueOnce({
       messages: [history, currentEvent],
-      indexTokenCountMap: {},
+      indexTokenCountMap: { 0: 11, 1: 22 },
       summary: undefined,
       boundaryTokenAdjustment: undefined,
     });
@@ -1044,6 +1044,10 @@ describe('AgentClient - startup telemetry', () => {
       expect.objectContaining({
         messages: [history, currentEvent],
         eventActorCheckpointing: true,
+        /** The DB-derived token map is positional over full history, which a
+         * checkpoint-restored graph state no longer matches. It must be blank
+         * so the pruner recounts against the messages actually in state. */
+        indexTokenCountMap: {},
       }),
     );
     expect(processStream).toHaveBeenCalledWith(

@@ -2222,9 +2222,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
           acceptsTitleEvents = false;
           resolveConvoReady();
-          await recordEventActorPersistenceFailure(
-            new Error('Event actor terminal persistence claim was replaced'),
-          );
+          try {
+            await recordEventActorPersistenceFailure(
+              new Error('Event actor terminal persistence claim was replaced'),
+            );
+          } catch (reconciliationError) {
+            /** The committing CAS already left a non-settled row that blocks
+             * later actor turns, so a failed status upgrade costs provenance,
+             * not safety. Never divert this clean exit past its cleanup. */
+            logger.error(
+              '[event-actor] Failed to preserve replaced-claim reconciliation',
+              reconciliationError,
+            );
+          }
           await finishResumableRequest(req, userId);
           disposeBackgroundClient();
           startupTelemetry?.end(job.abortController.signal.aborted ? 'aborted' : 'replaced');

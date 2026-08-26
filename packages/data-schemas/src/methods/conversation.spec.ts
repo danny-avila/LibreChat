@@ -4425,8 +4425,26 @@ describe('Conversation Operations', () => {
       ).resolves.toEqual({
         state: { ...first.state!, requiresColdStart: true },
         reconciliations: [
-          expect.objectContaining({ invocationId: 'event-one', status: 'settled' }),
-          expect.objectContaining({ invocationId: 'event-verified', status: 'settled' }),
+          expect.objectContaining({
+            invocationId: 'event-one',
+            status: 'settled',
+            resolution: 'checkpoint_verified',
+          }),
+          expect.objectContaining({
+            invocationId: 'event-conflict',
+            status: 'settled',
+            resolution: 'action_compensated',
+          }),
+          expect.objectContaining({
+            invocationId: 'event-checkpointless',
+            status: 'settled',
+            resolution: 'action_compensated',
+          }),
+          expect.objectContaining({
+            invocationId: 'event-verified',
+            status: 'settled',
+            resolution: 'checkpoint_verified',
+          }),
           later,
         ],
       });
@@ -4439,6 +4457,9 @@ describe('Conversation Operations', () => {
           resolution: 'history_repaired',
         }),
       ).resolves.toBe(true);
+      /** A repaired or compensated invocation keeps its receipt: it already
+       * applied an external action, so a delayed duplicate owner must never
+       * reacquire the same id. */
       await expect(
         methods.getAgentEventActorSnapshot({
           user: 'actor-reconcile-user',
@@ -4448,9 +4469,43 @@ describe('Conversation Operations', () => {
         state: { ...first.state!, requiresColdStart: true },
         reconciliations: [
           expect.objectContaining({ invocationId: 'event-one', status: 'settled' }),
+          expect.objectContaining({ invocationId: 'event-conflict', status: 'settled' }),
+          expect.objectContaining({ invocationId: 'event-checkpointless', status: 'settled' }),
           expect.objectContaining({ invocationId: 'event-verified', status: 'settled' }),
+          expect.objectContaining({
+            invocationId: 'event-later',
+            status: 'settled',
+            resolution: 'history_repaired',
+          }),
         ],
       });
+      await expect(beginReconciliation(later)).resolves.toBe(false);
+      await expect(
+        beginReconciliation({ ...reconciliation, invocationId: 'event-checkpointless' }),
+      ).resolves.toBe(false);
+      /** Retrying a repair converges on its own retained receipt. */
+      await expect(
+        methods.resolveAgentEventActorReconciliation({
+          user: 'actor-reconcile-user',
+          conversationId,
+          invocationId: 'event-later',
+          checkpoint: reconciliation.checkpoint,
+          resolution: 'history_repaired',
+        }),
+      ).resolves.toBe(true);
+      /** A different id stays admissible after those settled receipts. */
+      await expect(
+        beginReconciliation({ ...reconciliation, invocationId: 'event-fresh' }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.resolveAgentEventActorReconciliation({
+          user: 'actor-reconcile-user',
+          conversationId,
+          invocationId: 'event-fresh',
+          checkpoint: reconciliation.checkpoint,
+          resolution: 'invocation_abandoned',
+        }),
+      ).resolves.toBe(true);
       const visible = await methods.getConvo('actor-reconcile-user', conversationId);
       expect(visible).not.toHaveProperty('agentEventActor');
       expect(visible).not.toHaveProperty('agentEventActorReconciliations');

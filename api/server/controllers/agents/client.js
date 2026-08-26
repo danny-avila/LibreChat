@@ -3635,7 +3635,12 @@ class AgentClient extends BaseClient {
           activityLabel,
           activityPhase,
           eventActorCheckpointing: this.eventActorInvocationId != null,
-          indexTokenCountMap,
+          // The token map is positional over the DB-derived history. A warm
+          // continuation runs on checkpoint-restored state (restored messages
+          // plus the one new event), so those indices address different
+          // messages and the pruner would never recount them. Hand it an empty
+          // map so every count is derived from the messages actually in state.
+          indexTokenCountMap: this.eventActorContinuation === 'warm' ? {} : indexTokenCountMap,
           initialSummary,
           initialSessions,
           calibrationRatio,

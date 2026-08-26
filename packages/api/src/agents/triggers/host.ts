@@ -619,7 +619,16 @@ async function startRun(
             envelope.target.bindingId != null && {
               agentEventDelivery: {
                 deliveryKey: context.idempotencyKey,
-                event: envelope.event,
+                /** Identity only, matching the `fire` body: the actor uses this
+                 * to bind an invocation, never to build the turn's prompt. The
+                 * source payload is unbounded and would push large deliveries
+                 * past the chat route's body limit. */
+                event: {
+                  id: envelope.event.id,
+                  type: envelope.event.type,
+                  occurredAt: envelope.event.occurredAt,
+                  source: envelope.event.source,
+                },
                 ...(envelope.expectedAction != null && {
                   expectedAction: envelope.expectedAction,
                 }),

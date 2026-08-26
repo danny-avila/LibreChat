@@ -66,6 +66,17 @@ export type AgentEventActorCommitResult =
     }
   | { status: 'stale'; state?: IAgentEventActorState };
 
+/**
+ * Bounds the private invocation journal so a long-lived actor cannot grow its
+ * conversation document without limit. Only `settled` receipts can be evicted:
+ * a new fence is admitted exclusively when no active lifecycle row exists, and
+ * the appended row is always the newest. Eviction therefore costs same-id
+ * duplicate protection only after this many later invocations have themselves
+ * settled, well beyond the window in which generation admission can still
+ * replay a delivery key.
+ */
+const AGENT_EVENT_ACTOR_RECEIPT_LIMIT = 256;
+
 const ARCHIVE_CONVERSATION_BATCH_SIZE = 500;
 const PROJECT_STATS_REFRESH_CONCURRENCY = 10;
 const PROJECT_STATS_REFRESH_MAX_PASSES = 2;
@@ -684,7 +695,14 @@ export function createConversationMethods(
         },
         'agentEventActorReconciliations.invocationId': { $ne: input.reconciliation.invocationId },
       },
-      { $push: { agentEventActorReconciliations: input.reconciliation } },
+      {
+        $push: {
+          agentEventActorReconciliations: {
+            $each: [input.reconciliation],
+            $slice: -AGENT_EVENT_ACTOR_RECEIPT_LIMIT,
+          },
+        },
+      },
       { new: true, timestamps: false },
     )
       .select('+agentEventActorReconciliations')
@@ -754,6 +772,7 @@ export function createConversationMethods(
         {
           $set: {
             'agentEventActorReconciliations.$.status': 'settled',
+            'agentEventActorReconciliations.$.resolution': 'checkpoint_verified',
             'agentEventActorReconciliations.$.observedAt': new Date(),
           },
           $unset: { 'agentEventActorReconciliations.$.error': 1 },
@@ -788,15 +807,30 @@ export function createConversationMethods(
     };
     const mustRebuild =
       input.resolution === 'action_compensated' || input.resolution === 'history_repaired';
+    if (!mustRebuild) {
+      const abandoned = await Conversation.findOneAndUpdate(
+        ownership,
+        { $pull: { agentEventActorReconciliations: checkpointFilter } },
+        { new: true, timestamps: false },
+      )
+        .select('+agentEventActorReconciliations')
+        .lean<IConversation>();
+      return abandoned != null;
+    }
+    /** Repair and compensation both act on an invocation whose action already
+     * reached the outside world, so the receipt must survive as the durable
+     * same-invocation tombstone. Deleting it would let a delayed duplicate
+     * owner reacquire the same id and repeat that action. Compensation undoes
+     * the effect; it does not re-authorize the delivery, so a legitimate retry
+     * must arrive under a new invocation id. */
+    const retainedReceipt = {
+      'agentEventActorReconciliations.$.status': 'settled',
+      'agentEventActorReconciliations.$.resolution': input.resolution,
+      'agentEventActorReconciliations.$.observedAt': new Date(),
+    };
     const resolved = await Conversation.findOneAndUpdate(
-      {
-        ...ownership,
-        ...(mustRebuild ? { agentEventActor: { $exists: true } } : {}),
-      },
-      {
-        $pull: { agentEventActorReconciliations: checkpointFilter },
-        ...(mustRebuild ? { $set: { 'agentEventActor.requiresColdStart': true } } : {}),
-      },
+      { ...ownership, agentEventActor: { $exists: true } },
+      { $set: { ...retainedReceipt, 'agentEventActor.requiresColdStart': true } },
       { new: true, timestamps: false },
     )
       .select('+agentEventActorReconciliations')
@@ -804,19 +838,26 @@ export function createConversationMethods(
     if (resolved != null) {
       return true;
     }
-    if (!mustRebuild) {
-      return false;
-    }
-    /** Compensation before a first committed head must clear the exact fence
+    /** Compensation before a first committed head must retire the exact fence
      * without creating a partial actor state that cannot be resumed. */
     const resolvedWithoutHead = await Conversation.findOneAndUpdate(
       { ...ownership, agentEventActor: { $exists: false } },
-      { $pull: { agentEventActorReconciliations: checkpointFilter } },
+      { $set: retainedReceipt },
       { new: true, timestamps: false },
     )
       .select('+agentEventActorReconciliations')
       .lean<IConversation>();
-    return resolvedWithoutHead != null;
+    if (resolvedWithoutHead != null) {
+      return true;
+    }
+    /** A retried repair finds its own retained receipt already settled. */
+    const replayed = await Conversation.exists({
+      ...owner,
+      agentEventActorReconciliations: {
+        $elemMatch: { ...exactCheckpoint, status: 'settled', resolution: input.resolution },
+      },
+    });
+    return replayed != null;
   }
 
   /** Creates immutable child lineage exactly once without overwriting a concurrent winner. */

@@ -104,7 +104,7 @@ function toolEvidence(
 }
 
 function nonExecutedHITLToolCallIds(
-  job: SerializableJobData,
+  job: Pick<SerializableJobData, 'userSubmittedMessageFieldPaths'>,
   content: Agents.MessageContentComplex[],
 ): Set<string> {
   const ids = new Set<string>();
@@ -166,10 +166,7 @@ export function findAgentEventAppliedAction(
   if (expectedAction == null) {
     return undefined;
   }
-  const nonExecutedToolCallIds = nonExecutedHITLToolCallIds(
-    provenance as SerializableJobData,
-    content,
-  );
+  const nonExecutedToolCallIds = nonExecutedHITLToolCallIds(provenance, content);
   const action = runSteps
     .flatMap((step) => toolEvidence(step, nonExecutedToolCallIds))
     .find((item) => matchesExpectedAction(item, expectedAction));
