@@ -76,6 +76,7 @@ describe('agent event runtime config', () => {
             childTurns: true,
             completionWakeups: false,
             coalescing: true,
+            actorMailbox: true,
             checkpointForks: true,
             selfUrl: 'https://triggers.internal',
           },
@@ -94,6 +95,7 @@ describe('agent event runtime config', () => {
       childTurns: true,
       completionWakeups: false,
       coalescing: true,
+      actorMailbox: true,
       checkpointForks: true,
       selfUrl: 'https://triggers.internal',
     });

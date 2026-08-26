@@ -82,6 +82,7 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     batchRootId: { type: Schema.Types.ObjectId, ref: 'AgentTriggerDelivery' },
     batchRootRequeueCount: { type: Number, min: 0 },
     batchMembersSettledAt: { type: Date },
+    awaitTerminalHandling: { type: Boolean },
     handling: { type: handlingSchema },
     leaseBy: { type: String },
     leaseUntil: { type: Date },
@@ -102,6 +103,13 @@ triggerDeliverySchema.index({ deliveryKey: 1 }, { unique: true });
 triggerDeliverySchema.index({ status: 1, availableAt: 1, createdAt: 1 });
 triggerDeliverySchema.index({ status: 1, leaseUntil: 1, createdAt: 1 });
 triggerDeliverySchema.index({ orderingKey: 1, status: 1, laneSequence: 1 });
+triggerDeliverySchema.index({
+  orderingKey: 1,
+  awaitTerminalHandling: 1,
+  status: 1,
+  'handling.status': 1,
+  laneSequence: 1,
+});
 triggerDeliverySchema.index({ batchRootId: 1 }, { sparse: true });
 triggerDeliverySchema.index(
   { orderingKey: 1, coalesceKey: 1, status: 1, coalesceUntil: 1 },

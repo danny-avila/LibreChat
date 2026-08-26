@@ -568,6 +568,10 @@ endpoints:
   #   eventDriven:
   #     childTurns: false
   #     completionWakeups: false
+  #     # Serialize each authenticated bound actor's event lane through the
+  #     # authoritative terminal child-turn outcome. Enable only after every
+  #     # API replica supports terminal-handling mailbox blockers.
+  #     actorMailbox: false
   #     # Reuse bound child state through isolated checkpoint forks. Enable only
   #     # after every API replica supports this lifecycle. Requires the default
   #     # Mongo checkpointer; it is incompatible with checkpointer.type: memory.

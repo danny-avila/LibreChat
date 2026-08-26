@@ -545,6 +545,28 @@ describe('createAgentTriggerDeliveryEngine', () => {
     );
   });
 
+  it('rechecks an active actor turn without a tight delivery-lease polling loop', async () => {
+    const store = storeWith({
+      findEarlierUnsettled: jest.fn(async () => ({
+        availableAt: START,
+        reason: 'active_handling' as const,
+      })),
+    });
+    const dispatch = jest.fn(async () => successResult());
+    const engine = createAgentTriggerDeliveryEngine(
+      { store, dispatch, now: () => START },
+      { concurrency: 1 },
+    );
+
+    await engine.runTick();
+
+    expect(store.release).toHaveBeenCalledWith(
+      expect.objectContaining({ availableAt: new Date(START.getTime() + 1_000) }),
+    );
+    expect(store.beginAttempt).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
   it('starts independent deliveries up to the configured concurrency', async () => {
     let releaseDispatch: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {

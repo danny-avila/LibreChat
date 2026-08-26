@@ -31,6 +31,29 @@ const envelope = () =>
     input: 'Handle the ready resource.',
   });
 
+const boundEnvelope = () =>
+  createAgentTriggerEnvelope({
+    mode: 'continue',
+    requestId: 'request-bound-1',
+    deliveryId: 'delivery-bound-1',
+    receivedAt: 20,
+    principal: { id: '507f1f77bcf86cd799439011', tenantId: 'tenant-1' },
+    target: {
+      agentId: 'agent-1',
+      conversationId: 'child-conversation-1',
+      parentMessageId: 'parent-message-1',
+      bindingId: 'binding-1',
+      sourceKeyId: 'source-key-1',
+    },
+    event: {
+      id: 'event-bound-1',
+      type: 'game.turn',
+      occurredAt: 10,
+      source: { id: 'source-key-1', type: 'remote_api_key' },
+    },
+    input: 'Make the next move.',
+  });
+
 function deliveryRecord(overrides: Partial<AgentTriggerStoredRecord> = {}) {
   return {
     id: 'delivery-row-1',
@@ -179,6 +202,46 @@ describe('durable agent trigger service', () => {
       replayed: false,
       availableAt: START,
     });
+    await service.stop();
+  });
+
+  it('persists terminal handling serialization only for opted-in bound continuations', async () => {
+    const methods = deliveryMethods();
+    const service = createAgentTriggerService({
+      methods,
+      actorMailboxEnabled: () => true,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
+
+    await service.enqueue(boundEnvelope());
+    await service.enqueue(envelope());
+
+    expect(methods.enqueueAgentTriggerDelivery).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ awaitTerminalHandling: true }),
+    );
+    expect(methods.enqueueAgentTriggerDelivery).toHaveBeenNthCalledWith(
+      2,
+      expect.not.objectContaining({ awaitTerminalHandling: expect.anything() }),
+    );
+    await service.stop();
+  });
+
+  it('does not persist mailbox semantics before the rollout is enabled', async () => {
+    const methods = deliveryMethods();
+    const service = createAgentTriggerService({
+      methods,
+      actorMailboxEnabled: () => false,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
+
+    await service.enqueue(boundEnvelope());
+
+    expect(methods.enqueueAgentTriggerDelivery).toHaveBeenCalledWith(
+      expect.not.objectContaining({ awaitTerminalHandling: expect.anything() }),
+    );
     await service.stop();
   });
 

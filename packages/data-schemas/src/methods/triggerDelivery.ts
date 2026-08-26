@@ -49,6 +49,7 @@ export interface EnqueueAgentTriggerDeliveryInput {
   coalesceKey?: string;
   coalesceFrom?: Date;
   coalesceUntil?: Date;
+  awaitTerminalHandling?: boolean;
 }
 
 export interface AgentTriggerDeliveryFence {
@@ -195,6 +196,9 @@ function toRecord(delivery: IAgentTriggerDelivery): AgentTriggerDeliveryRecord {
     ...(delivery.batchRootId != null && { batchRootId: delivery.batchRootId }),
     ...(delivery.batchMembersSettledAt != null && {
       batchMembersSettledAt: delivery.batchMembersSettledAt,
+    }),
+    ...(delivery.awaitTerminalHandling != null && {
+      awaitTerminalHandling: delivery.awaitTerminalHandling,
     }),
     ...(delivery.handling != null && { handling: delivery.handling }),
   };
@@ -657,7 +661,14 @@ export function createAgentTriggerDeliveryMethods(
     }
     const stillRetained = await Delivery().exists({
       orderingKey,
-      status: { $in: ['staging', 'batched', 'pending', 'leased', 'dead'] },
+      $or: [
+        { status: { $in: ['staging', 'batched', 'pending', 'leased', 'dead'] } },
+        {
+          status: 'succeeded',
+          awaitTerminalHandling: true,
+          'handling.status': 'started',
+        },
+      ],
     });
     if (stillRetained != null) {
       await LaneSequence().updateOne(
@@ -774,18 +785,27 @@ export function createAgentTriggerDeliveryMethods(
     const earlier = await Delivery()
       .findOne({
         orderingKey: delivery.orderingKey,
-        status: { $in: ['pending', 'leased'] },
         laneSequence: { $lt: delivery.laneSequence },
+        $or: [
+          { status: { $in: ['pending', 'leased'] } },
+          {
+            status: 'succeeded',
+            awaitTerminalHandling: true,
+            'handling.status': 'started',
+          },
+        ],
       })
       .sort({ laneSequence: 1 })
-      .select('availableAt leaseUntil')
-      .lean<Pick<IAgentTriggerDelivery, 'availableAt' | 'leaseUntil'>>();
+      .select('availableAt leaseUntil status handling.status')
+      .lean<Pick<IAgentTriggerDelivery, 'availableAt' | 'leaseUntil' | 'status' | 'handling'>>();
     if (earlier == null) {
       return null;
     }
     return {
       availableAt: earlier.availableAt,
       ...(earlier.leaseUntil != null && { leaseUntil: earlier.leaseUntil }),
+      ...(earlier.status === 'succeeded' &&
+        earlier.handling?.status === 'started' && { reason: 'active_handling' as const }),
     };
   }
 
@@ -1130,8 +1150,13 @@ export function createAgentTriggerDeliveryMethods(
         },
         { new: true },
       )
-      .select('_id orderingKey batchMemberIds handling')
-      .lean<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'batchMemberIds' | 'handling'>>();
+      .select('_id orderingKey batchMemberIds awaitTerminalHandling handling')
+      .lean<
+        Pick<
+          IAgentTriggerDelivery,
+          '_id' | 'orderingKey' | 'batchMemberIds' | 'awaitTerminalHandling' | 'handling'
+        >
+      >();
 
     let authoritative = terminal;
     if (authoritative == null) {
@@ -1141,8 +1166,13 @@ export function createAgentTriggerDeliveryMethods(
           'handling.conversationId': input.conversationId,
           'handling.generationCreatedAt': input.generationCreatedAt,
         })
-        .select('_id orderingKey batchMemberIds handling')
-        .lean<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'batchMemberIds' | 'handling'>>();
+        .select('_id orderingKey batchMemberIds awaitTerminalHandling handling')
+        .lean<
+          Pick<
+            IAgentTriggerDelivery,
+            '_id' | 'orderingKey' | 'batchMemberIds' | 'awaitTerminalHandling' | 'handling'
+          >
+        >();
       const replayed =
         existing?.handling?.status === input.status &&
         existing.handling.error === error &&
@@ -1155,6 +1185,13 @@ export function createAgentTriggerDeliveryMethods(
     }
 
     await propagateBatchHandling(authoritative);
+    if (authoritative.awaitTerminalHandling === true) {
+      await LaneSequence().updateOne(
+        { _id: authoritative.orderingKey },
+        { $set: { cleanupRequestedAt: input.settledAt } },
+      );
+      await reclaimLaneIfInactive(authoritative.orderingKey);
+    }
     return true;
   }
 

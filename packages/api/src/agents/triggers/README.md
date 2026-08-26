@@ -173,6 +173,15 @@ immediately before dispatch, so queued events do not persist stale chat topology
 is its default ordering lane. A short-lived internal trigger token plus a second binding lookup is
 required to pass the child-thread write guard; possessing a binding id alone grants no access.
 
+Set `endpoints.agents.eventDriven.actorMailbox: true` only after every API replica runs a release
+that understands terminal-handling mailbox blockers. The flag defaults to false for rolling
+deployment safety, and `ENABLE_AGENT_EVENT_ACTOR_MAILBOX` remains a compatibility fallback. Once
+enabled, a bound actor's next delivery stays queued after the current delivery reaches transport
+success and does not dispatch until that child generation records `applied`,
+`completed_no_action`, `failed`, or `cancelled`. Different bindings remain independent and can run
+in parallel. Existing coalesced batches occupy one mailbox position and retain each member's
+individual receipt.
+
 ### Coalescing observational child events
 
 Sources that can prove several bound `continue` events are interchangeable observations may opt

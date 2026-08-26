@@ -1163,6 +1163,127 @@ describe('agent trigger delivery methods', () => {
     });
   });
 
+  it('keeps a binding lane queued until the earlier child turn settles', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const first = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ user, orderingKey: 'binding-lane', awaitTerminalHandling: true }),
+    );
+    const firstClaim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const firstAttempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: firstClaim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+    });
+    const generationCreatedAt = START.getTime() + 1_000;
+    await methods.completeAgentTriggerDelivery({
+      id: firstClaim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: firstAttempt!,
+      result: {
+        mode: 'continue',
+        status: 'started',
+        conversationId: 'actor-thread',
+        streamId: 'actor-thread',
+        generationCreatedAt,
+      },
+      settledAt: new Date(generationCreatedAt),
+      handling: {
+        status: 'started',
+        conversationId: 'actor-thread',
+        streamId: 'actor-thread',
+        generationCreatedAt,
+        startedAt: new Date(generationCreatedAt),
+      },
+    });
+    const second = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ user, orderingKey: 'binding-lane', awaitTerminalHandling: true }),
+    );
+    const secondClaim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-2',
+      claimToken: 'claim-2',
+      now: new Date(generationCreatedAt),
+      leaseUntil: new Date(generationCreatedAt + 60_000),
+    });
+
+    expect(firstClaim?.id).toBe(first.delivery.id);
+    expect(second.delivery.laneSequence).toBe(first.delivery.laneSequence + 1);
+    await expect(methods.findEarlierAgentTriggerDelivery(secondClaim!)).resolves.toMatchObject({
+      availableAt: START,
+      reason: 'active_handling',
+    });
+
+    await expect(
+      methods.settleAgentTriggerHandlingOutcome({
+        deliveryKey: first.delivery.deliveryKey,
+        conversationId: 'actor-thread',
+        generationCreatedAt,
+        status: 'applied',
+        settledAt: new Date(generationCreatedAt + 1_000),
+        action: { toolName: 'submit_action' },
+      }),
+    ).resolves.toBe(true);
+    await expect(methods.findEarlierAgentTriggerDelivery(secondClaim!)).resolves.toBeNull();
+  });
+
+  it('reclaims a binding lane only after its admitted child turn settles', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ orderingKey: 'settling-binding-lane', awaitTerminalHandling: true }),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+    });
+    const generationCreatedAt = START.getTime() + 1_000;
+    await methods.completeAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: attempt!,
+      result: {
+        mode: 'continue',
+        status: 'started',
+        conversationId: 'actor-thread',
+        streamId: 'actor-thread',
+        generationCreatedAt,
+      },
+      settledAt: new Date(generationCreatedAt),
+      handling: {
+        status: 'started',
+        conversationId: 'actor-thread',
+        streamId: 'actor-thread',
+        generationCreatedAt,
+        startedAt: new Date(generationCreatedAt),
+      },
+    });
+
+    await expect(LaneSequence.findById('settling-binding-lane')).resolves.not.toBeNull();
+    await expect(
+      methods.settleAgentTriggerHandlingOutcome({
+        deliveryKey: queued.delivery.deliveryKey,
+        conversationId: 'actor-thread',
+        generationCreatedAt,
+        status: 'completed_no_action',
+        settledAt: new Date(generationCreatedAt + 1_000),
+      }),
+    ).resolves.toBe(true);
+    await expect(LaneSequence.findById('settling-binding-lane')).resolves.toBeNull();
+  });
+
   it('records retry and success outcomes and expires only successful rows', async () => {
     const queued = await methods.enqueueAgentTriggerDelivery(enqueueInput());
     const first = await methods.claimNextAgentTriggerDelivery({
