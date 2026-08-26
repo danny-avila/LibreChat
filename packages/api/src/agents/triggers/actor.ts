@@ -64,6 +64,7 @@ export interface AgentEventActorDependencies {
   resolveReconciliation: ConversationMethods['resolveAgentEventActorReconciliation'];
   admitAction?: AgentTriggerDeliveryMethods['admitAgentEventActorAction'];
   releaseAction?: AgentTriggerDeliveryMethods['releaseAgentEventActorAction'];
+  hasActionAdmission?: AgentTriggerDeliveryMethods['hasAgentEventActorActionAdmission'];
   getReceipt?: AgentTriggerDeliveryMethods['getAgentEventActorReceipt'];
   clearReconciliation?: ConversationMethods['clearAgentEventActorReconciliation'];
 }
@@ -145,7 +146,45 @@ export async function executeAgentEventActor<T>(
           throw new Error('Event actor invocation already has a terminal receipt');
         }
       }
-      const unresolved = snapshot.reconciliations.filter((item) => item.status !== 'settled');
+      let recoveredInvocationId: string | undefined;
+      const pendingInvocation = snapshot.reconciliations.find(
+        (item) =>
+          item.invocationId === input.invocationId &&
+          item.status === 'invocation_pending' &&
+          item.actionAdmitted === true,
+      );
+      if (
+        pendingInvocation != null &&
+        input.bindingId != null &&
+        deps.hasActionAdmission != null &&
+        !(await deps.hasActionAdmission({
+          deliveryKey: input.invocationId,
+          user: input.user,
+          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+          bindingId: input.bindingId,
+          conversationId: input.conversationId,
+        }))
+      ) {
+        /** A no-action owner can crash after releasing delivery admission but
+         * before deleting this marker. Absence of both admission and receipt
+         * proves no terminal action owns the invocation, so abandonment is
+         * the only safe idempotent recovery. */
+        const abandoned = await deps.resolveReconciliation({
+          user: input.user,
+          conversationId: input.conversationId,
+          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+          invocationId: input.invocationId,
+          checkpoint: pendingInvocation.checkpoint,
+          resolution: 'invocation_abandoned',
+        });
+        if (!abandoned) {
+          throw new Error('Event actor orphaned no-action lifecycle could not be recovered');
+        }
+        recoveredInvocationId = input.invocationId;
+      }
+      const unresolved = snapshot.reconciliations.filter(
+        (item) => item.status !== 'settled' && item.invocationId !== recoveredInvocationId,
+      );
       if (unresolved.length > 0) {
         throw new Error(
           `Event actor is blocked on ${unresolved.map((item) => item.status).join(', ')} reconciliation`,

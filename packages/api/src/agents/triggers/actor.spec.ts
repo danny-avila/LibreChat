@@ -82,6 +82,7 @@ describe('event actor host adapter', () => {
     resolveReconciliation: jest.fn(async () => true),
     admitAction: jest.fn(async () => true),
     releaseAction: jest.fn(async () => true),
+    hasActionAdmission: jest.fn(async () => false),
   });
 
   it('cold-starts once, then forks and warm-continues only the next event', async () => {
@@ -893,5 +894,63 @@ describe('event actor host adapter', () => {
     expect(dependencies.releaseAction.mock.invocationCallOrder[0]).toBeLessThan(
       dependencies.resolveReconciliation.mock.invocationCallOrder[0],
     );
+  });
+
+  it('recovers a no-action lifecycle after admission was released before owner exit', async () => {
+    const invoke = jest.fn(async () => 'retried without action');
+    const checkpoint = {
+      threadId: conversationId,
+      checkpointNs: 'event-actor/orphaned-no-action',
+    };
+    const dependencies = {
+      ...deps(),
+      getReceipt: jest.fn().mockResolvedValue(null),
+    };
+    dependencies.getSnapshot.mockResolvedValue({
+      state: null,
+      reconciliations: [
+        {
+          invocationId: 'event-orphaned-no-action',
+          actionAdmitted: true,
+          status: 'invocation_pending',
+          checkpoint,
+          action: { toolName: 'submit_move' },
+          observedAt: new Date(),
+        },
+      ],
+      legacyTurn: null,
+      epoch: 0,
+    });
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          bindingId: 'binding-1',
+          invocationId: 'event-orphaned-no-action',
+          event: { id: 'event-orphaned-no-action' },
+          signal: new AbortController().signal,
+          invoke,
+          readAppliedAction: () => undefined,
+        },
+        dependencies,
+      ),
+    ).resolves.toMatchObject({ execution: { status: 'completed_no_action' } });
+
+    expect(dependencies.hasActionAdmission).toHaveBeenCalledWith({
+      deliveryKey: 'event-orphaned-no-action',
+      user: 'user-1',
+      bindingId: 'binding-1',
+      conversationId,
+    });
+    expect(dependencies.resolveReconciliation).toHaveBeenCalledWith({
+      user: 'user-1',
+      conversationId,
+      invocationId: 'event-orphaned-no-action',
+      checkpoint,
+      resolution: 'invocation_abandoned',
+    });
+    expect(invoke).toHaveBeenCalledTimes(1);
   });
 });

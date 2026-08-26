@@ -170,6 +170,7 @@ export interface AgentTriggerDeliveryMethods {
   ) => Promise<boolean>;
   admitAgentEventActorAction: (input: AdmitAgentEventActorActionInput) => Promise<boolean>;
   releaseAgentEventActorAction: (input: GetAgentEventActorReceiptInput) => Promise<boolean>;
+  hasAgentEventActorActionAdmission: (input: GetAgentEventActorReceiptInput) => Promise<boolean>;
   settleAgentEventActorReceipt: (input: SettleAgentEventActorReceiptInput) => Promise<boolean>;
   getAgentEventActorReceipt: (
     input: GetAgentEventActorReceiptInput,
@@ -1478,6 +1479,7 @@ export function createAgentTriggerDeliveryMethods(
             expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
           },
           $unset: {
+            lastError: 1,
             ...(applied && { 'handling.error': 1 }),
             ...(!applied && { 'handling.action': 1 }),
           },
@@ -1608,6 +1610,24 @@ export function createAgentTriggerDeliveryMethods(
       { $unset: { actorActionAdmittedAt: 1 } },
     );
     return released.modifiedCount === 1;
+  }
+
+  async function hasAgentEventActorActionAdmission(
+    input: GetAgentEventActorReceiptInput,
+  ): Promise<boolean> {
+    const tenantScope =
+      input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId };
+    return (
+      (await Delivery().exists({
+        deliveryKey: input.deliveryKey,
+        user: input.user,
+        ...tenantScope,
+        'envelope.target.bindingId': input.bindingId,
+        'handling.conversationId': input.conversationId,
+        actorReceipt: { $exists: false },
+        actorActionAdmittedAt: { $exists: true },
+      })) != null
+    );
   }
 
   async function getAgentEventActorReceipt(
@@ -1978,6 +1998,7 @@ export function createAgentTriggerDeliveryMethods(
         batchRootId: { $exists: false },
         actorReceipt: { $exists: false },
         actorActionAdmittedAt: { $exists: false },
+        $or: [{ handling: { $exists: false } }, { 'handling.status': 'started' }],
       })
       .lean<IAgentTriggerDelivery>();
     if (candidate?._id == null) {
@@ -1995,6 +2016,7 @@ export function createAgentTriggerDeliveryMethods(
           batchRootId: { $exists: false },
           actorReceipt: { $exists: false },
           actorActionAdmittedAt: { $exists: false },
+          $or: [{ handling: { $exists: false } }, { 'handling.status': 'started' }],
           requeueCount: previousRequeueCount,
         },
         {
@@ -2148,6 +2170,7 @@ export function createAgentTriggerDeliveryMethods(
     settleAgentTriggerHandlingOutcome,
     admitAgentEventActorAction,
     releaseAgentEventActorAction,
+    hasAgentEventActorActionAdmission,
     settleAgentEventActorReceipt,
     getAgentEventActorReceipt,
     backfillAgentEventActorReceipt,

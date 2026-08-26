@@ -1707,8 +1707,10 @@ describe('agent trigger delivery methods', () => {
       admittedAt: new Date(generationCreatedAt + 500),
     };
     await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(true);
+    await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(true);
     await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(false);
     await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(true);
+    await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(false);
     await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(true);
     await expect(methods.settleAgentEventActorReceipt(settlement)).resolves.toBe(true);
     await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(false);
@@ -2467,6 +2469,9 @@ describe('agent trigger delivery methods', () => {
     await expect(
       methods.getAgentTriggerDelivery(queued.delivery.deliveryKey),
     ).resolves.toMatchObject({ status: 'succeeded', handling: { status: 'applied' } });
+    expect(
+      (await methods.getAgentTriggerDelivery(queued.delivery.deliveryKey))?.lastError,
+    ).toBeUndefined();
     await expect(Delivery.findById(member._id).lean()).resolves.toMatchObject({
       status: 'succeeded',
       handling: { status: 'applied' },
@@ -2478,6 +2483,35 @@ describe('agent trigger delivery methods', () => {
     await expect(
       methods.requeueAgentTriggerDelivery(queued.delivery.id, START),
     ).resolves.toBeNull();
+  });
+
+  it('does not requeue a legacy terminal outcome before its receipt is migrated', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(enqueueInput());
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      {
+        $set: {
+          status: 'dead',
+          handling: {
+            status: 'applied',
+            conversationId: 'legacy-terminal-conversation',
+            streamId: 'legacy-terminal-conversation',
+            generationCreatedAt: START.getTime(),
+            startedAt: START,
+            settledAt: START,
+            action: { toolName: 'submit_move' },
+          },
+        },
+      },
+    );
+
+    await expect(
+      methods.requeueAgentTriggerDelivery(queued.delivery.id, START),
+    ).resolves.toBeNull();
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'dead',
+      handling: { status: 'applied' },
+    });
   });
 
   it('counts only live leases while an account deletion drains', async () => {
