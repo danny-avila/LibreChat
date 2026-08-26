@@ -174,6 +174,20 @@ export const stripBklTags = (text: string | null | undefined): string => {
   return out;
 };
 
+// OCR 파생 이중확장자 `.md` 표시 제거 (본문 프로즈용, 2026-08-26).
+// 우측 패널·칩은 stripDisplayExtension(파일명 단위)이 처리하지만, 답변 본문
+// (검색 문서 리스트 표 등)에 백엔드가 넣어준 파일명은 여기서 걷어낸다.
+// 마크다운 링크 URL(`](...)`) 구간은 건너뛰어 인용 링크를 손상시키지 않는다.
+const DOUBLE_MD_PROSE_RE = /(\.[A-Za-z0-9]{2,5})\.(?:md|markdown)\b/gi;
+
+export const stripDoubleMdForDisplay = (text: string): string => {
+  if (!text || !/\.(?:md|markdown)\b/i.test(text)) return text ?? '';
+  return text
+    .split(/(\]\([^)]*\))/)
+    .map((seg, i) => (i % 2 === 1 ? seg : seg.replace(DOUBLE_MD_PROSE_RE, '$1')))
+    .join('');
+};
+
 export const getBklDisplayText = (text: string | null | undefined): string => {
   if (!text) return text ?? '';
   if (BKL_QUERY_CHOICES_COMPLETE_RE.test(text)) {
@@ -182,7 +196,7 @@ export const getBklDisplayText = (text: string | null | undefined): string => {
   if (BKL_QUERY_CHOICES_PARTIAL_RE.test(text)) {
     return BKL_QUERY_CHOICES_PENDING_TEXT;
   }
-  return stripBklTags(text);
+  return stripDoubleMdForDisplay(stripBklTags(text));
 };
 
 export interface BklQueryCandidate {
