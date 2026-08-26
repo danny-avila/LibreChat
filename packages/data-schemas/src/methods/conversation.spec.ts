@@ -4871,30 +4871,6 @@ describe('Conversation Operations', () => {
         legacyTurn: null,
         epoch: 4,
       });
-      /** A fence abandoned by a crashed turn is reclaimed only once stale, and
-       * reclaiming fails safe: epoch advances and the head is marked cold. */
-      await expect(
-        methods.beginAgentEventActorLegacyTurn({ ...owner, token: 'legacy-crashed' }),
-      ).resolves.toBe(true);
-      await expect(
-        methods.reclaimAgentEventActorLegacyTurn({
-          ...owner,
-          token: 'legacy-crashed',
-          startedBefore: new Date(Date.now() - 60_000),
-        }),
-      ).resolves.toBe(false);
-      await expect(
-        methods.reclaimAgentEventActorLegacyTurn({
-          ...owner,
-          token: 'legacy-crashed',
-          startedBefore: new Date(Date.now() + 60_000),
-        }),
-      ).resolves.toBe(true);
-      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
-        state: { generation: 2, requiresColdStart: true },
-        legacyTurn: null,
-        epoch: 5,
-      });
     });
 
     it('serializes legacy-turn and fork-lifecycle acquisition before either can execute', async () => {
@@ -4958,7 +4934,7 @@ describe('Conversation Operations', () => {
       ).resolves.toBe(false);
     });
 
-    it('uses DocumentDB-compatible classic updates for legacy fence open and reclaim', async () => {
+    it('uses a DocumentDB-compatible classic update for legacy fence open', async () => {
       const conversationId = uuidv4();
       await Conversation.create({
         conversationId,
@@ -4986,18 +4962,6 @@ describe('Conversation Operations', () => {
       try {
         await expect(
           methods.beginAgentEventActorLegacyTurn({ ...owner, token: 'documentdb-token' }),
-        ).resolves.toBe(true);
-        await Conversation.updateOne(
-          owner,
-          { $set: { 'agentEventActorLegacyTurn.startedAt': new Date(Date.now() - 120_000) } },
-          { timestamps: false },
-        );
-        await expect(
-          methods.reclaimAgentEventActorLegacyTurn({
-            ...owner,
-            token: 'documentdb-token',
-            startedBefore: new Date(Date.now() - 60_000),
-          }),
         ).resolves.toBe(true);
         expect(updateSpy.mock.calls.length).toBeGreaterThan(0);
         for (const [, update] of updateSpy.mock.calls) {

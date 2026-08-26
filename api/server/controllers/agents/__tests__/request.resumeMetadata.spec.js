@@ -95,7 +95,6 @@ const mockGetAgentEventActorSnapshot = jest.fn();
 const mockCommitAgentEventActorState = jest.fn();
 const mockBeginAgentEventActorLegacyTurn = jest.fn();
 const mockCompleteAgentEventActorLegacyTurn = jest.fn();
-const mockReclaimAgentEventActorLegacyTurn = jest.fn();
 const mockRecordAgentEventActorReconciliation = jest.fn();
 const mockResolveAgentEventActorReconciliation = jest.fn();
 const mockStartupTelemetry = {
@@ -264,7 +263,6 @@ jest.mock('~/models', () => ({
   commitAgentEventActorState: (...args) => mockCommitAgentEventActorState(...args),
   beginAgentEventActorLegacyTurn: (...args) => mockBeginAgentEventActorLegacyTurn(...args),
   completeAgentEventActorLegacyTurn: (...args) => mockCompleteAgentEventActorLegacyTurn(...args),
-  reclaimAgentEventActorLegacyTurn: (...args) => mockReclaimAgentEventActorLegacyTurn(...args),
   recordAgentEventActorReconciliation: (...args) =>
     mockRecordAgentEventActorReconciliation(...args),
   resolveAgentEventActorReconciliation: (...args) =>
@@ -388,7 +386,6 @@ describe('ResumableAgentController resume metadata', () => {
     mockCommitAgentEventActorState.mockResolvedValue({ status: 'stale' });
     mockBeginAgentEventActorLegacyTurn.mockResolvedValue(true);
     mockCompleteAgentEventActorLegacyTurn.mockResolvedValue(true);
-    mockReclaimAgentEventActorLegacyTurn.mockResolvedValue(true);
     mockRecordAgentEventActorReconciliation.mockResolvedValue(true);
     mockResolveAgentEventActorReconciliation.mockResolvedValue(true);
   });
@@ -4055,7 +4052,6 @@ describe('ResumableAgentController resume metadata', () => {
         commitState: expect.any(Function),
         recordReconciliation: expect.any(Function),
         resolveReconciliation: expect.any(Function),
-        reclaimLegacyTurn: expect.any(Function),
       },
     );
     expect(mockExecuteAgentEventActor.mock.calls[0][0]).not.toHaveProperty('tenantId');
@@ -4503,6 +4499,79 @@ describe('ResumableAgentController resume metadata', () => {
     },
   );
 
+  it('retains local fence ownership when Redis metadata persistence fails', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    mockGenerationJobManager.updateMetadata.mockRejectedValueOnce(
+      new Error('redis metadata unavailable'),
+    );
+    const client = {
+      options: {
+        agent: {
+          toolDefinitions: [],
+          manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }],
+        },
+      },
+      sendMessage: jest.fn(),
+    };
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Persist ownership before Redis metadata.',
+        clientRequestId: 'req-event-metadata-failure',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-metadata-failure',
+          expectedAction: { toolName: 'submit_move' },
+          event: {
+            id: 'event-metadata-failure',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+        },
+      },
+      config: { endpoints: { agents: { eventDriven: { checkpointForks: true } } } },
+      _isAgentTrigger: true,
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockCompleteAgentEventActorLegacyTurn.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+
+    const fenceToken = mockBeginAgentEventActorLegacyTurn.mock.calls[0][0].token;
+    expect(client.sendMessage).not.toHaveBeenCalled();
+    expect(mockCompleteAgentEventActorLegacyTurn).toHaveBeenCalledWith({
+      user: 'user-123',
+      tenantId: 'tenant-1',
+      conversationId: 'child-conversation',
+      token: fenceToken,
+    });
+  });
+
   it('does not execute a legacy event turn when its durable fence is not acquired', async () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue(
       wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
@@ -4637,7 +4706,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockCompleteAgentEventActorLegacyTurn).not.toHaveBeenCalled();
   });
 
-  it('reclaims a stale legacy fence before executing the next legacy-only turn', async () => {
+  it('does not replay a stale ambiguous legacy fence based only on age', async () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue(
       wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
     );
@@ -4646,7 +4715,7 @@ describe('ResumableAgentController resume metadata', () => {
       agent_id: 'parent-agent',
       tenantId: 'tenant-1',
     });
-    mockBeginAgentEventActorLegacyTurn.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    mockBeginAgentEventActorLegacyTurn.mockResolvedValueOnce(false);
     mockGetAgentEventActorSnapshot.mockResolvedValueOnce({
       state: null,
       reconciliations: [],
@@ -4701,19 +4770,16 @@ describe('ResumableAgentController resume metadata', () => {
       jest.fn().mockResolvedValue({ client }),
       null,
     );
-    for (let attempt = 0; attempt < 20 && client.sendMessage.mock.calls.length === 0; attempt++) {
+    for (
+      let attempt = 0;
+      attempt < 20 && mockBeginAgentEventActorLegacyTurn.mock.calls.length === 0;
+      attempt++
+    ) {
       await nextTick();
     }
 
-    expect(mockReclaimAgentEventActorLegacyTurn).toHaveBeenCalledWith({
-      user: 'user-123',
-      tenantId: 'tenant-1',
-      conversationId: 'child-conversation',
-      token: 'crashed-legacy-turn',
-      startedBefore: expect.any(Date),
-    });
-    expect(mockBeginAgentEventActorLegacyTurn).toHaveBeenCalledTimes(2);
-    expect(client.sendMessage).toHaveBeenCalledTimes(1);
+    expect(mockBeginAgentEventActorLegacyTurn).toHaveBeenCalledTimes(1);
+    expect(client.sendMessage).not.toHaveBeenCalled();
   });
 
   it('uses the guard-normalized tenant for a legacy untenanted event actor', async () => {

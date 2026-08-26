@@ -79,7 +79,6 @@ describe('event actor host adapter', () => {
     }),
     recordReconciliation: jest.fn(async () => true),
     resolveReconciliation: jest.fn(async () => true),
-    reclaimLegacyTurn: jest.fn(async () => true),
   });
 
   it('cold-starts once, then forks and warm-continues only the next event', async () => {
@@ -211,11 +210,9 @@ describe('event actor host adapter', () => {
     expect(invoked).toBe(false);
     expect(mockedFork).not.toHaveBeenCalled();
     expect(dependencies.commitState).not.toHaveBeenCalled();
-    /** A live fence is never reclaimed. */
-    expect(dependencies.reclaimLegacyTurn).not.toHaveBeenCalled();
   });
 
-  it('reclaims a fence abandoned by a crashed legacy turn', async () => {
+  it('preserves an old ambiguous fence instead of replaying based on age', async () => {
     legacyTurn = { token: 'legacy-crashed', startedAt: new Date(Date.now() - 120_000) };
     const dependencies = deps();
 
@@ -235,11 +232,7 @@ describe('event actor host adapter', () => {
       ),
     ).rejects.toThrow('blocked on an in-flight legacy turn');
 
-    /** Reclaim fails safe rather than resuming across an unknown outcome:
-     * this event still refuses, and the next one rebuilds cold. */
-    expect(dependencies.reclaimLegacyTurn).toHaveBeenCalledWith(
-      expect.objectContaining({ token: 'legacy-crashed' }),
-    );
+    /** Elapsed time does not establish whether the external action ran. */
     expect(dependencies.commitState).not.toHaveBeenCalled();
   });
 
@@ -577,7 +570,6 @@ describe('event actor host adapter', () => {
       }),
       recordReconciliation: jest.fn(async () => true),
       resolveReconciliation: jest.fn(async () => true),
-      reclaimLegacyTurn: jest.fn(async () => true),
     };
 
     await expect(
@@ -716,7 +708,6 @@ describe('event actor host adapter', () => {
       commitState: jest.fn(),
       recordReconciliation: jest.fn(),
       resolveReconciliation: jest.fn(),
-      reclaimLegacyTurn: jest.fn(async () => true),
     };
 
     await expect(
@@ -743,7 +734,6 @@ describe('event actor host adapter', () => {
       commitState: jest.fn(),
       recordReconciliation: jest.fn(),
       resolveReconciliation: jest.fn(),
-      reclaimLegacyTurn: jest.fn(async () => true),
     };
 
     await expect(

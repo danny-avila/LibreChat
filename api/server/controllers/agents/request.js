@@ -52,7 +52,6 @@ const {
   commitAgentEventActorState,
   beginAgentEventActorLegacyTurn,
   completeAgentEventActorLegacyTurn,
-  reclaimAgentEventActorLegacyTurn,
   recordAgentEventActorReconciliation,
   resolveAgentEventActorReconciliation,
   isAgentTriggerPrincipalActive,
@@ -392,10 +391,6 @@ const JOB_RECORD_WAIT_DELAY_MS = 60;
 // than hand back a stream that would 404). Past it, a missing job means the original
 // already completed and was cleaned up (attach and let the client refetch).
 const IDEMPOTENCY_STARTUP_GRACE_MS = 5000;
-/** A legacy-turn fence still open after this long belongs to a crashed turn:
- *  generous enough that no live turn is ever reclaimed, bounded so a crash
- *  cannot disable fork mode for the actor indefinitely. */
-const LEGACY_EVENT_TURN_STALE_MS = 60 * 60 * 1000;
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
 /** New-chat retries do not carry a conversation id, so derive the stream id
  * from their stable per-submission id. This keeps both the dedupe key and the
@@ -1804,8 +1799,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       let legacyEventActorTurnToken;
       /** Closes the durable legacy-turn fence once this turn's history is
        * persisted, clearing the token and advancing the epoch in one write. A
-       * failure here leaves the token SET, which keeps blocking forks until it
-       * is reclaimed — the fail-closed state, never a silent completion. */
+       * failure here leaves the token SET, which keeps blocking forks until an
+       * explicit reconciliation proves the ambiguous turn safe to release. */
       const sealLegacyEventActorTurn = async () => {
         if (legacyEventActorTurnToken == null) {
           return;
@@ -1821,12 +1816,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           });
           if (!sealed) {
             logger.error(
-              `[event-actor] Legacy turn fence ${token} was not sealed; forks stay blocked until it is reclaimed`,
+              `[event-actor] Legacy turn fence ${token} was not sealed; forks stay blocked pending reconciliation`,
             );
           }
         } catch (sealError) {
           logger.error(
-            `[event-actor] Failed to seal legacy turn fence ${token}; forks stay blocked until it is reclaimed`,
+            `[event-actor] Failed to seal legacy turn fence ${token}; forks stay blocked pending reconciliation`,
             sealError,
           );
         }
@@ -2021,9 +2016,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 expectedAction: agentEventDelivery.expectedAction,
                 signal: job.abortController.signal,
                 checkpointer: req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
-                /** A fence older than a full generation lifetime belongs to a
-                 * crashed turn; the actor reclaims it and retries next event. */
-                legacyTurnStaleMs: LEGACY_EVENT_TURN_STALE_MS,
                 invoke: async (actorContext) => {
                   client.checkpointNamespace = actorContext.checkpointNamespace;
                   client.eventActorCheckpointId = actorContext.checkpointId;
@@ -2044,7 +2036,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 commitState: commitAgentEventActorState,
                 recordReconciliation: recordAgentEventActorReconciliation,
                 resolveReconciliation: resolveAgentEventActorReconciliation,
-                reclaimLegacyTurn: reclaimAgentEventActorLegacyTurn,
               },
             ).then(({ value, execution }) => {
               if (execution.status === 'applied') {
@@ -2075,47 +2066,26 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   conversationId,
                   ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
                 };
-                let acquiredLegacyTurn = await beginAgentEventActorLegacyTurn({
+                const acquiredLegacyTurn = await beginAgentEventActorLegacyTurn({
                   ...legacyTurnOwner,
                   token,
                 });
-                if (!acquiredLegacyTurn) {
-                  /** Legacy-only actors must be able to recover their own
-                   * crashed fence; otherwise a skills/HITL actor that never
-                   * enters the fork executor would stay blocked forever. */
-                  const snapshot = await getAgentEventActorSnapshot(legacyTurnOwner);
-                  const staleBefore = new Date(Date.now() - LEGACY_EVENT_TURN_STALE_MS);
-                  if (
-                    snapshot?.legacyTurn != null &&
-                    new Date(snapshot.legacyTurn.startedAt).getTime() < staleBefore.getTime() &&
-                    (await reclaimAgentEventActorLegacyTurn({
-                      ...legacyTurnOwner,
-                      token: snapshot.legacyTurn.token,
-                      startedBefore: staleBefore,
-                    }))
-                  ) {
-                    acquiredLegacyTurn = await beginAgentEventActorLegacyTurn({
-                      ...legacyTurnOwner,
-                      token,
-                    });
-                  }
-                }
                 if (!acquiredLegacyTurn) {
                   throw Object.assign(new Error('The event actor is temporarily unavailable'), {
                     code: 'EVENT_ACTOR_NOT_READY',
                     status: 409,
                   });
                 }
-                /** The same exact token must survive a HITL pause so the
-                 * resume controller can seal this fence only after its final
-                 * response is durable. Persist it before provider execution;
-                 * a metadata failure leaves the fence closed and aborts safely. */
+                /** The same exact token must survive a HITL pause. Retain local
+                 * ownership before the Redis write so a metadata failure can
+                 * still seal this token after its durable error turn is saved;
+                 * provider execution starts only after metadata persists. */
+                legacyEventActorTurnToken = token;
                 await GenerationJobManager.updateMetadata(
                   streamId,
                   { agentEventLegacyTurnToken: token },
                   jobCreatedAt,
                 );
-                legacyEventActorTurnToken = token;
               }
               return client.sendMessage(text, messageOptions);
             })();
@@ -2687,8 +2657,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
 
         /** Leave the fence set when terminal persistence loses ownership or
-         * fails. Its bounded stale-reclaim path is safer than admitting a fork
-         * against history that may not contain this turn. */
+         * fails. Time cannot prove whether an external action occurred, so an
+         * ambiguous fence remains fail-closed pending explicit reconciliation. */
         if (legacyEventActorErrorHistoryDurable) {
           await sealLegacyEventActorTurn();
         }

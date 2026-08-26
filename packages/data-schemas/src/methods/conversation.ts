@@ -270,13 +270,6 @@ export interface ConversationMethods {
     tenantId?: string;
     token: string;
   }): Promise<boolean>;
-  reclaimAgentEventActorLegacyTurn(input: {
-    user: string;
-    conversationId: string;
-    tenantId?: string;
-    token: string;
-    startedBefore: Date;
-  }): Promise<boolean>;
   recordAgentEventActorReconciliation(input: {
     user: string;
     conversationId: string;
@@ -697,54 +690,6 @@ export function createConversationMethods(
       { new: true, timestamps: false },
     ).lean<IConversation>();
     return sealed != null;
-  }
-
-  /**
-   * Releases a fence abandoned by a crashed legacy turn. The turn's outcome is
-   * unknown, so this fails safe rather than optimistically: the epoch advances
-   * and any head is marked cold, forcing the next actor turn to rebuild from
-   * whatever history actually became durable. Bounded by `startedBefore` so a
-   * live turn is never reclaimed.
-   */
-  async function reclaimAgentEventActorLegacyTurn(input: {
-    user: string;
-    conversationId: string;
-    tenantId?: string;
-    token: string;
-    startedBefore: Date;
-  }): Promise<boolean> {
-    const Conversation = mongoose.models.Conversation as Model<IConversation>;
-    const staleFence: FilterQuery<IConversation> = {
-      user: input.user,
-      conversationId: input.conversationId,
-      subagentThread: { $exists: true },
-      agentEventBinding: { $exists: true },
-      'agentEventActorLegacyTurn.token': input.token,
-      'agentEventActorLegacyTurn.startedAt': { $lt: input.startedBefore },
-      ...subagentLeaseTenantFilter(input.tenantId),
-      ...activeExpirationFilter<IConversation>(),
-    };
-    const reclaimedWithHead = await Conversation.findOneAndUpdate(
-      { ...staleFence, 'agentEventActor.generation': { $exists: true } },
-      {
-        $set: { 'agentEventActor.requiresColdStart': true },
-        $unset: { agentEventActorLegacyTurn: 1 },
-        $inc: { agentEventActorEpoch: 1 },
-      },
-      { new: true, timestamps: false },
-    ).lean<IConversation>();
-    if (reclaimedWithHead != null) {
-      return true;
-    }
-    const reclaimedHeadless = await Conversation.findOneAndUpdate(
-      { ...staleFence, 'agentEventActor.generation': { $exists: false } },
-      {
-        $unset: { agentEventActorLegacyTurn: 1 },
-        $inc: { agentEventActorEpoch: 1 },
-      },
-      { new: true, timestamps: false },
-    ).lean<IConversation>();
-    return reclaimedHeadless != null;
   }
 
   /** Acquires or advances one invocation lifecycle fence and blocks competing turns. */
@@ -2398,7 +2343,6 @@ export function createConversationMethods(
     commitAgentEventActorState,
     beginAgentEventActorLegacyTurn,
     completeAgentEventActorLegacyTurn,
-    reclaimAgentEventActorLegacyTurn,
     recordAgentEventActorReconciliation,
     resolveAgentEventActorReconciliation,
     reserveSubagentThread,

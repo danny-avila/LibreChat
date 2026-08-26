@@ -312,6 +312,7 @@ export function createAgentEventTerminalHandler(methods: {
   ) => Promise<boolean>;
   getAgentEventActorSnapshot: ConversationMethods['getAgentEventActorSnapshot'];
   resolveAgentEventActorReconciliation: ConversationMethods['resolveAgentEventActorReconciliation'];
+  completeAgentEventActorLegacyTurn: ConversationMethods['completeAgentEventActorLegacyTurn'];
   getMessage: MessageMethods['getMessage'];
 }): (
   streamId: string,
@@ -420,6 +421,22 @@ export function createAgentEventTerminalHandler(methods: {
       settlementOutcome = { status: 'failed' };
     } else if (committedAction != null) {
       settlementOutcome = { status: 'applied', action: committedAction };
+    }
+    if (job.agentEventLegacyTurnToken != null && snapshot?.legacyTurn != null) {
+      if (snapshot.legacyTurn.token !== job.agentEventLegacyTurnToken) {
+        throw new Error(
+          `Legacy event actor turn ${job.agentEventLegacyTurnToken} lost token ownership`,
+        );
+      }
+      const sealed = await methods.completeAgentEventActorLegacyTurn({
+        user: job.userId,
+        conversationId,
+        ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+        token: job.agentEventLegacyTurnToken,
+      });
+      if (!sealed) {
+        throw new Error(`Failed to seal legacy event actor turn ${job.agentEventLegacyTurnToken}`);
+      }
     }
     const settledAt = new Date(job.completedAt ?? Date.now());
     const settled = await methods.settleAgentTriggerHandlingOutcome({

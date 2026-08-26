@@ -40,8 +40,8 @@ export interface ExecuteAgentEventActorInput<T> {
   expectedAction?: AgentTriggerExpectedAction;
   signal: AbortSignal;
   checkpointer?: TCheckpointerConfig;
-  /** Age past which an unsealed legacy-turn fence is treated as abandoned. */
-  legacyTurnStaleMs: number;
+  /** Deprecated compatibility input. Elapsed time never proves replay safety. */
+  legacyTurnStaleMs?: number;
   invoke(context: AgentEventActorInvocationContext): Promise<T>;
   readAppliedAction(): AgentEventAppliedAction | undefined;
 }
@@ -56,7 +56,6 @@ export interface AgentEventActorDependencies {
   commitState: ConversationMethods['commitAgentEventActorState'];
   recordReconciliation: ConversationMethods['recordAgentEventActorReconciliation'];
   resolveReconciliation: ConversationMethods['resolveAgentEventActorReconciliation'];
-  reclaimLegacyTurn: ConversationMethods['reclaimAgentEventActorLegacyTurn'];
 }
 
 function toHead(actorThreadId: string, state: IAgentEventActorState | null): EventActorHead {
@@ -113,23 +112,13 @@ export async function executeAgentEventActor<T>(
           `Event actor is blocked on ${unresolved.map((item) => item.status).join(', ')} reconciliation`,
         );
       }
-      /** A legacy turn is mid-flight: its messages are not durable yet, so any
-       * rebuild would be incomplete. Refuse outright. A fence abandoned by a
-       * crashed turn is reclaimed first — that advances the epoch and marks
-       * any head cold, so this invocation simply retries on the next event
-       * rather than resuming across an unknown outcome. */
+      /** A legacy turn is or may have been mid-flight: its external action and
+       * durable-history outcome are unknown, so no amount of elapsed time can
+       * prove that replay is safe. Keep the fence closed until a terminal owner
+       * proves persistence and seals its exact token, or an operator performs
+       * an explicit reconciliation. */
       const legacyTurn = snapshot.legacyTurn;
       if (legacyTurn != null) {
-        const staleBefore = new Date(Date.now() - input.legacyTurnStaleMs);
-        if (legacyTurn.startedAt.getTime() < staleBefore.getTime()) {
-          await deps.reclaimLegacyTurn({
-            user: input.user,
-            conversationId: input.conversationId,
-            ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
-            token: legacyTurn.token,
-            startedBefore: staleBefore,
-          });
-        }
         throw new Error('Event actor is blocked on an in-flight legacy turn');
       }
       const state = snapshot.state;

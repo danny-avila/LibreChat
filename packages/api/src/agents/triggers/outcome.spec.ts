@@ -17,6 +17,7 @@ const createAgentEventTerminalHandler = (
     getAgentEventActorSnapshot: jest.fn().mockResolvedValue(undefined),
     getMessage: jest.fn().mockResolvedValue(null),
     resolveAgentEventActorReconciliation: jest.fn().mockResolvedValue(true),
+    completeAgentEventActorLegacyTurn: jest.fn().mockResolvedValue(true),
     ...methods,
   });
 
@@ -98,6 +99,58 @@ describe('agent event terminal outcomes', () => {
     expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'completed_no_action' }),
     );
+  });
+
+  it('seals a persisted legacy turn from a non-resume terminal owner', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const completeAgentEventActorLegacyTurn = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      completeAgentEventActorLegacyTurn,
+      getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+        state: null,
+        reconciliations: [],
+        legacyTurn: { token: 'legacy-terminal-token', startedAt: new Date() },
+      }),
+    });
+
+    await handler(
+      'conversation-1',
+      job({ status: 'aborted', agentEventLegacyTurnToken: 'legacy-terminal-token' }),
+      [],
+    );
+
+    expect(completeAgentEventActorLegacyTurn).toHaveBeenCalledWith({
+      user: 'user-1',
+      conversationId: 'conversation-1',
+      token: 'legacy-terminal-token',
+    });
+    expect(completeAgentEventActorLegacyTurn.mock.invocationCallOrder[0]).toBeLessThan(
+      settleAgentTriggerHandlingOutcome.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('replays terminal settlement after the same legacy token was already sealed', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const completeAgentEventActorLegacyTurn = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      completeAgentEventActorLegacyTurn,
+      getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+        state: null,
+        reconciliations: [],
+        legacyTurn: null,
+      }),
+    });
+
+    await handler(
+      'conversation-1',
+      job({ status: 'aborted', agentEventLegacyTurnToken: 'legacy-terminal-token' }),
+      [],
+    );
+
+    expect(completeAgentEventActorLegacyTurn).not.toHaveBeenCalled();
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledTimes(1);
   });
 
   it('matches nested action arrays structurally', async () => {
