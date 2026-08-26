@@ -1575,7 +1575,12 @@ export function createAgentTriggerDeliveryMethods(
         deliveryKey: input.deliveryKey,
         user: input.user,
         ...tenantScope,
-        status: { $in: ['succeeded', 'dead'] },
+        /** Loopback delivery returns `started` before the engine can persist
+         * transport completion, so the child may reach action admission while
+         * this exact attempt is still leased. The delivery row remains the
+         * serialization point: its identity fences plus the single admission
+         * marker allow only one overlapping attempt to proceed. */
+        status: { $in: ['leased', 'succeeded', 'dead'] },
         'envelope.target.bindingId': input.bindingId,
         actorReceipt: { $exists: false },
         actorActionAdmittedAt: { $exists: false },
@@ -1623,7 +1628,10 @@ export function createAgentTriggerDeliveryMethods(
         user: input.user,
         ...tenantScope,
         'envelope.target.bindingId': input.bindingId,
-        'handling.conversationId': input.conversationId,
+        $or: [
+          { handling: { $exists: false } },
+          { 'handling.conversationId': input.conversationId },
+        ],
         actorReceipt: { $exists: false },
         actorActionAdmittedAt: { $exists: true },
       })) != null

@@ -1651,6 +1651,22 @@ describe('agent trigger delivery methods', () => {
       now: START,
     });
     const generationCreatedAt = START.getTime() + 1_000;
+    const actionAdmission = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      tenantId: 'tenant-1',
+      bindingId: 'binding-1',
+      conversationId: 'conversation-1',
+      admittedAt: new Date(generationCreatedAt + 500),
+    };
+    /** The loopback child starts after the HTTP `started` response but before
+     * the delivery engine commits that result, so admission must work while
+     * the exact transport attempt is still leased. */
+    await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(true);
+    await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(true);
+    await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(false);
+    await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(true);
+    await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(false);
     await methods.completeAgentTriggerDelivery({
       id: claimed!.id,
       workerId: 'worker-1',
@@ -1698,14 +1714,6 @@ describe('agent trigger delivery methods', () => {
     };
 
     await expect(methods.settleAgentEventActorReceipt(settlement)).resolves.toBe(false);
-    const actionAdmission = {
-      deliveryKey: queued.delivery.deliveryKey,
-      user: queued.delivery.user,
-      tenantId: 'tenant-1',
-      bindingId: 'binding-1',
-      conversationId: 'conversation-1',
-      admittedAt: new Date(generationCreatedAt + 500),
-    };
     await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(true);
     await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(true);
     await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(false);
