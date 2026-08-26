@@ -106,6 +106,12 @@ async function passportLogin(req, email_or_id, password, done) {
     const bklSid = typeof data.sid === 'number' ? data.sid : Number(data.sid) || null;
     const bklUserClass = typeof data.userClass === 'number' ? data.userClass : null;
     const bklRoles = Array.isArray(data.roles) ? data.roles : [];
+    // 부서 정보 기회적 수집 — BIMS 응답에 부서 후보 키가 실려 오면 저장한다.
+    // (전용 부서 API 는 추후 연동 예정: bklAdmin POST /users/sync-departments)
+    const bklDepartment =
+      [data.deptNm, data.dept, data.department, data.deptName]
+        .map((v) => (typeof v === 'string' ? v.trim() : ''))
+        .find((v) => v.length > 0) || null;
 
     // BIMS 가 sid 안 보내면 ACL 매칭 불가 → 명시적으로 경고
     if (!bklSid) {
@@ -123,6 +129,10 @@ async function passportLogin(req, email_or_id, password, done) {
       bkl_roles: bklRoles,
       bkl_last_login_at: new Date(),
     };
+    if (bklDepartment) {
+      // null 로 덮어쓰지 않도록 값이 있을 때만 포함 (sync 훅이 채운 값 보존)
+      bklFields.bkl_department = bklDepartment;
+    }
 
     // 3. MongoDB 에서 유저 찾기
     let user = await findUser({ email: bklEmail });
@@ -162,6 +172,7 @@ async function passportLogin(req, email_or_id, password, done) {
         user.bkl_sid !== bklSid ||
         user.bkl_user_id !== bklUserId ||
         user.bkl_user_class !== bklUserClass ||
+        (bklDepartment != null && user.bkl_department !== bklDepartment) ||
         JSON.stringify(user.bkl_roles || []) !== JSON.stringify(bklRoles);
 
       if (needsUpdate) {

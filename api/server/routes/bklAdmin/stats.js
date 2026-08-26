@@ -176,6 +176,7 @@ router.get('/usage/by-user', async (req, res) => {
       username: 1,
       bkl_user_class: 1,
       bkl_user_id: 1,
+      bkl_department: 1,
       email: 1,
     });
 
@@ -194,6 +195,7 @@ router.get('/usage/by-user', async (req, res) => {
           username: user.username ?? null,
           bkl_user_class: user.bkl_user_class ?? null,
           bkl_user_id: user.bkl_user_id ?? null,
+          department: user.bkl_department ?? null,
           email: user.email ?? null,
           queries: row.queries,
           enhances: row.enhances,
@@ -258,6 +260,102 @@ router.get('/usage/by-group', async (req, res) => {
       ])
       .toArray();
     res.json({ data });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message) });
+  }
+});
+
+/**
+ * 전체 사용자 질의 이력 (Harvey Admin History 유사).
+ * `bkl_query_logs` 를 페이지네이션 조회하고, 전문(全文)은 `messages`
+ * 컬렉션을 messageId 로 조인해 보충한다 (삭제된 채팅은 preview 폴백).
+ *
+ * Params: days|from/to · user_id · kind(query|query_enhance) · model ·
+ *         q(textPreview 부분일치) · page/page_size(기본 50, 최대 10000 — 엑셀용)
+ */
+router.get('/queries/history', async (req, res) => {
+  try {
+    const db = getDb();
+    const { range } = parseDateRange(req.query, 30);
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.max(1, Math.min(parseInt(req.query.page_size, 10) || 50, 10000));
+
+    const filter = { createdAt: range };
+    if (req.query.user_id) {
+      filter.user = String(req.query.user_id);
+    }
+    if (req.query.kind) {
+      filter.kind = String(req.query.kind);
+    }
+    if (req.query.model) {
+      filter.model = String(req.query.model);
+    }
+    if (req.query.q) {
+      const escaped = String(req.query.q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.textPreview = { $regex: escaped, $options: 'i' };
+    }
+
+    const coll = db.collection(QUERY_LOGS);
+    const [total, logs] = await Promise.all([
+      coll.countDocuments(filter),
+      coll
+        .find(filter, {
+          projection: {
+            messageId: 1,
+            conversationId: 1,
+            user: 1,
+            kind: 1,
+            model: 1,
+            textPreview: 1,
+            createdAt: 1,
+          },
+        })
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .toArray(),
+    ]);
+
+    /* 전문 조인 — 로그의 preview 는 120자 절단본이므로 원본 메시지를 찾는다 */
+    const messageIds = [...new Set(logs.map((log) => log.messageId).filter(Boolean))];
+    let textMap = new Map();
+    if (messageIds.length > 0) {
+      const messages = await db
+        .collection('messages')
+        .find({ messageId: { $in: messageIds } }, { projection: { messageId: 1, text: 1 } })
+        .toArray();
+      textMap = new Map(messages.map((message) => [message.messageId, message.text]));
+    }
+
+    const userMap = await loadUsers(
+      db,
+      [...new Set(logs.map((log) => log.user).filter(Boolean))],
+      { name: 1, username: 1, email: 1, bkl_user_class: 1, bkl_user_id: 1, bkl_department: 1 },
+    );
+
+    res.json({
+      total,
+      page,
+      page_size: pageSize,
+      data: logs.map((log) => {
+        const user = userMap.get(String(log.user)) || {};
+        const fullText = textMap.get(log.messageId);
+        return {
+          message_id: log.messageId,
+          conversation_id: log.conversationId ?? null,
+          created_at: log.createdAt,
+          kind: log.kind,
+          model: log.model ?? null,
+          text: fullText ?? log.textPreview ?? '',
+          text_source: fullText != null ? 'message' : 'preview',
+          user_id: log.user ? String(log.user) : null,
+          user_name: user.name ?? null,
+          user_email: user.email ?? null,
+          user_class: user.bkl_user_class ?? null,
+          department: user.bkl_department ?? null,
+        };
+      }),
+    });
   } catch (err) {
     res.status(500).json({ error: String(err.message) });
   }
