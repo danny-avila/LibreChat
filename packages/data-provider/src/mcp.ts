@@ -458,6 +458,20 @@ const userUrlSchema = (protocolCheck: (val: string) => boolean, message: string)
     .refine(protocolCheck, { message });
 
 /**
+ * OBO options for user input: same shape as {@link OboOptionsSchema} but without
+ * its extractEnvVariable transform, so a submitted `${VAR}` is rejected rather
+ * than resolved into the stored config.
+ */
+const UserOboOptionsSchema = z.object({
+  scopes: z
+    .string()
+    .refine((val) => !envVarPattern.test(val), {
+      message: 'Environment variable references are not allowed in OBO scopes',
+    })
+    .pipe(z.string().min(1)),
+});
+
+/**
  * MCP Server configuration that comes from UI/API input only.
  * Omits server-managed fields like startup, timeout, customUserVars, etc.
  * Allows: title, description, url, iconPath, oauth (user credentials).
@@ -473,6 +487,14 @@ const userUrlSchema = (protocolCheck: (val: string) => boolean, message: string)
  * through user-controlled URLs (e.g. http://attacker.com/?k=${JWT_SECRET}).
  * Protocol checks use positive allowlists (http(s) / ws(s)) to block
  * file://, ftp://, javascript:, and other non-network schemes.
+ *
+ * SECURITY: `obo` uses UserOboOptionsSchema for the same reason — the admin
+ * schema's `scopes` carries the extractEnvVariable transform, which would
+ * resolve and persist any non-denylisted secret (e.g. ${OPENID_CLIENT_SECRET}).
+ * The field itself stays user-submittable because whether a caller may set it
+ * is enforced by the CONFIGURE_OBO permission in the MCP controllers, and
+ * `MCP_USER_INPUT_FIELDS` must keep listing it so the OBO lockdown check
+ * continues to treat obo changes as locked.
  */
 export const MCPServerUserInputSchema = z.union([
   userManagedServerFields(WebSocketOptionsSchema).extend({
@@ -481,10 +503,12 @@ export const MCPServerUserInputSchema = z.union([
   userManagedServerFields(SSEOptionsSchema).extend({
     proxy: z.never().optional(),
     url: userUrlSchema(isHttpProtocol, 'SSE URL must use http:// or https://'),
+    obo: UserOboOptionsSchema.optional(),
   }),
   userManagedServerFields(StreamableHTTPOptionsSchema).extend({
     proxy: z.never().optional(),
     url: userUrlSchema(isHttpProtocol, 'Streamable HTTP URL must use http:// or https://'),
+    obo: UserOboOptionsSchema.optional(),
   }),
 ]);
 

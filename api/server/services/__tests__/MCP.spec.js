@@ -34,8 +34,7 @@ jest.mock('@librechat/api', () => ({
   GenerationJobManager: jest.fn(),
   buildOAuthToolCallName: jest.fn((name) => name),
   getUserMCPAuthMap: jest.fn(),
-  resolveUserMCPRoleIds: jest.fn(async () => new Set()),
-  filterMCPServersByRoles: jest.fn((servers) => servers),
+  filterMCPServersForUser: jest.fn(async (servers) => servers),
   userCanAccessMCPServer: jest.fn(async () => true),
   /** Mirrors the real resolver so these tests still exercise the wrapper's own
    *  plumbing - loading the request config and degrading on failure - rather than

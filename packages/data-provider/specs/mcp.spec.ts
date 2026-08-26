@@ -113,6 +113,35 @@ describe('MCP schemas', () => {
       expect(userResult.success).toBe(false);
       delete process.env.FAKE_SECRET;
     });
+
+    it('should resolve obo scopes through the admin schema (attack vector baseline)', () => {
+      process.env.FAKE_SECRET = 'leaked-secret-value';
+      const adminResult = SSEOptionsSchema.safeParse({
+        type: 'sse',
+        url: 'https://mcp-server.com/sse',
+        obo: { scopes: '${FAKE_SECRET}' },
+      });
+      expect(adminResult.success).toBe(true);
+      if (adminResult.success) {
+        expect(adminResult.data.obo?.scopes).toBe('leaked-secret-value');
+      }
+      delete process.env.FAKE_SECRET;
+    });
+
+    it('should reject env var references in obo scopes through user input schema', () => {
+      process.env.FAKE_SECRET = 'leaked-secret-value';
+      const userResult = MCPServerUserInputSchema.safeParse({
+        type: 'sse',
+        url: 'https://mcp-server.com/sse',
+        obo: { scopes: '${FAKE_SECRET}' },
+      });
+      expect(userResult.success).toBe(false);
+      delete process.env.FAKE_SECRET;
+    });
+
+    it('should keep obo in the user-input field set so the OBO lockdown still covers it', () => {
+      expect(MCP_USER_INPUT_FIELDS.has('obo')).toBe(true);
+    });
   });
 
   describe('OAuth URL env variable resolution (admin schema)', () => {

@@ -472,16 +472,20 @@ export function replaceSpecialVars({
   const isoDatetime = now.toISOString();
   result = result.replace(/{{\s*iso_datetime\s*}}/gi, isoDatetime);
 
+  /** Replacements go through a callback so `$&`, `$1` etc. in a value stay literal. */
   if (user && user.name) {
-    result = result.replace(/{{\s*current_user\s*}}/gi, user.name);
+    const name = user.name;
+    result = result.replace(/{{\s*current_user\s*}}/gi, () => name);
   }
 
   if (user && user.department) {
-    result = result.replace(/{{\s*user_department\s*}}/gi, () => user.department);
+    const department = user.department;
+    result = result.replace(/{{\s*user_department\s*}}/gi, () => department);
   }
 
   if (user && user.jobTitle) {
-    result = result.replace(/{{\s*user_job_title\s*}}/gi, user.jobTitle);
+    const jobTitle = user.jobTitle;
+    result = result.replace(/{{\s*user_job_title\s*}}/gi, () => jobTitle);
   }
 
   return result;

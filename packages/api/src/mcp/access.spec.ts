@@ -4,6 +4,7 @@ import {
   parseServerRoleIds,
   canAccessMCPServer,
   filterMCPServersByRoles,
+  filterMCPServersForUser,
   resolveUserMCPRoleIds,
   userCanAccessMCPServer,
 } from './access';
@@ -63,6 +64,38 @@ describe('filterMCPServersByRoles', () => {
     };
     const result = filterMCPServersByRoles(servers, new Set(['rcm']));
     expect(Object.keys(result).sort()).toEqual(['gatedAllowed', 'open']);
+  });
+});
+
+describe('filterMCPServersForUser', () => {
+  it('skips the DB entirely when no server declares a roles gate', async () => {
+    const spy = spyRoles(['rcm']);
+    const servers = { open: cfg(), alsoOpen: cfg('') };
+
+    const result = await filterMCPServersForUser(servers, { idOnTheSource: 'oid-1' });
+
+    expect(result).toEqual(servers);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('resolves roles and filters once any server is gated', async () => {
+    const spy = spyRoles(['rcm']);
+    const servers = { open: cfg(), gatedAllowed: cfg('RCM'), gatedDenied: cfg('admin') };
+
+    const result = await filterMCPServersForUser(servers, { idOnTheSource: 'oid-2' });
+
+    expect(Object.keys(result).sort()).toEqual(['gatedAllowed', 'open']);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops gated servers for a user with no object id without querying', async () => {
+    const spy = spyRoles(['rcm']);
+    const servers = { open: cfg(), gated: cfg('RCM') };
+
+    const result = await filterMCPServersForUser(servers, null);
+
+    expect(Object.keys(result)).toEqual(['open']);
+    expect(spy).not.toHaveBeenCalled();
   });
 });
 

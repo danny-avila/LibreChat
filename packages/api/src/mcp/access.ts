@@ -84,6 +84,24 @@ export const filterMCPServersByRoles = (
 };
 
 /**
+ * Filters a server map for a user, resolving their roles only when at least one
+ * server declares a `roles` gate. Listings are the common case and are usually
+ * ungated, so this keeps a Sapphire round trip off the page-load path entirely.
+ */
+export const filterMCPServersForUser = async (
+  servers: Record<string, ParsedServerConfig>,
+  user?: Pick<IUser, 'idOnTheSource'> | null,
+): Promise<Record<string, ParsedServerConfig>> => {
+  const isGated = Object.values(servers).some(
+    (config) => parseServerRoleIds(config.roles).length > 0,
+  );
+  if (!isGated) {
+    return servers;
+  }
+  return filterMCPServersByRoles(servers, await resolveUserMCPRoleIds(user));
+};
+
+/**
  * Authoritative per-server access check for the tool-execution path. A missing
  * config or one with no `roles` gate carries nothing to enforce and short-circuits
  * to `true` without resolving the user's roles (a role-gated server always resolves

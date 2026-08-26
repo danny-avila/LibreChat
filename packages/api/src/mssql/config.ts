@@ -10,14 +10,13 @@ export interface SapphireDbConfig {
   schema: string;
   /** Encrypt the TDS connection (TLS). Off by default for local dev servers without a certificate. */
   encrypt: boolean;
-  /** Trust a self-signed server certificate. Defaults to true so local dev servers connect. */
+  /**
+   * Trust a self-signed server certificate. Off by default: trusting any
+   * presented certificate defeats TLS verification, so a dev server without a
+   * trusted chain must opt in via SAPPHIRE_DB_TRUST_SERVER_CERTIFICATE=true.
+   */
   trustServerCertificate: boolean;
 }
-
-const resolveTrustServerCertificate = (): boolean =>
-  process.env.SAPPHIRE_DB_TRUST_SERVER_CERTIFICATE == null
-    ? true
-    : isEnabled(process.env.SAPPHIRE_DB_TRUST_SERVER_CERTIFICATE);
 
 /** Connection settings resolved from the SAPPHIRE_DB_* environment variables. */
 export const sapphireDbConfig: SapphireDbConfig = {
@@ -28,7 +27,7 @@ export const sapphireDbConfig: SapphireDbConfig = {
   database: process.env.SAPPHIRE_DB_DATABASE ?? 'sapphire',
   schema: process.env.SAPPHIRE_DB_SCHEMA ?? 'dbo',
   encrypt: isEnabled(process.env.SAPPHIRE_DB_ENCRYPT),
-  trustServerCertificate: resolveTrustServerCertificate(),
+  trustServerCertificate: isEnabled(process.env.SAPPHIRE_DB_TRUST_SERVER_CERTIFICATE),
 };
 
 /** Whether the minimum Sapphire connection settings are present. */

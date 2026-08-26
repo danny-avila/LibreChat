@@ -113,6 +113,19 @@ describe('replaceSpecialVars', () => {
     expect(result).toBe('Hello Test User!');
   });
 
+  test('should treat $-substitution patterns in user values as literal text', () => {
+    const result = replaceSpecialVars({
+      text: '{{current_user}} | {{user_department}} | {{user_job_title}}',
+      user: {
+        ...mockUser,
+        name: 'A$&B',
+        department: 'R&D $` x',
+        jobTitle: 'Lead $1',
+      } as TUser,
+    });
+    expect(result).toBe('A$&B | R&D $` x | Lead $1');
+  });
+
   test('should not replace {{current_user}} if user is not provided', () => {
     const result = replaceSpecialVars({
       text: 'Hello {{current_user}}!',

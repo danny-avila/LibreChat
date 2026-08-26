@@ -40,8 +40,7 @@ const {
   containsGraphTokenPlaceholder,
   isOAuthServer,
   OpenIDReauthRequiredError,
-  resolveUserMCPRoleIds,
-  filterMCPServersByRoles,
+  filterMCPServersForUser,
   userCanAccessMCPServer,
 } = require('@librechat/api');
 const {
@@ -466,8 +465,7 @@ async function resolveAllMcpConfigs(userId, user) {
     ? await registry.getAllServerConfigs(userId, configServers, user.role)
     : await registry.getAllServerConfigs(userId, configServers);
 
-  const userRoleIds = await resolveUserMCPRoleIds(user);
-  return filterMCPServersByRoles(configs, userRoleIds);
+  return filterMCPServersForUser(configs, user);
 }
 
 /**
@@ -1312,8 +1310,7 @@ async function getMCPSetupData(userId, options = {}) {
   const allConfigs = role
     ? await registry.getAllServerConfigs(userId, configServers, role)
     : await registry.getAllServerConfigs(userId, configServers);
-  const userRoleIds = await resolveUserMCPRoleIds({ idOnTheSource });
-  const mcpConfig = filterMCPServersByRoles(allConfigs, userRoleIds);
+  const mcpConfig = await filterMCPServersForUser(allConfigs, { idOnTheSource });
   const mcpManager = getMCPManager(userId);
   /** @type {Map<string, import('@librechat/api').MCPConnection>} */
   let appConnections = new Map();
