@@ -234,7 +234,7 @@ const updateUserPluginsController = async (req, res) => {
     }
 
     let keys = Object.keys(auth);
-    const values = Object.values(auth); // Used in 'install' block
+    let values = Object.values(auth); // Used in 'install' block
 
     const isMCPTool = pluginKey.startsWith('mcp_') || pluginKey.includes(Constants.mcp_delimiter);
 
@@ -261,10 +261,32 @@ const updateUserPluginsController = async (req, res) => {
     if (pluginKey === Tools.web_search) {
       /** @type  {TCustomConfig['webSearch']} */
       const webSearchConfig = appConfig?.webSearch;
-      keys = extractWebSearchEnvVars({
-        keys: action === 'install' ? keys : webSearchKeys,
-        config: webSearchConfig,
-      });
+      if (action === 'install') {
+        // extractWebSearchEnvVars drops the submitted fields the config does not define, so
+        // mapping every key in one call can leave `keys` shorter than `values`, and the two
+        // are zipped by index below: a submitted value can then be stored under another
+        // provider's environment variable. Map one field at a time to keep each value with
+        // the key it was submitted under.
+        const mappedKeys = [];
+        const mappedValues = [];
+        for (let i = 0; i < keys.length; i++) {
+          const [envVar] = extractWebSearchEnvVars({
+            keys: [keys[i]],
+            config: webSearchConfig,
+          });
+          if (envVar) {
+            mappedKeys.push(envVar);
+            mappedValues.push(values[i]);
+          }
+        }
+        keys = mappedKeys;
+        values = mappedValues;
+      } else {
+        keys = extractWebSearchEnvVars({
+          keys: webSearchKeys,
+          config: webSearchConfig,
+        });
+      }
     }
 
     if (action === 'install') {
