@@ -63,26 +63,32 @@ export type StorageScope = {
   replacementLocks?: Map<string, Promise<void>>;
 };
 
-type ScopeSource = {
+type ScopeIdentity = {
   tenantId?: string;
   user?: { id?: string; tenantId?: string };
-  /**
-   * Resolved app config. Required, because it is what distinguishes a real request
-   * from a reduced copy of one: without it there is no way to tell "no cap is
-   * configured" from "this object never carried the cap", and the second silently
-   * disables the quota.
-   */
-  config: {
-    fileConfig?: Parameters<typeof mergeFileConfig>[0] & { storageLimit?: number };
-  };
-  /**
-   * Already-resolved scope, carried by request snapshots. Image-generation tools hold a
-   * reduced copy of the request rather than the live one; carrying the branded scope is
-   * how such a copy stays chargeable, and it is honoured before the config requirement
-   * above because a snapshot that carries a real scope needs nothing further.
-   */
-  storageScope?: StorageScope;
 };
+
+type ScopeSource = ScopeIdentity &
+  (
+    | {
+        storageScope: StorageScope;
+        config?: {
+          fileConfig?: Parameters<typeof mergeFileConfig>[0] & { storageLimit?: number };
+        };
+      }
+    | {
+        storageScope?: never;
+        /**
+         * Resolved app config. Required, because it is what distinguishes a real request
+         * from a reduced copy of one: without it there is no way to tell "no cap is
+         * configured" from "this object never carried the cap", and the second silently
+         * disables the quota.
+         */
+        config: {
+          fileConfig?: Parameters<typeof mergeFileConfig>[0] & { storageLimit?: number };
+        };
+      }
+  );
 
 /** Keyed by request identity so the scope neither mutates the request nor outlives it. */
 const scopesByRequest: WeakMap<ScopeSource, StorageScope> = new WeakMap();

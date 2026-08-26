@@ -6,6 +6,7 @@ import { resolveStorageScope } from './quota';
 
 type InterfaceConfig = AppConfig['interfaceConfig'];
 type FileConfig = NonNullable<AppConfig['fileConfig']>;
+type AppPaths = AppConfig['paths'];
 
 const retentionExpiryCache = new WeakMap<
   RetentionRequest,
@@ -36,6 +37,8 @@ export type RetentionRequest = {
     interfaceConfig?: InterfaceConfig;
     /** Carries the storage cap so a snapshot can resolve the same scope the live request would. */
     fileConfig?: FileConfig;
+    /** Carries the filesystem roots needed to undo rejected local generated-image writes. */
+    paths?: AppPaths;
   };
 };
 
@@ -300,9 +303,13 @@ export const createMinimalRetentionRequest = (
     return undefined;
   }
 
+  const storageScope = req.storageScope
+    ? resolveStorageScope({ user: req.user, storageScope: req.storageScope })
+    : resolveStorageScope({ tenantId: req.tenantId, user: req.user, config: req.config ?? {} });
+
   return {
     fileRetentionSource: req.fileRetentionSource,
-    storageScope: resolveStorageScope(req),
+    storageScope,
     user: req.user
       ? {
           id: req.user.id,
@@ -316,6 +323,7 @@ export const createMinimalRetentionRequest = (
     config: {
       interfaceConfig: req.config?.interfaceConfig,
       ...(req.config?.fileConfig ? { fileConfig: req.config.fileConfig } : {}),
+      ...(req.config?.paths ? { paths: req.config.paths } : {}),
     },
   };
 };

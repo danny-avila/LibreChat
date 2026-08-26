@@ -446,9 +446,16 @@ const processFileURL = async ({
   req,
 }) => {
   const retentionExpiryPromise = getRetentionExpiry(req);
+  const effectiveTenantId = req ? resolveStorageScope(req).tenantId : tenantId;
   const { saveURL, getFileURL } = getStrategyFunctions(fileStrategy);
   try {
-    const savedFile = await saveURL({ userId, URL, fileName, basePath, tenantId });
+    const savedFile = await saveURL({
+      userId,
+      URL,
+      fileName,
+      basePath,
+      tenantId: effectiveTenantId,
+    });
     if (!savedFile) {
       throw new Error(`Strategy "${fileStrategy}" did not save "${fileName}"`);
     }
@@ -466,7 +473,12 @@ const processFileURL = async ({
       typeof savedFile === 'string'
         ? savedFile
         : (savedFile.filepath ??
-          (await getFileURL({ userId, fileName: fallbackFileName, basePath, tenantId })));
+          (await getFileURL({
+            userId,
+            fileName: fallbackFileName,
+            basePath,
+            tenantId: effectiveTenantId,
+          })));
     if (!filepath) {
       throw new Error(`Strategy "${fileStrategy}" did not return a file URL for "${fileName}"`);
     }
@@ -490,11 +502,17 @@ const processFileURL = async ({
         type,
         context,
         ...(await retentionExpiryPromise),
-        tenantId,
+        tenantId: effectiveTenantId,
         width: dimensions.width,
         height: dimensions.height,
       },
-      () => deleteStoredBlob(req, { source: fileStrategy, filepath, ...storageMetadata, tenantId }),
+      () =>
+        deleteStoredBlob(req, {
+          source: fileStrategy,
+          filepath,
+          ...storageMetadata,
+          tenantId: effectiveTenantId,
+        }),
     );
   } catch (error) {
     logger.error(`Error while processing the image with ${fileStrategy}:`, error);
@@ -577,10 +595,8 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     return fileInfo;
   }
 
-  const result = await persistFile(
-    req,
-    fileInfo,
-    () => deleteStoredBlob(req, { source, filepath, storageKey, storageRegion }),
+  const result = await persistFile(req, fileInfo, () =>
+    deleteStoredBlob(req, { source, filepath, storageKey, storageRegion }),
   );
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
@@ -1035,10 +1051,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       const fileInfo = {
         ...removeNullishValues({
           text,
-          /* Extractors may report a conservative estimate (Mistral OCR returns
-           * `text.length * 4`). The ledger charges what it writes, so the row has to
-           * record the size actually persisted. */
-          bytes: Buffer.byteLength(text, 'utf8'),
+          bytes,
           file_id,
           temp_file_id,
           user: req.user.id,
@@ -1508,13 +1521,9 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     ...(await retentionExpiryPromise),
     tenantId: req.user.tenantId,
   };
-  try {
-    await persistFile(req, file, () =>
-      deleteStoredBlob(req, { source: file.source, filepath: file.filepath }),
-    );
-  } catch (error) {
-    logger.warn('Error saving OpenAI image output file metadata', error);
-  }
+  await persistFile(req, file, () =>
+    deleteStoredBlob(req, { source: file.source, filepath: file.filepath }),
+  );
   return file;
 };
 
