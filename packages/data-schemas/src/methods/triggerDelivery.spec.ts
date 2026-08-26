@@ -103,6 +103,32 @@ describe('agent trigger delivery methods', () => {
     expect(await Delivery.countDocuments()).toBe(1);
   });
 
+  it('keeps the original mailbox rollout semantics on idempotent replay', async () => {
+    const enabled = enqueueInput({ awaitTerminalHandling: true });
+    const first = await methods.enqueueAgentTriggerDelivery(enabled);
+    const disabledReplay = await methods.enqueueAgentTriggerDelivery({
+      ...enabled,
+      awaitTerminalHandling: undefined,
+    });
+
+    expect(first.delivery.awaitTerminalHandling).toBe(true);
+    expect(disabledReplay).toMatchObject({
+      replayed: true,
+      delivery: { id: first.delivery.id, awaitTerminalHandling: true },
+    });
+
+    const disabled = enqueueInput();
+    const second = await methods.enqueueAgentTriggerDelivery(disabled);
+    const enabledReplay = await methods.enqueueAgentTriggerDelivery({
+      ...disabled,
+      awaitTerminalHandling: true,
+    });
+
+    expect(second.delivery.awaitTerminalHandling).toBeUndefined();
+    expect(enabledReplay).toMatchObject({ replayed: true, delivery: { id: second.delivery.id } });
+    expect(enabledReplay.delivery.awaitTerminalHandling).toBeUndefined();
+  });
+
   it('projects public status while enforcing API key, owner, and tenant in the query', async () => {
     const user = new mongoose.Types.ObjectId();
     const queued = await methods.enqueueAgentTriggerDelivery(
@@ -226,6 +252,7 @@ describe('agent trigger delivery methods', () => {
         coalesceFrom,
         coalesceUntil,
         availableAt: coalesceUntil,
+        awaitTerminalHandling: true,
         envelopeBytes: 128,
         envelope: {
           mode: 'continue',
@@ -289,6 +316,7 @@ describe('agent trigger delivery methods', () => {
         attempt: attempt!,
         result,
         settledAt: coalesceUntil,
+        awaitTerminalHandling: true,
         handling: {
           status: 'started',
           conversationId: 'child-thread',
@@ -312,6 +340,30 @@ describe('agent trigger delivery methods', () => {
     expect(receipts).toHaveLength(4);
     expect(receipts.every((receipt) => receipt?.status === 'succeeded')).toBe(true);
     expect(receipts.every((receipt) => receipt?.handling?.status === 'started')).toBe(true);
+    expect(
+      (
+        await Delivery.find({ _id: { $in: queued.map(({ delivery }) => delivery.id) } }).lean()
+      ).every((row) => row.expiresAt == null),
+    ).toBe(true);
+
+    const later = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        orderingKey: 'commentary-lane',
+        awaitTerminalHandling: true,
+        availableAt: coalesceUntil,
+      }),
+    );
+    const laterClaim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-later',
+      claimToken: 'claim-later',
+      now: coalesceUntil,
+      leaseUntil: new Date(coalesceUntil.getTime() + 60_000),
+    });
+    expect(laterClaim?.id).toBe(later.delivery.id);
+    await expect(methods.findEarlierAgentTriggerDelivery(laterClaim!)).resolves.toMatchObject({
+      reason: 'active_handling',
+    });
 
     await expect(
       methods.settleAgentTriggerHandlingOutcome({
@@ -322,11 +374,24 @@ describe('agent trigger delivery methods', () => {
         settledAt: new Date(coalesceUntil.getTime() + 1_000),
       }),
     ).resolves.toBe(true);
+    await expect(methods.findEarlierAgentTriggerDelivery(laterClaim!)).resolves.toBeNull();
 
     let terminal = await Delivery.find({ orderingKey: 'commentary-lane' }).lean();
-    expect(terminal.every((row) => row.handling?.status === 'completed_no_action')).toBe(true);
+    const batchIds = new Set(queued.map(({ delivery }) => delivery.id));
+    expect(
+      terminal
+        .filter((row) => batchIds.has(String(row._id)))
+        .every((row) => row.handling?.status === 'completed_no_action'),
+    ).toBe(true);
 
-    const recoveringMember = terminal.find((row) => String(row._id) !== String(root!._id));
+    const recoveringMember = terminal.find(
+      (row) => batchIds.has(String(row._id)) && String(row._id) !== String(root!._id),
+    );
+    await Delivery.updateOne(
+      { _id: recoveringMember!._id },
+      { $set: { 'handling.status': 'started' } },
+    );
+    await expect(methods.findEarlierAgentTriggerDelivery(laterClaim!)).resolves.toBeNull();
     await Delivery.updateOne({ _id: recoveringMember!._id }, { $unset: { handling: 1 } });
     await expect(
       methods.settleAgentTriggerHandlingOutcome({
@@ -338,7 +403,44 @@ describe('agent trigger delivery methods', () => {
       }),
     ).resolves.toBe(true);
     terminal = await Delivery.find({ orderingKey: 'commentary-lane' }).lean();
-    expect(terminal.every((row) => row.handling?.status === 'completed_no_action')).toBe(true);
+    expect(
+      terminal
+        .filter((row) => batchIds.has(String(row._id)))
+        .every((row) => row.handling?.status === 'completed_no_action'),
+    ).toBe(true);
+    expect(
+      terminal
+        .filter((row) => batchIds.has(String(row._id)))
+        .every(
+          (row) =>
+            row.expiresAt?.getTime() === coalesceUntil.getTime() + 1_000 + 90 * 24 * 60 * 60_000,
+        ),
+    ).toBe(true);
+  });
+
+  it('promotes mailbox semantics when an enabled delivery joins an unmarked batch root', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const coalesceUntil = new Date(Date.now() + 60_000);
+    const shared = {
+      user,
+      orderingKey: 'mixed-rollout-batch',
+      coalesceKey: 'trigger_batch_mixed_rollout',
+      coalesceFrom: new Date(coalesceUntil.getTime() - 750),
+      coalesceUntil,
+      availableAt: coalesceUntil,
+      envelopeBytes: 128,
+    };
+    const first = await methods.enqueueAgentTriggerDelivery(enqueueInput(shared));
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ ...shared, awaitTerminalHandling: true }),
+    );
+
+    const root = await Delivery.findById(first.delivery.id).lean();
+    expect(root).toMatchObject({
+      status: 'pending',
+      awaitTerminalHandling: true,
+      batchSize: 2,
+    });
   });
 
   it('recovers batch receipts and lane cleanup after root settlement was interrupted', async () => {
@@ -1161,6 +1263,135 @@ describe('agent trigger delivery methods', () => {
     await expect(methods.findEarlierAgentTriggerDelivery(claimed!)).resolves.toEqual({
       availableAt: new Date(START.getTime() + 60_000),
     });
+  });
+
+  it('keeps a binding lane queued until the earlier child turn settles', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const first = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ user, orderingKey: 'binding-lane', awaitTerminalHandling: true }),
+    );
+    const firstClaim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const firstAttempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: firstClaim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+    });
+    const generationCreatedAt = START.getTime() + 1_000;
+    await methods.completeAgentTriggerDelivery({
+      id: firstClaim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: firstAttempt!,
+      result: {
+        mode: 'continue',
+        status: 'started',
+        conversationId: 'actor-thread',
+        streamId: 'actor-thread',
+        generationCreatedAt,
+      },
+      settledAt: new Date(generationCreatedAt),
+      awaitTerminalHandling: true,
+      handling: {
+        status: 'started',
+        conversationId: 'actor-thread',
+        streamId: 'actor-thread',
+        generationCreatedAt,
+        startedAt: new Date(generationCreatedAt),
+      },
+    });
+    const second = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ user, orderingKey: 'binding-lane', awaitTerminalHandling: true }),
+    );
+    const secondClaim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-2',
+      claimToken: 'claim-2',
+      now: new Date(generationCreatedAt),
+      leaseUntil: new Date(generationCreatedAt + 60_000),
+    });
+
+    expect(firstClaim?.id).toBe(first.delivery.id);
+    expect(second.delivery.laneSequence).toBe(first.delivery.laneSequence + 1);
+    await expect(methods.findEarlierAgentTriggerDelivery(secondClaim!)).resolves.toMatchObject({
+      availableAt: START,
+      reason: 'active_handling',
+    });
+    await expect(Delivery.findById(first.delivery.id).lean()).resolves.not.toHaveProperty(
+      'expiresAt',
+    );
+
+    await expect(
+      methods.settleAgentTriggerHandlingOutcome({
+        deliveryKey: first.delivery.deliveryKey,
+        conversationId: 'actor-thread',
+        generationCreatedAt,
+        status: 'applied',
+        settledAt: new Date(generationCreatedAt + 1_000),
+        action: { toolName: 'submit_action' },
+      }),
+    ).resolves.toBe(true);
+    await expect(Delivery.findById(first.delivery.id).lean()).resolves.toMatchObject({
+      expiresAt: new Date(generationCreatedAt + 1_000 + 90 * 24 * 60 * 60_000),
+    });
+    await expect(methods.findEarlierAgentTriggerDelivery(secondClaim!)).resolves.toBeNull();
+  });
+
+  it('reclaims a binding lane only after its admitted child turn settles', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ orderingKey: 'settling-binding-lane', awaitTerminalHandling: true }),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+    });
+    const generationCreatedAt = START.getTime() + 1_000;
+    await methods.completeAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: attempt!,
+      result: {
+        mode: 'continue',
+        status: 'started',
+        conversationId: 'actor-thread',
+        streamId: 'actor-thread',
+        generationCreatedAt,
+      },
+      settledAt: new Date(generationCreatedAt),
+      awaitTerminalHandling: true,
+      handling: {
+        status: 'started',
+        conversationId: 'actor-thread',
+        streamId: 'actor-thread',
+        generationCreatedAt,
+        startedAt: new Date(generationCreatedAt),
+      },
+    });
+
+    await expect(LaneSequence.findById('settling-binding-lane')).resolves.not.toBeNull();
+    await expect(
+      methods.settleAgentTriggerHandlingOutcome({
+        deliveryKey: queued.delivery.deliveryKey,
+        conversationId: 'actor-thread',
+        generationCreatedAt,
+        status: 'completed_no_action',
+        settledAt: new Date(generationCreatedAt + 1_000),
+      }),
+    ).resolves.toBe(true);
+    await expect(LaneSequence.findById('settling-binding-lane')).resolves.toBeNull();
   });
 
   it('records retry and success outcomes and expires only successful rows', async () => {

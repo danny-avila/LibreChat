@@ -63,6 +63,9 @@ export interface IAgentTriggerDelivery {
   batchRootId?: Types.ObjectId;
   batchRootRequeueCount?: number;
   batchMembersSettledAt?: Date;
+  /** Keeps this binding lane serialized until its admitted child turn reaches
+   *  an authoritative terminal handling outcome. */
+  awaitTerminalHandling?: boolean;
   handling?: AgentTriggerHandlingState;
   leaseBy?: string;
   leaseUntil?: Date;
@@ -147,4 +150,5 @@ export interface AgentTriggerDeliveryClaim extends AgentTriggerDeliveryRecord {
 export interface AgentTriggerOrderingBlock {
   availableAt: Date;
   leaseUntil?: Date;
+  reason?: 'active_handling';
 }

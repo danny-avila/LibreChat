@@ -13,6 +13,7 @@ const DEFAULT_RETRY_CAP_MS = 5 * 60_000;
 const DEFAULT_TICK_MS = 1_000;
 const DEFAULT_MAX_IDLE_TICK_MS = 15_000;
 const ORDERING_RECHECK_MS = 250;
+const ACTIVE_HANDLING_RECHECK_MS = 5_000;
 const DEFAULT_DEFER_MS = 5_000;
 const MAX_RETRY_AFTER_MS = 24 * 60 * 60_000;
 
@@ -97,6 +98,7 @@ export interface AgentTriggerDeliveryRecord {
   batchMemberIds?: Array<{ toString(): string } | string>;
   batchRootId?: { toString(): string } | string;
   batchMembersSettledAt?: Date;
+  awaitTerminalHandling?: boolean;
   leaseBy?: string;
   leaseUntil?: Date;
   lastError?: AgentTriggerDeliveryFailure;
@@ -115,6 +117,7 @@ export interface AgentTriggerDeliveryRecord {
 export interface AgentTriggerOrderingBlock {
   availableAt: Date;
   leaseUntil?: Date;
+  reason?: 'active_handling';
 }
 
 export interface AgentTriggerDeliveryStore {
@@ -157,6 +160,7 @@ export interface AgentTriggerDeliveryStore {
     result: AgentTriggerExecutionResult;
     settledAt: Date;
     handling?: AgentTriggerDeliveryRecord['handling'];
+    awaitTerminalHandling?: true;
   }) => Promise<boolean>;
   retry: (input: {
     id: string;
@@ -338,7 +342,9 @@ export function createAgentTriggerDeliveryEngine(
 
     const block = await deps.store.findEarlierUnsettled(delivery);
     if (block != null) {
-      const recheckAt = now().getTime() + ORDERING_RECHECK_MS;
+      const recheckAt =
+        now().getTime() +
+        (block.reason === 'active_handling' ? ACTIVE_HANDLING_RECHECK_MS : ORDERING_RECHECK_MS);
       const nextCheck =
         block.leaseUntil == null ? Math.max(recheckAt, block.availableAt.getTime()) : recheckAt;
       noteEligibleAt(new Date(nextCheck));
@@ -506,6 +512,7 @@ export function createAgentTriggerDeliveryEngine(
           attempt,
           result,
           settledAt,
+          ...(delivery.awaitTerminalHandling === true && { awaitTerminalHandling: true }),
           ...(handling != null && { handling }),
         });
       } catch (error) {

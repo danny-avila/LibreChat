@@ -47,6 +47,7 @@ export interface AgentTriggerServiceDeps {
   purgeRecoveryIntervalMs?: number;
   purgeRecoveryLimit?: number;
   coalescingEnabled?: () => boolean;
+  actorMailboxEnabled?: () => boolean;
 }
 
 export interface AgentTriggerDeliveryReceipt {
@@ -195,6 +196,8 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   const purgeRecoveryLimit = deps.purgeRecoveryLimit ?? DEFAULT_PURGE_RECOVERY_LIMIT;
   const coalescingEnabled =
     deps.coalescingEnabled ?? (() => isEnabled(process.env.ENABLE_AGENT_EVENT_COALESCING));
+  const actorMailboxEnabled =
+    deps.actorMailboxEnabled ?? (() => isEnabled(process.env.ENABLE_AGENT_EVENT_ACTOR_MAILBOX));
   if (!Number.isSafeInteger(userDrainTimeoutMs) || userDrainTimeoutMs <= 0) {
     throw new TypeError('userDrainTimeoutMs must be a positive integer');
   }
@@ -406,8 +409,19 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         throw new AgentTriggerDeliveryError('Agent event coalescing is not enabled on this server');
       }
       const prepared = prepareAgentTriggerDelivery(envelope, options);
+      const awaitTerminalHandling =
+        actorMailboxEnabled() &&
+        prepared.envelope.mode === 'continue' &&
+        prepared.envelope.target.bindingId != null &&
+        prepared.envelope.target.sourceKeyId != null;
+      const durableDelivery: PreparedAgentTriggerDelivery = {
+        ...prepared,
+        ...(awaitTerminalHandling && { awaitTerminalHandling: true }),
+      };
       await requireActivePrincipal(String(prepared.user));
-      const queued = await runAsSystem(async () => methods.enqueueAgentTriggerDelivery(prepared));
+      const queued = await runAsSystem(async () =>
+        methods.enqueueAgentTriggerDelivery(durableDelivery),
+      );
       try {
         await requireActivePrincipal(String(prepared.user));
       } catch (error) {

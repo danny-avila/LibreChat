@@ -35,6 +35,9 @@ export interface PreparedAgentTriggerDelivery {
   coalesceKey?: string;
   coalesceFrom?: Date;
   coalesceUntil?: Date;
+  /** Persisted rollout marker: keep this bound actor lane queued until the
+   *  admitted child turn records an authoritative terminal outcome. */
+  awaitTerminalHandling?: boolean;
 }
 
 export class AgentTriggerDeliveryError extends TypeError {

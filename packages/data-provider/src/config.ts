@@ -1051,6 +1051,9 @@ export const agentsEndpointSchema = baseEndpointSchema
           completionWakeups: z.boolean().optional(),
           /** Enable only after every API worker can consume coalesced deliveries. */
           coalescing: z.boolean().optional(),
+          /** Keep each bound actor's durable delivery lane queued through the
+           *  admitted child turn's authoritative terminal outcome. */
+          actorMailbox: z.boolean().optional(),
           /** Reuse a bound event actor's committed checkpoint through isolated
            *  per-invocation forks. Keep off until every API worker runs an SDK
            *  and host adapter that understand the fork lifecycle. */

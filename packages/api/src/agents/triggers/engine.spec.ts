@@ -106,7 +106,9 @@ describe('createAgentTriggerDeliveryEngine', () => {
       },
       input: 'Take the turn.',
     });
-    const store = storeWith({ claimNext: jest.fn(async () => delivery({ envelope })) });
+    const store = storeWith({
+      claimNext: jest.fn(async () => delivery({ envelope, awaitTerminalHandling: true })),
+    });
     const result: AgentTriggerExecutionResult = {
       mode: 'continue',
       status: 'started',
@@ -123,6 +125,7 @@ describe('createAgentTriggerDeliveryEngine', () => {
 
     expect(store.complete).toHaveBeenCalledWith(
       expect.objectContaining({
+        awaitTerminalHandling: true,
         handling: {
           status: 'started',
           conversationId: 'conversation-1',
@@ -543,6 +546,28 @@ describe('createAgentTriggerDeliveryEngine', () => {
     expect(store.release).toHaveBeenCalledWith(
       expect.objectContaining({ availableAt: new Date(START.getTime() + 4_000) }),
     );
+  });
+
+  it('rechecks an active actor turn without a tight delivery-lease polling loop', async () => {
+    const store = storeWith({
+      findEarlierUnsettled: jest.fn(async () => ({
+        availableAt: START,
+        reason: 'active_handling' as const,
+      })),
+    });
+    const dispatch = jest.fn(async () => successResult());
+    const engine = createAgentTriggerDeliveryEngine(
+      { store, dispatch, now: () => START },
+      { concurrency: 1 },
+    );
+
+    await engine.runTick();
+
+    expect(store.release).toHaveBeenCalledWith(
+      expect.objectContaining({ availableAt: new Date(START.getTime() + 5_000) }),
+    );
+    expect(store.beginAttempt).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('starts independent deliveries up to the configured concurrency', async () => {

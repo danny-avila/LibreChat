@@ -49,6 +49,7 @@ export interface EnqueueAgentTriggerDeliveryInput {
   coalesceKey?: string;
   coalesceFrom?: Date;
   coalesceUntil?: Date;
+  awaitTerminalHandling?: boolean;
 }
 
 export interface AgentTriggerDeliveryFence {
@@ -99,6 +100,7 @@ export interface AgentTriggerDeliveryMethods {
       result: unknown;
       settledAt: Date;
       handling?: AgentTriggerHandlingState;
+      awaitTerminalHandling?: true;
     },
   ) => Promise<boolean>;
   settleAgentTriggerHandlingOutcome: (
@@ -195,6 +197,9 @@ function toRecord(delivery: IAgentTriggerDelivery): AgentTriggerDeliveryRecord {
     ...(delivery.batchRootId != null && { batchRootId: delivery.batchRootId }),
     ...(delivery.batchMembersSettledAt != null && {
       batchMembersSettledAt: delivery.batchMembersSettledAt,
+    }),
+    ...(delivery.awaitTerminalHandling != null && {
+      awaitTerminalHandling: delivery.awaitTerminalHandling,
     }),
     ...(delivery.handling != null && { handling: delivery.handling }),
   };
@@ -315,6 +320,9 @@ export function createAgentTriggerDeliveryMethods(
                 availableAt: staged.coalesceUntil,
               },
               $push: { batchMemberIds: staged._id },
+              ...(staged.awaitTerminalHandling === true && {
+                $set: { awaitTerminalHandling: true },
+              }),
             },
             { new: true, sort: { laneSequence: -1, _id: -1 } },
           )
@@ -324,6 +332,20 @@ export function createAgentTriggerDeliveryMethods(
             .findOne({ orderingKey: lane._id, batchMemberIds: staged._id })
             .lean<IAgentTriggerDelivery>();
         }
+      }
+      if (
+        batchRoot?._id != null &&
+        staged.awaitTerminalHandling === true &&
+        batchRoot.awaitTerminalHandling !== true
+      ) {
+        const promoted = await Delivery().updateOne(
+          { _id: batchRoot._id, batchMemberIds: staged._id },
+          { $set: { awaitTerminalHandling: true } },
+        );
+        if (promoted.matchedCount !== 1) {
+          throw new Error('Failed to promote terminal handling onto the trigger batch root');
+        }
+        batchRoot.awaitTerminalHandling = true;
       }
     }
     const published = await Delivery().updateOne(
@@ -657,7 +679,15 @@ export function createAgentTriggerDeliveryMethods(
     }
     const stillRetained = await Delivery().exists({
       orderingKey,
-      status: { $in: ['staging', 'batched', 'pending', 'leased', 'dead'] },
+      $or: [
+        { status: { $in: ['staging', 'batched', 'pending', 'leased', 'dead'] } },
+        {
+          status: 'succeeded',
+          batchRootId: { $exists: false },
+          awaitTerminalHandling: true,
+          'handling.status': 'started',
+        },
+      ],
     });
     if (stillRetained != null) {
       await LaneSequence().updateOne(
@@ -774,18 +804,28 @@ export function createAgentTriggerDeliveryMethods(
     const earlier = await Delivery()
       .findOne({
         orderingKey: delivery.orderingKey,
-        status: { $in: ['pending', 'leased'] },
         laneSequence: { $lt: delivery.laneSequence },
+        $or: [
+          { status: { $in: ['pending', 'leased'] } },
+          {
+            status: 'succeeded',
+            batchRootId: { $exists: false },
+            awaitTerminalHandling: true,
+            'handling.status': 'started',
+          },
+        ],
       })
       .sort({ laneSequence: 1 })
-      .select('availableAt leaseUntil')
-      .lean<Pick<IAgentTriggerDelivery, 'availableAt' | 'leaseUntil'>>();
+      .select('availableAt leaseUntil status handling.status')
+      .lean<Pick<IAgentTriggerDelivery, 'availableAt' | 'leaseUntil' | 'status' | 'handling'>>();
     if (earlier == null) {
       return null;
     }
     return {
       availableAt: earlier.availableAt,
       ...(earlier.leaseUntil != null && { leaseUntil: earlier.leaseUntil }),
+      ...(earlier.status === 'succeeded' &&
+        earlier.handling?.status === 'started' && { reason: 'active_handling' as const }),
     };
   }
 
@@ -831,7 +871,15 @@ export function createAgentTriggerDeliveryMethods(
                 { 'handling.status': { $exists: false } },
               ],
       },
-      { $set: { handling: root.handling } },
+      {
+        $set: {
+          handling: root.handling,
+          ...(status !== 'started' &&
+            root.handling.settledAt != null && {
+              expiresAt: new Date(root.handling.settledAt.getTime() + SUCCESS_RETENTION_MS),
+            }),
+        },
+      },
     );
   }
 
@@ -843,6 +891,7 @@ export function createAgentTriggerDeliveryMethods(
       | 'batchMemberIds'
       | 'batchMembersSettledAt'
       | 'requeueCount'
+      | 'awaitTerminalHandling'
       | 'handling'
     >,
     input: {
@@ -861,6 +910,8 @@ export function createAgentTriggerDeliveryMethods(
     if (memberIds.length > 0) {
       const error = input.error == null ? undefined : normalizeFailure(input.error);
       const batchRootRequeueCount = root.requeueCount ?? 0;
+      const awaitsTerminalHandling =
+        root.awaitTerminalHandling === true && root.handling?.status === 'started';
       const settlement =
         input.status === 'succeeded'
           ? {
@@ -868,7 +919,9 @@ export function createAgentTriggerDeliveryMethods(
               attempts: input.attempt,
               result: input.result,
               settledAt: input.settledAt,
-              expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
+              ...(!awaitsTerminalHandling && {
+                expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
+              }),
               batchRootId: root._id,
               ...(root.handling != null && { handling: root.handling }),
             }
@@ -896,7 +949,9 @@ export function createAgentTriggerDeliveryMethods(
             leaseBy: 1,
             leaseUntil: 1,
             claimToken: 1,
-            ...(input.status === 'succeeded' ? { lastError: 1 } : { result: 1, expiresAt: 1 }),
+            ...(input.status === 'succeeded'
+              ? { lastError: 1, ...(awaitsTerminalHandling && { expiresAt: 1 }) }
+              : { result: 1, expiresAt: 1 }),
           },
           $push: {
             history: {
@@ -1033,21 +1088,37 @@ export function createAgentTriggerDeliveryMethods(
       result: unknown;
       settledAt: Date;
       handling?: AgentTriggerHandlingState;
+      awaitTerminalHandling?: true;
     },
   ): Promise<boolean> {
+    const awaitsTerminalHandling =
+      input.awaitTerminalHandling === true && input.handling?.status === 'started';
     const completed = await Delivery()
       .findOneAndUpdate(
-        fence(input),
+        {
+          ...fence(input),
+          ...(input.awaitTerminalHandling === true
+            ? { awaitTerminalHandling: true }
+            : { awaitTerminalHandling: { $ne: true } }),
+        },
         {
           $set: {
             status: 'succeeded',
             result: input.result,
             settledAt: input.settledAt,
-            expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
+            ...(!awaitsTerminalHandling && {
+              expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
+            }),
             laneCleanupPendingAt: input.settledAt,
             ...(input.handling != null && { handling: input.handling }),
           },
-          $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, lastError: 1 },
+          $unset: {
+            leaseBy: 1,
+            leaseUntil: 1,
+            claimToken: 1,
+            lastError: 1,
+            ...(awaitsTerminalHandling && { expiresAt: 1 }),
+          },
           $push: {
             history: {
               $each: [
@@ -1065,7 +1136,7 @@ export function createAgentTriggerDeliveryMethods(
         { new: true },
       )
       .select(
-        '_id orderingKey laneCleanupPendingAt batchMemberIds batchMembersSettledAt requeueCount handling',
+        '_id orderingKey laneCleanupPendingAt batchMemberIds batchMembersSettledAt requeueCount awaitTerminalHandling handling',
       )
       .lean<
         Pick<
@@ -1076,6 +1147,7 @@ export function createAgentTriggerDeliveryMethods(
           | 'batchMemberIds'
           | 'batchMembersSettledAt'
           | 'requeueCount'
+          | 'awaitTerminalHandling'
           | 'handling'
         >
       >();
@@ -1110,6 +1182,7 @@ export function createAgentTriggerDeliveryMethods(
     const terminalHandling = {
       'handling.status': input.status,
       'handling.settledAt': input.settledAt,
+      expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
       ...(error != null && { 'handling.error': error }),
       ...(input.action != null && { 'handling.action': input.action }),
     };
@@ -1130,8 +1203,13 @@ export function createAgentTriggerDeliveryMethods(
         },
         { new: true },
       )
-      .select('_id orderingKey batchMemberIds handling')
-      .lean<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'batchMemberIds' | 'handling'>>();
+      .select('_id orderingKey batchMemberIds awaitTerminalHandling handling')
+      .lean<
+        Pick<
+          IAgentTriggerDelivery,
+          '_id' | 'orderingKey' | 'batchMemberIds' | 'awaitTerminalHandling' | 'handling'
+        >
+      >();
 
     let authoritative = terminal;
     if (authoritative == null) {
@@ -1141,8 +1219,13 @@ export function createAgentTriggerDeliveryMethods(
           'handling.conversationId': input.conversationId,
           'handling.generationCreatedAt': input.generationCreatedAt,
         })
-        .select('_id orderingKey batchMemberIds handling')
-        .lean<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'batchMemberIds' | 'handling'>>();
+        .select('_id orderingKey batchMemberIds awaitTerminalHandling handling')
+        .lean<
+          Pick<
+            IAgentTriggerDelivery,
+            '_id' | 'orderingKey' | 'batchMemberIds' | 'awaitTerminalHandling' | 'handling'
+          >
+        >();
       const replayed =
         existing?.handling?.status === input.status &&
         existing.handling.error === error &&
@@ -1155,6 +1238,13 @@ export function createAgentTriggerDeliveryMethods(
     }
 
     await propagateBatchHandling(authoritative);
+    if (authoritative.awaitTerminalHandling === true) {
+      await LaneSequence().updateOne(
+        { _id: authoritative.orderingKey },
+        { $set: { cleanupRequestedAt: input.settledAt } },
+      );
+      await reclaimLaneIfInactive(authoritative.orderingKey);
+    }
     return true;
   }
 

@@ -13,6 +13,7 @@ export const configureAgentEventRuntime = (config?: AgentEventRuntimeConfig): vo
   setBooleanEnvironmentFallback('ENABLE_AGENT_EVENT_CHILD_TURNS', config?.childTurns);
   setBooleanEnvironmentFallback('ENABLE_SUBAGENT_COMPLETION_WAKEUPS', config?.completionWakeups);
   setBooleanEnvironmentFallback('ENABLE_AGENT_EVENT_COALESCING', config?.coalescing);
+  setBooleanEnvironmentFallback('ENABLE_AGENT_EVENT_ACTOR_MAILBOX', config?.actorMailbox);
   if (config?.selfUrl != null) {
     process.env.AGENT_TRIGGERS_SELF_URL = config.selfUrl;
   }
