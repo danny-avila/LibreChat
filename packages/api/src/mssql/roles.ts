@@ -3,8 +3,9 @@ import { sapphireDbConfig } from './config';
 import { getSapphirePool } from './pool';
 
 /** Bracket-quoted schema from config (a trusted identifier, not user input). */
-const database = `[${sapphireDbConfig.database}]`;
-const schema = `[${sapphireDbConfig.schema}]`;
+const quoteSqlIdent = (name: string) => `[${name.replace(/]/g, ']]')}]`;
+const database = quoteSqlIdent(sapphireDbConfig.database);
+const schema = quoteSqlIdent(sapphireDbConfig.schema);
 
 /**
  * Sapphire users are matched to LibreChat users by the Azure AD object id (the
