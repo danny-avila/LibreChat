@@ -63,6 +63,27 @@ const messageSchema: Schema<IMessage> = new Schema(
       required: true,
       default: false,
     },
+    isUserSubmitted: {
+      type: Boolean,
+    },
+    userSubmittedPaths: {
+      type: [String],
+      default: undefined,
+    },
+    userSubmittedMessageFieldPaths: {
+      type: [
+        {
+          _id: false,
+          path: { type: String, required: true },
+          field: {
+            type: String,
+            enum: ['answer', 'decision_response', 'decision_reason'],
+            required: true,
+          },
+        },
+      ],
+      default: undefined,
+    },
     isTemporary: {
       type: Boolean,
       default: false,
@@ -138,11 +159,48 @@ const messageSchema: Schema<IMessage> = new Schema(
     subagentTask: {
       type: {
         attemptKey: { type: String, required: true },
+        parentRunId: { type: String },
         requestFingerprint: { type: String },
         status: {
           type: String,
           enum: ['running', 'completed', 'error', 'cancelled'],
           required: true,
+        },
+        resultClaim: {
+          type: {
+            kind: { type: String, enum: ['manual', 'wakeup'], required: true },
+            claimId: { type: String, required: true },
+            claimedAt: { type: Date, required: true },
+          },
+          _id: false,
+          default: undefined,
+        },
+        controlReceipts: {
+          type: [
+            {
+              invocationId: { type: String, required: true },
+              fingerprint: { type: String, required: true },
+              controlId: { type: String },
+              action: {
+                type: String,
+                enum: ['steer', 'queue', 'interrupt', 'cancel', 'cancel_message'],
+                required: true,
+              },
+              status: {
+                type: String,
+                enum: ['reserved', 'accepted', 'applied', 'rejected', 'failed'],
+                required: true,
+              },
+              createdAt: { type: Date, required: true },
+              updatedAt: { type: Date, required: true },
+              boundary: { type: String, enum: ['preempt', 'tool', 'turn'] },
+              reason: { type: String },
+              message: { type: String },
+              messageTruncated: { type: Boolean },
+              _id: false,
+            },
+          ],
+          default: undefined,
         },
       },
       _id: false,
@@ -235,12 +293,32 @@ messageSchema.index({
 
 /**
  * Serves the conversation fetch ({conversationId, user} filter + createdAt
- * sort) from the index alone; without it Mongo fetches every full document in
- * the conversation and sorts them in memory. tenantId is deliberately not in
- * the middle: untenanted deployments issue no tenantId predicate, and a gap in
- * the prefix would push the sort back into memory for them.
+ * sort) and the deterministic child-thread view sort from the index alone;
+ * without it Mongo fetches every full document in the conversation and sorts
+ * them in memory. tenantId is deliberately not in the middle: untenanted
+ * deployments issue no tenantId predicate, and a gap in the prefix would push
+ * the sort back into memory for them.
  */
-messageSchema.index({ conversationId: 1, user: 1, createdAt: 1 });
+messageSchema.index({ conversationId: 1, user: 1, createdAt: 1, _id: 1 });
+
+/**
+ * Serves the batched newest-task read for child threads. `user` is an equality
+ * prefix and `conversationId` is the partition key, so Mongo/DocumentDB can
+ * stream each partition newest-first without materializing an unbounded sort.
+ */
+messageSchema.index(
+  { user: 1, conversationId: 1, createdAt: -1, _id: -1 },
+  { name: 'subagent_thread_latest_message' },
+);
+
+/** Bounds parent-run completion snapshots without scanning a user's message history. */
+messageSchema.index(
+  { user: 1, 'subagentTask.parentRunId': 1, 'subagentTask.status': 1, updatedAt: -1, _id: -1 },
+  {
+    name: 'subagent_parent_run_status_updated',
+    partialFilterExpression: { 'subagentTask.parentRunId': { $exists: true } },
+  },
+);
 
 // index for MeiliSearch sync operations
 messageSchema.index({ _meiliIndex: 1, isTemporary: 1, expiredAt: 1 });

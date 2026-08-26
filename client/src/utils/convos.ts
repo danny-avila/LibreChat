@@ -12,6 +12,7 @@ import {
 } from 'date-fns';
 import type { TConversation, GroupedConversations } from 'librechat-data-provider';
 import type { InfiniteData } from '@tanstack/react-query';
+import { isTemporaryConversation } from './conversation';
 
 // Date group helpers
 export const dateKeys = {
@@ -471,6 +472,14 @@ export function upsertConvoInAllQueries(
   moveToTop = true,
 ) {
   if (!nextConvo.conversationId) {
+    return;
+  }
+
+  /* The history query excludes temporary conversations server-side, so seeding
+     one into the list caches would surface it in the sidebar until the next
+     refetch, contradicting what temporary mode promises. Enforced here rather
+     than at each caller so a future insert path cannot reintroduce the leak. */
+  if (isTemporaryConversation(nextConvo)) {
     return;
   }
 

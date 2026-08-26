@@ -17,6 +17,9 @@ export interface StreamStatusResponse {
   status?: 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
   aggregatedContent?: Array<{ type: string; text?: string }>;
   createdAt?: number;
+  /** Generation age computed on the server's clock, so a reattaching client
+   *  can rebuild a clock-local elapsed baseline free of cross-machine skew. */
+  elapsedMs?: number;
   resumeState?: Agents.ResumeState;
   /** Live pending approval when `status === 'requires_action'`; mirrors
    *  `resumeState.pendingAction`, surfaced top-level for the resume-on-load path. */
@@ -223,7 +226,11 @@ export function useActiveJobs(enabled = true) {
     enabled,
     staleTime: 5_000,
     refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    /** Unconditional: the interval is off while nothing is listed, so a run
+     *  another client started during the last `staleTime` window would be
+     *  invisible until some unrelated refetch, and returning to the tab is
+     *  exactly when a pane needs to know whether its history has moved. */
+    refetchOnWindowFocus: 'always',
     refetchInterval: (data) => ((data?.activeJobIds?.length ?? 0) > 0 ? 5_000 : false),
     retry: false,
   });

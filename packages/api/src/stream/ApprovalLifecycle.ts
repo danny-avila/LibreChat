@@ -1,6 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import type { Agents } from 'librechat-data-provider';
-import type { IJobStoreV2, JobMetadataPatch, SteerQueueItem } from '~/stream/interfaces/IJobStore';
+import type {
+  IJobStoreV2,
+  JobMetadataPatch,
+  SerializableJobData,
+  SteerQueueItem,
+} from '~/stream/interfaces/IJobStore';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import {
   isPendingActionExpired,
@@ -253,6 +258,7 @@ export class ApprovalLifecycle {
       patch: {
         completedAt,
         error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+        ...(job.agentEventDeliveryKey != null && { terminalHostActionPending: true }),
       },
       clear: [
         'pendingAction',
@@ -343,6 +349,18 @@ export class ApprovalLifecycle {
       await this.expire(streamId, expectedActionId ?? job.pendingAction.actionId, job.createdAt);
       return false;
     }
+    /** Translate the resuming owner's transient quote-capability assertion
+     * into its execution-bound marker (see `steerQuotesExecutionId`). A
+     * legacy resumer never reaches this code — its execution rewrite alone
+     * invalidates the previous owner's marker. */
+    const { steerQuotesCapable, ...ownerPatch } = resumePatch ?? {};
+    const boundPatch = {
+      ...ownerPatch,
+      ...(steerQuotesCapable === true &&
+        typeof ownerPatch.providerExecutionId === 'string' && {
+          steerQuotesExecutionId: ownerPatch.providerExecutionId,
+        }),
+    };
     const resumed = await this.store.transitionStatus(streamId, {
       from: 'requires_action',
       to: 'running',
@@ -352,7 +370,7 @@ export class ApprovalLifecycle {
       /** Ownership can move across replicas on resume. Owner-specific fields
        *  must change in this SAME CAS: once status is `running`, steering
        *  routes are live and may atomically inspect them. */
-      patch: { lastActiveAt: Date.now(), ...resumePatch },
+      patch: { lastActiveAt: Date.now(), ...boundPatch },
       expectActionId: expectedActionId,
       expectCreatedAt: job.createdAt,
     });
@@ -377,15 +395,17 @@ export class ApprovalLifecycle {
   }
 
   /**
-   * Expires the observed approval and returns the winning job identity. Callers
-   * that need to notify runtime-local subscribers can use the identity to avoid
-   * delivering the predecessor's terminal event to a replacement generation.
+   * Expires the observed approval and returns the winning terminal snapshot.
+   * Callers that run host lifecycle hooks get the trusted pre-CAS metadata plus
+   * the exact status/error/completion fields committed by this transition,
+   * without a racy post-transition read (the terminal TTL may remove the hash).
    */
   async expireWithIdentity(
     streamId: string,
     expectedActionId?: string,
     expectedCreatedAt?: number,
-  ): Promise<number | null> {
+    options?: { markHostActionPending?: boolean },
+  ): Promise<SerializableJobData | null> {
     const job = await this.waitForPausePersistence(streamId, expectedCreatedAt);
     if (
       !job ||
@@ -395,13 +415,31 @@ export class ApprovalLifecycle {
       return null;
     }
     const createdAt = job.createdAt;
+    const completedAt = Date.now();
+    const error = 'Approval expired before a decision was made';
+    const expiredJob: SerializableJobData = {
+      ...job,
+      status: 'aborted',
+      error,
+      completedAt,
+      ...(options?.markHostActionPending === true && { terminalHostActionPending: true }),
+    };
+    delete expiredJob.pendingAction;
+    delete expiredJob.pendingActionId;
     const ok = await this.store.transitionStatus(streamId, {
       from: 'requires_action',
       to: 'aborted',
       clear: ['pendingAction', 'pendingActionId'],
       // completedAt lets the stores' terminal-cleanup reclaim the job; without
-      // it an expired approval lingers in the in-memory map indefinitely.
-      patch: { error: 'Approval expired before a decision was made', completedAt: Date.now() },
+      // it an expired approval lingers in the in-memory map indefinitely. When a host
+      // action is owed, `terminalHostActionPending` retains the job (and keeps it
+      // enumerable) until the adapter acknowledges — set ATOMICALLY here so a crash right
+      // after this CAS still leaves the durable retry evidence.
+      patch: {
+        error,
+        completedAt,
+        ...(options?.markHostActionPending === true && { terminalHostActionPending: true }),
+      },
       expectActionId: expectedActionId,
       expectCreatedAt: createdAt,
     });
@@ -409,6 +447,6 @@ export class ApprovalLifecycle {
       this.callbacks.onExpired?.(streamId, createdAt);
       logger.debug(`[ApprovalLifecycle] expired pending review: ${streamId}`);
     }
-    return ok ? createdAt : null;
+    return ok ? expiredJob : null;
   }
 }

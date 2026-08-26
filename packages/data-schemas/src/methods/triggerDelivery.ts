@@ -2,7 +2,9 @@ import type { Model, Types } from 'mongoose';
 import type {
   AgentTriggerDeliveryClaim,
   AgentTriggerDeliveryFailure,
+  AgentTriggerHandlingState,
   AgentTriggerDeliveryRecord,
+  AgentTriggerDeliveryStatusRecord,
   AgentTriggerOrderingBlock,
   IAgentTriggerDelivery,
   IAgentTriggerDeliveryDocument,
@@ -23,6 +25,8 @@ const MAX_DEAD_LETTER_LIMIT = 200;
 const DEFAULT_PURGE_RECOVERY_LIMIT = 25;
 const MAX_PURGE_RECOVERY_LIMIT = 200;
 const HISTORY_LIMIT = 64;
+const MAX_BATCH_SIZE = 8;
+const MAX_BATCH_BYTES = 512 * 1024;
 
 type DuplicateKeyError = { code?: number };
 
@@ -41,12 +45,26 @@ export interface EnqueueAgentTriggerDeliveryInput {
   user: string | Types.ObjectId;
   tenantId?: string;
   availableAt: Date;
+  envelopeBytes?: number;
+  coalesceKey?: string;
+  coalesceFrom?: Date;
+  coalesceUntil?: Date;
 }
 
 export interface AgentTriggerDeliveryFence {
   id: string;
   workerId: string;
   claimToken: string;
+}
+
+export interface SettleAgentTriggerHandlingOutcomeInput {
+  deliveryKey: string;
+  conversationId: string;
+  generationCreatedAt: number;
+  status: Exclude<AgentTriggerHandlingState['status'], 'started'>;
+  settledAt: Date;
+  error?: string;
+  action?: AgentTriggerHandlingState['action'];
 }
 
 export interface AgentTriggerDeliveryMethods {
@@ -63,6 +81,9 @@ export interface AgentTriggerDeliveryMethods {
   findEarlierAgentTriggerDelivery: (
     delivery: Pick<AgentTriggerDeliveryRecord, 'orderingKey' | 'laneSequence'>,
   ) => Promise<AgentTriggerOrderingBlock | null>;
+  getAgentTriggerDeliveryBatch: (
+    delivery: Pick<AgentTriggerDeliveryRecord, 'id' | 'batchMemberIds'>,
+  ) => Promise<AgentTriggerDeliveryRecord[]>;
   releaseAgentTriggerDelivery: (
     input: AgentTriggerDeliveryFence & { availableAt: Date },
   ) => Promise<boolean>;
@@ -77,7 +98,11 @@ export interface AgentTriggerDeliveryMethods {
       attempt: number;
       result: unknown;
       settledAt: Date;
+      handling?: AgentTriggerHandlingState;
     },
+  ) => Promise<boolean>;
+  settleAgentTriggerHandlingOutcome: (
+    input: SettleAgentTriggerHandlingOutcomeInput,
   ) => Promise<boolean>;
   retryAgentTriggerDelivery: (
     input: AgentTriggerDeliveryFence & {
@@ -94,6 +119,12 @@ export interface AgentTriggerDeliveryMethods {
     },
   ) => Promise<boolean>;
   getAgentTriggerDelivery: (deliveryKey: string) => Promise<AgentTriggerDeliveryRecord | null>;
+  getAgentTriggerDeliveryStatus: (
+    deliveryKey: string,
+    user: string | Types.ObjectId,
+    sourceKeyId: string,
+    tenantId?: string,
+  ) => Promise<AgentTriggerDeliveryStatusRecord | null>;
   getAgentTriggerDeadLetters: (limit?: number) => Promise<AgentTriggerDeliveryRecord[]>;
   requeueAgentTriggerDelivery: (
     id: string,
@@ -104,6 +135,7 @@ export interface AgentTriggerDeliveryMethods {
     now: Date,
   ) => Promise<number>;
   recoverAgentTriggerLanePublications: (limit?: number) => Promise<number>;
+  recoverAgentTriggerBatchReceipts: (limit?: number) => Promise<number>;
   reclaimInactiveAgentTriggerLanes: (limit?: number) => Promise<number>;
   prepareAgentTriggerUserPurge: (
     user: string | Types.ObjectId,
@@ -153,6 +185,18 @@ function toRecord(delivery: IAgentTriggerDelivery): AgentTriggerDeliveryRecord {
     ...(delivery.expiresAt != null && { expiresAt: delivery.expiresAt }),
     ...(delivery.requeueCount != null && { requeueCount: delivery.requeueCount }),
     ...(delivery.updatedAt != null && { updatedAt: delivery.updatedAt }),
+    ...(delivery.envelopeBytes != null && { envelopeBytes: delivery.envelopeBytes }),
+    ...(delivery.coalesceKey != null && { coalesceKey: delivery.coalesceKey }),
+    ...(delivery.coalesceFrom != null && { coalesceFrom: delivery.coalesceFrom }),
+    ...(delivery.coalesceUntil != null && { coalesceUntil: delivery.coalesceUntil }),
+    ...(delivery.batchSize != null && { batchSize: delivery.batchSize }),
+    ...(delivery.batchBytes != null && { batchBytes: delivery.batchBytes }),
+    ...(delivery.batchMemberIds != null && { batchMemberIds: delivery.batchMemberIds }),
+    ...(delivery.batchRootId != null && { batchRootId: delivery.batchRootId }),
+    ...(delivery.batchMembersSettledAt != null && {
+      batchMembersSettledAt: delivery.batchMembersSettledAt,
+    }),
+    ...(delivery.handling != null && { handling: delivery.handling }),
   };
 }
 
@@ -224,19 +268,110 @@ export function createAgentTriggerDeliveryMethods(
       throw new Error('Agent trigger lane publisher has an invalid sequence');
     }
 
+    const staged = await Delivery().findById(publisherDeliveryId).lean<IAgentTriggerDelivery>();
+    let batchRoot: IAgentTriggerDelivery | null = null;
+    if (
+      staged?._id != null &&
+      staged.coalesceKey != null &&
+      (staged.batchMemberIds?.length ?? 0) === 0
+    ) {
+      batchRoot = await Delivery()
+        .findOne({
+          orderingKey: lane._id,
+          batchMemberIds: staged._id,
+        })
+        .lean<IAgentTriggerDelivery>();
+      if (
+        batchRoot == null &&
+        lane.tailDeliveryId != null &&
+        staged.coalesceFrom != null &&
+        staged.coalesceUntil != null &&
+        staged.coalesceUntil.getTime() > Date.now() &&
+        staged.envelopeBytes != null &&
+        staged.envelopeBytes <= MAX_BATCH_BYTES
+      ) {
+        batchRoot = await Delivery()
+          .findOneAndUpdate(
+            {
+              _id: { $ne: staged._id },
+              $or: [{ _id: lane.tailDeliveryId }, { batchMemberIds: lane.tailDeliveryId }],
+              orderingKey: lane._id,
+              coalesceKey: staged.coalesceKey,
+              status: 'pending',
+              coalesceFrom: { $lte: staged.coalesceUntil },
+              coalesceUntil: {
+                $gt: new Date(),
+                $gte: staged.coalesceFrom,
+              },
+              batchMemberIds: { $ne: staged._id },
+              batchSize: { $lt: MAX_BATCH_SIZE },
+              batchBytes: { $lte: MAX_BATCH_BYTES - staged.envelopeBytes },
+            },
+            {
+              $inc: { batchSize: 1, batchBytes: staged.envelopeBytes },
+              $max: { coalesceFrom: staged.coalesceFrom },
+              $min: {
+                coalesceUntil: staged.coalesceUntil,
+                availableAt: staged.coalesceUntil,
+              },
+              $push: { batchMemberIds: staged._id },
+            },
+            { new: true, sort: { laneSequence: -1, _id: -1 } },
+          )
+          .lean<IAgentTriggerDelivery>();
+        if (batchRoot == null) {
+          batchRoot = await Delivery()
+            .findOne({ orderingKey: lane._id, batchMemberIds: staged._id })
+            .lean<IAgentTriggerDelivery>();
+        }
+      }
+    }
     const published = await Delivery().updateOne(
       { _id: publisherDeliveryId, orderingKey: lane._id, status: 'staging' },
       {
-        $set: { status: 'pending', laneSequence: lane.value },
+        $set: {
+          status: batchRoot == null ? 'pending' : 'batched',
+          laneSequence: lane.value,
+          ...(batchRoot?._id != null && {
+            batchRootId: batchRoot._id,
+            batchRootRequeueCount: batchRoot.requeueCount ?? 0,
+          }),
+        },
         $unset: { stagingRecoveryAt: 1 },
       },
     );
     let publicationCommitted = published.modifiedCount === 1;
     if (published.modifiedCount === 0) {
-      const current = await Delivery()
+      let current = await Delivery()
         .findById(publisherDeliveryId)
-        .select('orderingKey laneSequence status')
-        .lean<Pick<IAgentTriggerDelivery, 'orderingKey' | 'laneSequence' | 'status'>>();
+        .select('orderingKey laneSequence status batchRootId')
+        .lean<
+          Pick<IAgentTriggerDelivery, 'orderingKey' | 'laneSequence' | 'status' | 'batchRootId'>
+        >();
+      if (
+        batchRoot?._id != null &&
+        current != null &&
+        current.orderingKey === lane._id &&
+        current.status !== 'staging' &&
+        current.laneSequence !== lane.value
+      ) {
+        await Delivery().updateOne(
+          { _id: publisherDeliveryId, orderingKey: lane._id, status: current.status },
+          {
+            $set: {
+              laneSequence: lane.value,
+              batchRootId: batchRoot._id,
+              batchRootRequeueCount: batchRoot.requeueCount ?? 0,
+            },
+          },
+        );
+        current = await Delivery()
+          .findById(publisherDeliveryId)
+          .select('orderingKey laneSequence status batchRootId')
+          .lean<
+            Pick<IAgentTriggerDelivery, 'orderingKey' | 'laneSequence' | 'status' | 'batchRootId'>
+          >();
+      }
       publicationCommitted =
         current != null &&
         current.orderingKey === lane._id &&
@@ -360,6 +495,13 @@ export function createAgentTriggerDeliveryMethods(
     try {
       const created = await Delivery().create({
         ...input,
+        ...(input.coalesceKey == null
+          ? {}
+          : {
+              batchSize: 1,
+              batchBytes: input.envelopeBytes,
+              batchMemberIds: [],
+            }),
         laneSequence: 0,
         status: 'staging',
         attempts: 0,
@@ -515,7 +657,7 @@ export function createAgentTriggerDeliveryMethods(
     }
     const stillRetained = await Delivery().exists({
       orderingKey,
-      status: { $in: ['staging', 'pending', 'leased', 'dead'] },
+      status: { $in: ['staging', 'batched', 'pending', 'leased', 'dead'] },
     });
     if (stillRetained != null) {
       await LaneSequence().updateOne(
@@ -647,6 +789,195 @@ export function createAgentTriggerDeliveryMethods(
     };
   }
 
+  async function getAgentTriggerDeliveryBatch(
+    delivery: Pick<AgentTriggerDeliveryRecord, 'id' | 'batchMemberIds'>,
+  ): Promise<AgentTriggerDeliveryRecord[]> {
+    const memberIds = delivery.batchMemberIds ?? [];
+    if (memberIds.length === 0) {
+      return [];
+    }
+    const members = await Delivery()
+      .find({ _id: { $in: memberIds } })
+      .lean<IAgentTriggerDelivery[]>();
+    const byId = new Map(members.map((member) => [String(member._id), member]));
+    return memberIds.map((id) => {
+      const member = byId.get(String(id));
+      if (member == null) {
+        throw new Error('Agent trigger batch member is missing');
+      }
+      if (member.batchRootId != null && String(member.batchRootId) !== delivery.id) {
+        throw new Error('Agent trigger batch member belongs to another root');
+      }
+      return toRecord(member);
+    });
+  }
+
+  async function propagateBatchHandling(
+    root: Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'batchMemberIds' | 'handling'>,
+  ): Promise<void> {
+    if (root._id == null || root.handling == null || !root.batchMemberIds?.length) {
+      return;
+    }
+    const status = root.handling.status;
+    await Delivery().updateMany(
+      {
+        _id: { $in: root.batchMemberIds },
+        orderingKey: root.orderingKey,
+        $or:
+          status === 'started'
+            ? [{ 'handling.status': 'started' }, { 'handling.status': { $exists: false } }]
+            : [
+                { 'handling.status': { $in: ['started', status] } },
+                { 'handling.status': { $exists: false } },
+              ],
+      },
+      { $set: { handling: root.handling } },
+    );
+  }
+
+  async function settleBatchMembers(
+    root: Pick<
+      IAgentTriggerDelivery,
+      | '_id'
+      | 'orderingKey'
+      | 'batchMemberIds'
+      | 'batchMembersSettledAt'
+      | 'requeueCount'
+      | 'handling'
+    >,
+    input: {
+      attempt: number;
+      workerId: string;
+      status: 'succeeded' | 'dead';
+      settledAt: Date;
+      result?: unknown;
+      error?: AgentTriggerDeliveryFailure;
+    },
+  ): Promise<void> {
+    if (root._id == null || root.batchMembersSettledAt != null) {
+      return;
+    }
+    const memberIds = root.batchMemberIds ?? [];
+    if (memberIds.length > 0) {
+      const error = input.error == null ? undefined : normalizeFailure(input.error);
+      const batchRootRequeueCount = root.requeueCount ?? 0;
+      const settlement =
+        input.status === 'succeeded'
+          ? {
+              status: input.status,
+              attempts: input.attempt,
+              result: input.result,
+              settledAt: input.settledAt,
+              expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
+              batchRootId: root._id,
+              ...(root.handling != null && { handling: root.handling }),
+            }
+          : {
+              status: input.status,
+              attempts: input.attempt,
+              settledAt: input.settledAt,
+              lastError: error,
+              batchRootId: root._id,
+            };
+      await Delivery().updateMany(
+        {
+          _id: { $in: memberIds },
+          orderingKey: root.orderingKey,
+          status: { $in: ['staging', 'batched'] },
+          ...(batchRootRequeueCount === 0
+            ? {
+                $or: [{ batchRootRequeueCount: 0 }, { batchRootRequeueCount: { $exists: false } }],
+              }
+            : { batchRootRequeueCount }),
+        },
+        {
+          $set: settlement,
+          $unset: {
+            leaseBy: 1,
+            leaseUntil: 1,
+            claimToken: 1,
+            ...(input.status === 'succeeded' ? { lastError: 1 } : { result: 1, expiresAt: 1 }),
+          },
+          $push: {
+            history: {
+              $each: [
+                {
+                  attempt: input.attempt,
+                  outcome: input.status === 'succeeded' ? 'succeeded' : 'dead',
+                  at: input.settledAt,
+                  workerId: input.workerId,
+                  ...(error == null ? {} : { error }),
+                },
+              ],
+              $slice: -HISTORY_LIMIT,
+            },
+          },
+        },
+      );
+      const settledCount = await Delivery().countDocuments({
+        _id: { $in: memberIds },
+        orderingKey: root.orderingKey,
+        status: input.status,
+      });
+      if (settledCount !== memberIds.length) {
+        throw new Error('Not every agent trigger batch receipt could be settled');
+      }
+      if (input.status === 'succeeded' && root.handling != null) {
+        const authoritative = await Delivery()
+          .findById(root._id)
+          .select('_id orderingKey batchMemberIds handling')
+          .lean<
+            Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'batchMemberIds' | 'handling'>
+          >();
+        if (authoritative != null) {
+          await propagateBatchHandling(authoritative);
+        }
+      }
+    }
+    await Delivery().updateOne(
+      { _id: root._id, status: input.status, batchMembersSettledAt: { $exists: false } },
+      { $set: { batchMembersSettledAt: input.settledAt } },
+      { timestamps: false },
+    );
+  }
+
+  async function recoverAgentTriggerBatchReceipts(
+    limit = DEFAULT_PURGE_RECOVERY_LIMIT,
+  ): Promise<number> {
+    if (!Number.isSafeInteger(limit) || limit <= 0) {
+      throw new TypeError('Agent trigger batch recovery limit must be a positive integer');
+    }
+    const roots = await Delivery()
+      .find({
+        status: { $in: ['succeeded', 'dead'] },
+        batchMemberIds: { $exists: true, $ne: [] },
+        batchMembersSettledAt: { $exists: false },
+      })
+      .sort({ settledAt: 1, _id: 1 })
+      .limit(Math.min(limit, MAX_PURGE_RECOVERY_LIMIT))
+      .lean<IAgentTriggerDelivery[]>();
+    let recovered = 0;
+    for (const root of roots) {
+      if (root.settledAt == null || (root.status !== 'succeeded' && root.status !== 'dead')) {
+        continue;
+      }
+      const error = root.status === 'dead' ? root.lastError : undefined;
+      await settleBatchMembers(root, {
+        attempt: Math.max(root.attempts, 1),
+        workerId: 'batch-recovery',
+        status: root.status,
+        settledAt: root.settledAt,
+        ...(root.status === 'succeeded' ? { result: root.result } : {}),
+        ...(error == null ? {} : { error }),
+      });
+      if (root.status === 'succeeded') {
+        await fulfillLaneCleanupRequest(root);
+      }
+      recovered += 1;
+    }
+    return recovered;
+  }
+
   const fence = (input: AgentTriggerDeliveryFence) => ({
     _id: input.id,
     status: 'leased',
@@ -701,6 +1032,7 @@ export function createAgentTriggerDeliveryMethods(
       attempt: number;
       result: unknown;
       settledAt: Date;
+      handling?: AgentTriggerHandlingState;
     },
   ): Promise<boolean> {
     const completed = await Delivery()
@@ -713,6 +1045,7 @@ export function createAgentTriggerDeliveryMethods(
             settledAt: input.settledAt,
             expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
             laneCleanupPendingAt: input.settledAt,
+            ...(input.handling != null && { handling: input.handling }),
           },
           $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, lastError: 1 },
           $push: {
@@ -731,21 +1064,97 @@ export function createAgentTriggerDeliveryMethods(
         },
         { new: true },
       )
-      .select('_id orderingKey laneCleanupPendingAt')
-      .lean<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'laneCleanupPendingAt'>>();
+      .select(
+        '_id orderingKey laneCleanupPendingAt batchMemberIds batchMembersSettledAt requeueCount handling',
+      )
+      .lean<
+        Pick<
+          IAgentTriggerDelivery,
+          | '_id'
+          | 'orderingKey'
+          | 'laneCleanupPendingAt'
+          | 'batchMemberIds'
+          | 'batchMembersSettledAt'
+          | 'requeueCount'
+          | 'handling'
+        >
+      >();
     if (completed?._id == null) {
       return false;
     }
 
     try {
+      await settleBatchMembers(completed, {
+        attempt: input.attempt,
+        workerId: input.workerId,
+        status: 'succeeded',
+        settledAt: input.settledAt,
+        result: input.result,
+      });
       await fulfillLaneCleanupRequest(completed);
     } catch (error) {
-      // Delivery success is authoritative; counter reclamation is safe to retry later.
-      logger.warn('[agent-triggers] failed to reclaim an inactive ordering lane', {
+      // Root success is authoritative. Maintenance retries both constituent
+      // receipt settlement and the existing durable lane-cleanup marker.
+      logger.warn('[agent-triggers] failed to finalize a completed trigger batch', {
         orderingKey: completed.orderingKey,
         error: error instanceof Error ? error.message : String(error),
       });
     }
+    return true;
+  }
+
+  async function settleAgentTriggerHandlingOutcome(
+    input: SettleAgentTriggerHandlingOutcomeInput,
+  ): Promise<boolean> {
+    const error = input.error?.slice(0, MAX_ERROR_MESSAGE_LENGTH);
+    const terminalHandling = {
+      'handling.status': input.status,
+      'handling.settledAt': input.settledAt,
+      ...(error != null && { 'handling.error': error }),
+      ...(input.action != null && { 'handling.action': input.action }),
+    };
+    const terminal = await Delivery()
+      .findOneAndUpdate(
+        {
+          deliveryKey: input.deliveryKey,
+          'handling.status': 'started',
+          'handling.conversationId': input.conversationId,
+          'handling.generationCreatedAt': input.generationCreatedAt,
+        },
+        {
+          $set: terminalHandling,
+          $unset: {
+            ...(error == null && { 'handling.error': 1 }),
+            ...(input.action == null && { 'handling.action': 1 }),
+          },
+        },
+        { new: true },
+      )
+      .select('_id orderingKey batchMemberIds handling')
+      .lean<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'batchMemberIds' | 'handling'>>();
+
+    let authoritative = terminal;
+    if (authoritative == null) {
+      const existing = await Delivery()
+        .findOne({
+          deliveryKey: input.deliveryKey,
+          'handling.conversationId': input.conversationId,
+          'handling.generationCreatedAt': input.generationCreatedAt,
+        })
+        .select('_id orderingKey batchMemberIds handling')
+        .lean<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'batchMemberIds' | 'handling'>>();
+      const replayed =
+        existing?.handling?.status === input.status &&
+        existing.handling.error === error &&
+        existing.handling.action?.toolName === input.action?.toolName &&
+        existing.handling.action?.toolCallId === input.action?.toolCallId;
+      if (!replayed) {
+        return false;
+      }
+      authoritative = existing;
+    }
+
+    await propagateBatchHandling(authoritative);
     return true;
   }
 
@@ -786,25 +1195,54 @@ export function createAgentTriggerDeliveryMethods(
     },
   ): Promise<boolean> {
     const error = normalizeFailure(input.error);
-    const result = await Delivery().updateOne(fence(input), {
-      $set: { status: 'dead', settledAt: input.settledAt, lastError: error },
-      $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, expiresAt: 1 },
-      $push: {
-        history: {
-          $each: [
-            {
-              attempt: input.attempt,
-              outcome: 'dead',
-              at: input.settledAt,
-              workerId: input.workerId,
-              error,
+    const dead = await Delivery()
+      .findOneAndUpdate(
+        fence(input),
+        {
+          $set: { status: 'dead', settledAt: input.settledAt, lastError: error },
+          $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, expiresAt: 1 },
+          $push: {
+            history: {
+              $each: [
+                {
+                  attempt: input.attempt,
+                  outcome: 'dead',
+                  at: input.settledAt,
+                  workerId: input.workerId,
+                  error,
+                },
+              ],
+              $slice: -HISTORY_LIMIT,
             },
-          ],
-          $slice: -HISTORY_LIMIT,
+          },
         },
-      },
-    });
-    return result.modifiedCount === 1;
+        { new: true },
+      )
+      .select('_id orderingKey batchMemberIds batchMembersSettledAt requeueCount')
+      .lean<
+        Pick<
+          IAgentTriggerDelivery,
+          '_id' | 'orderingKey' | 'batchMemberIds' | 'batchMembersSettledAt' | 'requeueCount'
+        >
+      >();
+    if (dead?._id == null) {
+      return false;
+    }
+    try {
+      await settleBatchMembers(dead, {
+        attempt: input.attempt,
+        workerId: input.workerId,
+        status: 'dead',
+        settledAt: input.settledAt,
+        error,
+      });
+    } catch (settlementError) {
+      logger.warn('[agent-triggers] failed to settle batch dead-letter receipts', {
+        deliveryId: String(dead._id),
+        error: settlementError instanceof Error ? settlementError.message : String(settlementError),
+      });
+    }
+    return true;
   }
 
   async function getAgentTriggerDelivery(
@@ -814,13 +1252,70 @@ export function createAgentTriggerDeliveryMethods(
     return delivery == null ? null : toRecord(delivery);
   }
 
+  async function getAgentTriggerDeliveryStatus(
+    deliveryKey: string,
+    user: string | Types.ObjectId,
+    sourceKeyId: string,
+    tenantId?: string,
+  ): Promise<AgentTriggerDeliveryStatusRecord | null> {
+    const tenantScope =
+      tenantId == null ? { tenantId: null } : { $or: [{ tenantId: null }, { tenantId }] };
+    let delivery = await Delivery()
+      .findOne({
+        deliveryKey,
+        user,
+        'envelope.event.source.id': sourceKeyId,
+        'envelope.event.source.type': 'remote_api_key',
+        ...tenantScope,
+      })
+      .select(
+        '-_id deliveryKey status attempts availableAt createdAt settledAt result lastError handling',
+      )
+      .lean<AgentTriggerDeliveryStatusRecord>();
+    if (delivery != null && delivery.status === 'batched') {
+      const member = await Delivery()
+        .findOne({ deliveryKey, user, ...tenantScope })
+        .select('batchRootId')
+        .lean<Pick<IAgentTriggerDelivery, 'batchRootId'>>();
+      if (member?.batchRootId == null) {
+        return null;
+      }
+      const root = await Delivery()
+        .findOne({
+          _id: member.batchRootId,
+          user,
+          'envelope.event.source.id': sourceKeyId,
+          'envelope.event.source.type': 'remote_api_key',
+          ...tenantScope,
+        })
+        .select('-_id status attempts availableAt settledAt result lastError handling')
+        .lean<
+          Pick<
+            AgentTriggerDeliveryStatusRecord,
+            | 'status'
+            | 'attempts'
+            | 'availableAt'
+            | 'settledAt'
+            | 'result'
+            | 'lastError'
+            | 'handling'
+          >
+        >();
+      if (root == null) {
+        return null;
+      }
+      delivery = { ...delivery, ...root, deliveryKey };
+    }
+    return delivery;
+  }
+
   async function getAgentTriggerDeadLetters(limit = 50): Promise<AgentTriggerDeliveryRecord[]> {
     if (!Number.isSafeInteger(limit) || limit <= 0) {
       throw new TypeError('Agent trigger dead-letter limit must be a positive integer');
     }
     const boundedLimit = Math.min(limit, MAX_DEAD_LETTER_LIMIT);
     const deliveries = await Delivery()
-      .find({ status: 'dead' })
+      .find({ status: 'dead', batchRootId: { $exists: false } })
       .sort({ updatedAt: -1, _id: -1 })
       .limit(boundedLimit)
       .lean<IAgentTriggerDelivery[]>();
@@ -831,9 +1326,63 @@ export function createAgentTriggerDeliveryMethods(
     id: string,
     availableAt: Date,
   ): Promise<AgentTriggerDeliveryRecord | null> {
+    const candidate = await Delivery()
+      .findOne({ _id: id, status: 'dead', batchRootId: { $exists: false } })
+      .lean<IAgentTriggerDelivery>();
+    if (candidate?._id == null) {
+      return null;
+    }
+    const previousRequeueCount = candidate.requeueCount ?? 0;
+    const requeueCount = previousRequeueCount + 1;
+    const memberIds = candidate.batchMemberIds ?? [];
+    if (memberIds.length > 0) {
+      await Delivery().updateMany(
+        {
+          _id: { $in: memberIds },
+          orderingKey: candidate.orderingKey,
+          batchRootId: candidate._id,
+          status: { $in: ['staging', 'batched', 'succeeded', 'dead'] },
+          ...(previousRequeueCount === 0
+            ? {
+                $or: [{ batchRootRequeueCount: 0 }, { batchRootRequeueCount: { $exists: false } }],
+              }
+            : { batchRootRequeueCount: previousRequeueCount }),
+        },
+        {
+          $set: {
+            status: 'batched',
+            attempts: 0,
+            batchRootId: candidate._id,
+            batchRootRequeueCount: requeueCount,
+          },
+          $unset: {
+            lastError: 1,
+            result: 1,
+            settledAt: 1,
+            expiresAt: 1,
+          },
+        },
+      );
+      const preparedCount = await Delivery().countDocuments({
+        _id: { $in: memberIds },
+        orderingKey: candidate.orderingKey,
+        status: 'batched',
+        batchRootId: candidate._id,
+        batchRootRequeueCount: requeueCount,
+      });
+      if (preparedCount !== memberIds.length) {
+        throw new Error('Not every agent trigger batch receipt could be prepared for requeue');
+      }
+    }
+
     const staged = await Delivery()
       .findOneAndUpdate(
-        { _id: id, status: 'dead' },
+        {
+          _id: candidate._id,
+          status: 'dead',
+          batchRootId: { $exists: false },
+          requeueCount: previousRequeueCount,
+        },
         {
           $set: {
             status: 'staging',
@@ -851,6 +1400,7 @@ export function createAgentTriggerDeliveryMethods(
             settledAt: 1,
             expiresAt: 1,
             laneCleanupPendingAt: 1,
+            batchMembersSettledAt: 1,
           },
           $inc: { requeueCount: 1 },
         },
@@ -975,17 +1525,21 @@ export function createAgentTriggerDeliveryMethods(
     enqueueAgentTriggerDelivery,
     claimNextAgentTriggerDelivery,
     findEarlierAgentTriggerDelivery,
+    getAgentTriggerDeliveryBatch,
     releaseAgentTriggerDelivery,
     beginAgentTriggerDeliveryAttempt,
     deferAgentTriggerDeliveryAttempt,
     completeAgentTriggerDelivery,
+    settleAgentTriggerHandlingOutcome,
     retryAgentTriggerDelivery,
     deadLetterAgentTriggerDelivery,
     getAgentTriggerDelivery,
+    getAgentTriggerDeliveryStatus,
     getAgentTriggerDeadLetters,
     requeueAgentTriggerDelivery,
     countActiveAgentTriggerDeliveriesByUser,
     recoverAgentTriggerLanePublications,
+    recoverAgentTriggerBatchReceipts,
     reclaimInactiveAgentTriggerLanes,
     prepareAgentTriggerUserPurge,
     cancelAgentTriggerUserPurge,

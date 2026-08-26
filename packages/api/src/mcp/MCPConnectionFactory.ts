@@ -21,8 +21,8 @@ import {
   ReauthenticationRequiredError,
   resolveOboToken,
 } from '~/mcp/oauth';
-import { sanitizeUrlForLogging, isClientRejectionMessage, isOAuthServer } from './utils';
 import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
+import { isClientRejectionMessage, isOAuthServer } from './utils';
 import { isOAuthAuthenticationError } from './errors';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { withTimeout } from '~/utils/promise';
@@ -238,9 +238,9 @@ export class MCPConnectionFactory {
         return { tools, connection: null, oauthRequired, oauthUrl };
       }
       MCPConnection.decrementCycleCount(this.serverName);
-    } catch (listError) {
+    } catch {
       MCPConnection.decrementCycleCount(this.serverName);
-      logger.debug(`${this.logPrefix} [Discovery] Unauthenticated tool listing failed:`, listError);
+      logger.debug(`${this.logPrefix} [Discovery] Unauthenticated tool listing failed`);
     }
 
     connection.removeListener('oauthRequired', oauthHandler);
@@ -318,9 +318,7 @@ export class MCPConnectionFactory {
     this.connectionTimeout = options?.connectionTimeout;
     this.tenantContext = tenantStorage?.getStore?.();
     this.tenantId = this.tenantContext?.tenantId ?? getTenantId();
-    this.logPrefix = options?.user
-      ? `[MCP][${basic.serverName}][${options.user.id}]`
-      : `[MCP][${basic.serverName}]`;
+    this.logPrefix = options?.user ? `[MCP][User: ${options.user.id}]` : '[MCP]';
 
     this.user = options?.user;
 
@@ -362,7 +360,7 @@ export class MCPConnectionFactory {
       }
     }
 
-    logger.info(`${this.logPrefix} Resolving OBO token for scopes: ${oboConfig.scopes}`);
+    logger.info(`${this.logPrefix} Resolving OBO token`);
     return resolveOboToken(this.user, oboConfig, this.oboTokenResolver);
   }
 
@@ -447,10 +445,8 @@ export class MCPConnectionFactory {
       }
       try {
         await connection.dispose();
-      } catch (disconnectError) {
-        logger.warn(`${this.logPrefix} Failed to clean up rejected MCP connection`, {
-          error: disconnectError,
-        });
+      } catch {
+        logger.warn(`${this.logPrefix} Failed to clean up rejected MCP connection`);
       }
       throw error;
     }
@@ -647,10 +643,10 @@ export class MCPConnectionFactory {
       return tokens;
     } catch (error) {
       if (error instanceof ReauthenticationRequiredError) {
-        logger.info(`${this.logPrefix} ${error.message}, will trigger OAuth flow`);
+        logger.info(`${this.logPrefix} Reauthentication required; triggering OAuth flow`);
         return null;
       }
-      logger.debug(`${this.logPrefix} No existing tokens found or error loading tokens`, error);
+      logger.debug(`${this.logPrefix} No existing tokens found or token loading failed`);
       return null;
     }
   }
@@ -740,10 +736,9 @@ export class MCPConnectionFactory {
         resolve(null);
       }, timeoutMs);
 
-      refreshPromise.then(resolve, (error: unknown) => {
+      refreshPromise.then(resolve, () => {
         logger.info(
           `${this.logPrefix} Silent token refresh failed, falling back to interactive OAuth`,
-          error,
         );
         resolve(null);
       });
@@ -808,11 +803,12 @@ export class MCPConnectionFactory {
       return tokens;
     } catch (error) {
       if (error instanceof ReauthenticationRequiredError) {
-        logger.info(`${this.logPrefix} ${error.message}, falling back to interactive OAuth`);
+        logger.info(
+          `${this.logPrefix} Reauthentication required; falling back to interactive OAuth`,
+        );
       } else {
         logger.info(
           `${this.logPrefix} Silent token refresh failed, falling back to interactive OAuth`,
-          error,
         );
       }
       return null;
@@ -842,8 +838,8 @@ export class MCPConnectionFactory {
         return;
       }
       await this.flowManager.deleteFlow(flowId, 'mcp_get_tokens');
-    } catch (err) {
-      logger.debug(`${this.logPrefix} Failed to invalidate mcp_get_tokens cache`, err);
+    } catch {
+      logger.debug(`${this.logPrefix} Failed to invalidate mcp_get_tokens cache`);
     }
   }
 
@@ -874,8 +870,8 @@ export class MCPConnectionFactory {
       if (oldState) {
         await MCPOAuthHandler.deleteStateMapping(oldState, this.flowManager);
       }
-    } catch (err) {
-      logger.debug(`${this.logPrefix} Failed to invalidate completed mcp_oauth cache`, err);
+    } catch {
+      logger.debug(`${this.logPrefix} Failed to invalidate completed mcp_oauth cache`);
     }
   }
 
@@ -1117,7 +1113,7 @@ export class MCPConnectionFactory {
           // Start monitoring in background — createFlow will find the existing PENDING state
           // written by initFlow above, so metadata arg is unused (pass {} to make that explicit)
           this.flowManager!.createFlow(newFlowId, 'mcp_oauth', {}).catch(async (error) => {
-            logger.debug(`${this.logPrefix} OAuth flow monitor ended`, error);
+            logger.debug(`${this.logPrefix} OAuth flow monitor ended`);
             await this.clearStaleClientIfRejected(flowMetadata.reusedClientCredentialSetId, error);
           });
 
@@ -1128,8 +1124,8 @@ export class MCPConnectionFactory {
 
           connection.emit('oauthFailed', new Error('OAuth flow initiated - return early'));
           return;
-        } catch (error) {
-          logger.error(`${this.logPrefix} Failed to initiate OAuth flow`, error);
+        } catch {
+          logger.error(`${this.logPrefix} Failed to initiate OAuth flow`);
           connection.emit('oauthFailed', new Error('OAuth initiation failed'));
           return;
         }
@@ -1189,7 +1185,7 @@ export class MCPConnectionFactory {
           await this.invalidateGetTokensFlow(tokens);
           logger.info(`${this.logPrefix} Verified OAuth callback tokens in storage`);
         } catch (error) {
-          logger.error(`${this.logPrefix} Failed to verify OAuth callback tokens`, error);
+          logger.error(`${this.logPrefix} Failed to verify OAuth callback tokens`);
           connection.emit(
             'oauthFailed',
             error instanceof Error ? error : new Error('OAuth token verification failed'),
@@ -1315,7 +1311,7 @@ export class MCPConnectionFactory {
         }
 
         if (attempts === maxAttempts) {
-          logger.error(`${this.logPrefix} Failed to connect after ${maxAttempts} attempts`, error);
+          logger.error(`${this.logPrefix} Failed to connect after ${maxAttempts} attempts`);
           throw error;
         }
         await this.waitForRetry(2000 * attempts, signal);
@@ -1341,8 +1337,8 @@ export class MCPConnectionFactory {
         deleteTokens: this.tokenMethods!.deleteTokens,
         credentialSetId: reusedClientCredentialSetId,
       }),
-    ).catch((err) => {
-      logger.warn(`${this.logPrefix} Failed to clear stale client registration`, err);
+    ).catch(() => {
+      logger.warn(`${this.logPrefix} Failed to clear stale client registration`);
     });
   }
 
@@ -1374,15 +1370,15 @@ export class MCPConnectionFactory {
     error?: unknown;
   } | null> {
     const serverUrl = (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url;
-    logger.debug(
-      `${this.logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl ? sanitizeUrlForLogging(serverUrl) : 'undefined'}`,
-    );
+    logger.debug(`${this.logPrefix} \`handleOAuthRequired\` called`, {
+      hasServerUrl: Boolean(serverUrl),
+    });
 
     if (!this.flowManager || !serverUrl) {
       logger.error(
-        `${this.logPrefix} OAuth required but flow manager not available or server URL missing for ${this.serverName}`,
+        `${this.logPrefix} OAuth required but flow manager or server URL is unavailable`,
       );
-      logger.warn(`${this.logPrefix} Please configure OAuth credentials for ${this.serverName}`);
+      logger.warn(`${this.logPrefix} OAuth credentials must be configured`);
       return null;
     }
 
@@ -1390,7 +1386,7 @@ export class MCPConnectionFactory {
     let reusedClientCredentialSetId: string | undefined;
 
     try {
-      logger.debug(`${this.logPrefix} Checking for existing OAuth flow for ${this.serverName}...`);
+      logger.debug(`${this.logPrefix} Checking for existing OAuth flow`);
 
       /** Flow ID to check if a flow already exists */
       const flowId = this.getBaseFlowId();
@@ -1429,9 +1425,7 @@ export class MCPConnectionFactory {
             if (typeof this.oauthEnd === 'function') {
               await this.oauthEnd();
             }
-            logger.info(
-              `${this.logPrefix} Joined existing OAuth flow completed for ${this.serverName}`,
-            );
+            logger.info(`${this.logPrefix} Joined existing OAuth flow completed`);
             return {
               tokens,
               clientInfo: flowMeta?.clientInfo,
@@ -1487,12 +1481,12 @@ export class MCPConnectionFactory {
           if (oldState) {
             await MCPOAuthHandler.deleteStateMapping(oldState, this.flowManager);
           }
-        } catch (error) {
-          logger.warn(`${this.logPrefix} Failed to clean up existing OAuth flow`, error);
+        } catch {
+          logger.warn(`${this.logPrefix} Failed to clean up existing OAuth flow`);
         }
       }
 
-      logger.debug(`${this.logPrefix} Initiating new OAuth flow for ${this.serverName}...`);
+      logger.debug(`${this.logPrefix} Initiating new OAuth flow`);
       const {
         authorizationUrl,
         flowId: newFlowId,
@@ -1534,7 +1528,7 @@ export class MCPConnectionFactory {
       if (typeof this.oauthEnd === 'function') {
         await this.oauthEnd();
       }
-      logger.info(`${this.logPrefix} OAuth flow completed, tokens received for ${this.serverName}`);
+      logger.info(`${this.logPrefix} OAuth flow completed; tokens received`);
 
       return {
         tokens,
@@ -1546,7 +1540,7 @@ export class MCPConnectionFactory {
         reusedClientCredentialSetId,
       };
     } catch (error) {
-      logger.error(`${this.logPrefix} Failed to complete OAuth flow for ${this.serverName}`, error);
+      logger.error(`${this.logPrefix} Failed to complete OAuth flow`);
       return { tokens: null, reusedStoredClient, reusedClientCredentialSetId, error };
     }
   }

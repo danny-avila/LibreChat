@@ -4,6 +4,7 @@ import {
   buildCreatedInitialResponse,
   getExistingConversationAbortMessages,
   isInitialNewConversationSubmission,
+  mergeErrorMessages,
   mergeRegenerateFinalMessages,
   startedAsNewConversation,
 } from '~/hooks/SSE/useEventHandlers';
@@ -228,5 +229,63 @@ describe('getExistingConversationAbortMessages', () => {
         currentMessages,
       }).map(({ messageId }) => messageId),
     ).toEqual(['user-1']);
+  });
+});
+
+describe('mergeErrorMessages', () => {
+  const message = (messageId: string, isCreatedByUser = false) =>
+    ({
+      messageId,
+      conversationId: 'conversation-1',
+      isCreatedByUser,
+      text: messageId,
+    }) as TMessage;
+
+  it('adds the request and error for a normal submission', () => {
+    const userMessage = message('user-1', true);
+    const errorMessage = message('assistant-error');
+
+    expect(
+      mergeErrorMessages({
+        messages: [message('previous-response')],
+        userMessage,
+        errorMessage,
+      }).map(({ messageId }) => messageId),
+    ).toEqual(['previous-response', 'user-1', 'assistant-error']);
+  });
+
+  it('preserves regeneration history without duplicating its user', () => {
+    const userMessage = message('user-1', true);
+    const originalResponse = message('assistant-1');
+    const laterUser = message('user-2', true);
+    const laterResponse = message('assistant-2');
+    const errorMessage = message('assistant-1_');
+
+    expect(
+      mergeErrorMessages({
+        messages: [userMessage],
+        regenerateMessages: [userMessage, originalResponse, laterUser, laterResponse],
+        userMessage,
+        errorMessage,
+        isRegenerate: true,
+      }).map(({ messageId }) => messageId),
+    ).toEqual(['user-1', 'assistant-1', 'user-2', 'assistant-2', 'assistant-1_']);
+  });
+
+  it('replaces an edited response error that intentionally reuses its id', () => {
+    const userMessage = message('user-1', true);
+    const originalResponse = message('assistant-1');
+    const errorMessage = { ...originalResponse, text: 'Regeneration failed', error: true };
+
+    const merged = mergeErrorMessages({
+      messages: [userMessage],
+      regenerateMessages: [userMessage, originalResponse],
+      userMessage,
+      errorMessage,
+      isRegenerate: true,
+    });
+
+    expect(merged.map(({ messageId }) => messageId)).toEqual(['user-1', 'assistant-1']);
+    expect(merged[1]).toEqual(errorMessage);
   });
 });

@@ -359,6 +359,8 @@ export type Agent = {
   owner_contact?: AgentOwnerContact;
   /** Per-tool configuration options (deferred loading, allowed callers, etc.) */
   tool_options?: AgentToolOptions;
+  /** Attached action registrations, each `${encodedDomain}${actionDelimiter}${action_id}` */
+  actions?: string[];
   /** Optional allowlist of skill ObjectIds. Only applies when `skills_enabled`. */
   skills?: string[];
   /** Master toggle for skill use on this agent. `true` = active (full catalog unless
@@ -638,10 +640,20 @@ export type PartMetadata = {
    * as dispatch time rather than the task's runtime.
    */
   backgrounded?: boolean;
+  /**
+   * Content index this part occupied while its run streamed. The aggregator
+   * writes parts at provider-source indexes, so the streamed array is sparse;
+   * persistence compacts it and every part after a hole shifts down. The
+   * client's final handler stamps the streamed position onto the compacted
+   * parts it adopts, so index-derived render identity survives the swap
+   * instead of remounting the settled message. Client-only and absent
+   * everywhere else — persisted content never carries it.
+   */
+  streamedIndex?: number;
 };
 
 /** Metadata for parallel content rendering - subset of PartMetadata */
-export type ContentMetadata = Pick<PartMetadata, 'agentId' | 'groupId'>;
+export type ContentMetadata = Pick<PartMetadata, 'agentId' | 'groupId' | 'streamedIndex'>;
 
 export type ContentPart = (
   | CodeToolCall
@@ -687,6 +699,10 @@ export type SteerContentPart = {
   /** Attachments steered with the message; re-encoded per turn on replay
    *  like any other user-message media (refs only, never encoded data). */
   files?: Partial<TFile>[];
+  /** Quoted excerpts steered with the message, persisted separately from the
+   *  typed text (mirroring `TMessage.quotes`) so the UI renders them as
+   *  reference blocks; merged into the model-bound user turn on every replay. */
+  quotes?: string[];
 };
 
 export type TMessageContentParts =

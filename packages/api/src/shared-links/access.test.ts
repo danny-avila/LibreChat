@@ -114,6 +114,18 @@ async function grantUserViewer(resourceId: Types.ObjectId, uid: Types.ObjectId) 
   });
 }
 
+async function grantTenantUserViewer(resourceId: Types.ObjectId, uid: Types.ObjectId) {
+  await new AclEntry({
+    principalType: PrincipalType.USER,
+    principalModel: PrincipalModel.USER,
+    principalId: uid,
+    resourceType: ResourceType.SHARED_LINK,
+    resourceId,
+    permBits: PermissionBits.VIEW,
+    grantedBy: userId,
+  }).save();
+}
+
 /**
  * Inserts a ROLE VIEW grant directly (bypassing the role-name lookup, which is
  * tenant-scoped and would miss the globally seeded roles under a tenant context).
@@ -278,6 +290,32 @@ describe('canAccessSharedLink', () => {
   });
 
   describe('cross-tenant lookup', () => {
+    test('exposes the share tenant after a cross-tenant user grant succeeds', async () => {
+      const viewer = new Types.ObjectId();
+      const link = await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+        const tenantLink = await createTestLink();
+        await grantTenantUserViewer(tenantLink._id, viewer);
+        return tenantLink;
+      });
+      mockGetUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: viewer },
+      ]);
+      const req = createReq({
+        params: { shareId: link.shareId },
+        user: { id: viewer.toString(), _id: viewer, role: 'USER', tenantId: 'tenant-b' },
+      });
+      const res = createRes();
+      const next = jest.fn();
+
+      await tenantStorage.run({ tenantId: 'tenant-b' }, () =>
+        canAccessSharedLink(req, res, next as unknown as NextFunction),
+      );
+
+      expect(next).toHaveBeenCalled();
+      expect((req as unknown as Record<string, unknown>).shareTenantId).toBe('tenant-a');
+      expect((req as unknown as Record<string, unknown>).shareResourceId).toBe(link._id.toString());
+    });
+
     test('does not let a cross-tenant viewer role satisfy a ROLE ACL from another tenant', async () => {
       // Share owned by tenant-a, granted VIEW to role USER. A tenant-b viewer whose
       // own role is also USER must not inherit that grant: role principals are just

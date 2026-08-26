@@ -14,10 +14,15 @@ const mongoSanitize = require('express-mongo-sanitize');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   isEnabled,
+  issueCsp,
   apiNotFound,
   createMetrics,
+  applyCspNonce,
+  createCspPolicy,
+  shellCacheHeaders,
   ErrorController,
   memoryDiagnostics,
+  createSecurityHeaders,
   performStartupChecks,
   handleJsonParseError,
   GenerationJobManager,
@@ -43,6 +48,9 @@ const {
   updateInterfacePermissions,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
+  configureAgentEventRuntime,
+  createAgentEventTerminalHandler,
+  createScheduleWriteGate,
   waitForKeyvRedisClient,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
@@ -57,17 +65,20 @@ const { capabilityContextMiddleware } = require('./middleware/roles/capabilities
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { initializeAgentTriggerService } = require('./services/Agents/triggers');
+const { initializeScheduleEngine, recordExpiredScheduleApproval } = require('./services/Schedules');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { checkMigrations } = require('./services/start/migration');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const initializeMCPs = require('./services/initializeMCPs');
+const { configureSubagentTaskRouting } = require('./services/Endpoints/agents/subagentThreadStore');
 const configureSocialLogins = require('./socialLogins');
 const createSpaFallback = require('./utils/fallback');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const agentEventMethods = require('~/models');
 
 /** Route admin file-config MIME patterns through a linear-time engine (ReDoS-safe) on upload. */
 configureFileConfigRegexEngine();
@@ -84,6 +95,8 @@ const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default 
 
 const app = express();
 let serverReady = false;
+/** @type {import('@librechat/api').ScheduleEngineState} */
+let scheduleEngineState = 'starting';
 
 const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
 const CHAT_START_RETRY_AFTER_SECONDS = '1';
@@ -100,12 +113,21 @@ const rejectChatStartsUntilReady = (req, res, next) => {
   });
 };
 
+const rejectScheduleWritesUntilReady = createScheduleWriteGate({
+  getState: () => scheduleEngineState,
+  retryAfterSeconds: CHAT_START_RETRY_AFTER_SECONDS,
+});
+
 const configureGenerationStreams = () => {
   const streamServices = createStreamServices();
   GenerationJobManager.configure({
     ...streamServices,
     cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
   });
+  GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);
+  GenerationJobManager.setTerminalHostActionHandler(
+    createAgentEventTerminalHandler(agentEventMethods),
+  );
   GenerationJobManager.initialize();
   // Stop active generations and close their SSE streams while the HTTP server drains.
   registerShutdownTask(
@@ -124,6 +146,7 @@ const configureGenerationStreams = () => {
 
 const startServer = async () => {
   await waitForKeyvRedisClient();
+  await configureSubagentTaskRouting();
   const { metricsMiddleware, metricsRouter } = createMetrics();
   if (!process.env.METRICS_SECRET) {
     logger.warn('[metrics] METRICS_SECRET is not set - /metrics will return 401 for all requests');
@@ -141,6 +164,12 @@ const startServer = async () => {
 
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
+
+  /* Registered ahead of every route so health checks carry the headers too. */
+  const securityHeaders = createSecurityHeaders();
+  if (securityHeaders) {
+    app.use(securityHeaders);
+  }
 
   if (isEnabled(process.env.TRUST_TENANT_HEADER)) {
     logger.warn(
@@ -163,6 +192,7 @@ const startServer = async () => {
     logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);
   });
   const appConfig = await getAppConfig({ baseOnly: true });
+  configureAgentEventRuntime(appConfig?.endpoints?.agents?.eventDriven);
   initializeFileStorage(appConfig);
   const projectRoot = path.resolve(__dirname, '../..');
   // Plugin hooks execute only when the operator opts in via DEPLOYMENT_PLUGIN_HOOKS;
@@ -214,18 +244,24 @@ const startServer = async () => {
     }
   }
 
+  const cspPolicy = createCspPolicy();
+  const shellCache = shellCacheHeaders(cspPolicy != null);
+
   const sendIndexHtml = (req, res) => {
-    res.set({
-      'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
-      Pragma: process.env.INDEX_PRAGMA || 'no-cache',
-      Expires: process.env.INDEX_EXPIRES || '0',
-    });
+    res.set(shellCache);
     res.vary(QUERY_DEVTOOLS_HEADER);
 
     const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
     const saneLang = lang.replace(/"/g, '&quot;');
     let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
     updatedIndexHtml = maybeInjectQueryDevtoolsBootstrap(updatedIndexHtml, req);
+
+    /* Nonce last: every injected script above must be stamped too. */
+    if (cspPolicy) {
+      const csp = issueCsp(cspPolicy);
+      res.set(csp.headerName, csp.headerValue);
+      updatedIndexHtml = applyCspNonce(updatedIndexHtml, csp.nonce);
+    }
 
     res.type('html');
     res.send(updatedIndexHtml);
@@ -343,6 +379,7 @@ const startServer = async () => {
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
   app.use('/api/memories', routes.memories);
+  app.use('/api/schedules', rejectScheduleWritesUntilReady, routes.schedules);
   app.use('/api/permissions', routes.accessPermissions);
 
   app.use('/api/tags', routes.tags);
@@ -400,6 +437,17 @@ const startServer = async () => {
         memoryDiagnostics.start();
       }
       await initializeAgentTriggerService({ address: server.address() });
+      const scheduleEngineArmed = (await initializeScheduleEngine()) != null;
+      scheduleEngineState = scheduleEngineArmed ? 'armed' : 'unavailable';
+      if (!scheduleEngineArmed) {
+        // Terminal, not transient: arming is attempted once, so schedule writes are refused
+        // for the life of this process. Logged at error level because the only other signal
+        // an operator gets is a 503 on every write — every other health signal stays green.
+        logger.error(
+          '[schedules] write routes are PERMANENTLY unavailable in this process: the engine did not arm. ' +
+            'Resolve the cause logged above and restart.',
+        );
+      }
       serverReady = true;
       logger.info('Server readiness checks passing.');
     } catch (initErr) {

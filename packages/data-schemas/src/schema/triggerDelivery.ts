@@ -24,6 +24,33 @@ const historySchema = new Schema(
   { _id: false },
 );
 
+const handlingSchema = new Schema(
+  {
+    status: {
+      type: String,
+      enum: ['started', 'applied', 'completed_no_action', 'failed', 'cancelled'],
+      required: true,
+    },
+    conversationId: { type: String, required: true, maxlength: 256 },
+    streamId: { type: String, required: true, maxlength: 256 },
+    generationCreatedAt: { type: Number, required: true, min: 0 },
+    startedAt: { type: Date, required: true },
+    settledAt: { type: Date },
+    error: { type: String, maxlength: 2048 },
+    action: {
+      type: new Schema(
+        {
+          toolName: { type: String, required: true, maxlength: 256 },
+          toolCallId: { type: String, maxlength: 256 },
+        },
+        { _id: false },
+      ),
+      required: false,
+    },
+  },
+  { _id: false },
+);
+
 const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
   {
     deliveryKey: { type: String, required: true, maxlength: 128 },
@@ -36,12 +63,26 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     tenantId: { type: String, index: true },
     status: {
       type: String,
-      enum: ['staging', 'pending', 'leased', 'succeeded', 'dead'],
+      enum: ['staging', 'batched', 'pending', 'leased', 'succeeded', 'dead'],
       required: true,
       default: 'pending',
     },
     attempts: { type: Number, required: true, default: 0, min: 0 },
     availableAt: { type: Date, required: true },
+    envelopeBytes: { type: Number, min: 0 },
+    coalesceKey: { type: String, maxlength: 128 },
+    coalesceFrom: { type: Date },
+    coalesceUntil: { type: Date },
+    batchSize: { type: Number, min: 1 },
+    batchBytes: { type: Number, min: 0 },
+    batchMemberIds: {
+      type: [{ type: Schema.Types.ObjectId, ref: 'AgentTriggerDelivery' }],
+      default: undefined,
+    },
+    batchRootId: { type: Schema.Types.ObjectId, ref: 'AgentTriggerDelivery' },
+    batchRootRequeueCount: { type: Number, min: 0 },
+    batchMembersSettledAt: { type: Date },
+    handling: { type: handlingSchema },
     leaseBy: { type: String },
     leaseUntil: { type: Date },
     claimToken: { type: String },
@@ -61,6 +102,11 @@ triggerDeliverySchema.index({ deliveryKey: 1 }, { unique: true });
 triggerDeliverySchema.index({ status: 1, availableAt: 1, createdAt: 1 });
 triggerDeliverySchema.index({ status: 1, leaseUntil: 1, createdAt: 1 });
 triggerDeliverySchema.index({ orderingKey: 1, status: 1, laneSequence: 1 });
+triggerDeliverySchema.index({ batchRootId: 1 }, { sparse: true });
+triggerDeliverySchema.index(
+  { orderingKey: 1, coalesceKey: 1, status: 1, coalesceUntil: 1 },
+  { sparse: true },
+);
 triggerDeliverySchema.index({ status: 1, updatedAt: -1 });
 triggerDeliverySchema.index({ stagingRecoveryAt: 1 }, { sparse: true });
 triggerDeliverySchema.index({ laneCleanupPendingAt: 1 }, { sparse: true });

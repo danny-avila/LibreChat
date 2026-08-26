@@ -42,6 +42,7 @@ import {
   setDraft,
   setFilesDraft,
 } from '~/utils';
+import { markPastedTextFile } from '~/utils/files';
 import store from '~/store';
 import { useAutoSave } from '~/hooks';
 
@@ -53,6 +54,13 @@ const makeTextAreaRef = (value = '') =>
   ({
     current: { value, addEventListener: jest.fn(), removeEventListener: jest.fn() },
   }) as unknown as React.RefObject<HTMLTextAreaElement>;
+
+/** The registry `isTabLive` reads. A stamped tab keeps its claim only while it keeps reporting,
+ * so a scenario about another tab has to say whether that tab is still open. */
+const markTabLive = (tabId: string): void =>
+  localStorage.setItem(`librechat-live-tab:${tabId}`, JSON.stringify({ seenAt: Date.now() }));
+
+const markTabGone = (tabId: string): void => localStorage.removeItem(`librechat-live-tab:${tabId}`);
 
 beforeEach(() => {
   localStorage.clear();
@@ -527,5 +535,421 @@ describe('useAutoSave — side-by-side pending drafts', () => {
       'pane 0 paste',
     );
     expect(getFilesDraft(`${Constants.NEW_CONVO}:1`)).toEqual({ fileIds: [], pendingPastes: {} });
+  });
+});
+
+describe('useAutoSave — file cache updates', () => {
+  const liveAttachment = {
+    file_id: 'client-temp-id',
+    type: 'image/png',
+    size: 2048,
+    progress: 0.9,
+    preview: 'blob:local-preview',
+    tool_resource: 'file_search',
+    file: new File(['bytes'], 'cat.png', { type: 'image/png' }),
+  };
+  const persistedRecord = {
+    file_id: 'server-file-id',
+    temp_file_id: 'client-temp-id',
+    filename: 'cat.png',
+    filepath: '/images/cat.png',
+    type: 'image/png',
+    bytes: 2048,
+    object: 'file',
+    usage: 0,
+    user: 'user-1',
+    embedded: false,
+  };
+
+  const applySetFiles = (setFiles: jest.Mock, current: Map<string, unknown>) =>
+    setFiles.mock.calls.reduce(
+      (files, [update]) => (typeof update === 'function' ? update(files) : update),
+      current,
+    ) as Map<string, Record<string, unknown>>;
+
+  /**
+   * The file cache is rewritten on every upload and on every attachment an agent
+   * emits mid-run, and this hook restores from it. An empty draft there means the
+   * draft write has not caught up — not that the composer is empty — so clearing
+   * would drop an attachment the user just added (and, with no text typed, leave
+   * them with nothing submittable).
+   */
+  it('leaves live attachments alone when the file cache changes with no saved draft', () => {
+    const setFiles = jest.fn();
+    const files = new Map([['client-temp-id', liveAttachment]]);
+
+    const { rerender } = renderHook(
+      ({ fileList }: { fileList: unknown[] }) => {
+        (useGetFiles as jest.Mock).mockReturnValue({ data: fileList });
+        return useAutoSave({
+          conversationId: 'convo-1',
+          textAreaRef: makeTextAreaRef(),
+          files,
+          setFiles,
+        });
+      },
+      { initialProps: { fileList: [] as unknown[] } },
+    );
+
+    setFiles.mockClear();
+    /** The draft is gone the moment storage refuses or evicts the write — another
+     * tab clearing it, a quota failure, private browsing. The attachment the user
+     * just added is still in the composer either way. */
+    localStorage.clear();
+    act(() => {
+      rerender({ fileList: [persistedRecord] });
+    });
+
+    expect(applySetFiles(setFiles, files).size).toBe(1);
+  });
+
+  /**
+   * The restore also lands on entries the composer still owns, so it has to layer
+   * the persisted record over them rather than replace them: the blob preview the
+   * chip renders from and the tool resource the upload was staged under exist only
+   * locally, and `attached` decides whether removing the chip deletes the file.
+   */
+  it('layers the persisted record over a live attachment instead of replacing it', () => {
+    const setFiles = jest.fn();
+    const files = new Map([['client-temp-id', liveAttachment]]);
+    setFilesDraft('convo-1', { fileIds: ['client-temp-id'], pendingPastes: {} });
+
+    const { rerender } = renderHook(
+      ({ fileList }: { fileList: unknown[] }) => {
+        (useGetFiles as jest.Mock).mockReturnValue({ data: fileList });
+        return useAutoSave({
+          conversationId: 'convo-1',
+          textAreaRef: makeTextAreaRef(),
+          files,
+          setFiles,
+        });
+      },
+      { initialProps: { fileList: [] as unknown[] } },
+    );
+
+    /** Past the mount swap, which clears the composer itself before restoring. */
+    setFiles.mockClear();
+    act(() => {
+      rerender({ fileList: [persistedRecord] });
+    });
+
+    const restored = applySetFiles(setFiles, files).get('client-temp-id');
+    expect(restored).toMatchObject({
+      file_id: 'server-file-id',
+      filepath: '/images/cat.png',
+      progress: 1,
+      preview: 'blob:local-preview',
+      tool_resource: 'file_search',
+      attached: false,
+    });
+    expect(restored?.file).toBeInstanceOf(File);
+  });
+
+  it('marks a file restored from a draft alone as attached', () => {
+    const setFiles = jest.fn();
+    setFilesDraft('convo-1', { fileIds: ['client-temp-id'], pendingPastes: {} });
+
+    renderHook(() => {
+      (useGetFiles as jest.Mock).mockReturnValue({ data: [persistedRecord] });
+      return useAutoSave({
+        conversationId: 'convo-1',
+        textAreaRef: makeTextAreaRef(),
+        files: new Map(),
+        setFiles,
+      });
+    });
+
+    expect(applySetFiles(setFiles, new Map()).get('client-temp-id')).toMatchObject({
+      attached: true,
+      progress: 1,
+    });
+  });
+
+  it('prunes paste provenance ids that left the composer', () => {
+    setFilesDraft('convo-1', {
+      fileIds: ['live-file', 'removed-file'],
+      pendingPastes: {},
+      pastedTextIds: ['live-file', 'removed-file'],
+    });
+    const files = new Map([['live-file', { file_id: 'live-file', progress: 1, size: 0 }]]);
+
+    renderHook(() =>
+      useAutoSave({
+        conversationId: 'convo-1',
+        textAreaRef: makeTextAreaRef(),
+        files,
+        setFiles: jest.fn(),
+      }),
+    );
+
+    expect(getFilesDraft('convo-1').pastedTextIds).toEqual(['live-file']);
+  });
+
+  it('rebuilds paste provenance for a queued upload restored without a draft', () => {
+    /** A paste queued during a run has its pending draft taken by `takeComposerDraft`, so Edit
+     * message later restores the upload into an otherwise empty composer with nothing recording
+     * that it was a generated paste. Unmarked, it reads as a shared attachment: removing it would
+     * not delete it and New Chat would skip it, orphaning the unsent upload. */
+    markPastedTextFile('queued-paste');
+    setFilesDraft('convo-1', { fileIds: ['queued-paste'], pendingPastes: {} });
+    const files = new Map([
+      ['queued-paste', { file_id: 'queued-paste', progress: 1, size: 0, attached: true }],
+    ]);
+
+    renderHook(() =>
+      useAutoSave({
+        conversationId: 'convo-1',
+        textAreaRef: makeTextAreaRef(),
+        files,
+        setFiles: jest.fn(),
+      }),
+    );
+
+    expect(getFilesDraft('convo-1').pastedTextIds).toEqual(['queued-paste']);
+  });
+
+  it('does not restore a files draft another open tab owns', () => {
+    markTabLive('other-tab');
+    mockGetDraft.mockImplementation((id: string) => (id === 'convo-2' ? 'other tab text' : ''));
+    setFilesDraft('convo-2', {
+      fileIds: ['other-tab-file'],
+      pendingPastes: {},
+      tabId: 'other-tab',
+    });
+    const setFiles = jest.fn();
+    const { rerender } = renderHook(
+      ({ conversationId }: { conversationId: string }) =>
+        useAutoSave({
+          conversationId,
+          textAreaRef: makeTextAreaRef(),
+          files: new Map(),
+          setFiles,
+        }),
+      { initialProps: { conversationId: 'convo-1' } },
+    );
+
+    act(() => {
+      rerender({ conversationId: 'convo-2' });
+    });
+
+    expect(mockSetValue).not.toHaveBeenCalledWith('text', 'other tab text');
+    expect(getFilesDraft('convo-2').tabId).toBe('other-tab');
+  });
+  it('keeps autosaving to the pending key while the destination is owned by another live tab', () => {
+    jest.useFakeTimers();
+    markTabLive('other-tab');
+    const savedDrafts = new Map<string, string>();
+    mockGetDraft.mockImplementation((id: string) => savedDrafts.get(id) ?? '');
+    mockSetDraft.mockImplementation(({ id, value }: { id: string; value?: string }) => {
+      if (value != null && value.length > 1) {
+        savedDrafts.set(id, value);
+      }
+    });
+    const textAreaRef = makeTextAreaRef('queued draft');
+    const { rerender, unmount } = renderHook(
+      ({ isSubmitting }: { isSubmitting: boolean }) =>
+        useAutoSave({
+          isSubmitting,
+          conversationId: 'convo-2',
+          textAreaRef,
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      { initialProps: { isSubmitting: true } },
+    );
+
+    setFilesDraft(Constants.PENDING_CONVO, {
+      fileIds: ['queued-file'],
+      pendingPastes: {},
+    });
+    setFilesDraft('convo-2', {
+      fileIds: ['other-tab-file'],
+      pendingPastes: {},
+      tabId: 'other-tab',
+    });
+
+    act(() => {
+      rerender({ isSubmitting: false });
+    });
+
+    const inputListeners = (textAreaRef.current!.addEventListener as jest.Mock).mock.calls.filter(
+      ([event]) => event === 'input',
+    );
+    const inputListener = inputListeners[inputListeners.length - 1][1] as (event: unknown) => void;
+    textAreaRef.current!.value = 'later edit';
+    act(() => {
+      inputListener({ target: { value: 'later edit' } });
+      jest.advanceTimersByTime(50);
+    });
+
+    expect(savedDrafts.get(Constants.PENDING_CONVO)).toBe('later edit');
+
+    unmount();
+    mockSetValue.mockClear();
+    renderHook(() =>
+      useAutoSave({
+        isSubmitting: false,
+        conversationId: 'convo-2',
+        textAreaRef: makeTextAreaRef(),
+        files: new Map(),
+        setFiles: jest.fn(),
+      }),
+    );
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'later edit');
+    jest.useRealTimers();
+  });
+
+  it('leaves an ordinary conversation on its own key when the pending draft is empty', () => {
+    /** Mounting straight onto a conversation reports no previous key, and treating that alone as
+     * the awaited pending transition ran the migration on every such load: the conversation was
+     * put on the pending key and a just-sent attachment came back into the composer. A reload with
+     * real queued work still has to be recognised, so the pending record has to hold something. */
+    mockGetDraft.mockImplementation((id: string) =>
+      id === 'convo-9' ? 'text that belongs to convo-9' : '',
+    );
+
+    renderHook(() =>
+      useAutoSave({
+        isSubmitting: false,
+        conversationId: 'convo-9',
+        textAreaRef: makeTextAreaRef(),
+        files: new Map(),
+        setFiles: jest.fn(),
+      }),
+    );
+
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'text that belongs to convo-9');
+  });
+  it('keeps live attachments when both pending and destination drafts belong to other tabs', () => {
+    markTabLive('pending-owner');
+    markTabLive('destination-owner');
+    setFilesDraft(Constants.PENDING_CONVO, {
+      fileIds: ['pending-tab-file'],
+      pendingPastes: {},
+      tabId: 'pending-owner',
+    });
+    setFilesDraft('conversation-foreign', {
+      fileIds: ['destination-tab-file'],
+      pendingPastes: {},
+      tabId: 'destination-owner',
+    });
+
+    const files = new Map([
+      ['queued-file', { file_id: 'queued-file', progress: 1, size: 1, attached: true }],
+    ]);
+    const setFiles = jest.fn();
+    const { rerender } = renderHook(
+      ({ isSubmitting }: { isSubmitting: boolean }) =>
+        useAutoSave({
+          conversationId: 'conversation-foreign',
+          isSubmitting,
+          textAreaRef: makeTextAreaRef(),
+          files,
+          setFiles,
+        }),
+      { initialProps: { isSubmitting: true } },
+    );
+
+    act(() => {
+      rerender({ isSubmitting: false });
+    });
+
+    const updates = setFiles.mock.calls.map(([update]) =>
+      typeof update === 'function' ? update(new Map()) : update,
+    );
+    expect(updates.some((update) => update.has('queued-file'))).toBe(true);
+  });
+
+  it('does not migrate blocked pending drafts to an unrelated conversation', () => {
+    const pendingTextKey = `${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`;
+    localStorage.setItem(pendingTextKey, encodeBase64('draft for conversation C'));
+    markTabLive('other-tab');
+    (hasInFlightUpload as jest.Mock).mockReturnValue(true);
+    setFilesDraft(Constants.PENDING_CONVO, {
+      fileIds: ['pending-file'],
+      pendingPastes: {
+        'pending-file': { text: 'pending paste', selectionStart: 0 },
+      },
+    });
+    setFilesDraft('conversation-c', {
+      fileIds: ['other-tab-file'],
+      pendingPastes: {},
+      tabId: 'other-tab',
+    });
+
+    const { rerender } = renderHook(
+      ({ conversationId, isSubmitting }: { conversationId: string; isSubmitting: boolean }) =>
+        useAutoSave({
+          conversationId,
+          isSubmitting,
+          textAreaRef: makeTextAreaRef(),
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      {
+        initialProps: {
+          conversationId: 'conversation-c',
+          isSubmitting: true,
+        },
+      },
+    );
+
+    act(() => {
+      rerender({ conversationId: 'conversation-c', isSubmitting: false });
+    });
+    act(() => {
+      rerender({ conversationId: 'conversation-d', isSubmitting: false });
+    });
+
+    expect(localStorage.getItem(pendingTextKey)).toBe(encodeBase64('draft for conversation C'));
+    expect(localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}conversation-d`)).toBeNull();
+    expect(getFilesDraft(Constants.PENDING_CONVO).pendingPastes['pending-file']?.text).toBe(
+      'pending paste',
+    );
+    expect(getFilesDraft('conversation-d')).toEqual({ fileIds: [], pendingPastes: {} });
+    markTabGone('other-tab');
+    act(() => {
+      rerender({ conversationId: 'conversation-c', isSubmitting: false });
+    });
+
+    expect(localStorage.getItem(pendingTextKey)).toBeNull();
+    expect(localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}conversation-c`)).toBe(
+      encodeBase64('draft for conversation C'),
+    );
+    expect(getFilesDraft('conversation-c').pendingPastes['pending-file']?.text).toBe(
+      'pending paste',
+    );
+  });
+  it('restores a files draft whose owning tab has closed', () => {
+    /** A closed tab's id can never be presented again, so without reclaiming it the draft and
+     * the text saved beside it would stay unreachable for the rest of the profile's life. */
+    markTabLive('other-tab');
+    setFilesDraft('convo-2', {
+      fileIds: ['closed-tab-file'],
+      pendingPastes: {},
+      tabId: 'other-tab',
+    });
+    markTabGone('other-tab');
+    mockGetDraft.mockImplementation((id: string) => (id === 'convo-2' ? 'closed tab text' : ''));
+    (useGetFiles as jest.Mock).mockReturnValue({
+      data: [{ ...persistedRecord, file_id: 'closed-tab-file' }],
+    });
+
+    const { rerender } = renderHook(
+      ({ conversationId }: { conversationId: string }) =>
+        useAutoSave({
+          conversationId,
+          textAreaRef: makeTextAreaRef(),
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      { initialProps: { conversationId: 'convo-1' } },
+    );
+
+    act(() => {
+      rerender({ conversationId: 'convo-2' });
+    });
+
+    expect(mockSetValue).toHaveBeenCalledWith('text', 'closed tab text');
   });
 });

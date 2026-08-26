@@ -3,11 +3,14 @@ import { applyModelAwareDefaults, paramSettings } from './parameterSettings';
 import { EModelEndpoint } from './types';
 
 const googleParams = paramSettings[EModelEndpoint.google] as SettingDefinition[];
+const anthropicParams = paramSettings[EModelEndpoint.anthropic] as SettingDefinition[];
 const maxOut = (params: SettingDefinition[]) => params.find((p) => p.key === 'maxOutputTokens');
 const maxContext = (params: SettingDefinition[]) =>
   params.find((p) => p.key === 'maxContextTokens');
 const thinkingBudget = (params: SettingDefinition[]) =>
   params.find((p) => p.key === 'thinkingBudget');
+const hasSetting = (params: SettingDefinition[], key: string) =>
+  params.some((param) => param.key === key);
 
 describe('applyModelAwareDefaults', () => {
   it('resolves the Google maxOutputTokens default for current Gemini models', () => {
@@ -29,13 +32,32 @@ describe('applyModelAwareDefaults', () => {
     expect(maxOut(result)?.default).toBe(32768);
   });
 
-  it('returns settings unchanged for non-Google endpoints', () => {
-    const result = applyModelAwareDefaults(
-      googleParams,
-      EModelEndpoint.anthropic,
-      'gemini-2.5-pro',
-    );
+  it('returns settings unchanged for unrelated endpoints', () => {
+    const result = applyModelAwareDefaults(googleParams, EModelEndpoint.openAI, 'gemini-2.5-pro');
     expect(result).toBe(googleParams);
+  });
+
+  it('keeps prompt-cache controls for future Claude models that support caching', () => {
+    const result = applyModelAwareDefaults(
+      anthropicParams,
+      EModelEndpoint.anthropic,
+      'claude-sonnet-6',
+    );
+
+    expect(hasSetting(result, 'promptCache')).toBe(true);
+    expect(hasSetting(result, 'promptCacheTtl')).toBe(true);
+  });
+
+  it('hides prompt-cache controls for Anthropic models that do not support caching', () => {
+    const result = applyModelAwareDefaults(
+      anthropicParams,
+      EModelEndpoint.anthropic,
+      'claude-3-5-sonnet-latest',
+    );
+
+    expect(hasSetting(result, 'promptCache')).toBe(false);
+    expect(hasSetting(result, 'promptCacheTtl')).toBe(false);
+    expect(hasSetting(result, 'temperature')).toBe(true);
   });
 
   it('returns settings unchanged when no model is provided', () => {

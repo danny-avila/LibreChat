@@ -592,7 +592,7 @@ const loadTools = async ({
           user: safeUser,
           userMCPAuthMap,
           configServers,
-          requestBody: options.req?.body,
+          requestBody: options.requestBody ?? options.req?.body,
           requestScopedConnections,
           res: options.res,
           streamId: options.req?._resumableStreamId || null,

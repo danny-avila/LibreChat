@@ -63,6 +63,9 @@ type ProcessedUpload = {
 export type UploadLifecycleCallbacks = {
   /** Preassigned id so callers can persist recovery before the shared upload queue waits. */
   fileId?: string;
+  /** An attachment being replaced remains in state until the replacement succeeds, but should not
+   * count against this upload's file and total-size limits. */
+  replacesFileId?: string;
   /** Read once the queue and config waits are over, immediately before the batch is written into
    * the shared file state. A `false` return abandons the batch so a delayed upload cannot land in
    * a composer the user has since navigated away from. */
@@ -214,16 +217,23 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
 
   const uploadFile = useUploadFileMutation(
     {
-      onSuccess: (data) => {
-        takeUploadRecovery(data.temp_file_id)?.onSuccess?.(data.temp_file_id);
-        clearUploadTimer(data.temp_file_id);
+      onSuccess: (data, body) => {
+        /** Every client-side handle for this upload — the file map key, the delayed
+         * toast timer, the recovery callbacks — is the id the request was sent with.
+         * `temp_file_id` is the server's echo of it, so trusting the echo turns any
+         * mismatch into a completion update applied to a key that does not exist:
+         * the attachment stays below `progress: 1` and the send button never
+         * re-enables. Reconcile against the id we own. */
+        const fileId = (body.get('file_id') as string | null) ?? data.temp_file_id;
+        takeUploadRecovery(fileId)?.onSuccess?.(fileId);
+        clearUploadTimer(fileId);
         console.log('upload success', data);
         if (agent_id) {
           queryClient.refetchQueries([QueryKeys.agent, agent_id]);
           return;
         }
         updateFileById(
-          data.temp_file_id,
+          fileId,
           {
             progress: 0.9,
             filepath: data.filepath,
@@ -232,17 +242,22 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         );
 
         setTimeout(() => {
-          const cachedBlob = getCachedPreview(data.temp_file_id);
-          if (cachedBlob && data.file_id !== data.temp_file_id) {
+          const cachedBlob = getCachedPreview(fileId);
+          if (cachedBlob && data.file_id !== fileId) {
             cachePreview(data.file_id, cachedBlob);
-            removePreviewEntry(data.temp_file_id);
+            removePreviewEntry(fileId);
           }
           updateFileById(
-            data.temp_file_id,
+            fileId,
             {
               progress: 1,
               file_id: data.file_id,
-              temp_file_id: data.temp_file_id,
+              /** The stored temporary id has to stay the one this entry is keyed
+               * by: removal reads `file_id` and `temp_file_id` off the value and
+               * deletes those keys, and the draft restore correlates the cached
+               * record by the key it saved. Keeping the server's echo here would
+               * leave a chip that Remove deletes server-side but cannot clear. */
+              temp_file_id: fileId,
               filepath: data.filepath,
               type: data.type,
               height: data.height,
@@ -389,15 +404,35 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   ) => {
     const img = new Image();
     img.onload = async () => {
-      extendedFile.width = img.width;
-      extendedFile.height = img.height;
-      extendedFile = {
+      const measuredFile: ExtendedFile = {
         ...extendedFile,
+        width: img.width,
+        height: img.height,
         progress: 0.6,
       };
-      replaceFile(extendedFile);
+      replaceFile(measuredFile);
 
-      await startUpload(extendedFile, uploadLifecycle);
+      await startUpload(measuredFile, uploadLifecycle);
+    };
+    /** The upload only starts once the browser has decoded the image, so a decode
+     * it refuses (unsupported codec, truncated bytes, a revoked object URL) would
+     * otherwise strand the attachment below `progress: 1` — which reads as "still
+     * uploading" and keeps the composer's send button disabled for the rest of the
+     * session, with nothing to click and no error to explain it. Drop the file and
+     * say so instead. */
+    img.onerror = () => {
+      clearUploadTimer(extendedFile.file_id);
+      takeUploadRecovery(extendedFile.file_id)?.onError?.(extendedFile.file_id);
+      deleteFileById(extendedFile.file_id);
+      /** Reservations are released by the render that observes the file in the
+       * shared state, which a decode failing before that render never reaches —
+       * and once the file is gone no later render can either. A leaked one is
+       * merged into every subsequent batch's validation, so re-picking the same
+       * file reads as a duplicate and its size keeps counting against the limit. */
+      uploadScope.recent.delete(extendedFile.file_id);
+      removePreviewEntry(extendedFile.file_id);
+      URL.revokeObjectURL(preview);
+      setError('com_error_files_process');
     };
     img.src = preview;
   };
@@ -419,12 +454,32 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       fileConfig: currentFileConfig,
       endpointType,
     });
+    /** The source remains visible until success, so exclude only its matching entry from this
+     * upload's validation tallies. All other callers validate against the complete file map. */
+    const filesForValidation = (() => {
+      const replacesFileId = uploadLifecycle?.replacesFileId;
+      if (replacesFileId == null || replacesFileId === '') {
+        return existingFiles;
+      }
+      const withoutSource = new Map(existingFiles);
+      for (const [key, existingFile] of existingFiles) {
+        if (
+          key === replacesFileId ||
+          existingFile.file_id === replacesFileId ||
+          existingFile.temp_file_id === replacesFileId
+        ) {
+          withoutSource.delete(key);
+          break;
+        }
+      }
+      return withoutSource;
+    })();
 
     /* Validate files */
     let filesAreValid: boolean;
     try {
       filesAreValid = validateFiles({
-        files: existingFiles,
+        files: filesForValidation,
         fileList,
         setError,
         fileConfig: currentFileConfig,
@@ -579,12 +634,12 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     try {
       batchIsValid =
         validateFileDuplicates({
-          files: existingFiles,
+          files: filesForValidation,
           fileList: processedFileList,
           setError,
         }) &&
         validateFileSizes({
-          files: existingFiles,
+          files: filesForValidation,
           fileList: processedFileList,
           setError,
           endpointFileConfig,

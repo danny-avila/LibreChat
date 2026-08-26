@@ -1,5 +1,6 @@
 import type {
   IThemeAppearance,
+  IThemeBrands,
   IThemeColors,
   IThemeVariables,
   IThemeRGB,
@@ -9,7 +10,6 @@ import type {
 } from './types';
 import { defaultTheme } from './themes/default';
 import { darkTheme } from './themes/dark';
-
 export const THEME_VERSION = 1 as const;
 
 /**
@@ -61,6 +61,26 @@ export const defaultAppearance: IThemeAppearance = Object.freeze({
   motionNormal: '200ms',
 });
 
+export const themeBrandTokens: readonly (keyof IThemeBrands)[] = Object.freeze([
+  'provider-openai',
+  'provider-openai-gpt4',
+  'provider-openai-reasoning',
+  'provider-anthropic',
+  'provider-azure',
+  'provider-bedrock',
+  'provider-foreground',
+]);
+
+export const defaultBrands: IThemeBrands = Object.freeze({
+  'provider-openai': '#19C37D',
+  'provider-openai-gpt4': '#AB68FF',
+  'provider-openai-reasoning': '#000000',
+  'provider-anthropic': '#d09a74',
+  'provider-azure': 'linear-gradient(0.375turn, #61bde2, #4389d0)',
+  'provider-bedrock': '#268672',
+  'provider-foreground': '#ffffff',
+});
+
 export const libreChatTheme: ThemeDefinition = Object.freeze({
   version: THEME_VERSION,
   name: 'librechat',
@@ -68,11 +88,35 @@ export const libreChatTheme: ThemeDefinition = Object.freeze({
     light: { colors: defaultTheme },
     dark: { colors: darkTheme },
   },
+  brands: defaultBrands,
 });
 
 const rgbPattern = /^(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})$/;
 const cssLengthPattern = /^(0|\d*\.?\d+(px|rem|em))$/;
 const cssDurationPattern = /^\d*\.?\d+(ms|s)$/;
+const hexColorPattern = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+function isLinearGradient(value: string): boolean {
+  if (!value.startsWith('linear-gradient(') || /url\s*\(|image-set/i.test(value)) {
+    return false;
+  }
+  let depth = 0;
+  for (let i = 0; i < value.length; i++) {
+    const char = value[i];
+    if (char === '(') {
+      depth += 1;
+    } else if (char === ')') {
+      depth -= 1;
+      if (depth === 0) {
+        return i === value.length - 1;
+      }
+      if (depth < 0) {
+        return false;
+      }
+    }
+  }
+  return false;
+}
 
 const isRGB = (value: unknown): value is string => {
   if (typeof value !== 'string') {
@@ -123,7 +167,7 @@ export function validateThemeDefinition(theme: ThemeDefinition): string[] {
   }
 
   Object.keys(theme).forEach((key) => {
-    if (key !== 'version' && key !== 'name' && key !== 'modes') {
+    if (key !== 'version' && key !== 'name' && key !== 'modes' && key !== 'brands') {
       errors.push(`Unknown theme field: ${key}`);
     }
   });
@@ -193,6 +237,26 @@ export function validateThemeDefinition(theme: ThemeDefinition): string[] {
     }
   });
 
+  if (theme.brands !== undefined && !isPlainRecord(theme.brands)) {
+    errors.push('Theme brands must be an object');
+  } else {
+    Object.entries(theme.brands ?? {}).forEach(([key, value]) => {
+      if (!themeBrandTokens.includes(key as keyof IThemeBrands)) {
+        errors.push(`Unknown brand token: ${key}`);
+        return;
+      }
+      const isColorOnly = key === 'provider-foreground';
+      const isValidBrand =
+        typeof value === 'string' &&
+        (isColorOnly
+          ? hexColorPattern.test(value)
+          : hexColorPattern.test(value) || isLinearGradient(value));
+      if (value !== undefined && !isValidBrand) {
+        errors.push(`Invalid brand value for ${key}: ${value}`);
+      }
+    });
+  }
+
   return errors;
 }
 
@@ -217,6 +281,7 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
     mode,
     colors: { ...baseColors, ...customColors, ...composerHoverFallback } as Required<IThemeRGB>,
     appearance: { ...defaultAppearance, ...definition?.appearance },
+    brands: { ...defaultBrands, ...theme.brands },
   };
 }
 

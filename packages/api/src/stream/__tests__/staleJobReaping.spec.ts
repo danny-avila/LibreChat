@@ -34,6 +34,35 @@ describe('InMemoryJobStore - stale running-job failsafe', () => {
     await store.destroy();
   });
 
+  it('retains a terminal schedule job until reconciliation releases it', async () => {
+    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+    const store = new InMemoryJobStore({ ttlAfterComplete: 0 });
+
+    const job = await store.createJob('scheduled-run', 'u1', 'scheduled-run', undefined, {
+      scheduleId: 'schedule-1',
+      preserveForScheduleReconcile: true,
+    });
+    await store.updateJob(
+      job.streamId,
+      {
+        status: 'complete',
+        completedAt: Date.now(),
+        scheduleOutcome: 'success',
+      },
+      job.createdAt,
+    );
+
+    expect(await store.cleanup()).toBe(0);
+    expect(await store.hasJob(job.streamId)).toBe(true);
+
+    await store.updateJob(job.streamId, { preserveForScheduleReconcile: false }, job.createdAt);
+
+    expect(await store.cleanup()).toBe(1);
+    expect(await store.hasJob(job.streamId)).toBe(false);
+
+    await store.destroy();
+  });
+
   it('does not reap a running job with recent activity even if created long ago', async () => {
     const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
     const store = new InMemoryJobStore({ staleJobTimeout: 1000 });

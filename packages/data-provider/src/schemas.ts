@@ -1,12 +1,8 @@
 import { z } from 'zod';
-import type {
-  TMessageContentParts,
-  AgentSubagentGraph,
-  FunctionToolCall,
-  FunctionTool,
-} from './types/assistants';
+import type { TMessageContentParts, AgentSubagentGraph, FunctionTool } from './types/assistants';
 import type { SearchResultData } from './types/web';
 import type { TFile } from './types/files';
+import { userSubmittedMessageFieldPathSchema } from './filters';
 import { TFeedback, feedbackSchema } from './feedback';
 import { Tools } from './types/assistants';
 
@@ -390,7 +386,9 @@ export const ImageVisionTool: FunctionTool = {
   },
 };
 
-export const isImageVisionTool = (tool: FunctionTool | FunctionToolCall) =>
+/** Structural on purpose: accepts assistants tools/tool calls and agents function tool
+ *  calls alike — the check only ever reads `type` and `function.name`. */
+export const isImageVisionTool = (tool: { type?: string; function?: { name?: string } }) =>
   tool.type === 'function' && tool.function?.name === ImageVisionTool.function?.name;
 
 export const openAISettings = {
@@ -810,6 +808,9 @@ export const tPluginSchema = z.object({
   chatMenu: z.boolean().optional(),
   isButton: z.boolean().optional(),
   toolkit: z.boolean().optional(),
+  /** Raw upstream tool name when the model-facing key stripped a redundant
+   *  server-name prefix — proves upstream identity for legacy id migration. */
+  serverToolName: z.string().optional(),
 });
 
 export type TPlugin = z.infer<typeof tPluginSchema>;
@@ -845,6 +846,12 @@ export const tMessageSchema = z.object({
   /** @deprecated */
   generation: z.string().nullable().optional(),
   isCreatedByUser: z.boolean(),
+  /** True when the complete stored row came from outside the model. */
+  isUserSubmitted: z.boolean().optional(),
+  /** JSON pointers to caller-authored fields in an otherwise mixed model response. */
+  userSubmittedPaths: z.array(z.string().startsWith('/')).optional(),
+  /** Exact HITL message-field identity for caller-authored values stored in mixed responses. */
+  userSubmittedMessageFieldPaths: z.array(userSubmittedMessageFieldPathSchema).optional(),
   isTemporary: z.boolean().optional(),
   expiredAt: z.string().nullable().optional(),
   error: z.boolean().optional(),
@@ -940,10 +947,17 @@ export type UIResource = {
   [key: string]: unknown;
 };
 
+export type WorkspaceChange = {
+  profile: 'stateful';
+  operation: 'created' | 'updated';
+  path: string;
+};
+
 export type TAttachmentMetadata = {
   type?: Tools;
   messageId: string;
   toolCallId: string;
+  workspaceChange?: WorkspaceChange;
   [Tools.memory]?: MemoryArtifact;
   [Tools.ui_resources]?: UIResource[];
   [Tools.web_search]?: SearchResultData;

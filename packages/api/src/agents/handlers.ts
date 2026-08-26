@@ -2,6 +2,7 @@ import yaml from 'js-yaml';
 import { Types } from 'mongoose';
 import { GraphEvents, Constants } from '@librechat/agents';
 import { logger, normalizeSkillFrontmatterKeys } from '@librechat/data-schemas';
+import { hasActivePiiFields, hasActivePiiPatterns } from 'librechat-data-provider';
 import type {
   LCTool,
   EventHandler,
@@ -11,16 +12,19 @@ import type {
   ToolExecuteResult,
   ToolExecuteBatchRequest,
   SubagentTaskConfig,
+  CallerCapabilityProjectionSnapshot,
 } from '@librechat/agents';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
+import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
 import type { ValidationIssue } from '@librechat/data-schemas';
-import type { CodeEnvRef } from 'librechat-data-provider';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { CodeExecutionContext } from './execution';
+import type { TextContentFragment } from '~/protection';
 import type { ServerRequest } from '~/types';
 import {
   backgroundTaskRegistry,
   runCheckBackgroundTask,
+  getBackgroundTaskSnapshot,
   claimBackgroundArtifact,
   restoreBackgroundArtifact,
   getBackgroundCodeDelivery,
@@ -35,22 +39,40 @@ import {
   RUN_IN_BACKGROUND_ARG,
 } from './background';
 import {
+  contentFilterUninspectableResponse,
+  extractFileContent,
+  extractSkillContent,
+  extractToolArgumentContent,
+  hasActiveFileFieldPolicy,
+  getContentTraversalFragments,
+  getBlockedUninspectableFileField,
+  inspectContent,
+  isContentTraversalLimitError,
+} from '~/protection';
+import {
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
 } from './tools';
 import {
+  ContentFilterError,
+  contentFilterModelBoundBlockResponse,
+  isContentFilterError,
+} from '~/middleware/contentFilter';
+import {
   hasIntentArg,
   stripIntentArg,
   stripIntentLabelsFromToolDefinitions,
   INTENT_ARG,
 } from './intent';
-import { logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
+import { getSafeErrorMetadata, logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
+import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
+import { instrumentPtcToolMap } from './ptc';
 import { markSandboxReady } from './prewarm';
 
 export interface ToolEndCallbackData {
@@ -78,6 +100,10 @@ export interface ToolExecuteOptions {
   loadTools: (
     toolNames: string[],
     agentId?: string,
+    /** Immutable run configuration available before deferred tools connect. */
+    configurable?: Record<string, unknown>,
+    /** SDK-owned live caller capability projection for this agent context. */
+    callerCapabilityProjection?: CallerCapabilityProjectionSnapshot,
   ) => Promise<{
     loadedTools: StructuredToolInterface[];
     /** Additional configurable properties to merge (e.g., userMCPAuthMap) */
@@ -112,6 +138,13 @@ export interface ToolExecuteOptions {
   /** Emits an `attachment` SSE event on the current request's live stream. */
   emitAttachment?: (attachment: unknown) => void;
   /**
+   * Emits an `on_ptc_tool_call` SSE event for one inner tool invocation made
+   * by a programmatic tool-calling program. Absent on transports that don't
+   * carry the LibreChat step stream (Open Responses), which simply skips the
+   * instrumentation.
+   */
+  emitPtcProgress?: (event: PtcToolCallEvent) => void;
+  /**
    * Loads a skill by name with ACL constraint (returns full body for injection).
    *
    * `options.preferModelInvocable` (Phase 6): on a same-name collision,
@@ -127,6 +160,8 @@ export interface ToolExecuteOptions {
   ) => Promise<{
     body: string;
     name: string;
+    description?: string;
+    frontmatter?: Record<string, unknown>;
     _id: Types.ObjectId;
     /** Monotonic counter on the skill record. Threaded into
      *  `codeEnvRef.version` so codeapi's sessionKey scopes the cache
@@ -153,6 +188,8 @@ export interface ToolExecuteOptions {
   getAuthorSkillByName?: (params: { req: ServerRequest; name: string }) => Promise<{
     body: string;
     name: string;
+    description?: string;
+    frontmatter?: Record<string, unknown>;
     _id: Types.ObjectId;
     version: number;
     fileCount: number;
@@ -654,6 +691,223 @@ function errorResult(tc: ToolCallRequest, errorMessage: string): ToolExecuteResu
     content: '',
     errorMessage,
   };
+}
+
+function modelBoundContentFilterErrorMessage(
+  finding: Parameters<typeof contentFilterModelBoundBlockResponse>[0],
+): string {
+  return JSON.stringify(contentFilterModelBoundBlockResponse(finding));
+}
+
+function contentFilterErrorResult(
+  tc: ToolCallRequest,
+  finding: Parameters<typeof contentFilterModelBoundBlockResponse>[0],
+): ToolExecuteResult {
+  return errorResult(tc, modelBoundContentFilterErrorMessage(finding));
+}
+
+function filteredContentResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  fragments: Iterable<TextContentFragment>,
+): ToolExecuteResult | null {
+  const filters = req?.config?.filters;
+  if (filters == null) {
+    return null;
+  }
+  const finding = inspectContent(fragments, { filters });
+  return finding == null ? null : contentFilterErrorResult(tc, finding);
+}
+
+function filteredToolArgumentsResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  args: unknown,
+): ToolExecuteResult | null {
+  const pii = req?.config?.filters?.toolArguments?.pii;
+  if (!hasActivePiiFields(pii, ['name', 'arguments'])) {
+    return null;
+  }
+  const inspectName = pii?.fields == null || pii.fields.includes('name');
+  const inspectArguments = pii?.fields == null || pii.fields.includes('arguments');
+  try {
+    return filteredContentResult(
+      tc,
+      req,
+      extractToolArgumentContent({
+        ...(inspectName && { name: tc.name }),
+        ...(inspectArguments && { arguments: args }),
+      }),
+    );
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    return (
+      filteredContentResult(tc, req, getContentTraversalFragments(error)) ??
+      errorResult(tc, error.body.message)
+    );
+  }
+}
+
+/**
+ * Inner tool names the `name` PII policy would block. `filteredToolArgumentsResult`
+ * inspects `tc.name` for direct calls, but inner calls bypass it entirely — and
+ * the trace event carries the name unconditionally, so without this the trace
+ * becomes the disclosure path the policy exists to close. The eligible map holds
+ * a handful of names, each inspected once per PTC call.
+ */
+function collectFilteredPtcToolNames(
+  names: Iterable<string>,
+  req: ServerRequest | undefined,
+): ReadonlySet<string> | undefined {
+  const filters = req?.config?.filters;
+  if (filters == null || !hasActivePiiFields(filters.toolArguments?.pii, ['name'])) {
+    return undefined;
+  }
+  const blocked = new Set<string>();
+  for (const name of names) {
+    try {
+      if (inspectContent(extractToolArgumentContent({ name }), { filters }) != null) {
+        blocked.add(name);
+      }
+    } catch {
+      /* An un-inspectable name is treated as blocked: fail closed. */
+      blocked.add(name);
+    }
+  }
+  return blocked.size > 0 ? blocked : undefined;
+}
+
+function filteredToolOutputResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  output: unknown,
+): ToolExecuteResult | null {
+  const pii = req?.config?.filters?.toolArguments?.pii;
+  if (!hasActivePiiFields(pii, ['output'])) {
+    return null;
+  }
+  try {
+    return filteredContentResult(tc, req, extractToolArgumentContent({ name: tc.name, output }));
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    return (
+      filteredContentResult(tc, req, getContentTraversalFragments(error)) ??
+      errorResult(tc, error.body.message)
+    );
+  }
+}
+
+function filteredSkillResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  input: Parameters<typeof extractSkillContent>[0],
+): ToolExecuteResult | null {
+  const pii = req?.config?.filters?.skills?.pii;
+  if (!hasActivePiiPatterns(pii)) {
+    return null;
+  }
+  const selectedFields = new Set<string>(pii?.fields ?? []);
+  const selected = (field: string): boolean => pii?.fields == null || selectedFields.has(field);
+  const projected = {
+    ...(selected('name') && { name: input?.name }),
+    ...(selected('display_title') && { displayTitle: input?.displayTitle }),
+    ...(selected('description') && { description: input?.description }),
+    ...(selected('category') && { category: input?.category }),
+    ...(selected('instructions') && {
+      body: input?.body,
+      instructions: input?.instructions,
+    }),
+    ...(selected('imported_text') && { importedText: input?.importedText }),
+    ...(selected('frontmatter') && { frontmatter: input?.frontmatter }),
+    ...((selected('file_name') || selected('file_text')) && {
+      files: input?.files?.map((file) => ({
+        ...(selected('file_name') && { name: file?.name, filename: file?.filename }),
+        ...(selected('file_text') && { text: file?.text, content: file?.content }),
+      })),
+    }),
+  };
+  return filteredContentResult(tc, req, extractSkillContent(projected));
+}
+
+function isFilteredSkillProjection(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  input: Parameters<typeof extractSkillContent>[0],
+): boolean {
+  try {
+    return filteredSkillResult(tc, req, input) != null;
+  } catch (error) {
+    if (isContentTraversalLimitError(error)) {
+      return true;
+    }
+    throw error;
+  }
+}
+
+function filteredFileNameResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  filename: string,
+): ToolExecuteResult | null {
+  if (!hasActiveFileFieldPolicy(req?.config?.filters, ['name'])) {
+    return null;
+  }
+  return filteredContentResult(tc, req, extractFileContent({ filename }));
+}
+
+function uninspectableFileResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+): ToolExecuteResult | null {
+  const field = getBlockedUninspectableFileField(req?.config?.filters, [
+    'content',
+    'extracted_text',
+  ]);
+  return field == null ? null : errorResult(tc, contentFilterUninspectableResponse(field).message);
+}
+
+function filteredBinaryFileResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  filename: string,
+): ToolExecuteResult | null {
+  return filteredFileNameResult(tc, req, filename) ?? uninspectableFileResult(tc, req);
+}
+
+function filteredFileResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  filename: string,
+  content: string,
+): ToolExecuteResult | null {
+  const filters = req?.config?.filters;
+  if (!hasActiveFileFieldPolicy(filters, ['name', 'content', 'extracted_text'])) {
+    return null;
+  }
+  const filteredName = filteredFileNameResult(tc, req, filename);
+  if (filteredName != null) {
+    return filteredName;
+  }
+  const inspectRawContent = hasActiveFileFieldPolicy(filters, ['content']);
+  const inspectExtractedText = hasActiveFileFieldPolicy(filters, ['extracted_text']);
+  if (!inspectRawContent && !inspectExtractedText) {
+    return null;
+  }
+  if (looksBinary(content)) {
+    return uninspectableFileResult(tc, req);
+  }
+  return filteredContentResult(
+    tc,
+    req,
+    extractFileContent({
+      ...(inspectRawContent && { content }),
+      ...(inspectExtractedText && { extractedText: content }),
+    }),
+  );
 }
 
 function successResult(
@@ -1474,17 +1728,9 @@ function buildImageArtifactResult(
   };
 }
 
-/**
- * True when the first chunk of a string contains a NUL byte. Used as a
- * post-fetch safety net for files whose extension didn't match the
- * blocklist (no extension, novel format, etc.) — sniffs `cat` stdout to
- * avoid ever forwarding mangled bytes to the LLM. 8KB is the same
- * window the skill-file path uses; enough for any reasonable magic
- * number while bounded enough to stay cheap.
- */
+/** True when bounded authored or fetched content contains a NUL byte. */
 function looksBinary(content: string): boolean {
-  const limit = Math.min(content.length, 8192);
-  for (let i = 0; i < limit; i++) {
+  for (let i = 0; i < content.length; i++) {
     if (content.charCodeAt(i) === 0) return true;
   }
   return false;
@@ -1509,6 +1755,11 @@ async function handleSandboxImageRead(
   codeExecutionContext?: CodeExecutionContext,
   onSuccess?: () => void,
 ): Promise<ToolExecuteResult> {
+  const filtered = filteredBinaryFileResult(tc, req, filePath);
+  if (filtered != null) {
+    return filtered;
+  }
+
   const { readSandboxImage } = options;
   const binaryHint = (): ToolExecuteResult => ({
     toolCallId: tc.id,
@@ -1601,6 +1852,10 @@ async function handleSandboxFileFallback(
   if (SANDBOX_IMAGE_EXTENSIONS.has(ext)) {
     return handleSandboxImageRead(tc, filePath, ext, options, req, codeExecutionContext, onSuccess);
   }
+  const filteredName = filteredFileNameResult(tc, req, filePath);
+  if (filteredName != null) {
+    return filteredName;
+  }
   if (BINARY_EXTENSIONS_NEVER_READABLE.has(ext)) {
     return {
       toolCallId: tc.id,
@@ -1637,6 +1892,10 @@ async function handleSandboxFileFallback(
         errorMessage: `Failed to read "${filePath}" from the code-execution sandbox. Try \`bash_tool\` (e.g. \`cat ${filePath}\`).`,
       };
     }
+    const filtered = filteredFileResult(tc, req, filePath, result.content);
+    if (filtered != null) {
+      return filtered;
+    }
     if (looksBinary(result.content)) {
       return {
         toolCallId: tc.id,
@@ -1672,7 +1931,7 @@ async function handleSandboxFileFallback(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger.warn(`[handleReadFileCall] Sandbox fallback failed for "${filePath}": ${message}`);
+    logger.warn('[handleReadFileCall] Sandbox fallback failed', getSafeErrorMetadata(error));
     return {
       toolCallId: tc.id,
       status: 'error',
@@ -1832,7 +2091,7 @@ async function loadSandboxTextForAuthoring({
       return { status: 'missing' };
     }
     const message = getThrownValueMessage(error);
-    logger.warn(`[file_authoring] Sandbox read failed for "${filePath}": ${message}`);
+    logger.warn('[file_authoring] Sandbox read failed', getSafeErrorMetadata(error));
     return {
       status: 'error',
       message: `Error reading "${filePath}" from the code-execution sandbox: ${message}.`,
@@ -1867,6 +2126,19 @@ async function writeSandboxTextForAuthoring({
       `Sandbox file writing is not configured. Use \`bash_tool\` to write "${filePath}".`,
     );
   }
+  const filtered = filteredFileResult(tc, req, filePath, content);
+  if (filtered != null) {
+    return filtered;
+  }
+  let diff =
+    oldContent !== undefined ? createUnifiedDiff(filePath, oldContent, content) : undefined;
+  if (
+    diff &&
+    (filteredFileResult(tc, req, filePath, oldContent ?? '') != null ||
+      filteredFileResult(tc, req, filePath, diff) != null)
+  ) {
+    diff = undefined;
+  }
   const ctx = sandboxSessionContext(tc, sandboxContext);
   let writeResult: Awaited<ReturnType<NonNullable<ToolExecuteOptions['writeSandboxFile']>>>;
   try {
@@ -1880,7 +2152,7 @@ async function writeSandboxTextForAuthoring({
     });
   } catch (error) {
     const message = getThrownValueMessage(error);
-    logger.warn(`[file_authoring] Sandbox write failed for "${filePath}": ${message}`);
+    logger.warn('[file_authoring] Sandbox write failed', getSafeErrorMetadata(error));
     return errorResult(
       tc,
       `Error writing "${filePath}" to the code-execution sandbox: ${message}.`,
@@ -1890,8 +2162,6 @@ async function writeSandboxTextForAuthoring({
     return errorResult(tc, `Failed to write "${filePath}" to the code-execution sandbox.`);
   }
 
-  const diff =
-    oldContent !== undefined ? createUnifiedDiff(filePath, oldContent, content) : undefined;
   const action = created ? 'Created' : 'Updated';
   const summary = `${action} ${filePath} (${content.length} chars).`;
   return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {
@@ -2467,6 +2737,16 @@ async function writeSkillMd({
   if (structured.error) {
     return errorResult(tc, structured.error);
   }
+  const parsedContent = parseSkillMdUpdate(content);
+  const filtered = filteredSkillResult(tc, req, {
+    name: skillName,
+    description: parsedContent.description,
+    body: content,
+    frontmatter: structured.frontmatter,
+  });
+  if (filtered != null) {
+    return filtered;
+  }
 
   if (!skill) {
     const createDenied = await ensureCanCreateSkill(tc, options, req);
@@ -2480,17 +2760,20 @@ async function writeSkillMd({
     if (!author) {
       return errorResult(tc, 'Authentication required to create a skill.');
     }
-    const parsed = parseSkillMdUpdate(content);
     let result: Awaited<ReturnType<NonNullable<ToolExecuteOptions['createSkill']>>>;
     try {
       result = await options.createSkill({
         name: skillName,
-        description: parsed.description,
+        description: parsedContent.description,
         body: content,
-        ...(parsed.frontmatter !== undefined ? { frontmatter: parsed.frontmatter } : {}),
+        ...(parsedContent.frontmatter !== undefined
+          ? { frontmatter: parsedContent.frontmatter }
+          : {}),
         author: author.author,
         authorName: author.authorName,
-        ...(parsed.alwaysApply !== undefined ? { alwaysApply: parsed.alwaysApply } : {}),
+        ...(parsedContent.alwaysApply !== undefined
+          ? { alwaysApply: parsedContent.alwaysApply }
+          : {}),
         ...(author.tenantId ? { tenantId: author.tenantId } : {}),
       });
     } catch (error) {
@@ -2540,15 +2823,31 @@ async function writeSkillMd({
   if (!options.updateSkill) {
     return errorResult(tc, 'Skill updating is not configured.');
   }
-  const parsedUpdate = parseSkillMdUpdate(content);
+  let diff = createUnifiedDiff(`${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`, skill.body, content);
+  if (
+    diff &&
+    (isFilteredSkillProjection(tc, req, {
+      name: skill.name,
+      description: skill.description,
+      body: skill.body,
+      frontmatter: skill.frontmatter,
+    }) ||
+      isFilteredSkillProjection(tc, req, { body: diff }))
+  ) {
+    diff = '';
+  }
   const result = await options.updateSkill({
     id: skill._id.toString(),
     expectedVersion: skill.version,
     update: {
       body: content,
-      description: parsedUpdate.description,
-      ...(parsedUpdate.frontmatter !== undefined ? { frontmatter: parsedUpdate.frontmatter } : {}),
-      ...(parsedUpdate.alwaysApply !== undefined ? { alwaysApply: parsedUpdate.alwaysApply } : {}),
+      description: parsedContent.description,
+      ...(parsedContent.frontmatter !== undefined
+        ? { frontmatter: parsedContent.frontmatter }
+        : {}),
+      ...(parsedContent.alwaysApply !== undefined
+        ? { alwaysApply: parsedContent.alwaysApply }
+        : {}),
     },
   });
   if (result.status === 'conflict') {
@@ -2561,11 +2860,6 @@ async function writeSkillMd({
     return errorResult(tc, `Skill "${skillName}" not found or not accessible.`);
   }
 
-  const diff = createUnifiedDiff(
-    `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`,
-    skill.body,
-    content,
-  );
   const summary = `Updated ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).`;
   const surfacedWarnings = surfaceSkillAuthoringWarnings(result.warnings);
   const summaryWithWarnings = `${summary}${surfacedWarnings?.contentSuffix ?? ''}`;
@@ -2620,6 +2914,32 @@ async function writeBundledSkillFile({
   if (staleDenied) {
     return staleDenied;
   }
+  const skillFiltered = filteredSkillResult(tc, req, {
+    files: [{ filename: displayPath, content }],
+  });
+  if (skillFiltered != null) {
+    return skillFiltered;
+  }
+  const fileFiltered = filteredFileResult(tc, req, displayPath, content);
+  if (fileFiltered != null) {
+    return fileFiltered;
+  }
+
+  let diff =
+    oldContent !== undefined ? createUnifiedDiff(displayPath, oldContent, content) : undefined;
+  if (
+    diff &&
+    (isFilteredSkillProjection(tc, req, {
+      files: [{ filename: displayPath, content: oldContent }],
+    }) ||
+      filteredFileResult(tc, req, displayPath, oldContent ?? '') != null ||
+      isFilteredSkillProjection(tc, req, {
+        files: [{ filename: displayPath, content: diff }],
+      }) ||
+      filteredFileResult(tc, req, displayPath, diff) != null)
+  ) {
+    diff = undefined;
+  }
 
   await options.saveSkillFileContent({
     req,
@@ -2628,8 +2948,6 @@ async function writeBundledSkillFile({
     content,
     mimeType: guessMimeType(relativePath),
   });
-  const diff =
-    oldContent !== undefined ? createUnifiedDiff(displayPath, oldContent, content) : undefined;
   const action = created ? 'Created' : 'Updated';
   const summary = `${action} ${displayPath} (${content.length} chars).`;
   return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {
@@ -3303,6 +3621,15 @@ async function handleReadFileCall(
         errorMessage: `SKILL.md is empty for skill "${skillName}"`,
       };
     }
+    const filtered = filteredSkillResult(tc, req, {
+      name: skill.name,
+      description: skill.description,
+      body: skill.body,
+      frontmatter: skill.frontmatter,
+    });
+    if (filtered != null) {
+      return filtered;
+    }
     return {
       toolCallId: tc.id,
       status: 'success',
@@ -3337,6 +3664,13 @@ async function handleReadFileCall(
     };
   }
 
+  const fileFiltered = IMAGE_MIMES.has(file.mimeType)
+    ? filteredBinaryFileResult(tc, req, args.path)
+    : filteredFileNameResult(tc, req, args.path);
+  if (fileFiltered != null) {
+    return fileFiltered;
+  }
+
   // Known binary — serve images as artifacts, others as metadata
   if (file.isBinary === true) {
     if (IMAGE_MIMES.has(file.mimeType) && file.bytes <= MAX_BINARY_BYTES) {
@@ -3352,6 +3686,16 @@ async function handleReadFileCall(
 
   // Cached text content
   if (file.isBinary !== true && file.content != null && file.content !== '') {
+    const skillFiltered = filteredSkillResult(tc, req, {
+      files: [{ filename: args.path, content: file.content }],
+    });
+    if (skillFiltered != null) {
+      return skillFiltered;
+    }
+    const fileFiltered = filteredFileResult(tc, req, args.path, file.content);
+    if (fileFiltered != null) {
+      return fileFiltered;
+    }
     return {
       toolCallId: tc.id,
       status: 'success',
@@ -3471,6 +3815,16 @@ async function handleReadFileCall(
     }
 
     const text = buffer.toString('utf-8');
+    const skillFiltered = filteredSkillResult(tc, req, {
+      files: [{ filename: args.path, content: text }],
+    });
+    if (skillFiltered != null) {
+      return skillFiltered;
+    }
+    const fileFiltered = filteredFileResult(tc, req, args.path, text);
+    if (fileFiltered != null) {
+      return fileFiltered;
+    }
 
     // Cache text on first read (skill files are immutable)
     if (file.content == null && updateSkillFileContent && buffer.length <= MAX_CACHE_BYTES) {
@@ -3583,6 +3937,15 @@ async function handleSkillToolCall(
   if (args.args) {
     body = body.replace(/\$ARGUMENTS/g, args.args);
   }
+  const filtered = filteredSkillResult(tc, req, {
+    name: skill.name,
+    description: skill.description,
+    body,
+    frontmatter: skill.frontmatter,
+  });
+  if (filtered != null) {
+    return filtered;
+  }
 
   const injectedMessages: InjectedMessage[] = [buildSkillPrimeMessage({ name: skill.name, body })];
 
@@ -3653,6 +4016,11 @@ async function handleSkillToolCall(
         };
       }
     } catch (error) {
+      if (isContentFilterError(error)) {
+        return error instanceof ContentFilterError
+          ? errorResult(tc, modelBoundContentFilterErrorMessage(error.body))
+          : errorResult(tc, error.body.message);
+      }
       logger.error(
         `[handleSkillToolCall] Failed to prime files for skill "${args.skillName}":`,
         error instanceof Error ? error.message : error,
@@ -3819,12 +4187,25 @@ function buildToolCallConfig(
 }
 
 export function createToolExecuteHandler(options: ToolExecuteOptions): EventHandler {
-  const { loadTools, toolEndCallback, persistBackgroundCodeResult, emitAttachment, subagentTasks } =
-    options;
+  const {
+    loadTools,
+    toolEndCallback,
+    persistBackgroundCodeResult,
+    emitAttachment,
+    emitPtcProgress,
+    subagentTasks,
+  } = options;
 
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
       const { toolCalls, agentId, configurable, metadata, resolve, reject } = data;
+      const callerCapabilityProjection = resolveCallerCapabilityProjectionSnapshot(
+        (
+          data as ToolExecuteBatchRequest & {
+            callerCapabilityProjection?: unknown;
+          }
+        ).callerCapabilityProjection,
+      );
       /** Optional per-call channel (agents SDK > 3.2.33); cast keeps older
        * installed SDK typings compiling until the release lands. */
       const onResult = (
@@ -3847,13 +4228,37 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
       try {
         await runOutsideTracing(async () => {
           try {
-            const toolNames = [...new Set(toolCalls.map((tc: ToolCallRequest) => tc.name))];
+            const sourceConfigurable = configurable as Record<string, unknown> | undefined;
+            const sourceReq = sourceConfigurable?.req as ServerRequest | undefined;
+            const preloadedNameBlocks = new Map<ToolCallRequest, ToolExecuteResult>();
+            const allowedToolCalls: ToolCallRequest[] = [];
+            for (const tc of toolCalls) {
+              const filteredName = filteredToolArgumentsResult(tc, sourceReq, undefined);
+              if (filteredName != null) {
+                preloadedNameBlocks.set(tc, filteredName);
+              } else {
+                allowedToolCalls.push(tc);
+              }
+            }
+            if (allowedToolCalls.length === 0) {
+              resolve(
+                toolCalls.map((tc) =>
+                  reportResult(
+                    preloadedNameBlocks.get(tc) ??
+                      errorResult(tc, 'Submitted tool name was blocked.'),
+                  ),
+                ),
+              );
+              return;
+            }
+            const toolNames = [...new Set(allowedToolCalls.map((tc) => tc.name))];
             const { loadedTools, configurable: toolConfigurable } = await loadTools(
               toolNames,
               agentId,
+              sourceConfigurable,
+              callerCapabilityProjection,
             );
             const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
-            const sourceConfigurable = configurable as Record<string, unknown> | undefined;
             const loadedConfigurable = toolConfigurable as Record<string, unknown> | undefined;
             const mergedConfigurable = mergeToolConfigurables(
               sourceConfigurable,
@@ -3926,15 +4331,26 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                *  model a side effect is in flight that never executed. */
               const tool = toolMap.get(tc.name);
               if (!tool) {
-                return {
+                const missingToolResult: ToolExecuteResult = {
                   toolCallId: tc.id,
                   status: 'error' as const,
                   content: '',
                   errorMessage: `Tool ${tc.name} not found`,
                 };
+                return (
+                  filteredToolOutputResult(tc, backgroundReq, {
+                    errorMessage: missingToolResult.errorMessage,
+                  }) ?? missingToolResult
+                );
               }
               const isCodeCall = isCodeSessionAwareToolCall(tc.name, mergedConfigurable);
               const harvestEnabled = isCodeCall && persistBackgroundCodeResult != null;
+              const strippedArgs = stripIntentForInvoke(stripRunInBackgroundArg(tc.args), tool);
+              const normalizedArgs = normalizeToolInvokeArgs(strippedArgs, tool);
+              const filtered = filteredToolArgumentsResult(tc, backgroundReq, normalizedArgs);
+              if (filtered != null) {
+                return filtered;
+              }
               const created = backgroundTaskRegistry.create({
                 userId: backgroundUserId,
                 conversationId: backgroundConversationId,
@@ -3957,7 +4373,6 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               }
               const { task, isNew } = created;
               if (isNew) {
-                const strippedArgs = stripIntentForInvoke(stripRunInBackgroundArg(tc.args), tool);
                 /** Persists the settled result onto the dispatch turn's message
                  *  (patch the tool-call part's output, persist generated files,
                  *  append attachments), so a backgrounded code call reads like a
@@ -4004,16 +4419,27 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         );
                         return;
                       }
-                      const attachments = persisted.attachments;
-                      if (attachments != null && attachments.length > 0) {
-                        backgroundTaskRegistry.attachHarvest(
+                      backgroundTaskRegistry.finishHarvest(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        persisted.attachments,
+                      );
+                    } catch (persistError) {
+                      if (isContentFilterError(persistError)) {
+                        backgroundTaskRegistry.blockArtifact(
                           backgroundUserId,
                           backgroundConversationId,
                           task.id,
-                          attachments,
+                          persistError instanceof ContentFilterError
+                            ? modelBoundContentFilterErrorMessage(persistError.body)
+                            : persistError.body.message,
                         );
+                        logger.warn(
+                          `[background] Generated code output for task ${task.id} was blocked by content policy.`,
+                        );
+                        return;
                       }
-                    } catch (persistError) {
                       logger.warn(
                         `[background] Failed to persist code result for task ${task.id}:`,
                         persistError,
@@ -4029,7 +4455,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 };
                 void (async () => {
                   try {
-                    const result = (await tool.invoke(normalizeToolInvokeArgs(strippedArgs, tool), {
+                    const result = (await tool.invoke(normalizedArgs, {
                       /** Full invoke config (not just identity): a detached
                        *  code call still needs `session_id`/`_injected_files`/
                        *  `_runtime_session_hint` or it runs fileless on the
@@ -4045,6 +4471,26 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       isCodeCall && typeof result.content === 'string'
                         ? cleanCodeToolOutput(result.content)
                         : result.content;
+                    const filteredOutput = filteredToolOutputResult(tc, backgroundReq, {
+                      content,
+                      artifact: result.artifact,
+                    });
+                    if (filteredOutput != null) {
+                      const policyError =
+                        filteredOutput.errorMessage ?? 'Submitted content was blocked.';
+                      const errorOutput = isCodeCall
+                        ? toCodeToolFailure(tc.name, policyError)
+                        : policyError;
+                      backgroundTaskRegistry.fail(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        errorOutput,
+                        { harvestStarted: harvestEnabled },
+                      );
+                      harvestCodeResult({ output: errorOutput });
+                      return;
+                    }
                     /** Hold any artifact (images, files, UI resources,
                      *  citations) on the task instead of routing it through
                      *  this dispatch turn's callback: a slow background call
@@ -4063,19 +4509,35 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       artifact: result.artifact,
                     });
                   } catch (toolError) {
+                    const policyError =
+                      toolError instanceof ContentFilterError
+                        ? modelBoundContentFilterErrorMessage(toolError.body)
+                        : null;
                     const { message } = getSafeToolError(toolError);
-                    const errorOutput = isCodeCall ? toCodeToolFailure(tc.name, message) : message;
+                    const errorOutput =
+                      policyError ?? (isCodeCall ? toCodeToolFailure(tc.name, message) : message);
+                    const filteredError =
+                      policyError == null
+                        ? filteredToolOutputResult(tc, backgroundReq, {
+                            errorMessage: errorOutput,
+                          })
+                        : null;
+                    const neutralizedError = filteredError?.errorMessage ?? errorOutput;
+                    const deliveredError =
+                      isCodeCall && (policyError != null || filteredError != null)
+                        ? toCodeToolFailure(tc.name, neutralizedError)
+                        : neutralizedError;
                     backgroundTaskRegistry.fail(
                       backgroundUserId,
                       backgroundConversationId,
                       task.id,
-                      errorOutput,
+                      deliveredError,
                       /** Failed code tasks join the heal path too: without this,
                        *  a full-row save reverting the error patch would leave
                        *  the dispatch card on the handle JSON forever. */
                       { harvestStarted: harvestEnabled },
                     );
-                    harvestCodeResult({ output: errorOutput });
+                    harvestCodeResult({ output: deliveredError });
                   }
                 })();
               }
@@ -4088,13 +4550,66 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
 
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
+                const preloadedNameBlock = preloadedNameBlocks.get(tc);
+                if (preloadedNameBlock != null) {
+                  return reportResult(preloadedNameBlock);
+                }
+                /** Tool names are user/model-submitted content too. Check them
+                 *  before lookup so an unknown blocked name cannot reach logs
+                 *  or error history. Arguments are inspected after the tool
+                 *  schema normalizes them below. */
+                const filteredName = filteredToolArgumentsResult(
+                  tc,
+                  mergedConfigurable?.req as ServerRequest | undefined,
+                  undefined,
+                );
+                if (filteredName != null) {
+                  return reportResult(filteredName);
+                }
                 if (backgroundControlEnabled && tc.name === CHECK_BACKGROUND_TASK_NAME) {
-                  const pollContent = runCheckBackgroundTask({
+                  const req = mergedConfigurable?.req as ServerRequest | undefined;
+                  const filteredArguments = filteredToolArgumentsResult(tc, req, tc.args);
+                  if (filteredArguments != null) {
+                    return reportResult(filteredArguments);
+                  }
+                  const pollContent = await runCheckBackgroundTask({
                     userId: backgroundUserId,
                     conversationId: backgroundConversationId,
                     args: tc.args,
+                    toolCallId: tc.id,
+                    agentId,
+                    runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
                     subagentTasks,
                   });
+                  const taskSnapshot = getBackgroundTaskSnapshot({
+                    userId: backgroundUserId,
+                    conversationId: backgroundConversationId,
+                    args: tc.args,
+                  });
+                  /** Read harvest delivery before filtering and reuse that
+                   *  snapshot below. If attachments land afterward, this poll
+                   *  cannot emit them; the next poll reads and inspects them. */
+                  const delivery = getBackgroundCodeDelivery({
+                    userId: backgroundUserId,
+                    conversationId: backgroundConversationId,
+                    args: tc.args,
+                  });
+                  const filteredPollOutput = filteredToolOutputResult(tc, req, {
+                    content: pollContent,
+                    task:
+                      taskSnapshot == null
+                        ? undefined
+                        : {
+                            result: taskSnapshot.result,
+                            error: taskSnapshot.error,
+                            artifact: taskSnapshot.artifact,
+                            attachments: taskSnapshot.attachments,
+                          },
+                    delivery,
+                  });
+                  if (filteredPollOutput != null) {
+                    return reportResult(filteredPollOutput);
+                  }
                   /** Deliver a completed task's artifact through THIS live poll
                    *  turn (once): the tool's own turn finalized before the
                    *  artifact resolved, so this is where it can be surfaced.
@@ -4139,6 +4654,28 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           } as ToolEndCallbackMetadata,
                         );
                       } catch (callbackError) {
+                        if (isContentFilterError(callbackError)) {
+                          backgroundTaskRegistry.blockArtifact(
+                            backgroundUserId,
+                            backgroundConversationId,
+                            pending.taskId,
+                            callbackError instanceof ContentFilterError
+                              ? modelBoundContentFilterErrorMessage(callbackError.body)
+                              : callbackError.body.message,
+                          );
+                          logger.warn(
+                            `[background] Artifact delivery for task ${pending.taskId} was blocked by content policy.`,
+                          );
+                          return reportResult({
+                            toolCallId: tc.id,
+                            status: 'success' as const,
+                            content: await runCheckBackgroundTask({
+                              userId: backgroundUserId,
+                              conversationId: backgroundConversationId,
+                              args: tc.args,
+                            }),
+                          });
+                        }
                         /** Only synchronous callback throws land here (e.g. a
                          *  malformed artifact shape); the callback's downstream
                          *  persistence is fire-and-forget, so a storage failure
@@ -4163,11 +4700,6 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                    *  upserts by `file_id`) and the row patch re-application
                    *  guards against a HITL-pause/resume full-row save having
                    *  reverted the anchored result. */
-                  const delivery = getBackgroundCodeDelivery({
-                    userId: backgroundUserId,
-                    conversationId: backgroundConversationId,
-                    args: tc.args,
-                  });
                   if (
                     delivery &&
                     delivery.status !== 'running' &&
@@ -4281,6 +4813,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     isFileAuthoringCall
                   ) {
                     const req = mergedConfigurable?.req as ServerRequest | undefined;
+                    const filtered = filteredToolArgumentsResult(tc, req, tc.args);
+                    if (filtered != null) {
+                      return filtered;
+                    }
                     let handlerResult: ToolExecuteResult;
                     try {
                       if (tc.name === Constants.SKILL_TOOL) {
@@ -4321,7 +4857,24 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         handlerResult = errorResult(tc, `Tool ${tc.name} not found`);
                       }
                     } catch (toolError) {
+                      if (toolError instanceof ContentFilterError) {
+                        logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                          name: toolError.name,
+                          contentFiltered: true,
+                        });
+                        return errorResult(tc, modelBoundContentFilterErrorMessage(toolError.body));
+                      }
                       const { message, logContext } = getSafeToolError(toolError);
+                      const filteredError = filteredToolOutputResult(tc, req, {
+                        errorMessage: message,
+                      });
+                      if (filteredError != null) {
+                        logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                          name: logContext.name,
+                          contentFiltered: true,
+                        });
+                        return filteredError;
+                      }
                       logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
                         ...logContext,
                         toolCallArgsShape: getValueShape(tc.args),
@@ -4334,36 +4887,58 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       };
                     }
 
+                    const filteredOutput = filteredToolOutputResult(tc, req, {
+                      content: handlerResult.content,
+                      artifact: handlerResult.artifact,
+                      errorMessage: handlerResult.errorMessage,
+                    });
+                    if (filteredOutput != null) {
+                      return filteredOutput;
+                    }
+
+                    if (toolEndCallback && handlerResult.artifact) {
+                      try {
+                        await toolEndCallback(
+                          {
+                            output: {
+                              name: tc.name,
+                              tool_call_id: tc.id,
+                              content: handlerResult.content,
+                              artifact: handlerResult.artifact,
+                            },
+                          },
+                          {
+                            run_id: (metadata as Record<string, unknown>)?.run_id as
+                              | string
+                              | undefined,
+                            thread_id: (metadata as Record<string, unknown>)?.thread_id as
+                              | string
+                              | undefined,
+                            ...metadata,
+                            executingAgentId: agentId,
+                            codeExecutionContext,
+                          },
+                        );
+                      } catch (callbackError) {
+                        if (callbackError instanceof ContentFilterError) {
+                          logger.warn(
+                            `[ON_TOOL_EXECUTE] Artifact delivery for tool ${tc.name} was blocked by content policy.`,
+                          );
+                          return errorResult(
+                            tc,
+                            modelBoundContentFilterErrorMessage(callbackError.body),
+                          );
+                        }
+                        throw callbackError;
+                      }
+                    }
+
                     if (
                       isSandboxFileAuthoringCall &&
                       handlerResult.status === 'success' &&
                       sandboxContext
                     ) {
                       mergeSandboxSessionArtifact(sandboxContext, handlerResult.artifact);
-                    }
-
-                    if (toolEndCallback && handlerResult.artifact) {
-                      await toolEndCallback(
-                        {
-                          output: {
-                            name: tc.name,
-                            tool_call_id: tc.id,
-                            content: handlerResult.content,
-                            artifact: handlerResult.artifact,
-                          },
-                        },
-                        {
-                          run_id: (metadata as Record<string, unknown>)?.run_id as
-                            | string
-                            | undefined,
-                          thread_id: (metadata as Record<string, unknown>)?.thread_id as
-                            | string
-                            | undefined,
-                          ...metadata,
-                          executingAgentId: agentId,
-                          codeExecutionContext,
-                        },
-                      );
                     }
 
                     /* Sandbox-routed host file tools return before the
@@ -4385,15 +4960,24 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   const tool = toolMap.get(tc.name);
 
                   if (!tool) {
-                    logger.warn(
-                      `[ON_TOOL_EXECUTE] Tool "${tc.name}" not found. Available: ${[...toolMap.keys()].map((k) => `"${k}"`).join(', ')}`,
-                    );
-                    return {
+                    const missingToolResult: ToolExecuteResult = {
                       toolCallId: tc.id,
                       status: 'error' as const,
                       content: '',
                       errorMessage: `Tool ${tc.name} not found`,
                     };
+                    const filteredMissingTool = filteredToolOutputResult(
+                      tc,
+                      mergedConfigurable?.req as ServerRequest | undefined,
+                      { errorMessage: missingToolResult.errorMessage },
+                    );
+                    if (filteredMissingTool != null) {
+                      return filteredMissingTool;
+                    }
+                    logger.warn(
+                      `[ON_TOOL_EXECUTE] Tool "${tc.name}" not found. Available: ${[...toolMap.keys()].map((k) => `"${k}"`).join(', ')}`,
+                    );
+                    return missingToolResult;
                   }
 
                   try {
@@ -4410,18 +4994,45 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         | Map<string, StructuredToolInterface>
                         | undefined;
                       if (toolRegistry) {
+                        const activeCodeExecutionToolNames = callerCapabilityProjection
+                          ? new Set(callerCapabilityProjection.codeExecutionToolNames)
+                          : undefined;
+                        const activeDirectOnlyToolNames = callerCapabilityProjection
+                          ? new Set(callerCapabilityProjection.directOnlyToolNames)
+                          : undefined;
                         const fileAuthoringToolNames =
                           getFileAuthoringToolNames(mergedConfigurable) ?? new Set<string>();
-                        const filteredToolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
-                          (t) =>
-                            t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
-                            t.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
-                            t.name !== Constants.TOOL_SEARCH &&
-                            /* Host-only poll tool: implemented by the ON_TOOL_EXECUTE
-                             * shortcut, not callable from PTC-generated code. */
-                            t.name !== CHECK_BACKGROUND_TASK_NAME &&
-                            !fileAuthoringToolNames.has(t.name),
-                        );
+                        const eligibleToolDefs: LCTool[] = [];
+                        const disallowedToolDefs: LCTool[] = [];
+                        for (const toolDef of toolRegistry.values()) {
+                          const isInnerTool =
+                            toolDef.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
+                            toolDef.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
+                            toolDef.name !== Constants.TOOL_SEARCH &&
+                            toolDef.name !== CHECK_BACKGROUND_TASK_NAME &&
+                            !fileAuthoringToolNames.has(toolDef.name);
+                          if (!isInnerTool) {
+                            continue;
+                          }
+                          const allowsCodeExecution = (
+                            toolDef.allowed_callers ?? ['direct']
+                          ).includes('code_execution');
+                          if (
+                            allowsCodeExecution &&
+                            (activeCodeExecutionToolNames == null ||
+                              activeCodeExecutionToolNames.has(toolDef.name))
+                          ) {
+                            eligibleToolDefs.push(toolDef);
+                          } else if (
+                            !allowsCodeExecution &&
+                            (activeDirectOnlyToolNames == null ||
+                              activeDirectOnlyToolNames.has(toolDef.name))
+                          ) {
+                            disallowedToolDefs.push({
+                              name: toolDef.name,
+                            });
+                          }
+                        }
                         /* PTC-generated calls don't go through the host background
                          * interceptor, so strip the injected `run_in_background`
                          * param from target schemas (the registry entries were
@@ -4432,12 +5043,49 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                          * bridge must not advertise them. */
                         const toolDefs = stripIntentLabelsFromToolDefinitions(
                           stripBackgroundFromToolDefinitions(
-                            filteredToolDefs,
+                            eligibleToolDefs,
                             mergedConfigurable?.backgroundToolNames as string[] | undefined,
                           ),
                         );
                         toolCallConfig.toolDefs = toolDefs;
-                        toolCallConfig.toolMap = ptcToolMap ?? toolMap;
+                        toolCallConfig.disallowedToolDefs = disallowedToolDefs;
+                        const eligibleNames = new Set(toolDefs.map((toolDef) => toolDef.name));
+                        /* Instrument the ELIGIBLE map, never the raw one: the
+                         * caller-capability restriction decides what the sandbox
+                         * may reach, and tracing must not widen it. */
+                        const eligiblePtcToolMap = new Map(
+                          [...(ptcToolMap ?? toolMap)].filter(([name]) => eligibleNames.has(name)),
+                        );
+                        /* Inner calls produce no run step and no card of their
+                         * own, so the only record of what the program did is
+                         * this trace. `invoke` is the single seam every inner
+                         * call passes through.
+                         *
+                         * They also never reach `filteredToolArgumentsResult` —
+                         * the sandbox bridge invokes them directly — so when the
+                         * deployment filters tool arguments for PII, the trace
+                         * must not put their values on the wire. */
+                        const ptcReq = mergedConfigurable?.req as ServerRequest | undefined;
+                        const ptcArgumentPii = ptcReq?.config?.filters?.toolArguments?.pii;
+                        toolCallConfig.toolMap = emitPtcProgress
+                          ? instrumentPtcToolMap({
+                              toolMap: eligiblePtcToolMap,
+                              toolCallId: tc.id,
+                              runId: (metadata as Record<string, unknown>)?.run_id as
+                                | string
+                                | undefined,
+                              includePreviews: !hasActivePiiFields(ptcArgumentPii, [
+                                'name',
+                                'arguments',
+                                'output',
+                              ]),
+                              traceExclusions: collectFilteredPtcToolNames(
+                                eligiblePtcToolMap.keys(),
+                                ptcReq,
+                              ),
+                              emit: emitPtcProgress,
+                            })
+                          : eligiblePtcToolMap;
                       }
                     }
 
@@ -4452,14 +5100,23 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       (hasRunInBackgroundArg(tc.args) && !toolDeclaresRunInBackgroundParam(tool))
                         ? stripRunInBackgroundArg(tc.args)
                         : tc.args;
-                    const result = await tool.invoke(
-                      normalizeToolInvokeArgs(stripIntentForInvoke(foregroundArgs, tool), tool),
-                      {
-                        toolCall: toolCallConfig,
-                        configurable: mergedConfigurable,
-                        metadata,
-                      } as Record<string, unknown>,
+                    const normalizedArgs = normalizeToolInvokeArgs(
+                      stripIntentForInvoke(foregroundArgs, tool),
+                      tool,
                     );
+                    const filtered = filteredToolArgumentsResult(
+                      tc,
+                      mergedConfigurable?.req as ServerRequest | undefined,
+                      normalizedArgs,
+                    );
+                    if (filtered != null) {
+                      return filtered;
+                    }
+                    const result = await tool.invoke(normalizedArgs, {
+                      toolCall: toolCallConfig,
+                      configurable: mergedConfigurable,
+                      metadata,
+                    } as Record<string, unknown>);
 
                     /* Only sandbox-bound calls carry a runtime session hint, so
                      * this refreshes the prewarm module's warm window without
@@ -4480,6 +5137,17 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       typeof result.content === 'string'
                         ? cleanCodeToolOutput(result.content)
                         : result.content;
+                    const filteredOutput = filteredToolOutputResult(
+                      tc,
+                      mergedConfigurable?.req as ServerRequest | undefined,
+                      {
+                        content: cleanedContent,
+                        artifact: result.artifact,
+                      },
+                    );
+                    if (filteredOutput != null) {
+                      return filteredOutput;
+                    }
 
                     if (toolEndCallback) {
                       await toolEndCallback(
@@ -4512,7 +5180,25 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       status: 'success' as const,
                     };
                   } catch (toolError) {
+                    if (toolError instanceof ContentFilterError) {
+                      logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                        name: toolError.name,
+                        contentFiltered: true,
+                      });
+                      return errorResult(tc, modelBoundContentFilterErrorMessage(toolError.body));
+                    }
                     const { message, logContext } = getSafeToolError(toolError);
+                    const req = mergedConfigurable?.req as ServerRequest | undefined;
+                    const filteredError = filteredToolOutputResult(tc, req, {
+                      errorMessage: message,
+                    });
+                    if (filteredError != null) {
+                      logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                        name: logContext.name,
+                        contentFiltered: true,
+                      });
+                      return filteredError;
+                    }
                     logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
                       ...logContext,
                       toolCallArgsShape: getValueShape(tc.args),

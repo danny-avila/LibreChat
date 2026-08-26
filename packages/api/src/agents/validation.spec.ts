@@ -1,5 +1,6 @@
 import {
   MAX_SUBAGENTS,
+  setMaxSubagents,
   MAX_SUBAGENT_GRAPH_NODES,
   MAX_GRAPH_SUBAGENT_MEMBERS,
 } from 'librechat-data-provider';
@@ -46,6 +47,37 @@ describe('agentSubagentsSchema', () => {
       agent_ids: atCap,
     });
     expect(result.success).toBe(true);
+  });
+
+  it('accepts above the default cap when the configured limit is raised', () => {
+    setMaxSubagents(MAX_SUBAGENTS + 10);
+    const raised = Array.from({ length: MAX_SUBAGENTS + 5 }, (_, i) => `agent_${i}`);
+    const result = agentSubagentsSchema.safeParse({
+      enabled: true,
+      agent_ids: raised,
+    });
+    setMaxSubagents(undefined);
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects above the raised cap and resets on invalid configured values', () => {
+    const oversized = Array.from({ length: MAX_SUBAGENTS + 11 }, (_, i) => `agent_${i}`);
+
+    setMaxSubagents(MAX_SUBAGENTS + 10);
+    const overRaised = agentSubagentsSchema.safeParse({
+      enabled: true,
+      agent_ids: oversized,
+    });
+
+    setMaxSubagents(MAX_SUBAGENTS + 100);
+    const afterInvalid = agentSubagentsSchema.safeParse({
+      enabled: true,
+      agent_ids: oversized,
+    });
+
+    setMaxSubagents(undefined);
+    expect(overRaised.success).toBe(false);
+    expect(afterInvalid.success).toBe(false);
   });
 
   it('accepts an explicit bounded graph subagent', () => {

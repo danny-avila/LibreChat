@@ -2,7 +2,7 @@ import { memo, useMemo, useRef, useState, useCallback } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
-import { X, Zap, Send, Clock, Pencil, Trash2, Paperclip, RotateCcw } from 'lucide-react';
+import { X, Zap, Send, Clock, Pencil, Trash2, Paperclip, RotateCcw, TextQuote } from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
@@ -24,16 +24,44 @@ import store from '~/store';
 const ROW_CLASS =
   'flex w-full items-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary';
 
-function AttachmentCount({ count, label }: { count: number; label: string }) {
+function ContextCount({
+  icon,
+  count,
+  label,
+}: {
+  icon: React.ReactNode;
+  count: number;
+  label: string;
+}) {
   if (count === 0) {
     return null;
   }
   return (
     <span className="flex shrink-0 items-center gap-0.5 text-xs text-text-secondary">
-      <Paperclip className="h-3.5 w-3.5" aria-hidden="true" />
+      {icon}
       {count}
       <span className="sr-only">{label}</span>
     </span>
+  );
+}
+
+function AttachmentCount({ count, label }: { count: number; label: string }) {
+  return (
+    <ContextCount
+      icon={<Paperclip className="h-3.5 w-3.5" aria-hidden="true" />}
+      count={count}
+      label={label}
+    />
+  );
+}
+
+function QuoteCount({ count, label }: { count: number; label: string }) {
+  return (
+    <ContextCount
+      icon={<TextQuote className="h-3.5 w-3.5" aria-hidden="true" />}
+      count={count}
+      label={label}
+    />
   );
 }
 
@@ -61,6 +89,7 @@ function QueuedRow({
   const toggleEntry = useDefaultToggleEntry(steering);
   const interruptToggle = useInterruptToggleEntry();
   const fileCount = message.files?.length ?? 0;
+  const quoteCount = message.quotes?.length ?? 0;
   const isRecovered = message.recoverySteerId != null;
   const actionPendingRef = useRef(false);
   const [actionPending, setActionPending] = useState(false);
@@ -147,6 +176,10 @@ function QueuedRow({
       <span className="min-w-0 flex-1 truncate" title={message.text}>
         {message.text}
       </span>
+      <QuoteCount
+        count={quoteCount}
+        label={localize('com_ui_queued_quote_count', { 0: String(quoteCount) })}
+      />
       <AttachmentCount
         count={fileCount}
         label={localize('com_ui_queued_attachment_count', { 0: String(fileCount) })}
@@ -275,6 +308,10 @@ function FailedSteerRow({
       <span className="min-w-0 flex-1 truncate" title={steer.text}>
         {steer.text}
       </span>
+      <QuoteCount
+        count={steer.quotes?.length ?? 0}
+        label={localize('com_ui_queued_quote_count', { 0: String(steer.quotes?.length ?? 0) })}
+      />
       <span className="shrink-0 text-xs text-red-500">
         {localize(
           steer.deliveryUncertain ? 'com_ui_steer_delivery_unconfirmed' : 'com_ui_steer_failed',

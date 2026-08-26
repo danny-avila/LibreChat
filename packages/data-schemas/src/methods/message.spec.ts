@@ -1,9 +1,13 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
-import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { Constants, RetentionMode } from 'librechat-data-provider';
 import type { IMessage } from '..';
-import { createMessageMethods, CLIENT_MESSAGE_SELECT } from './message';
+import {
+  createMessageMethods,
+  CLIENT_MESSAGE_SELECT,
+  SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+} from './message';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
 import logger from '~/config/winston';
@@ -21,6 +25,12 @@ let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let Message: mongoose.Model<IMessage>;
 let saveMessage: ReturnType<typeof createMessageMethods>['saveMessage'];
 let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
+let getMessagesForSubagentThreadView: ReturnType<
+  typeof createMessageMethods
+>['getMessagesForSubagentThreadView'];
+let listSubagentTasksForThreads: ReturnType<
+  typeof createMessageMethods
+>['listSubagentTasksForThreads'];
 let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
 let updateToolCallResult: ReturnType<typeof createMessageMethods>['updateToolCallResult'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
@@ -28,6 +38,19 @@ let bulkSaveMessages: ReturnType<typeof createMessageMethods>['bulkSaveMessages'
 let updateMessageText: ReturnType<typeof createMessageMethods>['updateMessageText'];
 let deleteMessagesSince: ReturnType<typeof createMessageMethods>['deleteMessagesSince'];
 let recordMessage: ReturnType<typeof createMessageMethods>['recordMessage'];
+let claimSubagentTaskResult: ReturnType<typeof createMessageMethods>['claimSubagentTaskResult'];
+let recordSubagentTaskControlReceipt: ReturnType<
+  typeof createMessageMethods
+>['recordSubagentTaskControlReceipt'];
+let getSubagentTaskControlReceipt: ReturnType<
+  typeof createMessageMethods
+>['getSubagentTaskControlReceipt'];
+let getSubagentTaskControlReplay: ReturnType<
+  typeof createMessageMethods
+>['getSubagentTaskControlReplay'];
+let releaseSubagentTaskResultClaim: ReturnType<
+  typeof createMessageMethods
+>['releaseSubagentTaskResultClaim'];
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -40,6 +63,8 @@ beforeAll(async () => {
   const methods = createMessageMethods(mongoose);
   saveMessage = methods.saveMessage;
   getMessages = methods.getMessages;
+  getMessagesForSubagentThreadView = methods.getMessagesForSubagentThreadView;
+  listSubagentTasksForThreads = methods.listSubagentTasksForThreads;
   updateMessage = methods.updateMessage;
   updateToolCallResult = methods.updateToolCallResult;
   deleteMessages = methods.deleteMessages;
@@ -47,6 +72,11 @@ beforeAll(async () => {
   updateMessageText = methods.updateMessageText;
   deleteMessagesSince = methods.deleteMessagesSince;
   recordMessage = methods.recordMessage;
+  claimSubagentTaskResult = methods.claimSubagentTaskResult;
+  recordSubagentTaskControlReceipt = methods.recordSubagentTaskControlReceipt;
+  getSubagentTaskControlReceipt = methods.getSubagentTaskControlReceipt;
+  getSubagentTaskControlReplay = methods.getSubagentTaskControlReplay;
+  releaseSubagentTaskResultClaim = methods.releaseSubagentTaskResultClaim;
 
   await mongoose.connect(mongoUri);
 });
@@ -60,6 +90,7 @@ describe('Message Operations', () => {
   let mockCtx: {
     userId: string;
     isTemporary?: boolean;
+    expiredAt?: Date;
     interfaceConfig?: { temporaryChatRetention?: number; retentionMode?: RetentionMode };
   };
   let mockMessageData: Partial<IMessage> = {
@@ -74,6 +105,7 @@ describe('Message Operations', () => {
 
     // Clear database
     await Message.deleteMany({});
+    await mongoose.models.Conversation.deleteMany({});
 
     mockCtx = {
       userId: 'user123',
@@ -102,6 +134,156 @@ describe('Message Operations', () => {
       const savedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
       expect(savedMessage).toBeTruthy();
       expect(savedMessage?.text).toBe('Hello, world!');
+      expect(savedMessage?.isUserSubmitted).toBeUndefined();
+    });
+
+    it('should persist optional user-submitted provenance independently of message role', async () => {
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+        userSubmittedPaths: ['/content/0/text'],
+      });
+
+      expect(result?.isCreatedByUser).toBe(false);
+      expect(result?.isUserSubmitted).toBe(true);
+      expect(result?.userSubmittedPaths).toEqual(['/content/0/text']);
+
+      const savedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
+      expect(savedMessage?.isCreatedByUser).toBe(false);
+      expect(savedMessage?.isUserSubmitted).toBe(true);
+      expect(savedMessage?.userSubmittedPaths).toEqual(['/content/0/text']);
+    });
+
+    it('stamps native model output without overriding explicit provenance', async () => {
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+      });
+
+      expect(result?.isUserSubmitted).toBe(false);
+
+      const explicitlySubmitted = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        messageId: 'msg-explicit-submitted',
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+      });
+      expect(explicitlySubmitted?.isUserSubmitted).toBe(true);
+
+      const pathScoped = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        messageId: 'msg-path-scoped',
+        isCreatedByUser: false,
+        userSubmittedPaths: ['/content/0/text'],
+      });
+      expect(pathScoped?.isUserSubmitted).toBe(false);
+      expect(pathScoped?.userSubmittedPaths).toEqual(['/content/0/text']);
+    });
+
+    it('bounds and validates stored user-submitted provenance paths', async () => {
+      const submittedPaths = [
+        'not-a-pointer',
+        ...Array.from({ length: 300 }, (_, index) => `/content/${index}/text`),
+      ];
+
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        userSubmittedPaths: submittedPaths,
+      });
+
+      expect(result?.userSubmittedPaths).toHaveLength(256);
+      expect(result?.userSubmittedPaths).not.toContain('not-a-pointer');
+      expect(result?.userSubmittedPaths?.[0]).toBe('/content/0/text');
+      expect(result?.isUserSubmitted).toBe(true);
+    });
+
+    it('validates and atomically preserves exact HITL field provenance', async () => {
+      const first = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [
+          {
+            type: 'tool_call',
+            tool_call: { id: 'tool-1', output: 'Human response' },
+          },
+        ],
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/0/tool_call/output', field: 'answer' },
+          { path: '/content/0/tool_call/output', field: 'answer' },
+          { path: 'not-a-pointer', field: 'decision_reason' },
+        ],
+      });
+
+      expect(first?.userSubmittedMessageFieldPaths).toEqual([
+        expect.objectContaining({ path: '/content/0/tool_call/output', field: 'answer' }),
+      ]);
+
+      await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/0/tool_call/output', field: 'decision_response' },
+        ],
+      });
+
+      const stored = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(stored?.userSubmittedMessageFieldPaths).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: '/content/0/tool_call/output', field: 'answer' }),
+          expect.objectContaining({
+            path: '/content/0/tool_call/output',
+            field: 'decision_response',
+          }),
+        ]),
+      );
+      expect(stored?.userSubmittedMessageFieldPaths).toHaveLength(2);
+    });
+
+    it('adds semantic steer paths without replacing existing field provenance', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        userSubmittedPaths: ['/text'],
+      });
+
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [
+          { type: 'text', text: 'Model response' },
+          { type: 'steer', steer: 'User direction' },
+        ],
+      });
+
+      expect(result?.userSubmittedPaths).toEqual(expect.arrayContaining(['/text', '/content/1']));
+      expect(result?.userSubmittedPaths).toHaveLength(2);
+    });
+
+    it('persists dollar-prefixed message values literally while merging provenance', async () => {
+      const created = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        text: '$PATH',
+        content: [{ type: 'text', text: '$CONTENT' }],
+        userSubmittedPaths: ['/text', '/content/0/text'],
+      });
+
+      expect(created?.text).toBe('$PATH');
+      expect(created?.content).toEqual([expect.objectContaining({ text: '$CONTENT' })]);
+
+      const updated = await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        text: '$UPDATED_PATH',
+        content: [{ type: 'text', text: '$UPDATED_CONTENT' }],
+        userSubmittedPaths: ['/text', '/content/0/text'],
+      });
+
+      expect(updated?.text).toBe('$UPDATED_PATH');
+      expect(
+        await Message.findOne({ messageId: 'msg123', user: 'user123' })
+          .lean()
+          .then((message) => message?.content),
+      ).toEqual([expect.objectContaining({ text: '$UPDATED_CONTENT' })]);
     });
 
     it('should throw an error for unauthenticated user', async () => {
@@ -126,6 +308,120 @@ describe('Message Operations', () => {
       );
       expect(logger.info).not.toHaveBeenCalled();
     });
+  });
+
+  describe('bulkSaveMessages', () => {
+    it('preserves unknown provenance when cloning an unmarked assistant row', async () => {
+      const conversationId = uuidv4();
+      await bulkSaveMessages([
+        {
+          user: 'user123',
+          messageId: 'bulk-unmarked-assistant',
+          conversationId,
+          isCreatedByUser: false,
+        },
+        {
+          user: 'user123',
+          messageId: 'bulk-user-submitted',
+          conversationId,
+          isCreatedByUser: false,
+          isUserSubmitted: true,
+        },
+      ]);
+
+      const rows = await Message.find({ conversationId }).lean();
+      expect(
+        rows.find(({ messageId }) => messageId === 'bulk-unmarked-assistant'),
+      ).not.toHaveProperty('isUserSubmitted');
+      expect(
+        rows.find(({ messageId }) => messageId === 'bulk-user-submitted')?.isUserSubmitted,
+      ).toBe(true);
+    });
+
+    it('caps exact field provenance without promoting model output to whole-message provenance', async () => {
+      const conversationId = uuidv4();
+      await bulkSaveMessages([
+        {
+          user: 'user123',
+          messageId: 'bulk-exact-overflow',
+          conversationId,
+          isCreatedByUser: false,
+          userSubmittedMessageFieldPaths: Array.from({ length: 300 }, (_, index) => ({
+            path: `/decision/${index}`,
+            field: 'decision_response' as const,
+          })),
+        },
+      ]);
+
+      const row = await Message.findOne({ messageId: 'bulk-exact-overflow' }).lean();
+      expect(row?.userSubmittedMessageFieldPaths).toHaveLength(257);
+      expect(row).not.toHaveProperty('isUserSubmitted');
+    });
+  });
+
+  describe('recordMessage', () => {
+    it('stamps native model output without overriding explicit provenance', async () => {
+      const conversationId = uuidv4();
+      const modelOutput = await recordMessage({
+        user: 'user123',
+        messageId: 'record-model-output',
+        conversationId,
+        isCreatedByUser: false,
+      });
+      expect(modelOutput?.isUserSubmitted).toBe(false);
+
+      const explicitlySubmitted = await recordMessage({
+        user: 'user123',
+        messageId: 'record-user-submitted',
+        conversationId,
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+      });
+      expect(explicitlySubmitted?.isUserSubmitted).toBe(true);
+    });
+  });
+
+  it('preserves unknown provenance when message savers update legacy assistant rows', async () => {
+    const conversationId = uuidv4();
+    const messageIds = ['legacy-save', 'legacy-bulk', 'legacy-record'];
+    await Message.collection.insertMany(
+      messageIds.map((messageId) => ({
+        user: 'user123',
+        messageId,
+        conversationId,
+        isCreatedByUser: false,
+        text: 'Legacy assistant output',
+      })),
+    );
+
+    await saveMessage(mockCtx, {
+      messageId: 'legacy-save',
+      conversationId,
+      isCreatedByUser: false,
+      text: 'Updated assistant output',
+    });
+    await bulkSaveMessages([
+      {
+        user: 'user123',
+        messageId: 'legacy-bulk',
+        conversationId,
+        isCreatedByUser: false,
+        text: 'Updated assistant output',
+      },
+    ]);
+    await recordMessage({
+      user: 'user123',
+      messageId: 'legacy-record',
+      conversationId,
+      isCreatedByUser: false,
+      text: 'Updated assistant output',
+    });
+
+    const rows = await Message.find({ messageId: { $in: messageIds } }).lean();
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row).not.toHaveProperty('isUserSubmitted');
+    }
   });
 
   describe('updateMessageText', () => {
@@ -158,6 +454,97 @@ describe('Message Operations', () => {
       // Verify in database
       const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
       expect(updatedMessage?.text).toBe('Updated text');
+    });
+
+    it('atomically merges provenance from concurrent edits to distinct fields', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [{ type: 'text', text: 'Model content' }],
+      });
+
+      await Promise.all([
+        updateMessage(mockCtx.userId, {
+          messageId: 'msg123',
+          text: 'Human-edited text',
+          userSubmittedPaths: ['/text'],
+        }),
+        updateMessage(mockCtx.userId, {
+          messageId: 'msg123',
+          content: [{ type: 'text', text: 'Human-edited content' }],
+          userSubmittedPaths: ['/content/0/text'],
+        }),
+      ]);
+
+      const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(updatedMessage?.text).toBe('Human-edited text');
+      expect(updatedMessage?.content).toEqual([
+        expect.objectContaining({ type: 'text', text: 'Human-edited content' }),
+      ]);
+      expect(updatedMessage?.userSubmittedPaths).toEqual(
+        expect.arrayContaining(['/text', '/content/0/text']),
+      );
+      expect(updatedMessage?.userSubmittedPaths).toHaveLength(2);
+    });
+
+    it('atomically caps repeated provenance unions and promotes overflow to whole-message provenance', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [{ type: 'text', text: 'Model content' }],
+      });
+
+      await Promise.all([
+        updateMessage(mockCtx.userId, {
+          messageId: 'msg123',
+          userSubmittedPaths: Array.from({ length: 200 }, (_, index) => `/path/${index}`),
+          userSubmittedMessageFieldPaths: Array.from({ length: 200 }, (_, index) => ({
+            path: `/decision/${index}`,
+            field: 'decision_response' as const,
+          })),
+        }),
+        updateMessage(mockCtx.userId, {
+          messageId: 'msg123',
+          userSubmittedPaths: Array.from({ length: 200 }, (_, index) => `/path/${index + 200}`),
+          userSubmittedMessageFieldPaths: Array.from({ length: 200 }, (_, index) => ({
+            path: `/decision/${index + 200}`,
+            field: 'decision_response' as const,
+          })),
+        }),
+      ]);
+
+      const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(updatedMessage?.userSubmittedPaths).toHaveLength(256);
+      expect(updatedMessage?.userSubmittedMessageFieldPaths).toHaveLength(257);
+      expect(updatedMessage?.isUserSubmitted).toBe(true);
+    });
+
+    it('keeps repeated exact-field overflow scoped instead of promoting the whole message', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [{ type: 'text', text: 'Model content' }],
+      });
+
+      await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        userSubmittedMessageFieldPaths: Array.from({ length: 200 }, (_, index) => ({
+          path: `/decision/${index}`,
+          field: 'decision_response' as const,
+        })),
+      });
+      await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        userSubmittedMessageFieldPaths: Array.from({ length: 200 }, (_, index) => ({
+          path: `/decision/${index + 200}`,
+          field: 'decision_response' as const,
+        })),
+      });
+
+      const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(updatedMessage?.userSubmittedPaths).toHaveLength(0);
+      expect(updatedMessage?.userSubmittedMessageFieldPaths).toHaveLength(257);
+      expect(updatedMessage?.isUserSubmitted).toBe(false);
     });
 
     it('returns the generation-time Langfuse routing decisions with feedback updates', async () => {
@@ -615,7 +1002,7 @@ describe('Message Operations', () => {
     it('declares the compound index that serves the conversation fetch and its sort', () => {
       const indexes = Message.schema.indexes() as Array<[Record<string, number>, unknown]>;
       expect(indexes).toContainEqual([
-        { conversationId: 1, user: 1, createdAt: 1 },
+        { conversationId: 1, user: 1, createdAt: 1, _id: 1 },
         expect.anything(),
       ]);
     });
@@ -675,6 +1062,359 @@ describe('Message Operations', () => {
       expect(messages).toHaveLength(2);
       expect(messages[0].text).toBe('First message');
       expect(messages[1].text).toBe('Second message');
+    });
+  });
+
+  describe('getMessagesForSubagentThreadView', () => {
+    it('bounds text in MongoDB before returning the public projection', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'bounded-message',
+        conversationId,
+        text: '🧵'.repeat(20_000),
+        user: 'user123',
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(Array.from(messages[0].text ?? '')).toHaveLength(8_192);
+      expect(Buffer.byteLength(messages[0].text ?? '', 'utf8')).toBeLessThanOrEqual(32 * 1024);
+      expect(messages[0].textProjectionTruncated).toBe(true);
+      expect(messages[0]).not.toHaveProperty('user');
+      expect(messages[0]).not.toHaveProperty('conversationId');
+    });
+
+    it('projects the private transcript only for the explicitly selected task', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-a:assistant',
+        conversationId,
+        text: 'A',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-a',
+          mode: 'append',
+          messagesJson: '[{"type":"ai","data":{"content":"A"}}]',
+        },
+      });
+      await saveMessage(mockCtx, {
+        messageId: 'task-b:assistant',
+        conversationId,
+        text: 'B',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-b',
+          mode: 'append',
+          messagesJson: '[{"type":"ai","data":{"content":"B"}}]',
+        },
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 10,
+        textCodePointLimit: 8_192,
+        taskId: 'task-a',
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toHaveProperty('messageId', 'task-a:assistant');
+      expect(messages[0]).toHaveProperty('subagentTranscript.taskId', 'task-a');
+    });
+
+    it('omits an oversized private transcript before returning the application result', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-large:assistant',
+        conversationId,
+        text: 'The bounded public answer remains available.',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-large',
+          mode: 'append',
+          messagesJson: JSON.stringify([
+            {
+              type: 'ai',
+              data: { content: 'x'.repeat(SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT + 1) },
+            },
+          ]),
+        },
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+        taskId: 'task-large',
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0].text).toBe('The bounded public answer remains available.');
+      expect(messages[0]).not.toHaveProperty('subagentTranscript');
+      expect(messages[0].subagentTranscriptProjectionTruncated).toBe(true);
+    });
+  });
+
+  describe('listSubagentTasksForThreads', () => {
+    it('derives event task status from ordinary durable turn rows', async () => {
+      const conversationId = uuidv4();
+      await Message.create([
+        {
+          user: 'user123',
+          messageId: 'delivery-running:user',
+          conversationId,
+          isCreatedByUser: true,
+          createdAt: new Date('2026-08-21T10:00:00.000Z'),
+        },
+        {
+          user: 'user123',
+          messageId: 'delivery-complete:assistant',
+          conversationId,
+          isCreatedByUser: false,
+          createdAt: new Date('2026-08-21T10:01:00.000Z'),
+        },
+        {
+          user: 'user123',
+          messageId: 'delivery-error:assistant',
+          conversationId,
+          isCreatedByUser: false,
+          error: true,
+          createdAt: new Date('2026-08-21T10:02:00.000Z'),
+        },
+      ]);
+
+      const [record] = await listSubagentTasksForThreads({
+        user: 'user123',
+        conversationIds: [conversationId],
+        limitPerThread: 3,
+      });
+
+      expect(record.tasks).toEqual([
+        expect.objectContaining({
+          messageId: 'delivery-error:assistant',
+          status: 'error',
+          statusDerived: true,
+        }),
+        expect.objectContaining({
+          messageId: 'delivery-complete:assistant',
+          status: 'completed',
+          statusDerived: true,
+        }),
+        expect.objectContaining({
+          messageId: 'delivery-running:user',
+          status: 'running',
+          statusDerived: true,
+        }),
+      ]);
+    });
+
+    it('batches threads, deduplicates task rows, and bounds each newest task list', async () => {
+      const firstThread = uuidv4();
+      const secondThread = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-old:user',
+        conversationId: firstThread,
+        text: 'Start old task',
+        isCreatedByUser: true,
+        subagentTask: { attemptKey: 'old', status: 'running' },
+      });
+      await waitForTimestampTick();
+      await saveMessage(mockCtx, {
+        messageId: 'task-old:assistant',
+        conversationId: firstThread,
+        text: 'Finish old task',
+        isCreatedByUser: false,
+        subagentTask: { attemptKey: 'old', status: 'completed' },
+      });
+      await waitForTimestampTick();
+      await saveMessage(mockCtx, {
+        messageId: 'task-new:user',
+        conversationId: firstThread,
+        text: 'Start new task',
+        isCreatedByUser: true,
+        subagentTask: { attemptKey: 'new', status: 'running' },
+      });
+      await saveMessage(mockCtx, {
+        messageId: 'task-other:assistant',
+        conversationId: secondThread,
+        text: 'Other result',
+        isCreatedByUser: false,
+        subagentTask: { attemptKey: 'other', status: 'cancelled' },
+      });
+
+      const records = await listSubagentTasksForThreads({
+        user: 'user123',
+        conversationIds: [firstThread, secondThread],
+        limitPerThread: 2,
+      });
+
+      const first = records.find((record) => record.conversationId === firstThread);
+      expect(first?.tasks).toHaveLength(2);
+      expect(first?.tasks[0]).toEqual(
+        expect.objectContaining({ messageId: 'task-new:user', status: 'running' }),
+      );
+      expect(first?.tasks[1]).toEqual(
+        expect.objectContaining({ messageId: 'task-old:assistant', status: 'completed' }),
+      );
+      expect(records.find((record) => record.conversationId === secondThread)?.tasks).toEqual([
+        expect.objectContaining({ messageId: 'task-other:assistant', status: 'cancelled' }),
+      ]);
+      expect(records.every((record) => record.sourceTruncated !== true)).toBe(true);
+    });
+
+    it('marks every selected child truncated when one busy child fills the shared source window', async () => {
+      const quietThread = uuidv4();
+      const busyThread = uuidv4();
+      await Message.create([
+        ...['quiet-old', 'quiet-new'].map((taskId, index) => ({
+          user: 'user123',
+          messageId: `${taskId}:assistant`,
+          conversationId: quietThread,
+          isCreatedByUser: false,
+          createdAt: new Date(`2026-08-20T10:0${index}:00.000Z`),
+          updatedAt: new Date(`2026-08-20T10:0${index}:00.000Z`),
+          subagentTask: { attemptKey: taskId, status: 'completed' },
+        })),
+        ...Array.from({ length: 9 }, (_, index) => ({
+          user: 'user123',
+          messageId: `busy-${index}:assistant`,
+          conversationId: busyThread,
+          isCreatedByUser: false,
+          createdAt: new Date(`2026-08-21T10:${String(index).padStart(2, '0')}:00.000Z`),
+          updatedAt: new Date(`2026-08-21T10:${String(index).padStart(2, '0')}:00.000Z`),
+          subagentTask: { attemptKey: `busy-${index}`, status: 'completed' },
+        })),
+      ]);
+
+      const records = await listSubagentTasksForThreads({
+        user: 'user123',
+        conversationIds: [quietThread, busyThread],
+        limitPerThread: 2,
+      });
+
+      expect(records.find((record) => record.conversationId === quietThread)).toEqual(
+        expect.objectContaining({
+          sourceTruncated: true,
+          tasks: [expect.objectContaining({ messageId: 'quiet-new:assistant' })],
+        }),
+      );
+      expect(records.find((record) => record.conversationId === busyThread)?.sourceTruncated).toBe(
+        true,
+      );
+    });
+
+    it('preserves a newer recent task when the latest-per-thread snapshot is stale', async () => {
+      const conversationId = uuidv4();
+      const aggregate = jest.spyOn(Message, 'aggregate') as unknown as jest.Mock;
+      aggregate
+        .mockReturnValueOnce(
+          Promise.resolve([
+            {
+              conversationId,
+              tasks: [
+                {
+                  messageId: 'task-old:assistant',
+                  createdAt: new Date('2026-08-21T10:00:00.000Z'),
+                  status: 'completed',
+                },
+              ],
+            },
+          ]),
+        )
+        .mockReturnValueOnce(
+          Promise.resolve([
+            {
+              conversationId,
+              sourceRows: 1,
+              tasks: [
+                {
+                  messageId: 'task-new:user',
+                  createdAt: new Date('2026-08-21T11:00:00.000Z'),
+                  status: 'running',
+                },
+              ],
+            },
+          ]),
+        );
+
+      try {
+        await expect(
+          listSubagentTasksForThreads({
+            user: 'user123',
+            conversationIds: [conversationId],
+            limitPerThread: 2,
+          }),
+        ).resolves.toEqual([
+          {
+            conversationId,
+            tasks: [
+              expect.objectContaining({ messageId: 'task-new:user' }),
+              expect.objectContaining({ messageId: 'task-old:assistant' }),
+            ],
+          },
+        ]);
+      } finally {
+        aggregate.mockRestore();
+      }
+    });
+
+    it('preserves Mongo occurrence ordering when task timestamps tie', async () => {
+      const conversationId = uuidv4();
+      const aggregate = jest.spyOn(Message, 'aggregate') as unknown as jest.Mock;
+      aggregate
+        .mockReturnValueOnce(
+          Promise.resolve([
+            {
+              conversationId,
+              tasks: [
+                {
+                  messageId: 'task-b:user',
+                  createdAt: new Date('2026-08-21T10:00:00.000Z'),
+                  occurrenceId: new mongoose.Types.ObjectId('000000000000000000000002'),
+                  status: 'running',
+                },
+              ],
+            },
+          ]),
+        )
+        .mockReturnValueOnce(
+          Promise.resolve([
+            {
+              conversationId,
+              sourceRows: 1,
+              tasks: [
+                {
+                  messageId: 'task-a:assistant',
+                  createdAt: new Date('2026-08-21T10:00:00.000Z'),
+                  occurrenceId: new mongoose.Types.ObjectId('000000000000000000000001'),
+                  status: 'completed',
+                },
+              ],
+            },
+          ]),
+        );
+
+      try {
+        const [record] = await listSubagentTasksForThreads({
+          user: 'user123',
+          conversationIds: [conversationId],
+          limitPerThread: 2,
+        });
+
+        expect(record.tasks.map((task) => task.messageId)).toEqual([
+          'task-b:user',
+          'task-a:assistant',
+        ]);
+      } finally {
+        aggregate.mockRestore();
+      }
     });
   });
 
@@ -842,6 +1582,18 @@ describe('Message Operations', () => {
       expect(actualExpirationTime.getTime()).toBeLessThanOrEqual(
         new Date(afterSave.getTime() + 24 * 60 * 60 * 1000 + 1000).getTime(),
       );
+    });
+
+    it('preserves an exact inherited expiration instead of recomputing retention', async () => {
+      const inheritedExpiration = new Date('2026-08-22T03:04:05.000Z');
+      mockCtx.isTemporary = true;
+      mockCtx.expiredAt = inheritedExpiration;
+      mockCtx.interfaceConfig = { temporaryChatRetention: 48 };
+
+      const result = await saveMessage(mockCtx, mockMessageData);
+
+      expect(result?.isTemporary).toBe(true);
+      expect(result?.expiredAt).toEqual(inheritedExpiration);
     });
 
     it('should save a message without expiredAt when isTemporary is false', async () => {
@@ -1474,7 +2226,13 @@ describe('Message Operations', () => {
       const conversationId = uuidv4();
       const result = await saveMessage(
         { userId: 'user123' },
-        { messageId, conversationId, text: 'Tenant test', tenantId: 'malicious-tenant' },
+        {
+          messageId,
+          conversationId,
+          text: 'Tenant test',
+          tenantId: 'malicious-tenant',
+          userSubmittedPaths: ['/text'],
+        },
       );
 
       expect(result).not.toBeNull();
@@ -1538,15 +2296,893 @@ describe('Message Operations', () => {
       const conversationId = uuidv4();
       await saveMessage({ userId: 'user123' }, { messageId, conversationId, text: 'Original' });
 
-      await updateMessage('user123', {
+      const updateWithUnknownField = {
         messageId,
         text: 'Updated',
         tenantId: 'malicious-tenant',
-      });
+        unknownPipelineField: 'malicious-value',
+        userSubmittedPaths: ['/text'],
+      };
+      await updateMessage('user123', updateWithUnknownField);
 
       const doc = await Message.findOne({ messageId }).lean();
       expect(doc?.text).toBe('Updated');
       expect(doc?.tenantId).toBeUndefined();
+      expect((doc as Record<string, unknown> | null)?.unknownPipelineField).toBeUndefined();
+    });
+  });
+  describe('recordSubagentTaskControlReceipt', () => {
+    const createTaskInput = async (conversationId: string, taskId = 'task-1') => {
+      await Message.create({
+        user: 'user123',
+        conversationId,
+        messageId: `${taskId}:user`,
+        parentMessageId: Constants.NO_PARENT,
+        sender: 'User',
+        text: 'Do the work',
+        endpoint: 'agents',
+        isCreatedByUser: true,
+        subagentTask: {
+          attemptKey: `attempt-${taskId}`,
+          status: 'running',
+        },
+      });
+    };
+
+    it('advances one invocation monotonically and enforces ownership', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      const accepted = {
+        invocationId: 'invocation-1',
+        fingerprint: 'fingerprint-1',
+        controlId: 'control-1',
+        action: 'steer' as const,
+        status: 'accepted' as const,
+        createdAt: new Date('2026-08-24T12:00:00.000Z'),
+        updatedAt: new Date('2026-08-24T12:00:00.000Z'),
+        message: 'Use the primary source.',
+      };
+
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: { ...accepted, controlId: undefined, status: 'reserved' },
+        }),
+      ).resolves.toBe(true);
+      /** A reservation fences competing owners but is not public evidence that
+       * the command was accepted or applied. */
+      await expect(
+        getSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          invocationId: 'invocation-1',
+        }),
+      ).resolves.toBeNull();
+
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: accepted,
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: {
+            ...accepted,
+            status: 'applied',
+            boundary: 'tool',
+            updatedAt: new Date('2026-08-24T12:00:01.000Z'),
+          },
+        }),
+      ).resolves.toBe(true);
+      /** A delayed accepted replay cannot downgrade the durable terminal receipt. */
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: accepted,
+        }),
+      ).resolves.toBe('unchanged');
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'another-user',
+          conversationId,
+          taskId: 'task-1',
+          receipt: accepted,
+        }),
+      ).resolves.toBe(false);
+
+      const stored = await Message.findOne({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:user',
+      })
+        .select('+subagentTask')
+        .lean<IMessage>();
+      expect(stored).not.toBeNull();
+      if (stored == null) throw new Error('Expected the durable task input.');
+      expect(stored.subagentTask?.status).toBe('running');
+      expect(stored.subagentTask?.controlReceipts).toEqual([
+        expect.objectContaining({
+          invocationId: 'invocation-1',
+          action: 'steer',
+          status: 'applied',
+          boundary: 'tool',
+        }),
+      ]);
+    });
+
+    it('updates only the authorized tenant when message identities collide', async () => {
+      const conversationId = uuidv4();
+      const taskId = 'tenant-task';
+      await Promise.all(
+        ['tenant-a', 'tenant-b'].map((tenantId) =>
+          Message.create({
+            user: 'user123',
+            tenantId,
+            conversationId,
+            messageId: `${taskId}:user`,
+            parentMessageId: Constants.NO_PARENT,
+            sender: 'User',
+            text: 'Do the tenant work',
+            endpoint: 'agents',
+            isCreatedByUser: true,
+            subagentTask: { attemptKey: `attempt-${tenantId}`, status: 'running' },
+          }),
+        ),
+      );
+      const now = new Date('2026-08-24T12:00:00.000Z');
+
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          tenantId: 'tenant-b',
+          conversationId,
+          taskId,
+          receipt: {
+            invocationId: 'tenant-invocation',
+            fingerprint: 'tenant-fingerprint',
+            controlId: 'tenant-control',
+            action: 'queue',
+            status: 'accepted',
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ).resolves.toBe(true);
+
+      const [tenantA, tenantB] = await Promise.all(
+        ['tenant-a', 'tenant-b'].map((tenantId) =>
+          Message.findOne({
+            user: 'user123',
+            tenantId,
+            conversationId,
+            messageId: `${taskId}:user`,
+          })
+            .select('+subagentTask')
+            .lean<IMessage>(),
+        ),
+      );
+      expect(tenantA?.subagentTask?.controlReceipts).toBeUndefined();
+      expect(tenantB?.subagentTask?.controlReceipts).toEqual([
+        expect.objectContaining({ invocationId: 'tenant-invocation' }),
+      ]);
+    });
+
+    it('reads an exact authorized receipt and persists a new terminal rejection', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      await mongoose.models.Conversation.create({
+        user: 'user123',
+        conversationId,
+        title: 'Child thread',
+        endpoint: 'agents',
+        subagentThread: {
+          rootConversationId: 'parent-conversation',
+          parentConversationId: 'parent-conversation',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      await Message.create({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:assistant',
+        parentMessageId: 'task-1:user',
+        sender: 'researcher',
+        text: 'Done.',
+        endpoint: 'agents',
+        isCreatedByUser: false,
+        subagentTask: {
+          attemptKey: 'task-1-attempt',
+          parentRunId: 'parent-message',
+          status: 'completed',
+          resultClaim: {
+            kind: 'manual',
+            claimId: 'poll-1',
+            claimedAt: new Date('2026-08-24T12:00:02.000Z'),
+          },
+        },
+      });
+      const now = new Date('2026-08-24T12:00:00.000Z');
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: {
+            invocationId: 'terminal-invocation',
+            fingerprint: 'terminal-fingerprint',
+            action: 'cancel',
+            status: 'rejected',
+            reason: 'task_not_running',
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ).resolves.toBe(true);
+
+      await expect(
+        getSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          invocationId: 'terminal-invocation',
+        }),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          invocationId: 'terminal-invocation',
+          fingerprint: 'terminal-fingerprint',
+          status: 'rejected',
+          reason: 'task_not_running',
+        }),
+      );
+      await expect(
+        getSubagentTaskControlReceipt({
+          userId: 'another-user',
+          conversationId,
+          taskId: 'task-1',
+          invocationId: 'terminal-invocation',
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        getSubagentTaskControlReplay({
+          userId: 'user123',
+          parentConversationId: 'parent-conversation',
+          taskId: 'task-1',
+          invocationId: 'terminal-invocation',
+        }),
+      ).resolves.toEqual({
+        receipt: expect.objectContaining({ invocationId: 'terminal-invocation' }),
+        task: expect.objectContaining({
+          taskId: 'task-1',
+          threadId: conversationId,
+          subagentType: 'researcher',
+          status: 'completed',
+          resultAvailable: true,
+          resultClaimed: true,
+        }),
+      });
+      await expect(
+        getSubagentTaskControlReplay({
+          userId: 'user123',
+          parentConversationId: 'different-parent',
+          taskId: 'task-1',
+          invocationId: 'terminal-invocation',
+        }),
+      ).resolves.toBeNull();
+
+      const ordinaryConversationId = uuidv4();
+      await Message.create({
+        user: 'user123',
+        conversationId: ordinaryConversationId,
+        messageId: 'ordinary-task:user',
+        parentMessageId: Constants.NO_PARENT,
+        sender: 'User',
+        text: 'An ordinary message with a colliding id.',
+        endpoint: 'agents',
+        isCreatedByUser: true,
+      });
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId: ordinaryConversationId,
+          taskId: 'ordinary-task',
+          receipt: {
+            invocationId: 'terminal-invocation',
+            fingerprint: 'terminal-fingerprint',
+            action: 'cancel',
+            status: 'rejected',
+            reason: 'task_not_running',
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ).resolves.toBe(false);
+    });
+
+    it('replays an applied cancellation as cancelled before its terminal row exists', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      await mongoose.models.Conversation.create({
+        user: 'user123',
+        conversationId,
+        title: 'Cancelling child thread',
+        endpoint: 'agents',
+        subagentThread: {
+          rootConversationId: 'parent-conversation',
+          parentConversationId: 'parent-conversation',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      const now = new Date('2026-08-24T12:00:00.000Z');
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: {
+            invocationId: 'cancel-invocation',
+            fingerprint: 'cancel-fingerprint',
+            action: 'cancel',
+            status: 'applied',
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ).resolves.toBe(true);
+
+      await expect(
+        getSubagentTaskControlReplay({
+          userId: 'user123',
+          parentConversationId: 'parent-conversation',
+          taskId: 'task-1',
+          invocationId: 'cancel-invocation',
+        }),
+      ).resolves.toEqual({
+        receipt: expect.objectContaining({ invocationId: 'cancel-invocation' }),
+        task: expect.objectContaining({
+          taskId: 'task-1',
+          threadId: conversationId,
+          status: 'cancelled',
+          resultAvailable: false,
+          resultClaimed: false,
+          updatedAt: now,
+        }),
+      });
+    });
+
+    it('reports every accepted control when replaying one durable invocation', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      await mongoose.models.Conversation.create({
+        user: 'user123',
+        conversationId,
+        title: 'Controlled child thread',
+        endpoint: 'agents',
+        subagentThread: {
+          rootConversationId: 'parent-conversation',
+          parentConversationId: 'parent-conversation',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      const now = new Date('2026-08-24T12:00:00.000Z');
+      for (const index of [1, 2]) {
+        await expect(
+          recordSubagentTaskControlReceipt({
+            userId: 'user123',
+            conversationId,
+            taskId: 'task-1',
+            receipt: {
+              invocationId: `pending-invocation-${index}`,
+              fingerprint: `pending-fingerprint-${index}`,
+              controlId: `pending-control-${index}`,
+              action: 'queue',
+              status: 'accepted',
+              createdAt: now,
+              updatedAt: now,
+            },
+          }),
+        ).resolves.toBe(true);
+      }
+
+      await expect(
+        getSubagentTaskControlReplay({
+          userId: 'user123',
+          parentConversationId: 'parent-conversation',
+          taskId: 'task-1',
+          invocationId: 'pending-invocation-1',
+        }),
+      ).resolves.toEqual({
+        receipt: expect.objectContaining({ invocationId: 'pending-invocation-1' }),
+        task: expect.objectContaining({ pendingControls: 2 }),
+      });
+    });
+
+    it('rejects an invocation fingerprint conflict without reporting persistence', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      const now = new Date('2026-08-24T12:00:00.000Z');
+      const receipt = {
+        invocationId: 'conflicting-invocation',
+        fingerprint: 'first-fingerprint',
+        controlId: 'first-control',
+        action: 'queue' as const,
+        status: 'accepted' as const,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt,
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: { ...receipt, fingerprint: 'different-fingerprint' },
+        }),
+      ).resolves.toBe('conflict');
+    });
+
+    it('retains concurrent receipts without requiring an aggregation-pipeline update', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      const createdAt = new Date('2026-08-24T12:00:00.000Z');
+
+      const invocationIds = Array.from({ length: 32 }, (_, index) => `concurrent-${index}`);
+      await Promise.all(
+        invocationIds.map((invocationId, index) =>
+          recordSubagentTaskControlReceipt({
+            userId: 'user123',
+            conversationId,
+            taskId: 'task-1',
+            receipt: {
+              invocationId,
+              fingerprint: `${invocationId}-fingerprint`,
+              controlId: `${invocationId}-control`,
+              action: 'queue',
+              status: 'accepted',
+              createdAt: new Date(createdAt.getTime() + index),
+              updatedAt: new Date(createdAt.getTime() + index),
+            },
+          }),
+        ),
+      );
+
+      const stored = await Message.findOne({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:user',
+      })
+        .select('+subagentTask')
+        .lean<IMessage>();
+      expect(stored?.subagentTask?.controlReceipts).toEqual(
+        expect.arrayContaining(
+          invocationIds.map((invocationId) => expect.objectContaining({ invocationId })),
+        ),
+      );
+    });
+
+    it('retains accepted commands while bounding terminal receipt history', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      const createdAt = new Date('2026-08-24T12:00:00.000Z');
+      await recordSubagentTaskControlReceipt({
+        userId: 'user123',
+        conversationId,
+        taskId: 'task-1',
+        receipt: {
+          invocationId: 'pending',
+          fingerprint: 'pending-fingerprint',
+          controlId: 'pending-control',
+          action: 'queue',
+          status: 'accepted',
+          createdAt,
+          updatedAt: createdAt,
+        },
+      });
+      for (let index = 0; index < 70; index += 1) {
+        await recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: {
+            invocationId: `terminal-${index}`,
+            fingerprint: `fingerprint-${index}`,
+            controlId: `control-${index}`,
+            action: 'steer',
+            status: 'applied',
+            createdAt: new Date(createdAt.getTime() + index + 1),
+            updatedAt: new Date(createdAt.getTime() + index + 1),
+            boundary: 'tool',
+          },
+        });
+      }
+
+      const stored = await Message.findOne({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:user',
+      })
+        .select('+subagentTask')
+        .lean<IMessage>();
+      expect(stored).not.toBeNull();
+      if (stored == null) throw new Error('Expected the durable task input.');
+      expect(stored.subagentTask?.controlReceipts).toHaveLength(64);
+      expect(stored.subagentTask?.controlReceipts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ invocationId: 'pending', status: 'accepted' }),
+          expect.objectContaining({ invocationId: 'terminal-69', status: 'applied' }),
+        ]),
+      );
+      expect(stored.subagentTask?.controlReceipts).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ invocationId: 'terminal-0' })]),
+      );
+
+      /** An old idempotent retry retains its original occurrence ordering and
+       * cannot evict newer terminal history merely by arriving again. */
+      await recordSubagentTaskControlReceipt({
+        userId: 'user123',
+        conversationId,
+        taskId: 'task-1',
+        receipt: {
+          invocationId: 'terminal-0',
+          fingerprint: 'fingerprint-0',
+          controlId: 'control-0',
+          action: 'steer',
+          status: 'applied',
+          createdAt: new Date(createdAt.getTime() + 1),
+          updatedAt: new Date(createdAt.getTime() + 1),
+          boundary: 'tool',
+        },
+      });
+      const afterReplay = await Message.findOne({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:user',
+      })
+        .select('+subagentTask')
+        .lean<IMessage>();
+      expect(afterReplay?.subagentTask?.controlReceipts).toHaveLength(64);
+      expect(afterReplay?.subagentTask?.controlReceipts).toEqual(
+        expect.arrayContaining([expect.objectContaining({ invocationId: 'terminal-7' })]),
+      );
+      expect(afterReplay?.subagentTask?.controlReceipts).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ invocationId: 'terminal-0' })]),
+      );
+    });
+
+    it('refuses to evict active receipt fences at durable capacity', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      const createdAt = new Date('2026-08-24T12:00:00.000Z');
+      const results: Array<boolean | 'unchanged' | 'conflict'> = [];
+      for (let index = 0; index < 70; index += 1) {
+        results.push(
+          await recordSubagentTaskControlReceipt({
+            userId: 'user123',
+            conversationId,
+            taskId: 'task-1',
+            receipt: {
+              invocationId: `accepted-${index}`,
+              fingerprint: `fingerprint-${index}`,
+              controlId: `control-${index}`,
+              action: 'queue',
+              status: 'accepted',
+              createdAt: new Date(createdAt.getTime() + index),
+              updatedAt: new Date(createdAt.getTime() + index),
+            },
+          }),
+        );
+      }
+      expect(results.slice(0, 64)).toEqual(Array.from({ length: 64 }, () => true));
+      expect(results.slice(64)).toEqual(Array.from({ length: 6 }, () => false));
+
+      const stored = await Message.findOne({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:user',
+      })
+        .select('+subagentTask')
+        .lean<IMessage>();
+      expect(stored?.subagentTask?.controlReceipts).toHaveLength(64);
+      expect(stored?.subagentTask?.controlReceipts?.[0]?.invocationId).toBe('accepted-0');
+      expect(stored?.subagentTask?.controlReceipts?.[63]?.invocationId).toBe('accepted-63');
+
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: {
+            invocationId: 'terminal-with-no-allowance',
+            fingerprint: 'terminal-fingerprint',
+            controlId: 'terminal-control',
+            action: 'queue',
+            status: 'applied',
+            createdAt: new Date(createdAt.getTime() + 100),
+            updatedAt: new Date(createdAt.getTime() + 100),
+            boundary: 'turn',
+          },
+        }),
+      ).resolves.toBe(false);
+      const afterTerminal = await Message.findOne({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:user',
+      })
+        .select('+subagentTask')
+        .lean<IMessage>();
+      expect(afterTerminal?.subagentTask?.controlReceipts).toHaveLength(64);
+      expect(afterTerminal?.subagentTask?.controlReceipts).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ invocationId: 'terminal-with-no-allowance' }),
+        ]),
+      );
+
+      /** Completing an existing active fence always frees its own slot and wins
+       * over terminal history, even though its occurrence timestamp is oldest. */
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: {
+            invocationId: 'accepted-0',
+            fingerprint: 'fingerprint-0',
+            controlId: 'control-0',
+            action: 'queue',
+            status: 'applied',
+            createdAt,
+            updatedAt: new Date(createdAt.getTime() + 101),
+            boundary: 'turn',
+          },
+        }),
+      ).resolves.toBe(true);
+      const afterTransition = await Message.findOne({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:user',
+      })
+        .select('+subagentTask')
+        .lean<IMessage>();
+      expect(afterTransition?.subagentTask?.controlReceipts).toHaveLength(64);
+      expect(afterTransition?.subagentTask?.controlReceipts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ invocationId: 'accepted-0', status: 'applied' }),
+          expect.objectContaining({ invocationId: 'accepted-63', status: 'accepted' }),
+        ]),
+      );
+    });
+  });
+
+  describe('claimSubagentTaskResult', () => {
+    const terminalResult = async (taskId: string, conversationId: string, status: string) =>
+      saveMessage({ userId: 'user123' }, {
+        messageId: `${taskId}:assistant`,
+        conversationId,
+        text: 'child result',
+        subagentTask: { attemptKey: `${taskId}:attempt`, status },
+      } as Partial<IMessage>);
+
+    it('hands one terminal result to a single polling invocation', async () => {
+      const taskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(taskId, conversationId, 'completed');
+
+      const first = await claimSubagentTaskResult({
+        userId: 'user123',
+        conversationId,
+        taskId,
+        kind: 'manual',
+        claimId: 'poll-1',
+      });
+      expect(first.status).toBe('acquired');
+      expect(first.status === 'acquired' && first.message.text).toBe('child result');
+
+      /** The same invocation retrying recovers the result it never received. */
+      const retried = await claimSubagentTaskResult({
+        userId: 'user123',
+        conversationId,
+        taskId,
+        kind: 'manual',
+        claimId: 'poll-1',
+      });
+      expect(retried.status).toBe('acquired');
+
+      /** Another invocation is told it was collected instead of handed a copy. */
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId,
+          kind: 'manual',
+          claimId: 'poll-2',
+        }),
+      ).resolves.toMatchObject({ status: 'claimed' });
+    });
+
+    it('elects either a manual poll or one idempotent automatic wakeup', async () => {
+      const manualTaskId = uuidv4();
+      const wakeupTaskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(manualTaskId, conversationId, 'completed');
+      await terminalResult(wakeupTaskId, conversationId, 'completed');
+
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId: manualTaskId,
+          kind: 'manual',
+          claimId: 'poll-1',
+        }),
+      ).resolves.toMatchObject({ status: 'acquired' });
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId: manualTaskId,
+          kind: 'wakeup',
+          claimId: 'delivery-1',
+        }),
+      ).resolves.toMatchObject({ status: 'claimed' });
+
+      const wakeupClaim = {
+        userId: 'user123',
+        conversationId,
+        taskId: wakeupTaskId,
+        kind: 'wakeup' as const,
+        claimId: 'delivery-2',
+      };
+      await expect(claimSubagentTaskResult(wakeupClaim)).resolves.toMatchObject({
+        status: 'acquired',
+      });
+      await expect(claimSubagentTaskResult(wakeupClaim)).resolves.toMatchObject({
+        status: 'acquired',
+      });
+      await expect(
+        claimSubagentTaskResult({ ...wakeupClaim, claimId: 'delivery-3' }),
+      ).resolves.toMatchObject({ status: 'claimed' });
+      await expect(
+        claimSubagentTaskResult({ ...wakeupClaim, kind: 'manual', claimId: 'poll-2' }),
+      ).resolves.toMatchObject({ status: 'claimed' });
+    });
+
+    it('preserves and upgrades retries of legacy manual claims without a kind', async () => {
+      const taskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(taskId, conversationId, 'completed');
+      await claimSubagentTaskResult({
+        userId: 'user123',
+        conversationId,
+        taskId,
+        kind: 'manual',
+        claimId: 'legacy-poll',
+      });
+      await Message.collection.updateOne(
+        { user: 'user123', conversationId, messageId: `${taskId}:assistant` },
+        { $unset: { 'subagentTask.resultClaim.kind': '' } },
+      );
+
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId,
+          kind: 'manual',
+          claimId: 'legacy-poll',
+        }),
+      ).resolves.toMatchObject({
+        status: 'acquired',
+        message: { subagentTask: { resultClaim: { kind: 'manual', claimId: 'legacy-poll' } } },
+      });
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId,
+          kind: 'wakeup',
+          claimId: 'legacy-poll',
+        }),
+      ).resolves.toMatchObject({ status: 'claimed' });
+    });
+
+    it('releases only the exact rejected wakeup so manual collection can take over', async () => {
+      const taskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(taskId, conversationId, 'completed');
+      const wakeup = {
+        userId: 'user123',
+        conversationId,
+        taskId,
+        kind: 'wakeup' as const,
+        claimId: 'delivery-1',
+      };
+      await expect(claimSubagentTaskResult(wakeup)).resolves.toMatchObject({
+        status: 'acquired',
+      });
+      await expect(
+        releaseSubagentTaskResultClaim({ ...wakeup, claimId: 'another-delivery' }),
+      ).resolves.toBe(false);
+      await expect(releaseSubagentTaskResultClaim(wakeup)).resolves.toBe(true);
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId,
+          kind: 'manual',
+          claimId: 'poll-after-rejection',
+        }),
+      ).resolves.toMatchObject({ status: 'acquired' });
+    });
+
+    it('reports a result that is missing or still running as not found', async () => {
+      const runningTaskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(runningTaskId, conversationId, 'running');
+
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId: runningTaskId,
+          kind: 'manual',
+          claimId: 'poll-1',
+        }),
+      ).resolves.toEqual({ status: 'not_found' });
+
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId: uuidv4(),
+          kind: 'manual',
+          claimId: 'poll-1',
+        }),
+      ).resolves.toEqual({ status: 'not_found' });
+    });
+
+    it('never hands one owner’s result to another user', async () => {
+      const taskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(taskId, conversationId, 'completed');
+
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'other-user',
+          conversationId,
+          taskId,
+          kind: 'manual',
+          claimId: 'poll-1',
+        }),
+      ).resolves.toEqual({ status: 'not_found' });
     });
   });
 });

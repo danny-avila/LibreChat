@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { logger, runAsSystem } from '@librechat/data-schemas';
 import type { AgentTriggerExecutionResult } from './host';
+import { createAgentTriggerBatchEnvelope } from './batch';
 import { AgentTriggerDispatchError } from './dispatch';
 import { AgentTriggerExecutionError } from './host';
 
@@ -10,9 +11,41 @@ const DEFAULT_MAX_ATTEMPTS = 8;
 const DEFAULT_RETRY_BASE_MS = 1_000;
 const DEFAULT_RETRY_CAP_MS = 5 * 60_000;
 const DEFAULT_TICK_MS = 1_000;
+const DEFAULT_MAX_IDLE_TICK_MS = 15_000;
 const ORDERING_RECHECK_MS = 250;
 const DEFAULT_DEFER_MS = 5_000;
 const MAX_RETRY_AFTER_MS = 24 * 60 * 60_000;
+
+function startedHandling(
+  delivery: Pick<AgentTriggerDeliveryRecord, 'envelope'>,
+  result: AgentTriggerExecutionResult,
+  startedAt: Date,
+): AgentTriggerDeliveryRecord['handling'] | undefined {
+  const envelope = delivery.envelope;
+  if (
+    envelope == null ||
+    typeof envelope !== 'object' ||
+    !('mode' in envelope) ||
+    envelope.mode !== 'continue' ||
+    !('target' in envelope) ||
+    envelope.target == null ||
+    typeof envelope.target !== 'object' ||
+    !('bindingId' in envelope.target) ||
+    result.mode !== 'continue' ||
+    result.status === 'settled' ||
+    result.streamId == null ||
+    result.generationCreatedAt == null
+  ) {
+    return undefined;
+  }
+  return {
+    status: 'started',
+    conversationId: result.conversationId,
+    streamId: result.streamId,
+    generationCreatedAt: result.generationCreatedAt,
+    startedAt,
+  };
+}
 
 /** A pre-dispatch condition that must not consume the delivery's retry budget. */
 export class AgentTriggerDeliveryDeferredError extends Error {
@@ -25,7 +58,13 @@ export class AgentTriggerDeliveryDeferredError extends Error {
   }
 }
 
-export type AgentTriggerDeliveryStatus = 'staging' | 'pending' | 'leased' | 'succeeded' | 'dead';
+export type AgentTriggerDeliveryStatus =
+  | 'staging'
+  | 'batched'
+  | 'pending'
+  | 'leased'
+  | 'succeeded'
+  | 'dead';
 
 export interface AgentTriggerDeliveryFailure {
   code: string;
@@ -49,9 +88,28 @@ export interface AgentTriggerDeliveryRecord {
   attempts: number;
   availableAt: Date;
   createdAt: Date;
+  envelopeBytes?: number;
+  coalesceKey?: string;
+  coalesceFrom?: Date;
+  coalesceUntil?: Date;
+  batchSize?: number;
+  batchBytes?: number;
+  batchMemberIds?: Array<{ toString(): string } | string>;
+  batchRootId?: { toString(): string } | string;
+  batchMembersSettledAt?: Date;
   leaseBy?: string;
   leaseUntil?: Date;
   lastError?: AgentTriggerDeliveryFailure;
+  handling?: {
+    status: 'started' | 'applied' | 'completed_no_action' | 'failed' | 'cancelled';
+    conversationId: string;
+    streamId: string;
+    generationCreatedAt: number;
+    startedAt: Date;
+    settledAt?: Date;
+    error?: string;
+    action?: { toolName: string; toolCallId?: string };
+  };
 }
 
 export interface AgentTriggerOrderingBlock {
@@ -69,6 +127,9 @@ export interface AgentTriggerDeliveryStore {
   findEarlierUnsettled: (
     delivery: AgentTriggerDeliveryRecord,
   ) => Promise<AgentTriggerOrderingBlock | null>;
+  getBatch: (
+    delivery: Pick<AgentTriggerDeliveryRecord, 'id' | 'batchMemberIds'>,
+  ) => Promise<Array<Pick<AgentTriggerDeliveryRecord, 'id' | 'deliveryKey' | 'envelope'>>>;
   release: (input: {
     id: string;
     workerId: string;
@@ -95,6 +156,7 @@ export interface AgentTriggerDeliveryStore {
     attempt: number;
     result: AgentTriggerExecutionResult;
     settledAt: Date;
+    handling?: AgentTriggerDeliveryRecord['handling'];
   }) => Promise<boolean>;
   retry: (input: {
     id: string;
@@ -121,6 +183,9 @@ export interface AgentTriggerDeliveryEngineOptions {
   retryBaseMs?: number;
   retryCapMs?: number;
   tickMs?: number;
+  /** Ceiling for the poll interval while the queue stays empty; any wake or claimed
+   *  delivery snaps polling back to `tickMs`, so only true idleness ever waits this long. */
+  maxIdleTickMs?: number;
 }
 
 export interface AgentTriggerDeliveryEngineDeps {
@@ -134,8 +199,16 @@ export interface AgentTriggerDeliveryEngineDeps {
   workerId?: string;
 }
 
+interface ClaimPassResult {
+  count: number;
+  processing: Promise<void>[];
+  claimFailed?: boolean;
+}
+
 export interface AgentTriggerDeliveryEngine {
   start: () => void;
+  /** Registers a future eligibility time so the idle poll never sleeps past it. */
+  noteEligibleAt: (at: Date) => void;
   stop: () => Promise<void>;
   cancelUser: (userId: string) => Promise<void>;
   releaseUserCancellation: (userId: string) => void;
@@ -211,6 +284,10 @@ function isAccountDeletionDeferral(error: unknown): boolean {
   );
 }
 
+function isRuntimeReadinessDeferral(error: unknown): boolean {
+  return error instanceof AgentTriggerExecutionError && error.deferWithoutAttempt;
+}
+
 /** Durable, lease-fenced delivery runner shared by every trusted event source. */
 export function createAgentTriggerDeliveryEngine(
   deps: AgentTriggerDeliveryEngineDeps,
@@ -222,10 +299,22 @@ export function createAgentTriggerDeliveryEngine(
   const retryBaseMs = positiveInteger(options.retryBaseMs, DEFAULT_RETRY_BASE_MS, 'retryBaseMs');
   const retryCapMs = positiveInteger(options.retryCapMs, DEFAULT_RETRY_CAP_MS, 'retryCapMs');
   const tickMs = positiveInteger(options.tickMs, DEFAULT_TICK_MS, 'tickMs');
+  const maxIdleTickMs = Math.max(
+    tickMs,
+    positiveInteger(options.maxIdleTickMs, DEFAULT_MAX_IDLE_TICK_MS, 'maxIdleTickMs'),
+  );
   const now = deps.now ?? (() => new Date());
   const random = deps.random ?? Math.random;
   const workerId = deps.workerId ?? `${process.pid}-${randomUUID()}`;
   const controllers = new Map<AbortController, string>();
+  let idleStreak = 0;
+  /** Future eligibility times this process has seen (sorted, deduplicated, bounded); the
+   *  idle timer never sleeps past the earliest, so retries and defers are claimed when
+   *  due, not when the backoff happens to wake. On overflow the latest deadline is
+   *  dropped and that delivery degrades to idle-poll pickup, bounded by `maxIdleTickMs`
+   *  — the same bound that covers deliveries delayed by other replicas. */
+  const eligibleDeadlinesMs: number[] = [];
+  const MAX_TRACKED_DEADLINES = 64;
   const processing = new Set<Promise<void>>();
   const processingByUser = new Map<string, Set<Promise<void>>>();
   const cancelledUsers = new Set<string>();
@@ -233,7 +322,7 @@ export function createAgentTriggerDeliveryEngine(
   let started = false;
   let repumpRequested = false;
   let timer: NodeJS.Timeout | undefined;
-  let activeClaim: Promise<{ count: number; processing: Promise<void>[] }> | undefined;
+  let activeClaim: Promise<ClaimPassResult> | undefined;
 
   const processDelivery = async (delivery: AgentTriggerDeliveryRecord): Promise<void> => {
     const userId = String(delivery.user);
@@ -252,6 +341,7 @@ export function createAgentTriggerDeliveryEngine(
       const recheckAt = now().getTime() + ORDERING_RECHECK_MS;
       const nextCheck =
         block.leaseUntil == null ? Math.max(recheckAt, block.availableAt.getTime()) : recheckAt;
+      noteEligibleAt(new Date(nextCheck));
       await deps.store.release({
         id: delivery.id,
         workerId,
@@ -321,19 +411,27 @@ export function createAgentTriggerDeliveryEngine(
     try {
       let result: AgentTriggerExecutionResult;
       try {
-        result = await deps.dispatch(delivery.envelope, { signal: controller.signal });
+        const members = await deps.store.getBatch(delivery);
+        const dispatchEnvelope =
+          members.length === 0
+            ? delivery.envelope
+            : createAgentTriggerBatchEnvelope(delivery, members);
+        result = await deps.dispatch(dispatchEnvelope, { signal: controller.signal });
       } catch (error) {
         const attemptedAt = now();
         const deletionCancelled = controller.signal.aborted && cancelledUsers.has(userId);
         const deletionRejected = isAccountDeletionDeferral(error);
+        const runtimeNotReady = isRuntimeReadinessDeferral(error);
         if (
           error instanceof AgentTriggerDeliveryDeferredError ||
           deletionCancelled ||
-          deletionRejected
+          deletionRejected ||
+          runtimeNotReady
         ) {
           const delayMs =
             error instanceof AgentTriggerDeliveryDeferredError ? error.delayMs : DEFAULT_DEFER_MS;
           const availableAt = new Date(attemptedAt.getTime() + delayMs);
+          noteEligibleAt(availableAt);
           const deferred = await deps.store.defer({
             id: delivery.id,
             workerId,
@@ -342,9 +440,15 @@ export function createAgentTriggerDeliveryEngine(
             availableAt,
           });
           if (deferred) {
+            let reason = 'pre_dispatch';
+            if (deletionCancelled || deletionRejected) {
+              reason = 'account_deletion';
+            } else if (runtimeNotReady) {
+              reason = 'runtime_readiness';
+            }
             logger.info('[agent-triggers] delivery deferred without consuming an attempt', {
               deliveryKey: delivery.deliveryKey,
-              reason: deletionCancelled || deletionRejected ? 'account_deletion' : 'pre_dispatch',
+              reason,
               availableAt: availableAt.toISOString(),
             });
           }
@@ -371,6 +475,7 @@ export function createAgentTriggerDeliveryEngine(
           return;
         }
         const availableAt = retryAt(error, attempt, attemptedAt, retryBaseMs, retryCapMs, random);
+        noteEligibleAt(availableAt);
         const retrying = await deps.store.retry({
           id: delivery.id,
           workerId,
@@ -393,6 +498,7 @@ export function createAgentTriggerDeliveryEngine(
 
       const settledAt = now();
       try {
+        const handling = startedHandling(delivery, result, settledAt);
         await deps.store.complete({
           id: delivery.id,
           workerId,
@@ -400,6 +506,7 @@ export function createAgentTriggerDeliveryEngine(
           attempt,
           result,
           settledAt,
+          ...(handling != null && { handling }),
         });
       } catch (error) {
         const recorded: AgentTriggerDeliveryFailure = {
@@ -410,6 +517,7 @@ export function createAgentTriggerDeliveryEngine(
           attemptedAt: settledAt,
         };
         const availableAt = retryAt(error, attempt, settledAt, retryBaseMs, retryCapMs, random);
+        noteEligibleAt(availableAt);
         const retrying = await deps.store.retry({
           id: delivery.id,
           workerId,
@@ -444,7 +552,7 @@ export function createAgentTriggerDeliveryEngine(
     });
   };
 
-  const runClaimPass = async (): Promise<{ count: number; processing: Promise<void>[] }> => {
+  const runClaimPass = async (): Promise<ClaimPassResult> => {
     if (stopped) {
       return { count: 0, processing: [] };
     }
@@ -462,7 +570,7 @@ export function createAgentTriggerDeliveryEngine(
       deliveries.push(first);
     } catch (error) {
       logger.error('[agent-triggers] delivery claim failed:', error);
-      return { count: 0, processing: [] };
+      return { count: 0, processing: [], claimFailed: true };
     }
 
     if (openSlots > 1) {
@@ -504,17 +612,25 @@ export function createAgentTriggerDeliveryEngine(
     return { count: deliveries.length, processing: batch };
   };
 
-  const claimAvailable = (): Promise<{ count: number; processing: Promise<void>[] }> => {
+  const claimAvailable = (): Promise<ClaimPassResult> => {
     if (activeClaim != null) {
       return activeClaim;
     }
-    activeClaim = runAsSystem(runClaimPass).finally(() => {
-      activeClaim = undefined;
-      if (repumpRequested && !stopped) {
-        repumpRequested = false;
-        queueMicrotask(wake);
-      }
-    });
+    activeClaim = runAsSystem(runClaimPass)
+      .then((result) => {
+        /** Only a pass that confirmed an empty queue may advance the idle backoff: work
+         *  resets it, and a failed claim proves nothing, so it polls on at the base
+         *  cadence — the pre-backoff status quo through an outage and at recovery. */
+        idleStreak = result.count === 0 && result.claimFailed !== true ? idleStreak + 1 : 0;
+        return result;
+      })
+      .finally(() => {
+        activeClaim = undefined;
+        if (repumpRequested && !stopped) {
+          repumpRequested = false;
+          queueMicrotask(wake);
+        }
+      });
     return activeClaim;
   };
 
@@ -524,10 +640,7 @@ export function createAgentTriggerDeliveryEngine(
     return batch.count;
   };
 
-  function wake(): void {
-    if (stopped) {
-      return;
-    }
+  const claimOnce = (): void => {
     if (activeClaim != null) {
       repumpRequested = true;
       return;
@@ -535,16 +648,67 @@ export function createAgentTriggerDeliveryEngine(
     void claimAvailable().catch((error) =>
       logger.error('[agent-triggers] delivery claim pass failed:', error),
     );
+  };
+
+  function noteEligibleAt(at: Date): void {
+    const eligibleAtMs = at.getTime();
+    if (!Number.isFinite(eligibleAtMs) || stopped) {
+      return;
+    }
+    const insertAt = eligibleDeadlinesMs.findIndex((deadline) => deadline >= eligibleAtMs);
+    if (insertAt !== -1 && eligibleDeadlinesMs[insertAt] === eligibleAtMs) {
+      return;
+    }
+    eligibleDeadlinesMs.splice(
+      insertAt === -1 ? eligibleDeadlinesMs.length : insertAt,
+      0,
+      eligibleAtMs,
+    );
+    if (eligibleDeadlinesMs.length > MAX_TRACKED_DEADLINES) {
+      eligibleDeadlinesMs.pop();
+    }
+    if (started && eligibleDeadlinesMs[0] === eligibleAtMs) {
+      schedule();
+    }
+  }
+
+  /** A wake is evidence of work — an enqueue or a finished delivery — so it snaps the
+   *  idle backoff and the poll timer back to the base cadence before claiming. */
+  function wake(): void {
+    if (stopped) {
+      return;
+    }
+    idleStreak = 0;
+    if (started) {
+      schedule();
+    }
+    claimOnce();
   }
 
   const schedule = () => {
     if (stopped) {
       return;
     }
-    timer = setTimeout(() => {
-      wake();
+    if (timer != null) {
+      clearTimeout(timer);
+    }
+    let delay = Math.min(tickMs * 2 ** idleStreak, maxIdleTickMs);
+    if (eligibleDeadlinesMs.length > 0) {
+      delay = Math.max(0, Math.min(delay, eligibleDeadlinesMs[0] - now().getTime()));
+    }
+    timer = setTimeout(async () => {
+      if (stopped) {
+        return;
+      }
+      const nowMs = now().getTime();
+      while (eligibleDeadlinesMs.length > 0 && eligibleDeadlinesMs[0] <= nowMs) {
+        eligibleDeadlinesMs.shift();
+      }
+      await claimAvailable().catch((error) =>
+        logger.error('[agent-triggers] delivery claim pass failed:', error),
+      );
       schedule();
-    }, tickMs);
+    }, delay);
     timer.unref();
   };
 
@@ -555,7 +719,6 @@ export function createAgentTriggerDeliveryEngine(
       }
       started = true;
       wake();
-      schedule();
     },
     stop: async () => {
       stopped = true;
@@ -585,6 +748,7 @@ export function createAgentTriggerDeliveryEngine(
       cancelledUsers.delete(userId);
     },
     wake,
+    noteEligibleAt,
     runTick,
   };
 }

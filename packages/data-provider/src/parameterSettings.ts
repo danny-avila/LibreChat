@@ -17,6 +17,7 @@ import {
   anthropicSettings,
 } from './types';
 import { SettingDefinition, SettingsConfiguration } from './generate';
+import { supportsPromptCache } from './bedrock';
 
 // Base definitions
 const baseDefinitions: Record<string, SettingDefinition> = {
@@ -1264,37 +1265,49 @@ export const agentParamSettings: Record<string, SettingsConfiguration | undefine
  * Resolves model-aware defaults for a settings configuration before rendering.
  * Google's `maxOutputTokens` default depends on the selected Gemini model so that
  * current models (2.5 and 3+) surface their 64K output limit instead of the legacy 8K value.
+ * Anthropic prompt-cache controls are only surfaced for models that support them.
  */
 export function applyModelAwareDefaults(
   settings: SettingsConfiguration,
   endpoint: string,
   model?: string,
 ): SettingsConfiguration {
-  if (endpoint !== EModelEndpoint.google || !model) {
+  if (!model) {
     return settings;
   }
-  return settings.map((setting) => {
-    if (setting.key === 'maxOutputTokens') {
-      return { ...setting, default: googleSettings.maxOutputTokens.reset(model) };
-    }
-    /** The shared thinking budget range is model-agnostic, so it caps Pro below
-     *  its real ceiling and accepts Flash values the provider rejects. The
-     *  maximum and the positive floor move together. `range.min` stays -1 so
-     *  the "decide automatically" sentinel remains typeable. */
-    if (setting.key === 'thinkingBudget' && setting.range != null) {
-      const bounds = getGoogleThinkingBudgetBounds(model);
-      if (bounds != null) {
-        return {
-          ...setting,
-          range: {
-            ...setting.range,
-            max: bounds.max,
-            positiveMin: bounds.min,
-            modelSpecific: true,
-          },
-        };
-      }
-    }
-    return setting;
-  });
+  const modelAwareSettings =
+    endpoint === EModelEndpoint.google
+      ? settings.map((setting) => {
+          if (setting.key === 'maxOutputTokens') {
+            return { ...setting, default: googleSettings.maxOutputTokens.reset(model) };
+          }
+          /** The shared thinking budget range is model-agnostic, so it caps Pro below
+           *  its real ceiling and accepts Flash values the provider rejects. The
+           *  maximum and the positive floor move together. `range.min` stays -1 so
+           *  the "decide automatically" sentinel remains typeable. */
+          if (setting.key === 'thinkingBudget' && setting.range != null) {
+            const bounds = getGoogleThinkingBudgetBounds(model);
+            if (bounds != null) {
+              return {
+                ...setting,
+                range: {
+                  ...setting.range,
+                  max: bounds.max,
+                  positiveMin: bounds.min,
+                  modelSpecific: true,
+                },
+              };
+            }
+          }
+          return setting;
+        })
+      : settings;
+
+  if (endpoint !== EModelEndpoint.anthropic || supportsPromptCache(model)) {
+    return modelAwareSettings;
+  }
+
+  return modelAwareSettings.filter(
+    (setting) => setting.key !== 'promptCache' && setting.key !== 'promptCacheTtl',
+  );
 }

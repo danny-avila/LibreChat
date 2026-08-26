@@ -76,6 +76,7 @@ export interface SearchConfig {
   serperApiKey?: string;
   searxngInstanceUrl?: string;
   searxngApiKey?: string;
+  searxngSearchOptions?: z.infer<typeof webSearchSchema>['searxngSearchOptions'];
   tavilyApiKey?: string;
   tavilySearchUrl?: string;
   tavilySearchOptions?: TavilyConfig['tavilySearchOptions'];

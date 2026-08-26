@@ -76,7 +76,7 @@ async function reinitMCPServer({
     if (serverConfig?.inspectionFailed) {
       if (serverConfig.source === 'config') {
         logger.info(
-          `[MCP Reinitialize] Config-source server ${serverName} has inspectionFailed — retry handled by config cache`,
+          '[MCP Reinitialize] Config-source server inspection failed; retry handled by config cache',
         );
         return {
           availableTools: null,
@@ -89,18 +89,13 @@ async function reinitMCPServer({
           tools: null,
         };
       } else {
-        logger.info(
-          `[MCP Reinitialize] Server ${serverName} had failed inspection, attempting reinspection`,
-        );
+        logger.info('[MCP Reinitialize] Server inspection failed; attempting reinspection');
         try {
           const storageLocation = serverConfig.source === 'user' ? 'DB' : 'CACHE';
           await registry.reinspectServer(serverName, storageLocation, user?.id);
-          logger.info(`[MCP Reinitialize] Reinspection succeeded for server: ${serverName}`);
-        } catch (reinspectError) {
-          logger.error(
-            `[MCP Reinitialize] Reinspection failed for server ${serverName}:`,
-            reinspectError,
-          );
+          logger.info('[MCP Reinitialize] Server reinspection succeeded');
+        } catch {
+          logger.error('[MCP Reinitialize] Server reinspection failed');
           return {
             availableTools: null,
             success: false,
@@ -119,11 +114,9 @@ async function reinitMCPServer({
 
     const missingUserVars = getMissingCustomUserVars(serverConfig ?? {}, customUserVars);
     if (missingUserVars.length > 0) {
-      logger.warn(
-        `[MCP Reinitialize] Skipping server '${serverName}': required user-provided variable(s) not set: ${missingUserVars.join(
-          ', ',
-        )}. Tools will not be exposed until the user configures them.`,
-      );
+      logger.warn('[MCP Reinitialize] Skipping server with missing user configuration', {
+        missingVariableCount: missingUserVars.length,
+      });
       return {
         availableTools: null,
         success: false,
@@ -146,9 +139,8 @@ async function reinitMCPServer({
       : [];
     if (missingBodyFields.length > 0) {
       logger.info(
-        `[MCP Reinitialize] Server '${serverName}' requires request body field(s) [${missingBodyFields.join(
-          ', ',
-        )}] for runtime placeholders; connection deferred to first use in a chat turn`,
+        '[MCP Reinitialize] Runtime placeholders unresolved; connection deferred to first use',
+        { missingBodyFieldCount: missingBodyFields.length },
       );
       return {
         availableTools: null,
@@ -179,7 +171,7 @@ async function reinitMCPServer({
     const oauthStart =
       _oauthStart ??
       (async (authURL, options) => {
-        logger.info(`[MCP Reinitialize] OAuth URL received for ${serverName}`);
+        logger.info('[MCP Reinitialize] OAuth URL received');
         if (authURL !== oauthUrl) {
           oauthExpiresAt = undefined;
         }
@@ -211,9 +203,9 @@ async function reinitMCPServer({
         oboTrustChecker: createOboTrustChecker(),
       });
 
-      logger.info(`[MCP Reinitialize] Successfully established connection for ${serverName}`);
+      logger.info('[MCP Reinitialize] Successfully established connection');
     } catch (err) {
-      logger.info(`[MCP Reinitialize] getConnection threw error: ${err.message}`);
+      logger.info('[MCP Reinitialize] Connection attempt failed');
       logger.info(
         `[MCP Reinitialize] OAuth state - oauthRequired: ${oauthRequired}, oauthUrl: ${oauthUrl ? 'present' : 'null'}`,
       );
@@ -226,9 +218,7 @@ async function reinitMCPServer({
       const isOAuthFlowInitiated = err.message === 'OAuth flow initiated - return early';
 
       if (isOAuthError || oauthRequired || isOAuthFlowInitiated) {
-        logger.info(
-          `[MCP Reinitialize] OAuth required for ${serverName}, attempting tool discovery without auth`,
-        );
+        logger.info('[MCP Reinitialize] OAuth required; attempting tool discovery without auth');
         oauthRequired = true;
 
         try {
@@ -251,19 +241,14 @@ async function reinitMCPServer({
           if (discoveryResult.tools && discoveryResult.tools.length > 0) {
             tools = discoveryResult.tools;
             logger.info(
-              `[MCP Reinitialize] Discovered ${tools.length} tools for ${serverName} without full auth`,
+              `[MCP Reinitialize] Discovered ${tools.length} tools without full authentication`,
             );
           }
-        } catch (discoveryErr) {
-          logger.debug(
-            `[MCP Reinitialize] Tool discovery failed for ${serverName}: ${discoveryErr?.message ?? String(discoveryErr)}`,
-          );
+        } catch {
+          logger.debug('[MCP Reinitialize] Tool discovery failed');
         }
       } else {
-        logger.error(
-          `[MCP Reinitialize] Error initializing MCP server ${serverName} for user:`,
-          err,
-        );
+        logger.error('[MCP Reinitialize] Error initializing MCP server');
       }
     }
 
@@ -328,9 +313,10 @@ async function reinitMCPServer({
       }
     }
 
-    logger.debug(
-      `[MCP Reinitialize] Sending response for ${serverName} - oauthRequired: ${oauthRequired}, oauthUrl: ${oauthUrl ? 'present' : 'null'}`,
-    );
+    logger.debug('[MCP Reinitialize] Sending response', {
+      oauthRequired,
+      hasOauthUrl: Boolean(oauthUrl),
+    });
 
     const getResponseMessage = () => {
       if (oauthRequired && tools && tools.length > 0) {
@@ -366,25 +352,22 @@ async function reinitMCPServer({
       tools,
     };
 
-    logger.debug(`[MCP Reinitialize] Response for ${serverName}:`, {
+    logger.debug('[MCP Reinitialize] Response ready', {
       success: result.success,
       oauthRequired: result.oauthRequired,
-      oauthUrl: result.oauthUrl ? 'present' : null,
+      hasOauthUrl: Boolean(result.oauthUrl),
       toolsCount: tools?.length ?? 0,
     });
 
     return result;
-  } catch (error) {
-    logger.error(
-      '[MCP Reinitialize] Error loading MCP Tools, servers may still be initializing:',
-      error,
-    );
+  } catch {
+    logger.error('[MCP Reinitialize] Error loading MCP tools; servers may still be initializing');
   } finally {
     if (connection && ephemeralServer && !requestScopedConnections) {
       try {
         await connection.dispose();
-      } catch (error) {
-        logger.warn(`[MCP Reinitialize] Failed to dispose ephemeral server ${serverName}`, error);
+      } catch {
+        logger.warn('[MCP Reinitialize] Failed to dispose ephemeral server');
       }
     }
   }

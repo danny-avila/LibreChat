@@ -1,4 +1,6 @@
 import type { SubagentTaskConfig } from '@librechat/agents';
+import type { HostSubagentTaskConfig } from '~/agents/subagentDelivery';
+import { SUBAGENT_COMPLETION_DELIVERY } from '~/agents/subagentDelivery';
 import { CHECK_BACKGROUND_TASK_NAME } from '~/agents/background';
 import { createRun } from '~/agents/run';
 
@@ -58,7 +60,7 @@ jest.mock('~/agents/checkpointer', () => ({
   getAgentCheckpointer: jest.fn().mockResolvedValue({}),
 }));
 
-import { InMemorySubagentTaskStore, Run } from '@librechat/agents';
+import { HookRegistry, InMemorySubagentTaskStore, Run } from '@librechat/agents';
 
 function makeAgent(overrides?: Record<string, unknown>) {
   return {
@@ -151,5 +153,45 @@ describe('createRun code-tool eager/session wiring', () => {
       selfConfig.agentInputs?.toolDefinitions?.map((definition) => definition.name),
     ).not.toContain(CHECK_BACKGROUND_TASK_NAME);
     expect(selfConfig.agentInputs?.toolRegistry?.has(CHECK_BACKGROUND_TASK_NAME)).toBe(false);
+  });
+
+  it('registers wakeup-aware schema and handle guidance for automatic subagent delivery', async () => {
+    const subagentTasks: HostSubagentTaskConfig = {
+      store: new InMemorySubagentTaskStore(),
+      scopeId: 'owner:wakeup-parent',
+      completionDelivery: SUBAGENT_COMPLETION_DELIVERY,
+    };
+    const runConfig = await captureRunConfig(
+      makeAgent({
+        subagents: { enabled: true, allowSelf: true },
+        toolDefinitions: [],
+        toolRegistry: new Map(),
+      }),
+      subagentTasks,
+    );
+    const [agentInput] = (runConfig.graphConfig as { agents: Array<Record<string, unknown>> })
+      .agents;
+    const poll = (agentInput.toolDefinitions as Array<{ name: string; description: string }>).find(
+      (definition) => definition.name === CHECK_BACKGROUND_TASK_NAME,
+    );
+    expect(poll?.description).toContain('automatic completion delivery');
+
+    const hooks = runConfig.hooks as HookRegistry;
+    const [matcher] = hooks.getMatchers('PostToolUse');
+    expect(matcher.pattern).toBe('subagent');
+    const result = await matcher.hooks[0](
+      {
+        hook_event_name: 'PostToolUse',
+        runId: 'run-1',
+        toolName: 'subagent',
+        toolInput: {},
+        toolOutput: JSON.stringify({ background_task_id: 'task-1', status: 'running' }),
+        toolUseId: 'call-1',
+      },
+      new AbortController().signal,
+    );
+    expect(JSON.parse(result.updatedOutput as string).message).toContain(
+      'the host will resume you',
+    );
   });
 });

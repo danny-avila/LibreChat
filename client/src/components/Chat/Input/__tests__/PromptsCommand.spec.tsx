@@ -51,6 +51,7 @@ jest.mock('~/components/Prompts', () => ({
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
+  activateCatalog: jest.fn(),
 }));
 
 /* react-virtualized renders nothing in jsdom without a measured size; replace

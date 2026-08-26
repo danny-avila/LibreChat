@@ -1,11 +1,22 @@
-import type { InputItem } from '../types';
+import type { Response as ServerResponse } from 'express';
+import type { InputItem, ResponseContext } from '../types';
 import {
+  buildAggregatedResponse,
   convertInputToMessages,
   createAggregatorEventHandlers,
   createResponseAggregator,
+  createResponsesEventHandlers,
+  buildResponsesUsage,
 } from '../service';
+import { createResponseTracker } from '../handlers';
 
 describe('response usage aggregation', () => {
+  const context: ResponseContext = {
+    responseId: 'resp_test',
+    model: 'agent_test',
+    createdAt: 1778317637,
+  };
+
   it('accumulates usage across parent and subagent model calls', () => {
     const aggregator = createResponseAggregator();
     const handlers = createAggregatorEventHandlers(aggregator);
@@ -35,6 +46,56 @@ describe('response usage aggregation', () => {
       reasoningTokens: 0,
       cachedTokens: 15,
     });
+  });
+
+  it('builds one normalized wire total with an identity-free child breakdown', () => {
+    const usage = buildResponsesUsage([
+      { input_tokens: 100, output_tokens: 40, provider: 'openAI' },
+      {
+        input_tokens: 25,
+        output_tokens: 10,
+        provider: 'openAI',
+        usage_type: 'subagent',
+        input_token_details: { cache_read: 5 },
+      },
+    ]);
+
+    expect(usage).toEqual({
+      input_tokens: 125,
+      output_tokens: 50,
+      total_tokens: 175,
+      input_tokens_details: { cached_tokens: 5 },
+      output_tokens_details: { reasoning_tokens: 0 },
+      primary: { input_tokens: 100, output_tokens: 40, total_tokens: 140 },
+      subagent: { input_tokens: 25, output_tokens: 10, total_tokens: 35 },
+    });
+
+    const response = buildAggregatedResponse(context, createResponseAggregator(), usage);
+    expect(response.usage).toEqual(usage);
+  });
+
+  it('uses the normalized override in the completed streaming event', () => {
+    const writes: string[] = [];
+    const res = {
+      write: (chunk: string) => {
+        writes.push(chunk);
+      },
+    } as unknown as ServerResponse;
+    const tracker = createResponseTracker();
+    const usage = buildResponsesUsage([
+      { input_tokens: 100, output_tokens: 40, provider: 'openAI' },
+      {
+        input_tokens: 25,
+        output_tokens: 10,
+        provider: 'openAI',
+        usage_type: 'subagent',
+      },
+    ]);
+
+    createResponsesEventHandlers({ res, context, tracker }).finalizeStream(usage);
+
+    const completed = writes.find((chunk) => chunk.startsWith('data: {'));
+    expect(JSON.parse(completed?.slice(6) ?? '{}').response.usage).toEqual(usage);
   });
 });
 

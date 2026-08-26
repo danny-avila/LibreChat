@@ -244,6 +244,13 @@ html {
   --theme-motion-fast: 150ms;
   --theme-motion-normal: 200ms;
   --switch-unchecked: 0 0% 58%;
+  --provider-openai: #19c37d;
+  --provider-openai-gpt4: #ab68ff;
+  --provider-openai-reasoning: #000000;
+  --provider-anthropic: #d09a74;
+  --provider-azure: linear-gradient(0.375turn, #61bde2, #4389d0);
+  --provider-bedrock: #268672;
+  --provider-foreground: #ffffff;
 }
 .dark {
   --brand-purple: 171 104 255;
@@ -326,6 +333,13 @@ html {
   --surface-fixed-hover: var(--gray-100);
   --text-fixed: var(--gray-800);
   --switch-unchecked: 0 0% 40%;
+  --provider-openai: #19c37d;
+  --provider-openai-gpt4: #ab68ff;
+  --provider-openai-reasoning: #000000;
+  --provider-anthropic: #d09a74;
+  --provider-azure: linear-gradient(0.375turn, #61bde2, #4389d0);
+  --provider-bedrock: #268672;
+  --provider-foreground: #ffffff;
 }
 .gizmo {
   --text-primary: var(--gizmo-gray-950);

@@ -122,6 +122,14 @@ export class InMemoryEventTransport implements IEventTransport {
     }
   }
 
+  renewDemand(_streamId: string, _ttlMs: number): void {
+    // The in-process subscriber count is authoritative; no lease is needed.
+  }
+
+  hasDemand(streamId: string): boolean {
+    return this.getSubscriberCount(streamId) > 0;
+  }
+
   async recordProviderDrain(
     streamId: string,
     generationId: number,
