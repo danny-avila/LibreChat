@@ -9,7 +9,7 @@ import type {
   UpdateFilter,
   UpdateResult,
 } from 'mongodb';
-import type { IChatProject, IConversation } from '../types';
+import type { IAgentEventActorReconciliation, IChatProject, IConversation } from '../types';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
@@ -3982,6 +3982,7 @@ describe('Conversation Operations', () => {
         });
 
       await expect(beginInvocation('one')).resolves.toBe(true);
+      await expect(beginInvocation('one')).resolves.toBe(false);
       await expect(beginInvocation('one', checkpoint('different'))).resolves.toBe(false);
       await expect(beginInvocation('competing', checkpoint('one'))).resolves.toBe(false);
       const first = await methods.commitAgentEventActorState({
@@ -4029,6 +4030,21 @@ describe('Conversation Operations', () => {
         }),
       ).resolves.toBe(true);
       await expect(finishInvocation('one', checkpoint('one'))).resolves.toBe(true);
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          user: 'actor-head-user',
+          tenantId: 'tenant-a',
+          conversationId,
+          reconciliation: {
+            invocationId: 'one',
+            status: 'persistence_failed',
+            checkpoint: checkpoint('one'),
+            action: { toolName: 'submit_move' },
+            error: 'late stale controller',
+            observedAt: new Date(),
+          },
+        }),
+      ).resolves.toBe(false);
 
       const stale = await methods.commitAgentEventActorState({
         user: 'actor-head-user',
@@ -4117,6 +4133,21 @@ describe('Conversation Operations', () => {
       expect(fourth.status).toBe('committed');
       expect(fourth.state).not.toHaveProperty('requiresColdStart');
       await expect(finishInvocation('four', checkpoint('four'))).resolves.toBe(true);
+      const competingOwners = await Promise.all([
+        beginInvocation('five', checkpoint('four')),
+        beginInvocation('five', checkpoint('four')),
+      ]);
+      expect(competingOwners.sort()).toEqual([false, true]);
+      await expect(
+        methods.resolveAgentEventActorReconciliation({
+          user: 'actor-head-user',
+          tenantId: 'tenant-a',
+          conversationId,
+          invocationId: 'five',
+          checkpoint: checkpoint('four'),
+          resolution: 'invocation_abandoned',
+        }),
+      ).resolves.toBe(true);
       await expect(
         methods.getAgentEventActorSnapshot({
           user: 'actor-head-user',
@@ -4129,7 +4160,7 @@ describe('Conversation Operations', () => {
       );
     });
 
-    it('retains every actor reconciliation and clears only an explicitly resolved marker', async () => {
+    it('transitions one actor lifecycle and clears only the exact resolved marker', async () => {
       const conversationId = uuidv4();
       await Conversation.create({
         conversationId,
@@ -4196,19 +4227,19 @@ describe('Conversation Operations', () => {
         error: 'A competing checkpoint advanced the actor head',
         observedAt,
       };
+      const beginReconciliation = (next: IAgentEventActorReconciliation) =>
+        methods.recordAgentEventActorReconciliation({
+          user: 'actor-reconcile-user',
+          conversationId,
+          reconciliation: { ...next, status: 'invocation_pending' },
+        });
 
+      await expect(beginReconciliation(reconciliation)).resolves.toBe(true);
       await expect(
         methods.recordAgentEventActorReconciliation({
           user: 'actor-reconcile-user',
           conversationId,
           reconciliation,
-        }),
-      ).resolves.toBe(true);
-      await expect(
-        methods.recordAgentEventActorReconciliation({
-          user: 'actor-reconcile-user',
-          conversationId,
-          reconciliation: { ...reconciliation, invocationId: 'event-later' },
         }),
       ).resolves.toBe(true);
       await expect(
@@ -4218,7 +4249,7 @@ describe('Conversation Operations', () => {
         }),
       ).resolves.toEqual({
         state: first.state,
-        reconciliations: [reconciliation, { ...reconciliation, invocationId: 'event-later' }],
+        reconciliations: [reconciliation],
       });
       await expect(
         methods.invalidateAgentEventActorState({
@@ -4270,6 +4301,7 @@ describe('Conversation Operations', () => {
           checkpointNs: 'event-actor/checkpointless',
         },
       };
+      await expect(beginReconciliation(checkpointless)).resolves.toBe(true);
       await expect(
         methods.recordAgentEventActorReconciliation({
           user: 'actor-reconcile-user',
@@ -4292,6 +4324,7 @@ describe('Conversation Operations', () => {
         status: 'persistence_pending' as const,
         checkpoint,
       };
+      await expect(beginReconciliation(verified)).resolves.toBe(true);
       await expect(
         methods.recordAgentEventActorReconciliation({
           user: 'actor-reconcile-user',
@@ -4308,6 +4341,15 @@ describe('Conversation Operations', () => {
           resolution: 'checkpoint_verified',
         }),
       ).resolves.toBe(true);
+      const later = { ...reconciliation, invocationId: 'event-later' };
+      await expect(beginReconciliation(later)).resolves.toBe(true);
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          user: 'actor-reconcile-user',
+          conversationId,
+          reconciliation: later,
+        }),
+      ).resolves.toBe(true);
       await expect(
         methods.getAgentEventActorSnapshot({
           user: 'actor-reconcile-user',
@@ -4315,7 +4357,7 @@ describe('Conversation Operations', () => {
         }),
       ).resolves.toEqual({
         state: { ...first.state!, requiresColdStart: true },
-        reconciliations: [{ ...reconciliation, invocationId: 'event-later' }],
+        reconciliations: [later],
       });
       await expect(
         methods.resolveAgentEventActorReconciliation({

@@ -493,8 +493,12 @@ describe('agent event terminal outcomes', () => {
 
     await handler(
       'conversation-1',
-      job({ agentEventExpectedAction: { toolName: 'submit_move' } }),
-      [completedToolStep()],
+      job({
+        status: 'error',
+        error: 'run evidence was lost after the actor commit',
+        agentEventExpectedAction: { toolName: 'submit_move' },
+      }),
+      [],
     );
 
     expect(resolveAgentEventActorReconciliation).toHaveBeenCalledWith({
@@ -504,7 +508,13 @@ describe('agent event terminal outcomes', () => {
       checkpoint,
       resolution: 'checkpoint_verified',
     });
-    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledTimes(1);
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'applied',
+        action: { toolName: 'submit_move' },
+      }),
+    );
+    expect(settleAgentTriggerHandlingOutcome.mock.calls[0][0]).not.toHaveProperty('error');
   });
 
   it('releases a pre-action fence when terminal evidence proves no action occurred', async () => {

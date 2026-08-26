@@ -240,6 +240,7 @@ export function createAgentEventTerminalHandler(methods: {
     }
     const conversationId = job.conversationId ?? streamId;
     const outcome = classifyAgentEventRunOutcome(job, runSteps, content);
+    let committedAction: AgentEventAppliedAction | undefined;
     const snapshot = await methods.getAgentEventActorSnapshot({
       user: job.userId,
       conversationId,
@@ -304,17 +305,25 @@ export function createAgentEventTerminalHandler(methods: {
             `Agent event actor ${job.agentEventDeliveryKey} has unresolved lifecycle state`,
           );
         }
+        /** The persistence lifecycle was created by the same CAS that advanced
+         * the actor head. Once its history is verified, that committed action
+         * is more authoritative than incomplete reconstructed run evidence. */
+        committedAction = lifecycle.action;
       }
     }
+    const settlementOutcome: AgentEventRunOutcome =
+      committedAction == null ? outcome : { status: 'applied', action: committedAction };
     const settledAt = new Date(job.completedAt ?? Date.now());
     const settled = await methods.settleAgentTriggerHandlingOutcome({
       deliveryKey: job.agentEventDeliveryKey,
       conversationId,
       generationCreatedAt: job.createdAt,
-      status: outcome.status,
+      status: settlementOutcome.status,
       settledAt,
-      ...(outcome.status === 'failed' && { error: job.error ?? 'Generation failed' }),
-      ...(outcome.action != null && { action: outcome.action }),
+      ...(settlementOutcome.status === 'failed' && {
+        error: job.error ?? 'Generation failed',
+      }),
+      ...(settlementOutcome.action != null && { action: settlementOutcome.action }),
     });
     if (!settled) {
       throw new Error(`Failed to settle agent event delivery ${job.agentEventDeliveryKey}`);

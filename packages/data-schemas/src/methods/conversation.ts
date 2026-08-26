@@ -626,7 +626,8 @@ export function createConversationMethods(
         (item) => item.invocationId === input.reconciliation.invocationId,
       );
       const canTransition =
-        current?.status === 'invocation_pending' ||
+        (current?.status === 'invocation_pending' &&
+          input.reconciliation.status !== 'invocation_pending') ||
         (current?.status === 'persistence_pending' &&
           input.reconciliation.status === 'persistence_failed');
       const sameIdentity =
@@ -636,7 +637,12 @@ export function createConversationMethods(
         current.checkpoint.checkpointNs === input.reconciliation.checkpoint.checkpointNs &&
         current.action.toolName === input.reconciliation.action.toolName &&
         current.action.toolCallId === input.reconciliation.action.toolCallId;
-      if (input.reconciliation.status === 'invocation_pending' || !canTransition) {
+      /** A pending record is an exclusive ownership fence, not an idempotent
+       * receipt. A second executor must not inherit the first owner's claim. */
+      if (input.reconciliation.status === 'invocation_pending') {
+        return false;
+      }
+      if (!canTransition) {
         return sameIdentity;
       }
       const transitioned = await Conversation.findOneAndUpdate(
@@ -656,12 +662,15 @@ export function createConversationMethods(
         .lean<IConversation>();
       return transitioned != null;
     }
+    /** Every post-acquisition state must transition the exact pending lifecycle.
+     * Never recreate a marker after terminal recovery has already removed it. */
+    if (input.reconciliation.status !== 'invocation_pending') {
+      return false;
+    }
     const recorded = await Conversation.findOneAndUpdate(
       {
         ...ownership,
-        ...(input.reconciliation.status === 'invocation_pending'
-          ? { 'agentEventActorReconciliations.0': { $exists: false } }
-          : {}),
+        'agentEventActorReconciliations.0': { $exists: false },
         'agentEventActorReconciliations.invocationId': { $ne: input.reconciliation.invocationId },
       },
       { $push: { agentEventActorReconciliations: input.reconciliation } },
@@ -676,13 +685,8 @@ export function createConversationMethods(
     ) {
       return true;
     }
-    const raced = await Conversation.findOne({
-      ...ownership,
-      'agentEventActorReconciliations.invocationId': input.reconciliation.invocationId,
-    })
-      .select('+agentEventActorReconciliations')
-      .lean<IConversation>();
-    return raced != null;
+    /** Another writer won the same invocation fence while this write raced. */
+    return false;
   }
 
   /** Clears exactly one lifecycle after durable acknowledgement, abandonment, or repair. */
@@ -702,6 +706,16 @@ export function createConversationMethods(
       throw new Error('Event actor reconciliation changed its logical thread');
     }
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    let statusFilter: Record<string, unknown> = {};
+    if (input.resolution === 'checkpoint_verified') {
+      statusFilter = {
+        status: {
+          $in: ['persistence_pending', 'persistence_failed', 'commit_indeterminate'],
+        },
+      };
+    } else if (input.resolution === 'invocation_abandoned') {
+      statusFilter = { status: 'invocation_pending' };
+    }
     const checkpointFilter: Record<string, unknown> = {
       invocationId: input.invocationId,
       'checkpoint.threadId': input.checkpoint.threadId,
@@ -709,15 +723,7 @@ export function createConversationMethods(
       ...(input.checkpoint.checkpointId == null
         ? { 'checkpoint.checkpointId': { $exists: false } }
         : { 'checkpoint.checkpointId': input.checkpoint.checkpointId }),
-      ...(input.resolution === 'checkpoint_verified'
-        ? {
-            status: {
-              $in: ['persistence_pending', 'persistence_failed', 'commit_indeterminate'],
-            },
-          }
-        : input.resolution === 'invocation_abandoned'
-          ? { status: 'invocation_pending' }
-          : {}),
+      ...statusFilter,
     };
     if (
       input.resolution === 'checkpoint_verified' &&
