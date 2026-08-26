@@ -13,9 +13,17 @@ type MessageEntry = {
   isUser: boolean;
   preview: string;
   isEnd?: boolean;
+  isStart?: boolean;
 };
 
 const MESSAGES_END_ID = 'messages-end';
+/** The origin rib has no row of its own — it targets the top of the scroll
+ *  container, mirroring the terminus that targets `#messages-end`. */
+const MESSAGES_START_ID = 'messages-start';
+
+function isTerminusId(id: string): boolean {
+  return id === MESSAGES_END_ID || id === MESSAGES_START_ID;
+}
 
 export function extractPreviewFromContent(content?: TMessageContentParts[]): string {
   if (!content) {
@@ -91,6 +99,27 @@ export function buildSteerEntry(node: HTMLElement, id: string): MessageEntry {
     isUser: true,
     preview: raw.slice(0, 80) + (raw.length > 80 ? '...' : ''),
   };
+}
+
+type LocalizeFn = ReturnType<typeof useLocalize>;
+
+/**
+ * What a rib says it will take you to.
+ *
+ * A response enters the rail the instant its row mounts, which is one frame
+ * before its first token — and a run that is still thinking has no text at all.
+ * Falling through to the raw preview there labelled the rib with nothing and
+ * opened an empty preview card beside it; naming the pending state instead
+ * keeps the rail readable for the whole of a long generation.
+ */
+export function previewTextFor(entry: MessageEntry, localize: LocalizeFn): string {
+  if (entry.isStart === true) {
+    return localize('com_ui_scroll_to_top');
+  }
+  if (entry.isEnd === true) {
+    return localize('com_ui_scroll_to_bottom');
+  }
+  return entry.preview !== '' ? entry.preview : localize('com_ui_generating');
 }
 
 function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>): MessageEntry[] {
@@ -175,14 +204,27 @@ type RibDims = { baseW: number; baseH: number; peakW: number; peakH: number };
 
 const RIB_END: RibDims = { baseW: 3, baseH: 3, peakW: 4.5, peakH: 4.5 };
 const RIB_MESSAGE: RibDims = { baseW: 12, baseH: 3, peakW: 39, peakH: 6 };
+/** The rib you are reading is longer at rest, so the rail answers "where am I"
+ *  from length alone — the only axis a 3px line has left once colour is spent
+ *  on the in-view band. */
+const RIB_CURRENT: RibDims = { baseW: 21, baseH: 3, peakW: 39, peakH: 6 };
+/** Row height in px. `peakH` may reach it but never exceed it: the magnifier
+ *  writes into normal flow, and a rib taller than its row would reflow every
+ *  rib below the pointer — moving the rail out from under the pointer and
+ *  leaving the measured centres (and so the preview and the click target)
+ *  pointing at the wrong message. */
+const RIB_ROW_HEIGHT = 6;
 
 /** Vertical falloff radius (content-space px) over which neighbouring ribs magnify. */
 const MAG_INFLUENCE = 50;
 /** Delay before the shared preview first opens; subsequent moves reposition instantly. */
 const TOOLTIP_OPEN_DELAY = 60;
 
-export function ribDimsFor(entry: MessageEntry): RibDims {
-  return entry.isEnd ? RIB_END : RIB_MESSAGE;
+export function ribDimsFor(entry: MessageEntry, isCurrent = false): RibDims {
+  if (entry.isEnd === true || entry.isStart === true) {
+    return RIB_END;
+  }
+  return isCurrent ? RIB_CURRENT : RIB_MESSAGE;
 }
 
 /** Cosine bell: 1 at the pointer, easing to 0 at the influence radius. */
@@ -193,8 +235,12 @@ export function magnifyFalloff(distance: number, influence: number): number {
   return 0.5 * (1 + Math.cos((Math.PI * distance) / influence));
 }
 
+/** `shrink-0` is load-bearing: the ribs are flex items in a scrolling column, so
+ *  without it every row compresses to its content the moment the rail overflows —
+ *  halving the hit target of every rib in exactly the long conversations the rail
+ *  exists to navigate. */
 const indicatorButtonClasses = cn(
-  'flex h-1.5 w-full items-center justify-end rounded-sm transition-opacity duration-300',
+  'flex w-full shrink-0 items-center justify-end rounded-sm transition-opacity duration-300',
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
 );
 
@@ -203,18 +249,32 @@ const dimIndicatorClasses =
 
 const MessageIndicator = memo(function MessageIndicator({
   entry,
-  isHighlighted,
+  isInView,
   isCurrent,
+  isFocused,
   label,
+  tabIndex,
   onSelect,
 }: {
   entry: MessageEntry;
-  isHighlighted: boolean;
+  /** The row intersects the viewport — the soft band around where you are. */
+  isInView: boolean;
+  /** The row you are reading: the rail's single "you are here" mark. */
   isCurrent: boolean;
+  /** The rib the pointer or keyboard is previewing right now. */
+  isFocused: boolean;
   label: string;
+  tabIndex: number;
   onSelect: (id: string) => void;
 }) {
-  const baseSize = entry.isEnd ? 'mr-[4.5px] h-[3px] w-[3px]' : 'h-[3px] w-3';
+  const dims = ribDimsFor(entry, isCurrent);
+  const isEmphasized = isCurrent || isFocused;
+  let tone = 'bg-text-tertiary';
+  if (isEmphasized) {
+    tone = 'bg-text-primary';
+  } else if (isInView) {
+    tone = 'bg-text-secondary';
+  }
   return (
     <button
       type="button"
@@ -222,17 +282,23 @@ const MessageIndicator = memo(function MessageIndicator({
         e.stopPropagation();
         onSelect(entry.id);
       }}
-      className={cn(indicatorButtonClasses, isHighlighted ? 'opacity-100' : dimIndicatorClasses)}
+      className={cn(
+        indicatorButtonClasses,
+        isEmphasized || isInView ? 'opacity-100' : dimIndicatorClasses,
+      )}
+      style={{ height: RIB_ROW_HEIGHT }}
       aria-label={label}
       aria-current={isCurrent ? 'true' : undefined}
+      tabIndex={tabIndex}
       data-msg-id={entry.id}
     >
       <span
         className={cn(
           'block rounded-full',
-          baseSize,
-          isHighlighted ? 'bg-gray-800 dark:bg-gray-100' : 'bg-gray-400 dark:bg-gray-500',
+          entry.isEnd === true || entry.isStart === true ? 'mr-[4.5px]' : '',
+          tone,
         )}
+        style={{ width: dims.baseW, height: dims.baseH }}
       />
     </button>
   );
@@ -289,10 +355,15 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const suppressClickRef = useRef(false);
   const isDraggingRef = useRef(false);
+  /** True while the pointer or the keyboard is working the rail; freezes the
+   *  rail's auto-follow so the ribs stay put under an active gesture. */
+  const interactingRef = useRef(false);
 
   const ribLayoutRef = useRef<
     Array<{ id: string; line: HTMLElement; center: number; dims: RibDims }>
   >([]);
+  const measuredCountRef = useRef(-1);
+  const measuredCurrentRef = useRef<string | null | undefined>(undefined);
   const pointerYRef = useRef<number | null>(null);
   const magRafRef = useRef<number | null>(null);
   const reducedMotionRef = useRef(false);
@@ -305,45 +376,88 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   const [tip, setTip] = useState<{ id: string; top: number; right: number } | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
+  /** The terminus rib is pinned beside the down chevron rather than living in
+   *  the scrolling column, so it stays reachable however far the rail scrolls.
+   *  The origin rib is its mirror above the column, for the same reason: in a
+   *  long thread the top of the conversation scrolls out of the rail itself.
+   *
+   *  Only the terminus is ever `aria-current`: it is a real entry (`#messages-end`
+   *  closes the thread), whereas the origin is a control with no row of its own,
+   *  and marking both would put two current items in one nav. */
+  const { messageEntries, endEntry, startEntry } = useMemo(() => {
+    const last = entries[entries.length - 1];
+    const hasEnd = last?.isEnd === true;
+    const messageEntries = hasEnd ? entries.slice(0, -1) : entries;
+    return {
+      messageEntries,
+      endEntry: hasEnd ? last : null,
+      startEntry:
+        messageEntries.length > 0
+          ? { id: MESSAGES_START_ID, isUser: false, preview: '', isStart: true }
+          : null,
+    };
+  }, [entries]);
+
   const entryById = useMemo(() => {
     const map = new Map<string, MessageEntry>();
     for (let i = 0; i < entries.length; i++) {
       map.set(entries[i].id, entries[i]);
     }
+    if (startEntry) {
+      map.set(startEntry.id, startEntry);
+    }
     return map;
-  }, [entries]);
+  }, [entries, startEntry]);
 
-  /** The terminus rib is pinned beside the down chevron rather than living in
-   *  the scrolling column, so it stays reachable however far the rail scrolls. */
-  const { messageEntries, endEntry } = useMemo(() => {
-    const last = entries[entries.length - 1];
-    if (last?.isEnd === true) {
-      return { messageEntries: entries.slice(0, -1), endEntry: last };
+  /**
+   * Rib centres in the column's own content space, plus the resting size each
+   * rib returns to. Everything that answers "which rib is the pointer on" —
+   * the fisheye, the preview, a click in the gaps, a drag — reads this one
+   * layout, so they cannot disagree.
+   */
+  const measureRibs = useCallback(() => {
+    const col = columnRef.current;
+    if (!col) {
+      return;
     }
-    return { messageEntries: entries, endEntry: null };
-  }, [entries]);
-
-  const getCurrentVisibleId = useCallback((): string | null => {
-    const container = scrollableRef.current;
-    if (!container) {
-      return null;
-    }
-    let nextId: string | null = null;
-    let nextTop = Number.POSITIVE_INFINITY;
-    for (const id of visibleSetRef.current) {
-      const el = observedRef.current.get(id);
-      if (!el) {
+    const layout: Array<{ id: string; line: HTMLElement; center: number; dims: RibDims }> = [];
+    const kids = col.children;
+    for (let i = 0; i < kids.length; i++) {
+      const button = kids[i] as HTMLElement;
+      const id = button.getAttribute('data-msg-id');
+      const line = button.firstElementChild as HTMLElement | null;
+      const entry = id ? entryById.get(id) : undefined;
+      if (!id || !line || !entry) {
         continue;
       }
-      const top = entryTop(el, container);
-      if (top >= nextTop) {
-        continue;
-      }
-      nextId = id;
-      nextTop = top;
+      layout.push({
+        id,
+        line,
+        center: button.offsetTop + button.offsetHeight / 2,
+        dims: ribDimsFor(entry, id === currentId),
+      });
     }
-    return nextId;
-  }, [scrollableRef]);
+    measuredCountRef.current = kids.length;
+    measuredCurrentRef.current = currentId;
+    ribLayoutRef.current = layout;
+  }, [entryById, currentId]);
+
+  /** Re-measures when the rib set or the current rib has changed since the last
+   *  measurement, so a gesture that arrives before the scheduled measure still
+   *  hit-tests against the ribs on screen and releases them to the resting size
+   *  they are actually rendered at. */
+  const ensureRibLayout = useCallback(() => {
+    const col = columnRef.current;
+    if (!col) {
+      return;
+    }
+    if (
+      measuredCountRef.current !== col.children.length ||
+      measuredCurrentRef.current !== currentId
+    ) {
+      measureRibs();
+    }
+  }, [measureRibs, currentId]);
 
   useEffect(() => {
     messagesByIdRef.current = messagesById;
@@ -351,6 +465,9 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
   const resolveEntryEl = useCallback(
     (id: string): HTMLElement | null => {
+      if (id === MESSAGES_START_ID) {
+        return null;
+      }
       if (id === MESSAGES_END_ID) {
         return scrollableRef.current?.querySelector<HTMLElement>('#' + MESSAGES_END_ID) ?? null;
       }
@@ -395,10 +512,9 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       }
     }
     if (visibilityChanged) {
-      setCurrentId(getCurrentVisibleId());
       setVisibleIds(new Set(visibleSet));
     }
-  }, [resolveEntryEl, getCurrentVisibleId]);
+  }, [resolveEntryEl]);
 
   const refreshEntries = useCallback(() => {
     if (refreshTimerRef.current) {
@@ -426,6 +542,11 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
   const scrollToStart = useCallback(
     (id: string) => {
+      if (id === MESSAGES_START_ID) {
+        scrollTokenRef.current++;
+        scrollableRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
       const el = resolveEntryEl(id);
       if (!el) {
         return;
@@ -458,11 +579,19 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
       requestAnimationFrame(step);
     },
-    [resolveEntryEl],
+    [resolveEntryEl, scrollableRef],
   );
 
   const scrollToImmediate = useCallback(
     (id: string) => {
+      if (id === MESSAGES_START_ID) {
+        scrollTokenRef.current++;
+        const container = scrollableRef.current;
+        if (container) {
+          container.scrollTop = 0;
+        }
+        return;
+      }
       const el = resolveEntryEl(id);
       if (!el) {
         return;
@@ -475,7 +604,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       const scrollMargin = scrollMarginRef.current || readScrollMargin(el);
       container.scrollTop = computeTargetScroll(container, el, scrollMargin);
     },
-    [resolveEntryEl],
+    [resolveEntryEl, scrollableRef],
   );
 
   const focusMessage = useCallback((id: string) => {
@@ -496,7 +625,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         return;
       }
       scrollToStart(id);
-      if (id !== MESSAGES_END_ID) {
+      if (!isTerminusId(id)) {
         focusMessage(id);
       }
     },
@@ -525,6 +654,41 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     return document.activeElement === target;
   }, []);
 
+  /**
+   * The rib nearest the pointer, in the column's own content space.
+   *
+   * The column scrolls independently once a thread outgrows it, so a mapping
+   * built from the pointer's fraction of the column's *visible* height and the
+   * *whole* rib list answers with a rib the reader is not pointing at — the
+   * error grows with the thread and, worse, disagrees with the preview, which
+   * has always been nearest-centre. Both now read the same measured layout, so
+   * the rib under the pointer, the message named in the preview, and the
+   * message a drag lands on are one and the same.
+   */
+  const ribIdAt = useCallback(
+    (clientY: number): string | null => {
+      ensureRibLayout();
+      const col = columnRef.current;
+      const layout = ribLayoutRef.current;
+      if (!col || layout.length === 0) {
+        return null;
+      }
+      const contentY = clientY - col.getBoundingClientRect().top + col.scrollTop;
+      let nearestId: string | null = null;
+      let nearestD = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < layout.length; i++) {
+        const d = Math.abs(contentY - layout[i].center);
+        if (d >= nearestD) {
+          continue;
+        }
+        nearestD = d;
+        nearestId = layout[i].id;
+      }
+      return nearestId;
+    },
+    [ensureRibLayout],
+  );
+
   const scrubTo = useCallback(
     (clientY: number) => {
       const col = columnRef.current;
@@ -532,26 +696,22 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         return;
       }
       const rect = col.getBoundingClientRect();
-      /** The terminus is pinned below the column, so the pointer reaches it by
-       *  travelling past the bottom edge — the proportional mapping covers only
-       *  the ribs the column actually spans, or every position lands one late. */
+      /** The terminus ribs are pinned outside the column, so the pointer reaches
+       *  them by travelling past its edges. */
       if (endEntry && clientY >= rect.bottom) {
         scrollToImmediate(MESSAGES_END_ID);
         return;
       }
-      const ribs = col.querySelectorAll<HTMLElement>('[data-msg-id]');
-      const count = ribs.length;
-      if (count === 0) {
+      if (startEntry && clientY <= rect.top) {
+        scrollToImmediate(MESSAGES_START_ID);
         return;
       }
-      const fraction = rect.height > 0 ? (clientY - rect.top) / rect.height : 0;
-      const index = Math.max(0, Math.min(count - 1, Math.round(fraction * (count - 1))));
-      const id = ribs[index].getAttribute('data-msg-id');
+      const id = ribIdAt(clientY);
       if (id) {
         scrollToImmediate(id);
       }
     },
-    [scrollToImmediate, endEntry],
+    [scrollToImmediate, ribIdAt, endEntry, startEntry],
   );
 
   const handlePointerDown = useCallback(
@@ -561,6 +721,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       }
       dragCleanupRef.current?.();
       suppressClickRef.current = false;
+      interactingRef.current = true;
       const state = { pointerId: e.pointerId, startY: e.clientY, dragging: false };
 
       const finish = (wasDragging: boolean) => {
@@ -570,6 +731,9 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         window.removeEventListener('blur', onBlur);
         dragCleanupRef.current = null;
         isDraggingRef.current = false;
+        if (pointerYRef.current == null) {
+          interactingRef.current = false;
+        }
         if (wasDragging) {
           suppressClickRef.current = true;
           window.setTimeout(() => {
@@ -632,34 +796,6 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     return () => mq.removeListener(onChange);
   }, []);
 
-  const measureRibs = useCallback(() => {
-    const col = columnRef.current;
-    if (!col) {
-      return;
-    }
-    const colRect = col.getBoundingClientRect();
-    const scrollTop = col.scrollTop;
-    const layout: Array<{ id: string; line: HTMLElement; center: number; dims: RibDims }> = [];
-    const kids = col.children;
-    for (let i = 0; i < kids.length; i++) {
-      const button = kids[i] as HTMLElement;
-      const id = button.getAttribute('data-msg-id');
-      const line = button.firstElementChild as HTMLElement | null;
-      const entry = id ? entryById.get(id) : undefined;
-      if (!id || !line || !entry) {
-        continue;
-      }
-      const rect = button.getBoundingClientRect();
-      layout.push({
-        id,
-        line,
-        center: rect.top - colRect.top + scrollTop + rect.height / 2,
-        dims: ribDimsFor(entry),
-      });
-    }
-    ribLayoutRef.current = layout;
-  }, [entryById]);
-
   useEffect(() => {
     const raf = requestAnimationFrame(measureRibs);
     const col = columnRef.current;
@@ -671,7 +807,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       cancelAnimationFrame(raf);
       resize?.disconnect();
     };
-  }, [entries, measureRibs]);
+  }, [entries, currentId, measureRibs]);
 
   const positionTip = useCallback((top: number, right: number) => {
     tipPosRef.current = { top, right };
@@ -732,28 +868,38 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     [positionTip, revealTip],
   );
 
-  /** The pinned terminus lives outside the column, so it drives the shared
-   *  preview itself instead of through the rail's pointer magnification. */
-  const showEndTip = useCallback(
-    (el: HTMLElement) => {
+  /** The pinned origin and terminus live outside the column, so they drive the
+   *  shared preview themselves instead of through the rail's magnification. */
+  const showTerminusTip = useCallback(
+    (el: HTMLElement, id: string) => {
       const rect = el.getBoundingClientRect();
       const left = columnRef.current?.getBoundingClientRect().left ?? rect.left;
-      focusTooltip(MESSAGES_END_ID, rect.top + rect.height / 2, window.innerWidth - left + 8);
+      focusTooltip(id, rect.top + rect.height / 2, window.innerWidth - left + 8);
     },
     [focusTooltip],
   );
 
   const handleEndPointerEnter = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => showEndTip(e.currentTarget),
-    [showEndTip],
+    (e: React.PointerEvent<HTMLDivElement>) => showTerminusTip(e.currentTarget, MESSAGES_END_ID),
+    [showTerminusTip],
   );
 
   const handleEndFocus = useCallback(
-    (e: React.FocusEvent<HTMLDivElement>) => showEndTip(e.currentTarget),
-    [showEndTip],
+    (e: React.FocusEvent<HTMLDivElement>) => showTerminusTip(e.currentTarget, MESSAGES_END_ID),
+    [showTerminusTip],
   );
 
-  const handleEndBlur = useCallback(
+  const handleStartPointerEnter = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => showTerminusTip(e.currentTarget, MESSAGES_START_ID),
+    [showTerminusTip],
+  );
+
+  const handleStartFocus = useCallback(
+    (e: React.FocusEvent<HTMLDivElement>) => showTerminusTip(e.currentTarget, MESSAGES_START_ID),
+    [showTerminusTip],
+  );
+
+  const handleTerminusBlur = useCallback(
     (e: React.FocusEvent<HTMLDivElement>) => {
       const next = e.relatedTarget as Node | null;
       if (next && e.currentTarget.contains(next)) {
@@ -766,6 +912,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
   const applyMagnify = useCallback(() => {
     magRafRef.current = null;
+    ensureRibLayout();
     const col = columnRef.current;
     const layout = ribLayoutRef.current;
     const py = pointerYRef.current;
@@ -802,17 +949,21 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     } else {
       clearTooltip();
     }
-  }, [focusTooltip, clearTooltip]);
+  }, [focusTooltip, clearTooltip, ensureRibLayout]);
 
+  /** Restores the resting dimensions rather than clearing them: the ribs carry
+   *  their base size inline, from the same `ribDimsFor` the magnifier reads, so
+   *  there is one source of truth for a rib's size and no snap on release. */
   const resetMagnify = useCallback(() => {
+    ensureRibLayout();
     const layout = ribLayoutRef.current;
     for (let i = 0; i < layout.length; i++) {
-      const line = layout[i].line;
-      line.style.transition = 'width 140ms ease-out, height 140ms ease-out';
-      line.style.width = '';
-      line.style.height = '';
+      const rib = layout[i];
+      rib.line.style.transition = 'width 140ms ease-out, height 140ms ease-out';
+      rib.line.style.width = `${rib.dims.baseW}px`;
+      rib.line.style.height = `${rib.dims.baseH}px`;
     }
-  }, []);
+  }, [ensureRibLayout]);
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -821,6 +972,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         return;
       }
       const rect = col.getBoundingClientRect();
+      interactingRef.current = true;
       pointerYRef.current = e.clientY - rect.top + col.scrollTop;
       if (magRafRef.current == null) {
         magRafRef.current = requestAnimationFrame(applyMagnify);
@@ -831,6 +983,9 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
   const handlePointerLeave = useCallback(() => {
     pointerYRef.current = null;
+    if (!isDraggingRef.current) {
+      interactingRef.current = false;
+    }
     if (magRafRef.current != null) {
       cancelAnimationFrame(magRafRef.current);
       magRafRef.current = null;
@@ -846,9 +1001,8 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (!col || !target.getAttribute?.('data-msg-id')) {
         return;
       }
-      const colRect = col.getBoundingClientRect();
-      const rect = target.getBoundingClientRect();
-      pointerYRef.current = rect.top - colRect.top + col.scrollTop + rect.height / 2;
+      interactingRef.current = true;
+      pointerYRef.current = target.offsetTop + target.offsetHeight / 2;
       if (magRafRef.current == null) {
         magRafRef.current = requestAnimationFrame(applyMagnify);
       }
@@ -1008,20 +1162,50 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       const containerMaxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
       let nextCanUp = false;
       let nextCanDown = false;
+      /**
+       * The rail's "you are here" is a scroll-spy over entry spans, not the set
+       * of rows the IntersectionObserver reports. A response tall enough to fill
+       * the viewport keeps intersecting for screens on end, and an in-thread
+       * steer follows its response in document order while sitting *inside* it —
+       * so "topmost intersecting row" lights a rib several places short of the
+       * end while the reader is looking at the very bottom of the thread. The
+       * last entry whose snap point has passed the viewport top is the one being
+       * read, and at the bottom every snap clamps to the maximum scroll, which
+       * lands current on the terminus.
+       */
+      let currentIndex = -1;
       for (let i = 0; i < offsetsTop.length; i++) {
+        if (offsetsTop[i] === Number.POSITIVE_INFINITY) {
+          continue;
+        }
         const snap = Math.min(offsetsTop[i] - scrollMargin, containerMaxScrollTop);
-        if (snap < scrollTop - JUMP_EPS) {
-          nextCanUp = true;
-        } else if (snap > scrollTop + JUMP_EPS) {
+        if (snap > scrollTop + JUMP_EPS) {
           nextCanDown = true;
           break;
         }
+        currentIndex = i;
+        if (snap < scrollTop - JUMP_EPS) {
+          nextCanUp = true;
+        }
       }
+      if (containerMaxScrollTop <= 0) {
+        currentIndex = 0;
+      }
+      const nextCurrentId = entries[currentIndex < 0 ? 0 : currentIndex]?.id ?? null;
       setCanGoUp((prev) => (prev === nextCanUp ? prev : nextCanUp));
       setCanGoDown((prev) => (prev === nextCanDown ? prev : nextCanDown));
+      setCurrentId((prev) => (prev === nextCurrentId ? prev : nextCurrentId));
 
       const col = columnRef.current;
       if (!col) {
+        return;
+      }
+      /** While the pointer or the keyboard is working the rail, the rail holds
+       *  still. Re-centring under an active pointer slides the ribs out from
+       *  under it mid-gesture, and it also discards any wheel scroll the reader
+       *  did to reach a distant part of a thread too long for one column. */
+      if (interactingRef.current) {
+        cancelColumnBottomScroll();
         return;
       }
       if (containerMaxScrollTop > 0 && scrollTop >= containerMaxScrollTop - JUMP_EPS) {
@@ -1056,6 +1240,9 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (!firstInd || !lastInd) {
         return;
       }
+      /** `offsetTop` is content-space only because the column is a positioned
+       *  ancestor; without that it resolves against the absolutely positioned
+       *  `nav` and every centring decision inherits the chevron's height. */
       const mid = (firstInd.offsetTop + lastInd.offsetTop + lastInd.offsetHeight) / 2;
       const target = mid - col.clientHeight / 2;
       const columnMaxScrollTop = Math.max(0, col.scrollHeight - col.clientHeight);
@@ -1102,8 +1289,6 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
     const flush = () => {
       pendingFrame = null;
-      const nextCurrentId = getCurrentVisibleId();
-      setCurrentId((prev) => (prev === nextCurrentId ? prev : nextCurrentId));
       setVisibleIds((prev) => {
         if (prev.size === visibleSet.size) {
           let same = true;
@@ -1148,7 +1333,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         cancelAnimationFrame(pendingFrame);
       }
     };
-  }, [getCurrentVisibleId, scrollableRef]);
+  }, [scrollableRef]);
 
   useEffect(() => {
     const observer = observerRef.current;
@@ -1196,10 +1381,9 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     }
 
     if (visibilityChanged) {
-      setCurrentId(getCurrentVisibleId());
       setVisibleIds(new Set(visibleSet));
     }
-  }, [entries, getCurrentVisibleId, resolveEntryEl]);
+  }, [entries, resolveEntryEl]);
 
   const jumpToPrevious = useCallback(() => {
     const container = scrollableRef.current;
@@ -1246,6 +1430,43 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     }
   }, [entries, scrollableRef, scrollToStart, resolveEntryEl]);
 
+  /**
+   * Arrow keys walk the ribs; only one of them is ever in the tab order.
+   * A rail that made every rib a tab stop put the whole transcript between the
+   * reader and the next control — hundreds of stops in a long thread.
+   */
+  const handleColumnKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const col = columnRef.current;
+    if (!col) {
+      return;
+    }
+    const { key } = e;
+    if (key !== 'ArrowUp' && key !== 'ArrowDown' && key !== 'Home' && key !== 'End') {
+      return;
+    }
+    const ribs = col.querySelectorAll<HTMLElement>('[data-msg-id]');
+    if (ribs.length === 0) {
+      return;
+    }
+    let index = -1;
+    for (let i = 0; i < ribs.length; i++) {
+      if (ribs[i] === document.activeElement) {
+        index = i;
+        break;
+      }
+    }
+    let next = 0;
+    if (key === 'End') {
+      next = ribs.length - 1;
+    } else if (key === 'ArrowUp') {
+      next = index <= 0 ? 0 : index - 1;
+    } else if (key === 'ArrowDown') {
+      next = index < 0 ? 0 : Math.min(ribs.length - 1, index + 1);
+    }
+    e.preventDefault();
+    ribs[next].focus();
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.altKey && e.shiftKey && (e.code === 'KeyM' || e.key.toLowerCase() === 'm')) {
@@ -1265,7 +1486,18 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   const tipEntry = tip ? entryById.get(tip.id) : undefined;
   let tipText = '';
   if (tipEntry) {
-    tipText = tipEntry.isEnd ? localize('com_ui_scroll_to_bottom') : tipEntry.preview;
+    tipText = previewTextFor(tipEntry, localize);
+  }
+
+  /** One tab stop for the whole column; the arrows move within it. The current
+   *  rib carries it so Tab lands where the reader already is — and at the very
+   *  bottom, where current is the pinned terminus, on the last message rather
+   *  than back at the top of the thread. */
+  let rovingId = messageEntries[0].id;
+  if (currentId === MESSAGES_END_ID) {
+    rovingId = messageEntries[messageEntries.length - 1].id;
+  } else if (currentId != null && entryById.has(currentId)) {
+    rovingId = currentId;
   }
 
   return (
@@ -1288,6 +1520,27 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         <ChevronUp className="h-4 w-4" />
       </button>
 
+      {startEntry && (
+        <div
+          className="flex w-14 cursor-pointer touch-none select-none flex-col items-stretch"
+          onPointerDown={handlePointerDown}
+          onPointerEnter={handleStartPointerEnter}
+          onPointerLeave={clearTooltip}
+          onFocus={handleStartFocus}
+          onBlur={handleTerminusBlur}
+        >
+          <MessageIndicator
+            entry={startEntry}
+            isInView={!canGoUp}
+            isCurrent={false}
+            isFocused={hoveredId === startEntry.id}
+            tabIndex={0}
+            onSelect={handleSelect}
+            label={localize('com_ui_scroll_to_top')}
+          />
+        </div>
+      )}
+
       <div
         ref={columnRef}
         onPointerDown={handlePointerDown}
@@ -1296,22 +1549,24 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         onFocus={handleColumnFocus}
         onBlur={handleColumnBlur}
         onClick={handleColumnClick}
-        className="flex min-h-0 w-14 cursor-pointer touch-none select-none flex-col items-stretch gap-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden"
+        onKeyDown={handleColumnKeyDown}
+        data-message-nav-column=""
+        className="relative flex min-h-0 w-14 cursor-pointer touch-none select-none flex-col items-stretch gap-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {messageEntries.map((entry) => {
           const label = localize(
             entry.isUser ? 'com_ui_message_nav_go_to_user' : 'com_ui_message_nav_go_to_assistant',
-            { 0: entry.preview.slice(0, 30) },
+            { 0: previewTextFor(entry, localize).slice(0, 30) },
           );
-          const isHighlighted =
-            hoveredId != null ? hoveredId === entry.id : visibleIds.has(entry.id);
           return (
             <MessageIndicator
               key={entry.id}
               entry={entry}
-              isHighlighted={isHighlighted}
+              isInView={visibleIds.has(entry.id)}
               isCurrent={currentId === entry.id}
+              isFocused={hoveredId === entry.id}
+              tabIndex={entry.id === rovingId ? 0 : -1}
               onSelect={handleSelect}
               label={label}
             />
@@ -1326,14 +1581,14 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
           onPointerEnter={handleEndPointerEnter}
           onPointerLeave={clearTooltip}
           onFocus={handleEndFocus}
-          onBlur={handleEndBlur}
+          onBlur={handleTerminusBlur}
         >
           <MessageIndicator
             entry={endEntry}
-            isHighlighted={
-              hoveredId != null ? hoveredId === endEntry.id : visibleIds.has(endEntry.id)
-            }
+            isInView={visibleIds.has(endEntry.id)}
             isCurrent={currentId === endEntry.id}
+            isFocused={hoveredId === endEntry.id}
+            tabIndex={0}
             onSelect={handleSelect}
             label={localize('com_ui_scroll_to_bottom')}
           />
@@ -1350,6 +1605,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         <ChevronDown className="h-4 w-4" />
       </button>
       {tip &&
+        tipText !== '' &&
         createPortal(
           <div
             ref={tipElRef}
