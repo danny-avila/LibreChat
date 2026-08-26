@@ -74,6 +74,13 @@ export interface AdminLangfuseDeps {
   recordConnectionUpdate?: (event: LangfuseConnectionEvent) => void;
 }
 
+export interface LangfuseSessionLinkParams {
+  config: TCustomConfig['langfuse'];
+  conversationId: string;
+  userId: string;
+  getMessages: MessageMethods['getMessages'];
+}
+
 function getTenantId(req: ServerRequest): string | undefined {
   return (req.user as { tenantId?: string } | undefined)?.tenantId;
 }
@@ -133,6 +140,43 @@ function rejectWhenConnectionUnavailable(res: Response): Response | undefined {
   }
 
   return res.status(404).json({ error: 'Langfuse connection settings are not available' });
+}
+
+export async function resolveLangfuseSessionUrl({
+  config,
+  conversationId,
+  userId,
+  getMessages,
+}: LangfuseSessionLinkParams): Promise<string | null> {
+  if (!isLangfuseConnectionAvailable()) {
+    return null;
+  }
+
+  const destination = resolveLangfuseTenantDestination(config?.destination);
+  const projectId = config?.projectId?.trim();
+  if (config?.enabled !== true || !destination || !projectId) {
+    return null;
+  }
+
+  const destinationId = getLangfuseDestinationId(destination.baseUrl, projectId);
+  const messages = await getMessages(
+    {
+      user: userId,
+      conversationId,
+      langfuseSampled: true,
+      langfuseDestinationIds: destinationId,
+    },
+    '_id',
+    { sort: false, limit: 1 },
+  );
+  if (messages.length === 0) {
+    return null;
+  }
+
+  const sessionUrl = new URL(destination.baseUrl);
+  const basePath = sessionUrl.pathname.replace(/\/+$/, '');
+  sessionUrl.pathname = `${basePath}/project/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(conversationId)}`;
+  return sessionUrl.toString();
 }
 
 type LangfuseVerificationFailure = {
@@ -332,34 +376,13 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
     }
 
     try {
-      const stored = readStoredLangfuse(await findBaseConfig());
-      const destination = resolveLangfuseTenantDestination(stored?.destination);
-      const projectId = stored?.projectId?.trim();
-      if (stored?.enabled !== true || !destination || !projectId) {
-        const response: TLangfuseSessionLinkResponse = { url: null };
-        return res.status(200).json(response);
-      }
-
-      const destinationId = getLangfuseDestinationId(destination.baseUrl, projectId);
-      const messages = await getMessages(
-        {
-          user: userId,
-          conversationId,
-          langfuseSampled: true,
-          langfuseDestinationIds: destinationId,
-        },
-        '_id',
-        { sort: false, limit: 1 },
-      );
-      if (messages.length === 0) {
-        const response: TLangfuseSessionLinkResponse = { url: null };
-        return res.status(200).json(response);
-      }
-
-      const sessionUrl = new URL(destination.baseUrl);
-      const basePath = sessionUrl.pathname.replace(/\/+$/, '');
-      sessionUrl.pathname = `${basePath}/project/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(conversationId)}`;
-      const response: TLangfuseSessionLinkResponse = { url: sessionUrl.toString() };
+      const url = await resolveLangfuseSessionUrl({
+        config: readStoredLangfuse(await findBaseConfig()),
+        conversationId,
+        userId,
+        getMessages,
+      });
+      const response: TLangfuseSessionLinkResponse = { url };
       return res.status(200).json(response);
     } catch (error) {
       logger.error('[adminLangfuse] getSessionLink error:', error);

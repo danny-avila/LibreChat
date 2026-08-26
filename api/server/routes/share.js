@@ -20,11 +20,14 @@ const {
   isValidSharedLinksCursor,
   MAX_SHARED_LINK_SEARCH_LENGTH,
   createSharedLinkConfigMiddleware,
+  resolveLangfuseSessionUrl,
 } = require('@librechat/api');
 const {
   logger,
   runAsSystem,
   tenantStorage,
+  SYSTEM_TENANT_ID,
+  SystemCapabilities,
   createTempChatExpirationDate,
 } = require('@librechat/data-schemas');
 const { FileSources, PermissionTypes, Permissions } = require('librechat-data-provider');
@@ -38,6 +41,7 @@ const {
   getSharedLink,
   getSharedLinkFile,
   backfillSharedLinkFiles,
+  getMessages,
   getRoleByName,
 } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -48,10 +52,46 @@ const { createForkLimiters } = require('~/server/middleware/limiters');
 const optionalShareFileAuth = require('~/server/middleware/optionalShareFileAuth');
 const optionalJwtAuth = require('~/server/middleware/optionalJwtAuth');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const configMiddleware = require('~/server/middleware/config/app');
 const { getAppConfig } = require('~/server/services/Config/app');
 const router = express.Router();
 const sharedLinkConfigMiddleware = createSharedLinkConfigMiddleware({ getAppConfig });
+
+const normalizedTenantId = (tenantId) =>
+  tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
+
+const getSharedLangfuseSessionUrl = async (req) => {
+  const userId = req.user?.id ?? req.user?._id?.toString();
+  if (
+    !userId ||
+    normalizedTenantId(req.user?.tenantId) !== normalizedTenantId(req.shareTenantId) ||
+    !req.shareOwnerId ||
+    !req.shareConversationId
+  ) {
+    return null;
+  }
+
+  const isAdmin = await hasCapability(
+    {
+      id: userId,
+      role: req.user.role ?? '',
+      tenantId: req.user.tenantId,
+      idOnTheSource: req.user.idOnTheSource ?? null,
+    },
+    SystemCapabilities.ACCESS_ADMIN,
+  );
+  if (!isAdmin) {
+    return null;
+  }
+
+  return resolveLangfuseSessionUrl({
+    config: req.config?.langfuse,
+    conversationId: req.shareConversationId,
+    userId: req.shareOwnerId,
+    getMessages,
+  });
+};
 
 const SHARE_SERVICE_ERROR_STATUS = {
   INVALID_PARAMS: 400,
@@ -342,8 +382,16 @@ if (allowSharedLinks) {
           preflight: contentPreflight,
         });
         if (share) {
+          let langfuseSessionUrl = null;
+          try {
+            langfuseSessionUrl = await getSharedLangfuseSessionUrl(req);
+          } catch (error) {
+            logger.warn('[share] Failed to resolve Langfuse session link:', error);
+          }
           res.set('Cache-Control', 'private, no-store');
-          res.status(200).json(share);
+          res
+            .status(200)
+            .json(langfuseSessionUrl == null ? share : { ...share, langfuseSessionUrl });
         } else {
           res.status(404).end();
         }
