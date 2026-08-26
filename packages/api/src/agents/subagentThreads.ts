@@ -48,9 +48,9 @@ import { createSubagentAttemptKey, createSubagentThreadId } from './subagentThre
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
 import { SUBAGENT_COMPLETION_DELIVERY } from './subagentDelivery';
 import { createConcurrencyLimiter } from '~/utils/promise';
+import { projectSubagentActivity } from './activity';
 import { InMemoryEventTransport } from '~/stream';
 import { aggregateEmittedUsage } from './usage';
-import { projectSubagentActivity } from './activity';
 
 const SCOPE_VERSION = 1;
 const DEFAULT_MAX_THREAD_DEPTH = 1;
