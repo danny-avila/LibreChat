@@ -15,6 +15,8 @@ import { useGetStartupConfig } from '~/data-provider';
 import SectionHeader from './SectionHeader';
 import { isEphemeralAgent } from '~/common';
 
+const VISIBLE_FILE_LIMIT = 4;
+
 function FileSearch({
   agent_id,
   files: _files,
@@ -143,6 +145,7 @@ function FileSearch({
           agent_id={agent_id}
           tool_resource={EToolResources.file_search}
           Wrapper={FileRowWrapper}
+          visibleFileLimit={VISIBLE_FILE_LIMIT}
         />
         <div>
           {sharePointEnabled ? (

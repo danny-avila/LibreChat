@@ -47,7 +47,13 @@ jest.mock('~/components/SharePoint', () => ({
   SharePointPickerDialog: () => null,
 }));
 
-jest.mock('~/components/Chat/Input/Files/FileRow', () => () => null);
+jest.mock('~/components/Chat/Input/Files/FileRow', () => ({
+  __esModule: true,
+  default: jest.fn(() => null),
+  FileRowWrapper: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
+
+const mockFileRow = jest.requireMock('~/components/Chat/Input/Files/FileRow').default;
 
 jest.mock('@ariakit/react', () => ({
   MenuButton: ({ children, ...props }: { children: React.ReactNode }) => (
@@ -73,6 +79,10 @@ function Wrapper({ provider, children }: { provider?: string; children: React.Re
 }
 
 describe('FileSearch', () => {
+  beforeEach(() => {
+    mockFileRow.mockClear();
+  });
+
   it('renders upload UI when file uploads are not disabled', () => {
     mockFileConfig = mergeFileConfig({ endpoints: { default: { fileLimit: 10 } } });
     render(
@@ -146,5 +156,17 @@ describe('FileSearch', () => {
       </Wrapper>,
     );
     expect(screen.getByText('com_assistants_file_search')).toBeInTheDocument();
+  });
+
+  it('limits the number of files rendered inline', () => {
+    render(
+      <Wrapper>
+        <FileSearch agent_id="agent-1" />
+      </Wrapper>,
+    );
+
+    const fileRowProps = mockFileRow.mock.calls[0][0];
+    expect(fileRowProps.visibleFileLimit).toBe(4);
+    expect(fileRowProps.Wrapper).toBeDefined();
   });
 });
