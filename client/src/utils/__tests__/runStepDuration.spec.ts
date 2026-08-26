@@ -1,4 +1,4 @@
-import { getRunStepDurationLabels } from '../runStepDuration';
+import { getRunStepDurationLabels, getElapsedDurationLabels } from '../runStepDuration';
 
 describe('getRunStepDurationLabels', () => {
   describe('under ten seconds', () => {
@@ -79,6 +79,42 @@ describe('getRunStepDurationLabels', () => {
      *  round 3 on #14892). */
     it('uses localized digits in the minute branch', () => {
       expect(getRunStepDurationLabels(65_000, 'ar-EG').values).toEqual({ 0: '١', 1: '٥' });
+    });
+  });
+});
+
+describe('getElapsedDurationLabels', () => {
+  it('keeps the run-step visible form and rephrases the spoken form as elapsed', () => {
+    expect(getElapsedDurationLabels(5_000, 'en')).toEqual({
+      key: 'com_ui_duration_seconds',
+      values: { 0: '5' },
+      announcedKey: 'com_ui_elapsed_announced_seconds',
+      announcedValues: { count: '5' },
+    });
+  });
+
+  it('announces the singular form only for exactly one unit', () => {
+    expect(getElapsedDurationLabels(1_000).announcedKey).toBe(
+      'com_ui_elapsed_announced_seconds_one',
+    );
+    expect(getElapsedDurationLabels(60_000).announcedKey).toBe(
+      'com_ui_elapsed_announced_minutes_one',
+    );
+  });
+
+  it('rounds the spoken form to whole minutes past a minute', () => {
+    expect(getElapsedDurationLabels(90_000, 'en')).toMatchObject({
+      key: 'com_ui_duration_minutes',
+      values: { 0: '1', 1: '30' },
+      announcedKey: 'com_ui_elapsed_announced_minutes',
+      announcedValues: { count: '2' },
+    });
+  });
+
+  it('formats every interpolated number for the active locale', () => {
+    expect(getElapsedDurationLabels(65_000, 'ar-EG')).toMatchObject({
+      values: { 0: '١', 1: '٥' },
+      announcedValues: { count: '١' },
     });
   });
 });

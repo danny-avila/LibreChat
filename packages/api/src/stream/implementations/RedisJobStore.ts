@@ -34,6 +34,7 @@ import {
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   PAUSE_PERSISTENCE_TIMEOUT_MS,
   isPendingActionStale,
+  toWireRunSteps,
 } from '~/stream/interfaces/IJobStore';
 import {
   MAX_COALESCED_BYTES,
@@ -202,6 +203,7 @@ const JOB_CAS_LUA =
   'local clientItem = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
   'if item.clientSteerId then clientItem.clientSteerId = item.clientSteerId end ' +
   'if item.files then clientItem.files = item.files end ' +
+  'if item.quotes then clientItem.quotes = item.quotes end ' +
   'if item.preempt then clientItem.preempt = item.preempt end ' +
   'if item.preemptRevision then clientItem.preemptRevision = item.preemptRevision end ' +
   'projected[#projected + 1] = clientItem ' +
@@ -325,11 +327,12 @@ const REPLACEMENT_RECEIPT_ACK_LUA =
  *          recoveredSteerPayloadJson | "",
  *          generationProtocolVersion,
  *          creationAttemptId | "",
- *          expectedPredecessorCreatedAt | "",
+ *          expectedPredecessorCreatedAt | "", rejectActivePredecessor ("1" | "0"),
  *          ...hsetPairs]
  *   Returns: [previousUserId | "", previousTenantId | "", createdAt, "",
  *             replacedCreatedAt | "", replacedStatus | "", replacedConversationId | "",
- *             replacedProviderAbortReady | ""]
+ *             replacedProviderAbortReady | "", replacedProviderExecutionId | "",
+ *             replacedProviderDrained | ""]
  *   Predecessor mismatch returns the latest retained epoch in the replaced
  *   position plus an eighth active flag and ninth verified flag ("1" | "0").
  *   Job-only metadata is empty when that epoch has outlived its hash. When all
@@ -351,6 +354,9 @@ const JOB_CREATE_LUA =
   'local replacedStatus = redis.call("HGET", KEYS[1], "status") ' +
   'local replacedConversationId = redis.call("HGET", KEYS[1], "conversationId") ' +
   'local replacedProviderAbortReady = redis.call("HGET", KEYS[1], "providerAbortReady") ' +
+  'local replacedProviderExecutionId = redis.call("HGET", KEYS[1], "providerExecutionId") ' +
+  'local replacedProviderDrained = redis.call("HGET", KEYS[1], "providerDrained") ' +
+  'local replacedTerminalPersistencePending = redis.call("HGET", KEYS[1], "terminalPersistencePending") ' +
   'local replacedProtocol = redis.call("HGET", KEYS[1], "generationProtocolVersion") ' +
   'local MAX_SAFE_EPOCH = 9007199254740991 ' +
   'local function isSafeEpoch(value) return type(value) == "number" and value >= 0 ' +
@@ -360,16 +366,26 @@ const JOB_CREATE_LUA =
   'local replacedEpoch = tonumber(replacedCreatedAt) local previousCreatedAt = replacedEpoch ' +
   'if previousJobExists == 1 and (not isSafeEpoch(replacedEpoch) or not isValidJobStatus(replacedStatus)) then ' +
   'return { "", "", "0", "replacement_receipt_corrupt" } end ' +
+  'if (replacedProviderExecutionId and not replacedProviderDrained) ' +
+  'or (replacedProviderDrained and not replacedProviderExecutionId) ' +
+  'or (replacedProviderExecutionId and (replacedProviderExecutionId == "" ' +
+  'or string.len(replacedProviderExecutionId) > 128)) ' +
+  'or (replacedProviderDrained and replacedProviderDrained ~= "0" and replacedProviderDrained ~= "1") then ' +
+  'return { "", "", "0", "replacement_receipt_corrupt" } end ' +
   'local retainedEpochRaw = redis.call("GET", KEYS[7]) local retainedEpoch = tonumber(retainedEpochRaw) ' +
   'if retainedEpochRaw and not isSafeEpoch(retainedEpoch) then ' +
   'return { "", "", "0", "generation_epoch_corrupt" } end ' +
   'local observedCreatedAt = replacedCreatedAt local observedStatus = replacedStatus ' +
   'local observedConversationId = replacedConversationId ' +
   'local observedActive = previousJobExists == 1 and ' +
-  '(replacedStatus == "running" or replacedStatus == "requires_action") ' +
+  '(replacedStatus == "running" or replacedStatus == "requires_action" ' +
+  'or replacedTerminalPersistencePending == "1") ' +
   'if retainedEpoch and (not previousCreatedAt or retainedEpoch > previousCreatedAt) then ' +
   'previousCreatedAt = retainedEpoch observedCreatedAt = retainedEpochRaw ' +
   'observedStatus = nil observedConversationId = nil observedActive = false end ' +
+  'if ARGV[13] == "1" and observedActive then ' +
+  'return { previousUserId or "", previousTenantId or "", "0", "predecessor_mismatch", ' +
+  'observedCreatedAt, observedStatus or "", observedConversationId or "", "1", "1" } end ' +
   'if ARGV[12] ~= "" and (not observedCreatedAt or observedCreatedAt ~= ARGV[12]) then ' +
   'return { previousUserId or "", previousTenantId or "", "0", "predecessor_mismatch", ' +
   'observedCreatedAt or ARGV[12], observedStatus or "", observedConversationId or "", ' +
@@ -406,6 +422,10 @@ const JOB_CREATE_LUA =
   'or (previousJobExists == 1 and item.createdAt >= replacedEpoch) ' +
   'or (item.conversationId and type(item.conversationId) ~= "string") ' +
   'or (item.providerAbortReady ~= nil and type(item.providerAbortReady) ~= "boolean") ' +
+  'or (item.providerExecutionId ~= nil and (type(item.providerExecutionId) ~= "string" ' +
+  'or item.providerExecutionId == "" or string.len(item.providerExecutionId) > 128)) ' +
+  'or (item.providerDrained ~= nil and type(item.providerDrained) ~= "boolean") ' +
+  'or ((item.providerExecutionId ~= nil) ~= (item.providerDrained ~= nil)) ' +
   'or replacementSeen[tostring(item.createdAt)] then ' +
   'return { "", "", "0", "replacement_receipt_corrupt" } end ' +
   'lastReplacementEpoch = item.createdAt replacementSeen[tostring(item.createdAt)] = true ' +
@@ -430,6 +450,8 @@ const JOB_CREATE_LUA =
   'local replaced = { createdAt = replacedEpoch, status = replacedStatus } ' +
   'if replacedConversationId then replaced.conversationId = replacedConversationId end ' +
   'if replacedProviderAbortReady then replaced.providerAbortReady = replacedProviderAbortReady == "1" end ' +
+  'if replacedProviderExecutionId then replaced.providerExecutionId = replacedProviderExecutionId end ' +
+  'if replacedProviderDrained then replaced.providerDrained = replacedProviderDrained == "1" end ' +
   'replacementChain[#replacementChain + 1] = replaced replacementSeen[tostring(replacedEpoch)] = true end ' +
   'local recoveredSteerId = ARGV[5] local expectedRecovery = nil ' +
   'if recoveredSteerId ~= "" and ARGV[10] ~= "2" then return { "", "", "0", "recovery_payload_mismatch" } end ' +
@@ -439,10 +461,20 @@ const JOB_CREATE_LUA =
   'local expectedSeen = {} for i = 1, #decoded.fileIds do local fileId = decoded.fileIds[i] ' +
   'if type(fileId) ~= "string" or fileId == "" or expectedSeen[fileId] then ' +
   'return { "", "", "0", "recovery_payload_mismatch" } end expectedSeen[fileId] = true end ' +
+  'if decoded.quotes ~= nil then if not isDenseArray(decoded.quotes) then ' +
+  'return { "", "", "0", "recovery_payload_mismatch" } end ' +
+  'for i = 1, #decoded.quotes do if type(decoded.quotes[i]) ~= "string" or decoded.quotes[i] == "" then ' +
+  'return { "", "", "0", "recovery_payload_mismatch" } end end end ' +
   'expectedRecovery = decoded elseif ARGV[9] ~= "" then ' +
   'return { "", "", "0", "recovery_payload_mismatch" } end ' +
   'local function recoveryMatches(item, expected) ' +
   'if not expected or type(item.text) ~= "string" or item.text ~= expected.text then return false end ' +
+  // Quotes are model-bound like the text: order-significant identity, with a
+  // missing array on either side reading as empty (pre-quotes compatibility).
+  'local expectedQuotes = expected.quotes or {} local itemQuotes = item.quotes ' +
+  'if itemQuotes ~= nil and not isDenseArray(itemQuotes) then return false end ' +
+  'itemQuotes = itemQuotes or {} if #itemQuotes ~= #expectedQuotes then return false end ' +
+  'for i = 1, #itemQuotes do if itemQuotes[i] ~= expectedQuotes[i] then return false end end ' +
   'local actualSeen = {} local actualCount = 0 local files = item.files ' +
   'if files then if not isDenseArray(files) then return false end ' +
   'for i = 1, #files do local file = files[i] ' +
@@ -484,7 +516,8 @@ const JOB_CREATE_LUA =
   'if ok and item.steerId and not seen[item.steerId] then seen[item.steerId] = true ' +
   'local projected = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
   'if item.clientSteerId then projected.clientSteerId = item.clientSteerId end ' +
-  'if item.files then projected.files = item.files end if item.preempt then projected.preempt = item.preempt end ' +
+  'if item.files then projected.files = item.files end if item.quotes then projected.quotes = item.quotes end ' +
+  'if item.preempt then projected.preempt = item.preempt end ' +
   'if item.preemptRevision then projected.preemptRevision = item.preemptRevision end ' +
   'merged[#merged + 1] = projected receiptUpdates[#receiptUpdates + 1] = item end end end end ' +
   'local recoveryOwnerMatches = parkedUserId == ARGV[6] and ' +
@@ -511,7 +544,7 @@ const JOB_CREATE_LUA =
   'local ttl = tonumber(ARGV[1]) ' +
   'local generationEpochGraceTtl = tonumber(ARGV[3]) ' +
   'local hset = {} ' +
-  'for i = 13, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
+  'for i = 14, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
   'redis.call("HSET", KEYS[1], unpack(hset)) ' +
   'redis.call("HSET", KEYS[1], "createdAt", tostring(createdAt)) ' +
   'if ARGV[11] ~= "" then redis.call("HSET", KEYS[1], "__creationAttemptId", ARGV[11]) end ' +
@@ -533,7 +566,8 @@ const JOB_CREATE_LUA =
   'if claimTtl > 0 then redis.call("PEXPIRE", KEYS[10], claimTtl) end end ' +
   'return { previousUserId or "", previousTenantId or "", tostring(createdAt), "", ' +
   'replacedCreatedAt or "", replacedStatus or "", replacedConversationId or "", ' +
-  'replacedProviderAbortReady or "" }';
+  'replacedProviderAbortReady or "", replacedProviderExecutionId or "", ' +
+  'replacedProviderDrained or "" }';
 
 /**
  * Epoch-guarded field update. Terminal writes reclaim same-slot content in the
@@ -566,6 +600,23 @@ const JOB_UPDATE_LUA =
   'if runStepsTtl == 0 then redis.call("DEL", KEYS[3]) else redis.call("EXPIRE", KEYS[3], runStepsTtl) end ' +
   'end ' +
   'return 1';
+
+/** Exact provider-segment completion fence. A paused segment finishing after a
+ * resume cannot mark the resumed provider drained because its opaque id differs. */
+const PROVIDER_DRAIN_LUA =
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "providerExecutionId") ~= ARGV[2] then return 0 end ' +
+  'redis.call("HSET", KEYS[1], "providerDrained", "1") return 1';
+
+/** Exact initial provider-start fence. The controller rechecks account
+ * deletion before this CAS; an abort/replacement that wins next prevents the
+ * provider from starting after destructive cleanup has begun. */
+const PROVIDER_BEGIN_LUA =
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "providerExecutionId") ~= ARGV[2] then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "status") ~= "running" then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "providerDrained") ~= "1" then return 0 end ' +
+  'redis.call("HSET", KEYS[1], "providerDrained", "0") return 1';
 
 /** Single-winner promotion from abort-persistence pending to a consumable
  * terminal payload. Owner success/failure and stale-owner recovery share this
@@ -643,7 +694,8 @@ const STALE_JOB_DELETE_LUA =
   'if item.steerId and not seen[item.steerId] then seen[item.steerId] = true fullItems[#fullItems + 1] = item ' +
   'local clientItem = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
   'if item.clientSteerId then clientItem.clientSteerId = item.clientSteerId end ' +
-  'if item.files then clientItem.files = item.files end if item.preempt then clientItem.preempt = item.preempt end ' +
+  'if item.files then clientItem.files = item.files end if item.quotes then clientItem.quotes = item.quotes end ' +
+  'if item.preempt then clientItem.preempt = item.preempt end ' +
   'if item.preemptRevision then clientItem.preemptRevision = item.preemptRevision end ' +
   'projected[#projected + 1] = clientItem end ' +
   'if generationProtocol == 2 and item.clientSteerId then local raw = redis.call("HGET", KEYS[8], item.clientSteerId) ' +
@@ -893,6 +945,7 @@ const STEER_ENQUEUE_VERSIONED_LUA =
   'if redis.call("HGET", KEYS[1], "steersClosed") == "1" then return -1 end ' +
   'if redis.call("LLEN", KEYS[2]) >= tonumber(ARGV[3]) then return -2 end ' +
   'local item = cjson.decode(ARGV[1]) ' +
+  'if item.quotes then local qexec = redis.call("HGET", KEYS[1], "steerQuotesExecutionId") if not qexec or qexec == "" or qexec ~= redis.call("HGET", KEYS[1], "providerExecutionId") then item.quotes = nil end end ' +
   'if ARGV[5] == "1" then item.preemptRevision = 1 ' +
   'if redis.call("HGET", KEYS[1], "preemptCapable") == "1" then item.preempt = true end end ' +
   'local itemJson = cjson.encode(item) ' +
@@ -930,7 +983,10 @@ const STEER_ENQUEUE_RECEIPT_LUA =
   'if redis.call("HGET", KEYS[1], "status") ~= "running" then return -1 end ' +
   'if redis.call("HGET", KEYS[1], "steersClosed") == "1" then return -1 end ' +
   'if redis.call("LLEN", KEYS[2]) >= tonumber(ARGV[3]) then return -2 end ' +
-  'local legacyItem = cjson.decode(ARGV[1]) if ARGV[7] == "1" then legacyItem.preemptRevision = 1 ' +
+  'local legacyItem = cjson.decode(ARGV[1]) ' +
+  'if legacyItem.quotes then local qexec = redis.call("HGET", KEYS[1], "steerQuotesExecutionId") ' +
+  'if not qexec or qexec == "" or qexec ~= redis.call("HGET", KEYS[1], "providerExecutionId") then legacyItem.quotes = nil end end ' +
+  'if ARGV[7] == "1" then legacyItem.preemptRevision = 1 ' +
   'if redis.call("HGET", KEYS[1], "preemptCapable") == "1" then legacyItem.preempt = true end end ' +
   'redis.call("RPUSH", KEYS[2], cjson.encode(legacyItem)) ' +
   'redis.call("EXPIRE", KEYS[2], tonumber(ARGV[2])) ' +
@@ -941,6 +997,7 @@ const STEER_ENQUEUE_RECEIPT_LUA =
   'if redis.call("LLEN", KEYS[2]) >= tonumber(ARGV[3]) then return -2 end ' +
   'if redis.call("ZCARD", KEYS[4]) >= tonumber(ARGV[9]) then return -3 end ' +
   'local item = cjson.decode(ARGV[1]) ' +
+  'if item.quotes then local qexec = redis.call("HGET", KEYS[1], "steerQuotesExecutionId") if not qexec or qexec == "" or qexec ~= redis.call("HGET", KEYS[1], "providerExecutionId") then item.quotes = nil end end ' +
   'if ARGV[7] == "1" then ' +
   'item.preemptRevision = 1 ' +
   'if redis.call("HGET", KEYS[1], "preemptCapable") == "1" then item.preempt = true end ' +
@@ -1436,6 +1493,7 @@ const STEER_CLOSE_DRAIN_LUA =
   'local projected = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
   'if item.clientSteerId then projected.clientSteerId = item.clientSteerId end ' +
   'if item.files then projected.files = item.files end ' +
+  'if item.quotes then projected.quotes = item.quotes end ' +
   'if item.preempt then projected.preempt = item.preempt end ' +
   'if item.preemptRevision then projected.preemptRevision = item.preemptRevision end ' +
   'currentProjected[#currentProjected + 1] = projected end ' +
@@ -1502,6 +1560,9 @@ const KEYS = {
   runningJobs: 'stream:running',
   /** Jobs paused for human review (global set - single slot) */
   requiresActionJobs: 'stream:requires_action',
+  /** Terminal jobs that still owe a durable host lifecycle hook (global set). Retains
+   *  the aborted approval-expiry job for cross-replica / post-restart hook retry. */
+  terminalHostActionJobs: 'stream:terminal_host_action',
   /** User's active jobs set, tenant-qualified when tenantId is available */
   userJobs: (userId: string, tenantId?: string) =>
     tenantId ? `stream:user:{${tenantId}:${userId}}:jobs` : `stream:user:{${userId}}:jobs`,
@@ -1736,6 +1797,7 @@ export class RedisJobStore implements IJobStoreV2 {
     recoveredSteerPayload?: RecoveredSteerPayload,
     creationAttemptId?: string,
     expectedPredecessorCreatedAt?: number,
+    rejectActivePredecessor?: boolean,
   ): Promise<CreatedJobData> {
     if (typeof userId !== 'string' || userId.length === 0) {
       throw new Error('Generation job requires a non-empty user id');
@@ -1757,6 +1819,18 @@ export class RedisJobStore implements IJobStoreV2 {
     ) {
       throw new Error('Invalid expected generation predecessor');
     }
+    if (rejectActivePredecessor != null && typeof rejectActivePredecessor !== 'boolean') {
+      throw new Error('Invalid active generation predecessor policy');
+    }
+    const providerExecutionId = initialMetadata.providerExecutionId;
+    if (
+      providerExecutionId != null &&
+      (providerExecutionId.length === 0 || providerExecutionId.length > 128)
+    ) {
+      throw new Error('Invalid provider execution id');
+    }
+    const safeInitialMetadata = { ...initialMetadata };
+    delete safeInitialMetadata.providerDrained;
     let generationProtocolVersion: 1 | 2 = 1;
     if (
       initialMetadata.generationProtocolVersion === 1 ||
@@ -1767,7 +1841,7 @@ export class RedisJobStore implements IJobStoreV2 {
       generationProtocolVersion = 2;
     }
     const job: CreatedJobData = {
-      ...initialMetadata,
+      ...safeInitialMetadata,
       streamId,
       userId,
       ...(tenantId && { tenantId }),
@@ -1778,6 +1852,7 @@ export class RedisJobStore implements IJobStoreV2 {
       ...(idempotencyClientRequestId !== undefined && { idempotencyClientRequestId }),
       ...(recoveredSteerId !== undefined && { recoveredSteerId }),
       providerAbortReady: false,
+      ...(providerExecutionId != null && { providerDrained: true }),
       syncSent: false,
     };
     if (creationAttemptId != null) {
@@ -1825,6 +1900,7 @@ export class RedisJobStore implements IJobStoreV2 {
       String(job.generationProtocolVersion),
       creationAttemptId ?? '',
       expectedPredecessorCreatedAt == null ? '' : String(expectedPredecessorCreatedAt),
+      rejectActivePredecessor === true ? '1' : '0',
       ...hsetPairs,
     );
     if (Array.isArray(previousOwner) && previousOwner[3] === 'claim_lost') {
@@ -1909,6 +1985,18 @@ export class RedisJobStore implements IJobStoreV2 {
       previousOwner[7] !== ''
         ? previousOwner[7] === '1'
         : undefined;
+    const replacedProviderExecutionId =
+      Array.isArray(previousOwner) &&
+      typeof previousOwner[8] === 'string' &&
+      previousOwner[8] !== ''
+        ? previousOwner[8]
+        : undefined;
+    const replacedProviderDrained =
+      Array.isArray(previousOwner) &&
+      typeof previousOwner[9] === 'string' &&
+      previousOwner[9] !== ''
+        ? previousOwner[9] === '1'
+        : undefined;
     const replacedJob =
       replacedCreatedAt != null && Number.isFinite(replacedCreatedAt) && replacedStatus != null
         ? {
@@ -1923,6 +2011,18 @@ export class RedisJobStore implements IJobStoreV2 {
       Object.defineProperty(replacedJob, 'providerAbortReady', {
         value: replacedProviderAbortReady,
         enumerable: false,
+      });
+    }
+    if (replacedJob != null && replacedProviderExecutionId != null) {
+      Object.defineProperties(replacedJob, {
+        providerExecutionId: {
+          value: replacedProviderExecutionId,
+          enumerable: false,
+        },
+        providerDrained: {
+          value: replacedProviderDrained,
+          enumerable: false,
+        },
       });
     }
     const previousUserKeys =
@@ -2074,6 +2174,42 @@ export class RedisJobStore implements IJobStoreV2 {
     }
   }
 
+  async markProviderExecutionDrained(
+    streamId: string,
+    expectedCreatedAt: number,
+    providerExecutionId: string,
+  ): Promise<boolean> {
+    return (
+      Number(
+        await this.redis.eval(
+          PROVIDER_DRAIN_LUA,
+          1,
+          KEYS.job(streamId),
+          String(expectedCreatedAt),
+          providerExecutionId,
+        ),
+      ) === 1
+    );
+  }
+
+  async beginProviderExecution(
+    streamId: string,
+    expectedCreatedAt: number,
+    providerExecutionId: string,
+  ): Promise<boolean> {
+    return (
+      Number(
+        await this.redis.eval(
+          PROVIDER_BEGIN_LUA,
+          1,
+          KEYS.job(streamId),
+          String(expectedCreatedAt),
+          providerExecutionId,
+        ),
+      ) === 1
+    );
+  }
+
   async finalizeTerminalPersistence(
     streamId: string,
     expectedCreatedAt: number,
@@ -2103,7 +2239,8 @@ export class RedisJobStore implements IJobStoreV2 {
       left.createdAt === right.createdAt &&
       left.status === right.status &&
       left.userId === right.userId &&
-      left.tenantId === right.tenantId
+      left.tenantId === right.tenantId &&
+      left.providerDrained === right.providerDrained
     );
   }
 
@@ -2119,7 +2256,10 @@ export class RedisJobStore implements IJobStoreV2 {
     observedUserKeys: Set<string>,
   ): Promise<SerializableJobData | null> {
     const statusKey = job ? this.statusSetKey(job.status) : null;
-    const activeUserKey = job && statusKey != null ? KEYS.userJobs(job.userId, job.tenantId) : null;
+    const activeUserKey =
+      job && (statusKey != null || job.providerDrained === false)
+        ? KEYS.userJobs(job.userId, job.tenantId)
+        : null;
 
     if (this.isCluster) {
       const operations: Promise<unknown>[] = [
@@ -2129,6 +2269,11 @@ export class RedisJobStore implements IJobStoreV2 {
         statusKey === KEYS.requiresActionJobs
           ? this.redis.sadd(KEYS.requiresActionJobs, streamId)
           : this.redis.srem(KEYS.requiresActionJobs, streamId),
+        // Terminal host-action membership follows the durable hash field, not status, so
+        // an aborted approval-expiry job stays enumerable for hook retry until acked.
+        job?.terminalHostActionPending === true
+          ? this.redis.sadd(KEYS.terminalHostActionJobs, streamId)
+          : this.redis.srem(KEYS.terminalHostActionJobs, streamId),
       ];
       for (const userJobsKey of observedUserKeys) {
         if (userJobsKey !== activeUserKey) {
@@ -2159,6 +2304,11 @@ export class RedisJobStore implements IJobStoreV2 {
       pipeline.sadd(KEYS.requiresActionJobs, streamId);
     } else {
       pipeline.srem(KEYS.requiresActionJobs, streamId);
+    }
+    if (job?.terminalHostActionPending === true) {
+      pipeline.sadd(KEYS.terminalHostActionJobs, streamId);
+    } else {
+      pipeline.srem(KEYS.terminalHostActionJobs, streamId);
     }
     for (const userJobsKey of observedUserKeys) {
       if (userJobsKey !== activeUserKey) {
@@ -2320,6 +2470,12 @@ export class RedisJobStore implements IJobStoreV2 {
     let ttl = terminal ? this.ttl.completed : this.runningStorageTtlSeconds();
     if (terminal && patch?.terminalPersistencePending === true) {
       ttl = Math.max(ttl, TERMINAL_PERSISTENCE_RETENTION_TTL_S);
+    }
+    if (terminal && patch?.terminalHostActionPending === true) {
+      // A terminal job owing a host hook must outlive the normal completed TTL so cleanup
+      // can still enumerate and retry it across restarts; the pause backstop (24h) bounds
+      // the retry window. Cleared to the completed TTL on acknowledgement.
+      ttl = Math.max(ttl, this.ttl.requiresAction);
     }
     if (to === 'requires_action') {
       // A paused job must outlive its approval window, even when that window is
@@ -2564,6 +2720,70 @@ export class RedisJobStore implements IJobStoreV2 {
     return jobs;
   }
 
+  async getRequiresActionJobs(): Promise<SerializableJobData[]> {
+    const streamIds = await this.redis.smembers(KEYS.requiresActionJobs);
+    if (streamIds.length === 0) {
+      return [];
+    }
+    const jobs = await Promise.all(streamIds.map((streamId) => this.getJob(streamId)));
+    return jobs.filter(
+      (job): job is SerializableJobData => job != null && job.status === 'requires_action',
+    );
+  }
+
+  async getTerminalHostActionJobs(): Promise<SerializableJobData[]> {
+    const streamIds = await this.redis.smembers(KEYS.terminalHostActionJobs);
+    if (streamIds.length === 0) {
+      return [];
+    }
+    const jobs = await Promise.all(streamIds.map((streamId) => this.getJob(streamId)));
+    // The durable hash field is the source of truth; a stale set entry (job reaped, or the
+    // marker already cleared) is filtered out and self-heals via reconcileJobMembership.
+    const stale: string[] = [];
+    const pending: SerializableJobData[] = [];
+    for (let i = 0; i < streamIds.length; i++) {
+      const job = jobs[i];
+      if (job != null && job.terminalHostActionPending === true) {
+        pending.push(job);
+      } else {
+        stale.push(streamIds[i]);
+      }
+    }
+    if (stale.length > 0) {
+      await this.redis.srem(KEYS.terminalHostActionJobs, ...stale).catch(() => undefined);
+    }
+    // Enumerating IS the retry attempt: extend each pending job's TTL so unacknowledged
+    // host-action evidence outlives a host dependency (e.g. Mongo) that stays unreachable
+    // longer than the retention window. A deployment that stops sweeping lets it age out.
+    if (pending.length > 0 && this.ttl.requiresAction > 0) {
+      await Promise.all(
+        pending.map((job) =>
+          this.redis.expire(KEYS.job(job.streamId), this.ttl.requiresAction).catch(() => undefined),
+        ),
+      );
+    }
+    return pending;
+  }
+
+  async clearTerminalHostAction(streamId: string, expectedCreatedAt?: number): Promise<void> {
+    // Identity-fenced: only clear when the hash still holds this exact generation, so a
+    // replacement at the same streamId is never cleared through its predecessor. The HDEL
+    // and the completed-TTL reset happen atomically; membership is then reconciled to SREM.
+    const cleared = (await this.redis.eval(
+      'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+        'redis.call("HDEL", KEYS[1], "terminalHostActionPending") ' +
+        'if tonumber(ARGV[2]) > 0 then redis.call("EXPIRE", KEYS[1], ARGV[2]) end ' +
+        'return 1',
+      1,
+      KEYS.job(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+      String(this.ttl.completed),
+    )) as number;
+    if (cleared === 1) {
+      await this.redis.srem(KEYS.terminalHostActionJobs, streamId).catch(() => undefined);
+    }
+  }
+
   async cleanup(): Promise<number> {
     const now = Date.now();
     const streamIds = await this.redis.smembers(KEYS.runningJobs);
@@ -2731,6 +2951,10 @@ export class RedisJobStore implements IJobStoreV2 {
               patch: {
                 error: 'Approval expired before a decision was made',
                 completedAt: Date.now(),
+                // Store-won expiry: mark the host action pending (and extend retention via
+                // the TTL rule above) so the manager relay still runs its lifecycle hook on
+                // a replica that owns the runtime; cleared once that hook acknowledges.
+                terminalHostActionPending: true,
               },
               // Scope the CAS to the action we observed as stale: if the user resolved it
               // and the run re-paused on a fresh action between the read and here, the
@@ -2813,6 +3037,18 @@ export class RedisJobStore implements IJobStoreV2 {
    * @returns Array of conversation IDs with active jobs
    */
   async getActiveJobIdsByUser(userId: string, tenantId?: string): Promise<string[]> {
+    return this.getJobIdsByUser(userId, tenantId, false);
+  }
+
+  async getCleanupBlockingJobIdsByUser(userId: string, tenantId?: string): Promise<string[]> {
+    return this.getJobIdsByUser(userId, tenantId, true);
+  }
+
+  private async getJobIdsByUser(
+    userId: string,
+    tenantId: string | undefined,
+    includeUndrained: boolean,
+  ): Promise<string[]> {
     const userJobsKey = KEYS.userJobs(userId, tenantId);
     const trackedIds = await this.redis.smembers(userJobsKey);
 
@@ -2832,8 +3068,18 @@ export class RedisJobStore implements IJobStoreV2 {
       // polling and can complete.
       const belongsToUser =
         job?.userId === userId && (job.tenantId ?? undefined) === (tenantId ?? undefined);
-      if (belongsToUser && job && (job.status === 'running' || job.status === 'requires_action')) {
-        if (job.status === 'requires_action' && isPendingActionStale(job)) {
+      if (
+        belongsToUser &&
+        job &&
+        (job.status === 'running' ||
+          job.status === 'requires_action' ||
+          (includeUndrained && job.providerDrained === false))
+      ) {
+        if (
+          job.status === 'requires_action' &&
+          isPendingActionStale(job) &&
+          !(includeUndrained && job.providerDrained === false)
+        ) {
           continue;
         }
         activeIds.push(streamId);
@@ -2851,8 +3097,14 @@ export class RedisJobStore implements IJobStoreV2 {
         if (
           currentBelongsToUser &&
           currentJob &&
-          (currentJob.status === 'running' || currentJob.status === 'requires_action') &&
-          !(currentJob.status === 'requires_action' && isPendingActionStale(currentJob))
+          (currentJob.status === 'running' ||
+            currentJob.status === 'requires_action' ||
+            (includeUndrained && currentJob.providerDrained === false)) &&
+          !(
+            currentJob.status === 'requires_action' &&
+            isPendingActionStale(currentJob) &&
+            !(includeUndrained && currentJob.providerDrained === false)
+          )
         ) {
           activeIds.push(streamId);
         }
@@ -3429,7 +3681,7 @@ export class RedisJobStore implements IJobStoreV2 {
           g.getRunSteps(),
         );
         if (localSteps && localSteps.length > 0) {
-          return localSteps;
+          return toWireRunSteps(localSteps);
         }
       }
       // Note: Don't delete from cache here - graph may still be valid
@@ -4315,6 +4567,12 @@ export class RedisJobStore implements IJobStoreV2 {
       recoveredSteerId: data.recoveredSteerId || undefined,
       userMessage: data.userMessage ? JSON.parse(data.userMessage) : undefined,
       responseMessageId: data.responseMessageId || undefined,
+      isRegenerate: data.isRegenerate != null ? data.isRegenerate === '1' : undefined,
+      mcpRequestBody: data.mcpRequestBody ? JSON.parse(data.mcpRequestBody) : undefined,
+      userSubmittedPaths: data.userSubmittedPaths ? JSON.parse(data.userSubmittedPaths) : undefined,
+      userSubmittedMessageFieldPaths: data.userSubmittedMessageFieldPaths
+        ? JSON.parse(data.userSubmittedMessageFieldPaths)
+        : undefined,
       createdEventEmitted: data.createdEventEmitted === '1',
       sender: data.sender || undefined,
       syncSent: data.syncSent === '1',
@@ -4332,6 +4590,26 @@ export class RedisJobStore implements IJobStoreV2 {
       promptTokens: data.promptTokens ? parseInt(data.promptTokens, 10) : undefined,
       agent_id: data.agent_id || undefined,
       isTemporary: data.isTemporary != null ? data.isTemporary === '1' : undefined,
+      scheduleId: data.scheduleId || undefined,
+      scheduledFor: data.scheduledFor || undefined,
+      scheduleConfigRevision: data.scheduleConfigRevision
+        ? parseInt(data.scheduleConfigRevision, 10)
+        : undefined,
+      scheduleManual: data.scheduleManual != null ? data.scheduleManual === '1' : undefined,
+      scheduleOutcome:
+        data.scheduleOutcome === 'success' ||
+        data.scheduleOutcome === 'error' ||
+        data.scheduleOutcome === 'interrupted' ||
+        data.scheduleOutcome === 'skipped_balance'
+          ? data.scheduleOutcome
+          : undefined,
+      scheduleOutcomeError: data.scheduleOutcomeError || undefined,
+      preserveForScheduleReconcile:
+        data.preserveForScheduleReconcile != null
+          ? data.preserveForScheduleReconcile === '1'
+          : undefined,
+      terminalHostActionPending:
+        data.terminalHostActionPending != null ? data.terminalHostActionPending === '1' : undefined,
       // Deferred tools discovered before a HITL pause; replayed into createRun on resume.
       discoveredTools: data.discoveredTools ? JSON.parse(data.discoveredTools) : undefined,
       activityPhaseSnapshot: data.activityPhaseSnapshot
@@ -4343,8 +4621,14 @@ export class RedisJobStore implements IJobStoreV2 {
        *  `preemptArmed: false` and silently degrade interrupt-steer to
        *  tool-boundary steering in EVERY Redis deployment. */
       preemptCapable: data.preemptCapable != null ? data.preemptCapable === '1' : undefined,
+      /** Same explicit-mapper trap as `preemptCapable`: without this line every
+       *  Redis read reports the owner quote-incapable, so admission would drop
+       *  all steer quotes (and their echo) in EVERY Redis deployment. */
+      steerQuotesExecutionId: data.steerQuotesExecutionId || undefined,
       providerAbortReady:
         data.providerAbortReady != null ? data.providerAbortReady === '1' : undefined,
+      providerExecutionId: data.providerExecutionId || undefined,
+      providerDrained: data.providerDrained != null ? data.providerDrained === '1' : undefined,
       titleEvent: data.titleEvent || undefined,
       replayEvents: data.replayEvents || undefined,
       contextUsage: data.contextUsage || undefined,
@@ -4407,6 +4691,12 @@ export class RedisJobStore implements IJobStoreV2 {
           (candidate.conversationId != null && typeof candidate.conversationId !== 'string') ||
           (candidate.providerAbortReady != null &&
             typeof candidate.providerAbortReady !== 'boolean') ||
+          (candidate.providerExecutionId != null &&
+            (typeof candidate.providerExecutionId !== 'string' ||
+              candidate.providerExecutionId.length === 0 ||
+              candidate.providerExecutionId.length > 128)) ||
+          (candidate.providerDrained != null && typeof candidate.providerDrained !== 'boolean') ||
+          (candidate.providerExecutionId != null) !== (candidate.providerDrained != null) ||
           seen.has(candidate.createdAt as number)
         ) {
           throw new Error('Invalid generation replacement receipt');
@@ -4423,6 +4713,16 @@ export class RedisJobStore implements IJobStoreV2 {
         if (candidate.providerAbortReady != null) {
           Object.defineProperty(receipt, 'providerAbortReady', {
             value: candidate.providerAbortReady,
+            enumerable: false,
+          });
+        }
+        if (candidate.providerExecutionId != null) {
+          Object.defineProperty(receipt, 'providerExecutionId', {
+            value: candidate.providerExecutionId,
+            enumerable: false,
+          });
+          Object.defineProperty(receipt, 'providerDrained', {
+            value: candidate.providerDrained,
             enumerable: false,
           });
         }

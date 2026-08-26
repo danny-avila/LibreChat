@@ -202,6 +202,11 @@ type PlaceholderValue =
   | readonly PlaceholderValue[]
   | { readonly [key: string]: PlaceholderValue };
 
+export interface MCPRequestScope {
+  requestScoped: boolean;
+  requiredBodyFields: Array<keyof RequestBody>;
+}
+
 type UserScopedConnectionConfig = Pick<
   ParsedServerConfig,
   'requiresOAuth' | 'source' | 'dbId' | 'startup'
@@ -281,7 +286,10 @@ function hasPlaceholder(value: PlaceholderValue, pattern: RegExp): boolean {
   return Object.values(value).some((item) => hasPlaceholder(item, pattern));
 }
 
-function addRuntimeBodyPlaceholderFields(value: PlaceholderValue, fields: Set<string>): void {
+function addRuntimeBodyPlaceholderFields(
+  value: PlaceholderValue,
+  fields: Set<keyof RequestBody>,
+): void {
   if (typeof value === 'string') {
     for (const match of value.matchAll(RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN)) {
       const placeholderKey = match[1];
@@ -335,34 +343,32 @@ export function hasRuntimeUrlPlaceholders(config: UserScopedConnectionConfig): b
   return hasRuntimeContextPlaceholder(config.url);
 }
 
-export function hasRuntimeBodyPlaceholders(config: UserScopedConnectionConfig): boolean {
+export function getMCPRequestScope(config: UserScopedConnectionConfig): MCPRequestScope {
   if (!canResolveRuntimePlaceholders(config)) {
-    return false;
+    return { requestScoped: false, requiredBodyFields: [] };
   }
 
-  return placeholderBearingFields(config).some((value) =>
-    hasPlaceholder(value, RUNTIME_BODY_PLACEHOLDER_PATTERN),
-  );
+  const requiredBodyFields = new Set<keyof RequestBody>();
+  for (const value of placeholderBearingFields(config)) {
+    addRuntimeBodyPlaceholderFields(value, requiredBodyFields);
+  }
+
+  const fields = Array.from(requiredBodyFields);
+  return { requestScoped: fields.length > 0, requiredBodyFields: fields };
 }
 
-export function getRuntimeBodyPlaceholderFields(config: UserScopedConnectionConfig): string[] {
-  if (!canResolveRuntimePlaceholders(config)) {
-    return [];
-  }
-
-  const fields = new Set<string>();
-  for (const value of placeholderBearingFields(config)) {
-    addRuntimeBodyPlaceholderFields(value, fields);
-  }
-  return Array.from(fields);
+export function getRuntimeBodyPlaceholderFields(
+  config: UserScopedConnectionConfig,
+): Array<keyof RequestBody> {
+  return getMCPRequestScope(config).requiredBodyFields;
 }
 
 export function getMissingRuntimeBodyPlaceholderFields(
   config: UserScopedConnectionConfig,
   requestBody?: RequestBody,
 ): string[] {
-  return getRuntimeBodyPlaceholderFields(config).filter((field) => {
-    const value = requestBody?.[field as keyof RequestBody];
+  return getMCPRequestScope(config).requiredBodyFields.filter((field) => {
+    const value = requestBody?.[field];
     return value == null || (typeof value === 'string' && value.trim() === '');
   });
 }
@@ -380,13 +386,7 @@ export function getMissingRuntimeBodyPlaceholderFields(
  * connection without forcing a reconnect for every invocation.
  */
 export function requiresEphemeralUserConnection(config: UserScopedConnectionConfig): boolean {
-  if (!canResolveRuntimePlaceholders(config)) {
-    return false;
-  }
-
-  return placeholderBearingFields(config).some((value) =>
-    hasPlaceholder(value, RUNTIME_BODY_PLACEHOLDER_PATTERN),
-  );
+  return getMCPRequestScope(config).requestScoped;
 }
 
 /**
@@ -631,4 +631,6 @@ export {
   normalizeServerName,
   normalizeMCPToolKey,
   buildServerNameAliases,
+  stripServerNamePrefix,
+  stripServerNamePrefixes,
 } from 'librechat-data-provider';

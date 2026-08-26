@@ -28,7 +28,7 @@ jest.mock('../CancelledIcon', () => ({
 }));
 
 const defaults = {
-  progress: 1,
+  phase: 'completed' as const,
   inProgressText: 'Running foo',
   finishedText: 'Completed foo',
 };
@@ -52,25 +52,25 @@ describe('ProgressText duration', () => {
    * is still the in-progress one.
    */
   it('does not render while the step is still running', () => {
-    renderProgressText({ progress: 0.4, durationMs: 3500 });
+    renderProgressText({ phase: 'running', durationMs: 3500 });
     expect(screen.queryByText('· 3.5s')).not.toBeInTheDocument();
   });
 
   /**
    * On a cancelled or failed card the slot already carries the cancelled icon
-   * or the error suffix, and "how long it took" is not the fact the reader
-   * needs. The two states arrive through different props — `error` carries
-   * cancellation, `errorSuffix` alone carries failure — so both are pinned
-   * separately; gating on `error` alone rendered a duration beside "failed"
-   * (Codex round 1 on #14892).
+   * or the failure suffix, and "how long it took" is not the fact the reader
+   * needs. Both terminal-failure states are pinned: they used to arrive
+   * through two different props (`error` for cancellation, `errorSuffix` for
+   * failure), and gating on one of them alone rendered a duration beside
+   * "failed" (Codex round 1 on #14892). They are now one value.
    */
   it('does not render on a cancelled card', () => {
-    renderProgressText({ error: true, durationMs: 3500 });
+    renderProgressText({ phase: 'cancelled', durationMs: 3500 });
     expect(screen.queryByText('· 3.5s')).not.toBeInTheDocument();
   });
 
-  it('does not render on a failed card, where failure arrives as errorSuffix alone', () => {
-    renderProgressText({ errorSuffix: 'failed', durationMs: 3500 });
+  it('does not render on a failed card', () => {
+    renderProgressText({ phase: 'failed', durationMs: 3500 });
     expect(screen.queryByText('· 3.5s')).not.toBeInTheDocument();
     expect(screen.queryByText('took 3.5 seconds')).not.toBeInTheDocument();
   });

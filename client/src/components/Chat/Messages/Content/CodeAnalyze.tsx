@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Terminal } from 'lucide-react';
+import type { ToolCallPhase } from '~/utils/toolCallPhase';
 import { useProgress, useLocalize } from '~/hooks';
 import ProgressText from './ProgressText';
 import MarkdownLite from './MarkdownLite';
@@ -46,14 +47,22 @@ export default function CodeAnalyze({
     return acc;
   }, '');
 
+  /**
+   * The legacy assistants-endpoint card: it never receives run-step metadata,
+   * so it genuinely has only these two states and maps them directly rather
+   * than through `resolveToolCallPhase`, which needs signals this card has no
+   * access to. The announcement and the icon below read this same value.
+   */
+  const phase: ToolCallPhase = progress < 1 ? 'running' : 'completed';
+
   return (
     <>
       <span className="sr-only" aria-live="polite" aria-atomic="true">
-        {progress < 1 ? localize('com_ui_analyzing') : localize('com_ui_analyzing_finished')}
+        {phase === 'running' ? localize('com_ui_analyzing') : localize('com_ui_analyzing_finished')}
       </span>
       <div className="my-1 flex items-center gap-2.5">
         <ProgressText
-          progress={progress}
+          phase={phase}
           onClick={handleToggleCode}
           inProgressText={localize('com_ui_analyzing')}
           finishedText={localize('com_ui_analyzing_finished')}
@@ -61,7 +70,10 @@ export default function CodeAnalyze({
           isExpanded={showCode}
           icon={
             <Terminal
-              className={cn('size-4 shrink-0 text-text-secondary', progress < 1 && 'animate-pulse')}
+              className={cn(
+                'size-4 shrink-0 text-text-secondary',
+                phase === 'running' && 'animate-pulse',
+              )}
               aria-hidden="true"
             />
           }

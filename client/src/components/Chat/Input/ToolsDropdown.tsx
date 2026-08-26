@@ -27,6 +27,10 @@ interface ToolsDropdownProps {
   disabled?: boolean;
 }
 
+/** Ariakit portals to document.body by default, which puts the menu outside every landmark.
+ *  Returning null falls back to that default. */
+const getMainLandmark = () => document.querySelector<HTMLElement>('main');
+
 const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -400,7 +404,10 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
       menuId="tools-dropdown-menu"
       isOpen={isPopoverActive}
       setIsOpen={setIsPopoverActive}
-      modal={true}
+      modal={false}
+      portal={true}
+      portalElement={getMainLandmark}
+      preserveTabOrder={false}
       unmountOnHide={true}
       trigger={menuTrigger}
       items={dropdownItems}

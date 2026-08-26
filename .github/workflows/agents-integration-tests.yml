@@ -1,7 +1,7 @@
 name: Agents Integration Tests
 
 # Runs the packages/api `src/agents/**` integration specs (e.g. the durable HITL
-# checkpointer against a real in-process MongoDB via mongodb-memory-server). These
+# checkpointer and cross-replica subagent delivery against real MongoDB and Redis). These
 # are `*.integration.spec.ts`, which `test:ci` deliberately excludes — without this
 # job they run nowhere and their regressions guard nothing.
 on:
@@ -33,9 +33,20 @@ concurrency:
 
 jobs:
   agents_integration_tests:
-    name: Integration Tests that use in-process MongoDB
+    name: Integration Tests (MongoDB and Redis)
     timeout-minutes: 20
     runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout repository
@@ -95,8 +106,9 @@ jobs:
         if: steps.cache-api.outputs.cache-hit != 'true'
         run: npm run build:api
 
-      - name: Run agents integration tests (in-process MongoDB)
+      - name: Run agents integration tests
         working-directory: packages/api
         env:
           NODE_ENV: test
+          REDIS_URI: redis://127.0.0.1:6379
         run: npm run test:agents-integration

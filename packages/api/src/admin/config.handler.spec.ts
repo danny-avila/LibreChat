@@ -436,6 +436,50 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.upsertConfig).not.toHaveBeenCalled();
     });
 
+    it('rejects Langfuse header overrides, which cannot be encrypted at rest', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'user', principalId: 'u1' },
+        body: {
+          overrides: {
+            langfuse: { enabled: true, headers: { 'X-Proxy-Token': 'leaked' } },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        error: 'Langfuse request headers can only be configured in librechat.yaml',
+      });
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['nested dotted key', { langfuse: { 'headers.X-Proxy-Token': 'credential' } }],
+      ['root dotted path', { 'langfuse.headers': { 'X-Proxy-Token': 'credential' } }],
+      ['root dotted header path', { 'langfuse.headers.X-Proxy-Token': 'credential' }],
+    ])('rejects Langfuse headers supplied as a %s', async (_label, overrides) => {
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(
+        mockReq({ params: { principalType: 'user', principalId: 'u1' }, body: { overrides } }),
+        res,
+      );
+
+      /** `overrides` is a Mixed document written wholesale, so a dotted key
+       *  persists verbatim and the nested-map redactor never walks it — the
+       *  credential would come back in plaintext on the next read. */
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        error: 'Langfuse request headers can only be configured in librechat.yaml',
+      });
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
     it('rejects process-backed MCP servers supplied through the runtime config alias', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
@@ -475,6 +519,25 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(201);
       const savedOverrides = deps.upsertConfig.mock.calls[0][3];
       expect(savedOverrides.interface).toEqual({ modelSelect: false });
+    });
+
+    it('collapses an explicit schedules disable to the boolean form in overrides', async () => {
+      const { handlers, deps } = createHandlers({
+        upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: { interface: { schedules: { use: false, maxPerUser: 2 } } },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      const savedOverrides = deps.upsertConfig.mock.calls[0][3];
+      expect(savedOverrides.interface).toEqual({ schedules: false });
     });
 
     it('preserves skillSync sections in admin overrides', async () => {
@@ -950,6 +1013,21 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
     });
 
+    it('ignores tombstones for base-only filter policy', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'filters.messages.pii' },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body!.message).toBeDefined();
+      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+    });
+
     it('rejects unsafe field paths', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
@@ -1002,6 +1080,43 @@ describe('createAdminConfigHandlers', () => {
       expect(patchedFields['interface.prompts']).toBeUndefined();
     });
 
+    /** `use` is both a permission bit and the runtime disable for dual-purpose fields.
+     *  Stripping it alone leaves an object, which `getLimits` reads as ENABLED — so an
+     *  override meant to stop scheduled billing would start it. */
+    it('collapses an explicit schedules disable to the boolean form in patches', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [{ fieldPath: 'interface.schedules', value: { use: false, maxPerUser: 2 } }],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const patchedFields = deps.patchConfigFields.mock.calls[0][3];
+      expect(patchedFields['interface.schedules']).toBe(false);
+    });
+
+    it('keeps a schedules object that only narrows limits', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [{ fieldPath: 'interface.schedules', value: { maxPerUser: 2 } }],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const patchedFields = deps.patchConfigFields.mock.calls[0][3];
+      expect(patchedFields['interface.schedules']).toEqual({ maxPerUser: 2 });
+    });
+
     it('preserves skillSync field entries in patches', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
@@ -1039,6 +1154,27 @@ describe('createAdminConfigHandlers', () => {
       expect(res.body).toEqual({
         error: 'Process-backed MCP servers can only be configured in librechat.yaml',
       });
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('rejects Langfuse header field patches, including a single header path', async () => {
+      const { handlers, deps } = createHandlers();
+
+      for (const fieldPath of ['langfuse.headers', 'langfuse.headers.X-Proxy-Token']) {
+        const res = mockRes();
+        await handlers.patchConfigField(
+          mockReq({
+            params: { principalType: 'user', principalId: 'u1' },
+            body: { entries: [{ fieldPath, value: 'leaked' }] },
+          }),
+          res,
+        );
+
+        expect(res.statusCode).toBe(400);
+        expect(res.body).toEqual({
+          error: 'Langfuse request headers can only be configured in librechat.yaml',
+        });
+      }
       expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
 

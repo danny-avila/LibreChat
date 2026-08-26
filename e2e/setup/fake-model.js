@@ -55,6 +55,8 @@ const DEFERRED_HITL_MARKER = 'E2E_DEFERRED_HITL:';
 const HANDOFF_MARKER = 'E2E_HANDOFF:';
 const SUBAGENT_RESULT_MARKER = 'E2E_SUBAGENT_RESULT:';
 const SUBAGENT_CHILD_MARKER = 'E2E_SUBAGENT_CHILD:';
+const SUBAGENT_ACTIVITY_MARKER = 'E2E_SUBAGENT_ACTIVITY:';
+const SUBAGENT_ACTIVITY_CHILD_MARKER = 'E2E_SUBAGENT_ACTIVITY_CHILD:';
 const SUBAGENT_MODEL_OVERRIDE_ERROR =
   '[e2e] Streamed subagent result coverage requires an @librechat/agents release with ' +
   'StandardGraph.setSubagentModelOverride';
@@ -685,15 +687,28 @@ function overrideModel({
   toolCalls,
   thrownError,
   overrideSubagentModel,
+  disableHumanInTheLoop,
   resolveInvocation,
   resolveOnStream,
+  modelCallbacks,
 }) {
+  /** The shared mock profile enables approval HITL for its dedicated specs.
+   * Detached subagents reject that run-level mode before executing, so the
+   * credential-free activity scenario explicitly models a deployment with
+   * approval HITL disabled without weakening the shared profile. */
+  if (disableHumanInTheLoop) {
+    graph.humanInTheLoop = undefined;
+    for (const executor of graph._subagentExecutors ?? []) {
+      executor.humanInTheLoop = undefined;
+    }
+  }
   if (overrideSubagentModel && typeof graph.setSubagentModelOverride !== 'function') {
     overrideModel({
       graph,
       responses: [''],
       sleep,
       thrownError: SUBAGENT_MODEL_OVERRIDE_ERROR,
+      modelCallbacks,
     });
     return;
   }
@@ -707,6 +722,7 @@ function overrideModel({
       resolveInvocation,
       resolveOnStream,
     });
+    model.callbacks = modelCallbacks;
     graph.overrideModel = model;
     if (overrideSubagentModel) {
       graph.setSubagentModelOverride(model);
@@ -730,6 +746,7 @@ function overrideModel({
     emitCustomEvent: true,
     toolCalls,
   });
+  model.callbacks = modelCallbacks;
   graph.overrideModel = model;
 }
 
@@ -1355,6 +1372,79 @@ function subagentResultResponses(text) {
             type: 'tool_call',
           },
         ],
+      };
+    },
+  };
+}
+
+function parseSubagentActivityMarker(text) {
+  const value = getMarkerValue(text, SUBAGENT_ACTIVITY_MARKER);
+  const separator = value.indexOf(':');
+  if (separator <= 0 || separator === value.length - 1) {
+    return null;
+  }
+
+  const childIds = value.slice(0, separator).split(',').filter(Boolean);
+  if (childIds.length !== 2) {
+    return null;
+  }
+
+  return {
+    childIds,
+    label: value.slice(separator + 1),
+  };
+}
+
+function subagentActivityResponses(text) {
+  const marker = parseSubagentActivityMarker(text);
+  if (!marker) {
+    return null;
+  }
+
+  return {
+    responses: [''],
+    sleep: 50,
+    overrideSubagentModel: true,
+    disableHumanInTheLoop: true,
+    resolveInvocation: (messages) => {
+      const latestUserText = getLatestUserText(messages);
+      for (const [index] of marker.childIds.entries()) {
+        const childPrompt = `${SUBAGENT_ACTIVITY_CHILD_MARKER}${marker.label}:${index + 1}`;
+        if (!latestUserText.includes(childPrompt)) {
+          continue;
+        }
+
+        const progress = Array.from(
+          { length: 100 },
+          (_, phase) => `child-${index + 1}-phase-${phase + 1}`,
+        ).join(' ');
+        return {
+          response: `E2E detached child ${index + 1} activity ${marker.label} ${progress} E2E detached child ${index + 1} complete ${marker.label}`,
+        };
+      }
+
+      const backgroundTaskResults = (messages ?? []).filter(
+        (message) =>
+          messageType(message) === 'tool' &&
+          typeof message?.tool_call_id === 'string' &&
+          message.tool_call_id.startsWith('call_e2e_subagent_activity_'),
+      );
+      if (backgroundTaskResults.length >= marker.childIds.length) {
+        return { response: `E2E detached subagents dispatched ${marker.label}` };
+      }
+
+      return {
+        response: '',
+        toolCalls: marker.childIds.map((childId, index) => ({
+          id: `call_e2e_subagent_activity_${marker.label}_${index + 1}`,
+          name: 'subagent',
+          args: {
+            description: `${SUBAGENT_ACTIVITY_CHILD_MARKER}${marker.label}:${index + 1}`,
+            subagent_type: childId,
+            run_in_background: true,
+          },
+          type: 'tool_call',
+        })),
       };
     },
   };
@@ -2125,6 +2215,11 @@ function buildHandoffResponses(graph, parsed) {
 }
 
 function resolveResponses({ graph, messages, text, toolNames }) {
+  const subagentActivity = subagentActivityResponses(text);
+  if (subagentActivity) {
+    return subagentActivity;
+  }
+
   const subagentResult = subagentResultResponses(text);
   if (subagentResult) {
     return subagentResult;
@@ -2306,6 +2401,7 @@ module.exports = function fakeModelHook(run, context) {
     toolCalls,
     thrownError,
     overrideSubagentModel,
+    disableHumanInTheLoop,
     resolveInvocation,
     resolveOnStream,
   } = handoffScript
@@ -2323,6 +2419,7 @@ module.exports = function fakeModelHook(run, context) {
     toolCalls,
     thrownError,
     overrideSubagentModel,
+    disableHumanInTheLoop,
     resolveInvocation: async (streamMessages, streamOptions, runManager) =>
       deferredHitlInvocationResponse({
         graph,
@@ -2336,5 +2433,6 @@ module.exports = function fakeModelHook(run, context) {
       approvalOutcomeResponses(streamMessages) ??
       resolveOnStream?.(streamMessages, streamOptions, runManager) ??
       null,
+    modelCallbacks: context?.modelCallbacks,
   });
 };

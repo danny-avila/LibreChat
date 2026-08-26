@@ -171,6 +171,10 @@ export interface SteerMessageParams {
   text: string;
   /** Attachment refs steered with the message (already uploaded). */
   files?: TMessage['files'];
+  /** Quoted excerpts steered with the message ("Add to chat" selections). The
+   *  server normalizes them like a normal send's quotes and merges them into
+   *  the model-bound turn at the injection boundary. */
+  quotes?: string[];
   /**
    * Ask the server to seal the live model stream at the next provider-safe
    * boundary rather than waiting for a tool step. Never a rejection reason:
@@ -190,6 +194,10 @@ export interface SteerMessageResponse {
   /** Whether the seal request was actually armed; see {@link SteerMessageParams.preempt}. */
   preempt?: boolean;
   preemptRevision?: number;
+  /** Echoed when the durable item carries the sent quotes. Absent on a
+   *  pre-quotes server (which 202s while dropping them) — the client then
+   *  re-stages the excerpts as composer chips instead of losing them. */
+  quotesAccepted?: boolean;
   /** Receipt replay after this item already left the durable queue. */
   settled?: boolean;
   /** Settled specifically by terminal drain; restore as a queued follow-up. */

@@ -75,7 +75,7 @@ describe('useAskAnswerMode', () => {
     expect(result.current.popoverVisible).toBe(false);
   });
 
-  it('keeps batch mode active while reserving answers for the bounded form', () => {
+  it('locks the composer for a batch, and hands it back the moment it collapses', () => {
     mockUseGetMessages.mockReturnValue({
       data: {
         ...liveAsk,
@@ -92,7 +92,12 @@ describe('useAskAnswerMode', () => {
     expect(result.current.batchMode).toBe(true);
     expect(result.current.options).toEqual([]);
     expect(result.current.draftId).toBeNull();
-    expect(result.current.submitText('must stay out of the normal send path')).toBe(true);
+    /** The bounded form owns the answer, so the composer never speaks for it. */
+    expect(result.current.composerAnswers).toBe(false);
+    expect(result.current.composerLocked).toBe(true);
+    /** Text is declined, not claimed: claiming it dropped whatever was staged
+     *  when the pause began. */
+    expect(result.current.submitText('must stay out of the normal send path')).toBe(false);
     expect(mockSubmitAskAnswer).not.toHaveBeenCalled();
   });
 

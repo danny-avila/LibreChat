@@ -99,6 +99,12 @@ describe('GenerationJobManager startup telemetry', () => {
           parentMessageId: 'parent-1',
         },
         responseMessageId: 'response-1',
+        isRegenerate: true,
+        mcpRequestBody: {
+          messageId: 'response-1',
+          conversationId: 'overridden-conversation',
+          parentMessageId: 'response-1',
+        },
         sender: 'Agent',
         endpoint: 'agents',
         iconURL: 'https://example.com/icon.png',
@@ -129,6 +135,12 @@ describe('GenerationJobManager startup telemetry', () => {
         parentMessageId: 'parent-1',
       },
       responseMessageId: 'response-1',
+      isRegenerate: true,
+      mcpRequestBody: {
+        messageId: 'response-1',
+        conversationId: 'overridden-conversation',
+        parentMessageId: 'response-1',
+      },
       sender: 'Agent',
       endpoint: 'agents',
       iconURL: 'https://example.com/icon.png',
@@ -137,6 +149,8 @@ describe('GenerationJobManager startup telemetry', () => {
       isTemporary: false,
       promptTokens: 0,
       discoveredTools: [],
+      providerExecutionId: expect.any(String),
+      providerDrained: true,
     });
     expect(job.metadata.tenantId).toBeUndefined();
     expect(job.metadata.pendingAction).toBeUndefined();
@@ -147,6 +161,176 @@ describe('GenerationJobManager startup telemetry', () => {
       job.createdAt,
     );
 
+    await manager.destroy();
+  });
+
+  it('retains a terminal generation until its exact provider segment has drained', async () => {
+    const manager = createManager();
+    const streamId = 'stream-provider-drain-retention';
+    const job = await manager.createJob(streamId, 'user-1');
+    const providerExecutionId = job.metadata.providerExecutionId!;
+    await expect(
+      manager.beginProviderExecution(streamId, job.createdAt, providerExecutionId),
+    ).resolves.toBe(true);
+
+    await expect(manager.abortJob(streamId)).resolves.toMatchObject({ success: true });
+    await expect(manager.getActiveJobIdsForUser('user-1')).resolves.toEqual([]);
+    await expect(manager.getCleanupBlockingJobIdsForUser('user-1')).resolves.toEqual([streamId]);
+    await expect(manager.getJobStore().getJob(streamId)).resolves.toMatchObject({
+      status: 'aborted',
+      providerExecutionId,
+      providerDrained: false,
+    });
+
+    await expect(
+      manager.markProviderExecutionDrained(streamId, job.createdAt, 'different-segment'),
+    ).resolves.toBe(false);
+    await expect(manager.getJobStore().getJob(streamId)).resolves.toMatchObject({
+      providerDrained: false,
+    });
+
+    await expect(
+      manager.markProviderExecutionDrained(streamId, job.createdAt, providerExecutionId),
+    ).resolves.toBe(true);
+    await expect(manager.getJobStore().getJob(streamId)).resolves.toBeNull();
+    await expect(manager.getCleanupBlockingJobIdsForUser('user-1')).resolves.toEqual([]);
+    await manager.destroy();
+  });
+
+  it('keeps an undrained stale approval visible to destructive cleanup only', async () => {
+    const manager = createManager();
+    const streamId = 'stream-provider-drain-stale-approval';
+    const job = await manager.createJob(streamId, 'user-1');
+    await manager.beginProviderExecution(
+      streamId,
+      job.createdAt,
+      job.metadata.providerExecutionId!,
+    );
+    await manager.getJobStore().transitionStatus(streamId, {
+      from: 'running',
+      to: 'requires_action',
+      expectCreatedAt: job.createdAt,
+    });
+
+    await expect(manager.getActiveJobIdsForUser('user-1')).resolves.toEqual([]);
+    await expect(manager.getCleanupBlockingJobIdsForUser('user-1')).resolves.toEqual([streamId]);
+    await manager.markProviderExecutionDrained(
+      streamId,
+      job.createdAt,
+      job.metadata.providerExecutionId!,
+    );
+    await manager.destroy();
+  });
+
+  it('waits for provider-owner drain proof before destructive abort returns', async () => {
+    const manager = createManager();
+    const streamId = 'stream-provider-drain-wait';
+    const job = await manager.createJob(streamId, 'user-1');
+    await expect(
+      manager.beginProviderExecution(streamId, job.createdAt, job.metadata.providerExecutionId!),
+    ).resolves.toBe(true);
+    let abortSettled = false;
+    const aborting = manager
+      .abortJob(streamId, { awaitProviderDrain: true })
+      .finally(() => (abortSettled = true));
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(job.abortController.signal.aborted).toBe(true);
+    expect(abortSettled).toBe(false);
+
+    await manager.markProviderExecutionDrained(
+      streamId,
+      job.createdAt,
+      job.metadata.providerExecutionId!,
+    );
+    await expect(aborting).resolves.toMatchObject({ success: true });
+    expect(abortSettled).toBe(true);
+    await manager.destroy();
+  });
+
+  it('finishes a destructive abort immediately when the provider never started', async () => {
+    const manager = createManager();
+    const streamId = 'stream-provider-never-started';
+    await manager.createJob(streamId, 'user-1');
+
+    await expect(manager.abortJob(streamId, { awaitProviderDrain: true })).resolves.toMatchObject({
+      success: true,
+    });
+    await expect(manager.getJobStore().getJob(streamId)).resolves.toBeNull();
+    await manager.destroy();
+  });
+
+  it('rechecks provider drain when provider startup races the destructive abort', async () => {
+    const manager = createManager();
+    const streamId = 'stream-provider-drain-start-race';
+    const job = await manager.createJob(streamId, 'user-1');
+    const jobStore = manager.getJobStore();
+    const transition = jobStore.transitionStatusAndDrainSteers.bind(jobStore);
+    jest
+      .spyOn(jobStore, 'transitionStatusAndDrainSteers')
+      .mockImplementationOnce(async (...args) => {
+        await expect(
+          manager.beginProviderExecution(
+            streamId,
+            job.createdAt,
+            job.metadata.providerExecutionId!,
+          ),
+        ).resolves.toBe(true);
+        return transition(...args);
+      });
+
+    let abortSettled = false;
+    const aborting = manager
+      .abortJob(streamId, { awaitProviderDrain: true })
+      .finally(() => (abortSettled = true));
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(job.abortController.signal.aborted).toBe(true);
+    expect(abortSettled).toBe(false);
+
+    await manager.markProviderExecutionDrained(
+      streamId,
+      job.createdAt,
+      job.metadata.providerExecutionId!,
+    );
+    await expect(aborting).resolves.toMatchObject({ success: true });
+    expect(abortSettled).toBe(true);
+    await manager.destroy();
+  });
+
+  it('does not expose a replacement until its overwritten provider segment drains', async () => {
+    const manager = createManager();
+    const streamId = 'stream-provider-drain-replacement';
+    const predecessor = await manager.createJob(streamId, 'user-1');
+    await expect(
+      manager.beginProviderExecution(
+        streamId,
+        predecessor.createdAt,
+        predecessor.metadata.providerExecutionId!,
+      ),
+    ).resolves.toBe(true);
+    let replacementSettled = false;
+    const replacing = manager
+      .createJob(streamId, 'user-1')
+      .finally(() => (replacementSettled = true));
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(predecessor.abortController.signal.aborted).toBe(true);
+    expect(replacementSettled).toBe(false);
+
+    // The replacement already owns the job hash, so the predecessor can only
+    // publish its exact cross-replica proof; it must not mark the new segment.
+    await expect(
+      manager.markProviderExecutionDrained(
+        streamId,
+        predecessor.createdAt,
+        predecessor.metadata.providerExecutionId!,
+      ),
+    ).resolves.toBe(false);
+
+    const replacement = await replacing;
+    expect(replacement.createdAt).not.toBe(predecessor.createdAt);
+    expect(replacementSettled).toBe(true);
     await manager.destroy();
   });
 
@@ -703,6 +887,11 @@ describe('GenerationJobManager startup telemetry', () => {
       eventTransport.emitChunk(streamId, { data: { label: 'mismatched' } }, job.createdAt + 1);
 
       await expect(manager.abortJob(streamId)).resolves.toMatchObject({ success: true });
+      await manager.markProviderExecutionDrained(
+        streamId,
+        job.createdAt,
+        job.metadata.providerExecutionId!,
+      );
       await expect(jobStore.getJob(streamId)).resolves.toBeNull();
       expect(order).toEqual([]);
 
@@ -2101,7 +2290,9 @@ describe('GenerationJobManager startup telemetry', () => {
 
       const result = await aborting;
       expect(result).toMatchObject({ success: false, finalEvent: null });
-      expect(result.failureReason).toBeUndefined();
+      // Deletion is named for what it is. The point of this test is that it is NOT
+      // reported as a replacement — nothing took the conversation over.
+      expect(result.failureReason).toBe('job_not_found');
       expect(job.abortController.signal.aborted).toBe(true);
     } finally {
       releaseTransition?.();
@@ -2162,6 +2353,11 @@ describe('GenerationJobManager startup telemetry', () => {
       });
       expect(job.abortController.signal.aborted).toBe(true);
       expect(abortDisposer).toHaveBeenCalledTimes(1);
+      await manager.markProviderExecutionDrained(
+        streamId,
+        job.createdAt,
+        job.metadata.providerExecutionId!,
+      );
       await expect(jobStore.getJob(streamId)).resolves.toBeNull();
       await expect(manager.steering.peek(streamId, job.createdAt)).resolves.toEqual([]);
     } finally {
@@ -2587,6 +2783,86 @@ describe('GenerationJobManager startup telemetry', () => {
     await manager.destroy();
   });
 
+  it('holds terminal error publication until required persistence finishes', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore,
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    manager.initialize();
+    const streamId = 'stream-error-persistence-barrier';
+    const job = await manager.createJob(streamId, 'user-1');
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+    let releasePersistence!: () => void;
+    const persistence = new Promise<void>((resolve) => {
+      releasePersistence = resolve;
+    });
+
+    const completing = manager.completeJob(streamId, 'initialization failed', job.createdAt, {
+      beforeErrorPublication: () => persistence,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(onError).not.toHaveBeenCalled();
+    await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
+      status: 'error',
+      error: 'initialization failed',
+      terminalPersistencePending: true,
+    });
+
+    releasePersistence();
+    await expect(completing).resolves.toBe(true);
+
+    expect(onError).toHaveBeenCalledWith('initialization failed');
+    await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
+      status: 'error',
+      error: 'initialization failed',
+      terminalPersistencePending: false,
+    });
+    subscription?.unsubscribe();
+    await manager.destroy();
+  });
+
+  it('publishes reconciliation when required error persistence fails', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore,
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    manager.initialize();
+    const streamId = 'stream-error-persistence-fails';
+    const job = await manager.createJob(streamId, 'user-1');
+    const onDone = jest.fn();
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, onDone, onError);
+
+    await expect(
+      manager.completeJob(streamId, 'initialization failed', job.createdAt, {
+        beforeErrorPublication: async () => {
+          throw new Error('message store unavailable');
+        },
+      }),
+    ).resolves.toBe(true);
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(onDone).toHaveBeenCalledWith(
+      expect.objectContaining({
+        final: true,
+        reconcile: true,
+        terminalStatus: 'error',
+      }),
+    );
+    subscription?.unsubscribe();
+    await manager.destroy();
+  });
+
   it('atomically terminalizes a paused job when post-HITL persistence fails', async () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     const manager = new GenerationJobManagerClass();
@@ -2889,6 +3165,11 @@ describe('GenerationJobManager startup telemetry', () => {
       streamId,
       expect.objectContaining({ aborted: true }),
       job.createdAt,
+    );
+    await manager.markProviderExecutionDrained(
+      streamId,
+      job.createdAt,
+      job.metadata.providerExecutionId!,
     );
     await expect(jobStore.getJob(streamId)).resolves.toBeNull();
     expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useAtom } from 'jotai';
 import { ChevronDown, ExternalLink } from 'lucide-react';
 import {
@@ -15,10 +16,6 @@ import { groupToolTokens, formatTokens, formatCost } from '~/utils';
 import { contextBreakdownExpandedAtom } from '~/store/usage';
 import { useLocalize } from '~/hooks';
 
-/** Row text lifts to primary ink while the row is hovered or holds focus. */
-const HOVER_INK =
-  'transition-colors group-hover:text-text-primary group-focus-within:text-text-primary';
-
 interface RowProps {
   label: string;
   value: number;
@@ -27,12 +24,19 @@ interface RowProps {
   segment?: Pick<MeterSegment, 'slot' | 'hatched' | 'outlined'>;
   /** The free-space remainder, keyed to the bare track rather than a series */
   track?: boolean;
+  /** Meter segment this row keys; hovering it highlights its slice of the bar */
+  id?: string;
+  onHoverChange?: (id: string | null) => void;
 }
 
-function Row({ label, value, max, segment, track }: RowProps) {
+function Row({ label, value, max, segment, track, id, onHoverChange }: RowProps) {
   const percent = max != null && max > 0 ? Math.min((value / max) * 100, 100) : null;
   return (
-    <div className="group flex items-center justify-between gap-4 text-sm">
+    <div
+      className="flex items-center justify-between gap-4 text-sm"
+      onPointerEnter={id != null ? () => onHoverChange?.(id) : undefined}
+      onPointerLeave={id != null ? () => onHoverChange?.(null) : undefined}
+    >
       <span className="flex min-w-0 items-center gap-2">
         {segment != null && <MeterSwatch segment={segment} />}
         {track === true && (
@@ -41,12 +45,12 @@ function Row({ label, value, max, segment, track }: RowProps) {
             className="size-2 flex-none rounded-sm bg-surface-tertiary ring-1 ring-inset ring-border-medium"
           />
         )}
-        <span className={`text-text-secondary ${HOVER_INK}`}>{label}</span>
+        <span className="text-text-secondary">{label}</span>
       </span>
       <span className="font-medium text-text-primary">
         {formatTokens(value)}
         {percent != null && (
-          <span className={`ml-1 text-xs text-text-secondary ${HOVER_INK}`} aria-hidden="true">
+          <span className="ml-1 text-xs text-text-secondary" aria-hidden="true">
             ({Math.round(percent)}%)
           </span>
         )}
@@ -70,6 +74,7 @@ export default function Breakdown({
 }: BreakdownProps) {
   const localize = useLocalize();
   const [expanded, setExpanded] = useAtom(contextBreakdownExpandedAtom);
+  const [hoveredSegment, setHoveredSegment] = useState<string | null>(null);
   const { usedTokens, maxTokens, percent, snapshot, snapshotActive, branchUsage, hasUsage } = view;
   /** Show the all-branches total only when it (a) exceeds the active branch —
    *  epsilon guards against float summation order surfacing a spurious row in an
@@ -108,7 +113,6 @@ export default function Breakdown({
             label: localize('com_ui_context_messages'),
             value: messageTokens,
             slot: 1,
-            outlined: true,
           },
           { id: 'system', label: localize('com_ui_context_system'), value: systemTokens, slot: 2 },
           ...(groups == null
@@ -166,11 +170,27 @@ export default function Breakdown({
   /** The estimate path knows the total but not the composition, so it keeps a
    *  single unsegmented fill and its rows carry no swatches. */
   const meterSegments: MeterSegment[] =
-    segments.length > 0 ? segments : [{ id: 'used', value: usedTokens, slot: 1, outlined: true }];
+    segments.length > 0 ? segments : [{ id: 'used', value: usedTokens, slot: 1 }];
+
+  /** A hovered row can vanish mid-hover (live snapshot update, or the view
+   *  falling back to the estimate path, whose rows carry no hover pairing);
+   *  without its pointerleave a stale id would dim every segment. Clear the
+   *  state rather than masking it, so a stale highlight cannot return if the
+   *  row reappears with the pointer elsewhere. Render-phase reset: React
+   *  re-renders immediately and never commits the stale highlight. */
+  const hoverIsValid = (id: string): boolean =>
+    id === 'free'
+      ? breakdown != null && freeTokens != null
+      : meterSegments.some((segment) => segment.id === id && segment.value > 0);
+  if (hoveredSegment != null && !hoverIsValid(hoveredSegment)) {
+    setHoveredSegment(null);
+  }
+  const activeSegment =
+    hoveredSegment != null && hoverIsValid(hoveredSegment) ? hoveredSegment : null;
 
   return (
     <div className="w-72" role="region" aria-label={localize('com_ui_context_usage')}>
-      <Collapsible open={expanded} onOpenChange={setExpanded} className="space-y-3">
+      <Collapsible open={expanded} onOpenChange={setExpanded}>
         <CollapsibleTrigger
           className="group flex w-full items-center justify-between gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
           data-testid="context-breakdown-toggle"
@@ -179,21 +199,21 @@ export default function Breakdown({
             {localize('com_ui_context_window')}
           </span>
           <span className="flex items-center gap-1 whitespace-nowrap text-xs font-medium text-text-secondary">
-            <span className={HOVER_INK}>
-              {maxTokens != null
-                ? `${formatTokens(usedTokens)} / ${formatTokens(maxTokens)} (${Math.round(percent)}%)`
-                : formatTokens(usedTokens)}
-            </span>
+            {maxTokens != null
+              ? `${formatTokens(usedTokens)} / ${formatTokens(maxTokens)} (${Math.round(percent)}%)`
+              : formatTokens(usedTokens)}
             <ChevronDown
               aria-hidden="true"
-              className="size-3.5 shrink-0 text-text-tertiary transition-transform duration-200 group-data-[state=open]:rotate-180 motion-reduce:transition-none"
+              className="ease-[cubic-bezier(0,0,0.2,1)] size-3.5 shrink-0 text-text-tertiary transition-transform duration-300 group-data-[state=open]:rotate-180 motion-reduce:transition-none"
             />
           </span>
         </CollapsibleTrigger>
 
         <SegmentedMeter
+          className="mt-3"
           segments={maxTokens != null ? meterSegments : []}
           max={maxTokens ?? 1}
+          highlightId={activeSegment}
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}
@@ -201,131 +221,149 @@ export default function Breakdown({
           aria-label={localize('com_ui_context_usage')}
         />
 
-        <CollapsibleContent className="space-y-3 overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down motion-reduce:animate-none">
-          <div
-            className="space-y-1.5"
-            data-testid={breakdown ? 'context-breakdown' : 'context-estimate'}
-          >
-            {breakdown ? (
-              <>
-                {segments.map(
-                  ({ id, label, value, ...segment }) =>
-                    value > 0 && (
-                      <Row key={id} label={label} value={value} max={maxTokens} segment={segment} />
-                    ),
-                )}
-                {freeTokens != null && (
-                  <Row
-                    label={localize('com_ui_context_free')}
-                    value={freeTokens}
-                    max={maxTokens}
-                    track
-                  />
-                )}
-              </>
-            ) : (
-              <>
-                {view.branchTotals.summaryBaseline > 0 && (
-                  <Row
-                    label={localize('com_ui_context_summary')}
-                    value={view.branchTotals.summaryBaseline}
-                    max={maxTokens}
-                  />
-                )}
-                {view.messagesPruned ? (
-                  /** Over-window: the per-category split no longer describes what's
-                   *  sent, so show the pruned message total (incl. in-flight). */
-                  <Row
-                    label={localize('com_ui_context_messages')}
-                    value={view.messageTokens + view.liveTokens}
-                    max={maxTokens}
-                  />
-                ) : (
-                  <>
-                    <Row label={localize('com_ui_input')} value={view.branchTotals.input} />
+        {/* The gap to the meter lives INSIDE the animated element (mt-3 below),
+            so it collapses with the height. On the parent it would be a margin
+            outside the animation, and unmounting the content would drop it in a
+            single 12px jump after the height reached zero. */}
+        <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down motion-reduce:animate-none">
+          <div className="mt-3 space-y-3">
+            <div
+              className="space-y-1.5"
+              data-testid={breakdown ? 'context-breakdown' : 'context-estimate'}
+            >
+              {breakdown ? (
+                <>
+                  {segments.map(
+                    ({ id, label, value, ...segment }) =>
+                      value > 0 && (
+                        <Row
+                          key={id}
+                          label={label}
+                          value={value}
+                          max={maxTokens}
+                          segment={segment}
+                          id={id}
+                          onHoverChange={setHoveredSegment}
+                        />
+                      ),
+                  )}
+                  {freeTokens != null && (
                     <Row
-                      label={localize('com_ui_output')}
-                      value={view.branchTotals.output + view.liveTokens}
+                      label={localize('com_ui_context_free')}
+                      value={freeTokens}
+                      max={maxTokens}
+                      track
+                      id="free"
+                      onHoverChange={setHoveredSegment}
                     />
-                    {view.estimatedTokens > 0 && (
+                  )}
+                </>
+              ) : (
+                <>
+                  {view.branchTotals.summaryBaseline > 0 && (
+                    <Row
+                      label={localize('com_ui_context_summary')}
+                      value={view.branchTotals.summaryBaseline}
+                      max={maxTokens}
+                    />
+                  )}
+                  {view.messagesPruned ? (
+                    /** Over-window: the per-category split no longer describes what's
+                     *  sent, so show the pruned message total (incl. in-flight). */
+                    <Row
+                      label={localize('com_ui_context_messages')}
+                      value={view.messageTokens + view.liveTokens}
+                      max={maxTokens}
+                    />
+                  ) : (
+                    <>
+                      <Row label={localize('com_ui_input')} value={view.branchTotals.input} />
                       <Row
-                        label={localize('com_ui_context_estimated')}
-                        value={view.estimatedTokens}
+                        label={localize('com_ui_output')}
+                        value={view.branchTotals.output + view.liveTokens}
                       />
-                    )}
-                  </>
-                )}
-                {view.overheadTokens > 0 && (
-                  <Row label={localize('com_ui_context_system')} value={view.overheadTokens} />
-                )}
-                {maxTokens == null && (
-                  <p className="text-xs text-text-secondary">
-                    {localize('com_ui_context_unknown')}
+                      {view.estimatedTokens > 0 && (
+                        <Row
+                          label={localize('com_ui_context_estimated')}
+                          value={view.estimatedTokens}
+                        />
+                      )}
+                    </>
+                  )}
+                  {view.overheadTokens > 0 && (
+                    <Row label={localize('com_ui_context_system')} value={view.overheadTokens} />
+                  )}
+                  {maxTokens == null && (
+                    <p className="text-xs text-text-secondary">
+                      {localize('com_ui_context_unknown')}
+                    </p>
+                  )}
+                  <p className="text-xs italic text-text-secondary">
+                    {localize('com_ui_estimated')}
                   </p>
-                )}
-                <p className="text-xs italic text-text-secondary">{localize('com_ui_estimated')}</p>
+                </>
+              )}
+            </div>
+
+            {hasUsage && (
+              <>
+                <div className="border-t border-border-light" role="separator" />
+                <div className="space-y-1.5" data-testid="token-usage-totals">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
+                    {localize('com_ui_context_totals')}
+                  </h3>
+                  <Row label={localize('com_ui_input')} value={branchUsage.input} />
+                  <Row label={localize('com_ui_output')} value={branchUsage.output} />
+                  {branchUsage.cacheRead > 0 && (
+                    <Row label={localize('com_ui_cache_read')} value={branchUsage.cacheRead} />
+                  )}
+                  {branchUsage.cacheWrite > 0 && (
+                    <Row label={localize('com_ui_cache_write')} value={branchUsage.cacheWrite} />
+                  )}
+                </div>
+              </>
+            )}
+
+            {showCost && hasUsage && branchUsage.costKnown && (
+              <>
+                <div className="border-t border-border-light" role="separator" />
+                <div className="space-y-1.5" data-testid="token-usage-cost">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-text-secondary">
+                      {showTotal
+                        ? localize('com_ui_context_cost_branch')
+                        : localize('com_ui_context_cost')}
+                    </span>
+                    <span className="font-medium text-text-primary">
+                      {formatCost(view.branchCost, currency)}
+                    </span>
+                  </div>
+                  {showTotal && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-text-secondary">
+                        {localize('com_ui_context_cost_total')}
+                      </span>
+                      <span className="text-text-secondary">
+                        {formatCost(view.totalCost, currency)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {langfuseSessionUrl && (
+              <>
+                <div className="border-t border-border-light" role="separator" />
+                <Button asChild variant="link" className="h-auto w-full justify-between gap-2 p-0">
+                  <a href={langfuseSessionUrl} target="_blank" rel="noopener noreferrer">
+                    <span>{localize('com_ui_langfuse_view_session')}</span>
+                    <ExternalLink className="size-4 shrink-0" aria-hidden="true" />
+                  </a>
+                </Button>
               </>
             )}
           </div>
-
-          {hasUsage && (
-            <>
-              <div className="border-t border-border-light" role="separator" />
-              <div className="space-y-1.5" data-testid="token-usage-totals">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
-                  {localize('com_ui_context_totals')}
-                </h3>
-                <Row label={localize('com_ui_input')} value={branchUsage.input} />
-                <Row label={localize('com_ui_output')} value={branchUsage.output} />
-                {branchUsage.cacheRead > 0 && (
-                  <Row label={localize('com_ui_cache_read')} value={branchUsage.cacheRead} />
-                )}
-                {branchUsage.cacheWrite > 0 && (
-                  <Row label={localize('com_ui_cache_write')} value={branchUsage.cacheWrite} />
-                )}
-              </div>
-            </>
-          )}
-
-          {showCost && hasUsage && branchUsage.costKnown && (
-            <>
-              <div className="border-t border-border-light" role="separator" />
-              <div className="space-y-1.5" data-testid="token-usage-cost">
-                <div className="group flex items-center justify-between text-sm">
-                  <span className={`text-text-secondary ${HOVER_INK}`}>
-                    {showTotal
-                      ? localize('com_ui_context_cost_branch')
-                      : localize('com_ui_context_cost')}
-                  </span>
-                  <span className="font-medium text-text-primary">
-                    {formatCost(view.branchCost, currency)}
-                  </span>
-                </div>
-                {showTotal && (
-                  <div className="group flex items-center justify-between text-xs">
-                    <span className={`text-text-secondary ${HOVER_INK}`}>
-                      {localize('com_ui_context_cost_total')}
-                    </span>
-                    <span className={`text-text-secondary ${HOVER_INK}`}>
-                      {formatCost(view.totalCost, currency)}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {langfuseSessionUrl && (
-            <>
-              <div className="border-t border-border-light" role="separator" />
-              <Button asChild variant="link" className="h-auto w-full justify-between gap-2 p-0">
-                <a href={langfuseSessionUrl} target="_blank" rel="noopener noreferrer">
-                  <span>{localize('com_ui_langfuse_view_session')}</span>
-                  <ExternalLink className="size-4 shrink-0" aria-hidden="true" />
-                </a>
-              </Button>
-            </>
-          )}
         </CollapsibleContent>
       </Collapsible>
     </div>

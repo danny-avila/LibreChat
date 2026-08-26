@@ -13,6 +13,7 @@ import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
+import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { useToolCallIntent } from './Parts/intent';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
@@ -156,10 +157,6 @@ export default function ToolCall({
    * in-flight state.
    */
   const isClosed = runStepStatus != null;
-  const cancelled = isClosed
-    ? runStepStatus === 'cancelled'
-    : !isSubmitting && initialProgress < 1 && !hasError;
-  const errorState = hasError;
 
   const args = useMemo(() => {
     if (typeof _args === 'string') {
@@ -191,8 +188,19 @@ export default function ToolCall({
    * observable on the same render rather than after the hook settles.
    */
   const rawProgress = useProgress(isClosed ? 1 : initialProgress);
-  const progress = isClosed ? 1 : rawProgress;
-  const showCancelled = cancelled || (errorState && !output);
+  /**
+   * One resolution, read by the label, the live region, the icon and the
+   * shimmer alike. It also unifies two inputs that had drifted apart: the
+   * cancellation inference read `initialProgress` while the label read the
+   * animated `rawProgress`.
+   */
+  const phase = resolveToolCallPhase({
+    runStepStatus,
+    displayProgress: rawProgress,
+    reportedProgress: initialProgress,
+    isSubmitting,
+    hasError,
+  });
 
   const handleToggleInfo = useCallback(() => {
     mountBody();
@@ -221,7 +229,7 @@ export default function ToolCall({
   const intent = useToolCallIntent(_args);
 
   const getFinishedText = () => {
-    if (cancelled) {
+    if (phase === 'cancelled') {
       return localize('com_ui_cancelled');
     }
     /**
@@ -229,7 +237,7 @@ export default function ToolCall({
      * errored must not reach the live region as "completed", which would tell
      * a screen-reader user the opposite of what the card shows.
      */
-    if (errorState) {
+    if (phase === 'failed') {
       return function_name
         ? `${localize('com_ui_failed')}: ${function_name}`
         : localize('com_ui_failed');
@@ -258,7 +266,7 @@ export default function ToolCall({
           announced once via getFinishedText. */}
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {(() => {
-          if (progress < 1 && !showCancelled) {
+          if (phase === 'running') {
             return function_name
               ? localize('com_assistants_running_var', { 0: function_name })
               : localize('com_assistants_running_action');
@@ -272,7 +280,7 @@ export default function ToolCall({
         data-tool-call-id={toolCallId}
       >
         <ProgressText
-          progress={progress}
+          phase={phase}
           onClick={handleToggleInfo}
           inProgressText={
             intent ??
@@ -281,22 +289,18 @@ export default function ToolCall({
               : localize('com_assistants_running_action'))
           }
           authText={
-            !showCancelled && authDomain.length > 0 ? localize('com_ui_requires_auth') : undefined
+            phase === 'running' && authDomain.length > 0
+              ? localize('com_ui_requires_auth')
+              : undefined
           }
           finishedText={getFinishedText()}
           subtitle={subtitle}
           durationMs={runStepDurationMs}
-          errorSuffix={errorState && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
-            <ToolIcon
-              type={toolIconType}
-              iconUrl={mcpIconUrl}
-              isAnimating={progress < 1 && !showCancelled && !errorState}
-            />
+            <ToolIcon type={toolIconType} iconUrl={mcpIconUrl} isAnimating={phase === 'running'} />
           }
           hasInput={hasInfo}
           isExpanded={showInfo}
-          error={showCancelled}
         />
       </div>
       <div
@@ -312,7 +316,7 @@ export default function ToolCall({
           )}
         </div>
       </div>
-      {auth != null && auth && progress < 1 && !showCancelled && (
+      {auth != null && auth && phase === 'running' && (
         <div className="flex w-full flex-col gap-2.5">
           <div className="mb-1 mt-2">
             <Button

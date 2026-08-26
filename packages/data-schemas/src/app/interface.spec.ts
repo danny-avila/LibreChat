@@ -66,6 +66,30 @@ describe('loadDefaultInterface', () => {
     expect(interfaceConfig?.buildInfo).toBe(true);
   });
 
+  it('enables response feedback by default', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.feedback).toBe(true);
+  });
+
+  it('preserves a disabled response feedback flag', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        feedback: false,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.feedback).toBe(false);
+  });
+
   it('disables context cost by default', async () => {
     const interfaceConfig = await loadDefaultInterface({
       config: {},

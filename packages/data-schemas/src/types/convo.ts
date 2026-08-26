@@ -1,4 +1,39 @@
+import type { TSubagentThreadLineage } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
+
+export interface ISubagentThreadLease {
+  token: string;
+  taskId: string;
+  expiresAt: Date;
+}
+
+/** Server-private route from one authenticated event source to a child actor thread. */
+export interface IAgentEventBinding {
+  bindingId: string;
+  sourceKeyId: string;
+  actorId: string;
+}
+
+export interface IAgentEventBindingRecord {
+  conversationId: string;
+  agentId: string;
+  tenantId?: string;
+  isTemporary?: boolean;
+  expiredAt?: Date;
+  binding: IAgentEventBinding;
+  lineage: TSubagentThreadLineage;
+}
+
+export interface IActiveSubagentThreadLease {
+  conversationId: string;
+  parentConversationId: string;
+  taskId: string;
+}
+
+export interface ISubagentThreadReservation {
+  conversation: IConversation;
+  created: boolean;
+}
 
 // @ts-ignore
 export interface IConversation extends Document {
@@ -35,6 +70,11 @@ export interface IConversation extends Document {
   resendFiles?: boolean;
   imageDetail?: string;
   agent_id?: string;
+  subagentThread?: TSubagentThreadLineage;
+  /** Internal execution fence. Excluded from ordinary conversation reads. */
+  subagentThreadLease?: ISubagentThreadLease;
+  /** Internal event-source identity. Excluded from ordinary conversation reads. */
+  agentEventBinding?: IAgentEventBinding;
   assistant_id?: string;
   instructions?: string;
   stop?: string[];

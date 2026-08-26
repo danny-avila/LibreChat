@@ -51,6 +51,7 @@ interface RequestScopedTestServer {
   sessionsCreated: () => number;
   toolCallCount: () => number;
   observedRunIds: () => string[];
+  observedParentMessageIds: () => string[];
 }
 
 function trackSockets(httpServer: http.Server): () => Promise<void> {
@@ -72,6 +73,7 @@ function trackSockets(httpServer: http.Server): () => Promise<void> {
 async function createRequestScopedTestServer(): Promise<RequestScopedTestServer> {
   const sessions = new Map<string, StreamableHTTPServerTransport>();
   const runIds: string[] = [];
+  const parentMessageIds: string[] = [];
   let created = 0;
   let deletes = 0;
   let toolCalls = 0;
@@ -86,6 +88,10 @@ async function createRequestScopedTestServer(): Promise<RequestScopedTestServer>
       const runId = req.headers['x-run-id'];
       if (typeof runId === 'string') {
         runIds.push(runId);
+      }
+      const parentMessageId = req.headers['x-parent-message'];
+      if (typeof parentMessageId === 'string') {
+        parentMessageIds.push(parentMessageId);
       }
     } else if (req.method === 'DELETE') {
       deletes += 1;
@@ -127,6 +133,7 @@ async function createRequestScopedTestServer(): Promise<RequestScopedTestServer>
     sessionsCreated: () => created,
     toolCallCount: () => toolCalls,
     observedRunIds: () => [...runIds],
+    observedParentMessageIds: () => [...parentMessageIds],
     close: async () => {
       const closing = [...sessions.values()].map((transport) =>
         transport.close().catch(() => undefined),
@@ -157,7 +164,10 @@ function createServerConfig(url: string): ParsedServerConfig {
     source: 'yaml',
     requiresOAuth: false,
     initTimeout: 500,
-    headers: { 'X-Run-Id': '{{LIBRECHAT_BODY_MESSAGEID}}' },
+    headers: {
+      'X-Run-Id': '{{LIBRECHAT_BODY_MESSAGEID}}',
+      'X-Parent-Message': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+    },
   };
 }
 
@@ -246,6 +256,7 @@ describe('request-scoped MCP lifecycle integration', () => {
     expect(server.liveSessionCount()).toBe(1);
     expect(server.toolCallCount()).toBe(burstSize);
     expect(new Set(server.observedRunIds())).toEqual(new Set(['run-1']));
+    expect(new Set(server.observedParentMessageIds())).toEqual(new Set(['parent-1']));
     expect(manager.getConnectionStats().activityEntries).toBe(0);
 
     await cleanupMCPRequestContext(firstRun);
@@ -266,6 +277,7 @@ describe('request-scoped MCP lifecycle integration', () => {
     expect(server.sessionsCreated()).toBe(2);
     expect(server.liveSessionCount()).toBe(1);
     expect(new Set(server.observedRunIds())).toEqual(new Set(['run-1', 'run-2']));
+    expect(new Set(server.observedParentMessageIds())).toEqual(new Set(['parent-1']));
   });
 
   it('clears a failed run so the same server can recover in a fresh run', async () => {

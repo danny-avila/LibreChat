@@ -10,6 +10,7 @@ const mockAuthUserDocCacheStore = {
 };
 const mockGetLogStores = jest.fn(() => mockAuthUserDocCacheStore);
 const mockGetTenantId = jest.fn();
+const mockRunAsSystem = jest.fn((callback) => callback());
 jest.mock('passport-jwt', () => ({
   Strategy: jest.fn((opts, verifyCallback) => {
     capturedStrategyOptions = opts;
@@ -29,6 +30,7 @@ jest.mock('https-proxy-agent', () => ({
 jest.mock('@librechat/data-schemas', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
   getTenantId: mockGetTenantId,
+  runAsSystem: mockRunAsSystem,
 }));
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => false),
@@ -48,6 +50,7 @@ jest.mock('@librechat/api', () => ({
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
   updateUser: jest.fn(),
+  isAgentTriggerPrincipalActive: jest.fn(() => true),
 }));
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(() => ({
@@ -69,7 +72,7 @@ const {
   setCachedAuthUserDoc,
 } = require('@librechat/api');
 const openIdJwtLogin = require('./openIdJwtStrategy');
-const { findUser, updateUser } = require('~/models');
+const { findUser, updateUser, isAgentTriggerPrincipalActive } = require('~/models');
 
 function resetAuthUserDocCacheMocks() {
   mockGetTenantId.mockReturnValue(undefined);
@@ -87,6 +90,8 @@ function resetAuthUserDocCacheMocks() {
 
 beforeEach(() => {
   resetAuthUserDocCacheMocks();
+  mockRunAsSystem.mockClear();
+  isAgentTriggerPrincipalActive.mockResolvedValue(true);
 });
 
 function withEnv(env, callback) {
@@ -291,7 +296,7 @@ describe('openIdJwtStrategy – token source handling', () => {
       access_token: 'session-access',
       id_token: 'session-id',
       refresh_token: 'session-refresh',
-      expires_at: payload.exp,
+      expires_at: undefined,
     });
   });
 
@@ -310,7 +315,7 @@ describe('openIdJwtStrategy – token source handling', () => {
       access_token: 'cookie-access',
       id_token: 'cookie-id',
       refresh_token: 'cookie-refresh',
-      expires_at: payload.exp,
+      expires_at: undefined,
     });
   });
 
@@ -335,7 +340,7 @@ describe('openIdJwtStrategy – token source handling', () => {
       access_token: 'session-access',
       id_token: 'cookie-id',
       refresh_token: 'session-refresh',
-      expires_at: payload.exp,
+      expires_at: undefined,
     });
   });
 
@@ -352,6 +357,52 @@ describe('openIdJwtStrategy – token source handling', () => {
     expect(user.federatedTokens.access_token).toBe('raw-bearer-token');
     expect(user.federatedTokens.id_token).toBe('cookie-id');
     expect(user.federatedTokens.refresh_token).toBe('cookie-refresh');
+    expect(user.federatedTokens.expires_at).toBe(payload.exp);
+  });
+
+  it('should decode expires_at from a session access token that is itself a JWT', async () => {
+    const sessionAccessExp = 1234567890;
+    const sessionAccessToken = `header.${Buffer.from(
+      JSON.stringify({ sub: 'oidc-123', exp: sessionAccessExp }),
+    ).toString('base64')}.signature`;
+    const req = {
+      headers: { authorization: 'Bearer raw-bearer-token' },
+      session: {
+        openidTokens: {
+          accessToken: sessionAccessToken,
+          idToken: 'session-id',
+          refreshToken: 'session-refresh',
+        },
+      },
+    };
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(user.federatedTokens.access_token).toBe(sessionAccessToken);
+    expect(user.federatedTokens.expires_at).toBe(sessionAccessExp);
+    expect(user.federatedTokens.expires_at).not.toBe(payload.exp);
+  });
+
+  it('should store an opaque session access token with no expiry alongside a decodable stale ID token', async () => {
+    const staleIdToken = `header.${Buffer.from(
+      JSON.stringify({ sub: 'oidc-123', exp: Math.floor(Date.now() / 1000) - 3600 }),
+    ).toString('base64')}.signature`;
+    const req = {
+      headers: { authorization: 'Bearer raw-bearer-token' },
+      session: {
+        openidTokens: {
+          accessToken: 'opaque-session-access',
+          idToken: staleIdToken,
+          refreshToken: 'session-refresh',
+        },
+      },
+    };
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(user.federatedTokens.access_token).toBe('opaque-session-access');
+    expect(user.federatedTokens.id_token).toBe(staleIdToken);
+    expect(user.federatedTokens.expires_at).toBeUndefined();
   });
 
   it('should set id_token to undefined when not available in session or cookies', async () => {
@@ -449,6 +500,32 @@ describe('openIdJwtStrategy – auth user document cache', () => {
     });
     expect(setCachedAuthUserDoc).not.toHaveBeenCalled();
     expect(invalidateCachedAuthUserDoc).not.toHaveBeenCalled();
+  });
+
+  it('rejects a cached OpenID user while account deletion is fenced', async () => {
+    mockGetTenantId.mockReturnValue('tenant-a');
+    getAuthUserDocCacheMode.mockReturnValue('on');
+    getCachedAuthUserDoc.mockResolvedValue({
+      _id: 'cached-user',
+      role: SystemRoles.USER,
+      provider: 'openid',
+      tenantId: 'tenant-a',
+    });
+    isAgentTriggerPrincipalActive.mockResolvedValue(false);
+
+    const result = await invokeVerify(req, payload);
+
+    expect(result).toEqual({
+      user: false,
+      info: {
+        message: 'Account deletion is in progress',
+        code: 'ACCOUNT_DELETION_IN_PROGRESS',
+      },
+    });
+    expect(findOpenIDUser).not.toHaveBeenCalled();
+    expect(mockRunAsSystem).toHaveBeenCalledWith(expect.any(Function));
+    expect(isAgentTriggerPrincipalActive).toHaveBeenCalledWith('cached-user');
+    expect(setCachedAuthUserDoc).not.toHaveBeenCalled();
   });
 
   it('populates the cache after a miss with the fresh user document', async () => {

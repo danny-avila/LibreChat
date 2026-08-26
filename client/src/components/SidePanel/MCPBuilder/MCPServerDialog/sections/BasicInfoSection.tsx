@@ -1,5 +1,6 @@
 import { useFormContext } from 'react-hook-form';
 import { Input, Label, Textarea } from '@librechat/client';
+import { MCP_SERVER_TITLE_PATTERN } from 'librechat-data-provider';
 import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';
 import { useLocalize } from '~/hooks';
@@ -52,7 +53,7 @@ export default function BasicInfoSection() {
             {...register('title', {
               required: localize('com_ui_field_required'),
               pattern: {
-                value: /^[a-zA-Z0-9 ]+$/,
+                value: MCP_SERVER_TITLE_PATTERN,
                 message: localize('com_ui_mcp_title_invalid'),
               },
             })}

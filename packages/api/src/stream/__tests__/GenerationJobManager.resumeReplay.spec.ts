@@ -67,6 +67,22 @@ describe('GenerationJobManager resume replay events', () => {
     manager = undefined;
   });
 
+  test('projects regeneration ownership into resume state', async () => {
+    manager = createInMemoryManager();
+    const streamId = `regenerate-resume-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId, {
+      initialMetadata: {
+        responseMessageId: 'edited-response',
+        isRegenerate: true,
+      },
+    });
+
+    await expect(manager.getResumeState(streamId)).resolves.toMatchObject({
+      responseMessageId: 'edited-response',
+      isRegenerate: true,
+    });
+  });
+
   test('includes OAuth run step and delta replay events in resume state', async () => {
     manager = createInMemoryManager();
     const streamId = `oauth-delta-resume-${Date.now()}`;

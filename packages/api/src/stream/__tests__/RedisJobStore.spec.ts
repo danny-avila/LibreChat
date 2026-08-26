@@ -32,8 +32,8 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 
 function jobHashFromCreationCall(call: unknown[]): Record<string, string> {
   const keyCount = Number(call[1]);
-  // JOB_CREATE_LUA receives twelve scalar arguments before its HSET pairs.
-  const fields = call.slice(14 + keyCount);
+  // JOB_CREATE_LUA receives thirteen scalar arguments before its HSET pairs.
+  const fields = call.slice(15 + keyCount);
   const hash = Object.fromEntries(
     Array.from({ length: fields.length / 2 }, (_, index) => [
       String(fields[index * 2]),
@@ -47,6 +47,54 @@ function jobHashFromCreationCall(call: unknown[]): Record<string, string> {
 }
 
 describe('RedisJobStore', () => {
+  test('marks only the exact provider segment drained', async () => {
+    const evalDrain = jest.fn().mockResolvedValue(1);
+    const redis = {
+      isCluster: true,
+      eval: evalDrain,
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(
+      store.markProviderExecutionDrained('stream-provider-drain', 123456, 'segment-a'),
+    ).resolves.toBe(true);
+
+    const [script, keyCount, jobKey, createdAt, providerExecutionId] = evalDrain.mock.calls[0];
+    expect(script).toContain('HGET", KEYS[1], "createdAt"');
+    expect(script).toContain('HGET", KEYS[1], "providerExecutionId"');
+    expect(script).toContain('HSET", KEYS[1], "providerDrained", "1"');
+    expect([keyCount, jobKey, createdAt, providerExecutionId]).toEqual([
+      1,
+      'stream:{stream-provider-drain}:job',
+      '123456',
+      'segment-a',
+    ]);
+  });
+
+  test('starts only the exact still-running initial provider segment', async () => {
+    const evalBegin = jest.fn().mockResolvedValue(1);
+    const redis = {
+      isCluster: true,
+      eval: evalBegin,
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(
+      store.beginProviderExecution('stream-provider-begin', 123456, 'segment-a'),
+    ).resolves.toBe(true);
+
+    const [script, keyCount, jobKey, createdAt, providerExecutionId] = evalBegin.mock.calls[0];
+    expect(script).toContain('HGET", KEYS[1], "status") ~= "running"');
+    expect(script).toContain('HGET", KEYS[1], "providerDrained") ~= "1"');
+    expect(script).toContain('HSET", KEYS[1], "providerDrained", "0"');
+    expect([keyCount, jobKey, createdAt, providerExecutionId]).toEqual([
+      1,
+      'stream:{stream-provider-begin}:job',
+      '123456',
+      'segment-a',
+    ]);
+  });
+
   test('guards the atomic status transition with the expected creation epoch', async () => {
     const evalTransition = jest.fn().mockResolvedValue(0);
     const redis = {
@@ -279,15 +327,28 @@ describe('RedisJobStore', () => {
         parentMessageId: 'parent-1',
       },
       responseMessageId: 'response-1',
+      mcpRequestBody: {
+        messageId: 'response-1',
+        conversationId: 'overridden-conversation',
+        parentMessageId: 'response-1',
+      },
       sender: 'Agent',
       endpoint: 'agents',
       iconURL: 'https://example.com/icon.png',
       model: 'test-model',
       agent_id: 'agent-1',
       isTemporary: false,
+      scheduleId: 'schedule-1',
+      scheduledFor: '2026-08-17T12:00:00.000Z',
+      scheduleConfigRevision: 4,
+      scheduleManual: false,
+      scheduleOutcome: 'interrupted',
+      scheduleOutcomeError: 'Schedule deleted',
+      preserveForScheduleReconcile: true,
       promptTokens: 0,
       discoveredTools: [],
       preemptCapable: true,
+      steerQuotesExecutionId: 'exec-1',
       generationProtocolVersion: 2,
       resolvedAskUserQuestions: [
         {
@@ -310,6 +371,7 @@ describe('RedisJobStore', () => {
      * degrading to ordinary steering in every Redis deployment.
      */
     expect(job.preemptCapable).toBe(true);
+    expect(job.steerQuotesExecutionId).toBe('exec-1');
     expect(job.generationProtocolVersion).toBe(2);
     expect(job.checkpointNamespace).toBe(String(job.createdAt));
     expect(job.resolvedAskUserQuestions).toEqual([
@@ -334,12 +396,24 @@ describe('RedisJobStore', () => {
         parentMessageId: 'parent-1',
       },
       responseMessageId: 'response-1',
+      mcpRequestBody: {
+        messageId: 'response-1',
+        conversationId: 'overridden-conversation',
+        parentMessageId: 'response-1',
+      },
       sender: 'Agent',
       endpoint: 'agents',
       iconURL: 'https://example.com/icon.png',
       model: 'test-model',
       agent_id: 'agent-1',
       isTemporary: false,
+      scheduleId: 'schedule-1',
+      scheduledFor: '2026-08-17T12:00:00.000Z',
+      scheduleConfigRevision: 4,
+      scheduleManual: false,
+      scheduleOutcome: 'interrupted',
+      scheduleOutcomeError: 'Schedule deleted',
+      preserveForScheduleReconcile: true,
       promptTokens: 0,
       discoveredTools: [],
       resolvedAskUserQuestions: [
@@ -361,8 +435,20 @@ describe('RedisJobStore', () => {
     expect(storedFields).toMatchObject({
       conversationId: 'conversation-1',
       responseMessageId: 'response-1',
+      mcpRequestBody: JSON.stringify({
+        messageId: 'response-1',
+        conversationId: 'overridden-conversation',
+        parentMessageId: 'response-1',
+      }),
       agent_id: 'agent-1',
       isTemporary: '0',
+      scheduleId: 'schedule-1',
+      scheduledFor: '2026-08-17T12:00:00.000Z',
+      scheduleConfigRevision: '4',
+      scheduleManual: '0',
+      scheduleOutcome: 'interrupted',
+      scheduleOutcomeError: 'Schedule deleted',
+      preserveForScheduleReconcile: '1',
       promptTokens: '0',
       discoveredTools: '[]',
       resolvedAskUserQuestions: JSON.stringify([
@@ -411,7 +497,18 @@ describe('RedisJobStore', () => {
   test('atomically resets predecessor state when creating a replacement', async () => {
     const evalJobCreation = jest
       .fn()
-      .mockImplementation((...args: unknown[]) => ['user-1', '', args[Number(args[1]) + 3]]);
+      .mockImplementation((...args: unknown[]) => [
+        'user-1',
+        '',
+        args[Number(args[1]) + 3],
+        '',
+        '1',
+        'running',
+        'conversation-before-replacement',
+        '1',
+        'provider-before-replacement',
+        '0',
+      ]);
     const redis = {
       isCluster: true,
       eval: evalJobCreation,
@@ -423,7 +520,16 @@ describe('RedisJobStore', () => {
     const store = new RedisJobStore(redis);
     store.setCollectedUsage('stream-replacement', [{ input_tokens: 10 }]);
 
-    await store.createJob('stream-replacement', 'user-1');
+    const replacement = await store.createJob('stream-replacement', 'user-1');
+
+    expect(replacement.replacedJob).toMatchObject({
+      createdAt: 1,
+      status: 'running',
+      conversationId: 'conversation-before-replacement',
+      providerAbortReady: true,
+      providerExecutionId: 'provider-before-replacement',
+      providerDrained: false,
+    });
 
     const [script, keyCount, ...args] = evalJobCreation.mock.calls[0];
     expect(script).toContain(
@@ -576,6 +682,7 @@ describe('RedisJobStore', () => {
     const evalResult = createDeferred<number>();
     const runningMembership = createDeferred<number>();
     const requiresActionRemoval = createDeferred<number>();
+    const terminalHostActionRemoval = createDeferred<number>();
     const userMembership = createDeferred<number>();
     const userExpiry = createDeferred<number>();
     const started: string[] = [];
@@ -599,9 +706,13 @@ describe('RedisJobStore', () => {
         started.push('user');
         return userMembership.promise;
       }),
-      srem: jest.fn(() => {
-        started.push('requires_action');
-        return requiresActionRemoval.promise;
+      srem: jest.fn((key: string) => {
+        if (key === 'stream:requires_action') {
+          started.push('requires_action');
+          return requiresActionRemoval.promise;
+        }
+        started.push('terminal_host_action');
+        return terminalHostActionRemoval.promise;
       }),
       hgetall: jest.fn(() => jobHashFromCreationCall(evalJobCreation.mock.calls[0])),
       expire,
@@ -616,16 +727,23 @@ describe('RedisJobStore', () => {
 
     expect(started).toEqual(['job']);
     evalResult.resolve(1);
-    await waitFor(() => started.length === 4);
+    await waitFor(() => started.length === 5);
 
-    expect(started).toEqual(['job', 'running', 'requires_action', 'user']);
+    expect(started).toEqual(['job', 'running', 'requires_action', 'terminal_host_action', 'user']);
     expect(settled).toBe(false);
     expect(expire).not.toHaveBeenCalled();
 
     userMembership.resolve(1);
     await waitFor(() => expire.mock.calls.length === 1);
 
-    expect(started).toEqual(['job', 'running', 'requires_action', 'user', 'user_expiry']);
+    expect(started).toEqual([
+      'job',
+      'running',
+      'requires_action',
+      'terminal_host_action',
+      'user',
+      'user_expiry',
+    ]);
     expect(expire).toHaveBeenCalledWith('stream:user:{user-1}:jobs', 60);
     expect(settled).toBe(false);
 
@@ -634,6 +752,10 @@ describe('RedisJobStore', () => {
     expect(settled).toBe(false);
 
     runningMembership.resolve(1);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    terminalHostActionRemoval.resolve(1);
     await Promise.resolve();
     expect(settled).toBe(false);
 

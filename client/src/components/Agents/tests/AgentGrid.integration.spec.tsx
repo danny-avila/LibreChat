@@ -18,11 +18,6 @@ jest.mock('~/hooks/Agents', () => ({
   })),
 }));
 
-// Mock SmartLoader
-jest.mock('../SmartLoader', () => ({
-  useHasData: jest.fn(() => true),
-}));
-
 // Mock useLocalize hook
 jest.mock('~/hooks/useLocalize', () => () => (key: string, options?: any) => {
   const mockTranslations: Record<string, string> = {
@@ -360,6 +355,23 @@ describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
       // Should show loading spinner
       const spinner = document.querySelector('.text-text-primary');
       expect(spinner).toBeInTheDocument();
+    });
+
+    it('should retain cached agents while refetching', () => {
+      mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue({
+        ...defaultMockQueryResult,
+        isFetching: true,
+      });
+
+      const Wrapper = createWrapper();
+      render(
+        <Wrapper>
+          <AgentGrid category="finance" searchQuery="" onSelectAgent={mockOnSelectAgent} />
+        </Wrapper>,
+      );
+
+      expect(screen.getByTestId('agent-card-1')).toBeInTheDocument();
+      expect(screen.getByTestId('agent-card-2')).toBeInTheDocument();
     });
 
     it('should show empty state when no agents are available', () => {

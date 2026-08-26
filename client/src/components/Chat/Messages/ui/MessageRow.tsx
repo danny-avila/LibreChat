@@ -20,6 +20,18 @@ type MessageRowProps = {
   className?: string;
 };
 
+export function getMessageRowWidthClass({
+  fullWidth = false,
+  hasParallelContent = false,
+}: {
+  fullWidth?: boolean;
+  hasParallelContent?: boolean;
+} = {}) {
+  if (fullWidth) return 'w-full max-w-full sm:px-2';
+  if (hasParallelContent) return 'w-full sm:px-2 md:max-w-[58rem] xl:max-w-[70rem]';
+  return 'w-full sm:px-2 md:max-w-3xl xl:max-w-4xl';
+}
+
 export default function MessageRow({
   id,
   icon,
@@ -38,12 +50,7 @@ export default function MessageRow({
 }: MessageRowProps) {
   // Same column as ChatForm: max-width plus `sm:px-2`, so the body lines
   // up with the composer surface rather than the form's outer box.
-  let widthClass = 'w-full sm:px-2 md:max-w-3xl xl:max-w-4xl';
-  if (fullWidth) {
-    widthClass = 'w-full max-w-full sm:px-2';
-  } else if (hasParallelContent) {
-    widthClass = 'w-full sm:px-2 md:max-w-[58rem] xl:max-w-[70rem]';
-  }
+  const widthClass = getMessageRowWidthClass({ fullWidth, hasParallelContent });
 
   return (
     <div

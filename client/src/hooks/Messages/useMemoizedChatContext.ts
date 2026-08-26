@@ -55,6 +55,7 @@ export default function useMemoizedChatContext(
       latestMessageId: chatCtx.latestMessageId,
       latestMessageDepth: chatCtx.latestMessageDepth,
       handleContinue: chatCtx.handleContinue,
+      feedbackEnabled: chatCtx.feedbackEnabled,
       get isSubmitting() {
         return isSubmittingRef.current;
       },
@@ -68,6 +69,7 @@ export default function useMemoizedChatContext(
       chatCtx.latestMessageId,
       chatCtx.latestMessageDepth,
       chatCtx.handleContinue,
+      chatCtx.feedbackEnabled,
       isSubmitting, // intentional: forces new reference on streaming start/end so HoverButtons re-renders
     ],
   );

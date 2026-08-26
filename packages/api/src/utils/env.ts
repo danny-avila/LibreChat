@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import { extractEnvVariable } from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
@@ -7,6 +8,7 @@ import {
   isOpenIDTokenValid,
   extractOpenIDTokenInfo,
   processOpenIDPlaceholders,
+  OpenIDReauthRequiredError,
 } from './oidc';
 
 /**
@@ -144,6 +146,8 @@ export function createSafeUser(
  */
 export const ALLOWED_BODY_FIELDS = ['conversationId', 'parentMessageId', 'messageId'] as const;
 
+const OPENID_PLACEHOLDER_NAMES = `LIBRECHAT_OPENID_(?:${OPENID_TOKEN_FIELDS.join('|')}|TOKEN)`;
+
 /**
  * Matches every placeholder this module knows how to resolve: the enumerated
  * `{{LIBRECHAT_USER_*}}`, `{{LIBRECHAT_BODY_*}}`, and `{{LIBRECHAT_OPENID_*}}`
@@ -155,12 +159,23 @@ const RESOLVABLE_PLACEHOLDER_PATTERN = new RegExp(
   [
     `LIBRECHAT_USER_(?:${ALLOWED_USER_FIELDS.map((field) => field.toUpperCase()).join('|')})`,
     `LIBRECHAT_BODY_(?:${ALLOWED_BODY_FIELDS.map((field) => field.toUpperCase()).join('|')})`,
-    `LIBRECHAT_OPENID_(?:${OPENID_TOKEN_FIELDS.join('|')}|TOKEN)`,
+    OPENID_PLACEHOLDER_NAMES,
   ]
     .map((names) => `\\{\\{(?:${names})\\}\\}`)
     .join('|'),
   'g',
 );
+
+/**
+ * The subset of OpenID placeholders that cannot resolve without a usable token
+ * set. Identity metadata (`USER_ID`, `USER_EMAIL`, `USER_NAME`) comes from the
+ * user document and `EXPIRES_AT` is only ever a hint, so those must keep their
+ * pre-existing literal-then-strip behaviour when the token set is invalid
+ * rather than raising re-auth. Non-global so `exec` stays stateless, and
+ * unknown names are excluded so a typo stays literal and diagnosable.
+ */
+const OPENID_CREDENTIAL_PLACEHOLDER_PATTERN =
+  /\{\{LIBRECHAT_OPENID_(?:ACCESS_TOKEN|ID_TOKEN|TOKEN)\}\}/;
 
 /**
  * Replaces resolvable-but-unresolved placeholders with an empty string so
@@ -170,7 +185,7 @@ const RESOLVABLE_PLACEHOLDER_PATTERN = new RegExp(
  * users under that one string). Only for final resolution passes — staged
  * flows that resolve again later with more context must not strip.
  */
-function stripUnresolvedPlaceholders(value: string): string {
+export function stripUnresolvedPlaceholders(value: string): string {
   return value.replace(RESOLVABLE_PLACEHOLDER_PATTERN, '');
 }
 
@@ -320,6 +335,16 @@ function processSingleValue({
   const openidTokenInfo = extractOpenIDTokenInfo(user);
   if (openidTokenInfo && isOpenIDTokenValid(openidTokenInfo)) {
     value = processOpenIDPlaceholders(value, openidTokenInfo);
+  } else if (openidTokenInfo) {
+    const unresolvable = OPENID_CREDENTIAL_PLACEHOLDER_PATTERN.exec(value);
+    if (unresolvable) {
+      logger.warn(
+        `OpenID token is expired or unavailable; cannot resolve ${unresolvable[0]} for the current request`,
+      );
+      throw new OpenIDReauthRequiredError(
+        `OpenID token is expired or unavailable; re-authentication is required to resolve ${unresolvable[0]}`,
+      );
+    }
   }
 
   if (body) {
@@ -610,7 +635,22 @@ export function resolveHeaders(options?: {
         body,
         isHeader: true, // Important: Enable header encoding
       });
-      resolvedHeaders[key] = stripUnresolved ? stripUnresolvedPlaceholders(processed) : processed;
+      if (!stripUnresolved) {
+        resolvedHeaders[key] = processed;
+        return;
+      }
+
+      /** Reached only when the credential guard did not fire, i.e. the user has no OpenID identity at all: blanking the credential would emit `Authorization: Bearer `, which RFC 6750 rejects for a missing b64token */
+      const unresolvedCredential = OPENID_CREDENTIAL_PLACEHOLDER_PATTERN.exec(processed);
+      if (unresolvedCredential) {
+        logger.warn(
+          `Omitting header "${key}": ${unresolvedCredential[0]} could not be resolved for the current request`,
+        );
+        delete resolvedHeaders[key];
+        return;
+      }
+
+      resolvedHeaders[key] = stripUnresolvedPlaceholders(processed);
     });
   }
 

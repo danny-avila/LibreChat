@@ -470,6 +470,36 @@ describe('getMultiplier', () => {
     }
   });
 
+  it('should use the documented gpt-5.6 pricing', () => {
+    const expectedPricing = {
+      'gpt-5.6': {
+        standard: { prompt: 4, completion: 20 },
+        cache: { write: 5, read: 0.4 },
+        premium: { threshold: 272000, prompt: 8, completion: 30 },
+        premiumCache: { threshold: 272000, write: 10, read: 0.8 },
+      },
+      'gpt-5.6-terra': {
+        standard: { prompt: 2, completion: 12 },
+        cache: { write: 2.5, read: 0.2 },
+        premium: { threshold: 272000, prompt: 4, completion: 18 },
+        premiumCache: { threshold: 272000, write: 5, read: 0.4 },
+      },
+      'gpt-5.6-luna': {
+        standard: { prompt: 0.2, completion: 1.2 },
+        cache: { write: 0.25, read: 0.02 },
+        premium: { threshold: 272000, prompt: 0.4, completion: 1.8 },
+        premiumCache: { threshold: 272000, write: 0.5, read: 0.04 },
+      },
+    };
+
+    for (const [model, pricing] of Object.entries(expectedPricing)) {
+      expect(tokenValues[model]).toEqual(pricing.standard);
+      expect(cacheTokenValues[model]).toEqual(pricing.cache);
+      expect(premiumTokenValues[model]).toEqual(pricing.premium);
+      expect(premiumCacheTokenValues[model]).toEqual(pricing.premiumCache);
+    }
+  });
+
   it('should return the correct multiplier for gpt-4o', () => {
     const valueKey = getValueKey('gpt-4o-2024-08-06');
     expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(tokenValues['gpt-4o'].prompt);
@@ -2854,8 +2884,8 @@ describe('GPT-5.6 Long-Context Premium Pricing', () => {
       const premiumEntry = premiumTokenValues[model];
       expect(premiumEntry).toBeDefined();
       expect(premiumEntry.threshold).toBe(272000);
-      expect(premiumEntry.prompt).toBe(tokenValues[model].prompt * 2);
-      expect(premiumEntry.completion).toBe(tokenValues[model].completion * 1.5);
+      expect(premiumEntry.prompt).toBeCloseTo(tokenValues[model].prompt * 2);
+      expect(premiumEntry.completion).toBeCloseTo(tokenValues[model].completion * 1.5);
     }
   });
 

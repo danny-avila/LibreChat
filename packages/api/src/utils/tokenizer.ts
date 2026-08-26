@@ -27,6 +27,23 @@ class Tokenizer {
     return this.loadingPromises[encoding];
   }
 
+  /** Returns a counter that never substitutes an estimate for tokenizer errors. */
+  async createExactTokenCounter(encoding: EncodingName): Promise<(text: string) => number> {
+    await this.initEncoding(encoding);
+    const tokenizer = this.tokenizersCache[encoding];
+    if (!tokenizer) {
+      throw new Error(`Tokenizer encoding failed to initialize: ${encoding}`);
+    }
+    return (text: string): number => {
+      try {
+        return tokenizer.count(text);
+      } catch (error) {
+        this.handleCountError(encoding, tokenizer, error);
+        throw error;
+      }
+    };
+  }
+
   getTokenCount(text: string, encoding: EncodingName = 'o200k_base'): number {
     const tokenizer = this.tokenizersCache[encoding];
     if (!tokenizer) {
@@ -36,12 +53,21 @@ class Tokenizer {
     try {
       return tokenizer.count(text);
     } catch (error) {
-      logger.error('[Tokenizer] Error getting token count:', error);
-      delete this.tokenizersCache[encoding];
-      delete this.loadingPromises[encoding];
-      this.initEncoding(encoding);
+      this.handleCountError(encoding, tokenizer, error);
       return Math.ceil(text.length / 4);
     }
+  }
+
+  private handleCountError(encoding: EncodingName, tokenizer: AiTokenizer, error: unknown): void {
+    logger.error('[Tokenizer] Error getting token count:', error);
+    if (this.tokenizersCache[encoding] !== tokenizer) {
+      return;
+    }
+    delete this.tokenizersCache[encoding];
+    delete this.loadingPromises[encoding];
+    void this.initEncoding(encoding).catch((initError: unknown) => {
+      logger.error(`[Tokenizer] Error reloading ${encoding} encoding:`, initError);
+    });
   }
 }
 

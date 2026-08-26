@@ -3,14 +3,19 @@ const express = require('express');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   logAxiosError,
+  getSafeErrorMetadata,
   getApprovalTtlMs,
   refreshS3FileUrls,
   handleFilesUsageRequest,
   shouldUseUploadSse,
   startUploadSseStream,
+  sendUploadPolicyError,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
   getCodeExecutionBaseUrl,
+  assertUploadContentAllowed,
+  hasActiveFilePolicy,
+  sanitizeFilename,
 } = require('@librechat/api');
 const {
   Time,
@@ -23,6 +28,8 @@ const {
   PermissionBits,
   checkOpenAIStorage,
   isAssistantsEndpoint,
+  hasActivePiiPatterns,
+  mergeFileConfig,
 } = require('librechat-data-provider');
 const {
   filterFile,
@@ -367,7 +374,10 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
       req,
       { baseUrl, executionProfile },
     );
-    res.set(response.headers);
+    res.setHeader('Content-Disposition', 'attachment');
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'private, no-store');
     response.data.pipe(res);
   } catch (error) {
     /* `logAxiosError` redacts buffer/stream response bodies — without
@@ -567,6 +577,26 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
     // Access already validated by fileAccess middleware
     const file = req.fileAccess.file;
 
+    // Text-source files store extracted content in the DB; there is no backing file to stream
+    if (file.source === FileSources.text) {
+      /** `getFiles` excludes `text` by default, so the authorized record is re-fetched by `_id` */
+      const [textFile] = (await db.getFiles({ _id: file._id }, null, { text: 1 })) ?? [];
+      if (textFile?.text == null) {
+        logger.warn(`File download requested by user ${userId} has no stored text: ${file_id}`);
+        return res.status(404).send('No file content found');
+      }
+      const textFilename = file.filename?.toLowerCase().endsWith('.txt')
+        ? file.filename
+        : `${file.filename || file_id}.txt`;
+      res.setHeader('Content-Disposition', getContentDisposition(textFilename));
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader(
+        'X-File-Metadata',
+        encodeURIComponent(JSON.stringify(getDownloadFileMetadata(file))),
+      );
+      return res.send(textFile.text);
+    }
+
     if (checkOpenAIStorage(file.source) && !file.model) {
       logger.warn(`File download requested by user ${userId} has no associated model: ${file_id}`);
       return res.status(400).send('The model used when creating this file is not available');
@@ -639,6 +669,16 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
 
       fileStream.on('error', (streamError) => {
         logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);
+        if (res.headersSent) {
+          if (!res.writableEnded) {
+            res.destroy();
+          }
+          return;
+        }
+        res.removeHeader('Content-Disposition');
+        res.removeHeader('Content-Type');
+        res.removeHeader('X-File-Metadata');
+        res.status(500).send('Error downloading file');
       });
 
       setHeaders();
@@ -664,7 +704,19 @@ router.post('/', async (req, res) => {
   };
 
   try {
+    req.file.originalname = sanitizeFilename(req.file.originalname);
     filterFile({ req });
+
+    await assertUploadContentAllowed({
+      filters: req.config?.filters,
+      file: req.file,
+      endpoint: metadata.endpoint,
+      toolResource: metadata.tool_resource,
+      fileConfig: mergeFileConfig(req.config?.fileConfig),
+      ocrConfigured: req.config?.ocr != null,
+      ragConfigured: !!process.env.RAG_API_URL,
+      readFile: fs.readFile,
+    });
 
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
@@ -678,7 +730,7 @@ router.post('/', async (req, res) => {
     try {
       skipUploadAuth = await hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS);
     } catch (err) {
-      logger.warn(`[/files] capability check failed, denying bypass: ${err.message}`);
+      logger.warn('[/files] capability check failed, denying bypass:', getSafeErrorMetadata(err));
     }
 
     if (!skipUploadAuth) {
@@ -697,20 +749,38 @@ router.post('/', async (req, res) => {
     openSseStreamIfRequested();
     return await processAgentFileUpload({ req, res, metadata, sseStream });
   } catch (error) {
-    const message = resolveUploadErrorMessage(error);
-    logger.error('[/files] Error processing file:', error);
+    if (
+      sendUploadPolicyError(res, sseStream, error, {
+        tempFileId: metadata.temp_file_id,
+        toolResource: metadata.tool_resource,
+      })
+    ) {
+      return;
+    }
+    const contentProtectionActive =
+      hasActiveFilePolicy(req.config?.filters) ||
+      hasActivePiiPatterns(req.config?.messageFilter?.pii);
+    const message = resolveUploadErrorMessage(
+      error,
+      'Error processing file',
+      contentProtectionActive,
+    );
+    logger.error('[/files] Error processing file:', getSafeErrorMetadata(error));
 
     try {
       await fs.unlink(req.file.path);
       cleanup = false;
-    } catch (error) {
-      logger.error('[/files] Error deleting file:', error);
+    } catch (cleanupError) {
+      logger.error('[/files] Error deleting file:', getSafeErrorMetadata(cleanupError));
     }
 
-    let errorStatusCode = 500;
-    if (error.userErrorStatusCode) {
-      errorStatusCode = error.userErrorStatusCode;
-    }
+    const userErrorStatusCode = error?.userErrorStatusCode;
+    const errorStatusCode =
+      Number.isInteger(userErrorStatusCode) &&
+      userErrorStatusCode >= 400 &&
+      userErrorStatusCode <= 599
+        ? userErrorStatusCode
+        : 500;
 
     if (sseStream) {
       sseStream.sendError({
@@ -728,7 +798,10 @@ router.post('/', async (req, res) => {
       try {
         await fs.unlink(req.file.path);
       } catch (error) {
-        logger.error('[/files] Error deleting file after file processing:', error);
+        logger.error(
+          '[/files] Error deleting file after file processing:',
+          getSafeErrorMetadata(error),
+        );
       }
     } else {
       logger.debug('[/files] File processing completed without cleanup');

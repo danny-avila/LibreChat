@@ -31,8 +31,10 @@ const {
   PrincipalType,
   PermissionBits,
 } = require('librechat-data-provider');
+const { CONTENT_TRAVERSAL_MAX_DEPTH } = require('@librechat/api');
 
 let mockFileConfig;
+let mockFilters;
 const mockMaybeRunGitHubSkillSyncForRequest = jest.fn(async () => false);
 
 jest.mock('~/server/services/Config', () => ({
@@ -48,6 +50,7 @@ jest.mock('~/server/middleware/config/app', () => (req, _res, next) => {
     fileStrategy: 'local',
     paths: { uploads: '/tmp/uploads', images: '/tmp/images' },
     fileConfig: mockFileConfig,
+    filters: mockFilters,
   };
   next();
 });
@@ -157,6 +160,7 @@ afterEach(async () => {
   await AclEntry.deleteMany({});
   currentTestUser = testUsers.owner;
   mockFileConfig = undefined;
+  mockFilters = undefined;
   mockMaybeRunGitHubSkillSyncForRequest.mockClear();
 });
 
@@ -237,6 +241,17 @@ async function createSkillAsOwner(overrides = {}) {
       ...overrides,
     });
   return res;
+}
+
+function createOverflowingFrontmatter(visible) {
+  const root = { visible };
+  let current = root;
+  for (let depth = 0; depth < CONTENT_TRAVERSAL_MAX_DEPTH; depth++) {
+    current.nested = {};
+    current = current.nested;
+  }
+  current.nested = { hidden: 'PRIVATE-HIDDEN' };
+  return root;
 }
 
 describe('Skill routes', () => {
@@ -341,6 +356,131 @@ describe('Skill routes', () => {
       const b = await createSkillAsOwner();
       expect(b.status).toBe(409);
     });
+
+    it('blocks configured skill fields before creating a skill', async () => {
+      mockFilters = {
+        skills: {
+          pii: {
+            fields: ['instructions'],
+            starterPatterns: [],
+            customPatterns: [
+              { id: 'private_token', label: 'private token', regex: 'PRIVATE-\\d+' },
+            ],
+          },
+        },
+      };
+
+      const res = await createSkillAsOwner({ body: 'Use PRIVATE-1234 to authenticate.' });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'skill',
+          field: 'instructions',
+        }),
+      );
+      expect(await Skill.countDocuments()).toBe(0);
+    });
+
+    it('blocks an inspected partial frontmatter fragment before traversal exhaustion', async () => {
+      mockFilters = {
+        skills: {
+          pii: {
+            fields: ['frontmatter'],
+            starterPatterns: [],
+            customPatterns: [
+              { id: 'partial_content', label: 'partial content', regex: 'PRIVATE-VISIBLE' },
+            ],
+          },
+        },
+      };
+
+      const res = await createSkillAsOwner({
+        frontmatter: createOverflowingFrontmatter('PRIVATE-VISIBLE'),
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'skill',
+          field: 'frontmatter',
+        }),
+      );
+      expect(await Skill.countDocuments()).toBe(0);
+    });
+
+    it('fails closed when selected skill frontmatter cannot be fully inspected', async () => {
+      mockFilters = {
+        skills: {
+          pii: {
+            fields: ['frontmatter'],
+            starterPatterns: [],
+            customPatterns: [
+              { id: 'protected_content', label: 'protected content', regex: 'PRIVATE-NOT-PRESENT' },
+            ],
+          },
+        },
+      };
+
+      const res = await createSkillAsOwner({
+        frontmatter: createOverflowingFrontmatter('safe visible value'),
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({
+        error: 'content_filter_uninspectable',
+        message: 'Submitted content could not be completely inspected before processing.',
+        source: 'skill',
+        field: 'frontmatter',
+      });
+      expect(await Skill.countDocuments()).toBe(0);
+    });
+
+    it('does not fail closed on oversized frontmatter when only another field is selected', async () => {
+      mockFilters = {
+        skills: {
+          pii: {
+            fields: ['description'],
+            starterPatterns: [],
+            customPatterns: [
+              { id: 'protected_description', label: 'protected description', regex: 'PRIVATE' },
+            ],
+          },
+        },
+      };
+
+      const res = await createSkillAsOwner({
+        description: 'A safe skill description used for traversal coverage.',
+        frontmatter: createOverflowingFrontmatter('PRIVATE-VISIBLE'),
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).not.toBe('content_filter_uninspectable');
+      expect(res.body.issues).toEqual(
+        expect.arrayContaining([expect.objectContaining({ code: 'INVALID_SHAPE' })]),
+      );
+      expect(await Skill.countDocuments()).toBe(0);
+    });
+
+    it('honors skill field granularity', async () => {
+      mockFilters = {
+        skills: {
+          pii: {
+            fields: ['description'],
+            starterPatterns: [],
+            customPatterns: [
+              { id: 'private_token', label: 'private token', regex: 'PRIVATE-\\d+' },
+            ],
+          },
+        },
+      };
+
+      const res = await createSkillAsOwner({ body: 'Use PRIVATE-1234 to authenticate.' });
+
+      expect(res.status).toBe(201);
+    });
   });
 
   describe('POST /api/skills/import', () => {
@@ -411,6 +551,45 @@ describe('Skill routes', () => {
           storageRegion: 'us-east-2',
         }),
       );
+    });
+
+    it('blocks filtered Markdown before creating the imported skill', async () => {
+      mockFilters = {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [
+              { id: 'private_token', label: 'private token', regex: 'PRIVATE-\\d+' },
+            ],
+          },
+        },
+      };
+
+      const markdown = [
+        '---',
+        'name: filtered-import',
+        'description: Imported skill with enough description.',
+        '---',
+        'Use PRIVATE-1234 to authenticate.',
+      ].join('\n');
+      const res = await request(app)
+        .post('/api/skills/import')
+        .attach('file', Buffer.from(markdown), {
+          filename: 'filtered-import.md',
+          contentType: 'text/markdown',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'file',
+          field: 'extracted_text',
+        }),
+      );
+      expect(await Skill.countDocuments()).toBe(0);
+      expect(await SkillFile.countDocuments()).toBe(0);
     });
   });
 
@@ -499,6 +678,37 @@ describe('Skill routes', () => {
         .send({ expectedVersion: 1, description: 'nope' });
       expect(res.status).toBe(403);
     });
+
+    it('blocks configured content before updating a skill', async () => {
+      const created = await createSkillAsOwner();
+      mockFilters = {
+        skills: {
+          pii: {
+            fields: ['description'],
+            starterPatterns: [],
+            customPatterns: [
+              { id: 'private_token', label: 'private token', regex: 'PRIVATE-\\d+' },
+            ],
+          },
+        },
+      };
+
+      const res = await request(app)
+        .patch(`/api/skills/${created.body._id}`)
+        .send({ expectedVersion: 1, description: 'Contains PRIVATE-1234.' });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'skill',
+          field: 'description',
+        }),
+      );
+      const persisted = await Skill.findById(created.body._id).lean();
+      expect(persisted.version).toBe(1);
+      expect(persisted.description).toBe('A small demo skill used in routing integration tests.');
+    });
   });
 
   describe('DELETE /api/skills/:id', () => {
@@ -538,6 +748,133 @@ describe('Skill routes', () => {
       const res = await request(app).post(`/api/skills/${created.body._id}/files`);
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/no file/i);
+    });
+
+    it('blocks text file content before storage', async () => {
+      const created = await createSkillAsOwner();
+      mockFilters = {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [
+              { id: 'private_token', label: 'private token', regex: 'PRIVATE-\\d+' },
+            ],
+          },
+        },
+      };
+
+      const res = await request(app)
+        .post(`/api/skills/${created.body._id}/files`)
+        .field('relativePath', 'references/notes.txt')
+        .attach('file', Buffer.from('PRIVATE-1234'), {
+          filename: 'notes.txt',
+          contentType: 'text/plain',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'file',
+          field: 'extracted_text',
+        }),
+      );
+      expect(await SkillFile.countDocuments()).toBe(0);
+    });
+
+    it('does not decode binary file bytes for filtering', async () => {
+      const created = await createSkillAsOwner();
+      mockFilters = {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [
+              { id: 'private_token', label: 'private token', regex: 'PRIVATE-\\d+' },
+            ],
+          },
+        },
+      };
+      const binary = Buffer.concat([Buffer.from([0, 255, 0]), Buffer.from('PRIVATE-1234')]);
+
+      const res = await request(app)
+        .post(`/api/skills/${created.body._id}/files`)
+        .field('relativePath', 'assets/private.png')
+        .attach('file', binary, {
+          filename: 'private.png',
+          contentType: 'image/png',
+        });
+
+      expect(res.status).toBe(200);
+      expect(await SkillFile.countDocuments()).toBe(1);
+    });
+
+    it('blocks an opaque skill file before storage when configured fail-closed', async () => {
+      const created = await createSkillAsOwner();
+      mockFilters = {
+        files: {
+          pii: {
+            fields: ['content'],
+            uninspectable: 'block',
+          },
+        },
+      };
+      const binary = Buffer.from([0, 255, 0, 137, 80, 78, 71]);
+
+      const res = await request(app)
+        .post(`/api/skills/${created.body._id}/files`)
+        .field('relativePath', 'assets/private.png')
+        .attach('file', binary, {
+          filename: 'private.png',
+          contentType: 'image/png',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({
+        error: 'content_filter_uninspectable',
+        message: 'Submitted file content could not be inspected before processing.',
+        source: 'file',
+        field: 'content',
+      });
+      expect(await SkillFile.countDocuments()).toBe(0);
+    });
+
+    it('blocks opaque uploads when the skill file_text policy is enabled', async () => {
+      const created = await createSkillAsOwner();
+      mockFilters = {
+        skills: {
+          pii: {
+            fields: ['file_text'],
+            starterPatterns: ['sk_prefix'],
+          },
+        },
+        files: {
+          pii: {
+            fields: ['content'],
+            uninspectable: 'allow',
+          },
+        },
+      };
+      const binary = Buffer.from([0, 255, 0, 137, 80, 78, 71]);
+
+      const res = await request(app)
+        .post(`/api/skills/${created.body._id}/files`)
+        .field('relativePath', 'assets/private.png')
+        .attach('file', binary, {
+          filename: 'private.png',
+          contentType: 'image/png',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_uninspectable',
+          source: 'file',
+          field: 'content',
+        }),
+      );
+      expect(await SkillFile.countDocuments()).toBe(0);
     });
   });
 
