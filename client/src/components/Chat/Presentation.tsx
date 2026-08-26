@@ -10,6 +10,7 @@ import { useDeleteFilesMutation } from '~/data-provider';
 import { SidePanelGroup } from '~/components/SidePanel';
 import { activeSubagentPanel } from '~/store/subagents';
 import { useSetFilesToDelete } from '~/hooks';
+import { failedFileIdsFrom } from '~/utils';
 import store from '~/store';
 
 const Artifacts = lazy(() => import('~/components/Artifacts/Artifacts'));
@@ -45,9 +46,29 @@ export default function Presentation({ children }: { children: React.ReactNode }
   const setFilesToDelete = useSetFilesToDelete();
 
   const { mutateAsync } = useDeleteFilesMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
       console.log('Temporary Files deleted');
-      setFilesToDelete({});
+      const failed = new Set(failedFileIdsFrom(result));
+      if (failed.size === 0) {
+        setFilesToDelete({});
+        return;
+      }
+      try {
+        const filesToDelete = localStorage.getItem(LocalStorageKeys.FILES_TO_DELETE);
+        const map = JSON.parse(filesToDelete ?? '{}') as Record<string, ExtendedFile>;
+        const remaining: Record<string, ExtendedFile> = {};
+        for (const [key, file] of Object.entries(map)) {
+          if (
+            (file.file_id != null && failed.has(file.file_id)) ||
+            (file.temp_file_id != null && failed.has(file.temp_file_id))
+          ) {
+            remaining[key] = file;
+          }
+        }
+        setFilesToDelete(remaining);
+      } catch {
+        // Keep existing records if reading or parsing fails.
+      }
     },
     onError: (error) => {
       console.log('Error deleting temporary files:', error);

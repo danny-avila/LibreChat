@@ -15,7 +15,12 @@ import {
   getComposerDraftId,
   setPendingTextAttachmentDraft,
   removePendingTextAttachmentDraft,
+  resolvePendingPasteInsertStart,
+  addPastedTextDraftFile,
+  isFilesDraftOwnedByThisTab,
+  getFilesDraft,
   setDraft,
+  markPastedTextFile,
   getEntityName,
   getEntity,
   checkIfScrollable,
@@ -400,7 +405,13 @@ export default function useTextarea({
       }
       const composerValue = textArea.value;
       const pendingFileId = v4();
-      if (saveDrafts) {
+      markPastedTextFile(pendingFileId);
+      /** Another open tab can hold this shared key against files it still has attached, and
+       * `setFilesDraft` keeps that owner rather than rejecting the write: recording this paste
+       * there would hand it to a composer that never made it, which could then restore the
+       * upload and delete it through New Chat while this tab still shows the chip. */
+      if (saveDrafts && isFilesDraftOwnedByThisTab(getFilesDraft(draftId))) {
+        addPastedTextDraftFile({ id: draftId, fileId: pendingFileId });
         try {
           setDraft({ id: draftId, value: composerValue, persistExact: true });
           setPendingTextAttachmentDraft({
@@ -418,8 +429,8 @@ export default function useTextarea({
           // Persistence must not prevent the generated attachment from uploading.
         }
       }
-      const restorePaste = (target: HTMLTextAreaElement) => {
-        target.setSelectionRange(selectionStart, selectionStart);
+      const restorePaste = (target: HTMLTextAreaElement, insertStart: number) => {
+        target.setSelectionRange(insertStart, insertStart);
         insertTextAtCursor(target, pastedText);
         forceResize(target);
       };
@@ -427,18 +438,43 @@ export default function useTextarea({
       const isOriginatingComposer = (): boolean =>
         conversationIdRef.current === conversationId &&
         getNewConversationDraftToken(index) === draftToken;
-      const restorePasteAfterUploadFailure = (): boolean => {
-        const currentTextArea = textAreaRef.current;
-        if (
-          !currentTextArea ||
-          answerModeActiveRef.current ||
-          !isOriginatingComposer() ||
-          currentTextArea.value !== composerValue
-        ) {
+      /** Whether a durable copy of this paste exists. When one does, a composer the user has
+       * since typed into is deliberately left alone: the record recovers at an anchored offset on
+       * the next restore, and inserting here as well would fight that. */
+      const hasPersistedPasteRecovery = (fileId: string): boolean => {
+        if (!saveDrafts) {
           return false;
         }
-
-        restorePaste(currentTextArea);
+        const { pendingPastes } = getFilesDraft(draftId);
+        return pendingPastes[fileId] != null || pendingPastes[pendingFileId] != null;
+      };
+      const restorePasteAfterUploadFailure = (fileId: string): boolean => {
+        const currentTextArea = textAreaRef.current;
+        if (!currentTextArea || answerModeActiveRef.current || !isOriginatingComposer()) {
+          return false;
+        }
+        const composerUnchanged = currentTextArea.value === composerValue;
+        if (!composerUnchanged && hasPersistedPasteRecovery(fileId)) {
+          return false;
+        }
+        /** Nothing durable to fall back on: the shared draft key belongs to another tab, or drafts
+         * are off, so this callback holds the only copy of the paste left. Dropping it because the
+         * composer moved on would lose it outright, so it goes back in at the offset its anchors
+         * resolve to, which is where a restore from a record would have put it. */
+        restorePaste(
+          currentTextArea,
+          composerUnchanged
+            ? selectionStart
+            : resolvePendingPasteInsertStart(currentTextArea.value, {
+                text: pastedText,
+                selectionStart,
+                selectionEnd,
+                replacedText,
+                replacedApplied: true,
+                anchorBefore: composerValue.slice(0, selectionStart),
+                anchorAfter: composerValue.slice(selectionStart),
+              }),
+        );
         if (saveDrafts) {
           setDraft({
             id: getComposerDraftId(index, conversationIdRef.current, isSubmittingRef.current),
@@ -465,10 +501,16 @@ export default function useTextarea({
         fileId: pendingFileId,
         shouldCommit: isOriginatingComposer,
         onStart: (fileId) => {
-          if (!saveDrafts || fileId === pendingFileId) {
+          markPastedTextFile(fileId);
+          if (
+            !saveDrafts ||
+            fileId === pendingFileId ||
+            !isFilesDraftOwnedByThisTab(getFilesDraft(draftId))
+          ) {
             return;
           }
           try {
+            addPastedTextDraftFile({ id: draftId, fileId });
             removePendingTextAttachmentDraft({
               id: draftId,
               fileId: pendingFileId,
@@ -493,7 +535,7 @@ export default function useTextarea({
           clearPendingPasteDraft(fileId);
         },
         onError: (fileId) => {
-          const restored = restorePasteAfterUploadFailure();
+          const restored = restorePasteAfterUploadFailure(fileId);
           if (restored || getNewConversationDraftToken(index) !== draftToken) {
             clearPendingPasteDraft(fileId, true);
           }
@@ -507,7 +549,7 @@ export default function useTextarea({
           /** The name is either attached now or was never taken, so stop reserving it. */
           reservedPasteFilenames.current.delete(pastedFilename);
           if (!accepted) {
-            const restored = restorePasteAfterUploadFailure();
+            const restored = restorePasteAfterUploadFailure(pendingFileId);
             if (restored || getNewConversationDraftToken(index) !== draftToken) {
               clearPendingPasteDraft(pendingFileId, true);
             }
