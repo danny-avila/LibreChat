@@ -172,6 +172,13 @@ const markdownCSS = `
   box-sizing: content-box;
 }
 
+/* Rendered in place of the document when the marked CDN does not load. Its own
+   rule rather than an inline style so a contrast mode can reach it. */
+.markdown-error {
+  color: #e53e3e;
+  padding: 1rem;
+}
+
 /* Dark theme */
 @media (prefers-color-scheme: dark) {
   .markdown-body {
@@ -283,6 +290,9 @@ function contrastMarkdownCSS(isDarkMode: boolean): string {
   const link = hex('rgb-link', isDarkMode ? '#8cc8ff' : '#0000cc');
   const border = hex('rgb-border-medium', ink);
   const codeFill = hex('rgb-surface-secondary', canvas);
+  /** The renderer-failure notice is the one message this document paints itself,
+   *  and it has to survive a CDN outage inside a contrast mode. */
+  const destructive = hex('rgb-text-destructive', isDarkMode ? '#ff8f8f' : '#a10000');
 
   return `
 .markdown-body { color: ${ink}; background-color: ${canvas}; }
@@ -297,6 +307,7 @@ body { background-color: ${canvas}; }
 .markdown-body pre { border: 1px solid ${border}; }
 ::-webkit-scrollbar-thumb { background-color: ${ink}; }
 * { scrollbar-color: ${ink} ${canvas}; }
+.markdown-error { color: ${destructive}; }
 `;
 }
 
@@ -318,7 +329,7 @@ function generateMarkdownHtml(content: string, contrastCSS = ''): string {
 <script>
 if (typeof marked === 'undefined') {
   document.getElementById('content').innerHTML =
-    '<p style="color:#e53e3e;padding:1rem">Markdown renderer failed to load. Check network connectivity.</p>';
+    '<p class="markdown-error">Markdown renderer failed to load. Check network connectivity.</p>';
 } else {
 ${EMBEDDED_IS_SAFE_URL}
 marked.use({

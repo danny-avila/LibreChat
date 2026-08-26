@@ -190,6 +190,22 @@ describe('markdown artifacts', () => {
       expect(unanswered).toEqual([]);
     });
 
+    /** A CDN outage inside a contrast mode is exactly when the message matters,
+     *  and an inline style would be the one colour the override cannot reach. */
+    it('themes the renderer failure message', () => {
+      const standard = getMarkdownFiles('# Test')['index.html'];
+      expect(standard).toContain('class="markdown-error"');
+      expect(standard).not.toMatch(/style="color:/);
+      expect(standard).toContain('color: #e53e3e');
+
+      expect(getMarkdownFiles('# Test', true, true)['index.html']).toContain(
+        '.markdown-error { color: #ff8f8f; }',
+      );
+      expect(getMarkdownFiles('# Test', false, true)['index.html']).toContain(
+        '.markdown-error { color: #a10000; }',
+      );
+    });
+
     describe('content escaping', () => {
       it('should escape backticks in markdown content', () => {
         const markdown = 'Here is some `inline code`';
@@ -324,7 +340,7 @@ describe('markdown artifacts', () => {
 
       expect(html).toContain("typeof marked === 'undefined'");
       expect(html).toContain('failed to load');
-      expect(html).toContain('style="color:#e53e3e;padding:1rem"');
+      expect(html).toContain('class="markdown-error"');
     });
 
     it('should strip raw HTML blocks via renderer override', () => {
