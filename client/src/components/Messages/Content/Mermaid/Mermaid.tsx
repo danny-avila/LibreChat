@@ -318,7 +318,7 @@ export const MermaidRenderer = memo(function MermaidRenderer({
               ref={containerRef}
               hidden={showCode}
               className={cn(
-                'relative overflow-hidden rounded-md p-4 transition-colors duration-200',
+                'mermaid-viewport relative overflow-hidden rounded-md p-4 transition-colors duration-200',
                 fillContainer && 'h-full rounded-lg',
                 'bg-surface-primary-alt',
                 isPanning ? 'cursor-grabbing' : 'cursor-grab',
@@ -331,7 +331,7 @@ export const MermaidRenderer = memo(function MermaidRenderer({
                 <Spinner className="h-3 w-3" />
               </div>
               <div
-                className="absolute inset-0 flex items-center justify-center"
+                className="mermaid-pan-zoom absolute inset-0 flex items-center justify-center"
                 style={{
                   transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                   transition: isPanning ? 'none' : 'transform 0.1s ease-out',
@@ -491,7 +491,7 @@ export const MermaidRenderer = memo(function MermaidRenderer({
           ref={containerRef}
           hidden={showCode}
           className={cn(
-            'relative overflow-hidden p-4 transition-colors duration-200',
+            'mermaid-viewport relative overflow-hidden p-4 transition-colors duration-200',
             fillContainer && 'h-full rounded-lg',
             'bg-surface-primary-alt',
             isPanning ? 'cursor-grabbing' : 'cursor-grab',
@@ -501,7 +501,7 @@ export const MermaidRenderer = memo(function MermaidRenderer({
           onMouseDown={handleMouseDown}
         >
           <div
-            className="absolute inset-0 flex items-center justify-center"
+            className="mermaid-pan-zoom absolute inset-0 flex items-center justify-center"
             style={{
               transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
               transition: isPanning ? 'none' : 'transform 0.1s ease-out',

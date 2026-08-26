@@ -6,7 +6,7 @@ import * as RadixToast from '@radix-ui/react-toast';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
 import { Toast, ThemeProvider, ToastProvider, useInputModality } from '@librechat/client';
-import { ScreenshotProvider, useApiErrorBoundary, completeProgressiveRowMounts } from './hooks';
+import { ScreenshotProvider, useApiErrorBoundary, flushProgressiveRowMounts } from './hooks';
 import WakeLockManager from '~/components/System/WakeLockManager';
 import QueryDevtoolsGate from '~/components/QueryDevtoolsGate';
 import LanguageSync from '~/components/System/LanguageSync';
@@ -45,9 +45,12 @@ const App = () => {
 
   useEffect(() => {
     /** Force any windowed-out message rows to mount before the browser's
-     *  print pipeline reads the DOM, so long threads never print truncated. */
+     *  print pipeline reads the DOM, so long threads never print truncated.
+     *  Synchronous: `beforeprint` is dispatched synchronously and the
+     *  browser never waits on a handler's return value, so an async
+     *  completion (as screenshot export uses) would run too late. */
     const handleBeforePrint = () => {
-      completeProgressiveRowMounts();
+      flushProgressiveRowMounts();
     };
     window.addEventListener('beforeprint', handleBeforePrint);
     return () => window.removeEventListener('beforeprint', handleBeforePrint);

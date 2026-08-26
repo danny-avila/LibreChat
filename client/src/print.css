@@ -7,7 +7,16 @@
  * (client/src/components/Chat/Messages/MessagesView.tsx); reused here
  */
 @media print {
-  body * {
+  /*
+   * `:has()` gates this rule to routes that actually render the print
+   * target. Without it, a route lacking `[data-testid='screenshot-target']`
+   * (e.g. the read-only Share view, which uses `data-testid="messages-view"`
+   * instead) would hide the whole page here with nothing left to reveal,
+   * printing blank. Wrapped in `:where()` so the gate adds no specificity —
+   * otherwise this rule would outrank (and defeat) the plain attribute
+   * selector below that un-hides the target itself.
+   */
+  :where(body:has([data-testid='screenshot-target'])) * {
     visibility: hidden;
   }
 
@@ -25,11 +34,19 @@
    * media so the transcript can paginate naturally; this is safe globally
    * because every other such container in the app (menus, dialogs, other
    * scroll regions) is already invisible from the rule above.
+   *
+   * `.mermaid-viewport` and everything inside it
+   * (client/src/components/Messages/Content/Mermaid/Mermaid.tsx) are
+   * excluded: the viewport's inline height and `overflow-hidden` are
+   * load-bearing, and the rendered diagram `<img>` beneath it is sized by
+   * an inline pixel height — forcing `height: auto` on either collapses
+   * the diagram to zero height, and it disappears from the printed page
+   * entirely.
    */
   html,
   body,
   #root,
-  #root * {
+  #root *:not(.mermaid-viewport, .mermaid-viewport *) {
     overflow: visible !important;
     height: auto !important;
     max-height: none !important;
@@ -65,12 +82,14 @@
   }
 
   /*
-   * Transforms are reset for print so no ancestor's `transform` creates a
-   * containing block that could re-introduce clipping, and so a
-   * panned/zoomed Mermaid diagram falls back to its default view, which is
-   * what we want on paper.
+   * Resets a panned/zoomed Mermaid diagram to its default view for print.
+   * Scoped to the pan/zoom wrapper itself (`.mermaid-pan-zoom`, applied in
+   * client/src/components/Messages/Content/Mermaid/Mermaid.tsx) rather than
+   * every element, so it can't also strip `transform` off unrelated inline
+   * SVG content elsewhere in a message (e.g. KaTeX renders some glyphs as
+   * SVG with internally `transform`-positioned paths).
    */
-  * {
+  .mermaid-pan-zoom {
     transform: none !important;
   }
 

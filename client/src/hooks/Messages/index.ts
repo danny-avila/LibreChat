@@ -17,6 +17,7 @@ export {
   useRowMountWindow,
   useProgressiveRowMount,
   completeProgressiveRowMounts,
+  flushProgressiveRowMounts,
 } from './useProgressiveRowMount';
 export type { RowMountWindow } from './useProgressiveRowMount';
 export { default as useMessageActions } from './useMessageActions';
