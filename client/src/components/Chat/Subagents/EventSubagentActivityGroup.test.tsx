@@ -118,6 +118,21 @@ describe('EventSubagentActivityGroup', () => {
     );
   });
 
+  it('themes the group root so raw child-row buttons never inherit the unthemed body color', () => {
+    render(
+      <RecoilRoot>
+        <EventSubagentActivityGroup
+          conversationId="parent-conversation"
+          parentMessageIds={['parent-message']}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('region', { name: 'com_ui_subagent_activity' })).toHaveClass(
+      'text-text-primary',
+    );
+  });
+
   it('matches the width of a parallel assistant response', () => {
     render(
       <RecoilRoot>

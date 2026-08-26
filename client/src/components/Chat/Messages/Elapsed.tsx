@@ -59,8 +59,13 @@ const Elapsed = memo(function Elapsed({ index }: { index: number }) {
   }, [start]);
 
   const labels = getElapsedDurationLabels(seconds * 1000, i18n.language);
+  /** `ps-1.5` puts the reading on the column everything else in this slot
+   *  shares: the streaming dot pads the same 6px to center on the size-6
+   *  header icon's axis (see `EmptyTextPart`), and the hover-button glyphs
+   *  that replace the timer sit behind the same `p-1.5`. Inline-start, so
+   *  the alignment holds in RTL. */
   return (
-    <span className="flex items-center text-text-secondary">
+    <span className="flex items-center ps-1.5 text-text-secondary">
       <span aria-hidden="true" className="tabular-nums" data-testid="stream-elapsed">
         {localize(labels.key, labels.values)}
       </span>

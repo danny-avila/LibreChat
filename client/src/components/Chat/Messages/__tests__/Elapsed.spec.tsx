@@ -34,6 +34,9 @@ describe('Elapsed', () => {
     expect(screen.getByTestId('stream-elapsed')).toHaveTextContent(/^5s$/);
     expect(screen.getByTestId('stream-elapsed')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.getByText('5 seconds elapsed')).toHaveClass('sr-only');
+    /** The 6px inline-start inset that lines the reading up with the
+     *  streaming dot and the hover-button glyphs that replace it. */
+    expect(screen.getByTestId('stream-elapsed').parentElement).toHaveClass('ps-1.5');
 
     advance(54_000);
     expect(screen.getByTestId('stream-elapsed')).toHaveTextContent(/^59s$/);

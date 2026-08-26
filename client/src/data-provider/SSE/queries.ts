@@ -17,6 +17,9 @@ export interface StreamStatusResponse {
   status?: 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
   aggregatedContent?: Array<{ type: string; text?: string }>;
   createdAt?: number;
+  /** Generation age computed on the server's clock, so a reattaching client
+   *  can rebuild a clock-local elapsed baseline free of cross-machine skew. */
+  elapsedMs?: number;
   resumeState?: Agents.ResumeState;
   /** Live pending approval when `status === 'requires_action'`; mirrors
    *  `resumeState.pendingAction`, surfaced top-level for the resume-on-load path. */
