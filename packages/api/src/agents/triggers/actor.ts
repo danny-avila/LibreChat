@@ -146,6 +146,16 @@ export async function executeAgentEventActor<T>(
           throw new Error('Event actor invocation already has a terminal receipt');
         }
       }
+      if (
+        snapshot.reconciliations.some(
+          (item) => item.invocationId === input.invocationId && item.status === 'settled',
+        )
+      ) {
+        /** Mixed-version proof must be migrated by the terminal handler before
+         * the same delivery identity can execute again. Delivery admission
+         * alone cannot distinguish that proof from a pre-invoke orphan. */
+        throw new Error('Event actor invocation has legacy terminal proof awaiting migration');
+      }
       let recoveredInvocationId: string | undefined;
       const pendingInvocation = snapshot.reconciliations.find(
         (item) => item.invocationId === input.invocationId && item.status === 'invocation_pending',
@@ -303,6 +313,40 @@ export async function executeAgentEventActor<T>(
           });
           if (!abandoned) {
             throw new Error('Event actor duplicate lifecycle fence could not be abandoned');
+          }
+          /** If the prior recovery crashed after abandoning its marker but
+           * before releasing delivery admission, this retry has recreated and
+           * now removed the same pre-admission fence. No confirmed lifecycle
+           * can own that admission, so releasing it is safe and retryable. */
+          if (deps.hasActionAdmission != null && deps.releaseAction != null) {
+            const orphanedAdmission = await deps.hasActionAdmission({
+              deliveryKey: input.invocationId,
+              user: input.user,
+              ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+              bindingId: input.bindingId,
+              conversationId: input.conversationId,
+            });
+            if (orphanedAdmission) {
+              const released = await deps.releaseAction({
+                deliveryKey: input.invocationId,
+                user: input.user,
+                ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+                bindingId: input.bindingId,
+                conversationId: input.conversationId,
+              });
+              if (
+                !released &&
+                (await deps.hasActionAdmission({
+                  deliveryKey: input.invocationId,
+                  user: input.user,
+                  ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+                  bindingId: input.bindingId,
+                  conversationId: input.conversationId,
+                }))
+              ) {
+                throw new Error('Event actor orphaned action admission could not be released');
+              }
+            }
           }
           throw new Error('Event actor action admission was already consumed or settled');
         }

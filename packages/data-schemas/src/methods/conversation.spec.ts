@@ -4634,6 +4634,82 @@ describe('Conversation Operations', () => {
       ).resolves.toBe(true);
     });
 
+    it('does not confirm a stale marker after a checkpoint-distinct successor wins', async () => {
+      const conversationId = uuidv4();
+      const invocationId = 'event-stale-confirmation';
+      const original = {
+        invocationId,
+        status: 'invocation_pending' as const,
+        checkpoint: {
+          threadId: conversationId,
+          checkpointId: 'checkpoint-original',
+          checkpointNs: 'event-actor/original',
+        },
+        action: { toolName: 'submit_move', toolCallId: 'call-original' },
+        observedAt: new Date(),
+      };
+      const successor = {
+        ...original,
+        checkpoint: {
+          threadId: conversationId,
+          checkpointId: 'checkpoint-successor',
+          checkpointNs: 'event-actor/successor',
+        },
+        action: { toolName: 'submit_move', toolCallId: 'call-successor' },
+      };
+      await Conversation.create({
+        conversationId,
+        user: 'actor-stale-confirmation-user',
+        endpoint: EModelEndpoint.agents,
+        agentEventBinding: {
+          bindingId: `evtbind_${'b'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+        agentEventActorReconciliations: [successor],
+      });
+      const staleRead = jest.spyOn(Conversation, 'findOne').mockImplementationOnce(
+        () =>
+          ({
+            select: () => ({
+              lean: () => Promise.resolve({ agentEventActorReconciliations: [original] }),
+            }),
+          }) as never,
+      );
+
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          user: 'actor-stale-confirmation-user',
+          conversationId,
+          reconciliation: { ...original, actionAdmitted: true },
+        }),
+      ).resolves.toBe(false);
+      staleRead.mockRestore();
+      await expect(
+        methods.getAgentEventActorSnapshot({
+          user: 'actor-stale-confirmation-user',
+          conversationId,
+        }),
+      ).resolves.toMatchObject({
+        reconciliations: [
+          expect.objectContaining({
+            checkpoint: expect.objectContaining({ checkpointId: 'checkpoint-successor' }),
+            action: expect.objectContaining({ toolCallId: 'call-successor' }),
+          }),
+        ],
+      });
+    });
+
     it('clears an exact reconciled invocation without retaining a conversation receipt', async () => {
       const conversationId = uuidv4();
       const observedAt = new Date('2026-08-26T12:00:00.000Z');
@@ -4879,10 +4955,11 @@ describe('Conversation Operations', () => {
 
     it('retains an expired legacy receipt while its delivery handling is nonterminal', async () => {
       const conversationId = uuidv4();
+      const userId = new mongoose.Types.ObjectId();
       const now = new Date();
       await Conversation.create({
         conversationId,
-        user: 'actor-protected-expiry-user',
+        user: userId.toString(),
         endpoint: EModelEndpoint.agents,
         agentEventActorReconciliations: [
           {
@@ -4906,7 +4983,7 @@ describe('Conversation Operations', () => {
         orderingKey: 'protected-old-lane',
         laneSequence: 1,
         envelope: {},
-        user: new mongoose.Types.ObjectId(),
+        user: userId,
         status: 'succeeded',
         attempts: 1,
         availableAt: now,
@@ -4933,7 +5010,71 @@ describe('Conversation Operations', () => {
         { deliveryKey: 'protected-old' },
         { $set: { 'handling.status': 'applied', 'handling.settledAt': now } },
       );
+      const updatedAtBeforeExpiry = (
+        await Conversation.findOne({ conversationId }).select('updatedAt').lean()
+      )?.updatedAt;
       await expect(methods.expireLegacyAgentEventActorReceipts(now)).resolves.toBe(1);
+      await expect(
+        Conversation.findOne({ conversationId }).select('updatedAt').lean(),
+      ).resolves.toMatchObject({ updatedAt: updatedAtBeforeExpiry });
+    });
+
+    it('advances past protected legacy receipts within the bounded cleanup page', async () => {
+      const protectedConversationId = uuidv4();
+      const removableConversationId = uuidv4();
+      const userId = new mongoose.Types.ObjectId();
+      const now = new Date();
+      const oldReceipt = (invocationId: string, threadId: string) => ({
+        invocationId,
+        status: 'settled' as const,
+        resolution: 'action_compensated' as const,
+        checkpoint: { threadId, checkpointNs: `event-actor/${invocationId}` },
+        action: { toolName: 'submit_move' },
+        observedAt: new Date(now.getTime() - 91 * 24 * 60 * 60_000),
+      });
+      await Conversation.create([
+        {
+          conversationId: protectedConversationId,
+          user: userId.toString(),
+          endpoint: EModelEndpoint.agents,
+          agentEventActorReconciliations: [oldReceipt('protected-first', protectedConversationId)],
+        },
+        {
+          conversationId: removableConversationId,
+          user: userId.toString(),
+          endpoint: EModelEndpoint.agents,
+          agentEventActorReconciliations: [oldReceipt('removable-second', removableConversationId)],
+        },
+      ]);
+      const Delivery = mongoose.models.AgentTriggerDelivery;
+      await Delivery.create({
+        deliveryKey: 'protected-first',
+        fingerprint: 'protected-first-fingerprint',
+        orderingKey: 'protected-first-lane',
+        laneSequence: 1,
+        envelope: {},
+        user: userId,
+        status: 'succeeded',
+        attempts: 1,
+        availableAt: now,
+        awaitTerminalHandling: true,
+      });
+
+      await expect(methods.expireLegacyAgentEventActorReceipts(now, 1)).resolves.toBe(1);
+      await expect(
+        Conversation.findOne({ conversationId: protectedConversationId })
+          .select('+agentEventActorReconciliations')
+          .lean(),
+      ).resolves.toMatchObject({
+        agentEventActorReconciliations: [
+          expect.objectContaining({ invocationId: 'protected-first' }),
+        ],
+      });
+      await expect(
+        Conversation.findOne({ conversationId: removableConversationId })
+          .select('+agentEventActorReconciliations')
+          .lean(),
+      ).resolves.toMatchObject({ agentEventActorReconciliations: [] });
     });
 
     it('clears a compensated headless lifecycle without creating a partial actor head', async () => {

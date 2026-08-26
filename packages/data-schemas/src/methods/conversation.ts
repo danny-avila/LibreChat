@@ -760,7 +760,18 @@ export function createConversationMethods(
             $elemMatch: {
               invocationId: input.reconciliation.invocationId,
               status: current!.status,
-              ...(confirmsActionAdmission && { actionAdmitted: { $ne: true } }),
+              ...(confirmsActionAdmission && {
+                actionAdmitted: { $ne: true },
+                'checkpoint.threadId': current.checkpoint.threadId,
+                'checkpoint.checkpointNs': current.checkpoint.checkpointNs,
+                ...(current.checkpoint.checkpointId == null
+                  ? { 'checkpoint.checkpointId': { $exists: false } }
+                  : { 'checkpoint.checkpointId': current.checkpoint.checkpointId }),
+                'action.toolName': current.action.toolName,
+                ...(current.action.toolCallId == null
+                  ? { 'action.toolCallId': { $exists: false } }
+                  : { 'action.toolCallId': current.action.toolCallId }),
+              }),
             },
           },
         },
@@ -1111,75 +1122,98 @@ export function createConversationMethods(
     const boundedLimit = Math.max(1, Math.min(Math.trunc(limit), 1_000));
     const cutoff = new Date(now.getTime() - AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS);
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
-    const candidates = await Conversation.find({
-      agentEventActorReconciliations: {
-        $elemMatch: { status: 'settled', observedAt: { $lte: cutoff } },
-      },
-    })
-      .select('_id +agentEventActorReconciliations')
-      .limit(boundedLimit)
-      .lean<
-        Array<Pick<IConversation, 'agentEventActorReconciliations'> & { _id: Types.ObjectId }>
-      >();
-    if (candidates.length === 0) {
-      return 0;
-    }
-    /** A mixed-version owner may have committed this conversation receipt but
-     * crashed before terminalizing the delivery. That embedded proof must not
-     * expire while the corresponding transport row can still block its lane. */
-    const expiredInvocationIds = [
-      ...new Set(
-        candidates.flatMap((candidate) =>
-          (candidate.agentEventActorReconciliations ?? [])
-            .filter((receipt) => receipt.status === 'settled' && receipt.observedAt <= cutoff)
-            .map((receipt) => receipt.invocationId),
-        ),
-      ),
-    ];
     const Delivery = mongoose.models.AgentTriggerDelivery as
       | Model<IAgentTriggerDeliveryDocument>
       | undefined;
     if (Delivery == null) {
       return 0;
     }
-    const protectedInvocationIds = new Set(
-      await Delivery.find({
-        deliveryKey: { $in: expiredInvocationIds },
-        $or: [{ handling: { $exists: false } }, { 'handling.status': 'started' }],
-      }).distinct<string>('deliveryKey'),
-    );
-    const operations = candidates.flatMap((candidate) => {
-      const removable = (candidate.agentEventActorReconciliations ?? [])
-        .filter(
-          (receipt) =>
-            receipt.status === 'settled' &&
-            receipt.observedAt <= cutoff &&
-            !protectedInvocationIds.has(receipt.invocationId),
-        )
-        .map((receipt) => receipt.invocationId);
-      return removable.length === 0
-        ? []
-        : [
+    const pluralize = mongoose.pluralize();
+    const deliveryCollectionName =
+      typeof pluralize === 'function' ? pluralize(Delivery.modelName) : Delivery.modelName;
+    /** Join before applying the bound so protected rows cannot monopolize every
+     * maintenance page. A mixed-version owner may have committed conversation
+     * proof but crashed before terminalizing delivery; that proof remains until
+     * the corresponding delivery leaves absent/started handling. */
+    const candidates = await Conversation.aggregate<{
+      _id: Types.ObjectId;
+      invocationIds: string[];
+    }>([
+      {
+        $match: {
+          agentEventActorReconciliations: {
+            $elemMatch: { status: 'settled', observedAt: { $lte: cutoff } },
+          },
+        },
+      },
+      { $unwind: '$agentEventActorReconciliations' },
+      {
+        $match: {
+          'agentEventActorReconciliations.status': 'settled',
+          'agentEventActorReconciliations.observedAt': { $lte: cutoff },
+        },
+      },
+      {
+        $lookup: {
+          from: deliveryCollectionName,
+          let: {
+            deliveryKey: '$agentEventActorReconciliations.invocationId',
+            user: '$user',
+            tenantId: '$tenantId',
+          },
+          pipeline: [
             {
-              updateOne: {
-                filter: { _id: candidate._id },
-                update: {
-                  $pull: {
-                    agentEventActorReconciliations: {
-                      invocationId: { $in: removable },
-                      status: 'settled',
-                      observedAt: { $lte: cutoff },
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$deliveryKey', '$$deliveryKey'] },
+                    { $eq: [{ $toString: '$user' }, { $toString: '$$user' }] },
+                    {
+                      $eq: [{ $ifNull: ['$tenantId', null] }, { $ifNull: ['$$tenantId', null] }],
                     },
-                  },
+                  ],
+                },
+                $or: [{ handling: { $exists: false } }, { 'handling.status': 'started' }],
+              },
+            },
+            { $limit: 1 },
+          ],
+          as: 'blockingDelivery',
+        },
+      },
+      { $match: { 'blockingDelivery.0': { $exists: false } } },
+      {
+        $group: {
+          _id: '$_id',
+          invocationIds: { $addToSet: '$agentEventActorReconciliations.invocationId' },
+        },
+      },
+      { $limit: boundedLimit },
+    ]);
+    const operations = candidates.map(
+      (candidate) =>
+        ({
+          updateOne: {
+            filter: { _id: candidate._id },
+            update: {
+              $pull: {
+                agentEventActorReconciliations: {
+                  invocationId: { $in: candidate.invocationIds },
+                  status: 'settled',
+                  observedAt: { $lte: cutoff },
                 },
               },
             },
-          ];
-    }) as unknown as AnyBulkWriteOperation[];
+          },
+        }) as unknown as AnyBulkWriteOperation,
+    );
     if (operations.length === 0) {
       return 0;
     }
-    const result = await tenantSafeBulkWrite(Conversation, operations, { ordered: false });
+    const result = await tenantSafeBulkWrite(Conversation, operations, {
+      ordered: false,
+      timestamps: false,
+    });
     return result.modifiedCount;
   }
 

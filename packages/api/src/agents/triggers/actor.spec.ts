@@ -986,4 +986,90 @@ describe('event actor host adapter', () => {
     expect(dependencies.releaseAction).toHaveBeenCalledTimes(1);
     expect(invoke).not.toHaveBeenCalled();
   });
+
+  it('releases an orphaned admission after abandoning its replacement marker', async () => {
+    const invoke = jest.fn(async () => 'must not run');
+    const dependencies = {
+      ...deps(),
+      recordReconciliation: jest.fn().mockResolvedValue(true),
+      admitAction: jest.fn().mockResolvedValue(false),
+      hasActionAdmission: jest.fn().mockResolvedValue(true),
+      releaseAction: jest.fn().mockResolvedValue(true),
+      getReceipt: jest.fn().mockResolvedValue(null),
+    };
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          bindingId: 'binding-1',
+          invocationId: 'event-orphaned-admission',
+          event: { id: 'event-orphaned-admission' },
+          signal: new AbortController().signal,
+          invoke,
+          readAppliedAction: () => undefined,
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('action admission was already consumed or settled');
+
+    expect(dependencies.resolveReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invocationId: 'event-orphaned-admission',
+        expectedActionAdmitted: false,
+        resolution: 'invocation_abandoned',
+      }),
+    );
+    expect(dependencies.hasActionAdmission).toHaveBeenCalledTimes(1);
+    expect(dependencies.releaseAction).toHaveBeenCalledTimes(1);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('does not release or replay while legacy terminal proof awaits migration', async () => {
+    const invoke = jest.fn(async () => 'must not run');
+    const dependencies = {
+      ...deps(),
+      getReceipt: jest.fn().mockResolvedValue(null),
+    };
+    dependencies.getSnapshot.mockResolvedValue({
+      state: null,
+      reconciliations: [
+        {
+          invocationId: 'event-legacy-terminal',
+          status: 'settled',
+          resolution: 'checkpoint_verified',
+          checkpoint: {
+            threadId: conversationId,
+            checkpointId: 'checkpoint-terminal',
+            checkpointNs: 'event-actor/terminal',
+          },
+          action: { toolName: 'submit_move' },
+          observedAt: new Date(),
+        },
+      ],
+      legacyTurn: null,
+      epoch: 0,
+    });
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          bindingId: 'binding-1',
+          invocationId: 'event-legacy-terminal',
+          event: { id: 'event-legacy-terminal' },
+          signal: new AbortController().signal,
+          invoke,
+          readAppliedAction: () => undefined,
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('legacy terminal proof awaiting migration');
+
+    expect(dependencies.admitAction).not.toHaveBeenCalled();
+    expect(dependencies.releaseAction).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+  });
 });
