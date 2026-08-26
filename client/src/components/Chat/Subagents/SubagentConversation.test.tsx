@@ -105,7 +105,7 @@ describe('SubagentConversation', () => {
     expect(screen.getByText('Checked the constraints.')).toBeInTheDocument();
     expect(screen.getByText('search')).toBeInTheDocument();
     expect(screen.getByText('The release is ready.')).toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_thread_status_completed')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_subagent_thread_status_completed')).not.toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_thread_status_running')).toBeInTheDocument();
     expect(screen.getByTestId('thinking-cursor')).toBeInTheDocument();
     expect(container.querySelectorAll('.message-render')).toHaveLength(4);

@@ -119,7 +119,9 @@ function ChildMessage({
         )
       }
       label={label}
-      footer={<SubagentStatus activity={turn.activity} />}
+      footer={
+        turn.activity.status === 'completed' ? null : <SubagentStatus activity={turn.activity} />
+      }
       ariaLabel={label}
       headerPrefix=""
       isCreatedByUser={false}
