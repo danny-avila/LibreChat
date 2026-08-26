@@ -8,6 +8,7 @@ import {
 } from '~/components/Chat/Messages/Content/SourceLinkButtons';
 import { useLocalize } from '~/hooks';
 import { cn, FileTypeIcon, fileExtensionLabel } from '~/utils';
+import { stripDisplayExtension } from '~/utils/fileTypeIcon';
 
 interface ResultCardProps {
   hit: DocumentHit;
@@ -279,7 +280,7 @@ const ResultCard: React.FC<ResultCardProps> = ({
         {onToggleSelect && (
           <input
             type="checkbox"
-            aria-label={`${hit.file_name || hit.doc_id} 선택`}
+            aria-label={`${stripDisplayExtension(hit.file_name) || hit.doc_id} 선택`}
             checked={Boolean(isSelected)}
             onChange={onToggleSelect}
             onClick={(e) => e.stopPropagation()}
@@ -291,8 +292,13 @@ const ResultCard: React.FC<ResultCardProps> = ({
         </span>
         <FileTypeIcon name={hit.file_name} className="h-4 w-4 shrink-0" />
         <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">
-          {highlight(hit.file_name || hit.doc_id, query)}
+          {highlight(stripDisplayExtension(hit.file_name) || hit.doc_id, query)}
         </h3>
+        {hit.source_library === 'DB' && (
+          <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+            지식DB
+          </span>
+        )}
         {hit.title_match && (
           <span className="shrink-0 rounded bg-surface-secondary px-1.5 py-0.5 text-[10px] text-text-tertiary">
             파일명

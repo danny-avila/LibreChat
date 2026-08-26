@@ -12,6 +12,8 @@ export interface KeywordSearchFilters {
   extension_groups?: string[];
   workspace_class?: string;
   matter_uid?: string;
+  /** iManage 라이브러리 범위: "matter"(사건 문서, M) | "knowledge"(지식 DB). 생략 시 전체. */
+  library?: 'matter' | 'knowledge';
 }
 
 export interface KeywordSearchRequest {
@@ -48,6 +50,8 @@ export interface DocumentHit {
   practice_area_primary: string | null;
   score: number;
   chunk_count: number;
+  /** "M"(사건 문서) | "DB"(지식 DB) — 하이라이트 배지용 */
+  source_library?: string | null;
   title_match?: boolean;
   source_url?: string | null;
   imanage_preview_url?: string | null;

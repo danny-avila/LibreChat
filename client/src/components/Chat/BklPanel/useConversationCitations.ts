@@ -4,6 +4,7 @@ import type { TMessage } from 'librechat-data-provider';
 import { useGetMessagesByConvoId } from '~/data-provider/Messages';
 import { useConversationSources } from '~/data-provider/Sources';
 import { BKL_SOURCES_EVENT } from '~/utils/bklSourcesEvent';
+import { stripDisplayExtension } from '~/utils/fileTypeIcon';
 import type { BklSource } from '~/components/Chat/Messages/Content/ChunkModal';
 
 /**
@@ -67,7 +68,8 @@ export function extractFileName(source: BklSource): string {
   const meta = source.metadata?.[0];
   const raw = String(meta?.name ?? meta?.file_name ?? '출처 문서').normalize('NFC');
   const m = raw.match(/^『(.+?)』/);
-  return m ? m[1] : raw;
+  // OCR 파생 `.md` 는 표시에서 제거 (계약서.pdf.md → 계약서.pdf)
+  return stripDisplayExtension(m ? m[1] : raw);
 }
 
 function sourceImanageUrl(source: BklSource): string | null {

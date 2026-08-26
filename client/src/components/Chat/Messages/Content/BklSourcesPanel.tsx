@@ -4,6 +4,7 @@ import { ChevronLeft, FolderPlus, X } from 'lucide-react';
 import { Button } from '@librechat/client';
 import store from '~/store';
 import { cn, FileTypeIcon } from '~/utils';
+import { stripDisplayExtension } from '~/utils/fileTypeIcon';
 import AddToProjectPopover from '~/components/Projects/AddToProjectPopover';
 import { SourceExternalLink, SourceDisabledLink, SourcePopupLink } from './SourceLinkButtons';
 import MarkdownLite from './MarkdownLite';
@@ -57,7 +58,8 @@ function readSources(messageId: string): BklSource[] | null {
 
 function extractFileName(metaName: string): string {
   const m = metaName.normalize('NFC').match(/^『(.+?)』/);
-  return m ? m[1] : metaName.normalize('NFC');
+  // OCR 파생 `.md` 는 표시에서 제거 (계약서.pdf.md → 계약서.pdf)
+  return stripDisplayExtension(m ? m[1] : metaName.normalize('NFC'));
 }
 
 function sourceDocId(source: BklSource | null): string | null {
@@ -164,7 +166,9 @@ function getSectionBadge(
     const fallback = badgeFromChunkMarker(documentText);
     const idx = meta.attachment_idx as number | undefined;
     const total = meta.attachment_total as number | undefined;
-    const filename = (meta.attachment_filename as string | undefined) ?? fallback?.filename ?? '';
+    const filename = stripDisplayExtension(
+      (meta.attachment_filename as string | undefined) ?? fallback?.filename ?? '',
+    );
     const counter = idx && total ? `첨부 ${idx}/${total}` : (fallback?.label ?? '첨부');
     return { kind: 'attachment', label: counter, filename };
   }

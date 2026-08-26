@@ -26,6 +26,8 @@ function AccountSettings() {
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
   const [isFilesOpen, setIsFilesOpen] = useState(false);
+  // BKL 커스텀 (2026-08-26): "내 파일" 비활성화 — 코드는 유지, 노출만 차단.
+  const showMyFiles = false;
   // BKL: 설정 메뉴가 제거된 포크라 채팅 화면에서 테마를 바꿀 곳이 없었다.
   // 로그인 화면과 같은 라이트↔다크 토글을 마이메뉴에 노출한다.
   const { theme, setTheme } = useContext(ThemeContext);
@@ -71,15 +73,18 @@ function AccountSettings() {
             <DropdownMenuSeparator />
           </>
         )}
-        {/* BKL: 내 파일(업로드 파일 라이브러리) / 보관된 채팅 / 로그아웃 노출. 도움말 / 설정은 제거. */}
-        <Menu.MenuItem
-          onClick={() => setIsFilesOpen(true)}
-          className="select-item text-sm"
-          aria-label={localize('com_nav_my_files')}
-        >
-          <FileText className="icon-md" aria-hidden="true" />
-          {localize('com_nav_my_files')}
-        </Menu.MenuItem>
+        {/* BKL: 보관된 채팅 / 로그아웃 노출. 도움말 / 설정은 제거.
+            내 파일은 2026-08-26 비활성화 (showMyFiles) — 코드는 유지. */}
+        {showMyFiles && (
+          <Menu.MenuItem
+            onClick={() => setIsFilesOpen(true)}
+            className="select-item text-sm"
+            aria-label={localize('com_nav_my_files')}
+          >
+            <FileText className="icon-md" aria-hidden="true" />
+            {localize('com_nav_my_files')}
+          </Menu.MenuItem>
+        )}
         <Menu.MenuItem
           onClick={() => setIsArchiveOpen(true)}
           className="select-item text-sm"
@@ -115,7 +120,9 @@ function AccountSettings() {
           main={<ArchivedChatsTable onOpenChange={setIsArchiveOpen} />}
         />
       </OGDialog>
-      {isFilesOpen && <MyFilesModal open={isFilesOpen} onOpenChange={setIsFilesOpen} />}
+      {showMyFiles && isFilesOpen && (
+        <MyFilesModal open={isFilesOpen} onOpenChange={setIsFilesOpen} />
+      )}
     </Menu.MenuProvider>
   );
 }

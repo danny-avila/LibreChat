@@ -8,6 +8,8 @@ import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 export type ExtensionGroup = 'pdf' | 'msg' | 'docx' | 'hwpx' | 'pptx' | 'other';
+// iManage 라이브러리: matter = 사건 문서(M), knowledge = 지식 DB(DB)
+export type LibraryFilter = 'all' | 'matter' | 'knowledge';
 export type PeriodPreset =
   | 'all'
   | 'last_3_months'
@@ -24,6 +26,7 @@ export interface DocumentSearchFilterState {
   /** YYYY-MM-DD (inclusive) */
   endDate: string | null;
   extensionGroups: ExtensionGroup[];
+  library: LibraryFilter;
 }
 
 export const EMPTY_DOC_FILTERS: DocumentSearchFilterState = {
@@ -31,6 +34,7 @@ export const EMPTY_DOC_FILTERS: DocumentSearchFilterState = {
   startDate: null,
   endDate: null,
   extensionGroups: [],
+  library: 'all',
 };
 
 const EXTENSION_OPTIONS: {
@@ -44,6 +48,12 @@ const EXTENSION_OPTIONS: {
   { id: 'hwpx', label: 'HWPX', hint: 'hwp/hwpx' },
   { id: 'pptx', label: 'PPTX', hint: 'ppt/pptx' },
   { id: 'other', label: '기타', hint: 'other' },
+];
+
+const LIBRARY_OPTIONS: { id: LibraryFilter; label: string }[] = [
+  { id: 'all', label: '전체' },
+  { id: 'matter', label: '사건 문서' },
+  { id: 'knowledge', label: '지식 DB' },
 ];
 
 const PRESET_OPTIONS: { preset: Exclude<PeriodPreset, 'custom'>; labelKey: string }[] = [
@@ -106,7 +116,8 @@ export function isFilterActive(state: DocumentSearchFilterState): boolean {
     state.preset !== 'all' ||
     state.startDate !== null ||
     state.endDate !== null ||
-    state.extensionGroups.length > 0
+    state.extensionGroups.length > 0 ||
+    (state.library ?? 'all') !== 'all'
   );
 }
 
@@ -300,6 +311,34 @@ const FilterBar: React.FC<FilterBarProps> = ({ value, onChange, disabled }) => {
           )}
         </Ariakit.Menu>
       </Ariakit.MenuProvider>
+
+      {/* 라이브러리 (검색 범위) */}
+      <div
+        role="radiogroup"
+        aria-label="라이브러리 선택"
+        className="inline-flex h-9 items-center gap-0.5 rounded-full border border-border-medium bg-surface-primary p-0.5"
+      >
+        {LIBRARY_OPTIONS.map((opt) => {
+          const selected = (value.library ?? 'all') === opt.id;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onChange({ ...value, library: opt.id })}
+              className={cn(
+                'inline-flex h-7 items-center rounded-full px-3 text-xs font-medium transition-colors',
+                selected
+                  ? 'bg-text-primary text-surface-primary'
+                  : 'text-text-secondary hover:text-text-primary',
+              )}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
 
       {/* 확장자 */}
       <div className="flex flex-wrap items-center gap-1.5">
