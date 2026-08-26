@@ -103,6 +103,32 @@ describe('agent trigger delivery methods', () => {
     expect(await Delivery.countDocuments()).toBe(1);
   });
 
+  it('keeps the original mailbox rollout semantics on idempotent replay', async () => {
+    const enabled = enqueueInput({ awaitTerminalHandling: true });
+    const first = await methods.enqueueAgentTriggerDelivery(enabled);
+    const disabledReplay = await methods.enqueueAgentTriggerDelivery({
+      ...enabled,
+      awaitTerminalHandling: undefined,
+    });
+
+    expect(first.delivery.awaitTerminalHandling).toBe(true);
+    expect(disabledReplay).toMatchObject({
+      replayed: true,
+      delivery: { id: first.delivery.id, awaitTerminalHandling: true },
+    });
+
+    const disabled = enqueueInput();
+    const second = await methods.enqueueAgentTriggerDelivery(disabled);
+    const enabledReplay = await methods.enqueueAgentTriggerDelivery({
+      ...disabled,
+      awaitTerminalHandling: true,
+    });
+
+    expect(second.delivery.awaitTerminalHandling).toBeUndefined();
+    expect(enabledReplay).toMatchObject({ replayed: true, delivery: { id: second.delivery.id } });
+    expect(enabledReplay.delivery.awaitTerminalHandling).toBeUndefined();
+  });
+
   it('projects public status while enforcing API key, owner, and tenant in the query', async () => {
     const user = new mongoose.Types.ObjectId();
     const queued = await methods.enqueueAgentTriggerDelivery(
