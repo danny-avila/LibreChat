@@ -664,6 +664,41 @@ describe('createToolExecuteHandler', () => {
       expect(toolEndCallback).not.toHaveBeenCalled();
     });
 
+    it('supplies the executed arguments alongside the output to the tool end callback', async () => {
+      const toolEndCallback = jest.fn();
+      const tool = {
+        name: 'submit_move',
+        invoke: jest.fn(async () => ({ content: '{"ok":true}' })),
+      };
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+      }));
+      const handler = createToolExecuteHandler({ loadTools, toolEndCallback });
+
+      const [result] = await invokeHandler(handler, [
+        { id: 'call_submit_move', name: 'submit_move', args: { gameId: 'game-1', expectedPly: 8 } },
+      ]);
+
+      expect(result.content).toBe('{"ok":true}');
+      /** The stream-consumer tool-end path cannot reconstruct execution input,
+       * so the execution handler — which owns both halves — must supply it.
+       * The event-actor action recorder fences its declared argument subset
+       * against exactly this field; without it, warm continuation silently
+       * degrades to cold history rebuilds (proven by live canary). */
+      expect(toolEndCallback).toHaveBeenCalledTimes(1);
+      expect(toolEndCallback).toHaveBeenCalledWith(
+        {
+          input: { gameId: 'game-1', expectedPly: 8 },
+          output: expect.objectContaining({
+            name: 'submit_move',
+            tool_call_id: 'call_submit_move',
+            content: '{"ok":true}',
+          }),
+        },
+        expect.any(Object),
+      );
+    });
+
     it.each([
       ['bearer_header', 'Authorization: Bearer contract-token', 'Bearer token'],
       ['api_key_header', 'api-key: contract-token', 'api-key header'],

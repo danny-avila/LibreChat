@@ -819,6 +819,22 @@ describe('createAgentEventActionRecorder', () => {
     expect(recorder.read()).toBeUndefined();
   });
 
+  it('never qualifies an argument-fenced action from an output-only tool end', async () => {
+    /** Live-canary shape: the stream-consumer tool-end path delivers no
+     * execution input, so a declared argument subset can never be verified —
+     * the receipt must starve rather than trust an unfenced match. The
+     * execution handler is required to supply the input (see handlers.spec). */
+    const recorder = createAgentEventActionRecorder(expectedAction);
+    recorder.observeToolEnd({ output: successEnd.output });
+    expect(recorder.read()).toBeUndefined();
+  });
+
+  it('qualifies a name-only expected action from an output-only tool end', async () => {
+    const recorder = createAgentEventActionRecorder({ toolName: 'submit_move' });
+    recorder.observeToolEnd({ output: successEnd.output });
+    expect(recorder.read()).toEqual({ toolName: 'submit_move', toolCallId: 'call-1' });
+  });
+
   it('never records name mismatches, errored results, or malformed outputs', async () => {
     const recorder = createAgentEventActionRecorder(expectedAction);
     recorder.observeToolEnd({ ...successEnd, output: { ...successEnd.output, name: 'resign' } });

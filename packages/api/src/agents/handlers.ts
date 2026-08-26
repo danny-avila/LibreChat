@@ -76,6 +76,11 @@ import { instrumentPtcToolMap } from './ptc';
 import { markSandboxReady } from './prewarm';
 
 export interface ToolEndCallbackData {
+  /** The executed call's arguments. The stream-consumer tool-end path cannot
+   * reconstruct these, so the execution handler — which owns both halves —
+   * must supply them for consumers that fence on the input (the event-actor
+   * action recorder validates its declared argument subset against this). */
+  input?: unknown;
   output: {
     name: string;
     tool_call_id: string;
@@ -4641,6 +4646,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       try {
                         await toolEndCallback(
                           {
+                            input: tc.args,
                             output: {
                               name: pending.toolName,
                               tool_call_id: tc.id,
@@ -4900,6 +4906,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       try {
                         await toolEndCallback(
                           {
+                            input: tc.args,
                             output: {
                               name: tc.name,
                               tool_call_id: tc.id,
@@ -5152,6 +5159,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     if (toolEndCallback) {
                       await toolEndCallback(
                         {
+                          input: tc.args,
                           output: {
                             name: tc.name,
                             tool_call_id: tc.id,
