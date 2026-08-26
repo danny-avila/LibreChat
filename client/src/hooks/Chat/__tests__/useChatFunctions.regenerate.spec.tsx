@@ -20,6 +20,7 @@ jest.mock('react-router-dom', () => ({
 jest.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({
     getQueryData: mockGetQueryData,
+    getQueryState: jest.fn(() => undefined),
   }),
 }));
 
@@ -48,6 +49,7 @@ jest.mock('~/store', () => ({
   default: {
     isTemporary: 'isTemporary',
     isSubmittingFamily: () => 'isSubmitting',
+    submissionStartFamily: () => 'submissionStart',
     showStopButtonByIndex: () => 'showStopButton',
     pendingManualSkillsByConvoId: () => 'pendingManualSkills',
     pendingQuotesByConvoId: () => 'pendingQuotes',
@@ -56,6 +58,7 @@ jest.mock('~/store', () => ({
   useGetEphemeralAgent: () => mockGetEphemeralAgent,
 }));
 jest.mock('~/utils', () => ({
+  ...jest.requireActual('~/utils'),
   logger: {
     log: jest.fn(),
     dir: jest.fn(),
@@ -63,6 +66,7 @@ jest.mock('~/utils', () => ({
   },
   createDualMessageContent: jest.fn(() => []),
   getRouteChatProjectId: jest.fn(() => null),
+  requestChatFocus: jest.fn(),
 }));
 
 const userMessage = (messageId: string, parentMessageId = '00000000-0000-0000-0000-000000000000') =>
@@ -93,15 +97,23 @@ const conversation = (conversationId: string) =>
     agent_id: 'agent-1',
   }) as TConversation;
 
-function renderAsk(messages: TMessage[] | undefined, conversationId = 'conversation-1') {
+function renderAsk(
+  messages: TMessage[] | undefined,
+  conversationId = 'conversation-1',
+  options: { endpoint?: TConversation['endpoint']; isSubmitting?: boolean } = {},
+) {
   const setMessages = jest.fn();
   const setSubmission = jest.fn();
   const getMessages = jest.fn(() => messages);
+  const immutableConversation = conversation(conversationId);
+  if ('endpoint' in options) {
+    immutableConversation.endpoint = options.endpoint ?? null;
+  }
   const hook = renderHook(() =>
     useChatFunctions({
-      isSubmitting: false,
+      isSubmitting: options.isSubmitting ?? false,
       latestMessage: messages?.at(-1) ?? null,
-      conversation: conversation(conversationId),
+      conversation: immutableConversation,
       getMessages,
       setMessages,
       setSubmission,
@@ -132,6 +144,55 @@ describe('useChatFunctions ask', () => {
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       '[useChatFunctions] Refusing to send before existing conversation history loads',
     );
+  });
+
+  it('synchronously reports a refusal while another submit is in flight', () => {
+    const { result, setMessages, setSubmission } = renderAsk([], 'conversation-1', {
+      isSubmitting: true,
+    });
+
+    let askResult: ReturnType<typeof result.current.ask>;
+    act(() => {
+      askResult = result.current.ask({ text: 'queued follow-up' });
+    });
+
+    expect(askResult!).toBe(false);
+    expect(setMessages).not.toHaveBeenCalled();
+    expect(setSubmission).not.toHaveBeenCalled();
+    expect(mockSetShowStopButton).not.toHaveBeenCalled();
+  });
+
+  it('reports a refusal when no endpoint is available', () => {
+    const { result, setMessages, setSubmission } = renderAsk([], 'conversation-1', {
+      endpoint: null,
+    });
+
+    let askResult: ReturnType<typeof result.current.ask>;
+    act(() => {
+      askResult = result.current.ask({ text: 'queued follow-up' });
+    });
+
+    expect(askResult!).toBe(false);
+    expect(setMessages).not.toHaveBeenCalled();
+    expect(setSubmission).not.toHaveBeenCalled();
+    expect(mockSetShowStopButton).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['empty text', { text: '   ' }, undefined],
+    ['the search view', { text: 'queued follow-up', conversationId: 'search' }, undefined],
+    ['a continue without a latest message', { text: 'continue' }, { isContinued: true }],
+  ])('reports a refusal for %s', (_label, props, askOptions) => {
+    const { result, setMessages, setSubmission } = renderAsk([]);
+
+    let askResult: ReturnType<typeof result.current.ask>;
+    act(() => {
+      askResult = result.current.ask(props, askOptions);
+    });
+
+    expect(askResult!).toBe(false);
+    expect(setMessages).not.toHaveBeenCalled();
+    expect(setSubmission).not.toHaveBeenCalled();
   });
 
   it('allows an existing conversation whose loaded history is empty', () => {
@@ -231,5 +292,54 @@ describe('useChatFunctions regenerate', () => {
       setMessages.mock.calls.at(-1)?.[0].map((message: TMessage) => message.messageId),
     ).toEqual(['user-1', 'assistant-1_']);
     expect(messages.at(-1)?.messageId).toBe('assistant-1_');
+  });
+});
+
+describe('useChatFunctions ask attachments', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetQueryData.mockReturnValue({});
+  });
+
+  /** The server titles an attachment-only turn from the submitted filenames
+   *  (getAttachmentTitleText), so the fresh-file mapping must carry them. */
+  it('carries the filename on freshly attached files', () => {
+    const setMessages = jest.fn();
+    const setSubmission = jest.fn();
+    const setFiles = jest.fn();
+    const files = new Map([
+      [
+        'file-1',
+        {
+          file_id: 'file-1',
+          filepath: '/uploads/file-1',
+          filename: 'quarterly-report.pdf',
+          type: 'application/pdf',
+        },
+      ],
+    ]) as unknown as Parameters<typeof useChatFunctions>[0]['files'];
+
+    const { result } = renderHook(() =>
+      useChatFunctions({
+        isSubmitting: false,
+        latestMessage: null,
+        conversation: conversation(Constants.NEW_CONVO as string),
+        getMessages: () => [],
+        setMessages,
+        setSubmission,
+        files,
+        setFiles,
+      }),
+    );
+
+    act(() => {
+      result.current.ask({ text: '' });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.userMessage.files?.[0]).toMatchObject({
+      file_id: 'file-1',
+      filename: 'quarterly-report.pdf',
+    });
   });
 });

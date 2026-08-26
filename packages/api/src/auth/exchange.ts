@@ -50,6 +50,12 @@ export interface AdminExchangeData {
  */
 export interface AdminExchangeResponse {
   token: string;
+  /**
+   * When Google rotates the refresh token on use, this will differ from the
+   * token the client originally sent. Clients MUST persist this value; failing
+   * to do so causes future refresh calls to fail once Google's original grant
+   * expires or is revoked.
+   */
   refreshToken?: string;
   user: AdminExchangeUser;
   expiresAt?: number;

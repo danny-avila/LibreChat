@@ -275,7 +275,7 @@ async function mockActiveOAuthResumeStream({
     );
   }
 
-  await page.route(`**/api/agents/chat/status/${conversationId}`, (route) =>
+  await page.route(`**/api/agents/chat/status/${conversationId}**`, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -586,7 +586,7 @@ async function clickMessageTitleButton(page: Page, messageTextValue: string, tit
   const render = messageRender(page, messageTextValue);
   await render.scrollIntoViewIfNeeded();
   await render.hover();
-  await render.locator(`button[title="${title}"]`).last().click();
+  await render.getByRole('button', { name: title, exact: true }).last().click();
 }
 
 async function clickSibling(page: Page, messageTextValue: string, direction: 'Previous' | 'Next') {
@@ -1031,7 +1031,7 @@ test.describe('message tree stream operations', () => {
     await expect(editor).toBeVisible();
     await editor.fill(editedMiddlePrompt);
     await waitForGenerationStart(page, () =>
-      page.getByRole('button', { name: 'Save & Submit' }).click(),
+      page.getByRole('button', { name: 'Update & rerun' }).click(),
     );
     await expect(messagesView(page).getByText(editedMiddleReply)).toBeVisible({ timeout: 30000 });
 

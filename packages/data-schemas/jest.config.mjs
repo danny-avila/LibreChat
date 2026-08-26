@@ -2,6 +2,9 @@ export default {
   collectCoverageFrom: ['src/**/*.{js,jsx,ts,tsx}', '!<rootDir>/node_modules/'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
   testPathIgnorePatterns: ['/node_modules/', '/dist/', '/misc/'],
+  transformIgnorePatterns: [
+    '/node_modules/(?!mdast-util-|micromark|decode-named-character-reference|devlop|longest-streak|unist-util-|zwitch|character-(?:entities|reference)|parse-entities|stringify-entities|is-(?:alphanumerical|alphabetical|decimal|hexadecimal)|ccount|markdown-table|escape-string-regexp)',
+  ],
   coverageReporters: ['text', 'cobertura'],
   testResultsProcessor: 'jest-junit',
   moduleNameMapper: {
@@ -16,6 +19,9 @@ export default {
   //     lines: 57,
   //   },
   // },
+  // Download the in-memory MongoDB binary once, before workers fork: on a cold
+  // cache the parallel downloads race their final rename and fail whole suites.
+  globalSetup: '<rootDir>/jest.globalSetup.mjs',
   maxWorkers: '50%',
   restoreMocks: true,
   testTimeout: 15000,

@@ -55,6 +55,7 @@ const {
   deleteAgentCheckpoint,
   buildHITLRunWiring,
   resolveToolApprovalPolicy,
+  LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
   __resetCheckpointerForTests,
 } = require('@librechat/api');
 const ResumeAgentController = require('~/server/controllers/agents/resume');
@@ -105,9 +106,14 @@ async function buildHitlRun({ saver, conversationId, responses, toolCalls, runId
   return run;
 }
 
-const runConfig = (conversationId) => ({
+const runConfig = (conversationId, checkpointNamespace = '') => ({
   runName: 'AgentRun',
-  configurable: { thread_id: conversationId, user_id: USER_ID },
+  configurable: {
+    thread_id: conversationId,
+    checkpoint_ns: '',
+    [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: checkpointNamespace,
+    user_id: USER_ID,
+  },
   streamMode: 'values',
   version: 'v2',
 });
@@ -147,14 +153,9 @@ beforeAll(async () => {
 
   GenerationJobManager.configure({ ...createStreamServices(), cleanupOnComplete: false });
   GenerationJobManager.initialize();
-  // Mirrors api/server/index.js: expiry prunes the paused run's durable checkpoint.
-  GenerationJobManager.setApprovalExpiredHandler(async (conversationId) => {
-    await deleteAgentCheckpoint(conversationId, MONGO_CFG);
-  });
 }, 60000);
 
 afterAll(async () => {
-  GenerationJobManager.setApprovalExpiredHandler(null);
   await GenerationJobManager.destroy();
   await mongoose.disconnect();
   await mongoServer.stop();
@@ -208,6 +209,13 @@ describe('HITL checkpoint lifecycle (full wiring)', () => {
   test('pause → approve over the REAL /resume controller → tool runs once → checkpoint pruned', async () => {
     const conversationId = `e2e-resume-${Date.now()}`;
     const responseMessageId = 'resp-pause-1';
+    // Production creates the v2 generation before compiling/running the graph,
+    // then scopes every checkpoint operation to that immutable generation.
+    const job = await GenerationJobManager.createJob(conversationId, USER_ID, conversationId, {
+      initialMetadata: { generationProtocolVersion: 2 },
+    });
+    const checkpointNamespace = job.metadata.checkpointNamespace;
+    expect(checkpointNamespace).toBe(String(job.createdAt));
 
     // --- Turn 1: the model calls the gated tool → PreToolUse 'ask' → interrupt. ---
     const run = await buildHitlRun({
@@ -219,7 +227,7 @@ describe('HITL checkpoint lifecycle (full wiring)', () => {
     });
     await run.processStream(
       { messages: [new HumanMessage('run the guarded tool')] },
-      runConfig(conversationId),
+      runConfig(conversationId, checkpointNamespace),
     );
 
     const interrupt = run.getInterrupt();
@@ -229,7 +237,6 @@ describe('HITL checkpoint lifecycle (full wiring)', () => {
     expect(paused.checkpoints).toBeGreaterThan(0); // the interrupt checkpoint is durable
 
     // --- Pause bookkeeping (mirrors AgentClient.handleRunInterrupt). ---
-    const job = await GenerationJobManager.createJob(conversationId, USER_ID, conversationId);
     await GenerationJobManager.updateMetadata(conversationId, {
       endpoint: 'agents',
       agent_id: 'agent-e2e',
@@ -259,7 +266,7 @@ describe('HITL checkpoint lifecycle (full wiring)', () => {
           runId: responseMessageId,
         });
         await resumed.resume(resumeValue, {
-          ...runConfig(conversationId),
+          ...runConfig(conversationId, checkpointNamespace),
           signal: (abortController ?? new AbortController()).signal,
         });
         const reInterrupt = resumed.getInterrupt?.();
@@ -313,7 +320,7 @@ describe('HITL checkpoint lifecycle (full wiring)', () => {
     expect(job).toBeDefined();
   });
 
-  test('an abandoned pause is pruned eagerly on approval EXPIRY (not left to the TTL)', async () => {
+  test('an abandoned pause expires without deleting a replacement-scoped checkpoint', async () => {
     const conversationId = `e2e-expiry-${Date.now()}`;
     const run = await buildHitlRun({
       saver,
@@ -336,12 +343,15 @@ describe('HITL checkpoint lifecycle (full wiring)', () => {
     });
     await GenerationJobManager.approvals.pause(conversationId, pendingAction);
 
-    // The sweeper/stale-submit path: expiry fires the registered checkpoint prune.
+    // Expiry finalizes the stream, while checkpoint cleanup remains TTL-scoped. A
+    // thread-wide eager delete can race a replacement run on the same conversation.
     expect(await GenerationJobManager.expireApproval(conversationId, pendingAction.actionId)).toBe(
       true,
     );
 
     expect(await GenerationJobManager.getJobStatus(conversationId)).toBe('aborted');
+    expect((await checkpointCounts(conversationId)).checkpoints).toBeGreaterThan(0);
+    await deleteAgentCheckpoint(conversationId, MONGO_CFG);
     expect(await checkpointCounts(conversationId)).toEqual({ checkpoints: 0, writes: 0 });
   });
 });

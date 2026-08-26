@@ -22,6 +22,7 @@ services:
       - ./uploads:/app/uploads
       - ./logs:/app/logs
       - ./skill:/app/skill
+      - librechat-data:/app/data
   admin-panel:
     container_name: admin-panel
     image: registry.librechat.ai/clickhouse/librechat-admin-panel:latest
@@ -77,3 +78,4 @@ services:
 
 volumes:
   pgdata2:
+  librechat-data:

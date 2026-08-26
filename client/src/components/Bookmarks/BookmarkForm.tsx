@@ -1,8 +1,8 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { Controller, useForm } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
-import { Checkbox, Label, TextareaAutosize, Input, useToastContext } from '@librechat/client';
+import { Checkbox, FieldMessage, Label, TextareaAutosize, Input } from '@librechat/client';
 import type { TConversationTag, TConversationTagRequest } from 'librechat-data-provider';
 import { useBookmarkContext } from '~/Providers/BookmarkContext';
 import { useConversationTagMutation } from '~/data-provider';
@@ -14,7 +14,6 @@ type TBookmarkFormProps = {
   bookmark?: TConversationTag;
   conversationId?: string;
   formRef: React.RefObject<HTMLFormElement>;
-  setOpen: React.Dispatch<React.SetStateAction<boolean>>;
   mutation: ReturnType<typeof useConversationTagMutation>;
 };
 const BookmarkForm = ({
@@ -22,12 +21,10 @@ const BookmarkForm = ({
   bookmark,
   mutation,
   conversationId,
-  setOpen,
   formRef,
 }: TBookmarkFormProps) => {
   const localize = useLocalize();
   const queryClient = useQueryClient();
-  const { showToast } = useToastContext();
   const { bookmarks } = useBookmarkContext();
 
   const {
@@ -48,12 +45,27 @@ const BookmarkForm = ({
     },
   });
 
-  useEffect(() => {
-    if (bookmark && bookmark.tag) {
+  const [prevBookmark, setPrevBookmark] = React.useState(bookmark);
+
+  if (bookmark !== prevBookmark) {
+    setPrevBookmark(bookmark);
+    if (bookmark?.tag != null && bookmark.tag !== '') {
       setValue('tag', bookmark.tag);
       setValue('description', bookmark.description ?? '');
     }
-  }, [bookmark, setValue]);
+  }
+
+  /** Every source that could already hold the title, checked before the request is sent. */
+  const isTagTaken = (value: string) => {
+    const allTags =
+      queryClient.getQueryData<TConversationTag[]>([QueryKeys.conversationTags]) ?? [];
+
+    return (
+      (tags ?? []).includes(value) ||
+      allTags.some((tag) => tag.tag === value) ||
+      bookmarks.some((existing) => existing.tag === value)
+    );
+  };
 
   const onSubmit = (data: TConversationTagRequest) => {
     logger.log('tag_mutation', 'BookmarkForm - onSubmit: data', data);
@@ -63,25 +75,8 @@ const BookmarkForm = ({
     if (data.tag === bookmark?.tag && data.description === bookmark?.description) {
       return;
     }
-    if (data.tag != null && (tags ?? []).includes(data.tag)) {
-      showToast({
-        message: localize('com_ui_bookmarks_create_exists'),
-        status: 'warning',
-      });
-      return;
-    }
-    const allTags =
-      queryClient.getQueryData<TConversationTag[]>([QueryKeys.conversationTags]) ?? [];
-    if (allTags.some((tag) => tag.tag === data.tag && tag.tag !== bookmark?.tag)) {
-      showToast({
-        message: localize('com_ui_bookmarks_create_exists'),
-        status: 'warning',
-      });
-      return;
-    }
 
     mutation.mutate(data);
-    setOpen(false);
   };
 
   return (
@@ -106,23 +101,18 @@ const BookmarkForm = ({
                 }),
               },
               validate: (value) => {
-                return (
-                  value === bookmark?.tag ||
-                  bookmarks.every((bookmark) => bookmark.tag !== value) ||
-                  localize('com_ui_bookmarks_tag_exists')
-                );
+                if (value == null || value === '' || value === bookmark?.tag) {
+                  return true;
+                }
+                return !isTagTaken(value) || localize('com_ui_bookmarks_tag_exists');
               },
             })}
             className="w-full"
             aria-invalid={!!errors.tag}
             placeholder={localize('com_ui_enter_name')}
-            aria-describedby={errors.tag ? 'bookmark-tag-error' : undefined}
+            aria-describedby="bookmark-tag-error"
           />
-          {errors.tag && (
-            <span id="bookmark-tag-error" role="alert" className="text-sm text-red-500">
-              {errors.tag.message}
-            </span>
-          )}
+          <FieldMessage id="bookmark-tag-error" message={errors.tag?.message} />
         </div>
 
         {/* Description textarea */}
@@ -154,7 +144,10 @@ const BookmarkForm = ({
               'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-heavy',
             )}
             aria-labelledby="bookmark-description-label"
+            aria-invalid={!!errors.description}
+            aria-describedby="bookmark-description-error"
           />
+          <FieldMessage id="bookmark-description-error" message={errors.description?.message} />
         </div>
 
         {/* Add to conversation checkbox */}

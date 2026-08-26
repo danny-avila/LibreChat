@@ -30,6 +30,8 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
     agentId,
   }: t.SetMemoryParams) => Promise<t.MemoryResult>;
   deleteMemory: ({ userId, key, agentId }: t.DeleteMemoryParams) => Promise<t.MemoryResult>;
+  setMemoryById: (params: t.SetMemoryByIdParams) => Promise<t.SetMemoryByIdResult>;
+  deleteMemoryById: (params: t.MemoryByIdParams) => Promise<t.MemoryResult>;
   getAllUserMemories: (userId: string | Types.ObjectId) => Promise<t.IMemoryEntryLean[]>;
   getUserMemories: ({ userId, agentId }: t.GetUserMemoriesParams) => Promise<t.IMemoryEntryLean[]>;
   getFormattedMemories: ({
@@ -142,6 +144,85 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
     }
   }
 
+  /** Updates an existing memory without requiring its authored key. */
+  async function setMemoryById({
+    userId,
+    id,
+    key,
+    value,
+    tokenCount = 0,
+    agentId,
+  }: t.SetMemoryByIdParams): Promise<t.SetMemoryByIdResult> {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(id) || key?.toLowerCase() === 'nothing') {
+        return { ok: false };
+      }
+
+      const MemoryEntry = mongoose.models.MemoryEntry;
+      const recordFilter = { _id: id, userId, ...partitionFilter(agentId) };
+      const existingMemory = (await MemoryEntry.findOne(
+        recordFilter,
+      ).lean()) as t.IMemoryEntryLean | null;
+      if (!existingMemory) {
+        return { ok: false };
+      }
+
+      if (key != null && key !== existingMemory.key) {
+        const duplicate = await MemoryEntry.exists({
+          userId,
+          key,
+          ...partitionFilter(agentId),
+          _id: { $ne: existingMemory._id },
+        });
+        if (duplicate) {
+          return { ok: false, conflict: true };
+        }
+      }
+
+      const updatedMemory = (await MemoryEntry.findOneAndUpdate(
+        recordFilter,
+        {
+          ...(key != null ? { key } : {}),
+          value,
+          tokenCount,
+          updated_at: new Date(),
+        },
+        { new: true, runValidators: true },
+      ).lean()) as t.IMemoryEntryLean | null;
+
+      return updatedMemory ? { ok: true, memory: updatedMemory } : { ok: false };
+    } catch (error) {
+      throw new Error(
+        `Failed to update memory: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
+  /** Deletes an existing memory without requiring its authored key. */
+  async function deleteMemoryById({
+    userId,
+    id,
+    agentId,
+  }: t.MemoryByIdParams): Promise<t.MemoryResult> {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return { ok: false };
+      }
+
+      const MemoryEntry = mongoose.models.MemoryEntry;
+      const result = await MemoryEntry.findOneAndDelete({
+        _id: id,
+        userId,
+        ...partitionFilter(agentId),
+      });
+      return { ok: !!result };
+    } catch (error) {
+      throw new Error(
+        `Failed to delete memory: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
   /**
    * Gets all memory entries for a user across every partition
    */
@@ -242,6 +323,8 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
     setMemory,
     createMemory,
     deleteMemory,
+    setMemoryById,
+    deleteMemoryById,
     getAllUserMemories,
     getUserMemories,
     getFormattedMemories,

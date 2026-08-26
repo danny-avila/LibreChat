@@ -1382,6 +1382,37 @@ describe('registerUser - allowedDomains admin-panel override', () => {
     expect(getAppConfig).toHaveBeenCalledWith({ tenantId: 'tenant-x' });
   });
 
+  it('does not bootstrap a tenant-scoped registrant as an administrator', async () => {
+    getTenantId.mockReturnValue('attacker-selected-tenant');
+    createUser.mockResolvedValue({ _id: 'new-user', emailVerified: true });
+    checkEmailConfig.mockReturnValue(false);
+
+    await registerUser(validUser);
+
+    expect(countUsers).not.toHaveBeenCalled();
+    expect(createUser).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'USER' }),
+      undefined,
+      expect.any(Boolean),
+      true,
+    );
+  });
+
+  it('preserves first-user administrator bootstrap without a tenant context', async () => {
+    createUser.mockResolvedValue({ _id: 'new-user', emailVerified: true });
+    checkEmailConfig.mockReturnValue(false);
+
+    await registerUser(validUser);
+
+    expect(countUsers).toHaveBeenCalledTimes(1);
+    expect(createUser).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'ADMIN' }),
+      undefined,
+      expect.any(Boolean),
+      true,
+    );
+  });
+
   it('should block registration when the resolved allowedDomains rejects the email', async () => {
     isEmailDomainAllowed.mockReturnValue(false);
 

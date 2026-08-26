@@ -3,6 +3,8 @@ const path = require('path');
 const {
   EModelEndpoint,
   Constants,
+  ContentTypes,
+  Tools,
   RetentionMode,
   openAISettings,
   anthropicSettings,
@@ -315,18 +317,22 @@ describe('importChatGptConvo', () => {
 
     expect(userMsg1.sender).toBe('user');
     expect(userMsg1.isCreatedByUser).toBe(true);
+    expect(userMsg1.isUserSubmitted).toBe(true);
     expect(userMsg1.model).toBe('gpt-4');
 
     expect(userMsg2.sender).toBe('user');
     expect(userMsg2.isCreatedByUser).toBe(true);
+    expect(userMsg2.isUserSubmitted).toBe(true);
     expect(userMsg2.model).toBe('gpt-4o-mini');
 
     expect(assistantMsg1.sender).toBe('GPT-4');
     expect(assistantMsg1.isCreatedByUser).toBe(false);
+    expect(assistantMsg1.isUserSubmitted).toBe(true);
     expect(assistantMsg1.model).toBe('gpt-4');
 
     expect(assistantMsg2.sender).toBe('GPT-3.5-turbo');
     expect(assistantMsg2.isCreatedByUser).toBe(false);
+    expect(assistantMsg2.isUserSubmitted).toBe(true);
     expect(assistantMsg2.model).toBe('gpt-3.5-turbo');
   });
 
@@ -873,9 +879,171 @@ describe('importLibreChatConvo', () => {
 
     expect(importBatchBuilder.startConversation).toHaveBeenCalledWith(EModelEndpoint.openAI);
     expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(expectedNumberOfMessages);
+    expect(
+      importBatchBuilder.saveMessage.mock.calls.every(
+        ([message]) => message.isUserSubmitted === true,
+      ),
+    ).toBe(true);
+    expect(
+      importBatchBuilder.saveMessage.mock.calls.some(
+        ([message]) => message.isCreatedByUser === false && message.isUserSubmitted === true,
+      ),
+    ).toBe(true);
     expect(importBatchBuilder.finishConversation).toHaveBeenCalledTimes(1);
     expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
   });
+
+  it.each([
+    ['linear', false, false],
+    ['recursive', true, false],
+    ['numeric-author', false, 0],
+    ['omitted-author', false, undefined],
+  ])('strips MCP-UI attachments from %s imports', async (_format, recursive, authorFlag) => {
+    const message = {
+      messageId: 'message-1',
+      parentMessageId: Constants.NO_PARENT,
+      text: { _id: '\\ui{malicious}' },
+      isCreatedByUser: authorFlag,
+      content: [
+        { type: ContentTypes.TEXT, text: 'Before \\ui{malicious} after' },
+        { type: ContentTypes.TEXT, text: '`\\ui{literal}`' },
+        {
+          type: ContentTypes.TEXT,
+          text: {
+            value: 'Object \\ui{malicious} value',
+            annotations: [{ type: 'citation' }],
+          },
+        },
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: {
+            subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested \\ui{malicious} content' }],
+          },
+        },
+      ],
+      attachments: [
+        {
+          type: Tools.ui_resources,
+          [Tools.ui_resources]: [
+            {
+              resourceId: 'malicious',
+              mimeType: 'application/vnd.mcp-ui.remote-dom+javascript',
+              text: "root.innerHTML='<img src=x onerror=alert(window.origin)>'",
+            },
+          ],
+        },
+        { type: Tools.web_search, [Tools.web_search]: { results: [] } },
+      ],
+    };
+    const jsonData = {
+      conversationId: 'malicious-import',
+      title: 'Malicious import',
+      recursive,
+      ...(recursive ? { messagesTree: [message] } : { messages: [message] }),
+    };
+    const importBatchBuilder = new ImportBatchBuilder('user-123');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, 'user-123', () => importBatchBuilder);
+
+    expect(importBatchBuilder.messages[0].attachments).toEqual([
+      { type: Tools.web_search, [Tools.web_search]: { results: [] } },
+    ]);
+    expect(importBatchBuilder.messages[0].text).toBe('');
+    expect(importBatchBuilder.messages[0].content).toEqual([
+      { type: ContentTypes.TEXT, text: 'Before  after' },
+      { type: ContentTypes.TEXT, text: '`\\ui{literal}`' },
+      {
+        type: ContentTypes.TEXT,
+        text: { value: 'Object  value', annotations: [{ type: 'citation' }] },
+      },
+      {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested  content' }],
+        },
+      },
+    ]);
+  });
+
+  it('sanitizes singleton content and attachment fields before Mongoose array casting', async () => {
+    const message = {
+      messageId: 'message-1',
+      parentMessageId: Constants.NO_PARENT,
+      text: '\\ui{malicious}',
+      isCreatedByUser: false,
+      error: true,
+      content: { type: ContentTypes.TEXT, text: 'Before \\ui{malicious} after' },
+      attachments: { type: Tools.ui_resources, [Tools.ui_resources]: [] },
+    };
+    const jsonData = {
+      conversationId: 'singleton-import',
+      title: 'Singleton fields',
+      recursive: false,
+      messages: [message],
+    };
+    const importBatchBuilder = new ImportBatchBuilder('user-123');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, 'user-123', () => importBatchBuilder);
+
+    expect(importBatchBuilder.messages[0].content).toEqual([
+      { type: ContentTypes.TEXT, text: 'Before  after' },
+    ]);
+    expect(importBatchBuilder.messages[0].attachments).toEqual([]);
+    expect(importBatchBuilder.messages[0].text).toBe('');
+  });
+
+  it.each([true, null])(
+    'matches text and content renderers for author flag %s while stripping attachments',
+    async (authorFlag) => {
+      const message = {
+        messageId: 'message-1',
+        parentMessageId: Constants.NO_PARENT,
+        text: 'Example: \\ui{literal}',
+        isCreatedByUser: authorFlag,
+        content: [
+          { type: ContentTypes.TEXT, text: 'Part: \\ui{literal}' },
+          {
+            type: ContentTypes.TOOL_CALL,
+            tool_call: {
+              name: Constants.SUBAGENT,
+              output: 'Legacy \\ui{nested} output',
+              subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested \\ui{nested} text' }],
+            },
+          },
+        ],
+        attachments: [{ type: Tools.ui_resources, [Tools.ui_resources]: [] }],
+      };
+      const jsonData = {
+        conversationId: 'user-marker-import',
+        title: 'User marker import',
+        recursive: false,
+        messages: [message],
+      };
+      const importBatchBuilder = new ImportBatchBuilder('user-123');
+
+      const importer = getImporter(jsonData);
+      await importer(jsonData, 'user-123', () => importBatchBuilder);
+
+      expect(importBatchBuilder.messages[0].text).toBe('Example: \\ui{literal}');
+      expect(importBatchBuilder.messages[0].content).toEqual([
+        {
+          type: ContentTypes.TEXT,
+          text: authorFlag === true ? 'Part: \\ui{literal}' : 'Part: ',
+        },
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: {
+            name: Constants.SUBAGENT,
+            output: 'Legacy  output',
+            subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested  text' }],
+          },
+        },
+      ]);
+      expect(importBatchBuilder.messages[0].attachments).toEqual([]);
+    },
+  );
 
   it('should import linear, non-recursive thread correctly with correct endpoint', async () => {
     mockGetEndpointsConfig.mockResolvedValue({
@@ -926,6 +1094,7 @@ describe('importLibreChatConvo', () => {
     // Get the imported messages
     const messages = importBatchBuilder.messages;
     expect(messages.length).toBeGreaterThan(0);
+    expect(messages.every((message) => message.isUserSubmitted === true)).toBe(true);
 
     // Build maps for verification
     const textToMessageMap = new Map();
@@ -1503,12 +1672,14 @@ describe('importClaudeConvo', () => {
     // Check user message
     const userMsg = savedMessages.find((msg) => msg.text === 'Hello Claude');
     expect(userMsg.isCreatedByUser).toBe(true);
+    expect(userMsg.isUserSubmitted).toBe(true);
     expect(userMsg.sender).toBe('user');
     expect(userMsg.endpoint).toBe(EModelEndpoint.anthropic);
 
     // Check assistant message
     const assistantMsg = savedMessages.find((msg) => msg.text === 'Hello! How can I help you?');
     expect(assistantMsg.isCreatedByUser).toBe(false);
+    expect(assistantMsg.isUserSubmitted).toBe(true);
     expect(assistantMsg.sender).toBe('Claude');
     expect(assistantMsg.parentMessageId).toBe(userMsg.messageId);
   });

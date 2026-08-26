@@ -2,7 +2,7 @@ import React, { createContext, useContext, ReactNode, useMemo } from 'react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
-import { usePromptGroupsNav, useHasAccess } from '~/hooks';
+import { usePromptGroupsNav, useHasAccess, useCatalogReady } from '~/hooks';
 import { useGetAllPromptGroups } from '~/data-provider';
 import { CategoryIcon } from '~/components/Prompts';
 import { mapPromptGroups } from '~/utils';
@@ -31,10 +31,14 @@ export const PromptGroupsProvider = ({ children }: { children: ReactNode }) => {
     permissionType: PermissionTypes.PROMPTS,
     permission: Permissions.USE,
   });
+  /** Prompt groups are a background-warmed catalog: the queries stay off the
+   * startup path until warmup releases them (or a prompts UI activates them). */
+  const promptsReady = useCatalogReady('prompts');
+  const promptsEnabled = hasAccess && promptsReady;
 
-  const promptGroupsNav = usePromptGroupsNav(hasAccess);
+  const promptGroupsNav = usePromptGroupsNav(promptsEnabled);
   const { data: allGroupsData, isLoading: isLoadingAll } = useGetAllPromptGroups(undefined, {
-    enabled: hasAccess,
+    enabled: promptsEnabled,
     select: (data) => {
       const mappedArray: PromptOption[] = data.map((group) => ({
         id: group._id ?? '',

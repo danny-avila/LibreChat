@@ -8,9 +8,11 @@ import {
   findPendingActionMessageIndex,
   removeAskUserQuestionPart,
   parseAskUserQuestionArgs,
+  parseAskUserQuestionsArgs,
   resolveAskUserQuestionPart,
   getSubmittedAskAnswer,
   findLiveAskUserQuestion,
+  collectLiveAskToolCallIds,
   isAnsweredAskUserQuestionPart,
   splitOtherOption,
 } from './approval';
@@ -69,6 +71,37 @@ describe('applyPendingAction — tool_approval', () => {
       allowed_decisions: ['approve', 'reject'],
       description: 'Run search',
     });
+  });
+
+  it('replaces displayed tool args with the matching action request arguments', () => {
+    const originalArgs = { query: 'original model args' };
+    const rewrittenArgs = { query: 'rewritten by policy hook' };
+    const message = msg({ content: [toolCallPart('tc1', { args: originalArgs })] });
+    const action = toolApprovalAction({
+      payload: {
+        type: 'tool_approval',
+        action_requests: [
+          {
+            name: 'search',
+            arguments: rewrittenArgs,
+            tool_call_id: 'tc1',
+            description: 'Review rewritten search',
+          },
+        ],
+        review_configs: [
+          {
+            action_name: 'search',
+            tool_call_id: 'tc1',
+            allowed_decisions: ['approve', 'reject', 'edit', 'respond'],
+          },
+        ],
+      },
+    });
+
+    const result = applyPendingAction(message, action);
+
+    expect(getToolCall(result.content?.[0] as TMessageContentParts)?.args).toEqual(rewrittenArgs);
+    expect(getToolCall(message.content?.[0] as TMessageContentParts)?.args).toEqual(originalArgs);
   });
 
   it('leaves a completed tool call (with output) untouched and returns the same message reference', () => {
@@ -263,6 +296,50 @@ describe('parseAskUserQuestionArgs', () => {
   });
 });
 
+describe('parseAskUserQuestionsArgs', () => {
+  it('parses a complete batch and preserves headers and options', () => {
+    const parsed = parseAskUserQuestionsArgs({
+      questions: [
+        {
+          id: 'environment',
+          header: 'Environment',
+          question: 'Which environment?',
+          options: [{ label: 'Staging', value: 'staging' }],
+        },
+        { id: 'window', question: 'Which window?' },
+      ],
+    });
+    expect(parsed?.questions).toHaveLength(2);
+    expect(parsed?.questions[0]).toMatchObject({ id: 'environment', header: 'Environment' });
+  });
+
+  it('rejects malformed and duplicate-id batches', () => {
+    expect(parseAskUserQuestionsArgs({ questions: [] })).toBeNull();
+    expect(
+      parseAskUserQuestionsArgs({
+        questions: [
+          { id: 'same', question: 'First?' },
+          { id: 'same', question: 'Second?' },
+        ],
+      }),
+    ).toBeNull();
+  });
+
+  it('trims valid headers and omits whitespace-only or oversized headers', () => {
+    const parsed = parseAskUserQuestionsArgs({
+      questions: [
+        { id: 'trimmed', header: '  Context  ', question: 'First?' },
+        { id: 'blank', header: '   ', question: 'Second?' },
+        { id: 'large', header: 'x'.repeat(81), question: 'Third?' },
+      ],
+    });
+
+    expect(parsed?.questions[0].header).toBe('Context');
+    expect(parsed?.questions[1].header).toBeUndefined();
+    expect(parsed?.questions[2].header).toBeUndefined();
+  });
+});
+
 describe('removeAskUserQuestionPart', () => {
   it('strips the synthetic part for the matching actionId and keeps everything else', () => {
     const withCard = applyPendingAction(msg({ content: [textPart('hello')] }), askAction());
@@ -343,6 +420,68 @@ describe('resolveAskUserQuestionPart', () => {
     expect(getSubmittedAskAnswer('unknown')).toBeUndefined();
     expect(getSubmittedAskAnswer(undefined)).toBeUndefined();
   });
+
+  it('stamps the exact tool_call when the payload carried tool_call_id (multi-ask turn)', () => {
+    const askToolCallPart = (id: string) =>
+      ({
+        type: 'tool_call',
+        tool_call: { id, name: 'ask_user_question', args: '', type: 'tool_call' },
+      }) as unknown as TMessageContentParts;
+    const base = msg({ content: [askToolCallPart('tc_a'), askToolCallPart('tc_b')] });
+    const withCard = applyPendingAction(
+      base,
+      askAction({
+        actionId: 'a-multi-ask',
+        payload: {
+          type: 'ask_user_question',
+          question: { question: 'Which region?' },
+          tool_call_id: 'tc_a',
+        },
+      }),
+    );
+    const resolved = resolveAskUserQuestionPart(withCard, 'a-multi-ask', 'us-east');
+    const content = resolved.content as Array<{ tool_call?: Record<string, unknown> }>;
+    // Without the id, the newest-unanswered fallback would stamp tc_b.
+    expect(content[0]?.tool_call?.output).toBe('us-east');
+    expect(content[1]?.tool_call?.output).toBeUndefined();
+  });
+
+  it('stamps one batched tool call with structured args and answers', () => {
+    const base = msg({
+      content: [
+        {
+          type: 'tool_call',
+          tool_call: { id: 'tc-batch', name: 'ask_user_question', args: '', type: 'tool_call' },
+        } as unknown as TMessageContentParts,
+      ],
+    });
+    const questions = [
+      { id: 'environment', question: 'Which environment?' },
+      { id: 'window', question: 'Which window?' },
+    ];
+    const withCard = applyPendingAction(
+      base,
+      askAction({
+        actionId: 'a-batch',
+        payload: {
+          type: 'ask_user_question',
+          question: questions[0],
+          questions,
+          tool_call_id: 'tc-batch',
+        },
+      }),
+    );
+    const resolved = resolveAskUserQuestionPart(withCard, 'a-batch', {
+      environment: 'staging',
+      window: '7d',
+    });
+    const toolCall = (resolved.content as Array<{ tool_call?: Record<string, unknown> }>)[0]
+      ?.tool_call as Record<string, unknown>;
+    expect(JSON.parse(toolCall.args as string)).toEqual({ questions });
+    expect(JSON.parse(toolCall.output as string)).toEqual({
+      answers: { environment: 'staging', window: '7d' },
+    });
+  });
 });
 
 describe('splitOtherOption', () => {
@@ -418,6 +557,47 @@ describe('findLiveAskUserQuestion', () => {
     resolveAskUserQuestionPart(newer, 'a-done', 'Ada');
 
     expect(findLiveAskUserQuestion([older, newer])?.actionId).toBe('a-live');
+  });
+});
+
+describe('collectLiveAskToolCallIds', () => {
+  const attributedAsk = (actionId: string, toolCallId: string) =>
+    askAction({
+      actionId,
+      payload: {
+        type: 'ask_user_question',
+        question: { question: 'Q?' },
+        tool_call_id: toolCallId,
+      },
+    });
+
+  it('collects every live pause id, not just the newest, and drops answered ones', () => {
+    const first = applyPendingAction(msg({ content: [] }), attributedAsk('a-first', 'call_1'));
+    const both = applyPendingAction(first, attributedAsk('a-second', 'call_2'));
+
+    expect(collectLiveAskToolCallIds([both])).toEqual({
+      ids: ['call_1', 'call_2'],
+      hasUnattributed: false,
+    });
+
+    resolveAskUserQuestionPart(both, 'a-first', 'Ada');
+
+    // `both` is the pre-answer copy — the answered pause must still drop out.
+    expect(collectLiveAskToolCallIds([both])).toEqual({
+      ids: ['call_2'],
+      hasUnattributed: false,
+    });
+  });
+
+  it('flags unattributed pauses and handles non-array input', () => {
+    const unattributed = applyPendingAction(
+      msg({ content: [] }),
+      askAction({ actionId: 'a-unattributed' }),
+    );
+
+    expect(collectLiveAskToolCallIds([unattributed])).toEqual({ ids: [], hasUnattributed: true });
+    expect(collectLiveAskToolCallIds(null)).toEqual({ ids: [], hasUnattributed: false });
+    expect(collectLiveAskToolCallIds(undefined)).toEqual({ ids: [], hasUnattributed: false });
   });
 });
 

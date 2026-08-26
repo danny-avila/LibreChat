@@ -3,7 +3,6 @@ import { useRecoilState } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
 import SpeechRecognitionImport, { useSpeechRecognition } from 'react-speech-recognition';
-import useGetAudioSettings from './useGetAudioSettings';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -32,8 +31,6 @@ const useSpeechToTextBrowser = (
 ) => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { speechToTextEndpoint } = useGetAudioSettings();
-  const isBrowserSTTEnabled = speechToTextEndpoint === 'browser';
   const { data: speechConfig } = useGetCustomConfigSpeechQuery({ enabled: true });
   const sttExternal = Boolean(speechConfig?.sttExternal);
 
@@ -139,17 +136,6 @@ const useSpeechToTextBrowser = (
     showToast,
     sttExternal,
   ]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.shiftKey && e.altKey && e.code === 'KeyL' && !isBrowserSTTEnabled) {
-        toggleListening();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isBrowserSTTEnabled, toggleListening]);
 
   return {
     isListening,

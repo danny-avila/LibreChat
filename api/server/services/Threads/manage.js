@@ -497,7 +497,8 @@ async function checkMessageGaps({
  * @param {string} params.user - The user's ID.
  * @param {string} params.conversationId - LibreChat conversation ID.
  * @param {string} [params.context='message'] - The context of the usage. Defaults to 'message'.
- * @return {Promise<TMessage[]>} A promise that resolves to the updated messages
+ * @param {AppConfig['transactions']} [params.transactions] - Resolved transactions config.
+ * @return {Promise<void>}
  */
 const recordUsage = async ({
   prompt_tokens,
@@ -506,6 +507,7 @@ const recordUsage = async ({
   user,
   conversationId,
   context = 'message',
+  transactions,
 }) => {
   await spendTokens(
     {
@@ -513,6 +515,7 @@ const recordUsage = async ({
       model,
       context,
       conversationId,
+      transactions,
     },
     { promptTokens: prompt_tokens, completionTokens: completion_tokens },
   );

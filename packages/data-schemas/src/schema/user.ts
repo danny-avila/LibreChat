@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import { SystemRoles } from 'librechat-data-provider';
+import { SystemRoles, STATEFUL_CODE_ENVIRONMENTS } from 'librechat-data-provider';
 import { IUser } from '~/types';
 
 // Session sub-schema
@@ -131,11 +131,31 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       type: Date,
       default: null,
     },
+    agentTriggerDeletionStartedAt: {
+      type: Date,
+      select: false,
+    },
+    subagentAdmissionFences: {
+      type: [
+        {
+          token: { type: String, required: true },
+          expiresAt: { type: Date, required: true },
+        },
+      ],
+      _id: false,
+      select: false,
+      default: undefined,
+    },
     personalization: {
       type: {
         memories: {
           type: Boolean,
           default: true,
+        },
+        statefulCodeEnvironment: {
+          type: String,
+          enum: STATEFUL_CODE_ENVIRONMENTS,
+          default: 'user',
         },
       },
       default: {},

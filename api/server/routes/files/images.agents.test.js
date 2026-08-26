@@ -2,7 +2,7 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { createMethods } = require('@librechat/data-schemas');
+const { createMethods, logger } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   SystemRoles,
@@ -34,7 +34,8 @@ jest.mock('fs', () => {
 });
 
 const fs = require('fs');
-const { processAgentFileUpload } = require('~/server/services/Files/process');
+const { processAgentFileUpload, processImageFile } = require('~/server/services/Files/process');
+const { UninspectableFileError } = require('@librechat/api');
 
 const router = require('~/server/routes/files/images');
 
@@ -96,7 +97,12 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     jest.clearAllMocks();
   });
 
-  const createAppWithUser = (userId, userRole = SystemRoles.USER) => {
+  const createAppWithUser = (
+    userId,
+    userRole = SystemRoles.USER,
+    config = {},
+    fileOverrides = {},
+  ) => {
     const app = express();
     app.use(express.json());
     app.use((req, _res, next) => {
@@ -107,6 +113,7 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
           size: 100,
           path: '/tmp/t.png',
           filename: 'test.png',
+          ...fileOverrides,
         };
         req.file_id = uuidv4();
       }
@@ -115,12 +122,53 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     app.use((req, _res, next) => {
       req.user = { id: userId.toString(), role: userRole };
       req.app = { locals: {} };
-      req.config = { fileStrategy: 'local', paths: { imageOutput: '/tmp/images' } };
+      req.config = {
+        fileStrategy: 'local',
+        paths: { imageOutput: '/tmp/images' },
+        ...config,
+      };
       next();
     });
     app.use('/images', router);
     return app;
   };
+
+  it('inspects the canonical sanitized image filename used by upload processing', async () => {
+    const app = createAppWithUser(
+      authorId,
+      SystemRoles.USER,
+      {
+        filters: {
+          files: {
+            pii: {
+              fields: ['name'],
+              starterPatterns: [],
+              customPatterns: [
+                { id: 'canonical-name', label: 'canonical name', regex: 'PRIVATE_IMAGE' },
+              ],
+            },
+          },
+        },
+      },
+      { originalname: 'PRIVATE IMAGE.png' },
+    );
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: agentCustomId,
+      tool_resource: 'context',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      error: 'content_filter_block',
+      source: 'file',
+      field: 'name',
+    });
+    expect(processAgentFileUpload).not.toHaveBeenCalled();
+    expect(processImageFile).not.toHaveBeenCalled();
+  });
 
   it('should return 403 when user has no permission on agent', async () => {
     await createAgent({
@@ -164,6 +212,184 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
 
     expect(response.status).toBe(200);
     expect(processAgentFileUpload).toHaveBeenCalled();
+  });
+
+  it.each(['content', 'extracted_text'])(
+    'blocks opaque image %s before permission or processing side effects',
+    async (field) => {
+      const app = createAppWithUser(authorId, SystemRoles.USER, {
+        filters: {
+          files: {
+            pii: {
+              fields: [field],
+              starterPatterns: [],
+              customPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        },
+      });
+      const response = await request(app).post('/images').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        error: 'content_filter_uninspectable',
+        message: 'Submitted file content could not be inspected before processing.',
+        source: 'file',
+        field,
+      });
+      expect(processAgentFileUpload).not.toHaveBeenCalled();
+      expect(fs.promises.unlink).toHaveBeenCalledWith('/tmp/t.png');
+    },
+  );
+
+  it('defers extracted-text fail-close to configured OCR for a supported agent-context image', async () => {
+    await createAgent({
+      id: agentCustomId,
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: authorId,
+    });
+
+    const app = createAppWithUser(authorId, SystemRoles.USER, {
+      filters: {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [],
+            uninspectable: 'block',
+          },
+        },
+      },
+      fileConfig: {
+        ocr: { supportedMimeTypes: ['image/png'] },
+      },
+      ocr: {},
+    });
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: agentCustomId,
+      tool_resource: 'context',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(200);
+    expect(processAgentFileUpload).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves a deferred extracted-text policy error from image processing', async () => {
+    await createAgent({
+      id: agentCustomId,
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: authorId,
+    });
+    processAgentFileUpload.mockRejectedValueOnce(new UninspectableFileError('extracted_text'));
+    const app = createAppWithUser(authorId, SystemRoles.USER, {
+      filters: {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [],
+            uninspectable: 'block',
+          },
+        },
+      },
+      fileConfig: {
+        ocr: { supportedMimeTypes: ['image/png'] },
+      },
+      ocr: {},
+    });
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: agentCustomId,
+      tool_resource: 'context',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: 'content_filter_uninspectable',
+      message: 'Submitted file content could not be inspected before processing.',
+      source: 'file',
+      field: 'extracted_text',
+    });
+    expect(fs.promises.unlink).toHaveBeenCalledWith(`/tmp/images/${authorId.toString()}/test.png`);
+    expect(fs.promises.unlink).toHaveBeenCalledWith('/tmp/t.png');
+  });
+
+  it('blocks extracted-text fail-close when configured OCR does not support the image MIME type', async () => {
+    const app = createAppWithUser(authorId, SystemRoles.USER, {
+      filters: {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [],
+            uninspectable: 'block',
+          },
+        },
+      },
+      fileConfig: {
+        ocr: { supportedMimeTypes: ['image/jpeg'] },
+      },
+      ocr: {},
+    });
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: agentCustomId,
+      tool_resource: 'context',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      error: 'content_filter_uninspectable',
+      field: 'extracted_text',
+    });
+    expect(processAgentFileUpload).not.toHaveBeenCalled();
+  });
+
+  it('preserves raw-content fail-close even when configured OCR supports the image', async () => {
+    const app = createAppWithUser(authorId, SystemRoles.USER, {
+      filters: {
+        files: {
+          pii: {
+            fields: ['content'],
+            starterPatterns: [],
+            customPatterns: [],
+            uninspectable: 'block',
+          },
+        },
+      },
+      fileConfig: {
+        ocr: { supportedMimeTypes: ['image/png'] },
+      },
+      ocr: {},
+    });
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: agentCustomId,
+      tool_resource: 'context',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      error: 'content_filter_uninspectable',
+      field: 'content',
+    });
+    expect(processAgentFileUpload).not.toHaveBeenCalled();
   });
 
   it('should allow upload for admin regardless of ownership', async () => {
@@ -259,6 +485,99 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     });
 
     expect(response.status).toBe(200);
+  });
+
+  it('uses a normalized image error when file protection is active', async () => {
+    const rawProviderDetail = 'PRIVATE-IMAGE echoed in provider failure';
+    const providerError = Object.assign(new Error(rawProviderDetail), {
+      response: {
+        status: 502,
+        data: rawProviderDetail,
+        headers: { 'x-provider-debug': rawProviderDetail },
+      },
+    });
+    processImageFile.mockRejectedValueOnce(providerError);
+    const errorLogSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
+    const app = createAppWithUser(otherUserId, SystemRoles.USER, {
+      filters: {
+        files: {
+          pii: {
+            fields: ['name'],
+          },
+        },
+      },
+    });
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ message: 'Error processing file' });
+    expect(JSON.stringify(response.body)).not.toContain(rawProviderDetail);
+    expect(JSON.stringify(errorLogSpy.mock.calls)).not.toContain(rawProviderDetail);
+    errorLogSpy.mockRestore();
+  });
+
+  it('preserves legacy image error details when file protection is inactive', async () => {
+    const legacyMessage = 'Invalid file format: .legacy';
+    processImageFile.mockRejectedValueOnce(new Error(legacyMessage));
+    const app = createAppWithUser(otherUserId);
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ message: legacyMessage });
+  });
+
+  it.each([
+    [
+      'file policy',
+      {
+        filters: {
+          files: {
+            pii: { fields: ['name'], starterPatterns: [], customPatterns: [] },
+          },
+        },
+      },
+    ],
+    [
+      'legacy message policy',
+      { messageFilter: { pii: { starterPatterns: [], customPatterns: [] } } },
+    ],
+  ])('preserves image error details for an inert %s', async (_label, config) => {
+    const legacyMessage = 'Invalid file format: .legacy';
+    processImageFile.mockRejectedValueOnce(new Error(legacyMessage));
+    const app = createAppWithUser(otherUserId, SystemRoles.USER, config);
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ message: legacyMessage });
+  });
+
+  it('normalizes image errors when the legacy message policy is active', async () => {
+    const rawProviderDetail = 'Invalid file format: PRIVATE-IMAGE.legacy';
+    processImageFile.mockRejectedValueOnce(new Error(rawProviderDetail));
+    const app = createAppWithUser(otherUserId, SystemRoles.USER, {
+      messageFilter: { pii: {} },
+    });
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ message: 'Invalid file format' });
+    expect(JSON.stringify(response.body)).not.toContain(rawProviderDetail);
   });
 
   it('should return 404 for non-existent agent', async () => {

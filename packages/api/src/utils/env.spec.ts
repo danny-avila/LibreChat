@@ -2189,3 +2189,319 @@ describe('createSafeUser', () => {
     expect(createSafeUser(user).id).toBeUndefined();
   });
 });
+
+describe('resolveHeaders stripUnresolved', () => {
+  const templateHeaders = {
+    'X-OpenID-Id': '{{LIBRECHAT_USER_OPENIDID}}',
+    'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+    'Content-Type': 'application/json',
+  };
+
+  it('strips user placeholders when user context is missing entirely', () => {
+    const result = resolveHeaders({ headers: { ...templateHeaders }, stripUnresolved: true });
+
+    expect(result).toEqual({
+      'X-OpenID-Id': '',
+      'X-User-Id': '',
+      'Content-Type': 'application/json',
+    });
+  });
+
+  it('strips user placeholders when the safe user is an empty object (issue #14580)', () => {
+    const result = resolveHeaders({
+      headers: { ...templateHeaders },
+      user: createSafeUser(undefined),
+      stripUnresolved: true,
+    });
+
+    expect(result).toEqual({
+      'X-OpenID-Id': '',
+      'X-User-Id': '',
+      'Content-Type': 'application/json',
+    });
+  });
+
+  it('strips placeholders for fields the user lacks while substituting present fields', () => {
+    const localUser = createSafeUser({ id: 'user-123', email: 'me@example.com' } as IUser);
+
+    const result = resolveHeaders({
+      headers: { ...templateHeaders, 'X-Email': '{{LIBRECHAT_USER_EMAIL}}' },
+      user: localUser,
+      stripUnresolved: true,
+    });
+
+    expect(result).toEqual({
+      'X-OpenID-Id': '',
+      'X-User-Id': 'user-123',
+      'X-Email': 'me@example.com',
+      'Content-Type': 'application/json',
+    });
+  });
+
+  it('strips only the placeholder within a composite header value', () => {
+    const result = resolveHeaders({
+      headers: { Authorization: 'Bearer {{LIBRECHAT_USER_OPENIDID}}' },
+      stripUnresolved: true,
+    });
+
+    expect(result.Authorization).toBe('Bearer ');
+  });
+
+  it('strips body placeholders when no body context is available', () => {
+    const result = resolveHeaders({
+      headers: { 'X-Convo': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+      user: { id: 'user-123' },
+      stripUnresolved: true,
+    });
+
+    expect(result['X-Convo']).toBe('');
+  });
+
+  it('omits OpenID credential headers when no valid token is available', () => {
+    const result = resolveHeaders({
+      headers: {
+        'X-Access': '{{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        'X-Token': '{{LIBRECHAT_OPENID_TOKEN}}',
+      },
+      user: { id: 'user-123' },
+      stripUnresolved: true,
+    });
+
+    expect(result).not.toHaveProperty('X-Access');
+    expect(result).not.toHaveProperty('X-Token');
+  });
+
+  it('omits the credential header but strips identity placeholders to empty', () => {
+    const result = resolveHeaders({
+      headers: {
+        Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        'X-Org': '{{LIBRECHAT_OPENID_USER_ID}}',
+      },
+      user: createTestUser({ id: 'user-123' }),
+      stripUnresolved: true,
+    });
+
+    expect(result).not.toHaveProperty('Authorization');
+    expect(result['X-Org']).toBe('');
+  });
+
+  it('preserves credential placeholders literally when stripUnresolved is false', () => {
+    const result = resolveHeaders({
+      headers: {
+        Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        'X-Org': '{{LIBRECHAT_OPENID_USER_ID}}',
+      },
+      user: createTestUser({ id: 'user-123' }),
+    });
+
+    expect(result.Authorization).toBe('Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}');
+    expect(result['X-Org']).toBe('{{LIBRECHAT_OPENID_USER_ID}}');
+  });
+
+  it('leaves unknown and non-resolvable placeholders untouched', () => {
+    const result = resolveHeaders({
+      headers: {
+        'X-Typo': '{{LIBRECHAT_USER_NONEXISTENT}}',
+        'X-Graph': '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        'X-Custom': '{{MY_CUSTOM_VAR}}',
+      },
+      stripUnresolved: true,
+    });
+
+    expect(result['X-Typo']).toBe('{{LIBRECHAT_USER_NONEXISTENT}}');
+    expect(result['X-Graph']).toBe('{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}');
+    expect(result['X-Custom']).toBe('{{MY_CUSTOM_VAR}}');
+  });
+
+  it('preserves unresolved placeholders by default (staged flows resolve later)', () => {
+    const result = resolveHeaders({ headers: { ...templateHeaders } });
+
+    expect(result['X-OpenID-Id']).toBe('{{LIBRECHAT_USER_OPENIDID}}');
+    expect(result['X-User-Id']).toBe('{{LIBRECHAT_USER_ID}}');
+  });
+});
+
+describe('processMCPEnv OpenID re-authentication signalling', () => {
+  function createOpenIDUser(expiresAt: number): IUser {
+    return {
+      ...createTestUser({ id: 'user-123', provider: 'openid' }),
+      openidId: 'oidc-sub-456',
+      federatedTokens: {
+        access_token: 'stored-access-token',
+        id_token: 'stored-id-token',
+        refresh_token: 'stored-refresh-token',
+        expires_at: expiresAt,
+      },
+    } as IUser;
+  }
+
+  function tokenlessOpenIDUser(): IUser {
+    return {
+      ...createTestUser({ id: 'user-123', provider: 'openid' }),
+      openidId: 'oidc-sub-456',
+    } as IUser;
+  }
+
+  const expiredSeconds = Math.floor(Date.now() / 1000) - 3600;
+  const validSeconds = Math.floor(Date.now() / 1000) + 3600;
+
+  it('should throw an actionable re-auth error when the token set is expired and a credential placeholder is present', () => {
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com',
+      headers: {
+        Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+      },
+    };
+
+    expect(() => processMCPEnv({ options, user: createOpenIDUser(expiredSeconds) })).toThrow(
+      'OpenID token is expired or unavailable; re-authentication is required to resolve {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+    );
+  });
+
+  it('should still resolve other placeholders when the token set is expired but no OpenID placeholder is present', () => {
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com',
+      headers: {
+        'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+      },
+    };
+
+    const result = processMCPEnv({ options, user: createOpenIDUser(expiredSeconds) });
+
+    if (isStreamableHTTPOptions(result)) {
+      expect(result.headers?.['X-User-Id']).toBe('user-123');
+    } else {
+      throw new Error('Expected streamable-http options');
+    }
+  });
+
+  it('should leave an unknown OpenID placeholder name literal instead of raising re-auth', () => {
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com',
+      headers: {
+        Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCES_TOKEN}}',
+      },
+    };
+
+    const result = processMCPEnv({ options, user: createOpenIDUser(expiredSeconds) });
+
+    if (isStreamableHTTPOptions(result)) {
+      expect(result.headers?.Authorization).toBe('Bearer {{LIBRECHAT_OPENID_ACCES_TOKEN}}');
+    } else {
+      throw new Error('Expected streamable-http options');
+    }
+  });
+
+  it('should leave OpenID placeholders untouched for a user with no OpenID identity', () => {
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com',
+      headers: {
+        Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+      },
+    };
+
+    const result = processMCPEnv({ options, user: createTestUser({ id: 'user-123' }) });
+
+    if (isStreamableHTTPOptions(result)) {
+      expect(result.headers?.Authorization).toBe('Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}');
+    } else {
+      throw new Error('Expected streamable-http options');
+    }
+  });
+
+  it('should substitute the access token when the token set is still valid', () => {
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com',
+      headers: {
+        Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+      },
+    };
+
+    const result = processMCPEnv({ options, user: createOpenIDUser(validSeconds) });
+
+    if (isStreamableHTTPOptions(result)) {
+      expect(result.headers?.Authorization).toBe('Bearer stored-access-token');
+    } else {
+      throw new Error('Expected streamable-http options');
+    }
+  });
+
+  it('should raise re-auth from resolveHeaders when the token set is expired', () => {
+    expect(() =>
+      resolveHeaders({
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}' },
+        user: createOpenIDUser(expiredSeconds),
+        stripUnresolved: true,
+      }),
+    ).toThrow(
+      'OpenID token is expired or unavailable; re-authentication is required to resolve {{LIBRECHAT_OPENID_ID_TOKEN}}',
+    );
+  });
+
+  it('should leave identity metadata placeholders literal for an OpenID user with no stored tokens', () => {
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com',
+      headers: {
+        'X-User-Id': '{{LIBRECHAT_OPENID_USER_ID}}',
+      },
+    };
+
+    const result = processMCPEnv({ options, user: tokenlessOpenIDUser() });
+
+    if (isStreamableHTTPOptions(result)) {
+      expect(result.headers?.['X-User-Id']).toBe('{{LIBRECHAT_OPENID_USER_ID}}');
+    } else {
+      throw new Error('Expected streamable-http options');
+    }
+
+    expect(
+      resolveHeaders({
+        headers: { 'X-User-Id': '{{LIBRECHAT_OPENID_USER_ID}}' },
+        user: tokenlessOpenIDUser(),
+        stripUnresolved: true,
+      })['X-User-Id'],
+    ).toBe('');
+  });
+
+  it('should still raise re-auth for a credential placeholder when no tokens are stored', () => {
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com',
+      headers: {
+        Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+      },
+    };
+
+    expect(() => processMCPEnv({ options, user: tokenlessOpenIDUser() })).toThrow(
+      'OpenID token is expired or unavailable; re-authentication is required to resolve {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+    );
+  });
+
+  it('should not raise re-auth for a metadata-only template when the token set is expired', () => {
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com',
+      headers: {
+        'X-User-Id': '{{LIBRECHAT_OPENID_USER_ID}}',
+        'X-User-Email': '{{LIBRECHAT_OPENID_USER_EMAIL}}',
+        'X-User-Name': '{{LIBRECHAT_OPENID_USER_NAME}}',
+        'X-Expires': '{{LIBRECHAT_OPENID_EXPIRES_AT}}',
+      },
+    };
+
+    const result = processMCPEnv({ options, user: createOpenIDUser(expiredSeconds) });
+
+    if (isStreamableHTTPOptions(result)) {
+      expect(result.headers?.['X-User-Id']).toBe('{{LIBRECHAT_OPENID_USER_ID}}');
+      expect(result.headers?.['X-Expires']).toBe('{{LIBRECHAT_OPENID_EXPIRES_AT}}');
+    } else {
+      throw new Error('Expected streamable-http options');
+    }
+  });
+});

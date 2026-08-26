@@ -151,7 +151,7 @@ function PluginAuthForm({
              * anyway, and the form emulates a modal opening where users expect focus to shift. */
             autoFocus: i === 0,
             className:
-              'hover:border-border-light focus-visible:border-border-light focus-visible:ring-2 focus-visible:ring-ring-primary',
+              'hover:border-border-light focus-visible:border-border-light focus-visible:ring-2 focus-visible:ring-text-primary',
             ...register(authField, rules),
           };
           return (
@@ -178,7 +178,7 @@ function PluginAuthForm({
               {reserveMessage && (
                 <div className="min-h-4 text-xs leading-4">
                   {hasError && (
-                    <span id={`${authField}-error`} role="alert" className="text-red-500">
+                    <span id={`${authField}-error`} role="alert" className="text-text-destructive">
                       {String(errors?.[authField]?.message ?? '')}
                     </span>
                   )}
