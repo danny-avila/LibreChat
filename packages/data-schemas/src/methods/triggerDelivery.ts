@@ -1,6 +1,7 @@
 import type { Model, Types } from 'mongoose';
 import type {
   AgentTriggerDeliveryClaim,
+  AgentEventActorReceipt,
   AgentTriggerDeliveryFailure,
   AgentTriggerHandlingState,
   AgentTriggerDeliveryRecord,
@@ -29,6 +30,30 @@ const MAX_BATCH_SIZE = 8;
 const MAX_BATCH_BYTES = 512 * 1024;
 
 type DuplicateKeyError = { code?: number };
+
+export type AgentEventActorReceiptMetric = {
+  operation: 'read' | 'settle' | 'backfill';
+  outcome: 'hit' | 'miss' | 'success' | 'replay' | 'conflict';
+  resolution?: AgentEventActorReceipt['resolution'];
+};
+
+let observeAgentEventActorReceipt = (_metric: AgentEventActorReceiptMetric): void => undefined;
+
+/** Installs one process-local, low-cardinality observer at the storage boundary. */
+export function setAgentEventActorReceiptMetricObserver(
+  observer?: (metric: AgentEventActorReceiptMetric) => void,
+): void {
+  observeAgentEventActorReceipt = observer ?? (() => undefined);
+}
+
+/** Emits one already-bounded receipt metric through the configured observer. */
+export function recordAgentEventActorReceiptMetric(metric: AgentEventActorReceiptMetric): void {
+  try {
+    observeAgentEventActorReceipt(metric);
+  } catch (error) {
+    logger.warn('[trigger-delivery] Event actor receipt metric observer failed', error);
+  }
+}
 
 export class AgentTriggerDeliveryConflictError extends Error {
   constructor(deliveryKey: string) {
@@ -66,6 +91,36 @@ export interface SettleAgentTriggerHandlingOutcomeInput {
   settledAt: Date;
   error?: string;
   action?: AgentTriggerHandlingState['action'];
+}
+
+export interface SettleAgentEventActorReceiptInput {
+  deliveryKey: string;
+  user: string | Types.ObjectId;
+  tenantId?: string;
+  bindingId: string;
+  conversationId: string;
+  generationCreatedAt: number;
+  status: 'applied' | 'failed';
+  settledAt: Date;
+  error?: string;
+  receipt: Omit<AgentEventActorReceipt, 'bindingId' | 'settledAt'>;
+}
+
+export interface GetAgentEventActorReceiptInput {
+  deliveryKey: string;
+  user: string | Types.ObjectId;
+  tenantId?: string;
+  bindingId: string;
+  conversationId: string;
+}
+
+export type BackfillAgentEventActorReceiptInput = SettleAgentEventActorReceiptInput;
+
+export interface AgentEventActorReceiptStorageMetrics {
+  retainedByResolution: Record<AgentEventActorReceipt['resolution'], number>;
+  expiryEligible: number;
+  retryDeliveries: number;
+  deadDeliveries: number;
 }
 
 export interface AgentTriggerDeliveryMethods {
@@ -106,6 +161,14 @@ export interface AgentTriggerDeliveryMethods {
   settleAgentTriggerHandlingOutcome: (
     input: SettleAgentTriggerHandlingOutcomeInput,
   ) => Promise<boolean>;
+  settleAgentEventActorReceipt: (input: SettleAgentEventActorReceiptInput) => Promise<boolean>;
+  getAgentEventActorReceipt: (
+    input: GetAgentEventActorReceiptInput,
+  ) => Promise<AgentEventActorReceipt | null>;
+  backfillAgentEventActorReceipt: (input: BackfillAgentEventActorReceiptInput) => Promise<boolean>;
+  getAgentEventActorReceiptStorageMetrics: (
+    now: Date,
+  ) => Promise<AgentEventActorReceiptStorageMetrics>;
   retryAgentTriggerDelivery: (
     input: AgentTriggerDeliveryFence & {
       attempt: number;
@@ -202,6 +265,7 @@ function toRecord(delivery: IAgentTriggerDelivery): AgentTriggerDeliveryRecord {
       awaitTerminalHandling: delivery.awaitTerminalHandling,
     }),
     ...(delivery.handling != null && { handling: delivery.handling }),
+    ...(delivery.actorReceipt != null && { actorReceipt: delivery.actorReceipt }),
   };
 }
 
@@ -1248,6 +1312,268 @@ export function createAgentTriggerDeliveryMethods(
     return true;
   }
 
+  async function settleAgentEventActorReceipt(
+    input: SettleAgentEventActorReceiptInput,
+  ): Promise<boolean> {
+    const applied =
+      input.receipt.resolution === 'checkpoint_verified' ||
+      input.receipt.resolution === 'history_repaired';
+    if ((applied && input.status !== 'applied') || (!applied && input.status !== 'failed')) {
+      recordAgentEventActorReceiptMetric({
+        operation: 'settle',
+        outcome: 'conflict',
+        resolution: input.receipt.resolution,
+      });
+      return false;
+    }
+    if (
+      input.receipt.resolution === 'checkpoint_verified' &&
+      (typeof input.receipt.checkpoint.checkpointId !== 'string' ||
+        input.receipt.checkpoint.checkpointId.length === 0)
+    ) {
+      recordAgentEventActorReceiptMetric({
+        operation: 'settle',
+        outcome: 'conflict',
+        resolution: input.receipt.resolution,
+      });
+      return false;
+    }
+    const tenantScope =
+      input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId };
+    const actorReceipt: AgentEventActorReceipt = {
+      bindingId: input.bindingId,
+      ...input.receipt,
+      settledAt: input.settledAt,
+    };
+    const terminal = await Delivery()
+      .findOneAndUpdate(
+        {
+          deliveryKey: input.deliveryKey,
+          user: input.user,
+          ...tenantScope,
+          'envelope.target.bindingId': input.bindingId,
+          'handling.status': 'started',
+          'handling.conversationId': input.conversationId,
+          'handling.generationCreatedAt': input.generationCreatedAt,
+          actorReceipt: { $exists: false },
+        },
+        {
+          $set: {
+            'handling.status': input.status,
+            'handling.settledAt': input.settledAt,
+            ...(applied && { 'handling.action': input.receipt.action }),
+            ...(!applied && {
+              'handling.error': (input.error ?? 'Agent event actor action was compensated').slice(
+                0,
+                MAX_ERROR_MESSAGE_LENGTH,
+              ),
+            }),
+            actorReceipt,
+            expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
+          },
+          $unset: {
+            ...(applied && { 'handling.error': 1 }),
+            ...(!applied && { 'handling.action': 1 }),
+          },
+        },
+        { new: true },
+      )
+      .select('_id orderingKey batchMemberIds awaitTerminalHandling handling +actorReceipt')
+      .lean<
+        Pick<
+          IAgentTriggerDelivery,
+          | '_id'
+          | 'orderingKey'
+          | 'batchMemberIds'
+          | 'awaitTerminalHandling'
+          | 'handling'
+          | 'actorReceipt'
+        >
+      >();
+    let authoritative = terminal;
+    let replayed = false;
+    if (authoritative == null) {
+      authoritative = await Delivery()
+        .findOne({
+          deliveryKey: input.deliveryKey,
+          user: input.user,
+          ...tenantScope,
+          'envelope.target.bindingId': input.bindingId,
+          'handling.conversationId': input.conversationId,
+          'handling.generationCreatedAt': input.generationCreatedAt,
+          'handling.status': input.status,
+          actorReceipt,
+        })
+        .select('_id orderingKey batchMemberIds awaitTerminalHandling handling +actorReceipt')
+        .lean<
+          Pick<
+            IAgentTriggerDelivery,
+            | '_id'
+            | 'orderingKey'
+            | 'batchMemberIds'
+            | 'awaitTerminalHandling'
+            | 'handling'
+            | 'actorReceipt'
+          >
+        >();
+      if (authoritative == null) {
+        recordAgentEventActorReceiptMetric({
+          operation: 'settle',
+          outcome: 'conflict',
+          resolution: input.receipt.resolution,
+        });
+        return false;
+      }
+      replayed = true;
+    }
+    await propagateBatchHandling(authoritative);
+    if (authoritative.awaitTerminalHandling === true) {
+      await LaneSequence().updateOne(
+        { _id: authoritative.orderingKey },
+        { $set: { cleanupRequestedAt: input.settledAt } },
+      );
+      await reclaimLaneIfInactive(authoritative.orderingKey);
+    }
+    recordAgentEventActorReceiptMetric({
+      operation: 'settle',
+      outcome: replayed ? 'replay' : 'success',
+      resolution: input.receipt.resolution,
+    });
+    return true;
+  }
+
+  async function getAgentEventActorReceipt(
+    input: GetAgentEventActorReceiptInput,
+  ): Promise<AgentEventActorReceipt | null> {
+    const tenantScope =
+      input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId };
+    const delivery = await Delivery()
+      .findOne({
+        deliveryKey: input.deliveryKey,
+        user: input.user,
+        ...tenantScope,
+        'envelope.target.bindingId': input.bindingId,
+        'handling.conversationId': input.conversationId,
+        actorReceipt: { $exists: true },
+      })
+      .select('+actorReceipt')
+      .lean<Pick<IAgentTriggerDelivery, 'actorReceipt'>>();
+    recordAgentEventActorReceiptMetric({
+      operation: 'read',
+      outcome: delivery?.actorReceipt == null ? 'miss' : 'hit',
+      ...(delivery?.actorReceipt?.resolution == null
+        ? {}
+        : { resolution: delivery.actorReceipt.resolution }),
+    });
+    return delivery?.actorReceipt ?? null;
+  }
+
+  /** Lazily moves one pre-ledger conversation receipt onto its already-terminal
+   * delivery. The public outcome must already agree, so migration can never
+   * rewrite history or manufacture a second winner. */
+  async function backfillAgentEventActorReceipt(
+    input: BackfillAgentEventActorReceiptInput,
+  ): Promise<boolean> {
+    const applied =
+      input.receipt.resolution === 'checkpoint_verified' ||
+      input.receipt.resolution === 'history_repaired';
+    if ((applied && input.status !== 'applied') || (!applied && input.status !== 'failed')) {
+      recordAgentEventActorReceiptMetric({
+        operation: 'backfill',
+        outcome: 'conflict',
+        resolution: input.receipt.resolution,
+      });
+      return false;
+    }
+    if (
+      input.receipt.resolution === 'checkpoint_verified' &&
+      (typeof input.receipt.checkpoint.checkpointId !== 'string' ||
+        input.receipt.checkpoint.checkpointId.length === 0)
+    ) {
+      recordAgentEventActorReceiptMetric({
+        operation: 'backfill',
+        outcome: 'conflict',
+        resolution: input.receipt.resolution,
+      });
+      return false;
+    }
+    const tenantScope =
+      input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId };
+    const actorReceipt: AgentEventActorReceipt = {
+      bindingId: input.bindingId,
+      ...input.receipt,
+      settledAt: input.settledAt,
+    };
+    const migrated = await Delivery().findOneAndUpdate(
+      {
+        deliveryKey: input.deliveryKey,
+        user: input.user,
+        ...tenantScope,
+        'envelope.target.bindingId': input.bindingId,
+        'handling.conversationId': input.conversationId,
+        'handling.generationCreatedAt': input.generationCreatedAt,
+        'handling.status': input.status,
+        ...(applied && { 'handling.action': input.receipt.action }),
+        actorReceipt: { $exists: false },
+      },
+      {
+        $set: { actorReceipt },
+        $max: { expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS) },
+      },
+      { new: true },
+    );
+    if (migrated != null) {
+      recordAgentEventActorReceiptMetric({
+        operation: 'backfill',
+        outcome: 'success',
+        resolution: input.receipt.resolution,
+      });
+      return true;
+    }
+    const replayed =
+      (await Delivery().exists({
+        deliveryKey: input.deliveryKey,
+        user: input.user,
+        ...tenantScope,
+        'envelope.target.bindingId': input.bindingId,
+        'handling.conversationId': input.conversationId,
+        'handling.generationCreatedAt': input.generationCreatedAt,
+        'handling.status': input.status,
+        actorReceipt,
+      })) != null;
+    recordAgentEventActorReceiptMetric({
+      operation: 'backfill',
+      outcome: replayed ? 'replay' : 'conflict',
+      resolution: input.receipt.resolution,
+    });
+    return replayed;
+  }
+
+  async function getAgentEventActorReceiptStorageMetrics(
+    now: Date,
+  ): Promise<AgentEventActorReceiptStorageMetrics> {
+    const [byResolution, expiryEligible, retryDeliveries, deadDeliveries] = await Promise.all([
+      Delivery().aggregate<{ _id: AgentEventActorReceipt['resolution']; count: number }>([
+        { $match: { actorReceipt: { $exists: true } } },
+        { $group: { _id: '$actorReceipt.resolution', count: { $sum: 1 } } },
+      ]),
+      Delivery().countDocuments({ actorReceipt: { $exists: true }, expiresAt: { $lte: now } }),
+      Delivery().countDocuments({ status: 'pending', attempts: { $gt: 0 } }),
+      Delivery().countDocuments({ status: 'dead' }),
+    ]);
+    const retainedByResolution: AgentEventActorReceiptStorageMetrics['retainedByResolution'] = {
+      checkpoint_verified: 0,
+      action_compensated: 0,
+      history_repaired: 0,
+    };
+    for (const row of byResolution) {
+      if (row._id in retainedByResolution) {
+        retainedByResolution[row._id] = row.count;
+      }
+    }
+    return { retainedByResolution, expiryEligible, retryDeliveries, deadDeliveries };
+  }
+
   async function retryAgentTriggerDelivery(
     input: AgentTriggerDeliveryFence & {
       attempt: number;
@@ -1338,7 +1664,10 @@ export function createAgentTriggerDeliveryMethods(
   async function getAgentTriggerDelivery(
     deliveryKey: string,
   ): Promise<AgentTriggerDeliveryRecord | null> {
-    const delivery = await Delivery().findOne({ deliveryKey }).lean<IAgentTriggerDelivery>();
+    const delivery = await Delivery()
+      .findOne({ deliveryKey })
+      .select('+actorReceipt')
+      .lean<IAgentTriggerDelivery>();
     return delivery == null ? null : toRecord(delivery);
   }
 
@@ -1621,6 +1950,10 @@ export function createAgentTriggerDeliveryMethods(
     deferAgentTriggerDeliveryAttempt,
     completeAgentTriggerDelivery,
     settleAgentTriggerHandlingOutcome,
+    settleAgentEventActorReceipt,
+    getAgentEventActorReceipt,
+    backfillAgentEventActorReceipt,
+    getAgentEventActorReceiptStorageMetrics,
     retryAgentTriggerDelivery,
     deadLetterAgentTriggerDelivery,
     getAgentTriggerDelivery,

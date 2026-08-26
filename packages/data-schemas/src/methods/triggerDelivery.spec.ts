@@ -11,6 +11,8 @@ import type { IUser } from '~/types/user';
 import {
   AgentTriggerDeliveryConflictError,
   createAgentTriggerDeliveryMethods,
+  recordAgentEventActorReceiptMetric,
+  setAgentEventActorReceiptMetricObserver,
   type AgentTriggerDeliveryMethods,
 } from './triggerDelivery';
 import { createAgentTriggerLaneSequenceModel } from '../models/triggerLaneSequence';
@@ -52,12 +54,17 @@ afterAll(async () => {
 }, DB_SETUP_TIMEOUT_MS);
 
 beforeEach(async () => {
+  setAgentEventActorReceiptMetricObserver();
   await Promise.all([
     Delivery.deleteMany({}),
     LaneSequence.deleteMany({}),
     UserPurge.deleteMany({}),
     User.deleteMany({}),
   ]);
+});
+
+afterAll(() => {
+  setAgentEventActorReceiptMetricObserver();
 });
 
 function enqueueInput(
@@ -89,6 +96,19 @@ function transientFailure(overrides: Partial<AgentTriggerDeliveryFailure> = {}) 
 }
 
 describe('agent trigger delivery methods', () => {
+  it('never lets receipt metric failures affect storage correctness', () => {
+    setAgentEventActorReceiptMetricObserver(() => {
+      throw new Error('metrics unavailable');
+    });
+
+    expect(() =>
+      recordAgentEventActorReceiptMetric({
+        operation: 'settle',
+        outcome: 'success',
+        resolution: 'checkpoint_verified',
+      }),
+    ).not.toThrow();
+  });
   it('enqueues idempotently and rejects key reuse with different content', async () => {
     const input = enqueueInput();
     const first = await methods.enqueueAgentTriggerDelivery(input);
@@ -1603,6 +1623,506 @@ describe('agent trigger delivery methods', () => {
         error: 'provider rejected the model',
       },
     });
+  });
+
+  it('settles the public outcome and exact actor receipt in one delivery row', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        awaitTerminalHandling: true,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-1' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const claimed = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claimed!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+    });
+    const generationCreatedAt = START.getTime() + 1_000;
+    await methods.completeAgentTriggerDelivery({
+      id: claimed!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: attempt!,
+      result: { status: 'started' },
+      settledAt: new Date(generationCreatedAt),
+      awaitTerminalHandling: true,
+      handling: {
+        status: 'started',
+        conversationId: 'conversation-1',
+        streamId: 'conversation-1',
+        generationCreatedAt,
+        startedAt: new Date(generationCreatedAt),
+      },
+    });
+    const activeDelivery = await methods.getAgentTriggerDelivery(queued.delivery.deliveryKey);
+    expect(activeDelivery).toMatchObject({ handling: { status: 'started' } });
+    expect(activeDelivery).not.toHaveProperty('expiresAt');
+    const actorReceipt = {
+      bindingId: 'binding-1',
+      resolution: 'checkpoint_verified' as const,
+      checkpoint: {
+        threadId: 'conversation-1',
+        checkpointId: 'checkpoint-1',
+        checkpointNs: 'event:1',
+      },
+      action: { toolName: 'submit_move', toolCallId: 'call-1' },
+    };
+    const settlement = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      tenantId: 'tenant-1',
+      bindingId: actorReceipt.bindingId,
+      conversationId: 'conversation-1',
+      generationCreatedAt,
+      status: 'applied' as const,
+      settledAt: new Date(generationCreatedAt + 1_000),
+      receipt: {
+        resolution: actorReceipt.resolution,
+        checkpoint: actorReceipt.checkpoint,
+        action: actorReceipt.action,
+      },
+    };
+
+    await expect(methods.settleAgentEventActorReceipt(settlement)).resolves.toBe(true);
+    await expect(methods.settleAgentEventActorReceipt(settlement)).resolves.toBe(true);
+    for (const conflict of [
+      { ...settlement, user: new mongoose.Types.ObjectId() },
+      { ...settlement, tenantId: 'tenant-2' },
+      { ...settlement, bindingId: 'binding-2' },
+      { ...settlement, conversationId: 'conversation-2' },
+      {
+        ...settlement,
+        receipt: {
+          ...settlement.receipt,
+          checkpoint: { ...settlement.receipt.checkpoint, checkpointId: 'checkpoint-2' },
+        },
+      },
+      {
+        ...settlement,
+        receipt: { ...settlement.receipt, action: { toolName: 'resign_game' } },
+      },
+      {
+        ...settlement,
+        status: 'failed' as const,
+        receipt: { ...settlement.receipt, resolution: 'action_compensated' as const },
+      },
+    ]) {
+      await expect(methods.settleAgentEventActorReceipt(conflict)).resolves.toBe(false);
+    }
+    await expect(
+      methods.getAgentTriggerDelivery(queued.delivery.deliveryKey),
+    ).resolves.toMatchObject({
+      handling: { status: 'applied', action: actorReceipt.action },
+      expiresAt: new Date(generationCreatedAt + 1_000 + 90 * 24 * 60 * 60_000),
+      actorReceipt: {
+        ...actorReceipt,
+        settledAt: new Date(generationCreatedAt + 1_000),
+      },
+    });
+    await expect(
+      methods.getAgentEventActorReceipt({
+        deliveryKey: queued.delivery.deliveryKey,
+        user: queued.delivery.user,
+        tenantId: 'tenant-1',
+        bindingId: 'binding-1',
+        conversationId: 'conversation-1',
+      }),
+    ).resolves.toEqual({
+      ...actorReceipt,
+      settledAt: new Date(generationCreatedAt + 1_000),
+    });
+    const publicStatus = await methods.getAgentTriggerDeliveryStatus(
+      queued.delivery.deliveryKey,
+      queued.delivery.user,
+      'source-key-1',
+      'tenant-1',
+    );
+    expect(publicStatus).not.toHaveProperty('actorReceipt');
+    await expect(
+      methods.getAgentEventActorReceipt({
+        deliveryKey: queued.delivery.deliveryKey,
+        user: new mongoose.Types.ObjectId(),
+        tenantId: 'tenant-1',
+        bindingId: 'binding-1',
+        conversationId: 'conversation-1',
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it('lazily backfills one exact legacy receipt and rejects conflicting identities', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-legacy' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const generationCreatedAt = START.getTime() + 2_000;
+    const action = { toolName: 'submit_move', toolCallId: 'call-legacy' };
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      {
+        $set: {
+          status: 'succeeded',
+          handling: {
+            status: 'applied',
+            conversationId: 'conversation-legacy',
+            streamId: 'conversation-legacy',
+            generationCreatedAt,
+            startedAt: START,
+            settledAt: START,
+            action,
+          },
+          settledAt: START,
+          expiresAt: new Date(START.getTime() + 1_000),
+        },
+      },
+    );
+    const input = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      tenantId: 'tenant-1',
+      bindingId: 'binding-legacy',
+      conversationId: 'conversation-legacy',
+      generationCreatedAt,
+      status: 'applied' as const,
+      settledAt: new Date(START.getTime() + 3_000),
+      receipt: {
+        resolution: 'checkpoint_verified' as const,
+        checkpoint: {
+          threadId: 'conversation-legacy',
+          checkpointId: 'checkpoint-legacy',
+          checkpointNs: 'event-actor/legacy',
+        },
+        action,
+      },
+    };
+
+    await expect(
+      Promise.all([
+        methods.backfillAgentEventActorReceipt(input),
+        methods.backfillAgentEventActorReceipt(input),
+      ]),
+    ).resolves.toEqual([true, true]);
+    await expect(
+      methods.backfillAgentEventActorReceipt({
+        ...input,
+        receipt: {
+          ...input.receipt,
+          checkpoint: { ...input.receipt.checkpoint, checkpointId: 'different' },
+        },
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      methods.getAgentEventActorReceipt({
+        deliveryKey: input.deliveryKey,
+        user: input.user,
+        tenantId: input.tenantId,
+        bindingId: input.bindingId,
+        conversationId: input.conversationId,
+      }),
+    ).resolves.toEqual({
+      bindingId: input.bindingId,
+      ...input.receipt,
+      settledAt: input.settledAt,
+    });
+    const stored = await Delivery.findOne({ deliveryKey: input.deliveryKey }).lean();
+    expect(stored?.expiresAt?.getTime()).toBeGreaterThan(START.getTime() + 1_000);
+  });
+
+  it('does not let more than 1,024 unexpired receipts block or evict another actor receipt', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const settledAt = new Date(START.getTime() + 10_000);
+    const expiresAt = new Date(settledAt.getTime() + 90 * 24 * 60 * 60_000);
+    await Delivery.insertMany(
+      Array.from({ length: 1_025 }, (_, index) => ({
+        deliveryKey: `retained-receipt-${index}`,
+        fingerprint: `retained-fingerprint-${index}`,
+        orderingKey: `retained-lane-${index}`,
+        laneSequence: 1,
+        envelope: { mode: 'continue', target: { bindingId: `binding-${index}` } },
+        user,
+        tenantId: 'tenant-1',
+        status: 'succeeded',
+        attempts: 1,
+        availableAt: START,
+        handling: {
+          status: 'applied',
+          conversationId: `conversation-${index}`,
+          streamId: `conversation-${index}`,
+          generationCreatedAt: START.getTime() + index,
+          startedAt: START,
+          settledAt,
+          action: { toolName: 'submit_move', toolCallId: `call-${index}` },
+        },
+        actorReceipt: {
+          bindingId: `binding-${index}`,
+          resolution: 'checkpoint_verified',
+          checkpoint: {
+            threadId: `conversation-${index}`,
+            checkpointId: `checkpoint-${index}`,
+            checkpointNs: `event-actor/${index}`,
+          },
+          action: { toolName: 'submit_move', toolCallId: `call-${index}` },
+          settledAt,
+        },
+        settledAt,
+        expiresAt,
+      })),
+    );
+
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        orderingKey: 'fresh-receipt-lane',
+        awaitTerminalHandling: true,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-fresh' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const generationCreatedAt = settledAt.getTime() + 1_000;
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      {
+        $set: {
+          status: 'succeeded',
+          handling: {
+            status: 'started',
+            conversationId: 'conversation-fresh',
+            streamId: 'conversation-fresh',
+            generationCreatedAt,
+            startedAt: settledAt,
+          },
+        },
+      },
+    );
+
+    await expect(
+      methods.settleAgentEventActorReceipt({
+        deliveryKey: queued.delivery.deliveryKey,
+        user,
+        tenantId: 'tenant-1',
+        bindingId: 'binding-fresh',
+        conversationId: 'conversation-fresh',
+        generationCreatedAt,
+        status: 'applied',
+        settledAt: new Date(generationCreatedAt + 1_000),
+        receipt: {
+          resolution: 'checkpoint_verified',
+          checkpoint: {
+            threadId: 'conversation-fresh',
+            checkpointId: 'checkpoint-fresh',
+            checkpointNs: 'event-actor/fresh',
+          },
+          action: { toolName: 'submit_move', toolCallId: 'call-fresh' },
+        },
+      }),
+    ).resolves.toBe(true);
+
+    expect(await Delivery.countDocuments({ actorReceipt: { $exists: true } })).toBe(1_026);
+    await expect(
+      methods.getAgentEventActorReceipt({
+        deliveryKey: 'retained-receipt-0',
+        user,
+        tenantId: 'tenant-1',
+        bindingId: 'binding-0',
+        conversationId: 'conversation-0',
+      }),
+    ).resolves.toMatchObject({
+      resolution: 'checkpoint_verified',
+      action: { toolCallId: 'call-0' },
+    });
+    await expect(
+      methods.settleAgentEventActorReceipt({
+        deliveryKey: 'retained-receipt-0',
+        user,
+        tenantId: 'tenant-1',
+        bindingId: 'binding-0',
+        conversationId: 'conversation-0',
+        generationCreatedAt: START.getTime(),
+        status: 'applied',
+        settledAt,
+        receipt: {
+          resolution: 'checkpoint_verified',
+          checkpoint: {
+            threadId: 'conversation-0',
+            checkpointId: 'stale-owner-checkpoint',
+            checkpointNs: 'event-actor/0',
+          },
+          action: { toolName: 'submit_move', toolCallId: 'call-0' },
+        },
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      methods.getAgentEventActorReceiptStorageMetrics(new Date(START.getTime() + 20_000)),
+    ).resolves.toMatchObject({
+      retainedByResolution: {
+        checkpoint_verified: 1_026,
+        action_compensated: 0,
+        history_repaired: 0,
+      },
+      expiryEligible: 0,
+    });
+  });
+
+  it('never migrates a compensated legacy receipt as an applied outcome', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-compensated' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const generationCreatedAt = START.getTime() + 6_000;
+    const checkpoint = {
+      threadId: 'conversation-compensated',
+      checkpointId: 'checkpoint-compensated',
+      checkpointNs: 'event-actor/compensated',
+    };
+    const action = { toolName: 'submit_move', toolCallId: 'call-compensated' };
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      {
+        $set: {
+          status: 'succeeded',
+          handling: {
+            status: 'failed',
+            conversationId: 'conversation-compensated',
+            streamId: 'conversation-compensated',
+            generationCreatedAt,
+            startedAt: START,
+            settledAt: START,
+            error: 'Applied action was compensated',
+          },
+          settledAt: START,
+          expiresAt: new Date(START.getTime() + 90 * 24 * 60 * 60_000),
+        },
+      },
+    );
+    const common = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      tenantId: 'tenant-1',
+      bindingId: 'binding-compensated',
+      conversationId: 'conversation-compensated',
+      generationCreatedAt,
+      settledAt: new Date(START.getTime() + 7_000),
+      receipt: { checkpoint, action },
+    };
+
+    await expect(
+      methods.backfillAgentEventActorReceipt({
+        ...common,
+        status: 'failed',
+        receipt: { ...common.receipt, resolution: 'action_compensated' },
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      methods.backfillAgentEventActorReceipt({
+        ...common,
+        status: 'applied',
+        receipt: { ...common.receipt, resolution: 'checkpoint_verified' },
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      methods.getAgentEventActorReceipt({
+        deliveryKey: common.deliveryKey,
+        user: common.user,
+        tenantId: common.tenantId,
+        bindingId: common.bindingId,
+        conversationId: common.conversationId,
+      }),
+    ).resolves.toMatchObject({ resolution: 'action_compensated' });
+  });
+
+  it('allows exactly one winner when verification races compensation', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        awaitTerminalHandling: true,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-race' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const generationCreatedAt = START.getTime() + 4_000;
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      {
+        $set: {
+          status: 'succeeded',
+          awaitTerminalHandling: true,
+          handling: {
+            status: 'started',
+            conversationId: 'conversation-race',
+            streamId: 'conversation-race',
+            generationCreatedAt,
+            startedAt: START,
+          },
+        },
+      },
+    );
+    const checkpoint = {
+      threadId: 'conversation-race',
+      checkpointId: 'checkpoint-race',
+      checkpointNs: 'event-actor/race',
+    };
+    const common = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      tenantId: 'tenant-1',
+      bindingId: 'binding-race',
+      conversationId: 'conversation-race',
+      generationCreatedAt,
+      settledAt: new Date(START.getTime() + 5_000),
+    };
+    const [verified, compensated] = await Promise.all([
+      methods.settleAgentEventActorReceipt({
+        ...common,
+        status: 'applied',
+        receipt: {
+          resolution: 'checkpoint_verified',
+          checkpoint,
+          action: { toolName: 'submit_move' },
+        },
+      }),
+      methods.settleAgentEventActorReceipt({
+        ...common,
+        status: 'failed',
+        error: 'operator compensated action',
+        receipt: {
+          resolution: 'action_compensated',
+          checkpoint,
+          action: { toolName: 'submit_move' },
+        },
+      }),
+    ]);
+
+    expect(Number(verified) + Number(compensated)).toBe(1);
+    const stored = await methods.getAgentTriggerDelivery(queued.delivery.deliveryKey);
+    expect(stored?.handling?.status).toBe(verified ? 'applied' : 'failed');
+    expect(stored?.actorReceipt?.resolution).toBe(
+      verified ? 'checkpoint_verified' : 'action_compensated',
+    );
   });
 
   it('reclaims an inactive high-cardinality lane after its tail succeeds', async () => {

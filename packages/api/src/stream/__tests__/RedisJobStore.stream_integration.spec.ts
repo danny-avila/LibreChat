@@ -1299,6 +1299,7 @@ describe('RedisJobStore Integration Tests', () => {
         agent_id: 'saved-agent-1',
         isTemporary: true,
         agentEventDeliveryKey: 'trigger_1',
+        agentEventBindingId: 'binding-1',
         agentEventExpectedAction: {
           toolName: 'submit_move',
           argumentSubset: { gameId: 'game-1', expectedPly: 7 },
@@ -1312,6 +1313,7 @@ describe('RedisJobStore Integration Tests', () => {
       expect(turn1?.agent_id).toBe('saved-agent-1');
       expect(turn1?.isTemporary).toBe(true);
       expect(turn1?.agentEventDeliveryKey).toBe('trigger_1');
+      expect(turn1?.agentEventBindingId).toBe('binding-1');
       expect(turn1?.agentEventExpectedAction).toEqual({
         toolName: 'submit_move',
         argumentSubset: { gameId: 'game-1', expectedPly: 7 },
@@ -1333,6 +1335,7 @@ describe('RedisJobStore Integration Tests', () => {
       expect(turn2?.agent_id).toBeUndefined();
       expect(turn2?.isTemporary).toBeUndefined();
       expect(turn2?.agentEventDeliveryKey).toBeUndefined();
+      expect(turn2?.agentEventBindingId).toBeUndefined();
       expect(turn2?.agentEventExpectedAction).toBeUndefined();
       expect(turn2?.agentEventLegacyTurnToken).toBeUndefined();
       expect(turn2?.discoveredTools).toBeUndefined();

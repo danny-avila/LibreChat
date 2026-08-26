@@ -753,4 +753,65 @@ describe('event actor host adapter', () => {
     ).rejects.toThrow('Event actor binding is no longer active');
     expect(mockedGetCheckpointer).not.toHaveBeenCalled();
   });
+
+  it('replays a delivery receipt and cleans its stranded active marker without executing', async () => {
+    const checkpoint = {
+      threadId: conversationId,
+      checkpointId: 'checkpoint-terminal',
+      checkpointNs: 'event-actor/event-replay',
+    };
+    const invoke = jest.fn(async () => 'must not run');
+    const clearReconciliation = jest.fn(async () => true);
+    const dependencies = {
+      ...deps(),
+      getSnapshot: jest.fn(async () => ({
+        state: { generation: 1, checkpoint },
+        reconciliations: [
+          {
+            invocationId: 'event-replay',
+            status: 'history_persisted' as const,
+            checkpoint,
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        ],
+        legacyTurn: null,
+        epoch: 0,
+      })),
+      getReceipt: jest.fn(async () => ({
+        bindingId: 'binding-1',
+        resolution: 'checkpoint_verified' as const,
+        checkpoint,
+        action: { toolName: 'submit_move' },
+        settledAt: new Date(),
+      })),
+      clearReconciliation,
+    };
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          bindingId: 'binding-1',
+          invocationId: 'event-replay',
+          event: { id: 'event-replay' },
+          signal: new AbortController().signal,
+          invoke,
+          readAppliedAction: () => undefined,
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('already has a terminal receipt');
+
+    expect(clearReconciliation).toHaveBeenCalledWith({
+      user: 'user-1',
+      conversationId,
+      invocationId: 'event-replay',
+      checkpoint,
+      resolution: 'checkpoint_verified',
+    });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(dependencies.recordReconciliation).not.toHaveBeenCalled();
+  });
 });

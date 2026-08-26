@@ -54,6 +54,8 @@ const {
   completeAgentEventActorLegacyTurn,
   recordAgentEventActorReconciliation,
   resolveAgentEventActorReconciliation,
+  clearAgentEventActorReconciliation,
+  getAgentEventActorReceipt,
   isAgentTriggerPrincipalActive,
   isSubagentOwnerAdmissible,
 } = require('~/models');
@@ -1312,6 +1314,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         isTemporary: req._agentEventBindingRetention?.isTemporary ?? req.body?.isTemporary,
         ...(agentEventDelivery != null && {
           agentEventDeliveryKey: agentEventDelivery.deliveryKey,
+          agentEventBindingId: agentEventDelivery.target.bindingId,
           ...(agentEventDelivery.expectedAction != null && {
             agentEventExpectedAction: agentEventDelivery.expectedAction,
           }),
@@ -2011,6 +2014,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 user: userId,
                 ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
                 conversationId,
+                bindingId: agentEventDelivery.target.bindingId,
                 invocationId: eventTaskId,
                 event: agentEventDelivery.event,
                 expectedAction: agentEventDelivery.expectedAction,
@@ -2036,6 +2040,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 commitState: commitAgentEventActorState,
                 recordReconciliation: recordAgentEventActorReconciliation,
                 resolveReconciliation: resolveAgentEventActorReconciliation,
+                getReceipt: getAgentEventActorReceipt,
+                clearReconciliation: clearAgentEventActorReconciliation,
               },
             ).then(({ value, execution }) => {
               if (execution.status === 'applied') {

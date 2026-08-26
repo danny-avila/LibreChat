@@ -6,7 +6,11 @@ import {
   type EventActorHead,
   type EventActorHostAdapter,
 } from '@librechat/agents';
-import type { ConversationMethods, IAgentEventActorState } from '@librechat/data-schemas';
+import type {
+  AgentTriggerDeliveryMethods,
+  ConversationMethods,
+  IAgentEventActorState,
+} from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { AgentTriggerExpectedAction } from './envelope';
 import type { AgentEventAppliedAction } from './outcome';
@@ -35,6 +39,8 @@ export interface ExecuteAgentEventActorInput<T> {
   user: string;
   tenantId?: string;
   conversationId: string;
+  /** Authenticated binding that owns the delivery receipt. */
+  bindingId?: string;
   invocationId: string;
   event: EventActorEvent;
   expectedAction?: AgentTriggerExpectedAction;
@@ -56,6 +62,8 @@ export interface AgentEventActorDependencies {
   commitState: ConversationMethods['commitAgentEventActorState'];
   recordReconciliation: ConversationMethods['recordAgentEventActorReconciliation'];
   resolveReconciliation: ConversationMethods['resolveAgentEventActorReconciliation'];
+  getReceipt?: AgentTriggerDeliveryMethods['getAgentEventActorReceipt'];
+  clearReconciliation?: ConversationMethods['clearAgentEventActorReconciliation'];
 }
 
 function toHead(actorThreadId: string, state: IAgentEventActorState | null): EventActorHead {
@@ -105,6 +113,34 @@ export async function executeAgentEventActor<T>(
       });
       if (snapshot === undefined) {
         throw new Error('Event actor binding is no longer active');
+      }
+      if (input.bindingId != null && deps.getReceipt != null) {
+        const receipt = await deps.getReceipt({
+          deliveryKey: input.invocationId,
+          user: input.user,
+          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+          bindingId: input.bindingId,
+          conversationId: input.conversationId,
+        });
+        if (receipt != null) {
+          const marker = snapshot.reconciliations.find(
+            (item) => item.invocationId === input.invocationId,
+          );
+          if (marker != null && deps.clearReconciliation != null) {
+            const cleared = await deps.clearReconciliation({
+              user: input.user,
+              conversationId: input.conversationId,
+              ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+              invocationId: input.invocationId,
+              checkpoint: receipt.checkpoint,
+              resolution: receipt.resolution,
+            });
+            if (!cleared) {
+              throw new Error('Event actor terminal marker could not be recovered');
+            }
+          }
+          throw new Error('Event actor invocation already has a terminal receipt');
+        }
       }
       const unresolved = snapshot.reconciliations.filter((item) => item.status !== 'settled');
       if (unresolved.length > 0) {

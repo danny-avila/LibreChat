@@ -219,6 +219,13 @@ convoSchema.index(
   { 'agentEventBinding.bindingId': 1 },
   { unique: true, sparse: true, name: 'agent_event_binding_unique' },
 );
+convoSchema.index(
+  {
+    'agentEventActorReconciliations.status': 1,
+    'agentEventActorReconciliations.observedAt': 1,
+  },
+  { sparse: true, name: 'agent_event_actor_reconciliation_metrics' },
+);
 // index for MeiliSearch sync operations
 convoSchema.index({ _meiliIndex: 1, isTemporary: 1, expiredAt: 1 });
 
