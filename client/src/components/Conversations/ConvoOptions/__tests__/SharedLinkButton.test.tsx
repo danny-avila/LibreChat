@@ -132,7 +132,9 @@ describe('SharedLinkButton', () => {
         snapshotFiles: true,
       });
     });
-    expect(updateButton.querySelector('svg')).toHaveClass('animate-refresh-link-spin');
+    await waitFor(() =>
+      expect(updateButton.querySelector('svg')).toHaveClass('animate-refresh-link-spin'),
+    );
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(setSharedLink).toHaveBeenCalledWith(expect.stringContaining('/share/share-old'));
   });
