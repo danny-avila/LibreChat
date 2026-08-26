@@ -34,30 +34,29 @@ describe('loadDefaultModels', () => {
     getGoogleModels.mockReturnValue(['gemini-3.7-flash']);
   });
 
-  it('exposes the Google catalog to Vertex agents without another model lookup', async () => {
+  it('returns the Google catalog once under its configured endpoint', async () => {
     const models = await loadDefaultModels(request);
 
     expect(models).toEqual(
       expect.objectContaining({
         [EModelEndpoint.openAI]: ['gpt-5'],
         [EModelEndpoint.google]: ['gemini-3.7-flash'],
-        [Providers.VERTEXAI]: ['gemini-3.7-flash'],
         [EModelEndpoint.anthropic]: ['claude-sonnet'],
         [EModelEndpoint.bedrock]: ['amazon.nova-pro-v1:0'],
       }),
     );
-    expect(models[Providers.VERTEXAI]).toBe(models[EModelEndpoint.google]);
+    expect(models[Providers.VERTEXAI]).toBeUndefined();
     expect(getGoogleModels).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the Vertex catalog empty when the Google model source fails', async () => {
+  it('keeps the configured Google catalog empty when its model source fails', async () => {
     const error = new Error('Google models unavailable');
     getGoogleModels.mockReturnValue(Promise.reject(error));
 
     const models = await loadDefaultModels(request);
 
     expect(models[EModelEndpoint.google]).toEqual([]);
-    expect(models[Providers.VERTEXAI]).toBe(models[EModelEndpoint.google]);
+    expect(models[Providers.VERTEXAI]).toBeUndefined();
     expect(logger.error).toHaveBeenCalledWith('Error getting Google models:', error);
   });
 });

@@ -1,4 +1,4 @@
-import { EModelEndpoint } from './schemas';
+import { EModelEndpoint, Providers } from './schemas';
 import { KnownEndpoints } from './config';
 
 /** Canonical provider identity used for branding across client and server. */
@@ -78,6 +78,10 @@ const providerAliases: Record<string, ProviderId> = {
   togetherai: ProviderId.together,
 };
 
+const modelCatalogAliases: Partial<Record<string, string>> = {
+  [Providers.VERTEXAI]: EModelEndpoint.google,
+};
+
 const normalize = (input: string): string => input.toLowerCase().replace(/[\s._-]/g, '');
 
 const providerByNormalizedId = Object.values(ProviderId).reduce<Record<string, ProviderId>>(
@@ -95,4 +99,9 @@ export function resolveProviderId(input?: string | null): ProviderId | null {
   }
   const key = normalize(input);
   return providerByNormalizedId[key] ?? providerAliases[key] ?? null;
+}
+
+/** Resolves a runtime provider to the endpoint that owns its model catalog. */
+export function resolveModelCatalogKey(provider?: string | null): string {
+  return modelCatalogAliases[provider ?? ''] ?? provider ?? '';
 }

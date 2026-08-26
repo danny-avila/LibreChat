@@ -8,6 +8,7 @@ import {
   getSettingsKeys,
   getEndpointField,
   LocalStorageKeys,
+  resolveModelCatalogKey,
   SettingDefinition,
   agentParamSettings,
   applyModelAwareDefaults,
@@ -58,7 +59,7 @@ export default function ModelPanel({
     return value ?? '';
   }, [providerOption]);
   const models = useMemo(
-    () => (provider ? (modelsData[provider] ?? []) : []),
+    () => (provider ? (modelsData[resolveModelCatalogKey(provider)] ?? []) : []),
     [modelsData, provider],
   );
   const modelsPending = !modelsReady && !modelsError;
@@ -158,7 +159,7 @@ export default function ModelPanel({
                       if (value === provider) {
                         return;
                       }
-                      const nextModel = modelsData[value]?.[0] ?? '';
+                      const nextModel = modelsData[resolveModelCatalogKey(value)]?.[0] ?? '';
                       field.onChange(value);
                       setValue('model', nextModel);
                       localStorage.setItem(LocalStorageKeys.LAST_AGENT_PROVIDER, value);

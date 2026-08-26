@@ -1,4 +1,4 @@
-const { Providers, ViolationTypes } = require('librechat-data-provider');
+const { EModelEndpoint, Providers, ViolationTypes } = require('librechat-data-provider');
 
 jest.mock('@librechat/api', () => ({
   handleError: jest.fn(),
@@ -159,10 +159,10 @@ describe('validateModel', () => {
       expect(handleError).not.toHaveBeenCalled();
     });
 
-    it('accepts a Vertex model from the Vertex catalog', async () => {
+    it('accepts a Vertex model from the shared Google catalog', async () => {
       req.body = { model: 'gemini-3.7-flash', endpoint: Providers.VERTEXAI };
       getEndpointsConfig.mockResolvedValue({ [Providers.VERTEXAI]: { userProvide: false } });
-      getModelsConfig.mockResolvedValue({ [Providers.VERTEXAI]: ['gemini-3.7-flash'] });
+      getModelsConfig.mockResolvedValue({ [EModelEndpoint.google]: ['gemini-3.7-flash'] });
 
       await validateModel(req, res, next);
 
@@ -170,10 +170,10 @@ describe('validateModel', () => {
       expect(handleError).not.toHaveBeenCalled();
     });
 
-    it('rejects a Vertex model absent from the Vertex catalog', async () => {
+    it('rejects a Vertex model absent from the shared Google catalog', async () => {
       req.body = { model: 'gemini-not-available', endpoint: Providers.VERTEXAI };
       getEndpointsConfig.mockResolvedValue({ [Providers.VERTEXAI]: { userProvide: false } });
-      getModelsConfig.mockResolvedValue({ [Providers.VERTEXAI]: ['gemini-3.7-flash'] });
+      getModelsConfig.mockResolvedValue({ [EModelEndpoint.google]: ['gemini-3.7-flash'] });
 
       await validateModel(req, res, next);
 

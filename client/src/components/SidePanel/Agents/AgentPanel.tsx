@@ -13,6 +13,7 @@ import {
   LocalStorageKeys,
   PermissionBits,
   removeCodeExecutionCaller,
+  resolveModelCatalogKey,
   resolveStatefulCodeEnvironment,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
@@ -613,7 +614,7 @@ export default function AgentPanel() {
           status: 'error',
         });
       }
-      if (!(models[provider] ?? []).includes(model)) {
+      if (!(models[resolveModelCatalogKey(provider)] ?? []).includes(model)) {
         return showToast({
           message: localize('com_error_model_not_found'),
           status: 'error',
