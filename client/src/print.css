@@ -1,0 +1,85 @@
+/**
+ * Ctrl/Cmd+P prints the full conversation thread as a clean, paginated
+ * document (users can choose "Save as PDF" as the print destination).
+ *
+ * `[data-testid="screenshot-target"]` is the wrapper already used by the
+ * screenshot export feature to scope its capture to the message tree
+ * (client/src/components/Chat/Messages/MessagesView.tsx); reused here
+ */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  [data-testid='screenshot-target'],
+  [data-testid='screenshot-target'] * {
+    visibility: visible;
+  }
+
+  /*
+   * The transcript lives inside several nested scroll/clip containers
+   * (overflow-hidden / overflow-y-auto paired with h-full or an explicit
+   * height), none of which expand for print by default — a fixed-height,
+   * clipped box stays clipped to one page's worth of content instead of
+   * flowing across pages. Reset overflow/height site-wide within print
+   * media so the transcript can paginate naturally; this is safe globally
+   * because every other such container in the app (menus, dialogs, other
+   * scroll regions) is already invisible from the rule above.
+   */
+  html,
+  body,
+  #root,
+  #root * {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  [data-testid='screenshot-target'] {
+    width: 100% !important;
+  }
+
+  /*
+   * `visibility: hidden` above removes paint but not layout — the sidebar
+   * and the artifacts/subagent side panel are flex/resizable siblings of
+   * the transcript pane and would still reserve their on-screen width,
+   * squeezing the printed column into a narrow strip with blank space on
+   * either side. Collapse them outright using structural hooks that
+   * already exist for other purposes — `#messages-view`
+   * (client/src/components/SidePanel/SidePanelGroup.tsx) and the semantic
+   * `<aside>` sidebar landmark (client/src/components/UnifiedSidebar/UnifiedSidebar.tsx)
+   * — rather than adding new markup just for print.
+   */
+  div:has(> aside):has(#messages-view)>aside {
+    display: none !important;
+  }
+
+  #messages-view~* {
+    display: none !important;
+  }
+
+  #messages-view {
+    width: 100% !important;
+    flex: 1 1 100% !important;
+    max-width: none !important;
+  }
+
+  /*
+   * Transforms are reset for print so no ancestor's `transform` creates a
+   * containing block that could re-introduce clipping, and so a
+   * panned/zoomed Mermaid diagram falls back to its default view, which is
+   * what we want on paper.
+   */
+  * {
+    transform: none !important;
+  }
+
+  [data-testid='screenshot-target'] svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  @page {
+    margin: 12mm;
+  }
+}
