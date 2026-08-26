@@ -214,7 +214,7 @@ function matchesExpectedAction(
 }
 
 export interface AgentEventActionRecorder {
-  observeToolEnd(data: { input?: unknown; output?: unknown }): void;
+  observeToolEnd(data: { input?: unknown; backgroundDelivery?: boolean; output?: unknown }): void;
   read(): AgentEventAppliedAction | undefined;
 }
 
@@ -237,6 +237,12 @@ export function createAgentEventActionRecorder(
   return {
     observeToolEnd(data) {
       if (expectedAction == null || receipt != null || data == null) {
+        return;
+      }
+      /** A background-task delivery reports the ORIGINAL tool's name on a
+       * later poll turn — evidence of work some earlier turn dispatched,
+       * never proof that THIS invocation performed its action. */
+      if (data.backgroundDelivery === true) {
         return;
       }
       const output = data.output as

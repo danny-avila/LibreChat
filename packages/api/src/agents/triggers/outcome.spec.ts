@@ -835,6 +835,19 @@ describe('createAgentEventActionRecorder', () => {
     expect(recorder.read()).toEqual({ toolName: 'submit_move', toolCallId: 'call-1' });
   });
 
+  it('never lets a background-task delivery impersonate a name-only action', async () => {
+    /** The poll turn's delivery callback reports the ORIGINAL tool's name for
+     * artifact attribution — evidence of work another turn dispatched, not
+     * proof this invocation performed its expected action. */
+    const recorder = createAgentEventActionRecorder({ toolName: 'submit_move' });
+    recorder.observeToolEnd({
+      input: { background_task_id: 'task-1' },
+      backgroundDelivery: true,
+      output: { name: 'submit_move', tool_call_id: 'call-poll', content: '{"ok":true}' },
+    });
+    expect(recorder.read()).toBeUndefined();
+  });
+
   it('never records name mismatches, errored results, or malformed outputs', async () => {
     const recorder = createAgentEventActionRecorder(expectedAction);
     recorder.observeToolEnd({ ...successEnd, output: { ...successEnd.output, name: 'resign' } });

@@ -81,6 +81,14 @@ export interface ToolEndCallbackData {
    * must supply them for consumers that fence on the input (the event-actor
    * action recorder validates its declared argument subset against this). */
   input?: unknown;
+  /** True when this callback delivers the harvested completion of a
+   * previously dispatched background task on a poll turn. `output.name` then
+   * reports the ORIGINAL tool for artifact attribution while `input` carries
+   * the poll call's arguments — consumers that fence on execution identity
+   * (the event-actor action recorder) must ignore these deliveries, or a
+   * name-only expected action could be impersonated by work another turn
+   * dispatched. */
+  backgroundDelivery?: boolean;
   output: {
     name: string;
     tool_call_id: string;
@@ -4647,6 +4655,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         await toolEndCallback(
                           {
                             input: tc.args,
+                            backgroundDelivery: true,
                             output: {
                               name: pending.toolName,
                               tool_call_id: tc.id,
