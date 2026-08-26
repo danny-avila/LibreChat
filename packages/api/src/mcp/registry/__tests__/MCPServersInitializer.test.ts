@@ -29,6 +29,7 @@ jest.mock('@librechat/data-schemas', () => ({
     error: jest.fn(),
     debug: jest.fn(),
   },
+  scopedCacheKey: (baseKey: string) => baseKey,
 }));
 
 // Mock ServerConfigsDB to avoid mongoose dependency
