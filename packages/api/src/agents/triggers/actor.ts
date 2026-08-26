@@ -1,0 +1,450 @@
+import { logger } from '@librechat/data-schemas';
+import {
+  createEventActorExecutor,
+  type EventActorEvent,
+  type EventActorExecutionResult,
+  type EventActorHead,
+  type EventActorHostAdapter,
+} from '@librechat/agents';
+import type { ConversationMethods, IAgentEventActorState } from '@librechat/data-schemas';
+import type { TCheckpointerConfig } from 'librechat-data-provider';
+import type { AgentTriggerExpectedAction } from './envelope';
+import type { AgentEventAppliedAction } from './outcome';
+import {
+  captureAgentEventCheckpoint,
+  deleteAgentCheckpoint,
+  forkAgentEventCheckpoint,
+  getAgentCheckpointer,
+  getApprovalTtlMs,
+} from '../checkpointer';
+
+interface EventActorResult extends Record<string, EventActorEvent> {
+  action: AgentEventAppliedAction;
+  checkpointCaptureError: string | null;
+}
+
+export interface AgentEventActorInvocationContext {
+  checkpointNamespace: string;
+  checkpointId?: string;
+  invocationId: string;
+  continuation: 'warm' | 'cold';
+  signal: AbortSignal;
+}
+
+export interface ExecuteAgentEventActorInput<T> {
+  user: string;
+  tenantId?: string;
+  conversationId: string;
+  invocationId: string;
+  event: EventActorEvent;
+  expectedAction?: AgentTriggerExpectedAction;
+  signal: AbortSignal;
+  checkpointer?: TCheckpointerConfig;
+  /** Deprecated compatibility input. Elapsed time never proves replay safety. */
+  legacyTurnStaleMs?: number;
+  invoke(context: AgentEventActorInvocationContext): Promise<T>;
+  readAppliedAction(): AgentEventAppliedAction | undefined;
+}
+
+export interface ExecuteAgentEventActorResult<T> {
+  value: T;
+  execution: EventActorExecutionResult<EventActorResult>;
+}
+
+export interface AgentEventActorDependencies {
+  getSnapshot: ConversationMethods['getAgentEventActorSnapshot'];
+  commitState: ConversationMethods['commitAgentEventActorState'];
+  recordReconciliation: ConversationMethods['recordAgentEventActorReconciliation'];
+  resolveReconciliation: ConversationMethods['resolveAgentEventActorReconciliation'];
+}
+
+function toHead(actorThreadId: string, state: IAgentEventActorState | null): EventActorHead {
+  return state == null
+    ? { actorThreadId, generation: 0 }
+    : { actorThreadId, generation: state.generation, checkpoint: state.checkpoint };
+}
+
+function asError(value: unknown): Error {
+  return value instanceof Error ? value : new Error(String(value));
+}
+
+function checkpointMatches(
+  state: IAgentEventActorState,
+  checkpoint: { threadId: string; checkpointId?: string; checkpointNs: string },
+): boolean {
+  return (
+    typeof checkpoint.checkpointId === 'string' &&
+    state.checkpoint.threadId === checkpoint.threadId &&
+    state.checkpoint.checkpointId === checkpoint.checkpointId &&
+    state.checkpoint.checkpointNs === checkpoint.checkpointNs
+  );
+}
+
+/**
+ * Executes one authenticated bound-child event through the SDK's checkpoint-fork lifecycle.
+ * The request controller still owns generation admission and terminal receipts; this adapter owns
+ * only checkpoint preparation, invocation isolation, CAS commit, and bounded cleanup.
+ */
+export async function executeAgentEventActor<T>(
+  input: ExecuteAgentEventActorInput<T>,
+  deps: AgentEventActorDependencies,
+): Promise<ExecuteAgentEventActorResult<T>> {
+  let value: T | undefined;
+  let invocationError: unknown;
+  let observedState: IAgentEventActorState | null | undefined;
+  let observedEpoch: number | undefined;
+  const adapter: EventActorHostAdapter<EventActorEvent, EventActorResult> = {
+    async prepare(request, context) {
+      if (context.signal.aborted) {
+        throw context.signal.reason;
+      }
+      const snapshot = await deps.getSnapshot({
+        user: input.user,
+        conversationId: input.conversationId,
+        ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+      });
+      if (snapshot === undefined) {
+        throw new Error('Event actor binding is no longer active');
+      }
+      const unresolved = snapshot.reconciliations.filter((item) => item.status !== 'settled');
+      if (unresolved.length > 0) {
+        throw new Error(
+          `Event actor is blocked on ${unresolved.map((item) => item.status).join(', ')} reconciliation`,
+        );
+      }
+      /** A legacy turn is or may have been mid-flight: its external action and
+       * durable-history outcome are unknown, so no amount of elapsed time can
+       * prove that replay is safe. Keep the fence closed until a terminal owner
+       * proves persistence and seals its exact token, or an operator performs
+       * an explicit reconciliation. */
+      const legacyTurn = snapshot.legacyTurn;
+      if (legacyTurn != null) {
+        throw new Error('Event actor is blocked on an in-flight legacy turn');
+      }
+      const state = snapshot.state;
+      observedState = state;
+      observedEpoch = snapshot.epoch;
+      const head = toHead(input.conversationId, state);
+      if (state == null || state.requiresColdStart === true) {
+        return { status: 'checkpoint_unavailable', head };
+      }
+      const fork = await forkAgentEventCheckpoint(
+        state.checkpoint,
+        request.checkpointNs,
+        request.invocationId,
+        input.checkpointer,
+      );
+      if (fork == null) {
+        return { status: 'checkpoint_unavailable', head };
+      }
+      return {
+        status: 'ready',
+        invocation: {
+          ...request,
+          continuation: 'warm',
+          base: head,
+          fork: { ...fork, invocationId: request.invocationId },
+        },
+      };
+    },
+    async coldContinue(request, head, context) {
+      if (context.signal.aborted) {
+        throw context.signal.reason;
+      }
+      if (!(await getAgentCheckpointer(input.checkpointer))) {
+        throw new Error('Event actor checkpoint forks require a durable Mongo checkpointer');
+      }
+      return {
+        ...request,
+        continuation: 'cold',
+        base: head,
+        fork: {
+          threadId: input.conversationId,
+          checkpointNs: request.checkpointNs,
+          ...(head.checkpoint == null ? {} : { checkpointId: head.checkpoint.checkpointId }),
+          invocationId: request.invocationId,
+        },
+      };
+    },
+    async invoke(invocation, context) {
+      const fenced = await deps.recordReconciliation({
+        user: input.user,
+        conversationId: input.conversationId,
+        ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+        reconciliation: {
+          invocationId: invocation.invocationId,
+          status: 'invocation_pending',
+          checkpoint: {
+            threadId: invocation.fork.threadId,
+            checkpointNs: invocation.fork.checkpointNs,
+            ...(invocation.fork.checkpointId == null
+              ? {}
+              : { checkpointId: invocation.fork.checkpointId }),
+          },
+          action: { toolName: input.expectedAction?.toolName ?? 'expected_action' },
+          observedAt: new Date(),
+        },
+      });
+      if (!fenced) {
+        throw new Error('Event actor invocation could not acquire its durable lifecycle fence');
+      }
+      try {
+        value = await input.invoke({
+          checkpointNamespace: invocation.fork.checkpointNs,
+          ...(invocation.fork.checkpointId == null
+            ? {}
+            : { checkpointId: invocation.fork.checkpointId }),
+          invocationId: invocation.invocationId,
+          continuation: invocation.continuation,
+          signal: context.signal,
+        });
+      } catch (error) {
+        invocationError = error;
+      }
+      const action = input.readAppliedAction();
+      if (action == null) {
+        if (invocationError != null) {
+          throw invocationError;
+        }
+        return { status: 'completed_no_action' };
+      }
+      let checkpoint: Awaited<ReturnType<typeof captureAgentEventCheckpoint>>;
+      try {
+        checkpoint = await captureAgentEventCheckpoint(
+          input.conversationId,
+          invocation.fork.checkpointNs,
+          invocation.invocationId,
+          input.checkpointer,
+        );
+      } catch (error) {
+        return {
+          status: 'applied',
+          result: { action, checkpointCaptureError: asError(error).message },
+          checkpoint: invocation.fork,
+        };
+      }
+      if (checkpoint == null) {
+        return {
+          status: 'applied',
+          result: {
+            action,
+            checkpointCaptureError: 'Applied turn has no observable terminal checkpoint',
+          },
+          checkpoint: invocation.fork,
+        };
+      }
+      return {
+        status: 'applied',
+        result: { action, checkpointCaptureError: null },
+        checkpoint: { ...checkpoint, invocationId: invocation.invocationId },
+      };
+    },
+    async commit(request) {
+      if (request.result.checkpointCaptureError != null) {
+        throw new Error(request.result.checkpointCaptureError);
+      }
+      const expectedCheckpointId = request.expectedHead.checkpoint?.checkpointId;
+      if (
+        request.expectedHead.checkpoint != null &&
+        (typeof expectedCheckpointId !== 'string' || expectedCheckpointId.length === 0)
+      ) {
+        throw new Error('Event actor head is missing its checkpoint id');
+      }
+      const appliedCheckpointId = request.checkpoint.checkpointId;
+      if (typeof appliedCheckpointId !== 'string' || appliedCheckpointId.length === 0) {
+        throw new Error('Applied event actor checkpoint is missing its id');
+      }
+      if (observedState === undefined || observedEpoch === undefined) {
+        throw new Error('Event actor commit is missing its prepared host state');
+      }
+      const expectedHeadCheckpoint = request.expectedHead.checkpoint;
+      if (observedState != null && expectedHeadCheckpoint == null) {
+        throw new Error('Event actor commit lost its prepared checkpoint head');
+      }
+      /** The SDK head intentionally contains only portable checkpoint identity.
+       * Retain the host-private cold-start observation from prepare so the CAS
+       * cannot clear a legacy-path invalidation that races before acquisition. */
+      const expected =
+        observedState == null
+          ? undefined
+          : {
+              generation: request.expectedHead.generation,
+              checkpoint: {
+                threadId: expectedHeadCheckpoint!.threadId,
+                checkpointId: expectedCheckpointId!,
+                checkpointNs: expectedHeadCheckpoint!.checkpointNs,
+              },
+              ...(observedState.requiresColdStart === true ? { requiresColdStart: true } : {}),
+            };
+      const committed = await deps.commitState({
+        user: input.user,
+        conversationId: input.conversationId,
+        ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+        invocationId: request.invocation.invocationId,
+        action: request.result.action,
+        ...(expected == null ? {} : { expected }),
+        /** Legacy-path invalidations against headless or already cold-marked
+         * actors are visible ONLY through the epoch; the CAS must require the
+         * exact epoch observed at preparation. */
+        expectedEpoch: observedEpoch,
+        checkpoint: {
+          threadId: request.checkpoint.threadId,
+          checkpointId: appliedCheckpointId,
+          checkpointNs: request.checkpoint.checkpointNs,
+        },
+      });
+      if (committed.status === 'stale') {
+        /** A host-private cold marker can invalidate the CAS without advancing
+         * the portable SDK head. Omit that non-advanced head so the SDK reports
+         * an ordinary conflict instead of misclassifying it as indeterminate. */
+        const advanced =
+          committed.state != null && committed.state.generation > request.expectedHead.generation;
+        return {
+          status: 'stale',
+          ...(advanced ? { head: toHead(input.conversationId, committed.state!) } : {}),
+        };
+      }
+      if (committed.prunableCheckpoint != null) {
+        await deleteAgentCheckpoint(
+          committed.prunableCheckpoint.threadId,
+          input.checkpointer,
+          undefined,
+          {
+            throwOnError: true,
+            checkpointNamespace: committed.prunableCheckpoint.checkpointNs,
+          },
+        );
+      }
+      return { status: 'committed', head: toHead(input.conversationId, committed.state) };
+    },
+    async discard(request) {
+      await deleteAgentCheckpoint(request.invocation.fork.threadId, input.checkpointer, undefined, {
+        throwOnError: true,
+        checkpointNamespace: request.invocation.fork.checkpointNs,
+      });
+      const released = await deps.resolveReconciliation({
+        user: input.user,
+        conversationId: input.conversationId,
+        ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+        invocationId: request.invocation.invocationId,
+        checkpoint: {
+          threadId: request.invocation.fork.threadId,
+          checkpointNs: request.invocation.fork.checkpointNs,
+          ...(request.invocation.fork.checkpointId == null
+            ? {}
+            : { checkpointId: request.invocation.fork.checkpointId }),
+        },
+        resolution: 'invocation_abandoned',
+      });
+      if (!released) {
+        const snapshot = await deps.getSnapshot({
+          user: input.user,
+          conversationId: input.conversationId,
+          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+        });
+        if (
+          snapshot?.reconciliations.some(
+            (item) => item.invocationId === request.invocation.invocationId,
+          ) === true
+        ) {
+          throw new Error('Event actor invocation lifecycle fence could not be released');
+        }
+      }
+    },
+  };
+
+  const executor = createEventActorExecutor(adapter, {
+    maxDepth: 1,
+    dormantCheckpointTtlMs: getApprovalTtlMs(input.checkpointer),
+  });
+  let execution: EventActorExecutionResult<EventActorResult> = await executor.execute({
+    actorThreadId: input.conversationId,
+    invocationId: input.invocationId,
+    event: input.event,
+    depth: 1,
+    signal: input.signal,
+  });
+  if (execution.status === 'failed') {
+    throw execution.error;
+  }
+  if (execution.status === 'cancelled') {
+    throw asError(input.signal.reason ?? 'Event actor invocation cancelled');
+  }
+  if (
+    execution.status === 'commit_indeterminate' &&
+    typeof execution.checkpoint.checkpointId === 'string'
+  ) {
+    let snapshot: Awaited<ReturnType<AgentEventActorDependencies['getSnapshot']>>;
+    try {
+      snapshot = await deps.getSnapshot({
+        user: input.user,
+        conversationId: input.conversationId,
+        ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+      });
+    } catch (error) {
+      logger.warn('[event-actor] Could not verify an indeterminate checkpoint commit', {
+        conversationId: input.conversationId,
+        invocationId: input.invocationId,
+        error: asError(error).message,
+      });
+    }
+    if (
+      snapshot?.reconciliations.some(
+        (item) => item.invocationId === input.invocationId && item.status === 'persistence_pending',
+      ) === true &&
+      snapshot?.state != null &&
+      checkpointMatches(snapshot.state, execution.checkpoint) &&
+      execution.result != null
+    ) {
+      execution = {
+        status: 'applied',
+        result: execution.result,
+        head: toHead(input.conversationId, snapshot.state),
+        continuation: execution.continuation,
+      };
+    }
+  }
+  if (execution.status === 'commit_conflict' || execution.status === 'commit_indeterminate') {
+    const action = execution.result?.action ?? input.readAppliedAction();
+    if (action == null) {
+      throw new Error(`Event actor ${execution.status} did not retain applied-action evidence`);
+    }
+    const error =
+      execution.status === 'commit_indeterminate'
+        ? execution.error.message
+        : 'A competing checkpoint advanced the actor head';
+    const recorded = await deps.recordReconciliation({
+      user: input.user,
+      conversationId: input.conversationId,
+      ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+      reconciliation: {
+        invocationId: input.invocationId,
+        status: execution.status,
+        checkpoint: {
+          threadId: execution.checkpoint.threadId,
+          checkpointNs: execution.checkpoint.checkpointNs,
+          ...(execution.checkpoint.checkpointId == null
+            ? {}
+            : { checkpointId: execution.checkpoint.checkpointId }),
+        },
+        action,
+        error: error.slice(0, 1024),
+        observedAt: new Date(),
+      },
+    });
+    if (!recorded) {
+      throw new Error(`Failed to persist event actor ${execution.status} reconciliation`);
+    }
+    logger.error('[event-actor] Applied action blocked the actor pending reconciliation', {
+      conversationId: input.conversationId,
+      invocationId: input.invocationId,
+      status: execution.status,
+      error,
+    });
+    throw new Error(`Event actor action requires ${execution.status} reconciliation`);
+  }
+  if (invocationError != null) {
+    throw invocationError;
+  }
+  return { value: value as T, execution };
+}

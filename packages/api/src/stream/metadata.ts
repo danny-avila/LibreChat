@@ -42,6 +42,9 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   if (metadata.agentEventExpectedAction) {
     patch.agentEventExpectedAction = metadata.agentEventExpectedAction;
   }
+  if (metadata.agentEventLegacyTurnToken) {
+    patch.agentEventLegacyTurnToken = metadata.agentEventLegacyTurnToken;
+  }
   if (metadata.scheduleId) {
     patch.scheduleId = metadata.scheduleId;
   }

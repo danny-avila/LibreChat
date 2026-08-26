@@ -568,6 +568,15 @@ endpoints:
   #   eventDriven:
   #     childTurns: false
   #     completionWakeups: false
+  #     # Reuse bound child state through isolated checkpoint forks. Enable only
+  #     # after every API replica supports this lifecycle. Requires the default
+  #     # Mongo checkpointer; it is incompatible with checkpointer.type: memory.
+  #     # The committed head is an ordinary checkpoint under `checkpointer.ttl`,
+  #     # so an actor idle for longer than that TTL rebuilds from message history
+  #     # on its next event. Lowering the TTL below an actor's event interval
+  #     # leaves it correct but never warm. Agents with skill primes also stay
+  #     # on the legacy path for now, so edited skills always reach the actor.
+  #     checkpointForks: false
   #     # Optional trusted origin for internal trigger delivery. By default, LibreChat
   #     # uses its own bound listener; override only for an internal TLS/front-door route.
   #     # selfUrl: 'https://librechat.internal'

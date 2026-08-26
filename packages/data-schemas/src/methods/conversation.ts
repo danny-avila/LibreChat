@@ -2,6 +2,10 @@ import { RetentionMode } from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
 import type {
+  IAgentEventActorCheckpoint,
+  IAgentEventActorReconciliation,
+  IAgentEventActorSnapshot,
+  IAgentEventActorState,
   IAgentEventBindingRecord,
   AppConfig,
   IChatProjectDocument,
@@ -53,6 +57,34 @@ export type SubagentThreadReadRecord = Pick<
 };
 
 export type ParentSubagentThreadRecord = SubagentThreadReadRecord;
+
+export type AgentEventActorCommitResult =
+  | {
+      status: 'committed';
+      state: IAgentEventActorState;
+      prunableCheckpoint?: IAgentEventActorCheckpoint;
+    }
+  | { status: 'stale'; state?: IAgentEventActorState };
+
+/**
+ * How long a settled receipt keeps tombstoning its invocation id. A stale
+ * same-id owner is bounded by time, not by how many newer invocations settle,
+ * so eviction is primarily age-based: a receipt becomes prunable only once no
+ * delayed duplicate of its invocation could still be admitted — far beyond any
+ * generation, job, or delivery-retry lifetime.
+ */
+const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Absolute size bound for the private invocation journal so a pathological
+ * actor cannot grow its conversation document toward Mongo's document limit.
+ * Never an eviction quota: a receipt inside its retention window is never
+ * discarded. When the journal holds this many unexpired receipts, admission
+ * of NEW invocations is refused (fail closed) until receipts age out, so
+ * document integrity and same-id duplicate protection are both invariants
+ * rather than a trade.
+ */
+export const AGENT_EVENT_ACTOR_RECEIPT_LIMIT = 1024;
 
 const ARCHIVE_CONVERSATION_BATCH_SIZE = 500;
 const PROJECT_STATS_REFRESH_CONCURRENCY = 10;
@@ -211,6 +243,51 @@ export interface ConversationMethods {
     sourceKeyId: string;
     tenantId?: string;
   }): Promise<IAgentEventBindingRecord | null>;
+  getAgentEventActorSnapshot(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+  }): Promise<IAgentEventActorSnapshot | undefined>;
+  commitAgentEventActorState(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    invocationId: string;
+    action: IAgentEventActorReconciliation['action'];
+    expected?: IAgentEventActorState;
+    expectedEpoch: number;
+    checkpoint: IAgentEventActorCheckpoint;
+  }): Promise<AgentEventActorCommitResult>;
+  beginAgentEventActorLegacyTurn(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    token: string;
+  }): Promise<boolean>;
+  completeAgentEventActorLegacyTurn(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    token: string;
+  }): Promise<boolean>;
+  recordAgentEventActorReconciliation(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    reconciliation: IAgentEventActorReconciliation;
+  }): Promise<boolean>;
+  resolveAgentEventActorReconciliation(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    invocationId: string;
+    checkpoint: IAgentEventActorReconciliation['checkpoint'];
+    resolution:
+      | 'checkpoint_verified'
+      | 'action_compensated'
+      | 'history_repaired'
+      | 'invocation_abandoned';
+  }): Promise<boolean>;
   reserveSubagentThread(input: {
     user: string;
     conversationId: string;
@@ -412,6 +489,482 @@ export function createConversationMethods(
       binding: conversation.agentEventBinding,
       lineage: conversation.subagentThread,
     };
+  }
+
+  /** Reads the private actor head and every fail-closed reconciliation marker. */
+  async function getAgentEventActorSnapshot(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+  }): Promise<IAgentEventActorSnapshot | undefined> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const conversation = await Conversation.findOne({
+      user: input.user,
+      conversationId: input.conversationId,
+      subagentThread: { $exists: true },
+      agentEventBinding: { $exists: true },
+      ...subagentLeaseTenantFilter(input.tenantId),
+      ...activeExpirationFilter<IConversation>(),
+    })
+      .select(
+        '+agentEventActor +agentEventActorReconciliations +agentEventActorEpoch +agentEventActorLegacyTurn',
+      )
+      .lean<IConversation>();
+    return conversation == null
+      ? undefined
+      : {
+          state: conversation.agentEventActor ?? null,
+          reconciliations: conversation.agentEventActorReconciliations ?? [],
+          legacyTurn: conversation.agentEventActorLegacyTurn ?? null,
+          epoch: conversation.agentEventActorEpoch ?? 0,
+        };
+  }
+
+  /** Advances one actor head only when its complete prior identity still matches. */
+  async function commitAgentEventActorState(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    invocationId: string;
+    action: IAgentEventActorReconciliation['action'];
+    expected?: IAgentEventActorState;
+    expectedEpoch: number;
+    checkpoint: IAgentEventActorCheckpoint;
+  }): Promise<AgentEventActorCommitResult> {
+    if (input.checkpoint.threadId !== input.conversationId) {
+      throw new Error('Event actor checkpoint changed its logical thread');
+    }
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    /** A legacy turn against a headless or already cold-marked actor leaves
+     * the head fields unchanged, so the CAS must also require the invalidation
+     * epoch observed at preparation. `null` matches a document that has never
+     * been invalidated. */
+    const expectedFilter: FilterQuery<IConversation> = {
+      agentEventActorEpoch: input.expectedEpoch === 0 ? null : input.expectedEpoch,
+      /** A legacy turn in flight has not yet persisted its messages, so no
+       * fork rebuild can be complete — refuse the commit outright rather than
+       * relying on the epoch, which only moves once that turn seals. */
+      agentEventActorLegacyTurn: { $exists: false },
+      ...(input.expected == null
+        ? { agentEventActor: { $exists: false } }
+        : {
+            'agentEventActor.generation': input.expected.generation,
+            'agentEventActor.checkpoint.threadId': input.expected.checkpoint.threadId,
+            'agentEventActor.checkpoint.checkpointId': input.expected.checkpoint.checkpointId,
+            'agentEventActor.checkpoint.checkpointNs': input.expected.checkpoint.checkpointNs,
+            'agentEventActor.requiresColdStart':
+              input.expected.requiresColdStart === true ? true : { $ne: true },
+          }),
+    };
+    const nextState: IAgentEventActorState = {
+      generation: (input.expected?.generation ?? 0) + 1,
+      checkpoint: input.checkpoint,
+      ...(input.expected == null ? {} : { previousCheckpoint: input.expected.checkpoint }),
+    };
+    const previous = await Conversation.findOneAndUpdate(
+      {
+        user: input.user,
+        conversationId: input.conversationId,
+        subagentThread: { $exists: true },
+        agentEventBinding: { $exists: true },
+        agentEventActorReconciliations: {
+          $elemMatch: {
+            invocationId: input.invocationId,
+            status: 'invocation_pending',
+          },
+        },
+        ...subagentLeaseTenantFilter(input.tenantId),
+        ...activeExpirationFilter<IConversation>(),
+        ...expectedFilter,
+      },
+      {
+        $set: {
+          agentEventActor: nextState,
+          'agentEventActorReconciliations.$.status': 'persistence_pending',
+          'agentEventActorReconciliations.$.checkpoint': input.checkpoint,
+          'agentEventActorReconciliations.$.action': input.action,
+          'agentEventActorReconciliations.$.observedAt': new Date(),
+        },
+        $unset: { 'agentEventActorReconciliations.$.error': 1 },
+      },
+      { new: false, timestamps: false },
+    )
+      .select('+agentEventActor')
+      .lean<IConversation>();
+    if (previous != null) {
+      return {
+        status: 'committed',
+        state: nextState,
+        ...(previous.agentEventActor?.previousCheckpoint == null
+          ? {}
+          : { prunableCheckpoint: previous.agentEventActor.previousCheckpoint }),
+      };
+    }
+    const current = await getAgentEventActorSnapshot(input);
+    return {
+      status: 'stale',
+      ...(current?.state == null ? {} : { state: current.state }),
+    };
+  }
+
+  /**
+   * Opens the durable fence for one legacy-path turn BEFORE it executes. One
+   * mutually exclusive classic update sets the token and, only when a valid
+   * head exists, marks it cold — no partial fence state is externally visible.
+   * Refuses while another legacy turn or fork lifecycle is active. Abandoned
+   * legacy tokens are reclaimed through the bounded recovery operation before
+   * admission is retried.
+   */
+  async function beginAgentEventActorLegacyTurn(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    token: string;
+  }): Promise<boolean> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const ownership: FilterQuery<IConversation> = {
+      user: input.user,
+      conversationId: input.conversationId,
+      subagentThread: { $exists: true },
+      agentEventBinding: { $exists: true },
+      agentEventActorLegacyTurn: { $exists: false },
+      agentEventActorReconciliations: {
+        $not: { $elemMatch: { status: { $ne: 'settled' } } },
+      },
+      ...subagentLeaseTenantFilter(input.tenantId),
+      ...activeExpirationFilter<IConversation>(),
+    };
+    const legacyTurn = { token: input.token, startedAt: new Date() };
+    /** DocumentDB does not support aggregation-pipeline updates. Split the
+     * headful/headless shapes into mutually exclusive classic updates. A head
+     * cannot appear between them without first creating an unresolved fork
+     * lifecycle, which the shared ownership filter rejects. */
+    const openedWithHead = await Conversation.findOneAndUpdate(
+      { ...ownership, 'agentEventActor.generation': { $exists: true } },
+      {
+        $set: {
+          agentEventActorLegacyTurn: legacyTurn,
+          'agentEventActor.requiresColdStart': true,
+        },
+      },
+      { new: true, timestamps: false },
+    ).lean<IConversation>();
+    if (openedWithHead != null) {
+      return true;
+    }
+    const openedHeadless = await Conversation.findOneAndUpdate(
+      { ...ownership, 'agentEventActor.generation': { $exists: false } },
+      { $set: { agentEventActorLegacyTurn: legacyTurn } },
+      { new: true, timestamps: false },
+    ).lean<IConversation>();
+    return openedHeadless != null;
+  }
+
+  /**
+   * Closes the fence in ONE atomic write once the legacy turn's history is
+   * durable: clears this exact token and advances the epoch together, so a
+   * fork can never observe a cleared fence at an unchanged epoch. Matching the
+   * token keeps a later turn's seal from closing an earlier turn's fence.
+   */
+  async function completeAgentEventActorLegacyTurn(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    token: string;
+  }): Promise<boolean> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const sealed = await Conversation.findOneAndUpdate(
+      {
+        user: input.user,
+        conversationId: input.conversationId,
+        subagentThread: { $exists: true },
+        agentEventBinding: { $exists: true },
+        'agentEventActorLegacyTurn.token': input.token,
+        ...subagentLeaseTenantFilter(input.tenantId),
+        ...activeExpirationFilter<IConversation>(),
+      },
+      {
+        $unset: { agentEventActorLegacyTurn: 1 },
+        $inc: { agentEventActorEpoch: 1 },
+      },
+      { new: true, timestamps: false },
+    ).lean<IConversation>();
+    return sealed != null;
+  }
+
+  /** Acquires or advances one invocation lifecycle fence and blocks competing turns. */
+  async function recordAgentEventActorReconciliation(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    reconciliation: IAgentEventActorReconciliation;
+  }): Promise<boolean> {
+    if (input.reconciliation.checkpoint.threadId !== input.conversationId) {
+      throw new Error('Event actor reconciliation changed its logical thread');
+    }
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const ownership = {
+      user: input.user,
+      conversationId: input.conversationId,
+      subagentThread: { $exists: true },
+      agentEventBinding: { $exists: true },
+      ...subagentLeaseTenantFilter(input.tenantId),
+      ...activeExpirationFilter<IConversation>(),
+    };
+    const existing = await Conversation.findOne(ownership)
+      .select('+agentEventActorReconciliations')
+      .lean<IConversation>();
+    const journal = existing?.agentEventActorReconciliations ?? [];
+    const current = journal.find((item) => item.invocationId === input.reconciliation.invocationId);
+    if (current != null) {
+      const canTransition =
+        (current?.status === 'invocation_pending' &&
+          input.reconciliation.status !== 'invocation_pending') ||
+        (current?.status === 'persistence_pending' &&
+          (input.reconciliation.status === 'persistence_failed' ||
+            input.reconciliation.status === 'history_persisted')) ||
+        (current?.status === 'persistence_failed' &&
+          input.reconciliation.status === 'history_persisted');
+      const sameIdentity =
+        current?.status === input.reconciliation.status &&
+        current.checkpoint.threadId === input.reconciliation.checkpoint.threadId &&
+        current.checkpoint.checkpointId === input.reconciliation.checkpoint.checkpointId &&
+        current.checkpoint.checkpointNs === input.reconciliation.checkpoint.checkpointNs &&
+        current.action.toolName === input.reconciliation.action.toolName &&
+        current.action.toolCallId === input.reconciliation.action.toolCallId;
+      /** A pending record is an exclusive ownership fence, not an idempotent
+       * receipt. A second executor must not inherit the first owner's claim. */
+      if (input.reconciliation.status === 'invocation_pending') {
+        return false;
+      }
+      if (!canTransition) {
+        return sameIdentity;
+      }
+      const transitioned = await Conversation.findOneAndUpdate(
+        {
+          ...ownership,
+          agentEventActorReconciliations: {
+            $elemMatch: {
+              invocationId: input.reconciliation.invocationId,
+              status: current!.status,
+            },
+          },
+        },
+        { $set: { 'agentEventActorReconciliations.$': input.reconciliation } },
+        { new: true, timestamps: false },
+      )
+        .select('+agentEventActorReconciliations')
+        .lean<IConversation>();
+      return transitioned != null;
+    }
+    /** Every post-acquisition state must transition the exact pending lifecycle.
+     * Never recreate a marker after terminal recovery has already removed it. */
+    if (input.reconciliation.status !== 'invocation_pending') {
+      return false;
+    }
+    const receiptCutoff = new Date(Date.now() - AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS);
+    if (
+      journal.some(
+        (item) => item.status === 'settled' && item.observedAt.getTime() < receiptCutoff.getTime(),
+      )
+    ) {
+      await Conversation.updateOne(
+        ownership,
+        {
+          $pull: {
+            agentEventActorReconciliations: {
+              status: 'settled',
+              observedAt: { $lt: receiptCutoff },
+            },
+          },
+        },
+        { timestamps: false },
+      );
+    }
+    /** A receipt inside its retention window may NEVER be evicted — a stale
+     * same-id owner is bounded by time, and count-based eviction would reopen
+     * duplicate execution at high event rates. When the journal is full of
+     * unexpired receipts, refuse admission (fail closed) instead of trading
+     * away tombstone protection; the actor resumes once receipts age out.
+     * Admission is serialized by the no-active-row filter, so the journal can
+     * exceed the cap by at most the single row admitted after this check. */
+    const retainedReceipts = journal.filter(
+      (item) => item.status === 'settled' && item.observedAt.getTime() >= receiptCutoff.getTime(),
+    );
+    if (retainedReceipts.length >= AGENT_EVENT_ACTOR_RECEIPT_LIMIT) {
+      logger.error(
+        `[conversation] Event actor receipt journal for ${input.conversationId} is full of unexpired receipts; refusing new invocation ${input.reconciliation.invocationId} until receipts age out`,
+      );
+      return false;
+    }
+    const recorded = await Conversation.findOneAndUpdate(
+      {
+        ...ownership,
+        agentEventActorLegacyTurn: { $exists: false },
+        agentEventActorReconciliations: {
+          $not: { $elemMatch: { status: { $ne: 'settled' } } },
+        },
+        'agentEventActorReconciliations.invocationId': { $ne: input.reconciliation.invocationId },
+      },
+      { $push: { agentEventActorReconciliations: input.reconciliation } },
+      { new: true, timestamps: false },
+    )
+      .select('+agentEventActorReconciliations')
+      .lean<IConversation>();
+    if (
+      recorded?.agentEventActorReconciliations?.some(
+        (item) => item.invocationId === input.reconciliation.invocationId,
+      ) === true
+    ) {
+      return true;
+    }
+    /** Another writer won the same invocation fence while this write raced. */
+    return false;
+  }
+
+  /** Resolves exactly one lifecycle after settlement, abandonment, or repair. */
+  async function resolveAgentEventActorReconciliation(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    invocationId: string;
+    checkpoint: IAgentEventActorReconciliation['checkpoint'];
+    resolution:
+      | 'checkpoint_verified'
+      | 'action_compensated'
+      | 'history_repaired'
+      | 'invocation_abandoned';
+  }): Promise<boolean> {
+    if (input.checkpoint.threadId !== input.conversationId) {
+      throw new Error('Event actor reconciliation changed its logical thread');
+    }
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const exactCheckpoint: Record<string, unknown> = {
+      invocationId: input.invocationId,
+      'checkpoint.threadId': input.checkpoint.threadId,
+      'checkpoint.checkpointNs': input.checkpoint.checkpointNs,
+      ...(input.checkpoint.checkpointId == null
+        ? { 'checkpoint.checkpointId': { $exists: false } }
+        : { 'checkpoint.checkpointId': input.checkpoint.checkpointId }),
+    };
+    if (
+      input.resolution === 'checkpoint_verified' &&
+      (typeof input.checkpoint.checkpointId !== 'string' ||
+        input.checkpoint.checkpointId.length === 0)
+    ) {
+      return false;
+    }
+    const owner = {
+      user: input.user,
+      conversationId: input.conversationId,
+      subagentThread: { $exists: true },
+      agentEventBinding: { $exists: true },
+      ...subagentLeaseTenantFilter(input.tenantId),
+      ...activeExpirationFilter<IConversation>(),
+    };
+    if (input.resolution === 'checkpoint_verified') {
+      const settled = await Conversation.findOneAndUpdate(
+        {
+          ...owner,
+          'agentEventActor.checkpoint.threadId': input.checkpoint.threadId,
+          'agentEventActor.checkpoint.checkpointId': input.checkpoint.checkpointId!,
+          'agentEventActor.checkpoint.checkpointNs': input.checkpoint.checkpointNs,
+          agentEventActorReconciliations: {
+            $elemMatch: { ...exactCheckpoint, status: 'history_persisted' },
+          },
+        },
+        {
+          $set: {
+            'agentEventActorReconciliations.$.status': 'settled',
+            'agentEventActorReconciliations.$.resolution': 'checkpoint_verified',
+            'agentEventActorReconciliations.$.observedAt': new Date(),
+          },
+          $unset: { 'agentEventActorReconciliations.$.error': 1 },
+        },
+        { new: true, timestamps: false },
+      )
+        .select('+agentEventActorReconciliations')
+        .lean<IConversation>();
+      if (settled != null) {
+        return true;
+      }
+      /** A verification retry may replay only a receipt that verification
+       * itself settled. A compensated receipt must fail this resolve so the
+       * caller re-reads and honors the compensation instead. */
+      const replay = await Conversation.exists({
+        ...owner,
+        'agentEventActor.checkpoint.threadId': input.checkpoint.threadId,
+        'agentEventActor.checkpoint.checkpointId': input.checkpoint.checkpointId!,
+        'agentEventActor.checkpoint.checkpointNs': input.checkpoint.checkpointNs,
+        agentEventActorReconciliations: {
+          $elemMatch: { ...exactCheckpoint, status: 'settled', resolution: 'checkpoint_verified' },
+        },
+      });
+      return replay != null;
+    }
+    const checkpointFilter: Record<string, unknown> = {
+      ...exactCheckpoint,
+      ...(input.resolution === 'invocation_abandoned'
+        ? { status: 'invocation_pending' }
+        : { status: { $ne: 'settled' } }),
+    };
+    const ownership = {
+      ...owner,
+      agentEventActorReconciliations: { $elemMatch: checkpointFilter },
+    };
+    const mustRebuild =
+      input.resolution === 'action_compensated' || input.resolution === 'history_repaired';
+    if (!mustRebuild) {
+      const abandoned = await Conversation.findOneAndUpdate(
+        ownership,
+        { $pull: { agentEventActorReconciliations: checkpointFilter } },
+        { new: true, timestamps: false },
+      )
+        .select('+agentEventActorReconciliations')
+        .lean<IConversation>();
+      return abandoned != null;
+    }
+    /** Repair and compensation both act on an invocation whose action already
+     * reached the outside world, so the receipt must survive as the durable
+     * same-invocation tombstone. Deleting it would let a delayed duplicate
+     * owner reacquire the same id and repeat that action. Compensation undoes
+     * the effect; it does not re-authorize the delivery, so a legitimate retry
+     * must arrive under a new invocation id. */
+    const retainedReceipt = {
+      'agentEventActorReconciliations.$.status': 'settled',
+      'agentEventActorReconciliations.$.resolution': input.resolution,
+      'agentEventActorReconciliations.$.observedAt': new Date(),
+    };
+    const resolved = await Conversation.findOneAndUpdate(
+      { ...ownership, agentEventActor: { $exists: true } },
+      { $set: { ...retainedReceipt, 'agentEventActor.requiresColdStart': true } },
+      { new: true, timestamps: false },
+    )
+      .select('+agentEventActorReconciliations')
+      .lean<IConversation>();
+    if (resolved != null) {
+      return true;
+    }
+    /** Compensation before a first committed head must retire the exact fence
+     * without creating a partial actor state that cannot be resumed. */
+    const resolvedWithoutHead = await Conversation.findOneAndUpdate(
+      { ...ownership, agentEventActor: { $exists: false } },
+      { $set: retainedReceipt },
+      { new: true, timestamps: false },
+    )
+      .select('+agentEventActorReconciliations')
+      .lean<IConversation>();
+    if (resolvedWithoutHead != null) {
+      return true;
+    }
+    /** A retried repair finds its own retained receipt already settled. */
+    const replayed = await Conversation.exists({
+      ...owner,
+      agentEventActorReconciliations: {
+        $elemMatch: { ...exactCheckpoint, status: 'settled', resolution: input.resolution },
+      },
+    });
+    return replayed != null;
   }
 
   /** Creates immutable child lineage exactly once without overwriting a concurrent winner. */
@@ -1786,6 +2339,12 @@ export function createConversationMethods(
     getSubagentThreadForParent,
     listSubagentThreadsForParent,
     getAgentEventBinding,
+    getAgentEventActorSnapshot,
+    commitAgentEventActorState,
+    beginAgentEventActorLegacyTurn,
+    completeAgentEventActorLegacyTurn,
+    recordAgentEventActorReconciliation,
+    resolveAgentEventActorReconciliation,
     reserveSubagentThread,
     acquireSubagentThreadLease,
     renewSubagentThreadLease,

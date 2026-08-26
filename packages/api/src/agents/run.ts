@@ -1342,6 +1342,7 @@ export async function createRun({
   steering,
   activityLabel,
   activityPhase,
+  eventActorCheckpointing = false,
   hitlCapable = false,
   toolInputValidationErrors,
   sessionStartSource,
@@ -1430,6 +1431,8 @@ export async function createRun({
   activityLabel?: { hook: HookCallback<'PostToolBatch'> };
   /** Run-wide parent phase collector; registered after child batch labels. */
   activityPhase?: { hook: HookCallback<'PostToolBatch'> };
+  /** Persist clean terminal checkpoints for an isolated bound-event invocation. */
+  eventActorCheckpointing?: boolean;
   /**
    * Whether the caller implements the HITL pause/resume lifecycle (inspects
    * `run.getInterrupt()`, persists a pending action, exposes a resume route). Gates the
@@ -1834,7 +1837,7 @@ export async function createRun({
    */
   const asksUserQuestions =
     hitlCapable && !askToolAdminDisabled && agents.some(agentRequestsAskUserQuestion);
-  if (hitl || asksUserQuestions) {
+  if (hitl || asksUserQuestions || eventActorCheckpointing) {
     const checkpointer = await getAgentCheckpointer(agentsEndpointConfig?.checkpointer);
     graphConfig.compileOptions = { ...graphConfig.compileOptions, checkpointer };
   }

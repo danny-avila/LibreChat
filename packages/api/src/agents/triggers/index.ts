@@ -1,5 +1,6 @@
 export * from './dispatch';
 export * from './bindings';
+export * from './actor';
 export * from './bindingResolver';
 export * from './delivery';
 export * from './envelope';

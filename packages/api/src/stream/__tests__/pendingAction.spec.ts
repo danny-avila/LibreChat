@@ -1484,6 +1484,18 @@ describe('GenerationJobManager HITL resume metadata (round 19)', () => {
     expect(job?.metadata.discoveredTools).toEqual(['deep_tool', 'other_tool']);
   });
 
+  test('updateMetadata exposes a paused legacy-event fence through the job facade', async () => {
+    const streamId = 'stream-legacy-event';
+    await manager.createJob(streamId, 'user-1');
+    await manager.updateMetadata(streamId, {
+      agentEventLegacyTurnToken: 'legacy-hitl-token',
+    });
+
+    const job = await manager.getJob(streamId);
+
+    expect(job?.metadata.agentEventLegacyTurnToken).toBe('legacy-hitl-token');
+  });
+
   // H4: a pause that lands AFTER the resume snapshot but before the subscription must
   // still reach the client. subscribeWithResume re-reads the live job and surfaces it.
   test('subscribeWithResume surfaces a pause that the resume snapshot missed', async () => {
