@@ -82,6 +82,7 @@ function createApp(
       parentConversationId: (
         req as typeof req & { _agentEventBindingParentConversationId?: string }
       )._agentEventBindingParentConversationId,
+      bindingId: (req as typeof req & { _agentEventBindingId?: string })._agentEventBindingId,
       retention: (
         req as typeof req & {
           _agentEventBindingRetention?: { isTemporary?: boolean; expiredAt?: Date };
@@ -200,6 +201,7 @@ describe('subagent child-thread write policy', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
+      bindingId: `evtbind_${'a'.repeat(48)}`,
       parentConversationId: 'parent-conversation',
       retention: { isTemporary: true, expiredAt: '2099-08-22T00:00:00.000Z' },
     });

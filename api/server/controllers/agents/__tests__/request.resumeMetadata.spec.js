@@ -3931,7 +3931,7 @@ describe('ResumableAgentController resume metadata', () => {
     );
   });
 
-  it('reports a temporary event-actor fence as retryable rather than ending the binding', async () => {
+  it('retains terminal metadata for the first event in an empty bound actor thread', async () => {
     const expiredAt = new Date(Date.now() + 60_000);
     mockGenerationJobManager.claimGeneration.mockResolvedValue(
       wonGenerationClaim({
@@ -3950,11 +3950,10 @@ describe('ResumableAgentController resume metadata', () => {
       body: {
         text: 'Continue from event.',
         messageId: 'user-msg',
-        parentMessageId: 'response-previous',
+        parentMessageId: '00000000-0000-0000-0000-000000000000',
         clientRequestId: 'req-event',
         agentEventDelivery: {
           deliveryKey: 'req-event',
-          target: { bindingId: 'binding-1' },
           expectedAction: {
             toolName: 'submit_move',
             argumentSubset: { gameId: 'game-1', expectedPly: 7 },
@@ -3965,6 +3964,7 @@ describe('ResumableAgentController resume metadata', () => {
       },
       config: {},
       _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
       _agentEventBindingTenantId: 'tenant-1',
@@ -3988,6 +3988,7 @@ describe('ResumableAgentController resume metadata', () => {
         responseMessageId: 'req-event:assistant',
         userMessage: expect.objectContaining({ messageId: 'req-event:user' }),
         agentEventDeliveryKey: 'req-event',
+        agentEventBindingId: 'binding-1',
         agentEventExpectedAction: {
           toolName: 'submit_move',
           argumentSubset: { gameId: 'game-1', expectedPly: 7 },
@@ -4044,6 +4045,7 @@ describe('ResumableAgentController resume metadata', () => {
         endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
       },
       _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
       _agentEventBindingTenantId: undefined,
@@ -4138,6 +4140,7 @@ describe('ResumableAgentController resume metadata', () => {
         endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
       },
       _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
       _agentEventBindingTenantId: undefined,
@@ -4228,6 +4231,7 @@ describe('ResumableAgentController resume metadata', () => {
         endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
       },
       _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
       _agentEventBindingTenantId: 'tenant-1',
@@ -4340,6 +4344,7 @@ describe('ResumableAgentController resume metadata', () => {
         endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
       },
       _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
       _agentEventBindingTenantId: 'tenant-1',
@@ -4505,6 +4510,7 @@ describe('ResumableAgentController resume metadata', () => {
         },
         config: { endpoints: { agents: config } },
         _isAgentTrigger: true,
+        _agentEventBindingId: 'binding-1',
         _agentEventBindingParentConversationId: 'parent-conversation',
         _agentEventBindingParentAgentId: 'parent-agent',
         _agentEventBindingTenantId: 'tenant-1',
@@ -4599,6 +4605,7 @@ describe('ResumableAgentController resume metadata', () => {
         endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
       },
       _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
       _agentEventBindingTenantId: 'tenant-1',
@@ -4673,6 +4680,7 @@ describe('ResumableAgentController resume metadata', () => {
         endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
       },
       _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
       _agentEventBindingTenantId: 'tenant-1',
@@ -4743,6 +4751,7 @@ describe('ResumableAgentController resume metadata', () => {
         endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
       },
       _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
       _agentEventBindingTenantId: 'tenant-1',
@@ -4824,6 +4833,7 @@ describe('ResumableAgentController resume metadata', () => {
         endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
       },
       _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
       _agentEventBindingTenantId: 'tenant-1',
