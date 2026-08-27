@@ -129,9 +129,10 @@ import MessageNav, {
   previewTextFor,
   buildSteerEntry,
   buildFallbackEntry,
-  magnifyFalloff,
-  ribDimsFor,
 } from '../MessageNav';
+/** The rail's geometry is shared with the search results rail; it lives in the
+ *  one module both surfaces render. */
+import { magnifyFalloff, ribDimsFor } from '../Rail';
 
 function buildMessage(overrides: Partial<TestMessage> = {}): TestMessage {
   return {
@@ -935,6 +936,11 @@ describe('MessageNav', () => {
 
       act(() => {
         fireEvent.scroll(scrollable);
+        jest.advanceTimersByTime(32);
+      });
+      /** The rail frames itself after the commit that reports the window, so the
+       *  settle frames it schedules land on the next flush. */
+      act(() => {
         jest.advanceTimersByTime(32);
       });
 

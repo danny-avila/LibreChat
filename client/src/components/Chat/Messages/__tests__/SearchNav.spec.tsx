@@ -10,7 +10,17 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/utils', () => ({ cn: (...a: unknown[]) => a.filter(Boolean).join(' ') }));
 
-import SearchNav, { magnifyFalloff, ribDimsFor, type SearchNavEntry } from '../SearchNav';
+import SearchNav, { type SearchNavEntry } from '../SearchNav';
+/** The rail's geometry is shared with the transcript's nav; it lives in the one
+ *  module both surfaces render. */
+import { magnifyFalloff, ribDimsFor } from '../Rail';
+
+/** The rail pins an origin rib above the scrolling column, so a nav-wide
+ *  `[data-msg-id]` sweep no longer means "the result ribs". */
+function resultRibs(container: HTMLElement): HTMLElement[] {
+  const column = container.querySelector('[data-message-nav-column]');
+  return Array.from(column?.querySelectorAll<HTMLElement>('[data-msg-id]') ?? []);
+}
 
 function makeEntry(over: Partial<SearchNavEntry> & { index: number }): SearchNavEntry {
   return {
@@ -45,8 +55,8 @@ describe('SearchNav pure helpers', () => {
 
   describe('ribDimsFor', () => {
     it('returns the small square dims for an end marker and the bar dims otherwise', () => {
-      const message = ribDimsFor({ isEnd: false });
-      const end = ribDimsFor({ isEnd: true });
+      const message = ribDimsFor(makeEntry({ index: 0 }));
+      const end = ribDimsFor(makeEntry({ index: 1, isEnd: true }));
       expect(message.peakW).toBeGreaterThan(message.baseW);
       expect(message.baseW).toBeGreaterThan(end.baseW);
       expect(end.baseW).toBe(end.baseH);
@@ -81,14 +91,62 @@ describe('SearchNav rendering', () => {
     );
     const nav = container.querySelector('nav');
     expect(nav).not.toBeNull();
-    const indicators = container.querySelectorAll('[data-msg-id]');
+    const indicators = resultRibs(container);
     expect(indicators).toHaveLength(4);
-    expect(Array.from(indicators).map((el) => el.getAttribute('data-msg-id'))).toEqual([
+    expect(indicators.map((el) => el.getAttribute('data-msg-id'))).toEqual([
       'm0',
       'm1',
       'm2',
       'm3',
     ]);
+  });
+
+  it('pins an origin rib above the column that jumps to the first result', () => {
+    const onJump = jest.fn();
+    const { container } = render(
+      <SearchNav
+        entries={makeEntries(4)}
+        currentIndex={2}
+        visibleIndices={new Set([2])}
+        onJump={onJump}
+      />,
+    );
+    const origin = container.querySelector('[data-msg-id="search-results-start"]') as HTMLElement;
+    expect(origin).not.toBeNull();
+    expect(
+      container.querySelector('[data-message-nav-column] [data-msg-id="search-results-start"]'),
+    ).toBeNull();
+    fireEvent.click(origin);
+    expect(onJump).toHaveBeenCalledWith(0, true);
+  });
+
+  it('gives every result rib a fixed row height so the column cannot compress them', () => {
+    const { container } = render(
+      <SearchNav
+        entries={makeEntries(6)}
+        currentIndex={0}
+        visibleIndices={new Set([0])}
+        onJump={noop}
+      />,
+    );
+    for (const rib of resultRibs(container)) {
+      expect(rib.className).toContain('shrink-0');
+      expect(rib.style.height).toBe('6px');
+    }
+  });
+
+  it('puts exactly one result rib in the tab order', () => {
+    const { container } = render(
+      <SearchNav
+        entries={makeEntries(6)}
+        currentIndex={3}
+        visibleIndices={new Set([3])}
+        onJump={noop}
+      />,
+    );
+    const stops = resultRibs(container).filter((r) => r.getAttribute('tabindex') === '0');
+    expect(stops).toHaveLength(1);
+    expect(stops[0].getAttribute('data-msg-id')).toBe('m3');
   });
 
   it('marks aria-current on the entry whose index matches currentIndex', () => {
