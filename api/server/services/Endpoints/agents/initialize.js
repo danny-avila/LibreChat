@@ -859,6 +859,7 @@ const initializeClient = async ({
       model: agent.model,
       model_parameters: { model: agent.model_parameters?.model },
       recursion_limit: agent.recursion_limit,
+      memory_scope: agent.memory_scope,
       subagents: agent.subagents,
       configId: getLazySubagentConfigId(agent),
       codeEnvAvailable:
@@ -1089,6 +1090,7 @@ const initializeClient = async ({
         model: metadata.model,
         model_parameters: metadata.model_parameters,
         recursion_limit: metadata.recursion_limit,
+        memory_scope: metadata.memory_scope,
         subagents: metadata.subagents,
         configId: metadata.configId,
         codeEnvAvailable: metadata.codeEnvAvailable,

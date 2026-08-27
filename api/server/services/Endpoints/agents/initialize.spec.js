@@ -986,6 +986,7 @@ describe('initializeClient — subagent loading', () => {
       author: new mongoose.Types.ObjectId(),
       tools: ['web'],
       stateful_code_environment: 'agent-user',
+      memory_scope: 'agent',
     });
     await grantView(subAgent);
 
@@ -1019,6 +1020,7 @@ describe('initializeClient — subagent loading', () => {
         id: SUBAGENT_ID,
         configId: expect.any(String),
         statefulCodeEnvironment: 'agent-user',
+        memory_scope: 'agent',
       }),
     );
     expect(agentClientArgs.agent.lazySubagentConfigs[0]).not.toHaveProperty('tools');
