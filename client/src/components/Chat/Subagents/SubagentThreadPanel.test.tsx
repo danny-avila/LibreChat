@@ -1948,13 +1948,21 @@ describe('SubagentThreadPanel', () => {
       isError: false,
       isReadinessPending: false,
     }));
-    mockGetSubagentThread.mockResolvedValueOnce({
-      ...completedView,
-      nextCursor: 'very-old:assistant',
-      activity: [],
-      messages: [],
-      turns: [makeTurn('very-old', 'Very old result')],
-    });
+    mockGetSubagentThread
+      .mockResolvedValueOnce({
+        ...completedView,
+        nextCursor: 'very-old:assistant',
+        activity: [],
+        messages: [],
+        turns: [makeTurn('very-old', 'Very old result')],
+      })
+      .mockResolvedValueOnce({
+        ...completedView,
+        activity: [],
+        messages: [],
+        historyTruncated: false,
+        turns: [],
+      });
 
     const { rerender } = render(
       <RecoilRoot>
@@ -1980,6 +1988,16 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByText('Boundary result')).toBeInTheDocument();
     expect(screen.getByText('Current result')).toBeInTheDocument();
     expect(screen.getByText('New result')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+    await waitFor(() =>
+      expect(mockGetSubagentThread).toHaveBeenLastCalledWith(
+        'parent-conversation',
+        'child-thread',
+        undefined,
+        'task:assistant',
+      ),
+    );
   });
 
   it('follows a newly appended latest turn while preserving the continuous history', async () => {

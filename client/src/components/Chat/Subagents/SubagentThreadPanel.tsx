@@ -634,8 +634,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     () => (data == null ? [] : adaptDurableThreadConversation(data)),
     [data],
   );
-  const previousLatestTurnsRef = useRef({ threadId, turns: latestConversationTurns });
+  const previousLatestTurnsRef = useRef({
+    threadId,
+    generation: latestHistoryGeneration,
+    turns: latestConversationTurns,
+  });
   useEffect(() => {
+    if (data == null) return;
     const previous = previousLatestTurnsRef.current;
     if (previous.threadId === threadId) {
       const latestTaskIds = new Set(latestConversationTurns.map((turn) => turn.taskId));
@@ -643,9 +648,17 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       if (displaced.length > 0) {
         setOlderTurns((current) => mergeChildConversationTurns(current, displaced));
       }
+      if (previous.generation !== latestHistoryGeneration && historyCursor !== undefined) {
+        setHistoryCursor(undefined);
+        setHistoryBoundaryUnavailable(false);
+      }
     }
-    previousLatestTurnsRef.current = { threadId, turns: latestConversationTurns };
-  }, [latestConversationTurns, threadId]);
+    previousLatestTurnsRef.current = {
+      threadId,
+      generation: latestHistoryGeneration,
+      turns: latestConversationTurns,
+    };
+  }, [data, historyCursor, latestConversationTurns, latestHistoryGeneration, threadId]);
   const conversationTurns = useMemo(() => {
     const durableTurns = mergeChildConversationTurns(olderTurns, latestConversationTurns);
     if (durableTurns.length > 0) {
