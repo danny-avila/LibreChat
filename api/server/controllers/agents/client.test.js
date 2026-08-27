@@ -162,6 +162,21 @@ describe('AgentClient - event actor history adapter', () => {
       skillManifest: [{ id: 'skill-1', name: 'analysis', version: 3 }],
     });
   });
+
+  it('fingerprints agents reachable only through nested subagent graphs', () => {
+    const graphMember = { id: 'graph-member' };
+    const nested = { id: 'nested', subagentGraphConfigs: [{ memberConfigs: [graphMember] }] };
+    const client = Object.create(AgentClient.prototype);
+    client.options = { agent: { id: 'primary', subagentAgentConfigs: [nested] } };
+    client.agentConfigs = new Map([['parallel', { id: 'parallel' }]]);
+
+    expect(client.getEventActorAgents().map((agent) => agent.id)).toEqual([
+      'primary',
+      'parallel',
+      'nested',
+      'graph-member',
+    ]);
+  });
 });
 
 describe('AgentClient - final model-bound content protection', () => {

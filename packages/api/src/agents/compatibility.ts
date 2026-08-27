@@ -32,6 +32,7 @@ export interface AgentContextDefinition {
   modelParameters?: object;
   toolDefinitions?: readonly object[];
   toolOptions?: object;
+  execution?: object;
   skills?: readonly AgentContextSkillIdentity[];
 }
 
@@ -54,6 +55,7 @@ export interface InitializedAgentContextSource {
   model_parameters?: object;
   toolDefinitions?: readonly object[];
   tool_options?: object;
+  execution?: object;
   manualSkillPrimes?: readonly {
     _id: { toString(): string } | string;
     name: string;
@@ -194,6 +196,7 @@ export function createInitializedAgentContextFingerprint(input: {
       modelParameters: agent.model_parameters,
       toolDefinitions: agent.toolDefinitions,
       toolOptions: agent.tool_options,
+      execution: agent.execution,
       skills:
         index === 0
           ? [...skillIdentities(agent), ...(input.invokedSkills ?? [])]

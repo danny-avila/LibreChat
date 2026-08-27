@@ -312,6 +312,25 @@ class AgentClient extends BaseClient {
         model_parameters: JSON.parse(JSON.stringify(agent.model_parameters ?? {})),
         toolDefinitions: JSON.parse(JSON.stringify(agent.toolDefinitions ?? [])),
         tool_options: JSON.parse(JSON.stringify(agent.tool_options ?? {})),
+        execution: JSON.parse(
+          JSON.stringify({
+            endpoint: agent.endpoint,
+            tool_kwargs: agent.tool_kwargs,
+            edges: agent.edges,
+            end_after_tools: agent.end_after_tools,
+            hide_sequential_outputs: agent.hide_sequential_outputs,
+            stateful_code_sessions: agent.stateful_code_sessions,
+            stateful_code_environment: agent.stateful_code_environment,
+            artifacts: agent.artifacts,
+            recursion_limit: agent.recursion_limit,
+            subagents: agent.subagents,
+            memory_scope: agent.memory_scope,
+            skills_enabled: agent.skills_enabled,
+            skills: agent.skills,
+            backgroundToolNames: agent.backgroundToolNames,
+            intentToolNames: agent.intentToolNames,
+          }),
+        ),
         manualSkillPrimes: agent.manualSkillPrimes,
         alwaysApplySkillPrimes: agent.alwaysApplySkillPrimes,
       }));
@@ -1575,10 +1594,22 @@ class AgentClient extends BaseClient {
   }
 
   getEventActorAgents() {
-    return collectReachableAgents([
-      this.options.agent,
-      ...(this.agentConfigs?.values() ?? []),
-    ]).filter(Boolean);
+    const agents = [];
+    const visited = new Set();
+    const pending = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
+    for (let index = 0; index < pending.length; index++) {
+      const agent = pending[index];
+      if (!agent || visited.has(agent)) {
+        continue;
+      }
+      visited.add(agent);
+      agents.push(agent);
+      pending.push(...(agent.subagentAgentConfigs?.values?.() ?? []));
+      for (const graph of agent.subagentGraphConfigs ?? []) {
+        pending.push(...(graph.memberConfigs ?? []));
+      }
+    }
+    return agents;
   }
 
   /**

@@ -17,6 +17,7 @@ const context = (): AgentTurnSemanticContext => ({
       instructions: 'Help carefully.',
       modelParameters: { temperature: 0.2 },
       toolDefinitions: [{ name: 'search', schema: { type: 'object' } }],
+      execution: { edges: [{ from: 'agent-1', to: 'agent-2' }], recursionLimit: 25 },
       skills: [
         { id: 'skill-b', name: 'beta', version: 2 },
         { id: 'skill-a', name: 'alpha', version: 1 },
@@ -45,6 +46,14 @@ describe('agent context compatibility', () => {
       'tool definition',
       (value: AgentTurnSemanticContext) =>
         (value.agents[0].toolDefinitions = [{ name: 'submit', schema: { type: 'object' } }]),
+    ],
+    [
+      'graph topology',
+      (value: AgentTurnSemanticContext) =>
+        (value.agents[0].execution = {
+          edges: [{ from: 'agent-1', to: 'agent-3' }],
+          recursionLimit: 25,
+        }),
     ],
     [
       'Skill version',
