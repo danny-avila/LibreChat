@@ -32,6 +32,7 @@ const {
   createSubagentUsageSink,
   anyAgentReplaysReasoningContent,
   GenerationJobManager,
+  PENDING_ACTION_EXPIRED_CODE,
   getTransactionsConfig,
   resolveRecursionLimit,
   buildPendingAction,
@@ -3872,7 +3873,8 @@ class AgentClient extends BaseClient {
       if (
         err?.code === 'SCHEDULED_HITL_REQUIRES_SHARED_STORE' ||
         err?.code === 'SCHEDULED_HITL_REQUIRES_DURABLE_CHECKPOINT' ||
-        err?.code === 'HITL_CHECKPOINT_UNAVAILABLE'
+        err?.code === 'HITL_CHECKPOINT_UNAVAILABLE' ||
+        err?.code === PENDING_ACTION_EXPIRED_CODE
       ) {
         logger.warn(`[api/server/controllers/agents/client.js #sendCompletion] ${err.message}`);
         throw err;

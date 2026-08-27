@@ -1,10 +1,10 @@
 import type { Agents } from 'librechat-data-provider';
+import { ApprovalLifecycle, PendingActionExpiredError } from '~/stream/ApprovalLifecycle';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
 import { PAUSE_PERSISTENCE_TIMEOUT_ERROR } from '~/stream/interfaces/IJobStore';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
-import { ApprovalLifecycle } from '~/stream/ApprovalLifecycle';
 
 jest.spyOn(console, 'log').mockImplementation();
 
@@ -58,6 +58,17 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       if (pending?.payload.type === 'tool_approval') {
         expect(pending.payload.action_requests[0].name).toBe('shell');
       }
+    });
+
+    test('refuses an action whose deadline passed before the pause transition', async () => {
+      const streamId = 'stream-expired-before-pause';
+      await manager.createJob(streamId, 'user-1');
+
+      await expect(
+        manager.approvals.pause(streamId, buildAction(streamId, { expiresAt: Date.now() - 1 })),
+      ).rejects.toBeInstanceOf(PendingActionExpiredError);
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({ status: 'running' });
+      await expect(manager.approvals.peek(streamId)).resolves.toBeNull();
     });
 
     test('a later ask retains a legacy answer for ordered cross-replica reconstruction', async () => {
@@ -610,12 +621,15 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
     test('treats a past-expiresAt record as gone (lazy expiry)', async () => {
       const streamId = 'stream-expired-peek';
       await manager.createJob(streamId, 'user-1');
-      await manager.approvals.pause(
-        streamId,
-        buildAction(streamId, { expiresAt: Date.now() - 1000 }),
-      );
+      const expiresAt = Date.now() + 1000;
+      await manager.approvals.pause(streamId, buildAction(streamId, { expiresAt }));
 
-      expect(await manager.approvals.peek(streamId)).toBeNull();
+      const now = jest.spyOn(Date, 'now').mockReturnValue(expiresAt + 1);
+      try {
+        expect(await manager.approvals.peek(streamId)).toBeNull();
+      } finally {
+        now.mockRestore();
+      }
     });
   });
 
@@ -724,13 +738,16 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
     test('an expired pending action expires instead of resuming', async () => {
       const streamId = 'stream-resolve-expired';
       await manager.createJob(streamId, 'user-1');
-      await manager.approvals.pause(
-        streamId,
-        buildAction(streamId, { expiresAt: Date.now() - 1000 }),
-      );
+      const expiresAt = Date.now() + 1000;
+      await manager.approvals.pause(streamId, buildAction(streamId, { expiresAt }));
 
-      expect(await manager.approvals.resolve(streamId)).toBe(false);
-      expect(await manager.getJobStatus(streamId)).toBe('aborted');
+      const now = jest.spyOn(Date, 'now').mockReturnValue(expiresAt + 1);
+      try {
+        expect(await manager.approvals.resolve(streamId)).toBe(false);
+        expect(await manager.getJobStatus(streamId)).toBe('aborted');
+      } finally {
+        now.mockRestore();
+      }
     });
   });
 
@@ -813,13 +830,19 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
         scheduledFor: '2026-08-17T12:00:00.000Z',
       });
       const lifecycle = new ApprovalLifecycle(jobStore);
-      await lifecycle.pause(streamId, buildAction(streamId, { expiresAt: Date.now() - 1 }));
+      const expiresAt = Date.now() + 1_000;
+      await lifecycle.pause(streamId, buildAction(streamId, { expiresAt }));
       const onApprovalExpired = jest.fn(async () => undefined);
       manager.setApprovalExpiredHandler(onApprovalExpired);
 
-      await (
-        manager as unknown as { expireStaleApprovals: () => Promise<void> }
-      ).expireStaleApprovals();
+      const now = jest.spyOn(Date, 'now').mockReturnValue(expiresAt + 1);
+      try {
+        await (
+          manager as unknown as { expireStaleApprovals: () => Promise<void> }
+        ).expireStaleApprovals();
+      } finally {
+        now.mockRestore();
+      }
 
       expect(onApprovalExpired).toHaveBeenCalledWith(
         streamId,
@@ -1182,13 +1205,16 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
     test('excludes a pending-approval job whose prompt has expired', async () => {
       const streamId = 'stream-expired-active';
       await manager.createJob(streamId, 'user-exp');
-      await manager.approvals.pause(
-        streamId,
-        buildAction(streamId, { expiresAt: Date.now() - 1000 }),
-      );
+      const expiresAt = Date.now() + 1000;
+      await manager.approvals.pause(streamId, buildAction(streamId, { expiresAt }));
 
-      // Still requires_action, but the prompt is past expiry → no longer active.
-      expect(await manager.getActiveJobIdsForUser('user-exp')).not.toContain(streamId);
+      const now = jest.spyOn(Date, 'now').mockReturnValue(expiresAt + 1);
+      try {
+        // Still requires_action, but the prompt is past expiry → no longer active.
+        expect(await manager.getActiveJobIdsForUser('user-exp')).not.toContain(streamId);
+      } finally {
+        now.mockRestore();
+      }
     });
   });
 });

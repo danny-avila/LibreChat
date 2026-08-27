@@ -35,6 +35,17 @@ export interface ApprovalPauseOptions {
   persistencePending?: boolean;
 }
 
+export const PENDING_ACTION_EXPIRED_CODE = 'HITL_ACTION_EXPIRED';
+
+export class PendingActionExpiredError extends Error {
+  readonly code: typeof PENDING_ACTION_EXPIRED_CODE = PENDING_ACTION_EXPIRED_CODE;
+
+  constructor() {
+    super('The pending action expired before it could be exposed for review');
+    this.name = 'PendingActionExpiredError';
+  }
+}
+
 const PAUSE_PERSISTENCE_ACTION_PREFIX = 'pause-persistence:';
 
 export function pausePersistenceActionId(actionId: string): string {
@@ -85,6 +96,9 @@ export class ApprovalLifecycle {
     pendingAction: Agents.PendingAction,
     options: ApprovalPauseOptions = {},
   ): Promise<boolean> {
+    if (isPendingActionExpired({ pendingAction })) {
+      throw new PendingActionExpiredError();
+    }
     const job = await this.store.getJob(streamId);
     if (
       !job ||

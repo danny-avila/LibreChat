@@ -578,6 +578,54 @@ describe('AgentClient - interrupt discovery persistence', () => {
     expect(paused?.metadata.pendingAction.expiresAt).toBeLessThanOrEqual(now + 5_000);
   });
 
+  it('does not expose an event-bound pause after its inherited deadline', async () => {
+    const streamId = 'conversation-expired-event-bound-pause';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: { checkpointer: { ttl: 3600 } } } },
+        _agentEventBindingRetention: {
+          isTemporary: false,
+          expiredAt: new Date(Date.now() - 1),
+        },
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-expired-event-bound-pause';
+    client.jobCreatedAt = job.createdAt;
+
+    await expect(
+      client.handleRunInterrupt(
+        {
+          getInterrupt: () => ({
+            interruptId: 'ask-interrupt',
+            threadId: streamId,
+            payload: {
+              type: 'ask_user_question',
+              question: { question: 'Proceed?' },
+            },
+          }),
+        },
+        streamId,
+      ),
+    ).rejects.toMatchObject({ code: 'HITL_ACTION_EXPIRED' });
+    const liveJob = await GenerationJobManager.getJob(streamId);
+    expect(liveJob?.status).toBe('running');
+    expect(liveJob?.metadata.pendingAction).toBeUndefined();
+  });
+
   it('does not expose a scheduled pause without its shared action store', async () => {
     const streamId = 'scheduled-missing-shared-store';
     const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
