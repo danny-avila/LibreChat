@@ -149,6 +149,34 @@ describe('loadAuthValues', () => {
     expect(result).toEqual({ GOOGLE_KEY: undefined });
   });
 
+  it('should distinguish a missing optional credential from a credential-store failure', async () => {
+    delete process.env.KEENABLE_API_URL;
+    const missingError = Object.assign(new Error('No auth found'), {
+      code: 'PLUGIN_AUTH_NOT_FOUND',
+    });
+    getUserPluginAuthValue.mockRejectedValueOnce(missingError);
+
+    await expect(
+      loadAuthValues({
+        userId: 'user1',
+        authFields: ['KEENABLE_API_URL'],
+        optional: new Set(['KEENABLE_API_URL']),
+        failOnOptionalError: true,
+      }),
+    ).resolves.toEqual({ KEENABLE_API_URL: undefined });
+
+    getUserPluginAuthValue.mockRejectedValueOnce(new Error('Database unavailable'));
+
+    await expect(
+      loadAuthValues({
+        userId: 'user1',
+        authFields: ['KEENABLE_API_URL'],
+        optional: new Set(['KEENABLE_API_URL']),
+        failOnOptionalError: true,
+      }),
+    ).rejects.toThrow('Database unavailable');
+  });
+
   it('should not leak sentinel through catch path when DB lookup throws', async () => {
     process.env.GOOGLE_KEY = AuthType.USER_PROVIDED;
     getUserPluginAuthValue.mockRejectedValue(new Error('No auth found'));

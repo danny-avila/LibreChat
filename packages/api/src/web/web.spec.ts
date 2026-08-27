@@ -3,6 +3,7 @@ import {
   AuthType,
   RerankerTypes,
   SafeSearchTypes,
+  SearchCategories,
   SearchProviders,
   ScraperProviders,
 } from 'librechat-data-provider';
@@ -99,6 +100,17 @@ describe('web.ts', () => {
         ['KEENABLE_API_KEY', 'keenable-key'],
         [webSearchSelectionFields.selectedProvider, 'keenable'],
       ]);
+    });
+
+    it('rejects reranker selections that have no runtime service', () => {
+      const entries = getWebSearchInstallEntries({
+        auth: {
+          selectedReranker: 'infinity',
+        },
+        config: {} as TWebSearchConfig,
+      });
+
+      expect(entries).toEqual([]);
     });
 
     it('clears persisted provider choices with web-search credentials', () => {
@@ -559,6 +571,48 @@ describe('web.ts', () => {
       expect(result.authResult.keenableApiKey).toBe('user-keenable-key');
     });
 
+    it('should keep Keenable editable when the URL is user-provided but not saved yet', async () => {
+      const originalApiKey = process.env.KEENABLE_API_KEY;
+      const originalApiUrl = process.env.KEENABLE_API_URL;
+      process.env.KEENABLE_API_KEY = 'system-keenable-key';
+      process.env.KEENABLE_API_URL = AuthType.USER_PROVIDED;
+      mockLoadAuthValues.mockResolvedValue({
+        KEENABLE_API_KEY: 'system-keenable-key',
+      });
+
+      try {
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig: {
+            keenableApiKey: '${KEENABLE_API_KEY}',
+            keenableApiUrl: '${KEENABLE_API_URL}',
+            searchProvider: SearchProviders.KEENABLE,
+            scraperProvider: ScraperProviders.KEENABLE,
+            rerankerType: RerankerTypes.NONE,
+            safeSearch: SafeSearchTypes.MODERATE,
+          } as TWebSearchConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authTypes).toEqual([
+          [SearchCategories.PROVIDERS, AuthType.USER_PROVIDED],
+          [SearchCategories.SCRAPERS, AuthType.USER_PROVIDED],
+          [SearchCategories.RERANKERS, AuthType.SYSTEM_DEFINED],
+        ]);
+      } finally {
+        if (originalApiKey == null) {
+          delete process.env.KEENABLE_API_KEY;
+        } else {
+          process.env.KEENABLE_API_KEY = originalApiKey;
+        }
+        if (originalApiUrl == null) {
+          delete process.env.KEENABLE_API_URL;
+        } else {
+          process.env.KEENABLE_API_URL = originalApiUrl;
+        }
+      }
+    });
+
     it('should not send a system Keenable key to a user-provided API URL', async () => {
       const originalApiKey = process.env.KEENABLE_API_KEY;
       const originalApiUrl = process.env.KEENABLE_API_URL;
@@ -703,6 +757,39 @@ describe('web.ts', () => {
         ['scrapers', AuthType.USER_PROVIDED],
         ['rerankers', AuthType.SYSTEM_DEFINED],
       ]);
+    });
+
+    it('should fail closed when optional Keenable credential lookup fails', async () => {
+      mockLoadAuthValues.mockImplementation(({ authFields, failOnOptionalError }) => {
+        if (failOnOptionalError && authFields.includes('KEENABLE_API_URL')) {
+          return Promise.reject(new Error('Credential store unavailable'));
+        }
+        return Promise.resolve({});
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig: {
+          keenableApiKey: '${KEENABLE_API_KEY}',
+          keenableApiUrl: '${KEENABLE_API_URL}',
+          searchProvider: SearchProviders.KEENABLE,
+          scraperProvider: ScraperProviders.KEENABLE,
+          rerankerType: RerankerTypes.NONE,
+          safeSearch: SafeSearchTypes.MODERATE,
+        } as TWebSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(false);
+      expect(result.authResult.keenableApiKey).toBeUndefined();
+      expect(result.authResult.keenableApiUrl).toBeUndefined();
+      expect(mockLoadAuthValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          authFields: ['KEENABLE_API_KEY', 'KEENABLE_API_URL'],
+          throwError: true,
+          failOnOptionalError: true,
+        }),
+      );
     });
 
     it('should restore a fully keyless Keenable stack from per-user selections', async () => {

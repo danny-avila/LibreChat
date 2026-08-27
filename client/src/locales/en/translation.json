@@ -2425,6 +2425,7 @@
   "com_ui_web_search_firecrawl_url": "Firecrawl API URL (optional)",
   "com_ui_web_search_jina_key": "Enter Jina API Key",
   "com_ui_web_search_jina_url": "Jina API URL (optional)",
+  "com_ui_web_search_keenable_url": "Keenable API URL (optional)",
   "com_ui_web_search_processing": "Processing results",
   "com_ui_web_search_provider": "Search Provider",
   "com_ui_web_search_provider_keenable": "Keenable API",

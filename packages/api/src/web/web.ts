@@ -1,13 +1,14 @@
 import { webSearchAuth, webSearchKeys, webSearchSelectionFields } from '@librechat/data-schemas';
 import {
   AuthType,
+  RerankerTypes,
   SafeSearchTypes,
   SearchCategories,
   SearchProviders,
   ScraperProviders,
   extractVariableName,
 } from 'librechat-data-provider';
-import type { RerankerTypes, TCustomConfig, TWebSearchConfig } from 'librechat-data-provider';
+import type { TCustomConfig, TWebSearchConfig } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '@librechat/data-schemas';
 import { isSSRFTarget, resolveHostnameSSRF, getEffectivePort } from '../auth';
 
@@ -30,7 +31,7 @@ const USER_PROVIDED_OPT_IN_URL_KEYS = new Set<TWebSearchKeys>([
 
 const SEARCH_PROVIDER_VALUES = new Set<string>(Object.values(SearchProviders));
 const SCRAPER_PROVIDER_VALUES = new Set<string>(Object.values(ScraperProviders));
-const RERANKER_VALUES = new Set<string>(['infinity', 'jina', 'cohere', 'none']);
+const RERANKER_VALUES = new Set<string>(Object.values(RerankerTypes));
 
 function isUserProvidedEnabled(field: string): boolean {
   return process.env[field] === AuthType.USER_PROVIDED;
@@ -168,6 +169,7 @@ export async function loadWebSearchAuth({
     authFields: string[];
     optional?: Set<string>;
     throwError?: boolean;
+    failOnOptionalError?: boolean;
   }) => Promise<Record<string, string>>;
   throwError?: boolean;
 }): Promise<WebSearchAuthResult> {
@@ -185,12 +187,14 @@ export async function loadWebSearchAuth({
         isUserProvided: boolean;
         hasSystemApiKey: boolean;
         rejectedUserApiUrl: boolean;
+        lookupFailed: boolean;
       }>
     | undefined;
   function resolveKeenableAuth(): Promise<{
     isUserProvided: boolean;
     hasSystemApiKey: boolean;
     rejectedUserApiUrl: boolean;
+    lookupFailed: boolean;
   }> {
     keenableAuth ??= (async () => {
       let keenableUserProvided = false;
@@ -216,10 +220,16 @@ export async function loadWebSearchAuth({
           userId,
           authFields,
           optional: new Set(authFields),
-          throwError: false,
+          throwError: true,
+          failOnOptionalError: true,
         });
       } catch {
-        return { isUserProvided: false, hasSystemApiKey: false, rejectedUserApiUrl: false };
+        return {
+          isUserProvided: false,
+          hasSystemApiKey: false,
+          rejectedUserApiUrl: false,
+          lookupFailed: true,
+        };
       }
 
       const resolvedEntries: Array<{
@@ -229,15 +239,20 @@ export async function loadWebSearchAuth({
       }> = [];
       for (const { key: originalKey, field } of authEntries) {
         const value = authValues[field];
-        if (!value) {
-          continue;
-        }
         const envValue = process.env[field];
         const normalizedEnvValue = envValue?.trim();
         const isFieldUserProvided =
           normalizedEnvValue == null ||
           normalizedEnvValue === '' ||
           normalizedEnvValue === AuthType.USER_PROVIDED;
+        if (isFieldUserProvided) {
+          // The category stays editable even before the user saves a value.
+          // Otherwise a system key would hide a separately user-provided URL.
+          keenableUserProvided = true;
+        }
+        if (!value) {
+          continue;
+        }
         if (
           originalKey === 'keenableApiUrl' &&
           isFieldUserProvided &&
@@ -250,7 +265,12 @@ export async function loadWebSearchAuth({
       }
 
       if (rejectedUserApiUrl) {
-        return { isUserProvided: true, hasSystemApiKey: false, rejectedUserApiUrl: true };
+        return {
+          isUserProvided: true,
+          hasSystemApiKey: false,
+          rejectedUserApiUrl: true,
+          lookupFailed: false,
+        };
       }
 
       const hasUserProvidedApiUrl = resolvedEntries.some(
@@ -263,15 +283,17 @@ export async function loadWebSearchAuth({
           continue;
         }
         authResult[originalKey] = value;
-        if (isFieldUserProvided) {
-          keenableUserProvided = true;
-        }
         if (originalKey === 'keenableApiKey' && !isFieldUserProvided) {
           hasSystemApiKey = true;
         }
       }
 
-      return { isUserProvided: keenableUserProvided, hasSystemApiKey, rejectedUserApiUrl: false };
+      return {
+        isUserProvided: keenableUserProvided,
+        hasSystemApiKey,
+        rejectedUserApiUrl: false,
+        lookupFailed: false,
+      };
     })();
     return keenableAuth;
   }
@@ -381,7 +403,7 @@ export async function loadWebSearchAuth({
     if (category === SearchCategories.PROVIDERS && specificService === SearchProviders.KEENABLE) {
       const keenable = await resolveKeenableAuth();
       authResult.searchProvider = SearchProviders.KEENABLE;
-      if (keenable.rejectedUserApiUrl) {
+      if (keenable.lookupFailed || keenable.rejectedUserApiUrl) {
         return [false, true];
       }
       return [true, isUserProvided || keenable.isUserProvided || !keenable.hasSystemApiKey];
@@ -389,7 +411,7 @@ export async function loadWebSearchAuth({
     if (category === SearchCategories.SCRAPERS && specificService === ScraperProviders.KEENABLE) {
       const keenable = await resolveKeenableAuth();
       authResult.scraperProvider = ScraperProviders.KEENABLE;
-      if (keenable.rejectedUserApiUrl) {
+      if (keenable.lookupFailed || keenable.rejectedUserApiUrl) {
         return [false, true];
       }
       return [true, isUserProvided || keenable.isUserProvided || !keenable.hasSystemApiKey];
@@ -529,7 +551,7 @@ export async function loadWebSearchAuth({
      */
     if (category === SearchCategories.PROVIDERS && !specificService) {
       const keenable = await resolveKeenableAuth();
-      if (keenable.rejectedUserApiUrl) {
+      if (keenable.lookupFailed || keenable.rejectedUserApiUrl) {
         return [false, true];
       }
       if (authResult.keenableApiKey || authResult.keenableApiUrl) {
@@ -550,7 +572,7 @@ export async function loadWebSearchAuth({
      */
     if (category === SearchCategories.SCRAPERS && !specificService) {
       const keenable = await resolveKeenableAuth();
-      if (keenable.rejectedUserApiUrl) {
+      if (keenable.lookupFailed || keenable.rejectedUserApiUrl) {
         return [false, true];
       }
       if (

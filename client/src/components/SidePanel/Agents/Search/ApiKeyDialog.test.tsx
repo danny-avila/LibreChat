@@ -97,6 +97,7 @@ describe('ApiKeyDialog', () => {
 
     expect(setValue).toHaveBeenCalledWith('selectedProvider', SearchProviders.KEENABLE);
     expect(setValue).toHaveBeenCalledWith('selectedReranker', RerankerTypes.NONE);
+    expect(screen.getByPlaceholderText('com_ui_web_search_keenable_url')).toBeInTheDocument();
     expect(screen.queryByPlaceholderText('com_ui_web_search_jina_key')).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText('com_ui_web_search_cohere_key')).not.toBeInTheDocument();
   });
@@ -107,6 +108,15 @@ describe('ApiKeyDialog', () => {
     expect(screen.getByText('com_ui_web_search_provider_serper')).toBeInTheDocument();
     // Should not find a dropdown button for provider
     expect(screen.queryByRole('button', { name: /provider/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the custom URL input when Keenable is pinned but user-configurable', () => {
+    mockUseGetStartupConfig.mockReturnValue({
+      data: { webSearch: { searchProvider: SearchProviders.KEENABLE } },
+    });
+    render(<ApiKeyDialog {...defaultProps} />);
+
+    expect(screen.getByPlaceholderText('com_ui_web_search_keenable_url')).toBeInTheDocument();
   });
 
   it('shows only Jina reranker field if rerankerType is set to jina', () => {

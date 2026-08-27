@@ -139,6 +139,10 @@ export default function ApiKeyDialog({
             text: localize('com_ui_web_search_provider_keenable_key'),
           },
         },
+        keenableApiUrl: {
+          placeholder: localize('com_ui_web_search_keenable_url'),
+          type: 'text' as const,
+        },
       },
     },
   ];
