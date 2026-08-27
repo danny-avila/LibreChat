@@ -363,19 +363,54 @@ describe('pinned list cache synchronization', () => {
     expect(data?.pages[0].conversations[0].pinned).toBe(true);
   });
 
-  /** The first turn of a chat takes the upsert path, which merges rather than replaces:
-   * stripping the flags is what keeps that merge from writing the stale one back. */
-  it('keeps a pin when the first turn of a chat upserts stale chat state', () => {
+  /** Root-level SSE updates take the upsert path, and an older pin may be outside the
+   * loaded chats pages. The dedicated row has to supply the sidebar-owned flags when
+   * upsert inserts the conversation into that cache. */
+  it('keeps list flags when an older pin upserts into the chats cache', () => {
     const queryClient = createQueryClient();
+    const cachedPin = { ...pinnedConvo, isShared: true } as TConversation;
     queryClient.setQueryData(
       [QueryKeys.pinnedConversations, { tags: undefined }],
-      listResponse([pinnedConvo]),
+      listResponse([cachedPin]),
     );
+    queryClient.setQueryData([QueryKeys.allConversations, { tags: undefined }], {
+      pages: [
+        {
+          conversations: [
+            {
+              conversationId: 'other-recent',
+              title: 'Recent',
+              endpoint: 'openAI',
+            } as TConversation,
+          ],
+          nextCursor: 'cursor-2',
+        },
+      ],
+      pageParams: [undefined],
+    });
 
-    const staleChatState = { ...pinnedConvo, title: 'Replied', pinned: false } as TConversation;
+    const staleChatState = {
+      ...cachedPin,
+      title: 'Replied',
+      pinned: false,
+      isShared: false,
+    } as TConversation;
     upsertConvoInAllQueries(queryClient, withoutListFlags(staleChatState));
 
-    expect(readPinnedCache(queryClient)?.conversations[0].pinned).toBe(true);
+    expect(readPinnedCache(queryClient)?.conversations[0]).toEqual(
+      expect.objectContaining({ pinned: true, isShared: true, title: 'Replied' }),
+    );
+    const chats = queryClient.getQueryData<{
+      pages: Array<{ conversations: TConversation[] }>;
+    }>([QueryKeys.allConversations, { tags: undefined }]);
+    expect(chats?.pages[0].conversations[0]).toEqual(
+      expect.objectContaining({
+        conversationId: pinnedConversationId,
+        pinned: true,
+        isShared: true,
+        title: 'Replied',
+      }),
+    );
   });
 
   it('withoutListFlags drops only the sidebar-owned flags', () => {

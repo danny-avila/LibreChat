@@ -474,6 +474,7 @@ export function upsertConvoInAllQueries(
   if (!nextConvo.conversationId) {
     return;
   }
+  const conversationId = nextConvo.conversationId;
 
   /* The history query excludes temporary conversations server-side, so seeding
      one into the list caches would surface it in the sidebar until the next
@@ -483,17 +484,22 @@ export function upsertConvoInAllQueries(
     return;
   }
 
+  const cachedPin = findPinnedConversation(queryClient, conversationId);
+  const listConvo = cachedPin ? preserveListFlags(nextConvo, cachedPin) : nextConvo;
+
   /* Root-level SSE updates and resumable settlement go through upsert, not
      update. Merge into any already-cached pin so that path cannot leave the
-     section at the old title or position. Do not insert: a new chat is not
-     pinned until the pin mutation refetches. */
+     section at the old title or position. Carry its list flags into history
+     too when the conversation is older than the loaded pages. Do not insert
+     into the pinned cache: a new chat is not pinned until the pin mutation
+     refetches. */
   updatePinnedConvosQuery(
     queryClient,
-    nextConvo.conversationId,
+    conversationId,
     (found) => ({
       ...found,
-      ...nextConvo,
-      updatedAt: nextConvo.updatedAt ?? (moveToTop ? new Date().toISOString() : found.updatedAt),
+      ...listConvo,
+      updatedAt: listConvo.updatedAt ?? (moveToTop ? new Date().toISOString() : found.updatedAt),
     }),
     moveToTop,
   );
@@ -512,7 +518,7 @@ export function upsertConvoInAllQueries(
       let convoIdx = -1;
       for (let pi = 0; pi < oldData.pages.length; pi++) {
         const ci = oldData.pages[pi].conversations.findIndex(
-          (c) => c.conversationId === nextConvo.conversationId,
+          (c) => c.conversationId === conversationId,
         );
         if (ci !== -1) {
           pageIdx = pi;
@@ -523,7 +529,7 @@ export function upsertConvoInAllQueries(
 
       const now = new Date().toISOString();
       if (pageIdx === -1) {
-        if (!conversationMatchesListQuery(query.queryKey, nextConvo)) {
+        if (!conversationMatchesListQuery(query.queryKey, listConvo)) {
           return oldData;
         }
         const firstPage = oldData.pages[0] ?? { conversations: [], nextCursor: null };
@@ -533,7 +539,7 @@ export function upsertConvoInAllQueries(
             {
               ...firstPage,
               conversations: [
-                { ...nextConvo, updatedAt: nextConvo.updatedAt ?? now },
+                { ...listConvo, updatedAt: listConvo.updatedAt ?? now },
                 ...firstPage.conversations,
               ],
             },
@@ -545,8 +551,8 @@ export function upsertConvoInAllQueries(
       const found = oldData.pages[pageIdx].conversations[convoIdx];
       const updated = {
         ...found,
-        ...nextConvo,
-        updatedAt: nextConvo.updatedAt ?? (moveToTop ? now : found.updatedAt),
+        ...listConvo,
+        updatedAt: listConvo.updatedAt ?? (moveToTop ? now : found.updatedAt),
       };
 
       if (!conversationMatchesProjectQuery(query.queryKey, updated)) {
