@@ -444,6 +444,7 @@ export type TPinConversationResponse = TConversation;
 
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
   messages: TMessage[];
+  langfuseSessionUrl?: string;
 };
 
 export type TCreateShareLinkRequest = Pick<TConversation, 'conversationId'>;
