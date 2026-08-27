@@ -11,7 +11,7 @@ export const credentialNames = [
 
 export type CredentialName = (typeof credentialNames)[number];
 
-export type CredentialSource = 'environment' | 'temporary' | 'legacy-default';
+export type CredentialSource = 'environment' | 'temporary';
 
 export interface CredentialRuntimeState {
   filePath: string;
@@ -55,6 +55,8 @@ const legacyCredentialFingerprints: Partial<Record<CredentialName, string[]>> = 
   JWT_SECRET: ['69024f21e9ad17594dcccd93e87399af24a5426ccfe6108d1787f0335966abc4'],
   JWT_REFRESH_SECRET: ['282ad5f60261639fefed381976b4d0dde52eab5527a1ab2ec75d5be1efa1165b'],
 };
+
+const legacyJwtCredentialNames = new Set<CredentialName>(['JWT_SECRET', 'JWT_REFRESH_SECRET']);
 
 function getRuntimeState(): CredentialRuntimeState | undefined {
   const runtime = globalThis as typeof globalThis &
@@ -276,7 +278,13 @@ export function bootstrapCredentials(): CredentialRuntimeState {
   for (const name of credentialNames) {
     const environmentValue = process.env[name];
     if (isConfiguredCredential(environmentValue)) {
-      sources[name] = isLegacyCredential(name, environmentValue) ? 'legacy-default' : 'environment';
+      if (legacyJwtCredentialNames.has(name) && isLegacyCredential(name, environmentValue)) {
+        throw new Error(
+          `[credentials] ${name} uses a retired default value. Configure a unique replacement before starting LibreChat.`,
+        );
+      }
+
+      sources[name] = 'environment';
       continue;
     }
 
