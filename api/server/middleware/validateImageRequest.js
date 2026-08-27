@@ -1,5 +1,10 @@
 const cookie = require('cookie');
-const { createImageAuthorizationMiddleware, getBasePath, isEnabled } = require('@librechat/api');
+const {
+  createImageAuthorizationMiddleware,
+  getAppConfigOptionsFromUser,
+  getBasePath,
+  isEnabled,
+} = require('@librechat/api');
 const {
   findSession,
   getAgent,
@@ -9,6 +14,19 @@ const {
   hasCapabilityForPrincipals,
   hasPermission,
 } = require('~/models');
+const { getAppConfig } = require('~/server/services/Config');
+
+const getAssistantEndpointConfigs = (appConfig) =>
+  [
+    appConfig.endpoints?.assistants && {
+      endpoint: 'assistants',
+      ...appConfig.endpoints.assistants,
+    },
+    appConfig.endpoints?.azureAssistants && {
+      endpoint: 'azureAssistants',
+      ...appConfig.endpoints.azureAssistants,
+    },
+  ].filter(Boolean);
 
 /**
  * Thin Express adapter for the typed image-authorization service in `@librechat/api`.
@@ -30,6 +48,12 @@ function createValidateImageRequest(config = {}) {
     findSession,
     getAgent,
     getAssistant,
+    getAssistantEndpointConfigs: async ({ userId, user }) => {
+      const appConfig = await getAppConfig(
+        getAppConfigOptionsFromUser({ ...user, id: userId }, user.tenantId),
+      );
+      return getAssistantEndpointConfigs(appConfig);
+    },
     getUserById,
     getUserPrincipals,
     hasCapabilityForPrincipals,

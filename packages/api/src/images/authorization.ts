@@ -64,6 +64,10 @@ export interface ImageAuthorizationDeps {
     query: FilterQuery<IAssistant>,
     projection?: ProjectionType<IAssistant>,
   ) => Promise<AssistantImageRecord | null>;
+  getAssistantEndpointConfigs?: (params: {
+    userId: string;
+    user: ImageUser;
+  }) => Promise<AssistantConfig[]>;
   getUserPrincipals: (params: {
     userId: string;
     role?: string | null;
@@ -304,6 +308,23 @@ async function canViewAssistantAvatar(
   }
 }
 
+async function resolveAssistantConfigs(
+  ownerId: string,
+  owner: ImageUser,
+  fallbackConfigs: AssistantConfig[],
+  deps: ImageAuthorizationDeps,
+): Promise<AssistantConfig[]> {
+  if (!deps.getAssistantEndpointConfigs) {
+    return fallbackConfigs;
+  }
+  try {
+    return await deps.getAssistantEndpointConfigs({ userId: ownerId, user: owner });
+  } catch (error) {
+    logger.warn('[imageAuthorization] Assistant endpoint config resolution failed', error);
+    return [];
+  }
+}
+
 async function canViewUserAvatar(
   imagePath: ImagePath,
   viewerId: string | undefined,
@@ -359,7 +380,9 @@ export function createImageAuthorizationMiddleware(
         return;
       }
 
-      const owner = await runAsSystem(() => deps.getUserById(imagePath.ownerId, 'tenantId avatar'));
+      const owner = await runAsSystem(() =>
+        deps.getUserById(imagePath.ownerId, 'role tenantId idOnTheSource avatar'),
+      );
       if (!owner) {
         denyRequest(res, auth);
         return;
@@ -369,12 +392,18 @@ export function createImageAuthorizationMiddleware(
         if (imagePath.agentId) {
           return canViewAgentAvatar(imagePath, viewerId, owner, deps);
         }
-        if (assistantConfigs.length > 0) {
+        const currentAssistantConfigs = await resolveAssistantConfigs(
+          imagePath.ownerId,
+          owner,
+          assistantConfigs,
+          deps,
+        );
+        if (currentAssistantConfigs.length > 0) {
           const canViewAssistant = await canViewAssistantAvatar(
             imagePath,
             viewerId,
             owner,
-            assistantConfigs,
+            currentAssistantConfigs,
             deps,
           );
           if (canViewAssistant) {

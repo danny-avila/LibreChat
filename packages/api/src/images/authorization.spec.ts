@@ -222,7 +222,11 @@ describe('createImageAuthorizationMiddleware', () => {
     await middleware(createRequest(USER_AVATAR_PATH, `refreshToken=${token}`), response, next);
 
     expect(next).toHaveBeenCalledTimes(1);
-    expect(deps.getUserById).toHaveBeenNthCalledWith(1, OWNER_ID, 'tenantId avatar');
+    expect(deps.getUserById).toHaveBeenNthCalledWith(
+      1,
+      OWNER_ID,
+      'role tenantId idOnTheSource avatar',
+    );
     expect(deps.getUserById).toHaveBeenNthCalledWith(2, VIEWER_ID, 'tenantId');
   });
 
@@ -260,6 +264,31 @@ describe('createImageAuthorizationMiddleware', () => {
     );
 
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the owner principal endpoint config instead of the startup fallback', async () => {
+    (deps.getAssistant as jest.Mock).mockResolvedValue({
+      _id: '65cfb246f7ecadb8b1e8036e',
+      assistant_id: 'asst_private',
+      endpoint: 'assistants',
+    });
+    deps.getAssistantEndpointConfigs = jest
+      .fn()
+      .mockResolvedValue([{ endpoint: 'assistants', privateAssistants: true }]);
+    const assistantPath = `/images/${OWNER_ID}/assistant-avatar.png`;
+    const middleware = createImageAuthorizationMiddleware(
+      { assistantEndpoints: [{ endpoint: 'assistants', privateAssistants: false }] },
+      deps,
+    );
+
+    await middleware(createRequest(assistantPath), response, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(401);
+    expect(deps.getAssistantEndpointConfigs).toHaveBeenCalledWith({
+      userId: OWNER_ID,
+      user: expect.objectContaining({ tenantId: 'tenant-a' }),
+    });
   });
 
   it('marks protected image responses as private before serving them', async () => {

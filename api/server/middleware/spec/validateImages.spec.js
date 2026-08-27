@@ -15,6 +15,9 @@ jest.mock('~/models', () => ({
   hasCapabilityForPrincipals: jest.fn(),
   hasPermission: jest.fn(),
 }));
+jest.mock('~/server/services/Config', () => ({
+  getAppConfig: jest.fn(),
+}));
 
 const { isEnabled } = require('@librechat/api');
 const {
@@ -26,6 +29,7 @@ const {
   hasCapabilityForPrincipals,
   hasPermission,
 } = require('~/models');
+const { getAppConfig } = require('~/server/services/Config');
 
 describe('validateImageRequest middleware', () => {
   let req, res, next, validateImageRequest;
@@ -51,6 +55,7 @@ describe('validateImageRequest middleware', () => {
     isEnabled.mockReturnValue(false);
     getAgent.mockResolvedValue(null);
     getAssistant.mockResolvedValue(null);
+    getAppConfig.mockResolvedValue({ endpoints: {} });
     getUserById.mockResolvedValue({ role: 'USER', tenantId: 'tenant-a', idOnTheSource: null });
     findSession.mockResolvedValue({ _id: 'session' });
     getUserPrincipals.mockResolvedValue([{ principalType: 'user', principalId: validObjectId }]);
@@ -228,7 +233,9 @@ describe('validateImageRequest middleware', () => {
     test('should allow a shared assistant avatar for a different authenticated user', async () => {
       validateImageRequest = createValidateImageRequest({
         secureImageLinks: true,
-        assistantEndpoints: [{ endpoint: 'assistants', privateAssistants: false }],
+      });
+      getAppConfig.mockResolvedValue({
+        endpoints: { assistants: { privateAssistants: false } },
       });
       const validToken = jwt.sign(
         { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },

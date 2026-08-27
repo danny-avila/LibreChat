@@ -537,16 +537,6 @@ if (cluster.isMaster) {
       '/images/',
       createValidateImageRequest({
         secureImageLinks: appConfig.secureImageLinks,
-        assistantEndpoints: [
-          appConfig.endpoints?.assistants && {
-            endpoint: 'assistants',
-            ...appConfig.endpoints.assistants,
-          },
-          appConfig.endpoints?.azureAssistants && {
-            endpoint: 'azureAssistants',
-            ...appConfig.endpoints.azureAssistants,
-          },
-        ].filter(Boolean),
       }),
       routes.staticRoute,
     );
