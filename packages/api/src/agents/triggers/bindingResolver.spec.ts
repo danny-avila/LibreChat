@@ -31,25 +31,6 @@ function envelope(): AgentContinueTriggerEnvelope {
 }
 
 describe('agent event continuation resolver', () => {
-  it('defers without consuming attempts while the rollout gate is disabled', async () => {
-    const resolver = createAgentEventContinueResolver({
-      enabled: () => false,
-      methods: {
-        getAgentEventBinding: jest.fn(),
-        getConvo: jest.fn(),
-        getMessages: jest.fn(),
-      } as never,
-    });
-
-    await expect(
-      resolver(envelope(), { idempotencyKey: 'trigger-1' } as never),
-    ).rejects.toMatchObject({
-      code: 'EVENT_BINDING_DISABLED',
-      retryable: true,
-      deferWithoutAttempt: true,
-    });
-  });
-
   it('re-resolves the latest assistant leaf immediately before dispatch', async () => {
     const getMessages = jest.fn(async () => [
       Object.assign(new AIMessage('done'), {
@@ -59,7 +40,6 @@ describe('agent event continuation resolver', () => {
       }),
     ]) as never;
     const resolver = createAgentEventContinueResolver({
-      enabled: () => true,
       methods: {
         getAgentEventBinding: jest.fn(async () => ({
           conversationId: 'child-thread',
@@ -97,7 +77,6 @@ describe('agent event continuation resolver', () => {
 
   it('fails closed when the durable binding target changed', async () => {
     const resolver = createAgentEventContinueResolver({
-      enabled: () => true,
       methods: {
         getAgentEventBinding: jest.fn(async () => ({
           conversationId: 'another-thread',
@@ -117,7 +96,6 @@ describe('agent event continuation resolver', () => {
 
   it('defers an event while the actor has an active generation', async () => {
     const resolver = createAgentEventContinueResolver({
-      enabled: () => true,
       getGenerationJob: jest.fn(async () => ({ status: 'running' })),
       methods: {
         getAgentEventBinding: jest.fn(async () => ({
@@ -153,7 +131,6 @@ describe('agent event continuation resolver', () => {
 
   it('fails closed after the binding parent is removed', async () => {
     const resolver = createAgentEventContinueResolver({
-      enabled: () => true,
       methods: {
         getAgentEventBinding: jest.fn(async () => ({
           conversationId: 'child-thread',
@@ -185,7 +162,6 @@ describe('agent event continuation resolver', () => {
       } as never,
     }));
     const resolver = createAgentEventContinueResolver({
-      enabled: () => true,
       methods: {
         getAgentEventBinding,
         getConvo: jest.fn(),

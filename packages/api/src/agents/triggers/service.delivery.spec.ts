@@ -142,24 +142,6 @@ describe('durable agent trigger service', () => {
     await service.stop();
   });
 
-  it('rejects coalesced work before persistence unless every worker has the capability', async () => {
-    const methods = deliveryMethods();
-    const service = createAgentTriggerService({
-      methods,
-      coalescingEnabled: () => false,
-      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
-    });
-    await service.initialize({
-      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
-    });
-
-    await expect(
-      service.enqueue(envelope(), { coalesce: { key: 'championship-commentary' } }),
-    ).rejects.toThrow('Agent event coalescing is not enabled on this server');
-    expect(methods.enqueueAgentTriggerDelivery).not.toHaveBeenCalled();
-    await service.stop();
-  });
-
   it('refuses to arm without a reachable self origin', async () => {
     const service = createAgentTriggerService({ methods: deliveryMethods() });
 
@@ -205,11 +187,10 @@ describe('durable agent trigger service', () => {
     await service.stop();
   });
 
-  it('persists terminal handling serialization only for opted-in bound continuations', async () => {
+  it('persists terminal handling serialization only for bound continuations', async () => {
     const methods = deliveryMethods();
     const service = createAgentTriggerService({
       methods,
-      actorMailboxEnabled: () => true,
       deliveryOptions: { concurrency: 1, tickMs: 60_000 },
     });
     await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
@@ -223,23 +204,6 @@ describe('durable agent trigger service', () => {
     );
     expect(methods.enqueueAgentTriggerDelivery).toHaveBeenNthCalledWith(
       2,
-      expect.not.objectContaining({ awaitTerminalHandling: expect.anything() }),
-    );
-    await service.stop();
-  });
-
-  it('does not persist mailbox semantics before the rollout is enabled', async () => {
-    const methods = deliveryMethods();
-    const service = createAgentTriggerService({
-      methods,
-      actorMailboxEnabled: () => false,
-      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
-    });
-    await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
-
-    await service.enqueue(boundEnvelope());
-
-    expect(methods.enqueueAgentTriggerDelivery).toHaveBeenCalledWith(
       expect.not.objectContaining({ awaitTerminalHandling: expect.anything() }),
     );
     await service.stop();

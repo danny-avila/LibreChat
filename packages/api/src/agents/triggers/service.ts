@@ -15,13 +15,12 @@ import type {
 import type { AgentTriggerEnqueueOptions, PreparedAgentTriggerDelivery } from './delivery';
 import type { BoundAddress } from '../../app/origin';
 import { AgentTriggerDeliveryDeferredError, createAgentTriggerDeliveryEngine } from './engine';
-import { AgentTriggerDeliveryError, prepareAgentTriggerDelivery } from './delivery';
+import { prepareAgentTriggerDelivery } from './delivery';
 import { isShutdownInProgress, registerShutdownTask } from '../../app/shutdown';
 import { generateAgentTriggerToken } from '../../crypto/jwt';
 import { selfOriginFromAddress } from '../../app/origin';
 import { createAgentTriggerExecutionHost } from './host';
 import { parseAgentTriggerEnvelope } from './envelope';
-import { isEnabled } from '../../utils/common';
 
 export const AGENT_TRIGGER_TOKEN_TTL = '60s';
 const DEFAULT_USER_DRAIN_TIMEOUT_MS = 35_000;
@@ -46,8 +45,6 @@ export interface AgentTriggerServiceDeps {
   userDrainPollMs?: number;
   purgeRecoveryIntervalMs?: number;
   purgeRecoveryLimit?: number;
-  coalescingEnabled?: () => boolean;
-  actorMailboxEnabled?: () => boolean;
 }
 
 export interface AgentTriggerDeliveryReceipt {
@@ -195,10 +192,6 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   const purgeRecoveryIntervalMs =
     deps.purgeRecoveryIntervalMs ?? DEFAULT_PURGE_RECOVERY_INTERVAL_MS;
   const purgeRecoveryLimit = deps.purgeRecoveryLimit ?? DEFAULT_PURGE_RECOVERY_LIMIT;
-  const coalescingEnabled =
-    deps.coalescingEnabled ?? (() => isEnabled(process.env.ENABLE_AGENT_EVENT_COALESCING));
-  const actorMailboxEnabled =
-    deps.actorMailboxEnabled ?? (() => isEnabled(process.env.ENABLE_AGENT_EVENT_ACTOR_MAILBOX));
   if (!Number.isSafeInteger(userDrainTimeoutMs) || userDrainTimeoutMs <= 0) {
     throw new TypeError('userDrainTimeoutMs must be a positive integer');
   }
@@ -416,12 +409,8 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     dispatch: dispatchForActivePrincipal,
     enqueue: async (envelope, options) => {
       const methods = requireMethods();
-      if (options?.coalesce != null && !coalescingEnabled()) {
-        throw new AgentTriggerDeliveryError('Agent event coalescing is not enabled on this server');
-      }
       const prepared = prepareAgentTriggerDelivery(envelope, options);
       const awaitTerminalHandling =
-        actorMailboxEnabled() &&
         prepared.envelope.mode === 'continue' &&
         prepared.envelope.target.bindingId != null &&
         prepared.envelope.target.sourceKeyId != null;

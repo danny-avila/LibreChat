@@ -3,7 +3,6 @@ const {
   createAgentEventContinueResolver,
   createSubagentCompletionWakeupResolver,
   GenerationJobManager,
-  isEnabled,
 } = require('@librechat/api');
 const methods = require('~/models');
 
@@ -19,7 +18,6 @@ const service = createAgentTriggerService({
     methods,
     getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
     fallback: completionResolver,
-    enabled: () => isEnabled(process.env.ENABLE_AGENT_EVENT_CHILD_TURNS),
   }),
 });
 

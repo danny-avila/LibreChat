@@ -20,7 +20,6 @@ export interface AgentEventContinueResolverDeps {
     | undefined
   >;
   fallback?: ContinueResolver;
-  enabled?: () => boolean;
 }
 
 function invalidBinding(message: string, retryable = false): AgentTriggerExecutionError {
@@ -38,7 +37,6 @@ export function createAgentEventContinueResolver({
   methods,
   getGenerationJob,
   fallback,
-  enabled,
 }: AgentEventContinueResolverDeps): ContinueResolver {
   return async (
     envelope: AgentContinueTriggerEnvelope,
@@ -48,20 +46,6 @@ export function createAgentEventContinueResolver({
     if (bindingId == null || sourceKeyId == null) {
       return fallback?.(envelope, context);
     }
-    if (enabled?.() !== true) {
-      throw new AgentTriggerExecutionError(
-        'Event-driven child turns are disabled on this worker.',
-        {
-          mode: 'continue',
-          certainty: 'definite',
-          retryable: true,
-          deferWithoutAttempt: true,
-          code: 'EVENT_BINDING_DISABLED',
-          status: 503,
-        },
-      );
-    }
-
     let binding;
     let latestAssistant;
     try {

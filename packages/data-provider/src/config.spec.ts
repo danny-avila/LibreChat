@@ -67,7 +67,7 @@ describe('bedrockEndpointSchema', () => {
 });
 
 describe('agent event runtime config', () => {
-  it('accepts rollout flags and agent-event admission limits', () => {
+  it('accepts the routing choice and ignores removed rollout fields', () => {
     const result = configSchema.safeParse({
       version: '1.0',
       endpoints: {
@@ -93,12 +93,6 @@ describe('agent event runtime config', () => {
       return;
     }
     expect(result.data.endpoints?.agents?.eventDriven).toEqual({
-      childTurns: true,
-      completionWakeups: false,
-      coalescing: true,
-      actorMailbox: true,
-      checkpointForks: true,
-      durableReceipts: true,
       selfUrl: 'https://triggers.internal',
     });
     expect(result.data.rateLimits?.agentEvents).toEqual({
@@ -107,7 +101,7 @@ describe('agent event runtime config', () => {
     });
   });
 
-  it('rejects checkpoint forks with the process-local memory checkpointer', () => {
+  it('does not let removed checkpoint fields control memory-checkpointer validation', () => {
     const result = configSchema.safeParse({
       version: '1.0',
       endpoints: {
@@ -118,14 +112,12 @@ describe('agent event runtime config', () => {
       },
     });
 
-    expect(result.success).toBe(false);
-    expect(result.error?.issues).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          path: ['endpoints', 'agents', 'eventDriven', 'checkpointForks'],
-        }),
-      ]),
-    );
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.eventDriven).toEqual({});
+    expect(result.data.endpoints?.agents?.checkpointer).toEqual({ type: 'memory' });
   });
 });
 

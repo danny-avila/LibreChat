@@ -51,7 +51,6 @@ function dependencies(
     getDeliveryStatus: jest.fn(async () => delivery()),
     now: () => 1_755_430_000_000,
     createRequestId: () => 'generated-request-id',
-    coalescingEnabled: () => true,
     ...overrides,
   };
 }
@@ -229,30 +228,6 @@ describe('agent trigger event ingress', () => {
     expect(deps.enqueue).toHaveBeenCalledWith(expect.objectContaining({ mode: 'continue' }), {
       coalesce: { key: 'championship-commentary' },
     });
-  });
-
-  it('rejects coalescing until every API worker has the rollout capability', async () => {
-    const deps = dependencies({ coalescingEnabled: () => false });
-    const response = await request(createApp(deps, undefined, true))
-      .post('/api/agents/v1/events')
-      .set('Idempotency-Key', 'commentary-disabled-1')
-      .send({
-        mode: 'continue',
-        event: fireEvent().event,
-        target: {
-          agentId: 'commentator',
-          conversationId: 'commentator-thread',
-          parentMessageId: 'placeholder',
-          bindingId: `evtbind_${'b'.repeat(48)}`,
-          sourceKeyId: API_KEY_ID,
-        },
-        input: 'Comment on this game start.',
-        coalesce: { key: 'championship-commentary' },
-      });
-
-    expect(response.status).toBe(400);
-    expect(response.body.error.code).toBe('invalid_event');
-    expect(deps.enqueue).not.toHaveBeenCalled();
   });
 
   it('fails closed when the idempotency header is absent or duplicated', async () => {
