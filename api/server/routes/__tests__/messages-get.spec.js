@@ -7,6 +7,13 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => {
+  const retainMessageFiles = (existingFiles, requestedFileIds) => {
+    if (!Array.isArray(existingFiles) || !Array.isArray(requestedFileIds)) {
+      return null;
+    }
+    const retained = existingFiles.filter((file) => requestedFileIds.includes(file.file_id));
+    return retained.length === requestedFileIds.length ? retained : null;
+  };
   const inspectContent = jest.fn(() => null);
   const extractChatContent = jest.fn(() => []);
   const extractStoredMessageContent = jest.fn(() => []);
@@ -67,6 +74,7 @@ jest.mock('@librechat/api', () => {
         error?.code === 'content_filter_block' || error?.code === 'content_filter_uninspectable',
     ),
     resolveCanonicalFileReferences,
+    retainMessageFiles,
     assertStoredMessageBranchAllowed: jest.fn(async (input) => {
       let storedMessage = input.message;
       let resolvedFiles = [];
@@ -704,6 +712,58 @@ describe('message route conversation ownership filters', () => {
       tokenCount: 10,
       userSubmittedPaths: ['/content/0/text', '/text'],
     });
+  });
+
+  it('persists only existing files retained by a direct message edit', async () => {
+    const firstFile = { file_id: 'file-1', filename: 'Presentation.pdf' };
+    const secondFile = { file_id: 'file-2', filename: 'Notes.txt' };
+    getMessages.mockResolvedValue([
+      {
+        conversationId: 'convo-1',
+        isCreatedByUser: true,
+        files: [firstFile, secondFile],
+      },
+    ]);
+    updateMessage.mockResolvedValue({ messageId: 'message-1' });
+
+    const response = await request(app)
+      .put('/api/messages/convo-1/message-1')
+      .send({
+        text: 'Updated prompt',
+        model: 'test-model',
+        fileIds: ['file-2'],
+      });
+
+    expect(response.status).toBe(200);
+    expect(updateMessage).toHaveBeenCalledWith(authenticatedUserId, {
+      messageId: 'message-1',
+      text: 'Updated prompt',
+      tokenCount: 10,
+      files: [secondFile],
+      userSubmittedPaths: ['/text'],
+    });
+  });
+
+  it('rejects files that were not attached to the edited message', async () => {
+    getMessages.mockResolvedValue([
+      {
+        conversationId: 'convo-1',
+        isCreatedByUser: true,
+        files: [{ file_id: 'file-1', filename: 'Presentation.pdf' }],
+      },
+    ]);
+
+    const response = await request(app)
+      .put('/api/messages/convo-1/message-1')
+      .send({
+        text: 'Updated prompt',
+        model: 'test-model',
+        fileIds: ['foreign-file'],
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: 'Invalid fileIds' });
+    expect(updateMessage).not.toHaveBeenCalled();
   });
 
   it('filters the finalized indexed edit without rescanning persisted siblings', async () => {

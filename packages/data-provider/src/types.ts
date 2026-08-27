@@ -322,6 +322,7 @@ export type TUpdateMessageRequest = {
   messageId: string;
   model: string;
   text: string;
+  fileIds?: string[];
 };
 
 export type TUpdateMessageContent = {

@@ -962,12 +962,15 @@ export const listMessages = (params?: q.MessagesListParams): Promise<q.MessagesL
 };
 
 export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown> {
-  const { conversationId, messageId, text } = payload;
+  const { conversationId, messageId, text, fileIds } = payload;
   if (!conversationId) {
     throw new Error('conversationId is required');
   }
 
-  return request.put(endpoints.messages({ conversationId, messageId }), { text });
+  return request.put(endpoints.messages({ conversationId, messageId }), {
+    text,
+    ...(fileIds !== undefined && { fileIds }),
+  });
 }
 
 export function updateMessageContent(payload: t.TUpdateMessageContent): Promise<unknown> {
