@@ -2508,6 +2508,44 @@ describe('MessageNav', () => {
       restoreLayout();
     });
 
+    it('frames the window it missed once the gesture that froze it ends', () => {
+      // A drag that reaches the end commits `atEnd` while the rail is frozen.
+      // The owner hands back the same window afterwards, so releasing has to be
+      // what re-runs the follow — otherwise the column keeps the position the
+      // reader dragged it to, with the current ribs off-screen.
+      const messages = Array.from({ length: 10 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}` }),
+      );
+      const restoreLayout = stubRibLayout(messages.map((m) => m.messageId));
+      const { container, scrollable } = renderNav(messages);
+      const column = getColumn(container);
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 30, height: 30 }) as DOMRect;
+      Object.defineProperty(column, 'clientHeight', { value: 30, configurable: true });
+      Object.defineProperty(column, 'scrollHeight', { value: 200, configurable: true });
+      Object.defineProperty(column, 'scrollTop', { value: 0, writable: true, configurable: true });
+
+      /** Pointer on the rail: the follow is frozen from here on. */
+      act(() => {
+        fireEvent.pointerMove(column, { pointerId: 1, clientY: 10 });
+      });
+      (scrollable as HTMLElement).scrollTop = 3000;
+      act(() => {
+        fireEvent.scroll(scrollable);
+        jest.advanceTimersByTime(32);
+      });
+      column.scrollTop = 5;
+      expect(column.scrollTop).toBe(5);
+
+      /** The window does not change again; only the gesture ending does. */
+      act(() => {
+        fireEvent.pointerLeave(column, { pointerId: 1 });
+        jest.advanceTimersByTime(32);
+      });
+
+      expect(column.scrollTop).toBe(170);
+      restoreLayout();
+    });
+
     it('holds the rail still while the pointer is working it, and follows again after', () => {
       const messages = Array.from({ length: 10 }, (_, i) =>
         buildMessage({ messageId: `m-${i}`, text: `message ${i}`, isCreatedByUser: i % 2 === 0 }),

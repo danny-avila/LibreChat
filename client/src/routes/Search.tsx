@@ -195,8 +195,12 @@ export default function Search() {
     return () => mq.removeListener(onChange);
   }, []);
 
-  /** A fresh query re-seeds the list from the top; drop the stale window. */
+  /** A fresh query re-seeds the list from the top; drop the stale window, and
+   *  invalidate any rail jump still animating. Left running, it keeps writing
+   *  scroll positions over the reseed and finishes by snapping to a row index
+   *  from the previous result set. */
   useEffect(() => {
+    scrollTokenRef.current++;
     setRange(null);
     scrollTopRef.current = 0;
   }, [searchQuery]);

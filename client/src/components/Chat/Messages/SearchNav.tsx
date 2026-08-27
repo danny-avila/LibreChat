@@ -48,60 +48,52 @@ function SearchNav({ entries, currentIndex, visibleIndices, onJump }: SearchNavP
     };
   }, [entries]);
 
-  const entryById = useMemo(() => {
-    const map = new Map<string, SearchNavEntry>();
+  /** Lookups the scrolling path needs in constant time, built once per result
+   *  set rather than rescanned per frame. */
+  const { entryById, posByRowIndex } = useMemo(() => {
+    const byId = new Map<string, SearchNavEntry>();
     for (let i = 0; i < entries.length; i++) {
-      map.set(entries[i].id, entries[i]);
+      byId.set(entries[i].id, entries[i]);
     }
     if (startEntry) {
-      map.set(startEntry.id, startEntry);
+      byId.set(startEntry.id, startEntry);
     }
-    return map;
-  }, [entries, startEntry]);
+    const byIndex = new Map<number, number>();
+    for (let i = 0; i < rowEntries.length; i++) {
+      byIndex.set(rowEntries[i].index, i);
+    }
+    return { entryById: byId, posByRowIndex: byIndex };
+  }, [entries, rowEntries, startEntry]);
 
   /** Array position of the entry the reader is on; the chevrons walk from here. */
-  const currentPos = useMemo(() => {
-    if (currentIndex == null) {
-      return -1;
-    }
-    for (let i = 0; i < rowEntries.length; i++) {
-      if (rowEntries[i].index === currentIndex) {
-        return i;
-      }
-    }
-    return -1;
-  }, [rowEntries, currentIndex]);
-
+  const currentPos = currentIndex == null ? -1 : (posByRowIndex.get(currentIndex) ?? -1);
   const currentId = currentPos >= 0 ? rowEntries[currentPos].id : null;
 
-  const visibleIds = useMemo(() => {
+  /**
+   * The lit band and the window the rail frames, from one pass.
+   *
+   * A new `visibleIndices` set arrives on every change to the virtualized
+   * window, so this runs on the scrolling path and its cost grows with every
+   * page fetched. `atEnd` asks the rail for its own bottom, which is what
+   * reaching the last result should look like.
+   */
+  const { visibleIds, railWindow } = useMemo(() => {
     const ids = new Set<string>();
-    for (let i = 0; i < rowEntries.length; i++) {
-      if (visibleIndices.has(rowEntries[i].index)) {
-        ids.add(rowEntries[i].id);
-      }
-    }
-    return ids;
-  }, [rowEntries, visibleIndices]);
-
-  /** The rendered window, in rib positions. `atEnd` asks the rail for its own
-   *  bottom, which is what reaching the last result should look like. */
-  const railWindow = useMemo((): RailWindow | null => {
     let first = -1;
     let last = -1;
     for (let i = 0; i < rowEntries.length; i++) {
       if (!visibleIndices.has(rowEntries[i].index)) {
         continue;
       }
+      ids.add(rowEntries[i].id);
       if (first === -1) {
         first = i;
       }
       last = i;
     }
-    if (first === -1) {
-      return null;
-    }
-    return { first, last, atEnd: last === rowEntries.length - 1 };
+    const window: RailWindow | null =
+      first === -1 ? null : { first, last, atEnd: last === rowEntries.length - 1 };
+    return { visibleIds: ids, railWindow: window };
   }, [rowEntries, visibleIndices]);
 
   const jump = useCallback(

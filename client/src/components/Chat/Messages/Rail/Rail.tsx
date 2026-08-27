@@ -85,8 +85,16 @@ function Rail({
   const suppressClickRef = useRef(false);
   const isDraggingRef = useRef(false);
   /** True while the pointer or the keyboard is working the rail; freezes the
-   *  rail's auto-follow so the ribs stay put under an active gesture. */
+   *  rail's auto-follow so the ribs stay put under an active gesture. A ref
+   *  because the pointer sets it on every move, and re-rendering for that would
+   *  cost more than the freeze saves. */
   const interactingRef = useRef(false);
+  /** Bumped when a gesture ends. Releasing the rail has to re-run the follow
+   *  effect, and a ref alone cannot: if the window has not changed since the
+   *  gesture began — a drag that reached the end, say — the owner hands back
+   *  the same object, so nothing re-runs and the column stays where the reader
+   *  left it with the current ribs off-screen. */
+  const [settleToken, setSettleToken] = useState(0);
 
   const ribLayoutRef = useRef<
     Array<{ id: string; line: HTMLElement; center: number; dims: RibDims }>
@@ -273,6 +281,7 @@ function Rail({
         isDraggingRef.current = false;
         if (pointerClientYRef.current == null) {
           interactingRef.current = false;
+          setSettleToken((n) => n + 1);
         }
         if (wasDragging) {
           suppressClickRef.current = true;
@@ -543,10 +552,15 @@ function Rail({
     scheduleMagnify();
   }, [scheduleMagnify]);
 
+  const endInteraction = useCallback(() => {
+    interactingRef.current = false;
+    setSettleToken((n) => n + 1);
+  }, []);
+
   const handlePointerLeave = useCallback(() => {
     pointerClientYRef.current = null;
     if (!isDraggingRef.current) {
-      interactingRef.current = false;
+      endInteraction();
     }
     if (magRafRef.current != null) {
       cancelAnimationFrame(magRafRef.current);
@@ -554,7 +568,7 @@ function Rail({
     }
     resetMagnify();
     clearTooltip();
-  }, [resetMagnify, clearTooltip]);
+  }, [resetMagnify, clearTooltip, endInteraction]);
 
   const handleColumnFocus = useCallback(
     (e: React.FocusEvent<HTMLDivElement>) => {
@@ -673,7 +687,7 @@ function Rail({
     const target = mid - col.clientHeight / 2;
     const max = Math.max(0, col.scrollHeight - col.clientHeight);
     col.scrollTop = Math.max(0, Math.min(target, max));
-  }, [railWindow]);
+  }, [railWindow, settleToken]);
 
   if (entries.length === 0) {
     return null;

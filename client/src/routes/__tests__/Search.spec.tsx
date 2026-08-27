@@ -6,46 +6,63 @@ import Search from '../Search';
 
 /* react-virtualized measures nothing in jsdom; render every row flatly so the
    list contents are exercised. */
-jest.mock('react-virtualized', () => ({
-  __esModule: true,
-  CellMeasurerCache: class {
-    getHeight() {
-      return 100;
-    }
+const mockListHandle = {
+  scrollToPosition: jest.fn(),
+  scrollToRow: jest.fn(),
+  recomputeRowHeights: jest.fn(),
+};
 
-    clearAll() {}
-  },
-  CellMeasurer: ({
-    children,
-  }: {
-    children: (a: { registerChild: () => void }) => React.ReactNode;
-  }) => children({ registerChild: () => {} }),
-  List: ({
-    rowCount,
-    rowRenderer,
-    onRowsRendered,
-  }: {
-    rowCount: number;
-    rowRenderer: (p: {
-      index: number;
-      key: string;
-      parent: unknown;
-      style: object;
-    }) => React.ReactNode;
-    onRowsRendered?: (p: { startIndex: number; stopIndex: number }) => void;
-  }) => {
-    // expose the near-bottom trigger for the pagination test
-    (globalThis as Record<string, unknown>).__triggerRowsRendered = () =>
-      onRowsRendered?.({ startIndex: 0, stopIndex: rowCount - 1 });
-    return (
-      <div data-testid="virtual-list">
-        {Array.from({ length: rowCount }, (_, i) =>
-          rowRenderer({ index: i, key: String(i), parent: {}, style: {} }),
-        )}
-      </div>
-    );
-  },
-}));
+jest.mock('react-virtualized', () => {
+  const mockReact = jest.requireActual<typeof React>('react');
+  return {
+    __esModule: true,
+    CellMeasurerCache: class {
+      getHeight() {
+        return 100;
+      }
+
+      clearAll() {}
+    },
+    CellMeasurer: ({
+      children,
+    }: {
+      children: (a: { registerChild: () => void }) => React.ReactNode;
+    }) => children({ registerChild: () => {} }),
+    List: mockReact.forwardRef(
+      (
+        {
+          rowCount,
+          rowRenderer,
+          onRowsRendered,
+        }: {
+          rowCount: number;
+          rowRenderer: (p: {
+            index: number;
+            key: string;
+            parent: unknown;
+            style: object;
+          }) => React.ReactNode;
+          onRowsRendered?: (p: { startIndex: number; stopIndex: number }) => void;
+        },
+        ref: React.ForwardedRef<unknown>,
+      ) => {
+        // expose the near-bottom trigger for the pagination test
+        (globalThis as Record<string, unknown>).__triggerRowsRendered = () =>
+          onRowsRendered?.({ startIndex: 0, stopIndex: rowCount - 1 });
+        /** The route drives the list imperatively through a ref; a rail jump is
+         *  invisible without one. */
+        mockReact.useImperativeHandle(ref, () => mockListHandle, []);
+        return (
+          <div data-testid="virtual-list">
+            {Array.from({ length: rowCount }, (_, i) =>
+              rowRenderer({ index: i, key: String(i), parent: {}, style: {} }),
+            )}
+          </div>
+        );
+      },
+    ),
+  };
+});
 
 jest.mock('recoil', () => ({ useRecoilValue: jest.fn() }));
 jest.mock('~/data-provider', () => ({ useMessagesInfiniteQuery: jest.fn() }));
@@ -227,6 +244,59 @@ describe('Search route', () => {
     render(<Search />);
     expect(screen.getByText('row one')).toBeInTheDocument();
     expect(screen.getByTestId('search-footer')).toBeInTheDocument();
+  });
+
+  it('abandons a rail jump still animating when the query changes underneath it', () => {
+    // The jump eases over 400ms and finishes by snapping to a row index. Left
+    // running across a new query it keeps writing positions over the reseed and
+    // lands on an index from the previous result set, so the fresh results open
+    // partway down the list.
+    const frames: FrameRequestCallback[] = [];
+    const rafSpy = jest
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        frames.push(cb);
+        return frames.length;
+      });
+    const rows = Array.from({ length: 20 }, (_, i) => ({
+      messageId: `m${i}`,
+      text: `row ${i}`,
+    }));
+    mockUseRecoilValue.mockReturnValue(searchState());
+    mockUseQuery.mockReturnValue(
+      queryResult({ data: { pages: [{ messages: rows, nextCursor: null }] } }),
+    );
+    const { rerender } = render(<Search />);
+
+    /** The reader jumps to a late result. */
+    act(() => {
+      mockNavProps?.onJump(15, true);
+    });
+    const pending = frames.splice(0);
+    expect(pending.length).toBeGreaterThan(0);
+
+    /** A new query arrives mid-flight. */
+    mockUseRecoilValue.mockReturnValue(searchState({ query: 'other', debouncedQuery: 'other' }));
+    act(() => {
+      rerender(<Search />);
+    });
+    mockListHandle.scrollToPosition.mockClear();
+    mockListHandle.scrollToRow.mockClear();
+
+    /** Every frame the old jump had queued now runs. */
+    act(() => {
+      for (const frame of frames.splice(0).concat(pending)) {
+        frame(1_000_000);
+      }
+    });
+
+    expect(mockListHandle.scrollToRow).not.toHaveBeenCalledWith(15);
+    /** The reseed's own scroll to the top is the only position write allowed;
+     *  an intermediate easing value means the abandoned jump is still driving. */
+    for (const [position] of mockListHandle.scrollToPosition.mock.calls) {
+      expect(position).toBe(0);
+    }
+    rafSpy.mockRestore();
   });
 
   it('passes an entry per result (plus a trailing end marker) to the nav rail', () => {

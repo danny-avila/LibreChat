@@ -135,6 +135,28 @@ describe('SearchNav rendering', () => {
     }
   });
 
+  it('scans the result list once per window change, not once per derived value', () => {
+    // A new `visibleIndices` set arrives on every change to the virtualized
+    // window, so this is the scrolling path; its cost grows with every page
+    // fetched. Counting membership probes is the cheapest way to see a second
+    // full pass reappear.
+    const entries = makeEntries(200);
+    let probes = 0;
+    const counting = {
+      has(index: number) {
+        probes++;
+        return index >= 40 && index <= 60;
+      },
+    } as unknown as Set<number>;
+
+    render(
+      <SearchNav entries={entries} currentIndex={50} visibleIndices={counting} onJump={noop} />,
+    );
+
+    /** One pass over the results, not one per derived value. */
+    expect(probes).toBe(entries.length);
+  });
+
   it('puts exactly one result rib in the tab order', () => {
     const { container } = render(
       <SearchNav
