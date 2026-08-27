@@ -13,6 +13,9 @@ const assistantSchema: Schema<IAssistant> = new Schema<IAssistant>(
       index: true,
       required: true,
     },
+    endpoint: {
+      type: String,
+    },
     avatar: {
       type: Schema.Types.Mixed,
       default: undefined,

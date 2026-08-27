@@ -7,9 +7,11 @@ const VIEWER_ID = '65cfb246f7ecadb8b1e8036b';
 const OWNER_ID = '65cfb246f7ecadb8b1e8036c';
 const AGENT_DB_ID = '65cfb246f7ecadb8b1e8036d';
 const AGENT_PATH = `/images/${OWNER_ID}/agent-agent_abc123-avatar-12345.png`;
+const USER_AVATAR_PATH = `/images/${OWNER_ID}/avatar-12345.png`;
 
 function createResponse(): Response {
   const response = {
+    locals: {},
     status: jest.fn().mockReturnThis(),
     send: jest.fn().mockReturnThis(),
   };
@@ -105,7 +107,12 @@ describe('createImageAuthorizationMiddleware', () => {
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(deps.getAgent).toHaveBeenCalledWith(
-      { id: 'agent_abc123', 'avatar.filepath': AGENT_PATH },
+      {
+        id: 'agent_abc123',
+        'avatar.filepath': {
+          $in: [AGENT_PATH, `${AGENT_PATH}?manual=false`, `${AGENT_PATH}?manual=true`],
+        },
+      },
       { _id: 1 },
     );
     expect(deps.getUserPrincipals).toHaveBeenCalledTimes(1);
@@ -158,10 +165,11 @@ describe('createImageAuthorizationMiddleware', () => {
     (deps.getAssistant as jest.Mock).mockResolvedValue({
       _id: '65cfb246f7ecadb8b1e8036e',
       assistant_id: 'asst_shared',
+      endpoint: 'assistants',
     });
     const assistantPath = `/images/${OWNER_ID}/assistant-avatar.png`;
     const middleware = createImageAuthorizationMiddleware(
-      { assistantEndpoints: [{ privateAssistants: false }] },
+      { assistantEndpoints: [{ endpoint: 'assistants', privateAssistants: false }] },
       deps,
     );
 
@@ -169,9 +177,82 @@ describe('createImageAuthorizationMiddleware', () => {
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(deps.getAssistant).toHaveBeenCalledWith(
-      { 'avatar.filepath': assistantPath },
-      { _id: 1, assistant_id: 1 },
+      {
+        'avatar.filepath': {
+          $in: [assistantPath, `${assistantPath}?manual=false`, `${assistantPath}?manual=true`],
+        },
+      },
+      { _id: 1, assistant_id: 1, endpoint: 1 },
     );
+  });
+
+  it('does not use a shared endpoint policy for a private endpoint assistant', async () => {
+    (deps.getAssistant as jest.Mock).mockResolvedValue({
+      _id: '65cfb246f7ecadb8b1e8036e',
+      assistant_id: 'asst_private',
+      endpoint: 'azureAssistants',
+    });
+    const assistantPath = `/images/${OWNER_ID}/assistant-avatar.png`;
+    const middleware = createImageAuthorizationMiddleware(
+      {
+        assistantEndpoints: [
+          { endpoint: 'assistants', privateAssistants: false },
+          { endpoint: 'azureAssistants', privateAssistants: true },
+        ],
+      },
+      deps,
+    );
+
+    await middleware(createRequest(assistantPath), response, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(401);
+  });
+
+  it('allows an authenticated same-tenant viewer to load the stored user avatar', async () => {
+    (deps.getUserById as jest.Mock)
+      .mockResolvedValueOnce({
+        tenantId: 'tenant-a',
+        avatar: `${USER_AVATAR_PATH}?manual=true`,
+      })
+      .mockResolvedValueOnce({ tenantId: 'tenant-a' });
+    const token = signUser(VIEWER_ID);
+    const middleware = createImageAuthorizationMiddleware({}, deps);
+
+    await middleware(createRequest(USER_AVATAR_PATH, `refreshToken=${token}`), response, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(deps.getUserById).toHaveBeenNthCalledWith(1, OWNER_ID, 'tenantId avatar');
+    expect(deps.getUserById).toHaveBeenNthCalledWith(2, VIEWER_ID, 'tenantId');
+  });
+
+  it('denies the stored user avatar to a viewer from another tenant', async () => {
+    (deps.getUserById as jest.Mock)
+      .mockResolvedValueOnce({
+        tenantId: 'tenant-a',
+        avatar: `${USER_AVATAR_PATH}?manual=true`,
+      })
+      .mockResolvedValueOnce({ tenantId: 'tenant-b' });
+    const token = signUser(VIEWER_ID);
+    const middleware = createImageAuthorizationMiddleware({}, deps);
+
+    await middleware(createRequest(USER_AVATAR_PATH, `refreshToken=${token}`), response, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(403);
+  });
+
+  it('marks protected image responses as private before serving them', async () => {
+    const token = signUser(VIEWER_ID);
+    const middleware = createImageAuthorizationMiddleware({}, deps);
+
+    await middleware(
+      createRequest(`/images/${VIEWER_ID}/profile.png`, `refreshToken=${token}`),
+      response,
+      next,
+    );
+
+    expect(response.locals.privateImageCache).toBe(true);
   });
 
   it('rejects encoded traversal before any resource lookup', async () => {

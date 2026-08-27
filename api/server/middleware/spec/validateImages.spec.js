@@ -38,6 +38,7 @@ describe('validateImageRequest middleware', () => {
       originalUrl: '',
     };
     res = {
+      locals: {},
       status: jest.fn().mockReturnThis(),
       send: jest.fn(),
     };
@@ -165,7 +166,13 @@ describe('validateImageRequest middleware', () => {
       expect(getAgent).toHaveBeenCalledWith(
         {
           id: 'agent_abc123',
-          'avatar.filepath': '/images/65cfb246f7ecadb8b1e8036c/agent-agent_abc123-avatar-12345.png',
+          'avatar.filepath': {
+            $in: [
+              '/images/65cfb246f7ecadb8b1e8036c/agent-agent_abc123-avatar-12345.png',
+              '/images/65cfb246f7ecadb8b1e8036c/agent-agent_abc123-avatar-12345.png?manual=false',
+              '/images/65cfb246f7ecadb8b1e8036c/agent-agent_abc123-avatar-12345.png?manual=true',
+            ],
+          },
         },
         { _id: 1 },
       );
@@ -221,7 +228,7 @@ describe('validateImageRequest middleware', () => {
     test('should allow a shared assistant avatar for a different authenticated user', async () => {
       validateImageRequest = createValidateImageRequest({
         secureImageLinks: true,
-        assistantEndpoints: [{ privateAssistants: false }],
+        assistantEndpoints: [{ endpoint: 'assistants', privateAssistants: false }],
       });
       const validToken = jwt.sign(
         { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
@@ -232,14 +239,23 @@ describe('validateImageRequest middleware', () => {
       getAssistant.mockResolvedValue({
         _id: '65cfb246f7ecadb8b1e8036d',
         assistant_id: 'asst_shared',
+        endpoint: 'assistants',
       });
 
       await validateImageRequest(req, res, next);
 
       expect(next).toHaveBeenCalled();
       expect(getAssistant).toHaveBeenCalledWith(
-        { 'avatar.filepath': '/images/65cfb246f7ecadb8b1e8036c/assistant-avatar.png' },
-        { _id: 1, assistant_id: 1 },
+        {
+          'avatar.filepath': {
+            $in: [
+              '/images/65cfb246f7ecadb8b1e8036c/assistant-avatar.png',
+              '/images/65cfb246f7ecadb8b1e8036c/assistant-avatar.png?manual=false',
+              '/images/65cfb246f7ecadb8b1e8036c/assistant-avatar.png?manual=true',
+            ],
+          },
+        },
+        { _id: 1, assistant_id: 1, endpoint: 1 },
       );
     });
 
