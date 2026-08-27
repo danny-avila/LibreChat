@@ -200,8 +200,8 @@ interface:
   # A deployment with Redis-backed resumable streams can run this on every replica.
   # A single-process deployment without Redis must also set
   # `SCHEDULES_SINGLE_PROCESS=true`; unsafe multi-replica writes fail closed.
-  # Scheduled agents that can pause still require `USE_REDIS_STREAMS=true` so
-  # their pending action and resume fence survive a process restart.
+  # Scheduled agents that can pause require both `USE_REDIS_STREAMS=true` for
+  # shared action state and the default Mongo checkpointer for graph continuation.
   # schedules:
   #   use: true
   #   create: true

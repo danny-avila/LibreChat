@@ -6,6 +6,7 @@ const mockRecordCollectedUsage = jest.fn();
 const mockDetachedUsageRecorder = jest.fn();
 const mockCreateDetachedSubagentUsageRecorder = jest.fn(() => mockDetachedUsageRecorder);
 const mockGetAgentCheckpointer = jest.fn();
+const mockHasDurableAgentInterruptCheckpoint = jest.fn().mockResolvedValue(true);
 const mockBuildAgentScopedContext = jest.fn((...args) =>
   jest.requireActual('@librechat/api').buildAgentScopedContext(...args),
 );
@@ -66,6 +67,7 @@ jest.mock('@librechat/api', () => ({
   maybePrewarmCodeSandbox: jest.fn(),
   recordCollectedUsage: (...args) => mockRecordCollectedUsage(...args),
   getAgentCheckpointer: mockGetAgentCheckpointer,
+  hasDurableAgentInterruptCheckpoint: (...args) => mockHasDurableAgentInterruptCheckpoint(...args),
 }));
 
 describe('AgentClient - final model-bound content protection', () => {
@@ -566,6 +568,51 @@ describe('AgentClient - interrupt discovery persistence', () => {
     const paused = await GenerationJobManager.getJob(streamId);
     expect(paused?.metadata.pendingAction.expiresAt).toBeGreaterThanOrEqual(now + 4_900);
     expect(paused?.metadata.pendingAction.expiresAt).toBeLessThanOrEqual(now + 5_000);
+  });
+
+  it('does not expose a scheduled pause without its durable interrupt checkpoint', async () => {
+    const streamId = 'scheduled-missing-interrupt-checkpoint';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _isScheduledFire: true,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'scheduled-missing-checkpoint-response';
+    client.jobCreatedAt = job.createdAt;
+    client.checkpointNamespace = job.metadata.checkpointNamespace;
+    mockHasDurableAgentInterruptCheckpoint.mockResolvedValueOnce(false);
+
+    await expect(
+      client.handleRunInterrupt(
+        {
+          getInterrupt: () => ({
+            interruptId: 'ask-interrupt',
+            threadId: streamId,
+            payload: {
+              type: 'ask_user_question',
+              question: { question: 'Proceed?' },
+            },
+          }),
+        },
+        streamId,
+      ),
+    ).rejects.toMatchObject({ code: 'HITL_CHECKPOINT_UNAVAILABLE' });
+    await expect(GenerationJobManager.getJobStatus(streamId)).resolves.toBe('running');
   });
 });
 

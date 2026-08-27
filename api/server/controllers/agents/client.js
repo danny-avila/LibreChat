@@ -42,6 +42,7 @@ const {
   pickResumeContext,
   getApprovalTtlMs,
   getAgentCheckpointer,
+  hasDurableAgentInterruptCheckpoint,
   isHITLEnabled,
   captureAgentCheckpointGeneration,
   isContentFilterError,
@@ -3130,6 +3131,31 @@ class AgentClient extends BaseClient {
 
     const appConfig = this.options.req?.config;
     const checkpointerCfg = appConfig?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
+    if (this.options.req?._isScheduledFire === true && checkpointerCfg?.type !== 'memory') {
+      let hasDurableInterrupt = false;
+      try {
+        hasDurableInterrupt = await hasDurableAgentInterruptCheckpoint(
+          this.conversationId,
+          checkpointerCfg,
+          { checkpointNamespace: this.checkpointNamespace },
+        );
+      } catch (checkpointError) {
+        logger.error(
+          `[AgentClient] Failed to verify scheduled HITL checkpoint for ${this.conversationId} (${this.checkpointNamespace || 'legacy namespace'})`,
+          checkpointError,
+        );
+      }
+      if (!hasDurableInterrupt) {
+        logger.error(
+          `[AgentClient] Refusing unresumable scheduled HITL pause for ${this.conversationId} (${this.checkpointNamespace || 'legacy namespace'})`,
+        );
+        const error = new Error(
+          'The agent paused, but its durable continuation checkpoint is unavailable. Please retry the run.',
+        );
+        error.code = 'HITL_CHECKPOINT_UNAVAILABLE';
+        throw error;
+      }
+    }
     // Persist the generation params (temperature, max tokens, custom endpoint params, …)
     // so an ephemeral-agent resume continues with the SAME settings the run paused on.
     // The resume payload omits them and they aren't part of the fingerprint, so without
@@ -3281,13 +3307,11 @@ class AgentClient extends BaseClient {
         abortController = new AbortController();
       }
 
-      /** Scheduled approvals are unattended by definition and must outlive this
-       * process. Mongo preserves the LangGraph checkpoint, but the pending action,
-       * replay context, and resolution fence live in the generation job store. A
-       * process-local store loses that half on restart and leaves a rendered but
-       * unresolvable question. Refuse before provider work instead of spending on a
-       * run that can only become stranded. Interactive runs remain supported in
-       * single-process mode because the user is attached to the owning process. */
+      /** Scheduled approvals are unattended by definition. Their pending action,
+       * replay context, and resolution fence must be shared across workers; their
+       * LangGraph continuation must also be durable. Redis provides the first half,
+       * while handleRunInterrupt verifies the Mongo checkpoint before exposing the
+       * pause. Refuse unsupported topologies before spending on provider work. */
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
       const reachableAgents = collectReachableAgents([
@@ -3296,16 +3320,24 @@ class AgentClient extends BaseClient {
       ]);
       if (
         this.options.req?._isScheduledFire === true &&
-        !GenerationJobManager.isRedis &&
         (isHITLEnabled(agentsEConfig?.toolApproval) ||
           reachableAgents.some(agentRequestsAskUserQuestion))
       ) {
-        const error = new Error(
-          'Scheduled agent runs that can pause require a shared generation store. ' +
-            'Enable Redis streams with USE_REDIS_STREAMS=true.',
-        );
-        error.code = 'SCHEDULED_HITL_REQUIRES_SHARED_STORE';
-        throw error;
+        if (!GenerationJobManager.isRedis) {
+          const error = new Error(
+            'Scheduled agent runs that can pause require a shared generation store. ' +
+              'Enable Redis streams with USE_REDIS_STREAMS=true.',
+          );
+          error.code = 'SCHEDULED_HITL_REQUIRES_SHARED_STORE';
+          throw error;
+        }
+        if (agentsEConfig?.checkpointer?.type === 'memory') {
+          const error = new Error(
+            'Scheduled agent runs that can pause require the Mongo checkpointer.',
+          );
+          error.code = 'SCHEDULED_HITL_REQUIRES_DURABLE_CHECKPOINT';
+          throw error;
+        }
       }
 
       /** Fire-and-forget: boot each selected stateful environment in
@@ -3816,10 +3848,12 @@ class AgentClient extends BaseClient {
       this.applyHideSequentialOutputsFilter();
       this.rebaseActivityPhaseBounds(contentBeforeReshape);
     } catch (err) {
-      if (err?.code === 'SCHEDULED_HITL_REQUIRES_SHARED_STORE') {
-        logger.warn(
-          '[api/server/controllers/agents/client.js #sendCompletion] Refused scheduled HITL without a shared generation store',
-        );
+      if (
+        err?.code === 'SCHEDULED_HITL_REQUIRES_SHARED_STORE' ||
+        err?.code === 'SCHEDULED_HITL_REQUIRES_DURABLE_CHECKPOINT' ||
+        err?.code === 'HITL_CHECKPOINT_UNAVAILABLE'
+      ) {
+        logger.warn(`[api/server/controllers/agents/client.js #sendCompletion] ${err.message}`);
         throw err;
       }
       if (isContentFilterError(err)) {

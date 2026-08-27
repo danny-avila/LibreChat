@@ -5,6 +5,7 @@ import { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb';
 import { emptyCheckpoint, ERROR, INTERRUPT } from '@langchain/langgraph-checkpoint';
 import {
   getAgentCheckpointer,
+  hasDurableAgentInterruptCheckpoint,
   captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
   deleteAgentCheckpoints,
@@ -96,6 +97,26 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
     const ttlIndex = indexes.find((idx) => idx.expireAfterSeconds != null);
     expect(ttlIndex).toBeDefined();
     expect(ttlIndex?.expireAfterSeconds).toBe(3600);
+  });
+
+  it('verifies that an interrupt write has its matching durable checkpoint', async () => {
+    const saver = await getAgentCheckpointer(MONGO_CFG);
+    expect(saver).toBeDefined();
+    await expect(hasDurableAgentInterruptCheckpoint('verified-pause', MONGO_CFG)).resolves.toBe(
+      false,
+    );
+
+    await seedInterruptCheckpoint(saver!, 'verified-pause');
+
+    await expect(hasDurableAgentInterruptCheckpoint('verified-pause', MONGO_CFG)).resolves.toBe(
+      true,
+    );
+    await mongoose.connection.db!.collection('agent_checkpoints').deleteMany({
+      thread_id: 'verified-pause',
+    });
+    await expect(hasDurableAgentInterruptCheckpoint('verified-pause', MONGO_CFG)).resolves.toBe(
+      false,
+    );
   });
 
   it("uses Mongoose's selected database instead of the MongoClient URI default", async () => {

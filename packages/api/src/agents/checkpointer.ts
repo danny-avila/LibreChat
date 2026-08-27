@@ -403,6 +403,9 @@ export class LazyMongoSaver extends MongoDBSaver {
     if (isEventActorInvocation(config)) {
       await this.assertCheckpointFitsDocument(config, checkpoint, metadata);
       const persisted = await super.put(toStorageCheckpointConfig(config), checkpoint, metadata);
+      logger.debug(
+        `[checkpointer] Persisted durable checkpoint for thread ${config.configurable?.thread_id ?? 'unknown'} (${checkpoint.id})`,
+      );
       return fromStorageCheckpointConfig(persisted, config);
     }
     if (this.writeAnchorIds.delete(checkpoint.id)) {
@@ -413,6 +416,9 @@ export class LazyMongoSaver extends MongoDBSaver {
       sweepStale(this.persistedIds, (t) => t);
       this.persistedIds.set(checkpoint.id, Date.now());
       const persisted = await super.put(toStorageCheckpointConfig(config), checkpoint, metadata);
+      logger.debug(
+        `[checkpointer] Persisted durable checkpoint for thread ${config.configurable?.thread_id ?? 'unknown'} (${checkpoint.id})`,
+      );
       // `assertCheckpointFitsDocument` awaits a (potentially slow) serialization AFTER the
       // anchor was consumed above but BEFORE `persistedIds` was set — a bookkeeping-only
       // `putWrites` dispatched in that window sees neither marker and parks its batch. Flush
@@ -512,7 +518,7 @@ export class LazyMongoSaver extends MongoDBSaver {
       return;
     }
     logger.debug(
-      `[checkpointer] Persisting durable checkpoint for thread ${threadId ?? 'unknown'}: ${bytes} bytes`,
+      `[checkpointer] Prepared durable checkpoint for thread ${threadId ?? 'unknown'}: ${bytes} bytes`,
     );
   }
 }
@@ -585,6 +591,40 @@ export function resolveCheckpointerConfig(
 /** Approval-window milliseconds from the resolved config; drives pending-action expiry. */
 export function getApprovalTtlMs(cfg: TCheckpointerConfig | undefined): number {
   return resolveCheckpointerConfig(cfg).ttlSeconds * 1000;
+}
+
+/**
+ * Prove that Mongo contains a complete interrupt checkpoint for one generation.
+ *
+ * A pending Redis action is useful only when LangGraph can reload the state it
+ * interrupted. Check the write anchor and its matching checkpoint together so a
+ * partially written or misrouted saver cannot be exposed as a resumable pause.
+ * This runs once per interrupt, never on the ordinary generation path.
+ */
+export async function hasDurableAgentInterruptCheckpoint(
+  threadId: string,
+  cfg?: TCheckpointerConfig,
+  options?: { checkpointNamespace?: string },
+): Promise<boolean> {
+  if (!threadId || resolveCheckpointerConfig(cfg).type !== 'mongo') {
+    return false;
+  }
+  const saver = await getAgentCheckpointer(cfg);
+  if (!saver) {
+    return false;
+  }
+
+  const checkpointNamespace = options?.checkpointNamespace ?? '';
+  const tuple = await saver.getTuple({
+    configurable: {
+      thread_id: threadId,
+      checkpoint_ns: '',
+      ...(checkpointNamespace !== '' && {
+        [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: checkpointNamespace,
+      }),
+    },
+  });
+  return (tuple?.pendingWrites ?? []).some((write) => write[1] === INTERRUPT);
 }
 
 /**
