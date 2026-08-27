@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { createHash } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import type { ImageAuthorizationDeps } from './authorization';
 import { createImageAuthorizationMiddleware } from './authorization';
@@ -56,6 +57,17 @@ function signUser(userId: string): string {
   return jwt.sign({ id: userId }, process.env.JWT_REFRESH_SECRET as string, { expiresIn: '1h' });
 }
 
+function signOpenIdUser(userId: string, refreshToken: string): string {
+  return jwt.sign(
+    {
+      id: userId,
+      refreshTokenHash: createHash('sha256').update(refreshToken).digest('base64url'),
+    },
+    process.env.JWT_REFRESH_SECRET as string,
+    { expiresIn: '1h' },
+  );
+}
+
 describe('createImageAuthorizationMiddleware', () => {
   let deps: ImageAuthorizationDeps;
   let response: Response;
@@ -95,6 +107,82 @@ describe('createImageAuthorizationMiddleware', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(response.status).toHaveBeenCalledWith(403);
+  });
+
+  it('authenticates a refresh-bound OpenID cookie after the Express session expires', async () => {
+    const refreshToken = 'openid-refresh-token';
+    const signedUserId = signOpenIdUser(VIEWER_ID, refreshToken);
+    (deps.isOpenIdReuseEnabled as jest.Mock).mockReturnValue(true);
+    const middleware = createImageAuthorizationMiddleware({}, deps);
+
+    await middleware(
+      createRequest(
+        `/images/${VIEWER_ID}/profile.png`,
+        `refreshToken=${refreshToken}; token_provider=openid; openid_user_id=${signedUserId}`,
+      ),
+      response,
+      next,
+    );
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(deps.findSession).not.toHaveBeenCalled();
+  });
+
+  it('rejects an OpenID identity cookie paired with a different refresh token', async () => {
+    const signedUserId = signOpenIdUser(VIEWER_ID, 'expected-refresh-token');
+    (deps.isOpenIdReuseEnabled as jest.Mock).mockReturnValue(true);
+    const middleware = createImageAuthorizationMiddleware({}, deps);
+
+    await middleware(
+      createRequest(
+        `/images/${VIEWER_ID}/profile.png`,
+        `refreshToken=different-refresh-token; token_provider=openid; openid_user_id=${signedUserId}`,
+      ),
+      response,
+      next,
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(403);
+  });
+
+  it('requires an active Express session for a legacy OpenID identity cookie', async () => {
+    const refreshToken = 'legacy-refresh-token';
+    const signedUserId = signUser(VIEWER_ID);
+    (deps.isOpenIdReuseEnabled as jest.Mock).mockReturnValue(true);
+    const request = {
+      ...createRequest(
+        `/images/${VIEWER_ID}/profile.png`,
+        `refreshToken=${refreshToken}; token_provider=openid; openid_user_id=${signedUserId}`,
+      ),
+      session: { openidTokens: { refreshToken } },
+    } as unknown as Request;
+    const middleware = createImageAuthorizationMiddleware({}, deps);
+
+    await middleware(request, response, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the disabled fallback for an image path without an owner layout', async () => {
+    deps.getImageConfig = jest.fn();
+    const middleware = createImageAuthorizationMiddleware({ secureImageLinks: false }, deps);
+
+    await middleware(createRequest('/images/logo.png'), response, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(deps.getUserById).not.toHaveBeenCalled();
+  });
+
+  it('uses the disabled fallback when the path owner no longer exists', async () => {
+    deps.getImageConfig = jest.fn();
+    (deps.getUserById as jest.Mock).mockResolvedValue(null);
+    const middleware = createImageAuthorizationMiddleware({ secureImageLinks: false }, deps);
+
+    await middleware(createRequest(`/images/${OWNER_ID}/orphaned.png`), response, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(deps.getImageConfig).not.toHaveBeenCalled();
   });
 
   it('resolves principals once and applies the tenant to an agent capability check', async () => {

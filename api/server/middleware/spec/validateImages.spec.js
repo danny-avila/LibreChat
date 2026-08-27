@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { createHash } = require('node:crypto');
 const createValidateImageRequest = require('~/server/middleware/validateImageRequest');
 
 // Mock only isEnabled, keep getBasePath real so it reads process.env.DOMAIN_CLIENT
@@ -103,6 +104,27 @@ describe('validateImageRequest middleware', () => {
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.locals.privateImageCache).toBe(true);
+    });
+
+    test('should use the disabled fallback for an image without an owner layout', async () => {
+      req.originalUrl = '/images/logo.png';
+      const middleware = createValidateImageRequest({ secureImageLinks: false });
+
+      await middleware(req, res, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(getAppConfig).not.toHaveBeenCalled();
+    });
+
+    test('should use the disabled fallback when the path owner no longer exists', async () => {
+      getUserById.mockResolvedValue(null);
+      req.originalUrl = '/images/65cfb246f7ecadb8b1e8036c/orphaned.png';
+      const middleware = createValidateImageRequest({ secureImageLinks: false });
+
+      await middleware(req, res, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(getAppConfig).not.toHaveBeenCalled();
     });
   });
 
@@ -351,6 +373,25 @@ describe('validateImageRequest middleware', () => {
       req.headers.cookie = `refreshToken=dummy-token; token_provider=openid; openid_user_id=${signedUserId}`;
       req.originalUrl = `/images/${validObjectId}/example.jpg`;
       await validateImageRequest(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    test('should validate a refresh-bound user ID after the OpenID session expires', async () => {
+      const refreshToken = 'dummy-token';
+      const signedUserId = jwt.sign(
+        {
+          id: validObjectId,
+          refreshTokenHash: createHash('sha256').update(refreshToken).digest('base64url'),
+          exp: Math.floor(Date.now() / 1000) + 3600,
+        },
+        process.env.JWT_REFRESH_SECRET,
+      );
+      req.session = undefined;
+      req.headers.cookie = `refreshToken=${refreshToken}; token_provider=openid; openid_user_id=${signedUserId}`;
+      req.originalUrl = `/images/${validObjectId}/example.jpg`;
+
+      await validateImageRequest(req, res, next);
+
       expect(next).toHaveBeenCalled();
     });
 

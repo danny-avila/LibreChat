@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
 import { PermissionBits, PrincipalType, ResourceType } from 'librechat-data-provider';
 import {
@@ -53,6 +54,11 @@ type ResolvedImageConfig = {
 type CookieAuthResult =
   | { status: 'missing' }
   | { status: 'invalid' }
+  | { status: 'authenticated'; userId: string };
+
+type OpenIdCookieAuthResult =
+  | { status: 'invalid' }
+  | { status: 'legacy'; userId: string }
   | { status: 'authenticated'; userId: string };
 
 export interface ImageAuthorizationDeps {
@@ -163,6 +169,32 @@ function getSignedUserId(token: string | undefined): string | null {
   }
 }
 
+function getSignedOpenIdUserId(
+  token: string | undefined,
+  refreshToken: string,
+): OpenIdCookieAuthResult {
+  const secret = process.env.JWT_REFRESH_SECRET;
+  if (!token || !secret) {
+    return { status: 'invalid' };
+  }
+  try {
+    const payload = jwt.verify(token, secret) as JwtPayload;
+    if (typeof payload.id !== 'string' || !OBJECT_ID_PATTERN.test(payload.id)) {
+      return { status: 'invalid' };
+    }
+    if (typeof payload.refreshTokenHash !== 'string') {
+      return { status: 'legacy', userId: payload.id };
+    }
+    const refreshTokenHash = createHash('sha256').update(refreshToken).digest('base64url');
+    return payload.refreshTokenHash === refreshTokenHash
+      ? { status: 'authenticated', userId: payload.id }
+      : { status: 'invalid' };
+  } catch (error) {
+    logger.warn('[imageAuthorization] Invalid signed OpenID user token', error);
+    return { status: 'invalid' };
+  }
+}
+
 function getStoredPathCandidates(canonicalPath: string): string[] {
   return [canonicalPath, `${canonicalPath}?manual=false`, `${canonicalPath}?manual=true`];
 }
@@ -189,11 +221,17 @@ async function authenticateRequest(
   }
 
   if (parsed.token_provider === 'openid' && deps.isOpenIdReuseEnabled()) {
-    if (refreshToken !== req.session?.openidTokens?.refreshToken) {
+    const openIdAuth = getSignedOpenIdUserId(parsed.openid_user_id, refreshToken);
+    if (openIdAuth.status === 'authenticated') {
+      return openIdAuth;
+    }
+    if (
+      openIdAuth.status !== 'legacy' ||
+      refreshToken !== req.session?.openidTokens?.refreshToken
+    ) {
       return { status: 'invalid' };
     }
-    const userId = getSignedUserId(parsed.openid_user_id);
-    return userId ? { status: 'authenticated', userId } : { status: 'invalid' };
+    return { status: 'authenticated', userId: openIdAuth.userId };
   }
 
   const userId = getSignedUserId(refreshToken);
@@ -393,6 +431,10 @@ export function createImageAuthorizationMiddleware(
     try {
       const imagePath = parseImagePath(req.originalUrl, deps.getBasePath());
       if (!imagePath) {
+        if (options.secureImageLinks === false) {
+          next();
+          return;
+        }
         const auth = await authenticateRequest(req, deps);
         denyRequest(res, auth);
         return;
@@ -402,6 +444,10 @@ export function createImageAuthorizationMiddleware(
         deps.getUserById(imagePath.ownerId, 'role tenantId idOnTheSource avatar'),
       );
       if (!owner) {
+        if (options.secureImageLinks === false) {
+          next();
+          return;
+        }
         const auth = await authenticateRequest(req, deps);
         denyRequest(res, auth);
         return;

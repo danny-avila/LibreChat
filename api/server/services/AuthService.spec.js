@@ -82,6 +82,7 @@ const {
   parseCloudFrontCookieScope,
 } = require('@librechat/api');
 const jwt = require('jsonwebtoken');
+const { createHash } = require('node:crypto');
 const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   findUser,
@@ -307,6 +308,25 @@ describe('setOpenIDAuthTokens', () => {
       expect(req.session.openidTokens.idToken).toBe(nearExpiryIdToken);
       expect(req.session.openidTokens.accessToken).toBe('new-access-token');
     });
+  });
+
+  it('binds the signed OpenID user cookie to its refresh token', () => {
+    const tokenset = {
+      id_token: 'the-id-token',
+      access_token: 'the-access-token',
+      refresh_token: 'the-refresh-token',
+    };
+    const req = mockRequest();
+    const res = mockResponse();
+
+    setOpenIDAuthTokens(tokenset, req, res, 'user-123');
+
+    expect(jwt.verify(res._cookies.openid_user_id.value, process.env.JWT_REFRESH_SECRET)).toEqual(
+      expect.objectContaining({
+        id: 'user-123',
+        refreshTokenHash: createHash('sha256').update(tokenset.refresh_token).digest('base64url'),
+      }),
+    );
   });
 
   describe('cookie secure flag', () => {
