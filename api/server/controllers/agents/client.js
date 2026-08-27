@@ -45,7 +45,9 @@ const {
   hasDurableAgentInterruptCheckpoint,
   isHITLEnabled,
   isToolApprovalPauseCapable,
+  healToolApprovalPolicy,
   buildToolApprovalHooks,
+  resolvedToolApprovalHooksCanMatch,
   getPluginHookSource,
   captureAgentCheckpointGeneration,
   isContentFilterError,
@@ -54,6 +56,7 @@ const {
   LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY,
   agentRequestsAskUserQuestion,
   isAskUserQuestionAdminDisabled,
+  ASK_USER_QUESTION_TOOL_NAME,
   attachAskUserQuestionArgs,
   hydrateResumeRunSteps,
   createContentIndexOffsetHandlers,
@@ -3313,9 +3316,10 @@ class AgentClient extends BaseClient {
 
       /** Scheduled approvals are unattended by definition. Their pending action,
        * replay context, and resolution fence must be shared across workers; their
-       * LangGraph continuation must also be durable. Redis provides the first half,
-       * while handleRunInterrupt verifies the Mongo checkpoint before exposing the
-       * pause. Refuse unsupported topologies before spending on provider work. */
+       * LangGraph continuation must also use a durable shared checkpointer. Redis
+       * provides the first half, while handleRunInterrupt verifies the exact durable
+       * checkpoint before exposing the pause. Refuse unsupported topologies before
+       * spending on provider work. */
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
       const resolvedToolApprovalHooks = isHITLEnabled(agentsEConfig?.toolApproval)
@@ -3326,16 +3330,58 @@ class AgentClient extends BaseClient {
             appConfig,
           })
         : undefined;
-      const deploymentHooksCanAsk =
-        isHITLEnabled(agentsEConfig?.toolApproval) &&
-        getPluginHookSource()?.hasToolApprovalHooks?.() === true;
+      const pluginHookSource = isHITLEnabled(agentsEConfig?.toolApproval)
+        ? getPluginHookSource()
+        : undefined;
       const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
+      const approvalAgents = collectReachableAgents(topLevelAgents);
+      const approvalToolNames = new Set();
+      const approvalToolAliases = [];
+      const approvalAliasesByToolName = new Map();
+      for (const agent of approvalAgents) {
+        for (const tool of agent.tools ?? []) {
+          const name = typeof tool === 'string' ? tool : tool?.name;
+          if (typeof name === 'string' && name !== ASK_USER_QUESTION_TOOL_NAME) {
+            approvalToolNames.add(name);
+          }
+        }
+        for (const name of agent.toolRegistry?.keys?.() ?? []) {
+          if (name !== ASK_USER_QUESTION_TOOL_NAME) {
+            approvalToolNames.add(name);
+          }
+        }
+        for (const definition of agent.toolDefinitions ?? []) {
+          if (definition?.name && definition.name !== ASK_USER_QUESTION_TOOL_NAME) {
+            approvalToolNames.add(definition.name);
+          }
+        }
+        for (const alias of agent.mcpToolAliases ?? []) {
+          approvalToolAliases.push(alias);
+          const names = approvalAliasesByToolName.get(alias.name) ?? [];
+          names.push(alias.aliasName);
+          approvalAliasesByToolName.set(alias.name, names);
+        }
+      }
+      const effectiveToolApprovalPolicy = healToolApprovalPolicy(
+        agentsEConfig?.toolApproval,
+        approvalToolAliases,
+      );
+      const toolApprovalCanPause = Array.from(approvalToolNames).some((toolName) => {
+        const matcherNames = [toolName, ...(approvalAliasesByToolName.get(toolName) ?? [])];
+        const requestHookCanAsk = resolvedToolApprovalHooksCanMatch(
+          resolvedToolApprovalHooks ?? [],
+          matcherNames,
+        );
+        const pluginHookCanAsk = pluginHookSource?.hasToolApprovalHooks?.([toolName]) === true;
+        return isToolApprovalPauseCapable(
+          effectiveToolApprovalPolicy,
+          requestHookCanAsk || pluginHookCanAsk,
+          [toolName],
+        );
+      });
       if (
         this.options.req?._isScheduledFire === true &&
-        (isToolApprovalPauseCapable(
-          agentsEConfig?.toolApproval,
-          (resolvedToolApprovalHooks?.length ?? 0) > 0 || deploymentHooksCanAsk,
-        ) ||
+        (toolApprovalCanPause ||
           (!isAskUserQuestionAdminDisabled(appConfig) &&
             topLevelAgents.some(agentRequestsAskUserQuestion)))
       ) {
@@ -3347,12 +3393,10 @@ class AgentClient extends BaseClient {
           error.code = 'SCHEDULED_HITL_REQUIRES_SHARED_STORE';
           throw error;
         }
-        if (
-          agentsEConfig?.checkpointer?.type === 'memory' ||
-          !(await getAgentCheckpointer(agentsEConfig?.checkpointer))
-        ) {
+        if (!(await getAgentCheckpointer(agentsEConfig?.checkpointer))) {
           const error = new Error(
-            'Scheduled agent runs that can pause require the Mongo checkpointer.',
+            'Scheduled agent runs that can pause require a durable shared checkpointer. ' +
+              'Use the default MongoDB checkpointer.',
           );
           error.code = 'SCHEDULED_HITL_REQUIRES_DURABLE_CHECKPOINT';
           throw error;

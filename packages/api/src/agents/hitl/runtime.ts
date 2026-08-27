@@ -1,7 +1,7 @@
 import { HookRegistry, createToolPolicyHook } from '@librechat/agents';
 import type { TToolApprovalPolicy } from 'librechat-data-provider';
-import type { MCPToolAlias } from '~/tools/classification';
 import type { ResolvedToolApprovalHook, ToolApprovalHookContext } from './hooks';
+import type { MCPToolAlias } from '~/tools/classification';
 import { isHITLEnabled, mapToolApprovalPolicy } from './policy';
 import { buildToolApprovalHooks } from './hooks';
 
@@ -47,7 +47,7 @@ export function buildHITLRunWiring(
   }
 
   const registry = new HookRegistry();
-  let activePolicy = policy;
+  let activePolicy: TToolApprovalPolicy | undefined = policy;
   const aliases = [...mcpToolAliases];
   const registeredAliases = new Set(
     aliases.map(({ name, aliasName }) => `${name}\u0000${aliasName}`),

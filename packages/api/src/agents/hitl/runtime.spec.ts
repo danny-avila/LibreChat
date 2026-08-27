@@ -89,9 +89,10 @@ describe('buildHITLRunWiring host-hook composition', () => {
   });
 
   test('reuses request-scoped hooks resolved by admission without invoking factories twice', () => {
-    const factory = jest.fn(() => async () => ({ decision: 'ask' as const }));
+    const hook = async () => ({ decision: 'ask' as const });
+    const factory = jest.fn(() => hook);
     registerToolApprovalHook(factory);
-    const resolved = [{ hook: factory({})! }];
+    const resolved = [{ hook }];
     factory.mockClear();
 
     const wiring = buildHITLRunWiring({ enabled: true }, {}, [], resolved);

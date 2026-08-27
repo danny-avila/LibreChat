@@ -919,6 +919,11 @@ describe('AgentClient - startup telemetry', () => {
       subagentAgentConfigs: undefined,
     },
     {
+      name: 'an approval rule that matches no selected tool',
+      toolApproval: { enabled: true, mode: 'bypass', ask: ['approval_probe'] },
+      subagentAgentConfigs: undefined,
+    },
+    {
       name: 'ask_user_question on a nested subagent only',
       toolApproval: undefined,
       subagentAgentConfigs: [
@@ -952,6 +957,7 @@ describe('AgentClient - startup telemetry', () => {
         provider: EModelEndpoint.openAI,
         model_parameters: { model: 'gpt-4' },
         hide_sequential_outputs: false,
+        tools: [{ name: 'read_file' }],
         subagentAgentConfigs,
       },
       endpointTokenConfig: {},
@@ -1003,6 +1009,7 @@ describe('AgentClient - startup telemetry', () => {
         provider: EModelEndpoint.openAI,
         model_parameters: { model: 'gpt-4' },
         hide_sequential_outputs: false,
+        tools: [{ name: 'read_file' }],
       },
       endpointTokenConfig: {},
       eventHandlers: {},
@@ -1048,6 +1055,7 @@ describe('AgentClient - startup telemetry', () => {
         endpoint: EModelEndpoint.openAI,
         provider: EModelEndpoint.openAI,
         model_parameters: { model: 'gpt-4' },
+        tools: [{ name: 'write_file' }],
       },
       endpointTokenConfig: {},
       eventHandlers: {},

@@ -121,3 +121,25 @@ export function buildToolApprovalHooks(
   }
   return built;
 }
+
+/** Whether any resolved hook matcher can run for one of the supplied tool names. */
+export function resolvedToolApprovalHooksCanMatch(
+  hooks: readonly ResolvedToolApprovalHook[],
+  toolNames: readonly string[],
+): boolean {
+  return hooks.some(({ matcher }) => {
+    if (matcher == null) {
+      return toolNames.length > 0;
+    }
+    let regex: RegExp;
+    try {
+      regex = new RegExp(matcher);
+    } catch {
+      return false;
+    }
+    return toolNames.some((name) => {
+      regex.lastIndex = 0;
+      return regex.test(name);
+    });
+  });
+}

@@ -308,6 +308,8 @@ describe('registerDeploymentPluginHooks', () => {
     const source = getPluginHookSource();
     expect(source?.hasHooks()).toBe(true);
     expect(hasDeploymentPluginToolApprovalHooks()).toBe(true);
+    expect(hasDeploymentPluginToolApprovalHooks(['unmatched_tool'])).toBe(false);
+    expect(hasDeploymentPluginToolApprovalHooks(['write_file'])).toBe(true);
     const registry = new HookRegistry();
     expect(source?.register({ registry, context: { sessionId: 'conversation-seam' } })).toBe(4);
     setPluginHookSource(undefined);

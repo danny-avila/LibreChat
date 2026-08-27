@@ -594,7 +594,7 @@ export function getApprovalTtlMs(cfg: TCheckpointerConfig | undefined): number {
 }
 
 /**
- * Prove that Mongo contains a complete interrupt checkpoint for one generation.
+ * Prove that the durable saver contains a complete interrupt checkpoint for one generation.
  *
  * A pending Redis action is useful only when LangGraph can reload the state it
  * interrupted. Check the write anchor and its matching checkpoint together so a
@@ -606,7 +606,7 @@ export async function hasDurableAgentInterruptCheckpoint(
   cfg?: TCheckpointerConfig,
   options?: { checkpointNamespace?: string },
 ): Promise<boolean> {
-  if (!threadId || resolveCheckpointerConfig(cfg).type !== 'mongo') {
+  if (!threadId) {
     return false;
   }
   const saver = await getAgentCheckpointer(cfg);

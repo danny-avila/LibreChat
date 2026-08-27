@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
+import { matchesQuery } from '@librechat/agents';
 import type { HookRegistry, HookOutput } from '@librechat/agents';
 import type {
   PluginHookExecutionRequest,
@@ -114,11 +115,14 @@ export function hasDeploymentPluginHooks(): boolean {
 }
 
 /** Whether any executable deployment-plugin hook can return a tool decision. */
-export function hasDeploymentPluginToolApprovalHooks(): boolean {
+export function hasDeploymentPluginToolApprovalHooks(toolNames?: readonly string[]): boolean {
   return getExecutableHookPlugins().some((plugin) =>
-    plugin.hooks?.plan.entries.some(
-      (entry) => entry.status === 'ready' && entry.targetEvent === 'PreToolUse',
-    ),
+    plugin.hooks?.plan.entries.some((entry) => {
+      if (entry.status !== 'ready' || entry.targetEvent !== 'PreToolUse') {
+        return false;
+      }
+      return toolNames == null || toolNames.some((name) => matchesQuery(entry.matcher, name));
+    }),
   );
 }
 

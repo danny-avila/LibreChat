@@ -40,6 +40,20 @@ describe('isToolApprovalPauseCapable', () => {
   it('treats a programmatic hook as pause-capable when policy does not deny every tool', () => {
     expect(isToolApprovalPauseCapable({ enabled: true, mode: 'bypass' }, true)).toBe(true);
   });
+
+  it('intersects approval rules with the selected run tool surface', () => {
+    const policy = { enabled: true, mode: 'bypass' as const, ask: ['write_*'] };
+    expect(isToolApprovalPauseCapable(policy, false, [])).toBe(false);
+    expect(isToolApprovalPauseCapable(policy, false, ['read_file'])).toBe(false);
+    expect(isToolApprovalPauseCapable(policy, false, ['write_file'])).toBe(true);
+    expect(isToolApprovalPauseCapable({ enabled: true }, false, ['read_file'])).toBe(true);
+  });
+
+  it('keeps deny precedence when a matching programmatic hook can ask', () => {
+    const policy = { enabled: true, mode: 'bypass' as const, deny: ['delete_*'] };
+    expect(isToolApprovalPauseCapable(policy, true, ['delete_file'])).toBe(false);
+    expect(isToolApprovalPauseCapable(policy, true, ['write_file'])).toBe(true);
+  });
 });
 
 describe('resolveToolApprovalPolicy', () => {

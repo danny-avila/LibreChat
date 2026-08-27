@@ -76,7 +76,9 @@ export function resolveToolApprovalPolicy(
  * any multi-process deployment. Pair this predicate with the checkpointer
  * assignment at the `Run.create` call site.
  */
-export function isHITLEnabled(policy: TToolApprovalPolicy | undefined): boolean {
+export function isHITLEnabled(
+  policy: TToolApprovalPolicy | undefined,
+): policy is NonNullable<TToolApprovalPolicy> {
   return policy?.enabled === true;
 }
 
@@ -93,8 +95,33 @@ export function isHITLEnabled(policy: TToolApprovalPolicy | undefined): boolean 
 export function isToolApprovalPauseCapable(
   policy: TToolApprovalPolicy | undefined,
   hasProgrammaticHooks = false,
+  toolNames?: readonly string[],
 ): boolean {
-  if (!isHITLEnabled(policy) || policy?.deny?.includes('*')) {
+  if (!isHITLEnabled(policy)) {
+    return false;
+  }
+  const enabledPolicy = policy;
+  if (toolNames != null) {
+    const names = Array.from(new Set(toolNames.filter((name) => name.length > 0)));
+    if (names.length === 0) {
+      return false;
+    }
+    const matches = (patterns: string[] | undefined, name: string): boolean =>
+      patterns?.some((pattern) => globToRegex(pattern).test(name)) === true;
+    return names.some((name) => {
+      if (matches(enabledPolicy.deny, name)) {
+        return false;
+      }
+      if (hasProgrammaticHooks || matches(enabledPolicy.ask, name)) {
+        return true;
+      }
+      if (matches(enabledPolicy.allow, name)) {
+        return false;
+      }
+      return enabledPolicy.mode !== 'bypass' && enabledPolicy.mode !== 'dontAsk';
+    });
+  }
+  if (policy?.deny?.includes('*')) {
     return false;
   }
   if (hasProgrammaticHooks || (policy?.ask?.length ?? 0) > 0) {
