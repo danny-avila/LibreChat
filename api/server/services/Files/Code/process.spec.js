@@ -42,6 +42,11 @@ mockAxios.post = jest.fn();
 mockAxios.isAxiosError = jest.fn(() => false);
 
 const mockClassifyCodeArtifact = jest.fn(() => 'other');
+const mockExtractCodeArtifactRawText = jest.fn(() => null);
+const mockExtractCodeArtifactInspectionText = jest.fn(async () => ({
+  text: null,
+  complete: false,
+}));
 const mockExtractCodeArtifactText = jest.fn(async () => null);
 const mockGetExtractedTextFormat = jest.fn((_name, _mime, text) => (text == null ? null : 'text'));
 /* `hasOfficeHtmlPath` gates the persist-then-render split: when true, processCodeOutput
@@ -79,7 +84,13 @@ jest.mock('@librechat/api', () => {
      * direct-`jest.fn()` mocks below stay constant per file.
      */
     classifyCodeArtifact: (...args) => mockClassifyCodeArtifact(...args),
+    extractCodeArtifactRawText: (...args) => mockExtractCodeArtifactRawText(...args),
+    extractCodeArtifactInspectionText: (...args) => mockExtractCodeArtifactInspectionText(...args),
     extractCodeArtifactText: (...args) => mockExtractCodeArtifactText(...args),
+    getBoundedCodeOutputByteLimit: (configured) =>
+      typeof configured === 'number' && Number.isFinite(configured) && configured > 0
+        ? Math.min(configured, 64 * 1024 * 1024)
+        : 64 * 1024 * 1024,
     /* `processCodeOutput` derives the `textFormat` trust flag for
      * `IMongoFile` from this helper — Codex P1 review on PR #12934.
      * The mock returns 'text' for non-null extractor output and null
@@ -168,6 +179,7 @@ const {
 
 const {
   processCodeOutput,
+  prepareCodeOutputForInspection,
   getSessionInfo,
   readSandboxFile,
   readSandboxImage,
@@ -198,6 +210,7 @@ describe('Code Process', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    fileSizeLimitConfig.value = 20 * 1024 * 1024;
     // Default mock: atomic claim returns a new file record (no existing file)
     mockClaimCodeFile.mockResolvedValue({
       file_id: 'mock-uuid-1234',
@@ -209,6 +222,106 @@ describe('Code Process', () => {
       saveBuffer: jest.fn().mockResolvedValue('/uploads/mock-file-path.txt'),
     });
     determineFileType.mockResolvedValue({ mime: 'text/plain' });
+  });
+
+  describe('code output inspection preflight', () => {
+    it('derives file content from downloaded bytes without persisting anything', async () => {
+      const buffer = Buffer.from('safe raw content');
+      mockAxios.mockResolvedValue({ data: buffer });
+      mockClassifyCodeArtifact.mockReturnValueOnce('utf8-text');
+      mockExtractCodeArtifactRawText.mockReturnValueOnce('safe raw content');
+      mockExtractCodeArtifactInspectionText.mockResolvedValueOnce({
+        text: 'safe extracted content',
+        complete: true,
+      });
+
+      const prepared = await prepareCodeOutputForInspection(baseParams);
+
+      expect(prepared).toEqual({
+        buffer,
+        extractedTextComplete: true,
+        file: {
+          name: 'test-file.txt',
+          filename: 'test-file.txt',
+          type: 'text/plain',
+          content: 'safe raw content',
+          extractedText: 'safe extracted content',
+        },
+      });
+      expect(mockClaimCodeFile).not.toHaveBeenCalled();
+      expect(createFile).not.toHaveBeenCalled();
+      expect(getStrategyFunctions).not.toHaveBeenCalled();
+    });
+
+    it('persists the exact preflight buffer without downloading it again', async () => {
+      const preparedBuffer = Buffer.from('already inspected');
+
+      await processCodeOutput({ ...baseParams, preparedBuffer });
+
+      expect(mockAxios).not.toHaveBeenCalled();
+      expect(mockClaimCodeFile).toHaveBeenCalledTimes(1);
+      expect(createFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('enforces a caller-provided aggregate inspection budget while downloading', async () => {
+      mockAxios.mockResolvedValue({ data: Buffer.from('too large') });
+
+      await expect(
+        prepareCodeOutputForInspection({
+          ...baseParams,
+          maxBytes: 4,
+        }),
+      ).rejects.toThrow('Generated file exceeds the 4-byte transport limit');
+
+      expect(mockAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          maxContentLength: 4,
+          maxBodyLength: 4,
+        }),
+      );
+      expect(mockClaimCodeFile).not.toHaveBeenCalled();
+      expect(createFile).not.toHaveBeenCalled();
+    });
+
+    it('extracts text bytes even when the generated filename spoofs an image extension', async () => {
+      const buffer = Buffer.from('PRIVATE-SECRET');
+      mockAxios.mockResolvedValue({ data: buffer });
+      determineFileType.mockResolvedValueOnce(undefined);
+      mockClassifyCodeArtifact.mockReturnValueOnce('utf8-text');
+      mockExtractCodeArtifactRawText.mockReturnValueOnce('PRIVATE-SECRET');
+      mockExtractCodeArtifactInspectionText.mockResolvedValueOnce({
+        text: 'PRIVATE-SECRET',
+        complete: true,
+      });
+
+      const prepared = await prepareCodeOutputForInspection({
+        ...baseParams,
+        name: 'secret.png',
+      });
+
+      expect(mockExtractCodeArtifactRawText).toHaveBeenCalledWith(buffer, 'utf8-text');
+      expect(prepared.file).toMatchObject({
+        name: 'secret.png',
+        type: 'text/plain',
+        content: 'PRIVATE-SECRET',
+        extractedText: 'PRIVATE-SECRET',
+      });
+    });
+
+    it('returns the explicit bounded fallback without a second download or persistence', async () => {
+      const result = await processCodeOutput({
+        ...baseParams,
+        downloadFallback: true,
+      });
+
+      expect(result.file).toMatchObject({
+        filename: 'test-file.txt',
+        filepath: '/api/files/code/download/session-123/file-id-123',
+      });
+      expect(mockAxios).not.toHaveBeenCalled();
+      expect(mockClaimCodeFile).not.toHaveBeenCalled();
+      expect(createFile).not.toHaveBeenCalled();
+    });
   });
 
   describe('atomic file claim (via processCodeOutput)', () => {
@@ -804,6 +917,22 @@ describe('Code Process', () => {
     });
 
     describe('file size limit enforcement', () => {
+      it('treats a zero configured limit as unlimited within the hard transport ceiling', async () => {
+        fileSizeLimitConfig.value = 0;
+        mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+        await processCodeOutput(baseParams);
+
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({
+            maxContentLength: 64 * 1024 * 1024,
+            maxBodyLength: 64 * 1024 * 1024,
+          }),
+        );
+        expect(mockClaimCodeFile).toHaveBeenCalledTimes(1);
+        expect(createFile).toHaveBeenCalledTimes(1);
+      });
+
       it('should fallback to download URL when file exceeds size limit', async () => {
         // Set a small file size limit for this test
         fileSizeLimitConfig.value = 1000; // 1KB limit
@@ -813,6 +942,12 @@ describe('Code Process', () => {
 
         const { file: result } = await processCodeOutput(baseParams);
 
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({
+            maxContentLength: 1000,
+            maxBodyLength: 1000,
+          }),
+        );
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('exceeds size limit'));
         expect(result.filepath).toContain('/api/files/code/download/session-123/file-id-123');
         expect(result.expiresAt).toBeDefined();
@@ -820,6 +955,22 @@ describe('Code Process', () => {
         expect(createFile).not.toHaveBeenCalled();
 
         // Reset to default for other tests
+        fileSizeLimitConfig.value = 20 * 1024 * 1024;
+      });
+
+      it('uses the existing download fallback when Axios stops an oversized response', async () => {
+        fileSizeLimitConfig.value = 1000;
+        mockAxios.mockRejectedValue(new Error('maxContentLength size of 1000 exceeded'));
+
+        const { file: result } = await processCodeOutput(baseParams);
+
+        expect(result.filepath).toContain('/api/files/code/download/session-123/file-id-123');
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('Generated file exceeds size limit'),
+        );
+        expect(mockClaimCodeFile).not.toHaveBeenCalled();
+        expect(createFile).not.toHaveBeenCalled();
+
         fileSizeLimitConfig.value = 20 * 1024 * 1024;
       });
     });

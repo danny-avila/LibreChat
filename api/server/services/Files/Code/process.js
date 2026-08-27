@@ -15,6 +15,9 @@ const {
   codeServerHttpAgent,
   codeServerHttpsAgent,
   extractCodeArtifactText,
+  extractCodeArtifactRawText,
+  extractCodeArtifactInspectionText,
+  getBoundedCodeOutputByteLimit,
   getExtractedTextFormat,
   getStorageMetadata,
   getCodeExecutionBaseUrl,
@@ -46,6 +49,173 @@ const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { determineFileType } = require('~/server/utils');
 
 const axios = createAxiosInstance();
+
+class CodeOutputDownloadLimitError extends Error {
+  constructor(maxBytes) {
+    super(`Generated file exceeds the ${maxBytes}-byte transport limit`);
+    this.name = 'CodeOutputDownloadLimitError';
+    this.code = 'CODE_OUTPUT_DOWNLOAD_LIMIT';
+  }
+}
+
+const getCodeOutputFileSettings = (req) => {
+  const mergedFileConfig = mergeFileConfig(req.config.fileConfig);
+  const endpointFileConfig = getEndpointFileConfig({
+    fileConfig: mergedFileConfig,
+    endpoint: EModelEndpoint.agents,
+  });
+  const configuredFileSizeLimit =
+    endpointFileConfig.fileSizeLimit ?? mergedFileConfig.serverFileSizeLimit;
+  return {
+    endpointFileConfig,
+    fileSizeLimit: getBoundedCodeOutputByteLimit(configuredFileSizeLimit),
+  };
+};
+
+const downloadCodeOutputBuffer = async ({
+  req,
+  id,
+  session_id,
+  maxBytes,
+  codeApiBaseUrl,
+  executionProfile = 'default',
+}) => {
+  const baseURL = codeApiBaseUrl ?? getCodeExecutionBaseUrl(executionProfile);
+  const authHeaders = await getCodeApiAuthHeaders(req);
+  const downloadQuery = buildCodeEnvDownloadQuery({ kind: 'user', id: req.user.id });
+  let response;
+  try {
+    response = await axios({
+      method: 'get',
+      url: `${baseURL}/download/${session_id}/${id}${downloadQuery}`,
+      responseType: 'arraybuffer',
+      headers: {
+        'User-Agent': 'LibreChat/1.0',
+        ...authHeaders,
+        [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile,
+      },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
+      timeout: 15000,
+      ...(Number.isFinite(maxBytes) && maxBytes >= 0
+        ? {
+            maxContentLength: maxBytes,
+            maxBodyLength: maxBytes,
+          }
+        : {}),
+    });
+  } catch (error) {
+    if (
+      Number.isFinite(maxBytes) &&
+      maxBytes >= 0 &&
+      /maxContentLength|maxBodyLength/i.test(error?.message ?? '')
+    ) {
+      throw new CodeOutputDownloadLimitError(maxBytes);
+    }
+    throw error;
+  }
+  const buffer = Buffer.from(response.data, 'binary');
+  if (Number.isFinite(maxBytes) && maxBytes >= 0 && buffer.length > maxBytes) {
+    throw new CodeOutputDownloadLimitError(maxBytes);
+  }
+  return buffer;
+};
+
+/**
+ * Downloads and derives inspectable text for a code artifact without writing
+ * file bytes or metadata. Direct tool calls use this to preflight every
+ * artifact before allowing any one artifact to persist.
+ * @param {Object} params
+ * @param {ServerRequest} params.req
+ * @param {string} params.id
+ * @param {string} params.name
+ * @param {string} params.session_id
+ * @param {number} [params.maxBytes] - Remaining aggregate inspection budget.
+ * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
+ * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
+ */
+const prepareCodeOutputForInspection = async ({
+  req,
+  id,
+  name,
+  session_id,
+  maxBytes,
+  inspectContent = true,
+  codeApiBaseUrl,
+  executionProfile = 'default',
+}) => {
+  const { fileSizeLimit } = getCodeOutputFileSettings(req);
+  const transportLimit =
+    Number.isFinite(maxBytes) && maxBytes >= 0 ? Math.min(maxBytes, fileSizeLimit) : fileSizeLimit;
+  const buffer = await downloadCodeOutputBuffer({
+    req,
+    id,
+    session_id,
+    maxBytes: transportLimit,
+    codeApiBaseUrl,
+    executionProfile,
+  });
+  const safeName = sanitizeArtifactPath(name);
+  const fallbackType = inferMimeType(name, '') || 'application/octet-stream';
+  if (!inspectContent) {
+    return {
+      buffer,
+      file: {
+        name,
+        filename: safeName,
+        type: fallbackType,
+      },
+    };
+  }
+  if (buffer.length > fileSizeLimit) {
+    return {
+      buffer,
+      extractedTextComplete: false,
+      file: {
+        name,
+        filename: safeName,
+        type: fallbackType,
+      },
+    };
+  }
+
+  const detectedType = await determineFileType(buffer, true);
+  const detectedMimeType = detectedType?.mime?.toLowerCase();
+  if (detectedMimeType?.startsWith('image/')) {
+    return {
+      buffer,
+      extractedTextComplete: false,
+      file: {
+        name,
+        filename: safeName,
+        type: detectedMimeType,
+      },
+    };
+  }
+
+  const leafName = path.basename(safeName);
+  const unknownText = detectedType == null ? extractCodeArtifactRawText(buffer, 'utf8-text') : null;
+  const mimeType = unknownText != null ? 'text/plain' : (detectedMimeType ?? fallbackType);
+  const category = unknownText != null ? 'utf8-text' : classifyCodeArtifact(leafName, mimeType);
+  const content = unknownText ?? extractCodeArtifactRawText(buffer, category);
+  const extractedText = await extractCodeArtifactInspectionText(
+    buffer,
+    leafName,
+    mimeType,
+    category,
+  );
+  return {
+    buffer,
+    extractedTextComplete: extractedText.complete,
+    file: {
+      name,
+      filename: safeName,
+      type: mimeType,
+      content: content ?? undefined,
+      extractedText: extractedText.text ?? undefined,
+    },
+  };
+};
 
 /**
  * Creates a fallback download URL response when file cannot be processed locally.
@@ -324,6 +494,10 @@ const runPreviewFinalize = ({ finalize, fileId, previewRevision, onResolved }) =
  * @param {string} params.messageId - The current message ID.
  * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
  * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
+ * @param {Buffer} [params.preparedBuffer] - Bytes downloaded during a
+ *   no-write content inspection preflight.
+ * @param {boolean} [params.downloadFallback] - Return the bounded download
+ *   fallback without downloading the generated bytes again.
  * @returns {Promise<{ file: MongoFile & { messageId: string, toolCallId: string }, finalize?: () => Promise<MongoFile | null> }>}
  */
 const processCodeOutput = async ({
@@ -338,44 +512,43 @@ const processCodeOutput = async ({
   freshClaimAfter,
   codeApiBaseUrl,
   executionProfile = 'default',
+  preparedBuffer,
+  downloadFallback,
 }) => {
   const appConfig = req.config;
   const currentDate = new Date();
-  const baseURL = codeApiBaseUrl ?? getCodeExecutionBaseUrl(executionProfile);
   const fileExt = path.extname(name).toLowerCase();
   const isImage = fileExt && imageExtRegex.test(name);
 
-  const mergedFileConfig = mergeFileConfig(appConfig.fileConfig);
-  const endpointFileConfig = getEndpointFileConfig({
-    fileConfig: mergedFileConfig,
-    endpoint: EModelEndpoint.agents,
-  });
-  const fileSizeLimit = endpointFileConfig.fileSizeLimit ?? mergedFileConfig.serverFileSizeLimit;
+  const { endpointFileConfig, fileSizeLimit } = getCodeOutputFileSettings(req);
 
   try {
     const formattedDate = currentDate.toISOString();
-    const authHeaders = await getCodeApiAuthHeaders(req);
-    /* Code-output files are always user-private — no skill execution
-     * produces a skill-scoped output bucket. The download URL must
-     * carry `?kind=user&id=<userId>` so codeapi's `sessionAuth`
-     * resolves the matching `<tenant>:user:<userId>` sessionKey. See
-     * codeapi #1455 / Phase C. */
-    const downloadQuery = buildCodeEnvDownloadQuery({ kind: 'user', id: req.user.id });
-    const response = await axios({
-      method: 'get',
-      url: `${baseURL}/download/${session_id}/${id}${downloadQuery}`,
-      responseType: 'arraybuffer',
-      headers: {
-        'User-Agent': 'LibreChat/1.0',
-        ...authHeaders,
-        [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile,
-      },
-      httpAgent: codeServerHttpAgent,
-      httpsAgent: codeServerHttpsAgent,
-      timeout: 15000,
-    });
-
-    const buffer = Buffer.from(response.data, 'binary');
+    if (downloadFallback === true) {
+      return {
+        file: createDownloadFallback({
+          id,
+          name,
+          agentId,
+          messageId,
+          toolCallId,
+          session_id,
+          conversationId,
+          executionProfile,
+          expiresAt: currentDate.getTime() + 86400000,
+        }),
+      };
+    }
+    const buffer =
+      preparedBuffer ??
+      (await downloadCodeOutputBuffer({
+        req,
+        id,
+        session_id,
+        maxBytes: fileSizeLimit,
+        codeApiBaseUrl,
+        executionProfile,
+      }));
 
     // Enforce file size limit
     if (buffer.length > fileSizeLimit) {
@@ -733,6 +906,11 @@ const processCodeOutput = async ({
     }
     return { file: Object.assign(file, { messageId, toolCallId, agentId }) };
   } catch (error) {
+    if (error?.code === 'CODE_OUTPUT_DOWNLOAD_LIMIT') {
+      logger.warn(
+        `[processCodeOutput] Generated file exceeds size limit of ${(fileSizeLimit / megabyte).toFixed(2)} MB, falling back to download URL`,
+      );
+    }
     if (error?.message === 'Path traversal detected in filename') {
       logger.warn(
         `[processCodeOutput] Path traversal blocked for file "${name}" | conv=${conversationId}`,
@@ -1598,6 +1776,7 @@ module.exports = {
   checkIfActive,
   getSessionInfo,
   processCodeOutput,
+  prepareCodeOutputForInspection,
   readSandboxFile,
   readSandboxImage,
   writeSandboxFile,

@@ -63,6 +63,9 @@ type ProcessedUpload = {
 export type UploadLifecycleCallbacks = {
   /** Preassigned id so callers can persist recovery before the shared upload queue waits. */
   fileId?: string;
+  /** An attachment being replaced remains in state until the replacement succeeds, but should not
+   * count against this upload's file and total-size limits. */
+  replacesFileId?: string;
   /** Read once the queue and config waits are over, immediately before the batch is written into
    * the shared file state. A `false` return abandons the batch so a delayed upload cannot land in
    * a composer the user has since navigated away from. */
@@ -451,12 +454,32 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       fileConfig: currentFileConfig,
       endpointType,
     });
+    /** The source remains visible until success, so exclude only its matching entry from this
+     * upload's validation tallies. All other callers validate against the complete file map. */
+    const filesForValidation = (() => {
+      const replacesFileId = uploadLifecycle?.replacesFileId;
+      if (replacesFileId == null || replacesFileId === '') {
+        return existingFiles;
+      }
+      const withoutSource = new Map(existingFiles);
+      for (const [key, existingFile] of existingFiles) {
+        if (
+          key === replacesFileId ||
+          existingFile.file_id === replacesFileId ||
+          existingFile.temp_file_id === replacesFileId
+        ) {
+          withoutSource.delete(key);
+          break;
+        }
+      }
+      return withoutSource;
+    })();
 
     /* Validate files */
     let filesAreValid: boolean;
     try {
       filesAreValid = validateFiles({
-        files: existingFiles,
+        files: filesForValidation,
         fileList,
         setError,
         fileConfig: currentFileConfig,
@@ -611,12 +634,12 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     try {
       batchIsValid =
         validateFileDuplicates({
-          files: existingFiles,
+          files: filesForValidation,
           fileList: processedFileList,
           setError,
         }) &&
         validateFileSizes({
-          files: existingFiles,
+          files: filesForValidation,
           fileList: processedFileList,
           setError,
           endpointFileConfig,

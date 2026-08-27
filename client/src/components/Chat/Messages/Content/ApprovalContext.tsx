@@ -303,7 +303,7 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
  *
  * Reads `ChatContext` / the agent store / React Query. The cards render it from
  * live chat views but ALSO from contexts without a `ChatContext.Provider` (e.g. a
- * subagent tool paused inside a portaled dialog, or a search/citation render that
+ * subagent tool paused inside an isolated activity surface, or a search/citation render that
  * passes chat context as a prop), so it reads the context non-throwingly: with no
  * conversation, `buildResumeFields` returns null and the controls are inert rather
  * than crashing.

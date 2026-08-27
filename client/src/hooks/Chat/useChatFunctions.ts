@@ -29,10 +29,12 @@ import type { TAskFunction, ExtendedFile } from '~/common';
 import {
   logger,
   requestChatFocus,
+  markPasteSubmitted,
   hasStreamStartFailed,
   isSubmittableMessage,
   createDualMessageContent,
   getRouteChatProjectId,
+  stripStreamedIndexStamps,
 } from '~/utils';
 import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
@@ -219,6 +221,7 @@ export default function useChatFunctions({
   const isTemporary = useRecoilValue(store.isTemporary);
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(index));
+  const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(index));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const focusRegeneratedResponse = useFocusRegeneratedResponse();
 
@@ -546,9 +549,15 @@ export default function useChatFunctions({
 
     if (setFiles && reuseFiles === true) {
       currentMsg.files = [...submissionFiles];
+      /** Queued override files were consumed just like composer files, so mark their identities
+       * as submitted before later draft cleanup can classify the restored paste as unsent. */
+      submissionFiles.forEach((file) => {
+        markPasteSubmitted(file.file_id);
+        markPasteSubmitted(file.temp_file_id);
+      });
       // Caller-supplied overrideFiles were consumed elsewhere (queued
-      // during-run messages take theirs out of the composer at queue time) —
-      // clearing here would eat attachments staged for the user's NEXT send.
+      // during-run messages take theirs out of the composer at queue time,
+      // so clearing here would eat attachments staged for the user's NEXT send.
       if (isRegenerate) {
         setFiles(new Map());
         setFilesToDelete({});
@@ -565,6 +574,13 @@ export default function useChatFunctions({
         height: file.height,
         width: file.width,
       }));
+      /** The draft keeps a paste's provenance after the map is emptied, so discarding later has
+       * to be able to tell what this message already took with it. */
+      files.forEach((file, key) => {
+        markPasteSubmitted(key);
+        markPasteSubmitted(file.file_id);
+        markPasteSubmitted(file.temp_file_id);
+      });
       setFiles(new Map());
       setFilesToDelete({});
     }
@@ -625,7 +641,10 @@ export default function useChatFunctions({
       initialResponse.text = '';
 
       if (editedContent && latestMessage?.content) {
-        initialResponse.content = cloneDeep(latestMessage.content);
+        /** Stamps off: the rerun appends provider parts at the prefix LENGTH,
+         *  and a retained `streamedIndex` at or above it would collide with an
+         *  appended part's render key (see `stripStreamedIndexStamps`). */
+        initialResponse.content = stripStreamedIndexStamps(cloneDeep(latestMessage.content));
         /** Captured now, while it is still the retained prefix: a later resume
          *  sync replaces this array with the server's completion-local
          *  snapshot, after which its length no longer describes the offset. */
@@ -712,6 +731,7 @@ export default function useChatFunctions({
       setMessages([...submissionMessages, currentMsg, initialResponse]);
     }
 
+    setSubmissionStart(Date.now());
     setSubmission(submission);
     logger.dir('message_stream', submission, { depth: null });
   };

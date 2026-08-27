@@ -69,6 +69,26 @@ const MAX_ASK_ANSWER_LENGTH = 16_000;
 const ASK_QUESTION_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const MAX_ASK_QUESTIONS = 4;
 
+function getBoundedAskUserAnswerEntries(answers: unknown): Array<[string, string]> | undefined {
+  if (answers == null || typeof answers !== 'object' || Array.isArray(answers)) {
+    return undefined;
+  }
+  const entries = Object.entries(answers);
+  if (
+    entries.length === 0 ||
+    entries.length > MAX_ASK_QUESTIONS ||
+    entries.some(([, value]) => typeof value !== 'string' || value.length > MAX_ASK_ANSWER_LENGTH)
+  ) {
+    return undefined;
+  }
+  return entries as Array<[string, string]>;
+}
+
+/** Return batched ask-user values when their count and length are bounded. */
+export function getBoundedAskUserAnswerValues(answers: unknown): string[] {
+  return getBoundedAskUserAnswerEntries(answers)?.map(([, value]) => value) ?? [];
+}
+
 /**
  * Serialize every ordering a validated batch can take after the SDK rebuilds
  * its answer map in question order. Batches are capped at four questions, so
@@ -76,22 +96,15 @@ const MAX_ASK_QUESTIONS = 4;
  * checks inspect the exact ToolMessage even for a crafted key order.
  */
 export function serializeAskUserAnswerVariants(answers: unknown): string[] {
-  if (answers == null || typeof answers !== 'object' || Array.isArray(answers)) {
-    return [];
-  }
-  const entries = Object.entries(answers);
-  if (
-    entries.length === 0 ||
-    entries.length > MAX_ASK_QUESTIONS ||
-    entries.some(([, value]) => typeof value !== 'string')
-  ) {
+  const entries = getBoundedAskUserAnswerEntries(answers);
+  if (entries == null) {
     return [];
   }
 
   const variants: string[] = [];
-  const visit = (remaining: Array<[string, unknown]>, ordered: Array<[string, unknown]>) => {
+  const visit = (remaining: Array<[string, string]>, ordered: Array<[string, string]>) => {
     if (remaining.length === 0) {
-      const normalized = Object.create(null) as Record<string, unknown>;
+      const normalized = Object.create(null) as Record<string, string>;
       for (const [key, value] of ordered) {
         normalized[key] = value;
       }
@@ -324,7 +337,7 @@ type ResumableRunStep = {
 
 export function normalizeResumeRunStepIndices<T extends ResumableRunStep>(
   runSteps: readonly T[],
-  seedContent: readonly { type?: string; tool_call?: { id?: string } }[] = [],
+  seedContent: readonly ({ type?: string; tool_call?: { id?: string } } | undefined)[] = [],
 ): T[] {
   const toolCallIndices = new Map<string, number>();
   seedContent.forEach((part, index) => {
@@ -361,7 +374,7 @@ export function hydrateResumeRunSteps(
   runSteps: readonly RunStep[],
   stepMap: Map<string, RunStep | undefined> | undefined,
   graph: { toolCallStepIds?: Map<string, string> } | null | undefined,
-  seedContent: readonly { type?: string; tool_call?: { id?: string } }[] = [],
+  seedContent: readonly ({ type?: string; tool_call?: { id?: string } } | undefined)[] = [],
 ): void {
   for (const runStep of normalizeResumeRunStepIndices(runSteps, seedContent)) {
     if (!runStep?.id) {
@@ -491,7 +504,7 @@ export function createContentIndexOffsetHandlers(
  * already carry their answers).
  */
 function findAskPartIndex<
-  TPart extends { type?: string; tool_call?: { id?: string; name?: string } },
+  TPart extends { type?: string; tool_call?: { id?: unknown; name?: unknown } },
 >(content: TPart[], toolCallId: string | undefined, isStampable: (part: TPart) => boolean): number {
   for (let i = content.length - 1; i >= 0; i--) {
     const part = content[i];
@@ -564,7 +577,7 @@ export function findAskUserQuestionContentIndex<
  * array when nothing matched.
  */
 export function attachAskUserQuestionAnswer<
-  TPart extends { type?: string; tool_call?: { id?: string; name?: string; output?: unknown } },
+  TPart extends { type?: string; tool_call?: { id?: unknown; name?: unknown; output?: unknown } },
 >(
   content: TPart[],
   request: Agents.AskUserQuestionRequest | Agents.AskUserQuestionsRequest,
@@ -601,7 +614,7 @@ export function attachAskUserQuestionAnswer<
 
 /** Apply retained ask answers in one content pass for Redis reconstruction. */
 export function attachAskUserQuestionAnswers<
-  TPart extends { type?: string; tool_call?: { id?: string; name?: string; output?: unknown } },
+  TPart extends { type?: string; tool_call?: { id?: unknown; name?: unknown; output?: unknown } },
 >(content: TPart[], answers: readonly ResolvedAskUserQuestion[]): TPart[] {
   if (answers.length === 0) {
     return content;
@@ -637,7 +650,8 @@ export function attachAskUserQuestionAnswers<
     if (part?.type !== 'tool_call' || toolCall?.name !== ASK_USER_QUESTION_TOOL_NAME) {
       continue;
     }
-    const exactAnswer = toolCall.id != null ? exactAnswers.get(toolCall.id) : undefined;
+    const toolCallId = typeof toolCall.id === 'string' ? toolCall.id : undefined;
+    const exactAnswer = toolCallId != null ? exactAnswers.get(toolCallId) : undefined;
     const indexedAnswer = indexedAnswers.get(index);
     const legacyCandidate = legacyAnswers[legacyIndex];
     if (
@@ -673,8 +687,8 @@ export function attachAskUserQuestionAnswers<
     if (answer == null) {
       continue;
     }
-    if (exactAnswer != null && toolCall.id != null) {
-      exactAnswers.delete(toolCall.id);
+    if (exactAnswer != null && toolCallId != null) {
+      exactAnswers.delete(toolCallId);
     }
     if (indexedAnswer != null) {
       indexedAnswers.delete(index);

@@ -3,7 +3,6 @@ import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { Close } from '@radix-ui/react-popover';
 import { Flipper, Flipped } from 'react-flip-toolkit';
-import { getEndpointField } from 'librechat-data-provider';
 import { BookCopy, FileUp, FileX2, Ellipsis } from 'lucide-react';
 import {
   Button,
@@ -25,9 +24,10 @@ import {
 import type { MenuItemProps } from '@librechat/client';
 import type { TPreset } from 'librechat-data-provider';
 import type { ChangeEvent, FC } from 'react';
+import { ResolvedProviderIcon } from '~/components/Endpoints/ResolvedProviderIcon';
+import { resolveProviderIcon } from '~/hooks/Endpoint';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { getPresetTitle, getIconKey } from '~/utils';
-import { icons } from '~/hooks/Endpoint/Icons';
+import { getPresetTitle } from '~/utils';
 import { MenuSeparator } from '../UI';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -226,8 +226,10 @@ const PresetItems: FC<{
               return null;
             }
 
-            const iconKey = getIconKey({ endpoint: preset.endpoint, endpointsConfig });
-            const Icon = icons[iconKey];
+            const { provider, imageURL } = resolveProviderIcon({
+              endpoint: preset.endpoint,
+              endpointsConfig,
+            });
             const presetTitle = getPresetTitle(preset);
 
             return (
@@ -243,14 +245,12 @@ const PresetItems: FC<{
                         aria-label={presetTitle}
                         data-testid={`preset-item-${presetId}`}
                       >
-                        {Icon != null && (
-                          <Icon
-                            context="menu-item"
-                            iconURL={getEndpointField(endpointsConfig, preset.endpoint, 'iconURL')}
-                            className="icon-md shrink-0"
-                            endpoint={preset.endpoint}
-                          />
-                        )}
+                        <ResolvedProviderIcon
+                          provider={provider}
+                          imageURL={imageURL}
+                          size={20}
+                          className="icon-md shrink-0"
+                        />
                         <span className="truncate">{presetTitle}</span>
                       </Button>
                       <div className="flex items-center justify-end gap-1">

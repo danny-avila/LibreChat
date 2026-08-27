@@ -1,8 +1,65 @@
-import type { Agents, TFile, TPendingSteer } from 'librechat-data-provider';
-import type { StandardGraph } from '@librechat/agents';
+import type {
+  Agents,
+  TFile,
+  TPendingSteer,
+  UserSubmittedMessageFieldPath,
+} from 'librechat-data-provider';
+import type { RunStep, StandardGraph } from '@librechat/agents';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '../SteerRecovery';
+import type { MCPRuntimeRequestBody } from '~/mcp/types';
+
+/**
+ * Rewrites string-enum members to their literal values, recursively. The SDK and
+ * data-provider declare nominally distinct enums (`ContentTypes`, `StepTypes`, ...)
+ * with identical string values; erasing that nominality is what lets the two run-step
+ * contracts be compared structurally.
+ */
+type WireShape<T> = T extends string
+  ? `${T}`
+  : T extends readonly (infer U)[]
+    ? WireShape<U>[]
+    : T extends object
+      ? { [K in keyof T]: WireShape<T[K]> }
+      : T;
+
+type StaticAssert<T extends true> = T;
+
+/**
+ * Compile-time proof that the SDK run step and the wire contract (`Agents.RunStep`)
+ * agree structurally once enum nominality is erased: any added, removed, retyped, or
+ * newly optional SDK field fails these assertions, so drift cannot silently enter
+ * resume state through `toWireRunSteps`.
+ *
+ * `summary.content` is the one deliberately unchecked field: the SDK reuses its full
+ * `MessageContentComplex` union there, while the wire contract narrows it to the plain
+ * text blocks summarization actually emits. That narrowing is the single semantic
+ * judgment this conversion vouches for.
+ */
+type _WireRunStepContractHolds = StaticAssert<
+  WireShape<Omit<RunStep, 'summary'>> extends WireShape<Omit<Agents.RunStep, 'summary'>>
+    ? true
+    : false
+>;
+
+type _WireSummaryContractHolds = StaticAssert<
+  WireShape<Omit<NonNullable<RunStep['summary']>, 'content'>> extends WireShape<
+    Omit<NonNullable<Agents.RunStep['summary']>, 'content'>
+  >
+    ? true
+    : false
+>;
+
+/**
+ * Run steps living on the SDK graph serialize to exactly the wire shape
+ * `Agents.RunStep` describes; the assertion is safe because
+ * `_WireRunStepContractHolds` above proves the contracts identical modulo the
+ * nominally-split enums, which share their string values at runtime.
+ */
+export function toWireRunSteps(steps: readonly RunStep[]): Agents.RunStep[] {
+  return steps as Agents.RunStep[];
+}
 
 /**
  * A pause owner has this long to durably persist the interrupted turn before
@@ -12,6 +69,11 @@ import type { RecoveredSteerPayload } from '../SteerRecovery';
  */
 export const PAUSE_PERSISTENCE_TIMEOUT_MS = 30_000;
 export const PAUSE_PERSISTENCE_TIMEOUT_ERROR = 'Paused response persistence timed out';
+/** Maximum time a terminal provider owner may remain undrained before its
+ * process is treated as lost. Terminal host settlement retains the last
+ * durable evidence through this grace period, then releases the lane from a
+ * crashed owner instead of refreshing its fence forever. */
+export const PROVIDER_DRAIN_TIMEOUT_MS = 30_000;
 
 /**
  * Job status enum.
@@ -75,6 +137,15 @@ export interface SerializableJobData {
   /** Response message ID for reconnection */
   responseMessageId?: string;
 
+  /** Whether this generation replaces an existing assistant branch. */
+  isRegenerate?: boolean;
+  /** Exact normalized MCP placeholder identity for this turn. */
+  mcpRequestBody?: MCPRuntimeRequestBody;
+  /** Exact assistant-message fields authored by the user during this running job. */
+  userSubmittedPaths?: string[];
+  /** Exact request-only message fields embedded at caller-authored paths. */
+  userSubmittedMessageFieldPaths?: UserSubmittedMessageFieldPath[];
+
   /**
    * Whether this run has activity labels enabled (per-endpoint
    * `activityLabel: true`). Set once at run start so the resume path can
@@ -101,6 +172,24 @@ export interface SerializableJobData {
    * preempt shipped, which reads as incapable: the honest outcome.
    */
   preemptCapable?: boolean;
+  /**
+   * Transient owner assertion that this replica's drain merges
+   * `SteerQueueItem.quotes` into the injected turn. Never stored as-is:
+   * createJob and `ApprovalLifecycle.resolve` translate it into
+   * `steerQuotesExecutionId` bound to the asserting owner's execution.
+   */
+  steerQuotesCapable?: boolean;
+  /**
+   * The `providerExecutionId` of the owner that asserted quote capability.
+   * Valid only while it equals the LIVE `providerExecutionId`: a legacy
+   * replica winning a HITL resume rewrites the execution id but cannot know
+   * this field, so its stale assertion self-invalidates — which a bare
+   * boolean could not do (an old resume patch omits rather than clears it).
+   * The fenced enqueue evaluates the equality atomically and strips
+   * `item.quotes` on mismatch, keeping the persisted item and the
+   * `quotesAccepted` echo honest; the client re-stages dropped excerpts.
+   */
+  steerQuotesExecutionId?: string;
 
   /** Explicitly false until the provider-owning replica has installed its
    * generation-fenced abort subscription. Missing is conservative legacy
@@ -189,6 +278,12 @@ export interface SerializableJobData {
    * resume request can't be trusted to re-send the flag.
    */
   isTemporary?: boolean;
+  agentEventDeliveryKey?: string;
+  /** Trusted actor binding copied from the authenticated delivery envelope. */
+  agentEventBindingId?: string;
+  agentEventExpectedAction?: import('~/agents/triggers/types').AgentTriggerExpectedAction;
+  /** Exact durable legacy-turn fence carried across a HITL pause/resume. */
+  agentEventLegacyTurnToken?: string;
 
   /**
    * Set when status is `requires_action`. Describes the human review the
@@ -294,6 +389,10 @@ export type JobMetadataPatch = Partial<
   Pick<
     SerializableJobData,
     | 'responseMessageId'
+    | 'isRegenerate'
+    | 'mcpRequestBody'
+    | 'userSubmittedPaths'
+    | 'userSubmittedMessageFieldPaths'
     | 'sender'
     | 'conversationId'
     | 'userMessage'
@@ -302,6 +401,10 @@ export type JobMetadataPatch = Partial<
     | 'model'
     | 'agent_id'
     | 'isTemporary'
+    | 'agentEventDeliveryKey'
+    | 'agentEventBindingId'
+    | 'agentEventExpectedAction'
+    | 'agentEventLegacyTurnToken'
     | 'scheduleId'
     | 'scheduledFor'
     | 'scheduleConfigRevision'
@@ -313,6 +416,8 @@ export type JobMetadataPatch = Partial<
     | 'discoveredTools'
     | 'activityPhaseSnapshot'
     | 'preemptCapable'
+    | 'steerQuotesCapable'
+    | 'steerQuotesExecutionId'
     | 'providerExecutionId'
     | 'providerDrained'
     | 'generationProtocolVersion'
@@ -357,6 +462,10 @@ export interface SteerQueueItem {
    *  drain re-fetches each file by id scoped to the run's user and encodes
    *  fresh, so nothing here is trusted beyond identifying the file. */
   files?: Partial<TFile>[];
+  /** Quoted excerpts steered with the message, normalized at admission
+   *  (`getReferencedQuotes`). Kept separate from `text` so the persisted
+   *  steer part stays clean; merged into the model-bound turn at injection. */
+  quotes?: string[];
   /** The steer asked to seal the live model stream at the next provider-safe
    *  boundary instead of waiting for a tool step. Durable so a parked,
    *  claimed, or replayed chip keeps its "interrupting" label. */
@@ -372,7 +481,16 @@ export interface SteerQueueItem {
  * the same instruction twice after drain, terminal cleanup, or replacement. */
 export interface SteerReceipt {
   clientSteerId: string;
+  /** Quote-INDEPENDENT content hash (text/files/preempt) — the one shape every
+   * replica version computes, so lost-ACK retries replay across a rolling
+   * deploy in both directions. */
   fingerprint: string;
+  /** Identity of the REQUESTED quotes (pre any owner-capability strip),
+   * recorded beside the fingerprint so quote-aware readers enforce quote
+   * identity without making the fingerprint unreadable to legacy admission.
+   * Absent on receipts written by pre-quotes replicas or for quote-less
+   * requests. */
+  requestedQuotesFingerprint?: string;
   userId: string;
   tenantId?: string;
   agentId?: string;
@@ -447,6 +565,17 @@ export const STEER_ENQUEUE_QUEUE_FULL = -2;
  * so idempotency evidence is never evicted inside its recovery window. */
 export const STEER_ENQUEUE_RECEIPT_FULL = -3;
 
+/** The store rejected a status CAS because its atomic deadline had elapsed. */
+export class JobStatusTransitionDeadlineError extends Error {
+  readonly notAfterMs: number;
+
+  constructor(notAfterMs: number) {
+    super('The status transition deadline elapsed before the transition could commit');
+    this.name = 'JobStatusTransitionDeadlineError';
+    this.notAfterMs = notAfterMs;
+  }
+}
+
 /**
  * Arguments for an atomic {@link IJobStore.transitionStatus} compare-and-set.
  */
@@ -471,6 +600,12 @@ export interface JobStatusTransition {
    * the same stream ID.
    */
   expectCreatedAt?: number;
+  /**
+   * Additional guard: reject the transition when the store's clock has reached
+   * this absolute deadline. The comparison is part of the same atomic operation
+   * as the status change, so queueing or storage latency cannot publish stale state.
+   */
+  notAfterMs?: number;
   /** Extend all current steer receipts in the SAME atomic step as this
    * transition. Used by running→requires_action so no enqueue can land between
    * a pre-pause TTL pass and the status CAS. */
@@ -597,6 +732,8 @@ export interface UsageMetadata {
   output_token_details?: {
     /** Reasoning/thinking tokens generated as chain-of-thought (o1, Gemini thinking, etc.) */
     reasoning?: number;
+    /** Alternate provider/runtime alias for reasoning tokens. */
+    reasoning_tokens?: number;
     audio?: number;
   };
 }
@@ -1338,8 +1475,16 @@ export interface IEventTransport {
     options?: {
       /** Hold sequenced events until syncReorderBuffer establishes the replay frontier. */
       deferSequenceDelivery?: boolean;
+      /** After opening a fresh Pub/Sub channel, atomically capture its sequence frontier
+       * and fence delivery so synchronization cannot lose an attachment-time frame. */
+      captureSequenceFrontier?: boolean;
     },
-  ): { unsubscribe: () => void; ready?: Promise<void> };
+  ): {
+    unsubscribe: () => void;
+    ready?: Promise<void>;
+    /** Synchronize only the transport state captured by this concrete subscription. */
+    syncReorderBuffer?: () => void | Promise<void>;
+  };
 
   /**
    * Publish a chunk event.
@@ -1359,6 +1504,12 @@ export interface IEventTransport {
    * `generationId` is optional for compatibility with legacy, untagged publishers.
    */
   emitError(streamId: string, error: string, generationId?: number): void | Promise<void>;
+
+  /** Optional live-view demand marker used by observational streams that do not replay. */
+  renewDemand?(streamId: string, ttlMs: number): void | Promise<void>;
+
+  /** Returns whether at least one live viewer recently renewed demand for this stream. */
+  hasDemand?(streamId: string): boolean | Promise<boolean>;
 
   /**
    * Publish an abort signal to all replicas (Redis mode).

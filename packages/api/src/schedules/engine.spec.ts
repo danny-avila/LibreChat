@@ -286,6 +286,11 @@ describe('reconciliation consults the durable trigger delivery', () => {
     expect(methods.recordRunOutcome).not.toHaveBeenCalled();
   });
 
+  it('does NOT orphan a BATCHED delivery past the cutoff', async () => {
+    const methods = await runReconcile(joblessRun(OLD()), async () => ({ status: 'batched' }));
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+
   it('falls back to the legacy interrupted orphan for a SUCCEEDED delivery past the cutoff', async () => {
     const methods = await runReconcile(joblessRun(OLD()), async () => ({ status: 'succeeded' }));
     expect(methods.recordRunOutcome).toHaveBeenCalledWith(

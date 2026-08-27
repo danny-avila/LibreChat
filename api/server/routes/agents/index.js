@@ -7,6 +7,7 @@ const {
   buildAbortedResponseMetadata,
   isPendingActionStale,
   toClientPendingAction,
+  getGenerationElapsedMs,
   isHITLEnabled,
   captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
@@ -37,7 +38,7 @@ const {
   getServerGenerationProtocol,
   negotiateExistingGenerationProtocol,
 } = require('~/server/controllers/agents/protocol');
-const { saveMessage } = require('~/models');
+const { getFiles, saveMessage } = require('~/models');
 const {
   recordScheduleOutcome,
   beginScheduledStop,
@@ -524,6 +525,7 @@ router.get('/chat/status/:conversationId', async (req, res) => {
     status: job.status,
     aggregatedContent: resumeState?.aggregatedContent ?? [],
     createdAt: job.createdAt,
+    elapsedMs: getGenerationElapsedMs(job),
     resumeState,
     // Surface the live pending approval so a client rebuilding from /chat/status
     // (reload / cross-replica) has the action id + payload to render and submit
@@ -545,7 +547,6 @@ router.get('/chat/status/:conversationId', async (req, res) => {
 router.post('/chat/abort', configMiddleware, async (req, res, next) => {
   logger.debug(`[AgentStream] ========== ABORT ENDPOINT HIT ==========`);
   logger.debug(`[AgentStream] Method: ${req.method}, Path: ${req.path}`);
-  logger.debug(`[AgentStream] Body:`, req.body);
 
   const requestProtocolVersion = negotiateRequestGenerationProtocol(req);
   let responseProtocolVersion = requestProtocolVersion;
@@ -554,6 +555,11 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
       return sendGenerationJson(res, 400, { code: 'INVALID_ABORT_TARGET' }, requestProtocolVersion);
     }
     const { streamId, conversationId, abortKey, generationCreatedAt } = req.body;
+    logger.debug(`[AgentStream] Abort request`, {
+      conversationId,
+      hasStreamId: typeof streamId === 'string' && streamId.length > 0,
+      hasAbortKey: typeof abortKey === 'string' && abortKey.length > 0,
+    });
     for (const value of [streamId, conversationId, abortKey]) {
       if (
         value != null &&
@@ -769,6 +775,14 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
               unfinished: true,
               error: false,
               isCreatedByUser: false,
+              ...(Array.isArray(jobData.userSubmittedPaths) &&
+                jobData.userSubmittedPaths.length > 0 && {
+                  userSubmittedPaths: jobData.userSubmittedPaths,
+                }),
+              ...(Array.isArray(jobData.userSubmittedMessageFieldPaths) &&
+                jobData.userSubmittedMessageFieldPaths.length > 0 && {
+                  userSubmittedMessageFieldPaths: jobData.userSubmittedMessageFieldPaths,
+                }),
               user: userId,
             };
 
@@ -1008,7 +1022,11 @@ router.post(
   '/chat/steer',
   configMiddleware,
   ...steerLimiters,
-  createMessageFilterPii({ getConfig: (req) => req.config?.messageFilter?.pii }),
+  createMessageFilterPii({
+    getConfig: (req) => req.config?.messageFilter?.pii,
+    getFilters: (req) => req.config?.filters,
+    getFiles,
+  }),
   moderateText,
   SteerController,
 );
@@ -1024,7 +1042,11 @@ router.post(
   '/chat/steer/deliver',
   configMiddleware,
   ...steerLimiters,
-  createMessageFilterPii({ getConfig: (req) => req.config?.messageFilter?.pii }),
+  createMessageFilterPii({
+    getConfig: (req) => req.config?.messageFilter?.pii,
+    getFilters: (req) => req.config?.filters,
+    getFiles,
+  }),
   moderateText,
   SteerController.SteerDeliveryController,
 );

@@ -169,28 +169,37 @@ async function expectCompletedApprovalToolOutput(page: Page, toolCallId: string,
   // start collapsed. Wait for either the target card or its group before
   // deciding whether expansion is necessary.
   await expect(toolCall.or(groupToggle).first()).toBeVisible({ timeout: 30000 });
-  if (
-    !(await toolCall.isVisible()) &&
-    (await groupToggle.getAttribute('aria-expanded')) !== 'true'
-  ) {
-    await groupToggle.click();
-  }
+  // The final model turn is the quiescence barrier: all parallel tool work
+  // has settled before invocation-count assertions inspect the audit. It is
+  // also the fence the expansions below need, because the streamed response
+  // carries a placeholder id that the saved message replaces, remounting
+  // every card in the turn and closing whatever this helper had opened.
+  await expect(view.getByText(/^E2E approval outcomes:/).last()).toBeVisible({ timeout: 30000 });
 
-  await expect(toolCall).toBeVisible({ timeout: 30000 });
   const toggle = toolCall.getByRole('button', { name: /Ran approval_probe/ });
-  await expect(toggle).toBeVisible({ timeout: 30000 });
-  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
-    await toggle.click();
-  }
-
   // Scope exact output to its stable call id. This catches both a dropped
   // completion and an output accidentally attached to a sibling tool card.
-  await expect(
-    view.locator(`[data-tool-call-output-id="${toolCallId}"]`).getByText(output, { exact: true }),
-  ).toBeVisible({ timeout: 30000 });
-  // The final model turn is the quiescence barrier: all parallel tool work
-  // has settled before invocation-count assertions inspect the audit.
-  await expect(view.getByText(/^E2E approval outcomes:/).last()).toBeVisible({ timeout: 30000 });
+  const toolOutput = view
+    .locator(`[data-tool-call-output-id="${toolCallId}"]`)
+    .getByText(output, { exact: true });
+
+  // Re-open on every attempt rather than expanding once: a card that a late
+  // remount closes underneath would otherwise leave the assertion waiting on
+  // a body that nothing is going to mount again.
+  await expect(async () => {
+    if (!(await toolCall.isVisible())) {
+      const hasGroup = (await groupToggle.count()) > 0;
+      if (hasGroup && (await groupToggle.getAttribute('aria-expanded')) !== 'true') {
+        await groupToggle.click();
+      }
+    }
+    await expect(toolCall).toBeVisible({ timeout: 5000 });
+    await expect(toggle).toBeVisible({ timeout: 5000 });
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+      await toggle.click();
+    }
+    await expect(toolOutput).toBeVisible({ timeout: 5000 });
+  }).toPass({ timeout: 30000 });
 }
 
 test.describe('tool approvals', () => {

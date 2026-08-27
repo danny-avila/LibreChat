@@ -2845,4 +2845,29 @@ describe('erasure sweep rotation and idempotency-key lookup', () => {
     const found = await methods.getScheduleByClientRequestId(user, 'intent-9');
     expect(found?.id).toBe(schedule.id);
   });
+
+  it('persists a cron cadence without an hour or a minute', async () => {
+    const created = await Schedule.create(
+      scheduleData({ cadence: { frequency: 'cron', expression: '0 9,17 * * 1-5' } }),
+    );
+
+    const stored = await getSchedule(created.id);
+    expect(stored.cadence).toMatchObject({ frequency: 'cron', expression: '0 9,17 * * 1-5' });
+    expect('hour' in stored.cadence).toBe(false);
+    expect('minute' in stored.cadence).toBe(false);
+  });
+
+  it('refuses a cron cadence with no expression', async () => {
+    // Without this the row is armed but uncompilable: the engine reads a null next
+    // run as an unreadable cadence and disables it, silently, after the save.
+    await expect(
+      Schedule.create(scheduleData({ cadence: { frequency: 'cron' } as ISchedule['cadence'] })),
+    ).rejects.toThrow(/expression/);
+  });
+
+  it('still requires an hour and a minute for a structured cadence', async () => {
+    await expect(
+      Schedule.create(scheduleData({ cadence: { frequency: 'daily' } as ISchedule['cadence'] })),
+    ).rejects.toThrow(/hour/);
+  });
 });

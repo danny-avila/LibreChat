@@ -575,30 +575,80 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
     });
   });
 
-  it('retries without consuming the logical delivery when the parent is not settled', async () => {
-    expect.hasAssertions();
-    const host = createAgentTriggerExecutionHost(
-      deps(
-        fetchMock(async () =>
-          response(
-            { code: 'PARENT_NOT_READY', error: 'The parent is still running.' },
-            { status: 409 },
-          ),
-        ),
-      ),
+  it('carries server-resolved binding identity only on bound child continuations', async () => {
+    const base = createContinueEnvelope();
+    if (base.mode !== 'continue') {
+      throw new Error('Expected a continue envelope');
+    }
+    const envelope = {
+      ...base,
+      event: { ...base.event, payload: { blob: 'x'.repeat(4096) } },
+      expectedAction: {
+        toolName: 'submit_move',
+        argumentSubset: { gameId: 'game-1', expectedPly: 7 },
+      },
+      target: {
+        ...base.target,
+        bindingId: `evtbind_${'a'.repeat(48)}`,
+        sourceKeyId: 'source-key',
+      },
+    };
+    const fetcher = fetchMock(async () =>
+      response({
+        streamId: 'conversation-1',
+        conversationId: 'conversation-1',
+        status: 'started',
+      }),
     );
 
-    await host.dispatch(createContinueEnvelope()).catch((error: unknown) => {
-      expectExecutionError(error, {
-        mode: 'continue',
-        certainty: 'definite',
-        retryable: true,
-        deferWithoutAttempt: true,
-        code: 'PARENT_NOT_READY',
-        status: 409,
-      });
+    await createAgentTriggerExecutionHost(deps(fetcher)).dispatch(envelope);
+
+    const headers = fetcher.mock.calls[0][1]?.headers as Record<string, string>;
+    expect(headers['x-lc-agent-event-binding']).toBe(`evtbind_${'a'.repeat(48)}`);
+    expect(headers['x-lc-agent-event-source-key']).toBe('source-key');
+    /** The unbounded source payload never rides the delivery body; the actor
+     * binds an invocation from event identity alone. */
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toMatchObject({
+      agentEventDelivery: {
+        deliveryKey: getAgentTriggerIdempotencyKey(envelope),
+        event: {
+          id: envelope.event.id,
+          type: envelope.event.type,
+          occurredAt: envelope.event.occurredAt,
+          source: envelope.event.source,
+        },
+        expectedAction: envelope.expectedAction,
+      },
     });
+    expect(
+      JSON.parse(String(fetcher.mock.calls[0][1]?.body)).agentEventDelivery.event,
+    ).not.toHaveProperty('payload');
   });
+
+  it.each(['PARENT_NOT_READY', 'EVENT_ACTOR_NOT_READY'])(
+    'retries without consuming the logical delivery for temporary admission code %s',
+    async (code) => {
+      expect.hasAssertions();
+      const host = createAgentTriggerExecutionHost(
+        deps(
+          fetchMock(async () =>
+            response({ code, error: 'The actor is still busy.' }, { status: 409 }),
+          ),
+        ),
+      );
+
+      await host.dispatch(createContinueEnvelope()).catch((error: unknown) => {
+        expectExecutionError(error, {
+          mode: 'continue',
+          certainty: 'definite',
+          retryable: true,
+          deferWithoutAttempt: true,
+          code,
+          status: 409,
+        });
+      });
+    },
+  );
 
   it('releases a prepared durable result after a definite admission rejection', async () => {
     const releaseOnDefiniteFailure = jest.fn(async () => undefined);

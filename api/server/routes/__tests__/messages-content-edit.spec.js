@@ -9,9 +9,16 @@ jest.mock('@librechat/agents', () => ({
 jest.mock('@librechat/api', () => ({
   unescapeLaTeX: jest.fn((value) => value),
   countTokens: jest.fn().mockResolvedValue(2),
+  createContentFilter: jest.fn(() => (_req, _res, next) => next()),
   sendFeedbackScore: jest.fn().mockResolvedValue(undefined),
   traceIdForMessage: jest.fn((messageId) => `trace-${messageId}`),
   mergeQuotedTextForCount: jest.fn((text) => text),
+  assertStoredMessageMutationAllowed: jest.fn(),
+  assertChatMutationAllowed: jest.fn(),
+  assertStoredMessageBranchAllowed: jest.fn(),
+  mergeUserSubmittedPaths: (...lists) => [...new Set(lists.flat().filter(Boolean))],
+  mergeUserSubmittedMessageFieldPaths: (...lists) => lists.flat().filter(Boolean),
+  isContentFilterError: jest.fn(() => false),
   CHILD_THREAD_READ_ONLY_ERROR: 'Child thread is view-only.',
   isSubagentThreadWriteBlocked: jest.fn().mockResolvedValue(false),
   requireFeedbackEnabled: (req, res, next) => next(),
@@ -50,6 +57,7 @@ jest.mock('~/server/middleware', () => ({
 describe('PUT /:conversationId/:messageId content edit', () => {
   let app;
   const { getMessages, updateMessage } = require('~/models');
+  const { assertStoredMessageMutationAllowed } = require('@librechat/api');
 
   beforeAll(() => {
     const messagesRouter = require('../messages');
@@ -101,6 +109,32 @@ describe('PUT /:conversationId/:messageId content edit', () => {
           tool_call_ids: ['tool-1'],
         },
       ],
+      userSubmittedPaths: ['/content/0/text'],
+    });
+  });
+
+  it('inspects the finalized edited part without reclassifying untouched model siblings', async () => {
+    getMessages.mockResolvedValue([
+      {
+        conversationId: 'conversation-1',
+        tokenCount: 10,
+        content: [
+          { type: ContentTypes.TEXT, text: 'Original response', phase: 'commentary' },
+          { type: ContentTypes.TEXT, text: 'PRIVATE-MODEL-SIBLING', phase: 'final' },
+        ],
+      },
+    ]);
+
+    const response = await request(app)
+      .put('/api/messages/conversation-1/message-1')
+      .send({ index: 0, text: 'Edited response', model: 'gpt-5' });
+
+    expect(response.status).toBe(200);
+    expect(assertStoredMessageMutationAllowed).toHaveBeenNthCalledWith(1, undefined, {
+      content: [{ text: 'Edited response' }],
+    });
+    expect(assertStoredMessageMutationAllowed).toHaveBeenNthCalledWith(2, undefined, {
+      content: [{ type: ContentTypes.TEXT, text: 'Edited response', phase: 'commentary' }],
     });
   });
 
@@ -140,6 +174,7 @@ describe('PUT /:conversationId/:messageId content edit', () => {
           agentId: 'agent-1',
         },
       ],
+      userSubmittedPaths: ['/content/0/think'],
     });
   });
 
@@ -184,6 +219,7 @@ describe('PUT /:conversationId/:messageId content edit', () => {
           text: { value: 'Edited response', annotations },
         },
       ],
+      userSubmittedPaths: ['/content/0/text'],
     });
     expect(countTokens).toHaveBeenCalledWith('Original response', 'gpt-5');
   });

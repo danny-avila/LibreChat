@@ -1,17 +1,37 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { Plus } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
+import { useLocation } from 'react-router-dom';
 import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
 import { Button, FilterInput, OGDialogTrigger, TooltipAnchor } from '@librechat/client';
-import { useLocalize, useMCPServerManager, useHasAccess, useAuthContext } from '~/hooks';
+import {
+  useLocalize,
+  useMCPServerManager,
+  useHasAccess,
+  useAuthContext,
+  activateCatalog,
+} from '~/hooks';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import { PanelFooter, PanelContent } from '~/components/ui';
 import MCPServerCardSkeleton from './MCPServerCardSkeleton';
 import MCPAdminSettings from './MCPAdminSettings';
 import MCPServerDialog from './MCPServerDialog';
 import MCPServerList from './MCPServerList';
+import store from '~/store';
 
 export default function MCPBuilderPanel() {
   const localize = useLocalize();
+  const location = useLocation();
+  /** The panel stays mounted while the sidebar is hidden (collapsed, mobile
+   * drawer, or the insights route collapsing it), so only a visible panel
+   * releases its catalog ahead of the background warmup schedule */
+  const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
+  const panelVisible = sidebarExpanded && !location.pathname.startsWith('/insights');
+  useEffect(() => {
+    if (panelVisible) {
+      activateCatalog('mcpServers');
+    }
+  }, [panelVisible]);
   const { user } = useAuthContext();
   const { availableMCPServers, isLoading, getServerStatusIconProps, getConfigDialogProps } =
     useMCPServerManager();

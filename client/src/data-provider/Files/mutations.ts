@@ -178,12 +178,12 @@ export const useDeleteFilesMutation = (
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const localize = useLocalize();
-  const { onSuccess, onError, ...options } = _options || {};
+  const { onSuccess, onError, silent = false, ...options } = _options || {};
   return useMutation([MutationKeys.fileDelete], {
     mutationFn: (body: t.DeleteFilesBody) => dataService.deleteFiles(body),
     ...options,
     onError: (error, vars, context) => {
-      if (error && typeof error === 'object' && 'response' in error) {
+      if (!silent && error && typeof error === 'object' && 'response' in error) {
         const errorWithResponse = error as { response?: { status?: number } };
         if (errorWithResponse.response?.status === 403) {
           showToast({
@@ -195,21 +195,32 @@ export const useDeleteFilesMutation = (
       onError?.(error, vars, context);
     },
     onSuccess: (data, vars, context) => {
+      /** Only a reported failure leaves a record on disk, so everything else the request named
+       * is gone. Reading it the other way around would strand a row the server never had: a
+       * file another tab already deleted matches no record, and the route answers that with
+       * both id lists empty. Failed ids stay cached so the retry can still find them. */
+      const failed = new Set(data?.failedFileIds ?? []);
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (cachefiles) => {
         const { files: filesDeleted } = vars;
-
-        const fileMap = filesDeleted.reduce((acc, file) => {
-          acc.set(file.file_id, file);
+        const requested = filesDeleted.reduce((acc, file) => {
+          acc.add(file.file_id);
           return acc;
-        }, new Map<string, t.BatchFile>());
+        }, new Set<string>());
 
-        return (cachefiles ?? []).filter((file) => !fileMap.has(file.file_id));
+        return (cachefiles ?? []).filter(
+          (file) => !requested.has(file.file_id) || failed.has(file.file_id),
+        );
       });
 
-      showToast({
-        message: localize('com_ui_delete_success'),
-        status: 'success',
-      });
+      /** A storage failure still answers 200, so reporting success off the status alone would
+       * tell the user a file is gone while it is sitting on disk and back in their list. */
+      if (!silent) {
+        showToast(
+          failed.size > 0
+            ? { message: localize('com_ui_delete_partial_failure'), status: 'error' }
+            : { message: localize('com_ui_delete_success'), status: 'success' },
+        );
+      }
 
       onSuccess?.(data, vars, context);
       if (vars.agent_id != null && vars.agent_id) {

@@ -21,6 +21,11 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  createContentFilter: jest.fn(() => (req, res, next) => next()),
+  inspectContent: jest.fn(() => null),
+  extractFeedbackContent: jest.fn(() => []),
+  extractStoredMessageContent: jest.fn(() => []),
+  contentFilterBlockResponse: jest.fn(),
   createMessageRequestMiddleware:
     jest.requireActual('@librechat/api').createMessageRequestMiddleware,
   unescapeLaTeX: jest.fn((x) => x),

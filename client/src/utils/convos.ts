@@ -474,6 +474,7 @@ export function upsertConvoInAllQueries(
   if (!nextConvo.conversationId) {
     return;
   }
+  const conversationId = nextConvo.conversationId;
 
   /* The history query excludes temporary conversations server-side, so seeding
      one into the list caches would surface it in the sidebar until the next
@@ -483,17 +484,22 @@ export function upsertConvoInAllQueries(
     return;
   }
 
+  const cachedPin = findPinnedConversation(queryClient, conversationId);
+  const listConvo = cachedPin ? preserveListFlags(nextConvo, cachedPin) : nextConvo;
+
   /* Root-level SSE updates and resumable settlement go through upsert, not
      update. Merge into any already-cached pin so that path cannot leave the
-     section at the old title or position. Do not insert: a new chat is not
-     pinned until the pin mutation refetches. */
+     section at the old title or position. Carry its list flags into history
+     too when the conversation is older than the loaded pages. Do not insert
+     into the pinned cache: a new chat is not pinned until the pin mutation
+     refetches. */
   updatePinnedConvosQuery(
     queryClient,
-    nextConvo.conversationId,
+    conversationId,
     (found) => ({
       ...found,
-      ...nextConvo,
-      updatedAt: nextConvo.updatedAt ?? (moveToTop ? new Date().toISOString() : found.updatedAt),
+      ...listConvo,
+      updatedAt: listConvo.updatedAt ?? (moveToTop ? new Date().toISOString() : found.updatedAt),
     }),
     moveToTop,
   );
@@ -512,7 +518,7 @@ export function upsertConvoInAllQueries(
       let convoIdx = -1;
       for (let pi = 0; pi < oldData.pages.length; pi++) {
         const ci = oldData.pages[pi].conversations.findIndex(
-          (c) => c.conversationId === nextConvo.conversationId,
+          (c) => c.conversationId === conversationId,
         );
         if (ci !== -1) {
           pageIdx = pi;
@@ -523,7 +529,7 @@ export function upsertConvoInAllQueries(
 
       const now = new Date().toISOString();
       if (pageIdx === -1) {
-        if (!conversationMatchesListQuery(query.queryKey, nextConvo)) {
+        if (!conversationMatchesListQuery(query.queryKey, listConvo)) {
           return oldData;
         }
         const firstPage = oldData.pages[0] ?? { conversations: [], nextCursor: null };
@@ -533,7 +539,7 @@ export function upsertConvoInAllQueries(
             {
               ...firstPage,
               conversations: [
-                { ...nextConvo, updatedAt: nextConvo.updatedAt ?? now },
+                { ...listConvo, updatedAt: listConvo.updatedAt ?? now },
                 ...firstPage.conversations,
               ],
             },
@@ -545,8 +551,8 @@ export function upsertConvoInAllQueries(
       const found = oldData.pages[pageIdx].conversations[convoIdx];
       const updated = {
         ...found,
-        ...nextConvo,
-        updatedAt: nextConvo.updatedAt ?? (moveToTop ? now : found.updatedAt),
+        ...listConvo,
+        updatedAt: listConvo.updatedAt ?? (moveToTop ? now : found.updatedAt),
       };
 
       if (!conversationMatchesProjectQuery(query.queryKey, updated)) {
@@ -616,6 +622,43 @@ export function findPinnedConversation(
 }
 
 /**
+ * Flags the sidebar owns rather than the chat: `isShared` is derived per list request from
+ * the shared-links collection, and `pinned` is set by the pin mutation alone. Neither is
+ * carried by the single-conversation payloads callers swap in wholesale, so an omitted flag
+ * means "unchanged" rather than "cleared".
+ */
+const listFlags = ['isShared', 'pinned'] as const;
+
+function preserveListFlags(next: TConversation, found: TConversation): TConversation {
+  const carried = listFlags.filter((flag) => next[flag] === undefined && found[flag] !== undefined);
+  if (carried.length === 0) {
+    return next;
+  }
+  const merged = { ...next };
+  for (const flag of carried) {
+    merged[flag] = found[flag];
+  }
+  return merged;
+}
+
+/**
+ * A chat's conversation state snapshots the sidebar flags when the chat is opened and never
+ * hears about a later change, so pinning an open chat leaves a stale `pinned: false` on it.
+ * Strip them before that state reaches the list caches, or the next message would write the
+ * stale value back over the sidebar and drop the chat out of Pinned.
+ */
+export function withoutListFlags(conversation: TConversation): TConversation {
+  if (listFlags.every((flag) => conversation[flag] === undefined)) {
+    return conversation;
+  }
+  const stripped = { ...conversation };
+  for (const flag of listFlags) {
+    delete stripped[flag];
+  }
+  return stripped;
+}
+
+/**
  * The pinned sidebar section is fed by its own request rather than by the paginated
  * chats list, so every edit that reaches the chats cache has to reach this one too or
  * the section keeps showing a stale title, or a chat that is no longer pinned.
@@ -643,16 +686,13 @@ function updatePinnedConvosQuery(
       }
       const found = oldData.conversations[index];
       const updated = updater(found);
-      if (!updated || updated.pinned !== true) {
+      const merged = updated && preserveListFlags(updated, found);
+      if (!merged || merged.pinned !== true) {
         return {
           ...oldData,
           conversations: oldData.conversations.filter((_, i) => i !== index),
         };
       }
-      const merged =
-        updated.isShared === undefined && found.isShared !== undefined
-          ? { ...updated, isShared: found.isShared }
-          : updated;
 
       /* The server returns pins newest-first, so a pin that just received a message has
          to lead the section the same way it leads the chats list. The SSE payload can
@@ -713,15 +753,10 @@ export function updateConvoInAllQueries(
       }
 
       const found = oldData.pages[pageIdx].conversations[convoIdx];
-      /** `isShared` is derived per list request from the shared-links collection and is
-       * absent from single-conversation payloads, so callers that swap in a server
-       * response wholesale (rename, pin, SSE updates) would otherwise drop the sidebar
-       * badge until an unrelated list refetch. Carry it forward when the updater omits it. */
-      const next = updater(found);
-      const merged =
-        next.isShared === undefined && found.isShared !== undefined
-          ? { ...next, isShared: found.isShared }
-          : next;
+      /** Callers that swap in a server response or the chat's own state wholesale (rename,
+       * pin, SSE updates) omit the sidebar-only flags, which would otherwise drop the
+       * shared badge and push a pinned chat back into the date groups. */
+      const merged = preserveListFlags(updater(found), found);
       const updated = moveToTop ? { ...merged, updatedAt: new Date().toISOString() } : merged;
 
       if (!conversationMatchesProjectQuery(query.queryKey, updated)) {

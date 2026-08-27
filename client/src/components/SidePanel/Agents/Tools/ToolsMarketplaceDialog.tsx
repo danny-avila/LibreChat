@@ -176,13 +176,13 @@ export default function ToolsMarketplaceDialog({
       }
       const wasSelected = selectedIds.has(itemKey(item));
       /** An unselected, toolless MCP server normally needs its setup dialog.
-       *  A connected request-scoped server is already ready and attaches via
+       *  An authorized request-scoped server is already ready and attaches via
        *  its runtime wildcard; a selected toolless server must remain removable. */
       if (
         item.kind === 'mcp' &&
         item.toolCount === 0 &&
         !wasSelected &&
-        !(item.server.requestScoped === true && item.server.isConnected === true)
+        !(item.server.requestScoped === true && item.server.isReadyForAgent === true)
       ) {
         setDetailItem(item);
         return;

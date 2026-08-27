@@ -11,7 +11,7 @@ import type {
   TInsightsChurnedUser,
   TInsightsConversation,
 } from 'librechat-data-provider';
-import type { Model } from 'mongoose';
+import type { Model, PipelineStage } from 'mongoose';
 import type { IConversation, IMessage, IUser } from '~/types';
 
 export type InsightsOptions = TInsightsParams & {
@@ -24,20 +24,16 @@ export type InsightsMethods = {
   getInsights: (options?: InsightsOptions) => Promise<InsightsResult>;
 };
 
-type ConversationFacet = {
-  conversationCount: Array<{ total: number }>;
-  daily: Array<{ date: string; conversations: number }>;
-  recentConversations?: RecentConversation[];
+type CountResult = { total: number };
+
+type ConversationDay = {
+  date: string;
+  conversations: number;
 };
 
-type ConversationListFacet = Pick<ConversationFacet, 'conversationCount' | 'recentConversations'>;
-
-type MessageFacet = {
-  totals: MessageTotals[];
-  daily: MessageDay[];
-  userCount: Array<{ total: number }>;
-  dailyUsers: Array<{ date: string; users: number }>;
-  topUsers: MessageSummary[];
+type DailyUsers = {
+  date: string;
+  users: number;
 };
 
 type UserMessageTotals = {
@@ -53,11 +49,6 @@ type RecentConversation = {
 type MessageSummary = {
   _id: string;
   messages: number;
-};
-
-type MessageTotals = {
-  messages: number;
-  totalTokens: number;
 };
 
 type ChurnedUserActivity = {
@@ -285,8 +276,8 @@ export function createInsightsMethods(mongoose: typeof import('mongoose')): Insi
     const requestedSearch = options.search?.trim().slice(0, INSIGHTS_SEARCH_MAX_LENGTH) ?? '';
     const search = requestedSearch.length >= INSIGHTS_SEARCH_MIN_LENGTH ? requestedSearch : '';
     const searchRegex = search ? new RegExp(escapeRegex(search), 'i') : undefined;
-    const searchedConversationAggregation = searchRegex
-      ? Conversation.aggregate<ConversationListFacet>([
+    const searchedConversationScope: PipelineStage[] = searchRegex
+      ? [
           { $match: conversationMatch },
           {
             $addFields: {
@@ -325,137 +316,97 @@ export function createInsightsMethods(mongoose: typeof import('mongoose')): Insi
               ],
             },
           },
-          {
-            $facet: {
-              conversationCount: [{ $count: 'total' }],
-              recentConversations: [
-                { $sort: { createdAt: -1, _id: -1 } },
-                { $skip: (page - 1) * pageSize },
-                { $limit: pageSize },
-                {
-                  $project: {
-                    _id: 0,
-                    conversationId: 1,
-                    date: '$createdAt',
-                    userId: '$user',
-                  },
-                },
-              ],
-            },
-          },
-        ])
-      : Promise.resolve([] as ConversationListFacet[]);
+        ]
+      : [];
 
     const insightsAggregations = await Promise.all([
-      Conversation.aggregate<ConversationFacet>([
+      Conversation.aggregate<ConversationDay>([
         ...conversationScope,
         {
-          $facet: {
-            conversationCount: [{ $count: 'total' }],
-            daily: [
-              {
-                $group: {
-                  _id: {
-                    $dateToString: {
-                      format: '%Y-%m-%d',
-                      date: '$createdAt',
-                      timezone: timeZone,
-                    },
-                  },
-                  conversations: { $sum: 1 },
-                },
+          $group: {
+            _id: {
+              $dateToString: {
+                format: '%Y-%m-%d',
+                date: '$createdAt',
+                timezone: timeZone,
               },
-              { $project: { _id: 0, date: '$_id', conversations: 1 } },
-              { $sort: { date: 1 } },
-            ],
-            ...(searchRegex
-              ? {}
-              : {
-                  recentConversations: [
-                    { $sort: { createdAt: -1, _id: -1 } },
-                    { $skip: (page - 1) * pageSize },
-                    { $limit: pageSize },
-                    {
-                      $project: {
-                        _id: 0,
-                        conversationId: 1,
-                        date: '$createdAt',
-                        userId: '$user',
-                      },
-                    },
-                  ],
-                }),
+            },
+            conversations: { $sum: 1 },
+          },
+        },
+        { $project: { _id: 0, date: '$_id', conversations: 1 } },
+        { $sort: { date: 1 } },
+      ]),
+      Conversation.aggregate<RecentConversation>([
+        ...(searchRegex ? searchedConversationScope : conversationScope),
+        { $sort: { createdAt: -1, _id: -1 } },
+        { $skip: (page - 1) * pageSize },
+        { $limit: pageSize },
+        {
+          $project: {
+            _id: 0,
+            conversationId: 1,
+            date: '$createdAt',
+            userId: '$user',
           },
         },
       ]),
-      Message.aggregate<MessageFacet>([
+      searchRegex
+        ? Conversation.aggregate<CountResult>([...searchedConversationScope, { $count: 'total' }])
+        : Promise.resolve([] as CountResult[]),
+      Message.aggregate<MessageDay>([
         ...messageScope,
         {
-          $facet: {
-            totals: [
-              {
-                $group: {
-                  _id: 'all',
-                  messages: { $sum: 1 },
-                  totalTokens: { $sum: { $ifNull: ['$tokenCount', 0] } },
-                },
+          $group: {
+            _id: {
+              $dateToString: {
+                format: '%Y-%m-%d',
+                date: '$createdAt',
+                timezone: timeZone,
               },
-            ],
-            daily: [
-              {
-                $group: {
-                  _id: {
-                    $dateToString: {
-                      format: '%Y-%m-%d',
-                      date: '$createdAt',
-                      timezone: timeZone,
-                    },
-                  },
-                  messages: { $sum: 1 },
-                  totalTokens: { $sum: { $ifNull: ['$tokenCount', 0] } },
-                },
-              },
-              { $project: { _id: 0, date: '$_id', messages: 1, totalTokens: 1 } },
-              { $sort: { date: 1 } },
-            ],
-            userCount: [
-              { $match: { user: { $nin: [null, ''] }, isCreatedByUser: true } },
-              { $group: { _id: '$user' } },
-              { $count: 'total' },
-            ],
-            dailyUsers: [
-              { $match: { user: { $nin: [null, ''] }, isCreatedByUser: true } },
-              {
-                $group: {
-                  _id: {
-                    date: {
-                      $dateToString: {
-                        format: '%Y-%m-%d',
-                        date: '$createdAt',
-                        timezone: timeZone,
-                      },
-                    },
-                    user: '$user',
-                  },
-                },
-              },
-              { $group: { _id: '$_id.date', users: { $sum: 1 } } },
-              { $project: { _id: 0, date: '$_id', users: 1 } },
-              { $sort: { date: 1 } },
-            ],
-            topUsers: [
-              { $match: { user: { $nin: [null, ''] } } },
-              {
-                $group: {
-                  _id: '$user',
-                  messages: { $sum: 1 },
-                },
-              },
-              { $sort: { messages: -1, _id: 1 } },
-              { $limit: 8 },
-            ],
+            },
+            messages: { $sum: 1 },
+            totalTokens: { $sum: { $ifNull: ['$tokenCount', 0] } },
           },
         },
+        { $project: { _id: 0, date: '$_id', messages: 1, totalTokens: 1 } },
+        { $sort: { date: 1 } },
+      ]),
+      Message.aggregate<CountResult>([
+        { $match: { ...messageMatch, isCreatedByUser: true } },
+        { $group: { _id: '$user' } },
+        { $count: 'total' },
+      ]),
+      Message.aggregate<DailyUsers>([
+        { $match: { ...messageMatch, isCreatedByUser: true } },
+        {
+          $group: {
+            _id: {
+              date: {
+                $dateToString: {
+                  format: '%Y-%m-%d',
+                  date: '$createdAt',
+                  timezone: timeZone,
+                },
+              },
+              user: '$user',
+            },
+          },
+        },
+        { $group: { _id: '$_id.date', users: { $sum: 1 } } },
+        { $project: { _id: 0, date: '$_id', users: 1 } },
+        { $sort: { date: 1 } },
+      ]),
+      Message.aggregate<MessageSummary>([
+        ...messageScope,
+        {
+          $group: {
+            _id: '$user',
+            messages: { $sum: 1 },
+          },
+        },
+        { $sort: { messages: -1, _id: 1 } },
+        { $limit: 8 },
       ]),
       Message.aggregate<ChurnedUserActivity>([
         {
@@ -477,17 +428,17 @@ export function createInsightsMethods(mongoose: typeof import('mongoose')): Insi
         { $sort: { lastSeen: -1, _id: 1 } },
         { $limit: churnedUserLimit },
       ]),
-      searchedConversationAggregation,
     ]);
-    const [conversationFacets, messageFacets, churnedUserRows, searchedConversationFacets] =
-      insightsAggregations;
-
-    const conversationFacet = conversationFacets[0];
-    const conversationListFacet = searchRegex ? searchedConversationFacets[0] : conversationFacet;
-    const messageFacet = messageFacets[0];
-    const messageTotals = messageFacet?.totals ?? [];
-    const topMessageUsers = messageFacet?.topUsers ?? [];
-    const latestRows = conversationListFacet?.recentConversations ?? [];
+    const [
+      conversationDays,
+      latestRows,
+      searchedConversationCount,
+      messageDays,
+      userCount,
+      dailyUsers,
+      topMessageUsers,
+      churnedUserRows,
+    ] = insightsAggregations;
     const latestConversationOwners = latestRows
       .filter(
         (row): row is RecentConversation & { userId: string } =>
@@ -622,24 +573,29 @@ export function createInsightsMethods(mongoose: typeof import('mongoose')): Insi
     for (let key = firstDay; key <= lastDay; key = addCalendarDaysToKey(key, 1)) {
       addDay(days, key);
     }
-    for (const row of conversationFacet?.daily ?? []) {
+    for (const row of conversationDays) {
       const day = addDay(days, row.date);
       day.conversations = row.conversations;
     }
-    for (const row of messageFacet?.daily ?? []) {
+    for (const row of messageDays) {
       const day = addDay(days, row.date);
       day.messages = row.messages;
       day.totalTokens = row.totalTokens;
     }
-    for (const row of messageFacet?.dailyUsers ?? []) {
+    for (const row of dailyUsers) {
       const day = addDay(days, row.date);
       day.users = row.users;
     }
 
-    const totalConversations = conversationFacet?.conversationCount[0]?.total ?? 0;
-    const matchingConversations = conversationListFacet?.conversationCount[0]?.total ?? 0;
-    const totalMessages = messageTotals[0]?.messages ?? 0;
-    const totalTokens = messageTotals[0]?.totalTokens ?? 0;
+    const totalConversations = conversationDays.reduce(
+      (total, row) => total + row.conversations,
+      0,
+    );
+    const matchingConversations = searchRegex
+      ? (searchedConversationCount[0]?.total ?? 0)
+      : totalConversations;
+    const totalMessages = messageDays.reduce((total, row) => total + row.messages, 0);
+    const totalTokens = messageDays.reduce((total, row) => total + row.totalTokens, 0);
     const topConversationCountsByUser = new Map(
       topConversationCounts.map((summary) => [summary._id, summary.conversations]),
     );
@@ -649,7 +605,7 @@ export function createInsightsMethods(mongoose: typeof import('mongoose')): Insi
 
     return {
       summary: {
-        totalUsers: messageFacet?.userCount[0]?.total ?? 0,
+        totalUsers: userCount[0]?.total ?? 0,
         totalConversations,
         totalMessages,
         totalTokens,

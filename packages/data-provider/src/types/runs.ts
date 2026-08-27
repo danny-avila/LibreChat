@@ -46,12 +46,39 @@ export enum StepEvents {
   ON_SUMMARIZE_COMPLETE = 'on_summarize_complete',
   ON_SUBAGENT_UPDATE = 'on_subagent_update',
   ON_SANDBOX_STARTING = 'on_sandbox_starting',
+  ON_PTC_TOOL_CALL = 'on_ptc_tool_call',
 }
 
 /** Payload for {@link StepEvents.ON_SANDBOX_STARTING} — the stateful code
  * sandbox is cold-booting for the given code tool call. */
 export type SandboxStartingEvent = {
   tool_call_id: string;
+  runId?: string;
+};
+
+/** Lifecycle of one tool call made from inside a programmatic (PTC) program. */
+export type PtcToolCallStatus = 'running' | 'success' | 'error';
+
+/**
+ * Payload for {@link StepEvents.ON_PTC_TOOL_CALL} — one tool invocation the
+ * sandbox made on behalf of a programmatic tool-calling program. Emitted twice
+ * per inner call (`running`, then `success` / `error`) so the PTC card can
+ * render a live trace of what the code is doing under the code itself.
+ */
+export type PtcToolCallEvent = {
+  /** The PTC run step's tool call id — the card this line belongs under. */
+  tool_call_id: string;
+  /** Stable per-program id; the settle event reuses the start event's value. */
+  call_id: string;
+  /** Inner tool id, e.g. `search_code_mcp_github`. */
+  name: string;
+  status: PtcToolCallStatus;
+  /** `key=value` preview of the call's input. Start event only. */
+  args?: string;
+  /** Truncated failure message. `error` status only. */
+  error?: string;
+  /** Wall-clock time the inner call took. Settle events only. */
+  durationMs?: number;
   runId?: string;
 };
 
@@ -174,6 +201,9 @@ export type TPendingSteer = {
   text: string;
   createdAt?: number;
   files?: Partial<TFile>[];
+  /** Quoted excerpts steered with the message ("Add to chat" selections);
+   *  merged into the model-bound text at the injection boundary. */
+  quotes?: string[];
   /** The steer asked to interrupt generation at the next safe boundary —
    *  kept on parked/replayed chips so the "interrupting" label survives. */
   preempt?: boolean;
@@ -195,6 +225,9 @@ export type TSteerAppliedEvent = {
     clientSteerId?: string;
     createdAt?: number;
     files?: Partial<TFile>[];
+    /** Quoted excerpts steered with the message (mirrors `SteerContentPart`,
+     *  which cannot be imported here without a module cycle). */
+    quotes?: string[];
   };
   responseMessageId?: string;
   conversationId?: string;
@@ -356,6 +389,7 @@ export type SubagentUpdatePhase =
   | 'run_step'
   | 'run_step_delta'
   | 'run_step_completed'
+  | 'run_step_closed'
   | 'message_delta'
   | 'reasoning_delta'
   | 'stop'
@@ -378,6 +412,10 @@ export interface SubagentUpdateEvent {
   runId: string;
   parentRunId?: string;
   subagentRunId: string;
+  /** Host-assigned identity preserved when one detached update overlaps delivery streams. */
+  activityEventId?: string;
+  /** Host-assigned monotonic sequence within one detached child run. */
+  activitySequence?: number;
   /** Parent-side `tool_call_id` for the `subagent` tool invocation that
    *  triggered this run. Surfaces from the SDK (`3.1.67-dev.2`+) so hosts
    *  can correlate child progress to the parent tool call deterministically. */

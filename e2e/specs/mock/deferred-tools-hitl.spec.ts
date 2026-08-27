@@ -127,7 +127,8 @@ test.describe('deferred tools across HITL resume', () => {
       const response = await sendMessage(page, `${PROMPT_MARKER}${label}`);
       expect(response.ok()).toBeTruthy();
       await expect(page).toHaveURL(/\/c\/(?!new)/, { timeout: 15000 });
-      await expect(page.getByText(question, { exact: true })).toBeVisible({ timeout: 30000 });
+      const questionCard = page.getByRole('paragraph').filter({ hasText: question });
+      await expect(questionCard).toHaveText(question, { timeout: 30000 });
 
       /** Reload the public conversation route while the graph is paused. This
        * proves the browser reconstructs the real persisted pending action,
@@ -135,7 +136,7 @@ test.describe('deferred tools across HITL resume', () => {
       const conversationPath = new URL(page.url()).pathname;
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page).toHaveURL(conversationPath);
-      await expect(page.getByText(question, { exact: true })).toBeVisible({ timeout: 30000 });
+      await expect(questionCard).toHaveText(question, { timeout: 30000 });
 
       const option = page.getByRole('button', {
         name: new RegExp(`${escapeRegExp(optionLabel)}$`),

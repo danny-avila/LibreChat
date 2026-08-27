@@ -24,6 +24,7 @@ const {
   resolveCodeExecutionContext,
 } = require('@librechat/api');
 const {
+  AuthType,
   Tools,
   Constants,
   Permissions,
@@ -143,7 +144,20 @@ const validateTools = async (user, tools = []) => {
 const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => {
   return async function () {
     const authValues = await loadAuthValues({ userId, authFields });
-    return new ToolConstructor({ ...options, ...authValues, userId });
+    const userProvidedAuthFields = new Set(
+      authFields
+        .flatMap((authField) => authField.split('||'))
+        .filter((authField) => {
+          const value = process.env[authField];
+          return !value || value.trim() === '' || value === AuthType.USER_PROVIDED;
+        }),
+    );
+    return new ToolConstructor({
+      ...options,
+      ...authValues,
+      userId,
+      userProvidedAuthFields,
+    });
   };
 };
 
@@ -617,7 +631,7 @@ const loadTools = async ({
           user: safeUser,
           userMCPAuthMap,
           configServers,
-          requestBody: options.req?.body,
+          requestBody: options.requestBody ?? options.req?.body,
           requestScopedConnections,
           res: options.res,
           streamId: options.req?._resumableStreamId || null,

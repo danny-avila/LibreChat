@@ -1,12 +1,8 @@
 import { z } from 'zod';
-import type {
-  TMessageContentParts,
-  AgentSubagentGraph,
-  FunctionToolCall,
-  FunctionTool,
-} from './types/assistants';
+import type { TMessageContentParts, AgentSubagentGraph, FunctionTool } from './types/assistants';
 import type { SearchResultData } from './types/web';
 import type { TFile } from './types/files';
+import { userSubmittedMessageFieldPathSchema } from './filters';
 import { TFeedback, feedbackSchema } from './feedback';
 import { Tools } from './types/assistants';
 
@@ -390,7 +386,9 @@ export const ImageVisionTool: FunctionTool = {
   },
 };
 
-export const isImageVisionTool = (tool: FunctionTool | FunctionToolCall) =>
+/** Structural on purpose: accepts assistants tools/tool calls and agents function tool
+ *  calls alike — the check only ever reads `type` and `function.name`. */
+export const isImageVisionTool = (tool: { type?: string; function?: { name?: string } }) =>
   tool.type === 'function' && tool.function?.name === ImageVisionTool.function?.name;
 
 export const openAISettings = {
@@ -463,9 +461,54 @@ const getGoogleMaxOutputTokens = (modelName: string): number => {
   return GOOGLE_LEGACY_MAX_OUTPUT;
 };
 
+/**
+ * Per-model thinking budget bounds, documented in
+ * `com_endpoint_google_thinking_budget`: Gemini 2.5 Pro accepts 128-32,768,
+ * Flash accepts 0-24,576, and Flash Lite accepts 512-24,576. The generic
+ * 32,000 in the shared definition both under-limits Pro and lets invalid
+ * Flash values through.
+ *
+ * `-1` remains the "decide automatically" sentinel and is not part of these
+ * floors. Callers must keep `range.min` at -1 and apply `min` only to
+ * non-negative values.
+ */
+const GOOGLE_THINKING_BUDGET_PRO_MAX = 32768 as const;
+const GOOGLE_THINKING_BUDGET_FLASH_MAX = 24576 as const;
+const GOOGLE_THINKING_BUDGET_PRO_MIN = 128 as const;
+const GOOGLE_THINKING_BUDGET_FLASH_MIN = 0 as const;
+const GOOGLE_THINKING_BUDGET_FLASH_LITE_MIN = 512 as const;
+
+export type GoogleThinkingBudgetBounds = { min: number; max: number };
+
+export const getGoogleThinkingBudgetBounds = (
+  modelName: string,
+): GoogleThinkingBudgetBounds | undefined => {
+  if (!/gemini-2\.5/i.test(modelName)) {
+    return undefined;
+  }
+  if (/flash[-_.]?lite/i.test(modelName)) {
+    return { min: GOOGLE_THINKING_BUDGET_FLASH_LITE_MIN, max: GOOGLE_THINKING_BUDGET_FLASH_MAX };
+  }
+  if (/flash/i.test(modelName)) {
+    return { min: GOOGLE_THINKING_BUDGET_FLASH_MIN, max: GOOGLE_THINKING_BUDGET_FLASH_MAX };
+  }
+  if (/pro/i.test(modelName)) {
+    return { min: GOOGLE_THINKING_BUDGET_PRO_MIN, max: GOOGLE_THINKING_BUDGET_PRO_MAX };
+  }
+  return undefined;
+};
+
+export const getGoogleThinkingBudgetMax = (modelName: string): number | undefined =>
+  getGoogleThinkingBudgetBounds(modelName)?.max;
+
 export const googleSettings = {
   model: {
     default: 'gemini-1.5-flash-latest' as const,
+  },
+  maxContextTokens: {
+    min: 10 as const,
+    max: 2000000 as const,
+    step: 1000 as const,
   },
   maxOutputTokens: {
     min: 1 as const,
@@ -765,6 +808,9 @@ export const tPluginSchema = z.object({
   chatMenu: z.boolean().optional(),
   isButton: z.boolean().optional(),
   toolkit: z.boolean().optional(),
+  /** Raw upstream tool name when the model-facing key stripped a redundant
+   *  server-name prefix — proves upstream identity for legacy id migration. */
+  serverToolName: z.string().optional(),
 });
 
 export type TPlugin = z.infer<typeof tPluginSchema>;
@@ -800,6 +846,12 @@ export const tMessageSchema = z.object({
   /** @deprecated */
   generation: z.string().nullable().optional(),
   isCreatedByUser: z.boolean(),
+  /** True when the complete stored row came from outside the model. */
+  isUserSubmitted: z.boolean().optional(),
+  /** JSON pointers to caller-authored fields in an otherwise mixed model response. */
+  userSubmittedPaths: z.array(z.string().startsWith('/')).optional(),
+  /** Exact HITL message-field identity for caller-authored values stored in mixed responses. */
+  userSubmittedMessageFieldPaths: z.array(userSubmittedMessageFieldPathSchema).optional(),
   isTemporary: z.boolean().optional(),
   expiredAt: z.string().nullable().optional(),
   error: z.boolean().optional(),
@@ -1301,6 +1353,7 @@ export const googleBaseSchema = tConversationSchema.pick({
   examples: true,
   temperature: true,
   maxOutputTokens: true,
+  resendFiles: true,
   artifacts: true,
   topP: true,
   topK: true,

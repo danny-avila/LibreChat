@@ -13,7 +13,7 @@ import {
   getMissingCustomUserVars,
   hasCustomUserVars,
   hasRuntimeUrlPlaceholders,
-  hasRuntimeBodyPlaceholders,
+  getMCPRequestScope,
   hasRuntimeContextPlaceholders,
   getRuntimeBodyPlaceholderFields,
   getMissingRuntimeBodyPlaceholderFields,
@@ -814,32 +814,32 @@ describe('hasRuntimeUrlPlaceholders', () => {
   });
 });
 
-describe('hasRuntimeBodyPlaceholders', () => {
+describe('getMCPRequestScope', () => {
   it('detects trusted runtime BODY placeholders across connection fields', () => {
     expect(
-      hasRuntimeBodyPlaceholders({
+      getMCPRequestScope({
         source: 'yaml',
         url: 'https://example.com/conversations/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
-      }),
+      }).requestScoped,
     ).toBe(true);
 
     expect(
-      hasRuntimeBodyPlaceholders({
+      getMCPRequestScope({
         source: 'config',
         headers: {
           'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
         },
-      }),
+      }).requestScoped,
     ).toBe(true);
   });
 
   it('ignores BODY placeholders in user-sourced configs', () => {
     expect(
-      hasRuntimeBodyPlaceholders({
+      getMCPRequestScope({
         source: 'user',
         dbId: 'server-123',
         url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
-      }),
+      }).requestScoped,
     ).toBe(false);
   });
 
@@ -851,7 +851,7 @@ describe('hasRuntimeBodyPlaceholders', () => {
 
     expect(hasRuntimeContextPlaceholders(config)).toBe(false);
     expect(hasRuntimeUrlPlaceholders(config)).toBe(false);
-    expect(hasRuntimeBodyPlaceholders(config)).toBe(false);
+    expect(getMCPRequestScope(config).requestScoped).toBe(false);
     expect(getRuntimeBodyPlaceholderFields(config)).toEqual([]);
     expect(getMissingRuntimeBodyPlaceholderFields(config)).toEqual([]);
     expect(requiresEphemeralUserConnection(config)).toBe(false);
@@ -869,7 +869,7 @@ describe('hasRuntimeBodyPlaceholders', () => {
 
     expect(hasRuntimeContextPlaceholders(config)).toBe(false);
     expect(hasRuntimeUrlPlaceholders(config)).toBe(false);
-    expect(hasRuntimeBodyPlaceholders(config)).toBe(false);
+    expect(getMCPRequestScope(config).requestScoped).toBe(false);
     expect(getRuntimeBodyPlaceholderFields(config)).toEqual([]);
     expect(getMissingRuntimeBodyPlaceholderFields(config)).toEqual([]);
     expect(requiresEphemeralUserConnection(config)).toBe(false);

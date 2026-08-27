@@ -102,6 +102,12 @@ const localStorageAtoms = {
   modularChat: atomWithLocalStorage('modularChat', true),
   LaTeXParsing: atomWithLocalStorage('LaTeXParsing', true),
   centerFormOnLanding: atomWithLocalStorage('centerFormOnLanding', true),
+  /**
+   * Whether the mobile drawer stops short of the edge, leaving a strip of the
+   * conversation visible that also closes it when tapped. Off by default: the
+   * drawer covers the screen and the swipe closes it.
+   */
+  mobileDrawerStrip: atomWithLocalStorage('mobileDrawerStrip', false),
   showFooter: atomWithLocalStorage('showFooter', true),
 
   // Commands settings

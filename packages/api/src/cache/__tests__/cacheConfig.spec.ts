@@ -15,6 +15,7 @@ describe('cacheConfig', () => {
     delete process.env.REDIS_CLUSTER_SAFE_DELETE;
     delete process.env.REDIS_PING_INTERVAL;
     delete process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES;
+    delete process.env.VIOLATION_SCORE_TTL;
 
     // Clear module cache
     jest.resetModules();
@@ -261,6 +262,41 @@ describe('cacheConfig', () => {
 
       const { cacheConfig } = await import('../cacheConfig');
       expect(cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES).toEqual(['CONFIG_STORE', 'APP_CONFIG']);
+    });
+  });
+
+  describe('VIOLATION_SCORE_TTL configuration', () => {
+    test('should default to one hour when not set', async () => {
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.VIOLATION_SCORE_TTL).toBe(3600000);
+    });
+
+    test('should evaluate math expressions from the environment', async () => {
+      process.env.VIOLATION_SCORE_TTL = '1000 * 60 * 60 * 24';
+
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.VIOLATION_SCORE_TTL).toBe(86400000);
+    });
+
+    test('should disable expiry when set to 0', async () => {
+      process.env.VIOLATION_SCORE_TTL = '0';
+
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.VIOLATION_SCORE_TTL).toBeUndefined();
+    });
+
+    test('should disable expiry for negative values', async () => {
+      process.env.VIOLATION_SCORE_TTL = '-1000';
+
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.VIOLATION_SCORE_TTL).toBeUndefined();
+    });
+
+    test('should fall back to the default on invalid input', async () => {
+      process.env.VIOLATION_SCORE_TTL = 'not-a-duration';
+
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.VIOLATION_SCORE_TTL).toBe(3600000);
     });
   });
 });

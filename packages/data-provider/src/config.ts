@@ -2,6 +2,15 @@ import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
 import {
+  filtersConfigSchema,
+  MAX_PII_CUSTOM_REGEX_CHARACTERS,
+  MAX_PII_CUSTOM_REGEX_INSTRUCTIONS,
+  MAX_PII_PATTERN_ID_LENGTH,
+  MAX_PII_PATTERN_LABEL_LENGTH,
+  MAX_PII_PATTERNS_PER_SOURCE,
+  MAX_PII_PATTERN_LENGTH,
+} from './filters';
+import {
   EModelEndpoint,
   eModelEndpointSchema,
   isAgentsEndpoint,
@@ -12,6 +21,7 @@ import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { MAX_SUBAGENTS, MAX_SUBAGENTS_CEILING } from './limits';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { isActionTool } from './types/assistants';
 import { REFILL_INTERVAL_UNITS } from './balance';
 import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
@@ -29,7 +39,7 @@ export {
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
-export const BASE_ONLY_CONFIG_SECTIONS = [] as const;
+export const BASE_ONLY_CONFIG_SECTIONS = ['filters'] as const;
 /** Sections that may be stored in the tenant's base config document but must
  * not be overridden or tombstoned by role, group, or user config documents. */
 export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
@@ -59,6 +69,11 @@ export const defaultRetrievalModels = [
 
 export const excludedKeys = new Set([
   'conversationId',
+  'agentEventBinding',
+  'agentEventActor',
+  'agentEventActorReconciliations',
+  'agentEventActorEpoch',
+  'agentEventActorLegacyTurn',
   'subagentThread',
   'title',
   'iconURL',
@@ -888,7 +903,7 @@ export type ToolApprovalMode = z.infer<typeof toolApprovalModeSchema>;
  *
  * Shape mirrors `@librechat/agents`'s `ToolPolicyConfig` so the host can map it
  * directly into `createToolPolicyHook(config)`. The SDK does the evaluation
- * (`deny → bypass → allow → ask → dontAsk → fallthrough(ask)`); this config
+ * (`deny → ask → allow → bypass → dontAsk → fallthrough(ask)`); this config
  * just describes the surface.
  *
  * Conventions:
@@ -1028,6 +1043,31 @@ export const agentsEndpointSchema = baseEndpointSchema
           allowedEnvironments: z.array(z.enum(STATEFUL_CODE_ENVIRONMENTS)).min(1),
         })
         .optional(),
+      /** Process-wide event-driven agent rollout controls. Configure these from the base
+       * deployment config only so every API replica exposes the same wire capabilities. */
+      eventDriven: z
+        .object({
+          childTurns: z.boolean().optional(),
+          completionWakeups: z.boolean().optional(),
+          /** Enable only after every API worker can consume coalesced deliveries. */
+          coalescing: z.boolean().optional(),
+          /** Keep each bound actor's durable delivery lane queued through the
+           *  admitted child turn's authoritative terminal outcome. */
+          actorMailbox: z.boolean().optional(),
+          /** Reuse a bound event actor's committed checkpoint through isolated
+           *  per-invocation forks. Keep off until every API worker runs an SDK
+           *  and host adapter that understand the fork lifecycle. */
+          checkpointForks: z.boolean().optional(),
+          /** Admit checkpoint-forked external actions through the durable
+           * delivery receipt protocol. Enable only after every API replica
+           * runs the token-fenced receipt implementation and pre-upgrade
+           * actor deliveries have drained. */
+          durableReceipts: z.boolean().optional(),
+          /** Optional trusted origin for in-process trigger delivery. The bound
+           *  listener remains the default and is safer for most deployments. */
+          selfUrl: z.string().url().optional(),
+        })
+        .optional(),
       skills: z
         .object({
           maxCatalogSkills: z.number().int().min(1).max(100).optional(),
@@ -1041,6 +1081,15 @@ export const agentsEndpointSchema = baseEndpointSchema
       checkpointer: checkpointerSchema,
     }),
   )
+  .superRefine((config, ctx) => {
+    if (config.eventDriven?.checkpointForks === true && config.checkpointer?.type === 'memory') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['eventDriven', 'checkpointForks'],
+        message: 'Event actor checkpoint forks require the Mongo checkpointer',
+      });
+    }
+  })
   .default({
     disableBuilder: false,
     capabilities: defaultAgentCapabilities,
@@ -1065,6 +1114,14 @@ export const paramDefinitionSchema = z.object({
       min: z.number(),
       max: z.number(),
       step: z.number().optional(),
+      positiveMin: z.number().optional(),
+    })
+    /** A floor above the ceiling admits nothing but the sentinel, while the
+     *  clamp maps every non-negative input onto a maximum the generated schema
+     *  then rejects. */
+    .refine((value) => value.positiveMin == null || value.positiveMin <= value.max, {
+      message: 'range.positiveMin cannot exceed range.max',
+      path: ['positiveMin'],
     })
     .optional(),
   enumMappings: z.record(z.union([z.number(), z.boolean(), z.string()])).optional(),
@@ -1383,6 +1440,12 @@ export enum RateLimitPrefix {
 }
 
 export const rateLimitSchema = z.object({
+  agentEvents: z
+    .object({
+      userMax: z.number().int().positive().optional(),
+      userWindowInMinutes: z.number().positive().optional(),
+    })
+    .optional(),
   fileUploads: z
     .object({
       ipMax: z.number().optional(),
@@ -2065,7 +2128,16 @@ const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
  * (backreferences, lookaround, control escapes, and so on) is rejected at load rather than
  * silently dropped at request time.
  */
-let messageFilterRegexValidator: (pattern: string) => boolean = (value) => {
+interface MessageFilterRegexValidation {
+  readonly supported: boolean;
+  readonly programSize?: number;
+}
+
+type MessageFilterRegexValidationResult = boolean | MessageFilterRegexValidation;
+
+let messageFilterRegexValidator: (pattern: string) => MessageFilterRegexValidationResult = (
+  value,
+) => {
   try {
     new RegExp(value, 'g');
     return true;
@@ -2074,26 +2146,68 @@ let messageFilterRegexValidator: (pattern: string) => boolean = (value) => {
   }
 };
 
-export const setMessageFilterRegexValidator = (validate: (pattern: string) => boolean): void => {
+export const setMessageFilterRegexValidator = (
+  validate: (pattern: string) => MessageFilterRegexValidationResult,
+): void => {
   messageFilterRegexValidator = validate;
 };
 
 const messageFilterPiiCustomPatternSchema = z.object({
-  id: z.string().min(1),
-  label: z.string().min(1),
-  regex: z
-    .string()
-    .min(1)
-    .refine((value) => messageFilterRegexValidator(value), {
-      message:
-        'Unsupported regex: not compatible with the RE2 engine (no backreferences, lookaround, or control escapes)',
-    }),
+  id: z.string().min(1).max(MAX_PII_PATTERN_ID_LENGTH),
+  label: z.string().min(1).max(MAX_PII_PATTERN_LABEL_LENGTH),
+  regex: z.string().min(1).max(MAX_PII_PATTERN_LENGTH),
 });
 
-export const messageFilterPiiSchema = z.object({
-  starterPatterns: z.array(z.string()).optional(),
-  customPatterns: z.array(messageFilterPiiCustomPatternSchema).optional(),
-});
+export const messageFilterPiiSchema = z
+  .object({
+    starterPatterns: z
+      .array(z.string().max(MAX_PII_PATTERN_ID_LENGTH))
+      .max(MAX_PII_PATTERNS_PER_SOURCE)
+      .optional(),
+    customPatterns: z
+      .array(messageFilterPiiCustomPatternSchema)
+      .max(MAX_PII_PATTERNS_PER_SOURCE)
+      .optional(),
+  })
+  .superRefine((pii, context) => {
+    let regexCharacters = 0;
+    let regexInstructions = 0;
+    for (let index = 0; index < (pii.customPatterns?.length ?? 0); index++) {
+      const pattern = pii.customPatterns?.[index];
+      if (pattern == null) {
+        continue;
+      }
+      regexCharacters += pattern.regex.length;
+      const result = messageFilterRegexValidator(pattern.regex);
+      const supported = typeof result === 'boolean' ? result : result.supported;
+      if (!supported) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['customPatterns', index, 'regex'],
+          message:
+            'Unsupported regex: not compatible with the RE2 engine (no backreferences, lookaround, or control escapes)',
+        });
+        continue;
+      }
+      if (typeof result !== 'boolean' && result.programSize != null) {
+        regexInstructions += result.programSize;
+      }
+    }
+    if (regexCharacters > MAX_PII_CUSTOM_REGEX_CHARACTERS) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customPatterns'],
+        message: `Custom PII regexes may contain at most ${MAX_PII_CUSTOM_REGEX_CHARACTERS} characters in total`,
+      });
+    }
+    if (regexInstructions > MAX_PII_CUSTOM_REGEX_INSTRUCTIONS) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customPatterns'],
+        message: `Custom PII regexes may compile to at most ${MAX_PII_CUSTOM_REGEX_INSTRUCTIONS} instructions in total`,
+      });
+    }
+  });
 
 export type MessageFilterPiiConfig = z.infer<typeof messageFilterPiiSchema>;
 
@@ -2188,6 +2302,7 @@ export const configSchema = z.object({
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
+  filters: filtersConfigSchema.optional(),
   messageFilter: messageFilterSchema.optional(),
   endpoints: z
     .object({
@@ -2616,6 +2731,10 @@ export enum CacheKeys {
    * Key for cached group memberships used to resolve ACL user principals.
    */
   USER_PRINCIPALS = 'USER_PRINCIPALS',
+  /**
+   * Key for cached prompt group access ID sets (accessible, public, owned).
+   */
+  PROMPT_GROUPS_ACCESS = 'PROMPT_GROUPS_ACCESS',
   /**
    * Key for per-conversation stateful code sandbox prewarm/warm state.
    */
@@ -3176,6 +3295,120 @@ export function normalizeMCPToolKey(toolKey: string, rawServerNames: readonly st
     return toolKey;
   }
   return `${toolKey.slice(0, toolKey.length - matched.length)}${normalized}`;
+}
+
+/**
+ * Strips a redundant leading server-name prefix from a raw upstream tool name
+ * before it is embedded into a model-facing key, so the key doesn't carry the
+ * server twice (`acme_trace_..._mcp_acme`) and push long tool names
+ * past provider function-name limits (64 chars). The match is case-insensitive
+ * because display-cased server names ("Acme") conventionally prefix their
+ * tools in lowercase. Ingestion that strips must record the original name
+ * (`serverToolName` on the cached definition) — tool calls send THAT name back
+ * to the server, never the stripped one. Catalog producers must not call this
+ * directly: only {@link stripServerNamePrefixes} sees the whole sibling set and
+ * can keep colliding results apart.
+ */
+export function stripServerNamePrefix(toolName: string, normalizedServerName: string): string {
+  const prefixLength = normalizedServerName.length + 1;
+  if (toolName.length <= prefixLength) {
+    return toolName;
+  }
+  const prefix = toolName.slice(0, prefixLength).toLowerCase();
+  if (prefix !== `${normalizedServerName.toLowerCase()}_`) {
+    return toolName;
+  }
+  const stripped = toolName.slice(prefixLength);
+  if (isReservedMCPToolName(stripped)) {
+    return toolName;
+  }
+  /** `isActionTool` classifies keys by the RELATIVE position of `_action_`
+   *  and `_mcp_`; stripping moves the first `_mcp_` earlier, so a server
+   *  whose normalized name contains `_action_` could see a real MCP tool
+   *  reclassified as an OpenAPI action (bypassing MCP authorization). Never
+   *  produce a key whose classification differs from the raw key's. */
+  const keySuffix = `${Constants.mcp_delimiter}${normalizedServerName}`;
+  if (isActionTool(`${stripped}${keySuffix}`) !== isActionTool(`${toolName}${keySuffix}`)) {
+    return toolName;
+  }
+  return stripped;
+}
+
+/**
+ * Synthetic markers consumed by prefix (`isMCPAllPlaceholder`, the server-pin
+ * skip, the client's OAuth stream classification), so each reserves BOTH its
+ * exact name and its `${marker}${mcp_delimiter}` namespace: a stripped
+ * remainder inside any of them would turn a real upstream tool into the
+ * server-wide wildcard, the UI pin placeholder, or a synthetic OAuth call.
+ */
+const RESERVED_MCP_TOOL_MARKERS: readonly string[] = [
+  `${Constants.mcp_all}`,
+  `${Constants.mcp_server}`,
+  'oauth',
+];
+
+function isReservedMCPToolName(toolName: string): boolean {
+  /** `mcp_` opens the server-scoped pluginKey namespace (`mcp_${serverName}`),
+   *  and `lc_transfer_to_` opens the agent-handoff namespace (the client
+   *  renders such calls as handoffs; the background and intent passes exclude
+   *  them) — pre-strip tool keys could never enter either, since they always
+   *  began with the server name itself. */
+  if (
+    toolName.startsWith(`${Constants.mcp_prefix}`) ||
+    toolName.startsWith(`${Constants.LC_TRANSFER_TO_}`)
+  ) {
+    return true;
+  }
+  return RESERVED_MCP_TOOL_MARKERS.some(
+    (marker) => toolName === marker || toolName.startsWith(`${marker}${Constants.mcp_delimiter}`),
+  );
+}
+
+/**
+ * Maps every raw tool name in a server's catalog to its model-facing name,
+ * stripping redundant server-name prefixes collision-free: when two names
+ * yield the same result — a bare `foo` next to `<server>_foo`, or the
+ * case-variant pair `<server>_Foo` / `<Server>_Foo` under the case-insensitive
+ * prefix match — every collider keeps its raw name, so two distinct upstream
+ * tools can never collapse onto one key. Unprefixed names count against the
+ * result set through their identity mapping, which is what makes the bare-name
+ * case fall out of the same counter.
+ */
+export function stripServerNamePrefixes(
+  toolNames: readonly string[],
+  normalizedServerName: string,
+): Map<string, string> {
+  const rawNames = new Set(toolNames);
+  const finalNames = new Map<string, string>(
+    toolNames.map((name) => {
+      const stripped = stripServerNamePrefix(name, normalizedServerName);
+      /** Every sibling's RAW name is reserved even when that sibling itself
+       *  strips away: keys persisted BEFORE stripping embed raw names, so a
+       *  stripped result landing on another sibling's raw name would route
+       *  that sibling's legacy references to the wrong upstream tool. */
+      return [name, stripped !== name && rawNames.has(stripped) ? name : stripped];
+    }),
+  );
+  /** Reverting a collider to its raw name can itself collide with ANOTHER
+   *  sibling's stripped result (`foo` / `acme_foo` / `acme_acme_foo`), so the
+   *  guard iterates to a fixpoint. Each pass converts at least one stripped
+   *  result back to its unique raw name, so it terminates within the catalog
+   *  size. */
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const counts = new Map<string, number>();
+    finalNames.forEach((result) => {
+      counts.set(result, (counts.get(result) ?? 0) + 1);
+    });
+    finalNames.forEach((result, raw) => {
+      if (result !== raw && (counts.get(result) ?? 0) > 1) {
+        finalNames.set(raw, raw);
+        changed = true;
+      }
+    });
+  }
+  return finalNames;
 }
 
 export function splitMCPToolKey(

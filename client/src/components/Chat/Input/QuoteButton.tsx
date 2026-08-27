@@ -2,18 +2,15 @@ import { memo, useRef, useState, useEffect, useCallback, useLayoutEffect } from 
 import { createPortal } from 'react-dom';
 import { TextQuote } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
+import { cn, MAX_QUOTE_COUNT } from '~/utils';
 import { mainTextareaId } from '~/common';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 import store from '~/store';
 
 /** Only selections fully inside a rendered chat message get the popup. */
 const MESSAGE_SELECTOR = '.message-render';
 /** Max characters captured per excerpt (backend re-caps as defense-in-depth). */
 const MAX_QUOTE_LENGTH = 1500;
-/** Max excerpts queued at once; mirrors the backend `QUOTE_MAX_COUNT` cap so
- *  the composer never shows more quotes than the model actually receives. */
-const MAX_QUOTE_COUNT = 10;
 /** Vertical gap (px) between the selection and the popup. */
 const POPUP_OFFSET = 8;
 /** Keep the popup this far (px) from the viewport edges. */
@@ -248,7 +245,6 @@ const resolveTop = (anchor: Anchor, height: number, preferBelow: boolean): numbe
 function QuoteButton({ conversationId }: { conversationId: string }) {
   const localize = useLocalize();
   const [selection, setSelection] = useState<SelectionState | null>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const rangeRef = useRef<Range | null>(null);
   const clippersRef = useRef<HTMLElement[]>([]);
@@ -284,7 +280,6 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
       rangeRef.current = null;
       clippersRef.current = [];
       setSelection(null);
-      setPos(null);
     };
 
     const hide = () => {
@@ -429,13 +424,16 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
     };
   }, []);
 
-  /** Clamp using the button's real size so it never lands off-screen. Runs
-   *  before paint, so the first visible frame is already in its final spot. */
+  /** Clamp using the button's real size so it never lands off-screen. Apply the
+   *  measured layout directly before paint: feeding it back through state adds
+   *  a synchronous render to every selection update and can exhaust React's
+   *  nested-update limit while the browser is still changing the selection. */
   useLayoutEffect(() => {
-    if (!selection || !buttonRef.current) {
+    const button = buttonRef.current;
+    if (!selection || !button) {
       return;
     }
-    const { width, height } = buttonRef.current.getBoundingClientRect();
+    const { width, height } = button.getBoundingClientRect();
     const maxLeft = Math.max(EDGE_MARGIN, window.innerWidth - width - EDGE_MARGIN);
     const left = Math.min(
       Math.max(anchorCenterX(selection.anchor) - width / 2, EDGE_MARGIN),
@@ -443,7 +441,9 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
     );
     const top = resolveTop(selection.anchor, height, selection.viaTouch);
 
-    setPos((prev) => (prev && prev.top === top && prev.left === left ? prev : { top, left }));
+    button.style.top = `${top}px`;
+    button.style.left = `${left}px`;
+    button.style.visibility = 'visible';
   }, [selection]);
 
   const commitQuote = useCallback(
@@ -455,7 +455,6 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
       clippersRef.current = [];
       pressedTextRef.current = null;
       setSelection(null);
-      setPos(null);
       window.getSelection()?.removeAllRanges();
       document.getElementById(mainTextareaId)?.focus();
     },
@@ -538,10 +537,10 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
       aria-label={localize('com_ui_add_to_chat')}
       data-testid="add-to-chat-button"
       style={{
-        top: pos?.top ?? 0,
-        left: pos?.left ?? 0,
+        top: 0,
+        left: 0,
         /** Hidden until measured so it never flashes at an unclamped position. */
-        visibility: pos == null ? 'hidden' : 'visible',
+        visibility: 'hidden',
       }}
       className={cn(
         'fixed z-50 inline-flex items-center gap-1.5 rounded-full border border-border-light bg-surface-secondary text-sm font-medium text-text-primary shadow-lg transition-colors hover:bg-surface-tertiary',

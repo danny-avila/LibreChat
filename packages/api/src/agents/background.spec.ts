@@ -237,6 +237,88 @@ describe('applyBackgroundToolCalls', () => {
     ).toBeUndefined();
   });
 
+  it('resolves an action opt-in stored with the raw `---` domain against the collapsed def name', () => {
+    /** Agents persist `swapi---tech`; the runtime def is named `swapi_tech`. */
+    const defs = [mcpDef('getPerson_action_swapi_tech')];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: { 'getPerson_action_swapi---tech': { run_in_background: true } },
+    });
+    expect(result.backgroundToolNames).toEqual(['getPerson_action_swapi_tech']);
+    expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(true);
+  });
+
+  it('merges a raw action opt-in into an existing normalized option entry', () => {
+    const defs = [mcpDef('getPerson_action_swapi_tech')];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: {
+        'getPerson_action_swapi---tech': { run_in_background: true },
+        getPerson_action_swapi_tech: { defer_loading: true },
+      },
+    });
+    expect(result.backgroundToolNames).toEqual(['getPerson_action_swapi_tech']);
+  });
+
+  it('keeps an explicit normalized action background option authoritative', () => {
+    const defs = [mcpDef('getPerson_action_swapi_tech')];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: {
+        'getPerson_action_swapi---tech': { run_in_background: true },
+        getPerson_action_swapi_tech: { run_in_background: false },
+      },
+    });
+    expect(result.backgroundToolNames).toEqual([]);
+  });
+
+  it('does not collapse hyphens in the operationId when normalizing an action key', () => {
+    const defs = [
+      mcpDef('get_foo---bar_action_swapi_tech'),
+      mcpDef('get_foo_bar_action_swapi_tech'),
+    ];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: { 'get_foo---bar_action_swapi---tech': { run_in_background: true } },
+    });
+    expect(result.backgroundToolNames).toEqual(['get_foo---bar_action_swapi_tech']);
+  });
+
+  it('injects an opted-in action tool but not one the OAuth excludeTool rejects', () => {
+    const oauthActionNames = new Set(['sendMail_action_mail---example---com']);
+    const defs = [
+      mcpDef('getWeather_action_weather---com'),
+      mcpDef('sendMail_action_mail---example---com'),
+    ];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: {
+        'getWeather_action_weather---com': { run_in_background: true },
+        'sendMail_action_mail---example---com': { run_in_background: true },
+      },
+      excludeTool: (name) => oauthActionNames.has(name),
+    });
+    expect(result.backgroundToolNames).toEqual(['getWeather_action_weather---com']);
+    const oauthDef = result.toolDefinitions.find(
+      (d) => d.name === 'sendMail_action_mail---example---com',
+    );
+    expect(
+      (oauthDef?.parameters as { properties?: Record<string, unknown> }).properties?.[
+        RUN_IN_BACKGROUND_ARG
+      ],
+    ).toBeUndefined();
+  });
+
   it('skips a non-object (string-input) schema without rewriting it', () => {
     const defs = [{ name: 'legacy_tool', parameters: { type: 'string' } } as unknown as LCTool];
     const result = applyBackgroundToolCalls({
@@ -757,6 +839,7 @@ describe('BackgroundTaskRegistryClass', () => {
       artifact: { session_id: 'exec-1', files: [{ id: 'f1' }] },
       harvestStarted: true,
     });
+    registry.finishHarvest('u1', 'c1', created.task.id);
 
     const claimed = registry.claimArtifact('u1', 'c1', created.task.id);
     expect(claimed).toEqual({
@@ -776,7 +859,7 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.get('u1', 'c1', created.task.id)?.attachments).toEqual(attachments);
   });
 
-  it('revokeHarvest hands delivery back to the fallback path, restoring a claimed artifact', () => {
+  it('revokeHarvest hands a pending artifact to the fallback path', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
       userId: 'u1',
@@ -794,15 +877,71 @@ describe('BackgroundTaskRegistryClass', () => {
       harvestStarted: true,
     });
 
-    /** Poll claimed the artifact while the harvest was in flight… */
-    expect(registry.claimArtifact('u1', 'c1', created.task.id)?.harvestStarted).toBe(true);
-    /** …then the harvest failed: revoke restores the artifact for the
-     *  legacy fallback and clears the suppression flag. */
+    /** Pending inspection prevents poll delivery until the harvest settles. */
+    expect(registry.claimArtifact('u1', 'c1', created.task.id)).toBeUndefined();
+    /** A transient harvest failure unlocks the artifact for the legacy
+     *  fallback and clears the suppression flag. */
     registry.revokeHarvest('u1', 'c1', created.task.id, artifact);
     const task = registry.get('u1', 'c1', created.task.id);
     expect(task?.harvestStarted).toBeUndefined();
     expect(task?.artifact).toEqual(artifact);
     expect(registry.claimArtifact('u1', 'c1', created.task.id)?.harvestStarted).toBeUndefined();
+  });
+
+  it('keeps a policy-blocked artifact terminal across later registry mutations', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_code_blocked',
+      toolName: 'execute_code',
+      harvestStarted: true,
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    const artifact = {
+      session_id: 'exec-blocked',
+      files: [{ id: 'f1', opaqueBytes: 'PROTECTED-REGISTRY-BYTES' }],
+    };
+    registry.complete('u1', 'c1', created.task.id, {
+      content: 'safe stdout',
+      artifact,
+      harvestStarted: true,
+    });
+    registry.blockArtifact(
+      'u1',
+      'c1',
+      created.task.id,
+      'Submitted content could not be completely inspected before processing.',
+    );
+
+    registry.restoreArtifact('u1', 'c1', created.task.id, artifact);
+    registry.revokeHarvest('u1', 'c1', created.task.id, artifact);
+    registry.finishHarvest('u1', 'c1', created.task.id, [{ opaqueBytes: artifact }]);
+    registry.attachHarvest('u1', 'c1', created.task.id, [{ opaqueBytes: artifact }]);
+    registry.complete('u1', 'c1', created.task.id, {
+      content: 'unsafe replacement',
+      artifact,
+      harvestStarted: true,
+    });
+    registry.fail('u1', 'c1', created.task.id, 'raw failure');
+
+    const task = registry.get('u1', 'c1', created.task.id);
+    expect(task).toEqual(
+      expect.objectContaining({
+        status: 'error',
+        error: 'Submitted content could not be completely inspected before processing.',
+        artifactBlocked: true,
+      }),
+    );
+    expect(task?.result).toBeUndefined();
+    expect(task?.artifact).toBeUndefined();
+    expect(task?.attachments).toBeUndefined();
+    expect(task?.harvestStarted).toBeUndefined();
+    expect(registry.claimArtifact('u1', 'c1', created.task.id)).toBeUndefined();
+    expect(JSON.stringify(task)).not.toContain('PROTECTED-REGISTRY-BYTES');
+    expect(JSON.stringify(task)).not.toContain('raw failure');
   });
 
   it('exposes reaped (timed-out) tasks to the heal path when harvest was armed at dispatch', () => {
@@ -1030,7 +1169,7 @@ describe('getBackgroundCodeDelivery (singleton)', () => {
       artifact: { session_id: 'exec-1' },
       harvestStarted: true,
     });
-    backgroundTaskRegistry.attachHarvest('delivery_user', 'delivery_convo', created.task.id, [
+    backgroundTaskRegistry.finishHarvest('delivery_user', 'delivery_convo', created.task.id, [
       { file_id: 'f1' },
     ]);
 

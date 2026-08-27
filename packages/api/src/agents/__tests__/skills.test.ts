@@ -33,6 +33,7 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Types } from 'mongoose';
+import { logger } from '@librechat/data-schemas';
 import { HumanMessage, AIMessage } from '@librechat/agents/langchain/messages';
 import {
   scopeSkillIds,
@@ -45,6 +46,7 @@ import {
   resolveAlwaysApplySkills,
   injectManualSkillPrimes,
   injectSkillPrimes,
+  selectSkillPrimesForTurn,
   collectFreshSkillPrimeNames,
   extractManualSkills,
   isSkillPrimeMessage,
@@ -1301,6 +1303,25 @@ describe('resolveManualSkills', () => {
     expect(result).toEqual([{ _id: real._id, name: 'real', body: 'body of real' }]);
   });
 
+  it('does not log a raw submitted name when the requested skill cannot be resolved', async () => {
+    const submittedName = 'PRIVATE-SKILL-NAME';
+    const warn = jest.spyOn(logger, 'warn');
+
+    const result = await resolveManualSkills({
+      names: [submittedName],
+      getSkillByName: buildGetSkillByName({}),
+      accessibleSkillIds: [new Types.ObjectId()],
+      userId,
+    });
+
+    expect(result).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(
+      '[resolveManualSkills] Requested skill not found or not accessible',
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(submittedName);
+    warn.mockRestore();
+  });
+
   it('silently skips skills with userInvocable: false, preserving the rest of the batch', async () => {
     const open = mkSkill('open', userOid);
     const modelOnly: SkillDoc = { ...mkSkill('model-only', userOid), userInvocable: false };
@@ -2122,6 +2143,23 @@ describe('resolveAlwaysApplySkills', () => {
 describe('injectSkillPrimes', () => {
   const manual = (name: string, body: string) => ({ name, body });
   const always = (name: string, body: string) => ({ name, body });
+
+  it('selects the shared model-bound prime set before downstream consumers run', () => {
+    const selected = selectSkillPrimesForTurn({
+      manualSkillPrimes: [manual('shared', 'manual'), manual('explicit', 'explicit')],
+      alwaysApplySkillPrimes: [
+        always('shared', 'discarded'),
+        always('ambient-1', 'ambient-1'),
+        always('ambient-2', 'ambient-2'),
+      ],
+      maxPrimesPerTurn: 3,
+    });
+
+    expect(selected.manualSkillPrimes.map(({ name }) => name)).toEqual(['shared', 'explicit']);
+    expect(selected.alwaysApplySkillPrimes.map(({ name }) => name)).toEqual(['ambient-1']);
+    expect(selected.alwaysApplyDedupedFromManual).toBe(1);
+    expect(selected.alwaysApplyDropped).toBe(1);
+  });
 
   it('splices both lists with always-apply first, manual last (closer to user msg)', () => {
     const userMsg = new HumanMessage('what next?');

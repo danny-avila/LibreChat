@@ -75,6 +75,8 @@ function renderUseResumeOnLoad({
   pendingSteers,
   onPendingSteers,
   onQueuedMessages,
+  submissionStart,
+  onSubmissionStart,
 }: {
   messages?: TMessage[];
   getMessages?: () => TMessage[] | undefined;
@@ -87,6 +89,8 @@ function renderUseResumeOnLoad({
   pendingSteers?: PendingSteer[];
   onPendingSteers?: (steers: PendingSteer[]) => void;
   onQueuedMessages?: (queued: QueuedMessage[]) => void;
+  submissionStart?: number;
+  onSubmissionStart?: (submissionStart: number | null) => void;
 }) {
   const getMessages = jest.fn(getMessagesOverride ?? (() => messages));
   const queryClient = new QueryClient({
@@ -96,6 +100,9 @@ function renderUseResumeOnLoad({
   const initializeState = (snapshot: MutableSnapshot) => {
     snapshot.set(store.conversationByIndex(0), buildConversation(conversationId));
     snapshot.set(store.submissionByIndex(0), submission);
+    if (submissionStart != null) {
+      snapshot.set(store.submissionStartFamily(0), submissionStart);
+    }
     if (pendingSteers) {
       snapshot.set(store.pendingSteersByConvoId(conversationId), pendingSteers);
     }
@@ -105,6 +112,11 @@ function renderUseResumeOnLoad({
     const currentSubmission = useRecoilValue(store.submissionByIndex(0));
     setSubmissionState = useSetRecoilState(store.submissionByIndex(0));
     onSubmission?.(currentSubmission);
+    return null;
+  };
+  const SubmissionStartProbe = () => {
+    const currentStart = useRecoilValue(store.submissionStartFamily(0));
+    onSubmissionStart?.(currentStart);
     return null;
   };
   const PendingSteersProbe = () => {
@@ -129,6 +141,7 @@ function renderUseResumeOnLoad({
     <QueryClientProvider client={queryClient}>
       <RecoilRoot initializeState={initializeState}>
         <SubmissionProbe />
+        <SubmissionStartProbe />
         <SiblingIndexProbe />
         <PendingSteersProbe />
         <QueuedMessagesProbe />
@@ -288,6 +301,172 @@ describe('useResumeOnLoad', () => {
         | null;
       expect(attached?.resumeStreamId).toBe(CONVERSATION_ID);
       expect(attached?.resumeGenerationCreatedAt).toBe(4242);
+    });
+
+    /** The elapsed indicator's baseline must be the generation's real start:
+     *  an attach with no surviving anchor (a reload, or a run another client
+     *  started) rebuilds it clock-locally from the server-computed generation
+     *  age, subtracted from the moment the status response ARRIVED — so
+     *  neither cross-machine clock skew nor a slow history fetch between
+     *  receipt and apply can distort the reading. */
+    it('anchors the elapsed baseline via the server-computed generation age', async () => {
+      const observedStarts: Array<number | null> = [];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+
+      const { rerender } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        onSubmissionStart: (start) => observedStarts.push(start),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(observedStarts[observedStarts.length - 1]).toBeNull();
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
+      mockUseStreamStatus.mockReturnValue({
+        ...ACTIVE_STATUS,
+        dataUpdatedAt: 1_000_000,
+        data: { ...ACTIVE_STATUS.data, elapsedMs: 30_000 },
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(observedStarts[observedStarts.length - 1]).toBe(1_000_000 - 30_000);
+    });
+
+    /** An older server without `elapsedMs` still beats counting from attach:
+     *  the raw server start is adopted and the indicator clamps its skew. */
+    it('falls back to the server-recorded generation start without elapsedMs', async () => {
+      const observedStarts: Array<number | null> = [];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+
+      const { rerender } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        onSubmissionStart: (start) => observedStarts.push(start),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
+      mockUseStreamStatus.mockReturnValue(ACTIVE_STATUS);
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(observedStarts[observedStarts.length - 1]).toBe(4242);
+    });
+
+    /** A reattach to the run this session already anchored must keep the ask
+     *  baseline — the atom deliberately outlives the submission it timed. */
+    it('preserves a surviving elapsed baseline over the server-recorded start', async () => {
+      const observedStarts: Array<number | null> = [];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+
+      const { rerender } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        submissionStart: 1111,
+        onSubmissionStart: (start) => observedStarts.push(start),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
+      mockUseStreamStatus.mockReturnValue(ACTIVE_STATUS);
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(observedStarts[observedStarts.length - 1]).toBe(1111);
+    });
+
+    it('restores an externally started regeneration after history refreshes', async () => {
+      const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
+      const olderResponse = {
+        messageId: 'older-response',
+        parentMessageId: rootUser.messageId,
+        conversationId: CONVERSATION_ID,
+        text: 'Older response',
+        isCreatedByUser: false,
+      } as TMessage;
+      const newerResponse = {
+        messageId: 'newer-response',
+        parentMessageId: rootUser.messageId,
+        conversationId: CONVERSATION_ID,
+        text: 'Newer response',
+        isCreatedByUser: false,
+      } as TMessage;
+      const observedSubmissions: Array<TSubmission | null> = [];
+      let messages = [rootUser];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+
+      const { rerender, queryClient } = renderUseResumeOnLoad({
+        getMessages: () => messages,
+        onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const invalidate = jest.spyOn(queryClient, 'invalidateQueries').mockResolvedValue(undefined);
+      messages = [rootUser, newerResponse, olderResponse];
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: {
+          active: true,
+          status: 'running',
+          createdAt: 4242,
+          streamId: CONVERSATION_ID,
+          resumeState: {
+            aggregatedContent: [{ type: ContentTypes.TEXT, text: 'regenerating' }],
+            responseMessageId: `${olderResponse.messageId}_`,
+            userMessage: {
+              messageId: rootUser.messageId,
+              conversationId: CONVERSATION_ID,
+            },
+          },
+        },
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: [QueryKeys.messages, CONVERSATION_ID],
+      });
+      const attached = observedSubmissions[observedSubmissions.length - 1];
+      expect(attached?.isRegenerate).toBe(true);
+      expect(attached?.initialResponse?.messageId).toBe(`${olderResponse.messageId}_`);
+      expect(attached?.messages?.map((message) => message.messageId)).toEqual([
+        rootUser.messageId,
+        newerResponse.messageId,
+        olderResponse.messageId,
+      ]);
+      expect(attached?.regenerateMessages?.map((message) => message.messageId)).toEqual([
+        rootUser.messageId,
+        newerResponse.messageId,
+        olderResponse.messageId,
+      ]);
     });
 
     it('re-arms once per run rather than on every poll of the active list', async () => {
@@ -771,6 +950,54 @@ describe('useResumeOnLoad', () => {
     ]);
   });
 
+  it('does not claim an older sibling when resume state omits the response ID', async () => {
+    const observedSubmissions: Array<TSubmission | null> = [];
+    const userMessage = buildUserMessage(CONVERSATION_ID);
+    const olderSibling = {
+      messageId: 'older-sibling-response',
+      parentMessageId: userMessage.messageId,
+      conversationId: CONVERSATION_ID,
+      text: 'Older sibling',
+      isCreatedByUser: false,
+    } as TMessage;
+
+    mockUseStreamStatus.mockReturnValue({
+      isSuccess: true,
+      isFetching: false,
+      data: {
+        active: true,
+        status: 'running',
+        streamId: CONVERSATION_ID,
+        resumeState: {
+          runSteps: [],
+          aggregatedContent: [{ type: 'text', text: 'Active branch streaming' }],
+          conversationId: CONVERSATION_ID,
+          userMessage: {
+            messageId: userMessage.messageId,
+            parentMessageId: userMessage.parentMessageId,
+            conversationId: CONVERSATION_ID,
+            text: userMessage.text,
+          },
+        },
+      },
+    });
+
+    renderUseResumeOnLoad({
+      messages: [userMessage, olderSibling],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const submission = observedSubmissions[observedSubmissions.length - 1];
+    expect(submission?.initialResponse?.messageId).toBe(`${userMessage.messageId}_`);
+    expect((submission?.messages ?? []).map((message) => message.messageId)).toEqual([
+      olderSibling.messageId,
+    ]);
+  });
+
   it('restores the branch that owns a pending OAuth resume user message', async () => {
     const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
     const branchOneResponse = {
@@ -834,13 +1061,16 @@ describe('useResumeOnLoad', () => {
     expect(observedSiblingIndexes[observedSiblingIndexes.length - 1]).toBe(1);
   });
 
-  it('restores the assistant sibling selected by a pending regenerate response', async () => {
+  it('restores the regenerate branch without claiming its older response', async () => {
     const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
     const olderResponse = {
       messageId: 'older-response',
       parentMessageId: rootUser.messageId,
       conversationId: CONVERSATION_ID,
       text: 'Older response',
+      sender: 'Agent One',
+      model: 'gpt-5',
+      iconURL: 'https://example.com/agent-one.png',
       isCreatedByUser: false,
     } as TMessage;
     const newerResponse = {
@@ -890,9 +1120,88 @@ describe('useResumeOnLoad', () => {
 
     expect(observedSiblingIndexes[observedSiblingIndexes.length - 1]).toBe(0);
     const submission = observedSubmissions[observedSubmissions.length - 1];
-    expect(submission?.initialResponse?.messageId).toBe(olderResponse.messageId);
+    expect(submission?.initialResponse?.messageId).toBe(`${olderResponse.messageId}_`);
+    expect(submission?.initialResponse).toEqual(
+      expect.objectContaining({
+        sender: olderResponse.sender,
+        model: olderResponse.model,
+        iconURL: olderResponse.iconURL,
+      }),
+    );
+    expect(submission?.isRegenerate).toBe(true);
     expect((submission?.messages ?? []).map((message) => message.messageId)).toEqual([
+      rootUser.messageId,
       newerResponse.messageId,
+      olderResponse.messageId,
+    ]);
+    expect((submission?.regenerateMessages ?? []).map((message) => message.messageId)).toEqual([
+      rootUser.messageId,
+      newerResponse.messageId,
+      olderResponse.messageId,
+    ]);
+  });
+
+  it('preserves an exact-ID edited regeneration branch for early-abort rollback', async () => {
+    const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
+    const editedResponse = {
+      messageId: 'edited-response',
+      parentMessageId: rootUser.messageId,
+      conversationId: CONVERSATION_ID,
+      text: 'Original response before the edit',
+      isCreatedByUser: false,
+    } as TMessage;
+    const siblingResponse = {
+      messageId: 'sibling-response',
+      parentMessageId: rootUser.messageId,
+      conversationId: CONVERSATION_ID,
+      text: 'Unrelated sibling',
+      isCreatedByUser: false,
+    } as TMessage;
+    const observedSubmissions: Array<TSubmission | null> = [];
+
+    mockUseStreamStatus.mockReturnValue({
+      isSuccess: true,
+      isFetching: false,
+      data: {
+        active: true,
+        status: 'running',
+        streamId: CONVERSATION_ID,
+        resumeState: {
+          runSteps: [],
+          aggregatedContent: [],
+          responseMessageId: editedResponse.messageId,
+          isRegenerate: true,
+          conversationId: CONVERSATION_ID,
+          userMessage: {
+            messageId: rootUser.messageId,
+            parentMessageId: rootUser.parentMessageId,
+            conversationId: CONVERSATION_ID,
+            text: rootUser.text,
+          },
+        },
+      },
+    });
+
+    renderUseResumeOnLoad({
+      messages: [rootUser, siblingResponse, editedResponse],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const submission = observedSubmissions[observedSubmissions.length - 1];
+    expect(submission?.isRegenerate).toBe(true);
+    expect(submission?.initialResponse?.messageId).toBe(editedResponse.messageId);
+    expect(submission?.messages?.map((message) => message.messageId)).toEqual([
+      rootUser.messageId,
+      siblingResponse.messageId,
+    ]);
+    expect(submission?.regenerateMessages?.map((message) => message.messageId)).toEqual([
+      rootUser.messageId,
+      siblingResponse.messageId,
+      editedResponse.messageId,
     ]);
   });
 

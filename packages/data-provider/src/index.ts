@@ -3,6 +3,7 @@ export * from './azure';
 export * from './bedrock';
 export * from './balance';
 export * from './config';
+export * from './filters';
 export * from './file-config';
 /* messages  */
 export * from './messages';
@@ -29,6 +30,7 @@ export * from './types/mcpServers';
 export * from './types/mutations';
 export * from './types/queries';
 export * from './types/schedules';
+export * from './cadence';
 export * from './types/skills';
 export * from './types/runs';
 export * from './types/web';
@@ -51,6 +53,8 @@ export {
 export { default as request } from './request';
 export { dataService };
 import * as dataService from './data-service';
+/* provider identity */
+export * from './providers';
 /* general helpers */
 export * from './utils';
 export * from './actions';
