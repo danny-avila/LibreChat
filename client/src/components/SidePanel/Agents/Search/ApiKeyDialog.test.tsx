@@ -153,6 +153,36 @@ describe('ApiKeyDialog', () => {
     expect(screen.getByText('com_ui_web_search_reranker')).toBeInTheDocument();
   });
 
+  it('does not submit selections for system-defined categories', () => {
+    const onSubmit = jest.fn();
+    const formData = {
+      selectedProvider: SearchProviders.SERPER,
+      selectedScraper: ScraperProviders.KEENABLE,
+      selectedReranker: RerankerTypes.NONE,
+      keenableApiKey: '',
+    } as any;
+    mockUseGetStartupConfig.mockReturnValue({ data: {} });
+    render(
+      <ApiKeyDialog
+        {...defaultProps}
+        onSubmit={onSubmit}
+        authTypes={[
+          [SearchCategories.PROVIDERS, AuthType.SYSTEM_DEFINED],
+          [SearchCategories.SCRAPERS, AuthType.USER_PROVIDED],
+          [SearchCategories.RERANKERS, AuthType.SYSTEM_DEFINED],
+        ]}
+        handleSubmit={(fn: any) => () => fn(formData)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      selectedScraper: ScraperProviders.KEENABLE,
+      keenableApiKey: '',
+    });
+  });
+
   it('does not render scraper section if SYSTEM_DEFINED', () => {
     mockUseGetStartupConfig.mockReturnValue({ data: {} });
     const props = {

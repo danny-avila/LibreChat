@@ -12,9 +12,9 @@ import {
 
 export type SearchApiKeyFormData = {
   // Selected options
-  selectedProvider: SearchProviders;
-  selectedReranker: RerankerTypes;
-  selectedScraper: ScraperProviders;
+  selectedProvider?: SearchProviders;
+  selectedReranker?: RerankerTypes;
+  selectedScraper?: ScraperProviders;
   // API keys and URLs
   serperApiKey: string;
   searxngInstanceUrl: string;

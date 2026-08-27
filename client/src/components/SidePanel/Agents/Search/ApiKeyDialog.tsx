@@ -271,6 +271,20 @@ export default function ApiKeyDialog({
     setSelectedScraper(key as ScraperProviders);
   };
 
+  const handleVisibleSubmit = (data: SearchApiKeyFormData) => {
+    const visibleData = { ...data };
+    if (providerAuthType === AuthType.SYSTEM_DEFINED) {
+      delete visibleData.selectedProvider;
+    }
+    if (scraperAuthType === AuthType.SYSTEM_DEFINED) {
+      delete visibleData.selectedScraper;
+    }
+    if (rerankerAuthType === AuthType.SYSTEM_DEFINED) {
+      delete visibleData.selectedReranker;
+    }
+    onSubmit(visibleData);
+  };
+
   return (
     <OGDialog
       open={isOpen}
@@ -284,7 +298,7 @@ export default function ApiKeyDialog({
         main={
           <>
             <div className="mb-4 text-center font-medium">{localize('com_ui_web_search')}</div>
-            <form onSubmit={handleSubmit(onSubmit)}>
+            <form onSubmit={handleSubmit(handleVisibleSubmit)}>
               {/* Provider Section */}
               {providerAuthType !== AuthType.SYSTEM_DEFINED && (
                 <InputSection
@@ -339,7 +353,7 @@ export default function ApiKeyDialog({
           </>
         }
         selection={{
-          selectHandler: handleSubmit(onSubmit),
+          selectHandler: handleSubmit(handleVisibleSubmit),
           selectClasses: 'bg-surface-submit hover:bg-surface-submit-hover text-white',
           selectText: localize('com_ui_save'),
         }}

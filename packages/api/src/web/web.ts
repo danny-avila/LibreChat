@@ -180,14 +180,22 @@ export async function loadWebSearchAuth({
    * authenticate. This resolves the optional key/URL overrides once (a key only
    * lifts rate limits) and reports whether any of them came from the user.
    */
-  let keenableAuth: Promise<{ isUserProvided: boolean; hasSystemApiKey: boolean }> | undefined;
+  let keenableAuth:
+    | Promise<{
+        isUserProvided: boolean;
+        hasSystemApiKey: boolean;
+        rejectedUserApiUrl: boolean;
+      }>
+    | undefined;
   function resolveKeenableAuth(): Promise<{
     isUserProvided: boolean;
     hasSystemApiKey: boolean;
+    rejectedUserApiUrl: boolean;
   }> {
     keenableAuth ??= (async () => {
       let keenableUserProvided = false;
       let hasSystemApiKey = false;
+      let rejectedUserApiUrl = false;
       const keenableKeys: TWebSearchKeys[] = ['keenableApiKey', 'keenableApiUrl'];
       const authEntries: Array<{ key: TWebSearchKeys; field: string }> = [];
 
@@ -211,7 +219,7 @@ export async function loadWebSearchAuth({
           throwError: false,
         });
       } catch {
-        return { isUserProvided: false, hasSystemApiKey: false };
+        return { isUserProvided: false, hasSystemApiKey: false, rejectedUserApiUrl: false };
       }
 
       const resolvedEntries: Array<{
@@ -232,9 +240,14 @@ export async function loadWebSearchAuth({
           isFieldUserProvided &&
           (await isSSRFUrl(value, webSearchConfig?.allowedAddresses))
         ) {
+          rejectedUserApiUrl = true;
           continue;
         }
         resolvedEntries.push({ key: originalKey, value, isFieldUserProvided });
+      }
+
+      if (rejectedUserApiUrl) {
+        return { isUserProvided: true, hasSystemApiKey: false, rejectedUserApiUrl: true };
       }
 
       const hasUserProvidedApiUrl = resolvedEntries.some(
@@ -255,7 +268,7 @@ export async function loadWebSearchAuth({
         }
       }
 
-      return { isUserProvided: keenableUserProvided, hasSystemApiKey };
+      return { isUserProvided: keenableUserProvided, hasSystemApiKey, rejectedUserApiUrl: false };
     })();
     return keenableAuth;
   }
@@ -341,12 +354,15 @@ export async function loadWebSearchAuth({
       const selections = await resolveUserSelections();
       if (category === SearchCategories.PROVIDERS && selections.searchProvider) {
         specificService = selections.searchProvider as unknown as ServiceType;
+        authResult.searchProvider = selections.searchProvider;
         isUserProvided = true;
       } else if (category === SearchCategories.SCRAPERS && selections.scraperProvider) {
         specificService = selections.scraperProvider as unknown as ServiceType;
+        authResult.scraperProvider = selections.scraperProvider;
         isUserProvided = true;
       } else if (category === SearchCategories.RERANKERS && selections.rerankerType) {
         specificService = selections.rerankerType as unknown as ServiceType;
+        authResult.rerankerType = selections.rerankerType;
         isUserProvided = true;
       }
     }
@@ -362,11 +378,17 @@ export async function loadWebSearchAuth({
     if (category === SearchCategories.PROVIDERS && specificService === SearchProviders.KEENABLE) {
       const keenable = await resolveKeenableAuth();
       authResult.searchProvider = SearchProviders.KEENABLE;
+      if (keenable.rejectedUserApiUrl) {
+        return [false, true];
+      }
       return [true, isUserProvided || keenable.isUserProvided || !keenable.hasSystemApiKey];
     }
     if (category === SearchCategories.SCRAPERS && specificService === ScraperProviders.KEENABLE) {
       const keenable = await resolveKeenableAuth();
       authResult.scraperProvider = ScraperProviders.KEENABLE;
+      if (keenable.rejectedUserApiUrl) {
+        return [false, true];
+      }
       return [true, isUserProvided || keenable.isUserProvided || !keenable.hasSystemApiKey];
     }
 
@@ -484,7 +506,11 @@ export async function loadWebSearchAuth({
         continue;
       }
     }
-    if (category === SearchCategories.RERANKERS && !webSearchConfig?.rerankerType) {
+    if (
+      category === SearchCategories.RERANKERS &&
+      !webSearchConfig?.rerankerType &&
+      !specificService
+    ) {
       authResult.rerankerType = 'none' as RerankerTypes;
       return [true, false];
     }
@@ -500,6 +526,9 @@ export async function loadWebSearchAuth({
      */
     if (category === SearchCategories.PROVIDERS && !specificService) {
       const keenable = await resolveKeenableAuth();
+      if (keenable.rejectedUserApiUrl) {
+        return [false, true];
+      }
       if (authResult.keenableApiKey || authResult.keenableApiUrl) {
         authResult.searchProvider = SearchProviders.KEENABLE;
         return [true, keenable.isUserProvided];
@@ -518,6 +547,9 @@ export async function loadWebSearchAuth({
      */
     if (category === SearchCategories.SCRAPERS && !specificService) {
       const keenable = await resolveKeenableAuth();
+      if (keenable.rejectedUserApiUrl) {
+        return [false, true];
+      }
       if (
         authResult.searchProvider === SearchProviders.KEENABLE ||
         authResult.keenableApiKey ||

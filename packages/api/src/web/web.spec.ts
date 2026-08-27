@@ -1,12 +1,12 @@
-import { SafeSearchTypes, AuthType } from 'librechat-data-provider';
 import { webSearchAuth, webSearchSelectionFields } from '@librechat/data-schemas';
-import type {
-  ScraperProviders,
-  TWebSearchConfig,
-  SearchProviders,
-  TCustomConfig,
+import {
+  AuthType,
   RerankerTypes,
+  SafeSearchTypes,
+  SearchProviders,
+  ScraperProviders,
 } from 'librechat-data-provider';
+import type { TWebSearchConfig, TCustomConfig } from 'librechat-data-provider';
 import {
   loadWebSearchAuth,
   extractWebSearchEnvVars,
@@ -604,6 +604,33 @@ describe('web.ts', () => {
       }
     });
 
+    it('should reject selected Keenable auth when its user API URL is blocked', async () => {
+      mockIsSSRFTarget.mockReturnValueOnce(true);
+      mockLoadAuthValues.mockResolvedValue({
+        KEENABLE_API_KEY: 'user-keenable-key',
+        KEENABLE_API_URL: 'http://127.0.0.1:8080',
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig: {
+          keenableApiKey: '${KEENABLE_API_KEY}',
+          keenableApiUrl: '${KEENABLE_API_URL}',
+          searchProvider: 'keenable' as SearchProviders,
+          scraperProvider: 'keenable' as ScraperProviders,
+          rerankerType: 'none' as RerankerTypes,
+          safeSearch: SafeSearchTypes.MODERATE,
+        } as TWebSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(false);
+      expect(result.authResult.searchProvider).toBe(SearchProviders.KEENABLE);
+      expect(result.authResult.scraperProvider).toBe(ScraperProviders.KEENABLE);
+      expect(result.authResult.keenableApiKey).toBeUndefined();
+      expect(result.authResult.keenableApiUrl).toBeUndefined();
+    });
+
     it('should authenticate a fully keyless Keenable stack (search + scrape + no reranker)', async () => {
       // Nothing is authenticated anywhere: every field resolves empty.
       mockLoadAuthValues.mockImplementation(() => Promise.resolve({}));
@@ -670,6 +697,31 @@ describe('web.ts', () => {
       expect(result.authTypes.every(([, authType]) => authType === AuthType.USER_PROVIDED)).toBe(
         true,
       );
+    });
+
+    it('should return a persisted provider selection when its credential is missing', async () => {
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        if (authFields.includes(webSearchSelectionFields.selectedProvider)) {
+          return Promise.resolve({
+            [webSearchSelectionFields.selectedProvider]: SearchProviders.TAVILY,
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig: {
+          tavilyApiKey: '${TAVILY_API_KEY}',
+          firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+          safeSearch: SafeSearchTypes.MODERATE,
+        } as TWebSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(false);
+      expect(result.authResult.searchProvider).toBe(SearchProviders.TAVILY);
+      expect(result.authTypes).toContainEqual(['providers', AuthType.USER_PROVIDED]);
     });
 
     it('should pass Keenable scraper options through and honor their timeout', async () => {
