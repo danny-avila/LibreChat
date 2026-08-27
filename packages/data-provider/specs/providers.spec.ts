@@ -1,10 +1,11 @@
 import {
   ProviderId,
   resolveProviderId,
+  resolveModelCatalogKey,
   endpointToProvider,
   knownEndpointToProvider,
 } from '../src/providers';
-import { EModelEndpoint } from '../src/schemas';
+import { EModelEndpoint, Providers } from '../src/schemas';
 import { KnownEndpoints } from '../src/config';
 
 describe('ProviderId', () => {
@@ -76,5 +77,25 @@ describe('mapping tables', () => {
       expect(knownEndpointToProvider[known]).toBeDefined();
     }
     expect(knownEndpointToProvider[KnownEndpoints['together.ai']]).toBe(ProviderId.together);
+  });
+});
+
+describe('resolveModelCatalogKey', () => {
+  it('uses the Google endpoint catalog for Vertex AI', () => {
+    expect(resolveModelCatalogKey(Providers.VERTEXAI)).toBe(EModelEndpoint.google);
+  });
+
+  it('preserves an exact Vertex AI catalog over the native fallback', () => {
+    expect(
+      resolveModelCatalogKey(Providers.VERTEXAI, {
+        [EModelEndpoint.google]: ['gemini-3.7-flash'],
+        [Providers.VERTEXAI]: ['custom-vertex-model'],
+      }),
+    ).toBe(Providers.VERTEXAI);
+  });
+
+  it('preserves providers that own their own catalog', () => {
+    expect(resolveModelCatalogKey(EModelEndpoint.google)).toBe(EModelEndpoint.google);
+    expect(resolveModelCatalogKey('custom-provider')).toBe('custom-provider');
   });
 });

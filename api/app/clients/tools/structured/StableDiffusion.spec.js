@@ -3,7 +3,6 @@ const axios = require('axios');
 const mockApplySSRFSafeAgentIfDirect = jest.fn();
 
 jest.mock('axios', () => ({ post: jest.fn() }), { virtual: true });
-jest.mock('fs');
 jest.mock('sharp', () => jest.fn(), { virtual: true });
 jest.mock('uuid', () => ({ v4: jest.fn() }), { virtual: true });
 jest.mock('@librechat/data-schemas', () => ({
@@ -24,14 +23,10 @@ jest.mock(
   }),
   { virtual: true },
 );
-jest.mock(
-  '@librechat/api',
-  () => ({
-    applySSRFSafeAgentIfDirect: (...args) => mockApplySSRFSafeAgentIfDirect(...args),
-    getBasePath: jest.fn(),
-  }),
-  { virtual: true },
-);
+jest.mock('@librechat/api', () => ({
+  applySSRFSafeAgentIfDirect: (...args) => mockApplySSRFSafeAgentIfDirect(...args),
+  getBasePath: jest.fn(),
+}));
 jest.mock('~/config/paths', () => ({}), { virtual: true });
 
 const StableDiffusionAPI = require('./StableDiffusion');
