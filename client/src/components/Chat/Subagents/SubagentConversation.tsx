@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Bot, ChevronDown, CornerDownRight, Radio } from 'lucide-react';
 import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
+import { Bot, ChevronDown, CornerDownRight, Radio } from 'lucide-react';
 import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@librechat/client';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { ChildConversationTurn } from './adapters';
