@@ -58,6 +58,16 @@ const legacyCredentialFingerprints: Partial<Record<CredentialName, string[]>> = 
 
 const legacyJwtCredentialNames = new Set<CredentialName>(['JWT_SECRET', 'JWT_REFRESH_SECRET']);
 
+function rejectLegacyJwtCredential(name: CredentialName, value: string): void {
+  if (!legacyJwtCredentialNames.has(name) || !isLegacyCredential(name, value)) {
+    return;
+  }
+
+  throw new Error(
+    `[credentials] ${name} uses a retired default value. Configure a unique replacement before starting LibreChat.`,
+  );
+}
+
 function getRuntimeState(): CredentialRuntimeState | undefined {
   const runtime = globalThis as typeof globalThis &
     Record<symbol, CredentialRuntimeState | undefined>;
@@ -250,6 +260,8 @@ function adoptCredentialFile(
     if (!isUsableTemporaryCredential(name, value)) {
       return false;
     }
+
+    rejectLegacyJwtCredential(name, value);
   }
 
   for (const name of names) {
@@ -278,12 +290,7 @@ export function bootstrapCredentials(): CredentialRuntimeState {
   for (const name of credentialNames) {
     const environmentValue = process.env[name];
     if (isConfiguredCredential(environmentValue)) {
-      if (legacyJwtCredentialNames.has(name) && isLegacyCredential(name, environmentValue)) {
-        throw new Error(
-          `[credentials] ${name} uses a retired default value. Configure a unique replacement before starting LibreChat.`,
-        );
-      }
-
+      rejectLegacyJwtCredential(name, environmentValue);
       sources[name] = 'environment';
       continue;
     }
@@ -291,6 +298,7 @@ export function bootstrapCredentials(): CredentialRuntimeState {
     missingFromEnvironment.push(name);
     const fileValue = file.values[name];
     if (isUsableTemporaryCredential(name, fileValue)) {
+      rejectLegacyJwtCredential(name, fileValue);
       process.env[name] = fileValue;
       sources[name] = 'temporary';
       loadedFromFile.push(name);
