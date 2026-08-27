@@ -35,7 +35,7 @@ describe('useAuthSearchTool', () => {
   it('forwards an explicitly empty Keenable URL as a clear operation', () => {
     const { result } = renderHook(() => useAuthSearchTool());
 
-    act(() => result.current.installTool(emptyForm()));
+    act(() => result.current.installTool(emptyForm(), { keenableApiUrl: true }));
 
     expect(mockMutate).toHaveBeenCalledWith({
       pluginKey: Tools.web_search,
@@ -45,12 +45,25 @@ describe('useAuthSearchTool', () => {
     });
   });
 
-  it('omits an undefined Keenable URL', () => {
+  it('omits a pristine empty Keenable URL', () => {
+    const { result } = renderHook(() => useAuthSearchTool());
+
+    act(() => result.current.installTool(emptyForm()));
+
+    expect(mockMutate).toHaveBeenCalledWith({
+      pluginKey: Tools.web_search,
+      action: 'install',
+      auth: {},
+      isEntityTool: true,
+    });
+  });
+
+  it('omits an undefined Keenable URL even when marked dirty', () => {
     const data = emptyForm();
     data.keenableApiUrl = undefined as unknown as string;
     const { result } = renderHook(() => useAuthSearchTool());
 
-    act(() => result.current.installTool(data));
+    act(() => result.current.installTool(data, { keenableApiUrl: true }));
 
     expect(mockMutate).toHaveBeenCalledWith({
       pluginKey: Tools.web_search,

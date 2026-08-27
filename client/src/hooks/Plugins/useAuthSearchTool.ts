@@ -29,6 +29,8 @@ export type SearchApiKeyFormData = {
   cohereApiKey: string;
 };
 
+export type SearchApiKeyDirtyFields = Partial<Record<keyof SearchApiKeyFormData, boolean>>;
+
 const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
   const queryClient = useQueryClient();
   const isEntityTool = options?.isEntityTool ?? true;
@@ -60,7 +62,7 @@ const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
   });
 
   const installTool = useCallback(
-    (data: SearchApiKeyFormData) => {
+    (data: SearchApiKeyFormData, dirtyFields: SearchApiKeyDirtyFields = {}) => {
       const auth = Object.entries({
         selectedProvider: data.selectedProvider,
         selectedScraper: data.selectedScraper,
@@ -78,7 +80,9 @@ const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
         cohereApiKey: data.cohereApiKey,
       }).reduce(
         (acc, [key, value]) => {
-          if (value || (key === 'keenableApiUrl' && value === '')) {
+          const wasExplicitlyCleared =
+            value === '' && dirtyFields[key as keyof SearchApiKeyFormData] === true;
+          if (value || wasExplicitlyCleared) {
             acc[key] = value;
           }
           return acc;
