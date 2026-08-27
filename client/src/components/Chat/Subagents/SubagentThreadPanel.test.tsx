@@ -2112,6 +2112,19 @@ describe('SubagentThreadPanel', () => {
       ),
     );
     await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(6));
+
+    latestView = {
+      ...latestView,
+      nextCursor: 'new-live-boundary:assistant',
+      turns: [makeTurn('task-final', 'Final live result')],
+    };
+    rerender(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+    await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(7));
+
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
     await waitFor(() =>
       expect(mockGetSubagentThread).toHaveBeenLastCalledWith(
@@ -2121,7 +2134,7 @@ describe('SubagentThreadPanel', () => {
         'middle-older:assistant',
       ),
     );
-    await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(7));
+    await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(8));
     expect(screen.getAllByTestId('conversation-turn').map((turn) => turn.textContent)).toEqual([
       expect.stringContaining('Very old result'),
       expect.stringContaining('Boundary result'),
@@ -2130,6 +2143,7 @@ describe('SubagentThreadPanel', () => {
       expect.stringContaining('Newer middle result'),
       expect.stringContaining('New result'),
       expect.stringContaining('Newest result'),
+      expect.stringContaining('Final live result'),
     ]);
   });
 
