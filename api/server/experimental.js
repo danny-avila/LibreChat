@@ -19,6 +19,7 @@ const {
   applyCspNonce,
   createCspPolicy,
   shellCacheHeaders,
+  escapeHtmlAttribute,
   ErrorController,
   QUERY_DEVTOOLS_HEADER,
   createSecurityHeaders,
@@ -33,6 +34,7 @@ const {
   setupGracefulShutdown,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
+  configureAgentEventRuntime,
   GenerationJobManager,
   createAgentEventTerminalHandler,
   waitForKeyvRedisClient,
@@ -399,6 +401,7 @@ if (cluster.isMaster) {
     // principal) still merges DB `__base__` overrides, which must not drive which hook
     // modules load in every worker (matches api/server/index.js's baseOnly usage).
     const baseAppConfig = await getAppConfig({ baseOnly: true });
+    configureAgentEventRuntime(baseAppConfig?.endpoints?.agents?.eventDriven);
     const toolApproval = baseAppConfig?.endpoints?.agents?.toolApproval;
     await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
       basePath: path.resolve(__dirname, '../..'),
@@ -434,8 +437,8 @@ if (cluster.isMaster) {
       res.vary(QUERY_DEVTOOLS_HEADER);
 
       const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
-      const saneLang = lang.replace(/"/g, '&quot;');
-      let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+      const saneLang = escapeHtmlAttribute(lang);
+      let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, () => `lang="${saneLang}"`);
       updatedIndexHtml = maybeInjectQueryDevtoolsBootstrap(updatedIndexHtml, req);
 
       /* Nonce last: every injected script above must be stamped too. */

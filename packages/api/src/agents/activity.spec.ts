@@ -1,6 +1,77 @@
-import { projectSubagentActivity, SUBAGENT_ACTIVITY_LIMITS } from './activity';
+import {
+  projectPersistedMessageActivity,
+  projectPersistedMessageActivityJson,
+  projectSubagentActivity,
+  SUBAGENT_ACTIVITY_LIMITS,
+} from './activity';
 
 describe('durable subagent activity projection', () => {
+  it('projects ordinary persisted chat content into the shared activity vocabulary', () => {
+    const projection = projectPersistedMessageActivity([
+      { type: 'reasoning' },
+      {
+        type: 'activity_label',
+        label: 'Selected a legal move',
+        labelType: 'phase',
+        toolCallIds: ['move-1'],
+        labelTruncated: true,
+      },
+      {
+        type: 'tool',
+        toolCallId: 'move-1',
+        name: 'submit_move',
+        input: '{"uci":"e2e4"}',
+        output: '{"accepted":true}',
+        progress: 1,
+        inputValidationError: true,
+        inputTruncated: true,
+        outputTruncated: true,
+      },
+      { type: 'writing', text: 'Move submitted.' },
+    ]);
+
+    expect(projection).toEqual({
+      activity: [
+        { type: 'reasoning' },
+        {
+          type: 'activity_label',
+          label: 'Selected a legal move',
+          labelType: 'phase',
+          toolCallIds: ['move-1'],
+          labelTruncated: true,
+        },
+        {
+          type: 'tool',
+          toolCallId: 'move-1',
+          name: 'submit_move',
+          input: '{"uci":"e2e4"}',
+          output: '{"accepted":true}',
+          status: 'completed',
+          inputValidationError: true,
+          inputTruncated: true,
+          outputTruncated: true,
+        },
+        { type: 'writing', text: 'Move submitted.' },
+      ],
+      truncated: false,
+    });
+  });
+
+  it('validates a settlement-time public activity projection without private transcript parsing', () => {
+    const projection = projectPersistedMessageActivityJson(
+      JSON.stringify([{ type: 'reasoning' }, { type: 'writing', text: 'Public result.' }]),
+    );
+
+    expect(projection).toEqual({
+      activity: [{ type: 'reasoning' }, { type: 'writing', text: 'Public result.' }],
+      truncated: false,
+    });
+    expect(projectPersistedMessageActivityJson('{')).toEqual({
+      activity: [],
+      truncated: true,
+    });
+  });
+
   it('keeps visible text and tool lifecycle while dropping private metadata and reasoning text', () => {
     const projection = projectSubagentActivity(
       JSON.stringify([

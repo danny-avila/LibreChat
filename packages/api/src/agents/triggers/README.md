@@ -173,6 +173,26 @@ immediately before dispatch, so queued events do not persist stale chat topology
 is its default ordering lane. A short-lived internal trigger token plus a second binding lookup is
 required to pass the child-thread write guard; possessing a binding id alone grants no access.
 
+Set `endpoints.agents.eventDriven.actorMailbox: true` only after every API replica runs a release
+that understands terminal-handling mailbox blockers. The flag defaults to false for rolling
+deployment safety, and `ENABLE_AGENT_EVENT_ACTOR_MAILBOX` remains a compatibility fallback. Once
+enabled, a bound actor's next delivery stays queued after the current delivery reaches transport
+success and does not dispatch until that child generation records `applied`,
+`completed_no_action`, `failed`, or `cancelled`. Different bindings remain independent and can run
+in parallel. Existing coalesced batches occupy one mailbox position and retain each member's
+individual receipt. An active mailbox record does not receive its normal success TTL; the 90-day
+retention window begins only after terminal handling is recorded.
+
+Set `endpoints.agents.eventDriven.durableReceipts: true` only after every API replica runs the
+token-fenced delivery receipt implementation and all pre-upgrade bound-actor deliveries have
+drained. It defaults to false so a rolling deployment cannot overlap token-unaware admission
+release with a newer token-owned action. Keep it false during the binary rollout, then enable it
+deployment-wide together with `checkpointForks` after the old workers and their deliveries are
+gone. LibreChat projects this base-only setting into
+`ENABLE_AGENT_EVENT_DURABLE_RECEIPTS` before accepting requests; the controller deliberately does
+not read the merged per-principal config, so tenant, role, and user overrides cannot bypass the
+barrier.
+
 ### Coalescing observational child events
 
 Sources that can prove several bound `continue` events are interchangeable observations may opt

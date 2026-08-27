@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
 import { ForkOptions } from 'librechat-data-provider';
-import { Bot, CornerDownRight, ListEnd, MessagesSquare, OctagonX, X, Zap } from 'lucide-react';
+import {
+  Bot,
+  CornerDownRight,
+  CornerUpLeft,
+  ListEnd,
+  MessagesSquare,
+  OctagonX,
+  X,
+  Zap,
+} from 'lucide-react';
 import {
   useRecoilCallback,
   useRecoilState,
@@ -43,12 +52,17 @@ import {
   subagentProgressByToolCallId,
   subagentProgressKey,
 } from '~/store/subagents';
+import {
+  adaptDurableThreadActivity,
+  adaptDurableThreadConversation,
+  adaptLivePersistedActivity,
+} from './adapters';
 import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
 import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
-import { adaptDurableThreadActivity, adaptLivePersistedActivity } from './adapters';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
 import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useParentSubagents } from './ParentSubagentsProvider';
+import SubagentConversation from './SubagentConversation';
 import { eventSubagentSelection } from './eventSelection';
 import { useAgentsMapContext } from '~/Providers';
 
@@ -474,6 +488,50 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     }
     return { ...merged, controls: [...(merged.controls ?? []), transientControl] };
   }, [data, liveActivity, progress, selection.durable, transientControl]);
+  const conversationTurns = useMemo(() => {
+    const durableTurns = data == null ? [] : adaptDurableThreadConversation(data);
+    if (durableTurns.length > 0) {
+      const selectedTurnIndex = durableTurns.findIndex((turn) => turn.taskId === taskId);
+      if (selectedTurnIndex >= 0) {
+        return durableTurns.map((turn, index) =>
+          index === selectedTurnIndex ? { ...turn, activity } : turn,
+        );
+      }
+      // The API keeps the exact selected activity even when its bounded
+      // chronological turn is the first item removed from the response.
+      // Preserve that selection ahead of the retained newer continuation.
+      return [
+        {
+          taskId: taskId || `${selection.parentMessageId}:${selection.toolCallId}`,
+          trigger: {
+            kind:
+              selection.event == null
+                ? ('parent_continuation' as const)
+                : ('external_event' as const),
+            summary: selection.prompt ?? activity.prompt ?? '',
+          },
+          activity,
+        },
+        ...durableTurns,
+      ];
+    }
+    return [
+      {
+        taskId: taskId || `${selection.parentMessageId}:${selection.toolCallId}`,
+        trigger: {
+          kind:
+            selection.event == null ? ('parent_dispatch' as const) : ('external_event' as const),
+          summary: selection.prompt ?? activity.prompt ?? '',
+        },
+        activity,
+      },
+    ];
+  }, [activity, data, selection, taskId]);
+  /** During a rolling deployment an older API replica can omit `turns`. Keep
+   * that response readable through the same deep activity renderer; every
+   * current host otherwise enters the conversation-native rendering seam. */
+  const hasConversationProjection =
+    selection.durable == null || data == null || Array.isArray(data.turns);
   const taskInaccessible = controlInaccessible || transientControl?.reason === 'task_inaccessible';
   const controlAvailable =
     selection.durable != null && data?.status === 'running' && !taskInaccessible && !controlsClosed;
@@ -578,6 +636,62 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       </div>
     );
   }
+  const conversationStateByTask = useMemo(
+    () => new Map([[taskId || conversationTurns[0]?.taskId || '', panelState] as const]),
+    [conversationTurns, panelState, taskId],
+  );
+
+  let activityPanel: ReactNode;
+  if (hasConversationProjection) {
+    activityPanel = (
+      <SubagentActivityScrollSurface padded={false}>
+        {data?.historyTruncated === true && (
+          <div
+            role="note"
+            className="border-b border-border-light px-4 py-3 text-sm text-text-secondary"
+          >
+            {localize('com_ui_subagent_thread_history_truncated')}
+          </div>
+        )}
+        <SubagentConversation
+          turns={conversationTurns}
+          agentId={data?.agentId}
+          conversationId={threadId || selection.parentConversationId}
+          stateByTask={conversationStateByTask}
+          controllableTaskId={
+            controlAvailable && !controlPending ? selection.durable?.taskId : undefined
+          }
+          onCancelControl={(_controlledTaskId, controlId) =>
+            submitControl('cancel_message', controlId)
+          }
+        />
+      </SubagentActivityScrollSurface>
+    );
+  } else if (selection.event != null && (eventSummary?.tasks.length ?? 0) > 1) {
+    activityPanel = (
+      <SubagentActivityScrollSurface padded={false}>
+        <div data-subagent-thread-timeline>
+          {timelinePrefix}
+          {visibleEventTasks.map(renderEventTask)}
+        </div>
+      </SubagentActivityScrollSurface>
+    );
+  } else {
+    activityPanel = (
+      <SubagentActivity
+        key={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
+        activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
+        activity={activity}
+        state={panelState}
+        showPrompt={false}
+        onCancelControl={
+          controlAvailable && !controlPending
+            ? (controlId) => submitControl('cancel_message', controlId)
+            : undefined
+        }
+      />
+    );
+  }
 
   return (
     <aside
@@ -595,7 +709,25 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           <h2 className="truncate text-sm font-semibold" title={activity.title}>
             {activity.title}
           </h2>
+          {data?.depth != null && (
+            <div className="truncate text-xs text-text-secondary">
+              {localize('com_ui_subagent_depth', { 0: String(data.depth) })}
+            </div>
+          )}
         </div>
+        {selection.host === 'conversation' && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={close}
+            aria-label={localize('com_ui_subagent_view_in_parent')}
+            className="h-8 shrink-0 gap-1.5"
+          >
+            <CornerUpLeft size={15} aria-hidden="true" />
+            <span className="hidden lg:inline">{localize('com_ui_subagent_view_in_parent')}</span>
+          </Button>
+        )}
         {canContinueAsChat && (
           <Button
             type="button"
@@ -656,26 +788,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       <ApprovalProvider
         key={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
       >
-        {selection.event != null && (eventSummary?.tasks.length ?? 0) > 1 ? (
-          <SubagentActivityScrollSurface padded={false}>
-            <div data-subagent-thread-timeline>
-              {timelinePrefix}
-              {visibleEventTasks.map(renderEventTask)}
-            </div>
-          </SubagentActivityScrollSurface>
-        ) : (
-          <SubagentActivity
-            key={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
-            activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
-            activity={activity}
-            state={panelState}
-            onCancelControl={
-              controlAvailable && !controlPending
-                ? (controlId) => submitControl('cancel_message', controlId)
-                : undefined
-            }
-          />
-        )}
+        {activityPanel}
       </ApprovalProvider>
       {showControlFooter && (
         <div className="shrink-0 border-t border-border-light p-3">
@@ -795,6 +908,7 @@ function HistoricalEventTaskActivity({
       activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${task.taskId}`}
       activity={activity}
       state={state}
+      showPrompt={false}
       embedded
     />
   );

@@ -47,6 +47,7 @@ export interface AgentTriggerServiceDeps {
   purgeRecoveryIntervalMs?: number;
   purgeRecoveryLimit?: number;
   coalescingEnabled?: () => boolean;
+  actorMailboxEnabled?: () => boolean;
 }
 
 export interface AgentTriggerDeliveryReceipt {
@@ -120,6 +121,7 @@ export interface AgentTriggerDeliveryPersistence {
   ) => Promise<void>;
   cancelAgentTriggerUserPurge: (userId: string, fenceStartedAt: Date) => Promise<boolean>;
   recoverAgentTriggerUserPurges: (limit?: number) => Promise<number>;
+  expireLegacyAgentEventActorReceipts?: (now: Date, limit?: number) => Promise<number>;
   deleteAgentTriggerDeliveriesByUser: (userId: string) => Promise<void>;
 }
 
@@ -195,6 +197,8 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   const purgeRecoveryLimit = deps.purgeRecoveryLimit ?? DEFAULT_PURGE_RECOVERY_LIMIT;
   const coalescingEnabled =
     deps.coalescingEnabled ?? (() => isEnabled(process.env.ENABLE_AGENT_EVENT_COALESCING));
+  const actorMailboxEnabled =
+    deps.actorMailboxEnabled ?? (() => isEnabled(process.env.ENABLE_AGENT_EVENT_ACTOR_MAILBOX));
   if (!Number.isSafeInteger(userDrainTimeoutMs) || userDrainTimeoutMs <= 0) {
     throw new TypeError('userDrainTimeoutMs must be a positive integer');
   }
@@ -299,21 +303,31 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     }
     const methods = deps.methods;
     const current = runAsSystem(async () => {
-      const [purgedUsers, publishedLanes, recoveredBatches] = await Promise.all([
-        methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit),
-        methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
-        methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit),
-      ]);
+      const [purgedUsers, publishedLanes, recoveredBatches, expiredLegacyActorReceipts] =
+        await Promise.all([
+          methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit),
+          methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
+          methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit),
+          methods.expireLegacyAgentEventActorReceipts?.(new Date(), purgeRecoveryLimit) ??
+            Promise.resolve(0),
+        ]);
       const reclaimedLanes = await methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit);
       if (publishedLanes > 0) {
         deliveryEngine?.wake();
       }
-      if (purgedUsers > 0 || publishedLanes > 0 || recoveredBatches > 0 || reclaimedLanes > 0) {
+      if (
+        purgedUsers > 0 ||
+        publishedLanes > 0 ||
+        recoveredBatches > 0 ||
+        reclaimedLanes > 0 ||
+        expiredLegacyActorReceipts > 0
+      ) {
         logger.info('[agent-triggers] recovered durable delivery maintenance', {
           purgedUsers,
           publishedLanes,
           recoveredBatches,
           reclaimedLanes,
+          expiredLegacyActorReceipts,
         });
       }
     })
@@ -406,8 +420,19 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         throw new AgentTriggerDeliveryError('Agent event coalescing is not enabled on this server');
       }
       const prepared = prepareAgentTriggerDelivery(envelope, options);
+      const awaitTerminalHandling =
+        actorMailboxEnabled() &&
+        prepared.envelope.mode === 'continue' &&
+        prepared.envelope.target.bindingId != null &&
+        prepared.envelope.target.sourceKeyId != null;
+      const durableDelivery: PreparedAgentTriggerDelivery = {
+        ...prepared,
+        ...(awaitTerminalHandling && { awaitTerminalHandling: true }),
+      };
       await requireActivePrincipal(String(prepared.user));
-      const queued = await runAsSystem(async () => methods.enqueueAgentTriggerDelivery(prepared));
+      const queued = await runAsSystem(async () =>
+        methods.enqueueAgentTriggerDelivery(durableDelivery),
+      );
       try {
         await requireActivePrincipal(String(prepared.user));
       } catch (error) {

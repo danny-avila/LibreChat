@@ -1,4 +1,5 @@
 import type { Document, Types } from 'mongoose';
+import type { IAgentEventActorReconciliation } from './convo';
 
 export type AgentTriggerDeliveryStatus =
   | 'staging'
@@ -21,6 +22,18 @@ export interface AgentTriggerHandlingState {
     toolName: string;
     toolCallId?: string;
   };
+}
+
+/** Private terminal proof for one delivery-owned event-actor invocation. */
+export interface AgentEventActorReceipt {
+  bindingId: string;
+  resolution: 'checkpoint_verified' | 'action_compensated' | 'history_repaired';
+  checkpoint: IAgentEventActorReconciliation['checkpoint'];
+  action: {
+    toolName: string;
+    toolCallId?: string;
+  };
+  settledAt: Date;
 }
 
 export interface AgentTriggerDeliveryFailure {
@@ -63,7 +76,16 @@ export interface IAgentTriggerDelivery {
   batchRootId?: Types.ObjectId;
   batchRootRequeueCount?: number;
   batchMembersSettledAt?: Date;
+  /** Keeps this binding lane serialized until its admitted child turn reaches
+   *  an authoritative terminal handling outcome. */
+  awaitTerminalHandling?: boolean;
   handling?: AgentTriggerHandlingState;
+  actorReceipt?: AgentEventActorReceipt;
+  /** Delivery-owned serialization point acquired exactly once before an event
+   * actor may invoke an external action. */
+  actorActionAdmittedAt?: Date;
+  /** Attempt identity that fences admission takeover and release. */
+  actorActionAdmissionId?: string;
   leaseBy?: string;
   leaseUntil?: Date;
   claimToken?: string;
@@ -147,4 +169,5 @@ export interface AgentTriggerDeliveryClaim extends AgentTriggerDeliveryRecord {
 export interface AgentTriggerOrderingBlock {
   availableAt: Date;
   leaseUntil?: Date;
+  reason?: 'active_handling';
 }

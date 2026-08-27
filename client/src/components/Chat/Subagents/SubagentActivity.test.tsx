@@ -270,7 +270,7 @@ describe('SubagentActivity', () => {
     expect(screen.getByTestId('tool-approval')).toBeInTheDocument();
   });
 
-  it('marks bounded activity as shortened without expanding tool details', () => {
+  it('marks bounded tool details as shortened without claiming history is missing', () => {
     render(
       <SubagentActivity
         activity={{
@@ -290,7 +290,8 @@ describe('SubagentActivity', () => {
     );
 
     expect(screen.queryByText('bounded input')).not.toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_thread_history_truncated')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_subagent_activity_details_truncated')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_subagent_thread_history_truncated')).not.toBeInTheDocument();
   });
 
   it('renders writing, reasoning, grouped tools, and collapsed details', () => {

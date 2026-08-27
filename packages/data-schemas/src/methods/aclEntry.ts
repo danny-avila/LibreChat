@@ -139,6 +139,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     resourceType: string,
     requiredPermBit: number,
     resourceIds?: Types.ObjectId[],
+    readPrimary?: boolean,
   ) => Promise<Types.ObjectId[]>;
   deleteAclEntries: (
     filter: Record<string, unknown>,
@@ -152,6 +153,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     resourceType: string,
     requiredPermissions: number,
     resourceIds?: Types.ObjectId[],
+    readPrimary?: boolean,
   ) => Promise<Types.ObjectId[]>;
   aggregateAclEntries: (pipeline: PipelineStage[]) => Promise<unknown[]>;
   getSoleOwnedResourceIds: (
@@ -492,6 +494,8 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
    *   resources are considered, so the query cost scales with the candidate set
    *   instead of every accessible resource of the type. An empty array matches
    *   nothing rather than lifting the bound.
+   * @param readPrimary - Read from the primary so a lagging secondary cannot
+   *   pin pre-mutation IDs into a caller's cache.
    * @returns Array of resource IDs
    */
   async function findAccessibleResources(
@@ -499,6 +503,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     resourceType: string,
     requiredPermBit: number,
     resourceIds?: Types.ObjectId[],
+    readPrimary = false,
   ): Promise<Types.ObjectId[]> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     const principalsQuery = principalsList.map((p) => ({
@@ -506,12 +511,17 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
       ...(p.principalType !== PrincipalType.PUBLIC && { principalId: p.principalId }),
     }));
 
-    return await AclEntry.find({
+    const query = AclEntry.find({
       $or: principalsQuery,
       ...(resourceIds !== undefined && { resourceId: { $in: resourceIds } }),
       resourceType,
       permBits: { $in: permissionBitSupersets(requiredPermBit) },
-    }).distinct('resourceId');
+    });
+    if (readPrimary) {
+      /** Cache builds must not capture a lagging secondary's pre-mutation state */
+      query.read('primary');
+    }
+    return await query.distinct('resourceId');
   }
 
   /**
@@ -546,19 +556,26 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
    * @param resourceType - The type of resource
    * @param requiredPermissions - Required permission bits
    * @param resourceIds - Optional candidate bound; see {@link findAccessibleResources}
+   * @param readPrimary - Read from the primary; see {@link findAccessibleResources}
    */
   async function findPublicResourceIds(
     resourceType: string,
     requiredPermissions: number,
     resourceIds?: Types.ObjectId[],
+    readPrimary = false,
   ): Promise<Types.ObjectId[]> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
-    return await AclEntry.find({
+    const query = AclEntry.find({
       principalType: PrincipalType.PUBLIC,
       ...(resourceIds !== undefined && { resourceId: { $in: resourceIds } }),
       resourceType,
       permBits: { $in: permissionBitSupersets(requiredPermissions) },
-    }).distinct('resourceId');
+    });
+    if (readPrimary) {
+      /** Cache builds must not capture a lagging secondary's pre-mutation state */
+      query.read('primary');
+    }
+    return await query.distinct('resourceId');
   }
 
   /**

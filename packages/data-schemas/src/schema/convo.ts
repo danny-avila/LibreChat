@@ -66,6 +66,104 @@ const convoSchema: Schema<IConversation> = new Schema(
       default: undefined,
       select: false,
     },
+    /** Committed event-actor state. Invocation forks live in the checkpointer;
+     * only the current and previous committed identities live with the binding. */
+    agentEventActor: {
+      type: {
+        generation: { type: Number, min: 1, required: true },
+        checkpoint: {
+          type: {
+            threadId: { type: String, required: true },
+            checkpointId: { type: String, required: true },
+            checkpointNs: { type: String, required: true },
+          },
+          _id: false,
+          required: true,
+        },
+        previousCheckpoint: {
+          type: {
+            threadId: { type: String, required: true },
+            checkpointId: { type: String, required: true },
+            checkpointNs: { type: String, required: true },
+          },
+          _id: false,
+          default: undefined,
+        },
+        requiresColdStart: { type: Boolean, default: undefined },
+      },
+      _id: false,
+      default: undefined,
+      select: false,
+    },
+    /** Fail-closed invocation proof. Active records block later turns through checkpoint,
+     * history, and outcome settlement; settled receipts no longer block new IDs but keep
+     * delayed owners from reacquiring an invocation that already applied its action. */
+    agentEventActorReconciliations: {
+      type: [
+        {
+          invocationId: { type: String, required: true },
+          actionAdmitted: { type: Boolean, default: undefined },
+          status: {
+            type: String,
+            enum: [
+              'invocation_pending',
+              'persistence_pending',
+              'history_persisted',
+              'commit_conflict',
+              'commit_indeterminate',
+              'persistence_failed',
+              'settled',
+            ],
+            required: true,
+          },
+          checkpoint: {
+            type: {
+              threadId: { type: String, required: true },
+              checkpointId: { type: String, default: undefined },
+              checkpointNs: { type: String, required: true },
+            },
+            _id: false,
+            required: true,
+          },
+          action: {
+            type: {
+              toolName: { type: String, required: true },
+              toolCallId: { type: String, default: undefined },
+            },
+            _id: false,
+            required: true,
+          },
+          error: { type: String, default: undefined },
+          resolution: {
+            type: String,
+            enum: ['checkpoint_verified', 'action_compensated', 'history_repaired'],
+            default: undefined,
+          },
+          observedAt: { type: Date, required: true },
+          _id: false,
+        },
+      ],
+      default: undefined,
+      select: false,
+    },
+    /** Bumped by every legacy-path event so a concurrently prepared fork can
+     * never commit past an invalidation the head fields alone cannot show. */
+    agentEventActorEpoch: {
+      type: Number,
+      default: undefined,
+      select: false,
+    },
+    /** In-flight legacy turn. Blocks fork execution and commit until the
+     * turn's history is durable; a crash leaves it set, failing closed. */
+    agentEventActorLegacyTurn: {
+      type: {
+        token: { type: String, required: true },
+        startedAt: { type: Date, required: true },
+      },
+      _id: false,
+      default: undefined,
+      select: false,
+    },
     tags: {
       type: [String],
       default: [],
@@ -121,6 +219,13 @@ convoSchema.index({ user: 1, 'subagentThreadLease.expiresAt': 1 });
 convoSchema.index(
   { 'agentEventBinding.bindingId': 1 },
   { unique: true, sparse: true, name: 'agent_event_binding_unique' },
+);
+convoSchema.index(
+  {
+    'agentEventActorReconciliations.status': 1,
+    'agentEventActorReconciliations.observedAt': 1,
+  },
+  { sparse: true, name: 'agent_event_actor_reconciliation_metrics' },
 );
 // index for MeiliSearch sync operations
 convoSchema.index({ _meiliIndex: 1, isTemporary: 1, expiredAt: 1 });

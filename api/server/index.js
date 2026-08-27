@@ -20,6 +20,7 @@ const {
   applyCspNonce,
   createCspPolicy,
   shellCacheHeaders,
+  escapeHtmlAttribute,
   ErrorController,
   memoryDiagnostics,
   createSecurityHeaders,
@@ -147,7 +148,21 @@ const configureGenerationStreams = () => {
 const startServer = async () => {
   await waitForKeyvRedisClient();
   await configureSubagentTaskRouting();
-  const { metricsMiddleware, metricsRouter } = createMetrics();
+  const { metricsMiddleware, metricsRouter } = createMetrics({
+    collectAgentEventActorStorageMetrics: () =>
+      runAsSystem(async () => {
+        const now = new Date();
+        const [receiptMetrics, reconciliationMetrics] = await Promise.all([
+          agentEventMethods.getAgentEventActorReceiptStorageMetrics(now),
+          agentEventMethods.getAgentEventActorReconciliationStorageMetrics(now),
+        ]);
+        return {
+          ...receiptMetrics,
+          pendingReconciliations: reconciliationMetrics.pending,
+          oldestPendingAgeSeconds: reconciliationMetrics.oldestPendingAgeSeconds,
+        };
+      }),
+  });
   if (!process.env.METRICS_SECRET) {
     logger.warn('[metrics] METRICS_SECRET is not set - /metrics will return 401 for all requests');
   }
@@ -252,8 +267,8 @@ const startServer = async () => {
     res.vary(QUERY_DEVTOOLS_HEADER);
 
     const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
-    const saneLang = lang.replace(/"/g, '&quot;');
-    let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+    const saneLang = escapeHtmlAttribute(lang);
+    let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, () => `lang="${saneLang}"`);
     updatedIndexHtml = maybeInjectQueryDevtoolsBootstrap(updatedIndexHtml, req);
 
     /* Nonce last: every injected script above must be stamped too. */

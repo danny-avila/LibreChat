@@ -155,6 +155,17 @@ const messageSchema: Schema<IMessage> = new Schema(
       select: false,
       default: undefined,
     },
+    subagentActivityProjection: {
+      type: {
+        taskId: { type: String, required: true },
+        version: { type: Number, enum: [1], required: true },
+        activityJson: { type: String, required: true },
+        truncated: { type: Boolean, required: true },
+      },
+      _id: false,
+      select: false,
+      default: undefined,
+    },
     /** Durable, server-only marker used to make detached retries at-most-once. */
     subagentTask: {
       type: {

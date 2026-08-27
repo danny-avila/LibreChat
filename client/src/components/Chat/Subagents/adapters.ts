@@ -4,6 +4,8 @@ import type {
   PartMetadata,
   SubagentActivityItem,
   SubagentControlReceipt,
+  SubagentThreadTriggerKind,
+  SubagentThreadTurn,
   SubagentThreadStatus,
   SubagentThreadView,
   TMessageContentParts,
@@ -45,6 +47,7 @@ export type ChildActivityItem =
       agentIds?: string[];
       status?: 'ok' | 'partial' | 'failed';
       pending?: boolean;
+      labelTruncated?: boolean;
     };
 
 export type ChildActivity = {
@@ -59,6 +62,17 @@ export type ChildActivity = {
   >;
   activityTruncated?: boolean;
   controlsTruncated?: boolean;
+};
+
+export type ChildConversationTurn = {
+  taskId: string;
+  trigger: {
+    kind: SubagentThreadTriggerKind;
+    summary: string;
+    createdAt?: string;
+    summaryTruncated?: boolean;
+  };
+  activity: ChildActivity;
 };
 
 type ContentToolCall = {
@@ -164,6 +178,7 @@ const publicActivityToChildActivity = (items: SubagentActivityItem[]): ChildActi
     return {
       ...item,
       ...(item.input == null ? {} : { input: item.input }),
+      ...(item.inputValidationError === true ? { inputValidationError: true } : {}),
     };
   });
 
@@ -323,13 +338,35 @@ export function adaptDurableThreadActivity(
     items,
     controls: view.controlReceipts ?? [],
     controlsTruncated: view.controlReceiptsTruncated === true,
-    activityTruncated:
-      view.activityTruncated ||
-      view.historyTruncated ||
-      (view.activity ?? []).some(
-        (item) =>
-          (item.type === 'writing' && item.textTruncated === true) ||
-          (item.type === 'tool' && (item.inputTruncated === true || item.outputTruncated === true)),
-      ),
+    activityTruncated: view.activityTruncated,
   };
+}
+
+const adaptDurableTurn = (turn: SubagentThreadTurn, title: string): ChildConversationTurn => {
+  const items = publicActivityToChildActivity(turn.activity ?? []);
+  const response = turn.messages.find((message) => message.role === 'assistant');
+  if (items.length === 0 && response?.text != null && response.text !== '') {
+    items.push({
+      type: 'writing',
+      text: response.text,
+      ...(response.textTruncated === true ? { textTruncated: true } : {}),
+    });
+  }
+  return {
+    taskId: turn.taskId,
+    trigger: turn.trigger,
+    activity: {
+      title,
+      status: turn.status,
+      items,
+      controls: turn.controlReceipts ?? [],
+      controlsTruncated: turn.controlReceiptsTruncated === true,
+      activityTruncated: turn.activityTruncated,
+    },
+  };
+};
+
+/** Adapts the branch-selected durable history into one chronological child conversation. */
+export function adaptDurableThreadConversation(view: SubagentThreadView): ChildConversationTurn[] {
+  return (view.turns ?? []).map((turn) => adaptDurableTurn(turn, view.title));
 }

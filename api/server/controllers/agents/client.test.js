@@ -992,6 +992,84 @@ describe('AgentClient - startup telemetry', () => {
     );
   });
 
+  it('rehydrates a warm event actor from its fork and injects only the new event message', async () => {
+    jest.clearAllMocks();
+    const history = { _getType: () => 'human', content: 'old turn' };
+    const currentEvent = { _getType: () => 'human', content: 'new event' };
+    mockFormatAgentMessages.mockReturnValueOnce({
+      messages: [history, currentEvent],
+      indexTokenCountMap: { 0: 11, 1: 22 },
+      summary: { text: 'summary of earlier turns', tokenCount: 40 },
+      boundaryTokenAdjustment: undefined,
+    });
+    const processStream = jest.fn().mockResolvedValue();
+    mockCreateRun.mockResolvedValue({
+      Graph: null,
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-123',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-123';
+    client.responseMessageId = 'response-123';
+    client.parentMessageId = 'parent-123';
+    client.checkpointNamespace = 'event-actor/fork';
+    client.eventActorCheckpointId = 'checkpoint-base';
+    client.eventActorInvocationId = 'event-2';
+    client.eventActorContinuation = 'warm';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] });
+
+    expect(mockCreateRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: [history, currentEvent],
+        eventActorCheckpointing: true,
+        /** The DB-derived token map is positional over full history, which a
+         * checkpoint-restored graph state no longer matches. It must be blank
+         * so the pruner recounts against the messages actually in state. The
+         * cross-run summary stays: it summarizes pre-boundary turns that were
+         * excluded from the history the committed checkpoint was built from. */
+        indexTokenCountMap: {},
+        initialSummary: { text: 'summary of earlier turns', tokenCount: 40 },
+      }),
+    );
+    expect(processStream).toHaveBeenCalledWith(
+      { messages: [currentEvent] },
+      expect.objectContaining({
+        configurable: expect.objectContaining({
+          thread_id: 'conversation-123',
+          checkpoint_id: 'checkpoint-base',
+          __librechat_checkpoint_ns: 'event-actor/fork',
+          __librechat_event_actor_invocation_id: 'event-2',
+          event_actor_invocation_id: 'event-2',
+          event_actor_depth: 1,
+        }),
+      }),
+      expect.anything(),
+    );
+    expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+  });
+
   it('does not expose or process a fresh graph when strict checkpoint pruning fails', async () => {
     jest.clearAllMocks();
     const checkpointGeneration = {

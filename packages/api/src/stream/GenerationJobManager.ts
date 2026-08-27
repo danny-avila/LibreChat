@@ -2626,6 +2626,7 @@ class GenerationJobManagerClass {
         providerDrained: jobData.providerDrained,
         steersClosed: jobData.steersClosed,
         idempotencyClientRequestId: jobData.idempotencyClientRequestId,
+        agentEventLegacyTurnToken: jobData.agentEventLegacyTurnToken,
         terminalPersistencePending: jobData.terminalPersistencePending,
         terminalPersistenceStartedAt: jobData.terminalPersistenceStartedAt,
         // Surface the pending review so status/resume routes built on the

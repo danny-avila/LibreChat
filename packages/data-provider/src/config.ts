@@ -70,6 +70,10 @@ export const defaultRetrievalModels = [
 export const excludedKeys = new Set([
   'conversationId',
   'agentEventBinding',
+  'agentEventActor',
+  'agentEventActorReconciliations',
+  'agentEventActorEpoch',
+  'agentEventActorLegacyTurn',
   'subagentThread',
   'title',
   'iconURL',
@@ -1047,6 +1051,18 @@ export const agentsEndpointSchema = baseEndpointSchema
           completionWakeups: z.boolean().optional(),
           /** Enable only after every API worker can consume coalesced deliveries. */
           coalescing: z.boolean().optional(),
+          /** Keep each bound actor's durable delivery lane queued through the
+           *  admitted child turn's authoritative terminal outcome. */
+          actorMailbox: z.boolean().optional(),
+          /** Reuse a bound event actor's committed checkpoint through isolated
+           *  per-invocation forks. Keep off until every API worker runs an SDK
+           *  and host adapter that understand the fork lifecycle. */
+          checkpointForks: z.boolean().optional(),
+          /** Admit checkpoint-forked external actions through the durable
+           * delivery receipt protocol. Enable only after every API replica
+           * runs the token-fenced receipt implementation and pre-upgrade
+           * actor deliveries have drained. */
+          durableReceipts: z.boolean().optional(),
           /** Optional trusted origin for in-process trigger delivery. The bound
            *  listener remains the default and is safer for most deployments. */
           selfUrl: z.string().url().optional(),
@@ -1065,6 +1081,15 @@ export const agentsEndpointSchema = baseEndpointSchema
       checkpointer: checkpointerSchema,
     }),
   )
+  .superRefine((config, ctx) => {
+    if (config.eventDriven?.checkpointForks === true && config.checkpointer?.type === 'memory') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['eventDriven', 'checkpointForks'],
+        message: 'Event actor checkpoint forks require the Mongo checkpointer',
+      });
+    }
+  })
   .default({
     disableBuilder: false,
     capabilities: defaultAgentCapabilities,
@@ -1089,6 +1114,14 @@ export const paramDefinitionSchema = z.object({
       min: z.number(),
       max: z.number(),
       step: z.number().optional(),
+      positiveMin: z.number().optional(),
+    })
+    /** A floor above the ceiling admits nothing but the sentinel, while the
+     *  clamp maps every non-negative input onto a maximum the generated schema
+     *  then rejects. */
+    .refine((value) => value.positiveMin == null || value.positiveMin <= value.max, {
+      message: 'range.positiveMin cannot exceed range.max',
+      path: ['positiveMin'],
     })
     .optional(),
   enumMappings: z.record(z.union([z.number(), z.boolean(), z.string()])).optional(),
@@ -2697,6 +2730,10 @@ export enum CacheKeys {
    * Key for cached group memberships used to resolve ACL user principals.
    */
   USER_PRINCIPALS = 'USER_PRINCIPALS',
+  /**
+   * Key for cached prompt group access ID sets (accessible, public, owned).
+   */
+  PROMPT_GROUPS_ACCESS = 'PROMPT_GROUPS_ACCESS',
   /**
    * Key for per-conversation stateful code sandbox prewarm/warm state.
    */

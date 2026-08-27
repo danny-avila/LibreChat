@@ -308,6 +308,22 @@ const initializeClient = async ({
    * server-owned per-agent map. This covers both traditional TOOL_END events
    * and event-driven ON_TOOL_EXECUTE callbacks. */
   const toolEndCallback = async (data, metadata = {}) => {
+    /** Event-actor action receipt: recorded in graph context at execution time
+     * so fork classification never races the asynchronously populated run-step
+     * collection. Observational only — a recorder failure must not disturb the
+     * tool result path. */
+    if (typeof req._agentEventActionObserver === 'function') {
+      try {
+        req._agentEventActionObserver(data);
+      } catch (observerError) {
+        logger.warn('[toolEndCallback] Event actor action observer failed', observerError);
+      }
+    }
+    /** Policy-withheld outputs exist solely as execution evidence for the
+     * observer above; nothing may flow to artifact processing. */
+    if (data?.outputFiltered === true) {
+      return;
+    }
     const node = typeof metadata.langgraph_node === 'string' ? metadata.langgraph_node : '';
     const nodeAgentId = node.startsWith(GraphNodeKeys.TOOLS)
       ? node.slice(GraphNodeKeys.TOOLS.length)

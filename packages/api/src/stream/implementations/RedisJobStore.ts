@@ -4729,9 +4729,11 @@ export class RedisJobStore implements IJobStoreV2 {
       agent_id: data.agent_id || undefined,
       isTemporary: data.isTemporary != null ? data.isTemporary === '1' : undefined,
       agentEventDeliveryKey: data.agentEventDeliveryKey || undefined,
+      agentEventBindingId: data.agentEventBindingId || undefined,
       agentEventExpectedAction: data.agentEventExpectedAction
         ? JSON.parse(data.agentEventExpectedAction)
         : undefined,
+      agentEventLegacyTurnToken: data.agentEventLegacyTurnToken || undefined,
       scheduleId: data.scheduleId || undefined,
       scheduledFor: data.scheduledFor || undefined,
       scheduleConfigRevision: data.scheduleConfigRevision
