@@ -1778,6 +1778,7 @@ describe('BaseClient', () => {
         anotherExistingField: 'anotherValue',
         temperature: 0.7,
         modelLabel: 'GPT-3.5',
+        pinned: true,
         subagentThread: {
           rootConversationId: 'root-conversation',
           parentConversationId: 'parent-conversation',
@@ -1822,6 +1823,9 @@ describe('BaseClient', () => {
       // Only check that someExistingField is in unsetFields
       expect(saveOptions.unsetFields).toHaveProperty('someExistingField', 1);
       expect(saveOptions.unsetFields).not.toHaveProperty('subagentThread');
+      // Sidebar metadata is never part of endpointOptions, so sweeping it would
+      // unpin a chat every time it received a message.
+      expect(saveOptions.unsetFields).not.toHaveProperty('pinned');
 
       // Mock saveConvo to return the expected fields
       saveConvo.mockImplementation((req, fields) => {

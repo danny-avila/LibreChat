@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   MemoryScope,
   getMaxSubagents,
+  resolveModelCatalogKey,
   ViolationTypes,
   ErrorTypes,
   MAX_SUBAGENT_GRAPH_NODES,
@@ -923,7 +924,7 @@ export async function validateAgentModel(
     };
   }
 
-  const availableModels = modelsConfig[endpoint];
+  const availableModels = modelsConfig[resolveModelCatalogKey(endpoint, modelsConfig)];
   if (!availableModels) {
     return {
       isValid: false,

@@ -2,6 +2,7 @@
  * @jest-environment jsdom
  */
 import React from 'react';
+import { Providers } from 'librechat-data-provider';
 import { FormProvider, useForm } from 'react-hook-form';
 import { fireEvent, render } from '@testing-library/react';
 import type { AgentForm } from '~/common';
@@ -144,6 +145,54 @@ describe('ModelPanel', () => {
     expect(getByTestId('com_ui_model-selected')).toHaveTextContent('alternate-model');
     expect(localStorage.getItem('lastAgentProvider')).toBe('alternate');
     expect(localStorage.getItem('lastAgentModel')).toBe('alternate-model');
+  });
+
+  it('selects the Google catalog for a Vertex AI provider', () => {
+    const providers = [
+      { label: 'Original', value: 'original' },
+      { label: 'Vertex AI', value: Providers.VERTEXAI },
+    ];
+    const { getByTestId } = render(
+      <TestForm
+        defaultProvider="original"
+        defaultModel="original-model"
+        models={{ original: ['original-model'], google: ['gemini-3.7-flash'] }}
+        modelsReady={true}
+        providers={providers}
+      />,
+    );
+
+    fireEvent.click(getByTestId(`com_ui_provider-${Providers.VERTEXAI}`));
+
+    expect(getByTestId('com_ui_model-selected')).toHaveTextContent('gemini-3.7-flash');
+    expect(localStorage.getItem('lastAgentProvider')).toBe(Providers.VERTEXAI);
+    expect(localStorage.getItem('lastAgentModel')).toBe('gemini-3.7-flash');
+  });
+
+  it('selects an exact Vertex AI catalog when configured', () => {
+    const providers = [
+      { label: 'Original', value: 'original' },
+      { label: 'Vertex AI', value: Providers.VERTEXAI },
+    ];
+    const { getByTestId } = render(
+      <TestForm
+        defaultProvider="original"
+        defaultModel="original-model"
+        models={{
+          original: ['original-model'],
+          google: ['gemini-3.7-flash'],
+          [Providers.VERTEXAI]: ['custom-vertex-model'],
+        }}
+        modelsReady={true}
+        providers={providers}
+      />,
+    );
+
+    fireEvent.click(getByTestId(`com_ui_provider-${Providers.VERTEXAI}`));
+
+    expect(getByTestId('com_ui_model-selected')).toHaveTextContent('custom-vertex-model');
+    expect(localStorage.getItem('lastAgentProvider')).toBe(Providers.VERTEXAI);
+    expect(localStorage.getItem('lastAgentModel')).toBe('custom-vertex-model');
   });
 
   it('preserves the model when the current provider is selected again', () => {
