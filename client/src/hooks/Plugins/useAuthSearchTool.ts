@@ -78,7 +78,7 @@ const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
         cohereApiKey: data.cohereApiKey,
       }).reduce(
         (acc, [key, value]) => {
-          if (value) {
+          if (value || (key === 'keenableApiUrl' && value === '')) {
             acc[key] = value;
           }
           return acc;
