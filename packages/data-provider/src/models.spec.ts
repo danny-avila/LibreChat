@@ -1,6 +1,9 @@
+import type { TModelSpec } from './models';
 import {
   resolveSpecToolFlag,
+  resolveSpecArtifacts,
   resolveSpecMcpServers,
+  resolveSpecUserToggle,
   resolveSpecUserToggles,
   resolveSpecSkillsEnabled,
 } from './models';
@@ -65,17 +68,78 @@ describe('model spec defaults vs. explicit user toggles', () => {
   });
 
   describe('resolveSpecUserToggles', () => {
-    it('drops request toggles for a spec that hides the badge row', () => {
-      expect(resolveSpecUserToggles({ web_search: false }, { hideBadgeRow: true })).toBeUndefined();
-      expect(resolveSpecUserToggles(false, { hideBadgeRow: true })).toBeUndefined();
+    const hidden = (spec: Partial<TModelSpec>) => ({ hideBadgeRow: true, ...spec }) as TModelSpec;
+
+    it('drops only the toggles whose capability the hidden spec configures', () => {
+      /** Authority follows configuration: a hidden spec silent on a capability
+       *  has nothing to protect, so the request still decides there. */
+      expect(
+        resolveSpecUserToggles(
+          { web_search: false, file_search: false, run_in_background: true },
+          hidden({ webSearch: true }),
+        ),
+      ).toEqual({ file_search: false, run_in_background: true });
     });
 
-    it('passes toggles through for every ordinary spec', () => {
+    it('drops the object entirely when the spec governs every toggle sent', () => {
+      expect(
+        resolveSpecUserToggles({ web_search: false }, hidden({ webSearch: true })),
+      ).toBeUndefined();
+    });
+
+    it('preserves fields with no spec counterpart', () => {
+      expect(
+        resolveSpecUserToggles(
+          { unknown_future_toggle: true } as never,
+          hidden({ webSearch: true }),
+        ),
+      ).toEqual({ unknown_future_toggle: true });
+    });
+
+    it('passes toggles through untouched for every ordinary spec', () => {
       const toggles = { web_search: false };
-      expect(resolveSpecUserToggles(toggles, { hideBadgeRow: false })).toBe(toggles);
-      expect(resolveSpecUserToggles(toggles, {})).toBe(toggles);
+      expect(resolveSpecUserToggles(toggles, { webSearch: true } as TModelSpec)).toBe(toggles);
       expect(resolveSpecUserToggles(toggles, null)).toBe(toggles);
       expect(resolveSpecUserToggles(toggles, undefined)).toBe(toggles);
+    });
+
+    it('treats a spec value of false as configured', () => {
+      expect(
+        resolveSpecUserToggles({ web_search: true }, hidden({ webSearch: false })),
+      ).toBeUndefined();
+    });
+  });
+
+  describe('resolveSpecUserToggle', () => {
+    it('drops a single field the hidden spec configures', () => {
+      expect(
+        resolveSpecUserToggle(false, { hideBadgeRow: true, skills: true } as TModelSpec, 'skills'),
+      ).toBeUndefined();
+    });
+
+    it('keeps it when the hidden spec is silent on that capability', () => {
+      expect(resolveSpecUserToggle(false, { hideBadgeRow: true } as TModelSpec, 'skills')).toBe(
+        false,
+      );
+    });
+
+    it('keeps it for an ordinary spec', () => {
+      expect(resolveSpecUserToggle(false, { skills: true } as TModelSpec, 'skills')).toBe(false);
+    });
+  });
+
+  describe('resolveSpecArtifacts', () => {
+    it.each([
+      ['spec true means the default renderer', undefined, true, 'default'],
+      ['a spec string passes through', undefined, 'shadcn', 'shadcn'],
+      ['a request value decides', 'custom', true, 'custom'],
+      ['an empty request value is the badge turned off', '', 'shadcn', undefined],
+      ['neither side asks', undefined, undefined, undefined],
+      ['an empty spec string is not a request', undefined, '', undefined],
+    ])('%s', (_label, userValue, specValue, expected) => {
+      expect(
+        resolveSpecArtifacts(userValue as string | undefined, specValue as TModelSpec['artifacts']),
+      ).toBe(expected);
     });
   });
 });

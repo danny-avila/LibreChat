@@ -8,6 +8,7 @@ import {
   isAgentsEndpoint,
   isEphemeralAgentId,
   isAssistantsEndpoint,
+  resolveSpecArtifacts,
   resolveModelSpecEndpoint,
   resolveSpecSkillsEnabled,
 } from 'librechat-data-provider';
@@ -354,7 +355,7 @@ export function applyModelSpecEphemeralAgent({
     execute_code: modelSpec.executeCode ?? false,
     memory: modelSpec.memory ?? false,
     skills: resolveSpecSkillsEnabled(undefined, modelSpec.skills),
-    artifacts: modelSpec.artifacts === true ? 'default' : modelSpec.artifacts || '',
+    artifacts: resolveSpecArtifacts(undefined, modelSpec.artifacts) ?? '',
   };
 
   /** For existing conversations, layer per-conversation localStorage overrides on

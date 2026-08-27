@@ -1134,6 +1134,49 @@ describe('loadAgent', () => {
       expect(result?.skills_enabled).toBe(true);
     });
 
+    test('a hidden spec still applies the artifacts it configures', async () => {
+      const req = hiddenReq({ web_search: false });
+      const spec = (req.config as unknown as { modelSpecs: { list: Record<string, unknown>[] } })
+        .modelSpecs.list[0];
+      spec.artifacts = true;
+
+      const result = await loadAgent(
+        {
+          req,
+          spec: 'hidden-spec',
+          agent_id: EPHEMERAL_AGENT_ID as string,
+          endpoint: 'openai',
+          model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+        },
+        deps,
+      );
+
+      expect(result?.artifacts).toBe('default');
+    });
+
+    test('a hidden spec leaves capabilities it does not configure to the request', async () => {
+      const req = hiddenReq({ file_search: true });
+      const spec = (req.config as unknown as { modelSpecs: { list: Record<string, unknown>[] } })
+        .modelSpecs.list[0];
+      /** Silent on file search, so it holds no authority over that toggle. */
+      delete spec.fileSearch;
+      delete spec.mcpServers;
+      delete spec.skills;
+
+      const result = await loadAgent(
+        {
+          req,
+          spec: 'hidden-spec',
+          agent_id: EPHEMERAL_AGENT_ID as string,
+          endpoint: 'openai',
+          model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+        },
+        deps,
+      );
+
+      expect(result?.tools).toEqual(['execute_code', 'file_search', 'web_search']);
+    });
+
     test('an ordinary spec still honors the same toggles', async () => {
       const req = hiddenReq({ web_search: false, execute_code: false, skills: false, mcp: [] });
       const spec = (req.config as unknown as { modelSpecs: { list: Record<string, unknown>[] } })

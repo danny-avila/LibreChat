@@ -5,6 +5,7 @@ import {
   isEphemeralAgentId,
   getEphemeralSender,
   appendAgentIdSuffix,
+  resolveSpecArtifacts,
   resolveSpecMcpServers,
   encodeEphemeralAgentId,
   resolveSpecUserToggles,
@@ -267,8 +268,9 @@ export async function loadAddedAgent(
     tools,
   };
 
-  if (ephemeralAgent?.artifacts != null && ephemeralAgent.artifacts) {
-    result.artifacts = ephemeralAgent.artifacts;
+  const artifacts = resolveSpecArtifacts(ephemeralAgent?.artifacts, modelSpec?.artifacts);
+  if (artifacts != null) {
+    result.artifacts = artifacts;
   }
   applyModelSpecSubagents(result, modelSpec);
   applyModelSpecSkills(result, modelSpec, ephemeralAgent?.skills);

@@ -4,6 +4,7 @@ import {
   isAgentsEndpoint,
   isEphemeralAgentId,
   getEphemeralSender,
+  resolveSpecArtifacts,
   resolveSpecMcpServers,
   encodeEphemeralAgentId,
   resolveSpecUserToggles,
@@ -164,8 +165,9 @@ export async function loadEphemeralAgent(
     result.tool_options = mergeSynthesizedToolOptions(result.tool_options, intentToolOptions);
   }
 
-  if (ephemeralAgent?.artifacts) {
-    result.artifacts = ephemeralAgent.artifacts;
+  const artifacts = resolveSpecArtifacts(ephemeralAgent?.artifacts, modelSpec?.artifacts);
+  if (artifacts != null) {
+    result.artifacts = artifacts;
   }
   if (modelSpec?.subagents) {
     result.subagents = modelSpec.subagents;

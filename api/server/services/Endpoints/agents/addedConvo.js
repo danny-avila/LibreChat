@@ -9,7 +9,7 @@ const {
 } = require('@librechat/api');
 const {
   isEphemeralAgentId,
-  resolveSpecUserToggles,
+  resolveSpecUserToggle,
   resolveSpecSkillsEnabled,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
@@ -141,9 +141,10 @@ const processAddedConvo = async ({
       /** Mirrors the primary agent: the spec's `skills` config is a default the
        *  added conversation's own toggle overrides (`false` stays a hard opt-out). */
       const specSkillsEnabled = resolveSpecSkillsEnabled(
-        resolveSpecUserToggles(
+        resolveSpecUserToggle(
           addedConvo.ephemeralAgent?.skills ?? req.body?.ephemeralAgent?.skills,
           selectedModelSpec,
+          'skills',
         ),
         selectedModelSpec.skills,
       );

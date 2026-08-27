@@ -36,7 +36,7 @@ const {
   MAX_SUBAGENT_GRAPH_NODES,
   MAX_SUBAGENT_RUN_CONFIGS,
   isEphemeralAgentId,
-  resolveSpecUserToggles,
+  resolveSpecUserToggle,
   resolveSpecSkillsEnabled,
   resolveAllowedStatefulCodeEnvironments,
 } = require('librechat-data-provider');
@@ -505,7 +505,7 @@ const initializeClient = async ({
     /** The spec's `skills` config is the default the badge is seeded from; the
      *  request's explicit toggle decides (`skills: false` stays a hard opt-out). */
     const specSkillsEnabled = resolveSpecSkillsEnabled(
-      resolveSpecUserToggles(req.body?.ephemeralAgent?.skills, selectedModelSpec),
+      resolveSpecUserToggle(req.body?.ephemeralAgent?.skills, selectedModelSpec, 'skills'),
       selectedModelSpec.skills,
     );
     if (!specSkillsEnabled) {

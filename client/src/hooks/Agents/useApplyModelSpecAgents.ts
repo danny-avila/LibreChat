@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import {
   Constants,
+  resolveSpecArtifacts,
   resolveSpecMcpServers,
   resolveSpecSkillsEnabled,
 } from 'librechat-data-provider';
@@ -110,9 +111,7 @@ export function useApplyAgentTemplate() {
         execute_code: ephemeralAgent?.execute_code ?? modelSpec.executeCode ?? false,
         memory: ephemeralAgent?.memory ?? modelSpec.memory ?? false,
         skills: resolveSpecSkillsEnabled(ephemeralAgent?.skills, modelSpec.skills),
-        artifacts:
-          ephemeralAgent?.artifacts ??
-          (modelSpec.artifacts === true ? 'default' : modelSpec.artifacts || ''),
+        artifacts: resolveSpecArtifacts(ephemeralAgent?.artifacts, modelSpec.artifacts) ?? '',
       };
 
       applyAgentTemplate(targetId, sourceId, mergedAgent);

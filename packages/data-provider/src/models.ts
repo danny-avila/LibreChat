@@ -246,21 +246,100 @@ export function resolveSpecToolFlag(
 }
 
 /**
- * A spec that hides the chat badge row offers no control over the capabilities
- * it configures, which is how an admin makes them unconditional. Its own
- * configuration is therefore authoritative: request toggles are dropped before
- * any of the resolvers below see them, rather than each caller remembering the
- * check. Returns the toggles unchanged for every ordinary spec.
- *
- * Only the spec's OWN capabilities are governed — a spec with no `skills`
- * config has nothing to protect, so the per-conversation skills badge still
- * decides there.
+ * Every ephemeral toggle paired with the model-spec field that configures it.
+ * A superset of `SPEC_TOOL_TOGGLES`, which covers only the toggles that equip a
+ * tool; this one also carries the capabilities configured by other means
+ * (MCP servers, skills, artifacts, background execution, intent labels).
  */
-export function resolveSpecUserToggles<T>(
-  userToggles: T | undefined,
-  modelSpec: Pick<TModelSpec, 'hideBadgeRow'> | null | undefined,
+export const SPEC_CAPABILITY_FIELDS: ReadonlyArray<
+  readonly [keyof TEphemeralAgent, keyof TModelSpec]
+> = [
+  ['web_search', 'webSearch'],
+  ['file_search', 'fileSearch'],
+  ['execute_code', 'executeCode'],
+  ['memory', 'memory'],
+  ['ask_user_question', 'askUserQuestion'],
+  ['mcp', 'mcpServers'],
+  ['skills', 'skills'],
+  ['artifacts', 'artifacts'],
+  ['run_in_background', 'runInBackground'],
+  ['describe_intent', 'describeIntent'],
+];
+
+const SPEC_FIELD_BY_TOGGLE = new Map<string, keyof TModelSpec>(SPEC_CAPABILITY_FIELDS);
+
+/**
+ * Whether a spec holds authority over one capability: it hides the badge row —
+ * so the user was never offered a control for it — AND it configures that
+ * capability itself. A hidden spec silent on a capability has nothing to
+ * protect, so the request still decides there.
+ */
+function specOverridesUser(
+  modelSpec: TModelSpec | null | undefined,
+  specField: keyof TModelSpec | undefined,
+): boolean {
+  return modelSpec?.hideBadgeRow === true && specField != null && modelSpec[specField] != null;
+}
+
+/**
+ * Drops the request's toggle for one capability when the spec holds authority
+ * over it. For the sites that resolve a single field rather than a whole
+ * ephemeral agent.
+ */
+export function resolveSpecUserToggle<T>(
+  userValue: T | undefined,
+  modelSpec: TModelSpec | null | undefined,
+  specField: keyof TModelSpec,
 ): T | undefined {
-  return modelSpec?.hideBadgeRow === true ? undefined : userToggles;
+  return specOverridesUser(modelSpec, specField) ? undefined : userValue;
+}
+
+/**
+ * Strips from a request's ephemeral agent only the toggles whose capability the
+ * spec holds authority over, leaving the rest to decide as usual. Fields with no
+ * spec counterpart are always preserved, so a capability added later is not
+ * silently suppressed before it has a spec field to be governed by. Returns the
+ * object unchanged for every ordinary spec.
+ */
+export function resolveSpecUserToggles(
+  userToggles: TEphemeralAgent | null | undefined,
+  modelSpec: TModelSpec | null | undefined,
+): TEphemeralAgent | undefined {
+  if (userToggles == null) {
+    return undefined;
+  }
+  if (modelSpec?.hideBadgeRow !== true) {
+    return userToggles;
+  }
+  const preserved: Record<string, unknown> = {};
+  let preservedCount = 0;
+  for (const key of Object.keys(userToggles)) {
+    if (specOverridesUser(modelSpec, SPEC_FIELD_BY_TOGGLE.get(key))) {
+      continue;
+    }
+    preserved[key] = (userToggles as Record<string, unknown>)[key];
+    preservedCount++;
+  }
+  return preservedCount > 0 ? (preserved as TEphemeralAgent) : undefined;
+}
+
+/**
+ * The artifacts mode for an ephemeral agent. A spec's `artifacts` seeds it —
+ * `true` meaning the default renderer — and an explicit request value decides,
+ * matching every other spec-configured capability. Returns undefined when
+ * neither side asks for artifacts, so callers can leave the field unset.
+ */
+export function resolveSpecArtifacts(
+  userValue: string | undefined,
+  specValue: TModelSpec['artifacts'],
+): string | undefined {
+  if (typeof userValue === 'string') {
+    return userValue || undefined;
+  }
+  if (specValue === true) {
+    return 'default';
+  }
+  return typeof specValue === 'string' && specValue !== '' ? specValue : undefined;
 }
 
 /**
