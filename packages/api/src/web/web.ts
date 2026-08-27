@@ -8,8 +8,8 @@ import {
   ScraperProviders,
   extractVariableName,
 } from 'librechat-data-provider';
-import type { TCustomConfig, TWebSearchConfig } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '@librechat/data-schemas';
+import type { TCustomConfig, TWebSearchConfig } from 'librechat-data-provider';
 import { isSSRFTarget, resolveHostnameSSRF, getEffectivePort } from '../auth';
 
 /**
