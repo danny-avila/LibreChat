@@ -208,13 +208,19 @@ const base: ChildActivity = {
 };
 
 describe('SubagentActivity', () => {
-  it.each(['running', 'completed', 'failed', 'cancelled'] as const)(
+  it.each(['running', 'failed', 'cancelled'] as const)(
     'renders the %s lifecycle through the shared view',
     (status) => {
       render(<SubagentActivity activity={{ ...base, status }} />);
       expect(screen.getByText(`com_ui_subagent_thread_status_${status}`)).toBeInTheDocument();
     },
   );
+
+  it('does not repeat the completed lifecycle in the conversation body', () => {
+    render(<SubagentActivity activity={base} />);
+
+    expect(screen.queryByText('com_ui_subagent_thread_status_completed')).not.toBeInTheDocument();
+  });
 
   it('reports when the durable control history is bounded', () => {
     render(<SubagentActivity activity={{ ...base, controlsTruncated: true }} />);

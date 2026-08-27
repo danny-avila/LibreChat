@@ -101,6 +101,26 @@ describe('BaseClient', () => {
     });
   });
 
+  test('persists only the host-authored external event display projection on the user turn', () => {
+    const projection = {
+      version: 1,
+      eventType: 'chess.turn.ready',
+      sourceType: 'speed-chess',
+      occurredAt: new Date('2026-08-21T12:00:00.000Z'),
+      expectedActionToolName: 'submit_move',
+    };
+    TestClient.options.req = { _agentEventTriggerProjection: projection };
+
+    expect(
+      TestClient.createUserMessage({
+        messageId: 'event:user',
+        parentMessageId: 'parent',
+        conversationId: 'event-thread',
+        text: 'Private event payload',
+      }),
+    ).toEqual(expect.objectContaining({ subagentTriggerProjection: projection }));
+  });
+
   test('returns the input messages without instructions when addInstructions() is called with empty instructions', () => {
     const messages = [{ content: 'Hello' }, { content: 'How are you?' }, { content: 'Goodbye' }];
     const instructions = '';

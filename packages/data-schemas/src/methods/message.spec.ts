@@ -1092,6 +1092,81 @@ describe('Message Operations', () => {
       expect(messages[0]).not.toHaveProperty('conversationId');
     });
 
+    it('anchors older pages by an exact scoped message without exposing Mongo ids', async () => {
+      const conversationId = uuidv4();
+      for (let index = 0; index < 4; index += 1) {
+        await saveMessage(mockCtx, {
+          messageId: `task-${index}:assistant`,
+          conversationId,
+          text: `Answer ${index}`,
+          user: 'user123',
+          createdAt: new Date(Date.UTC(2026, 7, 21, 12, index)),
+        });
+      }
+      await saveMessage(mockCtx, {
+        messageId: 'foreign:user',
+        conversationId: uuidv4(),
+        text: 'Foreign anchor',
+        user: 'user123',
+      });
+
+      const page = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        beforeMessageId: 'task-2:assistant',
+        limit: 2,
+        textCodePointLimit: 8_192,
+      });
+      const foreign = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        beforeMessageId: 'foreign:user',
+        limit: 2,
+        textCodePointLimit: 8_192,
+      });
+
+      expect(page.map((message) => message.messageId)).toEqual([
+        'task-2:assistant',
+        'task-1:assistant',
+      ]);
+      expect(page[0]).not.toHaveProperty('_id');
+      expect(foreign).toEqual([]);
+    });
+
+    it('projects only the bounded display-safe external event identity', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'event:user',
+        conversationId,
+        text: 'Private event payload',
+        user: 'user123',
+        subagentTriggerProjection: {
+          version: 1,
+          eventType: 'chess.turn.ready',
+          sourceType: 'speed-chess',
+          occurredAt: new Date('2026-08-21T12:00:00.000Z'),
+          expectedActionToolName: 'submit_move',
+        },
+      });
+
+      const [projected] = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+      });
+
+      expect(projected.subagentTriggerProjection).toEqual({
+        version: 1,
+        eventType: 'chess.turn.ready',
+        sourceType: 'speed-chess',
+        occurredAt: new Date('2026-08-21T12:00:00.000Z'),
+        expectedActionToolName: 'submit_move',
+      });
+      expect(projected.subagentTriggerProjection).not.toHaveProperty('deliveryId');
+      expect(projected.subagentTriggerProjection).not.toHaveProperty('sourceId');
+    });
+
     it('projects bounded private transcripts for the retained linear history', async () => {
       const conversationId = uuidv4();
       await saveMessage(mockCtx, {

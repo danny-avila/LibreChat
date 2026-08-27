@@ -140,6 +140,7 @@ function getPreliminaryResponseMessageId({ messageId, responseMessageId }) {
 function getPreliminaryUserMessage(
   { messageId, parentMessageId, text, quotes, files, manualSkills, alwaysAppliedSkills },
   conversationId,
+  subagentTriggerProjection,
 ) {
   if (typeof messageId !== 'string' || messageId.length === 0) {
     return null;
@@ -170,6 +171,36 @@ function getPreliminaryUserMessage(
     ...(Array.isArray(manualSkills) && manualSkills.length > 0 && { manualSkills }),
     ...(Array.isArray(alwaysAppliedSkills) &&
       alwaysAppliedSkills.length > 0 && { alwaysAppliedSkills }),
+    ...(subagentTriggerProjection != null && { subagentTriggerProjection }),
+  };
+}
+
+const DISPLAY_IDENTITY_CONTROLS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu;
+
+function sanitizeEventDisplayIdentity(value) {
+  if (typeof value !== 'string') return undefined;
+  const bounded = Array.from(value).slice(0, 512).join('');
+  const sanitized = bounded.normalize('NFC').replace(DISPLAY_IDENTITY_CONTROLS, ' ').trim();
+  return sanitized.length === 0 ? undefined : Array.from(sanitized).slice(0, 256).join('');
+}
+
+function getAgentEventTriggerProjection(agentEventDelivery) {
+  const event = agentEventDelivery?.event;
+  const occurredAt = new Date(event?.occurredAt);
+  const eventType = sanitizeEventDisplayIdentity(event?.type);
+  const sourceType = sanitizeEventDisplayIdentity(event?.source?.type);
+  if (eventType == null || sourceType == null || Number.isNaN(occurredAt.getTime())) {
+    return undefined;
+  }
+  const expectedActionToolName = sanitizeEventDisplayIdentity(
+    agentEventDelivery?.expectedAction?.toolName,
+  );
+  return {
+    version: 1,
+    eventType,
+    sourceType,
+    occurredAt,
+    ...(expectedActionToolName == null ? {} : { expectedActionToolName }),
   };
 }
 
@@ -271,7 +302,7 @@ async function saveErrorTurn(
                   alwaysAppliedSkills: req.body.alwaysAppliedSkills,
                 }),
             }
-          : getPreliminaryUserMessage(req.body, conversationId);
+          : getPreliminaryUserMessage(req.body, conversationId, req._agentEventTriggerProjection);
       if (!userMessage) {
         return;
       }
@@ -1271,6 +1302,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     rawAgentEventDelivery.deliveryKey === clientRequestId
       ? rawAgentEventDelivery
       : undefined;
+  req._agentEventTriggerProjection = getAgentEventTriggerProjection(agentEventDelivery);
 
   try {
     logger.debug(`[ResumableAgentController] Creating job`, {
@@ -1285,6 +1317,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     const preliminaryUserMessage = getPreliminaryUserMessage(
       { ...req.body, messageId: preallocatedUserMessageId },
       conversationId,
+      req._agentEventTriggerProjection,
     );
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId, {
       startupTelemetry,

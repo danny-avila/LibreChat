@@ -1,16 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
-import { ForkOptions } from 'librechat-data-provider';
-import {
-  Bot,
-  CornerDownRight,
-  CornerUpLeft,
-  ListEnd,
-  MessagesSquare,
-  OctagonX,
-  X,
-  Zap,
-} from 'lucide-react';
+import { dataService, ForkOptions } from 'librechat-data-provider';
+import { Bot, CornerDownRight, ListEnd, MessagesSquare, OctagonX, X, Zap } from 'lucide-react';
 import {
   useRecoilCallback,
   useRecoilState,
@@ -39,6 +30,13 @@ import type {
 import type { ReactNode } from 'react';
 import type { ActiveSubagentPanel, SubagentControlUiState } from '~/store/subagents';
 import {
+  adaptDurableThreadActivity,
+  adaptDurableThreadConversation,
+  adaptLivePersistedActivity,
+  mergeChildConversationTurns,
+  retainBoundedMovingWindowTurns,
+} from './adapters';
+import {
   ACTIVE_THREAD_REFRESH_MS,
   subagentThreadHasTaskEvidence,
   useForkConvoMutation,
@@ -52,11 +50,6 @@ import {
   subagentProgressByToolCallId,
   subagentProgressKey,
 } from '~/store/subagents';
-import {
-  adaptDurableThreadActivity,
-  adaptDurableThreadConversation,
-  adaptLivePersistedActivity,
-} from './adapters';
 import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
 import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
@@ -186,12 +179,26 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         return true;
       });
   }, [byMessageId, selection.event, selection.parentMessageId]);
+  const selectedEventActor = eventSiblings.find((child) => child.threadId === threadId);
+  const selectedEventActorName =
+    (selectedEventActor?.agentId == null
+      ? undefined
+      : agentsMap?.[selectedEventActor.agentId]?.name) ??
+    selectedEventActor?.actorId ??
+    eventSummary?.actorId ??
+    foregroundTitle;
   const { data, isLoading, isError, isReadinessPending, refetch } = useSubagentThreadQuery(
     selection.parentConversationId,
     threadId,
     taskId,
     eventTaskRunning ? { refetchInterval: ACTIVE_THREAD_REFRESH_MS } : undefined,
   );
+  const latestHistoryGeneration = JSON.stringify([
+    data?.nextCursor ?? null,
+    ...(data?.turns?.map((turn) => turn.taskId) ?? []),
+  ]);
+  const latestHistoryGenerationRef = useRef(latestHistoryGeneration);
+  latestHistoryGenerationRef.current = latestHistoryGeneration;
   const durableTerminal =
     subagentThreadHasTaskEvidence(data, taskId) &&
     (data?.status === 'completed' ||
@@ -251,6 +258,42 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     },
   });
   const [controlMessage, setControlMessage] = useState('');
+  const [turnDetailOverrides, setTurnDetailOverrides] = useState(
+    () => new Map<string, ReturnType<typeof adaptDurableThreadActivity>>(),
+  );
+  const [turnDetailStates, setTurnDetailStates] = useState(
+    () => new Map<string, 'idle' | 'loading' | 'unavailable' | 'error'>(),
+  );
+  const [olderTurns, setOlderTurns] = useState<ReturnType<typeof adaptDurableThreadConversation>>(
+    [],
+  );
+  const [movingWindowTurns, setMovingWindowTurns] = useState<
+    ReturnType<typeof adaptDurableThreadConversation>
+  >([]);
+  const [rebaseTurns, setRebaseTurns] = useState<ReturnType<typeof adaptDurableThreadConversation>>(
+    [],
+  );
+  const [postRebaseTurns, setPostRebaseTurns] = useState<
+    ReturnType<typeof adaptDurableThreadConversation>
+  >([]);
+  const postRebaseTurnsRef = useRef(postRebaseTurns);
+  const [historyRebaseActive, setHistoryRebaseActive] = useState(false);
+  const historyRebaseActiveRef = useRef(historyRebaseActive);
+  const [historyCursor, setHistoryCursor] = useState<string | null | undefined>(undefined);
+  const [historyCursorGeneration, setHistoryCursorGeneration] = useState<string>();
+  const [historyState, setHistoryState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [historyBoundaryUnavailable, setHistoryBoundaryUnavailable] = useState(false);
+  const activeThreadRef = useRef(threadId);
+  const selectionThreadRef = useRef(threadId);
+  const selectionGenerationRef = useRef(0);
+  const turnDetailRequestsRef = useRef(new Set<string>());
+  const historyRequestRef = useRef<string | null>(null);
+  const historyHasLoadedRef = useRef(false);
+  if (selectionThreadRef.current !== threadId) {
+    selectionThreadRef.current = threadId;
+    selectionGenerationRef.current += 1;
+  }
+  activeThreadRef.current = threadId;
   const [controlInaccessible, setControlInaccessible] = useState(false);
   const [controlsClosed, setControlsClosed] = useState(false);
   const controlInFlightRef = useRef(false);
@@ -265,6 +308,207 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       controlSelectionRef.current = '';
     };
   }, [controlIdentity]);
+
+  useEffect(() => {
+    setTurnDetailOverrides(new Map());
+    setTurnDetailStates(new Map());
+    setOlderTurns([]);
+    setMovingWindowTurns([]);
+    setRebaseTurns([]);
+    setPostRebaseTurns([]);
+    postRebaseTurnsRef.current = [];
+    setHistoryRebaseActive(false);
+    historyRebaseActiveRef.current = false;
+    setHistoryCursor(undefined);
+    setHistoryCursorGeneration(undefined);
+    setHistoryState('idle');
+    setHistoryBoundaryUnavailable(false);
+    turnDetailRequestsRef.current.clear();
+    historyRequestRef.current = null;
+    historyHasLoadedRef.current = false;
+  }, [threadId]);
+
+  useEffect(() => {
+    if (
+      data?.threadId === threadId &&
+      (data.historyUnavailable === true ||
+        (data.historyTruncated === true && data.nextCursor == null))
+    ) {
+      setHistoryBoundaryUnavailable(true);
+    }
+  }, [
+    data?.historyTruncated,
+    data?.historyUnavailable,
+    data?.nextCursor,
+    data?.threadId,
+    threadId,
+  ]);
+
+  const loadTurnDetails = useCallback(
+    async (detailTaskId: string) => {
+      const requestedThreadId = threadId;
+      const requestedGeneration = selectionGenerationRef.current;
+      const requestKey = `${requestedGeneration}\u0000${requestedThreadId}\u0000${detailTaskId}`;
+      if (
+        turnDetailStates.get(detailTaskId) === 'loading' ||
+        turnDetailRequestsRef.current.has(requestKey)
+      ) {
+        return;
+      }
+      turnDetailRequestsRef.current.add(requestKey);
+      setTurnDetailStates((current) => new Map(current).set(detailTaskId, 'loading'));
+      try {
+        const exact = await dataService.getSubagentThread(
+          selection.parentConversationId,
+          requestedThreadId,
+          detailTaskId,
+        );
+        if (
+          activeThreadRef.current !== requestedThreadId ||
+          selectionGenerationRef.current !== requestedGeneration
+        ) {
+          return;
+        }
+        if (!subagentThreadHasTaskEvidence(exact, detailTaskId)) {
+          setTurnDetailStates((current) => new Map(current).set(detailTaskId, 'unavailable'));
+          return;
+        }
+        const detail = adaptDurableThreadActivity(exact, detailTaskId);
+        setTurnDetailOverrides((current) => new Map(current).set(detailTaskId, detail));
+        setTurnDetailStates((current) =>
+          new Map(current).set(
+            detailTaskId,
+            detail.activityTruncated === true ? 'unavailable' : 'idle',
+          ),
+        );
+      } catch {
+        if (
+          activeThreadRef.current !== requestedThreadId ||
+          selectionGenerationRef.current !== requestedGeneration
+        ) {
+          return;
+        }
+        setTurnDetailStates((current) => new Map(current).set(detailTaskId, 'error'));
+      } finally {
+        turnDetailRequestsRef.current.delete(requestKey);
+      }
+    },
+    [selection.parentConversationId, threadId, turnDetailStates],
+  );
+  const loadEarlierHistory = useCallback(async () => {
+    const requestedThreadId = threadId;
+    const requestedSelectionGeneration = selectionGenerationRef.current;
+    const requestedGeneration = historyRebaseActive
+      ? (historyCursorGeneration ?? latestHistoryGeneration)
+      : latestHistoryGeneration;
+    const startsRebase =
+      !historyRebaseActive &&
+      historyCursor !== undefined &&
+      historyCursorGeneration !== requestedGeneration;
+    const recoveringRebase = startsRebase || historyRebaseActive;
+    const cursor = historyCursor === undefined || startsRebase ? data?.nextCursor : historyCursor;
+    const requestKey = `${requestedSelectionGeneration}\u0000${requestedThreadId}\u0000${cursor ?? ''}\u0000${requestedGeneration}`;
+    if (cursor == null || historyState === 'loading' || historyRequestRef.current != null) {
+      return;
+    }
+    historyRequestRef.current = requestKey;
+    setHistoryState('loading');
+    try {
+      const page = await dataService.getSubagentThread(
+        selection.parentConversationId,
+        requestedThreadId,
+        undefined,
+        cursor,
+      );
+      if (
+        activeThreadRef.current !== requestedThreadId ||
+        selectionGenerationRef.current !== requestedSelectionGeneration
+      ) {
+        return;
+      }
+      if (!historyRebaseActive && latestHistoryGenerationRef.current !== requestedGeneration) {
+        setHistoryState('idle');
+        return;
+      }
+      const pageTurns = adaptDurableThreadConversation(page);
+      let recoveryCompleted = false;
+      if (recoveringRebase) {
+        const bridgeTurns = startsRebase
+          ? retainBoundedMovingWindowTurns(movingWindowTurns, rebaseTurns)
+          : movingWindowTurns;
+        const nextRebaseTurns = mergeChildConversationTurns(
+          pageTurns,
+          startsRebase ? [] : rebaseTurns,
+        );
+        const retainedTaskIds = new Set(
+          mergeChildConversationTurns(olderTurns, bridgeTurns, postRebaseTurnsRef.current).map(
+            (turn) => turn.taskId,
+          ),
+        );
+        const reconnected = pageTurns.some((turn) => retainedTaskIds.has(turn.taskId));
+        const recoveryComplete = reconnected || page.nextCursor == null;
+        if (recoveryComplete) {
+          recoveryCompleted = true;
+          const retainedPostRebaseTurns = postRebaseTurnsRef.current;
+          postRebaseTurnsRef.current = [];
+          setOlderTurns((current) =>
+            mergeChildConversationTurns(
+              current,
+              bridgeTurns,
+              nextRebaseTurns,
+              retainedPostRebaseTurns,
+            ),
+          );
+          setMovingWindowTurns([]);
+          setRebaseTurns([]);
+          setPostRebaseTurns([]);
+          setHistoryRebaseActive(false);
+          historyRebaseActiveRef.current = false;
+        } else {
+          if (startsRebase) setMovingWindowTurns(bridgeTurns);
+          setRebaseTurns(nextRebaseTurns);
+          setHistoryRebaseActive(true);
+          historyRebaseActiveRef.current = true;
+        }
+      } else {
+        setOlderTurns((current) => mergeChildConversationTurns(pageTurns, current));
+      }
+      historyHasLoadedRef.current = true;
+      setHistoryCursor(page.nextCursor ?? null);
+      setHistoryCursorGeneration(
+        recoveryCompleted ? latestHistoryGenerationRef.current : requestedGeneration,
+      );
+      setHistoryBoundaryUnavailable(
+        (current) =>
+          current ||
+          page.historyUnavailable === true ||
+          (page.historyTruncated && page.nextCursor == null),
+      );
+      setHistoryState('idle');
+    } catch {
+      if (
+        activeThreadRef.current !== requestedThreadId ||
+        selectionGenerationRef.current !== requestedSelectionGeneration
+      ) {
+        return;
+      }
+      setHistoryState('error');
+    } finally {
+      if (historyRequestRef.current === requestKey) historyRequestRef.current = null;
+    }
+  }, [
+    data?.nextCursor,
+    historyCursor,
+    historyCursorGeneration,
+    historyRebaseActive,
+    historyState,
+    latestHistoryGeneration,
+    movingWindowTurns,
+    olderTurns,
+    rebaseTurns,
+    selection.parentConversationId,
+    threadId,
+  ]);
 
   const controlTask = useSubagentControlMutation({
     onSuccess: ({ receipt }, variables) => {
@@ -488,19 +732,59 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     }
     return { ...merged, controls: [...(merged.controls ?? []), transientControl] };
   }, [data, liveActivity, progress, selection.durable, transientControl]);
+  const panelTitle = selection.event == null ? activity.title : selectedEventActorName;
+  const latestConversationTurns = useMemo(
+    () => (data == null ? [] : adaptDurableThreadConversation(data)),
+    [data],
+  );
+  const previousLatestTurnsRef = useRef({
+    threadId,
+    generation: latestHistoryGeneration,
+    turns: latestConversationTurns,
+  });
+  useEffect(() => {
+    if (data == null) return;
+    const previous = previousLatestTurnsRef.current;
+    if (previous.threadId === threadId) {
+      const latestTaskIds = new Set(latestConversationTurns.map((turn) => turn.taskId));
+      const displaced = previous.turns.filter((turn) => !latestTaskIds.has(turn.taskId));
+      if (displaced.length > 0 && historyHasLoadedRef.current) {
+        if (historyRebaseActiveRef.current) {
+          const retained = retainBoundedMovingWindowTurns(postRebaseTurnsRef.current, displaced);
+          postRebaseTurnsRef.current = retained;
+          setPostRebaseTurns(retained);
+        } else {
+          setMovingWindowTurns((current) => retainBoundedMovingWindowTurns(current, displaced));
+        }
+      }
+    }
+    previousLatestTurnsRef.current = {
+      threadId,
+      generation: latestHistoryGeneration,
+      turns: latestConversationTurns,
+    };
+  }, [data, historyRebaseActive, latestConversationTurns, latestHistoryGeneration, threadId]);
   const conversationTurns = useMemo(() => {
-    const durableTurns = data == null ? [] : adaptDurableThreadConversation(data);
+    const durableTurns = mergeChildConversationTurns(
+      olderTurns,
+      movingWindowTurns,
+      rebaseTurns,
+      postRebaseTurns,
+      latestConversationTurns,
+    );
     if (durableTurns.length > 0) {
       const selectedTurnIndex = durableTurns.findIndex((turn) => turn.taskId === taskId);
       if (selectedTurnIndex >= 0) {
-        return durableTurns.map((turn, index) =>
-          index === selectedTurnIndex ? { ...turn, activity } : turn,
-        );
+        return durableTurns.map((turn, index) => {
+          const selected = index === selectedTurnIndex ? { ...turn, activity } : turn;
+          const override = turnDetailOverrides.get(turn.taskId);
+          return override == null ? selected : { ...selected, activity: override };
+        });
       }
       // The API keeps the exact selected activity even when its bounded
       // chronological turn is the first item removed from the response.
       // Preserve that selection ahead of the retained newer continuation.
-      return [
+      const retained = [
         {
           taskId: taskId || `${selection.parentMessageId}:${selection.toolCallId}`,
           trigger: {
@@ -514,6 +798,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         },
         ...durableTurns,
       ];
+      return retained.map((turn) => {
+        const override = turnDetailOverrides.get(turn.taskId);
+        return override == null ? turn : { ...turn, activity: override };
+      });
     }
     return [
       {
@@ -526,7 +814,30 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         activity,
       },
     ];
-  }, [activity, data, selection, taskId]);
+  }, [
+    activity,
+    latestConversationTurns,
+    movingWindowTurns,
+    olderTurns,
+    postRebaseTurns,
+    rebaseTurns,
+    selection,
+    taskId,
+    turnDetailOverrides,
+  ]);
+  const effectiveTurnDetailStates = useMemo(() => {
+    const states = new Map(turnDetailStates);
+    if (activity.activityTruncated === true && taskId !== '') states.set(taskId, 'unavailable');
+    return states;
+  }, [activity.activityTruncated, taskId, turnDetailStates]);
+  const historyCursorUsesLatest =
+    !historyRebaseActive &&
+    (historyCursor === undefined || historyCursorGeneration !== latestHistoryGeneration);
+  const effectiveHistoryCursor = historyCursorUsesLatest ? data?.nextCursor : historyCursor;
+  const showUnavailableHistoryBoundary =
+    historyBoundaryUnavailable ||
+    data?.historyUnavailable === true ||
+    (historyCursorUsesLatest && data?.historyTruncated === true && data.nextCursor == null);
   /** During a rolling deployment an older API replica can omit `turns`. Keep
    * that response readable through the same deep activity renderer; every
    * current host otherwise enters the conversation-native rendering seam. */
@@ -626,13 +937,14 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         </Button>
       </div>
     );
-  } else if (eventSummary?.tasksTruncated) {
+  } else if (eventSummary?.tasksTruncated === true) {
     timelinePrefix = (
       <div
-        role="note"
-        className="border-b border-border-light px-4 py-3 text-sm text-text-secondary"
+        role="status"
+        aria-label={localize('com_ui_subagent_thread_history_truncated')}
+        className="flex h-7 items-center justify-center border-b border-border-light text-text-tertiary"
       >
-        {localize('com_ui_subagent_thread_history_truncated')}
+        <span aria-hidden>•••</span>
       </div>
     );
   }
@@ -645,12 +957,40 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   if (hasConversationProjection) {
     activityPanel = (
       <SubagentActivityScrollSurface padded={false}>
-        {data?.historyTruncated === true && (
+        {showUnavailableHistoryBoundary && (
           <div
-            role="note"
-            className="border-b border-border-light px-4 py-3 text-sm text-text-secondary"
+            role="status"
+            aria-label={localize('com_ui_subagent_thread_history_truncated')}
+            className="flex h-7 items-center justify-center border-b border-border-light text-text-tertiary"
           >
-            {localize('com_ui_subagent_thread_history_truncated')}
+            <span aria-hidden>•••</span>
+          </div>
+        )}
+        {effectiveHistoryCursor != null && historyState !== 'error' && (
+          <div className="flex justify-center border-b border-border-light px-4 py-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={historyState === 'loading'}
+              onClick={() => void loadEarlierHistory()}
+            >
+              {historyState === 'loading'
+                ? localize('com_ui_loading')
+                : localize('com_ui_subagent_load_earlier_activity')}
+            </Button>
+          </div>
+        )}
+        {historyState === 'error' && (
+          <div className="flex justify-center border-b border-border-light px-4 py-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void loadEarlierHistory()}
+            >
+              {localize('com_ui_retry')}
+            </Button>
           </div>
         )}
         <SubagentConversation
@@ -664,10 +1004,15 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           onCancelControl={(_controlledTaskId, controlId) =>
             submitControl('cancel_message', controlId)
           }
+          detailStateByTask={effectiveTurnDetailStates}
+          onLoadTurnDetails={loadTurnDetails}
         />
       </SubagentActivityScrollSurface>
     );
-  } else if (selection.event != null && (eventSummary?.tasks.length ?? 0) > 1) {
+  } else if (
+    selection.event != null &&
+    ((eventSummary?.tasks.length ?? 0) > 1 || eventSummary?.tasksTruncated === true)
+  ) {
     activityPanel = (
       <SubagentActivityScrollSurface padded={false}>
         <div data-subagent-thread-timeline>
@@ -701,33 +1046,42 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       aria-label={localize('com_ui_subagent_thread_panel')}
       className="flex h-full w-full flex-col overflow-hidden bg-surface-primary-alt text-text-primary"
     >
-      <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-border-light px-4 py-3">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border-light px-3">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-tertiary">
           <Bot size={17} aria-hidden="true" />
         </div>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold" title={activity.title}>
-            {activity.title}
-          </h2>
-          {data?.depth != null && (
-            <div className="truncate text-xs text-text-secondary">
-              {localize('com_ui_subagent_depth', { 0: String(data.depth) })}
-            </div>
+          {selection.event != null && eventSiblings.length > 1 ? (
+            <Select value={threadId} onValueChange={selectActor}>
+              <SelectTrigger
+                className="h-8 max-w-sm border-0 bg-transparent px-1 font-semibold shadow-none"
+                aria-label={localize('com_ui_subagent_actor')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {eventSiblings.map((child) => (
+                  <SelectItem
+                    key={child.threadId}
+                    value={child.threadId}
+                    disabled={!child.latestTaskId}
+                  >
+                    {child.agentId != null && agentsMap?.[child.agentId]?.name
+                      ? agentsMap[child.agentId]?.name
+                      : child.actorId || child.title}
+                    {child.actorId != null && agentsMap?.[child.agentId ?? '']?.name
+                      ? ` · ${child.actorId}`
+                      : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <h2 className="truncate text-sm font-semibold" title={panelTitle}>
+              {panelTitle}
+            </h2>
           )}
         </div>
-        {selection.host === 'conversation' && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={close}
-            aria-label={localize('com_ui_subagent_view_in_parent')}
-            className="h-8 shrink-0 gap-1.5"
-          >
-            <CornerUpLeft size={15} aria-hidden="true" />
-            <span className="hidden lg:inline">{localize('com_ui_subagent_view_in_parent')}</span>
-          </Button>
-        )}
         {canContinueAsChat && (
           <Button
             type="button"
@@ -753,34 +1107,6 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           <X size={17} aria-hidden="true" />
         </Button>
       </header>
-
-      {selection.event != null && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border-light px-4 py-2">
-          <div className="min-w-0 flex-1">
-            <Select value={threadId} onValueChange={selectActor}>
-              <SelectTrigger className="h-8" aria-label={localize('com_ui_subagent_actor')}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {eventSiblings.map((child) => (
-                  <SelectItem
-                    key={child.threadId}
-                    value={child.threadId}
-                    disabled={!child.latestTaskId}
-                  >
-                    {child.agentId != null && agentsMap?.[child.agentId]?.name
-                      ? agentsMap[child.agentId]?.name
-                      : child.actorId || child.title}
-                    {child.actorId != null && agentsMap?.[child.agentId ?? '']?.name
-                      ? ` · ${child.actorId}`
-                      : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      )}
 
       {/* Keep the foreground panel's existing nested-tool approval controls
           coordinated within this invocation. Detached activity projections
