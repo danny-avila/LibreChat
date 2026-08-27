@@ -125,4 +125,22 @@ describe('agent context compatibility', () => {
 
     expect(changed.digest).not.toBe(fingerprint.digest);
   });
+
+  it('invalidates a constant-version deployment Skill when its body changes', () => {
+    const fingerprint = (body: string) =>
+      createInitializedAgentContextFingerprint({
+        agents: [
+          {
+            id: 'agent-1',
+            alwaysApplySkillPrimes: [
+              { _id: 'deployment:analysis', name: 'analysis', version: 1, body },
+            ],
+          },
+        ],
+      });
+
+    expect(fingerprint('First instructions').digest).not.toBe(
+      fingerprint('Updated instructions').digest,
+    );
+  });
 });

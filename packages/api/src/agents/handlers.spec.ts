@@ -1525,6 +1525,7 @@ describe('createToolExecuteHandler', () => {
         id: 'skill-id',
         name: 'analysis',
         version: 4,
+        contentDigest: expect.any(String),
       });
     });
 

@@ -32,6 +32,7 @@ export interface IAgentEventActorSkillIdentity {
   id: string;
   name: string;
   version: number;
+  contentDigest?: string;
 }
 
 /** Private committed checkpoint state for one event-bound child actor. */

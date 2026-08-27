@@ -61,6 +61,7 @@ jest.mock('@librechat/api', () => ({
     version: 1,
     digest: 'context',
   })),
+  createSkillContentDigest: jest.fn((body) => `digest:${body}`),
   MAX_AGENT_CONTEXT_SKILLS: 64,
   createDetachedSubagentUsageRecorder: (...args) =>
     mockCreateDetachedSubagentUsageRecorder(...args),
@@ -152,20 +153,34 @@ describe('AgentClient - event actor history adapter', () => {
     client.eventActorAgentContextSources = [
       {
         id: 'agent-1',
-        manualSkillPrimes: [{ _id: 'skill-1', name: 'analysis', version: 3 }],
+        manualSkillPrimes: [
+          { _id: 'skill-1', name: 'analysis', version: 3, body: 'Analyze carefully.' },
+        ],
       },
     ];
     client.getEventActorAgents = jest.fn(() => []);
     client.getEventActorMemorySnapshots = jest.fn().mockResolvedValue([]);
 
     await expect(client.getEventActorContext()).resolves.toMatchObject({
-      skillManifest: [{ id: 'skill-1', name: 'analysis', version: 3 }],
+      skillManifest: [
+        {
+          id: 'skill-1',
+          name: 'analysis',
+          version: 3,
+          contentDigest: 'digest:Analyze carefully.',
+        },
+      ],
     });
   });
 
   it('fingerprints agents reachable only through nested subagent graphs', () => {
     const graphMember = { id: 'graph-member' };
-    const nested = { id: 'nested', subagentGraphConfigs: [{ memberConfigs: [graphMember] }] };
+    const lazy = { id: 'lazy', configId: 'lazy-config-v2' };
+    const nested = {
+      id: 'nested',
+      lazySubagentConfigs: [lazy],
+      subagentGraphConfigs: [{ memberConfigs: [graphMember] }],
+    };
     const client = Object.create(AgentClient.prototype);
     client.options = { agent: { id: 'primary', subagentAgentConfigs: [nested] } };
     client.agentConfigs = new Map([['parallel', { id: 'parallel' }]]);
@@ -174,6 +189,7 @@ describe('AgentClient - event actor history adapter', () => {
       'primary',
       'parallel',
       'nested',
+      'lazy',
       'graph-member',
     ]);
   });

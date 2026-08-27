@@ -73,7 +73,12 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
 
     expect(deps.getSkillByName).toHaveBeenCalledWith('brand-guidelines', [SKILL_ID]);
     expect(result.skillManifest).toEqual([
-      { id: SKILL_ID.toString(), name: 'brand-guidelines', version: SKILL_VERSION },
+      {
+        id: SKILL_ID.toString(),
+        name: 'brand-guidelines',
+        version: SKILL_VERSION,
+        contentDigest: expect.any(String),
+      },
     ]);
   });
 

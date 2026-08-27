@@ -545,6 +545,41 @@ describe('event actor host adapter', () => {
     expect(mockedDelete).not.toHaveBeenCalled();
   });
 
+  it('retains applied-action evidence when result context capture fails', async () => {
+    const dependencies = deps();
+    let toolExecutions = 0;
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId: 'event-context-indeterminate',
+          event: { id: 'event-context-indeterminate' },
+          signal: new AbortController().signal,
+          invoke: async () => {
+            toolExecutions += 1;
+            return 'response';
+          },
+          readAppliedAction: () => ({ toolName: 'submit_move' }),
+          readResultContext: async () => {
+            throw new Error('memory partition unavailable');
+          },
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('requires commit_indeterminate reconciliation');
+
+    expect(toolExecutions).toBe(1);
+    expect(dependencies.commitState).not.toHaveBeenCalled();
+    expect(dependencies.recordReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reconciliation: expect.objectContaining({ status: 'commit_indeterminate' }),
+      }),
+    );
+    expect(mockedCapture).not.toHaveBeenCalled();
+    expect(mockedDelete).not.toHaveBeenCalled();
+  });
+
   it('recovers an indeterminate cleanup after the actor head was committed', async () => {
     state = {
       generation: 2,

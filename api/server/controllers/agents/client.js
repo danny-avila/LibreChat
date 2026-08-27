@@ -122,6 +122,7 @@ const {
   getDynamicToolContexts,
   getSafeErrorMetadata,
   createInitializedAgentContextFingerprint,
+  createSkillContentDigest,
   MAX_AGENT_CONTEXT_SKILLS,
 } = require('@librechat/api');
 const {
@@ -315,6 +316,7 @@ class AgentClient extends BaseClient {
         execution: JSON.parse(
           JSON.stringify({
             endpoint: agent.endpoint,
+            configId: agent.configId,
             tool_kwargs: agent.tool_kwargs,
             edges: agent.edges,
             end_after_tools: agent.end_after_tools,
@@ -1605,6 +1607,7 @@ class AgentClient extends BaseClient {
       visited.add(agent);
       agents.push(agent);
       pending.push(...(agent.subagentAgentConfigs?.values?.() ?? []));
+      pending.push(...(agent.lazySubagentConfigs?.values?.() ?? []));
       for (const graph of agent.subagentGraphConfigs ?? []) {
         pending.push(...(graph.memberConfigs ?? []));
       }
@@ -1661,13 +1664,18 @@ class AgentClient extends BaseClient {
     const manifest = new Map(baseManifest.map((skill) => [skill.id, skill]));
     for (const agent of this.eventActorAgentContextSources ?? []) {
       for (const skill of agent.manualSkillPrimes ?? []) {
-        if (!Number.isInteger(skill.version) || skill.version < 1) {
-          throw new Error('Manual Skill is missing its semantic version');
+        if (
+          !Number.isInteger(skill.version) ||
+          skill.version < 1 ||
+          typeof skill.body !== 'string'
+        ) {
+          throw new Error('Manual Skill is missing semantic identity');
         }
         manifest.set(skill._id.toString(), {
           id: skill._id.toString(),
           name: skill.name,
           version: skill.version,
+          contentDigest: createSkillContentDigest(skill.body),
         });
       }
     }

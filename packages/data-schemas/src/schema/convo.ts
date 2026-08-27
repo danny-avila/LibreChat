@@ -96,6 +96,7 @@ const convoSchema: Schema<IConversation> = new Schema(
               id: { type: String, required: true },
               name: { type: String, required: true },
               version: { type: Number, min: 1, required: true },
+              contentDigest: { type: String, default: undefined },
               _id: false,
             },
           ],

@@ -26,6 +26,7 @@ import { createConcurrencyLimiter, getSafeErrorMetadata } from '~/utils';
 import { assertSkillFileContentAllowed } from '~/skills/protection';
 import { extractInvokedSkillsFromPayload } from './run';
 import { SKILL_FILE_PREFIX } from './skills';
+import { createSkillContentDigest } from './compatibility';
 
 const MAX_INSPECTABLE_SKILL_FILE_BYTES = 10 * 1024 * 1024;
 const SKILL_FILE_CONTENT_FIELDS = ['file_text'] as const;
@@ -638,7 +639,12 @@ export interface PrimeInvokedSkillsResult {
    *  so it can reconstruct HumanMessages at the right position in the message sequence. */
   skills?: Map<string, string>;
   /** Exact records resolved under the current request's ACL. */
-  skillManifest?: Array<{ id: string; name: string; version: number }>;
+  skillManifest?: Array<{
+    id: string;
+    name: string;
+    version: number;
+    contentDigest: string;
+  }>;
 }
 
 export interface PrimeInvokedSkillsForProfilesDeps
@@ -700,6 +706,7 @@ export async function primeInvokedSkills(
     id: skill._id.toString(),
     name: skill.name,
     version: skill.version,
+    contentDigest: createSkillContentDigest(skill.body),
   }));
 
   // Phase 2: Single batch upload for ALL skills' files (shared session)

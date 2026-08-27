@@ -68,6 +68,7 @@ import {
 } from './intent';
 import { getSafeErrorMetadata, logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
+import { createSkillContentDigest } from './compatibility';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
@@ -200,7 +201,12 @@ export interface ToolExecuteOptions {
     disableModelInvocation?: boolean;
   } | null>;
   /** Captures a successfully resolved model-invoked Skill for durable continuation context. */
-  onSkillResolved?: (skill: { id: string; name: string; version: number }) => void;
+  onSkillResolved?: (skill: {
+    id: string;
+    name: string;
+    version: number;
+    contentDigest: string;
+  }) => void;
   /**
    * Loads a skill by name when the current user is the author. This is a
    * narrow recovery path for freshly-authored skills whose runtime catalog
@@ -4063,6 +4069,7 @@ async function handleSkillToolCall(
     id: skill._id.toString(),
     name: skill.name,
     version: skill.version,
+    contentDigest: createSkillContentDigest(skill.body),
   });
 
   return {

@@ -422,7 +422,18 @@ export async function executeAgentEventActor<T>(
         }
         return { status: 'completed_no_action' };
       }
-      resultContext = input.readResultContext ? await input.readResultContext() : preparedContext;
+      try {
+        resultContext = input.readResultContext ? await input.readResultContext() : preparedContext;
+      } catch (error) {
+        return {
+          status: 'applied',
+          result: {
+            action,
+            checkpointCaptureError: `Applied turn context could not be captured: ${asError(error).message}`,
+          },
+          checkpoint: invocation.fork,
+        };
+      }
       let checkpoint: Awaited<ReturnType<typeof captureAgentEventCheckpoint>>;
       try {
         checkpoint = await captureAgentEventCheckpoint(

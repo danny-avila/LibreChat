@@ -14,6 +14,7 @@ export interface AgentContextSkillIdentity {
   id: string;
   name: string;
   version: number;
+  contentDigest?: string;
 }
 
 export interface AgentContextMemorySnapshot {
@@ -60,15 +61,21 @@ export interface InitializedAgentContextSource {
     _id: { toString(): string } | string;
     name: string;
     version?: number;
+    body?: string;
   }[];
   alwaysApplySkillPrimes?: readonly {
     _id: { toString(): string } | string;
     name: string;
     version?: number;
+    body?: string;
   }[];
 }
 
 export const MAX_AGENT_CONTEXT_SKILLS = 64;
+
+export function createSkillContentDigest(body: string): string {
+  return createHash('sha256').update(body).digest('base64url');
+}
 
 const SECRET_KEY_PATTERN =
   /^(?:authorization|password|secret)$|(?:^|[-_])(?:api[-_]?key|access[-_]?token|refresh[-_]?token|client[-_]?secret)$/i;
@@ -169,7 +176,12 @@ function skillIdentities(agent: InitializedAgentContextSource): AgentContextSkil
   const unique = new Map<string, AgentContextSkillIdentity>();
   for (const skill of skills) {
     const id = skill._id.toString();
-    unique.set(id, { id, name: skill.name, version: skill.version ?? 0 });
+    unique.set(id, {
+      id,
+      name: skill.name,
+      version: skill.version ?? 0,
+      ...(skill.body == null ? {} : { contentDigest: createSkillContentDigest(skill.body) }),
+    });
   }
   return [...unique.values()];
 }
