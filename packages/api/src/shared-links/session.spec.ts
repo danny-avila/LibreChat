@@ -1,8 +1,7 @@
-import type { MessageMethods } from '@librechat/data-schemas';
+import { configCapability, SystemCapabilities, type MessageMethods } from '@librechat/data-schemas';
 import { createSharedLangfuseSessionResolver } from './session';
 
-const hasCapability = jest.fn();
-const hasConfigCapability = jest.fn();
+const getHeldCapabilities = jest.fn();
 const getMessages = jest.fn() as unknown as MessageMethods['getMessages'];
 const resolveSessionUrl = jest.fn();
 
@@ -14,8 +13,7 @@ const config = {
 
 function createResolver() {
   return createSharedLangfuseSessionResolver({
-    hasCapability,
-    hasConfigCapability,
+    getHeldCapabilities,
     getMessages,
     resolveSessionUrl,
   });
@@ -32,8 +30,9 @@ const validParams = {
 describe('createSharedLangfuseSessionResolver', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    hasCapability.mockResolvedValue(true);
-    hasConfigCapability.mockResolvedValue(true);
+    getHeldCapabilities.mockResolvedValue(
+      new Set([SystemCapabilities.ACCESS_ADMIN, SystemCapabilities.MANAGE_CONFIGS]),
+    );
     resolveSessionUrl.mockResolvedValue('https://cloud.langfuse.com/session-1');
   });
 
@@ -41,13 +40,13 @@ describe('createSharedLangfuseSessionResolver', () => {
     const result = await createResolver()(validParams);
 
     expect(result).toBe('https://cloud.langfuse.com/session-1');
-    expect(hasCapability).toHaveBeenCalledWith(
+    expect(getHeldCapabilities).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'admin-1', tenantId: 'tenant-1' }),
-      'access:admin',
-    );
-    expect(hasConfigCapability).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'admin-1', tenantId: 'tenant-1' }),
-      'langfuse',
+      [
+        SystemCapabilities.ACCESS_ADMIN,
+        SystemCapabilities.MANAGE_CONFIGS,
+        configCapability('langfuse'),
+      ],
     );
     expect(resolveSessionUrl).toHaveBeenCalledWith({
       config,
@@ -64,27 +63,36 @@ describe('createSharedLangfuseSessionResolver', () => {
     });
 
     expect(result).toBeNull();
-    expect(hasCapability).not.toHaveBeenCalled();
+    expect(getHeldCapabilities).not.toHaveBeenCalled();
     expect(resolveSessionUrl).not.toHaveBeenCalled();
   });
 
   it('rejects a viewer without admin access', async () => {
-    hasCapability.mockResolvedValue(false);
+    getHeldCapabilities.mockResolvedValue(new Set([SystemCapabilities.MANAGE_CONFIGS]));
 
     const result = await createResolver()(validParams);
 
     expect(result).toBeNull();
-    expect(hasConfigCapability).not.toHaveBeenCalled();
     expect(resolveSessionUrl).not.toHaveBeenCalled();
   });
 
   it('rejects an admin without Langfuse config access', async () => {
-    hasConfigCapability.mockResolvedValue(false);
+    getHeldCapabilities.mockResolvedValue(new Set([SystemCapabilities.ACCESS_ADMIN]));
 
     const result = await createResolver()(validParams);
 
     expect(result).toBeNull();
     expect(resolveSessionUrl).not.toHaveBeenCalled();
+  });
+
+  it('accepts an admin with section-specific Langfuse config access', async () => {
+    getHeldCapabilities.mockResolvedValue(
+      new Set([SystemCapabilities.ACCESS_ADMIN, configCapability('langfuse')]),
+    );
+
+    const result = await createResolver()(validParams);
+
+    expect(result).toBe('https://cloud.langfuse.com/session-1');
   });
 
   it('treats the system tenant and an omitted tenant as the same deployment', async () => {

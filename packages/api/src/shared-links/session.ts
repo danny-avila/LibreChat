@@ -1,10 +1,6 @@
-import { SYSTEM_TENANT_ID, SystemCapabilities } from '@librechat/data-schemas';
+import { configCapability, SYSTEM_TENANT_ID, SystemCapabilities } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
-import type {
-  CapabilityUser,
-  HasCapabilityFn,
-  HasConfigCapabilityFn,
-} from '~/middleware/capabilities';
+import type { CapabilityUser, GetHeldCapabilitiesFn } from '~/middleware/capabilities';
 import type { LangfuseSessionLinkParams } from '~/langfuse/session';
 import { resolveLangfuseSessionUrl } from '~/langfuse/session';
 
@@ -25,8 +21,7 @@ export interface SharedLangfuseSessionParams {
 }
 
 export interface SharedLangfuseSessionDeps {
-  hasCapability: HasCapabilityFn;
-  hasConfigCapability: HasConfigCapabilityFn;
+  getHeldCapabilities: GetHeldCapabilitiesFn;
   getMessages: LangfuseSessionLinkParams['getMessages'];
   resolveSessionUrl?: (params: LangfuseSessionLinkParams) => Promise<string | null>;
 }
@@ -62,10 +57,17 @@ export function createSharedLangfuseSessionResolver(deps: SharedLangfuseSessionD
       tenantId: viewer.tenantId,
       idOnTheSource: viewer.idOnTheSource ?? null,
     };
-    if (!(await deps.hasCapability(capabilityUser, SystemCapabilities.ACCESS_ADMIN))) {
-      return null;
-    }
-    if (!(await deps.hasConfigCapability(capabilityUser, 'langfuse'))) {
+    const langfuseConfigCapability = configCapability('langfuse');
+    const heldCapabilities = await deps.getHeldCapabilities(capabilityUser, [
+      SystemCapabilities.ACCESS_ADMIN,
+      SystemCapabilities.MANAGE_CONFIGS,
+      langfuseConfigCapability,
+    ]);
+    if (
+      !heldCapabilities.has(SystemCapabilities.ACCESS_ADMIN) ||
+      (!heldCapabilities.has(SystemCapabilities.MANAGE_CONFIGS) &&
+        !heldCapabilities.has(langfuseConfigCapability))
+    ) {
       return null;
     }
 
