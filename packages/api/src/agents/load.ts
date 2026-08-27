@@ -6,6 +6,7 @@ import {
   getEphemeralSender,
   resolveSpecMcpServers,
   encodeEphemeralAgentId,
+  resolveSpecUserToggles,
   resolveSpecSkillsEnabled,
 } from 'librechat-data-provider';
 import type {
@@ -64,7 +65,13 @@ export async function loadEphemeralAgent(
   if (spec != null && spec !== '') {
     modelSpec = modelSpecs?.list?.find((s) => s.name === spec) ?? null;
   }
-  const ephemeralAgent: TEphemeralAgent | undefined = req.body?.ephemeralAgent;
+  /** A spec that hides the badge row makes its tool configuration
+   *  unconditional — there is no control to express an override with, so a
+   *  request toggle against one is dropped rather than obeyed. */
+  const ephemeralAgent: TEphemeralAgent | undefined = resolveSpecUserToggles(
+    req.body?.ephemeralAgent,
+    modelSpec,
+  );
   const userId = req.user?.id ?? '';
   const mcpServers = new Set<string>(
     resolveSpecMcpServers(ephemeralAgent?.mcp, modelSpec?.mcpServers),

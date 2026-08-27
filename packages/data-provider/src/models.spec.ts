@@ -1,4 +1,9 @@
-import { resolveSpecToolFlag, resolveSpecMcpServers, resolveSpecSkillsEnabled } from './models';
+import {
+  resolveSpecToolFlag,
+  resolveSpecMcpServers,
+  resolveSpecUserToggles,
+  resolveSpecSkillsEnabled,
+} from './models';
 
 /**
  * A model spec's tool configuration seeds the chat badge row; it does not
@@ -56,6 +61,21 @@ describe('model spec defaults vs. explicit user toggles', () => {
     it('keeps `skills: false` a hard opt-out the badge cannot lift', () => {
       expect(resolveSpecSkillsEnabled(true, false)).toBe(false);
       expect(resolveSpecSkillsEnabled(undefined, false)).toBe(false);
+    });
+  });
+
+  describe('resolveSpecUserToggles', () => {
+    it('drops request toggles for a spec that hides the badge row', () => {
+      expect(resolveSpecUserToggles({ web_search: false }, { hideBadgeRow: true })).toBeUndefined();
+      expect(resolveSpecUserToggles(false, { hideBadgeRow: true })).toBeUndefined();
+    });
+
+    it('passes toggles through for every ordinary spec', () => {
+      const toggles = { web_search: false };
+      expect(resolveSpecUserToggles(toggles, { hideBadgeRow: false })).toBe(toggles);
+      expect(resolveSpecUserToggles(toggles, {})).toBe(toggles);
+      expect(resolveSpecUserToggles(toggles, null)).toBe(toggles);
+      expect(resolveSpecUserToggles(toggles, undefined)).toBe(toggles);
     });
   });
 });

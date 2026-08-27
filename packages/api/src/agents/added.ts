@@ -7,6 +7,7 @@ import {
   appendAgentIdSuffix,
   resolveSpecMcpServers,
   encodeEphemeralAgentId,
+  resolveSpecUserToggles,
   resolveSpecSkillsEnabled,
 } from 'librechat-data-provider';
 import type {
@@ -131,8 +132,8 @@ export async function loadAddedAgent(
    *  A pane whose spec hides the badge row is exempt: those toggles were never
    *  offered for it, so the other pane's choices must not silently strip the
    *  capabilities its spec configured. */
-  const requestAgent = modelSpec?.hideBadgeRow === true ? undefined : req.body?.ephemeralAgent;
-  const paneAgent = rest.ephemeralAgent;
+  const requestAgent = resolveSpecUserToggles(req.body?.ephemeralAgent, modelSpec);
+  const paneAgent = resolveSpecUserToggles(rest.ephemeralAgent, modelSpec);
   const ephemeralAgent: TEphemeralAgent | undefined =
     requestAgent || paneAgent ? { ...requestAgent, ...paneAgent } : undefined;
 

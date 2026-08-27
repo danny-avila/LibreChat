@@ -246,6 +246,24 @@ export function resolveSpecToolFlag(
 }
 
 /**
+ * A spec that hides the chat badge row offers no control over the capabilities
+ * it configures, which is how an admin makes them unconditional. Its own
+ * configuration is therefore authoritative: request toggles are dropped before
+ * any of the resolvers below see them, rather than each caller remembering the
+ * check. Returns the toggles unchanged for every ordinary spec.
+ *
+ * Only the spec's OWN capabilities are governed — a spec with no `skills`
+ * config has nothing to protect, so the per-conversation skills badge still
+ * decides there.
+ */
+export function resolveSpecUserToggles<T>(
+  userToggles: T | undefined,
+  modelSpec: Pick<TModelSpec, 'hideBadgeRow'> | null | undefined,
+): T | undefined {
+  return modelSpec?.hideBadgeRow === true ? undefined : userToggles;
+}
+
+/**
  * The user's MCP selection is authoritative whenever the client sends one — an
  * empty array is a deselection, not an absent value. A spec's `mcpServers`
  * seeds the picker, and applies only when no selection accompanies the request.

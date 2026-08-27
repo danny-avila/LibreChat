@@ -1084,6 +1084,78 @@ describe('loadAgent', () => {
     });
   });
 
+  describe('a hidden badge row makes the spec unconditional (#15277)', () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    const hiddenReq = (ephemeralAgent: TEphemeralAgent) =>
+      ({
+        user: { id: 'user123' },
+        body: { ephemeralAgent },
+        config: {
+          config: {},
+          fileStrategy: FileSources.local,
+          imageOutputType: 'png',
+          modelSpecs: {
+            list: [
+              {
+                name: 'hidden-spec',
+                label: 'Hidden Spec',
+                preset: { endpoint: 'openai', model: 'gpt-4' },
+                hideBadgeRow: true,
+                webSearch: true,
+                executeCode: true,
+                skills: true,
+                mcpServers: ['crm'],
+              },
+            ],
+          },
+        },
+      }) as unknown as LoadAgentParams['req'];
+
+    /** No badge exists to express an override with, so a toggle posted against
+     *  such a spec — only an API caller can produce one — is dropped. */
+    test('request toggles cannot strip a hidden spec of its tools', async () => {
+      mockGetMCPServerTools.mockImplementation(async (_userId: string, server: string) => ({
+        [`lookup_mcp_${server}`]: { name: `lookup_mcp_${server}` },
+      }));
+
+      const result = await loadAgent(
+        {
+          req: hiddenReq({ web_search: false, execute_code: false, skills: false, mcp: [] }),
+          spec: 'hidden-spec',
+          agent_id: EPHEMERAL_AGENT_ID as string,
+          endpoint: 'openai',
+          model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+        },
+        deps,
+      );
+
+      expect(result?.tools).toEqual(['execute_code', 'web_search', 'lookup_mcp_crm']);
+      expect(result?.skills_enabled).toBe(true);
+    });
+
+    test('an ordinary spec still honors the same toggles', async () => {
+      const req = hiddenReq({ web_search: false, execute_code: false, skills: false, mcp: [] });
+      const spec = (req.config as unknown as { modelSpecs: { list: Record<string, unknown>[] } })
+        .modelSpecs.list[0];
+      delete spec.hideBadgeRow;
+
+      const result = await loadAgent(
+        {
+          req,
+          spec: 'hidden-spec',
+          agent_id: EPHEMERAL_AGENT_ID as string,
+          endpoint: 'openai',
+          model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+        },
+        deps,
+      );
+
+      expect(result?.tools).toEqual([]);
+      expect(result?.skills_enabled).toBe(false);
+    });
+  });
+
   describe('added conversations inherit the composer toggles (#15277)', () => {
     const { EPHEMERAL_AGENT_ID } = Constants;
 
