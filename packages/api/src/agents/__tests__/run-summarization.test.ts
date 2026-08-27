@@ -11,7 +11,7 @@ import type { BaseMessage } from '@langchain/core/messages';
 import type { SubagentTaskConfig } from '@librechat/agents';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
-import { createRun } from '~/agents/run';
+import { createRun, isAskUserQuestionAdminDisabled } from '~/agents/run';
 
 // Mock winston logger — `format` must be callable so @librechat/data-schemas
 // dist module-load completes cleanly; see api/test/__mocks__/logger.js.
@@ -106,6 +106,21 @@ function makeAgent(
     ...overrides,
   };
 }
+
+describe('isAskUserQuestionAdminDisabled', () => {
+  it('applies includedTools precedence and the filteredTools fallback', () => {
+    expect(isAskUserQuestionAdminDisabled(undefined)).toBe(false);
+    expect(isAskUserQuestionAdminDisabled({ includedTools: ['calculator'] } as AppConfig)).toBe(
+      true,
+    );
+    expect(
+      isAskUserQuestionAdminDisabled({ includedTools: ['ask_user_question'] } as AppConfig),
+    ).toBe(false);
+    expect(
+      isAskUserQuestionAdminDisabled({ filteredTools: ['ask_user_question'] } as AppConfig),
+    ).toBe(true);
+  });
+});
 
 type TestRunAgent = ReturnType<typeof makeAgent> & {
   subagentAgentConfigs?: TestRunAgent[];

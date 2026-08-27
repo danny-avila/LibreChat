@@ -52,6 +52,7 @@ const {
   LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
   LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY,
   agentRequestsAskUserQuestion,
+  isAskUserQuestionAdminDisabled,
   attachAskUserQuestionArgs,
   hydrateResumeRunSteps,
   createContentIndexOffsetHandlers,
@@ -3323,7 +3324,8 @@ class AgentClient extends BaseClient {
           agentsEConfig?.toolApproval,
           getRegisteredToolApprovalHookCount() > 0,
         ) ||
-          topLevelAgents.some(agentRequestsAskUserQuestion))
+          (!isAskUserQuestionAdminDisabled(appConfig) &&
+            topLevelAgents.some(agentRequestsAskUserQuestion)))
       ) {
         if (!GenerationJobManager.isRedis) {
           const error = new Error(
