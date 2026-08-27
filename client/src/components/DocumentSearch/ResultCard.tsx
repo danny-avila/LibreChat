@@ -296,7 +296,7 @@ const ResultCard: React.FC<ResultCardProps> = ({
         </h3>
         {hit.source_library === 'DB' && (
           <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
-            지식DB
+            DB 라이브러리
           </span>
         )}
         {hit.title_match && (

@@ -52,8 +52,8 @@ const EXTENSION_OPTIONS: {
 
 const LIBRARY_OPTIONS: { id: LibraryFilter; label: string }[] = [
   { id: 'all', label: '전체' },
-  { id: 'matter', label: '사건 문서' },
-  { id: 'knowledge', label: '지식 DB' },
+  { id: 'matter', label: 'M 라이브러리' },
+  { id: 'knowledge', label: 'DB 라이브러리' },
 ];
 
 const PRESET_OPTIONS: { preset: Exclude<PeriodPreset, 'custom'>; labelKey: string }[] = [
