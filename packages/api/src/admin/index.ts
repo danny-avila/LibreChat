@@ -1,5 +1,5 @@
 export { createAdminConfigHandlers } from './config';
-export { createAdminLangfuseHandlers, resolveLangfuseSessionUrl } from './langfuse';
+export { createAdminLangfuseHandlers } from './langfuse';
 export { createAdminGrantsHandlers } from './grants';
 export { createAdminGroupsHandlers } from './groups';
 export { createAdminRolesHandlers } from './roles';
@@ -8,7 +8,7 @@ export { createAdminUsersHandlers } from './users';
 export { createAdminAuditLogHandlers } from './auditLog';
 export { resolveConfigSecret, redactConfigSecretMaps } from './secrets';
 export type { AdminConfigDeps } from './config';
-export type { AdminLangfuseDeps, LangfuseSessionLinkParams } from './langfuse';
+export type { AdminLangfuseDeps } from './langfuse';
 export type { AdminGrantsDeps, GrantPrincipalType } from './grants';
 export type { AdminGroupsDeps } from './groups';
 export type { AdminRolesDeps } from './roles';

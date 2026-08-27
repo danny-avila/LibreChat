@@ -20,14 +20,12 @@ const {
   isValidSharedLinksCursor,
   MAX_SHARED_LINK_SEARCH_LENGTH,
   createSharedLinkConfigMiddleware,
-  resolveLangfuseSessionUrl,
+  createSharedLangfuseSessionResolver,
 } = require('@librechat/api');
 const {
   logger,
   runAsSystem,
   tenantStorage,
-  SYSTEM_TENANT_ID,
-  SystemCapabilities,
   createTempChatExpirationDate,
 } = require('@librechat/data-schemas');
 const { FileSources, PermissionTypes, Permissions } = require('librechat-data-provider');
@@ -58,41 +56,11 @@ const { getAppConfig } = require('~/server/services/Config/app');
 const router = express.Router();
 const sharedLinkConfigMiddleware = createSharedLinkConfigMiddleware({ getAppConfig });
 
-const normalizedTenantId = (tenantId) =>
-  tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
-
-const getSharedLangfuseSessionUrl = async (req) => {
-  const userId = req.user?.id ?? req.user?._id?.toString();
-  if (
-    !userId ||
-    normalizedTenantId(req.user?.tenantId) !== normalizedTenantId(req.shareTenantId) ||
-    !req.shareOwnerId ||
-    !req.shareConversationId
-  ) {
-    return null;
-  }
-
-  const capabilityUser = {
-    id: userId,
-    role: req.user.role ?? '',
-    tenantId: req.user.tenantId,
-    idOnTheSource: req.user.idOnTheSource ?? null,
-  };
-  const isAdmin = await hasCapability(capabilityUser, SystemCapabilities.ACCESS_ADMIN);
-  if (!isAdmin) {
-    return null;
-  }
-  if (!(await hasConfigCapability(capabilityUser, 'langfuse'))) {
-    return null;
-  }
-
-  return resolveLangfuseSessionUrl({
-    config: req.config?.langfuse,
-    conversationId: req.shareConversationId,
-    userId: req.shareOwnerId,
-    getMessages,
-  });
-};
+const getSharedLangfuseSessionUrl = createSharedLangfuseSessionResolver({
+  hasCapability,
+  hasConfigCapability,
+  getMessages,
+});
 
 const SHARE_SERVICE_ERROR_STATUS = {
   INVALID_PARAMS: 400,
@@ -385,7 +353,13 @@ if (allowSharedLinks) {
         if (share) {
           let langfuseSessionUrl = null;
           try {
-            langfuseSessionUrl = await getSharedLangfuseSessionUrl(req);
+            langfuseSessionUrl = await getSharedLangfuseSessionUrl({
+              viewer: req.user,
+              shareTenantId: req.shareTenantId,
+              shareConversationId: req.shareConversationId,
+              shareOwnerId: req.shareOwnerId,
+              config: req.config?.langfuse,
+            });
           } catch (error) {
             logger.warn('[share] Failed to resolve Langfuse session link:', error);
           }

@@ -18,10 +18,11 @@ import {
   getLangfuseTenantDestinations,
   resolveLangfuseTenantDestination,
 } from '~/langfuse/tenantDestinations';
-import { getLangfuseDestinationId, scopeHeadersToDestination } from '~/langfuse/destinations';
 import { redirectPolicyFor, resolveLangfuseHeaders } from '~/langfuse/utils';
 import { decryptConfigSecret, encryptConfigSecretFields } from './secrets';
+import { scopeHeadersToDestination } from '~/langfuse/destinations';
 import { isLangfuseConnectionAvailable } from '~/langfuse/policy';
+import { resolveLangfuseSessionUrl } from '~/langfuse/session';
 import { mergeHeaders } from '~/utils/headers';
 
 const DEFAULT_PRIORITY = 10;
@@ -72,13 +73,6 @@ export interface AdminLangfuseDeps {
   getMessages: MessageMethods['getMessages'];
   invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
   recordConnectionUpdate?: (event: LangfuseConnectionEvent) => void;
-}
-
-export interface LangfuseSessionLinkParams {
-  config: TCustomConfig['langfuse'];
-  conversationId: string;
-  userId: string;
-  getMessages: MessageMethods['getMessages'];
 }
 
 function getTenantId(req: ServerRequest): string | undefined {
@@ -140,43 +134,6 @@ function rejectWhenConnectionUnavailable(res: Response): Response | undefined {
   }
 
   return res.status(404).json({ error: 'Langfuse connection settings are not available' });
-}
-
-export async function resolveLangfuseSessionUrl({
-  config,
-  conversationId,
-  userId,
-  getMessages,
-}: LangfuseSessionLinkParams): Promise<string | null> {
-  if (!isLangfuseConnectionAvailable()) {
-    return null;
-  }
-
-  const destination = resolveLangfuseTenantDestination(config?.destination);
-  const projectId = config?.projectId?.trim();
-  if (config?.enabled !== true || !destination || !projectId) {
-    return null;
-  }
-
-  const destinationId = getLangfuseDestinationId(destination.baseUrl, projectId);
-  const messages = await getMessages(
-    {
-      user: userId,
-      conversationId,
-      langfuseSampled: true,
-      langfuseDestinationIds: destinationId,
-    },
-    '_id',
-    { sort: false, limit: 1 },
-  );
-  if (messages.length === 0) {
-    return null;
-  }
-
-  const sessionUrl = new URL(destination.baseUrl);
-  const basePath = sessionUrl.pathname.replace(/\/+$/, '');
-  sessionUrl.pathname = `${basePath}/project/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(conversationId)}`;
-  return sessionUrl.toString();
 }
 
 type LangfuseVerificationFailure = {

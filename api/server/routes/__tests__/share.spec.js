@@ -10,7 +10,7 @@ const mockSharedLinkConfigMiddleware = jest.fn((_req, _res, next) => next());
 let mockShareTenantId;
 const mockHasCapability = jest.fn();
 const mockHasConfigCapability = jest.fn();
-const mockResolveLangfuseSessionUrl = jest.fn();
+const mockGetSharedLangfuseSessionUrl = jest.fn();
 const mockBuildSharedLinkStartupPayload = jest.fn();
 const mockCanAccessSharedLink = jest.fn((req, _res, next) => {
   req.shareResourceId = 'resource-123';
@@ -98,7 +98,11 @@ jest.mock('@librechat/api', () => ({
   buildShareFileEtag: (file) =>
     `"share-${file.file_id}-${file.previewRevision ?? 0}-${file.bytes ?? 0}-${file.filepath ?? ''}"`,
   MAX_SHARED_LINK_SEARCH_LENGTH: 256,
-  resolveLangfuseSessionUrl: (...args) => mockResolveLangfuseSessionUrl(...args),
+  createSharedLangfuseSessionResolver: jest.fn(
+    () =>
+      (...args) =>
+        mockGetSharedLangfuseSessionUrl(...args),
+  ),
   isContentFilterError: jest.fn(
     (error) =>
       error?.code === 'content_filter_block' || error?.code === 'content_filter_uninspectable',
@@ -295,7 +299,7 @@ describe('share routes', () => {
     mockShareTenantId = undefined;
     mockHasCapability.mockResolvedValue(false);
     mockHasConfigCapability.mockResolvedValue(false);
-    mockResolveLangfuseSessionUrl.mockResolvedValue(null);
+    mockGetSharedLangfuseSessionUrl.mockResolvedValue(null);
     mockGetAppConfig.mockResolvedValue({
       interfaceConfig: {
         privacyPolicy: { externalUrl: 'https://example.com/privacy' },
@@ -373,9 +377,7 @@ describe('share routes', () => {
 
   it('includes the source conversation session for an admin in the share tenant', async () => {
     mockShareTenantId = 'tenant-abc';
-    mockHasCapability.mockResolvedValue(true);
-    mockHasConfigCapability.mockResolvedValue(true);
-    mockResolveLangfuseSessionUrl.mockResolvedValue(
+    mockGetSharedLangfuseSessionUrl.mockResolvedValue(
       'https://cloud.langfuse.com/project/project-1/sessions/conversation-owner-123',
     );
     mockSharedMessagesResult({ shareId: 'share-123', messages: [] });
@@ -392,23 +394,16 @@ describe('share routes', () => {
     expect(response.body.langfuseSessionUrl).toBe(
       'https://cloud.langfuse.com/project/project-1/sessions/conversation-owner-123',
     );
-    expect(mockHasCapability).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'admin-123', tenantId: 'tenant-abc' }),
-      'access:admin',
-    );
-    expect(mockHasConfigCapability).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'admin-123', tenantId: 'tenant-abc' }),
-      'langfuse',
-    );
-    expect(mockResolveLangfuseSessionUrl).toHaveBeenCalledWith({
+    expect(mockGetSharedLangfuseSessionUrl).toHaveBeenCalledWith({
+      viewer: expect.objectContaining({ id: 'admin-123', tenantId: 'tenant-abc' }),
+      shareTenantId: 'tenant-abc',
+      shareConversationId: 'conversation-owner-123',
+      shareOwnerId: 'owner-123',
       config: langfuse,
-      conversationId: 'conversation-owner-123',
-      userId: 'owner-123',
-      getMessages: expect.any(Function),
     });
   });
 
-  it('does not expose a session link to a non-admin in the share tenant', async () => {
+  it('omits the session link when the shared-session resolver denies access', async () => {
     mockShareTenantId = 'tenant-abc';
     mockSharedMessagesResult({ shareId: 'share-123', messages: [] });
 
@@ -418,47 +413,11 @@ describe('share routes', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).not.toHaveProperty('langfuseSessionUrl');
-    expect(mockResolveLangfuseSessionUrl).not.toHaveBeenCalled();
-  });
-
-  it('does not expose a session link to an admin without Langfuse config access', async () => {
-    mockShareTenantId = 'tenant-abc';
-    mockHasCapability.mockResolvedValue(true);
-    mockSharedMessagesResult({ shareId: 'share-123', messages: [] });
-
-    const response = await request(
-      buildApp({ user: { id: 'admin-123', role: 'ADMIN', tenantId: 'tenant-abc' } }),
-    ).get('/api/share/share-123');
-
-    expect(response.status).toBe(200);
-    expect(response.body).not.toHaveProperty('langfuseSessionUrl');
-    expect(mockHasConfigCapability).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'admin-123', tenantId: 'tenant-abc' }),
-      'langfuse',
-    );
-    expect(mockResolveLangfuseSessionUrl).not.toHaveBeenCalled();
-  });
-
-  it('does not expose a session link to an admin from another tenant', async () => {
-    mockShareTenantId = 'tenant-owner';
-    mockHasCapability.mockResolvedValue(true);
-    mockSharedMessagesResult({ shareId: 'share-123', messages: [] });
-
-    const response = await request(
-      buildApp({ user: { id: 'admin-123', role: 'ADMIN', tenantId: 'tenant-viewer' } }),
-    ).get('/api/share/share-123');
-
-    expect(response.status).toBe(200);
-    expect(response.body).not.toHaveProperty('langfuseSessionUrl');
-    expect(mockHasCapability).not.toHaveBeenCalled();
-    expect(mockResolveLangfuseSessionUrl).not.toHaveBeenCalled();
   });
 
   it('serves the shared chat when session-link resolution fails', async () => {
     mockShareTenantId = 'tenant-abc';
-    mockHasCapability.mockResolvedValue(true);
-    mockHasConfigCapability.mockResolvedValue(true);
-    mockResolveLangfuseSessionUrl.mockRejectedValue(new Error('Langfuse lookup failed'));
+    mockGetSharedLangfuseSessionUrl.mockRejectedValue(new Error('Langfuse lookup failed'));
     mockSharedMessagesResult({ shareId: 'share-123', messages: [] });
 
     const response = await request(
