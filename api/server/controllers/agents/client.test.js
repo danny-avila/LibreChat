@@ -903,6 +903,64 @@ describe('AgentClient - startup telemetry', () => {
     expect(mockCreateRun).toHaveBeenCalledTimes(createRunBefore);
   });
 
+  it.each([
+    {
+      name: 'a bypass-only approval policy',
+      toolApproval: { enabled: true, mode: 'bypass' },
+      subagentAgentConfigs: undefined,
+    },
+    {
+      name: 'ask_user_question on a nested subagent only',
+      toolApproval: undefined,
+      subagentAgentConfigs: [
+        {
+          id: 'nested-agent',
+          tools: [{ name: 'ask_user_question' }],
+        },
+      ],
+    },
+  ])('does not reject scheduled runs for $name', async ({ toolApproval, subagentAgentConfigs }) => {
+    const processStream = jest.fn().mockResolvedValue();
+    mockCreateRun.mockResolvedValueOnce({
+      Graph: null,
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+      getInterrupt: jest.fn(() => undefined),
+    });
+    const createRunBefore = mockCreateRun.mock.calls.length;
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: { toolApproval } } },
+        _isScheduledFire: true,
+        _resumableStreamId: 'scheduled-non-pausing-policy',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+        subagentAgentConfigs,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'scheduled-non-pausing-policy';
+    client.responseMessageId = 'scheduled-non-pausing-response';
+    client.parentMessageId = 'scheduled-non-pausing-parent';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await expect(client.chatCompletion({ payload: [] })).resolves.toBeUndefined();
+    expect(mockCreateRun).toHaveBeenCalledTimes(createRunBefore + 1);
+    expect(processStream).toHaveBeenCalledTimes(1);
+  });
+
   it('overlaps run creation with checkpoint pruning and joins both before stream processing', async () => {
     let releaseCheckpoint;
     let checkpointStarted;

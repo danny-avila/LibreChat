@@ -44,6 +44,8 @@ const {
   getAgentCheckpointer,
   hasDurableAgentInterruptCheckpoint,
   isHITLEnabled,
+  isToolApprovalPauseCapable,
+  getRegisteredToolApprovalHookCount,
   captureAgentCheckpointGeneration,
   isContentFilterError,
   deleteAgentCheckpoint,
@@ -3314,14 +3316,14 @@ class AgentClient extends BaseClient {
        * pause. Refuse unsupported topologies before spending on provider work. */
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
-      const reachableAgents = collectReachableAgents([
-        this.options.agent,
-        ...(this.agentConfigs?.values() ?? []),
-      ]);
+      const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
       if (
         this.options.req?._isScheduledFire === true &&
-        (isHITLEnabled(agentsEConfig?.toolApproval) ||
-          reachableAgents.some(agentRequestsAskUserQuestion))
+        (isToolApprovalPauseCapable(
+          agentsEConfig?.toolApproval,
+          getRegisteredToolApprovalHookCount() > 0,
+        ) ||
+          topLevelAgents.some(agentRequestsAskUserQuestion))
       ) {
         if (!GenerationJobManager.isRedis) {
           const error = new Error(
@@ -3331,7 +3333,10 @@ class AgentClient extends BaseClient {
           error.code = 'SCHEDULED_HITL_REQUIRES_SHARED_STORE';
           throw error;
         }
-        if (agentsEConfig?.checkpointer?.type === 'memory') {
+        if (
+          agentsEConfig?.checkpointer?.type === 'memory' ||
+          !(await getAgentCheckpointer(agentsEConfig?.checkpointer))
+        ) {
           const error = new Error(
             'Scheduled agent runs that can pause require the Mongo checkpointer.',
           );

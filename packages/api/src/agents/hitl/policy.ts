@@ -81,6 +81,32 @@ export function isHITLEnabled(policy: TToolApprovalPolicy | undefined): boolean 
 }
 
 /**
+ * Whether the configured policy can structurally return `ask` for any tool.
+ *
+ * `bypass` and `dontAsk` are non-pausing fallbacks; only an explicit ask rule
+ * or a programmatic hook can tighten them to `ask`. A catch-all deny remains
+ * non-pausing because deny wins over every hook/rule, while a catch-all allow
+ * removes the default mode's unmatched-tool ask fallback. More-specific pattern
+ * overlap is intentionally treated conservatively because the run's complete
+ * lazy tool surface is not known at admission time.
+ */
+export function isToolApprovalPauseCapable(
+  policy: TToolApprovalPolicy | undefined,
+  hasProgrammaticHooks = false,
+): boolean {
+  if (!isHITLEnabled(policy) || policy?.deny?.includes('*')) {
+    return false;
+  }
+  if (hasProgrammaticHooks || (policy?.ask?.length ?? 0) > 0) {
+    return true;
+  }
+  if (policy?.mode === 'bypass' || policy?.mode === 'dontAsk') {
+    return false;
+  }
+  return policy?.allow?.includes('*') !== true;
+}
+
+/**
  * Map a LibreChat tool-approval policy to the SDK's `ToolPolicyConfig`.
  *
  * Returns `undefined` when there's nothing to configure (so the SDK's own

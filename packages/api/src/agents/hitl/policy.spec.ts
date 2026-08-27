@@ -17,7 +17,30 @@ import {
   applyResumeContext,
   applyResumeModelParameters,
   exemptAskUserQuestionFromApproval,
+  isToolApprovalPauseCapable,
 } from './policy';
+
+describe('isToolApprovalPauseCapable', () => {
+  it('recognizes the default ask fallback and explicit ask rules', () => {
+    expect(isToolApprovalPauseCapable({ enabled: true })).toBe(true);
+    expect(isToolApprovalPauseCapable({ enabled: true, mode: 'bypass', ask: ['write_*'] })).toBe(
+      true,
+    );
+  });
+
+  it('excludes policies that can only allow or deny', () => {
+    expect(isToolApprovalPauseCapable({ enabled: true, mode: 'bypass' })).toBe(false);
+    expect(isToolApprovalPauseCapable({ enabled: true, mode: 'dontAsk' })).toBe(false);
+    expect(isToolApprovalPauseCapable({ enabled: true, allow: ['*'] })).toBe(false);
+    expect(isToolApprovalPauseCapable({ enabled: true, deny: ['*'], ask: ['write_*'] }, true)).toBe(
+      false,
+    );
+  });
+
+  it('treats a programmatic hook as pause-capable when policy does not deny every tool', () => {
+    expect(isToolApprovalPauseCapable({ enabled: true, mode: 'bypass' }, true)).toBe(true);
+  });
+});
 
 describe('resolveToolApprovalPolicy', () => {
   test('returns the endpoint policy unchanged (single layer wired today)', () => {
