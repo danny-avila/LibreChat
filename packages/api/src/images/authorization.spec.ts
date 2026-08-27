@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
-import { createImageAuthorizationMiddleware } from './authorization';
-import type { ImageAuthorizationDeps } from './authorization';
 import type { NextFunction, Request, Response } from 'express';
+import type { ImageAuthorizationDeps } from './authorization';
+import { createImageAuthorizationMiddleware } from './authorization';
 
 const VIEWER_ID = '65cfb246f7ecadb8b1e8036b';
 const OWNER_ID = '65cfb246f7ecadb8b1e8036c';
