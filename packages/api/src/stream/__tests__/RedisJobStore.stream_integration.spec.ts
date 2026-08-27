@@ -4,6 +4,7 @@ import type { Agents } from 'librechat-data-provider';
 import type { Redis, Cluster } from 'ioredis';
 import type { SteerQueueItem, SteerReceipt } from '../interfaces/IJobStore';
 import {
+  JobStatusTransitionDeadlineError,
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   STEER_ENQUEUE_RECEIPT_FULL,
 } from '../interfaces/IJobStore';
@@ -125,6 +126,33 @@ describe('RedisJobStore Integration Tests', () => {
         userId,
         status: 'running',
       });
+
+      await store.destroy();
+    });
+
+    test('atomically rejects a status transition after its deadline', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `test-transition-deadline-${Date.now()}`;
+      await store.createJob(streamId, 'deadline-user', streamId);
+
+      await expect(
+        store.transitionStatus(streamId, {
+          from: 'running',
+          to: 'requires_action',
+          notAfterMs: Date.now() - 1,
+        }),
+      ).rejects.toMatchObject({
+        name: JobStatusTransitionDeadlineError.name,
+        notAfterMs: expect.any(Number),
+      });
+      await expect(store.getJob(streamId)).resolves.toMatchObject({ status: 'running' });
 
       await store.destroy();
     });

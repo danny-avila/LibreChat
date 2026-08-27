@@ -71,6 +71,31 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       await expect(manager.approvals.peek(streamId)).resolves.toBeNull();
     });
 
+    test('refuses an action that expires while the pause transition is waiting on storage', async () => {
+      const streamId = 'stream-expired-during-pause';
+      await manager.createJob(streamId, 'user-1');
+      const expiresAt = Date.now() + 1000;
+      const originalTransition = jobStore.transitionStatus.bind(jobStore);
+      const now = jest.spyOn(Date, 'now').mockReturnValue(expiresAt - 1);
+      const transition = jest
+        .spyOn(jobStore, 'transitionStatus')
+        .mockImplementationOnce(async (...args) => {
+          now.mockReturnValue(expiresAt);
+          return originalTransition(...args);
+        });
+
+      try {
+        await expect(
+          manager.approvals.pause(streamId, buildAction(streamId, { expiresAt })),
+        ).rejects.toBeInstanceOf(PendingActionExpiredError);
+      } finally {
+        transition.mockRestore();
+        now.mockRestore();
+      }
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({ status: 'running' });
+      await expect(manager.approvals.peek(streamId)).resolves.toBeNull();
+    });
+
     test('a later ask retains a legacy answer for ordered cross-replica reconstruction', async () => {
       const streamId = 'stream-repause-retains-legacy-answer';
       await manager.createJob(streamId, 'user-1');
