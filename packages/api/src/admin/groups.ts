@@ -17,7 +17,7 @@ import { parsePagination } from './pagination';
 
 type GroupListFilter = Pick<GroupFilterOptions, 'source' | 'search'>;
 
-const VALID_GROUP_SOURCES: ReadonlySet<string> = new Set(['local', 'entra']);
+const VALID_GROUP_SOURCES: ReadonlySet<string> = new Set(['local', 'entra', 'oidc']);
 const MAX_CREATE_MEMBER_IDS = 500;
 const MAX_SEARCH_LENGTH = 200;
 const MAX_NAME_LENGTH = 500;
