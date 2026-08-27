@@ -2674,6 +2674,9 @@ class AgentClient extends BaseClient {
     const scopes = new Map([[primaryScope ?? '', primary]]);
     await Promise.all(
       agents.map(async (agent) => {
+        if (agent !== this.options.agent && !agentHasInlineMemoryTools(agent)) {
+          return;
+        }
         const agentId = getMemoryAgentId(agent);
         const scope = agentId ?? '';
         if (scopes.has(scope)) {

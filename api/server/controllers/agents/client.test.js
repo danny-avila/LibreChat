@@ -193,6 +193,38 @@ describe('AgentClient - event actor history adapter', () => {
       'graph-member',
     ]);
   });
+
+  it('snapshots only memory partitions that can reach model context', async () => {
+    const getFormattedMemories = require('~/models').getFormattedMemories;
+    getFormattedMemories.mockClear();
+    getFormattedMemories.mockResolvedValue({ withKeys: 'private memory' });
+    const primary = { id: 'primary' };
+    const inertChild = {
+      id: 'inert-child',
+      memory_scope: 'agent',
+      memoryToolsRegistered: false,
+    };
+    const memoryChild = {
+      id: 'memory-child',
+      memory_scope: 'agent',
+      memoryToolsRegistered: true,
+    };
+    const client = Object.create(AgentClient.prototype);
+    client.options = { agent: primary, req: { user: { id: 'user-1' } } };
+    client.getSharedMemoryContext = jest.fn().mockResolvedValue({ withoutKeys: 'shared memory' });
+
+    await expect(
+      client.getEventActorMemorySnapshots([primary, inertChild, memoryChild]),
+    ).resolves.toEqual([
+      { scope: 'memory-child', withKeys: 'private memory' },
+      { scope: 'shared', withoutKeys: 'shared memory' },
+    ]);
+    expect(getFormattedMemories).toHaveBeenCalledTimes(1);
+    expect(getFormattedMemories).toHaveBeenCalledWith({
+      userId: 'user-1',
+      agentId: 'memory-child',
+    });
+  });
 });
 
 describe('AgentClient - final model-bound content protection', () => {
