@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { logger, getTenantId, webSearchKeys } = require('@librechat/data-schemas');
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   getNewS3URL,
   needsRefresh,
@@ -8,7 +8,8 @@ const {
   MCPTokenStorage,
   getAppConfigOptionsFromUser,
   normalizeHttpError,
-  extractWebSearchEnvVars,
+  getWebSearchInstallEntries,
+  getWebSearchUninstallFields,
   deleteAgentCheckpoints,
   deleteAllSharedLinksWithCleanup,
 } = require('@librechat/api');
@@ -233,18 +234,17 @@ const updateUserPluginsController = async (req, res) => {
       return res.status(200).send();
     }
 
-    let keys = Object.keys(auth);
-    const values = Object.values(auth); // Used in 'install' block
+    let authEntries = Object.entries(auth);
 
     const isMCPTool = pluginKey.startsWith('mcp_') || pluginKey.includes(Constants.mcp_delimiter);
 
     // Early exit condition:
-    // If keys are empty (meaning auth: {} was likely sent for uninstall, or auth was empty for install)
-    // AND it's not web_search (which has special key handling to populate `keys` for uninstall)
+    // If auth is empty (meaning auth: {} was likely sent for uninstall or install)
+    // AND it's not web_search (which expands its uninstall fields)
     // AND it's NOT (an uninstall action FOR an MCP tool - we need to proceed for this case to clear all its auth)
     // THEN return.
     if (
-      keys.length === 0 &&
+      authEntries.length === 0 &&
       pluginKey !== Tools.web_search &&
       !(action === 'uninstall' && isMCPTool)
     ) {
@@ -261,23 +261,29 @@ const updateUserPluginsController = async (req, res) => {
     if (pluginKey === Tools.web_search) {
       /** @type  {TCustomConfig['webSearch']} */
       const webSearchConfig = appConfig?.webSearch;
-      keys = extractWebSearchEnvVars({
-        keys: action === 'install' ? keys : webSearchKeys,
-        config: webSearchConfig,
-      });
+      authEntries =
+        action === 'install'
+          ? getWebSearchInstallEntries({ auth, config: webSearchConfig })
+          : getWebSearchUninstallFields(webSearchConfig).map((field) => [field, '']);
     }
 
     if (action === 'install') {
-      for (let i = 0; i < keys.length; i++) {
-        authService = await updateUserPluginAuth(user.id, keys[i], pluginKey, values[i]);
+      for (const [field, value] of authEntries) {
+        authService =
+          pluginKey === Tools.web_search && value === ''
+            ? await deleteUserPluginAuth(user.id, field)
+            : await updateUserPluginAuth(user.id, field, pluginKey, value);
         if (authService instanceof Error) {
           logger.error('[authService]', authService);
           ({ status, message } = normalizeHttpError(authService));
+          if (pluginKey === Tools.web_search) {
+            break;
+          }
         }
       }
     } else if (action === 'uninstall') {
       // const isMCPTool was defined earlier
-      if (isMCPTool && keys.length === 0) {
+      if (isMCPTool && authEntries.length === 0) {
         // This handles the case where auth: {} is sent for an MCP tool uninstall.
         // It means "delete all credentials associated with this MCP pluginKey".
         authService = await deleteUserPluginAuth(user.id, null, true, pluginKey);
@@ -299,12 +305,11 @@ const updateUserPluginsController = async (req, res) => {
         }
       } else {
         // This handles:
-        // 1. Web_search uninstall (keys will be populated with all webSearchKeys if auth was {}).
-        // 2. Other tools uninstall (if keys were provided).
-        // 3. MCP tool uninstall if specific keys were provided in `auth` (not current frontend behavior).
-        // If keys is empty for non-MCP tools (and not web_search), this loop won't run, and nothing is deleted.
-        for (let i = 0; i < keys.length; i++) {
-          authService = await deleteUserPluginAuth(user.id, keys[i]); // Deletes by authField name
+        // 1. Web_search uninstall (entries include every configured field).
+        // 2. Other tools uninstall (if auth fields were provided).
+        // 3. MCP tool uninstall if specific fields were provided in `auth`.
+        for (const [field] of authEntries) {
+          authService = await deleteUserPluginAuth(user.id, field); // Deletes by authField name
           if (authService instanceof Error) {
             logger.error('[authService] Error deleting specific auth key:', authService);
             ({ status, message } = normalizeHttpError(authService));

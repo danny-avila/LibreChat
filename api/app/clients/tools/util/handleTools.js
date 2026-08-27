@@ -418,6 +418,10 @@ const loadTools = async ({
         loadAuthValues,
         webSearchConfig: webSearch,
       });
+      if (!result.authenticated) {
+        logger.warn('[handleTools] Skipping web search because authentication is incomplete.');
+        continue;
+      }
       const { onSearchResults, onGetHighlights } = options?.[Tools.web_search] ?? {};
       const { httpAgent, httpsAgent } = resolveWebSearchSSRFAgents(
         result.authResult,
