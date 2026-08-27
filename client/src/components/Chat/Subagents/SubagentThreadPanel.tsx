@@ -276,6 +276,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const [postRebaseTurns, setPostRebaseTurns] = useState<
     ReturnType<typeof adaptDurableThreadConversation>
   >([]);
+  const postRebaseTurnsRef = useRef(postRebaseTurns);
   const [historyRebaseActive, setHistoryRebaseActive] = useState(false);
   const [historyCursor, setHistoryCursor] = useState<string | null | undefined>(undefined);
   const [historyCursorGeneration, setHistoryCursorGeneration] = useState<string>();
@@ -314,6 +315,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     setMovingWindowTurns([]);
     setRebaseTurns([]);
     setPostRebaseTurns([]);
+    postRebaseTurnsRef.current = [];
     setHistoryRebaseActive(false);
     setHistoryCursor(undefined);
     setHistoryCursorGeneration(undefined);
@@ -363,6 +365,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           activeThreadRef.current !== requestedThreadId ||
           selectionGenerationRef.current !== requestedGeneration
         ) {
+          return;
+        }
+        if (!subagentThreadHasTaskEvidence(exact, detailTaskId)) {
+          setTurnDetailStates((current) => new Map(current).set(detailTaskId, 'unavailable'));
           return;
         }
         const detail = adaptDurableThreadActivity(exact, detailTaskId);
@@ -423,6 +429,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         return;
       }
       const pageTurns = adaptDurableThreadConversation(page);
+      let recoveryCompleted = false;
       if (recoveringRebase) {
         const bridgeTurns = startsRebase
           ? retainBoundedMovingWindowTurns(movingWindowTurns, rebaseTurns)
@@ -437,8 +444,16 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         const reconnected = pageTurns.some((turn) => retainedTaskIds.has(turn.taskId));
         const recoveryComplete = reconnected || page.nextCursor == null;
         if (recoveryComplete) {
+          recoveryCompleted = true;
+          const retainedPostRebaseTurns = postRebaseTurnsRef.current;
+          postRebaseTurnsRef.current = [];
           setOlderTurns((current) =>
-            mergeChildConversationTurns(current, bridgeTurns, nextRebaseTurns, postRebaseTurns),
+            mergeChildConversationTurns(
+              current,
+              bridgeTurns,
+              nextRebaseTurns,
+              retainedPostRebaseTurns,
+            ),
           );
           setMovingWindowTurns([]);
           setRebaseTurns([]);
@@ -454,7 +469,9 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       }
       historyHasLoadedRef.current = true;
       setHistoryCursor(page.nextCursor ?? null);
-      setHistoryCursorGeneration(requestedGeneration);
+      setHistoryCursorGeneration(
+        recoveryCompleted ? latestHistoryGenerationRef.current : requestedGeneration,
+      );
       setHistoryBoundaryUnavailable(
         (current) =>
           current ||
@@ -482,7 +499,6 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     latestHistoryGeneration,
     movingWindowTurns,
     olderTurns,
-    postRebaseTurns,
     rebaseTurns,
     selection.parentConversationId,
     threadId,
@@ -728,7 +744,9 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       const displaced = previous.turns.filter((turn) => !latestTaskIds.has(turn.taskId));
       if (displaced.length > 0 && historyHasLoadedRef.current) {
         if (historyRebaseActive) {
-          setPostRebaseTurns((current) => retainBoundedMovingWindowTurns(current, displaced));
+          const retained = retainBoundedMovingWindowTurns(postRebaseTurnsRef.current, displaced);
+          postRebaseTurnsRef.current = retained;
+          setPostRebaseTurns(retained);
         } else {
           setMovingWindowTurns((current) => retainBoundedMovingWindowTurns(current, displaced));
         }
@@ -911,6 +929,16 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         <Button type="button" variant="ghost" size="sm" onClick={loadEarlierEventTasks}>
           {localize('com_ui_load_more')}
         </Button>
+      </div>
+    );
+  } else if (eventSummary?.tasksTruncated === true) {
+    timelinePrefix = (
+      <div
+        role="status"
+        aria-label={localize('com_ui_subagent_thread_history_truncated')}
+        className="flex h-7 items-center justify-center border-b border-border-light text-text-tertiary"
+      >
+        <span aria-hidden>•••</span>
       </div>
     );
   }

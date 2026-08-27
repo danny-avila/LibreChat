@@ -1507,7 +1507,14 @@ describe('SubagentThreadPanel', () => {
       ...completedView,
       activity: [{ type: 'writing', text: 'Loaded exact activity' }],
       activityTruncated: false,
-      messages: [],
+      messages: [
+        {
+          messageId: 'task-old:assistant',
+          parentMessageId: 'task-old:user',
+          role: 'assistant',
+          text: 'Loaded exact activity',
+        },
+      ],
     });
 
     render(
@@ -1525,6 +1532,46 @@ describe('SubagentThreadPanel', () => {
       'child-thread',
       'task-old',
     );
+  });
+
+  it('retains partial activity when an exact historical task has vanished', async () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: {
+        ...completedView,
+        turns: [
+          {
+            taskId: 'task-old',
+            trigger: { kind: 'parent_dispatch', summary: 'Retained prompt' },
+            status: 'completed',
+            activity: [{ type: 'writing', text: 'Retained partial result' }],
+            activityTruncated: true,
+            messages: [],
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    mockGetSubagentThread.mockResolvedValue({
+      ...completedView,
+      activity: [],
+      activityTruncated: false,
+      messages: [],
+      turns: [],
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'load-task-old' }));
+    await waitFor(() =>
+      expect(screen.getAllByTestId('conversation-turn')[1]).toHaveTextContent('unavailable'),
+    );
+    expect(screen.getByText('Retained partial result')).toBeInTheDocument();
   });
 
   it('prepends an older bounded page without adding it to live polling', async () => {
@@ -1880,7 +1927,14 @@ describe('SubagentThreadPanel', () => {
       threadId: 'thread-a',
       activity: [{ type: 'writing', text: 'Fresh detail' }],
       activityTruncated: false,
-      messages: [],
+      messages: [
+        {
+          messageId: 'task-a:assistant',
+          parentMessageId: 'task-a:user',
+          role: 'assistant',
+          text: 'Fresh detail',
+        },
+      ],
     });
     const selectionA: ActiveSubagentPanel = {
       ...selection,
@@ -2043,6 +2097,10 @@ describe('SubagentThreadPanel', () => {
       activity: [{ type: 'writing', text: 'Current result' }],
       turns: [makeTurn('boundary', 'Boundary result'), makeTurn('task', 'Current result')],
     };
+    let resolveReconnect: (view: SubagentThreadView) => void = () => undefined;
+    const reconnectPage = new Promise<SubagentThreadView>((resolve) => {
+      resolveReconnect = resolve;
+    });
     mockUseSubagentThreadQuery.mockImplementation(() => ({
       data: latestView,
       isLoading: false,
@@ -2065,16 +2123,7 @@ describe('SubagentThreadPanel', () => {
         historyTruncated: true,
         turns: [makeTurn('middle-newer', 'Newer middle result')],
       })
-      .mockResolvedValueOnce({
-        ...completedView,
-        activity: [],
-        messages: [],
-        historyTruncated: false,
-        turns: [
-          makeTurn('boundary', 'Boundary result'),
-          makeTurn('middle-older', 'Older middle result'),
-        ],
-      });
+      .mockReturnValueOnce(reconnectPage);
 
     const { rerender } = render(
       <RecoilRoot>
@@ -2134,7 +2183,34 @@ describe('SubagentThreadPanel', () => {
         'middle-older:assistant',
       ),
     );
-    await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(8));
+
+    latestView = {
+      ...latestView,
+      nextCursor: 'ultimate-live-boundary:assistant',
+      turns: [makeTurn('task-ultimate', 'Ultimate live result')],
+    };
+    rerender(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+    await waitFor(() => expect(screen.getByText('Ultimate live result')).toBeInTheDocument());
+
+    await act(async () => {
+      resolveReconnect({
+        ...completedView,
+        activity: [],
+        messages: [],
+        historyTruncated: false,
+        turns: [
+          makeTurn('boundary', 'Boundary result'),
+          makeTurn('middle-older', 'Older middle result'),
+        ],
+      });
+      await reconnectPage;
+    });
+
+    await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(9));
     expect(screen.getAllByTestId('conversation-turn').map((turn) => turn.textContent)).toEqual([
       expect.stringContaining('Very old result'),
       expect.stringContaining('Boundary result'),
@@ -2144,7 +2220,11 @@ describe('SubagentThreadPanel', () => {
       expect.stringContaining('New result'),
       expect.stringContaining('Newest result'),
       expect.stringContaining('Final live result'),
+      expect.stringContaining('Ultimate live result'),
     ]);
+    expect(
+      screen.queryByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }),
+    ).not.toBeInTheDocument();
   });
 
   it('does not accumulate displaced latest-window turns before history is requested', async () => {
@@ -2292,6 +2372,8 @@ describe('SubagentThreadPanel', () => {
     expect(new Set(mockUseSubagentThreadQuery.mock.calls.map((call) => call[2]))).toEqual(
       new Set(['task-5', 'task-4', 'task-3', 'task-2', 'task-1']),
     );
-    expect(screen.queryByText('com_ui_subagent_thread_history_truncated')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('status', { name: 'com_ui_subagent_thread_history_truncated' }),
+    ).toHaveTextContent('•••');
   });
 });
