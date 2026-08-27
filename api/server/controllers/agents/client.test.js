@@ -56,6 +56,12 @@ jest.mock('@librechat/api', () => ({
   countFormattedMessageTokens: jest.fn(() => 42),
   countTokens: jest.fn((text) => Math.ceil(String(text ?? '').length / 4)),
   createCachedTokenCounter: jest.fn(async () => jest.fn(() => 0)),
+  createInitializedAgentContextFingerprint: jest.fn(() => ({
+    algorithm: 'sha256',
+    version: 1,
+    digest: 'context',
+  })),
+  MAX_AGENT_CONTEXT_SKILLS: 64,
   createDetachedSubagentUsageRecorder: (...args) =>
     mockCreateDetachedSubagentUsageRecorder(...args),
   captureAgentCheckpointGeneration: (...args) => mockCaptureAgentCheckpointGeneration(...args),
@@ -138,6 +144,23 @@ describe('AgentClient - event actor history adapter', () => {
       }),
     ).resolves.toBeUndefined();
     expect(client.getEventActorContext).not.toHaveBeenCalled();
+  });
+
+  it('carries a freshly manual-primed Skill into the durable manifest', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: { endpoints: { agents: {} } } } };
+    client.eventActorAgentContextSources = [
+      {
+        id: 'agent-1',
+        manualSkillPrimes: [{ _id: 'skill-1', name: 'analysis', version: 3 }],
+      },
+    ];
+    client.getEventActorAgents = jest.fn(() => []);
+    client.getEventActorMemorySnapshots = jest.fn().mockResolvedValue([]);
+
+    await expect(client.getEventActorContext()).resolves.toMatchObject({
+      skillManifest: [{ id: 'skill-1', name: 'analysis', version: 3 }],
+    });
   });
 });
 

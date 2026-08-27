@@ -1570,7 +1570,10 @@ class AgentClient extends BaseClient {
   }
 
   getEventActorAgents() {
-    return [this.options.agent, ...(this.agentConfigs?.values() ?? [])].filter(Boolean);
+    return collectReachableAgents([
+      this.options.agent,
+      ...(this.agentConfigs?.values() ?? []),
+    ]).filter(Boolean);
   }
 
   /**
@@ -1620,6 +1623,18 @@ class AgentClient extends BaseClient {
    */
   async getEventActorContext(baseManifest = []) {
     const manifest = new Map(baseManifest.map((skill) => [skill.id, skill]));
+    for (const agent of this.eventActorAgentContextSources ?? []) {
+      for (const skill of agent.manualSkillPrimes ?? []) {
+        if (!Number.isInteger(skill.version) || skill.version < 1) {
+          throw new Error('Manual Skill is missing its semantic version');
+        }
+        manifest.set(skill._id.toString(), {
+          id: skill._id.toString(),
+          name: skill.name,
+          version: skill.version,
+        });
+      }
+    }
     for (const skill of this.eventActorSkillPrimeResult?.skillManifest ?? []) {
       manifest.set(skill.id, skill);
     }
@@ -3567,7 +3582,7 @@ class AgentClient extends BaseClient {
 
       /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
       let skillPrimeResult = this.eventActorSkillPrimeResult;
-      if (this.eventActorContinuation !== 'warm' || skillPrimeResult == null) {
+      if (skillPrimeResult == null) {
         skillPrimeResult = this.options.primeInvokedSkills
           ? await this.options.primeInvokedSkills(payload)
           : undefined;
