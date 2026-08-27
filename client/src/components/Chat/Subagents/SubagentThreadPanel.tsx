@@ -268,6 +268,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   );
   const [historyCursor, setHistoryCursor] = useState<string | null | undefined>(undefined);
   const [historyState, setHistoryState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [historyBoundaryUnavailable, setHistoryBoundaryUnavailable] = useState(false);
   const activeThreadRef = useRef(threadId);
   const selectionThreadRef = useRef(threadId);
   const selectionGenerationRef = useRef(0);
@@ -299,6 +300,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     setOlderTurns([]);
     setHistoryCursor(undefined);
     setHistoryState('idle');
+    setHistoryBoundaryUnavailable(false);
     turnDetailRequestsRef.current.clear();
     historyRequestRef.current = null;
   }, [threadId]);
@@ -383,6 +385,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         return mergeChildConversationTurns(pageTurns, current);
       });
       setHistoryCursor(page.nextCursor ?? null);
+      setHistoryBoundaryUnavailable(page.historyTruncated && page.nextCursor == null);
       setHistoryState('idle');
     } catch {
       if (
@@ -694,6 +697,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     return states;
   }, [activity.activityTruncated, taskId, turnDetailStates]);
   const effectiveHistoryCursor = historyCursor === undefined ? data?.nextCursor : historyCursor;
+  const showUnavailableHistoryBoundary =
+    historyCursor === undefined
+      ? data?.historyTruncated === true && data.nextCursor == null
+      : historyBoundaryUnavailable;
   /** During a rolling deployment an older API replica can omit `turns`. Keep
    * that response readable through the same deep activity renderer; every
    * current host otherwise enters the conversation-native rendering seam. */
@@ -803,6 +810,15 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   if (hasConversationProjection) {
     activityPanel = (
       <SubagentActivityScrollSurface padded={false}>
+        {showUnavailableHistoryBoundary && (
+          <div
+            role="status"
+            aria-label={localize('com_ui_subagent_thread_history_truncated')}
+            className="flex h-7 items-center justify-center border-b border-border-light text-text-tertiary"
+          >
+            <span aria-hidden>•••</span>
+          </div>
+        )}
         {effectiveHistoryCursor != null && historyState !== 'error' && (
           <div className="flex justify-center border-b border-border-light px-4 py-2">
             <Button

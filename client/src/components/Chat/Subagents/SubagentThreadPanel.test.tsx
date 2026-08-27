@@ -1709,6 +1709,41 @@ describe('SubagentThreadPanel', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('shows a compact inaccessible-history boundary when no recovery cursor exists', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: {
+        ...completedView,
+        historyTruncated: true,
+        turns: [
+          {
+            taskId: 'task',
+            trigger: { kind: 'parent_dispatch', summary: 'Current prompt' },
+            status: 'completed',
+            activity: [{ type: 'writing', text: 'Current result' }],
+            activityTruncated: false,
+            messages: [],
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(
+      screen.getByRole('status', { name: 'com_ui_subagent_thread_history_truncated' }),
+    ).toHaveTextContent('•••');
+    expect(
+      screen.queryByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('rejects stale exact-detail responses across an actor A-B-A switch', async () => {
     let resolveStaleDetail: (view: SubagentThreadView) => void = () => undefined;
     const staleDetail = new Promise<SubagentThreadView>((resolve) => {
