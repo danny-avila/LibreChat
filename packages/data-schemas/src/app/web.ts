@@ -16,6 +16,9 @@ export const webSearchAuth = {
       tavilyApiKey: 1 as const,
       tavilySearchUrl: 0 as const,
     },
+    ddg_html: {
+      // No API key required — html.duckduckgo.com/html is no-key
+    },
   },
   scrapers: {
     firecrawl: {

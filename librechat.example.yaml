@@ -1132,3 +1132,9 @@ endpoints:
 #       - id: anthropic_api_key
 #         label: Anthropic API key
 #         regex: "sk-ant-[A-Za-z0-9_-]{20,}"
+
+# DDG HTML (no API key) — uses https://html.duckduckgo.com/html/ (NOT lite.duckduckgo.com/lite/)
+# webSearch:
+#   searchProvider: ddg_html
+#   scraperProvider: firecrawl
+#   firecrawlApiKey: '${FIRECRAWL_API_KEY}'

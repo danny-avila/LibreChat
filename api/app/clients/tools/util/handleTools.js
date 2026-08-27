@@ -1,5 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { Calculator, createSearchTool, createCodeExecutionTool } = require('@librechat/agents');
+const { createDdgHtmlAPI } = require('~/server/services/Tools/ddgHtmlSearch');
 const {
   checkAccess,
   toolkitParent,
@@ -414,6 +415,30 @@ const loadTools = async ({
         dynamicToolContextMap[tool] = buildWebSearchDynamicContext(
           options.req?.conversationCreatedAt,
         );
+        // DDG HTML is no-key provider — uses html.duckduckgo.com/html (not lite / api)
+        if (result.authResult.searchProvider === 'ddg_html') {
+          const ddgApi = createDdgHtmlAPI({ httpAgent, httpsAgent });
+          const { tool } = require('@langchain/core/tools');
+          const { z } = require('zod');
+          const schema = z.object({
+            query: z.string().min(1).describe('Search query'),
+            max_results: z.number().int().min(1).max(10).optional().describe('Max results, defaults to 5'),
+          });
+          return tool(
+            async ({ query, max_results = 5 }, runConfig) => {
+              const r = await ddgApi.getSources({ query, numResults: max_results });
+              if (!r.success) throw new Error(r.error);
+              // Fire attachment event like @librechat/agents does
+              if (onSearchResults) {
+                try {
+                  onSearchResults({ success: true, data: r.data }, runConfig || {});
+                } catch {}
+              }
+              return JSON.stringify(r.data);
+            },
+            { name: 'web_search', description: 'Search the web via DuckDuckGo HTML (no API key)', schema },
+          );
+        }
         return createSearchTool({
           ...result.authResult,
           httpAgent,

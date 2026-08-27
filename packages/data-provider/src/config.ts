@@ -1824,6 +1824,7 @@ export enum SearchProviders {
   SERPER = 'serper',
   SEARXNG = 'searxng',
   TAVILY = 'tavily',
+  DDG_HTML = 'ddg_html',
 }
 
 export enum ScraperProviders {
