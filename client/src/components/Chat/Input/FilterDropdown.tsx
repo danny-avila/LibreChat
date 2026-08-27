@@ -56,14 +56,17 @@ const EXTENSION_OPTIONS: { id: ExtensionGroup; label: string; hint: string }[] =
   { id: 'other', label: '기타', hint: 'other' },
 ];
 
-// iManage 라이브러리 선택 — matter: 사건 문서(M 라이브러리), knowledge: 지식 DB(DB 라이브러리)
+// iManage 라이브러리 선택 — matter: M 라이브러리(사건 문서), knowledge: DB 라이브러리(지식 DB)
 const LIBRARY_OPTIONS: { id: LibraryFilter; label: string }[] = [
   { id: 'all', label: '전체' },
-  { id: 'matter', label: '사건 문서' },
-  { id: 'knowledge', label: '지식 DB' },
+  { id: 'matter', label: 'M 라이브러리' },
+  { id: 'knowledge', label: 'DB 라이브러리' },
 ];
 
 const DATE_FMT = 'yyyy-MM-dd';
+
+/** 아래로 펼치기 위해 필요한 최소 높이(px). 이보다 좁으면 위로 연다. */
+const MIN_DROPDOWN_SPACE = 340;
 
 const parseDate = (value: string | null): Date | undefined => {
   if (!value) return undefined;
@@ -140,7 +143,48 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
     isOpen && activeTab === 'document',
   );
 
-  const menu = Ariakit.useMenuStore({ open: isOpen, setOpen: setIsOpen });
+  // 기본은 버튼 아래로 펼친다. 채팅 화면처럼 버튼이 뷰포트 하단에 붙어
+  // 아래 공간이 부족할 때만 위로 연다 (열기 직전 pointerdown 시점에 계산).
+  const [placement, setPlacement] = useState<'bottom-start' | 'top-start'>('bottom-start');
+  const menu = Ariakit.useMenuStore({ open: isOpen, setOpen: setIsOpen, placement });
+
+  // 패널 밖(채팅 입력창 포함) 어디를 눌러도 닫히도록 capture 단계에서 감지.
+  // Ariakit 자체 outside-click 은 중간에서 stopPropagation 하는 요소(채팅
+  // 입력 영역 등)에 막힐 수 있어, 채팅창을 클릭해도 안 닫히는 문제가 있었다.
+  React.useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) {
+        return;
+      }
+      const { popoverElement, disclosureElement } = menu.getState();
+      if (popoverElement?.contains(target) || disclosureElement?.contains(target)) {
+        return;
+      }
+      setIsOpen(false);
+    };
+    // 키보드 포커스가 채팅 입력창으로 이동해도 닫는다.
+    const handleFocusIn = (event: FocusEvent) => {
+      const target = event.target as Node | null;
+      if (!target) {
+        return;
+      }
+      const { popoverElement, disclosureElement } = menu.getState();
+      if (popoverElement?.contains(target) || disclosureElement?.contains(target)) {
+        return;
+      }
+      setIsOpen(false);
+    };
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    document.addEventListener('focusin', handleFocusIn, true);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('focusin', handleFocusIn, true);
+    };
+  }, [isOpen, menu]);
 
   const handleSelectPreset = useCallback(
     (preset: Exclude<PeriodFilterPreset, 'custom'>) => {
@@ -311,6 +355,11 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
             disabled={isDisabled}
             id="filter-dropdown-button"
             aria-label="Filters"
+            onPointerDown={(event: React.PointerEvent<HTMLButtonElement>) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              const spaceBelow = window.innerHeight - rect.bottom;
+              setPlacement(spaceBelow >= MIN_DROPDOWN_SPACE ? 'bottom-start' : 'top-start');
+            }}
             className={cn(
               'flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
               (isOpen || isActive) && 'bg-surface-hover',
@@ -333,10 +382,26 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
         unmountOnHide
         gutter={4}
         composite={false}
-        /* flip=true(기본)로 두어 입력창이 뷰포트 하단 가까이 있을 때 자동으로 위로 뒤집히도록 한다. */
+        /* placement 는 열기 직전에 직접 계산하므로 자동 flip 은 끈다.
+           가용 높이를 넘으면 패널 자체가 스크롤된다. */
+        flip={false}
         hideOnHoverOutside={false}
-        className="popover-ui z-50 w-[320px] !overflow-visible !p-2"
+        className="popover-ui z-50 w-[320px] !overflow-y-auto !p-2"
+        style={{ maxHeight: 'min(560px, var(--popover-available-height, 560px))' }}
       >
+        {/* 헤더 — 제목 + 닫기 버튼 */}
+        <div className="mb-1.5 flex items-center justify-between px-0.5">
+          <span className="text-xs font-semibold text-text-primary">필터</span>
+          <button
+            type="button"
+            aria-label="필터 닫기"
+            onClick={() => setIsOpen(false)}
+            className="flex size-6 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+
         {/* 라이브러리(검색 범위) 세그먼트 — 탭과 무관하게 상시 노출 */}
         <div className="mb-2 px-0.5">
           <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-text-secondary">

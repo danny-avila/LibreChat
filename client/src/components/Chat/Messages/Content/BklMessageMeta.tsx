@@ -161,7 +161,7 @@ export default function BklMessageMeta({ message }: { message?: TMessage }) {
       <Chip
         key="library"
         icon={<Library className="h-3 w-3 shrink-0" aria-hidden="true" />}
-        label={`범위: ${meta.library === 'knowledge' ? '지식 DB' : '사건 문서'}`}
+        label={`범위: ${meta.library === 'knowledge' ? 'DB 라이브러리' : 'M 라이브러리'}`}
       />,
     );
   }
