@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { AgentSubagentsConfig } from './types/assistants';
 import type { TModelSpecPreset } from './schemas';
+import type { TEphemeralAgent } from './types';
 import {
   EModelEndpoint,
   tModelSpecPresetSchema,
@@ -83,6 +84,16 @@ export type TModelSpec = {
   skills?: boolean | string[];
   subagents?: ModelSpecSubagentsConfig;
 };
+
+type EphemeralToolToggles = Pick<
+  TEphemeralAgent,
+  'web_search' | 'file_search' | 'execute_code' | 'memory' | 'ask_user_question'
+>;
+
+type SpecToolToggles = Pick<
+  TModelSpec,
+  'webSearch' | 'fileSearch' | 'executeCode' | 'memory' | 'askUserQuestion'
+>;
 
 export const modelSpecSubagentsSchema = z
   .object({
@@ -205,6 +216,66 @@ export const tModelSpecSchema = z.object({
   skills: z.union([z.boolean(), z.array(z.string())]).optional(),
   subagents: modelSpecSubagentsSchema.optional(),
 });
+
+/**
+ * Ephemeral-agent toggle ↔ model-spec field pairs for the capabilities a spec
+ * can pre-enable and the chat badge row can toggle. Consumed by both the
+ * client (badge state) and the ephemeral agent loaders (tool equipping) so the
+ * two never drift.
+ */
+export const SPEC_TOOL_TOGGLES: ReadonlyArray<
+  readonly [keyof EphemeralToolToggles, keyof SpecToolToggles]
+> = [
+  ['execute_code', 'executeCode'],
+  ['file_search', 'fileSearch'],
+  ['web_search', 'webSearch'],
+  ['memory', 'memory'],
+  ['ask_user_question', 'askUserQuestion'],
+];
+
+/**
+ * A model spec pre-enables a capability as a DEFAULT, not a mandate: an
+ * explicit user toggle — `false` included — decides. Specs whose tools must
+ * not be overridden suppress the badge row entirely via `hideBadgeRow`.
+ */
+export function resolveSpecToolFlag(
+  userValue: boolean | undefined,
+  specValue: boolean | undefined,
+): boolean {
+  return typeof userValue === 'boolean' ? userValue : specValue === true;
+}
+
+/**
+ * The user's MCP selection is authoritative whenever the client sends one — an
+ * empty array is a deselection, not an absent value. A spec's `mcpServers`
+ * seeds the picker, and applies only when no selection accompanies the request.
+ */
+export function resolveSpecMcpServers(
+  userValue: string[] | undefined,
+  specValue: string[] | undefined,
+): string[] {
+  return Array.isArray(userValue) ? userValue : (specValue ?? []);
+}
+
+/**
+ * Skills follow the same default-not-mandate rule, with one exception kept
+ * from the original semantics: a spec's explicit `skills: false` remains a
+ * hard opt-out. Unlike the boolean tool flags — whose `false` has always been
+ * a mere default the badge could turn back on — `skills: false` has always
+ * pinned the agent off, and specs rely on it to keep a catalog out of reach.
+ */
+export function resolveSpecSkillsEnabled(
+  userValue: boolean | undefined,
+  specValue: TModelSpec['skills'],
+): boolean {
+  if (specValue === false) {
+    return false;
+  }
+  if (typeof userValue === 'boolean') {
+    return userValue;
+  }
+  return specValue === true || Array.isArray(specValue);
+}
 
 export const specsConfigSchema = z.object({
   enforce: z.boolean().default(false),

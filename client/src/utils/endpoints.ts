@@ -9,6 +9,7 @@ import {
   isEphemeralAgentId,
   isAssistantsEndpoint,
   resolveModelSpecEndpoint,
+  resolveSpecSkillsEnabled,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
@@ -352,6 +353,7 @@ export function applyModelSpecEphemeralAgent({
     file_search: modelSpec.fileSearch ?? false,
     execute_code: modelSpec.executeCode ?? false,
     memory: modelSpec.memory ?? false,
+    skills: resolveSpecSkillsEnabled(undefined, modelSpec.skills),
     artifacts: modelSpec.artifacts === true ? 'default' : modelSpec.artifacts || '',
   };
 
@@ -365,6 +367,7 @@ export function applyModelSpecEphemeralAgent({
       ['file_search', LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_],
       ['artifacts', LocalStorageKeys.LAST_ARTIFACTS_TOGGLE_],
       ['memory', LocalStorageKeys.LAST_MEMORY_TOGGLE_],
+      ['skills', LocalStorageKeys.LAST_SKILLS_TOGGLE_],
     ];
 
     for (const [toolKey, storagePrefix] of toolStorageMap) {

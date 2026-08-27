@@ -65,6 +65,7 @@ describe('applyModelSpecEphemeralAgent', () => {
         web_search: false,
         file_search: true,
         memory: false,
+        skills: false,
         artifacts: 'default',
       });
     });
@@ -241,6 +242,7 @@ describe('applyModelSpecEphemeralAgent', () => {
         web_search: false,
         file_search: true,
         memory: false,
+        skills: false,
         artifacts: 'default',
       });
     });
@@ -293,6 +295,39 @@ describe('applyModelSpecEphemeralAgent', () => {
       });
 
       expect(updateEphemeralAgent).toHaveBeenCalledWith(Constants.NEW_CONVO, expect.any(Object));
+    });
+  });
+
+  describe('skills badge reflects the spec (#15277)', () => {
+    it.each([
+      ['skills: true', true, true],
+      ['a skill allowlist', ['research'], true],
+      ['skills: false', false, false],
+      ['no skills config', undefined, false],
+    ])('seeds the badge from %s', (_label, specSkills, expected) => {
+      const modelSpec = createModelSpec(
+        specSkills === undefined ? {} : { skills: specSkills as TModelSpec['skills'] },
+      );
+
+      applyModelSpecEphemeralAgent({ convoId: null, modelSpec, updateEphemeralAgent });
+
+      expect(updateEphemeralAgent).toHaveBeenCalledWith(
+        Constants.NEW_CONVO,
+        expect.objectContaining({ skills: expected }),
+      );
+    });
+
+    it('layers a per-conversation skills opt-out over a spec that enables them', () => {
+      const convoId = 'convo-abc';
+      writeToolToggle(LocalStorageKeys.LAST_SKILLS_TOGGLE_, convoId, false);
+      const modelSpec = createModelSpec({ skills: true });
+
+      applyModelSpecEphemeralAgent({ convoId, modelSpec, updateEphemeralAgent });
+
+      expect(updateEphemeralAgent).toHaveBeenCalledWith(
+        convoId,
+        expect.objectContaining({ skills: false }),
+      );
     });
   });
 });

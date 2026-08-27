@@ -955,6 +955,135 @@ describe('loadAgent', () => {
     }
   });
 
+  describe('model spec tool flags are defaults, not mandates (#15277)', () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    const buildReq = (
+      ephemeralAgent: TEphemeralAgent | undefined,
+      spec: Record<string, unknown>,
+    ): LoadAgentParams['req'] =>
+      ({
+        user: { id: 'user123' },
+        body: ephemeralAgent ? { ephemeralAgent } : {},
+        config: {
+          config: {},
+          fileStrategy: FileSources.local,
+          imageOutputType: 'png',
+          modelSpecs: {
+            list: [
+              {
+                name: 'spec-under-test',
+                label: 'spec-under-test',
+                preset: { endpoint: 'openai', model: 'gpt-4' },
+                ...spec,
+              },
+            ],
+          },
+        },
+      }) as unknown as LoadAgentParams['req'];
+
+    const load = (ephemeralAgent: TEphemeralAgent | undefined, spec: Record<string, unknown>) =>
+      loadAgent(
+        {
+          req: buildReq(ephemeralAgent, spec),
+          spec: 'spec-under-test',
+          agent_id: EPHEMERAL_AGENT_ID as string,
+          endpoint: 'openai',
+          model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+        },
+        deps,
+      );
+
+    test('an explicit user "off" disables every spec-enabled tool', async () => {
+      const result = await load(
+        {
+          web_search: false,
+          file_search: false,
+          execute_code: false,
+          memory: false,
+          ask_user_question: false,
+        },
+        {
+          webSearch: true,
+          fileSearch: true,
+          executeCode: true,
+          memory: true,
+          askUserQuestion: true,
+        },
+      );
+
+      expect(result?.tools).toEqual([]);
+    });
+
+    test('a spec flag still applies when the request carries no toggle for it', async () => {
+      const result = await load({ web_search: false }, { webSearch: true, fileSearch: true });
+
+      expect(result?.tools).toEqual(['file_search']);
+    });
+
+    test('a spec flag applies when no ephemeral agent accompanies the request', async () => {
+      const result = await load(undefined, { webSearch: true, executeCode: true });
+
+      expect(result?.tools).toEqual(['execute_code', 'web_search']);
+    });
+
+    test('a user "on" still equips a tool the spec leaves off', async () => {
+      const result = await load({ web_search: true }, { webSearch: false });
+
+      expect(result?.tools).toEqual(['web_search']);
+    });
+
+    test('a deselected MCP server is not re-added by the spec', async () => {
+      mockGetMCPServerTools.mockResolvedValue({ crm_lookup: { name: 'crm_lookup' } });
+
+      const result = await load({ mcp: [] }, { mcpServers: ['crm'] });
+
+      expect(result?.tools).toEqual([]);
+      expect(mockGetMCPServerTools).not.toHaveBeenCalled();
+    });
+
+    test('an MCP selection replaces the spec list rather than unioning with it', async () => {
+      mockGetMCPServerTools.mockImplementation(async (_userId: string, server: string) => ({
+        [`lookup_mcp_${server}`]: { name: `lookup_mcp_${server}` },
+      }));
+
+      const result = await load({ mcp: ['jira'] }, { mcpServers: ['crm'] });
+
+      expect(result?.tools).toEqual(['lookup_mcp_jira']);
+    });
+
+    test('the spec MCP list applies when the request sends no selection', async () => {
+      mockGetMCPServerTools.mockImplementation(async (_userId: string, server: string) => ({
+        [`lookup_mcp_${server}`]: { name: `lookup_mcp_${server}` },
+      }));
+
+      const result = await load({ web_search: false }, { mcpServers: ['crm'] });
+
+      expect(result?.tools).toEqual(['lookup_mcp_crm']);
+    });
+
+    test('an explicit skills "off" overrides a spec that enables skills', async () => {
+      const result = await load({ skills: false }, { skills: true });
+
+      expect(result?.skills_enabled).toBe(false);
+      expect(result?.skills).toEqual([]);
+    });
+
+    test('a spec skill allowlist still narrows the catalog when skills stay on', async () => {
+      const result = await load({ skills: true }, { skills: ['research'] });
+
+      expect(result?.skills_enabled).toBe(true);
+      expect(result?.skills).toEqual([]);
+    });
+
+    test('a spec `skills: false` remains a hard opt-out the badge cannot lift', async () => {
+      const result = await load({ skills: true }, { skills: false });
+
+      expect(result?.skills_enabled).toBe(false);
+      expect(result?.skills).toEqual([]);
+    });
+  });
+
   describe('Edge Cases', () => {
     test('should handle loadAgent with malformed req object', async () => {
       const result = await loadAgent(

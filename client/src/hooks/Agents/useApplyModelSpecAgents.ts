@@ -1,5 +1,9 @@
 import { useCallback } from 'react';
-import { Constants } from 'librechat-data-provider';
+import {
+  Constants,
+  resolveSpecMcpServers,
+  resolveSpecSkillsEnabled,
+} from 'librechat-data-provider';
 import type { TStartupConfig, TSubmission } from 'librechat-data-provider';
 import { useUpdateEphemeralAgent, useApplyNewAgentTemplate } from '~/store/agents';
 import { getModelSpec, applyModelSpecEphemeralAgent } from '~/utils';
@@ -8,7 +12,9 @@ import { getModelSpec, applyModelSpecEphemeralAgent } from '~/utils';
  * Hook that applies a model spec from a preset to an ephemeral agent.
  * This is used when initializing a new conversation with a preset that has a spec.
  *
- * When a spec is provided, its tool settings are applied to the ephemeral agent.
+ * When a spec is provided, its tool settings seed the ephemeral agent as
+ * defaults — an explicit user toggle, including a cleared MCP selection, always
+ * survives the merge.
  * When no spec is provided but specs are configured, the ephemeral agent is reset
  * to null on context transitions (leaving a spec, or moving to a different
  * conversation key) so BadgeRowContext refills values from localStorage — both
@@ -98,16 +104,16 @@ export function useApplyAgentTemplate() {
 
       const mergedAgent = {
         ...ephemeralAgent,
-        mcp: [...(ephemeralAgent?.mcp ?? []), ...(modelSpec.mcpServers ?? [])],
+        mcp: [...new Set(resolveSpecMcpServers(ephemeralAgent?.mcp, modelSpec.mcpServers))],
         web_search: ephemeralAgent?.web_search ?? modelSpec.webSearch ?? false,
         file_search: ephemeralAgent?.file_search ?? modelSpec.fileSearch ?? false,
         execute_code: ephemeralAgent?.execute_code ?? modelSpec.executeCode ?? false,
+        memory: ephemeralAgent?.memory ?? modelSpec.memory ?? false,
+        skills: resolveSpecSkillsEnabled(ephemeralAgent?.skills, modelSpec.skills),
         artifacts:
           ephemeralAgent?.artifacts ??
           (modelSpec.artifacts === true ? 'default' : modelSpec.artifacts || ''),
       };
-
-      mergedAgent.mcp = [...new Set(mergedAgent.mcp)];
 
       applyAgentTemplate(targetId, sourceId, mergedAgent);
     },
