@@ -146,6 +146,17 @@ function globToRegex(pattern: string): RegExp {
   return new RegExp('^' + escaped.replace(/\*/g, '.*') + '$');
 }
 
+/** Whether an enabled static policy unconditionally denies one concrete tool name. */
+export function isToolDeniedByApprovalPolicy(
+  policy: TToolApprovalPolicy | undefined,
+  toolName: string,
+): boolean {
+  return (
+    isHITLEnabled(policy) &&
+    policy.deny?.some((pattern) => globToRegex(pattern).test(toolName)) === true
+  );
+}
+
 /**
  * Extends each `toolApproval` pattern list with the names of tools whose
  * OTHER spelling matches, so admin YAML keeps applying when a tool's key

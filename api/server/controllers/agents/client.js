@@ -45,14 +45,13 @@ const {
   hasDurableAgentInterruptCheckpoint,
   isHITLEnabled,
   buildToolApprovalHooks,
-  canAgentGraphPauseForToolApproval,
+  canAgentGraphPause,
   getPluginHookSource,
   captureAgentCheckpointGeneration,
   isContentFilterError,
   deleteAgentCheckpoint,
   LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
   LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY,
-  agentRequestsAskUserQuestion,
   isAskUserQuestionAdminDisabled,
   attachAskUserQuestionArgs,
   hydrateResumeRunSteps,
@@ -3136,6 +3135,13 @@ class AgentClient extends BaseClient {
     const appConfig = this.options.req?.config;
     const checkpointerCfg = appConfig?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
     if (this.options.req?._isScheduledFire === true) {
+      if (!GenerationJobManager.isRedis) {
+        const error = new Error(
+          'The agent paused, but its shared action state is unavailable. Please retry the run.',
+        );
+        error.code = 'SCHEDULED_HITL_REQUIRES_SHARED_STORE';
+        throw error;
+      }
       let hasDurableInterrupt = false;
       try {
         hasDurableInterrupt = await hasDurableAgentInterruptCheckpoint(
@@ -3328,18 +3334,14 @@ class AgentClient extends BaseClient {
           })
         : undefined;
       const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
-      const toolApprovalCanPause = canAgentGraphPauseForToolApproval({
+      const runCanPause = canAgentGraphPause({
         policy: agentsEConfig?.toolApproval,
         agents: topLevelAgents,
         resolvedProgrammaticHooks: resolvedToolApprovalHooks,
         pluginHookSource: getPluginHookSource(),
+        askUserQuestionAdminDisabled: isAskUserQuestionAdminDisabled(appConfig),
       });
-      if (
-        this.options.req?._isScheduledFire === true &&
-        (toolApprovalCanPause ||
-          (!isAskUserQuestionAdminDisabled(appConfig) &&
-            topLevelAgents.some(agentRequestsAskUserQuestion)))
-      ) {
+      if (this.options.req?._isScheduledFire === true && runCanPause) {
         if (!GenerationJobManager.isRedis) {
           const error = new Error(
             'Scheduled agent runs that can pause require a shared generation store. ' +
@@ -3629,16 +3631,13 @@ class AgentClient extends BaseClient {
         // HITL is off or the generation has no remnants. Deliberately unconditional
         // per HITL turn: any cheaper Redis flag can go stale across replicas/restarts,
         // while these are two indexed, usually-empty deleteMany operations.
-        // The gate mirrors createRun's checkpointer condition: the approval policy
-        // OR an ask_user_question-capable agent (which attaches a checkpointer
-        // WITHOUT the approval policy).
+        // Reuse the exact admission result so denied ask_user_question tools and
+        // non-matching approval policies do not initialize checkpoint work.
         //
         // Start the prune alongside graph construction. The all-settled barrier
         // below still guarantees it completes before the graph is exposed or run.
         const shouldPruneCheckpoint =
-          streamId &&
-          this.eventActorInvocationId == null &&
-          (isHITLEnabled(agentsEConfig?.toolApproval) || agents.some(agentRequestsAskUserQuestion));
+          streamId && this.eventActorInvocationId == null && runCanPause;
         let checkpointPrunePromise = Promise.resolve();
         if (shouldPruneCheckpoint && this.checkpointNamespace !== '') {
           checkpointPrunePromise = deleteAgentCheckpoint(

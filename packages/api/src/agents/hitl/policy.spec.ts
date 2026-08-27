@@ -18,6 +18,7 @@ import {
   applyResumeModelParameters,
   exemptAskUserQuestionFromApproval,
   isToolApprovalPauseCapable,
+  isToolDeniedByApprovalPolicy,
 } from './policy';
 
 describe('isToolApprovalPauseCapable', () => {
@@ -53,6 +54,20 @@ describe('isToolApprovalPauseCapable', () => {
     const policy = { enabled: true, mode: 'bypass' as const, deny: ['delete_*'] };
     expect(isToolApprovalPauseCapable(policy, true, ['delete_file'])).toBe(false);
     expect(isToolApprovalPauseCapable(policy, true, ['write_file'])).toBe(true);
+  });
+});
+
+describe('isToolDeniedByApprovalPolicy', () => {
+  it('matches exact and wildcard denies only when approval is enabled', () => {
+    expect(
+      isToolDeniedByApprovalPolicy({ enabled: true, deny: ['ask_*'] }, 'ask_user_question'),
+    ).toBe(true);
+    expect(
+      isToolDeniedByApprovalPolicy({ enabled: true, deny: ['write_*'] }, 'ask_user_question'),
+    ).toBe(false);
+    expect(
+      isToolDeniedByApprovalPolicy({ enabled: false, deny: ['ask_*'] }, 'ask_user_question'),
+    ).toBe(false);
   });
 });
 

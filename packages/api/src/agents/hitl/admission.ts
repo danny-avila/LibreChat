@@ -2,10 +2,14 @@ import type { TToolApprovalPolicy } from 'librechat-data-provider';
 import type { PluginHookSource } from '~/agents/hooks/source';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { ResolvedToolApprovalHook } from './hooks';
-import { healToolApprovalPolicy, isHITLEnabled, isToolApprovalPauseCapable } from './policy';
+import {
+  healToolApprovalPolicy,
+  isHITLEnabled,
+  isToolApprovalPauseCapable,
+  isToolDeniedByApprovalPolicy,
+} from './policy';
 import { ASK_USER_QUESTION_TOOL_NAME } from './askUserQuestionTool';
 import { resolvedToolApprovalHooksCanMatch } from './hooks';
-import { collectReachableAgents } from '../traversal';
 
 interface ApprovalToolReference {
   readonly name?: string;
@@ -13,6 +17,11 @@ interface ApprovalToolReference {
 
 interface ApprovalToolRegistry {
   keys(): Iterable<string>;
+  has(name: string): boolean;
+}
+
+interface ApprovalSubagentGraph {
+  readonly memberConfigs?: readonly (ToolApprovalAdmissionAgent | null | undefined)[];
 }
 
 export interface ToolApprovalAdmissionAgent {
@@ -21,6 +30,9 @@ export interface ToolApprovalAdmissionAgent {
   readonly toolDefinitions?: readonly ApprovalToolReference[];
   readonly mcpToolAliases?: readonly MCPToolAlias[];
   readonly subagentAgentConfigs?: readonly (ToolApprovalAdmissionAgent | null | undefined)[];
+  readonly lazySubagentConfigs?: readonly (ToolApprovalAdmissionAgent | null | undefined)[];
+  readonly subagentGraphMemberMetadata?: readonly (ToolApprovalAdmissionAgent | null | undefined)[];
+  readonly subagentGraphConfigs?: readonly ApprovalSubagentGraph[];
 }
 
 export interface ToolApprovalAdmissionInput {
@@ -28,24 +40,70 @@ export interface ToolApprovalAdmissionInput {
   readonly agents: readonly (ToolApprovalAdmissionAgent | null | undefined)[];
   readonly resolvedProgrammaticHooks?: readonly ResolvedToolApprovalHook[];
   readonly pluginHookSource?: PluginHookSource;
+  readonly askUserQuestionAdminDisabled?: boolean;
+}
+
+function agentHasTool(agent: ToolApprovalAdmissionAgent, toolName: string): boolean {
+  return (
+    agent.tools?.some((tool) => (typeof tool === 'string' ? tool : tool.name) === toolName) ===
+      true ||
+    agent.toolRegistry?.has(toolName) === true ||
+    agent.toolDefinitions?.some((definition) => definition.name === toolName) === true
+  );
+}
+
+function collectApprovalAgents(roots: readonly (ToolApprovalAdmissionAgent | null | undefined)[]): {
+  agents: ToolApprovalAdmissionAgent[];
+  hasLazyToolSurface: boolean;
+} {
+  const agents: ToolApprovalAdmissionAgent[] = [];
+  const visited = new Set<ToolApprovalAdmissionAgent>();
+  const pending = [...roots];
+  let hasLazyToolSurface = false;
+
+  for (let index = 0; index < pending.length; index++) {
+    const agent = pending[index];
+    if (agent == null || visited.has(agent)) {
+      continue;
+    }
+    visited.add(agent);
+    agents.push(agent);
+    pending.push(...(agent.subagentAgentConfigs ?? []));
+    if ((agent.lazySubagentConfigs?.length ?? 0) > 0) {
+      hasLazyToolSurface = true;
+      pending.push(...(agent.lazySubagentConfigs ?? []));
+    }
+    pending.push(...(agent.subagentGraphMemberMetadata ?? []));
+    for (const graph of agent.subagentGraphConfigs ?? []) {
+      pending.push(...(graph.memberConfigs ?? []));
+    }
+  }
+
+  return { agents, hasLazyToolSurface };
 }
 
 /**
- * Whether the initialized agent graph exposes a tool that can actually pause
- * under the effective approval policy. Admission uses the eager tool surface;
- * the interrupt boundary remains the fail-closed backstop for lazy tools that
- * resolve later in the run.
+ * Whether an initialized run can pause through tool approval or a top-level
+ * `ask_user_question`. Eager tools are matched exactly across every subagent
+ * form; unresolved lazy surfaces are classified conservatively. The interrupt
+ * boundary remains the final fail-closed durability check.
  */
-export function canAgentGraphPauseForToolApproval({
+export function canAgentGraphPause({
   policy,
   agents,
   resolvedProgrammaticHooks = [],
   pluginHookSource,
+  askUserQuestionAdminDisabled = false,
 }: ToolApprovalAdmissionInput): boolean {
+  const asksUserQuestion =
+    !askUserQuestionAdminDisabled &&
+    !isToolDeniedByApprovalPolicy(policy, ASK_USER_QUESTION_TOOL_NAME) &&
+    agents.some((agent) => agent != null && agentHasTool(agent, ASK_USER_QUESTION_TOOL_NAME));
   if (!isHITLEnabled(policy)) {
-    return false;
+    return asksUserQuestion;
   }
 
+  const approvalGraph = collectApprovalAgents(agents);
   const toolNames = new Set<string>();
   const aliases: MCPToolAlias[] = [];
   const aliasesByToolName = new Map<string, string[]>();
@@ -55,7 +113,7 @@ export function canAgentGraphPauseForToolApproval({
     }
   };
 
-  for (const agent of collectReachableAgents(agents)) {
+  for (const agent of approvalGraph.agents) {
     for (const tool of agent.tools ?? []) {
       addToolName(typeof tool === 'string' ? tool : tool.name);
     }
@@ -76,7 +134,7 @@ export function canAgentGraphPauseForToolApproval({
   }
 
   const effectivePolicy = healToolApprovalPolicy(policy, aliases);
-  return Array.from(toolNames).some((toolName) => {
+  const knownToolCanPause = Array.from(toolNames).some((toolName) => {
     const matcherNames = [toolName, ...(aliasesByToolName.get(toolName) ?? [])];
     const requestHookCanAsk = resolvedToolApprovalHooksCanMatch(
       resolvedProgrammaticHooks,
@@ -87,4 +145,15 @@ export function canAgentGraphPauseForToolApproval({
       toolName,
     ]);
   });
+  if (knownToolCanPause) {
+    return true;
+  }
+  if (approvalGraph.hasLazyToolSurface) {
+    const unresolvedHookCanAsk =
+      resolvedProgrammaticHooks.length > 0 || pluginHookSource?.hasToolApprovalHooks?.() === true;
+    if (isToolApprovalPauseCapable(effectivePolicy, unresolvedHookCanAsk)) {
+      return true;
+    }
+  }
+  return asksUserQuestion;
 }
