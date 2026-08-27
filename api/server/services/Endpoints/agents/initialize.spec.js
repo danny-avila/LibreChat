@@ -718,8 +718,8 @@ describe('initializeClient — subagent loading', () => {
     endpoint: 'agents',
   });
 
-  const makePrimaryConfig = ({ edges = [], subagents, agent_ids }) => ({
-    id: PRIMARY_ID,
+  const makePrimaryConfig = ({ id = PRIMARY_ID, edges = [], subagents, agent_ids }) => ({
+    id,
     endpoint: 'agents',
     edges,
     toolDefinitions: [],
@@ -788,6 +788,35 @@ describe('initializeClient — subagent loading', () => {
       userId: testUser._id.toString(),
       parentConversationId: 'conv_sub',
     });
+  });
+
+  it('keeps completion delivery disabled for an ephemeral parent agent', async () => {
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        id: Constants.EPHEMERAL_AGENT_ID,
+        subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+      }),
+    );
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('run_in_background');
+    const endpointOption = makeEndpointOption();
+    endpointOption.agent = Promise.resolve({
+      id: Constants.EPHEMERAL_AGENT_ID,
+      name: 'Ephemeral Primary',
+      provider: 'openai',
+      model: 'gpt-4',
+      tools: [],
+    });
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption,
+    });
+
+    expect(agentClientArgs.subagentTasks).toBe(capturedToolExecuteOptions.subagentTasks);
+    expect(agentClientArgs.subagentTasks.completionDelivery).toBeUndefined();
   });
 
   it('uses one normalized MCP body for discovery, deferred execution, and AgentClient', async () => {
