@@ -1292,6 +1292,33 @@ describe('loadAgent', () => {
       expect(result?.skills_enabled).toBe(false);
     });
 
+    test("records the pane's own skills choice when no spec configures skills", async () => {
+      /** Otherwise the pane falls back to the run-level toggle, which belongs to
+       *  the PRIMARY request — the other pane's badge scoping this one. */
+      const offResult = await loadAddedAgent(
+        { req: addedReq({ skills: false }, {}), conversation: addedConversation },
+        deps,
+      );
+      expect(offResult?.skills_enabled).toBe(false);
+      expect(offResult?.skills).toEqual([]);
+
+      const onResult = await loadAddedAgent(
+        { req: addedReq({ skills: true }, {}), conversation: addedConversation },
+        deps,
+      );
+      expect(onResult?.skills_enabled).toBe(true);
+      expect(onResult?.skills).toBeUndefined();
+    });
+
+    test('leaves skills unset when neither the spec nor the request decides', async () => {
+      const result = await loadAddedAgent(
+        { req: addedReq({ web_search: true }, {}), conversation: addedConversation },
+        deps,
+      );
+
+      expect(result?.skills_enabled).toBeUndefined();
+    });
+
     test('a spec still applies to the added pane when the composer is silent', async () => {
       const result = await loadAddedAgent(
         {

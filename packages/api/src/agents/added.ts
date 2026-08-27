@@ -37,6 +37,16 @@ function applyModelSpecSkills(
   ephemeralSkills: boolean | undefined,
 ): void {
   if (!modelSpec || !Object.prototype.hasOwnProperty.call(modelSpec, 'skills')) {
+    /** With no spec default to resolve against there is still a decision to
+     *  record: the run-level `ephemeralSkillsToggle` this pane would otherwise
+     *  fall back to belongs to the PRIMARY request, so leaving `skills_enabled`
+     *  unset lets the other pane's badge scope this one. */
+    if (typeof ephemeralSkills === 'boolean') {
+      result.skills_enabled = ephemeralSkills;
+      if (!ephemeralSkills) {
+        result.skills = [];
+      }
+    }
     return;
   }
   const skillsEnabled = resolveSpecSkillsEnabled(ephemeralSkills, modelSpec.skills);
