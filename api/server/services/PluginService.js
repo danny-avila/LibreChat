@@ -53,7 +53,9 @@ const getUserPluginAuthValue = async (userId, authField, throwError = true, plug
     if (!throwError) {
       return null;
     }
-    logger.error('[getUserPluginAuthValue]', err);
+    if (err?.code !== 'PLUGIN_AUTH_NOT_FOUND') {
+      logger.error('[getUserPluginAuthValue]', err);
+    }
     throw err;
   }
 };
