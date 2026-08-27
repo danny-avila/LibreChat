@@ -4,8 +4,8 @@ import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { RailWindow } from './Rail';
 import { useMessagesConversation, useMessagesSubmission } from '~/Providers';
 import { useGetMessagesByConvoId } from '~/data-provider';
-import { Rail } from './Rail';
 import { useLocalize } from '~/hooks';
+import { Rail } from './Rail';
 
 type MessageEntry = {
   id: string;

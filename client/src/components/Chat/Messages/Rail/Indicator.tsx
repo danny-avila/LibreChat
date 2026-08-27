@@ -1,6 +1,6 @@
 import { memo } from 'react';
-import { ribDimsFor, RIB_ROW_HEIGHT } from './geometry';
 import type { RailEntry } from './types';
+import { ribDimsFor, RIB_ROW_HEIGHT } from './geometry';
 import { cn } from '~/utils';
 
 /** `shrink-0` is load-bearing: the ribs are flex items in a scrolling column, so

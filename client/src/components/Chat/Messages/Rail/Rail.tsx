@@ -1,7 +1,8 @@
 import { memo, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronUp, ChevronDown } from 'lucide-react';
-import { Indicator, chevronButtonClasses } from './Indicator';
+import type { RailEntry, RailWindow } from './types';
+import type { RibDims } from './geometry';
 import {
   ribDimsFor,
   magnifyFalloff,
@@ -9,8 +10,7 @@ import {
   MAG_INFLUENCE,
   TOOLTIP_OPEN_DELAY,
 } from './geometry';
-import type { RibDims } from './geometry';
-import type { RailEntry, RailWindow } from './types';
+import { Indicator, chevronButtonClasses } from './Indicator';
 import { cn } from '~/utils';
 
 const BOTTOM_SNAP_RETRIES = 2;

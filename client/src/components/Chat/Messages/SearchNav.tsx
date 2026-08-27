@@ -1,7 +1,7 @@
 import { memo, useMemo, useCallback } from 'react';
 import type { RailEntry, RailWindow } from './Rail';
-import { Rail } from './Rail';
 import { useLocalize } from '~/hooks';
+import { Rail } from './Rail';
 
 export interface SearchNavEntry extends RailEntry {
   /** Row position in the virtualized result list, which is the only address
