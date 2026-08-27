@@ -199,6 +199,8 @@ export interface ToolExecuteOptions {
      */
     disableModelInvocation?: boolean;
   } | null>;
+  /** Captures a successfully resolved model-invoked Skill for durable continuation context. */
+  onSkillResolved?: (skill: { id: string; name: string; version: number }) => void;
   /**
    * Loads a skill by name when the current user is the author. This is a
    * narrow recovery path for freshly-authored skills whose runtime catalog
@@ -4056,6 +4058,12 @@ async function handleSkillToolCall(
         `are NOT available to bash or code execution this turn. Use the read_file tool to view bundled files instead.`;
     }
   }
+
+  options.onSkillResolved?.({
+    id: skill._id.toString(),
+    name: skill.name,
+    version: skill.version,
+  });
 
   return {
     toolCallId: tc.id,

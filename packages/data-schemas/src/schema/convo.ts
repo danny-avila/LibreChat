@@ -1,6 +1,7 @@
 import { Schema } from 'mongoose';
 import { conversationPreset } from './defaults';
 import { IConversation } from '~/types';
+import { MAX_AGENT_EVENT_ACTOR_SKILLS } from '~/types/convo';
 
 const convoSchema: Schema<IConversation> = new Schema(
   {
@@ -79,6 +80,30 @@ const convoSchema: Schema<IConversation> = new Schema(
           },
           _id: false,
           required: true,
+        },
+        contextFingerprint: {
+          type: {
+            algorithm: { type: String, enum: ['sha256'], required: true },
+            version: { type: Number, min: 1, required: true },
+            digest: { type: String, required: true },
+          },
+          _id: false,
+          default: undefined,
+        },
+        skillManifest: {
+          type: [
+            {
+              id: { type: String, required: true },
+              name: { type: String, required: true },
+              version: { type: Number, min: 1, required: true },
+              _id: false,
+            },
+          ],
+          default: undefined,
+          validate: {
+            validator: (skills: unknown[]) => skills.length <= MAX_AGENT_EVENT_ACTOR_SKILLS,
+            message: `Event actor Skill manifest exceeds ${MAX_AGENT_EVENT_ACTOR_SKILLS}`,
+          },
         },
         previousCheckpoint: {
           type: {

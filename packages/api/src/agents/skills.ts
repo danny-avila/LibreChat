@@ -30,6 +30,8 @@ export type TGetSkillByName = (
   _id: Types.ObjectId;
   name: string;
   body: string;
+  /** Monotonic Skill document version used by checkpoint context compatibility. */
+  version?: number;
   author: Types.ObjectId;
   /** Structured SKILL.md metadata retained for model-bound policy checks. */
   frontmatter?: Record<string, unknown>;
@@ -798,6 +800,7 @@ export interface ResolveManualSkillsParams {
     _id: Types.ObjectId;
     name: string;
     body: string;
+    version?: number;
     author: Types.ObjectId | string;
     deployment?: boolean;
     /** Structured SKILL.md metadata retained for model-bound policy checks. */
@@ -846,6 +849,8 @@ export interface ResolvedSkillPrime {
   _id: Types.ObjectId;
   name: string;
   body: string;
+  /** Monotonic Skill revision used by checkpoint compatibility. */
+  version?: number;
   /** Structured SKILL.md metadata retained for model-bound policy checks. */
   frontmatter?: Record<string, unknown>;
   /**
@@ -980,6 +985,7 @@ export async function resolveManualSkills(
           _id: skill._id,
           name: skill.name,
           body: skill.body,
+          version: skill.version,
           frontmatter: skill.frontmatter,
         };
         if (skill.allowedTools !== undefined) {
@@ -1016,6 +1022,7 @@ export interface ResolveAlwaysApplySkillsParams {
       author: Types.ObjectId | string;
       frontmatter?: Record<string, unknown>;
       allowedTools?: string[];
+      version?: number;
       deployment?: boolean;
     }>;
     has_more?: boolean;
@@ -1140,6 +1147,7 @@ export async function resolveAlwaysApplySkills(
         _id: skill._id,
         name: skill.name,
         body: skill.body,
+        version: skill.version,
         frontmatter: skill.frontmatter,
       };
       if (skill.allowedTools !== undefined) {

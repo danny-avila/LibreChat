@@ -65,6 +65,18 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     expect(deps.batchUploadCodeEnvFiles).not.toHaveBeenCalled();
   });
 
+  it('resolves explicit actor-head names without scanning message history', async () => {
+    mockExtract.mockReturnValue(new Set());
+    const deps = makeDeps({ payload: undefined, skillNames: ['brand-guidelines'] });
+
+    const result = await primeInvokedSkills(deps);
+
+    expect(deps.getSkillByName).toHaveBeenCalledWith('brand-guidelines', [SKILL_ID]);
+    expect(result.skillManifest).toEqual([
+      { id: SKILL_ID.toString(), name: 'brand-guidelines', version: SKILL_VERSION },
+    ]);
+  });
+
   it('enters the batch-upload path when codeEnvAvailable is true', async () => {
     const deps = makeDeps({ codeEnvAvailable: true });
 

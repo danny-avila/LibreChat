@@ -35,8 +35,6 @@ export interface ResolveAgentTurnExecutionPlanInput {
   };
   canPause: boolean;
   checkpointerType?: TCheckpointerType;
-  hasSkillPrimes: boolean;
-  hasMemoryContext: boolean;
   expectedActionMayDetach: boolean;
 }
 
@@ -73,8 +71,6 @@ export function resolveAgentTurnExecutionPlan(
     expectedAction != null &&
     input.checkpointerType !== 'memory' &&
     !input.canPause &&
-    !input.hasSkillPrimes &&
-    !input.hasMemoryContext &&
     !input.expectedActionMayDetach;
   let strategy: AgentTurnContinuationStrategy = 'history';
   if (input.isNewConversation) {

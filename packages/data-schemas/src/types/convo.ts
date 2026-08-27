@@ -1,6 +1,8 @@
 import type { TSubagentThreadLineage } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
 
+export const MAX_AGENT_EVENT_ACTOR_SKILLS = 64;
+
 export interface ISubagentThreadLease {
   token: string;
   taskId: string;
@@ -20,10 +22,25 @@ export interface IAgentEventActorCheckpoint {
   checkpointNs: string;
 }
 
+export interface IAgentEventActorContextFingerprint {
+  algorithm: 'sha256';
+  version: number;
+  digest: string;
+}
+
+export interface IAgentEventActorSkillIdentity {
+  id: string;
+  name: string;
+  version: number;
+}
+
 /** Private committed checkpoint state for one event-bound child actor. */
 export interface IAgentEventActorState {
   generation: number;
   checkpoint: IAgentEventActorCheckpoint;
+  contextFingerprint?: IAgentEventActorContextFingerprint;
+  /** Bounded semantic Skill set needed to validate a warm continuation without history. */
+  skillManifest?: IAgentEventActorSkillIdentity[];
   previousCheckpoint?: IAgentEventActorCheckpoint;
   /** Forces the next qualifying event to rebuild from durable message history. */
   requiresColdStart?: boolean;

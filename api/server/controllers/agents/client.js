@@ -121,6 +121,8 @@ const {
   collectReachableAgents,
   getDynamicToolContexts,
   getSafeErrorMetadata,
+  createInitializedAgentContextFingerprint,
+  MAX_AGENT_CONTEXT_SKILLS,
 } = require('@librechat/api');
 const {
   Run,
@@ -216,6 +218,7 @@ class AgentClient extends BaseClient {
     this.eventActorCheckpointId = undefined;
     this.eventActorInvocationId = undefined;
     this.eventActorContinuation = undefined;
+    this.eventActorSkillPrimeResult = undefined;
 
     /** @type {AgentRun} */
     this.run;
@@ -293,6 +296,21 @@ class AgentClient extends BaseClient {
       usageEmitSink?.filter((event) => event?.usage_type === 'subagent').length ?? 0;
     /** @type {AgentClientOptions} */
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
+    /** Preserve initialization-time semantic inputs before buildMessages
+     * decorates live agent instructions with request memory/MCP context. */
+    this.eventActorAgentContextSources = this.getEventActorAgents().map((agent) => ({
+      id: agent.id,
+      version: agent.version,
+      provider: agent.provider,
+      model: agent.model ?? agent.model_parameters?.model,
+      instructions: agent.instructions,
+      additional_instructions: agent.additional_instructions,
+      model_parameters: JSON.parse(JSON.stringify(agent.model_parameters ?? {})),
+      toolDefinitions: JSON.parse(JSON.stringify(agent.toolDefinitions ?? [])),
+      tool_options: JSON.parse(JSON.stringify(agent.tool_options ?? {})),
+      manualSkillPrimes: agent.manualSkillPrimes,
+      alwaysApplySkillPrimes: agent.alwaysApplySkillPrimes,
+    }));
     /** @type {string} */
     this.model = this.options.agent.model_parameters.model;
     /** The key for the usage object's input tokens
@@ -1551,6 +1569,94 @@ class AgentClient extends BaseClient {
     return files;
   }
 
+  getEventActorAgents() {
+    return [this.options.agent, ...(this.agentConfigs?.values() ?? [])].filter(Boolean);
+  }
+
+  /**
+   * Resolves the committed Skill manifest and request-cached memory before the
+   * actor chooses warm versus rebuilt continuation. No message history is read.
+   *
+   * @param {import('@librechat/data-schemas').IAgentEventActorState | null} state
+   */
+  async prepareEventActorContext(state) {
+    if (state?.contextFingerprint == null) {
+      return undefined;
+    }
+    if (isMemoryAgentEnabled(this.options.req.config?.memory)) {
+      return undefined;
+    }
+    const storedManifest = Array.isArray(state.skillManifest) ? state.skillManifest : [];
+    if (storedManifest.length > MAX_AGENT_CONTEXT_SKILLS) {
+      return undefined;
+    }
+
+    let skillPrimeResult = {};
+    if (storedManifest.length > 0) {
+      if (typeof this.options.primeInvokedSkills !== 'function') {
+        return undefined;
+      }
+      skillPrimeResult = await this.options.primeInvokedSkills(
+        [],
+        storedManifest.map((skill) => skill.name),
+      );
+      const resolvedManifest = [...(skillPrimeResult?.skillManifest ?? [])].sort((left, right) =>
+        left.id.localeCompare(right.id),
+      );
+      const expectedManifest = [...storedManifest].sort((left, right) =>
+        left.id.localeCompare(right.id),
+      );
+      if (JSON.stringify(resolvedManifest) !== JSON.stringify(expectedManifest)) {
+        return undefined;
+      }
+    }
+    this.eventActorSkillPrimeResult = skillPrimeResult;
+    const context = await this.getEventActorContext(storedManifest);
+    return context;
+  }
+
+  /**
+   * @param {Array<{id: string, name: string, version: number}>} [baseManifest]
+   */
+  async getEventActorContext(baseManifest = []) {
+    const manifest = new Map(baseManifest.map((skill) => [skill.id, skill]));
+    for (const skill of this.eventActorSkillPrimeResult?.skillManifest ?? []) {
+      manifest.set(skill.id, skill);
+    }
+    for (const skill of this.options.invokedSkillIdentities?.values?.() ?? []) {
+      manifest.set(skill.id, skill);
+    }
+    if (manifest.size > MAX_AGENT_CONTEXT_SKILLS) {
+      throw new RangeError(`Event actor exceeds ${MAX_AGENT_CONTEXT_SKILLS} durable Skills`);
+    }
+    const skillManifest = [...manifest.values()].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    );
+    const agents = this.getEventActorAgents();
+    const memory = await this.getEventActorMemorySnapshots(agents);
+    const agentsConfig = this.options.req.config?.endpoints?.[EModelEndpoint.agents];
+    return {
+      fingerprint: createInitializedAgentContextFingerprint({
+        agents: this.eventActorAgentContextSources ?? agents,
+        invokedSkills: skillManifest,
+        approvalPolicy: agentsConfig?.toolApproval,
+        memory,
+        checkpointerType: agentsConfig?.checkpointer?.type,
+      }),
+      skillManifest,
+    };
+  }
+
+  async loadHistory(conversationId, parentMessageId = null) {
+    if (this.eventActorContinuation === 'warm') {
+      logger.debug('[AgentClient] Skipping durable history for compatible event actor', {
+        conversationId,
+      });
+      return [];
+    }
+    return super.loadHistory(conversationId, parentMessageId);
+  }
+
   async buildMessages(messages, parentMessageId, _buildOptions, opts) {
     /** Always pass mapMethod; getMessagesForConversation applies it only to messages with addedConvo flag */
     const orderedMessages = this.constructor.getMessagesForConversation({
@@ -1616,7 +1722,7 @@ class AgentClient extends BaseClient {
      * original promise later still propagates either error.
      */
     const earlySharedContextPromise = Promise.all([
-      this.useMemory(),
+      this.getSharedMemoryContext(),
       resolveConfigServers(this.options.req),
     ]);
     void earlySharedContextPromise.catch(() => {});
@@ -2484,6 +2590,52 @@ class AgentClient extends BaseClient {
       );
     }
     return { withKeys, withoutKeys };
+  }
+
+  /** Reuses the exact memory authorization/load promise for planning and prompt construction. */
+  getSharedMemoryContext() {
+    this.memoryContextPromise ??= this.useMemory();
+    return this.memoryContextPromise;
+  }
+
+  /**
+   * Returns the model-bound memory snapshots needed for event-actor compatibility.
+   * The request-scoped memory cache makes this the same read used by buildMessages.
+   *
+   * @param {Array<import('@librechat/api').InitializedAgent>} agents
+   * @returns {Promise<Array<{scope: string, withKeys?: string, withoutKeys?: string}>>}
+   */
+  async getEventActorMemorySnapshots(agents) {
+    const primary = await this.getSharedMemoryContext();
+    if (!primary) {
+      return [];
+    }
+    const userId = this.options.req.user.id + '';
+    const primaryScope = getMemoryAgentId(this.options.agent);
+    const scopes = new Map([[primaryScope ?? '', primary]]);
+    await Promise.all(
+      agents.map(async (agent) => {
+        const agentId = getMemoryAgentId(agent);
+        const scope = agentId ?? '';
+        if (scopes.has(scope)) {
+          return;
+        }
+        const snapshot = await getRequestMemories({
+          req: this.options.req,
+          userId,
+          agentId,
+          getFormattedMemories: db.getFormattedMemories,
+        });
+        scopes.set(scope, snapshot);
+      }),
+    );
+    return [...scopes]
+      .map(([scope, snapshot]) => ({
+        scope: scope || 'shared',
+        ...(snapshot.withKeys ? { withKeys: snapshot.withKeys } : {}),
+        ...(snapshot.withoutKeys ? { withoutKeys: snapshot.withoutKeys } : {}),
+      }))
+      .sort((left, right) => left.scope.localeCompare(right.scope));
   }
 
   /**
@@ -3414,9 +3566,13 @@ class AgentClient extends BaseClient {
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
 
       /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
-      const skillPrimeResult = this.options.primeInvokedSkills
-        ? await this.options.primeInvokedSkills(payload)
-        : undefined;
+      let skillPrimeResult = this.eventActorSkillPrimeResult;
+      if (this.eventActorContinuation !== 'warm' || skillPrimeResult == null) {
+        skillPrimeResult = this.options.primeInvokedSkills
+          ? await this.options.primeInvokedSkills(payload)
+          : undefined;
+      }
+      this.eventActorSkillPrimeResult = skillPrimeResult;
 
       /** Seed each reachable agent's trusted code-session partition. */
       const initialSessions = buildInitialToolSessions({

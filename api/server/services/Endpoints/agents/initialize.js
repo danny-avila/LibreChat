@@ -345,6 +345,7 @@ const initializeClient = async ({
   /** @type {Map<string, import('@librechat/api').EndpointTokenConfig | undefined>} */
   const endpointTokenConfigByAgentId = new Map();
 
+  const invokedSkillIdentities = new Map();
   const toolExecuteOptions = {
     loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
       const ctx = agentToolContexts.get(agentId) ?? {};
@@ -392,6 +393,7 @@ const initializeClient = async ({
     }),
     emitAttachment: createAttachmentEmitter({ res, streamId, jobCreatedAt }),
     emitPtcProgress: createPtcProgressEmitter({ res, streamId, jobCreatedAt }),
+    onSkillResolved: (skill) => invokedSkillIdentities.set(skill.id, skill),
     ...getSkillToolDeps(),
   };
 
@@ -1355,10 +1357,11 @@ const initializeClient = async ({
     },
   );
   const handlePrimeInvokedSkills = skillsCapabilityEnabled
-    ? (payload) =>
+    ? (payload, skillNames) =>
         primeInvokedSkillsForProfiles({
           req,
           payload,
+          skillNames,
           accessibleSkillIds,
           executionProfiles: codeExecutionProfiles,
           ...getSkillToolDeps(),
@@ -1438,6 +1441,7 @@ const initializeClient = async ({
     aggregateContent,
     artifactPromises,
     primeInvokedSkills: handlePrimeInvokedSkills,
+    invokedSkillIdentities,
     agent: primaryConfig,
     spec: endpointOption.spec,
     iconURL: endpointOption.iconURL,

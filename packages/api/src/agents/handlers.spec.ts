@@ -1427,6 +1427,7 @@ describe('createToolExecuteHandler', () => {
     function createSkillHandler(
       getSkillByName: ToolExecuteOptions['getSkillByName'],
       filters?: Record<string, unknown>,
+      onSkillResolved?: ToolExecuteOptions['onSkillResolved'],
     ) {
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [],
@@ -1435,7 +1436,7 @@ describe('createToolExecuteHandler', () => {
           ...(filters != null ? { req: { config: { filters } } } : {}),
         },
       }));
-      return createToolExecuteHandler({ loadTools, getSkillByName });
+      return createToolExecuteHandler({ loadTools, getSkillByName, onSkillResolved });
     }
 
     /** Skill with one bundled file plus every dep the priming gate requires,
@@ -1502,6 +1503,29 @@ describe('createToolExecuteHandler', () => {
       expect(result.status).toBe('error');
       expect(result.errorMessage).toContain('cannot be invoked by the model');
       expect(result.errorMessage).toContain('pii-redactor');
+    });
+
+    it('captures the exact identity of a successfully model-invoked Skill', async () => {
+      const onSkillResolved = jest.fn();
+      const getSkillByName = jest.fn(async () => ({
+        _id: { toString: () => 'skill-id' } as never,
+        name: 'analysis',
+        body: 'Analyze the position.',
+        fileCount: 0,
+        version: 4,
+      }));
+      const handler = createSkillHandler(getSkillByName, undefined, onSkillResolved);
+
+      const [result] = await invokeHandler(handler, [
+        { id: 'call_skill_identity', name: Constants.SKILL_TOOL, args: { skillName: 'analysis' } },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(onSkillResolved).toHaveBeenCalledWith({
+        id: 'skill-id',
+        name: 'analysis',
+        version: 4,
+      });
     });
 
     it('blocks stored skill instructions before injecting them into model context', async () => {

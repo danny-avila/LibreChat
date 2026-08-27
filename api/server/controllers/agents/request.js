@@ -1690,10 +1690,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     const eventActorMayPause =
       isHITLEnabled(agentsConfig?.toolApproval) ||
       eventActorAgents.some(agentRequestsAskUserQuestion);
-    const eventActorHasSkillPrimes =
-      client?.options?.primeInvokedSkills != null ||
-      (client?.options?.agent?.alwaysApplySkillPrimes?.length ?? 0) > 0 ||
-      (client?.options?.agent?.manualSkillPrimes?.length ?? 0) > 0;
     const expectedActionToolName = agentEventDelivery?.expectedAction?.toolName;
     const eventActorActionMayDetach =
       typeof expectedActionToolName === 'string' &&
@@ -1730,8 +1726,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           : undefined,
       canPause: eventActorMayPause,
       checkpointerType: agentsConfig?.checkpointer?.type,
-      hasSkillPrimes: eventActorHasSkillPrimes,
-      hasMemoryContext: req.config?.memory != null && req.config.memory.disabled !== true,
       expectedActionMayDetach: eventActorActionMayDetach,
     });
 
@@ -2077,6 +2071,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 expectedAction: turnExecutionPlan.expectedAction,
                 signal: job.abortController.signal,
                 checkpointer: req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
+                resolveContext: (state) => client.prepareEventActorContext(state),
+                readResultContext: () => client.getEventActorContext(),
                 invoke: async (actorContext) => {
                   client.checkpointNamespace = actorContext.checkpointNamespace;
                   client.eventActorCheckpointId = actorContext.checkpointId;

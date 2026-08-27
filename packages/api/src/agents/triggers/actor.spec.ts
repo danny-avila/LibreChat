@@ -8,6 +8,7 @@ import {
   forkAgentEventCheckpoint,
   getAgentCheckpointer,
 } from '../checkpointer';
+import { createAgentContextFingerprint } from '../compatibility';
 import { createAgentEventActionRecorder, findAgentEventAppliedAction } from './outcome';
 import { executeAgentEventActor } from './actor';
 
@@ -58,26 +59,30 @@ describe('event actor host adapter', () => {
       legacyTurn,
       epoch,
     })),
-    commitState: jest.fn(async ({ expected, expectedEpoch, checkpoint }) => {
-      if (
-        expectedEpoch !== epoch ||
-        (state == null && expected != null) ||
-        (state != null &&
-          (expected == null ||
-            expected.generation !== state.generation ||
-            expected.checkpoint.checkpointId !== state.checkpoint.checkpointId ||
-            (expected.requiresColdStart === true) !== (state.requiresColdStart === true)))
-      ) {
-        return { status: 'stale' as const, ...(state == null ? {} : { state }) };
-      }
-      const previous = state?.checkpoint;
-      state = {
-        generation: (state?.generation ?? 0) + 1,
-        checkpoint,
-        ...(previous == null ? {} : { previousCheckpoint: previous }),
-      };
-      return { status: 'committed' as const, state };
-    }),
+    commitState: jest.fn(
+      async ({ expected, expectedEpoch, checkpoint, contextFingerprint, skillManifest }) => {
+        if (
+          expectedEpoch !== epoch ||
+          (state == null && expected != null) ||
+          (state != null &&
+            (expected == null ||
+              expected.generation !== state.generation ||
+              expected.checkpoint.checkpointId !== state.checkpoint.checkpointId ||
+              (expected.requiresColdStart === true) !== (state.requiresColdStart === true)))
+        ) {
+          return { status: 'stale' as const, ...(state == null ? {} : { state }) };
+        }
+        const previous = state?.checkpoint;
+        state = {
+          generation: (state?.generation ?? 0) + 1,
+          checkpoint,
+          ...(contextFingerprint == null ? {} : { contextFingerprint }),
+          ...(skillManifest == null ? {} : { skillManifest }),
+          ...(previous == null ? {} : { previousCheckpoint: previous }),
+        };
+        return { status: 'committed' as const, state };
+      },
+    ),
     recordReconciliation: jest.fn(async () => true),
     resolveReconciliation: jest.fn(async () => true),
     admitAction: jest.fn(async () => true),
@@ -125,6 +130,85 @@ describe('event actor host adapter', () => {
       undefined,
     );
     expect(state).toMatchObject({ generation: 2, checkpoint: { checkpointId: 'checkpoint-2' } });
+  });
+
+  it('rebuilds on a missing or changed context fingerprint and stamps the new head', async () => {
+    const current = createAgentContextFingerprint({ agents: [{ id: 'agent-1', version: 2 }] });
+    state = {
+      generation: 1,
+      checkpoint: {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-old-context',
+        checkpointNs: 'event-actor/old-context',
+      },
+    };
+    const dependencies = deps();
+    let continuation: 'warm' | 'cold' | undefined;
+
+    await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-new-context',
+        event: { id: 'event-new-context', type: 'turn' },
+        signal: new AbortController().signal,
+        contextFingerprint: current,
+        invoke: async (context) => {
+          continuation = context.continuation;
+          return 'response';
+        },
+        readAppliedAction: () => ({ toolName: 'submit_move' }),
+      },
+      dependencies,
+    );
+
+    expect(continuation).toBe('cold');
+    expect(mockedFork).not.toHaveBeenCalled();
+    expect(state?.contextFingerprint).toEqual(current);
+  });
+
+  it('validates the stored Skill manifest before warm continuation and commits additions', async () => {
+    const current = createAgentContextFingerprint({ agents: [{ id: 'agent-1', version: 2 }] });
+    const storedSkill = { id: 'skill-1', name: 'analysis', version: 3 };
+    const invokedSkill = { id: 'skill-2', name: 'reporting', version: 1 };
+    state = {
+      generation: 1,
+      checkpoint: {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-compatible',
+        checkpointNs: 'event-actor/compatible',
+      },
+      contextFingerprint: current,
+      skillManifest: [storedSkill],
+    };
+    let continuation: 'warm' | 'cold' | undefined;
+
+    await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-skill-context',
+        event: { id: 'event-skill-context', type: 'turn' },
+        signal: new AbortController().signal,
+        resolveContext: async (observed) => ({
+          fingerprint: current,
+          skillManifest: observed.skillManifest ?? [],
+        }),
+        readResultContext: async () => ({
+          fingerprint: current,
+          skillManifest: [storedSkill, invokedSkill],
+        }),
+        invoke: async (context) => {
+          continuation = context.continuation;
+          return 'response';
+        },
+        readAppliedAction: () => ({ toolName: 'submit_move' }),
+      },
+      deps(),
+    );
+
+    expect(continuation).toBe('warm');
+    expect(state?.skillManifest).toEqual([storedSkill, invokedSkill]);
   });
 
   it('commits from the execution-time receipt when run steps lag sendMessage', async () => {

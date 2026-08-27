@@ -30,6 +30,7 @@ import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
 import logger from '~/config/winston';
+import { MAX_AGENT_EVENT_ACTOR_SKILLS } from '~/types/convo';
 
 const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 90 * 24 * 60 * 60_000;
 
@@ -245,6 +246,8 @@ export interface ConversationMethods {
     expected?: IAgentEventActorState;
     expectedEpoch: number;
     checkpoint: IAgentEventActorCheckpoint;
+    contextFingerprint?: IAgentEventActorState['contextFingerprint'];
+    skillManifest?: IAgentEventActorState['skillManifest'];
   }): Promise<AgentEventActorCommitResult>;
   beginAgentEventActorLegacyTurn(input: {
     user: string;
@@ -533,9 +536,14 @@ export function createConversationMethods(
     expected?: IAgentEventActorState;
     expectedEpoch: number;
     checkpoint: IAgentEventActorCheckpoint;
+    contextFingerprint?: IAgentEventActorState['contextFingerprint'];
+    skillManifest?: IAgentEventActorState['skillManifest'];
   }): Promise<AgentEventActorCommitResult> {
     if (input.checkpoint.threadId !== input.conversationId) {
       throw new Error('Event actor checkpoint changed its logical thread');
+    }
+    if ((input.skillManifest?.length ?? 0) > MAX_AGENT_EVENT_ACTOR_SKILLS) {
+      throw new RangeError(`Event actor Skill manifest exceeds ${MAX_AGENT_EVENT_ACTOR_SKILLS}`);
     }
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
     /** A legacy turn against a headless or already cold-marked actor leaves
@@ -555,6 +563,19 @@ export function createConversationMethods(
             'agentEventActor.checkpoint.threadId': input.expected.checkpoint.threadId,
             'agentEventActor.checkpoint.checkpointId': input.expected.checkpoint.checkpointId,
             'agentEventActor.checkpoint.checkpointNs': input.expected.checkpoint.checkpointNs,
+            ...(input.expected.contextFingerprint == null
+              ? { 'agentEventActor.contextFingerprint': { $exists: false } }
+              : {
+                  'agentEventActor.contextFingerprint.algorithm':
+                    input.expected.contextFingerprint.algorithm,
+                  'agentEventActor.contextFingerprint.version':
+                    input.expected.contextFingerprint.version,
+                  'agentEventActor.contextFingerprint.digest':
+                    input.expected.contextFingerprint.digest,
+                }),
+            ...(input.expected.skillManifest == null
+              ? { 'agentEventActor.skillManifest': { $exists: false } }
+              : { 'agentEventActor.skillManifest': input.expected.skillManifest }),
             'agentEventActor.requiresColdStart':
               input.expected.requiresColdStart === true ? true : { $ne: true },
           }),
@@ -562,6 +583,8 @@ export function createConversationMethods(
     const nextState: IAgentEventActorState = {
       generation: (input.expected?.generation ?? 0) + 1,
       checkpoint: input.checkpoint,
+      ...(input.contextFingerprint == null ? {} : { contextFingerprint: input.contextFingerprint }),
+      ...(input.skillManifest == null ? {} : { skillManifest: input.skillManifest }),
       ...(input.expected == null ? {} : { previousCheckpoint: input.expected.checkpoint }),
     };
     const previous = await Conversation.findOneAndUpdate(

@@ -77,6 +77,70 @@ jest.mock('@librechat/api', () => ({
   hasDurableAgentInterruptCheckpoint: (...args) => mockHasDurableAgentInterruptCheckpoint(...args),
 }));
 
+describe('AgentClient - event actor history adapter', () => {
+  const fingerprint = { algorithm: 'sha256', version: 1, digest: 'context' };
+
+  it('loads no durable history after compatibility selected a warm continuation', async () => {
+    const loadHistory = jest.spyOn(BaseClient.prototype, 'loadHistory');
+    const client = Object.create(AgentClient.prototype);
+    client.eventActorContinuation = 'warm';
+
+    await expect(client.loadHistory('conversation-1', 'message-1')).resolves.toEqual([]);
+    expect(loadHistory).not.toHaveBeenCalled();
+    loadHistory.mockRestore();
+  });
+
+  it('delegates rebuilt continuation to the existing durable history loader', async () => {
+    const loadHistory = jest
+      .spyOn(BaseClient.prototype, 'loadHistory')
+      .mockResolvedValue([{ messageId: 'message-1' }]);
+    const client = Object.create(AgentClient.prototype);
+    client.eventActorContinuation = 'cold';
+
+    await expect(client.loadHistory('conversation-1', 'message-1')).resolves.toEqual([
+      { messageId: 'message-1' },
+    ]);
+    expect(loadHistory).toHaveBeenCalledWith('conversation-1', 'message-1');
+    loadHistory.mockRestore();
+  });
+
+  it('resolves and caches the exact durable Skill manifest before warming', async () => {
+    const skillManifest = [{ id: 'skill-1', name: 'analysis', version: 3 }];
+    const primeInvokedSkills = jest.fn().mockResolvedValue({ skillManifest });
+    const client = Object.create(AgentClient.prototype);
+    client.options = {
+      req: { config: {} },
+      primeInvokedSkills,
+    };
+    client.getEventActorContext = jest.fn().mockResolvedValue({ fingerprint, skillManifest });
+
+    await expect(
+      client.prepareEventActorContext({ contextFingerprint: fingerprint, skillManifest }),
+    ).resolves.toEqual({ fingerprint, skillManifest });
+    expect(primeInvokedSkills).toHaveBeenCalledWith([], ['analysis']);
+    expect(client.eventActorSkillPrimeResult).toEqual({ skillManifest });
+  });
+
+  it('falls back when a durable Skill resolves to a different revision', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = {
+      req: { config: {} },
+      primeInvokedSkills: jest.fn().mockResolvedValue({
+        skillManifest: [{ id: 'skill-1', name: 'analysis', version: 4 }],
+      }),
+    };
+    client.getEventActorContext = jest.fn();
+
+    await expect(
+      client.prepareEventActorContext({
+        contextFingerprint: fingerprint,
+        skillManifest: [{ id: 'skill-1', name: 'analysis', version: 3 }],
+      }),
+    ).resolves.toBeUndefined();
+    expect(client.getEventActorContext).not.toHaveBeenCalled();
+  });
+});
+
 describe('AgentClient - final model-bound content protection', () => {
   const filters = {
     messages: {
