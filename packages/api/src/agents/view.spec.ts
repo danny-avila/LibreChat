@@ -601,6 +601,8 @@ describe('subagent thread parent-scoped view', () => {
       SUBAGENT_THREAD_VIEW_LIMITS.responseBytes,
     );
     expect(view.historyTruncated).toBe(true);
+    const firstRetainedTask = Number(view.turns[0].taskId.replace('task-', ''));
+    expect(view.nextCursor).toBe(`task-${firstRetainedTask - 1}:user`);
   });
 
   it('requires tenantless messages when the authenticated request has no tenant', async () => {
@@ -1091,6 +1093,13 @@ describe('parent child-thread index', () => {
         text: 'Safe instruction. {"privateRoutingKey":"must-not-leak"}',
         textProjectionTruncated: true,
         createdAt: new Date('2026-08-21T11:00:00.000Z'),
+        subagentTriggerProjection: {
+          version: 1,
+          eventType: 'chess.turn.ready',
+          sourceType: 'speed-chess',
+          occurredAt: new Date('2026-08-21T10:59:00.000Z'),
+          expectedActionToolName: 'submit_move',
+        },
       },
     ]);
     const handler = createSubagentThreadViewHandler({
@@ -1108,7 +1117,16 @@ describe('parent child-thread index', () => {
         turns: [
           expect.objectContaining({
             taskId: 'delivery-1',
-            trigger: expect.objectContaining({ kind: 'external_event', summary: '' }),
+            trigger: expect.objectContaining({
+              kind: 'external_event',
+              summary: '',
+              externalEvent: {
+                eventType: 'chess.turn.ready',
+                sourceType: 'speed-chess',
+                occurredAt: '2026-08-21T10:59:00.000Z',
+                expectedActionToolName: 'submit_move',
+              },
+            }),
             activity: [
               expect.objectContaining({
                 type: 'tool',
@@ -1132,6 +1150,54 @@ describe('parent child-thread index', () => {
     expect(getMessagesForSubagentThreadView).toHaveBeenCalledWith(
       expect.not.objectContaining({ taskId: expect.anything() }),
     );
+  });
+
+  it('anchors an older page through an exact scoped task-message cursor', async () => {
+    const olderInput = {
+      ...message('older:user', 'running', true),
+      parentMessageId: null,
+    } as IMessage;
+    const olderAssistant = {
+      ...message('older:assistant', 'completed'),
+      parentMessageId: 'older:user',
+    } as IMessage;
+    const getMessagesForSubagentThreadView = jest
+      .fn()
+      .mockResolvedValue([olderAssistant, olderInput]);
+    const handler = createSubagentThreadViewHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
+      getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+      getMessagesForSubagentThreadView,
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest({}, { cursor: 'newer:user' }), response);
+
+    expect(getMessagesForSubagentThreadView).toHaveBeenCalledWith(
+      expect.objectContaining({ beforeMessageId: 'newer:user' }),
+    );
+    expect(json.mock.calls[0][0].turns).toEqual([expect.objectContaining({ taskId: 'older' })]);
+  });
+
+  it('rejects malformed or combined history cursors before storage access', async () => {
+    const getMessagesForSubagentThreadView = jest.fn();
+    const handler = createSubagentThreadViewHandler({
+      getConvoOwnership: jest.fn(),
+      getSubagentThreadForParent: jest.fn(),
+      getMessagesForSubagentThreadView,
+    });
+    const malformed = createResponse();
+    const combined = createResponse();
+
+    await handler(createRequest({}, { cursor: 'private-routing-id' }), malformed.response);
+    await handler(
+      createRequest({}, { cursor: 'older:user', taskId: 'selected-task' }),
+      combined.response,
+    );
+
+    expect(malformed.status).toHaveBeenCalledWith(404);
+    expect(combined.status).toHaveBeenCalledWith(404);
+    expect(getMessagesForSubagentThreadView).not.toHaveBeenCalled();
   });
 
   it('projects ordinary and event children together without exposing event delivery identity', async () => {

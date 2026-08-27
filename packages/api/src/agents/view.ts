@@ -56,6 +56,13 @@ type SubagentThreadViewParams = {
   threadId?: string;
 };
 
+const validTaskMessageId = (value: unknown): value is string => {
+  if (typeof value !== 'string' || Buffer.byteLength(value, 'utf8') > MAX_PUBLIC_ID_BYTES) {
+    return false;
+  }
+  return taskIdFromMessageId(value) != null;
+};
+
 const validConversationId = (value: string | undefined): value is string =>
   value != null && value.trim() !== '' && value.length <= 256;
 
@@ -337,6 +344,31 @@ const publicThreadTurns = (
           summary: eventThread ? '' : (input?.text ?? ''),
           ...(input?.createdAt == null ? {} : { createdAt: input.createdAt }),
           ...(!eventThread && input?.textTruncated === true ? { summaryTruncated: true } : {}),
+          ...(eventThread &&
+          record.input?.subagentTriggerProjection?.version === 1 &&
+          isoDate(record.input.subagentTriggerProjection.occurredAt) != null
+            ? {
+                externalEvent: {
+                  eventType: truncateUtf8(
+                    record.input.subagentTriggerProjection.eventType,
+                    MAX_PUBLIC_ID_BYTES,
+                  ).text,
+                  sourceType: truncateUtf8(
+                    record.input.subagentTriggerProjection.sourceType,
+                    MAX_PUBLIC_ID_BYTES,
+                  ).text,
+                  occurredAt: isoDate(record.input.subagentTriggerProjection.occurredAt)!,
+                  ...(record.input.subagentTriggerProjection.expectedActionToolName == null
+                    ? {}
+                    : {
+                        expectedActionToolName: truncateUtf8(
+                          record.input.subagentTriggerProjection.expectedActionToolName,
+                          MAX_PUBLIC_ID_BYTES,
+                        ).text,
+                      }),
+                },
+              }
+            : {}),
         },
         status: publicStatus(
           [record.assistant, record.input].filter(
@@ -537,12 +569,15 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
     const tenantId = req.user?.tenantId || undefined;
     const { parentConversationId, threadId } = req.params as SubagentThreadViewParams;
     const requestedTaskId = req.query?.taskId;
+    const historyCursor = req.query?.cursor;
     if (
       !userId ||
       !validConversationId(parentConversationId) ||
       !validConversationId(threadId) ||
       parentConversationId === threadId ||
-      (requestedTaskId != null && !validTaskId(requestedTaskId))
+      (requestedTaskId != null && !validTaskId(requestedTaskId)) ||
+      (historyCursor != null && !validTaskMessageId(historyCursor)) ||
+      (requestedTaskId != null && historyCursor != null)
     ) {
       notFound(res);
       return;
@@ -577,6 +612,7 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         user: userId,
         ...(tenantId == null ? {} : { tenantId }),
         ...(requestedTaskId == null ? {} : { selectedTaskId: requestedTaskId }),
+        ...(historyCursor == null ? {} : { beforeMessageId: historyCursor }),
         limit: MAX_THREAD_MESSAGES + 1,
         textCodePointLimit: MAX_MESSAGE_TEXT_PROJECTION_CODE_POINTS,
       });
@@ -589,6 +625,10 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
       if (branchRootParentId != null && taskIdFromMessageId(branchRootParentId) != null) {
         historyTruncated = true;
       }
+      const nextCursor =
+        branchRootParentId != null && validTaskMessageId(branchRootParentId)
+          ? branchRootParentId
+          : undefined;
       const activeLeaseTaskId =
         child.subagentThreadLease != null && child.subagentThreadLease.expiresAt > now
           ? child.subagentThreadLease.taskId
@@ -690,13 +730,19 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         turns,
         messages: projectedMessages,
         historyTruncated: historyTruncated || projectedMessages.length < publicSource.length,
+        ...(nextCursor == null ? {} : { nextCursor }),
         ...(isoDate(child.updatedAt) == null ? {} : { updatedAt: isoDate(child.updatedAt) }),
       };
       const selectedAssistantId =
         requestedTaskId == null ? undefined : `${requestedTaskId}:assistant`;
       while (Buffer.byteLength(JSON.stringify(view), 'utf8') > MAX_RESPONSE_BYTES) {
         if ((view.turns?.length ?? 0) > 1) {
-          view.turns?.shift();
+          const removedTurn = view.turns?.shift();
+          const removedTurnAnchor = branch.find(
+            (message) =>
+              removedTurn != null && taskIdFromMessageId(message.messageId) === removedTurn.taskId,
+          )?.messageId;
+          if (validTaskMessageId(removedTurnAnchor)) view.nextCursor = removedTurnAnchor;
           view.historyTruncated = true;
           continue;
         }

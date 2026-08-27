@@ -122,6 +122,13 @@ export type SubagentThreadTriggerKind =
   | 'parent_continuation'
   | 'external_event';
 
+export type SubagentExternalEventDetails = {
+  eventType: string;
+  sourceType: string;
+  occurredAt: string;
+  expectedActionToolName?: string;
+};
+
 /**
  * One chronological child execution boundary. The trigger is host-authored,
  * while activity and messages are bounded public projections of the child run.
@@ -133,6 +140,7 @@ export type SubagentThreadTurn = {
     summary: string;
     createdAt?: string;
     summaryTruncated?: boolean;
+    externalEvent?: SubagentExternalEventDetails;
   };
   status: SubagentThreadStatus;
   activity: SubagentActivityItem[];
@@ -165,5 +173,7 @@ export type SubagentThreadView = {
   turns?: SubagentThreadTurn[];
   messages: SubagentThreadMessage[];
   historyTruncated: boolean;
+  /** Opaque task-message cursor for the next older bounded branch page. */
+  nextCursor?: string;
   updatedAt?: string;
 };

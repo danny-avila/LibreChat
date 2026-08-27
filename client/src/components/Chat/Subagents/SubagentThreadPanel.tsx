@@ -1,16 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
-import { ForkOptions } from 'librechat-data-provider';
-import {
-  Bot,
-  CornerDownRight,
-  CornerUpLeft,
-  ListEnd,
-  MessagesSquare,
-  OctagonX,
-  X,
-  Zap,
-} from 'lucide-react';
+import { dataService, ForkOptions } from 'librechat-data-provider';
+import { Bot, CornerDownRight, ListEnd, MessagesSquare, OctagonX, X, Zap } from 'lucide-react';
 import {
   useRecoilCallback,
   useRecoilState,
@@ -186,6 +177,14 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         return true;
       });
   }, [byMessageId, selection.event, selection.parentMessageId]);
+  const selectedEventActor = eventSiblings.find((child) => child.threadId === threadId);
+  const selectedEventActorName =
+    (selectedEventActor?.agentId == null
+      ? undefined
+      : agentsMap?.[selectedEventActor.agentId]?.name) ??
+    selectedEventActor?.actorId ??
+    eventSummary?.actorId ??
+    foregroundTitle;
   const { data, isLoading, isError, isReadinessPending, refetch } = useSubagentThreadQuery(
     selection.parentConversationId,
     threadId,
@@ -251,6 +250,21 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     },
   });
   const [controlMessage, setControlMessage] = useState('');
+  const [turnDetailOverrides, setTurnDetailOverrides] = useState(
+    () => new Map<string, ReturnType<typeof adaptDurableThreadActivity>>(),
+  );
+  const [turnDetailStates, setTurnDetailStates] = useState(
+    () => new Map<string, 'idle' | 'loading' | 'unavailable' | 'error'>(),
+  );
+  const [olderTurns, setOlderTurns] = useState<ReturnType<typeof adaptDurableThreadConversation>>(
+    [],
+  );
+  const [historyCursor, setHistoryCursor] = useState<string | null | undefined>(undefined);
+  const [historyState, setHistoryState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const activeThreadRef = useRef(threadId);
+  const turnDetailRequestsRef = useRef(new Set<string>());
+  const historyRequestRef = useRef<string | null>(null);
+  activeThreadRef.current = threadId;
   const [controlInaccessible, setControlInaccessible] = useState(false);
   const [controlsClosed, setControlsClosed] = useState(false);
   const controlInFlightRef = useRef(false);
@@ -265,6 +279,87 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       controlSelectionRef.current = '';
     };
   }, [controlIdentity]);
+
+  useEffect(() => {
+    setTurnDetailOverrides(new Map());
+    setTurnDetailStates(new Map());
+    setOlderTurns([]);
+    setHistoryCursor(undefined);
+    setHistoryState('idle');
+    turnDetailRequestsRef.current.clear();
+    historyRequestRef.current = null;
+  }, [threadId]);
+
+  const loadTurnDetails = useCallback(
+    async (detailTaskId: string) => {
+      const requestedThreadId = threadId;
+      const requestKey = `${requestedThreadId}\u0000${detailTaskId}`;
+      if (
+        turnDetailStates.get(detailTaskId) === 'loading' ||
+        turnDetailRequestsRef.current.has(requestKey)
+      ) {
+        return;
+      }
+      turnDetailRequestsRef.current.add(requestKey);
+      setTurnDetailStates((current) => new Map(current).set(detailTaskId, 'loading'));
+      try {
+        const exact = await dataService.getSubagentThread(
+          selection.parentConversationId,
+          requestedThreadId,
+          detailTaskId,
+        );
+        if (activeThreadRef.current !== requestedThreadId) return;
+        const detail = adaptDurableThreadActivity(exact, detailTaskId);
+        setTurnDetailOverrides((current) => new Map(current).set(detailTaskId, detail));
+        setTurnDetailStates((current) =>
+          new Map(current).set(
+            detailTaskId,
+            detail.activityTruncated === true ? 'unavailable' : 'idle',
+          ),
+        );
+      } catch {
+        if (activeThreadRef.current !== requestedThreadId) return;
+        setTurnDetailStates((current) => new Map(current).set(detailTaskId, 'error'));
+      } finally {
+        turnDetailRequestsRef.current.delete(requestKey);
+      }
+    },
+    [selection.parentConversationId, threadId, turnDetailStates],
+  );
+  const loadEarlierHistory = useCallback(async () => {
+    const cursor = historyCursor === undefined ? data?.nextCursor : historyCursor;
+    const requestedThreadId = threadId;
+    if (
+      cursor == null ||
+      historyState === 'loading' ||
+      historyRequestRef.current === requestedThreadId
+    ) {
+      return;
+    }
+    historyRequestRef.current = requestedThreadId;
+    setHistoryState('loading');
+    try {
+      const page = await dataService.getSubagentThread(
+        selection.parentConversationId,
+        requestedThreadId,
+        undefined,
+        cursor,
+      );
+      if (activeThreadRef.current !== requestedThreadId) return;
+      const pageTurns = adaptDurableThreadConversation(page);
+      setOlderTurns((current) => {
+        const seen = new Set(current.map((turn) => turn.taskId));
+        return [...pageTurns.filter((turn) => !seen.has(turn.taskId)), ...current];
+      });
+      setHistoryCursor(page.nextCursor ?? null);
+      setHistoryState('idle');
+    } catch {
+      if (activeThreadRef.current !== requestedThreadId) return;
+      setHistoryState('error');
+    } finally {
+      if (historyRequestRef.current === requestedThreadId) historyRequestRef.current = null;
+    }
+  }, [data?.nextCursor, historyCursor, historyState, selection.parentConversationId, threadId]);
 
   const controlTask = useSubagentControlMutation({
     onSuccess: ({ receipt }, variables) => {
@@ -488,19 +583,27 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     }
     return { ...merged, controls: [...(merged.controls ?? []), transientControl] };
   }, [data, liveActivity, progress, selection.durable, transientControl]);
+  const panelTitle = selection.event == null ? activity.title : selectedEventActorName;
   const conversationTurns = useMemo(() => {
-    const durableTurns = data == null ? [] : adaptDurableThreadConversation(data);
+    const latestTurns = data == null ? [] : adaptDurableThreadConversation(data);
+    const latestTaskIds = new Set(latestTurns.map((turn) => turn.taskId));
+    const durableTurns = [
+      ...olderTurns.filter((turn) => !latestTaskIds.has(turn.taskId)),
+      ...latestTurns,
+    ];
     if (durableTurns.length > 0) {
       const selectedTurnIndex = durableTurns.findIndex((turn) => turn.taskId === taskId);
       if (selectedTurnIndex >= 0) {
-        return durableTurns.map((turn, index) =>
-          index === selectedTurnIndex ? { ...turn, activity } : turn,
-        );
+        return durableTurns.map((turn, index) => {
+          const selected = index === selectedTurnIndex ? { ...turn, activity } : turn;
+          const override = turnDetailOverrides.get(turn.taskId);
+          return override == null ? selected : { ...selected, activity: override };
+        });
       }
       // The API keeps the exact selected activity even when its bounded
       // chronological turn is the first item removed from the response.
       // Preserve that selection ahead of the retained newer continuation.
-      return [
+      const retained = [
         {
           taskId: taskId || `${selection.parentMessageId}:${selection.toolCallId}`,
           trigger: {
@@ -514,6 +617,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         },
         ...durableTurns,
       ];
+      return retained.map((turn) => {
+        const override = turnDetailOverrides.get(turn.taskId);
+        return override == null ? turn : { ...turn, activity: override };
+      });
     }
     return [
       {
@@ -526,7 +633,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         activity,
       },
     ];
-  }, [activity, data, selection, taskId]);
+  }, [activity, data, olderTurns, selection, taskId, turnDetailOverrides]);
+  const effectiveTurnDetailStates = useMemo(() => {
+    const states = new Map(turnDetailStates);
+    if (activity.activityTruncated === true && taskId !== '') states.set(taskId, 'unavailable');
+    return states;
+  }, [activity.activityTruncated, taskId, turnDetailStates]);
+  const effectiveHistoryCursor = historyCursor === undefined ? data?.nextCursor : historyCursor;
   /** During a rolling deployment an older API replica can omit `turns`. Keep
    * that response readable through the same deep activity renderer; every
    * current host otherwise enters the conversation-native rendering seam. */
@@ -626,15 +739,6 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         </Button>
       </div>
     );
-  } else if (eventSummary?.tasksTruncated) {
-    timelinePrefix = (
-      <div
-        role="note"
-        className="border-b border-border-light px-4 py-3 text-sm text-text-secondary"
-      >
-        {localize('com_ui_subagent_thread_history_truncated')}
-      </div>
-    );
   }
   const conversationStateByTask = useMemo(
     () => new Map([[taskId || conversationTurns[0]?.taskId || '', panelState] as const]),
@@ -645,12 +749,31 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   if (hasConversationProjection) {
     activityPanel = (
       <SubagentActivityScrollSurface padded={false}>
-        {data?.historyTruncated === true && (
-          <div
-            role="note"
-            className="border-b border-border-light px-4 py-3 text-sm text-text-secondary"
-          >
-            {localize('com_ui_subagent_thread_history_truncated')}
+        {effectiveHistoryCursor != null && (
+          <div className="flex justify-center border-b border-border-light px-4 py-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={historyState === 'loading'}
+              onClick={() => void loadEarlierHistory()}
+            >
+              {historyState === 'loading'
+                ? localize('com_ui_loading')
+                : localize('com_ui_subagent_load_earlier_activity')}
+            </Button>
+          </div>
+        )}
+        {historyState === 'error' && (
+          <div className="flex justify-center border-b border-border-light px-4 py-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void loadEarlierHistory()}
+            >
+              {localize('com_ui_retry')}
+            </Button>
           </div>
         )}
         <SubagentConversation
@@ -664,6 +787,8 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           onCancelControl={(_controlledTaskId, controlId) =>
             submitControl('cancel_message', controlId)
           }
+          detailStateByTask={effectiveTurnDetailStates}
+          onLoadTurnDetails={loadTurnDetails}
         />
       </SubagentActivityScrollSurface>
     );
@@ -701,33 +826,42 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       aria-label={localize('com_ui_subagent_thread_panel')}
       className="flex h-full w-full flex-col overflow-hidden bg-surface-primary-alt text-text-primary"
     >
-      <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-border-light px-4 py-3">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border-light px-3">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-tertiary">
           <Bot size={17} aria-hidden="true" />
         </div>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold" title={activity.title}>
-            {activity.title}
-          </h2>
-          {data?.depth != null && (
-            <div className="truncate text-xs text-text-secondary">
-              {localize('com_ui_subagent_depth', { 0: String(data.depth) })}
-            </div>
+          {selection.event != null && eventSiblings.length > 1 ? (
+            <Select value={threadId} onValueChange={selectActor}>
+              <SelectTrigger
+                className="h-8 max-w-sm border-0 bg-transparent px-1 font-semibold shadow-none"
+                aria-label={localize('com_ui_subagent_actor')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {eventSiblings.map((child) => (
+                  <SelectItem
+                    key={child.threadId}
+                    value={child.threadId}
+                    disabled={!child.latestTaskId}
+                  >
+                    {child.agentId != null && agentsMap?.[child.agentId]?.name
+                      ? agentsMap[child.agentId]?.name
+                      : child.actorId || child.title}
+                    {child.actorId != null && agentsMap?.[child.agentId ?? '']?.name
+                      ? ` · ${child.actorId}`
+                      : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <h2 className="truncate text-sm font-semibold" title={panelTitle}>
+              {panelTitle}
+            </h2>
           )}
         </div>
-        {selection.host === 'conversation' && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={close}
-            aria-label={localize('com_ui_subagent_view_in_parent')}
-            className="h-8 shrink-0 gap-1.5"
-          >
-            <CornerUpLeft size={15} aria-hidden="true" />
-            <span className="hidden lg:inline">{localize('com_ui_subagent_view_in_parent')}</span>
-          </Button>
-        )}
         {canContinueAsChat && (
           <Button
             type="button"
@@ -753,34 +887,6 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           <X size={17} aria-hidden="true" />
         </Button>
       </header>
-
-      {selection.event != null && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border-light px-4 py-2">
-          <div className="min-w-0 flex-1">
-            <Select value={threadId} onValueChange={selectActor}>
-              <SelectTrigger className="h-8" aria-label={localize('com_ui_subagent_actor')}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {eventSiblings.map((child) => (
-                  <SelectItem
-                    key={child.threadId}
-                    value={child.threadId}
-                    disabled={!child.latestTaskId}
-                  >
-                    {child.agentId != null && agentsMap?.[child.agentId]?.name
-                      ? agentsMap[child.agentId]?.name
-                      : child.actorId || child.title}
-                    {child.actorId != null && agentsMap?.[child.agentId ?? '']?.name
-                      ? ` · ${child.actorId}`
-                      : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      )}
 
       {/* Keep the foreground panel's existing nested-tool approval controls
           coordinated within this invocation. Detached activity projections

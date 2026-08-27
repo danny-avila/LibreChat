@@ -166,6 +166,19 @@ const messageSchema: Schema<IMessage> = new Schema(
       select: false,
       default: undefined,
     },
+    /** Bounded, display-safe identity for an event-authored child turn. */
+    subagentTriggerProjection: {
+      type: {
+        version: { type: Number, enum: [1], required: true },
+        eventType: { type: String, required: true },
+        sourceType: { type: String, required: true },
+        occurredAt: { type: Date, required: true },
+        expectedActionToolName: { type: String },
+      },
+      _id: false,
+      select: false,
+      default: undefined,
+    },
     /** Durable, server-only marker used to make detached retries at-most-once. */
     subagentTask: {
       type: {

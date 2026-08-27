@@ -357,11 +357,6 @@ export function SubagentActivityContent({
           {localize('com_ui_subagent_control_history_truncated')}
         </div>
       )}
-      {activity.activityTruncated === true && (
-        <div className="mb-3 text-xs italic text-text-secondary">
-          {localize('com_ui_subagent_thread_history_truncated')}
-        </div>
-      )}
       {showDetailTruncationNotice && activityDetailsTruncated && (
         <div className="mb-3 text-xs italic text-text-secondary">
           {localize('com_ui_subagent_activity_details_truncated')}
@@ -406,11 +401,12 @@ export default function SubagentActivity({
   showPrompt?: boolean;
   onCancelControl?: (controlId: string) => void;
 }) {
-  const statusHeader = (
-    <div className="shrink-0 border-b border-border-light px-4 py-2">
-      <SubagentStatus activity={activity} />
-    </div>
-  );
+  const statusHeader =
+    activity.status === 'completed' ? null : (
+      <div className="shrink-0 border-b border-border-light px-4 py-2">
+        <SubagentStatus activity={activity} />
+      </div>
+    );
   const content = (
     <SubagentActivityContent
       activity={activity}

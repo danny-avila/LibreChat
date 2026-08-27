@@ -19,6 +19,14 @@ export type SubagentTaskControlReceiptStatus =
   | 'rejected'
   | 'failed';
 
+export type SubagentTriggerProjection = {
+  version: 1;
+  eventType: string;
+  sourceType: string;
+  occurredAt: Date;
+  expectedActionToolName?: string;
+};
+
 /** Server-private durable receipt for one parent-to-child control invocation. */
 export interface ISubagentTaskControlReceipt {
   invocationId: string;
@@ -108,6 +116,7 @@ export interface IMessage extends Document {
     };
     controlReceipts?: ISubagentTaskControlReceipt[];
   };
+  subagentTriggerProjection?: SubagentTriggerProjection;
   contextMeta?: {
     calibrationRatio?: number;
     encoding?: string;

@@ -1,6 +1,6 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { ChildConversationTurn } from './adapters';
 import SubagentConversation from './SubagentConversation';
 
@@ -48,6 +48,7 @@ jest.mock('lucide-react', () => ({
   Bot: () => null,
   CheckCircle2: () => null,
   Clock3: () => null,
+  ChevronDown: () => null,
   CornerDownRight: () => null,
   Radio: () => null,
   XCircle: () => null,
@@ -81,7 +82,13 @@ const turns: ChildConversationTurn[] = [
     taskId: 'task-2',
     trigger: {
       kind: 'external_event',
-      summary: 'A deployment event arrived.',
+      summary: '',
+      externalEvent: {
+        eventType: 'chess.turn.ready',
+        sourceType: 'speed-chess',
+        occurredAt: '2026-08-25T12:01:00.000Z',
+        expectedActionToolName: 'submit_move',
+      },
     },
     activity: {
       title: 'Research child',
@@ -100,7 +107,7 @@ describe('SubagentConversation', () => {
     );
 
     expect(screen.getAllByText('com_ui_subagent_trigger_parent_dispatch')).toHaveLength(2);
-    expect(screen.getAllByText('com_ui_subagent_trigger_external_event')).toHaveLength(2);
+    expect(screen.getAllByText('com_ui_subagent_trigger_external_event')).toHaveLength(1);
     expect(screen.getByText('Investigate the release.')).toBeInTheDocument();
     expect(screen.getByText('Checked the constraints.')).toBeInTheDocument();
     expect(screen.getByText('search')).toBeInTheDocument();
@@ -108,11 +115,34 @@ describe('SubagentConversation', () => {
     expect(screen.queryByText('com_ui_subagent_thread_status_completed')).not.toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_thread_status_running')).toBeInTheDocument();
     expect(screen.getByTestId('thinking-cursor')).toBeInTheDocument();
-    expect(container.querySelectorAll('.message-render')).toHaveLength(4);
-    expect(container.querySelectorAll('.user-turn')).toHaveLength(2);
+    expect(container.querySelectorAll('.message-render')).toHaveLength(3);
+    expect(container.querySelectorAll('.user-turn')).toHaveLength(1);
     expect(container.querySelectorAll('.agent-turn')).toHaveLength(2);
     expect(container.querySelector('[data-subagent-conversation]')).toBeInTheDocument();
     expect(screen.queryByText('com_ui_prompt')).not.toBeInTheDocument();
-    expect(screen.getAllByText('com_ui_subagent_activity_details_truncated')).toHaveLength(1);
+    expect(
+      screen.queryByText('com_ui_subagent_activity_details_truncated'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('com_ui_subagent_activity_details_unavailable')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_event_details' }));
+    expect(screen.getByText('chess.turn.ready')).toBeInTheDocument();
+    expect(screen.getByText('speed-chess')).toBeInTheDocument();
+    expect(screen.getByText('submit_move')).toBeInTheDocument();
+  });
+
+  it('requests an exact bounded projection only when shortened turn activity is opened', () => {
+    const loadDetails = jest.fn();
+    const shortened = [
+      { ...turns[0], activity: { ...turns[0].activity, activityTruncated: true } },
+    ];
+    render(
+      <RecoilRoot>
+        <SubagentConversation turns={shortened} onLoadTurnDetails={loadDetails} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_show_full_activity' }));
+    expect(loadDetails).toHaveBeenCalledWith('task-1');
   });
 });

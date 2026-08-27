@@ -140,6 +140,7 @@ function getPreliminaryResponseMessageId({ messageId, responseMessageId }) {
 function getPreliminaryUserMessage(
   { messageId, parentMessageId, text, quotes, files, manualSkills, alwaysAppliedSkills },
   conversationId,
+  subagentTriggerProjection,
 ) {
   if (typeof messageId !== 'string' || messageId.length === 0) {
     return null;
@@ -170,6 +171,31 @@ function getPreliminaryUserMessage(
     ...(Array.isArray(manualSkills) && manualSkills.length > 0 && { manualSkills }),
     ...(Array.isArray(alwaysAppliedSkills) &&
       alwaysAppliedSkills.length > 0 && { alwaysAppliedSkills }),
+    ...(subagentTriggerProjection != null && { subagentTriggerProjection }),
+  };
+}
+
+function getAgentEventTriggerProjection(agentEventDelivery) {
+  const event = agentEventDelivery?.event;
+  const occurredAt = new Date(event?.occurredAt);
+  if (
+    typeof event?.type !== 'string' ||
+    event.type.length === 0 ||
+    typeof event?.source?.type !== 'string' ||
+    event.source.type.length === 0 ||
+    Number.isNaN(occurredAt.getTime())
+  ) {
+    return undefined;
+  }
+  const expectedActionToolName = agentEventDelivery?.expectedAction?.toolName;
+  return {
+    version: 1,
+    eventType: event.type.slice(0, 256),
+    sourceType: event.source.type.slice(0, 256),
+    occurredAt,
+    ...(typeof expectedActionToolName === 'string' && expectedActionToolName.length > 0
+      ? { expectedActionToolName: expectedActionToolName.slice(0, 256) }
+      : {}),
   };
 }
 
@@ -271,7 +297,7 @@ async function saveErrorTurn(
                   alwaysAppliedSkills: req.body.alwaysAppliedSkills,
                 }),
             }
-          : getPreliminaryUserMessage(req.body, conversationId);
+          : getPreliminaryUserMessage(req.body, conversationId, req._agentEventTriggerProjection);
       if (!userMessage) {
         return;
       }
@@ -1271,6 +1297,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     rawAgentEventDelivery.deliveryKey === clientRequestId
       ? rawAgentEventDelivery
       : undefined;
+  req._agentEventTriggerProjection = getAgentEventTriggerProjection(agentEventDelivery);
 
   try {
     logger.debug(`[ResumableAgentController] Creating job`, {
@@ -1285,6 +1312,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     const preliminaryUserMessage = getPreliminaryUserMessage(
       { ...req.body, messageId: preallocatedUserMessageId },
       conversationId,
+      req._agentEventTriggerProjection,
     );
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId, {
       startupTelemetry,

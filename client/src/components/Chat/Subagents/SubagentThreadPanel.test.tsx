@@ -22,12 +22,24 @@ const mockForkMutate = jest.fn();
 const mockControlMutate = jest.fn();
 const mockNavigateToConvo = jest.fn();
 const mockShowToast = jest.fn();
+const mockGetSubagentThread = jest.fn();
 const mockApprovalProviderMounted = jest.fn();
 const mockApprovalProviderUnmounted = jest.fn();
 let mockIsMobile = false;
 let mockParentChildrenByMessage = new Map<string, ParentSubagentSummary[]>();
 let mockParentChildrenByThread = new Map<string, ParentSubagentSummary>();
 const mockRefreshParentChildren = jest.fn().mockResolvedValue(undefined);
+
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    dataService: {
+      ...actual.dataService,
+      getSubagentThread: (...args: unknown[]) => mockGetSubagentThread(...args),
+    },
+  };
+});
 
 jest.mock('~/data-provider', () => ({
   ACTIVE_THREAD_REFRESH_MS: 2000,
@@ -151,13 +163,17 @@ jest.mock('./SubagentConversation', () => ({
   default: ({
     turns,
     stateByTask,
+    detailStateByTask,
+    onLoadTurnDetails,
   }: {
     turns: Array<{
       taskId: string;
       trigger: { summary: string };
-      activity: { items: Array<{ text?: string }> };
+      activity: { items: Array<{ text?: string }>; activityTruncated?: boolean };
     }>;
     stateByTask?: ReadonlyMap<string, string>;
+    detailStateByTask?: ReadonlyMap<string, string>;
+    onLoadTurnDetails?: (taskId: string) => void;
   }) => (
     <div
       data-testid="subagent-conversation"
@@ -169,6 +185,12 @@ jest.mock('./SubagentConversation', () => ({
           {turn.activity.items.map((item, index) => (
             <span key={index}>{item.text}</span>
           ))}
+          {turn.activity.activityTruncated === true && onLoadTurnDetails != null && (
+            <button type="button" onClick={() => onLoadTurnDetails(turn.taskId)}>
+              {`load-${turn.taskId}`}
+            </button>
+          )}
+          {detailStateByTask?.get(turn.taskId)}
         </div>
       ))}
     </div>
@@ -289,9 +311,14 @@ describe('SubagentThreadPanel', () => {
     mockControlMutate.mockClear();
     mockNavigateToConvo.mockClear();
     mockShowToast.mockClear();
+    mockGetSubagentThread.mockReset();
     mockRefreshParentChildren.mockClear();
     mockParentChildrenByMessage = new Map();
     mockParentChildrenByThread = new Map();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('renders a bounded read-only activity timeline and closes its selection', async () => {
@@ -328,7 +355,7 @@ describe('SubagentThreadPanel', () => {
     );
     expect(mockUseSubagentActivityStream).toHaveBeenCalledWith(selection, false);
     expect(screen.getByText('Research child')).toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_depth')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_subagent_depth')).not.toBeInTheDocument();
     expect(screen.getByText('Investigate the release.')).toBeInTheDocument();
     expect(screen.getByText('The release is ready.')).toBeInTheDocument();
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-status', 'completed');
@@ -369,7 +396,7 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_view_in_parent' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
 
     expect(active).toBeNull();
     await waitFor(() =>
@@ -1406,6 +1433,154 @@ describe('SubagentThreadPanel', () => {
     expect(mockRefreshParentChildren).toHaveBeenCalled();
   });
 
+  it('keeps a single event actor in the compact header without a duplicate selector', () => {
+    const eventChild: ParentSubagentSummary = {
+      threadId: 'child-thread',
+      parentMessageId: 'parent-message',
+      subagentType: 'agent-1',
+      subagentKind: 'agent',
+      agentId: 'agent-1',
+      title: 'First actor',
+      origin: 'event',
+      actorId: 'actor-1',
+      status: 'completed',
+      latestTaskId: 'task',
+      tasks: [{ taskId: 'task', status: 'completed' }],
+      tasksTruncated: false,
+    };
+    mockParentChildrenByMessage = new Map([['parent-message', [eventChild]]]);
+    mockParentChildrenByThread = new Map([[eventChild.threadId, eventChild]]);
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel
+          selection={{
+            ...selection,
+            event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task' },
+          }}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Analyst One' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('combobox', { name: 'com_ui_subagent_actor' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('com_ui_subagent_depth')).not.toBeInTheDocument();
+  });
+
+  it('loads an exact older turn projection only after the local disclosure is opened', async () => {
+    const truncatedView: SubagentThreadView = {
+      ...completedView,
+      turns: [
+        {
+          taskId: 'task-old',
+          trigger: { kind: 'parent_dispatch', summary: 'Old prompt' },
+          status: 'completed',
+          activity: [],
+          activityTruncated: true,
+          messages: [],
+        },
+        {
+          taskId: 'task',
+          trigger: { kind: 'parent_continuation', summary: 'Current prompt' },
+          status: 'completed',
+          activity: [{ type: 'writing', text: 'Current result' }],
+          activityTruncated: false,
+          messages: [],
+        },
+      ],
+    };
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: truncatedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    mockGetSubagentThread.mockResolvedValue({
+      ...completedView,
+      activity: [{ type: 'writing', text: 'Loaded exact activity' }],
+      activityTruncated: false,
+      messages: [],
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(mockGetSubagentThread).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'load-task-old' }));
+    await waitFor(() => expect(screen.getByText('Loaded exact activity')).toBeInTheDocument());
+    expect(mockGetSubagentThread).toHaveBeenCalledTimes(1);
+    expect(mockGetSubagentThread).toHaveBeenCalledWith(
+      'parent-conversation',
+      'child-thread',
+      'task-old',
+    );
+  });
+
+  it('prepends an older bounded page without adding it to live polling', async () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: {
+        ...completedView,
+        nextCursor: 'older:assistant',
+        turns: [
+          {
+            taskId: 'task',
+            trigger: { kind: 'parent_dispatch', summary: 'Current prompt' },
+            status: 'completed',
+            activity: [{ type: 'writing', text: 'Current result' }],
+            activityTruncated: false,
+            messages: [],
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    mockGetSubagentThread.mockResolvedValue({
+      ...completedView,
+      activity: [],
+      messages: [],
+      historyTruncated: false,
+      turns: [
+        {
+          taskId: 'older',
+          trigger: { kind: 'parent_dispatch', summary: 'Older prompt' },
+          status: 'completed',
+          activity: [{ type: 'writing', text: 'Older result' }],
+          activityTruncated: false,
+          messages: [],
+        },
+      ],
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+    await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(2));
+    expect(mockGetSubagentThread).toHaveBeenCalledWith(
+      'parent-conversation',
+      'child-thread',
+      undefined,
+      'older:assistant',
+    );
+    expect(mockUseSubagentThreadQuery.mock.calls.every((call) => call[2] === 'task')).toBe(true);
+  });
+
   it('follows a newly appended latest turn while preserving the continuous history', async () => {
     const eventChild: ParentSubagentSummary = {
       threadId: 'child-thread',
@@ -1507,6 +1682,6 @@ describe('SubagentThreadPanel', () => {
     expect(new Set(mockUseSubagentThreadQuery.mock.calls.map((call) => call[2]))).toEqual(
       new Set(['task-5', 'task-4', 'task-3', 'task-2', 'task-1']),
     );
-    expect(screen.getByText('com_ui_subagent_thread_history_truncated')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_subagent_thread_history_truncated')).not.toBeInTheDocument();
   });
 });

@@ -4,7 +4,6 @@ import type {
   PartMetadata,
   SubagentActivityItem,
   SubagentControlReceipt,
-  SubagentThreadTriggerKind,
   SubagentThreadTurn,
   SubagentThreadStatus,
   SubagentThreadView,
@@ -66,12 +65,7 @@ export type ChildActivity = {
 
 export type ChildConversationTurn = {
   taskId: string;
-  trigger: {
-    kind: SubagentThreadTriggerKind;
-    summary: string;
-    createdAt?: string;
-    summaryTruncated?: boolean;
-  };
+  trigger: SubagentThreadTurn['trigger'];
   activity: ChildActivity;
 };
 

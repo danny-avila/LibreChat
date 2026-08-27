@@ -366,6 +366,7 @@ export type SubagentThreadViewMessageRecord = Pick<
   | 'error'
   | 'unfinished'
   | 'subagentTranscript'
+  | 'subagentTriggerProjection'
 > & {
   textProjectionTruncated?: boolean;
   subagentTranscriptProjectionTruncated?: boolean;
@@ -499,6 +500,7 @@ export interface MessageMethods {
     conversationId: string;
     tenantId?: string;
     selectedTaskId?: string;
+    beforeMessageId?: string;
     limit: number;
     textCodePointLimit: number;
   }): Promise<SubagentThreadViewMessageRecord[]>;
@@ -1462,6 +1464,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     conversationId: string;
     tenantId?: string;
     selectedTaskId?: string;
+    beforeMessageId?: string;
     limit: number;
     textCodePointLimit: number;
   }): Promise<SubagentThreadViewMessageRecord[]> {
@@ -1855,6 +1858,36 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           ],
         },
         subagentTask: boundedSubagentTask,
+        subagentTriggerProjection: {
+          $cond: [
+            { $eq: ['$subagentTriggerProjection.version', 1] },
+            {
+              version: 1,
+              eventType: boundedString(
+                '$subagentTriggerProjection.eventType',
+                SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT,
+              ),
+              sourceType: boundedString(
+                '$subagentTriggerProjection.sourceType',
+                SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT,
+              ),
+              occurredAt: '$subagentTriggerProjection.occurredAt',
+              expectedActionToolName: {
+                $cond: [
+                  {
+                    $eq: [{ $type: '$subagentTriggerProjection.expectedActionToolName' }, 'string'],
+                  },
+                  boundedString(
+                    '$subagentTriggerProjection.expectedActionToolName',
+                    SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT,
+                  ),
+                  '$$REMOVE',
+                ],
+              },
+            },
+            '$$REMOVE',
+          ],
+        },
       };
       const sourceMetadataProjection = {
         _subagentTranscriptSourceBytes: transcriptJsonBytes,
@@ -1894,17 +1927,34 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           ? { tenantId: { $exists: false } }
           : { tenantId: input.tenantId }),
       };
+      const anchor =
+        input.beforeMessageId == null
+          ? null
+          : await Message.findOne({ ...baseMatch, messageId: input.beforeMessageId })
+              .select('_id createdAt')
+              .lean<Pick<IMessage, '_id' | 'createdAt'>>();
+      if (input.beforeMessageId != null && anchor == null) return [];
+      const pageMatch =
+        anchor == null
+          ? baseMatch
+          : {
+              ...baseMatch,
+              $or: [
+                { createdAt: { $lt: anchor.createdAt } },
+                { createdAt: anchor.createdAt, _id: { $lte: anchor._id } },
+              ],
+            };
       /** Keep rows as independent MongoDB results. A `$facet` would combine the
        * complete page into one BSON document and could exceed MongoDB's 16 MiB
        * document limit before the API applies its smaller public byte budget. */
       const messagesPromise = Message.aggregate<SubagentThreadViewMessageRecord>([
-        { $match: baseMatch },
+        { $match: pageMatch },
         { $sort: { createdAt: -1, _id: -1 } },
         { $limit: input.limit },
         { $project: boundedMessageProjection },
       ]);
       const recentSourcesPromise = Message.aggregate<ActivitySourceProjection>([
-        { $match: baseMatch },
+        { $match: pageMatch },
         { $sort: { createdAt: -1, _id: -1 } },
         { $limit: SUBAGENT_ACTIVITY_SOURCE_CANDIDATE_LIMIT },
         {
