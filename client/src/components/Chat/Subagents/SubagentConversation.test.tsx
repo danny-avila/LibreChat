@@ -125,7 +125,11 @@ describe('SubagentConversation', () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_activity_details_unavailable')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_event_details' }));
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /com_ui_subagent_trigger_external_event.*chess\.turn\.ready.*speed-chess/,
+      }),
+    );
     expect(screen.getByText('chess.turn.ready')).toBeInTheDocument();
     expect(screen.getByText('speed-chess')).toBeInTheDocument();
     expect(screen.getByText('submit_move')).toBeInTheDocument();
@@ -144,5 +148,38 @@ describe('SubagentConversation', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_show_full_activity' }));
     expect(loadDetails).toHaveBeenCalledWith('task-1');
+  });
+
+  it('gives repeated external-event disclosures distinguishable accessible names', () => {
+    const secondEvent: ChildConversationTurn = {
+      ...turns[1],
+      taskId: 'task-3',
+      trigger: {
+        kind: 'external_event',
+        summary: '',
+        externalEvent: {
+          eventType: 'review.ready',
+          sourceType: 'github',
+          occurredAt: '2026-08-25T12:02:00.000Z',
+        },
+      },
+    };
+
+    render(
+      <RecoilRoot>
+        <SubagentConversation turns={[turns[1], secondEvent]} />
+      </RecoilRoot>,
+    );
+
+    expect(
+      screen.getByRole('button', {
+        name: /com_ui_subagent_trigger_external_event.*chess\.turn\.ready.*speed-chess/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {
+        name: /com_ui_subagent_trigger_external_event.*review\.ready.*github/,
+      }),
+    ).toBeInTheDocument();
   });
 });

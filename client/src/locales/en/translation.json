@@ -2219,7 +2219,6 @@
   "com_ui_subagent_activity_details_unavailable": "Additional activity details are unavailable.",
   "com_ui_subagent_show_full_activity": "Show full activity",
   "com_ui_subagent_load_earlier_activity": "Load earlier activity",
-  "com_ui_subagent_event_details": "Show external event details",
   "com_ui_subagent_event_type": "Event",
   "com_ui_subagent_event_source": "Source",
   "com_ui_subagent_event_received": "Occurred",

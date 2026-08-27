@@ -175,27 +175,32 @@ function getPreliminaryUserMessage(
   };
 }
 
+const DISPLAY_IDENTITY_CONTROLS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu;
+
+function sanitizeEventDisplayIdentity(value) {
+  if (typeof value !== 'string') return undefined;
+  const bounded = Array.from(value).slice(0, 512).join('');
+  const sanitized = bounded.normalize('NFC').replace(DISPLAY_IDENTITY_CONTROLS, ' ').trim();
+  return sanitized.length === 0 ? undefined : Array.from(sanitized).slice(0, 256).join('');
+}
+
 function getAgentEventTriggerProjection(agentEventDelivery) {
   const event = agentEventDelivery?.event;
   const occurredAt = new Date(event?.occurredAt);
-  if (
-    typeof event?.type !== 'string' ||
-    event.type.length === 0 ||
-    typeof event?.source?.type !== 'string' ||
-    event.source.type.length === 0 ||
-    Number.isNaN(occurredAt.getTime())
-  ) {
+  const eventType = sanitizeEventDisplayIdentity(event?.type);
+  const sourceType = sanitizeEventDisplayIdentity(event?.source?.type);
+  if (eventType == null || sourceType == null || Number.isNaN(occurredAt.getTime())) {
     return undefined;
   }
-  const expectedActionToolName = agentEventDelivery?.expectedAction?.toolName;
+  const expectedActionToolName = sanitizeEventDisplayIdentity(
+    agentEventDelivery?.expectedAction?.toolName,
+  );
   return {
     version: 1,
-    eventType: event.type.slice(0, 256),
-    sourceType: event.source.type.slice(0, 256),
+    eventType,
+    sourceType,
     occurredAt,
-    ...(typeof expectedActionToolName === 'string' && expectedActionToolName.length > 0
-      ? { expectedActionToolName: expectedActionToolName.slice(0, 256) }
-      : {}),
+    ...(expectedActionToolName == null ? {} : { expectedActionToolName }),
   };
 }
 

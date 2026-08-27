@@ -191,6 +191,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     taskId,
     eventTaskRunning ? { refetchInterval: ACTIVE_THREAD_REFRESH_MS } : undefined,
   );
+  const latestHistoryGeneration = JSON.stringify([
+    data?.nextCursor ?? null,
+    ...(data?.turns?.map((turn) => turn.taskId) ?? []),
+  ]);
+  const latestHistoryGenerationRef = useRef(latestHistoryGeneration);
+  latestHistoryGenerationRef.current = latestHistoryGeneration;
   const durableTerminal =
     subagentThreadHasTaskEvidence(data, taskId) &&
     (data?.status === 'completed' ||
@@ -329,14 +335,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const loadEarlierHistory = useCallback(async () => {
     const cursor = historyCursor === undefined ? data?.nextCursor : historyCursor;
     const requestedThreadId = threadId;
-    if (
-      cursor == null ||
-      historyState === 'loading' ||
-      historyRequestRef.current === requestedThreadId
-    ) {
+    const requestedGeneration = latestHistoryGeneration;
+    const requestKey = `${requestedThreadId}\u0000${cursor ?? ''}\u0000${requestedGeneration}`;
+    if (cursor == null || historyState === 'loading' || historyRequestRef.current != null) {
       return;
     }
-    historyRequestRef.current = requestedThreadId;
+    historyRequestRef.current = requestKey;
     setHistoryState('loading');
     try {
       const page = await dataService.getSubagentThread(
@@ -346,6 +350,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         cursor,
       );
       if (activeThreadRef.current !== requestedThreadId) return;
+      if (latestHistoryGenerationRef.current !== requestedGeneration) {
+        setHistoryState('idle');
+        return;
+      }
       const pageTurns = adaptDurableThreadConversation(page);
       setOlderTurns((current) => {
         const seen = new Set(current.map((turn) => turn.taskId));
@@ -357,9 +365,16 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       if (activeThreadRef.current !== requestedThreadId) return;
       setHistoryState('error');
     } finally {
-      if (historyRequestRef.current === requestedThreadId) historyRequestRef.current = null;
+      if (historyRequestRef.current === requestKey) historyRequestRef.current = null;
     }
-  }, [data?.nextCursor, historyCursor, historyState, selection.parentConversationId, threadId]);
+  }, [
+    data?.nextCursor,
+    historyCursor,
+    historyState,
+    latestHistoryGeneration,
+    selection.parentConversationId,
+    threadId,
+  ]);
 
   const controlTask = useSubagentControlMutation({
     onSuccess: ({ receipt }, variables) => {
@@ -749,7 +764,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   if (hasConversationProjection) {
     activityPanel = (
       <SubagentActivityScrollSurface padded={false}>
-        {effectiveHistoryCursor != null && (
+        {effectiveHistoryCursor != null && historyState !== 'error' && (
           <div className="flex justify-center border-b border-border-light px-4 py-2">
             <Button
               type="button"

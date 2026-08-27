@@ -53,7 +53,6 @@ function ExternalEventTrigger({ turn }: { turn: ChildConversationTurn }) {
           type="button"
           variant="ghost"
           className="h-auto min-h-9 w-full justify-start gap-2 px-0 text-left text-sm text-text-secondary hover:bg-transparent hover:text-text-primary"
-          aria-label={localize('com_ui_subagent_event_details')}
         >
           <TriggerIcon kind="external_event" />
           <span className="font-medium">{label}</span>

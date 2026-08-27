@@ -1581,6 +1581,134 @@ describe('SubagentThreadPanel', () => {
     expect(mockUseSubagentThreadQuery.mock.calls.every((call) => call[2] === 'task')).toBe(true);
   });
 
+  it('discards an older-page response when the latest cursor generation advances', async () => {
+    let resolveOlderPage: (view: SubagentThreadView) => void = () => undefined;
+    const olderPage = new Promise<SubagentThreadView>((resolve) => {
+      resolveOlderPage = resolve;
+    });
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: {
+        ...completedView,
+        nextCursor: 'older-a:assistant',
+        turns: [
+          {
+            taskId: 'task',
+            trigger: { kind: 'parent_dispatch', summary: 'Current prompt' },
+            status: 'completed',
+            activity: [{ type: 'writing', text: 'Current result' }],
+            activityTruncated: false,
+            messages: [],
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    mockGetSubagentThread.mockReturnValueOnce(olderPage);
+
+    const { rerender } = render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: {
+        ...completedView,
+        nextCursor: 'older-b:assistant',
+        turns: [
+          {
+            taskId: 'task-new',
+            trigger: { kind: 'parent_continuation', summary: 'New prompt' },
+            status: 'completed',
+            activity: [{ type: 'writing', text: 'New result' }],
+            activityTruncated: false,
+            messages: [],
+          },
+          {
+            taskId: 'task',
+            trigger: { kind: 'parent_dispatch', summary: 'Current prompt' },
+            status: 'completed',
+            activity: [{ type: 'writing', text: 'Current result' }],
+            activityTruncated: false,
+            messages: [],
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    rerender(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    await act(async () => {
+      resolveOlderPage({
+        ...completedView,
+        activity: [],
+        messages: [],
+        turns: [
+          {
+            taskId: 'older-a',
+            trigger: { kind: 'parent_dispatch', summary: 'Displaced prompt' },
+            status: 'completed',
+            activity: [{ type: 'writing', text: 'Displaced result' }],
+            activityTruncated: false,
+            messages: [],
+          },
+        ],
+      });
+      await olderPage;
+    });
+
+    expect(screen.queryByText('Displaced result')).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }),
+      ).toBeEnabled(),
+    );
+  });
+
+  it('shows only the retry control after an earlier-history request fails', async () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: {
+        ...completedView,
+        nextCursor: 'older:assistant',
+        turns: [
+          {
+            taskId: 'task',
+            trigger: { kind: 'parent_dispatch', summary: 'Current prompt' },
+            status: 'completed',
+            activity: [{ type: 'writing', text: 'Current result' }],
+            activityTruncated: false,
+            messages: [],
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    mockGetSubagentThread.mockRejectedValueOnce(new Error('history unavailable'));
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeEnabled());
+    expect(
+      screen.queryByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('follows a newly appended latest turn while preserving the continuous history', async () => {
     const eventChild: ParentSubagentSummary = {
       threadId: 'child-thread',

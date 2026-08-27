@@ -602,7 +602,7 @@ describe('subagent thread parent-scoped view', () => {
     );
     expect(view.historyTruncated).toBe(true);
     const firstRetainedTask = Number(view.turns[0].taskId.replace('task-', ''));
-    expect(view.nextCursor).toBe(`task-${firstRetainedTask - 1}:user`);
+    expect(view.nextCursor).toBe(`task-${firstRetainedTask - 1}:assistant`);
   });
 
   it('requires tenantless messages when the authenticated request has no tenant', async () => {

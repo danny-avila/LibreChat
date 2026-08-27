@@ -738,10 +738,13 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
       while (Buffer.byteLength(JSON.stringify(view), 'utf8') > MAX_RESPONSE_BYTES) {
         if ((view.turns?.length ?? 0) > 1) {
           const removedTurn = view.turns?.shift();
-          const removedTurnAnchor = branch.find(
-            (message) =>
-              removedTurn != null && taskIdFromMessageId(message.messageId) === removedTurn.taskId,
-          )?.messageId;
+          const removedTurnAnchor = [...branch]
+            .reverse()
+            .find(
+              (message) =>
+                removedTurn != null &&
+                taskIdFromMessageId(message.messageId) === removedTurn.taskId,
+            )?.messageId;
           if (validTaskMessageId(removedTurnAnchor)) view.nextCursor = removedTurnAnchor;
           view.historyTruncated = true;
           continue;

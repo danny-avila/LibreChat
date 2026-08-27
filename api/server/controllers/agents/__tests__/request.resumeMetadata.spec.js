@@ -4021,9 +4021,9 @@ describe('ResumableAgentController resume metadata', () => {
     });
     const event = {
       id: 'game-1:ply-8',
-      type: 'chess.turn',
+      type: 'chess.\u202Eturn',
       occurredAt: Date.now(),
-      source: { id: 'speed-chess', type: 'mcp' },
+      source: { id: 'speed-chess', type: 'm\u2066cp' },
       payload: { gameId: 'game-1', expectedPly: 8 },
     };
     const req = {
@@ -4037,7 +4037,7 @@ describe('ResumableAgentController resume metadata', () => {
           deliveryKey: 'req-event-fork',
           target: { bindingId: 'binding-1' },
           event,
-          expectedAction: { toolName: 'submit_move', argumentSubset: { expectedPly: 8 } },
+          expectedAction: { toolName: 'submit_\u200Fmove', argumentSubset: { expectedPly: 8 } },
         },
       },
       config: {
@@ -4064,7 +4064,7 @@ describe('ResumableAgentController resume metadata', () => {
         conversationId: 'child-conversation',
         invocationId: 'req-event-fork',
         event,
-        expectedAction: { toolName: 'submit_move', argumentSubset: { expectedPly: 8 } },
+        expectedAction: { toolName: 'submit_\u200Fmove', argumentSubset: { expectedPly: 8 } },
       }),
       {
         getSnapshot: expect.any(Function),
@@ -4079,6 +4079,13 @@ describe('ResumableAgentController resume metadata', () => {
       },
     );
     expect(mockExecuteAgentEventActor.mock.calls[0][0]).not.toHaveProperty('tenantId');
+    expect(req._agentEventTriggerProjection).toEqual({
+      version: 1,
+      eventType: 'chess. turn',
+      sourceType: 'm cp',
+      occurredAt: new Date(event.occurredAt),
+      expectedActionToolName: 'submit_ move',
+    });
     expect(client).toMatchObject({
       checkpointNamespace: 'event-actor/fork',
       eventActorCheckpointId: 'checkpoint-base',
