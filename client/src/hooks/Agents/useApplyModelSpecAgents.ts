@@ -3,6 +3,7 @@ import {
   Constants,
   resolveSpecArtifacts,
   resolveSpecMcpServers,
+  resolveSpecUserToggles,
   resolveSpecSkillsEnabled,
 } from 'librechat-data-provider';
 import type { TStartupConfig, TSubmission } from 'librechat-data-provider';
@@ -103,15 +104,19 @@ export function useApplyAgentTemplate() {
         return;
       }
 
+      /** Drop toggles the spec holds authority over before propagating them to
+       *  the saved conversation, so the pinned state is re-derived here rather
+       *  than inherited from whatever was submitted. */
+      const submitted = resolveSpecUserToggles(ephemeralAgent, modelSpec);
       const mergedAgent = {
-        ...ephemeralAgent,
-        mcp: [...new Set(resolveSpecMcpServers(ephemeralAgent?.mcp, modelSpec.mcpServers))],
-        web_search: ephemeralAgent?.web_search ?? modelSpec.webSearch ?? false,
-        file_search: ephemeralAgent?.file_search ?? modelSpec.fileSearch ?? false,
-        execute_code: ephemeralAgent?.execute_code ?? modelSpec.executeCode ?? false,
-        memory: ephemeralAgent?.memory ?? modelSpec.memory ?? false,
-        skills: resolveSpecSkillsEnabled(ephemeralAgent?.skills, modelSpec.skills),
-        artifacts: resolveSpecArtifacts(ephemeralAgent?.artifacts, modelSpec.artifacts) ?? '',
+        ...submitted,
+        mcp: [...new Set(resolveSpecMcpServers(submitted?.mcp, modelSpec.mcpServers))],
+        web_search: submitted?.web_search ?? modelSpec.webSearch ?? false,
+        file_search: submitted?.file_search ?? modelSpec.fileSearch ?? false,
+        execute_code: submitted?.execute_code ?? modelSpec.executeCode ?? false,
+        memory: submitted?.memory ?? modelSpec.memory ?? false,
+        skills: resolveSpecSkillsEnabled(submitted?.skills, modelSpec.skills),
+        artifacts: resolveSpecArtifacts(submitted?.artifacts, modelSpec.artifacts) ?? '',
       };
 
       applyAgentTemplate(targetId, sourceId, mergedAgent);

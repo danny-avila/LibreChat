@@ -206,6 +206,29 @@ describe('useApplyAgentTemplate spec merge (#15277)', () => {
     expect(result.current.ephemeralAgent?.mcp).toEqual(['clickhouse']);
   });
 
+  it("re-pins a hidden spec's capabilities rather than trusting what was submitted", () => {
+    const { result } = renderHook(() => useTemplateHarness(targetId), { wrapper: Wrapper });
+
+    act(() => {
+      result.current.applyAgentTemplate({
+        targetId,
+        sourceId: NEW_CONVO,
+        ephemeralAgent: { web_search: false, mcp: [], memory: false },
+        specName: 'test-spec',
+        startupConfig: specWithTools({
+          hideBadgeRow: true,
+          webSearch: true,
+          mcpServers: ['clickhouse'],
+        }),
+      });
+    });
+
+    expect(result.current.ephemeralAgent?.web_search).toBe(true);
+    expect(result.current.ephemeralAgent?.mcp).toEqual(['clickhouse']);
+    /** The spec is silent on memory, so the submitted value still stands. */
+    expect(result.current.ephemeralAgent?.memory).toBe(false);
+  });
+
   it('carries an explicit tool opt-out through the merge', () => {
     const { result } = renderHook(() => useTemplateHarness(targetId), { wrapper: Wrapper });
 
