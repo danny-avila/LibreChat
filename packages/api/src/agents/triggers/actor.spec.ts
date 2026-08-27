@@ -8,8 +8,8 @@ import {
   forkAgentEventCheckpoint,
   getAgentCheckpointer,
 } from '../checkpointer';
-import { createAgentContextFingerprint } from '../compatibility';
 import { createAgentEventActionRecorder, findAgentEventAppliedAction } from './outcome';
+import { createAgentContextFingerprint } from '../compatibility';
 import { executeAgentEventActor } from './actor';
 
 jest.mock('../checkpointer', () => ({

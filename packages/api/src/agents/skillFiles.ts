@@ -24,9 +24,9 @@ import { seedCodeFilesIntoSessions, type CodeExecutionProfileRoute } from './cod
 import { ContentFilterError, isContentFilterError } from '~/middleware/contentFilter';
 import { createConcurrencyLimiter, getSafeErrorMetadata } from '~/utils';
 import { assertSkillFileContentAllowed } from '~/skills/protection';
+import { createSkillContentDigest } from './compatibility';
 import { extractInvokedSkillsFromPayload } from './run';
 import { SKILL_FILE_PREFIX } from './skills';
-import { createSkillContentDigest } from './compatibility';
 
 const MAX_INSPECTABLE_SKILL_FILE_BYTES = 10 * 1024 * 1024;
 const SKILL_FILE_CONTENT_FIELDS = ['file_text'] as const;

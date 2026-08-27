@@ -27,10 +27,10 @@ import {
 } from './chatProject';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { MAX_AGENT_EVENT_ACTOR_SKILLS } from '~/types/convo';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
 import logger from '~/config/winston';
-import { MAX_AGENT_EVENT_ACTOR_SKILLS } from '~/types/convo';
 
 const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 90 * 24 * 60 * 60_000;
 

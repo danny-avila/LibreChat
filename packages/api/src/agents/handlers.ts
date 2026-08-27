@@ -68,8 +68,8 @@ import {
 } from './intent';
 import { getSafeErrorMetadata, logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
-import { createSkillContentDigest } from './compatibility';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
+import { createSkillContentDigest } from './compatibility';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';

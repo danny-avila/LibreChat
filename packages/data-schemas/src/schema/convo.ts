@@ -1,7 +1,7 @@
 import { Schema } from 'mongoose';
+import { MAX_AGENT_EVENT_ACTOR_SKILLS } from '~/types/convo';
 import { conversationPreset } from './defaults';
 import { IConversation } from '~/types';
-import { MAX_AGENT_EVENT_ACTOR_SKILLS } from '~/types/convo';
 
 const convoSchema: Schema<IConversation> = new Schema(
   {

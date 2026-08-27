@@ -14,10 +14,9 @@ import type {
   IAgentEventActorSkillIdentity,
 } from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
+import type { AgentContextFingerprint } from '../compatibility';
 import type { AgentTriggerExpectedAction } from './envelope';
 import type { AgentEventAppliedAction } from './outcome';
-import type { AgentContextFingerprint } from '../compatibility';
-import { agentContextFingerprintsMatch } from '../compatibility';
 import {
   captureAgentEventCheckpoint,
   deleteAgentCheckpoint,
@@ -25,6 +24,7 @@ import {
   getAgentCheckpointer,
   getApprovalTtlMs,
 } from '../checkpointer';
+import { agentContextFingerprintsMatch } from '../compatibility';
 
 interface EventActorResult extends Record<string, EventActorEvent> {
   action: AgentEventAppliedAction;
