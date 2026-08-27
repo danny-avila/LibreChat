@@ -118,12 +118,23 @@ export async function loadAddedAgent(
   }
 
   const appConfig = req.config as AppConfig | undefined;
-  /** An added conversation carries no toggles of its own — the composer's badge
-   *  row is shared by both panes and submits one `ephemeralAgent` — so the
-   *  request's state is the only expression of user intent for this pane. */
-  const ephemeralAgent = (rest.ephemeralAgent ?? req.body?.ephemeralAgent) as
-    | TEphemeralAgent
-    | undefined;
+  const modelSpecs = (appConfig?.modelSpecs as { list?: TModelSpec[] })?.list;
+  const modelSpec: TModelSpec | null =
+    spec != null && spec !== '' ? (modelSpecs?.find((s) => s.name === spec) ?? null) : null;
+
+  /** An added pane carries no toggles of its own — one badge row is shared by
+   *  both panes and submits a single `ephemeralAgent` — so the request's state
+   *  stands in, field by field, for whatever the pane leaves unset. Merged
+   *  rather than substituted so a pane that does carry a partial object still
+   *  inherits the toggles it omits.
+   *
+   *  A pane whose spec hides the badge row is exempt: those toggles were never
+   *  offered for it, so the other pane's choices must not silently strip the
+   *  capabilities its spec configured. */
+  const requestAgent = modelSpec?.hideBadgeRow === true ? undefined : req.body?.ephemeralAgent;
+  const paneAgent = rest.ephemeralAgent;
+  const ephemeralAgent: TEphemeralAgent | undefined =
+    requestAgent || paneAgent ? { ...requestAgent, ...paneAgent } : undefined;
 
   const primaryIsEphemeral = primaryAgent && isEphemeralAgentId(primaryAgent.id);
   if (primaryIsEphemeral && Array.isArray(primaryAgent.tools)) {
@@ -140,8 +151,6 @@ export async function loadAddedAgent(
       }
     }
 
-    const modelSpecs = (appConfig?.modelSpecs as { list?: TModelSpec[] })?.list;
-    const modelSpec = spec != null && spec !== '' ? modelSpecs?.find((s) => s.name === spec) : null;
     const sender = getEphemeralSender({
       modelLabel: rest.modelLabel,
       specLabel: modelSpec?.label,
@@ -179,11 +188,6 @@ export async function loadAddedAgent(
 
   const userId = req.user?.id ?? '';
 
-  const modelSpecs = (appConfig?.modelSpecs as { list?: TModelSpec[] })?.list;
-  let modelSpec: (typeof modelSpecs extends Array<infer T> | undefined ? T : never) | null = null;
-  if (spec != null && spec !== '') {
-    modelSpec = modelSpecs?.find((s) => s.name === spec) ?? null;
-  }
   const mcpServers = new Set<string>(
     resolveSpecMcpServers(ephemeralAgent?.mcp, modelSpec?.mcpServers),
   );

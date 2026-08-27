@@ -1171,6 +1171,47 @@ describe('loadAgent', () => {
       expect(result?.skills_enabled).toBe(true);
     });
 
+    test('a partial pane object still inherits the toggles it omits', async () => {
+      mockGetMCPServerTools.mockImplementation(async (_userId: string, server: string) => ({
+        [`lookup_mcp_${server}`]: { name: `lookup_mcp_${server}` },
+      }));
+
+      const result = await loadAddedAgent(
+        {
+          req: addedReq({ web_search: true, mcp: ['jira'] }, {}),
+          conversation: {
+            ...addedConversation,
+            ephemeralAgent: { skills: false },
+          } as unknown as TConversation,
+        },
+        deps,
+      );
+
+      expect(result?.tools).toEqual(['web_search', 'lookup_mcp_jira']);
+    });
+
+    test('a pane whose spec hides the badge row keeps its spec capabilities', async () => {
+      mockGetMCPServerTools.mockImplementation(async (_userId: string, server: string) => ({
+        [`lookup_mcp_${server}`]: { name: `lookup_mcp_${server}` },
+      }));
+
+      /** Those toggles were never offered for this pane, so the other pane's
+       *  choices must not strip what its own spec configured. */
+      const result = await loadAddedAgent(
+        {
+          req: addedReq(
+            { web_search: false, skills: false, mcp: [] },
+            { hideBadgeRow: true, webSearch: true, skills: true, mcpServers: ['crm'] },
+          ),
+          conversation: addedConversation,
+        },
+        deps,
+      );
+
+      expect(result?.tools).toEqual(['web_search', 'lookup_mcp_crm']);
+      expect(result?.skills_enabled).toBe(true);
+    });
+
     test("the added pane's own toggles still outrank the request when present", async () => {
       const result = await loadAddedAgent(
         {
