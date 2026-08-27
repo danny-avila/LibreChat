@@ -396,6 +396,7 @@ describe('child activity adapters', () => {
           input: '{"query":"release"}',
           output: 'Found it.',
           status: 'completed',
+          inputValidationError: true,
         },
         { type: 'writing', text: 'Durable answer.' },
       ],
@@ -424,6 +425,9 @@ describe('child activity adapters', () => {
         status: 'completed',
         items: view.activity,
       }),
+    );
+    expect(adaptDurableThreadActivity(view, 'task').items[0]).toEqual(
+      expect.objectContaining({ inputValidationError: true }),
     );
   });
 

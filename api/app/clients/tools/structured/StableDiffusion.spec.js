@@ -6,13 +6,9 @@ jest.mock('axios', () => ({ post: jest.fn() }), { virtual: true });
 jest.mock('fs');
 jest.mock('sharp', () => jest.fn(), { virtual: true });
 jest.mock('uuid', () => ({ v4: jest.fn() }), { virtual: true });
-jest.mock(
-  '@librechat/data-schemas',
-  () => ({
-    logger: { error: jest.fn() },
-  }),
-  { virtual: true },
-);
+jest.mock('@librechat/data-schemas', () => ({
+  logger: { error: jest.fn() },
+}));
 jest.mock(
   '@librechat/agents/langchain/tools',
   () => ({

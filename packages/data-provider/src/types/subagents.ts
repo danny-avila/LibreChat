@@ -56,12 +56,26 @@ export type SubagentActivityItem =
       type: 'reasoning';
     }
   | {
+      type: 'activity_label';
+      label: string;
+      labelType?: 'phase';
+      toolCallIds?: string[];
+      activityStartIndex?: number;
+      activityEndIndex?: number;
+      activityCount?: number;
+      agentIds?: string[];
+      status?: 'ok' | 'partial' | 'failed';
+      pending?: boolean;
+      labelTruncated?: boolean;
+    }
+  | {
       type: 'tool';
       toolCallId: string;
       name: string;
       input?: string;
       output?: string;
       status: 'running' | 'completed' | 'failed' | 'cancelled';
+      inputValidationError?: true;
       inputTruncated?: boolean;
       outputTruncated?: boolean;
     };
@@ -103,6 +117,31 @@ export type SubagentThreadMessage = {
   textTruncated?: boolean;
 };
 
+export type SubagentThreadTriggerKind =
+  | 'parent_dispatch'
+  | 'parent_continuation'
+  | 'external_event';
+
+/**
+ * One chronological child execution boundary. The trigger is host-authored,
+ * while activity and messages are bounded public projections of the child run.
+ */
+export type SubagentThreadTurn = {
+  taskId: string;
+  trigger: {
+    kind: SubagentThreadTriggerKind;
+    summary: string;
+    createdAt?: string;
+    summaryTruncated?: boolean;
+  };
+  status: SubagentThreadStatus;
+  activity: SubagentActivityItem[];
+  activityTruncated: boolean;
+  controlReceipts?: SubagentControlReceipt[];
+  controlReceiptsTruncated?: boolean;
+  messages: SubagentThreadMessage[];
+};
+
 export type SubagentThreadView = {
   threadId: string;
   parentConversationId: string;
@@ -110,6 +149,8 @@ export type SubagentThreadView = {
   parentToolCallId: string;
   subagentType: string;
   subagentKind: 'agent' | 'graph';
+  /** Product recursion level, currently bounded to one by the host runtime. */
+  depth?: number;
   agentId?: string;
   title: string;
   status: SubagentThreadStatus;
@@ -120,6 +161,8 @@ export type SubagentThreadView = {
   controlReceipts?: SubagentControlReceipt[];
   /** True when older authoritative command receipts were omitted from this view. */
   controlReceiptsTruncated?: boolean;
+  /** Chronological, branch-selected child history for conversation-native rendering. */
+  turns?: SubagentThreadTurn[];
   messages: SubagentThreadMessage[];
   historyTruncated: boolean;
   updatedAt?: string;
