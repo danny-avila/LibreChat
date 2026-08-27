@@ -111,7 +111,7 @@ export function getWebSearchInstallEntries({
   const selectionEntries: [string, string][] = [];
 
   for (const [key, value] of Object.entries(auth)) {
-    if (typeof value !== 'string' || value === '') {
+    if (typeof value !== 'string') {
       continue;
     }
 

@@ -277,13 +277,13 @@ export default function ApiKeyDialog({
 
   const handleVisibleSubmit = (data: SearchApiKeyFormData) => {
     const visibleData = { ...data };
-    if (providerAuthType === AuthType.SYSTEM_DEFINED) {
+    if (providerAuthType === AuthType.SYSTEM_DEFINED || config?.webSearch?.searchProvider != null) {
       delete visibleData.selectedProvider;
     }
-    if (scraperAuthType === AuthType.SYSTEM_DEFINED) {
+    if (scraperAuthType === AuthType.SYSTEM_DEFINED || config?.webSearch?.scraperProvider != null) {
       delete visibleData.selectedScraper;
     }
-    if (rerankerAuthType === AuthType.SYSTEM_DEFINED) {
+    if (rerankerAuthType === AuthType.SYSTEM_DEFINED || config?.webSearch?.rerankerType != null) {
       delete visibleData.selectedReranker;
     }
     onSubmit(visibleData);

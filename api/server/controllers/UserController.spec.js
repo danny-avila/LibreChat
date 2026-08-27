@@ -10,6 +10,7 @@ const mockPurgeAgentTriggerDeliveriesForUser = jest.fn().mockResolvedValue(undef
 const mockCancelAndDrainSubagentThreads = jest.fn().mockResolvedValue(undefined);
 const mockQuiesceUserSchedules = jest.fn().mockResolvedValue(true);
 const mockRestoreUserSchedules = jest.fn().mockResolvedValue(undefined);
+const mockGetWebSearchInstallEntries = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
@@ -86,6 +87,7 @@ jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   needsRefresh: jest.fn(),
   getNewS3URL: jest.fn(),
+  getWebSearchInstallEntries: (...args) => mockGetWebSearchInstallEntries(...args),
   GenerationJobManager: {
     getCleanupBlockingJobIdsForUser: (...args) => mockGetActiveJobIdsForUser(...args),
     abortJob: (...args) => mockAbortJob(...args),
@@ -160,7 +162,7 @@ const {
   cancelAgentTriggerUserDeletion,
 } = require('~/models');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
-const { updateUserPluginAuth } = require('~/server/services/PluginService');
+const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { webSearchSelectionFields } = require('@librechat/data-schemas');
 
 describe('updateUserPluginsController', () => {
@@ -175,6 +177,12 @@ describe('updateUserPluginsController', () => {
   });
 
   it('does not persist web-search selections after a credential write fails', async () => {
+    mockGetWebSearchInstallEntries.mockReturnValue([
+      ['KEENABLE_API_KEY', 'new-key'],
+      [webSearchSelectionFields.selectedProvider, 'keenable'],
+      [webSearchSelectionFields.selectedScraper, 'keenable'],
+      [webSearchSelectionFields.selectedReranker, 'none'],
+    ]);
     updateUserPluginAuth.mockResolvedValueOnce(new Error('credential write failed'));
 
     await updateUserPluginsController(
@@ -216,6 +224,33 @@ describe('updateUserPluginsController', () => {
         expect.anything(),
       );
     }
+  });
+
+  it('deletes explicitly cleared web-search credentials', async () => {
+    mockGetWebSearchInstallEntries.mockReturnValue([['KEENABLE_API_URL', '']]);
+
+    await updateUserPluginsController(
+      {
+        config: {
+          webSearch: {
+            keenableApiUrl: '${KEENABLE_API_URL}',
+          },
+        },
+        user: { id: 'user-id', _id: 'user-id', plugins: [] },
+        body: {
+          pluginKey: 'web_search',
+          action: 'install',
+          isEntityTool: true,
+          auth: {
+            keenableApiUrl: '',
+          },
+        },
+      },
+      mockRes,
+    );
+
+    expect(deleteUserPluginAuth).toHaveBeenCalledWith('user-id', 'KEENABLE_API_URL');
+    expect(updateUserPluginAuth).not.toHaveBeenCalled();
   });
 });
 

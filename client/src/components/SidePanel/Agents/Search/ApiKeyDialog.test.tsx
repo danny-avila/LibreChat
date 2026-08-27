@@ -193,6 +193,36 @@ describe('ApiKeyDialog', () => {
     });
   });
 
+  it('does not submit selections for admin-pinned user-auth categories', () => {
+    const onSubmit = jest.fn();
+    const formData = {
+      selectedProvider: SearchProviders.KEENABLE,
+      selectedScraper: ScraperProviders.KEENABLE,
+      selectedReranker: RerankerTypes.NONE,
+      keenableApiKey: 'user-key',
+    } as any;
+    mockUseGetStartupConfig.mockReturnValue({
+      data: {
+        webSearch: {
+          searchProvider: SearchProviders.KEENABLE,
+          scraperProvider: ScraperProviders.KEENABLE,
+          rerankerType: RerankerTypes.NONE,
+        },
+      },
+    });
+    render(
+      <ApiKeyDialog
+        {...defaultProps}
+        onSubmit={onSubmit}
+        handleSubmit={(fn: any) => () => fn(formData)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+
+    expect(onSubmit).toHaveBeenCalledWith({ keenableApiKey: 'user-key' });
+  });
+
   it('does not render scraper section if SYSTEM_DEFINED', () => {
     mockUseGetStartupConfig.mockReturnValue({ data: {} });
     const props = {

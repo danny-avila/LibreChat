@@ -269,7 +269,10 @@ const updateUserPluginsController = async (req, res) => {
 
     if (action === 'install') {
       for (const [field, value] of authEntries) {
-        authService = await updateUserPluginAuth(user.id, field, pluginKey, value);
+        authService =
+          pluginKey === Tools.web_search && value === ''
+            ? await deleteUserPluginAuth(user.id, field)
+            : await updateUserPluginAuth(user.id, field, pluginKey, value);
         if (authService instanceof Error) {
           logger.error('[authService]', authService);
           ({ status, message } = normalizeHttpError(authService));

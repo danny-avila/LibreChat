@@ -113,6 +113,19 @@ describe('web.ts', () => {
       expect(entries).toEqual([]);
     });
 
+    it('preserves explicit empty credential values as clear operations', () => {
+      const entries = getWebSearchInstallEntries({
+        auth: {
+          keenableApiUrl: '',
+        },
+        config: {
+          keenableApiUrl: '${KEENABLE_API_URL}',
+        } as TWebSearchConfig,
+      });
+
+      expect(entries).toEqual([['KEENABLE_API_URL', '']]);
+    });
+
     it('clears persisted provider choices with web-search credentials', () => {
       const fields = getWebSearchUninstallFields({
         keenableApiKey: '${KEENABLE_API_KEY}',
