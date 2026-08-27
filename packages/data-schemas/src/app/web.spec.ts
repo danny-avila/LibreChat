@@ -93,6 +93,59 @@ describe('loadWebSearchConfig', () => {
       expect(result?.searchProvider).toBe('serper');
       expect(result?.serperApiKey).toBe('test-key');
     });
+
+    it('should preserve searxngSearchOptions', () => {
+      const config: TCustomConfig['webSearch'] = {
+        searchProvider: SearchProviders.SEARXNG,
+        searxngSearchOptions: {
+          engines: 'google,bing,startpage,qwant',
+          language: 'en',
+        },
+      };
+
+      const result = loadWebSearchConfig(config);
+
+      expect(result?.searxngSearchOptions).toEqual({
+        engines: 'google,bing,startpage,qwant',
+        language: 'en',
+      });
+    });
+
+    it('should normalize a YAML engine list, which reaches this loader unparsed', () => {
+      const result = loadWebSearchConfig({
+        searchProvider: SearchProviders.SEARXNG,
+        searxngSearchOptions: {
+          engines: ['google', 'bing', 'startpage'],
+          language: 'en',
+        },
+      });
+
+      expect(result?.searxngSearchOptions?.engines).toBe('google,bing,startpage');
+    });
+
+    it('should trim whitespace and empty entries from a raw engines string', () => {
+      const result = loadWebSearchConfig({
+        searchProvider: SearchProviders.SEARXNG,
+        searxngSearchOptions: { engines: 'google, bing , , startpage' },
+      });
+
+      expect(result?.searxngSearchOptions?.engines).toBe('google,bing,startpage');
+    });
+
+    it('should treat an all-blank engines value as unset', () => {
+      const result = loadWebSearchConfig({
+        searchProvider: SearchProviders.SEARXNG,
+        searxngSearchOptions: { engines: '  ,  ' },
+      });
+
+      expect(result?.searxngSearchOptions?.engines).toBeUndefined();
+    });
+
+    it('should leave searxngSearchOptions undefined when the block is absent', () => {
+      const result = loadWebSearchConfig({ searchProvider: SearchProviders.SEARXNG });
+
+      expect(result?.searxngSearchOptions).toBeUndefined();
+    });
   });
 
   describe('safeSearch', () => {

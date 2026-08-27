@@ -3,6 +3,7 @@ export { default as useDeleteFilesFromTable } from './useDeleteFilesFromTable';
 export { default as useSetFilesToDelete } from './useSetFilesToDelete';
 export { default as useFileHandling, useFileHandlingNoChatContext } from './useFileHandling';
 export { default as useFileDeletion } from './useFileDeletion';
+export { default as useClientResize } from './useClientResize';
 export { default as useUpdateFiles } from './useUpdateFiles';
 export { default as useDragHelpers } from './useDragHelpers';
 export { default as useUploadOptions } from './useUploadOptions';

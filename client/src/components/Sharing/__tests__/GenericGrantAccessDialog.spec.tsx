@@ -131,6 +131,37 @@ describe('GenericGrantAccessDialog - permissions load failure', () => {
     ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_share_var' }));
-    expect(screen.getByTestId('unified-people-search')).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog');
+
+    expect(dialog).toHaveClass('max-w-5xl', 'overflow-hidden', 'p-0');
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'com_ui_user_group_permissions' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('com_ui_share_access_description')).toHaveClass('sr-only');
+    expect(screen.getByTestId('unified-people-search').closest('section')).toHaveClass('w-full');
+    expect(screen.getByTestId('public-toggle').parentElement).toHaveClass('border-t');
+    expect(screen.getByTestId('admin-settings')).toBeInTheDocument();
+    expect(dialog.firstElementChild).not.toHaveClass('border-b');
+    const saveButton = screen.getByRole('button', { name: 'com_ui_save' });
+    const footer = saveButton.parentElement;
+    expect(footer).toHaveClass('bg-transparent');
+    expect(footer).not.toHaveClass('border-t');
+    expect(saveButton).toHaveClass('sm:w-auto');
+    expect(saveButton).not.toHaveClass('min-w-[140px]');
+    expect(screen.queryByRole('button', { name: 'com_ui_cancel' })).not.toBeInTheDocument();
+  });
+
+  it('discards the draft through the shared close path', () => {
+    const setIsPublic = jest.fn();
+    const setPublicRole = jest.fn();
+    mockUseResourcePermissionState.mockReturnValue(baseState({ setIsPublic, setPublicRole }));
+
+    renderDialog();
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_share_var' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(setIsPublic).toHaveBeenCalledWith(false);
+    expect(setPublicRole).toHaveBeenCalledWith('viewer');
   });
 });

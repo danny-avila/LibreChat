@@ -346,7 +346,7 @@ export async function initializeCustom({
 
   const streamRate = clientOptions.streamRate as number | undefined;
   if (streamRate != null) {
-    (options.llmConfig as Record<string, unknown>)._lc_stream_delay = streamRate;
+    options.llmConfig._lc_stream_delay = streamRate;
   }
 
   return options;

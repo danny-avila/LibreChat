@@ -291,6 +291,7 @@ describe('resolveComposerKeyDown', () => {
     isSubmitting: false,
     allowSubmitWhileGenerating: false,
     hasDuringRunModifier: false,
+    shortcutsEnabled: true,
     enterToSend: true,
     submitOverride: undefined,
     yieldedChords: new Set<string>(),
@@ -373,6 +374,27 @@ describe('resolveComposerKeyDown', () => {
     expect(
       resolveComposerKeyDown(keydown({ ctrlKey: true }), { ...duringRun, enterToSend: false }),
     ).toBe('submit');
+  });
+
+  it('gates during-run shortcut chords while preserving plain Enter behavior', () => {
+    const shortcutsDisabled = {
+      ...duringRun,
+      shortcutsEnabled: false,
+      submitOverride: null,
+    };
+
+    expect(resolveComposerKeyDown(keydown({ altKey: true }), shortcutsDisabled)).toBe('newline');
+    expect(
+      resolveComposerKeyDown(keydown({ ctrlKey: true, shiftKey: true }), shortcutsDisabled),
+    ).toBe('none');
+    expect(
+      resolveComposerKeyDown(keydown({ metaKey: true, shiftKey: true }), shortcutsDisabled),
+    ).toBe('none');
+    expect(resolveComposerKeyDown(keydown({ ctrlKey: true }), shortcutsDisabled)).toBe('newline');
+    expect(resolveComposerKeyDown(keydown(), shortcutsDisabled)).toBe('submit');
+    expect(resolveComposerKeyDown(keydown(), { ...shortcutsDisabled, enterToSend: false })).toBe(
+      'newline',
+    );
   });
 
   it('does nothing while a run disallows submission', () => {

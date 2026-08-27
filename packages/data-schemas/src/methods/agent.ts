@@ -187,6 +187,72 @@ function rebuildMCPServerNames(tools: string[] | undefined | null, priorNames: s
   return Array.from(retained);
 }
 
+const hasOperatorKeys = (value: unknown): boolean =>
+  typeof value === 'object' && value !== null && Object.keys(value as object).length > 0;
+
+/** Resolves a dotted operator path, such as `tool_resources.file_search.file_ids`. */
+function resolveDocumentPath(source: Record<string, unknown>, path: string): unknown {
+  let current: unknown = source;
+  for (const segment of path.split('.')) {
+    if (typeof current !== 'object' || current === null) {
+      return undefined;
+    }
+    current =
+      current instanceof Map ? current.get(segment) : (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+/** The values an `$addToSet` specification would add, flattening the `$each` form. */
+function addToSetCandidates(spec: unknown): unknown[] {
+  if (
+    typeof spec === 'object' &&
+    spec !== null &&
+    Array.isArray((spec as { $each?: unknown }).$each)
+  ) {
+    return (spec as { $each: unknown[] }).$each;
+  }
+  return [spec];
+}
+
+/**
+ * Whether an update's atomic operators can still change the stored document. `$push`
+ * always appends and `$pull` matches on arbitrary query criteria, so both count as
+ * mutating. `$addToSet` is a no-op once every value it adds is already stored, which is
+ * exactly what an idempotent retry looks like, so it is resolved against the document.
+ * Whatever cannot be compared cheaply counts as mutating: over-reporting only records a
+ * redundant version, while under-reporting would apply a change no version records.
+ */
+function operatorsMutateDocument(
+  currentObject: Record<string, unknown>,
+  $push: unknown,
+  $pull: unknown,
+  $addToSet: unknown,
+): boolean {
+  if (hasOperatorKeys($push) || hasOperatorKeys($pull)) {
+    return true;
+  }
+
+  if (!hasOperatorKeys($addToSet)) {
+    return false;
+  }
+
+  for (const [path, spec] of Object.entries($addToSet as Record<string, unknown>)) {
+    const existing = resolveDocumentPath(currentObject, path);
+    const stored = Array.isArray(existing) ? existing : [];
+    for (const candidate of addToSetCandidates(spec)) {
+      if (typeof candidate === 'object' && candidate !== null) {
+        return true;
+      }
+      if (!stored.includes(candidate)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 /**
  * Check if a version already exists in the versions array, excluding timestamp and author fields.
  */
@@ -604,17 +670,14 @@ export function createAgentMethods(
     const Agent = mongoose.models.Agent as Model<IAgent>;
     const { updatingUserId = null, forceVersion = false, skipVersioning = false } = options;
     const mongoOptions = { new: true, upsert: false };
+    /** Set when the update would snapshot a version identical to the newest one. The write
+     *  still lands; only the `versions` entry is dropped. */
+    let suppressedVersionEntry = false;
 
     const currentAgent = await Agent.findOne(searchParameter);
     if (currentAgent) {
-      const {
-        __v,
-        _id,
-        id: __id,
-        versions,
-        author: _author,
-        ...versionData
-      } = currentAgent.toObject() as unknown as Record<string, unknown>;
+      const currentObject = currentAgent.toObject() as unknown as Record<string, unknown>;
+      const { __v, _id, id: __id, versions, author: _author, ...versionData } = currentObject;
       const { $push, $pull, $addToSet, ...directUpdates } = updateData;
 
       /** Self-heal: drop allowlist ids whose skill no longer exists in the
@@ -693,13 +756,31 @@ export function createAgentMethods(
           versions as Record<string, unknown>[],
           actionsHash,
         );
-        if (duplicateVersion && !forceVersion) {
-          const agentObj = currentAgent.toObject() as IAgent & {
-            version?: number;
-            versions?: unknown[];
-          };
-          agentObj.version = (versions as unknown[]).length;
-          return agentObj;
+        /** A duplicate snapshot adds no history, but the write itself must still land: the
+         *  document is regularly not equal to its newest version, because `$push`/`$pull`/
+         *  `$addToSet` snapshot the pre-update state and `skipVersioning` snapshots nothing.
+         *  `isDuplicateVersion` compares direct updates only, so it cannot speak for an
+         *  update that also carries an operator that lands a change; suppressing there
+         *  would apply a change no version records. An operator that changes nothing, the
+         *  shape of an idempotent retry, leaves the snapshot a genuine duplicate. */
+        const mutatesOutsideSnapshot = operatorsMutateDocument(
+          currentObject,
+          $push,
+          $pull,
+          $addToSet,
+        );
+        if (duplicateVersion && !forceVersion && !mutatesOutsideSnapshot) {
+          suppressedVersionEntry = true;
+          /** Every operator that reaches here was judged unable to change the document,
+           *  and for `$addToSet` that reading came from a document fetched before the
+           *  write, so it cannot bind a concurrent one: a `$pull` landing in between would
+           *  leave this update re-adding the value with no version entry to record it.
+           *  Drop what was judged a no-op rather than race it, so the suppressed write
+           *  carries no operator at all and is true by construction instead of true only
+           *  while nothing else writes first. */
+          delete updateData.$addToSet;
+          delete updateData.$push;
+          delete updateData.$pull;
         }
       }
 
@@ -717,7 +798,7 @@ export function createAgentMethods(
         versionEntry.updatedBy = new mongoose.Types.ObjectId(updatingUserId);
       }
 
-      if (shouldCreateVersion) {
+      if (shouldCreateVersion && !suppressedVersionEntry) {
         updateData.$push = {
           ...(($push as Record<string, unknown>) || {}),
           versions: versionEntry,
@@ -725,11 +806,21 @@ export function createAgentMethods(
       }
     }
 
-    return (await Agent.findOneAndUpdate(
+    const updatedAgent = (await Agent.findOneAndUpdate(
       searchParameter,
       updateData,
       mongoOptions,
     ).lean()) as IAgent | null;
+
+    /** `version` is a response-only field holding the count of `versions`. It is reported
+     *  here so a suppressed entry keeps the shape callers saw before the write was fixed.
+     *  It answers "was a version recorded", never "did the update apply". The two stopped
+     *  being the same question once a suppressed update started landing. */
+    if (updatedAgent && suppressedVersionEntry) {
+      (updatedAgent as IAgent & { version?: number }).version = updatedAgent.versions?.length ?? 0;
+    }
+
+    return updatedAgent;
   }
 
   /**

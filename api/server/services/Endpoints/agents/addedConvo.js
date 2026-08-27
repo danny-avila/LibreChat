@@ -11,7 +11,7 @@ const { isEphemeralAgentId } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { getAccessibleMcpServerNames } = require('~/server/services/MCP');
-const { isExpectedMCPToolsUnavailableError } = require('~/server/services/ToolService');
+const { isFatalAgentInitializationError } = require('~/server/services/ToolService');
 const { getSkillDbMethods, canAuthorSkillFiles } = require('./skillDeps');
 const db = require('~/models');
 
@@ -42,6 +42,7 @@ const loadAddedAgent = (params) =>
  * @param {Array} params.requestFiles - Request files
  * @param {string} params.conversationId - The conversation ID
  * @param {string} [params.parentMessageId] - The parent message ID for thread filtering
+ * @param {import('@librechat/api').MCPRuntimeRequestBody} [params.requestBody]
  * @param {Set} params.allowedProviders - Set of allowed providers
  * @param {Map} params.agentConfigs - Map of agent configs to add to
  * @param {string} params.primaryAgentId - The primary agent ID
@@ -70,6 +71,7 @@ const processAddedConvo = async ({
   requestFiles,
   conversationId,
   parentMessageId,
+  requestBody,
   allowedProviders,
   agentConfigs,
   primaryAgentId,
@@ -170,6 +172,7 @@ const processAddedConvo = async ({
         requestFiles,
         conversationId,
         parentMessageId,
+        requestBody,
         agent: addedAgent,
         endpointOption,
         allowedProviders,
@@ -227,7 +230,7 @@ const processAddedConvo = async ({
 
     return { userMCPAuthMap };
   } catch (err) {
-    if (isExpectedMCPToolsUnavailableError(err)) {
+    if (isFatalAgentInitializationError(err)) {
       throw err;
     }
     logger.error('[processAddedConvo] Error processing addedConvo for parallel agent', err);

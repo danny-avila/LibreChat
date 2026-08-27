@@ -102,4 +102,22 @@ describe('ToolApproval', () => {
     fireEvent.click(approveSecond);
     expect(submit).toBeEnabled();
   });
+
+  test('restores a selected decision when the card remounts inside the same message', () => {
+    const tree = (key: string) => (
+      <RecoilRoot>
+        <ApprovalProvider>
+          <ToolApproval key={key} approval={approval()} toolCallId="call-1" args={{ a: 1 }} />
+        </ApprovalProvider>
+      </RecoilRoot>
+    );
+    const view = render(tree('direct'));
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(screen.getByRole('button', { name: 'Approve' })).toHaveAttribute('aria-pressed', 'true');
+
+    view.rerender(tree('phase-slice'));
+
+    expect(screen.getByRole('button', { name: 'Approve' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Submit' })).toBeEnabled();
+  });
 });

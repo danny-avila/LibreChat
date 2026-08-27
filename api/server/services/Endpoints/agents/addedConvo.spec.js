@@ -42,8 +42,8 @@ jest.mock('~/server/services/MCP', () => ({
 }));
 
 jest.mock('~/server/services/ToolService', () => ({
-  isExpectedMCPToolsUnavailableError: (error) =>
-    error?.code === 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+  isFatalAgentInitializationError: (error) =>
+    ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
 }));
 
 jest.mock('./skillDeps', () => ({
@@ -59,7 +59,7 @@ jest.mock('~/models', () => ({
 }));
 
 const { processAddedConvo } = require('./addedConvo');
-const { Constants } = require('librechat-data-provider');
+const { Constants, ErrorTypes } = require('librechat-data-provider');
 
 const makeReq = () => ({ user: { id: 'u1', role: 'USER' } });
 
@@ -143,10 +143,13 @@ describe('processAddedConvo', () => {
     );
   });
 
-  it('propagates an expected-MCP-tools failure from an added parallel agent', async () => {
-    const toolError = Object.assign(new Error('Added agent expected MCP tools are unavailable'), {
-      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
-      statusCode: 503,
+  it.each([
+    ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 503],
+    [ErrorTypes.RESOURCE_RECOVERY_REQUIRED, 409],
+  ])('propagates fatal %s failures from an added parallel agent', async (code, statusCode) => {
+    const toolError = Object.assign(new Error(`Added agent failed with ${code}`), {
+      code,
+      statusCode,
     });
     mockInitializeAgent.mockRejectedValueOnce(toolError);
 

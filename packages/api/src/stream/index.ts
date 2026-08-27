@@ -28,6 +28,9 @@ export {
   isPendingActionExpired,
   isPendingActionStale,
 } from './interfaces/IJobStore';
+// Canonical "did this generation actually stop?" predicate — shared by every caller
+// that settles durable state on an abort's outcome.
+export { isStopConfirmed } from './interfaces/IJobStore';
 export {
   STEER_ENQUEUE_NOT_RUNNING,
   STEER_ENQUEUE_QUEUE_FULL,
@@ -51,6 +54,7 @@ export type { RecoveredSteerPayload } from './SteerRecovery';
 export { createStreamServices } from './createStreamServices';
 export type { StreamServicesConfig, StreamServices } from './createStreamServices';
 export { filterPersistableAbortContent, hasPersistableAbortContent } from './abortContent';
+export { getGenerationElapsedMs } from './elapsed';
 
 // Implementations (for advanced use cases)
 export { InMemoryJobStore } from './implementations/InMemoryJobStore';

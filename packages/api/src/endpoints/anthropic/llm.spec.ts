@@ -1864,6 +1864,12 @@ describe('getLLMConfig', () => {
             shouldHaveHeaders: false,
             shouldHavePromptCache: true,
           },
+          {
+            model: 'claude-sonnet-6',
+            promptCache: true,
+            shouldHaveHeaders: false,
+            shouldHavePromptCache: true,
+          },
           // Models that support prompt cache but have no additional beta headers needed
           {
             model: 'claude-3-opus',

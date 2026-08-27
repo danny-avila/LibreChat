@@ -7,7 +7,7 @@ In this Chart, LibreChat will only work with environment Variables. You can Spec
 ## Setup
 
 1. Generate Variables
-Generate `CREDS_KEY`, `JWT_SECRET`, `JWT_REFRESH_SECRET`  and `MEILI_MASTER_KEY`  using `openssl rand -hex 32` and `CREDS_IV` using openssl rand -hex 16.
+Generate unique values for `CREDS_KEY`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, and `MEILI_MASTER_KEY` using `openssl rand -hex 32`, and `CREDS_IV` using `openssl rand -hex 16`. Store them in the existing Kubernetes Secret so every replica uses the same values.
 place them in a secret like this (If you want to change the secret name, remember to change it in your helm values):
 ```yaml
 apiVersion: v1
@@ -18,6 +18,7 @@ metadata:
 type: Opaque
 stringData:
   CREDS_KEY: <generated value>
+  CREDS_IV: <generated value>
   JWT_SECRET: <generated value>
   JWT_REFRESH_SECRET: <generated value>
   MEILI_MASTER_KEY: <generated value>
@@ -112,3 +113,25 @@ uses annotation-based discovery. The gateway container also has configurable
 
 See [`otel/langfuse-fanout/README.md`](../../otel/langfuse-fanout/README.md)
 for the central Langfuse secret and values example.
+
+## Content Security Policy
+
+LibreChat's application-level CSP is disabled by default. Enable it through
+`librechat.configEnv` so Kubernetes rollouts can start in report-only mode
+before enforcing:
+
+```yaml
+librechat:
+  configEnv:
+    CSP_ENABLED: "true"
+    CSP_REPORT_ONLY: "true"
+    CSP_REPORT_URI: "https://reports.example.com/csp"
+```
+
+After reviewing the reports, set `CSP_REPORT_ONLY: "false"` to enforce. Use the
+`CSP_*_EXTRA` variables from `.env.example` for deployment-specific CDNs,
+analytics endpoints, or embedded frames.
+
+The chart does not set CSP at the ingress layer: the policy carries a nonce that
+has to be freshly generated for each HTML response and matched against the
+`<script>` tags in that same response, which only the app can do.

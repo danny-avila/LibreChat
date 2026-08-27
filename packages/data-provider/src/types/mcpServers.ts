@@ -52,6 +52,8 @@ export type MCPServerDBObjectResponse = {
   support_contact?: SupportContact;
   /** Response-only fallback resolved from the server's first owner. */
   owner_contact?: MCPServerOwnerContact;
+  /** True when chat request fields are required before the server can connect. */
+  requestScoped?: boolean;
 } & MCPOptions;
 
 export type MCPServersListResponse = Record<string, MCPServerDBObjectResponse>;

@@ -1,5 +1,6 @@
 import { logger, TokenMethods } from '@librechat/data-schemas';
 import type { IToken } from '@librechat/data-schemas';
+import type { ParsedServerConfig } from '../..';
 import { OAuthReconnectionManager } from './OAuthReconnectionManager';
 import { OAuthReconnectionTracker } from './OAuthReconnectionTracker';
 import { FlowStateManager, MCPConnection, MCPOptions } from '../..';
@@ -203,6 +204,8 @@ describe('OAuthReconnectionManager', () => {
 
       await reconnectionManager.reconnectServers(userId);
 
+      expect(mockRegistryInstance.getOAuthServers).toHaveBeenCalledWith(userId);
+
       // Verify server3 was marked as active
       expect(reconnectionTracker.isActive(userId, 'server3')).toBe(true);
 
@@ -213,6 +216,7 @@ describe('OAuthReconnectionManager', () => {
       expect(mockMCPManager.getUserConnection).toHaveBeenCalledWith({
         serverName: 'server3',
         user: { id: userId },
+        serverConfig: { initTimeout: 5000 },
         flowManager,
         tokenMethods,
         forceNew: false,
@@ -450,6 +454,71 @@ describe('OAuthReconnectionManager', () => {
 
       const result = await reconnectionManager.reconnectServer(userId, serverName);
       expect(result).toBe(true);
+    });
+
+    it('should defer request-scoped reconnection without reporting success', async () => {
+      const userId = 'user-123';
+      const serverName = 'request-scoped-server';
+
+      reconnectionTracker.setFailed(userId, serverName);
+      reconnectionTracker.setActive(userId, serverName);
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://example.com/mcp',
+        source: 'yaml',
+        headers: {
+          'X-Conversation-ID': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        },
+      } as unknown as MCPOptions);
+
+      const result = await reconnectionManager.reconnectServer(userId, serverName);
+
+      expect(result).toBe(false);
+      expect(reconnectionTracker.isFailed(userId, serverName)).toBe(false);
+      expect(reconnectionTracker.isActive(userId, serverName)).toBe(false);
+      expect(mockMCPManager.getUserConnection).not.toHaveBeenCalled();
+      expect(mockMCPManager.disconnectUserConnection).not.toHaveBeenCalled();
+    });
+
+    it('should classify request scope from the effective config-tier overlay', async () => {
+      const userId = 'user-123';
+      const serverName = 'overlaid-server';
+      const configServers: Record<string, ParsedServerConfig> = {
+        [serverName]: {
+          type: 'streamable-http',
+          url: 'https://example.com/mcp',
+          source: 'config',
+          headers: {
+            'X-Conversation-ID': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+          },
+        },
+      };
+      const effectiveConfig = {
+        ...configServers[serverName],
+        source: 'yaml',
+      } as ParsedServerConfig;
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockImplementation(
+        async (_name, _userId, candidates) =>
+          candidates === configServers
+            ? effectiveConfig
+            : ({
+                type: 'streamable-http',
+                url: 'https://example.com/mcp',
+                source: 'yaml',
+              } as MCPOptions),
+      );
+      const result = await reconnectionManager.reconnectServer(userId, serverName, configServers);
+
+      expect(result).toBe(false);
+      expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(
+        serverName,
+        userId,
+        configServers,
+      );
+      expect(mockMCPManager.getUserConnection).not.toHaveBeenCalled();
+      expect(reconnectionTracker.isFailed(userId, serverName)).toBe(false);
+      expect(reconnectionTracker.isActive(userId, serverName)).toBe(false);
     });
 
     it('should return false on failed reconnection', async () => {

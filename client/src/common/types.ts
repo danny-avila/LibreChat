@@ -103,27 +103,6 @@ export enum IconContext {
   message = 'message',
 }
 
-export type IconMapProps = {
-  className?: string;
-  iconURL?: string;
-  context?: 'landing' | 'menu-item' | 'nav' | 'message';
-  endpoint?: string | null;
-  endpointType?: string;
-  assistantName?: string;
-  agentName?: string;
-  avatar?: string;
-  size?: number;
-};
-
-export type IconComponent = React.ComponentType<IconMapProps>;
-export type AgentIconComponent = React.ComponentType<AgentIconMapProps>;
-export type IconComponentTypes = IconComponent | AgentIconComponent;
-export type IconsRecord = {
-  [key in t.EModelEndpoint | 'unknown' | string]: IconComponentTypes | null | undefined;
-};
-
-export type AgentIconMapProps = IconMapProps & { agentName?: string };
-
 export type NavLink = {
   title: TranslationKeys;
   label?: string;
@@ -212,6 +191,10 @@ export interface MCPServerInfo {
   tools: t.AgentToolType[];
   isConfigured: boolean;
   isConnected: boolean;
+  /** True when the server can be attached to an agent, even if its transport is request-scoped. */
+  isReadyForAgent?: boolean;
+  /** True when tools can only be discovered with live chat request fields. */
+  requestScoped?: boolean;
   consumeOnly?: boolean;
   support_contact?: t.SupportContact;
   owner_contact?: t.MCPServerOwnerContact;
@@ -247,6 +230,8 @@ export type AgentModelPanelProps = {
   agent_id?: string;
   providers: Option[];
   models: Record<string, string[] | undefined>;
+  modelsError: boolean;
+  modelsReady: boolean;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
 };
 
@@ -353,7 +338,7 @@ export type TOptions = {
   isContinued?: boolean;
   isEdited?: boolean;
   overrideMessages?: t.TMessage[];
-  /** This value is only true when the user submits a message with "Save & Submit" for a user-created message */
+  /** This value is only true when the user submits a message with "Update & rerun" for a user-created message */
   isResubmission?: boolean;
   /** Currently only utilized when `isResubmission === true`, uses that message's currently attached files */
   overrideFiles?: t.TMessage['files'];
@@ -410,6 +395,8 @@ export type TMessageChatContext = {
   latestMessageId: string | undefined;
   latestMessageDepth: number | undefined;
   handleContinue: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  /** Resolved once per chat from `interface.feedback`; false until the config loads */
+  feedbackEnabled: boolean;
   /** Should be a getter backed by a ref — reads current value without triggering re-renders */
   readonly isSubmitting: boolean;
 };
@@ -534,6 +521,7 @@ export type IconProps = Pick<t.TMessage, 'isCreatedByUser' | 'model'> &
     iconClassName?: string;
     endpoint?: t.EModelEndpoint | string | null;
     endpointType?: t.EModelEndpoint | null;
+    endpointsConfig?: t.TEndpointsConfig | null;
     assistantName?: string;
     agentName?: string;
     error?: boolean;

@@ -9,6 +9,14 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('@librechat/client', () => ({
   TooltipAnchor: ({ render }: { render: React.ReactElement }) => render,
+  Button: ({
+    children,
+    variant: _variant,
+    size: _size,
+    ...props
+  }: React.ComponentProps<'button'> & { variant?: string; size?: string }) => (
+    <button {...props}>{children}</button>
+  ),
 }));
 
 const tool = {
@@ -27,6 +35,7 @@ function setup(overrides: Partial<React.ComponentProps<typeof MCPToolItem>> = {}
     intentDisabled: false,
     deferredToolsEnabled: false,
     programmaticToolsEnabled: false,
+    programmaticToolsAvailable: false,
     backgroundToolsEnabled: false,
     toolIntentsEnabled: false,
     onToggleSelect: jest.fn(),
@@ -85,6 +94,13 @@ describe('MCPToolItem', () => {
     expect(props.onToggleDefer).toHaveBeenCalledTimes(1);
   });
 
+  test('deferred tool keeps its warning color while hovered', () => {
+    setup({ deferredToolsEnabled: true, isDeferred: true });
+    const deferButton = screen.getByRole('button', { name: 'com_ui_mcp_defer_loading' });
+    expect(deferButton).toHaveClass('hover:text-text-secondary');
+    expect(deferButton.querySelector('svg')).toHaveClass('text-text-warning');
+  });
+
   test('defer button is absent when deferred tools are disabled', () => {
     setup();
     expect(
@@ -93,8 +109,30 @@ describe('MCPToolItem', () => {
   });
 
   test('programmatic is an inline button rendered only when enabled', () => {
-    const props = setup({ programmaticToolsEnabled: true });
+    const props = setup({ programmaticToolsEnabled: true, programmaticToolsAvailable: true });
     const programmaticButton = screen.getByRole('button', { name: 'com_ui_mcp_programmatic' });
+    fireEvent.click(programmaticButton);
+    expect(props.onToggleProgrammatic).toHaveBeenCalledTimes(1);
+  });
+
+  test('programmatic is inert until Code Interpreter is selected', () => {
+    const props = setup({ programmaticToolsEnabled: true, programmaticToolsAvailable: false });
+    const programmaticButton = screen.getByRole('button', { name: 'com_ui_mcp_programmatic' });
+
+    expect(programmaticButton).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(programmaticButton);
+    expect(props.onToggleProgrammatic).not.toHaveBeenCalled();
+  });
+
+  test('an existing programmatic setting can be cleared after Code Interpreter is disabled', () => {
+    const props = setup({
+      programmaticToolsEnabled: true,
+      programmaticToolsAvailable: false,
+      isProgrammatic: true,
+    });
+    const programmaticButton = screen.getByRole('button', { name: 'com_ui_mcp_programmatic' });
+
+    expect(programmaticButton).not.toHaveAttribute('aria-disabled');
     fireEvent.click(programmaticButton);
     expect(props.onToggleProgrammatic).toHaveBeenCalledTimes(1);
   });

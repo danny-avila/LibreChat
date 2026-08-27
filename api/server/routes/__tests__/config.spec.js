@@ -103,6 +103,8 @@ afterEach(() => {
   delete process.env.SAML_CERT;
   delete process.env.SAML_SESSION_SECRET;
   delete process.env.ALLOW_ACCOUNT_DELETION;
+  delete process.env.ADMIN_PANEL_URL;
+  delete process.env.ENABLE_INSIGHTS;
   delete process.env.ANALYTICS_GTM_ID;
   delete process.env.CUSTOM_FOOTER;
   delete process.env.HELP_AND_FAQ_URL;
@@ -173,12 +175,14 @@ describe('GET /api/config', () => {
       expect(response.body).not.toHaveProperty('sharePointPickerGraphScope');
       expect(response.body).not.toHaveProperty('sharePointPickerSharePointScope');
       expect(response.body).not.toHaveProperty('conversationImportMaxFileSize');
+      expect(response.body).not.toHaveProperty('insightsEnabled');
     });
 
     it('should strip authenticated-only informational fields from unauthenticated response (#12688)', async () => {
       process.env.ANALYTICS_GTM_ID = 'GTM-XYZ';
       process.env.CUSTOM_FOOTER = 'internal footer text';
       process.env.HELP_AND_FAQ_URL = 'https://internal.example.com/faq';
+      process.env.ADMIN_PANEL_URL = 'https://admin.example.com';
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       const app = createApp(null);
 
@@ -193,6 +197,7 @@ describe('GET /api/config', () => {
       expect(response.body).not.toHaveProperty('openidReuseTokens');
       expect(response.body).not.toHaveProperty('allowAccountDeletion');
       expect(response.body).not.toHaveProperty('customFooter');
+      expect(response.body).not.toHaveProperty('adminPanelURL');
     });
 
     it('should not include share-only fields when share context is requested', async () => {
@@ -393,6 +398,18 @@ describe('GET /api/config', () => {
       expect(response.body.bundlerURL).toBe('https://bundler.test');
       expect(response.body.staticBundlerURL).toBe('https://static-bundler.test');
       expect(response.body.conversationImportMaxFileSize).toBe(5000000);
+    });
+
+    it('should advertise Insights only when ENABLE_INSIGHTS is enabled', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(mockUser);
+
+      let response = await request(app).get('/api/config');
+      expect(response.body.insightsEnabled).toBe(false);
+
+      process.env.ENABLE_INSIGHTS = 'true';
+      response = await request(app).get('/api/config');
+      expect(response.body.insightsEnabled).toBe(true);
     });
 
     it('should advertise Langfuse fanout only when the toggle and collector URL are configured', async () => {
@@ -625,6 +642,40 @@ describe('GET /api/config', () => {
 
       expect(response.body.allowAccountDeletion).toBe(true);
       expect(mockHasCapability).not.toHaveBeenCalled();
+    });
+
+    it('should include adminPanelURL for users with ACCESS_ADMIN capability', async () => {
+      process.env.ADMIN_PANEL_URL = 'https://admin.example.com';
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.adminPanelURL).toBe('https://admin.example.com');
+      expect(mockHasCapability).toHaveBeenCalled();
+    });
+
+    it('should omit adminPanelURL for authenticated users without ACCESS_ADMIN', async () => {
+      process.env.ADMIN_PANEL_URL = 'https://admin.example.com';
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(false);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('adminPanelURL');
+      expect(mockHasCapability).toHaveBeenCalled();
+    });
+
+    it('should omit adminPanelURL when ADMIN_PANEL_URL is not set', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('adminPanelURL');
     });
 
     it('should return 500 when getAppConfig throws', async () => {

@@ -369,8 +369,9 @@ const registerUser = async (user, additionalData = {}) => {
       return { status: 200, message: genericVerificationMessage };
     }
 
-    //determine if this is the first registered user (not counting anonymous_user)
-    const isFirstRegisteredUser = (await countUsers()) === 0;
+    // Only the first user in the unscoped, single-tenant deployment bootstraps ADMIN.
+    // Tenant administrators must be provisioned through a trusted administrative flow.
+    const isFirstRegisteredUser = !tenantId && (await countUsers()) === 0;
 
     const salt = bcrypt.genSaltSync(10);
     const newUserData = {

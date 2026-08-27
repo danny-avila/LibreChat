@@ -1,14 +1,18 @@
 const { Constants } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
 
 const mockGetConnection = jest.fn();
 const mockDiscoverServerTools = jest.fn();
 const mockGetGraphApiToken = jest.fn();
 const mockUpdateMCPServerTools = jest.fn();
+const mockGetMCPToolsCacheGeneration = jest.fn().mockResolvedValue('generation-current');
+const mockGetToolPublicationGeneration = jest.fn().mockReturnValue('generation-current');
 
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(() => ({
     getConnection: mockGetConnection,
     discoverServerTools: mockDiscoverServerTools,
+    getToolPublicationGeneration: mockGetToolPublicationGeneration,
   })),
   getMCPServersRegistry: jest.fn(() => ({ getServerConfig: jest.fn() })),
   getFlowStateManager: jest.fn(() => ({})),
@@ -21,6 +25,7 @@ jest.mock('~/models', () => ({
 }));
 jest.mock('~/server/services/Config', () => ({
   updateMCPServerTools: mockUpdateMCPServerTools,
+  getMCPToolsCacheGeneration: mockGetMCPToolsCacheGeneration,
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: mockGetGraphApiToken,
@@ -117,7 +122,113 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
       serverName,
       tools: [],
       serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+      publicationGeneration: 'generation-current',
     });
+  });
+
+  /** An app-level catalog write is dropped unless it carries the ordering reserved before its
+   * own tools/list. When this path forwarded no revision, every publication was discarded and
+   * agents were told the server had no tools at all (#14857). */
+  it('publishes under the ordering its snapshot was fetched with', async () => {
+    mockGetConnection.mockResolvedValue({
+      fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({
+        tools: [{ name: 'search', inputSchema: { type: 'object' } }],
+        complete: true,
+        publicationRevision: '7',
+      }),
+    });
+
+    await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+    });
+
+    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({ serverName, publicationRevision: '7' }),
+    );
+  });
+
+  it('asks the connection to republish a catalog it could not order', async () => {
+    const refreshToolList = jest.fn().mockResolvedValue(undefined);
+    mockGetConnection.mockResolvedValue({
+      refreshToolList,
+      fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({
+        tools: [{ name: 'search', inputSchema: { type: 'object' } }],
+        complete: true,
+        orderingUnavailable: true,
+      }),
+    });
+
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+    });
+
+    expect(refreshToolList).toHaveBeenCalledTimes(1);
+    expect(result.tools).toHaveLength(1);
+  });
+
+  it('preserves cached tools when live recovery returns an incomplete snapshot', async () => {
+    const fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
+      tools: [{ name: 'partial', inputSchema: { type: 'object' } }],
+      complete: false,
+    });
+    mockGetConnection.mockResolvedValue({
+      fetchOrderedToolsSnapshot,
+    });
+
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+    });
+
+    expect(result.tools).toBeNull();
+    expect(fetchOrderedToolsSnapshot).toHaveBeenCalledTimes(1);
+    expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
+  });
+
+  it('discards a snapshot when another replica rotates its generation during discovery', async () => {
+    mockGetMCPToolsCacheGeneration
+      .mockResolvedValueOnce('generation-current')
+      .mockResolvedValueOnce('generation-replaced');
+    mockGetConnection.mockResolvedValue({
+      fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({
+        tools: [{ name: 'stale', inputSchema: { type: 'object' } }],
+        complete: true,
+      }),
+    });
+
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+    });
+
+    expect(result.tools).toBeNull();
+    expect(result.availableTools).toBeNull();
+    expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
+  });
+
+  it('does not return tools when the guarded publication loses its generation race', async () => {
+    mockGetConnection.mockResolvedValue({
+      fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({
+        tools: [{ name: 'stale', inputSchema: { type: 'object' } }],
+        complete: true,
+      }),
+    });
+    mockUpdateMCPServerTools.mockResolvedValue(null);
+
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+    });
+
+    expect(result.tools).toBeNull();
+    expect(result.availableTools).toBeNull();
   });
 
   it('passes request body and Graph resolver into connection creation', async () => {
@@ -167,8 +278,8 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     );
   });
 
-  it('disconnects ephemeral BODY-scoped connections after loading tools', async () => {
-    const disconnect = jest.fn().mockResolvedValue(undefined);
+  it('disposes ephemeral BODY-scoped connections after loading tools', async () => {
+    const dispose = jest.fn().mockResolvedValue(undefined);
     const tools = [{ name: 'search', inputSchema: { type: 'object', properties: {} } }];
     const serverConfig = {
       type: 'streamable-http',
@@ -176,7 +287,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
       source: 'yaml',
     };
     mockGetConnection.mockResolvedValue({
-      disconnect,
+      dispose,
       fetchTools: jest.fn().mockResolvedValue(tools),
     });
 
@@ -188,7 +299,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
       userMCPAuthMap: undefined,
     });
 
-    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(dispose).toHaveBeenCalledTimes(1);
     expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
       expect.objectContaining({
         tools,
@@ -261,9 +372,8 @@ describe('reinitMCPServer — runtime BODY placeholder pre-check (issue #14074)'
   });
 
   it('connects normally when the request body provides the placeholder fields', async () => {
-    const disconnect = jest.fn().mockResolvedValue(undefined);
     mockGetConnection.mockResolvedValue({
-      disconnect,
+      dispose: jest.fn().mockResolvedValue(undefined),
       fetchTools: jest.fn().mockResolvedValue([]),
     });
 
@@ -345,5 +455,40 @@ describe('reinitMCPServer — OAuth attempt lifetime', () => {
       oauthUrl: 'https://oauth.example.com/authorize',
       oauthExpiresAt: expiresAt,
     });
+  });
+});
+
+describe('reinitMCPServer — log hygiene', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('keeps user-created server and connection details out of discovery logs', async () => {
+    const serverName = 'PRIVATE-MCP-SERVER-NAME';
+    const privateUrl = 'https://private.example.test/PRIVATE-CONFIG-PATH';
+    const privateError = `PRIVATE-CONNECTION-ERROR for ${privateUrl}`;
+    const logSpies = ['debug', 'info', 'warn', 'error'].map((level) =>
+      jest.spyOn(logger, level).mockImplementation(() => {}),
+    );
+    mockGetConnection.mockRejectedValue(new Error(privateError));
+
+    const result = await reinitMCPServer({
+      user: { id: 'user-123' },
+      serverName,
+      serverConfig: { type: 'streamable-http', url: privateUrl },
+      userMCPAuthMap: undefined,
+    });
+
+    const loggedText = logSpies
+      .flatMap((spy) => spy.mock.calls)
+      .flat()
+      .map((value) => String(value))
+      .join('\n');
+
+    expect(result.message).toContain(serverName);
+    expect(loggedText).not.toContain(serverName);
+    expect(loggedText).not.toContain(privateUrl);
+    expect(loggedText).not.toContain(privateError);
+    expect(logger.error).toHaveBeenCalledWith('[MCP Reinitialize] Error initializing MCP server');
   });
 });

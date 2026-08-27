@@ -6,6 +6,7 @@ import {
   PrincipalType,
   PermissionBits,
   PrincipalModel,
+  MCPOptionsSchema,
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
@@ -76,12 +77,15 @@ beforeAll(async () => {
   await dbMethods.seedDefaultRoles();
 
   serverConfigsDB = new ServerConfigsDB(mongoose);
-});
+  /** Booting a real mongod, resetting the module registry and re-importing
+   *  data-schemas costs more than the 15s global `testTimeout`, once the runner
+   *  is busy enough. Matches `checkpointer.integration.spec.ts`. */
+}, 60000);
 
 afterAll(async () => {
   await mongoose.disconnect();
   await mongoServer.stop();
-});
+}, 60000);
 
 beforeEach(async () => {
   // Clear collections except AccessRole
@@ -1052,6 +1056,35 @@ describe('ServerConfigsDB', () => {
   });
 
   describe('get()', () => {
+    it('normalizes null headers from historical stored configs before runtime use', async () => {
+      const server = await mongoose.models.MCPServer.create({
+        serverName: 'legacy-null-headers',
+        normalizedServerName: 'legacy-null-headers',
+        author: new mongoose.Types.ObjectId(userId),
+        config: {
+          type: 'streamable-http',
+          url: 'https://example.com/mcp',
+          title: 'Legacy Null Headers',
+          headers: null,
+        },
+      });
+      await mongoose.models.AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalModel: PrincipalModel.USER,
+        principalId: new mongoose.Types.ObjectId(userId),
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: server._id,
+        permBits: PermissionBits.VIEW,
+        grantedBy: new mongoose.Types.ObjectId(userId),
+      });
+
+      const result = await serverConfigsDB.get('legacy-null-headers', userId);
+
+      expect(result).toBeDefined();
+      expect(result).not.toHaveProperty('headers');
+      expect(MCPOptionsSchema.safeParse(result).success).toBe(true);
+    });
+
     describe('public access (no userId)', () => {
       it('should return undefined for non-public server without userId', async () => {
         const config = createSSEConfig('Private Server');
