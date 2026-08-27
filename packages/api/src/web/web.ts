@@ -151,6 +151,13 @@ export interface WebSearchAuthResult {
   authResult: Partial<TWebSearchConfig>;
 }
 
+interface KeenableAuthResolution {
+  isUserProvided: boolean;
+  hasSystemApiKey: boolean;
+  rejectedUserApiUrl: boolean;
+  lookupFailed: boolean;
+}
+
 /**
  * Loads and verifies web search authentication values
  * @param params - Authentication parameters
@@ -182,25 +189,20 @@ export async function loadWebSearchAuth({
    * authenticate. This resolves the optional key/URL overrides once (a key only
    * lifts rate limits) and reports whether any of them came from the user.
    */
-  let keenableAuth:
-    | Promise<{
-        isUserProvided: boolean;
-        hasSystemApiKey: boolean;
-        rejectedUserApiUrl: boolean;
-        lookupFailed: boolean;
-      }>
-    | undefined;
-  function resolveKeenableAuth(): Promise<{
-    isUserProvided: boolean;
-    hasSystemApiKey: boolean;
-    rejectedUserApiUrl: boolean;
-    lookupFailed: boolean;
-  }> {
-    keenableAuth ??= (async () => {
+  const keenableAuth = new Map<boolean, Promise<KeenableAuthResolution>>();
+  function resolveKeenableAuth(includeApiUrl: boolean): Promise<KeenableAuthResolution> {
+    const cached = keenableAuth.get(includeApiUrl);
+    if (cached) {
+      return cached;
+    }
+
+    const resolution = (async () => {
       let keenableUserProvided = false;
       let hasSystemApiKey = false;
       let rejectedUserApiUrl = false;
-      const keenableKeys: TWebSearchKeys[] = ['keenableApiKey', 'keenableApiUrl'];
+      const keenableKeys: TWebSearchKeys[] = includeApiUrl
+        ? ['keenableApiKey', 'keenableApiUrl']
+        : ['keenableApiKey'];
       const authEntries: Array<{ key: TWebSearchKeys; field: string }> = [];
 
       for (const originalKey of keenableKeys) {
@@ -295,7 +297,8 @@ export async function loadWebSearchAuth({
         lookupFailed: false,
       };
     })();
-    return keenableAuth;
+    keenableAuth.set(includeApiUrl, resolution);
+    return resolution;
   }
 
   let userSelections:
@@ -303,12 +306,14 @@ export async function loadWebSearchAuth({
         searchProvider?: SearchProviders;
         scraperProvider?: ScraperProviders;
         rerankerType?: RerankerTypes;
+        lookupFailed?: boolean;
       }>
     | undefined;
   function resolveUserSelections(): Promise<{
     searchProvider?: SearchProviders;
     scraperProvider?: ScraperProviders;
     rerankerType?: RerankerTypes;
+    lookupFailed?: boolean;
   }> {
     userSelections ??= (async () => {
       const fields: string[] = [];
@@ -331,10 +336,11 @@ export async function loadWebSearchAuth({
           userId,
           authFields: fields,
           optional: new Set(fields),
-          throwError: false,
+          throwError: true,
+          failOnOptionalError: true,
         });
       } catch {
-        return {};
+        return { lookupFailed: true };
       }
 
       const searchProvider = values[webSearchSelectionFields.selectedProvider];
@@ -377,6 +383,9 @@ export async function loadWebSearchAuth({
 
     if (!specificService) {
       const selections = await resolveUserSelections();
+      if (selections.lookupFailed) {
+        return [false, true];
+      }
       if (category === SearchCategories.PROVIDERS && selections.searchProvider) {
         specificService = selections.searchProvider as unknown as ServiceType;
         authResult.searchProvider = selections.searchProvider;
@@ -401,7 +410,7 @@ export async function loadWebSearchAuth({
     // key, so a pinned Keenable authenticates even when nothing is configured —
     // as a search provider and as a scraper alike.
     if (category === SearchCategories.PROVIDERS && specificService === SearchProviders.KEENABLE) {
-      const keenable = await resolveKeenableAuth();
+      const keenable = await resolveKeenableAuth(true);
       authResult.searchProvider = SearchProviders.KEENABLE;
       if (keenable.lookupFailed || keenable.rejectedUserApiUrl) {
         return [false, true];
@@ -409,7 +418,10 @@ export async function loadWebSearchAuth({
       return [true, isUserProvided || keenable.isUserProvided || !keenable.hasSystemApiKey];
     }
     if (category === SearchCategories.SCRAPERS && specificService === ScraperProviders.KEENABLE) {
-      const keenable = await resolveKeenableAuth();
+      const searchUsesKeenable =
+        authResult.searchProvider === SearchProviders.KEENABLE ||
+        webSearchConfig?.searchProvider === SearchProviders.KEENABLE;
+      const keenable = await resolveKeenableAuth(searchUsesKeenable);
       authResult.scraperProvider = ScraperProviders.KEENABLE;
       if (keenable.lookupFailed || keenable.rejectedUserApiUrl) {
         return [false, true];
@@ -550,7 +562,7 @@ export async function loadWebSearchAuth({
      * without making Keenable the implicit default for new users.
      */
     if (category === SearchCategories.PROVIDERS && !specificService) {
-      const keenable = await resolveKeenableAuth();
+      const keenable = await resolveKeenableAuth(true);
       if (keenable.lookupFailed || keenable.rejectedUserApiUrl) {
         return [false, true];
       }
@@ -571,7 +583,8 @@ export async function loadWebSearchAuth({
      * was never told to use Keenable.
      */
     if (category === SearchCategories.SCRAPERS && !specificService) {
-      const keenable = await resolveKeenableAuth();
+      const searchUsesKeenable = authResult.searchProvider === SearchProviders.KEENABLE;
+      const keenable = await resolveKeenableAuth(searchUsesKeenable);
       if (keenable.lookupFailed || keenable.rejectedUserApiUrl) {
         return [false, true];
       }

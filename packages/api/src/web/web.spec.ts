@@ -826,6 +826,44 @@ describe('web.ts', () => {
       );
     });
 
+    it('should fail closed when persisted-selection lookup fails', async () => {
+      mockLoadAuthValues.mockImplementation(({ authFields, failOnOptionalError }) => {
+        if (failOnOptionalError && authFields.includes(webSearchSelectionFields.selectedProvider)) {
+          return Promise.reject(new Error('Credential store unavailable'));
+        }
+        return Promise.resolve(
+          Object.fromEntries(authFields.map((field: string) => [field, 'system-value'])),
+        );
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig: {
+          serperApiKey: '${SERPER_API_KEY}',
+          firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+          jinaApiKey: '${JINA_API_KEY}',
+          safeSearch: SafeSearchTypes.MODERATE,
+        } as TWebSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(false);
+      expect(result.authResult.searchProvider).toBeUndefined();
+      expect(result.authResult.scraperProvider).toBeUndefined();
+      expect(result.authResult.rerankerType).toBeUndefined();
+      expect(mockLoadAuthValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          authFields: [
+            webSearchSelectionFields.selectedProvider,
+            webSearchSelectionFields.selectedScraper,
+            webSearchSelectionFields.selectedReranker,
+          ],
+          throwError: true,
+          failOnOptionalError: true,
+        }),
+      );
+    });
+
     it('should return a persisted provider selection when its credential is missing', async () => {
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         if (authFields.includes(webSearchSelectionFields.selectedProvider)) {
@@ -972,6 +1010,68 @@ describe('web.ts', () => {
       expect(result.authResult.scraperProvider).toBe('keenable' as ScraperProviders);
       expect(result.authResult.keenableApiKey).toBe('user-keenable-key');
       expect(result.authenticated).toBe(true);
+    });
+
+    it('should ignore a saved Keenable search URL for scraper-only Keenable', async () => {
+      const originalApiKey = process.env.KEENABLE_API_KEY;
+      const originalSerperKey = process.env.SERPER_API_KEY;
+      process.env.KEENABLE_API_KEY = 'system-keenable-key';
+      process.env.SERPER_API_KEY = 'system-serper-key';
+      mockIsSSRFTarget.mockReturnValue(true);
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        for (const field of authFields) {
+          if (field === 'KEENABLE_API_KEY') {
+            result[field] = 'system-keenable-key';
+          } else if (field === 'KEENABLE_API_URL') {
+            result[field] = 'http://127.0.0.1:8080';
+          } else if (field === 'SERPER_API_KEY') {
+            result[field] = 'system-serper-key';
+          }
+        }
+        return Promise.resolve(result);
+      });
+
+      try {
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig: {
+            serperApiKey: '${SERPER_API_KEY}',
+            keenableApiKey: '${KEENABLE_API_KEY}',
+            keenableApiUrl: '${KEENABLE_API_URL}',
+            searchProvider: SearchProviders.SERPER,
+            scraperProvider: ScraperProviders.KEENABLE,
+            rerankerType: RerankerTypes.NONE,
+            safeSearch: SafeSearchTypes.MODERATE,
+          } as TWebSearchConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authenticated).toBe(true);
+        expect(result.authResult.searchProvider).toBe(SearchProviders.SERPER);
+        expect(result.authResult.scraperProvider).toBe(ScraperProviders.KEENABLE);
+        expect(result.authResult.keenableApiKey).toBe('system-keenable-key');
+        expect(result.authResult.keenableApiUrl).toBeUndefined();
+        expect(mockLoadAuthValues).toHaveBeenCalledWith(
+          expect.objectContaining({ authFields: ['KEENABLE_API_KEY'] }),
+        );
+        expect(mockLoadAuthValues).not.toHaveBeenCalledWith(
+          expect.objectContaining({ authFields: ['KEENABLE_API_KEY', 'KEENABLE_API_URL'] }),
+        );
+        expect(mockIsSSRFTarget).not.toHaveBeenCalled();
+      } finally {
+        mockIsSSRFTarget.mockReturnValue(false);
+        if (originalApiKey == null) {
+          delete process.env.KEENABLE_API_KEY;
+        } else {
+          process.env.KEENABLE_API_KEY = originalApiKey;
+        }
+        if (originalSerperKey == null) {
+          delete process.env.SERPER_API_KEY;
+        } else {
+          process.env.SERPER_API_KEY = originalSerperKey;
+        }
+      }
     });
 
     it('should not scrape with Keenable for another search provider without a Keenable value', async () => {

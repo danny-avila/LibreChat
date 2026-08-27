@@ -146,6 +146,7 @@ const {
   deleteUserController,
   getUserController,
   acceptTermsController,
+  updateUserPluginsController,
   resendVerificationController,
   verifyEmailController,
 } = require('./UserController');
@@ -159,6 +160,64 @@ const {
   cancelAgentTriggerUserDeletion,
 } = require('~/models');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
+const { updateUserPluginAuth } = require('~/server/services/PluginService');
+const { webSearchSelectionFields } = require('@librechat/data-schemas');
+
+describe('updateUserPluginsController', () => {
+  const mockRes = {
+    status: jest.fn().mockReturnThis(),
+    send: jest.fn().mockReturnThis(),
+    json: jest.fn().mockReturnThis(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('does not persist web-search selections after a credential write fails', async () => {
+    updateUserPluginAuth.mockResolvedValueOnce(new Error('credential write failed'));
+
+    await updateUserPluginsController(
+      {
+        config: {
+          webSearch: {
+            keenableApiKey: '${KEENABLE_API_KEY}',
+            keenableApiUrl: '${KEENABLE_API_URL}',
+          },
+        },
+        user: { id: 'user-id', _id: 'user-id', plugins: [] },
+        body: {
+          pluginKey: 'web_search',
+          action: 'install',
+          isEntityTool: true,
+          auth: {
+            selectedProvider: 'keenable',
+            selectedScraper: 'keenable',
+            selectedReranker: 'none',
+            keenableApiKey: 'new-key',
+          },
+        },
+      },
+      mockRes,
+    );
+
+    expect(updateUserPluginAuth).toHaveBeenCalledTimes(1);
+    expect(updateUserPluginAuth).toHaveBeenCalledWith(
+      'user-id',
+      'KEENABLE_API_KEY',
+      'web_search',
+      'new-key',
+    );
+    for (const selectionField of Object.values(webSearchSelectionFields)) {
+      expect(updateUserPluginAuth).not.toHaveBeenCalledWith(
+        'user-id',
+        selectionField,
+        'web_search',
+        expect.anything(),
+      );
+    }
+  });
+});
 
 describe('verifyEmailController', () => {
   const mockRes = {
