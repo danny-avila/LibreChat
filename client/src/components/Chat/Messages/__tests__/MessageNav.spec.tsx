@@ -2432,6 +2432,82 @@ describe('MessageNav', () => {
       restoreLayout();
     });
 
+    it('installs one measurement observer, not one per copy of the effect', () => {
+      // The rail measures rib offsets on every resize and every entry or current
+      // change. A second observer doubles that pass for exactly the long lists
+      // the rail exists to navigate.
+      /** The effect legitimately re-runs as entries and the current rib settle,
+       *  disconnecting as it goes; what must never happen is two watching the
+       *  column at once. The transcript's own content observer is a separate,
+       *  legitimate watcher, so count only those aimed at the rail. */
+      const watching = new Set<CountingResizeObserver>();
+      const RealResizeObserver = global.ResizeObserver;
+      class CountingResizeObserver {
+        target: Element | null = null;
+        observe(el: Element) {
+          this.target = el;
+          watching.add(this);
+        }
+
+        unobserve() {
+          watching.delete(this);
+        }
+
+        disconnect() {
+          watching.delete(this);
+        }
+      }
+      (global as unknown as { ResizeObserver: unknown }).ResizeObserver = CountingResizeObserver;
+
+      const { container } = renderNav(
+        Array.from({ length: 6 }, (_, i) =>
+          buildMessage({ messageId: `m-${i}`, text: `message ${i}` }),
+        ),
+      );
+
+      const column = getColumn(container);
+      const onColumn = [...watching].filter((o) => o.target === column);
+      expect(onColumn).toHaveLength(1);
+      (global as unknown as { ResizeObserver: unknown }).ResizeObserver = RealResizeObserver;
+    });
+
+    it('cancels the pending preview and magnification frame when the rail unmounts', () => {
+      // Leaving search, or switching conversations, is exactly the transition
+      // where a rib hovered moments earlier leaves a timer and a queued frame
+      // pointing at a component that is gone.
+      const messages = Array.from({ length: 6 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}` }),
+      );
+      const restoreLayout = stubRibLayout(messages.map((m) => m.messageId));
+      const { container, unmount } = renderNav(messages);
+      const column = getColumn(container);
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+
+      const clearSpy = jest.spyOn(global, 'clearTimeout');
+      const cancelSpy = jest.spyOn(window, 'cancelAnimationFrame');
+
+      act(() => {
+        fireEvent.pointerMove(column, { pointerId: 1, clientY: 15 });
+      });
+      /** Unmount inside the preview's open delay, with a frame still queued. */
+      act(() => {
+        unmount();
+      });
+
+      expect(clearSpy).toHaveBeenCalled();
+      expect(cancelSpy).toHaveBeenCalled();
+      /** Nothing left to fire against the unmounted rail. */
+      expect(() =>
+        act(() => {
+          jest.advanceTimersByTime(200);
+        }),
+      ).not.toThrow();
+
+      clearSpy.mockRestore();
+      cancelSpy.mockRestore();
+      restoreLayout();
+    });
+
     it('holds the rail still while the pointer is working it, and follows again after', () => {
       const messages = Array.from({ length: 10 }, (_, i) =>
         buildMessage({ messageId: `m-${i}`, text: `message ${i}`, isCreatedByUser: i % 2 === 0 }),

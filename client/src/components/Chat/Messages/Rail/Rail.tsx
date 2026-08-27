@@ -335,18 +335,22 @@ function Rail({
     return () => mq.removeListener(onChange);
   }, []);
 
-  useEffect(() => {
-    const raf = requestAnimationFrame(measureRibs);
-    const col = columnRef.current;
-    const resize = col ? new ResizeObserver(measureRibs) : null;
-    if (col && resize) {
-      resize.observe(col);
-    }
-    return () => {
-      cancelAnimationFrame(raf);
-      resize?.disconnect();
-    };
-  }, [entries, currentId, measureRibs]);
+  /** A rib hovered or focused moments before the rail unmounts leaves a queued
+   *  frame and a pending preview timer behind, both of which would fire against
+   *  a component that is gone. Leaving search, or switching conversations, is
+   *  exactly that transition. */
+  useEffect(
+    () => () => {
+      if (magRafRef.current != null) {
+        cancelAnimationFrame(magRafRef.current);
+      }
+      if (tipTimerRef.current) {
+        clearTimeout(tipTimerRef.current);
+      }
+    },
+    [],
+  );
+
   const positionTip = useCallback((top: number, right: number) => {
     tipPosRef.current = { top, right };
     const el = tipElRef.current;
@@ -508,6 +512,14 @@ function Rail({
     }
   }, [ensureRibLayout]);
 
+  /** At most one magnification pass per frame, whoever asks for it: the pointer
+   *  moving, the rail scrolling under a still pointer, or focus landing on a rib. */
+  const scheduleMagnify = useCallback(() => {
+    if (magRafRef.current == null) {
+      magRafRef.current = requestAnimationFrame(applyMagnify);
+    }
+  }, [applyMagnify]);
+
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       const col = columnRef.current;
@@ -516,11 +528,9 @@ function Rail({
       }
       interactingRef.current = true;
       pointerClientYRef.current = e.clientY;
-      if (magRafRef.current == null) {
-        magRafRef.current = requestAnimationFrame(applyMagnify);
-      }
+      scheduleMagnify();
     },
-    [applyMagnify],
+    [scheduleMagnify],
   );
 
   /** Wheeling the rail moves the ribs without moving the pointer, so the hit
@@ -530,10 +540,8 @@ function Rail({
     if (pointerClientYRef.current == null) {
       return;
     }
-    if (magRafRef.current == null) {
-      magRafRef.current = requestAnimationFrame(applyMagnify);
-    }
-  }, [applyMagnify]);
+    scheduleMagnify();
+  }, [scheduleMagnify]);
 
   const handlePointerLeave = useCallback(() => {
     pointerClientYRef.current = null;
@@ -560,11 +568,9 @@ function Rail({
       interactingRef.current = true;
       const rect = target.getBoundingClientRect();
       pointerClientYRef.current = rect.top + rect.height / 2;
-      if (magRafRef.current == null) {
-        magRafRef.current = requestAnimationFrame(applyMagnify);
-      }
+      scheduleMagnify();
     },
-    [applyMagnify],
+    [scheduleMagnify],
   );
 
   const handleColumnBlur = useCallback(
