@@ -205,11 +205,12 @@ async function authenticateRequest(
 }
 
 function isSharedAssistant(assistant: AssistantImageRecord, configs: AssistantConfig[]): boolean {
-  const matchingConfigs = assistant.endpoint
-    ? configs.filter((config) => config.endpoint === assistant.endpoint)
-    : configs.length === 1
-      ? configs
-      : [];
+  let matchingConfigs: AssistantConfig[] = [];
+  if (assistant.endpoint) {
+    matchingConfigs = configs.filter((config) => config.endpoint === assistant.endpoint);
+  } else if (configs.length === 1) {
+    matchingConfigs = configs;
+  }
 
   return matchingConfigs.some((config) => {
     if (config.privateAssistants) {
