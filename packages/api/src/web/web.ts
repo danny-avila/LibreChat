@@ -107,7 +107,8 @@ export function getWebSearchInstallEntries({
   auth: Partial<Record<string, string | null>>;
   config: TCustomConfig['webSearch'];
 }): [string, string][] {
-  const entries: [string, string][] = [];
+  const credentialEntries: [string, string][] = [];
+  const selectionEntries: [string, string][] = [];
 
   for (const [key, value] of Object.entries(auth)) {
     if (typeof value !== 'string' || value === '') {
@@ -116,7 +117,7 @@ export function getWebSearchInstallEntries({
 
     const selection = mapWebSearchSelection(key, value);
     if (selection) {
-      entries.push(selection);
+      selectionEntries.push(selection);
       continue;
     }
 
@@ -125,11 +126,11 @@ export function getWebSearchInstallEntries({
       config,
     });
     if (authField) {
-      entries.push([authField, value]);
+      credentialEntries.push([authField, value]);
     }
   }
 
-  return entries;
+  return [...credentialEntries, ...selectionEntries];
 }
 
 export function getWebSearchUninstallFields(config: TCustomConfig['webSearch']): string[] {

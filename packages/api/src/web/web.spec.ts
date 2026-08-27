@@ -89,9 +89,9 @@ describe('web.ts', () => {
 
       const entries = getWebSearchInstallEntries({
         auth: {
+          selectedProvider: 'keenable',
           serperApiKey: 'serper-key',
           keenableApiKey: 'keenable-key',
-          selectedProvider: 'keenable',
         },
         config,
       });

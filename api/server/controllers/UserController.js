@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { logger, getTenantId, webSearchSelectionFields } = require('@librechat/data-schemas');
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   getNewS3URL,
   needsRefresh,
@@ -41,8 +41,6 @@ const {
 } = require('~/server/services/Schedules');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
-
-const WEB_SEARCH_SELECTION_FIELDS = new Set(Object.values(webSearchSelectionFields));
 
 const PUBLIC_USER_RESPONSE_FIELDS = [
   '_id',
@@ -267,14 +265,6 @@ const updateUserPluginsController = async (req, res) => {
         action === 'install'
           ? getWebSearchInstallEntries({ auth, config: webSearchConfig })
           : getWebSearchUninstallFields(webSearchConfig).map((field) => [field, '']);
-      if (action === 'install') {
-        authEntries.sort(([leftField], [rightField]) => {
-          return (
-            Number(WEB_SEARCH_SELECTION_FIELDS.has(leftField)) -
-            Number(WEB_SEARCH_SELECTION_FIELDS.has(rightField))
-          );
-        });
-      }
     }
 
     if (action === 'install') {
