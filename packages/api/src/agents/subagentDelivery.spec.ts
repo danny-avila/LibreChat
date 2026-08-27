@@ -31,8 +31,9 @@ describe('createSubagentWakeupHandleHook', () => {
       background_task_id: 'task-1',
       subagent_thread_id: 'thread-1',
       status: 'running',
-      message: SUBAGENT_WAKEUP_GUIDANCE,
     });
+    expect(updated.message).toContain('background_task_id "task-1"');
+    expect(updated.message).toContain(SUBAGENT_WAKEUP_GUIDANCE);
   });
 
   it('leaves ordinary background tools and terminal subagent results unchanged', async () => {

@@ -51,7 +51,13 @@ export function createSubagentWakeupHandleHook(): HookCallback<'PostToolUse'> {
     ) {
       return {};
     }
-    const updated = { ...output, message: SUBAGENT_WAKEUP_GUIDANCE };
+    /** The client recognizes a durable child handle by its exact host-owned shape
+     * and by the message repeating the opaque task identity. Preserve that
+     * anti-spoofing contract while replacing the legacy poll-first guidance. */
+    const updated = {
+      ...output,
+      message: `Task handle: background_task_id "${output.background_task_id}". ${SUBAGENT_WAKEUP_GUIDANCE}`,
+    };
     return {
       updatedOutput: typeof input.toolOutput === 'string' ? JSON.stringify(updated) : updated,
     };
