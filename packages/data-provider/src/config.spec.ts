@@ -737,6 +737,66 @@ describe('webSearchSchema', () => {
     ).toThrow();
   });
 
+  it('accepts Keenable search options', () => {
+    const result = webSearchSchema.parse({
+      keenableSearchOptions: {
+        maxResults: 7,
+        site: 'example.com',
+        attributionTitle: 'LibreChat',
+        timeout: 15000,
+      },
+    });
+
+    expect(result.keenableSearchOptions?.maxResults).toBe(7);
+    expect(result.keenableSearchOptions?.site).toBe('example.com');
+    expect(result.keenableSearchOptions?.attributionTitle).toBe('LibreChat');
+    expect(result.keenableSearchOptions?.timeout).toBe(15000);
+  });
+
+  it('rejects invalid Keenable search options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        keenableSearchOptions: {
+          maxResults: 0,
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        keenableSearchOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts Keenable as a scraper provider with its options', () => {
+    const result = webSearchSchema.parse({
+      searchProvider: 'keenable',
+      scraperProvider: 'keenable',
+      rerankerType: 'none',
+      keenableScraperOptions: {
+        attributionTitle: 'LibreChat',
+        timeout: 15000,
+      },
+    });
+
+    expect(result.scraperProvider).toBe('keenable');
+    expect(result.keenableScraperOptions?.attributionTitle).toBe('LibreChat');
+    expect(result.keenableScraperOptions?.timeout).toBe(15000);
+  });
+
+  it('rejects invalid Keenable scraper options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        keenableScraperOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+  });
+
   it('accepts SearXNG search options', () => {
     const result = webSearchSchema.parse({
       searxngSearchOptions: {

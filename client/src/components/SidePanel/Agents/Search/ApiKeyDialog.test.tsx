@@ -1,7 +1,13 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ApiKeyDialog from './ApiKeyDialog';
-import { AuthType, SearchCategories, RerankerTypes } from 'librechat-data-provider';
+import {
+  AuthType,
+  RerankerTypes,
+  SearchProviders,
+  SearchCategories,
+  ScraperProviders,
+} from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 
 // Mock useLocalize to just return the key
@@ -32,6 +38,7 @@ const defaultProps = {
   ],
   isToolAuthenticated: false,
   register: mockRegister as any,
+  setValue: jest.fn(),
   handleSubmit: (fn: any) => (e: any) => fn(e),
 };
 
@@ -60,6 +67,38 @@ describe('ApiKeyDialog', () => {
     // Switch to Cohere
     fireEvent.click(screen.getByText('com_ui_web_search_reranker_cohere'));
     expect(screen.getByPlaceholderText('com_ui_web_search_cohere_key')).toBeInTheDocument();
+  });
+
+  it('restores per-user provider and scraper selections', () => {
+    mockUseGetStartupConfig.mockReturnValue({ data: {} });
+    render(
+      <ApiKeyDialog
+        {...defaultProps}
+        searchProvider={SearchProviders.KEENABLE}
+        scraperProvider={ScraperProviders.KEENABLE}
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'com_ui_web_search_provider_keenable' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'com_ui_web_search_scraper_keenable' }),
+    ).toBeInTheDocument();
+  });
+
+  it('writes keyless provider and reranker selections into the submitted form', () => {
+    const setValue = jest.fn();
+    mockUseGetStartupConfig.mockReturnValue({ data: {} });
+    render(<ApiKeyDialog {...defaultProps} setValue={setValue} />);
+
+    fireEvent.click(screen.getByText('com_ui_web_search_provider_keenable'));
+    fireEvent.click(screen.getByText('com_ui_web_search_reranker_none'));
+
+    expect(setValue).toHaveBeenCalledWith('selectedProvider', SearchProviders.KEENABLE);
+    expect(setValue).toHaveBeenCalledWith('selectedReranker', RerankerTypes.NONE);
+    expect(screen.queryByPlaceholderText('com_ui_web_search_jina_key')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('com_ui_web_search_cohere_key')).not.toBeInTheDocument();
   });
 
   it('shows static text for provider and only provider input if provider is set', () => {

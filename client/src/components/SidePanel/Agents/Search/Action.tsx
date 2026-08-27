@@ -2,7 +2,13 @@ import { useRef } from 'react';
 import { Button } from '@librechat/client';
 import { useFormContext } from 'react-hook-form';
 import { KeyRound, CircleCheck } from 'lucide-react';
-import { AuthType, AgentCapabilities } from 'librechat-data-provider';
+import {
+  AuthType,
+  RerankerTypes,
+  SearchProviders,
+  ScraperProviders,
+  AgentCapabilities,
+} from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { useLocalize, useSearchApiKeyForm } from '~/hooks';
 import ApiKeyDialog from './ApiKeyDialog';
@@ -10,9 +16,15 @@ import ApiKeyDialog from './ApiKeyDialog';
 export default function Action({
   authTypes = [],
   isToolAuthenticated = false,
+  searchProvider,
+  scraperProvider,
+  rerankerType,
 }: {
   authTypes?: [string, AuthType][];
   isToolAuthenticated?: boolean;
+  searchProvider?: SearchProviders;
+  scraperProvider?: ScraperProviders;
+  rerankerType?: RerankerTypes;
 }) {
   const localize = useLocalize();
   const { setValue } = useFormContext<AgentForm>();
@@ -68,9 +80,13 @@ export default function Action({
         onRevoke={handleRevokeApiKey}
         onOpenChange={setIsDialogOpen}
         register={keyFormMethods.register}
+        setValue={keyFormMethods.setValue}
         isToolAuthenticated={isToolAuthenticated}
         handleSubmit={keyFormMethods.handleSubmit}
         triggerRef={apiKeyButtonRef}
+        searchProvider={searchProvider}
+        scraperProvider={scraperProvider}
+        rerankerType={rerankerType}
       />
     </>
   );

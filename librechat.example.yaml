@@ -1024,6 +1024,8 @@ endpoints:
 #   searxngApiKey: '${SEARXNG_API_KEY}'
 #   # Tavily (search provider and/or scraper)
 #   tavilyApiKey: '${TAVILY_API_KEY}'
+#   # Keenable (search provider; keyless by default, a key only lifts rate limits)
+#   keenableApiKey: '${KEENABLE_API_KEY}'
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
@@ -1086,6 +1088,40 @@ endpoints:
 #     # includeFavicon: false   # Include favicon URL for each result
 #     # format: markdown        # 'markdown' (default) or 'text' (plain text, may increase latency)
 #     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000); Tavily Extract receives seconds clamped to 1-60
+#
+# Keenable as both search provider and scraper example — a fully keyless web
+# search stack: no API key for any of the three categories. The public search and
+# fetch endpoints are rate-limited; a key only lifts the cap.
+# webSearch:
+#   searchProvider: keenable
+#   scraperProvider: keenable
+#   rerankerType: none          # Rerankers all require a key; 'none' skips reranking
+#   # keenableApiKey: '${KEENABLE_API_KEY}'   # Optional: a key only lifts rate limits (public endpoints used when unset)
+#   # keenableApiUrl: '${KEENABLE_API_URL}'   # Optional: search API URL override (fetch uses KEENABLE_FETCH_URL)
+#   keenableSearchOptions:
+#     maxResults: 5             # 1-20 results per search (default: 8)
+#     # site: example.com       # Restrict search to a single domain
+#     # attributionTitle: LibreChat  # X-Keenable-Title header sent with each request
+#     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000)
+#   keenableScraperOptions:
+#     # attributionTitle: LibreChat  # X-Keenable-Title header sent with each fetch
+#     timeout: 15000            # HTTP request timeout in milliseconds (max 120000)
+#
+# Keenable search paired with another scraper (Firecrawl here) also works; each
+# category is configured independently:
+# webSearch:
+#   searchProvider: keenable
+#   scraperProvider: firecrawl
+#   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
+#
+# The reverse (someone else's search, Keenable as the scraper) also works. Pin
+# the stack for every user as shown below, or leave the providers unpinned so
+# each user can save this same keyless combination in the API-key dialog:
+# webSearch:
+#   searchProvider: searxng
+#   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
+#   scraperProvider: keenable
+#   rerankerType: none
 #
 # SearXNG as the search provider example:
 # webSearch:
