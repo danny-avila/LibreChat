@@ -18,11 +18,11 @@ const { getAppConfig } = require('~/server/services/Config');
 
 const getAssistantEndpointConfigs = (appConfig) =>
   [
-    appConfig.endpoints?.assistants && {
+    appConfig?.endpoints?.assistants && {
       endpoint: 'assistants',
       ...appConfig.endpoints.assistants,
     },
-    appConfig.endpoints?.azureAssistants && {
+    appConfig?.endpoints?.azureAssistants && {
       endpoint: 'azureAssistants',
       ...appConfig.endpoints.azureAssistants,
     },
@@ -33,6 +33,7 @@ const getAssistantEndpointConfigs = (appConfig) =>
  * @param {boolean | {secureImageLinks?: boolean, assistantEndpoints?: object[]}} [config]
  */
 function createValidateImageRequest(config = {}) {
+  const resolveDynamicConfig = typeof config !== 'boolean';
   const options =
     typeof config === 'boolean'
       ? { secureImageLinks: config }
@@ -41,24 +42,31 @@ function createValidateImageRequest(config = {}) {
           assistantEndpoints: config.assistantEndpoints,
         };
 
-  return createImageAuthorizationMiddleware(options, {
+  const deps = {
     parseCookies: cookie.parse,
     isOpenIdReuseEnabled: () => isEnabled(process.env.OPENID_REUSE_TOKENS),
     getBasePath,
     findSession,
     getAgent,
     getAssistant,
-    getAssistantEndpointConfigs: async ({ userId, user }) => {
-      const appConfig = await getAppConfig(
-        getAppConfigOptionsFromUser({ ...user, id: userId }, user.tenantId),
-      );
-      return getAssistantEndpointConfigs(appConfig);
-    },
     getUserById,
     getUserPrincipals,
     hasCapabilityForPrincipals,
     hasPermission,
-  });
+  };
+  if (resolveDynamicConfig) {
+    deps.getImageConfig = async ({ userId, user }) => {
+      const appConfig = await getAppConfig(
+        getAppConfigOptionsFromUser({ ...user, id: userId }, user.tenantId),
+      );
+      return {
+        secureImageLinks: appConfig.secureImageLinks,
+        assistantEndpoints: getAssistantEndpointConfigs(appConfig),
+      };
+    };
+  }
+
+  return createImageAuthorizationMiddleware(options, deps);
 }
 
 module.exports = createValidateImageRequest;

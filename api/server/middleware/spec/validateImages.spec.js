@@ -81,6 +81,29 @@ describe('validateImageRequest middleware', () => {
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.send).toHaveBeenCalledWith('Unauthorized');
     });
+
+    test('should honor an owner-scoped setting that disables image protection', async () => {
+      getAppConfig.mockResolvedValue({ secureImageLinks: false, endpoints: {} });
+      req.originalUrl = '/images/65cfb246f7ecadb8b1e8036c/example.jpg';
+      const middleware = createValidateImageRequest({ secureImageLinks: true });
+
+      await middleware(req, res, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(res.locals.privateImageCache).toBeUndefined();
+    });
+
+    test('should honor an owner-scoped setting that enables image protection', async () => {
+      getAppConfig.mockResolvedValue({ secureImageLinks: true, endpoints: {} });
+      req.originalUrl = '/images/65cfb246f7ecadb8b1e8036c/example.jpg';
+      const middleware = createValidateImageRequest({ secureImageLinks: false });
+
+      await middleware(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.locals.privateImageCache).toBe(true);
+    });
   });
 
   describe('Standard LibreChat token flow', () => {

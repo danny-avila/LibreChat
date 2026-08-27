@@ -172,8 +172,9 @@ describe('createImageAuthorizationMiddleware', () => {
       { assistantEndpoints: [{ endpoint: 'assistants', privateAssistants: false }] },
       deps,
     );
+    const token = signUser(VIEWER_ID);
 
-    await middleware(createRequest(assistantPath), response, next);
+    await middleware(createRequest(assistantPath, `refreshToken=${token}`), response, next);
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(deps.getAssistant).toHaveBeenCalledWith(
@@ -184,6 +185,24 @@ describe('createImageAuthorizationMiddleware', () => {
       },
       { _id: 1, assistant_id: 1, endpoint: 1 },
     );
+  });
+
+  it('requires authentication for an otherwise shared assistant avatar', async () => {
+    (deps.getAssistant as jest.Mock).mockResolvedValue({
+      _id: '65cfb246f7ecadb8b1e8036e',
+      assistant_id: 'asst_shared',
+      endpoint: 'assistants',
+    });
+    const assistantPath = `/images/${OWNER_ID}/assistant-avatar.png`;
+    const middleware = createImageAuthorizationMiddleware(
+      { assistantEndpoints: [{ endpoint: 'assistants', privateAssistants: false }] },
+      deps,
+    );
+
+    await middleware(createRequest(assistantPath), response, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(401);
   });
 
   it('does not use a shared endpoint policy for a private endpoint assistant', async () => {
@@ -272,9 +291,10 @@ describe('createImageAuthorizationMiddleware', () => {
       assistant_id: 'asst_private',
       endpoint: 'assistants',
     });
-    deps.getAssistantEndpointConfigs = jest
-      .fn()
-      .mockResolvedValue([{ endpoint: 'assistants', privateAssistants: true }]);
+    deps.getImageConfig = jest.fn().mockResolvedValue({
+      secureImageLinks: true,
+      assistantEndpoints: [{ endpoint: 'assistants', privateAssistants: true }],
+    });
     const assistantPath = `/images/${OWNER_ID}/assistant-avatar.png`;
     const middleware = createImageAuthorizationMiddleware(
       { assistantEndpoints: [{ endpoint: 'assistants', privateAssistants: false }] },
@@ -285,10 +305,51 @@ describe('createImageAuthorizationMiddleware', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(response.status).toHaveBeenCalledWith(401);
-    expect(deps.getAssistantEndpointConfigs).toHaveBeenCalledWith({
+    expect(deps.getImageConfig).toHaveBeenCalledWith({
       userId: OWNER_ID,
       user: expect.objectContaining({ tenantId: 'tenant-a' }),
     });
+  });
+
+  it('honors an owner-scoped setting that disables secure image links', async () => {
+    deps.getImageConfig = jest.fn().mockResolvedValue({
+      secureImageLinks: false,
+      assistantEndpoints: [],
+    });
+    const middleware = createImageAuthorizationMiddleware({}, deps);
+
+    await middleware(createRequest(`/images/${OWNER_ID}/private.png`), response, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(response.locals.privateImageCache).toBeUndefined();
+  });
+
+  it('honors an owner-scoped setting that enables protection over a disabled fallback', async () => {
+    deps.getImageConfig = jest.fn().mockResolvedValue({
+      secureImageLinks: true,
+      assistantEndpoints: [],
+    });
+    const middleware = createImageAuthorizationMiddleware({ secureImageLinks: false }, deps);
+
+    await middleware(createRequest(`/images/${OWNER_ID}/private.png`), response, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(401);
+    expect(response.locals.privateImageCache).toBe(true);
+  });
+
+  it('decodes an encoded deployment base path consistently with the request URL', async () => {
+    (deps.getBasePath as jest.Mock).mockReturnValue('/libre%20chat');
+    const token = signUser(VIEWER_ID);
+    const middleware = createImageAuthorizationMiddleware({}, deps);
+
+    await middleware(
+      createRequest(`/libre%20chat/images/${VIEWER_ID}/profile.png`, `refreshToken=${token}`),
+      response,
+      next,
+    );
+
+    expect(next).toHaveBeenCalledTimes(1);
   });
 
   it('marks protected image responses as private before serving them', async () => {

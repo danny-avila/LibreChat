@@ -45,6 +45,11 @@ type AssistantImageRecord = Pick<IAssistant, '_id' | 'assistant_id'> & {
   endpoint?: string;
 };
 
+type ResolvedImageConfig = {
+  secureImageLinks: boolean;
+  assistantEndpoints: AssistantConfig[];
+};
+
 type CookieAuthResult =
   | { status: 'missing' }
   | { status: 'invalid' }
@@ -64,10 +69,10 @@ export interface ImageAuthorizationDeps {
     query: FilterQuery<IAssistant>,
     projection?: ProjectionType<IAssistant>,
   ) => Promise<AssistantImageRecord | null>;
-  getAssistantEndpointConfigs?: (params: {
-    userId: string;
-    user: ImageUser;
-  }) => Promise<AssistantConfig[]>;
+  getImageConfig?: (params: { userId: string; user: ImageUser }) => Promise<{
+    secureImageLinks?: boolean;
+    assistantEndpoints?: AssistantConfig[];
+  }>;
   getUserPrincipals: (params: {
     userId: string;
     role?: string | null;
@@ -118,7 +123,13 @@ function parseImagePath(originalUrl: string, basePath: string): ImagePath | null
   }
 
   const cleanPath = decodedUrl.split(/[?#]/, 1)[0];
-  const imagesPath = `${basePath}/images`;
+  let decodedBasePath: string;
+  try {
+    decodedBasePath = decodeURIComponent(basePath);
+  } catch {
+    return null;
+  }
+  const imagesPath = `${decodedBasePath}/images`;
   const match = cleanPath.match(
     new RegExp(`^${escapeRegExp(imagesPath)}/([a-f0-9]{24})/([^/]+)$`, 'i'),
   );
@@ -284,9 +295,6 @@ async function canViewAssistantAvatar(
   if (!assistant) {
     return false;
   }
-  if (isSharedAssistant(assistant, configs)) {
-    return true;
-  }
   if (!viewerId) {
     return false;
   }
@@ -294,6 +302,9 @@ async function canViewAssistantAvatar(
   const viewer = await runAsSystem(() => deps.getUserById(viewerId, 'role tenantId idOnTheSource'));
   if (!viewer || viewer.tenantId !== owner.tenantId) {
     return false;
+  }
+  if (isSharedAssistant(assistant, configs)) {
+    return true;
   }
   const principals = await loadPrincipals(viewerId, viewer, deps);
   try {
@@ -308,35 +319,49 @@ async function canViewAssistantAvatar(
   }
 }
 
-async function resolveAssistantConfigs(
+async function resolveImageConfig(
   ownerId: string,
   owner: ImageUser,
-  fallbackConfigs: AssistantConfig[],
+  options: ImageAuthorizationOptions,
   deps: ImageAuthorizationDeps,
-): Promise<AssistantConfig[]> {
-  if (!deps.getAssistantEndpointConfigs) {
-    return fallbackConfigs;
+): Promise<ResolvedImageConfig> {
+  if (!deps.getImageConfig) {
+    return {
+      secureImageLinks: options.secureImageLinks !== false,
+      assistantEndpoints: options.assistantEndpoints ?? [],
+    };
   }
   try {
-    return await deps.getAssistantEndpointConfigs({ userId: ownerId, user: owner });
+    const config = await deps.getImageConfig({ userId: ownerId, user: owner });
+    return {
+      secureImageLinks: config.secureImageLinks !== false,
+      assistantEndpoints: config.assistantEndpoints ?? [],
+    };
   } catch (error) {
-    logger.warn('[imageAuthorization] Assistant endpoint config resolution failed', error);
-    return [];
+    logger.warn('[imageAuthorization] Image config resolution failed', error);
+    return { secureImageLinks: true, assistantEndpoints: [] };
   }
 }
 
-async function canViewUserAvatar(
+function isStoredUserAvatar(
   imagePath: ImagePath,
-  viewerId: string | undefined,
   owner: ImageUser,
   deps: ImageAuthorizationDeps,
-): Promise<boolean> {
-  if (!viewerId || typeof owner.avatar !== 'string') {
+): boolean {
+  if (typeof owner.avatar !== 'string') {
     return false;
   }
   const storedAvatar =
     parseImagePath(owner.avatar, deps.getBasePath()) ?? parseImagePath(owner.avatar, '');
-  if (storedAvatar?.canonicalPath !== imagePath.canonicalPath) {
+  return storedAvatar?.canonicalPath === imagePath.canonicalPath;
+}
+
+async function canViewUserAvatar(
+  viewerId: string | undefined,
+  owner: ImageUser,
+  deps: ImageAuthorizationDeps,
+): Promise<boolean> {
+  if (!viewerId) {
     return false;
   }
   const viewer = await runAsSystem(() => deps.getUserById(viewerId, 'tenantId'));
@@ -355,28 +380,20 @@ export function createImageAuthorizationMiddleware(
   options: ImageAuthorizationOptions,
   deps: ImageAuthorizationDeps,
 ): RequestHandler {
-  if (options.secureImageLinks === false) {
+  if (!deps.getImageConfig && options.secureImageLinks === false) {
     return (_req: Request, _res: Response, next: NextFunction): void => next();
   }
 
-  const assistantConfigs = options.assistantEndpoints ?? [];
   return async function authorizeImageRequest(
     req: ImageRequest,
     res: Response,
     next: NextFunction,
   ): Promise<void> {
     try {
-      res.locals.privateImageCache = true;
-      const auth = await authenticateRequest(req, deps);
       const imagePath = parseImagePath(req.originalUrl, deps.getBasePath());
       if (!imagePath) {
+        const auth = await authenticateRequest(req, deps);
         denyRequest(res, auth);
-        return;
-      }
-
-      const viewerId = auth.status === 'authenticated' ? auth.userId : undefined;
-      if (viewerId === imagePath.ownerId) {
-        next();
         return;
       }
 
@@ -384,7 +401,29 @@ export function createImageAuthorizationMiddleware(
         deps.getUserById(imagePath.ownerId, 'role tenantId idOnTheSource avatar'),
       );
       if (!owner) {
+        const auth = await authenticateRequest(req, deps);
         denyRequest(res, auth);
+        return;
+      }
+
+      const loadImageConfig = (): Promise<ResolvedImageConfig> =>
+        resolveImageConfig(imagePath.ownerId, owner, options, deps);
+      const imageConfig = owner.tenantId
+        ? await tenantStorage.run(
+            { tenantId: owner.tenantId, userId: imagePath.ownerId },
+            loadImageConfig,
+          )
+        : await runAsSystem(loadImageConfig);
+      if (!imageConfig.secureImageLinks) {
+        next();
+        return;
+      }
+
+      res.locals.privateImageCache = true;
+      const auth = await authenticateRequest(req, deps);
+      const viewerId = auth.status === 'authenticated' ? auth.userId : undefined;
+      if (viewerId === imagePath.ownerId) {
+        next();
         return;
       }
 
@@ -392,25 +431,22 @@ export function createImageAuthorizationMiddleware(
         if (imagePath.agentId) {
           return canViewAgentAvatar(imagePath, viewerId, owner, deps);
         }
-        const currentAssistantConfigs = await resolveAssistantConfigs(
-          imagePath.ownerId,
-          owner,
-          assistantConfigs,
-          deps,
-        );
-        if (currentAssistantConfigs.length > 0) {
+        if (isStoredUserAvatar(imagePath, owner, deps)) {
+          return canViewUserAvatar(viewerId, owner, deps);
+        }
+        if (imageConfig.assistantEndpoints.length > 0) {
           const canViewAssistant = await canViewAssistantAvatar(
             imagePath,
             viewerId,
             owner,
-            currentAssistantConfigs,
+            imageConfig.assistantEndpoints,
             deps,
           );
           if (canViewAssistant) {
             return true;
           }
         }
-        return canViewUserAvatar(imagePath, viewerId, owner, deps);
+        return false;
       };
       const allowed = owner.tenantId
         ? await tenantStorage.run(
