@@ -597,16 +597,22 @@ export function getApprovalTtlMs(cfg: TCheckpointerConfig | undefined): number {
  * Prove that the durable saver contains a complete interrupt checkpoint for one generation.
  *
  * A pending Redis action is useful only when LangGraph can reload the state it
- * interrupted. Check the write anchor and its matching checkpoint together so a
- * partially written or misrouted saver cannot be exposed as a resumable pause.
+ * interrupted. Read the exact checkpoint selected by the current interrupt and
+ * require its matching interrupt id, so an older retained pause cannot satisfy
+ * verification for a missing or misrouted re-pause.
  * This runs once per interrupt, never on the ordinary generation path.
  */
 export async function hasDurableAgentInterruptCheckpoint(
   threadId: string,
   cfg?: TCheckpointerConfig,
-  options?: { checkpointNamespace?: string },
+  options?: {
+    checkpointNamespace?: string;
+    checkpointId: string;
+    checkpointNs?: string;
+    interruptId: string;
+  },
 ): Promise<boolean> {
-  if (!threadId) {
+  if (!threadId || !options?.checkpointId || !options.interruptId) {
     return false;
   }
   const saver = await getAgentCheckpointer(cfg);
@@ -618,13 +624,29 @@ export async function hasDurableAgentInterruptCheckpoint(
   const tuple = await saver.getTuple({
     configurable: {
       thread_id: threadId,
-      checkpoint_ns: '',
+      checkpoint_ns: options.checkpointNs ?? '',
+      checkpoint_id: options.checkpointId,
       ...(checkpointNamespace !== '' && {
         [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: checkpointNamespace,
       }),
     },
   });
-  return (tuple?.pendingWrites ?? []).some((write) => write[1] === INTERRUPT);
+  if (tuple?.checkpoint.id !== options.checkpointId) {
+    return false;
+  }
+  return (tuple.pendingWrites ?? []).some((write) => {
+    if (write[1] !== INTERRUPT) {
+      return false;
+    }
+    const values = Array.isArray(write[2]) ? write[2] : [write[2]];
+    return values.some(
+      (value) =>
+        value != null &&
+        typeof value === 'object' &&
+        'id' in value &&
+        value.id === options.interruptId,
+    );
+  });
 }
 
 /**

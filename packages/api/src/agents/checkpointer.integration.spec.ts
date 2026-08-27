@@ -50,6 +50,7 @@ async function seedInterruptCheckpoint(
   saver: MongoDBSaver,
   threadId: string,
   checkpointNamespace = '',
+  interruptId = 'interrupt-current',
 ) {
   const { config, checkpoint, metadata } = putArgs(threadId, checkpointNamespace);
   await saver.putWrites(
@@ -60,7 +61,7 @@ async function seedInterruptCheckpoint(
         checkpoint_id: checkpoint.id,
       },
     },
-    [[INTERRUPT, 'approve?']],
+    [[INTERRUPT, { id: interruptId, value: 'approve?' }]],
     'task-1',
   );
   await saver.put(config, checkpoint, metadata);
@@ -102,21 +103,38 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
   it('verifies that an interrupt write has its matching durable checkpoint', async () => {
     const saver = await getAgentCheckpointer(MONGO_CFG);
     expect(saver).toBeDefined();
-    await expect(hasDurableAgentInterruptCheckpoint('verified-pause', MONGO_CFG)).resolves.toBe(
-      false,
-    );
+    const missingIdentity = {
+      checkpointId: 'missing-checkpoint',
+      interruptId: 'interrupt-current',
+    };
+    await expect(
+      hasDurableAgentInterruptCheckpoint('verified-pause', MONGO_CFG, missingIdentity),
+    ).resolves.toBe(false);
 
-    await seedInterruptCheckpoint(saver!, 'verified-pause');
+    const checkpoint = await seedInterruptCheckpoint(saver!, 'verified-pause');
+    const identity = {
+      checkpointId: checkpoint.id,
+      interruptId: 'interrupt-current',
+    };
 
-    await expect(hasDurableAgentInterruptCheckpoint('verified-pause', MONGO_CFG)).resolves.toBe(
-      true,
-    );
+    await expect(
+      hasDurableAgentInterruptCheckpoint('verified-pause', MONGO_CFG, identity),
+    ).resolves.toBe(true);
+    await expect(
+      hasDurableAgentInterruptCheckpoint('verified-pause', MONGO_CFG, missingIdentity),
+    ).resolves.toBe(false);
+    await expect(
+      hasDurableAgentInterruptCheckpoint('verified-pause', MONGO_CFG, {
+        ...identity,
+        interruptId: 'interrupt-stale',
+      }),
+    ).resolves.toBe(false);
     await mongoose.connection.db!.collection('agent_checkpoints').deleteMany({
       thread_id: 'verified-pause',
     });
-    await expect(hasDurableAgentInterruptCheckpoint('verified-pause', MONGO_CFG)).resolves.toBe(
-      false,
-    );
+    await expect(
+      hasDurableAgentInterruptCheckpoint('verified-pause', MONGO_CFG, identity),
+    ).resolves.toBe(false);
   });
 
   it("uses Mongoose's selected database instead of the MongoClient URI default", async () => {

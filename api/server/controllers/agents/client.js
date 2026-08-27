@@ -45,6 +45,7 @@ const {
   hasDurableAgentInterruptCheckpoint,
   isHITLEnabled,
   buildToolApprovalHooks,
+  agentRunUsesCheckpointer,
   canAgentGraphPause,
   getPluginHookSource,
   captureAgentCheckpointGeneration,
@@ -3147,7 +3148,12 @@ class AgentClient extends BaseClient {
         hasDurableInterrupt = await hasDurableAgentInterruptCheckpoint(
           this.conversationId,
           checkpointerCfg,
-          { checkpointNamespace: this.checkpointNamespace },
+          {
+            checkpointNamespace: this.checkpointNamespace,
+            checkpointId: interrupt.checkpointId,
+            checkpointNs: interrupt.checkpointNs,
+            interruptId: interrupt.interruptId,
+          },
         );
       } catch (checkpointError) {
         logger.error(
@@ -3334,12 +3340,20 @@ class AgentClient extends BaseClient {
           })
         : undefined;
       const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
+      const askUserQuestionAdminDisabled = isAskUserQuestionAdminDisabled(appConfig);
       const runCanPause = canAgentGraphPause({
         policy: agentsEConfig?.toolApproval,
         agents: topLevelAgents,
+        hostGeneratedToolNames:
+          this.options.subagentTasks == null ? undefined : [Constants.CHECK_BACKGROUND_TASK],
         resolvedProgrammaticHooks: resolvedToolApprovalHooks,
         pluginHookSource: getPluginHookSource(),
-        askUserQuestionAdminDisabled: isAskUserQuestionAdminDisabled(appConfig),
+        askUserQuestionAdminDisabled,
+      });
+      const runUsesCheckpointer = agentRunUsesCheckpointer({
+        policy: agentsEConfig?.toolApproval,
+        agents: topLevelAgents,
+        askUserQuestionAdminDisabled,
       });
       if (this.options.req?._isScheduledFire === true && runCanPause) {
         if (!GenerationJobManager.isRedis) {
@@ -3631,13 +3645,14 @@ class AgentClient extends BaseClient {
         // HITL is off or the generation has no remnants. Deliberately unconditional
         // per HITL turn: any cheaper Redis flag can go stale across replicas/restarts,
         // while these are two indexed, usually-empty deleteMany operations.
-        // Reuse the exact admission result so denied ask_user_question tools and
-        // non-matching approval policies do not initialize checkpoint work.
+        // Mirror createRun's checkpointer attachment gate. This is deliberately
+        // broader than pause admission: retries must prune remnants even when a
+        // policy or request hook changed from pausing to non-pausing.
         //
         // Start the prune alongside graph construction. The all-settled barrier
         // below still guarantees it completes before the graph is exposed or run.
         const shouldPruneCheckpoint =
-          streamId && this.eventActorInvocationId == null && runCanPause;
+          streamId && this.eventActorInvocationId == null && runUsesCheckpointer;
         let checkpointPrunePromise = Promise.resolve();
         if (shouldPruneCheckpoint && this.checkpointNamespace !== '') {
           checkpointPrunePromise = deleteAgentCheckpoint(

@@ -38,6 +38,7 @@ export interface ToolApprovalAdmissionAgent {
 export interface ToolApprovalAdmissionInput {
   readonly policy: TToolApprovalPolicy | undefined;
   readonly agents: readonly (ToolApprovalAdmissionAgent | null | undefined)[];
+  readonly hostGeneratedToolNames?: readonly string[];
   readonly resolvedProgrammaticHooks?: readonly ResolvedToolApprovalHook[];
   readonly pluginHookSource?: PluginHookSource;
   readonly askUserQuestionAdminDisabled?: boolean;
@@ -91,6 +92,7 @@ function collectApprovalAgents(roots: readonly (ToolApprovalAdmissionAgent | nul
 export function canAgentGraphPause({
   policy,
   agents,
+  hostGeneratedToolNames = [],
   resolvedProgrammaticHooks = [],
   pluginHookSource,
   askUserQuestionAdminDisabled = false,
@@ -112,6 +114,10 @@ export function canAgentGraphPause({
       toolNames.add(name);
     }
   };
+
+  for (const name of hostGeneratedToolNames) {
+    addToolName(name);
+  }
 
   for (const agent of approvalGraph.agents) {
     for (const tool of agent.tools ?? []) {
@@ -156,4 +162,24 @@ export function canAgentGraphPause({
     }
   }
   return asksUserQuestion;
+}
+
+/**
+ * Whether `createRun` attaches a checkpointer for this initialization.
+ * Cleanup follows attachment, not current pause capability: a retry must not
+ * restore remnants written before a policy or request-hook change.
+ */
+export function agentRunUsesCheckpointer({
+  policy,
+  agents,
+  askUserQuestionAdminDisabled = false,
+}: Pick<
+  ToolApprovalAdmissionInput,
+  'policy' | 'agents' | 'askUserQuestionAdminDisabled'
+>): boolean {
+  return (
+    isHITLEnabled(policy) ||
+    (!askUserQuestionAdminDisabled &&
+      agents.some((agent) => agent != null && agentHasTool(agent, ASK_USER_QUESTION_TOOL_NAME)))
+  );
 }

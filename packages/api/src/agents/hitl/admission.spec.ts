@@ -1,7 +1,7 @@
 import type { PluginHookSource } from '~/agents/hooks/source';
 import type { ToolApprovalAdmissionAgent } from './admission';
 import type { ToolApprovalHook } from './hooks';
-import { canAgentGraphPause } from './admission';
+import { agentRunUsesCheckpointer, canAgentGraphPause } from './admission';
 
 const askHook: ToolApprovalHook = async () => ({ decision: 'ask' });
 
@@ -68,6 +68,16 @@ describe('canAgentGraphPause', () => {
     ).toBe(false);
   });
 
+  test('includes host-generated runtime tools in approval admission', () => {
+    expect(
+      canAgentGraphPause({
+        policy: { enabled: true, mode: 'bypass', ask: ['check_background_task'] },
+        agents: [{}],
+        hostGeneratedToolNames: ['check_background_task'],
+      }),
+    ).toBe(true);
+  });
+
   test('matches static and request-scoped rules against MCP aliases', () => {
     const agent: ToolApprovalAdmissionAgent = {
       tools: ['mcp__server__read_file'],
@@ -126,6 +136,27 @@ describe('canAgentGraphPause', () => {
       canAgentGraphPause({
         policy: undefined,
         agents: [{ subagentAgentConfigs: [{ tools: ['ask_user_question'] }] }],
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('agentRunUsesCheckpointer', () => {
+  test('tracks checkpointer attachment independently from current pause capability', () => {
+    const policy = { enabled: true, mode: 'bypass' as const };
+    const agents = [{ tools: ['read_file'] }];
+    expect(canAgentGraphPause({ policy, agents })).toBe(false);
+    expect(agentRunUsesCheckpointer({ policy, agents })).toBe(true);
+  });
+
+  test('uses the same top-level ask-tool admin gate as createRun', () => {
+    const agents = [{ tools: ['ask_user_question'] }];
+    expect(agentRunUsesCheckpointer({ policy: undefined, agents })).toBe(true);
+    expect(
+      agentRunUsesCheckpointer({
+        policy: undefined,
+        agents,
+        askUserQuestionAdminDisabled: true,
       }),
     ).toBe(false);
   });

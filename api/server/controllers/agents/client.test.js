@@ -657,6 +657,8 @@ describe('AgentClient - interrupt discovery persistence', () => {
           {
             getInterrupt: () => ({
               interruptId: 'ask-interrupt',
+              checkpointId: 'checkpoint-current',
+              checkpointNs: 'nested-agent',
               threadId: streamId,
               payload: {
                 type: 'ask_user_question',
@@ -667,6 +669,12 @@ describe('AgentClient - interrupt discovery persistence', () => {
           streamId,
         ),
       ).rejects.toMatchObject({ code: 'HITL_CHECKPOINT_UNAVAILABLE' });
+      expect(mockHasDurableAgentInterruptCheckpoint).toHaveBeenCalledWith(streamId, undefined, {
+        checkpointNamespace: job.metadata.checkpointNamespace,
+        checkpointId: 'checkpoint-current',
+        checkpointNs: 'nested-agent',
+        interruptId: 'ask-interrupt',
+      });
       await expect(GenerationJobManager.getJobStatus(streamId)).resolves.toBe('running');
     } finally {
       isRedisSpy.mockRestore();
@@ -963,6 +971,51 @@ describe('AgentClient - startup telemetry', () => {
     expect(mockCreateRun).toHaveBeenCalledTimes(createRunBefore);
   });
 
+  it('includes host-generated background tools in scheduled pause admission', async () => {
+    const createRunBefore = mockCreateRun.mock.calls.length;
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: {
+          endpoints: {
+            [EModelEndpoint.agents]: {
+              toolApproval: {
+                enabled: true,
+                mode: 'bypass',
+                ask: ['check_background_task'],
+              },
+            },
+          },
+        },
+        _isScheduledFire: true,
+        _resumableStreamId: 'scheduled-background-tool',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        tools: [{ name: 'read_file' }],
+      },
+      subagentTasks: {},
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'scheduled-background-tool';
+    client.responseMessageId = 'scheduled-background-response';
+    client.parentMessageId = 'scheduled-background-parent';
+
+    await expect(client.chatCompletion({ payload: [] })).rejects.toMatchObject({
+      code: 'SCHEDULED_HITL_REQUIRES_SHARED_STORE',
+    });
+    expect(mockCreateRun).toHaveBeenCalledTimes(createRunBefore);
+  });
+
   it.each([
     {
       name: 'a bypass-only approval policy',
@@ -993,6 +1046,7 @@ describe('AgentClient - startup telemetry', () => {
   ])(
     'does not reject scheduled runs for $name',
     async ({ toolApproval, primaryTools, subagentAgentConfigs }) => {
+      mockDeleteAgentCheckpoint.mockReset().mockResolvedValue(undefined);
       const processStream = jest.fn().mockResolvedValue();
       mockCreateRun.mockResolvedValueOnce({
         Graph: null,
@@ -1026,6 +1080,7 @@ describe('AgentClient - startup telemetry', () => {
         artifactPromises: [],
       });
       client.conversationId = 'scheduled-non-pausing-policy';
+      client.checkpointNamespace = 'scheduled-non-pausing-generation';
       client.responseMessageId = 'scheduled-non-pausing-response';
       client.parentMessageId = 'scheduled-non-pausing-parent';
       client.recordCollectedUsage = jest.fn().mockResolvedValue();
@@ -1033,6 +1088,19 @@ describe('AgentClient - startup telemetry', () => {
       await expect(client.chatCompletion({ payload: [] })).resolves.toBeUndefined();
       expect(mockCreateRun).toHaveBeenCalledTimes(createRunBefore + 1);
       expect(processStream).toHaveBeenCalledTimes(1);
+      if (toolApproval?.enabled === true) {
+        expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
+          'scheduled-non-pausing-policy',
+          undefined,
+          undefined,
+          {
+            throwOnError: true,
+            checkpointNamespace: 'scheduled-non-pausing-generation',
+          },
+        );
+      } else {
+        expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+      }
     },
   );
 
