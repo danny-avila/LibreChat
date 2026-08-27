@@ -271,6 +271,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     ReturnType<typeof adaptDurableThreadConversation>
   >([]);
   const [historyCursor, setHistoryCursor] = useState<string | null | undefined>(undefined);
+  const [historyCursorGeneration, setHistoryCursorGeneration] = useState<string>();
   const [historyState, setHistoryState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [historyBoundaryUnavailable, setHistoryBoundaryUnavailable] = useState(false);
   const activeThreadRef = useRef(threadId);
@@ -279,7 +280,6 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const turnDetailRequestsRef = useRef(new Set<string>());
   const historyRequestRef = useRef<string | null>(null);
   const historyHasLoadedRef = useRef(false);
-  const historyRebasedRef = useRef(false);
   if (selectionThreadRef.current !== threadId) {
     selectionThreadRef.current = threadId;
     selectionGenerationRef.current += 1;
@@ -306,12 +306,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     setOlderTurns([]);
     setMovingWindowTurns([]);
     setHistoryCursor(undefined);
+    setHistoryCursorGeneration(undefined);
     setHistoryState('idle');
     setHistoryBoundaryUnavailable(false);
     turnDetailRequestsRef.current.clear();
     historyRequestRef.current = null;
     historyHasLoadedRef.current = false;
-    historyRebasedRef.current = false;
   }, [threadId]);
 
   useEffect(() => {
@@ -368,10 +368,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     [selection.parentConversationId, threadId, turnDetailStates],
   );
   const loadEarlierHistory = useCallback(async () => {
-    const cursor = historyCursor === undefined ? data?.nextCursor : historyCursor;
     const requestedThreadId = threadId;
     const requestedSelectionGeneration = selectionGenerationRef.current;
     const requestedGeneration = latestHistoryGeneration;
+    const insertAfterLoadedHistory =
+      historyCursor !== undefined && historyCursorGeneration !== requestedGeneration;
+    const cursor =
+      historyCursor === undefined || insertAfterLoadedHistory ? data?.nextCursor : historyCursor;
     const requestKey = `${requestedSelectionGeneration}\u0000${requestedThreadId}\u0000${cursor ?? ''}\u0000${requestedGeneration}`;
     if (cursor == null || historyState === 'loading' || historyRequestRef.current != null) {
       return;
@@ -396,15 +399,14 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         return;
       }
       const pageTurns = adaptDurableThreadConversation(page);
-      const insertAfterLoadedHistory = historyRebasedRef.current;
       if (insertAfterLoadedHistory) {
         setMovingWindowTurns((current) => retainBoundedMovingWindowTurns(current, pageTurns));
       } else {
         setOlderTurns((current) => mergeChildConversationTurns(pageTurns, current));
       }
-      historyRebasedRef.current = false;
       historyHasLoadedRef.current = true;
       setHistoryCursor(page.nextCursor ?? null);
+      setHistoryCursorGeneration(requestedGeneration);
       setHistoryBoundaryUnavailable(
         (current) =>
           current ||
@@ -426,6 +428,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   }, [
     data?.nextCursor,
     historyCursor,
+    historyCursorGeneration,
     historyState,
     latestHistoryGeneration,
     selection.parentConversationId,
@@ -673,17 +676,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       if (displaced.length > 0 && historyHasLoadedRef.current) {
         setMovingWindowTurns((current) => retainBoundedMovingWindowTurns(current, displaced));
       }
-      if (previous.generation !== latestHistoryGeneration && historyCursor !== undefined) {
-        historyRebasedRef.current = true;
-        setHistoryCursor(undefined);
-      }
     }
     previousLatestTurnsRef.current = {
       threadId,
       generation: latestHistoryGeneration,
       turns: latestConversationTurns,
     };
-  }, [data, historyCursor, latestConversationTurns, latestHistoryGeneration, threadId]);
+  }, [data, latestConversationTurns, latestHistoryGeneration, threadId]);
   const conversationTurns = useMemo(() => {
     const durableTurns = mergeChildConversationTurns(
       olderTurns,
@@ -746,11 +745,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     if (activity.activityTruncated === true && taskId !== '') states.set(taskId, 'unavailable');
     return states;
   }, [activity.activityTruncated, taskId, turnDetailStates]);
-  const effectiveHistoryCursor = historyCursor === undefined ? data?.nextCursor : historyCursor;
+  const historyCursorUsesLatest =
+    historyCursor === undefined || historyCursorGeneration !== latestHistoryGeneration;
+  const effectiveHistoryCursor = historyCursorUsesLatest ? data?.nextCursor : historyCursor;
   const showUnavailableHistoryBoundary =
     historyBoundaryUnavailable ||
     data?.historyUnavailable === true ||
-    (historyCursor === undefined && data?.historyTruncated === true && data.nextCursor == null);
+    (historyCursorUsesLatest && data?.historyTruncated === true && data.nextCursor == null);
   /** During a rolling deployment an older API replica can omit `turns`. Keep
    * that response readable through the same deep activity renderer; every
    * current host otherwise enters the conversation-native rendering seam. */
