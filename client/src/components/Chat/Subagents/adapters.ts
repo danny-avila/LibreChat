@@ -364,3 +364,55 @@ const adaptDurableTurn = (turn: SubagentThreadTurn, title: string): ChildConvers
 export function adaptDurableThreadConversation(view: SubagentThreadView): ChildConversationTurn[] {
   return (view.turns ?? []).map((turn) => adaptDurableTurn(turn, view.title));
 }
+
+const triggerDetailScore = (turn: ChildConversationTurn): number =>
+  (turn.trigger.summary.trim().length > 0 ? 1 : 0) +
+  (turn.trigger.createdAt == null ? 0 : 1) +
+  (turn.trigger.externalEvent == null ? 0 : 2);
+
+const mergeTurnControls = (
+  older: ChildActivity['controls'],
+  newer: ChildActivity['controls'],
+): ChildActivity['controls'] => {
+  if (older == null) return newer;
+  if (newer == null) return older;
+  const receipts = new Map(older.map((receipt) => [receipt.invocationId, receipt]));
+  for (const receipt of newer) receipts.set(receipt.invocationId, receipt);
+  return [...receipts.values()];
+};
+
+/** Merge chronological page projections whose bounded Mongo windows can split
+ * one task between its user trigger and assistant activity records. */
+export function mergeChildConversationTurns(
+  ...pages: ChildConversationTurn[][]
+): ChildConversationTurn[] {
+  const merged: ChildConversationTurn[] = [];
+  const indexByTaskId = new Map<string, number>();
+  for (const turn of pages.flat()) {
+    const existingIndex = indexByTaskId.get(turn.taskId);
+    if (existingIndex == null) {
+      indexByTaskId.set(turn.taskId, merged.length);
+      merged.push(turn);
+      continue;
+    }
+    const older = merged[existingIndex];
+    const trigger =
+      triggerDetailScore(turn) > triggerDetailScore(older) ? turn.trigger : older.trigger;
+    const controls = mergeTurnControls(older.activity.controls, turn.activity.controls);
+    merged[existingIndex] = {
+      taskId: turn.taskId,
+      trigger,
+      activity: {
+        ...older.activity,
+        ...turn.activity,
+        items: turn.activity.items.length > 0 ? turn.activity.items : older.activity.items,
+        ...(controls == null ? {} : { controls }),
+        activityTruncated:
+          older.activity.activityTruncated === true || turn.activity.activityTruncated === true,
+        controlsTruncated:
+          older.activity.controlsTruncated === true || turn.activity.controlsTruncated === true,
+      },
+    };
+  }
+  return merged;
+}
