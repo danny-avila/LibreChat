@@ -296,21 +296,26 @@ class AgentClient extends BaseClient {
       usageEmitSink?.filter((event) => event?.usage_type === 'subagent').length ?? 0;
     /** @type {AgentClientOptions} */
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
-    /** Preserve initialization-time semantic inputs before buildMessages
-     * decorates live agent instructions with request memory/MCP context. */
-    this.eventActorAgentContextSources = this.getEventActorAgents().map((agent) => ({
-      id: agent.id,
-      version: agent.version,
-      provider: agent.provider,
-      model: agent.model ?? agent.model_parameters?.model,
-      instructions: agent.instructions,
-      additional_instructions: agent.additional_instructions,
-      model_parameters: JSON.parse(JSON.stringify(agent.model_parameters ?? {})),
-      toolDefinitions: JSON.parse(JSON.stringify(agent.toolDefinitions ?? [])),
-      tool_options: JSON.parse(JSON.stringify(agent.tool_options ?? {})),
-      manualSkillPrimes: agent.manualSkillPrimes,
-      alwaysApplySkillPrimes: agent.alwaysApplySkillPrimes,
-    }));
+    if (
+      this.options.req?._isAgentTrigger === true &&
+      this.options.req?._agentEventBindingParentConversationId != null
+    ) {
+      /** Preserve initialization-time semantic inputs before buildMessages
+       * decorates live agent instructions with request memory/MCP context. */
+      this.eventActorAgentContextSources = this.getEventActorAgents().map((agent) => ({
+        id: agent.id,
+        version: agent.version,
+        provider: agent.provider,
+        model: agent.model ?? agent.model_parameters?.model,
+        instructions: agent.instructions,
+        additional_instructions: agent.additional_instructions,
+        model_parameters: JSON.parse(JSON.stringify(agent.model_parameters ?? {})),
+        toolDefinitions: JSON.parse(JSON.stringify(agent.toolDefinitions ?? [])),
+        tool_options: JSON.parse(JSON.stringify(agent.tool_options ?? {})),
+        manualSkillPrimes: agent.manualSkillPrimes,
+        alwaysApplySkillPrimes: agent.alwaysApplySkillPrimes,
+      }));
+    }
     /** @type {string} */
     this.model = this.options.agent.model_parameters.model;
     /** The key for the usage object's input tokens
