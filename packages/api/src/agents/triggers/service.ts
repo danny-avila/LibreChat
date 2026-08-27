@@ -121,6 +121,7 @@ export interface AgentTriggerDeliveryPersistence {
   ) => Promise<void>;
   cancelAgentTriggerUserPurge: (userId: string, fenceStartedAt: Date) => Promise<boolean>;
   recoverAgentTriggerUserPurges: (limit?: number) => Promise<number>;
+  expireLegacyAgentEventActorReceipts?: (now: Date, limit?: number) => Promise<number>;
   deleteAgentTriggerDeliveriesByUser: (userId: string) => Promise<void>;
 }
 
@@ -302,21 +303,31 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     }
     const methods = deps.methods;
     const current = runAsSystem(async () => {
-      const [purgedUsers, publishedLanes, recoveredBatches] = await Promise.all([
-        methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit),
-        methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
-        methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit),
-      ]);
+      const [purgedUsers, publishedLanes, recoveredBatches, expiredLegacyActorReceipts] =
+        await Promise.all([
+          methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit),
+          methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
+          methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit),
+          methods.expireLegacyAgentEventActorReceipts?.(new Date(), purgeRecoveryLimit) ??
+            Promise.resolve(0),
+        ]);
       const reclaimedLanes = await methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit);
       if (publishedLanes > 0) {
         deliveryEngine?.wake();
       }
-      if (purgedUsers > 0 || publishedLanes > 0 || recoveredBatches > 0 || reclaimedLanes > 0) {
+      if (
+        purgedUsers > 0 ||
+        publishedLanes > 0 ||
+        recoveredBatches > 0 ||
+        reclaimedLanes > 0 ||
+        expiredLegacyActorReceipts > 0
+      ) {
         logger.info('[agent-triggers] recovered durable delivery maintenance', {
           purgedUsers,
           publishedLanes,
           recoveredBatches,
           reclaimedLanes,
+          expiredLegacyActorReceipts,
         });
       }
     })

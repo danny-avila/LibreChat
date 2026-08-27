@@ -60,6 +60,7 @@ import {
 } from './message';
 import {
   createConversationMethods,
+  type AgentEventActorReconciliationStorageMetrics,
   type ConversationMethods,
   type ParentSubagentThreadRecord,
 } from './conversation';
@@ -114,7 +115,11 @@ import { createScheduleMethods, type ScheduleMethods } from './schedule';
 import {
   createAgentTriggerDeliveryMethods,
   AgentTriggerDeliveryConflictError,
+  recordAgentEventActorReceiptMetric,
+  setAgentEventActorReceiptMetricObserver,
   type AgentTriggerDeliveryMethods,
+  type AgentEventActorReceiptMetric,
+  type AgentEventActorReceiptStorageMetrics,
 } from './triggerDelivery';
 import { createSkillSyncMethods, type SkillSyncMethods } from './skillSync';
 import type {
@@ -406,6 +411,7 @@ export type {
   SubagentThreadViewMessageRecord,
   SubagentTaskResultClaim,
   ConversationMethods,
+  AgentEventActorReconciliationStorageMetrics,
   ChatProjectMethods,
   TxMethods,
   TransactionMethods,
@@ -426,6 +432,8 @@ export type {
   UpsertSkillSyncCredentialInput,
   SkillSyncMethods,
   AgentTriggerDeliveryMethods,
+  AgentEventActorReceiptMetric,
+  AgentEventActorReceiptStorageMetrics,
   ScheduleMethods,
   AgentMethods,
   ConfigMethods,
@@ -435,3 +443,5 @@ export type {
   MCPAuthorityCredentialSourceDocument,
   InsightsMethods,
 };
+
+export { recordAgentEventActorReceiptMetric, setAgentEventActorReceiptMetricObserver };

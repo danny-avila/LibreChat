@@ -11,6 +11,8 @@ import type { IUser } from '~/types/user';
 import {
   AgentTriggerDeliveryConflictError,
   createAgentTriggerDeliveryMethods,
+  recordAgentEventActorReceiptMetric,
+  setAgentEventActorReceiptMetricObserver,
   type AgentTriggerDeliveryMethods,
 } from './triggerDelivery';
 import { createAgentTriggerLaneSequenceModel } from '../models/triggerLaneSequence';
@@ -52,12 +54,17 @@ afterAll(async () => {
 }, DB_SETUP_TIMEOUT_MS);
 
 beforeEach(async () => {
+  setAgentEventActorReceiptMetricObserver();
   await Promise.all([
     Delivery.deleteMany({}),
     LaneSequence.deleteMany({}),
     UserPurge.deleteMany({}),
     User.deleteMany({}),
   ]);
+});
+
+afterAll(() => {
+  setAgentEventActorReceiptMetricObserver();
 });
 
 function enqueueInput(
@@ -89,6 +96,19 @@ function transientFailure(overrides: Partial<AgentTriggerDeliveryFailure> = {}) 
 }
 
 describe('agent trigger delivery methods', () => {
+  it('never lets receipt metric failures affect storage correctness', () => {
+    setAgentEventActorReceiptMetricObserver(() => {
+      throw new Error('metrics unavailable');
+    });
+
+    expect(() =>
+      recordAgentEventActorReceiptMetric({
+        operation: 'settle',
+        outcome: 'success',
+        resolution: 'checkpoint_verified',
+      }),
+    ).not.toThrow();
+  });
   it('enqueues idempotently and rejects key reuse with different content', async () => {
     const input = enqueueInput();
     const first = await methods.enqueueAgentTriggerDelivery(input);
@@ -771,8 +791,8 @@ describe('agent trigger delivery methods', () => {
       status: 'succeeded',
       batchRootRequeueCount: 1,
     });
-    await expect(methods.recoverAgentTriggerBatchReceipts()).rejects.toThrow(
-      'Not every agent trigger batch receipt could be settled',
+    await expect(methods.recoverAgentTriggerLanePublications()).rejects.toThrow(
+      'Not every agent trigger batch receipt could be prepared for requeue',
     );
     await expect(Delivery.findById(memberId).lean()).resolves.toMatchObject({
       status: 'succeeded',
@@ -781,7 +801,7 @@ describe('agent trigger delivery methods', () => {
     expect((await Delivery.findById(root!._id).lean())?.batchMembersSettledAt).toBeUndefined();
   });
 
-  it('retries safely when batch requeue stops after preparing its members', async () => {
+  it('recovers batch requeue after claiming the root before member preparation', async () => {
     const user = new mongoose.Types.ObjectId();
     const coalesceUntil = new Date(Date.now() + 60_000);
     const shared = {
@@ -816,24 +836,26 @@ describe('agent trigger delivery methods', () => {
       error: transientFailure({ retryable: false }),
       settledAt: coalesceUntil,
     });
-    const transition = jest.spyOn(Delivery, 'findOneAndUpdate').mockImplementationOnce(() => {
-      throw new Error('process interrupted before root transition');
+    const transition = jest.spyOn(Delivery, 'updateMany').mockImplementationOnce(() => {
+      throw new Error('process interrupted before member preparation');
     });
 
     await expect(methods.requeueAgentTriggerDelivery(claim!.id, coalesceUntil)).rejects.toThrow(
-      'process interrupted before root transition',
+      'process interrupted before member preparation',
     );
     transition.mockRestore();
     await expect(Delivery.findById(claim!.id).lean()).resolves.toMatchObject({
-      status: 'dead',
-      requeueCount: 0,
+      status: 'staging',
+      requeueCount: 1,
     });
     const preparedMember = await Delivery.findOne({ batchRootId: claim!.id }).lean();
-    expect(preparedMember).toMatchObject({ status: 'batched', batchRootRequeueCount: 1 });
+    expect(preparedMember).toMatchObject({ status: 'dead' });
 
-    await expect(
-      methods.requeueAgentTriggerDelivery(claim!.id, coalesceUntil),
-    ).resolves.toMatchObject({ status: 'pending', requeueCount: 1 });
+    await expect(methods.recoverAgentTriggerLanePublications()).resolves.toBeGreaterThan(0);
+    await expect(Delivery.findById(claim!.id).lean()).resolves.toMatchObject({
+      status: 'pending',
+      requeueCount: 1,
+    });
     await expect(Delivery.findById(preparedMember!._id).lean()).resolves.toMatchObject({
       status: 'batched',
       batchRootRequeueCount: 1,
@@ -1605,6 +1627,680 @@ describe('agent trigger delivery methods', () => {
     });
   });
 
+  it('settles the public outcome and exact actor receipt in one delivery row', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        awaitTerminalHandling: true,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-1' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const claimed = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claimed!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+    });
+    const generationCreatedAt = START.getTime() + 1_000;
+    const actionAdmission = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      tenantId: 'tenant-1',
+      bindingId: 'binding-1',
+      conversationId: 'conversation-1',
+      admittedAt: new Date(generationCreatedAt + 500),
+      admissionId: 'admission-1',
+    };
+    /** The loopback child starts after the HTTP `started` response but before
+     * the delivery engine commits that result, so admission must work while
+     * the exact transport attempt is still leased. */
+    await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(true);
+    await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(true);
+    await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(false);
+    const successorAdmission = { ...actionAdmission, admissionId: 'admission-2' };
+    await expect(methods.admitAgentEventActorAction(successorAdmission)).resolves.toBe(false);
+    await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(true);
+    await expect(methods.admitAgentEventActorAction(successorAdmission)).resolves.toBe(true);
+    /** The predecessor's delayed release cannot clear its successor. */
+    await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(false);
+    await expect(methods.hasAgentEventActorActionAdmission(successorAdmission)).resolves.toBe(true);
+    await expect(methods.releaseAgentEventActorAction(successorAdmission)).resolves.toBe(true);
+    await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(false);
+    /** A pre-token worker's live admission must remain opaque but protected
+     * throughout a rolling upgrade. New workers may observe the fence, but
+     * cannot replace or release it without its (unavailable) owner token. */
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      { $set: { actorActionAdmittedAt: actionAdmission.admittedAt } },
+    );
+    await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(true);
+    await expect(methods.admitAgentEventActorAction(successorAdmission)).resolves.toBe(false);
+    await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(false);
+    /** An old worker can also leave a newer worker's stale token behind, then
+     * write a fresh token-unaware timestamp. Timestamp ownership remains the
+     * admission fence even when that retained token does not identify it. */
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      { $set: { actorActionAdmissionId: 'stale-new-worker-token' } },
+    );
+    await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(true);
+    await expect(methods.admitAgentEventActorAction(successorAdmission)).resolves.toBe(false);
+    await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(false);
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      { $unset: { actorActionAdmittedAt: 1, actorActionAdmissionId: 1 } },
+    );
+    await methods.completeAgentTriggerDelivery({
+      id: claimed!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: attempt!,
+      result: { status: 'started' },
+      settledAt: new Date(generationCreatedAt),
+      awaitTerminalHandling: true,
+      handling: {
+        status: 'started',
+        conversationId: 'conversation-1',
+        streamId: 'conversation-1',
+        generationCreatedAt,
+        startedAt: new Date(generationCreatedAt),
+      },
+    });
+    const activeDelivery = await methods.getAgentTriggerDelivery(queued.delivery.deliveryKey);
+    expect(activeDelivery).toMatchObject({ handling: { status: 'started' } });
+    expect(activeDelivery).not.toHaveProperty('expiresAt');
+    const actorReceipt = {
+      bindingId: 'binding-1',
+      resolution: 'checkpoint_verified' as const,
+      checkpoint: {
+        threadId: 'conversation-1',
+        checkpointId: 'checkpoint-1',
+        checkpointNs: 'event:1',
+      },
+      action: { toolName: 'submit_move', toolCallId: 'call-1' },
+    };
+    const settlement = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      tenantId: 'tenant-1',
+      bindingId: actorReceipt.bindingId,
+      conversationId: 'conversation-1',
+      generationCreatedAt,
+      status: 'applied' as const,
+      settledAt: new Date(generationCreatedAt + 1_000),
+      requiresActionAdmission: true as const,
+      receipt: {
+        resolution: actorReceipt.resolution,
+        checkpoint: actorReceipt.checkpoint,
+        action: actorReceipt.action,
+      },
+    };
+
+    await expect(methods.settleAgentEventActorReceipt(settlement)).resolves.toBe(false);
+    await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(true);
+    await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(true);
+    await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(false);
+    await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(true);
+    await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(false);
+    await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(true);
+    await expect(methods.settleAgentEventActorReceipt(settlement)).resolves.toBe(true);
+    await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(false);
+    /** Simulate a receipt written by the pre-normalization build after
+     * transport dead-lettered the root. Exact replay must retire that dead
+     * state instead of leaving a non-requeueable dead letter. */
+    await Delivery.updateOne(
+      { deliveryKey: settlement.deliveryKey },
+      { $set: { status: 'dead', lastError: transientFailure() } },
+    );
+    await expect(methods.settleAgentEventActorReceipt(settlement)).resolves.toBe(true);
+    await expect(
+      Delivery.findOne({ deliveryKey: settlement.deliveryKey }).lean(),
+    ).resolves.toMatchObject({ status: 'succeeded' });
+    for (const conflict of [
+      { ...settlement, user: new mongoose.Types.ObjectId() },
+      { ...settlement, tenantId: 'tenant-2' },
+      { ...settlement, bindingId: 'binding-2' },
+      { ...settlement, conversationId: 'conversation-2' },
+      {
+        ...settlement,
+        receipt: {
+          ...settlement.receipt,
+          checkpoint: { ...settlement.receipt.checkpoint, checkpointId: 'checkpoint-2' },
+        },
+      },
+      {
+        ...settlement,
+        receipt: { ...settlement.receipt, action: { toolName: 'resign_game' } },
+      },
+      {
+        ...settlement,
+        status: 'failed' as const,
+        receipt: { ...settlement.receipt, resolution: 'action_compensated' as const },
+      },
+    ]) {
+      await expect(methods.settleAgentEventActorReceipt(conflict)).resolves.toBe(false);
+    }
+    await expect(
+      methods.getAgentTriggerDelivery(queued.delivery.deliveryKey),
+    ).resolves.toMatchObject({
+      handling: { status: 'applied', action: actorReceipt.action },
+      expiresAt: new Date(generationCreatedAt + 1_000 + 90 * 24 * 60 * 60_000),
+      actorReceipt: {
+        ...actorReceipt,
+        settledAt: new Date(generationCreatedAt + 1_000),
+      },
+    });
+    await expect(
+      methods.getAgentEventActorReceipt({
+        deliveryKey: queued.delivery.deliveryKey,
+        user: queued.delivery.user,
+        tenantId: 'tenant-1',
+        bindingId: 'binding-1',
+        conversationId: 'conversation-1',
+      }),
+    ).resolves.toEqual({
+      ...actorReceipt,
+      settledAt: new Date(generationCreatedAt + 1_000),
+    });
+    const publicStatus = await methods.getAgentTriggerDeliveryStatus(
+      queued.delivery.deliveryKey,
+      queued.delivery.user,
+      'source-key-1',
+      'tenant-1',
+    );
+    expect(publicStatus).not.toHaveProperty('actorReceipt');
+    await expect(
+      methods.getAgentEventActorReceipt({
+        deliveryKey: queued.delivery.deliveryKey,
+        user: new mongoose.Types.ObjectId(),
+        tenantId: 'tenant-1',
+        bindingId: 'binding-1',
+        conversationId: 'conversation-1',
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it('serializes no-action settlement against renewed action admission', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        awaitTerminalHandling: true,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-1' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const claimed = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claimed!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+    });
+    const generationCreatedAt = START.getTime() + 1_000;
+    await methods.completeAgentTriggerDelivery({
+      id: claimed!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: attempt!,
+      result: { status: 'started' },
+      settledAt: new Date(generationCreatedAt),
+      awaitTerminalHandling: true,
+      handling: {
+        status: 'started',
+        conversationId: 'conversation-1',
+        streamId: 'conversation-1',
+        generationCreatedAt,
+        startedAt: new Date(generationCreatedAt),
+      },
+    });
+    const admission = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      tenantId: 'tenant-1',
+      bindingId: 'binding-1',
+      conversationId: 'conversation-1',
+      admittedAt: new Date(generationCreatedAt + 500),
+      admissionId: 'admission-1',
+    };
+    const noAction = {
+      deliveryKey: queued.delivery.deliveryKey,
+      conversationId: 'conversation-1',
+      generationCreatedAt,
+      status: 'completed_no_action' as const,
+      settledAt: new Date(generationCreatedAt + 1_000),
+    };
+
+    await expect(methods.admitAgentEventActorAction(admission)).resolves.toBe(true);
+    await expect(methods.settleAgentTriggerHandlingOutcome(noAction)).resolves.toBe(false);
+    await expect(methods.releaseAgentEventActorAction(admission)).resolves.toBe(true);
+    await expect(methods.settleAgentTriggerHandlingOutcome(noAction)).resolves.toBe(true);
+    await expect(methods.admitAgentEventActorAction(admission)).resolves.toBe(false);
+  });
+
+  it('lazily backfills one exact legacy receipt and rejects conflicting identities', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-legacy' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const generationCreatedAt = START.getTime() + 2_000;
+    const action = { toolName: 'submit_move', toolCallId: 'call-legacy' };
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      {
+        $set: {
+          status: 'dead',
+          handling: {
+            status: 'applied',
+            conversationId: 'conversation-legacy',
+            streamId: 'conversation-legacy',
+            generationCreatedAt,
+            startedAt: START,
+            settledAt: START,
+            action,
+          },
+          settledAt: START,
+          expiresAt: new Date(START.getTime() + 1_000),
+        },
+      },
+    );
+    const input = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      tenantId: 'tenant-1',
+      bindingId: 'binding-legacy',
+      conversationId: 'conversation-legacy',
+      generationCreatedAt,
+      status: 'applied' as const,
+      settledAt: new Date(START.getTime() + 3_000),
+      receipt: {
+        resolution: 'checkpoint_verified' as const,
+        checkpoint: {
+          threadId: 'conversation-legacy',
+          checkpointId: 'checkpoint-legacy',
+          checkpointNs: 'event-actor/legacy',
+        },
+        action,
+      },
+    };
+
+    await expect(
+      Promise.all([
+        methods.backfillAgentEventActorReceipt(input),
+        methods.backfillAgentEventActorReceipt(input),
+      ]),
+    ).resolves.toEqual([true, true]);
+    await expect(
+      methods.backfillAgentEventActorReceipt({
+        ...input,
+        receipt: {
+          ...input.receipt,
+          checkpoint: { ...input.receipt.checkpoint, checkpointId: 'different' },
+        },
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      methods.getAgentEventActorReceipt({
+        deliveryKey: input.deliveryKey,
+        user: input.user,
+        tenantId: input.tenantId,
+        bindingId: input.bindingId,
+        conversationId: input.conversationId,
+      }),
+    ).resolves.toEqual({
+      bindingId: input.bindingId,
+      ...input.receipt,
+      settledAt: input.settledAt,
+    });
+    const stored = await Delivery.findOne({ deliveryKey: input.deliveryKey }).lean();
+    expect(stored?.status).toBe('succeeded');
+    expect(stored?.expiresAt?.getTime()).toBeGreaterThan(START.getTime() + 1_000);
+  });
+
+  it('does not let more than 1,024 unexpired receipts block or evict another actor receipt', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const settledAt = new Date(START.getTime() + 10_000);
+    const expiresAt = new Date(settledAt.getTime() + 90 * 24 * 60 * 60_000);
+    await Delivery.insertMany(
+      Array.from({ length: 1_025 }, (_, index) => ({
+        deliveryKey: `retained-receipt-${index}`,
+        fingerprint: `retained-fingerprint-${index}`,
+        orderingKey: `retained-lane-${index}`,
+        laneSequence: 1,
+        envelope: { mode: 'continue', target: { bindingId: `binding-${index}` } },
+        user,
+        tenantId: 'tenant-1',
+        status: 'succeeded',
+        attempts: 1,
+        availableAt: START,
+        handling: {
+          status: 'applied',
+          conversationId: `conversation-${index}`,
+          streamId: `conversation-${index}`,
+          generationCreatedAt: START.getTime() + index,
+          startedAt: START,
+          settledAt,
+          action: { toolName: 'submit_move', toolCallId: `call-${index}` },
+        },
+        actorReceipt: {
+          bindingId: `binding-${index}`,
+          resolution: 'checkpoint_verified',
+          checkpoint: {
+            threadId: `conversation-${index}`,
+            checkpointId: `checkpoint-${index}`,
+            checkpointNs: `event-actor/${index}`,
+          },
+          action: { toolName: 'submit_move', toolCallId: `call-${index}` },
+          settledAt,
+        },
+        settledAt,
+        expiresAt,
+      })),
+    );
+
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        orderingKey: 'fresh-receipt-lane',
+        awaitTerminalHandling: true,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-fresh' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const generationCreatedAt = settledAt.getTime() + 1_000;
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      {
+        $set: {
+          status: 'succeeded',
+          handling: {
+            status: 'started',
+            conversationId: 'conversation-fresh',
+            streamId: 'conversation-fresh',
+            generationCreatedAt,
+            startedAt: settledAt,
+          },
+        },
+      },
+    );
+
+    await expect(
+      methods.settleAgentEventActorReceipt({
+        deliveryKey: queued.delivery.deliveryKey,
+        user,
+        tenantId: 'tenant-1',
+        bindingId: 'binding-fresh',
+        conversationId: 'conversation-fresh',
+        generationCreatedAt,
+        status: 'applied',
+        settledAt: new Date(generationCreatedAt + 1_000),
+        receipt: {
+          resolution: 'checkpoint_verified',
+          checkpoint: {
+            threadId: 'conversation-fresh',
+            checkpointId: 'checkpoint-fresh',
+            checkpointNs: 'event-actor/fresh',
+          },
+          action: { toolName: 'submit_move', toolCallId: 'call-fresh' },
+        },
+      }),
+    ).resolves.toBe(true);
+
+    expect(await Delivery.countDocuments({ actorReceipt: { $exists: true } })).toBe(1_026);
+    await expect(
+      methods.getAgentEventActorReceipt({
+        deliveryKey: 'retained-receipt-0',
+        user,
+        tenantId: 'tenant-1',
+        bindingId: 'binding-0',
+        conversationId: 'conversation-0',
+      }),
+    ).resolves.toMatchObject({
+      resolution: 'checkpoint_verified',
+      action: { toolCallId: 'call-0' },
+    });
+    await expect(
+      methods.settleAgentEventActorReceipt({
+        deliveryKey: 'retained-receipt-0',
+        user,
+        tenantId: 'tenant-1',
+        bindingId: 'binding-0',
+        conversationId: 'conversation-0',
+        generationCreatedAt: START.getTime(),
+        status: 'applied',
+        settledAt,
+        receipt: {
+          resolution: 'checkpoint_verified',
+          checkpoint: {
+            threadId: 'conversation-0',
+            checkpointId: 'stale-owner-checkpoint',
+            checkpointNs: 'event-actor/0',
+          },
+          action: { toolName: 'submit_move', toolCallId: 'call-0' },
+        },
+      }),
+    ).resolves.toBe(false);
+    await Delivery.insertMany([
+      {
+        deliveryKey: 'actor-retry-without-mailbox-flag',
+        fingerprint: 'actor-retry-without-mailbox-flag',
+        orderingKey: 'actor-retry-lane',
+        laneSequence: 1,
+        envelope: { mode: 'continue', target: { bindingId: 'binding-retry' } },
+        user,
+        tenantId: 'tenant-1',
+        status: 'pending',
+        attempts: 2,
+        availableAt: START,
+        handling: {
+          status: 'started',
+          conversationId: 'conversation-retry',
+          streamId: 'conversation-retry',
+          generationCreatedAt: START.getTime(),
+          startedAt: START,
+        },
+      },
+      {
+        deliveryKey: 'actor-dead-without-mailbox-flag',
+        fingerprint: 'actor-dead-without-mailbox-flag',
+        orderingKey: 'actor-dead-lane',
+        laneSequence: 1,
+        envelope: { mode: 'continue', target: { bindingId: 'binding-dead' } },
+        user,
+        tenantId: 'tenant-1',
+        status: 'dead',
+        attempts: 3,
+        availableAt: START,
+        handling: {
+          status: 'started',
+          conversationId: 'conversation-dead',
+          streamId: 'conversation-dead',
+          generationCreatedAt: START.getTime(),
+          startedAt: START,
+        },
+      },
+    ]);
+    await expect(
+      methods.getAgentEventActorReceiptStorageMetrics(new Date(START.getTime() + 20_000)),
+    ).resolves.toMatchObject({
+      retainedByResolution: {
+        checkpoint_verified: 1_026,
+        action_compensated: 0,
+        history_repaired: 0,
+      },
+      expiryEligible: 0,
+      retryDeliveries: 1,
+      deadDeliveries: 1,
+    });
+  });
+
+  it('never migrates a compensated legacy receipt as an applied outcome', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-compensated' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const generationCreatedAt = START.getTime() + 6_000;
+    const checkpoint = {
+      threadId: 'conversation-compensated',
+      checkpointId: 'checkpoint-compensated',
+      checkpointNs: 'event-actor/compensated',
+    };
+    const action = { toolName: 'submit_move', toolCallId: 'call-compensated' };
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      {
+        $set: {
+          status: 'succeeded',
+          handling: {
+            status: 'failed',
+            conversationId: 'conversation-compensated',
+            streamId: 'conversation-compensated',
+            generationCreatedAt,
+            startedAt: START,
+            settledAt: START,
+            error: 'Applied action was compensated',
+          },
+          settledAt: START,
+          expiresAt: new Date(START.getTime() + 90 * 24 * 60 * 60_000),
+        },
+      },
+    );
+    const common = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      tenantId: 'tenant-1',
+      bindingId: 'binding-compensated',
+      conversationId: 'conversation-compensated',
+      generationCreatedAt,
+      settledAt: new Date(START.getTime() + 7_000),
+      receipt: { checkpoint, action },
+    };
+
+    await expect(
+      methods.backfillAgentEventActorReceipt({
+        ...common,
+        status: 'failed',
+        receipt: { ...common.receipt, resolution: 'action_compensated' },
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      methods.backfillAgentEventActorReceipt({
+        ...common,
+        status: 'applied',
+        receipt: { ...common.receipt, resolution: 'checkpoint_verified' },
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      methods.getAgentEventActorReceipt({
+        deliveryKey: common.deliveryKey,
+        user: common.user,
+        tenantId: common.tenantId,
+        bindingId: common.bindingId,
+        conversationId: common.conversationId,
+      }),
+    ).resolves.toMatchObject({ resolution: 'action_compensated' });
+  });
+
+  it('allows exactly one winner when verification races compensation', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        awaitTerminalHandling: true,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-race' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const generationCreatedAt = START.getTime() + 4_000;
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      {
+        $set: {
+          status: 'succeeded',
+          awaitTerminalHandling: true,
+          handling: {
+            status: 'started',
+            conversationId: 'conversation-race',
+            streamId: 'conversation-race',
+            generationCreatedAt,
+            startedAt: START,
+          },
+        },
+      },
+    );
+    const checkpoint = {
+      threadId: 'conversation-race',
+      checkpointId: 'checkpoint-race',
+      checkpointNs: 'event-actor/race',
+    };
+    const common = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      tenantId: 'tenant-1',
+      bindingId: 'binding-race',
+      conversationId: 'conversation-race',
+      generationCreatedAt,
+      settledAt: new Date(START.getTime() + 5_000),
+    };
+    const [verified, compensated] = await Promise.all([
+      methods.settleAgentEventActorReceipt({
+        ...common,
+        status: 'applied',
+        receipt: {
+          resolution: 'checkpoint_verified',
+          checkpoint,
+          action: { toolName: 'submit_move' },
+        },
+      }),
+      methods.settleAgentEventActorReceipt({
+        ...common,
+        status: 'failed',
+        error: 'operator compensated action',
+        receipt: {
+          resolution: 'action_compensated',
+          checkpoint,
+          action: { toolName: 'submit_move' },
+        },
+      }),
+    ]);
+
+    expect(Number(verified) + Number(compensated)).toBe(1);
+    const stored = await methods.getAgentTriggerDelivery(queued.delivery.deliveryKey);
+    expect(stored?.handling?.status).toBe(verified ? 'applied' : 'failed');
+    expect(stored?.actorReceipt?.resolution).toBe(
+      verified ? 'checkpoint_verified' : 'action_compensated',
+    );
+  });
+
   it('reclaims an inactive high-cardinality lane after its tail succeeds', async () => {
     const orderingKey = 'one-shot-resource-lane';
     await methods.enqueueAgentTriggerDelivery(enqueueInput({ orderingKey }));
@@ -1790,6 +2486,163 @@ describe('agent trigger delivery methods', () => {
     await expect(methods.getAgentTriggerDeadLetters(Number.NaN)).rejects.toThrow(
       'Agent trigger dead-letter limit must be a positive integer',
     );
+  });
+
+  it('retires a dead letter when its admitted actor action later settles', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'late-terminal-batch';
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        orderingKey,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-late-terminal' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const generationCreatedAt = START.getTime() + 1_000;
+    const member = await Delivery.create({
+      ...enqueueInput({
+        user,
+        orderingKey,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId: 'binding-late-terminal' },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+      laneSequence: 2,
+      status: 'dead',
+      attempts: 3,
+      requeueCount: 0,
+      batchRootId: queued.delivery.id,
+      settledAt: START,
+      lastError: transientFailure(),
+      handling: {
+        status: 'started',
+        conversationId: 'conversation-late-terminal',
+        streamId: 'conversation-late-terminal',
+        generationCreatedAt,
+        startedAt: START,
+      },
+    });
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      {
+        $set: {
+          status: 'dead',
+          attempts: 3,
+          batchMemberIds: [member._id],
+          batchMembersSettledAt: START,
+          actorActionAdmittedAt: START,
+          handling: {
+            status: 'started',
+            conversationId: 'conversation-late-terminal',
+            streamId: 'conversation-late-terminal',
+            generationCreatedAt,
+            startedAt: START,
+          },
+        },
+      },
+    );
+
+    await expect(
+      methods.settleAgentEventActorReceipt({
+        deliveryKey: queued.delivery.deliveryKey,
+        user,
+        tenantId: 'tenant-1',
+        bindingId: 'binding-late-terminal',
+        conversationId: 'conversation-late-terminal',
+        generationCreatedAt,
+        status: 'applied',
+        settledAt: new Date(generationCreatedAt + 1_000),
+        requiresActionAdmission: true,
+        receipt: {
+          resolution: 'checkpoint_verified',
+          checkpoint: {
+            threadId: 'conversation-late-terminal',
+            checkpointId: 'checkpoint-late-terminal',
+            checkpointNs: 'event-actor/late-terminal',
+          },
+          action: { toolName: 'submit_move' },
+        },
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      methods.getAgentTriggerDelivery(queued.delivery.deliveryKey),
+    ).resolves.toMatchObject({ status: 'succeeded', handling: { status: 'applied' } });
+    expect(
+      (await methods.getAgentTriggerDelivery(queued.delivery.deliveryKey))?.lastError,
+    ).toBeUndefined();
+    await expect(Delivery.findById(member._id).lean()).resolves.toMatchObject({
+      status: 'succeeded',
+      handling: { status: 'applied' },
+    });
+    await expect(
+      methods.getAgentTriggerDeliveryStatus(member.deliveryKey, user, 'source-key-1', 'tenant-1'),
+    ).resolves.toMatchObject({ status: 'succeeded', handling: { status: 'applied' } });
+    await expect(LaneSequence.findById(orderingKey).lean()).resolves.toBeNull();
+    await expect(
+      methods.requeueAgentTriggerDelivery(queued.delivery.id, START),
+    ).resolves.toBeNull();
+  });
+
+  it('does not requeue a legacy terminal outcome before its receipt is migrated', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(enqueueInput());
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      {
+        $set: {
+          status: 'dead',
+          handling: {
+            status: 'applied',
+            conversationId: 'legacy-terminal-conversation',
+            streamId: 'legacy-terminal-conversation',
+            generationCreatedAt: START.getTime(),
+            startedAt: START,
+            settledAt: START,
+            action: { toolName: 'submit_move' },
+          },
+        },
+      },
+    );
+
+    await expect(
+      methods.requeueAgentTriggerDelivery(queued.delivery.id, START),
+    ).resolves.toBeNull();
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'dead',
+      handling: { status: 'applied' },
+    });
+  });
+
+  it('does not requeue ambiguous legacy started handling', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(enqueueInput());
+    await Delivery.updateOne(
+      { deliveryKey: queued.delivery.deliveryKey },
+      {
+        $set: {
+          status: 'dead',
+          handling: {
+            status: 'started',
+            conversationId: 'legacy-started-conversation',
+            streamId: 'legacy-started-conversation',
+            generationCreatedAt: START.getTime(),
+            startedAt: START,
+          },
+        },
+      },
+    );
+
+    await expect(
+      methods.requeueAgentTriggerDelivery(queued.delivery.id, START),
+    ).resolves.toBeNull();
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'dead',
+      handling: { status: 'started' },
+    });
   });
 
   it('counts only live leases while an account deletion drains', async () => {

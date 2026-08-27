@@ -33,6 +33,7 @@ const {
   executeAgentEventActor,
   findAgentEventAppliedAction,
   createAgentEventActionRecorder,
+  isEnabled,
   isHITLEnabled,
   agentRequestsAskUserQuestion,
 } = require('@librechat/api');
@@ -54,6 +55,11 @@ const {
   completeAgentEventActorLegacyTurn,
   recordAgentEventActorReconciliation,
   resolveAgentEventActorReconciliation,
+  clearAgentEventActorReconciliation,
+  admitAgentEventActorAction,
+  releaseAgentEventActorAction,
+  hasAgentEventActorActionAdmission,
+  getAgentEventActorReceipt,
   isAgentTriggerPrincipalActive,
   isSubagentOwnerAdmissible,
 } = require('~/models');
@@ -1312,6 +1318,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         isTemporary: req._agentEventBindingRetention?.isTemporary ?? req.body?.isTemporary,
         ...(agentEventDelivery != null && {
           agentEventDeliveryKey: agentEventDelivery.deliveryKey,
+          agentEventBindingId: agentEventDelivery.target.bindingId,
           ...(agentEventDelivery.expectedAction != null && {
             agentEventExpectedAction: agentEventDelivery.expectedAction,
           }),
@@ -1836,6 +1843,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
           reconciliation: {
             invocationId: appliedEventActor.invocationId,
+            ...(appliedEventActor.actionAdmitted === true && { actionAdmitted: true }),
             status: 'persistence_failed',
             checkpoint: appliedEventActor.checkpoint,
             action: appliedEventActor.action,
@@ -1945,6 +1953,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         const checkpointForksEnabled =
           req.config?.endpoints?.[EModelEndpoint.agents]?.eventDriven?.checkpointForks === true;
+        /** This is a deployment barrier, not a principal-scoped feature. It is
+         * populated from the base config before the listener starts; reading
+         * merged req.config here would let a user/role/tenant override bypass
+         * the mixed-version rollout fence. */
+        const durableActorReceiptsEnabled = isEnabled(
+          process.env.ENABLE_AGENT_EVENT_DURABLE_RECEIPTS,
+        );
         const agentsConfig = req.config?.endpoints?.[EModelEndpoint.agents];
         const eventActorAgents = [
           client?.options?.agent,
@@ -1985,6 +2000,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           );
         const canUseEventActorFork =
           checkpointForksEnabled &&
+          durableActorReceiptsEnabled &&
           agentsConfig?.checkpointer?.type !== 'memory' &&
           !eventActorMayPause &&
           !eventActorHasSkillPrimes &&
@@ -2011,6 +2027,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 user: userId,
                 ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
                 conversationId,
+                bindingId: agentEventDelivery.target.bindingId,
                 invocationId: eventTaskId,
                 event: agentEventDelivery.event,
                 expectedAction: agentEventDelivery.expectedAction,
@@ -2036,11 +2053,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 commitState: commitAgentEventActorState,
                 recordReconciliation: recordAgentEventActorReconciliation,
                 resolveReconciliation: resolveAgentEventActorReconciliation,
+                admitAction: admitAgentEventActorAction,
+                releaseAction: releaseAgentEventActorAction,
+                hasActionAdmission: hasAgentEventActorActionAdmission,
+                getReceipt: getAgentEventActorReceipt,
+                clearReconciliation: clearAgentEventActorReconciliation,
               },
             ).then(({ value, execution }) => {
               if (execution.status === 'applied') {
                 appliedEventActor = {
                   invocationId: eventTaskId,
+                  actionAdmitted: typeof admitAgentEventActorAction === 'function',
                   checkpoint: execution.head.checkpoint,
                   action: execution.result.action,
                 };
@@ -2420,6 +2443,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
             reconciliation: {
               invocationId: appliedEventActor.invocationId,
+              ...(appliedEventActor.actionAdmitted === true && { actionAdmitted: true }),
               status: 'history_persisted',
               checkpoint: appliedEventActor.checkpoint,
               action: appliedEventActor.action,

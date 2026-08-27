@@ -51,6 +51,40 @@ const handlingSchema = new Schema(
   { _id: false },
 );
 
+const actorReceiptSchema = new Schema(
+  {
+    bindingId: { type: String, required: true, maxlength: 256 },
+    resolution: {
+      type: String,
+      enum: ['checkpoint_verified', 'action_compensated', 'history_repaired'],
+      required: true,
+    },
+    checkpoint: {
+      type: new Schema(
+        {
+          threadId: { type: String, required: true, maxlength: 256 },
+          checkpointId: { type: String, maxlength: 512 },
+          checkpointNs: { type: String, required: true, maxlength: 512 },
+        },
+        { _id: false },
+      ),
+      required: true,
+    },
+    action: {
+      type: new Schema(
+        {
+          toolName: { type: String, required: true, maxlength: 256 },
+          toolCallId: { type: String, maxlength: 256 },
+        },
+        { _id: false },
+      ),
+      required: true,
+    },
+    settledAt: { type: Date, required: true },
+  },
+  { _id: false },
+);
+
 const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
   {
     deliveryKey: { type: String, required: true, maxlength: 128 },
@@ -84,6 +118,9 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     batchMembersSettledAt: { type: Date },
     awaitTerminalHandling: { type: Boolean },
     handling: { type: handlingSchema },
+    actorReceipt: { type: actorReceiptSchema, select: false },
+    actorActionAdmittedAt: { type: Date, select: false },
+    actorActionAdmissionId: { type: String, maxlength: 64, select: false },
     leaseBy: { type: String },
     leaseUntil: { type: Date },
     claimToken: { type: String },
@@ -117,6 +154,7 @@ triggerDeliverySchema.index(
   { sparse: true },
 );
 triggerDeliverySchema.index({ status: 1, updatedAt: -1 });
+triggerDeliverySchema.index({ 'actorReceipt.resolution': 1 }, { sparse: true });
 triggerDeliverySchema.index({ stagingRecoveryAt: 1 }, { sparse: true });
 triggerDeliverySchema.index({ laneCleanupPendingAt: 1 }, { sparse: true });
 // Only successful rows receive expiresAt. Dead letters remain available until

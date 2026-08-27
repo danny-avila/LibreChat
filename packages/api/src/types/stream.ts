@@ -44,6 +44,8 @@ export interface GenerationJobMetadata {
   isTemporary?: boolean;
   /** Exact durable delivery whose accepted continuation created this generation. */
   agentEventDeliveryKey?: string;
+  /** Trusted actor binding copied from the authenticated delivery envelope. */
+  agentEventBindingId?: string;
   /** Optional action evidence contract declared by the authenticated event source. */
   agentEventExpectedAction?: AgentTriggerExpectedAction;
   /** Exact durable legacy-turn fence carried across a HITL pause/resume. */

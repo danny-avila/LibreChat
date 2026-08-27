@@ -367,6 +367,22 @@ describe('durable agent trigger service', () => {
     await service.stop();
   });
 
+  it('expires dormant legacy actor receipts during durable maintenance', async () => {
+    const expireLegacyAgentEventActorReceipts = jest.fn().mockResolvedValue(1);
+    const service = createAgentTriggerService({
+      methods: deliveryMethods({ expireLegacyAgentEventActorReceipts }),
+      purgeRecoveryIntervalMs: 60_000,
+      purgeRecoveryLimit: 17,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+
+    expect(expireLegacyAgentEventActorReceipts).toHaveBeenCalledWith(expect.any(Date), 17);
+    await service.stop();
+  });
+
   it('settles interrupted batch receipts before reclaiming their lane', async () => {
     let finishBatchRecovery: ((count: number) => void) | undefined;
     const recoverAgentTriggerBatchReceipts = jest.fn(

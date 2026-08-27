@@ -10,11 +10,7 @@ import type {
   UpdateResult,
 } from 'mongodb';
 import type { IAgentEventActorReconciliation, IChatProject, IConversation } from '../types';
-import {
-  AGENT_EVENT_ACTOR_RECEIPT_LIMIT,
-  ConversationMethods,
-  createConversationMethods,
-} from './conversation';
+import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
 
@@ -4238,7 +4234,7 @@ describe('Conversation Operations', () => {
       );
     });
 
-    it('transitions one actor lifecycle and retains exact settled receipts', async () => {
+    it('retains exact legacy settled receipts until delivery-ledger migration', async () => {
       const conversationId = uuidv4();
       await Conversation.create({
         conversationId,
@@ -4548,7 +4544,258 @@ describe('Conversation Operations', () => {
       expect(visible).not.toHaveProperty('agentEventActorReconciliations');
     });
 
-    it('prunes only settled receipts older than the retention window on admission', async () => {
+    it('confirms action admission only on the exact pending lifecycle', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'actor-admission-user',
+        endpoint: EModelEndpoint.agents,
+        agentEventBinding: {
+          bindingId: `evtbind_${'a'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      const pending = {
+        invocationId: 'event-admission',
+        status: 'invocation_pending' as const,
+        checkpoint: {
+          threadId: conversationId,
+          checkpointNs: 'event-actor/admission',
+        },
+        action: { toolName: 'submit_move' },
+        observedAt: new Date(),
+      };
+
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          user: 'actor-admission-user',
+          conversationId,
+          reconciliation: pending,
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          user: 'actor-admission-user',
+          conversationId,
+          reconciliation: { ...pending, actionAdmitted: true },
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          user: 'actor-admission-user',
+          conversationId,
+          reconciliation: { ...pending, actionAdmitted: true },
+        }),
+      ).resolves.toBe(false);
+      await expect(
+        methods.getAgentEventActorSnapshot({
+          user: 'actor-admission-user',
+          conversationId,
+        }),
+      ).resolves.toMatchObject({
+        reconciliations: [
+          expect.objectContaining({
+            invocationId: 'event-admission',
+            status: 'invocation_pending',
+            actionAdmitted: true,
+          }),
+        ],
+      });
+      await expect(
+        methods.resolveAgentEventActorReconciliation({
+          user: 'actor-admission-user',
+          conversationId,
+          invocationId: pending.invocationId,
+          checkpoint: pending.checkpoint,
+          expectedActionAdmitted: false,
+          resolution: 'invocation_abandoned',
+        }),
+      ).resolves.toBe(false);
+      await expect(
+        methods.resolveAgentEventActorReconciliation({
+          user: 'actor-admission-user',
+          conversationId,
+          invocationId: pending.invocationId,
+          checkpoint: pending.checkpoint,
+          expectedActionAdmitted: true,
+          resolution: 'invocation_abandoned',
+        }),
+      ).resolves.toBe(true);
+    });
+
+    it('does not confirm a stale marker after a checkpoint-distinct successor wins', async () => {
+      const conversationId = uuidv4();
+      const invocationId = 'event-stale-confirmation';
+      const original = {
+        invocationId,
+        status: 'invocation_pending' as const,
+        checkpoint: {
+          threadId: conversationId,
+          checkpointId: 'checkpoint-original',
+          checkpointNs: 'event-actor/original',
+        },
+        action: { toolName: 'submit_move', toolCallId: 'call-original' },
+        observedAt: new Date(),
+      };
+      const successor = {
+        ...original,
+        checkpoint: {
+          threadId: conversationId,
+          checkpointId: 'checkpoint-successor',
+          checkpointNs: 'event-actor/successor',
+        },
+        action: { toolName: 'submit_move', toolCallId: 'call-successor' },
+      };
+      await Conversation.create({
+        conversationId,
+        user: 'actor-stale-confirmation-user',
+        endpoint: EModelEndpoint.agents,
+        agentEventBinding: {
+          bindingId: `evtbind_${'b'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+        agentEventActorReconciliations: [successor],
+      });
+      const staleRead = jest.spyOn(Conversation, 'findOne').mockImplementationOnce(
+        () =>
+          ({
+            select: () => ({
+              lean: () => Promise.resolve({ agentEventActorReconciliations: [original] }),
+            }),
+          }) as never,
+      );
+
+      await expect(
+        methods.recordAgentEventActorReconciliation({
+          user: 'actor-stale-confirmation-user',
+          conversationId,
+          reconciliation: { ...original, actionAdmitted: true },
+        }),
+      ).resolves.toBe(false);
+      staleRead.mockRestore();
+      await expect(
+        methods.getAgentEventActorSnapshot({
+          user: 'actor-stale-confirmation-user',
+          conversationId,
+        }),
+      ).resolves.toMatchObject({
+        reconciliations: [
+          expect.objectContaining({
+            checkpoint: expect.objectContaining({ checkpointId: 'checkpoint-successor' }),
+            action: expect.objectContaining({ toolCallId: 'call-successor' }),
+          }),
+        ],
+      });
+    });
+
+    it('clears an exact reconciled invocation without retaining a conversation receipt', async () => {
+      const conversationId = uuidv4();
+      const observedAt = new Date('2026-08-26T12:00:00.000Z');
+      const checkpoint = {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-one',
+        checkpointNs: 'event-actor/event-one',
+      };
+      await Conversation.create({
+        conversationId,
+        user: 'actor-receipt-user',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: {
+          bindingId: `evtbind_${'f'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      await methods.recordAgentEventActorReconciliation({
+        user: 'actor-receipt-user',
+        conversationId,
+        reconciliation: {
+          invocationId: 'event-one',
+          status: 'invocation_pending',
+          checkpoint,
+          action: { toolName: 'submit_move' },
+          observedAt,
+        },
+      });
+      await methods.commitAgentEventActorState({
+        user: 'actor-receipt-user',
+        conversationId,
+        invocationId: 'event-one',
+        expectedEpoch: 0,
+        action: { toolName: 'submit_move' },
+        checkpoint,
+      });
+      await methods.recordAgentEventActorReconciliation({
+        user: 'actor-receipt-user',
+        conversationId,
+        reconciliation: {
+          invocationId: 'event-one',
+          status: 'history_persisted',
+          checkpoint,
+          action: { toolName: 'submit_move' },
+          observedAt,
+        },
+      });
+
+      await expect(
+        methods.getAgentEventActorReconciliationStorageMetrics(
+          new Date(observedAt.getTime() + 12_000),
+        ),
+      ).resolves.toEqual({ pending: 1, oldestPendingAgeSeconds: 12 });
+
+      await expect(
+        methods.clearAgentEventActorReconciliation({
+          user: 'actor-receipt-user',
+          conversationId,
+          invocationId: 'event-one',
+          checkpoint,
+          resolution: 'checkpoint_verified',
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.getAgentEventActorSnapshot({ user: 'actor-receipt-user', conversationId }),
+      ).resolves.toMatchObject({ reconciliations: [] });
+      await expect(
+        methods.getAgentEventActorReconciliationStorageMetrics(
+          new Date(observedAt.getTime() + 12_000),
+        ),
+      ).resolves.toEqual({ pending: 0, oldestPendingAgeSeconds: 0 });
+    });
+
+    it('does not prune legacy settled receipts during new invocation admission', async () => {
       const conversationId = uuidv4();
       await Conversation.create({
         conversationId,
@@ -4637,9 +4884,9 @@ describe('Conversation Operations', () => {
           },
         }),
       ).resolves.toBe(true);
-      /** The expired tombstone is evicted by age; the recent receipt and the
-       * newly admitted fence survive, and the expired id becomes admissible
-       * again only because its whole stale-owner window has passed. */
+      /** Conversation admission no longer owns receipt retention. Lazy
+       * delivery-ledger migration removes either legacy receipt only after its
+       * authoritative row is durable. */
       await expect(
         methods.getAgentEventActorSnapshot({
           user: 'actor-retention-user',
@@ -4650,10 +4897,363 @@ describe('Conversation Operations', () => {
         epoch: 0,
         legacyTurn: null,
         reconciliations: [
+          expect.objectContaining({ invocationId: 'event-old', status: 'settled' }),
           expect.objectContaining({ invocationId: 'event-recent', status: 'settled' }),
           expect.objectContaining({ invocationId: 'event-next', status: 'invocation_pending' }),
         ],
       });
+    });
+
+    it('expires dormant legacy settled receipts independently of matching delivery replay', async () => {
+      const oldConversationId = uuidv4();
+      const recentConversationId = uuidv4();
+      const settled = (invocationId: string, observedAt: Date) => ({
+        invocationId,
+        status: 'settled' as const,
+        resolution: 'action_compensated' as const,
+        checkpoint: {
+          threadId: invocationId === 'old' ? oldConversationId : recentConversationId,
+          checkpointNs: `event-actor/${invocationId}`,
+        },
+        action: { toolName: 'submit_move' },
+        observedAt,
+      });
+      const now = new Date();
+      await Conversation.create([
+        {
+          conversationId: oldConversationId,
+          user: 'actor-legacy-expiry-user',
+          endpoint: EModelEndpoint.agents,
+          agentEventActorReconciliations: [
+            settled('old', new Date(now.getTime() - 91 * 24 * 60 * 60_000)),
+          ],
+        },
+        {
+          conversationId: recentConversationId,
+          user: 'actor-legacy-expiry-user',
+          endpoint: EModelEndpoint.agents,
+          agentEventActorReconciliations: [
+            settled('recent', new Date(now.getTime() - 89 * 24 * 60 * 60_000)),
+          ],
+        },
+      ]);
+
+      await expect(methods.expireLegacyAgentEventActorReceipts(now, 1)).resolves.toBe(1);
+      await expect(
+        Conversation.findOne({ conversationId: oldConversationId })
+          .select('+agentEventActorReconciliations')
+          .lean(),
+      ).resolves.toMatchObject({ agentEventActorReconciliations: [] });
+      await expect(
+        Conversation.findOne({ conversationId: recentConversationId })
+          .select('+agentEventActorReconciliations')
+          .lean(),
+      ).resolves.toMatchObject({
+        agentEventActorReconciliations: [expect.objectContaining({ invocationId: 'recent' })],
+      });
+    });
+
+    it('retains an expired legacy receipt while its delivery handling is nonterminal', async () => {
+      const conversationId = uuidv4();
+      const userId = new mongoose.Types.ObjectId();
+      const now = new Date();
+      await Conversation.create({
+        conversationId,
+        user: userId.toString(),
+        endpoint: EModelEndpoint.agents,
+        agentEventActorReconciliations: [
+          {
+            invocationId: 'protected-old',
+            status: 'settled',
+            resolution: 'checkpoint_verified',
+            checkpoint: {
+              threadId: conversationId,
+              checkpointId: 'checkpoint-old',
+              checkpointNs: 'event-actor/protected-old',
+            },
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(now.getTime() - 91 * 24 * 60 * 60_000),
+          },
+        ],
+      });
+      const Delivery = mongoose.models.AgentTriggerDelivery;
+      await Delivery.create({
+        deliveryKey: 'protected-old',
+        fingerprint: 'protected-old-fingerprint',
+        orderingKey: 'protected-old-lane',
+        laneSequence: 1,
+        envelope: {},
+        user: userId,
+        status: 'succeeded',
+        attempts: 1,
+        availableAt: now,
+        awaitTerminalHandling: true,
+        handling: {
+          status: 'started',
+          conversationId,
+          streamId: conversationId,
+          generationCreatedAt: now.getTime(),
+          startedAt: now,
+        },
+      });
+
+      await expect(methods.expireLegacyAgentEventActorReceipts(now)).resolves.toBe(0);
+      await expect(
+        Conversation.findOne({ conversationId }).select('+agentEventActorReconciliations').lean(),
+      ).resolves.toMatchObject({
+        agentEventActorReconciliations: [
+          expect.objectContaining({ invocationId: 'protected-old' }),
+        ],
+      });
+
+      await Delivery.updateOne(
+        { deliveryKey: 'protected-old' },
+        { $set: { 'handling.status': 'applied', 'handling.settledAt': now } },
+      );
+      const updatedAtBeforeExpiry = (
+        await Conversation.findOne({ conversationId }).select('updatedAt').lean()
+      )?.updatedAt;
+      /** The first call reaches the end of the protected page and resets the
+       * cursor; the next bounded sweep revisits it after handling is terminal. */
+      await expect(methods.expireLegacyAgentEventActorReceipts(now)).resolves.toBe(0);
+      await expect(methods.expireLegacyAgentEventActorReceipts(now)).resolves.toBe(1);
+      await expect(
+        Conversation.findOne({ conversationId }).select('updatedAt').lean(),
+      ).resolves.toMatchObject({ updatedAt: updatedAtBeforeExpiry });
+    });
+
+    it('pages raw conversations before filtering and advances past protected receipts', async () => {
+      const freshConversationId = uuidv4();
+      const protectedConversationId = uuidv4();
+      const removableConversationId = uuidv4();
+      const userId = new mongoose.Types.ObjectId();
+      const now = new Date();
+      const oldReceipt = (invocationId: string, threadId: string) => ({
+        invocationId,
+        status: 'settled' as const,
+        resolution: 'action_compensated' as const,
+        checkpoint: { threadId, checkpointNs: `event-actor/${invocationId}` },
+        action: { toolName: 'submit_move' },
+        observedAt: new Date(now.getTime() - 91 * 24 * 60 * 60_000),
+      });
+      await Conversation.create([
+        {
+          conversationId: freshConversationId,
+          user: userId.toString(),
+          endpoint: EModelEndpoint.agents,
+          agentEventActorReconciliations: [
+            { ...oldReceipt('fresh-first', freshConversationId), observedAt: now },
+          ],
+        },
+        {
+          conversationId: protectedConversationId,
+          user: userId.toString(),
+          endpoint: EModelEndpoint.agents,
+          agentEventActorReconciliations: [oldReceipt('protected-first', protectedConversationId)],
+        },
+        {
+          conversationId: removableConversationId,
+          user: userId.toString(),
+          endpoint: EModelEndpoint.agents,
+          agentEventActorReconciliations: [oldReceipt('removable-second', removableConversationId)],
+        },
+      ]);
+      const Delivery = mongoose.models.AgentTriggerDelivery;
+      await Delivery.create({
+        deliveryKey: 'protected-first',
+        fingerprint: 'protected-first-fingerprint',
+        orderingKey: 'protected-first-lane',
+        laneSequence: 1,
+        envelope: {},
+        user: userId,
+        status: 'succeeded',
+        attempts: 1,
+        availableAt: now,
+        awaitTerminalHandling: true,
+      });
+
+      /** The first raw page contains no expired receipt. The second contains
+       * a protected receipt, and only the third reaches removable work. */
+      await expect(methods.expireLegacyAgentEventActorReceipts(now, 1)).resolves.toBe(0);
+      await expect(methods.expireLegacyAgentEventActorReceipts(now, 1)).resolves.toBe(0);
+      await expect(methods.expireLegacyAgentEventActorReceipts(now, 1)).resolves.toBe(1);
+      await expect(
+        Conversation.findOne({ conversationId: protectedConversationId })
+          .select('+agentEventActorReconciliations')
+          .lean(),
+      ).resolves.toMatchObject({
+        agentEventActorReconciliations: [
+          expect.objectContaining({ invocationId: 'protected-first' }),
+        ],
+      });
+      await expect(
+        Conversation.findOne({ conversationId: removableConversationId })
+          .select('+agentEventActorReconciliations')
+          .lean(),
+      ).resolves.toMatchObject({ agentEventActorReconciliations: [] });
+    });
+
+    it('clears a compensated headless lifecycle without creating a partial actor head', async () => {
+      const conversationId = uuidv4();
+      const checkpoint = {
+        threadId: conversationId,
+        checkpointNs: 'event-actor/headless-compensation',
+      };
+      await Conversation.create({
+        conversationId,
+        user: 'actor-headless-clear-user',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: {
+          bindingId: `evtbind_${'d'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+        agentEventActorReconciliations: [
+          {
+            invocationId: 'headless-compensation',
+            status: 'commit_conflict',
+            checkpoint,
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        ],
+      });
+
+      await expect(
+        methods.clearAgentEventActorReconciliation({
+          user: 'actor-headless-clear-user',
+          conversationId,
+          invocationId: 'headless-compensation',
+          checkpoint,
+          resolution: 'action_compensated',
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        Conversation.findOne({ conversationId })
+          .select('+agentEventActor +agentEventActorReconciliations')
+          .lean(),
+      ).resolves.toMatchObject({ agentEventActorReconciliations: [] });
+      const stored = await Conversation.findOne({ conversationId })
+        .select('+agentEventActor')
+        .lean();
+      expect(stored?.agentEventActor).toBeUndefined();
+    });
+
+    it('clears an exact settled legacy receipt after delivery-ledger migration', async () => {
+      const conversationId = uuidv4();
+      const checkpoint = {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-migrated',
+        checkpointNs: 'event-actor/migrated',
+      };
+      await Conversation.create({
+        conversationId,
+        user: 'actor-migrated-clear-user',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: {
+          bindingId: `evtbind_${'c'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+        agentEventActor: { generation: 1, checkpoint },
+        agentEventActorReconciliations: [
+          {
+            invocationId: 'migrated',
+            status: 'settled',
+            resolution: 'checkpoint_verified',
+            checkpoint,
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        ],
+      });
+
+      await expect(
+        methods.clearAgentEventActorReconciliation({
+          user: 'actor-migrated-clear-user',
+          conversationId,
+          invocationId: 'migrated',
+          checkpoint,
+          resolution: 'checkpoint_verified',
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        methods.getAgentEventActorSnapshot({
+          user: 'actor-migrated-clear-user',
+          conversationId,
+        }),
+      ).resolves.toMatchObject({ reconciliations: [] });
+    });
+
+    it('does not compensate an action that has not passed invocation admission', async () => {
+      const conversationId = uuidv4();
+      const checkpoint = {
+        threadId: conversationId,
+        checkpointNs: 'event-actor/not-admitted',
+      };
+      await Conversation.create({
+        conversationId,
+        user: 'actor-unadmitted-user',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: {
+          bindingId: `evtbind_${'b'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+        agentEventActorReconciliations: [
+          {
+            invocationId: 'not-admitted',
+            actionAdmitted: true,
+            status: 'invocation_pending',
+            checkpoint,
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        ],
+      });
+
+      await expect(
+        methods.resolveAgentEventActorReconciliation({
+          user: 'actor-unadmitted-user',
+          conversationId,
+          invocationId: 'not-admitted',
+          checkpoint,
+          resolution: 'action_compensated',
+        }),
+      ).resolves.toBe(false);
     });
 
     it('versions every legacy invalidation so a stale prepared fork cannot commit past it', async () => {
@@ -4972,7 +5572,7 @@ describe('Conversation Operations', () => {
       }
     });
 
-    it('refuses new invocations rather than evicting unexpired receipts at the cap', async () => {
+    it('does not let a legacy settled journal cap block a healthy actor', async () => {
       const conversationId = uuidv4();
       await Conversation.create({
         conversationId,
@@ -4996,7 +5596,7 @@ describe('Conversation Operations', () => {
         },
       });
       const bulkReceipts = (observedAt: Date) =>
-        Array.from({ length: AGENT_EVENT_ACTOR_RECEIPT_LIMIT }, (_, index) => ({
+        Array.from({ length: 1025 }, (_, index) => ({
           invocationId: `bulk-${index}`,
           status: 'settled' as const,
           resolution: 'checkpoint_verified' as const,
@@ -5029,9 +5629,7 @@ describe('Conversation Operations', () => {
             observedAt: new Date(),
           },
         });
-      /** A journal full of unexpired receipts fails closed: no receipt inside
-       * its stale-owner window may ever be evicted to make room. */
-      await expect(admit()).resolves.toBe(false);
+      await expect(admit()).resolves.toBe(true);
       await expect(
         methods.getAgentEventActorSnapshot({
           user: 'actor-cap-user',
@@ -5041,35 +5639,10 @@ describe('Conversation Operations', () => {
         expect.objectContaining({
           reconciliations: expect.arrayContaining([
             expect.objectContaining({ invocationId: 'bulk-0' }),
+            expect.objectContaining({ invocationId: 'event-at-cap' }),
           ]),
         }),
       );
-      await Conversation.updateOne(
-        { conversationId },
-        {
-          $set: {
-            agentEventActorReconciliations: bulkReceipts(
-              new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
-            ),
-          },
-        },
-        { timestamps: false },
-      );
-      /** Once the window passes, expired receipts prune and admission resumes. */
-      await expect(admit()).resolves.toBe(true);
-      await expect(
-        methods.getAgentEventActorSnapshot({
-          user: 'actor-cap-user',
-          conversationId,
-        }),
-      ).resolves.toEqual({
-        state: null,
-        epoch: 0,
-        legacyTurn: null,
-        reconciliations: [
-          expect.objectContaining({ invocationId: 'event-at-cap', status: 'invocation_pending' }),
-        ],
-      });
     });
 
     it('admits one cross-replica owner and fences renewal and release by token', async () => {

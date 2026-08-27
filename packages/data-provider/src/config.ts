@@ -1058,6 +1058,11 @@ export const agentsEndpointSchema = baseEndpointSchema
            *  per-invocation forks. Keep off until every API worker runs an SDK
            *  and host adapter that understand the fork lifecycle. */
           checkpointForks: z.boolean().optional(),
+          /** Admit checkpoint-forked external actions through the durable
+           * delivery receipt protocol. Enable only after every API replica
+           * runs the token-fenced receipt implementation and pre-upgrade
+           * actor deliveries have drained. */
+          durableReceipts: z.boolean().optional(),
           /** Optional trusted origin for in-process trigger delivery. The bound
            *  listener remains the default and is safer for most deployments. */
           selfUrl: z.string().url().optional(),

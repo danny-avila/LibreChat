@@ -279,6 +279,8 @@ export interface SerializableJobData {
    */
   isTemporary?: boolean;
   agentEventDeliveryKey?: string;
+  /** Trusted actor binding copied from the authenticated delivery envelope. */
+  agentEventBindingId?: string;
   agentEventExpectedAction?: import('~/agents/triggers/types').AgentTriggerExpectedAction;
   /** Exact durable legacy-turn fence carried across a HITL pause/resume. */
   agentEventLegacyTurnToken?: string;
@@ -400,6 +402,7 @@ export type JobMetadataPatch = Partial<
     | 'agent_id'
     | 'isTemporary'
     | 'agentEventDeliveryKey'
+    | 'agentEventBindingId'
     | 'agentEventExpectedAction'
     | 'agentEventLegacyTurnToken'
     | 'scheduleId'

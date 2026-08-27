@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
 import {
   createEventActorExecutor,
@@ -6,7 +7,11 @@ import {
   type EventActorHead,
   type EventActorHostAdapter,
 } from '@librechat/agents';
-import type { ConversationMethods, IAgentEventActorState } from '@librechat/data-schemas';
+import type {
+  AgentTriggerDeliveryMethods,
+  ConversationMethods,
+  IAgentEventActorState,
+} from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { AgentTriggerExpectedAction } from './envelope';
 import type { AgentEventAppliedAction } from './outcome';
@@ -35,6 +40,8 @@ export interface ExecuteAgentEventActorInput<T> {
   user: string;
   tenantId?: string;
   conversationId: string;
+  /** Authenticated binding that owns the delivery receipt. */
+  bindingId?: string;
   invocationId: string;
   event: EventActorEvent;
   expectedAction?: AgentTriggerExpectedAction;
@@ -56,6 +63,11 @@ export interface AgentEventActorDependencies {
   commitState: ConversationMethods['commitAgentEventActorState'];
   recordReconciliation: ConversationMethods['recordAgentEventActorReconciliation'];
   resolveReconciliation: ConversationMethods['resolveAgentEventActorReconciliation'];
+  admitAction?: AgentTriggerDeliveryMethods['admitAgentEventActorAction'];
+  releaseAction?: AgentTriggerDeliveryMethods['releaseAgentEventActorAction'];
+  hasActionAdmission?: AgentTriggerDeliveryMethods['hasAgentEventActorActionAdmission'];
+  getReceipt?: AgentTriggerDeliveryMethods['getAgentEventActorReceipt'];
+  clearReconciliation?: ConversationMethods['clearAgentEventActorReconciliation'];
 }
 
 function toHead(actorThreadId: string, state: IAgentEventActorState | null): EventActorHead {
@@ -80,6 +92,21 @@ function checkpointMatches(
   );
 }
 
+function actionAdmissionId(
+  invocationId: string,
+  checkpoint: { threadId: string; checkpointId?: string; checkpointNs: string },
+): string {
+  return createHash('sha256')
+    .update(invocationId)
+    .update('\0')
+    .update(checkpoint.threadId)
+    .update('\0')
+    .update(checkpoint.checkpointNs)
+    .update('\0')
+    .update(checkpoint.checkpointId ?? '')
+    .digest('hex');
+}
+
 /**
  * Executes one authenticated bound-child event through the SDK's checkpoint-fork lifecycle.
  * The request controller still owns generation admission and terminal receipts; this adapter owns
@@ -91,6 +118,7 @@ export async function executeAgentEventActor<T>(
 ): Promise<ExecuteAgentEventActorResult<T>> {
   let value: T | undefined;
   let invocationError: unknown;
+  let ownedActionAdmissionId: string | undefined;
   let observedState: IAgentEventActorState | null | undefined;
   let observedEpoch: number | undefined;
   const adapter: EventActorHostAdapter<EventActorEvent, EventActorResult> = {
@@ -106,7 +134,96 @@ export async function executeAgentEventActor<T>(
       if (snapshot === undefined) {
         throw new Error('Event actor binding is no longer active');
       }
-      const unresolved = snapshot.reconciliations.filter((item) => item.status !== 'settled');
+      if (input.bindingId != null && deps.getReceipt != null) {
+        const receipt = await deps.getReceipt({
+          deliveryKey: input.invocationId,
+          user: input.user,
+          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+          bindingId: input.bindingId,
+          conversationId: input.conversationId,
+        });
+        if (receipt != null) {
+          const marker = snapshot.reconciliations.find(
+            (item) => item.invocationId === input.invocationId,
+          );
+          if (marker != null && deps.clearReconciliation != null) {
+            const cleared = await deps.clearReconciliation({
+              user: input.user,
+              conversationId: input.conversationId,
+              ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+              invocationId: input.invocationId,
+              checkpoint: receipt.checkpoint,
+              resolution: receipt.resolution,
+            });
+            if (!cleared) {
+              throw new Error('Event actor terminal marker could not be recovered');
+            }
+          }
+          throw new Error('Event actor invocation already has a terminal receipt');
+        }
+      }
+      if (
+        snapshot.reconciliations.some(
+          (item) => item.invocationId === input.invocationId && item.status === 'settled',
+        )
+      ) {
+        /** Mixed-version proof must be migrated by the terminal handler before
+         * the same delivery identity can execute again. Delivery admission
+         * alone cannot distinguish that proof from a pre-invoke orphan. */
+        throw new Error('Event actor invocation has legacy terminal proof awaiting migration');
+      }
+      let recoveredInvocationId: string | undefined;
+      const pendingInvocation = snapshot.reconciliations.find(
+        (item) => item.invocationId === input.invocationId && item.status === 'invocation_pending',
+      );
+      if (pendingInvocation != null && input.bindingId != null && deps.hasActionAdmission != null) {
+        const pendingAdmissionId = actionAdmissionId(
+          input.invocationId,
+          pendingInvocation.checkpoint,
+        );
+        const actionAdmitted = await deps.hasActionAdmission({
+          deliveryKey: input.invocationId,
+          user: input.user,
+          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+          bindingId: input.bindingId,
+          conversationId: input.conversationId,
+          admissionId: pendingAdmissionId,
+        });
+        if (pendingInvocation.actionAdmitted !== true || !actionAdmitted) {
+          /** Abandoning the conversation marker fences a paused pre-admission
+           * owner: it must confirm this exact marker after winning delivery
+           * admission and therefore cannot invoke after takeover. */
+          const abandoned = await deps.resolveReconciliation({
+            user: input.user,
+            conversationId: input.conversationId,
+            ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+            invocationId: input.invocationId,
+            checkpoint: pendingInvocation.checkpoint,
+            expectedActionAdmitted: pendingInvocation.actionAdmitted === true,
+            resolution: 'invocation_abandoned',
+          });
+          if (!abandoned) {
+            throw new Error('Event actor orphaned no-action lifecycle could not be recovered');
+          }
+          if (actionAdmitted) {
+            const released = await deps.releaseAction?.({
+              deliveryKey: input.invocationId,
+              user: input.user,
+              ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+              bindingId: input.bindingId,
+              conversationId: input.conversationId,
+              admissionId: pendingAdmissionId,
+            });
+            if (!released) {
+              throw new Error('Event actor orphaned action admission could not be released');
+            }
+          }
+          recoveredInvocationId = input.invocationId;
+        }
+      }
+      const unresolved = snapshot.reconciliations.filter(
+        (item) => item.status !== 'settled' && item.invocationId !== recoveredInvocationId,
+      );
       if (unresolved.length > 0) {
         throw new Error(
           `Event actor is blocked on ${unresolved.map((item) => item.status).join(', ')} reconciliation`,
@@ -187,6 +304,78 @@ export async function executeAgentEventActor<T>(
       });
       if (!fenced) {
         throw new Error('Event actor invocation could not acquire its durable lifecycle fence');
+      }
+      /** The delivery row is the serialization point between action admission
+       * and terminal settlement. A plain receipt read cannot close the final
+       * read-before-invoke race across two Mongo documents. */
+      if (input.bindingId != null && deps.admitAction != null) {
+        const admissionId = actionAdmissionId(input.invocationId, invocation.fork);
+        const admitted = await deps.admitAction({
+          deliveryKey: input.invocationId,
+          user: input.user,
+          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+          bindingId: input.bindingId,
+          conversationId: input.conversationId,
+          admittedAt: new Date(),
+          admissionId,
+        });
+        if (!admitted) {
+          const abandoned = await deps.resolveReconciliation({
+            user: input.user,
+            conversationId: input.conversationId,
+            ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+            invocationId: invocation.invocationId,
+            checkpoint: {
+              threadId: invocation.fork.threadId,
+              checkpointNs: invocation.fork.checkpointNs,
+              ...(invocation.fork.checkpointId == null
+                ? {}
+                : { checkpointId: invocation.fork.checkpointId }),
+            },
+            expectedActionAdmitted: false,
+            resolution: 'invocation_abandoned',
+          });
+          if (!abandoned) {
+            throw new Error('Event actor duplicate lifecycle fence could not be abandoned');
+          }
+          throw new Error('Event actor action admission was already consumed or settled');
+        }
+        const confirmed = await deps.recordReconciliation({
+          user: input.user,
+          conversationId: input.conversationId,
+          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+          reconciliation: {
+            invocationId: invocation.invocationId,
+            actionAdmitted: true,
+            status: 'invocation_pending',
+            checkpoint: {
+              threadId: invocation.fork.threadId,
+              checkpointNs: invocation.fork.checkpointNs,
+              ...(invocation.fork.checkpointId == null
+                ? {}
+                : { checkpointId: invocation.fork.checkpointId }),
+            },
+            action: { toolName: input.expectedAction?.toolName ?? 'expected_action' },
+            observedAt: new Date(),
+          },
+        });
+        if (!confirmed) {
+          const released = await deps.releaseAction?.({
+            deliveryKey: input.invocationId,
+            user: input.user,
+            ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+            bindingId: input.bindingId,
+            conversationId: input.conversationId,
+            admissionId,
+          });
+          if (!released) {
+            throw new Error(
+              'Event actor lost admission lifecycle and could not release its action',
+            );
+          }
+          throw new Error('Event actor action admission lifecycle was superseded before invoke');
+        }
+        ownedActionAdmissionId = admissionId;
       }
       try {
         value = await input.invoke({
@@ -318,6 +507,33 @@ export async function executeAgentEventActor<T>(
       return { status: 'committed', head: toHead(input.conversationId, committed.state) };
     },
     async discard(request) {
+      /** Release the delivery-owned action admission before deleting either
+       * the fork or its conversation-side lifecycle evidence. A crash after
+       * this release is retryable; the inverse order can orphan admission
+       * forever with no durable marker left to recover it from. */
+      if (ownedActionAdmissionId != null && input.bindingId != null && deps.releaseAction != null) {
+        const releasedAction = await deps.releaseAction({
+          deliveryKey: input.invocationId,
+          user: input.user,
+          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+          bindingId: input.bindingId,
+          conversationId: input.conversationId,
+          admissionId: ownedActionAdmissionId,
+        });
+        if (!releasedAction) {
+          const receipt = await deps.getReceipt?.({
+            deliveryKey: input.invocationId,
+            user: input.user,
+            ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+            bindingId: input.bindingId,
+            conversationId: input.conversationId,
+          });
+          if (receipt == null) {
+            throw new Error('Event actor action admission could not be released');
+          }
+        }
+        ownedActionAdmissionId = undefined;
+      }
       await deleteAgentCheckpoint(request.invocation.fork.threadId, input.checkpointer, undefined, {
         throwOnError: true,
         checkpointNamespace: request.invocation.fork.checkpointNs,
@@ -334,6 +550,9 @@ export async function executeAgentEventActor<T>(
             ? {}
             : { checkpointId: request.invocation.fork.checkpointId }),
         },
+        ...(input.bindingId != null && deps.admitAction != null
+          ? { expectedActionAdmitted: true }
+          : {}),
         resolution: 'invocation_abandoned',
       });
       if (!released) {
@@ -419,6 +638,7 @@ export async function executeAgentEventActor<T>(
       ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
       reconciliation: {
         invocationId: input.invocationId,
+        ...(input.bindingId != null && deps.admitAction != null ? { actionAdmitted: true } : {}),
         status: execution.status,
         checkpoint: {
           threadId: execution.checkpoint.threadId,

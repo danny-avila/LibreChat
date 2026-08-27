@@ -1,4 +1,8 @@
-import type { ConversationMethods, MessageMethods } from '@librechat/data-schemas';
+import type {
+  AgentTriggerDeliveryMethods,
+  ConversationMethods,
+  MessageMethods,
+} from '@librechat/data-schemas';
 import type { Agents } from 'librechat-data-provider';
 import type { AgentTriggerExpectedAction } from './envelope';
 import type { SerializableJobData } from '~/stream';
@@ -331,6 +335,10 @@ export function createAgentEventTerminalHandler(methods: {
   ) => Promise<boolean>;
   getAgentEventActorSnapshot: ConversationMethods['getAgentEventActorSnapshot'];
   resolveAgentEventActorReconciliation: ConversationMethods['resolveAgentEventActorReconciliation'];
+  clearAgentEventActorReconciliation: ConversationMethods['clearAgentEventActorReconciliation'];
+  settleAgentEventActorReceipt: AgentTriggerDeliveryMethods['settleAgentEventActorReceipt'];
+  getAgentEventActorReceipt: AgentTriggerDeliveryMethods['getAgentEventActorReceipt'];
+  backfillAgentEventActorReceipt: AgentTriggerDeliveryMethods['backfillAgentEventActorReceipt'];
   completeAgentEventActorLegacyTurn: ConversationMethods['completeAgentEventActorLegacyTurn'];
   getMessage: MessageMethods['getMessage'];
 }): (
@@ -350,8 +358,10 @@ export function createAgentEventTerminalHandler(methods: {
     }
     const conversationId = job.conversationId ?? streamId;
     const outcome = classifyAgentEventRunOutcome(job, runSteps, content);
+    const settledAt = new Date(job.completedAt ?? Date.now());
     let committedAction: AgentEventAppliedAction | undefined;
     let compensated = false;
+    let actorReceiptSettled = false;
     const snapshot = await methods.getAgentEventActorSnapshot({
       user: job.userId,
       conversationId,
@@ -360,8 +370,130 @@ export function createAgentEventTerminalHandler(methods: {
     const lifecycle = snapshot?.reconciliations.find(
       (item) => item.invocationId === job.agentEventDeliveryKey,
     );
-    if (lifecycle != null) {
+    let durableReceipt =
+      job.agentEventBindingId == null
+        ? null
+        : await methods.getAgentEventActorReceipt({
+            deliveryKey: job.agentEventDeliveryKey,
+            user: job.userId,
+            ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+            bindingId: job.agentEventBindingId,
+            conversationId,
+          });
+    if (durableReceipt != null) {
+      actorReceiptSettled = true;
+      /** Settlement owns public batch propagation and lane cleanup as well as
+       * the private receipt. Replaying the exact settlement repairs a crash
+       * after the atomic root write but before either idempotent side effect. */
+      const finalized = await methods.settleAgentEventActorReceipt({
+        deliveryKey: job.agentEventDeliveryKey,
+        user: job.userId,
+        ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+        bindingId: durableReceipt.bindingId,
+        conversationId,
+        generationCreatedAt: job.createdAt,
+        status: durableReceipt.resolution === 'action_compensated' ? 'failed' : 'applied',
+        settledAt: durableReceipt.settledAt,
+        ...(durableReceipt.resolution === 'action_compensated' && {
+          error: 'Applied event actor action was explicitly compensated',
+        }),
+        receipt: {
+          resolution: durableReceipt.resolution,
+          checkpoint: durableReceipt.checkpoint,
+          action: durableReceipt.action,
+        },
+      });
+      if (!finalized) {
+        throw new Error(
+          `Agent event actor ${job.agentEventDeliveryKey} terminal receipt could not be finalized`,
+        );
+      }
+      if (durableReceipt.resolution === 'action_compensated') {
+        compensated = true;
+      } else {
+        committedAction = durableReceipt.action;
+      }
+      if (lifecycle != null) {
+        const cleared = await methods.clearAgentEventActorReconciliation({
+          user: job.userId,
+          conversationId,
+          ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+          invocationId: job.agentEventDeliveryKey,
+          checkpoint: durableReceipt.checkpoint,
+          resolution: durableReceipt.resolution,
+        });
+        if (!cleared) {
+          throw new Error(
+            `Agent event actor ${job.agentEventDeliveryKey} terminal marker could not be cleared`,
+          );
+        }
+      }
+    } else if (lifecycle != null) {
       if (lifecycle.status === 'settled') {
+        /** Compatibility for receipts written by the pre-delivery-ledger build:
+         * copy the exact terminal proof only when the already-public handling
+         * outcome agrees, then remove the embedded representation. */
+        if (job.agentEventBindingId != null && lifecycle.resolution != null) {
+          const legacyCompensated = lifecycle.resolution === 'action_compensated';
+          /** A pre-ledger owner can settle the embedded lifecycle and crash
+           * before publishing the matching delivery outcome. Terminalize that
+           * exact started generation first; replay is idempotent when an older
+           * owner already completed the public write. The resulting terminal
+           * handling is then the delivery-side proof required by migration. */
+          const legacyStatus = legacyCompensated ? 'failed' : 'applied';
+          const legacyError = legacyCompensated
+            ? 'Applied event actor action was explicitly compensated'
+            : undefined;
+          const terminalized = await methods.settleAgentTriggerHandlingOutcome({
+            deliveryKey: job.agentEventDeliveryKey,
+            conversationId,
+            generationCreatedAt: job.createdAt,
+            status: legacyStatus,
+            settledAt: lifecycle.observedAt,
+            ...(legacyError == null ? {} : { error: legacyError }),
+            ...(!legacyCompensated && { action: lifecycle.action }),
+          });
+          if (!terminalized) {
+            throw new Error(
+              `Agent event actor ${job.agentEventDeliveryKey} legacy public outcome could not be recovered`,
+            );
+          }
+          const migrated = await methods.backfillAgentEventActorReceipt({
+            deliveryKey: job.agentEventDeliveryKey,
+            user: job.userId,
+            ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+            bindingId: job.agentEventBindingId,
+            conversationId,
+            generationCreatedAt: job.createdAt,
+            status: legacyStatus,
+            settledAt: lifecycle.observedAt,
+            ...(legacyError == null ? {} : { error: legacyError }),
+            receipt: {
+              resolution: lifecycle.resolution,
+              checkpoint: lifecycle.checkpoint,
+              action: lifecycle.action,
+            },
+          });
+          if (!migrated) {
+            throw new Error(
+              `Agent event actor ${job.agentEventDeliveryKey} legacy receipt could not be migrated`,
+            );
+          }
+          const cleared = await methods.clearAgentEventActorReconciliation({
+            user: job.userId,
+            conversationId,
+            ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+            invocationId: job.agentEventDeliveryKey,
+            checkpoint: lifecycle.checkpoint,
+            resolution: lifecycle.resolution,
+          });
+          if (!cleared) {
+            throw new Error(
+              `Agent event actor ${job.agentEventDeliveryKey} migrated marker could not be cleared`,
+            );
+          }
+          actorReceiptSettled = true;
+        }
         /** A compensated receipt still tombstones its invocation id, but its
          * external effect was explicitly undone — replaying it as applied
          * would tell the source the operation stands and suppress the
@@ -375,7 +507,7 @@ export function createAgentEventTerminalHandler(methods: {
         throw new Error(
           `Agent event actor ${job.agentEventDeliveryKey} requires ${lifecycle.status} reconciliation`,
         );
-      } else {
+      } else if (job.agentEventBindingId != null) {
         const historyIsDurable = await hasDurableAgentEventHistory({
           getMessage: methods.getMessage,
           user: job.userId,
@@ -387,15 +519,77 @@ export function createAgentEventTerminalHandler(methods: {
             `Agent event actor ${job.agentEventDeliveryKey} has invalid durable message history`,
           );
         }
-        /** The persistence lifecycle was created by the same CAS that advanced
-         * the actor head, and history_persisted is written only after the
-         * controller's post-commit message barrier. Resolving BEFORE settlement
-         * makes the receipt's status CAS the serialization point against a
-         * concurrent compensation: whichever transition wins determines the
-         * public outcome, and a crash between this resolve and the settle
-         * below converges through the retained receipt's replay. The receipt
-         * keeps its full action proof either way, so nothing is lost if the
-         * settle write never lands. */
+        const stored = await methods.settleAgentEventActorReceipt({
+          deliveryKey: job.agentEventDeliveryKey,
+          user: job.userId,
+          ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+          bindingId: job.agentEventBindingId,
+          conversationId,
+          generationCreatedAt: job.createdAt,
+          status: 'applied',
+          settledAt,
+          ...(lifecycle.actionAdmitted === true && { requiresActionAdmission: true }),
+          receipt: {
+            resolution: 'checkpoint_verified',
+            checkpoint: lifecycle.checkpoint,
+            action: lifecycle.action,
+          },
+        });
+        if (!stored) {
+          durableReceipt = await methods.getAgentEventActorReceipt({
+            deliveryKey: job.agentEventDeliveryKey,
+            user: job.userId,
+            ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+            bindingId: job.agentEventBindingId,
+            conversationId,
+          });
+          if (durableReceipt == null) {
+            throw new Error(
+              `Agent event actor ${job.agentEventDeliveryKey} terminal receipt was not retained`,
+            );
+          }
+        }
+        durableReceipt ??= {
+          bindingId: job.agentEventBindingId,
+          resolution: 'checkpoint_verified',
+          checkpoint: lifecycle.checkpoint,
+          action: lifecycle.action,
+          settledAt,
+        };
+        actorReceiptSettled = true;
+        if (durableReceipt.resolution === 'action_compensated') {
+          compensated = true;
+        } else {
+          committedAction = durableReceipt.action;
+        }
+        const cleared = await methods.clearAgentEventActorReconciliation({
+          user: job.userId,
+          conversationId,
+          ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+          invocationId: job.agentEventDeliveryKey,
+          checkpoint: durableReceipt.checkpoint,
+          resolution: durableReceipt.resolution,
+        });
+        if (!cleared) {
+          throw new Error(
+            `Agent event actor ${job.agentEventDeliveryKey} terminal marker could not be cleared`,
+          );
+        }
+      } else {
+        /** A generation created before binding identity was added must finish
+         * through the old receipt path; inventing binding scope here would be
+         * less safe than retaining the already-deployed mixed-version logic. */
+        const historyIsDurable = await hasDurableAgentEventHistory({
+          getMessage: methods.getMessage,
+          user: job.userId,
+          conversationId,
+          deliveryKey: job.agentEventDeliveryKey,
+        });
+        if (!historyIsDurable) {
+          throw new Error(
+            `Agent event actor ${job.agentEventDeliveryKey} has invalid durable message history`,
+          );
+        }
         const resolved = await methods.resolveAgentEventActorReconciliation({
           user: job.userId,
           conversationId,
@@ -404,9 +598,7 @@ export function createAgentEventTerminalHandler(methods: {
           checkpoint: lifecycle.checkpoint,
           resolution: 'checkpoint_verified',
         });
-        if (resolved) {
-          committedAction = lifecycle.action;
-        } else {
+        if (!resolved) {
           const reread = await methods.getAgentEventActorSnapshot({
             user: job.userId,
             conversationId,
@@ -422,6 +614,8 @@ export function createAgentEventTerminalHandler(methods: {
               `Agent event actor ${job.agentEventDeliveryKey} settlement receipt was not retained`,
             );
           }
+        } else {
+          committedAction = lifecycle.action;
         }
       }
     }
@@ -458,7 +652,9 @@ export function createAgentEventTerminalHandler(methods: {
         throw new Error(`Failed to seal legacy event actor turn ${job.agentEventLegacyTurnToken}`);
       }
     }
-    const settledAt = new Date(job.completedAt ?? Date.now());
+    if (actorReceiptSettled) {
+      return;
+    }
     const settled = await methods.settleAgentTriggerHandlingOutcome({
       deliveryKey: job.agentEventDeliveryKey,
       conversationId,

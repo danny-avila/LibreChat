@@ -68,6 +68,20 @@ describe('Experimental server configuration', () => {
     expect(listenIndex).toBeGreaterThan(routingIndex);
   });
 
+  it('projects base-only event rollout barriers before accepting requests', () => {
+    const baseConfigIndex = source.indexOf(
+      'const baseAppConfig = await getAppConfig({ baseOnly: true });',
+    );
+    const eventRuntimeIndex = source.indexOf(
+      'configureAgentEventRuntime(baseAppConfig?.endpoints?.agents?.eventDriven);',
+    );
+    const listenIndex = source.indexOf('const server = app.listen');
+
+    expect(baseConfigIndex).toBeGreaterThan(-1);
+    expect(eventRuntimeIndex).toBeGreaterThan(baseConfigIndex);
+    expect(listenIndex).toBeGreaterThan(eventRuntimeIndex);
+  });
+
   it('matches the standard server pre-authentication tenant routes', () => {
     expect(source).toContain("app.use('/oauth', preAuthTenantMiddleware, routes.oauth);");
     expect(source).toContain("app.use('/api/auth', preAuthTenantMiddleware, routes.auth);");

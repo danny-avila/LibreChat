@@ -1,5 +1,5 @@
 import { RetentionMode } from 'librechat-data-provider';
-import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
+import type { AnyBulkWriteOperation, FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
 import type {
   IAgentEventActorCheckpoint,
@@ -7,6 +7,7 @@ import type {
   IAgentEventActorSnapshot,
   IAgentEventActorState,
   IAgentEventBindingRecord,
+  IAgentTriggerDeliveryDocument,
   AppConfig,
   IChatProjectDocument,
   IActiveSubagentThreadLease,
@@ -29,6 +30,8 @@ import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
 import logger from '~/config/winston';
+
+const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 90 * 24 * 60 * 60_000;
 
 type ConversationUpdateResult = {
   value:
@@ -66,25 +69,10 @@ export type AgentEventActorCommitResult =
     }
   | { status: 'stale'; state?: IAgentEventActorState };
 
-/**
- * How long a settled receipt keeps tombstoning its invocation id. A stale
- * same-id owner is bounded by time, not by how many newer invocations settle,
- * so eviction is primarily age-based: a receipt becomes prunable only once no
- * delayed duplicate of its invocation could still be admitted — far beyond any
- * generation, job, or delivery-retry lifetime.
- */
-const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-
-/**
- * Absolute size bound for the private invocation journal so a pathological
- * actor cannot grow its conversation document toward Mongo's document limit.
- * Never an eviction quota: a receipt inside its retention window is never
- * discarded. When the journal holds this many unexpired receipts, admission
- * of NEW invocations is refused (fail closed) until receipts age out, so
- * document integrity and same-id duplicate protection are both invariants
- * rather than a trade.
- */
-export const AGENT_EVENT_ACTOR_RECEIPT_LIMIT = 1024;
+export interface AgentEventActorReconciliationStorageMetrics {
+  pending: number;
+  oldestPendingAgeSeconds: number;
+}
 
 const ARCHIVE_CONVERSATION_BATCH_SIZE = 500;
 const PROJECT_STATS_REFRESH_CONCURRENCY = 10;
@@ -282,12 +270,25 @@ export interface ConversationMethods {
     tenantId?: string;
     invocationId: string;
     checkpoint: IAgentEventActorReconciliation['checkpoint'];
+    expectedActionAdmitted?: boolean;
     resolution:
       | 'checkpoint_verified'
       | 'action_compensated'
       | 'history_repaired'
       | 'invocation_abandoned';
   }): Promise<boolean>;
+  clearAgentEventActorReconciliation(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    invocationId: string;
+    checkpoint: IAgentEventActorReconciliation['checkpoint'];
+    resolution: 'checkpoint_verified' | 'action_compensated' | 'history_repaired';
+  }): Promise<boolean>;
+  getAgentEventActorReconciliationStorageMetrics(
+    now: Date,
+  ): Promise<AgentEventActorReconciliationStorageMetrics>;
+  expireLegacyAgentEventActorReceipts(now: Date, limit?: number): Promise<number>;
   reserveSubagentThread(input: {
     user: string;
     conversationId: string;
@@ -349,6 +350,8 @@ export function createConversationMethods(
   mongoose: typeof import('mongoose'),
   messageMethods?: Pick<MessageMethods, 'getMessages' | 'deleteMessages'>,
 ): ConversationMethods {
+  let legacyReceiptExpiryCursor: Types.ObjectId | undefined;
+
   function getMessageMethods() {
     if (!messageMethods) {
       throw new Error('Message methods not injected into conversation methods');
@@ -717,7 +720,18 @@ export function createConversationMethods(
     const journal = existing?.agentEventActorReconciliations ?? [];
     const current = journal.find((item) => item.invocationId === input.reconciliation.invocationId);
     if (current != null) {
+      const confirmsActionAdmission =
+        current.status === 'invocation_pending' &&
+        current.actionAdmitted !== true &&
+        input.reconciliation.status === 'invocation_pending' &&
+        input.reconciliation.actionAdmitted === true &&
+        current.checkpoint.threadId === input.reconciliation.checkpoint.threadId &&
+        current.checkpoint.checkpointId === input.reconciliation.checkpoint.checkpointId &&
+        current.checkpoint.checkpointNs === input.reconciliation.checkpoint.checkpointNs &&
+        current.action.toolName === input.reconciliation.action.toolName &&
+        current.action.toolCallId === input.reconciliation.action.toolCallId;
       const canTransition =
+        confirmsActionAdmission ||
         (current?.status === 'invocation_pending' &&
           input.reconciliation.status !== 'invocation_pending') ||
         (current?.status === 'persistence_pending' &&
@@ -727,6 +741,7 @@ export function createConversationMethods(
           input.reconciliation.status === 'history_persisted');
       const sameIdentity =
         current?.status === input.reconciliation.status &&
+        current.actionAdmitted === input.reconciliation.actionAdmitted &&
         current.checkpoint.threadId === input.reconciliation.checkpoint.threadId &&
         current.checkpoint.checkpointId === input.reconciliation.checkpoint.checkpointId &&
         current.checkpoint.checkpointNs === input.reconciliation.checkpoint.checkpointNs &&
@@ -734,7 +749,7 @@ export function createConversationMethods(
         current.action.toolCallId === input.reconciliation.action.toolCallId;
       /** A pending record is an exclusive ownership fence, not an idempotent
        * receipt. A second executor must not inherit the first owner's claim. */
-      if (input.reconciliation.status === 'invocation_pending') {
+      if (input.reconciliation.status === 'invocation_pending' && !confirmsActionAdmission) {
         return false;
       }
       if (!canTransition) {
@@ -747,6 +762,18 @@ export function createConversationMethods(
             $elemMatch: {
               invocationId: input.reconciliation.invocationId,
               status: current!.status,
+              ...(confirmsActionAdmission && {
+                actionAdmitted: { $ne: true },
+                'checkpoint.threadId': current.checkpoint.threadId,
+                'checkpoint.checkpointNs': current.checkpoint.checkpointNs,
+                ...(current.checkpoint.checkpointId == null
+                  ? { 'checkpoint.checkpointId': { $exists: false } }
+                  : { 'checkpoint.checkpointId': current.checkpoint.checkpointId }),
+                'action.toolName': current.action.toolName,
+                ...(current.action.toolCallId == null
+                  ? { 'action.toolCallId': { $exists: false } }
+                  : { 'action.toolCallId': current.action.toolCallId }),
+              }),
             },
           },
         },
@@ -760,41 +787,6 @@ export function createConversationMethods(
     /** Every post-acquisition state must transition the exact pending lifecycle.
      * Never recreate a marker after terminal recovery has already removed it. */
     if (input.reconciliation.status !== 'invocation_pending') {
-      return false;
-    }
-    const receiptCutoff = new Date(Date.now() - AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS);
-    if (
-      journal.some(
-        (item) => item.status === 'settled' && item.observedAt.getTime() < receiptCutoff.getTime(),
-      )
-    ) {
-      await Conversation.updateOne(
-        ownership,
-        {
-          $pull: {
-            agentEventActorReconciliations: {
-              status: 'settled',
-              observedAt: { $lt: receiptCutoff },
-            },
-          },
-        },
-        { timestamps: false },
-      );
-    }
-    /** A receipt inside its retention window may NEVER be evicted — a stale
-     * same-id owner is bounded by time, and count-based eviction would reopen
-     * duplicate execution at high event rates. When the journal is full of
-     * unexpired receipts, refuse admission (fail closed) instead of trading
-     * away tombstone protection; the actor resumes once receipts age out.
-     * Admission is serialized by the no-active-row filter, so the journal can
-     * exceed the cap by at most the single row admitted after this check. */
-    const retainedReceipts = journal.filter(
-      (item) => item.status === 'settled' && item.observedAt.getTime() >= receiptCutoff.getTime(),
-    );
-    if (retainedReceipts.length >= AGENT_EVENT_ACTOR_RECEIPT_LIMIT) {
-      logger.error(
-        `[conversation] Event actor receipt journal for ${input.conversationId} is full of unexpired receipts; refusing new invocation ${input.reconciliation.invocationId} until receipts age out`,
-      );
       return false;
     }
     const recorded = await Conversation.findOneAndUpdate(
@@ -829,6 +821,7 @@ export function createConversationMethods(
     tenantId?: string;
     invocationId: string;
     checkpoint: IAgentEventActorReconciliation['checkpoint'];
+    expectedActionAdmitted?: boolean;
     resolution:
       | 'checkpoint_verified'
       | 'action_compensated'
@@ -902,11 +895,30 @@ export function createConversationMethods(
       });
       return replay != null;
     }
+    let expectedAdmissionFilter: Record<string, unknown> = {};
+    if (input.expectedActionAdmitted != null) {
+      expectedAdmissionFilter = input.expectedActionAdmitted
+        ? { actionAdmitted: true }
+        : { actionAdmitted: { $ne: true } };
+    }
     const checkpointFilter: Record<string, unknown> = {
       ...exactCheckpoint,
       ...(input.resolution === 'invocation_abandoned'
-        ? { status: 'invocation_pending' }
-        : { status: { $ne: 'settled' } }),
+        ? {
+            status: 'invocation_pending',
+            ...expectedAdmissionFilter,
+          }
+        : {
+            status: {
+              $in: [
+                'persistence_pending',
+                'history_persisted',
+                'commit_conflict',
+                'commit_indeterminate',
+                'persistence_failed',
+              ],
+            },
+          }),
     };
     const ownership = {
       ...owner,
@@ -965,6 +977,227 @@ export function createConversationMethods(
       },
     });
     return replayed != null;
+  }
+
+  /** Removes an active lifecycle only after its terminal proof is durable elsewhere. */
+  async function clearAgentEventActorReconciliation(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    invocationId: string;
+    checkpoint: IAgentEventActorReconciliation['checkpoint'];
+    resolution: 'checkpoint_verified' | 'action_compensated' | 'history_repaired';
+  }): Promise<boolean> {
+    if (input.checkpoint.threadId !== input.conversationId) {
+      throw new Error('Event actor reconciliation changed its logical thread');
+    }
+    if (
+      input.resolution === 'checkpoint_verified' &&
+      (typeof input.checkpoint.checkpointId !== 'string' ||
+        input.checkpoint.checkpointId.length === 0)
+    ) {
+      return false;
+    }
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const exactCheckpoint = {
+      invocationId: input.invocationId,
+      'checkpoint.threadId': input.checkpoint.threadId,
+      'checkpoint.checkpointNs': input.checkpoint.checkpointNs,
+      ...(input.checkpoint.checkpointId == null
+        ? { 'checkpoint.checkpointId': { $exists: false } }
+        : { 'checkpoint.checkpointId': input.checkpoint.checkpointId }),
+    };
+    const owner = {
+      user: input.user,
+      conversationId: input.conversationId,
+      subagentThread: { $exists: true },
+      agentEventBinding: { $exists: true },
+      ...subagentLeaseTenantFilter(input.tenantId),
+      ...activeExpirationFilter<IConversation>(),
+    };
+    const activeStatuses =
+      input.resolution === 'checkpoint_verified'
+        ? ['history_persisted']
+        : [
+            'persistence_pending',
+            'history_persisted',
+            'commit_conflict',
+            'commit_indeterminate',
+            'persistence_failed',
+          ];
+    const lifecycle = {
+      ...exactCheckpoint,
+      $or: [
+        { status: { $in: activeStatuses } },
+        { status: 'settled', resolution: input.resolution },
+      ],
+    };
+    const clearedWithHead = await Conversation.findOneAndUpdate(
+      {
+        ...owner,
+        agentEventActor: { $exists: true },
+        ...(input.resolution === 'checkpoint_verified' && {
+          'agentEventActor.checkpoint.threadId': input.checkpoint.threadId,
+          'agentEventActor.checkpoint.checkpointId': input.checkpoint.checkpointId,
+          'agentEventActor.checkpoint.checkpointNs': input.checkpoint.checkpointNs,
+        }),
+        agentEventActorReconciliations: { $elemMatch: lifecycle },
+      },
+      {
+        ...(input.resolution === 'checkpoint_verified'
+          ? {}
+          : { $set: { 'agentEventActor.requiresColdStart': true } }),
+        $pull: { agentEventActorReconciliations: lifecycle },
+      },
+      { new: true, timestamps: false },
+    )
+      .select('+agentEventActorReconciliations')
+      .lean<IConversation>();
+    if (clearedWithHead != null) {
+      return true;
+    }
+    if (input.resolution !== 'checkpoint_verified') {
+      const clearedWithoutHead = await Conversation.findOneAndUpdate(
+        {
+          ...owner,
+          agentEventActor: { $exists: false },
+          agentEventActorReconciliations: { $elemMatch: lifecycle },
+        },
+        { $pull: { agentEventActorReconciliations: lifecycle } },
+        { new: true, timestamps: false },
+      )
+        .select('+agentEventActorReconciliations')
+        .lean<IConversation>();
+      if (clearedWithoutHead != null) {
+        return true;
+      }
+    }
+    const conflict = await Conversation.exists({
+      ...owner,
+      agentEventActorReconciliations: { $elemMatch: { invocationId: input.invocationId } },
+    });
+    if (conflict != null) {
+      return false;
+    }
+    return (await Conversation.exists(owner)) != null;
+  }
+
+  async function getAgentEventActorReconciliationStorageMetrics(
+    now: Date,
+  ): Promise<AgentEventActorReconciliationStorageMetrics> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const [row] = await Conversation.aggregate<{ pending: number; oldestObservedAt?: Date }>([
+      {
+        $match: {
+          agentEventActorReconciliations: {
+            $elemMatch: { status: { $ne: 'settled' } },
+          },
+        },
+      },
+      { $unwind: '$agentEventActorReconciliations' },
+      { $match: { 'agentEventActorReconciliations.status': { $ne: 'settled' } } },
+      {
+        $group: {
+          _id: null,
+          pending: { $sum: 1 },
+          oldestObservedAt: { $min: '$agentEventActorReconciliations.observedAt' },
+        },
+      },
+    ]);
+    const oldestObservedAt = row?.oldestObservedAt;
+    return {
+      pending: row?.pending ?? 0,
+      oldestPendingAgeSeconds:
+        oldestObservedAt == null
+          ? 0
+          : Math.max(0, (now.getTime() - oldestObservedAt.getTime()) / 1000),
+    };
+  }
+
+  /** Bounded mixed-version cleanup for terminal receipts embedded by older
+   * builds. New receipts expire through the delivery collection TTL index,
+   * but dormant legacy conversations need an independent retirement path. */
+  async function expireLegacyAgentEventActorReceipts(now: Date, limit = 100): Promise<number> {
+    if (Number.isNaN(now.getTime())) {
+      throw new TypeError('now must be a valid date');
+    }
+    const boundedLimit = Math.max(1, Math.min(Math.trunc(limit), 1_000));
+    const cutoff = new Date(now.getTime() - AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS);
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const Delivery = mongoose.models.AgentTriggerDelivery as
+      | Model<IAgentTriggerDeliveryDocument>
+      | undefined;
+    if (Delivery == null) {
+      return 0;
+    }
+    /** Advance a bounded candidate page before querying delivery protection.
+     * Reaching the end resets the cursor so newly expiry-eligible older rows
+     * enter the next sweep without making any one pass collection-wide. */
+    const candidates = await Conversation.find({
+      ...(legacyReceiptExpiryCursor == null ? {} : { _id: { $gt: legacyReceiptExpiryCursor } }),
+    })
+      .select('_id +agentEventActorReconciliations')
+      .sort({ _id: 1 })
+      .limit(boundedLimit)
+      .lean<
+        Array<Pick<IConversation, 'agentEventActorReconciliations'> & { _id: Types.ObjectId }>
+      >();
+    if (candidates.length === 0) {
+      legacyReceiptExpiryCursor = undefined;
+      return 0;
+    }
+    legacyReceiptExpiryCursor = candidates[candidates.length - 1]._id;
+    const expiredInvocationIds = [
+      ...new Set(
+        candidates.flatMap((candidate) =>
+          (candidate.agentEventActorReconciliations ?? [])
+            .filter((receipt) => receipt.status === 'settled' && receipt.observedAt <= cutoff)
+            .map((receipt) => receipt.invocationId),
+        ),
+      ),
+    ];
+    const protectedInvocationIds = new Set(
+      await Delivery.find({
+        deliveryKey: { $in: expiredInvocationIds },
+        $or: [{ handling: { $exists: false } }, { 'handling.status': 'started' }],
+      }).distinct<string>('deliveryKey'),
+    );
+    const operations = candidates.flatMap((candidate) => {
+      const removable = (candidate.agentEventActorReconciliations ?? [])
+        .filter(
+          (receipt) =>
+            receipt.status === 'settled' &&
+            receipt.observedAt <= cutoff &&
+            !protectedInvocationIds.has(receipt.invocationId),
+        )
+        .map((receipt) => receipt.invocationId);
+      return removable.length === 0
+        ? []
+        : [
+            {
+              updateOne: {
+                filter: { _id: candidate._id },
+                update: {
+                  $pull: {
+                    agentEventActorReconciliations: {
+                      invocationId: { $in: removable },
+                      status: 'settled',
+                      observedAt: { $lte: cutoff },
+                    },
+                  },
+                },
+              },
+            },
+          ];
+    }) as unknown as AnyBulkWriteOperation[];
+    if (operations.length === 0) {
+      return 0;
+    }
+    const result = await tenantSafeBulkWrite(Conversation, operations, {
+      ordered: false,
+      timestamps: false,
+    });
+    return result.modifiedCount;
   }
 
   /** Creates immutable child lineage exactly once without overwriting a concurrent winner. */
@@ -2345,6 +2578,9 @@ export function createConversationMethods(
     completeAgentEventActorLegacyTurn,
     recordAgentEventActorReconciliation,
     resolveAgentEventActorReconciliation,
+    clearAgentEventActorReconciliation,
+    getAgentEventActorReconciliationStorageMetrics,
+    expireLegacyAgentEventActorReceipts,
     reserveSubagentThread,
     acquireSubagentThreadLease,
     renewSubagentThreadLease,

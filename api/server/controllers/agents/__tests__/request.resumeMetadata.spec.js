@@ -97,6 +97,11 @@ const mockBeginAgentEventActorLegacyTurn = jest.fn();
 const mockCompleteAgentEventActorLegacyTurn = jest.fn();
 const mockRecordAgentEventActorReconciliation = jest.fn();
 const mockResolveAgentEventActorReconciliation = jest.fn();
+const mockClearAgentEventActorReconciliation = jest.fn();
+const mockAdmitAgentEventActorAction = jest.fn();
+const mockReleaseAgentEventActorAction = jest.fn();
+const mockHasAgentEventActorActionAdmission = jest.fn();
+const mockGetAgentEventActorReceipt = jest.fn();
 const mockStartupTelemetry = {
   mark: jest.fn(),
   setStreamId: jest.fn(),
@@ -164,6 +169,7 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  isEnabled: (value) => value === true || value === 'true' || value === '1',
   isScheduleFireRequest: (...args) => mockIsScheduleFireRequest(...args),
   exemptFromConcurrencyLimiter: (...args) => mockExemptFromConcurrencyLimiter(...args),
   toPendingSteer: jest.fn((item) => item),
@@ -267,6 +273,11 @@ jest.mock('~/models', () => ({
     mockRecordAgentEventActorReconciliation(...args),
   resolveAgentEventActorReconciliation: (...args) =>
     mockResolveAgentEventActorReconciliation(...args),
+  clearAgentEventActorReconciliation: (...args) => mockClearAgentEventActorReconciliation(...args),
+  admitAgentEventActorAction: (...args) => mockAdmitAgentEventActorAction(...args),
+  releaseAgentEventActorAction: (...args) => mockReleaseAgentEventActorAction(...args),
+  hasAgentEventActorActionAdmission: (...args) => mockHasAgentEventActorActionAdmission(...args),
+  getAgentEventActorReceipt: (...args) => mockGetAgentEventActorReceipt(...args),
   isAgentTriggerPrincipalActive: (...args) => mockIsAgentTriggerPrincipalActive(...args),
   isSubagentOwnerAdmissible: (...args) => mockIsSubagentOwnerAdmissible(...args),
 }));
@@ -310,6 +321,7 @@ function nextTick() {
 describe('ResumableAgentController resume metadata', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.ENABLE_AGENT_EVENT_DURABLE_RECEIPTS = 'true';
     mockMCPContexts = new WeakMap();
     mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: true });
     mockDecrementPendingRequest.mockResolvedValue(undefined);
@@ -388,6 +400,11 @@ describe('ResumableAgentController resume metadata', () => {
     mockCompleteAgentEventActorLegacyTurn.mockResolvedValue(true);
     mockRecordAgentEventActorReconciliation.mockResolvedValue(true);
     mockResolveAgentEventActorReconciliation.mockResolvedValue(true);
+    mockClearAgentEventActorReconciliation.mockResolvedValue(true);
+    mockAdmitAgentEventActorAction.mockResolvedValue(true);
+    mockReleaseAgentEventActorAction.mockResolvedValue(true);
+    mockHasAgentEventActorActionAdmission.mockResolvedValue(false);
+    mockGetAgentEventActorReceipt.mockResolvedValue(null);
   });
 
   it.each([
@@ -3937,6 +3954,7 @@ describe('ResumableAgentController resume metadata', () => {
         clientRequestId: 'req-event',
         agentEventDelivery: {
           deliveryKey: 'req-event',
+          target: { bindingId: 'binding-1' },
           expectedAction: {
             toolName: 'submit_move',
             argumentSubset: { gameId: 'game-1', expectedPly: 7 },
@@ -4017,12 +4035,13 @@ describe('ResumableAgentController resume metadata', () => {
         endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
         agentEventDelivery: {
           deliveryKey: 'req-event-fork',
+          target: { bindingId: 'binding-1' },
           event,
           expectedAction: { toolName: 'submit_move', argumentSubset: { expectedPly: 8 } },
         },
       },
       config: {
-        endpoints: { agents: { eventDriven: { checkpointForks: true } } },
+        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
       },
       _isAgentTrigger: true,
       _agentEventBindingParentConversationId: 'parent-conversation',
@@ -4052,6 +4071,11 @@ describe('ResumableAgentController resume metadata', () => {
         commitState: expect.any(Function),
         recordReconciliation: expect.any(Function),
         resolveReconciliation: expect.any(Function),
+        clearReconciliation: expect.any(Function),
+        admitAction: expect.any(Function),
+        releaseAction: expect.any(Function),
+        hasActionAdmission: expect.any(Function),
+        getReceipt: expect.any(Function),
       },
     );
     expect(mockExecuteAgentEventActor.mock.calls[0][0]).not.toHaveProperty('tenantId');
@@ -4093,6 +4117,7 @@ describe('ResumableAgentController resume metadata', () => {
         endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
         agentEventDelivery: {
           deliveryKey: 'req-event-receipt',
+          target: { bindingId: 'binding-1' },
           event: {
             id: 'game-1:ply-9',
             type: 'chess.turn',
@@ -4103,7 +4128,7 @@ describe('ResumableAgentController resume metadata', () => {
         },
       },
       config: {
-        endpoints: { agents: { eventDriven: { checkpointForks: true } } },
+        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
       },
       _isAgentTrigger: true,
       _agentEventBindingParentConversationId: 'parent-conversation',
@@ -4181,6 +4206,7 @@ describe('ResumableAgentController resume metadata', () => {
         endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
         agentEventDelivery: {
           deliveryKey: 'req-event-persistence',
+          target: { bindingId: 'binding-1' },
           event: {
             id: 'event-persistence',
             type: 'test.event',
@@ -4191,7 +4217,9 @@ describe('ResumableAgentController resume metadata', () => {
           expectedAction: { toolName: 'submit_move' },
         },
       },
-      config: { endpoints: { agents: { eventDriven: { checkpointForks: true } } } },
+      config: {
+        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+      },
       _isAgentTrigger: true,
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
@@ -4290,6 +4318,7 @@ describe('ResumableAgentController resume metadata', () => {
         endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
         agentEventDelivery: {
           deliveryKey: 'req-event-success',
+          target: { bindingId: 'binding-1' },
           event: {
             id: 'event-success',
             type: 'test.event',
@@ -4300,7 +4329,9 @@ describe('ResumableAgentController resume metadata', () => {
           expectedAction: { toolName: 'submit_move' },
         },
       },
-      config: { endpoints: { agents: { eventDriven: { checkpointForks: true } } } },
+      config: {
+        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+      },
       _isAgentTrigger: true,
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
@@ -4342,6 +4373,7 @@ describe('ResumableAgentController resume metadata', () => {
         status: 'history_persisted',
         checkpoint,
         action: { toolName: 'submit_move', toolCallId: 'call-move' },
+        actionAdmitted: true,
         observedAt: expect.any(Date),
       },
     });
@@ -4353,64 +4385,79 @@ describe('ResumableAgentController resume metadata', () => {
 
   it.each([
     [
+      'durable-receipt rollout disabled',
+      { toolDefinitions: [] },
+      { eventDriven: { checkpointForks: true } },
+      undefined,
+      undefined,
+      false,
+    ],
+    [
       'tool approval',
       { toolDefinitions: [] },
-      { toolApproval: { enabled: true }, eventDriven: { checkpointForks: true } },
+      {
+        toolApproval: { enabled: true },
+        eventDriven: { checkpointForks: true, durableReceipts: true },
+      },
       undefined,
       undefined,
     ],
     [
       'primary ask_user_question',
       { toolDefinitions: [{ name: 'ask_user_question' }] },
-      { eventDriven: { checkpointForks: true } },
+      { eventDriven: { checkpointForks: true, durableReceipts: true } },
       undefined,
       undefined,
     ],
     [
       'added-agent ask_user_question',
       { toolDefinitions: [] },
-      { eventDriven: { checkpointForks: true } },
+      { eventDriven: { checkpointForks: true, durableReceipts: true } },
       new Map([['added-agent', { toolDefinitions: [{ name: 'ask_user_question' }] }]]),
       undefined,
     ],
     [
       'memory-checkpointer',
       { toolDefinitions: [] },
-      { eventDriven: { checkpointForks: true }, checkpointer: { type: 'memory' } },
+      {
+        eventDriven: { checkpointForks: true, durableReceipts: true },
+        checkpointer: { type: 'memory' },
+      },
       undefined,
       undefined,
     ],
     [
       'always-apply skill prime',
       { toolDefinitions: [], alwaysApplySkillPrimes: [{ name: 'playbook', body: '# playbook' }] },
-      { eventDriven: { checkpointForks: true } },
+      { eventDriven: { checkpointForks: true, durableReceipts: true } },
       undefined,
       undefined,
     ],
     [
       'manual skill prime',
       { toolDefinitions: [], manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }] },
-      { eventDriven: { checkpointForks: true } },
+      { eventDriven: { checkpointForks: true, durableReceipts: true } },
       undefined,
       undefined,
     ],
     [
       'skills-capable (history-derived re-priming)',
       { toolDefinitions: [] },
-      { eventDriven: { checkpointForks: true } },
+      { eventDriven: { checkpointForks: true, durableReceipts: true } },
       undefined,
       { primeInvokedSkills: async () => undefined },
     ],
     [
       'background-capable expected action',
       { toolDefinitions: [], backgroundToolNames: ['submit_move_mcp_chess'] },
-      { eventDriven: { checkpointForks: true } },
+      { eventDriven: { checkpointForks: true, durableReceipts: true } },
       undefined,
       undefined,
     ],
   ])(
     'keeps %s event actors on the existing resumable path',
-    async (_label, agent, config, agentConfigs, clientOptions) => {
+    async (_label, agent, config, agentConfigs, clientOptions, durableReceiptsEnabled = true) => {
+      process.env.ENABLE_AGENT_EVENT_DURABLE_RECEIPTS = String(durableReceiptsEnabled);
       mockGenerationJobManager.claimGeneration.mockResolvedValue(
         wonGenerationClaim({
           streamId: 'child-conversation',
@@ -4438,6 +4485,7 @@ describe('ResumableAgentController resume metadata', () => {
           endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
           agentEventDelivery: {
             deliveryKey: 'req-event-hitl',
+            target: { bindingId: 'binding-1' },
             expectedAction: { toolName: 'submit_move' },
             event: {
               id: 'event-hitl',
@@ -4529,6 +4577,7 @@ describe('ResumableAgentController resume metadata', () => {
         endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
         agentEventDelivery: {
           deliveryKey: 'req-event-metadata-failure',
+          target: { bindingId: 'binding-1' },
           expectedAction: { toolName: 'submit_move' },
           event: {
             id: 'event-metadata-failure',
@@ -4539,7 +4588,9 @@ describe('ResumableAgentController resume metadata', () => {
           },
         },
       },
-      config: { endpoints: { agents: { eventDriven: { checkpointForks: true } } } },
+      config: {
+        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+      },
       _isAgentTrigger: true,
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
@@ -4600,6 +4651,7 @@ describe('ResumableAgentController resume metadata', () => {
         endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
         agentEventDelivery: {
           deliveryKey: 'req-event-fence-lost',
+          target: { bindingId: 'binding-1' },
           expectedAction: { toolName: 'submit_move' },
           event: {
             id: 'event-fence-lost',
@@ -4610,7 +4662,9 @@ describe('ResumableAgentController resume metadata', () => {
           },
         },
       },
-      config: { endpoints: { agents: { eventDriven: { checkpointForks: true } } } },
+      config: {
+        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+      },
       _isAgentTrigger: true,
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
@@ -4667,6 +4721,7 @@ describe('ResumableAgentController resume metadata', () => {
         endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
         agentEventDelivery: {
           deliveryKey: 'req-event-error-persistence',
+          target: { bindingId: 'binding-1' },
           expectedAction: { toolName: 'submit_move' },
           event: {
             id: 'event-error-persistence',
@@ -4677,7 +4732,9 @@ describe('ResumableAgentController resume metadata', () => {
           },
         },
       },
-      config: { endpoints: { agents: { eventDriven: { checkpointForks: true } } } },
+      config: {
+        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+      },
       _isAgentTrigger: true,
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
@@ -4745,6 +4802,7 @@ describe('ResumableAgentController resume metadata', () => {
         endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
         agentEventDelivery: {
           deliveryKey: 'req-event-stale-legacy',
+          target: { bindingId: 'binding-1' },
           expectedAction: { toolName: 'submit_move' },
           event: {
             id: 'event-stale-legacy',
@@ -4755,7 +4813,9 @@ describe('ResumableAgentController resume metadata', () => {
           },
         },
       },
-      config: { endpoints: { agents: { eventDriven: { checkpointForks: true } } } },
+      config: {
+        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+      },
       _isAgentTrigger: true,
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',

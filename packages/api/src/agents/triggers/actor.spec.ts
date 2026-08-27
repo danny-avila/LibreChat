@@ -47,6 +47,7 @@ describe('event actor host adapter', () => {
       checkpointNs,
       checkpointId: `checkpoint-${nextCheckpoint++}`,
     }));
+    mockedDelete.mockReset();
     mockedDelete.mockResolvedValue();
   });
 
@@ -79,6 +80,9 @@ describe('event actor host adapter', () => {
     }),
     recordReconciliation: jest.fn(async () => true),
     resolveReconciliation: jest.fn(async () => true),
+    admitAction: jest.fn(async () => true),
+    releaseAction: jest.fn(async () => true),
+    hasActionAdmission: jest.fn(async () => false),
   });
 
   it('cold-starts once, then forks and warm-continues only the next event', async () => {
@@ -752,5 +756,320 @@ describe('event actor host adapter', () => {
       ),
     ).rejects.toThrow('Event actor binding is no longer active');
     expect(mockedGetCheckpointer).not.toHaveBeenCalled();
+  });
+
+  it('replays a delivery receipt and cleans its stranded active marker without executing', async () => {
+    const checkpoint = {
+      threadId: conversationId,
+      checkpointId: 'checkpoint-terminal',
+      checkpointNs: 'event-actor/event-replay',
+    };
+    const invoke = jest.fn(async () => 'must not run');
+    const clearReconciliation = jest.fn(async () => true);
+    const dependencies = {
+      ...deps(),
+      getSnapshot: jest.fn(async () => ({
+        state: { generation: 1, checkpoint },
+        reconciliations: [
+          {
+            invocationId: 'event-replay',
+            status: 'history_persisted' as const,
+            checkpoint,
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        ],
+        legacyTurn: null,
+        epoch: 0,
+      })),
+      getReceipt: jest.fn(async () => ({
+        bindingId: 'binding-1',
+        resolution: 'checkpoint_verified' as const,
+        checkpoint,
+        action: { toolName: 'submit_move' },
+        settledAt: new Date(),
+      })),
+      clearReconciliation,
+    };
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          bindingId: 'binding-1',
+          invocationId: 'event-replay',
+          event: { id: 'event-replay' },
+          signal: new AbortController().signal,
+          invoke,
+          readAppliedAction: () => undefined,
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('already has a terminal receipt');
+
+    expect(clearReconciliation).toHaveBeenCalledWith({
+      user: 'user-1',
+      conversationId,
+      invocationId: 'event-replay',
+      checkpoint,
+      resolution: 'checkpoint_verified',
+    });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(dependencies.recordReconciliation).not.toHaveBeenCalled();
+  });
+
+  it('abandons the lifecycle when delivery-owned action admission already settled', async () => {
+    const invoke = jest.fn(async () => 'must not run');
+    const resolveReconciliation = jest.fn(async () => true);
+    const dependencies = {
+      ...deps(),
+      getReceipt: jest.fn().mockResolvedValue(null),
+      admitAction: jest.fn().mockResolvedValue(false),
+      resolveReconciliation,
+    };
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          bindingId: 'binding-1',
+          invocationId: 'event-race',
+          event: { id: 'event-race' },
+          signal: new AbortController().signal,
+          invoke,
+          readAppliedAction: () => undefined,
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('action admission was already consumed or settled');
+
+    expect(dependencies.recordReconciliation).toHaveBeenCalledTimes(1);
+    expect(dependencies.admitAction).toHaveBeenCalledWith({
+      deliveryKey: 'event-race',
+      user: 'user-1',
+      bindingId: 'binding-1',
+      conversationId,
+      admittedAt: expect.any(Date),
+      admissionId: expect.any(String),
+    });
+    expect(resolveReconciliation).toHaveBeenNthCalledWith(1, {
+      user: 'user-1',
+      conversationId,
+      invocationId: 'event-race',
+      checkpoint: expect.objectContaining({ threadId: conversationId }),
+      expectedActionAdmitted: false,
+      resolution: 'invocation_abandoned',
+    });
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('releases delivery admission when the actor completes without an external action', async () => {
+    const dependencies = {
+      ...deps(),
+      getReceipt: jest.fn().mockResolvedValue(null),
+    };
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          bindingId: 'binding-1',
+          invocationId: 'event-no-action',
+          event: { id: 'event-no-action' },
+          signal: new AbortController().signal,
+          invoke: async () => 'no action',
+          readAppliedAction: () => undefined,
+        },
+        dependencies,
+      ),
+    ).resolves.toMatchObject({ execution: { status: 'completed_no_action' } });
+
+    expect(dependencies.releaseAction).toHaveBeenCalledWith({
+      deliveryKey: 'event-no-action',
+      user: 'user-1',
+      bindingId: 'binding-1',
+      conversationId,
+      admissionId: expect.any(String),
+    });
+    expect(dependencies.releaseAction.mock.invocationCallOrder[0]).toBeLessThan(
+      dependencies.resolveReconciliation.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('recovers a no-action lifecycle after admission was released before owner exit', async () => {
+    const invoke = jest.fn(async () => 'retried without action');
+    const checkpoint = {
+      threadId: conversationId,
+      checkpointNs: 'event-actor/orphaned-no-action',
+    };
+    const dependencies = {
+      ...deps(),
+      getReceipt: jest.fn().mockResolvedValue(null),
+    };
+    dependencies.getSnapshot.mockResolvedValue({
+      state: null,
+      reconciliations: [
+        {
+          invocationId: 'event-orphaned-no-action',
+          actionAdmitted: true,
+          status: 'invocation_pending',
+          checkpoint,
+          action: { toolName: 'submit_move' },
+          observedAt: new Date(),
+        },
+      ],
+      legacyTurn: null,
+      epoch: 0,
+    });
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          bindingId: 'binding-1',
+          invocationId: 'event-orphaned-no-action',
+          event: { id: 'event-orphaned-no-action' },
+          signal: new AbortController().signal,
+          invoke,
+          readAppliedAction: () => undefined,
+        },
+        dependencies,
+      ),
+    ).resolves.toMatchObject({ execution: { status: 'completed_no_action' } });
+
+    expect(dependencies.hasActionAdmission).toHaveBeenCalledWith({
+      deliveryKey: 'event-orphaned-no-action',
+      user: 'user-1',
+      bindingId: 'binding-1',
+      conversationId,
+      admissionId: expect.any(String),
+    });
+    expect(dependencies.resolveReconciliation).toHaveBeenNthCalledWith(1, {
+      user: 'user-1',
+      conversationId,
+      invocationId: 'event-orphaned-no-action',
+      checkpoint,
+      expectedActionAdmitted: true,
+      resolution: 'invocation_abandoned',
+    });
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('never invokes after a retry supersedes its pre-admission lifecycle', async () => {
+    const invoke = jest.fn(async () => 'must not run');
+    const dependencies = {
+      ...deps(),
+      recordReconciliation: jest.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false),
+      admitAction: jest.fn().mockResolvedValue(true),
+      releaseAction: jest.fn().mockResolvedValue(true),
+      getReceipt: jest.fn().mockResolvedValue(null),
+    };
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          bindingId: 'binding-1',
+          invocationId: 'event-pre-admission-race',
+          event: { id: 'event-pre-admission-race' },
+          signal: new AbortController().signal,
+          invoke,
+          readAppliedAction: () => undefined,
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('admission lifecycle was superseded before invoke');
+
+    expect(dependencies.admitAction).toHaveBeenCalledTimes(1);
+    expect(dependencies.releaseAction).toHaveBeenCalledTimes(1);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('does not clear an admission it failed to acquire', async () => {
+    const invoke = jest.fn(async () => 'must not run');
+    const dependencies = {
+      ...deps(),
+      recordReconciliation: jest.fn().mockResolvedValue(true),
+      admitAction: jest.fn().mockResolvedValue(false),
+      getReceipt: jest.fn().mockResolvedValue(null),
+    };
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          bindingId: 'binding-1',
+          invocationId: 'event-orphaned-admission',
+          event: { id: 'event-orphaned-admission' },
+          signal: new AbortController().signal,
+          invoke,
+          readAppliedAction: () => undefined,
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('action admission was already consumed or settled');
+
+    expect(dependencies.resolveReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invocationId: 'event-orphaned-admission',
+        expectedActionAdmitted: false,
+        resolution: 'invocation_abandoned',
+      }),
+    );
+    expect(dependencies.releaseAction).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('does not release or replay while legacy terminal proof awaits migration', async () => {
+    const invoke = jest.fn(async () => 'must not run');
+    const dependencies = {
+      ...deps(),
+      getReceipt: jest.fn().mockResolvedValue(null),
+    };
+    dependencies.getSnapshot.mockResolvedValue({
+      state: null,
+      reconciliations: [
+        {
+          invocationId: 'event-legacy-terminal',
+          status: 'settled',
+          resolution: 'checkpoint_verified',
+          checkpoint: {
+            threadId: conversationId,
+            checkpointId: 'checkpoint-terminal',
+            checkpointNs: 'event-actor/terminal',
+          },
+          action: { toolName: 'submit_move' },
+          observedAt: new Date(),
+        },
+      ],
+      legacyTurn: null,
+      epoch: 0,
+    });
+
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          bindingId: 'binding-1',
+          invocationId: 'event-legacy-terminal',
+          event: { id: 'event-legacy-terminal' },
+          signal: new AbortController().signal,
+          invoke,
+          readAppliedAction: () => undefined,
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('legacy terminal proof awaiting migration');
+
+    expect(dependencies.admitAction).not.toHaveBeenCalled();
+    expect(dependencies.releaseAction).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
   });
 });
