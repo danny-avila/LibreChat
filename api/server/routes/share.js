@@ -344,25 +344,27 @@ if (allowSharedLinks) {
           sharedFileMetadata: true,
           legacyPii: req.config?.messageFilter?.pii,
         });
-        const share = await getSharedMessages(req.params.shareId, req.shareResourceId, {
+        const sharePromise = getSharedMessages(req.params.shareId, req.shareResourceId, {
           // Viewer-independent: the per-link choice (stored on the share) decides
           // file inclusion; only a global env kill switch can force it off here.
           snapshotFiles: !isFileSnapshotKillSwitchActive(),
           preflight: contentPreflight,
         });
+        const langfuseSessionPromise = getSharedLangfuseSessionUrl({
+          viewer: req.user,
+          shareTenantId: req.shareTenantId,
+          shareConversationId: req.shareConversationId,
+          shareOwnerId: req.shareOwnerId,
+          config: req.config?.langfuse,
+        }).catch((error) => {
+          logger.warn('[share] Failed to resolve Langfuse session link:', error);
+          return null;
+        });
+        const [share, langfuseSessionUrl] = await Promise.all([
+          sharePromise,
+          langfuseSessionPromise,
+        ]);
         if (share) {
-          let langfuseSessionUrl = null;
-          try {
-            langfuseSessionUrl = await getSharedLangfuseSessionUrl({
-              viewer: req.user,
-              shareTenantId: req.shareTenantId,
-              shareConversationId: req.shareConversationId,
-              shareOwnerId: req.shareOwnerId,
-              config: req.config?.langfuse,
-            });
-          } catch (error) {
-            logger.warn('[share] Failed to resolve Langfuse session link:', error);
-          }
           res.set('Cache-Control', 'private, no-store');
           res
             .status(200)

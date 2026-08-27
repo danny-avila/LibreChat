@@ -432,6 +432,31 @@ describe('share routes', () => {
     );
   });
 
+  it('resolves the session link while loading the shared snapshot', async () => {
+    let resolveShare;
+    let markShareStarted;
+    const shareStarted = new Promise((resolve) => {
+      markShareStarted = resolve;
+    });
+    const pendingShare = new Promise((resolve) => {
+      resolveShare = resolve;
+    });
+    getSharedMessages.mockImplementationOnce(() => {
+      markShareStarted();
+      return pendingShare;
+    });
+    mockGetSharedLangfuseSessionUrl.mockResolvedValue(null);
+
+    const responsePromise = request(buildApp())
+      .get('/api/share/share-123')
+      .then((response) => response);
+    await shareStarted;
+
+    expect(mockGetSharedLangfuseSessionUrl).toHaveBeenCalledTimes(1);
+    resolveShare({ shareId: 'share-123', messages: [] });
+    await expect(responsePromise).resolves.toMatchObject({ status: 200 });
+  });
+
   it('normalizes shared-link list parameters without double-decoding search text', async () => {
     getSharedLinks.mockResolvedValue({ links: [], hasNextPage: false });
     mockParseSharedLinksPageSize.mockReturnValueOnce(100);

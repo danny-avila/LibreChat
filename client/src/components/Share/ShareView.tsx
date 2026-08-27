@@ -42,7 +42,7 @@ function SharedView() {
   const { isAuthReady } = useAuthContext();
   const { theme, setTheme } = useContext(ThemeContext);
   const { shareId } = useParams();
-  const { data: config } = useGetSharedStartupConfig(shareId);
+  const { data: config } = useGetSharedStartupConfig(shareId, { enabled: isAuthReady });
   const { data, isLoading, refetch } = useGetSharedMessages(shareId ?? '', {
     enabled: isAuthReady,
   });
