@@ -270,6 +270,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const [movingWindowTurns, setMovingWindowTurns] = useState<
     ReturnType<typeof adaptDurableThreadConversation>
   >([]);
+  const [rebaseTurns, setRebaseTurns] = useState<ReturnType<typeof adaptDurableThreadConversation>>(
+    [],
+  );
+  const [historyRebaseActive, setHistoryRebaseActive] = useState(false);
   const [historyCursor, setHistoryCursor] = useState<string | null | undefined>(undefined);
   const [historyCursorGeneration, setHistoryCursorGeneration] = useState<string>();
   const [historyState, setHistoryState] = useState<'idle' | 'loading' | 'error'>('idle');
@@ -305,6 +309,8 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     setTurnDetailStates(new Map());
     setOlderTurns([]);
     setMovingWindowTurns([]);
+    setRebaseTurns([]);
+    setHistoryRebaseActive(false);
     setHistoryCursor(undefined);
     setHistoryCursorGeneration(undefined);
     setHistoryState('idle');
@@ -315,10 +321,20 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   }, [threadId]);
 
   useEffect(() => {
-    if (data?.threadId === threadId && data.historyUnavailable === true) {
+    if (
+      data?.threadId === threadId &&
+      (data.historyUnavailable === true ||
+        (data.historyTruncated === true && data.nextCursor == null))
+    ) {
       setHistoryBoundaryUnavailable(true);
     }
-  }, [data?.historyUnavailable, data?.threadId, threadId]);
+  }, [
+    data?.historyTruncated,
+    data?.historyUnavailable,
+    data?.nextCursor,
+    data?.threadId,
+    threadId,
+  ]);
 
   const loadTurnDetails = useCallback(
     async (detailTaskId: string) => {
@@ -371,10 +387,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     const requestedThreadId = threadId;
     const requestedSelectionGeneration = selectionGenerationRef.current;
     const requestedGeneration = latestHistoryGeneration;
-    const insertAfterLoadedHistory =
+    const startsRebase =
       historyCursor !== undefined && historyCursorGeneration !== requestedGeneration;
-    const cursor =
-      historyCursor === undefined || insertAfterLoadedHistory ? data?.nextCursor : historyCursor;
+    const recoveringRebase = startsRebase || historyRebaseActive;
+    const cursor = historyCursor === undefined || startsRebase ? data?.nextCursor : historyCursor;
     const requestKey = `${requestedSelectionGeneration}\u0000${requestedThreadId}\u0000${cursor ?? ''}\u0000${requestedGeneration}`;
     if (cursor == null || historyState === 'loading' || historyRequestRef.current != null) {
       return;
@@ -399,8 +415,31 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         return;
       }
       const pageTurns = adaptDurableThreadConversation(page);
-      if (insertAfterLoadedHistory) {
-        setMovingWindowTurns((current) => retainBoundedMovingWindowTurns(current, pageTurns));
+      if (recoveringRebase) {
+        const bridgeTurns = startsRebase
+          ? retainBoundedMovingWindowTurns(movingWindowTurns, rebaseTurns)
+          : movingWindowTurns;
+        const nextRebaseTurns = mergeChildConversationTurns(
+          pageTurns,
+          startsRebase ? [] : rebaseTurns,
+        );
+        const retainedTaskIds = new Set(
+          mergeChildConversationTurns(olderTurns, bridgeTurns).map((turn) => turn.taskId),
+        );
+        const reconnected = pageTurns.some((turn) => retainedTaskIds.has(turn.taskId));
+        const recoveryComplete = reconnected || page.nextCursor == null;
+        if (recoveryComplete) {
+          setOlderTurns((current) =>
+            mergeChildConversationTurns(current, bridgeTurns, nextRebaseTurns),
+          );
+          setMovingWindowTurns([]);
+          setRebaseTurns([]);
+          setHistoryRebaseActive(false);
+        } else {
+          if (startsRebase) setMovingWindowTurns(bridgeTurns);
+          setRebaseTurns(nextRebaseTurns);
+          setHistoryRebaseActive(true);
+        }
       } else {
         setOlderTurns((current) => mergeChildConversationTurns(pageTurns, current));
       }
@@ -429,8 +468,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     data?.nextCursor,
     historyCursor,
     historyCursorGeneration,
+    historyRebaseActive,
     historyState,
     latestHistoryGeneration,
+    movingWindowTurns,
+    olderTurns,
+    rebaseTurns,
     selection.parentConversationId,
     threadId,
   ]);
@@ -687,6 +730,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     const durableTurns = mergeChildConversationTurns(
       olderTurns,
       movingWindowTurns,
+      rebaseTurns,
       latestConversationTurns,
     );
     if (durableTurns.length > 0) {
@@ -736,6 +780,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     latestConversationTurns,
     movingWindowTurns,
     olderTurns,
+    rebaseTurns,
     selection,
     taskId,
     turnDetailOverrides,

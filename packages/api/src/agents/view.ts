@@ -620,7 +620,12 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
       let historyTruncated = messages.length > MAX_THREAD_MESSAGES;
       const newestFirst = messages.slice(0, MAX_THREAD_MESSAGES);
       const branch = canonicalThreadBranch(newestFirst);
-      let historyUnavailable = branch.length < newestFirst.length;
+      /** A valid inclusive cursor returns at least its anchor. An empty cursor
+       * page means that the retained chain vanished between requests, so the
+       * public projection must expose the discontinuity instead of presenting
+       * the latest page as complete history. */
+      let historyUnavailable = historyCursor != null && messages.length === 0;
+      historyUnavailable ||= branch.length < newestFirst.length;
       if (historyUnavailable) historyTruncated = true;
       const branchRootParentId = branch[0]?.parentMessageId;
       if (branchRootParentId != null && taskIdFromMessageId(branchRootParentId) != null) {

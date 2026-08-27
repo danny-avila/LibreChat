@@ -1803,11 +1803,12 @@ describe('SubagentThreadPanel', () => {
     ).toHaveTextContent('•••');
   });
 
-  it('preserves an unrecoverable boundary after the latest polling window moves', async () => {
+  it('preserves a cursorless truncated boundary after the latest polling window moves', async () => {
     let latestView: SubagentThreadView = {
       ...completedView,
-      historyUnavailable: true,
-      nextCursor: 'older:assistant',
+      historyTruncated: true,
+      historyUnavailable: undefined,
+      nextCursor: undefined,
       turns: [],
     };
     mockUseSubagentThreadQuery.mockImplementation(() => ({
@@ -1828,7 +1829,7 @@ describe('SubagentThreadPanel', () => {
 
     latestView = {
       ...latestView,
-      historyUnavailable: undefined,
+      historyTruncated: false,
       nextCursor: 'new-boundary:assistant',
     };
     rerender(
@@ -2058,10 +2059,21 @@ describe('SubagentThreadPanel', () => {
       })
       .mockResolvedValueOnce({
         ...completedView,
+        nextCursor: 'middle-older:assistant',
+        activity: [],
+        messages: [],
+        historyTruncated: true,
+        turns: [makeTurn('middle-newer', 'Newer middle result')],
+      })
+      .mockResolvedValueOnce({
+        ...completedView,
         activity: [],
         messages: [],
         historyTruncated: false,
-        turns: [makeTurn('middle', 'Middle result')],
+        turns: [
+          makeTurn('boundary', 'Boundary result'),
+          makeTurn('middle-older', 'Older middle result'),
+        ],
       });
 
     const { rerender } = render(
@@ -2100,11 +2112,22 @@ describe('SubagentThreadPanel', () => {
       ),
     );
     await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(6));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+    await waitFor(() =>
+      expect(mockGetSubagentThread).toHaveBeenLastCalledWith(
+        'parent-conversation',
+        'child-thread',
+        undefined,
+        'middle-older:assistant',
+      ),
+    );
+    await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(7));
     expect(screen.getAllByTestId('conversation-turn').map((turn) => turn.textContent)).toEqual([
       expect.stringContaining('Very old result'),
       expect.stringContaining('Boundary result'),
       expect.stringContaining('Current result'),
-      expect.stringContaining('Middle result'),
+      expect.stringContaining('Older middle result'),
+      expect.stringContaining('Newer middle result'),
       expect.stringContaining('New result'),
       expect.stringContaining('Newest result'),
     ]);

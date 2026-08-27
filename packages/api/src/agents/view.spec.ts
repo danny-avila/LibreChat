@@ -1180,6 +1180,29 @@ describe('parent child-thread index', () => {
     expect(json.mock.calls[0][0].turns).toEqual([expect.objectContaining({ taskId: 'older' })]);
   });
 
+  it('marks a vanished inclusive history cursor as unavailable', async () => {
+    const getMessagesForSubagentThreadView = jest.fn().mockResolvedValue([]);
+    const handler = createSubagentThreadViewHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
+      getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+      getMessagesForSubagentThreadView,
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest({}, { cursor: 'vanished:assistant' }), response);
+
+    expect(getMessagesForSubagentThreadView).toHaveBeenCalledWith(
+      expect.objectContaining({ beforeMessageId: 'vanished:assistant' }),
+    );
+    expect(json.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        historyTruncated: true,
+        historyUnavailable: true,
+      }),
+    );
+    expect(json.mock.calls[0][0]).not.toHaveProperty('nextCursor');
+  });
+
   it('rejects malformed or combined history cursors before storage access', async () => {
     const getMessagesForSubagentThreadView = jest.fn();
     const handler = createSubagentThreadViewHandler({
