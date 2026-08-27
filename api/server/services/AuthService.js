@@ -4,6 +4,7 @@ const { createHash, webcrypto } = require('node:crypto');
 const {
   logger,
   getTenantId,
+  runAsSystem,
   DEFAULT_SESSION_EXPIRY,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
 } = require('@librechat/data-schemas');
@@ -32,6 +33,7 @@ const {
   deleteTokens,
   deleteSession,
   createSession,
+  upsertSession,
   generateToken,
   deleteUserById,
   generateRefreshToken,
@@ -826,7 +828,7 @@ const setOpenIDAuthTokens = (
       sameSite: 'strict',
     });
     if (userId && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
-      /** Bind image cookie authentication to the refresh token without requiring the shorter session. */
+      /** Bind image cookie identity to the durable refresh-token session. */
       const refreshTokenHash = createHash('sha256').update(refreshToken).digest('base64url');
       const signedUserId = jwt.sign(
         { id: userId, refreshTokenHash },
@@ -848,6 +850,24 @@ const setOpenIDAuthTokens = (
     logger.error('[setOpenIDAuthTokens] Error in setting authentication tokens:', error);
     throw error;
   }
+};
+
+/** Stores OpenID refresh-token state independently of the shorter Express session. */
+const storeOpenIDSession = async (userId, refreshToken, tenantId, previousRefreshToken) => {
+  if (!userId || !refreshToken) {
+    return false;
+  }
+  const expiresIn = math(process.env.REFRESH_TOKEN_EXPIRY, DEFAULT_REFRESH_TOKEN_EXPIRY);
+  await runAsSystem(() =>
+    upsertSession(userId, refreshToken, {
+      expiration: new Date(Date.now() + expiresIn),
+      tenantId,
+    }),
+  );
+  if (previousRefreshToken && previousRefreshToken !== refreshToken) {
+    await runAsSystem(() => deleteSession({ refreshToken: previousRefreshToken }));
+  }
+  return true;
 };
 
 /**
@@ -918,6 +938,7 @@ module.exports = {
   setAuthTokens,
   resetPassword,
   setOpenIDAuthTokens,
+  storeOpenIDSession,
   setCloudFrontAuthCookies,
   requestPasswordReset,
   resendVerificationEmail,

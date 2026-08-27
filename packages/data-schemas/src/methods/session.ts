@@ -24,6 +24,11 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
   SessionError: typeof SessionError;
   deleteSession: (params: t.DeleteSessionParams) => Promise<{ deletedCount?: number }>;
   createSession: (userId: string, options?: t.CreateSessionOptions) => Promise<t.SessionResult>;
+  upsertSession: (
+    userId: string,
+    refreshToken: string,
+    options: t.UpsertSessionOptions,
+  ) => Promise<t.ISession>;
   updateExpiration: (
     session: t.ISession | string,
     newExpiration?: Date,
@@ -61,6 +66,42 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
     } catch (error) {
       logger.error('[createSession] Error creating session:', error);
       throw new SessionError('Failed to create session', 'CREATE_SESSION_FAILED');
+    }
+  }
+
+  /** Stores an externally issued refresh token so logout and administrative revocation apply. */
+  async function upsertSession(
+    userId: string,
+    refreshToken: string,
+    options: t.UpsertSessionOptions,
+  ): Promise<t.ISession> {
+    if (!userId || !refreshToken || !options.expiration) {
+      throw new SessionError('User, refresh token, and expiration are required', 'INVALID_SESSION');
+    }
+
+    try {
+      const Session = mongoose.models.Session;
+      const refreshTokenHash = await hashToken(refreshToken);
+      const update: Record<string, unknown> = {
+        user: userId,
+        refreshTokenHash,
+        expiration: options.expiration,
+      };
+      if (options.tenantId) {
+        update.tenantId = options.tenantId;
+      }
+      const session = await Session.findOneAndUpdate(
+        { user: userId, refreshTokenHash },
+        { $set: update },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      ).exec();
+      if (!session) {
+        throw new SessionError('Stored session was not returned', 'SESSION_NOT_FOUND');
+      }
+      return session as t.ISession;
+    } catch (error) {
+      logger.error('[upsertSession] Error storing session:', error);
+      throw new SessionError('Failed to store session', 'UPSERT_SESSION_FAILED');
     }
   }
 
@@ -284,6 +325,7 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
     SessionError,
     deleteSession,
     createSession,
+    upsertSession,
     updateExpiration,
     countActiveSessions,
     generateRefreshToken,

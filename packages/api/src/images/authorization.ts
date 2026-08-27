@@ -136,7 +136,11 @@ function parseImagePath(originalUrl: string, basePath: string): ImagePath | null
     return null;
   }
   const imagesPath = `${decodedBasePath}/images`;
-  const match = cleanPath.match(
+  const imagesPrefix = `${imagesPath}/`;
+  const normalizedPath = cleanPath.startsWith(imagesPrefix)
+    ? `${imagesPrefix}${cleanPath.slice(imagesPrefix.length).replace(/^\/+/, '')}`
+    : cleanPath;
+  const match = normalizedPath.match(
     new RegExp(`^${escapeRegExp(imagesPath)}/([a-f0-9]{24})/([^/]+)$`, 'i'),
   );
   if (!match) {
@@ -222,16 +226,18 @@ async function authenticateRequest(
 
   if (parsed.token_provider === 'openid' && deps.isOpenIdReuseEnabled()) {
     const openIdAuth = getSignedOpenIdUserId(parsed.openid_user_id, refreshToken);
-    if (openIdAuth.status === 'authenticated') {
-      return openIdAuth;
-    }
-    if (
-      openIdAuth.status !== 'legacy' ||
-      refreshToken !== req.session?.openidTokens?.refreshToken
-    ) {
+    if (openIdAuth.status === 'invalid') {
       return { status: 'invalid' };
     }
-    return { status: 'authenticated', userId: openIdAuth.userId };
+    if (openIdAuth.status === 'legacy') {
+      return refreshToken === req.session?.openidTokens?.refreshToken
+        ? { status: 'authenticated', userId: openIdAuth.userId }
+        : { status: 'invalid' };
+    }
+    const session = await runAsSystem(() =>
+      deps.findSession({ userId: openIdAuth.userId, refreshToken }),
+    );
+    return session ? openIdAuth : { status: 'invalid' };
   }
 
   const userId = getSignedUserId(refreshToken);

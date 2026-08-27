@@ -2,6 +2,7 @@ jest.mock(
   '@librechat/data-schemas',
   () => ({
     logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
+    runAsSystem: (callback) => callback(),
     getTenantId: jest.fn(() => undefined),
     DEFAULT_SESSION_EXPIRY: 900000,
     DEFAULT_REFRESH_TOKEN_EXPIRY: 604800000,
@@ -51,6 +52,7 @@ jest.mock('~/models', () => ({
   deleteTokens: jest.fn(),
   deleteSession: jest.fn(),
   createSession: jest.fn(),
+  upsertSession: jest.fn(),
   generateToken: jest.fn(),
   deleteUserById: jest.fn(),
   generateRefreshToken: jest.fn(),
@@ -94,6 +96,8 @@ const {
   generateToken,
   generateRefreshToken,
   createSession,
+  upsertSession,
+  deleteSession,
   createToken,
   deleteTokens,
 } = require('~/models');
@@ -102,6 +106,7 @@ const { sendEmail } = require('~/server/utils');
 const bcrypt = require('bcryptjs');
 const {
   setOpenIDAuthTokens,
+  storeOpenIDSession,
   requestPasswordReset,
   registerUser,
   resetPassword,
@@ -327,6 +332,32 @@ describe('setOpenIDAuthTokens', () => {
         refreshTokenHash: createHash('sha256').update(tokenset.refresh_token).digest('base64url'),
       }),
     );
+  });
+
+  it('stores an OpenID refresh token for durable revocation checks', async () => {
+    const before = Date.now();
+    upsertSession.mockResolvedValue({ _id: 'session-id' });
+
+    await storeOpenIDSession('user-123', 'the-refresh-token', 'tenant-a');
+
+    expect(upsertSession).toHaveBeenCalledWith(
+      'user-123',
+      'the-refresh-token',
+      expect.objectContaining({
+        tenantId: 'tenant-a',
+        expiration: expect.any(Date),
+      }),
+    );
+    expect(upsertSession.mock.calls[0][2].expiration.getTime()).toBeGreaterThan(before);
+  });
+
+  it('revokes the previous durable session when the IdP rotates the refresh token', async () => {
+    upsertSession.mockResolvedValue({ _id: 'new-session-id' });
+    deleteSession.mockResolvedValue({ deletedCount: 1 });
+
+    await storeOpenIDSession('user-123', 'new-refresh-token', 'tenant-a', 'old-refresh-token');
+
+    expect(deleteSession).toHaveBeenCalledWith({ refreshToken: 'old-refresh-token' });
   });
 
   describe('cookie secure flag', () => {

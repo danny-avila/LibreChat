@@ -125,7 +125,10 @@ describe('createImageAuthorizationMiddleware', () => {
     );
 
     expect(next).toHaveBeenCalledTimes(1);
-    expect(deps.findSession).not.toHaveBeenCalled();
+    expect(deps.findSession).toHaveBeenCalledWith({
+      userId: VIEWER_ID,
+      refreshToken,
+    });
   });
 
   it('rejects an OpenID identity cookie paired with a different refresh token', async () => {
@@ -137,6 +140,26 @@ describe('createImageAuthorizationMiddleware', () => {
       createRequest(
         `/images/${VIEWER_ID}/profile.png`,
         `refreshToken=different-refresh-token; token_provider=openid; openid_user_id=${signedUserId}`,
+      ),
+      response,
+      next,
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(403);
+  });
+
+  it('rejects a refresh-bound OpenID cookie after its durable session is revoked', async () => {
+    const refreshToken = 'revoked-openid-refresh-token';
+    const signedUserId = signOpenIdUser(VIEWER_ID, refreshToken);
+    (deps.isOpenIdReuseEnabled as jest.Mock).mockReturnValue(true);
+    (deps.findSession as jest.Mock).mockResolvedValue(null);
+    const middleware = createImageAuthorizationMiddleware({}, deps);
+
+    await middleware(
+      createRequest(
+        `/images/${VIEWER_ID}/profile.png`,
+        `refreshToken=${refreshToken}; token_provider=openid; openid_user_id=${signedUserId}`,
       ),
       response,
       next,
@@ -183,6 +206,17 @@ describe('createImageAuthorizationMiddleware', () => {
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(deps.getImageConfig).not.toHaveBeenCalled();
+  });
+
+  it('normalizes repeated separators before applying a disabled fallback', async () => {
+    deps.getImageConfig = jest.fn().mockResolvedValue({ secureImageLinks: true });
+    const middleware = createImageAuthorizationMiddleware({ secureImageLinks: false }, deps);
+
+    await middleware(createRequest(`/images//${OWNER_ID}/private.png`), response, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(401);
+    expect(deps.getImageConfig).toHaveBeenCalledTimes(1);
   });
 
   it('resolves principals once and applies the tenant to an agent capability check', async () => {

@@ -43,4 +43,6 @@ const assistantSchema: Schema<IAssistant> = new Schema<IAssistant>(
   },
 );
 
+assistantSchema.index({ tenantId: 1, 'avatar.filepath': 1 });
+
 export default assistantSchema;

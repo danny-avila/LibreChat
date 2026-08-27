@@ -126,6 +126,18 @@ describe('validateImageRequest middleware', () => {
       expect(next).toHaveBeenCalledTimes(1);
       expect(getAppConfig).not.toHaveBeenCalled();
     });
+
+    test('should normalize repeated separators before applying a disabled fallback', async () => {
+      getAppConfig.mockResolvedValue({ secureImageLinks: true, endpoints: {} });
+      req.originalUrl = '/images//65cfb246f7ecadb8b1e8036c/private.png';
+      const middleware = createValidateImageRequest({ secureImageLinks: false });
+
+      await middleware(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(getAppConfig).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('Standard LibreChat token flow', () => {
@@ -393,6 +405,10 @@ describe('validateImageRequest middleware', () => {
       await validateImageRequest(req, res, next);
 
       expect(next).toHaveBeenCalled();
+      expect(findSession).toHaveBeenCalledWith({
+        userId: validObjectId,
+        refreshToken,
+      });
     });
 
     test('should return 403 for invalid JWT-signed user ID', async () => {

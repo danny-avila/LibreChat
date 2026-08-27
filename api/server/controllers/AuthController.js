@@ -13,6 +13,7 @@ const {
 const {
   requestPasswordReset,
   setOpenIDAuthTokens,
+  storeOpenIDSession,
   setCloudFrontAuthCookies,
   resetPassword,
   setAuthTokens,
@@ -242,6 +243,13 @@ const refreshController = async (req, res) => {
         );
       }
 
+      const activeRefreshToken = tokenset.refresh_token || refreshToken;
+      await storeOpenIDSession(
+        user._id.toString(),
+        activeRefreshToken,
+        user.tenantId,
+        refreshToken,
+      );
       const token = setOpenIDAuthTokens(tokenset, req, res, {
         userId: user._id.toString(),
         existingRefreshToken: refreshToken,
