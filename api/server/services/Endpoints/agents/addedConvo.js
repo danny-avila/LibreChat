@@ -137,7 +137,7 @@ const processAddedConvo = async ({
       /** Mirrors the primary agent: the spec's `skills` config is a default the
        *  added conversation's own toggle overrides (`false` stays a hard opt-out). */
       const specSkillsEnabled = resolveSpecSkillsEnabled(
-        addedConvo.ephemeralAgent?.skills,
+        addedConvo.ephemeralAgent?.skills ?? req.body?.ephemeralAgent?.skills,
         selectedModelSpec.skills,
       );
       if (!specSkillsEnabled) {

@@ -1084,6 +1084,109 @@ describe('loadAgent', () => {
     });
   });
 
+  describe('added conversations inherit the composer toggles (#15277)', () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    const addedReq = (ephemeralAgent?: TEphemeralAgent, spec?: Record<string, unknown>) =>
+      ({
+        user: { id: 'user123' },
+        body: ephemeralAgent ? { ephemeralAgent } : {},
+        config: {
+          config: {},
+          fileStrategy: FileSources.local,
+          imageOutputType: 'png',
+          modelSpecs: {
+            list: [
+              {
+                name: 'added-spec',
+                label: 'Added Spec',
+                preset: { endpoint: 'openai', model: 'gpt-4' },
+                ...spec,
+              },
+            ],
+          },
+        },
+      }) as unknown as Parameters<typeof loadAddedAgent>[0]['req'];
+
+    const addedConversation = {
+      endpoint: 'openai',
+      model: 'gpt-4',
+      spec: 'added-spec',
+    } as unknown as TConversation;
+
+    /** The added pane never carries an `ephemeralAgent` of its own — one badge
+     *  row submits one toggle set — so the request's state must reach it. */
+    test('a composer opt-out disables a spec tool on the added pane', async () => {
+      const result = await loadAddedAgent(
+        {
+          req: addedReq({ web_search: false }, { webSearch: true }),
+          conversation: addedConversation,
+        },
+        deps,
+      );
+
+      expect(result?.tools).toEqual([]);
+    });
+
+    test('a composer skills opt-out reaches the added pane', async () => {
+      const result = await loadAddedAgent(
+        {
+          req: addedReq({ skills: false }, { skills: true }),
+          conversation: addedConversation,
+        },
+        deps,
+      );
+
+      expect(result?.skills_enabled).toBe(false);
+      expect(result?.skills).toEqual([]);
+    });
+
+    test('a composer skills opt-out reaches the mirrored-tools branch too', async () => {
+      const result = await loadAddedAgent(
+        {
+          req: addedReq({ skills: false }, { skills: ['brand-writer'] }),
+          conversation: addedConversation,
+          primaryAgent: {
+            id: EPHEMERAL_AGENT_ID as string,
+            tools: ['web_search'],
+          } as LibreChatAgent,
+        },
+        deps,
+      );
+
+      expect(result?.tools).toEqual(['web_search']);
+      expect(result?.skills_enabled).toBe(false);
+    });
+
+    test('a spec still applies to the added pane when the composer is silent', async () => {
+      const result = await loadAddedAgent(
+        {
+          req: addedReq(undefined, { webSearch: true, skills: true }),
+          conversation: addedConversation,
+        },
+        deps,
+      );
+
+      expect(result?.tools).toEqual(['web_search']);
+      expect(result?.skills_enabled).toBe(true);
+    });
+
+    test("the added pane's own toggles still outrank the request when present", async () => {
+      const result = await loadAddedAgent(
+        {
+          req: addedReq({ web_search: false }, { webSearch: true }),
+          conversation: {
+            ...addedConversation,
+            ephemeralAgent: { web_search: true },
+          } as unknown as TConversation,
+        },
+        deps,
+      );
+
+      expect(result?.tools).toEqual(['web_search']);
+    });
+  });
+
   describe('Edge Cases', () => {
     test('should handle loadAgent with malformed req object', async () => {
       const result = await loadAgent(

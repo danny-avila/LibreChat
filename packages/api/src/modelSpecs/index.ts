@@ -252,7 +252,14 @@ export function sanitizeModelSpecs<T extends Partial<TSpecsConfig> | null | unde
 
       const preset = modelSpec?.preset;
       const sanitizedModelSpec = { ...modelSpec };
-      delete (sanitizedModelSpec as { skills?: unknown }).skills;
+      /** Skill NAMES reveal the catalog, so they never reach a client — but the
+       *  fact that a spec enables skills does, because the chat badge is seeded
+       *  from it and an absent field is indistinguishable from `skills: false`.
+       *  Narrowed like `subagents` below rather than deleted. */
+      const specSkills = (sanitizedModelSpec as { skills?: unknown }).skills;
+      if (Array.isArray(specSkills)) {
+        (sanitizedModelSpec as { skills?: unknown }).skills = specSkills.length > 0;
+      }
       const subagents = sanitizedModelSpec.subagents;
       if (subagents && typeof subagents === 'object') {
         const sanitizedSubagents: TModelSpec['subagents'] = {};

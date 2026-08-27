@@ -65,7 +65,11 @@ export interface LoadAddedAgentDeps {
 }
 
 interface LoadAddedAgentParams {
-  req: { user?: { id?: string }; config?: Record<string, unknown> };
+  req: {
+    user?: { id?: string };
+    config?: Record<string, unknown>;
+    body?: { ephemeralAgent?: TEphemeralAgent };
+  };
   conversation: TConversation | null;
   primaryAgent?: Agent | null;
 }
@@ -114,7 +118,12 @@ export async function loadAddedAgent(
   }
 
   const appConfig = req.config as AppConfig | undefined;
-  const ephemeralAgent = rest.ephemeralAgent as TEphemeralAgent | undefined;
+  /** An added conversation carries no toggles of its own — the composer's badge
+   *  row is shared by both panes and submits one `ephemeralAgent` — so the
+   *  request's state is the only expression of user intent for this pane. */
+  const ephemeralAgent = (rest.ephemeralAgent ?? req.body?.ephemeralAgent) as
+    | TEphemeralAgent
+    | undefined;
 
   const primaryIsEphemeral = primaryAgent && isEphemeralAgentId(primaryAgent.id);
   if (primaryIsEphemeral && Array.isArray(primaryAgent.tools)) {

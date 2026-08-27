@@ -357,10 +357,14 @@ export function applyModelSpecEphemeralAgent({
     artifacts: modelSpec.artifacts === true ? 'default' : modelSpec.artifacts || '',
   };
 
-  // For existing conversations, layer per-conversation localStorage overrides
-  // on top of spec defaults so user modifications persist across navigation.
-  // If localStorage is empty (e.g., cleared), spec values stand alone.
-  if (key !== Constants.NEW_CONVO) {
+  /** For existing conversations, layer per-conversation localStorage overrides on
+   *  top of spec defaults so user modifications persist across navigation. If
+   *  localStorage is empty (e.g. cleared), spec values stand alone.
+   *
+   *  A spec that hides the badge row is skipped entirely: with no badge to
+   *  inspect or restore a tool, a value stored under an earlier configuration
+   *  would silently disable a spec-enabled tool the user cannot see. */
+  if (key !== Constants.NEW_CONVO && modelSpec.hideBadgeRow !== true) {
     const toolStorageMap: Array<[keyof t.TEphemeralAgent, string]> = [
       ['execute_code', LocalStorageKeys.LAST_CODE_TOGGLE_],
       ['web_search', LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_],
@@ -372,12 +376,20 @@ export function applyModelSpecEphemeralAgent({
 
     for (const [toolKey, storagePrefix] of toolStorageMap) {
       const raw = getTimestampedValue(`${storagePrefix}${key}`);
-      if (raw !== null) {
-        try {
-          agent[toolKey] = JSON.parse(raw) as never;
-        } catch {
-          // ignore parse errors
-        }
+      if (raw === null) {
+        continue;
+      }
+      try {
+        const stored = JSON.parse(raw);
+        /** Skills route back through the spec rule so a stored `true` cannot
+         *  lift a spec's `skills: false`, which every server writer enforces. */
+        agent[toolKey] = (
+          toolKey === 'skills'
+            ? resolveSpecSkillsEnabled(stored as boolean | undefined, modelSpec.skills)
+            : stored
+        ) as never;
+      } catch {
+        // ignore parse errors
       }
     }
 

@@ -330,4 +330,66 @@ describe('applyModelSpecEphemeralAgent', () => {
       );
     });
   });
+
+  describe('spec safeguards restored after review (#15292)', () => {
+    it('ignores stored overrides for a spec that hides the badge row', () => {
+      const convoId = 'convo-hidden';
+      writeToolToggle(LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_, convoId, false);
+      writeToolToggle(LocalStorageKeys.LAST_CODE_TOGGLE_, convoId, false);
+      localStorage.setItem(`${LocalStorageKeys.LAST_MCP_}${convoId}`, JSON.stringify([]));
+      const modelSpec = createModelSpec({ hideBadgeRow: true, webSearch: true });
+
+      applyModelSpecEphemeralAgent({ convoId, modelSpec, updateEphemeralAgent });
+
+      /** No badge exists to inspect or restore these, so a value stored under an
+       *  earlier configuration must not silently disable a spec-enabled tool. */
+      expect(updateEphemeralAgent).toHaveBeenCalledWith(
+        convoId,
+        expect.objectContaining({
+          web_search: true,
+          execute_code: true,
+          mcp: ['spec-server1'],
+        }),
+      );
+    });
+
+    it('still layers stored overrides when the badge row is visible', () => {
+      const convoId = 'convo-visible';
+      writeToolToggle(LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_, convoId, false);
+      const modelSpec = createModelSpec({ webSearch: true });
+
+      applyModelSpecEphemeralAgent({ convoId, modelSpec, updateEphemeralAgent });
+
+      expect(updateEphemeralAgent).toHaveBeenCalledWith(
+        convoId,
+        expect.objectContaining({ web_search: false }),
+      );
+    });
+
+    it('does not let a stored skills toggle lift a spec hard opt-out', () => {
+      const convoId = 'convo-skills-off';
+      writeToolToggle(LocalStorageKeys.LAST_SKILLS_TOGGLE_, convoId, true);
+      const modelSpec = createModelSpec({ skills: false });
+
+      applyModelSpecEphemeralAgent({ convoId, modelSpec, updateEphemeralAgent });
+
+      expect(updateEphemeralAgent).toHaveBeenCalledWith(
+        convoId,
+        expect.objectContaining({ skills: false }),
+      );
+    });
+
+    it('honors a stored skills opt-out against a spec that enables them', () => {
+      const convoId = 'convo-skills-user-off';
+      writeToolToggle(LocalStorageKeys.LAST_SKILLS_TOGGLE_, convoId, false);
+      const modelSpec = createModelSpec({ skills: true });
+
+      applyModelSpecEphemeralAgent({ convoId, modelSpec, updateEphemeralAgent });
+
+      expect(updateEphemeralAgent).toHaveBeenCalledWith(
+        convoId,
+        expect.objectContaining({ skills: false }),
+      );
+    });
+  });
 });
