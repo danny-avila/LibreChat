@@ -32,6 +32,7 @@ const {
   createSubagentUsageSink,
   anyAgentReplaysReasoningContent,
   GenerationJobManager,
+  PENDING_ACTION_EXPIRED_CODE,
   getTransactionsConfig,
   resolveRecursionLimit,
   buildPendingAction,
@@ -42,13 +43,18 @@ const {
   pickResumeContext,
   getApprovalTtlMs,
   getAgentCheckpointer,
+  hasDurableAgentInterruptCheckpoint,
   isHITLEnabled,
+  buildToolApprovalHooks,
+  agentRunUsesCheckpointer,
+  canAgentGraphPause,
+  getPluginHookSource,
   captureAgentCheckpointGeneration,
   isContentFilterError,
   deleteAgentCheckpoint,
   LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
   LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY,
-  agentRequestsAskUserQuestion,
+  isAskUserQuestionAdminDisabled,
   attachAskUserQuestionArgs,
   hydrateResumeRunSteps,
   createContentIndexOffsetHandlers,
@@ -153,19 +159,6 @@ const { getMCPManager } = require('~/config');
 const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
-
-function getInterruptTtlMs(checkpointerCfg, req) {
-  const configuredTtlMs = getApprovalTtlMs(checkpointerCfg);
-  const retention = req?._agentEventBindingRetention;
-  if (retention?.expiredAt == null) {
-    return configuredTtlMs;
-  }
-  const bindingDeadline = new Date(retention.expiredAt).getTime();
-  if (!Number.isFinite(bindingDeadline)) {
-    return configuredTtlMs;
-  }
-  return Math.min(configuredTtlMs, Math.max(0, bindingDeadline - Date.now()));
-}
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 
@@ -3130,6 +3123,43 @@ class AgentClient extends BaseClient {
 
     const appConfig = this.options.req?.config;
     const checkpointerCfg = appConfig?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
+    if (this.options.req?._isScheduledFire === true) {
+      if (!GenerationJobManager.isRedis) {
+        const error = new Error(
+          'The agent paused, but its shared action state is unavailable. Please retry the run.',
+        );
+        error.code = 'SCHEDULED_HITL_REQUIRES_SHARED_STORE';
+        throw error;
+      }
+      let hasDurableInterrupt = false;
+      try {
+        hasDurableInterrupt = await hasDurableAgentInterruptCheckpoint(
+          this.conversationId,
+          checkpointerCfg,
+          {
+            checkpointNamespace: this.checkpointNamespace,
+            checkpointId: interrupt.checkpointId,
+            checkpointNs: interrupt.checkpointNs,
+            interruptId: interrupt.interruptId,
+          },
+        );
+      } catch (checkpointError) {
+        logger.error(
+          `[AgentClient] Failed to verify scheduled HITL checkpoint for ${this.conversationId} (${this.checkpointNamespace || 'legacy namespace'})`,
+          checkpointError,
+        );
+      }
+      if (!hasDurableInterrupt) {
+        logger.error(
+          `[AgentClient] Refusing unresumable scheduled HITL pause for ${this.conversationId} (${this.checkpointNamespace || 'legacy namespace'})`,
+        );
+        const error = new Error(
+          'The agent paused, but its durable continuation checkpoint is unavailable. Please retry the run.',
+        );
+        error.code = 'HITL_CHECKPOINT_UNAVAILABLE';
+        throw error;
+      }
+    }
     // Persist the generation params (temperature, max tokens, custom endpoint params, …)
     // so an ephemeral-agent resume continues with the SAME settings the run paused on.
     // The resume payload omits them and they aren't part of the fingerprint, so without
@@ -3174,7 +3204,8 @@ class AgentClient extends BaseClient {
       // thread_id was bound to conversationId at run config (config.configurable);
       // fall back to it when the SDK doesn't echo threadId on the interrupt.
       threadId: interrupt.threadId ?? this.conversationId,
-      ttlMs: getInterruptTtlMs(checkpointerCfg, this.options.req),
+      ttlMs: getApprovalTtlMs(checkpointerCfg),
+      expiresAt: this.options.req?._agentEventBindingRetention?.expiredAt,
       // Pin the graph-determining request fields so resume can't rebuild this paused
       // run on a different agent/tool set (esp. ephemeral agents, whose agent_id is
       // undefined so the id guard can't tell two configs apart).
@@ -3281,6 +3312,57 @@ class AgentClient extends BaseClient {
         abortController = new AbortController();
       }
 
+      /** Scheduled approvals are unattended by definition. Their pending action,
+       * replay context, and resolution fence must be shared across workers; their
+       * LangGraph continuation must also use a durable shared checkpointer. Redis
+       * provides the first half, while handleRunInterrupt verifies the exact durable
+       * checkpoint before exposing the pause. Refuse unsupported topologies before
+       * spending on provider work. */
+      /** @type {AppConfig['endpoints']['agents']} */
+      const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
+      const resolvedToolApprovalHooks = isHITLEnabled(agentsEConfig?.toolApproval)
+        ? buildToolApprovalHooks({
+            userId: this.options.req?.user?.id,
+            conversationId: this.conversationId,
+            tenantId: this.options.req?.user?.tenantId,
+            appConfig,
+          })
+        : undefined;
+      const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
+      const askUserQuestionAdminDisabled = isAskUserQuestionAdminDisabled(appConfig);
+      const runCanPause = canAgentGraphPause({
+        policy: agentsEConfig?.toolApproval,
+        agents: topLevelAgents,
+        hostGeneratedToolNames:
+          this.options.subagentTasks == null ? undefined : [Constants.CHECK_BACKGROUND_TASK],
+        resolvedProgrammaticHooks: resolvedToolApprovalHooks,
+        pluginHookSource: getPluginHookSource(),
+        askUserQuestionAdminDisabled,
+      });
+      const runUsesCheckpointer = agentRunUsesCheckpointer({
+        policy: agentsEConfig?.toolApproval,
+        agents: topLevelAgents,
+        askUserQuestionAdminDisabled,
+      });
+      if (this.options.req?._isScheduledFire === true && runCanPause) {
+        if (!GenerationJobManager.isRedis) {
+          const error = new Error(
+            'Scheduled agent runs that can pause require a shared generation store. ' +
+              'Enable Redis streams with USE_REDIS_STREAMS=true.',
+          );
+          error.code = 'SCHEDULED_HITL_REQUIRES_SHARED_STORE';
+          throw error;
+        }
+        if (!(await getAgentCheckpointer(agentsEConfig?.checkpointer))) {
+          const error = new Error(
+            'Scheduled agent runs that can pause require a durable shared checkpointer. ' +
+              'Use the default MongoDB checkpointer.',
+          );
+          error.code = 'SCHEDULED_HITL_REQUIRES_DURABLE_CHECKPOINT';
+          throw error;
+        }
+      }
+
       /** Fire-and-forget: boot each selected stateful environment in
        *  parallel with generation so the first execute_code/bash call lands
        *  on a warm VM. No-op unless a reachable agent resolved
@@ -3290,9 +3372,6 @@ class AgentClient extends BaseClient {
         conversationId: this.conversationId,
         agents: [this.options.agent, ...(this.agentConfigs?.values() ?? [])],
       });
-
-      /** @type {AppConfig['endpoints']['agents']} */
-      const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
       config = {
         runName: 'AgentRun',
@@ -3555,16 +3634,14 @@ class AgentClient extends BaseClient {
         // HITL is off or the generation has no remnants. Deliberately unconditional
         // per HITL turn: any cheaper Redis flag can go stale across replicas/restarts,
         // while these are two indexed, usually-empty deleteMany operations.
-        // The gate mirrors createRun's checkpointer condition: the approval policy
-        // OR an ask_user_question-capable agent (which attaches a checkpointer
-        // WITHOUT the approval policy).
+        // Mirror createRun's checkpointer attachment gate. This is deliberately
+        // broader than pause admission: retries must prune remnants even when a
+        // policy or request hook changed from pausing to non-pausing.
         //
         // Start the prune alongside graph construction. The all-settled barrier
         // below still guarantees it completes before the graph is exposed or run.
         const shouldPruneCheckpoint =
-          streamId &&
-          this.eventActorInvocationId == null &&
-          (isHITLEnabled(agentsEConfig?.toolApproval) || agents.some(agentRequestsAskUserQuestion));
+          streamId && this.eventActorInvocationId == null && runUsesCheckpointer;
         let checkpointPrunePromise = Promise.resolve();
         if (shouldPruneCheckpoint && this.checkpointNamespace !== '') {
           checkpointPrunePromise = deleteAgentCheckpoint(
@@ -3627,6 +3704,7 @@ class AgentClient extends BaseClient {
           // opts into the tool-approval wiring. Non-resumable callers (OpenAI-compat, Responses)
           // leave this off so an approval-gated tool can't pause where there's no resume path.
           hitlCapable: true,
+          resolvedToolApprovalHooks,
           toolInputValidationErrors: this.toolInputValidationErrors,
           // Mid-run steering: drain queued user messages at each tool-batch
           // boundary and inject them into graph state. The offset wrapper
@@ -3792,6 +3870,15 @@ class AgentClient extends BaseClient {
       this.applyHideSequentialOutputsFilter();
       this.rebaseActivityPhaseBounds(contentBeforeReshape);
     } catch (err) {
+      if (
+        err?.code === 'SCHEDULED_HITL_REQUIRES_SHARED_STORE' ||
+        err?.code === 'SCHEDULED_HITL_REQUIRES_DURABLE_CHECKPOINT' ||
+        err?.code === 'HITL_CHECKPOINT_UNAVAILABLE' ||
+        err?.code === PENDING_ACTION_EXPIRED_CODE
+      ) {
+        logger.warn(`[api/server/controllers/agents/client.js #sendCompletion] ${err.message}`);
+        throw err;
+      }
       if (isContentFilterError(err)) {
         logger.warn(
           '[api/server/controllers/agents/client.js #sendCompletion] Blocked by content policy',
@@ -3953,6 +4040,14 @@ class AgentClient extends BaseClient {
 
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
+      const resolvedToolApprovalHooks = isHITLEnabled(agentsEConfig?.toolApproval)
+        ? buildToolApprovalHooks({
+            userId: this.options.req?.user?.id,
+            conversationId: this.conversationId,
+            tenantId: this.options.req?.user?.tenantId,
+            appConfig,
+          })
+        : undefined;
 
       BaseClient.prototype.setModelBoundStoredMessages.call(
         this,
@@ -4109,6 +4204,7 @@ class AgentClient extends BaseClient {
         // The resumed run can pause AGAIN (another tool, a follow-up question), and this
         // controller owns that lifecycle, so it must keep the HITL wiring on the rebuilt run.
         hitlCapable: true,
+        resolvedToolApprovalHooks,
         // Plugin SessionStart hooks match on the lifecycle source; a rebuilt run is a
         // resume, not a fresh startup.
         sessionStartSource: 'resume',

@@ -46,6 +46,7 @@ import type { Callbacks } from '@langchain/core/callbacks/manager';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
 import type { ToolInputValidationError } from '~/agents/toolValidation';
+import type { ResolvedToolApprovalHook } from '~/agents/hitl/hooks';
 import type { ResolvedAlwaysApplySkill } from '~/agents/skills';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { SubagentUsageEvent } from '~/agents/usage';
@@ -1091,7 +1092,7 @@ export function agentRequestsAskUserQuestion(agent: {
  * it to the model, attaching checkpointers, and pausing runs — for a run-pausing
  * tool the filter must be an actual kill switch.
  */
-function isAskUserQuestionAdminDisabled(appConfig?: AppConfig): boolean {
+export function isAskUserQuestionAdminDisabled(appConfig?: AppConfig): boolean {
   const included = appConfig?.includedTools;
   if (included != null && included.length > 0) {
     return !included.includes(ASK_USER_QUESTION_TOOL_NAME);
@@ -1392,6 +1393,7 @@ export async function createRun({
   activityPhase,
   eventActorCheckpointing = false,
   hitlCapable = false,
+  resolvedToolApprovalHooks,
   toolInputValidationErrors,
   sessionStartSource,
   streaming = true,
@@ -1490,6 +1492,11 @@ export async function createRun({
    * final response / `[DONE]` with the tool call left unresolved).
    */
   hitlCapable?: boolean;
+  /**
+   * Request-scoped approval hooks already resolved by the scheduled-run admission guard.
+   * Reuse them here so a context-aware factory is evaluated exactly once for the run.
+   */
+  resolvedToolApprovalHooks?: readonly ResolvedToolApprovalHook[];
   /** Plugin-hook SessionStart lifecycle source: 'startup' (default) or 'resume' on HITL-rebuild paths. */
   sessionStartSource?: string;
   /** Request-scoped tool input failures consumed by the completion handler. */
@@ -1881,6 +1888,7 @@ export async function createRun({
           appConfig,
         },
         mcpToolAliases,
+        resolvedToolApprovalHooks,
       )
     : undefined;
   registerResolvedMCPToolAliases = (resolvedAgent) => {

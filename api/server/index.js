@@ -38,6 +38,7 @@ const {
   getDeploymentPluginHookCapabilities,
   registerDeploymentPluginHooks,
   hasDeploymentPluginHooks,
+  hasDeploymentPluginToolApprovalHooks,
   setPluginHookSource,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
@@ -220,6 +221,7 @@ const startServer = async () => {
   // agents -> plugins import (see agents/hooks/source.ts).
   setPluginHookSource({
     hasHooks: hasDeploymentPluginHooks,
+    hasToolApprovalHooks: hasDeploymentPluginToolApprovalHooks,
     register: registerDeploymentPluginHooks,
   });
   await initializeDeploymentSkills({

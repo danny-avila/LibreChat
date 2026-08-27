@@ -200,9 +200,9 @@ describe('RedisJobStore', () => {
       }),
     ).resolves.toBe(false);
 
-    // ARGV[4] is the terminal job TTL. The persistence owner/recovery path
+    // ARGV[5] is the terminal job TTL. The persistence owner/recovery path
     // gets five minutes even when ordinary completed records are immediate.
-    expect(evalTransition.mock.calls[0][15]).toBe('300');
+    expect(evalTransition.mock.calls[0][16]).toBe('300');
   });
 
   test('retains the generation epoch beyond the paused job TTL', async () => {
@@ -223,9 +223,9 @@ describe('RedisJobStore', () => {
     expect(transitionCall[0]).toContain(
       'redis.call("SET", KEYS[8], currentCreatedAt, "EX", ttl + generationEpochGraceTtl)',
     );
-    expect(transitionCall[15]).toBe('4621');
-    expect(transitionCall[16]).toBe('0');
-    expect(transitionCall[20]).toBe('300');
+    expect(transitionCall[16]).toBe('4621');
+    expect(transitionCall[17]).toBe('0');
+    expect(transitionCall[21]).toBe('300');
   });
 
   test('seeds the guarded epoch when reaping a legacy job without a marker', async () => {
@@ -991,9 +991,9 @@ describe('RedisJobStore', () => {
       evalTransition.mock.invocationCallOrder[0],
     );
     const transitionCall = evalTransition.mock.calls[0];
-    expect(transitionCall[15]).toBe('86400');
-    expect(transitionCall[17]).toBe('86400');
+    expect(transitionCall[16]).toBe('86400');
     expect(transitionCall[18]).toBe('86400');
+    expect(transitionCall[19]).toBe('86400');
   });
 
   test('acknowledges evidence TTLs without removing a successor retry member', async () => {

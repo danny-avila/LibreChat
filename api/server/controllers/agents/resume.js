@@ -712,6 +712,13 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
 
   const scheduleId = job.metadata?.scheduleId;
   const scheduledFor = job.metadata?.scheduledFor;
+  // A resumed schedule is still an unattended scheduled run. Preserve that
+  // provenance on the rebuilt client so every later pause (a second approval
+  // or follow-up question) must prove its durable checkpoint before the job is
+  // exposed as `requires_action` again.
+  if (scheduleId) {
+    req._isScheduledFire = true;
+  }
   if (
     scheduleId &&
     !(await isScheduleLive(scheduleId, job.metadata?.scheduleConfigRevision, {

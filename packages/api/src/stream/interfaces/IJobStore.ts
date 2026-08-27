@@ -565,6 +565,17 @@ export const STEER_ENQUEUE_QUEUE_FULL = -2;
  * so idempotency evidence is never evicted inside its recovery window. */
 export const STEER_ENQUEUE_RECEIPT_FULL = -3;
 
+/** The store rejected a status CAS because its atomic deadline had elapsed. */
+export class JobStatusTransitionDeadlineError extends Error {
+  readonly notAfterMs: number;
+
+  constructor(notAfterMs: number) {
+    super('The status transition deadline elapsed before the transition could commit');
+    this.name = 'JobStatusTransitionDeadlineError';
+    this.notAfterMs = notAfterMs;
+  }
+}
+
 /**
  * Arguments for an atomic {@link IJobStore.transitionStatus} compare-and-set.
  */
@@ -589,6 +600,12 @@ export interface JobStatusTransition {
    * the same stream ID.
    */
   expectCreatedAt?: number;
+  /**
+   * Additional guard: reject the transition when the store's clock has reached
+   * this absolute deadline. The comparison is part of the same atomic operation
+   * as the status change, so queueing or storage latency cannot publish stale state.
+   */
+  notAfterMs?: number;
   /** Extend all current steer receipts in the SAME atomic step as this
    * transition. Used by running→requires_action so no enqueue can land between
    * a pre-pause TTL pass and the status CAS. */
