@@ -1,4 +1,5 @@
 import { getProxyForUrl } from 'proxy-from-env';
+import { ScraperProviders } from 'librechat-data-provider';
 import type { TWebSearchConfig } from 'librechat-data-provider';
 import type https from 'node:https';
 import type http from 'node:http';
@@ -34,7 +35,9 @@ function getProxyExemptions(authResult: Partial<TWebSearchConfig>): string[] {
   const entries = new Set<string>();
   const destinations = [
     ...WEB_SEARCH_URL_KEYS.map((key) => authResult[key]),
-    process.env.KEENABLE_FETCH_URL,
+    ...(authResult.scraperProvider === ScraperProviders.KEENABLE
+      ? [process.env.KEENABLE_FETCH_URL]
+      : []),
   ];
   for (const destination of destinations) {
     if (typeof destination !== 'string' || destination.length === 0) {

@@ -233,8 +233,11 @@ export async function loadWebSearchAuth({
           continue;
         }
         const envValue = process.env[field];
+        const normalizedEnvValue = envValue?.trim();
         const isFieldUserProvided =
-          envValue == null || envValue === '' || envValue === AuthType.USER_PROVIDED;
+          normalizedEnvValue == null ||
+          normalizedEnvValue === '' ||
+          normalizedEnvValue === AuthType.USER_PROVIDED;
         if (
           originalKey === 'keenableApiUrl' &&
           isFieldUserProvided &&

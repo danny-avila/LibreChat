@@ -14,6 +14,7 @@ const mockGetAccessibleMcpServerNames = jest.fn(async () => []);
 
 const mockCreateSearchTool = jest.fn(() => ({ name: 'web_search' }));
 const mockLoadWebSearchAuth = jest.fn(async () => ({
+  authenticated: true,
   authResult: { searchProvider: 'serper', searxngInstanceUrl: 'http://searxng.internal:8080' },
 }));
 
@@ -894,6 +895,24 @@ describe('Tool Handlers', () => {
       await expect(
         loadWebSearchConfig({ allowedAddresses: { '10.0.0.5:11434': true } }),
       ).resolves.toBeDefined();
+    });
+
+    it('does not construct web search when authentication is incomplete', async () => {
+      mockLoadWebSearchAuth.mockResolvedValueOnce({
+        authenticated: false,
+        authResult: { searchProvider: 'keenable' },
+      });
+
+      const toolMap = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [Tools.web_search],
+        returnMap: true,
+        webSearch: {},
+        options: { req: buildReq() },
+      });
+
+      expect(toolMap[Tools.web_search]).toBeUndefined();
+      expect(mockCreateSearchTool).not.toHaveBeenCalled();
     });
   });
 });

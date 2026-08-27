@@ -604,6 +604,46 @@ describe('web.ts', () => {
       }
     });
 
+    it('should treat a whitespace-only Keenable URL env value as user-provided', async () => {
+      const originalApiKey = process.env.KEENABLE_API_KEY;
+      const originalApiUrl = process.env.KEENABLE_API_URL;
+      process.env.KEENABLE_API_KEY = 'system-keenable-key';
+      process.env.KEENABLE_API_URL = '   ';
+      mockLoadAuthValues.mockResolvedValue({
+        KEENABLE_API_KEY: 'system-keenable-key',
+        KEENABLE_API_URL: 'https://user-keenable.example.com',
+      });
+
+      try {
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig: {
+            keenableApiKey: '${KEENABLE_API_KEY}',
+            keenableApiUrl: '${KEENABLE_API_URL}',
+            searchProvider: 'keenable' as SearchProviders,
+            scraperProvider: 'keenable' as ScraperProviders,
+            rerankerType: 'none' as RerankerTypes,
+            safeSearch: SafeSearchTypes.MODERATE,
+          } as TWebSearchConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authResult.keenableApiUrl).toBe('https://user-keenable.example.com');
+        expect(result.authResult.keenableApiKey).toBeUndefined();
+      } finally {
+        if (originalApiKey == null) {
+          delete process.env.KEENABLE_API_KEY;
+        } else {
+          process.env.KEENABLE_API_KEY = originalApiKey;
+        }
+        if (originalApiUrl == null) {
+          delete process.env.KEENABLE_API_URL;
+        } else {
+          process.env.KEENABLE_API_URL = originalApiUrl;
+        }
+      }
+    });
+
     it('should reject selected Keenable auth when its user API URL is blocked', async () => {
       mockIsSSRFTarget.mockReturnValueOnce(true);
       mockLoadAuthValues.mockResolvedValue({
