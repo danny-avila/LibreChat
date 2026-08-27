@@ -2,6 +2,7 @@ jest.mock(
   '@librechat/data-schemas',
   () => ({
     logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
+    runAsSystem: (callback) => callback(),
     getTenantId: jest.fn(() => undefined),
     DEFAULT_SESSION_EXPIRY: 900000,
     DEFAULT_REFRESH_TOKEN_EXPIRY: 604800000,
@@ -24,6 +25,7 @@ jest.mock(
     checkEmailConfig: jest.fn(),
     isEmailDomainAllowed: jest.fn(),
     math: jest.fn((val, fallback) => (val ? Number(val) : fallback)),
+    storeOpenIdSession: jest.fn(),
     shouldUseSecureCookie: jest.fn(() => false),
     resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
     setCloudFrontCookies: jest.fn(() => true),
@@ -51,6 +53,7 @@ jest.mock('~/models', () => ({
   deleteTokens: jest.fn(),
   deleteSession: jest.fn(),
   createSession: jest.fn(),
+  upsertSession: jest.fn(),
   generateToken: jest.fn(),
   deleteUserById: jest.fn(),
   generateRefreshToken: jest.fn(),
@@ -80,8 +83,10 @@ const {
   setCloudFrontCookies,
   getCloudFrontConfig,
   parseCloudFrontCookieScope,
+  storeOpenIdSession,
 } = require('@librechat/api');
 const jwt = require('jsonwebtoken');
+const { createHash } = require('node:crypto');
 const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   findUser,
@@ -93,6 +98,8 @@ const {
   generateToken,
   generateRefreshToken,
   createSession,
+  upsertSession,
+  deleteSession,
   createToken,
   deleteTokens,
 } = require('~/models');
@@ -101,6 +108,7 @@ const { sendEmail } = require('~/server/utils');
 const bcrypt = require('bcryptjs');
 const {
   setOpenIDAuthTokens,
+  storeOpenIDSession,
   requestPasswordReset,
   registerUser,
   resetPassword,
@@ -307,6 +315,57 @@ describe('setOpenIDAuthTokens', () => {
       expect(req.session.openidTokens.idToken).toBe(nearExpiryIdToken);
       expect(req.session.openidTokens.accessToken).toBe('new-access-token');
     });
+  });
+
+  it('binds the signed OpenID user cookie to its refresh token', () => {
+    const tokenset = {
+      id_token: 'the-id-token',
+      access_token: 'the-access-token',
+      refresh_token: 'the-refresh-token',
+    };
+    const req = mockRequest();
+    const res = mockResponse();
+
+    setOpenIDAuthTokens(tokenset, req, res, 'user-123');
+
+    expect(jwt.verify(res._cookies.openid_user_id.value, process.env.JWT_REFRESH_SECRET)).toEqual(
+      expect.objectContaining({
+        id: 'user-123',
+        refreshTokenHash: createHash('sha256').update(tokenset.refresh_token).digest('base64url'),
+      }),
+    );
+  });
+
+  it('stores an OpenID refresh token for durable revocation checks', async () => {
+    storeOpenIdSession.mockResolvedValue(true);
+
+    await storeOpenIDSession('user-123', 'the-refresh-token', 'tenant-a');
+
+    expect(storeOpenIdSession).toHaveBeenCalledWith(
+      {
+        userId: 'user-123',
+        refreshToken: 'the-refresh-token',
+        tenantId: 'tenant-a',
+        previousRefreshToken: undefined,
+      },
+      { upsertSession, deleteSession },
+    );
+  });
+
+  it('revokes the previous durable session when the IdP rotates the refresh token', async () => {
+    storeOpenIdSession.mockResolvedValue(true);
+
+    await storeOpenIDSession('user-123', 'new-refresh-token', 'tenant-a', 'old-refresh-token');
+
+    expect(storeOpenIdSession).toHaveBeenCalledWith(
+      {
+        userId: 'user-123',
+        refreshToken: 'new-refresh-token',
+        tenantId: 'tenant-a',
+        previousRefreshToken: 'old-refresh-token',
+      },
+      { upsertSession, deleteSession },
+    );
   });
 
   describe('cookie secure flag', () => {

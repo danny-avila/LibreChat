@@ -28,6 +28,7 @@ import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
   JobCreationSupersededError,
+  JobStatusTransitionDeadlineError,
   JobPredecessorMismatchError,
   STEER_ENQUEUE_NOT_RUNNING,
   STEER_QUEUE_MAX_DEPTH,
@@ -107,6 +108,7 @@ function assertCreateIdempotencyArguments(
  *     from,
  *     expectActionId | "",
  *     expectCreatedAt | "",
+ *     notAfterMs | "",
  *     ttl,
  *     terminal ("0" | "1"),
  *     chunksAfterComplete,
@@ -124,14 +126,17 @@ const JOB_CAS_LUA =
   'if redis.call("HGET", KEYS[1], "status") ~= ARGV[1] then return 0 end ' +
   'if ARGV[2] ~= "" and redis.call("HGET", KEYS[1], "pendingActionId") ~= ARGV[2] then return 0 end ' +
   'if ARGV[3] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[3] then return 0 end ' +
+  'if ARGV[4] ~= "" then local now = redis.call("TIME") ' +
+  'local nowMs = tonumber(now[1]) * 1000 + math.floor(tonumber(now[2]) / 1000) ' +
+  'if nowMs >= tonumber(ARGV[4]) then return -1 end end ' +
   'local currentCreatedAt = redis.call("HGET", KEYS[1], "createdAt") ' +
-  'local ttl = tonumber(ARGV[4]) ' +
-  'local terminal = ARGV[5] == "1" ' +
-  'local chunksTtl = tonumber(ARGV[6]) ' +
-  'local runStepsTtl = tonumber(ARGV[7]) ' +
-  'local parkedTtl = tonumber(ARGV[8]) ' +
-  'local generationEpochGraceTtl = tonumber(ARGV[9]) ' +
-  'local receiptTtl = tonumber(ARGV[10]) ' +
+  'local ttl = tonumber(ARGV[5]) ' +
+  'local terminal = ARGV[6] == "1" ' +
+  'local chunksTtl = tonumber(ARGV[7]) ' +
+  'local runStepsTtl = tonumber(ARGV[8]) ' +
+  'local parkedTtl = tonumber(ARGV[9]) ' +
+  'local generationEpochGraceTtl = tonumber(ARGV[10]) ' +
+  'local receiptTtl = tonumber(ARGV[11]) ' +
   'local ownerUserId = redis.call("HGET", KEYS[1], "userId") ' +
   'local ownerTenantId = redis.call("HGET", KEYS[1], "tenantId") ' +
   'local generationProtocol = redis.call("HGET", KEYS[1], "generationProtocolVersion") == "2" and 2 or 1 ' +
@@ -163,8 +168,8 @@ const JOB_CAS_LUA =
   'or (item.createdAt and (type(item.createdAt) ~= "number" or item.createdAt < 0)) ' +
   'or (item.recoveringCreatedAt and (type(item.recoveringCreatedAt) ~= "number" or item.recoveringCreatedAt < 0)) then return 0 end ' +
   'validatedPrior[#validatedPrior + 1] = item end end end ' +
-  'local hdelCount = tonumber(ARGV[12]) ' +
-  'local idx = 13 ' +
+  'local hdelCount = tonumber(ARGV[13]) ' +
+  'local idx = 14 ' +
   'for i = 1, hdelCount do redis.call("HDEL", KEYS[1], ARGV[idx]) idx = idx + 1 end ' +
   'local hset = {} ' +
   'for i = idx, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
@@ -227,7 +232,7 @@ const JOB_CAS_LUA =
   'redis.call("DEL", KEYS[5], KEYS[6]) ' +
   'if chunksTtl == 0 then redis.call("DEL", KEYS[3]) else redis.call("EXPIRE", KEYS[3], chunksTtl) end ' +
   'if runStepsTtl == 0 then redis.call("DEL", KEYS[4]) else redis.call("EXPIRE", KEYS[4], runStepsTtl) end ' +
-  'if ARGV[11] == "1" then if #items == 0 then return "[]" end return cjson.encode(items) end ' +
+  'if ARGV[12] == "1" then if #items == 0 then return "[]" end return cjson.encode(items) end ' +
   'else ' +
   'redis.call("EXPIRE", KEYS[3], ttl) ' +
   'redis.call("EXPIRE", KEYS[4], ttl) ' +
@@ -2514,7 +2519,7 @@ export class RedisJobStore implements IJobStoreV2 {
     args: JobStatusTransition,
     returnDrainedSteers: boolean,
   ): Promise<true | SteerQueueItem[] | null> {
-    const { from, to, patch, clear, expectActionId, expectCreatedAt } = args;
+    const { from, to, patch, clear, expectActionId, expectCreatedAt, notAfterMs } = args;
     const key = KEYS.job(streamId);
 
     // status + patch become HSET pairs; serializeJob skips undefined, so
@@ -2573,6 +2578,7 @@ export class RedisJobStore implements IJobStoreV2 {
       from,
       expectActionId ?? '',
       expectCreatedAt != null ? String(expectCreatedAt) : '',
+      notAfterMs != null ? String(notAfterMs) : '',
       String(ttl),
       terminal ? '1' : '0',
       String(
@@ -2591,6 +2597,9 @@ export class RedisJobStore implements IJobStoreV2 {
       ...clearFields,
       ...fields,
     );
+    if (result === -1 && notAfterMs != null) {
+      throw new JobStatusTransitionDeadlineError(notAfterMs);
+    }
     if (returnDrainedSteers ? typeof result !== 'string' : result !== 1) {
       return null;
     }

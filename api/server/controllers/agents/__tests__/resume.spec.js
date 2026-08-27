@@ -382,6 +382,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         files: req.body.files,
         isTemporary: req.body.isTemporary,
         conversationCreatedAt: req.conversationCreatedAt,
+        isScheduledFire: req._isScheduledFire,
         timezone: req.body.timezone,
         checkpointNamespace,
         requestBody,
@@ -721,6 +722,8 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       const res = await post(approveBody());
       expect(res.status).toBe(200);
       await settled;
+
+      expect(capturedInit.isScheduledFire).toBe(true);
 
       expect(mockClaimScheduleResume).toHaveBeenCalledWith('schedule-1', scheduledFor, {
         expectedConfigRevision: 4,

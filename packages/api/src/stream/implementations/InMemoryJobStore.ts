@@ -23,6 +23,7 @@ import type {
 } from '~/stream/interfaces/IJobStore';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
+  JobStatusTransitionDeadlineError,
   JobPredecessorMismatchError,
   STEER_ENQUEUE_NOT_RUNNING,
   STEER_ENQUEUE_QUEUE_FULL,
@@ -769,6 +770,9 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
     if (args.expectCreatedAt != null && job.createdAt !== args.expectCreatedAt) {
       return false;
+    }
+    if (args.notAfterMs != null && Date.now() >= args.notAfterMs) {
+      throw new JobStatusTransitionDeadlineError(args.notAfterMs);
     }
     if (['complete', 'error', 'aborted'].includes(args.to)) {
       if (!this.isParkedRecoveryCompatible(streamId, job)) {
