@@ -327,7 +327,7 @@ export function ShareHeader({
             )}
           </div>
 
-          <div className="flex items-center gap-2 md:self-start">
+          <div className="flex flex-wrap items-center justify-end gap-2 md:flex-nowrap md:self-start">
             {langfuseSessionUrl && (
               <Button
                 asChild

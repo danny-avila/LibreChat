@@ -24,6 +24,7 @@ describe('ShareHeader', () => {
     const link = screen.getByRole('link', { name: 'View session in Langfuse' });
     expect(link).toHaveAttribute('href', url);
     expect(link).toHaveAttribute('target', '_blank');
+    expect(link.parentElement).toHaveClass('flex-wrap');
   });
 
   it('omits the Langfuse action when the server does not supply a session', () => {
