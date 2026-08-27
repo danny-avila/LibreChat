@@ -31,6 +31,7 @@ const MCPSubMenu = React.forwardRef<HTMLButtonElement, MCPSubMenuProps>(
     const {
       isPinned,
       mcpValues,
+      requiredServerSet,
       setIsPinned,
       isInitializing,
       placeholderText,
@@ -101,6 +102,7 @@ const MCPSubMenu = React.forwardRef<HTMLButtonElement, MCPSubMenuProps>(
                   key={server.serverName}
                   server={server}
                   isSelected={mcpValues?.includes(server.serverName) ?? false}
+                  isRequired={requiredServerSet?.has(server.serverName)}
                   connectionStatus={connectionStatus}
                   isInitializing={isInitializing}
                   statusIconProps={getServerStatusIconProps(server.serverName)}

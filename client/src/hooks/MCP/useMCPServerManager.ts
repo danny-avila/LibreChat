@@ -62,7 +62,12 @@ type PollIntervals = Record<string, NodeJS.Timeout | null>;
 export function useMCPServerManager({
   conversationId,
   storageContextKey,
-}: { conversationId?: string | null; storageContextKey?: string } = {}) {
+  requiredServers,
+}: {
+  conversationId?: string | null;
+  storageContextKey?: string;
+  requiredServers?: string[];
+} = {}) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
@@ -117,17 +122,30 @@ export function useMCPServerManager({
     [availableMCPServers],
   );
 
-  const { mcpValues, setMCPValues, isPinned, setIsPinned } = useMCPSelect({
+  const requiredServerSet = useMemo(() => new Set(requiredServers ?? []), [requiredServers]);
+
+  const {
+    mcpValues: selectedMCPValues,
+    setMCPValues,
+    isPinned,
+    setIsPinned,
+  } = useMCPSelect({
     conversationId,
     storageContextKey,
     servers: selectableServers,
   });
-  const mcpValuesRef = useRef(mcpValues);
+
+  const mcpValues = useMemo(
+    () => Array.from(new Set([...selectedMCPValues, ...requiredServerSet])),
+    [selectedMCPValues, requiredServerSet],
+  );
+
+  const mcpValuesRef = useRef(selectedMCPValues);
 
   // fixes the issue where OAuth flows would deselect all the servers except the one that is being authenticated on success
   useEffect(() => {
-    mcpValuesRef.current = mcpValues;
-  }, [mcpValues]);
+    mcpValuesRef.current = selectedMCPValues;
+  }, [selectedMCPValues]);
 
   // Check if specific permission bit is set
   const checkEffectivePermission = useCallback(
@@ -605,21 +623,19 @@ export function useMCPServerManager({
 
   const toggleServerSelection = useCallback(
     (serverName: string) => {
-      if (isInitializing(serverName)) {
+      if (isInitializing(serverName) || requiredServerSet.has(serverName)) {
         return;
       }
 
-      const currentValues = mcpValues ?? [];
-      const isCurrentlySelected = currentValues.includes(serverName);
+      const isCurrentlySelected = selectedMCPValues.includes(serverName);
 
       if (isCurrentlySelected) {
-        const filteredValues = currentValues.filter((name) => name !== serverName);
-        setMCPValues(filteredValues);
+        setMCPValues(selectedMCPValues.filter((name) => name !== serverName));
       } else {
-        setMCPValues([...currentValues, serverName]);
+        setMCPValues([...selectedMCPValues, serverName]);
       }
     },
-    [mcpValues, setMCPValues, isInitializing],
+    [selectedMCPValues, setMCPValues, isInitializing, requiredServerSet],
   );
 
   const handleConfigSave = useCallback(
@@ -818,7 +834,7 @@ export function useMCPServerManager({
     getOAuthUrl,
     mcpValues,
     setMCPValues,
-
+    requiredServerSet,
     isPinned,
     setIsPinned,
     placeholderText,

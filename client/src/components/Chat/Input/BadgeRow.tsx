@@ -33,6 +33,7 @@ interface BadgeRowProps {
   specName?: string | null;
   isSubmitting?: boolean;
   isInChat: boolean;
+  endpoint?: string | null;
 }
 
 interface BadgeWrapperProps {
@@ -150,6 +151,7 @@ function BadgeRow({
   onChange,
   onToggle,
   isInChat,
+  endpoint,
 }: BadgeRowProps) {
   const [orderedBadges, setOrderedBadges] = useState<BadgeItem[]>([]);
   const [dragState, dispatch] = useReducer(dragReducer, {
@@ -328,6 +330,7 @@ function BadgeRow({
       conversationId={conversationId}
       specName={specName}
       isSubmitting={isSubmitting}
+      endpoint={endpoint}
     >
       <div ref={containerRef} className="relative flex flex-wrap items-center gap-2">
         {showEphemeralBadges === true && <ToolsDropdown />}

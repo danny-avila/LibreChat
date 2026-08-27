@@ -23,7 +23,7 @@ function MCPSelectContent() {
       return [];
     }
     const selectedSet = new Set(manager.mcpValues);
-    return manager.selectableServers?.filter((s) => selectedSet.has(s.serverName));
+    return manager.selectableServers?.filter((s) => selectedSet?.has(s.serverName));
   }, [manager?.selectableServers, manager?.mcpValues]);
 
   const displayText = useMemo(() => {
@@ -48,6 +48,7 @@ function MCPSelectContent() {
     isPinned,
     mcpValues,
     isInitializing,
+    requiredServerSet,
     placeholderText,
     connectionStatus,
     selectableServers,
@@ -112,6 +113,7 @@ function MCPSelectContent() {
               <MCPServerMenuItem
                 key={server.serverName}
                 server={server}
+                isRequired={requiredServerSet?.has(server.serverName)}
                 isSelected={mcpValues?.includes(server.serverName) ?? false}
                 connectionStatus={connectionStatus}
                 isInitializing={isInitializing}

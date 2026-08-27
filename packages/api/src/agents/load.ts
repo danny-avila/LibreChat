@@ -63,9 +63,36 @@ export async function loadEphemeralAgent(
   if (spec != null && spec !== '') {
     modelSpec = modelSpecs?.list?.find((s) => s.name === spec) ?? null;
   }
+  const appConfig = req.config;
+  const endpoints = appConfig?.endpoints;
+
+  let endpointConfig = endpoints?.[endpoint as keyof typeof endpoints];
+
+  if (!isAgentsEndpoint(endpoint) && !endpointConfig) {
+    try {
+      endpointConfig = getCustomEndpointConfig({
+        endpoint,
+        appConfig,
+      });
+    } catch (error) {
+      logger.error('[loadEphemeralAgent] Error getting custom endpoint config', error);
+    }
+  }
+
   const ephemeralAgent: TEphemeralAgent | undefined = req.body?.ephemeralAgent;
-  const mcpServers = new Set<string>(ephemeralAgent?.mcp);
   const userId = req.user?.id ?? '';
+
+  const mcpServers = new Set<string>(ephemeralAgent?.mcp);
+
+  const requiredMcpServers = (endpointConfig as { requiredMcpServers?: string[] } | undefined)
+    ?.requiredMcpServers;
+
+  if (Array.isArray(requiredMcpServers)) {
+    for (const mcpServer of requiredMcpServers) {
+      mcpServers.add(mcpServer);
+    }
+  }
+
   if (modelSpec?.mcpServers) {
     for (const mcpServer of modelSpec.mcpServers) {
       mcpServers.add(mcpServer);
@@ -124,16 +151,6 @@ export async function loadEphemeralAgent(
     typeof modelPromptPrefix === 'string' ? modelPromptPrefix : requestPromptPrefix;
 
   // Get endpoint config for modelDisplayLabel fallback
-  const appConfig = req.config;
-  const endpoints = appConfig?.endpoints;
-  let endpointConfig = endpoints?.[endpoint as keyof typeof endpoints];
-  if (!isAgentsEndpoint(endpoint) && !endpointConfig) {
-    try {
-      endpointConfig = getCustomEndpointConfig({ endpoint, appConfig });
-    } catch (err) {
-      logger.error('[loadEphemeralAgent] Error getting custom endpoint config', err);
-    }
-  }
 
   const sender = getEphemeralSender({
     modelLabel: (model_parameters as AgentModelParameters & { modelLabel?: string })?.modelLabel,

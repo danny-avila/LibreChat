@@ -9,7 +9,7 @@ import {
   useToolToggle,
 } from '~/hooks';
 import { getTimestampedValue } from '~/utils/timestamps';
-import { useGetStartupConfig } from '~/data-provider';
+import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 
 interface BadgeRowContextType {
@@ -37,6 +37,7 @@ interface BadgeRowProviderProps {
   isSubmitting?: boolean;
   conversationId?: string | null;
   specName?: string | null;
+  endpoint?: string | null;
 }
 
 export default function BadgeRowProvider({
@@ -44,14 +45,23 @@ export default function BadgeRowProvider({
   isSubmitting,
   conversationId,
   specName,
+  endpoint,
 }: BadgeRowProviderProps) {
   const lastContextKeyRef = useRef<string>('');
   const hasInitializedRef = useRef(false);
   const { agentsConfig } = useGetAgentsConfig();
   const { data: startupConfig } = useGetStartupConfig();
+  const { data: endpointsConfig } = useGetEndpointsQuery();
   const key = conversationId ?? Constants.NEW_CONVO;
   const hasModelSpecs = (startupConfig?.modelSpecs?.list?.length ?? 0) > 0;
 
+  const requiredServers = useMemo(() => {
+    if (!endpoint) {
+      return [];
+    }
+
+    return endpointsConfig?.[endpoint]?.requiredMcpServers ?? [];
+  }, [endpoint, endpointsConfig]);
   /**
    * Compute the storage context key for non-spec persistence:
    * - `__defaults__`: specs configured but none active → shared defaults key
@@ -270,7 +280,11 @@ export default function BadgeRowProvider({
     isAuthenticated: true,
   });
 
-  const mcpServerManager = useMCPServerManager({ conversationId, storageContextKey });
+  const mcpServerManager = useMCPServerManager({
+    conversationId,
+    storageContextKey,
+    requiredServers,
+  });
 
   const value: BadgeRowContextType = {
     skills,

@@ -539,6 +539,7 @@ export type TConfig = {
   providerId?: ProviderId;
   version?: string;
   modelDisplayLabel?: string;
+  requiredMcpServers?: string[];
   userProvide?: boolean | null;
   userProvideURL?: boolean | null;
   userProvideAccessKeyId?: boolean;

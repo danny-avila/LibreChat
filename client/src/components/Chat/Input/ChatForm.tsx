@@ -673,6 +673,7 @@ const ChatForm = memo(function ChatForm({
                     !isAgentsEndpoint(endpoint) &&
                     !isAssistantsEndpoint(endpoint)
                   }
+                  endpoint={conversation?.endpoint}
                   isSubmitting={isSubmitting}
                   conversationId={conversationId}
                   specName={conversation?.spec}

@@ -35,6 +35,7 @@ export function loadCustomEndpointsConfig(
         name: configName,
         iconURL,
         modelDisplayLabel,
+        requiredMcpServers,
         customParams,
         provider,
       } = endpoint;
@@ -63,6 +64,7 @@ export function loadCustomEndpointsConfig(
         userProvideURL,
         customParams: resolvedCustomParams,
         modelDisplayLabel,
+        requiredMcpServers,
         iconURL,
         providerId: resolveEndpointProviderId({
           name,
