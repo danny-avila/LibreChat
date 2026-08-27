@@ -6,7 +6,7 @@ import {
   actionDelimiter,
   isActionTool,
 } from 'librechat-data-provider';
-import type { FilterQuery, Model, PipelineStage, Types } from 'mongoose';
+import type { FilterQuery, Model, PipelineStage, ProjectionType, Types } from 'mongoose';
 import type { AgentToolResources } from 'librechat-data-provider';
 import type { IAgent, IAclEntry } from '~/types';
 import { filterExistingSkillIds } from './skill';
@@ -440,7 +440,10 @@ export function createAgentMethods(
   mongoose: typeof import('mongoose'),
   deps: AgentDeps,
 ): {
-  getAgent: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent | null>;
+  getAgent: (
+    searchParameter: FilterQuery<IAgent>,
+    projection?: ProjectionType<IAgent>,
+  ) => Promise<IAgent | null>;
   getAgentVersions: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent['versions'] | null>;
   getAgentWithVersionCount: (
     searchParameter: FilterQuery<IAgent>,
@@ -556,9 +559,12 @@ export function createAgentMethods(
   /**
    * Get an agent document based on the provided search parameter.
    */
-  async function getAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
+  async function getAgent(
+    searchParameter: FilterQuery<IAgent>,
+    projection?: ProjectionType<IAgent>,
+  ): Promise<IAgent | null> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    return await Agent.findOne(searchParameter).lean<IAgent>();
+    return await Agent.findOne(searchParameter, projection).lean<IAgent>();
   }
 
   /**

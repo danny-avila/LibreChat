@@ -78,6 +78,8 @@ export * from './plugins';
 export * from './endpoints';
 /* Files */
 export * from './files';
+/* Images */
+export * from './images';
 /* Storage */
 export * from './storage';
 /* Tools */

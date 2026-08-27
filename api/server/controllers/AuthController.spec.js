@@ -7,6 +7,7 @@ jest.mock('~/server/services/GraphTokenService', () => ({
 jest.mock('~/server/services/AuthService', () => ({
   requestPasswordReset: jest.fn(),
   setOpenIDAuthTokens: jest.fn(),
+  storeOpenIDSession: jest.fn(),
   setCloudFrontAuthCookies: jest.fn(),
   resetPassword: jest.fn(),
   setAuthTokens: jest.fn(),
@@ -47,6 +48,7 @@ const { graphTokenController, refreshController } = require('./AuthController');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const {
   setOpenIDAuthTokens,
+  storeOpenIDSession,
   setCloudFrontAuthCookies,
   setAuthTokens,
 } = require('~/server/services/AuthService');
@@ -236,6 +238,7 @@ describe('refreshController – OpenID path', () => {
     mockTokenset.claims.mockReturnValue(baseClaims);
     getOpenIdEmail.mockReturnValue(baseClaims.email);
     setOpenIDAuthTokens.mockReturnValue('new-app-token');
+    storeOpenIDSession.mockResolvedValue(true);
     setCloudFrontAuthCookies.mockReturnValue(true);
     findOpenIDUser.mockResolvedValue({ user: { ...defaultUser }, error: null, migration: false });
     getUserById.mockResolvedValue({
@@ -289,6 +292,12 @@ describe('refreshController – OpenID path', () => {
       existingRefreshToken: 'stored-refresh',
       tenantId: undefined,
     });
+    expect(storeOpenIDSession).toHaveBeenCalledWith(
+      'user-db-id',
+      'new-refresh',
+      undefined,
+      'stored-refresh',
+    );
   };
 
   it('should call getOpenIdEmail with token claims and use result for findOpenIDUser', async () => {
