@@ -1,4 +1,5 @@
 import type * as t from '~/types/session';
+import { createIndexesWithRetry } from '~/utils/retry';
 import { signPayload, hashToken } from '~/crypto';
 import logger from '~/config/winston';
 
@@ -29,6 +30,7 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
     refreshToken: string,
     options: t.UpsertSessionOptions,
   ) => Promise<t.ISession>;
+  ensureSessionIndexes: () => Promise<void>;
   updateExpiration: (
     session: t.ISession | string,
     newExpiration?: Date,
@@ -41,6 +43,18 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
     options?: t.DeleteAllSessionsOptions,
   ) => Promise<{ deletedCount?: number }>;
 } {
+  let sessionIndexesPromise: Promise<void> | null = null;
+
+  function ensureSessionIndexes(): Promise<void> {
+    if (!sessionIndexesPromise) {
+      sessionIndexesPromise = createIndexesWithRetry(mongoose.models.Session).catch((error) => {
+        sessionIndexesPromise = null;
+        throw error;
+      });
+    }
+    return sessionIndexesPromise;
+  }
+
   /**
    * Creates a new session for a user
    */
@@ -55,6 +69,7 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
     const expiresIn = options.expiresIn ?? DEFAULT_REFRESH_TOKEN_EXPIRY;
 
     try {
+      await ensureSessionIndexes();
       const Session = mongoose.models.Session;
       const currentSession = new Session({
         user: userId,
@@ -80,6 +95,7 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
     }
 
     try {
+      await ensureSessionIndexes();
       const Session = mongoose.models.Session;
       const refreshTokenHash = await hashToken(refreshToken);
       const update: Record<string, unknown> = {
@@ -326,6 +342,7 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
     deleteSession,
     createSession,
     upsertSession,
+    ensureSessionIndexes,
     updateExpiration,
     countActiveSessions,
     generateRefreshToken,

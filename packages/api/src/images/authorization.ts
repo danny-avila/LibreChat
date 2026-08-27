@@ -459,6 +459,8 @@ export function createImageAuthorizationMiddleware(
         return;
       }
 
+      const authPromise = authenticateRequest(req, deps);
+      void authPromise.catch(() => undefined);
       const loadImageConfig = (): Promise<ResolvedImageConfig> =>
         resolveImageConfig(imagePath.ownerId, owner, options, deps);
       const imageConfig = owner.tenantId
@@ -473,7 +475,7 @@ export function createImageAuthorizationMiddleware(
       }
 
       res.locals.privateImageCache = true;
-      const auth = await authenticateRequest(req, deps);
+      const auth = await authPromise;
       const viewerId = auth.status === 'authenticated' ? auth.userId : undefined;
       if (viewerId === imagePath.ownerId) {
         next();

@@ -4,7 +4,6 @@ const { createHash, webcrypto } = require('node:crypto');
 const {
   logger,
   getTenantId,
-  runAsSystem,
   DEFAULT_SESSION_EXPIRY,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
 } = require('@librechat/data-schemas');
@@ -12,6 +11,7 @@ const { ErrorTypes, SystemRoles, errorsToString } = require('librechat-data-prov
 const {
   math,
   isEnabled,
+  storeOpenIdSession,
   checkEmailConfig,
   setCloudFrontCookies,
   getCloudFrontConfig,
@@ -854,20 +854,10 @@ const setOpenIDAuthTokens = (
 
 /** Stores OpenID refresh-token state independently of the shorter Express session. */
 const storeOpenIDSession = async (userId, refreshToken, tenantId, previousRefreshToken) => {
-  if (!userId || !refreshToken) {
-    return false;
-  }
-  const expiresIn = math(process.env.REFRESH_TOKEN_EXPIRY, DEFAULT_REFRESH_TOKEN_EXPIRY);
-  await runAsSystem(() =>
-    upsertSession(userId, refreshToken, {
-      expiration: new Date(Date.now() + expiresIn),
-      tenantId,
-    }),
+  return storeOpenIdSession(
+    { userId, refreshToken, tenantId, previousRefreshToken },
+    { upsertSession, deleteSession },
   );
-  if (previousRefreshToken && previousRefreshToken !== refreshToken) {
-    await runAsSystem(() => deleteSession({ refreshToken: previousRefreshToken }));
-  }
-  return true;
 };
 
 /**

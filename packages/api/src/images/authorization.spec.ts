@@ -433,6 +433,32 @@ describe('createImageAuthorizationMiddleware', () => {
     });
   });
 
+  it('starts protected image authentication while owner config is resolving', async () => {
+    let resolveConfig: ((config: { secureImageLinks: boolean }) => void) | undefined;
+    deps.getImageConfig = jest.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveConfig = resolve;
+        }),
+    );
+    const token = signUser(VIEWER_ID);
+    const middleware = createImageAuthorizationMiddleware({}, deps);
+    const pending = middleware(
+      createRequest(`/images/${VIEWER_ID}/profile.png`, `refreshToken=${token}`),
+      response,
+      next,
+    );
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(deps.getImageConfig).toHaveBeenCalledTimes(1);
+    expect(deps.findSession).toHaveBeenCalledWith({ userId: VIEWER_ID, refreshToken: token });
+    resolveConfig?.({ secureImageLinks: true });
+    await pending;
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
   it('honors an owner-scoped setting that disables secure image links', async () => {
     deps.getImageConfig = jest.fn().mockResolvedValue({
       secureImageLinks: false,

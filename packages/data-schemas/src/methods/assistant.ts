@@ -1,5 +1,6 @@
 import type { FilterQuery, Model, ProjectionType } from 'mongoose';
 import type { IAssistant } from '~/types';
+import { createIndexesWithRetry } from '~/utils/retry';
 
 export function createAssistantMethods(mongoose: typeof import('mongoose')): {
   updateAssistantDoc: (
@@ -16,7 +17,21 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
     searchParams: FilterQuery<IAssistant>,
     projection?: ProjectionType<IAssistant>,
   ) => Promise<IAssistant | null>;
+  ensureAssistantIndexes: () => Promise<void>;
 } {
+  const Assistant = () => mongoose.models.Assistant as Model<IAssistant>;
+  let assistantIndexesPromise: Promise<void> | null = null;
+
+  function ensureAssistantIndexes(): Promise<void> {
+    if (!assistantIndexesPromise) {
+      assistantIndexesPromise = createIndexesWithRetry(Assistant()).catch((error) => {
+        assistantIndexesPromise = null;
+        throw error;
+      });
+    }
+    return assistantIndexesPromise;
+  }
+
   /**
    * Update an assistant with new data without overwriting existing properties,
    * or create a new assistant if it doesn't exist.
@@ -25,9 +40,8 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
     searchParams: FilterQuery<IAssistant>,
     updateData: Partial<IAssistant>,
   ): Promise<IAssistant | null> {
-    const Assistant = mongoose.models.Assistant as Model<IAssistant>;
     const options = { new: true, upsert: true };
-    return await Assistant.findOneAndUpdate(searchParams, updateData, options).lean<IAssistant>();
+    return await Assistant().findOneAndUpdate(searchParams, updateData, options).lean<IAssistant>();
   }
 
   /**
@@ -37,8 +51,8 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
     searchParams: FilterQuery<IAssistant>,
     projection?: ProjectionType<IAssistant>,
   ): Promise<IAssistant | null> {
-    const Assistant = mongoose.models.Assistant as Model<IAssistant>;
-    return await Assistant.findOne(searchParams, projection).lean<IAssistant>();
+    await ensureAssistantIndexes();
+    return await Assistant().findOne(searchParams, projection).lean<IAssistant>();
   }
 
   /**
@@ -48,8 +62,7 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
     searchParams: FilterQuery<IAssistant>,
     select: string | Record<string, number> | null = null,
   ): Promise<IAssistant[]> {
-    const Assistant = mongoose.models.Assistant as Model<IAssistant>;
-    const query = Assistant.find(searchParams);
+    const query = Assistant().find(searchParams);
 
     return await (select ? query.select(select) : query).lean<IAssistant[]>();
   }
@@ -60,16 +73,14 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
   async function deleteAssistant(
     searchParams: FilterQuery<IAssistant>,
   ): Promise<IAssistant | null> {
-    const Assistant = mongoose.models.Assistant as Model<IAssistant>;
-    return await Assistant.findOneAndDelete(searchParams);
+    return await Assistant().findOneAndDelete(searchParams);
   }
 
   /**
    * Deletes all assistants matching the given search parameters.
    */
   async function deleteAssistants(searchParams: FilterQuery<IAssistant>): Promise<number> {
-    const Assistant = mongoose.models.Assistant as Model<IAssistant>;
-    const result = await Assistant.deleteMany(searchParams);
+    const result = await Assistant().deleteMany(searchParams);
     return result.deletedCount;
   }
 
@@ -79,6 +90,7 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
     deleteAssistants,
     getAssistants,
     getAssistant,
+    ensureAssistantIndexes,
   };
 }
 

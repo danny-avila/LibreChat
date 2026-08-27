@@ -25,6 +25,7 @@ jest.mock(
     checkEmailConfig: jest.fn(),
     isEmailDomainAllowed: jest.fn(),
     math: jest.fn((val, fallback) => (val ? Number(val) : fallback)),
+    storeOpenIdSession: jest.fn(),
     shouldUseSecureCookie: jest.fn(() => false),
     resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
     setCloudFrontCookies: jest.fn(() => true),
@@ -82,6 +83,7 @@ const {
   setCloudFrontCookies,
   getCloudFrontConfig,
   parseCloudFrontCookieScope,
+  storeOpenIdSession,
 } = require('@librechat/api');
 const jwt = require('jsonwebtoken');
 const { createHash } = require('node:crypto');
@@ -335,29 +337,35 @@ describe('setOpenIDAuthTokens', () => {
   });
 
   it('stores an OpenID refresh token for durable revocation checks', async () => {
-    const before = Date.now();
-    upsertSession.mockResolvedValue({ _id: 'session-id' });
+    storeOpenIdSession.mockResolvedValue(true);
 
     await storeOpenIDSession('user-123', 'the-refresh-token', 'tenant-a');
 
-    expect(upsertSession).toHaveBeenCalledWith(
-      'user-123',
-      'the-refresh-token',
-      expect.objectContaining({
+    expect(storeOpenIdSession).toHaveBeenCalledWith(
+      {
+        userId: 'user-123',
+        refreshToken: 'the-refresh-token',
         tenantId: 'tenant-a',
-        expiration: expect.any(Date),
-      }),
+        previousRefreshToken: undefined,
+      },
+      { upsertSession, deleteSession },
     );
-    expect(upsertSession.mock.calls[0][2].expiration.getTime()).toBeGreaterThan(before);
   });
 
   it('revokes the previous durable session when the IdP rotates the refresh token', async () => {
-    upsertSession.mockResolvedValue({ _id: 'new-session-id' });
-    deleteSession.mockResolvedValue({ deletedCount: 1 });
+    storeOpenIdSession.mockResolvedValue(true);
 
     await storeOpenIDSession('user-123', 'new-refresh-token', 'tenant-a', 'old-refresh-token');
 
-    expect(deleteSession).toHaveBeenCalledWith({ refreshToken: 'old-refresh-token' });
+    expect(storeOpenIdSession).toHaveBeenCalledWith(
+      {
+        userId: 'user-123',
+        refreshToken: 'new-refresh-token',
+        tenantId: 'tenant-a',
+        previousRefreshToken: 'old-refresh-token',
+      },
+      { upsertSession, deleteSession },
+    );
   });
 
   describe('cookie secure flag', () => {
