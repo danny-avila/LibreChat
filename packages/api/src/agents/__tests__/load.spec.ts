@@ -1256,6 +1256,25 @@ describe('loadAgent', () => {
       expect(result?.skills).toEqual([]);
     });
 
+    test('the mirrored-tools branch applies the spec artifacts too', async () => {
+      const { EPHEMERAL_AGENT_ID: EID } = Constants;
+      const req = addedReq(undefined, { artifacts: true });
+
+      /** This branch returns early, so every spec-configured capability has to
+       *  be resolved before it, not after. */
+      const result = await loadAddedAgent(
+        {
+          req,
+          conversation: addedConversation,
+          primaryAgent: { id: EID as string, tools: ['web_search'] } as LibreChatAgent,
+        },
+        deps,
+      );
+
+      expect(result?.tools).toEqual(['web_search']);
+      expect(result?.artifacts).toBe('default');
+    });
+
     test('a composer skills opt-out reaches the mirrored-tools branch too', async () => {
       const result = await loadAddedAgent(
         {

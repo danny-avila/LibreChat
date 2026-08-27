@@ -170,6 +170,10 @@ export async function loadAddedAgent(
     };
     applyModelSpecSkills(result, modelSpec, ephemeralAgent?.skills);
     applyModelSpecSubagents(result, modelSpec);
+    const mirroredArtifacts = resolveSpecArtifacts(ephemeralAgent?.artifacts, modelSpec?.artifacts);
+    if (mirroredArtifacts != null) {
+      result.artifacts = mirroredArtifacts;
+    }
     const primaryBackgroundToolOptions: AgentToolOptions | undefined =
       synthesizeBackgroundToolOptions({ ephemeralAgent, modelSpec });
     if (primaryBackgroundToolOptions) {

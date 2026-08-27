@@ -11,6 +11,7 @@ import {
   resolveSpecArtifacts,
   resolveModelSpecEndpoint,
   resolveSpecSkillsEnabled,
+  specOverridesUserToggle,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
@@ -362,10 +363,13 @@ export function applyModelSpecEphemeralAgent({
    *  top of spec defaults so user modifications persist across navigation. If
    *  localStorage is empty (e.g. cleared), spec values stand alone.
    *
-   *  A spec that hides the badge row is skipped entirely: with no badge to
-   *  inspect or restore a tool, a value stored under an earlier configuration
-   *  would silently disable a spec-enabled tool the user cannot see. */
-  if (key !== Constants.NEW_CONVO && modelSpec.hideBadgeRow !== true) {
+   *  Capabilities a hidden-badge spec configures are pinned: with no badge to
+   *  inspect or restore one, a value stored under an earlier configuration
+   *  would silently disable a tool the user cannot see. The pinning is per
+   *  capability, matching the server — a hidden spec silent on a capability
+   *  holds nothing over it, and erasing that stored value here is the one
+   *  divergence the server could not repair. */
+  if (key !== Constants.NEW_CONVO) {
     const toolStorageMap: Array<[keyof t.TEphemeralAgent, string]> = [
       ['execute_code', LocalStorageKeys.LAST_CODE_TOGGLE_],
       ['web_search', LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_],
@@ -376,6 +380,9 @@ export function applyModelSpecEphemeralAgent({
     ];
 
     for (const [toolKey, storagePrefix] of toolStorageMap) {
+      if (specOverridesUserToggle(modelSpec, toolKey)) {
+        continue;
+      }
       const raw = getTimestampedValue(`${storagePrefix}${key}`);
       if (raw === null) {
         continue;
@@ -394,7 +401,9 @@ export function applyModelSpecEphemeralAgent({
       }
     }
 
-    const mcpRaw = localStorage.getItem(`${LocalStorageKeys.LAST_MCP_}${key}`);
+    const mcpRaw = specOverridesUserToggle(modelSpec, 'mcp')
+      ? null
+      : localStorage.getItem(`${LocalStorageKeys.LAST_MCP_}${key}`);
     if (mcpRaw !== null) {
       try {
         const parsed = JSON.parse(mcpRaw);

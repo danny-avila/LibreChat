@@ -272,13 +272,22 @@ const SPEC_FIELD_BY_TOGGLE = new Map<string, keyof TModelSpec>(SPEC_CAPABILITY_F
  * Whether a spec holds authority over one capability: it hides the badge row —
  * so the user was never offered a control for it — AND it configures that
  * capability itself. A hidden spec silent on a capability has nothing to
- * protect, so the request still decides there.
+ * protect, so the user's own value still decides there.
+ *
+ * Shared with the client, which must filter its restored per-conversation
+ * toggles by the same rule: erasing a stored value the server would have
+ * honored puts the two out of step in the one direction the server cannot
+ * correct, because by then the value is already gone.
  */
-function specOverridesUser(
+export function specOverridesUserToggle(
   modelSpec: TModelSpec | null | undefined,
-  specField: keyof TModelSpec | undefined,
+  toggleField: keyof TEphemeralAgent,
 ): boolean {
-  return modelSpec?.hideBadgeRow === true && specField != null && modelSpec[specField] != null;
+  if (modelSpec?.hideBadgeRow !== true) {
+    return false;
+  }
+  const specField = SPEC_FIELD_BY_TOGGLE.get(toggleField);
+  return specField != null && modelSpec[specField] != null;
 }
 
 /**
@@ -289,9 +298,9 @@ function specOverridesUser(
 export function resolveSpecUserToggle<T>(
   userValue: T | undefined,
   modelSpec: TModelSpec | null | undefined,
-  specField: keyof TModelSpec,
+  toggleField: keyof TEphemeralAgent,
 ): T | undefined {
-  return specOverridesUser(modelSpec, specField) ? undefined : userValue;
+  return specOverridesUserToggle(modelSpec, toggleField) ? undefined : userValue;
 }
 
 /**
@@ -314,7 +323,7 @@ export function resolveSpecUserToggles(
   const preserved: Record<string, unknown> = {};
   let preservedCount = 0;
   for (const key of Object.keys(userToggles)) {
-    if (specOverridesUser(modelSpec, SPEC_FIELD_BY_TOGGLE.get(key))) {
+    if (specOverridesUserToggle(modelSpec, key as keyof TEphemeralAgent)) {
       continue;
     }
     preserved[key] = (userToggles as Record<string, unknown>)[key];

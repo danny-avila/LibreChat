@@ -332,6 +332,23 @@ describe('applyModelSpecEphemeralAgent', () => {
   });
 
   describe('spec safeguards restored after review (#15292)', () => {
+    it('restores stored toggles a hidden spec does not configure', () => {
+      const convoId = 'convo-hidden-partial';
+      writeToolToggle(LocalStorageKeys.LAST_MEMORY_TOGGLE_, convoId, true);
+      writeToolToggle(LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_, convoId, false);
+      const modelSpec = createModelSpec({ hideBadgeRow: true, webSearch: true });
+      delete (modelSpec as { memory?: unknown }).memory;
+
+      applyModelSpecEphemeralAgent({ convoId, modelSpec, updateEphemeralAgent });
+
+      /** The spec pins web search; it says nothing about memory, so erasing the
+       *  stored value here would be a divergence the server cannot repair. */
+      expect(updateEphemeralAgent).toHaveBeenCalledWith(
+        convoId,
+        expect.objectContaining({ web_search: true, memory: true }),
+      );
+    });
+
     it('ignores stored overrides for a spec that hides the badge row', () => {
       const convoId = 'convo-hidden';
       writeToolToggle(LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_, convoId, false);
