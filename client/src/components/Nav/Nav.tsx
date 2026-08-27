@@ -228,6 +228,14 @@ const Nav = memo(
           {...{ inert: !navVisible ? '' : undefined }}
         >
           <div className="flex flex-1 flex-col overflow-hidden" ref={outerContainerRef}>
+            <div className="flex h-100 shrink-0 items-center justify-center py-2">
+              <img
+                src="/assets/logo.svg?v=2"
+                className="h-25 max-w-100 object-contain"
+                alt={localize('com_ui_logo', { 0: 'Company' })}
+              />
+            </div>
+
             <MemoNewChat
               subHeaders={subHeaders}
               toggleNav={toggleNavVisible}
