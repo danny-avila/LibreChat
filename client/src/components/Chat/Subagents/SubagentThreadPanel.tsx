@@ -279,6 +279,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const turnDetailRequestsRef = useRef(new Set<string>());
   const historyRequestRef = useRef<string | null>(null);
   const historyHasLoadedRef = useRef(false);
+  const historyRebasedRef = useRef(false);
   if (selectionThreadRef.current !== threadId) {
     selectionThreadRef.current = threadId;
     selectionGenerationRef.current += 1;
@@ -310,6 +311,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     turnDetailRequestsRef.current.clear();
     historyRequestRef.current = null;
     historyHasLoadedRef.current = false;
+    historyRebasedRef.current = false;
   }, [threadId]);
 
   const loadTurnDetails = useCallback(
@@ -388,9 +390,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         return;
       }
       const pageTurns = adaptDurableThreadConversation(page);
-      setOlderTurns((current) => {
-        return mergeChildConversationTurns(pageTurns, current);
-      });
+      const insertAfterLoadedHistory = historyRebasedRef.current;
+      if (insertAfterLoadedHistory) {
+        setMovingWindowTurns((current) => retainBoundedMovingWindowTurns(current, pageTurns));
+      } else {
+        setOlderTurns((current) => mergeChildConversationTurns(pageTurns, current));
+      }
+      historyRebasedRef.current = false;
       historyHasLoadedRef.current = true;
       setHistoryCursor(page.nextCursor ?? null);
       setHistoryBoundaryUnavailable(
@@ -662,6 +668,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         setMovingWindowTurns((current) => retainBoundedMovingWindowTurns(current, displaced));
       }
       if (previous.generation !== latestHistoryGeneration && historyCursor !== undefined) {
+        historyRebasedRef.current = true;
         setHistoryCursor(undefined);
       }
     }

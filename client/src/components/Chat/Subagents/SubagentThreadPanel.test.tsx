@@ -2020,7 +2020,7 @@ describe('SubagentThreadPanel', () => {
         activity: [],
         messages: [],
         historyTruncated: false,
-        turns: [],
+        turns: [makeTurn('middle', 'Middle result')],
       });
 
     const { rerender } = render(
@@ -2033,8 +2033,8 @@ describe('SubagentThreadPanel', () => {
 
     latestView = {
       ...latestView,
-      nextCursor: 'task:assistant',
-      turns: [makeTurn('task', 'Current result'), makeTurn('task-new', 'New result')],
+      nextCursor: 'middle:assistant',
+      turns: [makeTurn('task-new', 'New result'), makeTurn('task-newer', 'Newest result')],
     };
     rerender(
       <RecoilRoot>
@@ -2042,11 +2042,12 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(4));
+    await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(5));
     expect(screen.getByText('Very old result')).toBeInTheDocument();
     expect(screen.getByText('Boundary result')).toBeInTheDocument();
     expect(screen.getByText('Current result')).toBeInTheDocument();
     expect(screen.getByText('New result')).toBeInTheDocument();
+    expect(screen.getByText('Newest result')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
     await waitFor(() =>
@@ -2054,9 +2055,18 @@ describe('SubagentThreadPanel', () => {
         'parent-conversation',
         'child-thread',
         undefined,
-        'task:assistant',
+        'middle:assistant',
       ),
     );
+    await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(6));
+    expect(screen.getAllByTestId('conversation-turn').map((turn) => turn.textContent)).toEqual([
+      expect.stringContaining('Very old result'),
+      expect.stringContaining('Boundary result'),
+      expect.stringContaining('Current result'),
+      expect.stringContaining('Middle result'),
+      expect.stringContaining('New result'),
+      expect.stringContaining('Newest result'),
+    ]);
   });
 
   it('does not accumulate displaced latest-window turns before history is requested', async () => {
