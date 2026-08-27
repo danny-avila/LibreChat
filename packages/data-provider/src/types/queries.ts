@@ -1,9 +1,9 @@
 import type { InfiniteData } from '@tanstack/react-query';
+import type { RerankerTypes, SearchProviders, ScraperProviders } from '../config';
 import type * as p from '../accessPermissions';
 import type * as a from '../types/agents';
 import type * as s from '../schemas';
 import type * as t from '../types';
-import type { RerankerTypes, SearchProviders, ScraperProviders } from '../config';
 
 export type Conversation = {
   id: string;

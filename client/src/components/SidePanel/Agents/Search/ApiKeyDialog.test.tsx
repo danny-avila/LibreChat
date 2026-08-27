@@ -1,6 +1,5 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import ApiKeyDialog from './ApiKeyDialog';
 import {
   AuthType,
   RerankerTypes,
@@ -9,6 +8,7 @@ import {
   ScraperProviders,
 } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
+import ApiKeyDialog from './ApiKeyDialog';
 
 // Mock useLocalize to just return the key
 jest.mock('~/hooks', () => ({

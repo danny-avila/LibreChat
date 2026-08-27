@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import {
   Tools,
   AuthType,
@@ -8,7 +9,6 @@ import {
   SearchProviders,
   ScraperProviders,
 } from 'librechat-data-provider';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 
 export type SearchApiKeyFormData = {
   // Selected options
