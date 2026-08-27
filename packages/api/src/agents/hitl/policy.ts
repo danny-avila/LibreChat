@@ -316,6 +316,8 @@ export interface PendingActionContext {
   responseMessageId?: string;
   /** Optional TTL (ms). When set, `expiresAt = createdAt + ttlMs`. */
   ttlMs?: number;
+  /** Optional absolute upper bound inherited from an enclosing event binding. */
+  expiresAt?: Date | string | number;
   /** Override actionId; defaults to a fresh uuid. */
   actionId?: string;
   /** SDK interrupt id (`RunInterruptResult.interruptId`) for cross-process resume. */
@@ -725,6 +727,25 @@ export function buildPendingAction(
   ctx: PendingActionContext,
 ): Agents.PendingAction {
   const createdAt = Date.now();
+  const ttlExpiresAt = typeof ctx.ttlMs === 'number' ? createdAt + ctx.ttlMs : undefined;
+  let absoluteExpiresAt: number | undefined;
+  if (typeof ctx.expiresAt === 'number') {
+    absoluteExpiresAt = ctx.expiresAt;
+  } else if (ctx.expiresAt instanceof Date) {
+    absoluteExpiresAt = ctx.expiresAt.getTime();
+  } else if (typeof ctx.expiresAt === 'string') {
+    absoluteExpiresAt = new Date(ctx.expiresAt).getTime();
+  }
+  const finiteAbsoluteExpiresAt = Number.isFinite(absoluteExpiresAt)
+    ? absoluteExpiresAt
+    : undefined;
+  let expiresAt = ttlExpiresAt;
+  if (finiteAbsoluteExpiresAt != null) {
+    expiresAt =
+      ttlExpiresAt == null
+        ? finiteAbsoluteExpiresAt
+        : Math.min(ttlExpiresAt, finiteAbsoluteExpiresAt);
+  }
   return {
     actionId: ctx.actionId ?? randomUUID(),
     streamId: ctx.streamId,
@@ -733,7 +754,7 @@ export function buildPendingAction(
     responseMessageId: ctx.responseMessageId,
     payload,
     createdAt,
-    expiresAt: typeof ctx.ttlMs === 'number' ? createdAt + ctx.ttlMs : undefined,
+    expiresAt,
     interruptId: ctx.interruptId,
     threadId: ctx.threadId,
     requestFingerprint: ctx.requestFingerprint,

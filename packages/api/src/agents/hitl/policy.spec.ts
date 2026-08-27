@@ -315,6 +315,17 @@ describe('buildPendingAction', () => {
     expect(action.expiresAt).toBeGreaterThanOrEqual(before);
     expect(action.expiresAt).toBeLessThanOrEqual(after);
   });
+
+  test('caps the TTL at an inherited absolute deadline without a second clock read', () => {
+    const deadline = Date.now() + 1_000;
+    const action = buildPendingAction(toolApprovalPayload, {
+      ...ctx,
+      ttlMs: 5_000,
+      expiresAt: new Date(deadline),
+    });
+
+    expect(action.expiresAt).toBe(deadline);
+  });
 });
 
 describe('toClientPendingAction', () => {

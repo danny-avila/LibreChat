@@ -159,19 +159,6 @@ const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
-function getInterruptTtlMs(checkpointerCfg, req) {
-  const configuredTtlMs = getApprovalTtlMs(checkpointerCfg);
-  const retention = req?._agentEventBindingRetention;
-  if (retention?.expiredAt == null) {
-    return configuredTtlMs;
-  }
-  const bindingDeadline = new Date(retention.expiredAt).getTime();
-  if (!Number.isFinite(bindingDeadline)) {
-    return configuredTtlMs;
-  }
-  return Math.min(configuredTtlMs, Math.max(0, bindingDeadline - Date.now()));
-}
-
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 
 function getUserFacingRequestError(baseMessage, error, appConfig) {
@@ -3216,7 +3203,8 @@ class AgentClient extends BaseClient {
       // thread_id was bound to conversationId at run config (config.configurable);
       // fall back to it when the SDK doesn't echo threadId on the interrupt.
       threadId: interrupt.threadId ?? this.conversationId,
-      ttlMs: getInterruptTtlMs(checkpointerCfg, this.options.req),
+      ttlMs: getApprovalTtlMs(checkpointerCfg),
+      expiresAt: this.options.req?._agentEventBindingRetention?.expiredAt,
       // Pin the graph-determining request fields so resume can't rebuild this paused
       // run on a different agent/tool set (esp. ephemeral agents, whose agent_id is
       // undefined so the id guard can't tell two configs apart).
