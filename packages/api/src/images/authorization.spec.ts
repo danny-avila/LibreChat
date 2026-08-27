@@ -242,6 +242,26 @@ describe('createImageAuthorizationMiddleware', () => {
     expect(response.status).toHaveBeenCalledWith(403);
   });
 
+  it('normalizes a stored root image URL when the app uses a base path', async () => {
+    (deps.getBasePath as jest.Mock).mockReturnValue('/chat');
+    (deps.getUserById as jest.Mock)
+      .mockResolvedValueOnce({
+        tenantId: 'tenant-a',
+        avatar: `${USER_AVATAR_PATH}?manual=true`,
+      })
+      .mockResolvedValueOnce({ tenantId: 'tenant-a' });
+    const token = signUser(VIEWER_ID);
+    const middleware = createImageAuthorizationMiddleware({}, deps);
+
+    await middleware(
+      createRequest(`/chat${USER_AVATAR_PATH}`, `refreshToken=${token}`),
+      response,
+      next,
+    );
+
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
   it('marks protected image responses as private before serving them', async () => {
     const token = signUser(VIEWER_ID);
     const middleware = createImageAuthorizationMiddleware({}, deps);

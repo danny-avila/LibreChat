@@ -313,7 +313,8 @@ async function canViewUserAvatar(
   if (!viewerId || typeof owner.avatar !== 'string') {
     return false;
   }
-  const storedAvatar = parseImagePath(owner.avatar, deps.getBasePath());
+  const storedAvatar =
+    parseImagePath(owner.avatar, deps.getBasePath()) ?? parseImagePath(owner.avatar, '');
   if (storedAvatar?.canonicalPath !== imagePath.canonicalPath) {
     return false;
   }
