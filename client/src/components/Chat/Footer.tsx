@@ -67,9 +67,13 @@ function Footer({ className }: { className?: string }) {
     </React.Fragment>
   ));
 
-  const footerElements = [...mainContentRender, privacyPolicyRender, termsOfServiceRender].filter(
-    Boolean,
-  );
+  const governedRender = <span>{localize('com_ui_governed')}</span>;
+  const footerElements = [
+    ...mainContentRender,
+    governedRender,
+    privacyPolicyRender,
+    termsOfServiceRender,
+  ].filter(Boolean);
 
   return (
     <div className="relative w-full">
