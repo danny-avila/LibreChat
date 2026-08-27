@@ -21,12 +21,12 @@ export function resolveSamlSubject(
     return { error: 'missing_name_id' };
   }
 
-  if (profile.nameIDFormat === TRANSIENT_SAML_NAME_ID_FORMAT) {
+  if (profile?.nameIDFormat === TRANSIENT_SAML_NAME_ID_FORMAT) {
     return { error: 'transient_name_id' };
   }
 
   const normalizedExpectedIssuer = expectedIssuer?.trim();
-  const issuer = typeof profile.issuer === 'string' ? profile.issuer.trim() : '';
+  const issuer = typeof profile?.issuer === 'string' ? profile.issuer.trim() : '';
   if (normalizedExpectedIssuer && issuer !== normalizedExpectedIssuer) {
     return { error: 'issuer_mismatch' };
   }
