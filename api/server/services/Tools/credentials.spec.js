@@ -94,6 +94,35 @@ describe('loadAuthValues', () => {
     expect(getUserPluginAuthValue).not.toHaveBeenCalled();
   });
 
+  it('should load independent authentication fields in parallel', async () => {
+    delete process.env.FIRST_KEY;
+    delete process.env.SECOND_KEY;
+    let resolveFirst;
+    const firstValue = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+    getUserPluginAuthValue.mockImplementation((_userId, field) => {
+      if (field === 'FIRST_KEY') {
+        return firstValue;
+      }
+      return Promise.resolve('second-value');
+    });
+
+    const resultPromise = loadAuthValues({
+      userId: 'user1',
+      authFields: ['FIRST_KEY', 'SECOND_KEY'],
+    });
+    await Promise.resolve();
+    const callCountBeforeFirstResolved = getUserPluginAuthValue.mock.calls.length;
+    resolveFirst('first-value');
+
+    await expect(resultPromise).resolves.toEqual({
+      FIRST_KEY: 'first-value',
+      SECOND_KEY: 'second-value',
+    });
+    expect(callCountBeforeFirstResolved).toBe(2);
+  });
+
   it('should return real env value from first matching field in fallback chain', async () => {
     process.env.GEMINI_API_KEY = 'gemini-key';
     process.env.GOOGLE_KEY = 'google-key';

@@ -559,6 +559,51 @@ describe('web.ts', () => {
       expect(result.authResult.keenableApiKey).toBe('user-keenable-key');
     });
 
+    it('should not send a system Keenable key to a user-provided API URL', async () => {
+      const originalApiKey = process.env.KEENABLE_API_KEY;
+      const originalApiUrl = process.env.KEENABLE_API_URL;
+      process.env.KEENABLE_API_KEY = 'system-keenable-key';
+      delete process.env.KEENABLE_API_URL;
+      mockLoadAuthValues.mockResolvedValue({
+        KEENABLE_API_KEY: 'system-keenable-key',
+        KEENABLE_API_URL: 'https://user-keenable.example.com',
+      });
+
+      try {
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig: {
+            keenableApiKey: '${KEENABLE_API_KEY}',
+            keenableApiUrl: '${KEENABLE_API_URL}',
+            searchProvider: 'keenable' as SearchProviders,
+            scraperProvider: 'keenable' as ScraperProviders,
+            rerankerType: 'none' as RerankerTypes,
+            safeSearch: SafeSearchTypes.MODERATE,
+          } as TWebSearchConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authResult.keenableApiUrl).toBe('https://user-keenable.example.com');
+        expect(result.authResult.keenableApiKey).toBeUndefined();
+        expect(result.authTypes).toEqual([
+          ['providers', AuthType.USER_PROVIDED],
+          ['scrapers', AuthType.USER_PROVIDED],
+          ['rerankers', AuthType.SYSTEM_DEFINED],
+        ]);
+      } finally {
+        if (originalApiKey == null) {
+          delete process.env.KEENABLE_API_KEY;
+        } else {
+          process.env.KEENABLE_API_KEY = originalApiKey;
+        }
+        if (originalApiUrl == null) {
+          delete process.env.KEENABLE_API_URL;
+        } else {
+          process.env.KEENABLE_API_URL = originalApiUrl;
+        }
+      }
+    });
+
     it('should authenticate a fully keyless Keenable stack (search + scrape + no reranker)', async () => {
       // Nothing is authenticated anywhere: every field resolves empty.
       mockLoadAuthValues.mockImplementation(() => Promise.resolve({}));

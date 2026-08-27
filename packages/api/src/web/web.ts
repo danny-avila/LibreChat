@@ -214,6 +214,11 @@ export async function loadWebSearchAuth({
         return { isUserProvided: false, hasSystemApiKey: false };
       }
 
+      const resolvedEntries: Array<{
+        key: TWebSearchKeys;
+        value: string;
+        isFieldUserProvided: boolean;
+      }> = [];
       for (const { key: originalKey, field } of authEntries) {
         const value = authValues[field];
         if (!value) {
@@ -227,6 +232,18 @@ export async function loadWebSearchAuth({
           isFieldUserProvided &&
           (await isSSRFUrl(value, webSearchConfig?.allowedAddresses))
         ) {
+          continue;
+        }
+        resolvedEntries.push({ key: originalKey, value, isFieldUserProvided });
+      }
+
+      const hasUserProvidedApiUrl = resolvedEntries.some(
+        ({ key, isFieldUserProvided }) => key === 'keenableApiUrl' && isFieldUserProvided,
+      );
+      for (const { key: originalKey, value, isFieldUserProvided } of resolvedEntries) {
+        // Never forward an administrator's secret to an endpoint controlled by
+        // the user. Keenable remains functional without the key at that URL.
+        if (originalKey === 'keenableApiKey' && !isFieldUserProvided && hasUserProvidedApiUrl) {
           continue;
         }
         authResult[originalKey] = value;

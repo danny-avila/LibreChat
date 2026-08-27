@@ -42,9 +42,11 @@ const loadAuthValues = async ({ userId, authFields, optional, throwError = true 
     return null;
   };
 
-  for (let authField of authFields) {
-    const fields = authField.split('||');
-    const result = await findAuthValue(fields);
+  const results = await Promise.all(
+    authFields.map((authField) => findAuthValue(authField.split('||'))),
+  );
+
+  for (const result of results) {
     if (result) {
       authValues[result.authField] = result.authValue;
     }
