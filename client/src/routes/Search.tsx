@@ -83,6 +83,9 @@ const MeasuredRow: FC<{
 MeasuredRow.displayName = 'SearchMeasuredRow';
 
 const SCROLL_DURATION = 400;
+/** react-virtualized rounds the positions it is handed, so a jump's own scroll
+ *  events come back a fraction off what was written. */
+const SCROLL_MATCH_EPS = 2;
 const PREVIEW_MAX = 80;
 
 function easeOutCubic(t: number): number {
@@ -175,6 +178,9 @@ export default function Search() {
    *  (topmost visible) row and `[start..stop]` as the lit rib set. */
   const [range, setRange] = useState<{ start: number; stop: number } | null>(null);
   const scrollTopRef = useRef(0);
+  /** The last position the running jump wrote, so its own scroll events can be
+   *  told apart from the reader's. */
+  const animatedScrollRef = useRef<number | null>(null);
   const scrollTokenRef = useRef(0);
   const reducedMotionRef = useRef(false);
 
@@ -201,6 +207,7 @@ export default function Search() {
    *  from the previous result set. */
   useEffect(() => {
     scrollTokenRef.current++;
+    animatedScrollRef.current = null;
     setRange(null);
     scrollTopRef.current = 0;
   }, [searchQuery]);
@@ -237,7 +244,19 @@ export default function Search() {
 
   const currentIndex = range ? range.start : null;
 
+  /**
+   * A jump in flight is the list's own doing, so it must not read as the reader
+   * changing their mind — but a wheel or a drag must, or the animation fights
+   * them for 400ms and then snaps to the row it was aiming at, undoing the
+   * scroll entirely. The animation records every position it writes; a scroll
+   * that reports anything else came from the reader, and retires the jump.
+   */
   const handleScroll = useCallback(({ scrollTop }: { scrollTop: number }) => {
+    const animated = animatedScrollRef.current;
+    if (animated == null || Math.abs(scrollTop - animated) > SCROLL_MATCH_EPS) {
+      scrollTokenRef.current++;
+      animatedScrollRef.current = null;
+    }
     scrollTopRef.current = scrollTop;
   }, []);
 
@@ -261,18 +280,21 @@ export default function Search() {
       const startScroll = scrollTopRef.current;
       const startTime = performance.now();
       const token = ++scrollTokenRef.current;
+      animatedScrollRef.current = startScroll;
       const step = (now: number) => {
         if (token !== scrollTokenRef.current || !listRef.current) {
+          animatedScrollRef.current = null;
           return;
         }
         const progress = Math.min(1, (now - startTime) / SCROLL_DURATION);
-        listRef.current.scrollToPosition(
-          startScroll + (target - startScroll) * easeOutCubic(progress),
-        );
+        const position = startScroll + (target - startScroll) * easeOutCubic(progress);
+        animatedScrollRef.current = position;
+        listRef.current.scrollToPosition(position);
         if (progress < 1) {
           requestAnimationFrame(step);
         } else {
           listRef.current.scrollToRow(index);
+          animatedScrollRef.current = null;
         }
       };
       requestAnimationFrame(step);

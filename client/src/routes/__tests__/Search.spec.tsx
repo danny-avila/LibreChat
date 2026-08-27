@@ -34,6 +34,7 @@ jest.mock('react-virtualized', () => {
           rowCount,
           rowRenderer,
           onRowsRendered,
+          onScroll,
         }: {
           rowCount: number;
           rowRenderer: (p: {
@@ -43,12 +44,16 @@ jest.mock('react-virtualized', () => {
             style: object;
           }) => React.ReactNode;
           onRowsRendered?: (p: { startIndex: number; stopIndex: number }) => void;
+          onScroll?: (p: { scrollTop: number }) => void;
         },
         ref: React.ForwardedRef<unknown>,
       ) => {
         // expose the near-bottom trigger for the pagination test
         (globalThis as Record<string, unknown>).__triggerRowsRendered = () =>
           onRowsRendered?.({ startIndex: 0, stopIndex: rowCount - 1 });
+        /** and the scroll seam, so a test can scroll as the reader would */
+        (globalThis as Record<string, unknown>).__scroll = (scrollTop: number) =>
+          onScroll?.({ scrollTop });
         /** The route drives the list imperatively through a ref; a rail jump is
          *  invisible without one. */
         mockReact.useImperativeHandle(ref, () => mockListHandle, []);
@@ -244,6 +249,86 @@ describe('Search route', () => {
     render(<Search />);
     expect(screen.getByText('row one')).toBeInTheDocument();
     expect(screen.getByTestId('search-footer')).toBeInTheDocument();
+  });
+
+  function startJump(index: number) {
+    const frames: FrameRequestCallback[] = [];
+    const rafSpy = jest
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        frames.push(cb);
+        return frames.length;
+      });
+    const rows = Array.from({ length: 20 }, (_, i) => ({
+      messageId: `m${i}`,
+      text: `row ${i}`,
+    }));
+    mockUseRecoilValue.mockReturnValue(searchState());
+    mockUseQuery.mockReturnValue(
+      queryResult({ data: { pages: [{ messages: rows, nextCursor: null }] } }),
+    );
+    const view = render(<Search />);
+    act(() => {
+      mockNavProps?.onJump(index, true);
+    });
+    return { frames, rafSpy, view };
+  }
+
+  const scrollAs = (top: number) =>
+    (globalThis as unknown as Record<string, (t: number) => void>).__scroll(top);
+
+  it('lets the reader scroll out of an animating jump instead of fighting them', () => {
+    // The jump eases for 400ms and finishes by snapping to its target row. A
+    // wheel or a drag partway through has to retire it, or the reader is pulled
+    // back to a row they already scrolled away from.
+    const { frames, rafSpy } = startJump(15);
+
+    /** One frame of the animation runs; its own scroll event must not count. */
+    act(() => {
+      frames.splice(0, 1).forEach((f) => f(1000));
+    });
+    const animated = mockListHandle.scrollToPosition.mock.calls.at(-1)?.[0] as number;
+    act(() => {
+      scrollAs(animated);
+    });
+
+    /** Now the reader scrolls somewhere the animation never wrote. */
+    act(() => {
+      scrollAs(animated + 400);
+    });
+    mockListHandle.scrollToPosition.mockClear();
+    mockListHandle.scrollToRow.mockClear();
+
+    act(() => {
+      for (const frame of frames.splice(0)) {
+        frame(1_000_000);
+      }
+    });
+
+    expect(mockListHandle.scrollToRow).not.toHaveBeenCalled();
+    expect(mockListHandle.scrollToPosition).not.toHaveBeenCalled();
+    rafSpy.mockRestore();
+  });
+
+  it('does not retire its own jump on the scroll events the animation causes', () => {
+    const { frames, rafSpy } = startJump(15);
+
+    /** Replay the animation, echoing each written position back as a scroll the
+     *  way the list does. */
+    act(() => {
+      let guard = 0;
+      while (frames.length > 0 && guard++ < 50) {
+        const frame = frames.shift() as FrameRequestCallback;
+        frame(1000 + guard * 16);
+        const written = mockListHandle.scrollToPosition.mock.calls.at(-1)?.[0] as number;
+        if (typeof written === 'number') {
+          scrollAs(written);
+        }
+      }
+    });
+
+    expect(mockListHandle.scrollToRow).toHaveBeenCalledWith(15);
+    rafSpy.mockRestore();
   });
 
   it('abandons a rail jump still animating when the query changes underneath it', () => {
