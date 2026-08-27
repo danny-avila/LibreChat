@@ -1267,7 +1267,7 @@ const initializeClient = async ({
               ? { tenantId: req.user.tenantId }
               : {}),
           },
-          { completionWakeups: !isEphemeralAgentId(primaryConfig.id) },
+          { completionWakeups: true },
         )
       : undefined;
   let hasExistingSubagentTask = false;

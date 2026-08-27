@@ -1,4 +1,5 @@
 import { Constants } from '@librechat/agents';
+import { isEphemeralAgentId } from 'librechat-data-provider';
 import type { HookCallback, PostToolUseHookOutput, SubagentTaskConfig } from '@librechat/agents';
 
 export const SUBAGENT_COMPLETION_DELIVERY = 'wakeup';
@@ -20,6 +21,19 @@ export function usesSubagentCompletionWakeups(
   );
 }
 
+/** Automatic delivery is agent-specific even though the SDK task scope is run-wide. */
+export function agentUsesSubagentCompletionWakeups(
+  config: SubagentTaskConfig | undefined,
+  agentId: string | undefined,
+): config is HostSubagentTaskConfig {
+  return (
+    usesSubagentCompletionWakeups(config) &&
+    typeof agentId === 'string' &&
+    agentId !== '' &&
+    !isEphemeralAgentId(agentId)
+  );
+}
+
 function parseOutput(output: unknown): Record<string, unknown> | undefined {
   if (typeof output === 'object' && output !== null && !Array.isArray(output)) {
     return output as Record<string, unknown>;
@@ -38,9 +52,11 @@ function parseOutput(output: unknown): Record<string, unknown> | undefined {
 }
 
 /** Replaces the SDK's legacy poll-first handle with the host's durable delivery contract. */
-export function createSubagentWakeupHandleHook(): HookCallback<'PostToolUse'> {
+export function createSubagentWakeupHandleHook(
+  supportsWakeup: (agentId: string | undefined) => boolean = () => true,
+): HookCallback<'PostToolUse'> {
   return async (input): Promise<PostToolUseHookOutput> => {
-    if (input.toolName !== String(Constants.SUBAGENT)) {
+    if (input.toolName !== String(Constants.SUBAGENT) || !supportsWakeup(input.executingAgentId)) {
       return {};
     }
     const output = parseOutput(input.toolOutput);

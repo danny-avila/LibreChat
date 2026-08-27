@@ -56,7 +56,7 @@ import {
   warnUnmatchedSelectionNames,
   synthesizeSelectionToolOptions,
 } from './selection';
-import { SUBAGENT_WAKEUP_GUIDANCE, usesSubagentCompletionWakeups } from './subagentDelivery';
+import { SUBAGENT_WAKEUP_GUIDANCE, agentUsesSubagentCompletionWakeups } from './subagentDelivery';
 import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
 import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
@@ -1327,7 +1327,7 @@ export async function runCheckBackgroundTask(params: {
               : await routedStore.claimTask(subagentTasks.scopeId, taskId, invocationId);
           const claimed = serializeSubagentClaim(
             claim,
-            usesSubagentCompletionWakeups(subagentTasks),
+            agentUsesSubagentCompletionWakeups(subagentTasks, params.agentId),
           );
           if (claimed != null) {
             return JSON.stringify(claimed);
@@ -1379,7 +1379,10 @@ export async function runCheckBackgroundTask(params: {
   const tasks = backgroundTaskRegistry.list(userId, conversationId);
   let subagentTasks: SerializedSubagentTask[] = [];
   let listWarning: string | undefined;
-  const completionWakeups = usesSubagentCompletionWakeups(params.subagentTasks);
+  const completionWakeups = agentUsesSubagentCompletionWakeups(
+    params.subagentTasks,
+    params.agentId,
+  );
   if (params.subagentTasks != null) {
     try {
       const routedStore = routedSubagentStore(params.subagentTasks.store);

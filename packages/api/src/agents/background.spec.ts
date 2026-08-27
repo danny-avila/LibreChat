@@ -1488,6 +1488,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
       await runCheckBackgroundTask({
         userId: 'owner',
         conversationId: 'wakeup-parent',
+        agentId: 'agent_parent',
         args: { background_task_id: started.task.taskId },
         subagentTasks,
       }),
@@ -1501,12 +1502,25 @@ describe('runCheckBackgroundTask (singleton)', () => {
       await runCheckBackgroundTask({
         userId: 'owner',
         conversationId: 'wakeup-parent',
+        agentId: 'agent_parent',
         args: {},
         subagentTasks,
       }),
     );
     expect(listed.message).toBe(SUBAGENT_WAKEUP_GUIDANCE);
     expect(listed.tasks[0].message).toBeUndefined();
+
+    const ephemeralPoll = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'wakeup-parent',
+        agentId: 'openAI__gpt-4o',
+        args: { background_task_id: started.task.taskId },
+        subagentTasks,
+      }),
+    );
+    expect(ephemeralPoll.status).toBe('running');
+    expect(ephemeralPoll.message).toBeUndefined();
 
     store.control(subagentTasks.scopeId, started.task.taskId, { action: 'cancel' });
   });
