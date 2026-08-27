@@ -1744,6 +1744,65 @@ describe('SubagentThreadPanel', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('preserves an unrecoverable boundary while loading later cursor pages', async () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: {
+        ...completedView,
+        nextCursor: 'older:assistant',
+        turns: [],
+      },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    mockGetSubagentThread
+      .mockResolvedValueOnce({
+        ...completedView,
+        nextCursor: 'oldest:assistant',
+        historyTruncated: true,
+        historyUnavailable: true,
+        activity: [],
+        messages: [],
+        turns: [],
+      })
+      .mockResolvedValueOnce({
+        ...completedView,
+        historyTruncated: false,
+        activity: [],
+        messages: [],
+        turns: [],
+      });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+    await waitFor(() =>
+      expect(mockGetSubagentThread).toHaveBeenLastCalledWith(
+        'parent-conversation',
+        'child-thread',
+        undefined,
+        'older:assistant',
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+    await waitFor(() =>
+      expect(mockGetSubagentThread).toHaveBeenLastCalledWith(
+        'parent-conversation',
+        'child-thread',
+        undefined,
+        'oldest:assistant',
+      ),
+    );
+
+    expect(
+      screen.getByRole('status', { name: 'com_ui_subagent_thread_history_truncated' }),
+    ).toHaveTextContent('•••');
+  });
+
   it('rejects stale exact-detail responses across an actor A-B-A switch', async () => {
     let resolveStaleDetail: (view: SubagentThreadView) => void = () => undefined;
     const staleDetail = new Promise<SubagentThreadView>((resolve) => {
@@ -1998,6 +2057,50 @@ describe('SubagentThreadPanel', () => {
         'task:assistant',
       ),
     );
+  });
+
+  it('does not accumulate displaced latest-window turns before history is requested', async () => {
+    const makeTurn = (taskId: string, text: string) => ({
+      taskId,
+      trigger: { kind: 'parent_dispatch' as const, summary: `${text} prompt` },
+      status: 'completed' as const,
+      activity: [{ type: 'writing' as const, text }],
+      activityTruncated: false,
+      messages: [],
+    });
+    let latestView: SubagentThreadView = {
+      ...completedView,
+      nextCursor: 'old:assistant',
+      turns: [makeTurn('old', 'Old result'), makeTurn('task', 'Current result')],
+    };
+    mockUseSubagentThreadQuery.mockImplementation(() => ({
+      data: latestView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    }));
+
+    const { rerender } = render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+    expect(screen.getByText('Old result')).toBeInTheDocument();
+
+    latestView = {
+      ...latestView,
+      nextCursor: 'task:assistant',
+      turns: [makeTurn('task', 'Current result'), makeTurn('new', 'New result')],
+    };
+    rerender(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    await waitFor(() => expect(screen.queryByText('Old result')).not.toBeInTheDocument());
+    expect(screen.getByText('Current result prompt')).toBeInTheDocument();
+    expect(screen.getByText('New result')).toBeInTheDocument();
   });
 
   it('follows a newly appended latest turn while preserving the continuous history', async () => {

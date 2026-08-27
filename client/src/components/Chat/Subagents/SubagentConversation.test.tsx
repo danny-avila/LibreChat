@@ -158,8 +158,8 @@ describe('SubagentConversation', () => {
         kind: 'external_event',
         summary: '',
         externalEvent: {
-          eventType: 'review.ready',
-          sourceType: 'github',
+          eventType: 'chess.turn.ready',
+          sourceType: 'speed-chess',
           occurredAt: '2026-08-25T12:02:00.000Z',
         },
       },
@@ -173,12 +173,12 @@ describe('SubagentConversation', () => {
 
     expect(
       screen.getByRole('button', {
-        name: /com_ui_subagent_trigger_external_event.*chess\.turn\.ready.*speed-chess/,
+        name: /com_ui_subagent_trigger_external_event.*chess\.turn\.ready.*speed-chess.*2026-08-25T12:01:00.000Z/,
       }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('button', {
-        name: /com_ui_subagent_trigger_external_event.*review\.ready.*github/,
+        name: /com_ui_subagent_trigger_external_event.*chess\.turn\.ready.*speed-chess.*2026-08-25T12:02:00.000Z/,
       }),
     ).toBeInTheDocument();
   });

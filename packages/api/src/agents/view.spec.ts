@@ -243,6 +243,7 @@ describe('subagent thread parent-scoped view', () => {
     ]);
     expect(JSON.stringify(view)).not.toContain('abandoned');
     expect(view.historyTruncated).toBe(true);
+    expect(view.historyUnavailable).toBe(true);
   });
 
   it('labels a retained continuation honestly when its task ancestor was truncated', async () => {

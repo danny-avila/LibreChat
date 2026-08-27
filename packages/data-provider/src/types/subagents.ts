@@ -173,6 +173,8 @@ export type SubagentThreadView = {
   turns?: SubagentThreadTurn[];
   messages: SubagentThreadMessage[];
   historyTruncated: boolean;
+  /** True when some branch rows were omitted and cannot be recovered with `nextCursor`. */
+  historyUnavailable?: boolean;
   /** Opaque task-message cursor for the next older bounded branch page. */
   nextCursor?: string;
   updatedAt?: string;

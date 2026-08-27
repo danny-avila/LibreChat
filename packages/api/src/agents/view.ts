@@ -620,7 +620,8 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
       let historyTruncated = messages.length > MAX_THREAD_MESSAGES;
       const newestFirst = messages.slice(0, MAX_THREAD_MESSAGES);
       const branch = canonicalThreadBranch(newestFirst);
-      if (branch.length < newestFirst.length) historyTruncated = true;
+      let historyUnavailable = branch.length < newestFirst.length;
+      if (historyUnavailable) historyTruncated = true;
       const branchRootParentId = branch[0]?.parentMessageId;
       if (branchRootParentId != null && taskIdFromMessageId(branchRootParentId) != null) {
         historyTruncated = true;
@@ -695,6 +696,7 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         const projected = projectedById.get(message.messageId);
         return projected == null ? [] : [projected];
       });
+      if (projectedMessages.length < publicSource.length) historyUnavailable = true;
       const projectedMessagesById = new Map(
         projectedMessages.map((message) => [message.messageId, message]),
       );
@@ -730,6 +732,7 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         turns,
         messages: projectedMessages,
         historyTruncated: historyTruncated || projectedMessages.length < publicSource.length,
+        ...(historyUnavailable ? { historyUnavailable: true } : {}),
         ...(nextCursor == null ? {} : { nextCursor }),
         ...(isoDate(child.updatedAt) == null ? {} : { updatedAt: isoDate(child.updatedAt) }),
       };

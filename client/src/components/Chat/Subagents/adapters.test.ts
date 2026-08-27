@@ -6,15 +6,17 @@ import type {
 } from 'librechat-data-provider';
 import type { ChildConversationTurn } from './adapters';
 import {
+  adaptDurableThreadActivity,
+  adaptLivePersistedActivity,
+  MAX_RETAINED_MOVING_WINDOW_TURNS,
+  mergeChildConversationTurns,
+  retainBoundedMovingWindowTurns,
+} from './adapters';
+import {
   aggregateSubagentContent,
   initSubagentAggregatorState,
   initSubagentTickerState,
 } from '~/utils/subagentContent';
-import {
-  adaptDurableThreadActivity,
-  adaptLivePersistedActivity,
-  mergeChildConversationTurns,
-} from './adapters';
 
 describe('child activity adapters', () => {
   it('prefers authoritative parent persistence over a partial live foreground trace', () => {
@@ -576,5 +578,20 @@ describe('child activity adapters', () => {
         }),
       },
     ]);
+  });
+
+  it('bounds automatically retained moving-window turns', () => {
+    const turns = Array.from(
+      { length: MAX_RETAINED_MOVING_WINDOW_TURNS + 3 },
+      (_, index): ChildConversationTurn => ({
+        taskId: `task-${index}`,
+        trigger: { kind: 'parent_continuation', summary: '' },
+        activity: { title: 'Player', status: 'completed', items: [] },
+      }),
+    );
+
+    expect(retainBoundedMovingWindowTurns([], turns).map((turn) => turn.taskId)).toEqual(
+      turns.slice(-MAX_RETAINED_MOVING_WINDOW_TURNS).map((turn) => turn.taskId),
+    );
   });
 });

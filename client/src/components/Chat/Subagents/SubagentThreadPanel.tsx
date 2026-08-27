@@ -30,6 +30,13 @@ import type {
 import type { ReactNode } from 'react';
 import type { ActiveSubagentPanel, SubagentControlUiState } from '~/store/subagents';
 import {
+  adaptDurableThreadActivity,
+  adaptDurableThreadConversation,
+  adaptLivePersistedActivity,
+  mergeChildConversationTurns,
+  retainBoundedMovingWindowTurns,
+} from './adapters';
+import {
   ACTIVE_THREAD_REFRESH_MS,
   subagentThreadHasTaskEvidence,
   useForkConvoMutation,
@@ -43,12 +50,6 @@ import {
   subagentProgressByToolCallId,
   subagentProgressKey,
 } from '~/store/subagents';
-import {
-  adaptDurableThreadActivity,
-  adaptDurableThreadConversation,
-  adaptLivePersistedActivity,
-  mergeChildConversationTurns,
-} from './adapters';
 import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
 import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
@@ -266,6 +267,9 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const [olderTurns, setOlderTurns] = useState<ReturnType<typeof adaptDurableThreadConversation>>(
     [],
   );
+  const [movingWindowTurns, setMovingWindowTurns] = useState<
+    ReturnType<typeof adaptDurableThreadConversation>
+  >([]);
   const [historyCursor, setHistoryCursor] = useState<string | null | undefined>(undefined);
   const [historyState, setHistoryState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [historyBoundaryUnavailable, setHistoryBoundaryUnavailable] = useState(false);
@@ -274,6 +278,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const selectionGenerationRef = useRef(0);
   const turnDetailRequestsRef = useRef(new Set<string>());
   const historyRequestRef = useRef<string | null>(null);
+  const historyHasLoadedRef = useRef(false);
   if (selectionThreadRef.current !== threadId) {
     selectionThreadRef.current = threadId;
     selectionGenerationRef.current += 1;
@@ -298,11 +303,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     setTurnDetailOverrides(new Map());
     setTurnDetailStates(new Map());
     setOlderTurns([]);
+    setMovingWindowTurns([]);
     setHistoryCursor(undefined);
     setHistoryState('idle');
     setHistoryBoundaryUnavailable(false);
     turnDetailRequestsRef.current.clear();
     historyRequestRef.current = null;
+    historyHasLoadedRef.current = false;
   }, [threadId]);
 
   const loadTurnDetails = useCallback(
@@ -384,8 +391,14 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       setOlderTurns((current) => {
         return mergeChildConversationTurns(pageTurns, current);
       });
+      historyHasLoadedRef.current = true;
       setHistoryCursor(page.nextCursor ?? null);
-      setHistoryBoundaryUnavailable(page.historyTruncated && page.nextCursor == null);
+      setHistoryBoundaryUnavailable(
+        (current) =>
+          current ||
+          page.historyUnavailable === true ||
+          (page.historyTruncated && page.nextCursor == null),
+      );
       setHistoryState('idle');
     } catch {
       if (
@@ -645,12 +658,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     if (previous.threadId === threadId) {
       const latestTaskIds = new Set(latestConversationTurns.map((turn) => turn.taskId));
       const displaced = previous.turns.filter((turn) => !latestTaskIds.has(turn.taskId));
-      if (displaced.length > 0) {
-        setOlderTurns((current) => mergeChildConversationTurns(current, displaced));
+      if (displaced.length > 0 && historyHasLoadedRef.current) {
+        setMovingWindowTurns((current) => retainBoundedMovingWindowTurns(current, displaced));
       }
       if (previous.generation !== latestHistoryGeneration && historyCursor !== undefined) {
         setHistoryCursor(undefined);
-        setHistoryBoundaryUnavailable(false);
       }
     }
     previousLatestTurnsRef.current = {
@@ -660,7 +672,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     };
   }, [data, historyCursor, latestConversationTurns, latestHistoryGeneration, threadId]);
   const conversationTurns = useMemo(() => {
-    const durableTurns = mergeChildConversationTurns(olderTurns, latestConversationTurns);
+    const durableTurns = mergeChildConversationTurns(
+      olderTurns,
+      movingWindowTurns,
+      latestConversationTurns,
+    );
     if (durableTurns.length > 0) {
       const selectedTurnIndex = durableTurns.findIndex((turn) => turn.taskId === taskId);
       if (selectedTurnIndex >= 0) {
@@ -703,7 +719,15 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         activity,
       },
     ];
-  }, [activity, latestConversationTurns, olderTurns, selection, taskId, turnDetailOverrides]);
+  }, [
+    activity,
+    latestConversationTurns,
+    movingWindowTurns,
+    olderTurns,
+    selection,
+    taskId,
+    turnDetailOverrides,
+  ]);
   const effectiveTurnDetailStates = useMemo(() => {
     const states = new Map(turnDetailStates);
     if (activity.activityTruncated === true && taskId !== '') states.set(taskId, 'unavailable');
@@ -711,9 +735,9 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   }, [activity.activityTruncated, taskId, turnDetailStates]);
   const effectiveHistoryCursor = historyCursor === undefined ? data?.nextCursor : historyCursor;
   const showUnavailableHistoryBoundary =
-    historyCursor === undefined
-      ? data?.historyTruncated === true && data.nextCursor == null
-      : historyBoundaryUnavailable;
+    historyBoundaryUnavailable ||
+    data?.historyUnavailable === true ||
+    (historyCursor === undefined && data?.historyTruncated === true && data.nextCursor == null);
   /** During a rolling deployment an older API replica can omit `turns`. Keep
    * that response readable through the same deep activity renderer; every
    * current host otherwise enters the conversation-native rendering seam. */

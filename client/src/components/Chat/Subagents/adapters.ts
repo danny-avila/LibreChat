@@ -416,3 +416,14 @@ export function mergeChildConversationTurns(
   }
   return merged;
 }
+
+/** Polling may displace turns from the API's latest window. Retain only one
+ * bounded bridge window; older pages remain an explicit user action. */
+export const MAX_RETAINED_MOVING_WINDOW_TURNS = 50;
+
+export function retainBoundedMovingWindowTurns(
+  current: ChildConversationTurn[],
+  displaced: ChildConversationTurn[],
+): ChildConversationTurn[] {
+  return mergeChildConversationTurns(current, displaced).slice(-MAX_RETAINED_MOVING_WINDOW_TURNS);
+}

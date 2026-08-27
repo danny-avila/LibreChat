@@ -59,6 +59,7 @@ function ExternalEventTrigger({ turn }: { turn: ChildConversationTurn }) {
           <span className="min-w-0 truncate text-xs">
             {details.eventType} · {details.sourceType}
           </span>
+          <span className="sr-only">{details.occurredAt}</span>
           <ChevronDown
             size={15}
             aria-hidden
