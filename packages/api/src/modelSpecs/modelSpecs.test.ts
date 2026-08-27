@@ -68,7 +68,10 @@ describe('modelSpecs helpers', () => {
     /** The client seeds its skills badge from this field, so an enabled spec has
      *  to stay distinguishable from `skills: false` and from no config at all. */
     expect(sanitizeModelSpecs(build(['a', 'b'])).list[0].skills).toBe(true);
-    expect(sanitizeModelSpecs(build([])).list[0].skills).toBe(false);
+    /** An empty allowlist scopes to no skills but keeps `skills_enabled` true,
+     *  which still permits skill authoring — so it must narrow to `true`, the
+     *  same answer `resolveSpecSkillsEnabled` gives the loaders. */
+    expect(sanitizeModelSpecs(build([])).list[0].skills).toBe(true);
     expect(sanitizeModelSpecs(build(true)).list[0].skills).toBe(true);
     expect(sanitizeModelSpecs(build(false)).list[0].skills).toBe(false);
     expect(sanitizeModelSpecs(build()).list[0]).not.toHaveProperty('skills');
