@@ -726,8 +726,22 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       : undefined,
   });
 
+  /** A newly bound actor conversation has no child messages yet, so its first
+   * event legitimately uses the root parent id. The authenticated write guard
+   * supplies the binding identity before this controller; that durable binding,
+   * not the presence of an earlier child message, proves this is a continuation. */
+  const boundEventBindingId =
+    req._agentEventBindingId ?? req.resolvedConversation?.agentEventBinding?.bindingId;
+  const isBoundEventContinuation =
+    req._isAgentTrigger === true &&
+    !isNewConvo &&
+    req._agentEventBindingParentConversationId != null &&
+    typeof boundEventBindingId === 'string' &&
+    boundEventBindingId.length > 0;
   const isTriggerContinuation =
-    req._isAgentTrigger === true && !isNewConvo && parentMessageId !== Constants.NO_PARENT;
+    req._isAgentTrigger === true &&
+    !isNewConvo &&
+    (parentMessageId !== Constants.NO_PARENT || isBoundEventContinuation);
 
   if (
     await isUnpersistedPreliminaryParent({
@@ -1297,6 +1311,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   const rawAgentEventDelivery = req.body?.agentEventDelivery;
   const agentEventDelivery =
     isTriggerContinuation &&
+    isBoundEventContinuation &&
     rawAgentEventDelivery != null &&
     typeof rawAgentEventDelivery === 'object' &&
     rawAgentEventDelivery.deliveryKey === clientRequestId
@@ -1351,7 +1366,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         isTemporary: req._agentEventBindingRetention?.isTemporary ?? req.body?.isTemporary,
         ...(agentEventDelivery != null && {
           agentEventDeliveryKey: agentEventDelivery.deliveryKey,
-          agentEventBindingId: agentEventDelivery.target.bindingId,
+          agentEventBindingId: boundEventBindingId,
           ...(agentEventDelivery.expectedAction != null && {
             agentEventExpectedAction: agentEventDelivery.expectedAction,
           }),
@@ -2060,7 +2075,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 user: userId,
                 ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
                 conversationId,
-                bindingId: agentEventDelivery.target.bindingId,
+                bindingId: boundEventBindingId,
                 invocationId: eventTaskId,
                 event: agentEventDelivery.event,
                 expectedAction: agentEventDelivery.expectedAction,
