@@ -132,6 +132,7 @@ const processAddedConvo = async ({
       addedAgent &&
       isEphemeralAgentId(addedAgent.id) &&
       selectedModelSpec &&
+      addedConvo.ephemeralAgent?.skills === undefined &&
       Object.hasOwn(selectedModelSpec, 'skills')
     ) {
       if (selectedModelSpec.skills === true) {

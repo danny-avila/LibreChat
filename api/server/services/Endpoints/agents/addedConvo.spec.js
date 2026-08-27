@@ -329,4 +329,44 @@ describe('processAddedConvo', () => {
     );
     expect(mockGetSkillDbMethods).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps an explicit skills disable over the added agent model-spec default', async () => {
+    mockLoadAddedAgent.mockResolvedValue({
+      id: Constants.EPHEMERAL_AGENT_ID,
+      provider: 'openai',
+      skills_enabled: false,
+      skills: [],
+    });
+
+    await processAddedConvo(
+      baseParams({
+        req: {
+          user: { id: 'u1', role: 'USER' },
+          config: {
+            modelSpecs: {
+              list: [{ name: 'added-spec', skills: true }],
+            },
+          },
+        },
+        endpointOption: {
+          addedConvo: {
+            endpoint: 'openai',
+            model: 'gpt-4o',
+            spec: 'added-spec',
+            ephemeralAgent: { skills: false },
+          },
+        },
+      }),
+    );
+
+    expect(mockInitializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: expect.objectContaining({
+          skills_enabled: false,
+          skills: [],
+        }),
+      }),
+      expect.anything(),
+    );
+  });
 });
