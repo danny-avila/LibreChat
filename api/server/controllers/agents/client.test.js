@@ -820,6 +820,42 @@ describe('AgentClient - startup telemetry', () => {
     jest.restoreAllMocks();
   });
 
+  it('refuses scheduled pause-capable runs before provider startup without Redis', async () => {
+    mockIsHITLEnabled.mockReturnValue(false);
+    const createRunBefore = mockCreateRun.mock.calls.length;
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _isScheduledFire: true,
+        _resumableStreamId: 'scheduled-hitl-no-redis',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        tools: [{ name: 'ask_user_question' }],
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'scheduled-hitl-no-redis';
+    client.responseMessageId = 'scheduled-hitl-response';
+    client.parentMessageId = 'scheduled-hitl-parent';
+
+    await expect(client.chatCompletion({ payload: [] })).rejects.toMatchObject({
+      code: 'SCHEDULED_HITL_REQUIRES_SHARED_STORE',
+      message: expect.stringContaining('USE_REDIS_STREAMS=true'),
+    });
+    expect(mockCreateRun).toHaveBeenCalledTimes(createRunBefore);
+  });
+
   it('overlaps run creation with checkpoint pruning and joins both before stream processing', async () => {
     let releaseCheckpoint;
     let checkpointStarted;

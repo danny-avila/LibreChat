@@ -711,6 +711,13 @@ async function buildMongoSaver(
       client: mongoose.connection.getClient() as unknown as ConstructorParameters<
         typeof MongoDBSaver
       >[0]['client'],
+      // MongoDBSaver calls MongoClient.db(dbName). Passing no name makes that
+      // resolve from the driver's URI default, which is not guaranteed to be the
+      // database Mongoose selected (for example when Mongoose connected with a
+      // dbName override). Every capture/delete path below uses connection.db, so
+      // bind the saver to that exact database as well or a pause can be written to
+      // one database while LibreChat looks for it in another.
+      dbName: mongoose.connection.db?.databaseName,
       checkpointCollectionName: resolved.checkpointCollectionName,
       checkpointWritesCollectionName: resolved.checkpointWritesCollectionName,
       // TTL index on `upserted_at`: an unresolved paused run is reclaimed after the

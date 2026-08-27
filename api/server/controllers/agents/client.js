@@ -3281,6 +3281,33 @@ class AgentClient extends BaseClient {
         abortController = new AbortController();
       }
 
+      /** Scheduled approvals are unattended by definition and must outlive this
+       * process. Mongo preserves the LangGraph checkpoint, but the pending action,
+       * replay context, and resolution fence live in the generation job store. A
+       * process-local store loses that half on restart and leaves a rendered but
+       * unresolvable question. Refuse before provider work instead of spending on a
+       * run that can only become stranded. Interactive runs remain supported in
+       * single-process mode because the user is attached to the owning process. */
+      /** @type {AppConfig['endpoints']['agents']} */
+      const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
+      const reachableAgents = collectReachableAgents([
+        this.options.agent,
+        ...(this.agentConfigs?.values() ?? []),
+      ]);
+      if (
+        this.options.req?._isScheduledFire === true &&
+        !GenerationJobManager.isRedis &&
+        (isHITLEnabled(agentsEConfig?.toolApproval) ||
+          reachableAgents.some(agentRequestsAskUserQuestion))
+      ) {
+        const error = new Error(
+          'Scheduled agent runs that can pause require a shared generation store. ' +
+            'Enable Redis streams with USE_REDIS_STREAMS=true.',
+        );
+        error.code = 'SCHEDULED_HITL_REQUIRES_SHARED_STORE';
+        throw error;
+      }
+
       /** Fire-and-forget: boot each selected stateful environment in
        *  parallel with generation so the first execute_code/bash call lands
        *  on a warm VM. No-op unless a reachable agent resolved
@@ -3290,9 +3317,6 @@ class AgentClient extends BaseClient {
         conversationId: this.conversationId,
         agents: [this.options.agent, ...(this.agentConfigs?.values() ?? [])],
       });
-
-      /** @type {AppConfig['endpoints']['agents']} */
-      const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
       config = {
         runName: 'AgentRun',
@@ -3792,6 +3816,12 @@ class AgentClient extends BaseClient {
       this.applyHideSequentialOutputsFilter();
       this.rebaseActivityPhaseBounds(contentBeforeReshape);
     } catch (err) {
+      if (err?.code === 'SCHEDULED_HITL_REQUIRES_SHARED_STORE') {
+        logger.warn(
+          '[api/server/controllers/agents/client.js #sendCompletion] Refused scheduled HITL without a shared generation store',
+        );
+        throw err;
+      }
       if (isContentFilterError(err)) {
         logger.warn(
           '[api/server/controllers/agents/client.js #sendCompletion] Blocked by content policy',

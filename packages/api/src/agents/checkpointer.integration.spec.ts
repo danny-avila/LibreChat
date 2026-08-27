@@ -98,6 +98,31 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
     expect(ttlIndex?.expireAfterSeconds).toBe(3600);
   });
 
+  it("uses Mongoose's selected database instead of the MongoClient URI default", async () => {
+    await mongoose.disconnect();
+    await mongoose.connect(mongoServer.getUri('driver_default'), { dbName: 'active_app' });
+    __resetCheckpointerForTests();
+
+    const saver = await getAgentCheckpointer(MONGO_CFG);
+    expect(saver).toBeDefined();
+    await seedInterruptCheckpoint(saver!, 'db-selection-pause');
+
+    expect(
+      await mongoose.connection.db!.collection('agent_checkpoints').countDocuments({
+        thread_id: 'db-selection-pause',
+      }),
+    ).toBe(1);
+    expect(
+      await mongoose.connection
+        .getClient()
+        .db('driver_default')
+        .collection('agent_checkpoints')
+        .countDocuments({
+          thread_id: 'db-selection-pause',
+        }),
+    ).toBe(0);
+  });
+
   it('returns undefined for the memory type (SDK MemorySaver fallback) even when connected', async () => {
     expect(await getAgentCheckpointer({ type: 'memory' })).toBeUndefined();
   });
