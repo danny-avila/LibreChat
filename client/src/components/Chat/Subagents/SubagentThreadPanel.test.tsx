@@ -2376,4 +2376,45 @@ describe('SubagentThreadPanel', () => {
       screen.getByRole('status', { name: 'com_ui_subagent_thread_history_truncated' }),
     ).toHaveTextContent('•••');
   });
+
+  it('marks a truncated one-task legacy event window as incomplete', () => {
+    const eventChild: ParentSubagentSummary = {
+      threadId: 'child-thread',
+      parentMessageId: 'parent-message',
+      subagentType: 'agent-1',
+      subagentKind: 'agent',
+      agentId: 'agent-1',
+      title: 'Actor',
+      origin: 'event',
+      actorId: 'actor-1',
+      status: 'completed',
+      latestTaskId: 'task',
+      tasks: [{ taskId: 'task', status: 'completed' }],
+      tasksTruncated: true,
+    };
+    mockParentChildrenByMessage = new Map([['parent-message', [eventChild]]]);
+    mockParentChildrenByThread = new Map([[eventChild.threadId, eventChild]]);
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel
+          selection={{
+            ...selection,
+            event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task' },
+          }}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getAllByTestId('shared-activity')).toHaveLength(1);
+    expect(
+      screen.getByRole('status', { name: 'com_ui_subagent_thread_history_truncated' }),
+    ).toHaveTextContent('•••');
+  });
 });

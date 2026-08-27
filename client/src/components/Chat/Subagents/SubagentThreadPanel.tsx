@@ -278,6 +278,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   >([]);
   const postRebaseTurnsRef = useRef(postRebaseTurns);
   const [historyRebaseActive, setHistoryRebaseActive] = useState(false);
+  const historyRebaseActiveRef = useRef(historyRebaseActive);
   const [historyCursor, setHistoryCursor] = useState<string | null | undefined>(undefined);
   const [historyCursorGeneration, setHistoryCursorGeneration] = useState<string>();
   const [historyState, setHistoryState] = useState<'idle' | 'loading' | 'error'>('idle');
@@ -317,6 +318,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     setPostRebaseTurns([]);
     postRebaseTurnsRef.current = [];
     setHistoryRebaseActive(false);
+    historyRebaseActiveRef.current = false;
     setHistoryCursor(undefined);
     setHistoryCursorGeneration(undefined);
     setHistoryState('idle');
@@ -439,7 +441,9 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           startsRebase ? [] : rebaseTurns,
         );
         const retainedTaskIds = new Set(
-          mergeChildConversationTurns(olderTurns, bridgeTurns).map((turn) => turn.taskId),
+          mergeChildConversationTurns(olderTurns, bridgeTurns, postRebaseTurnsRef.current).map(
+            (turn) => turn.taskId,
+          ),
         );
         const reconnected = pageTurns.some((turn) => retainedTaskIds.has(turn.taskId));
         const recoveryComplete = reconnected || page.nextCursor == null;
@@ -459,10 +463,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           setRebaseTurns([]);
           setPostRebaseTurns([]);
           setHistoryRebaseActive(false);
+          historyRebaseActiveRef.current = false;
         } else {
           if (startsRebase) setMovingWindowTurns(bridgeTurns);
           setRebaseTurns(nextRebaseTurns);
           setHistoryRebaseActive(true);
+          historyRebaseActiveRef.current = true;
         }
       } else {
         setOlderTurns((current) => mergeChildConversationTurns(pageTurns, current));
@@ -743,7 +749,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       const latestTaskIds = new Set(latestConversationTurns.map((turn) => turn.taskId));
       const displaced = previous.turns.filter((turn) => !latestTaskIds.has(turn.taskId));
       if (displaced.length > 0 && historyHasLoadedRef.current) {
-        if (historyRebaseActive) {
+        if (historyRebaseActiveRef.current) {
           const retained = retainBoundedMovingWindowTurns(postRebaseTurnsRef.current, displaced);
           postRebaseTurnsRef.current = retained;
           setPostRebaseTurns(retained);
@@ -1003,7 +1009,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         />
       </SubagentActivityScrollSurface>
     );
-  } else if (selection.event != null && (eventSummary?.tasks.length ?? 0) > 1) {
+  } else if (
+    selection.event != null &&
+    ((eventSummary?.tasks.length ?? 0) > 1 || eventSummary?.tasksTruncated === true)
+  ) {
     activityPanel = (
       <SubagentActivityScrollSurface padded={false}>
         <div data-subagent-thread-timeline>
