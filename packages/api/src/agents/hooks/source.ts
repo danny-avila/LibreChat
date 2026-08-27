@@ -16,6 +16,8 @@ export interface PluginHookSourceOptions {
  */
 export interface PluginHookSource {
   hasHooks(): boolean;
+  /** Whether a ready deployment hook can participate in tool-approval decisions. */
+  hasToolApprovalHooks?(): boolean;
   register(options: PluginHookSourceOptions): number;
 }
 

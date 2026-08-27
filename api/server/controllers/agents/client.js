@@ -45,7 +45,8 @@ const {
   hasDurableAgentInterruptCheckpoint,
   isHITLEnabled,
   isToolApprovalPauseCapable,
-  getRegisteredToolApprovalHookCount,
+  buildToolApprovalHooks,
+  getPluginHookSource,
   captureAgentCheckpointGeneration,
   isContentFilterError,
   deleteAgentCheckpoint,
@@ -3134,7 +3135,7 @@ class AgentClient extends BaseClient {
 
     const appConfig = this.options.req?.config;
     const checkpointerCfg = appConfig?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
-    if (this.options.req?._isScheduledFire === true && checkpointerCfg?.type !== 'memory') {
+    if (this.options.req?._isScheduledFire === true) {
       let hasDurableInterrupt = false;
       try {
         hasDurableInterrupt = await hasDurableAgentInterruptCheckpoint(
@@ -3317,12 +3318,23 @@ class AgentClient extends BaseClient {
        * pause. Refuse unsupported topologies before spending on provider work. */
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
+      const resolvedToolApprovalHooks = isHITLEnabled(agentsEConfig?.toolApproval)
+        ? buildToolApprovalHooks({
+            userId: this.options.req?.user?.id,
+            conversationId: this.conversationId,
+            tenantId: this.options.req?.user?.tenantId,
+            appConfig,
+          })
+        : undefined;
+      const deploymentHooksCanAsk =
+        isHITLEnabled(agentsEConfig?.toolApproval) &&
+        getPluginHookSource()?.hasToolApprovalHooks?.() === true;
       const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
       if (
         this.options.req?._isScheduledFire === true &&
         (isToolApprovalPauseCapable(
           agentsEConfig?.toolApproval,
-          getRegisteredToolApprovalHookCount() > 0,
+          (resolvedToolApprovalHooks?.length ?? 0) > 0 || deploymentHooksCanAsk,
         ) ||
           (!isAskUserQuestionAdminDisabled(appConfig) &&
             topLevelAgents.some(agentRequestsAskUserQuestion)))
@@ -3690,6 +3702,7 @@ class AgentClient extends BaseClient {
           // opts into the tool-approval wiring. Non-resumable callers (OpenAI-compat, Responses)
           // leave this off so an approval-gated tool can't pause where there's no resume path.
           hitlCapable: true,
+          resolvedToolApprovalHooks,
           toolInputValidationErrors: this.toolInputValidationErrors,
           // Mid-run steering: drain queued user messages at each tool-batch
           // boundary and inject them into graph state. The offset wrapper
@@ -4024,6 +4037,14 @@ class AgentClient extends BaseClient {
 
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
+      const resolvedToolApprovalHooks = isHITLEnabled(agentsEConfig?.toolApproval)
+        ? buildToolApprovalHooks({
+            userId: this.options.req?.user?.id,
+            conversationId: this.conversationId,
+            tenantId: this.options.req?.user?.tenantId,
+            appConfig,
+          })
+        : undefined;
 
       BaseClient.prototype.setModelBoundStoredMessages.call(
         this,
@@ -4180,6 +4201,7 @@ class AgentClient extends BaseClient {
         // The resumed run can pause AGAIN (another tool, a follow-up question), and this
         // controller owns that lifecycle, so it must keep the HITL wiring on the rebuilt run.
         hitlCapable: true,
+        resolvedToolApprovalHooks,
         // Plugin SessionStart hooks match on the lifecycle source; a rebuilt run is a
         // resume, not a fresh startup.
         sessionStartSource: 'resume',

@@ -903,7 +903,7 @@ export type ToolApprovalMode = z.infer<typeof toolApprovalModeSchema>;
  *
  * Shape mirrors `@librechat/agents`'s `ToolPolicyConfig` so the host can map it
  * directly into `createToolPolicyHook(config)`. The SDK does the evaluation
- * (`deny → bypass → allow → ask → dontAsk → fallthrough(ask)`); this config
+ * (`deny → ask → allow → bypass → dontAsk → fallthrough(ask)`); this config
  * just describes the surface.
  *
  * Conventions:

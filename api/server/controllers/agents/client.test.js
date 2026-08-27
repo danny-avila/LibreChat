@@ -19,7 +19,14 @@ const mockFormatAgentMessages = jest.fn(() => ({
 
 const { Providers } = require('@librechat/agents');
 const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
-const { GenerationJobManager, createStreamServices } = require('@librechat/api');
+const {
+  GenerationJobManager,
+  createStreamServices,
+  registerToolApprovalHook,
+  clearToolApprovalHooks,
+  getPluginHookSource,
+  setPluginHookSource,
+} = require('@librechat/api');
 const BaseClient = require('~/app/clients/BaseClient');
 const AgentClient = require('./client');
 const { resolveConfigServers } = require('~/server/services/MCP');
@@ -864,6 +871,8 @@ describe('AgentClient - activity phase completion', () => {
 
 describe('AgentClient - startup telemetry', () => {
   afterEach(() => {
+    clearToolApprovalHooks();
+    mockIsHITLEnabled.mockReturnValue(false);
     jest.restoreAllMocks();
   });
 
@@ -959,6 +968,104 @@ describe('AgentClient - startup telemetry', () => {
     await expect(client.chatCompletion({ payload: [] })).resolves.toBeUndefined();
     expect(mockCreateRun).toHaveBeenCalledTimes(createRunBefore + 1);
     expect(processStream).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses request-scoped hook resolution when deciding whether a scheduled run can pause', async () => {
+    mockIsHITLEnabled.mockReturnValue(true);
+    registerToolApprovalHook((context) =>
+      context.userId === 'different-user' ? async () => ({ decision: 'ask' }) : undefined,
+    );
+    const processStream = jest.fn().mockResolvedValue();
+    mockCreateRun.mockResolvedValueOnce({
+      Graph: null,
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+      getInterrupt: jest.fn(() => undefined),
+    });
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: {
+          endpoints: {
+            [EModelEndpoint.agents]: {
+              toolApproval: { enabled: true, mode: 'bypass' },
+            },
+          },
+        },
+        _isScheduledFire: true,
+        _resumableStreamId: 'scheduled-request-scoped-hook',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'scheduled-request-scoped-hook';
+    client.checkpointNamespace = 'scheduled-request-scoped-generation';
+    client.responseMessageId = 'scheduled-request-scoped-response';
+    client.parentMessageId = 'scheduled-request-scoped-parent';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await expect(client.chatCompletion({ payload: [] })).resolves.toBeUndefined();
+    expect(mockCreateRun.mock.calls.at(-1)?.[0]?.resolvedToolApprovalHooks).toEqual([]);
+  });
+
+  it('admits deployment PreToolUse hooks as pause-capable for scheduled runs', async () => {
+    mockIsHITLEnabled.mockReturnValue(true);
+    const previousSource = getPluginHookSource();
+    setPluginHookSource({
+      hasHooks: () => true,
+      hasToolApprovalHooks: () => true,
+      register: () => 1,
+    });
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: {
+          endpoints: {
+            [EModelEndpoint.agents]: {
+              toolApproval: { enabled: true, mode: 'bypass' },
+            },
+          },
+        },
+        _isScheduledFire: true,
+        _resumableStreamId: 'scheduled-deployment-hook',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'scheduled-deployment-hook';
+    client.responseMessageId = 'scheduled-deployment-response';
+    client.parentMessageId = 'scheduled-deployment-parent';
+
+    try {
+      await expect(client.chatCompletion({ payload: [] })).rejects.toMatchObject({
+        code: 'SCHEDULED_HITL_REQUIRES_SHARED_STORE',
+      });
+    } finally {
+      setPluginHookSource(previousSource);
+    }
   });
 
   it('overlaps run creation with checkpoint pruning and joins both before stream processing', async () => {

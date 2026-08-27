@@ -113,6 +113,15 @@ export function hasDeploymentPluginHooks(): boolean {
   return getExecutableHookPlugins().length > 0;
 }
 
+/** Whether any executable deployment-plugin hook can return a tool decision. */
+export function hasDeploymentPluginToolApprovalHooks(): boolean {
+  return getExecutableHookPlugins().some((plugin) =>
+    plugin.hooks?.plan.entries.some(
+      (entry) => entry.status === 'ready' && entry.targetEvent === 'PreToolUse',
+    ),
+  );
+}
+
 export interface RegisterDeploymentPluginHooksOptions {
   registry: HookRegistry;
   context?: PluginHookRuntimeContext;

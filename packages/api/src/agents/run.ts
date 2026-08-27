@@ -83,6 +83,7 @@ import { getAgentCheckpointer } from '~/agents/checkpointer';
 import { getPluginHookSource } from '~/agents/hooks/source';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { buildHITLRunWiring } from '~/agents/hitl/runtime';
+import type { ResolvedToolApprovalHook } from '~/agents/hitl/hooks';
 import { buildLangfuseConfig } from '~/langfuse/config';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { applyTestRunHook } from '~/agents/testHook';
@@ -1392,6 +1393,7 @@ export async function createRun({
   activityPhase,
   eventActorCheckpointing = false,
   hitlCapable = false,
+  resolvedToolApprovalHooks,
   toolInputValidationErrors,
   sessionStartSource,
   streaming = true,
@@ -1490,6 +1492,11 @@ export async function createRun({
    * final response / `[DONE]` with the tool call left unresolved).
    */
   hitlCapable?: boolean;
+  /**
+   * Request-scoped approval hooks already resolved by the scheduled-run admission guard.
+   * Reuse them here so a context-aware factory is evaluated exactly once for the run.
+   */
+  resolvedToolApprovalHooks?: readonly ResolvedToolApprovalHook[];
   /** Plugin-hook SessionStart lifecycle source: 'startup' (default) or 'resume' on HITL-rebuild paths. */
   sessionStartSource?: string;
   /** Request-scoped tool input failures consumed by the completion handler. */
@@ -1881,6 +1888,7 @@ export async function createRun({
           appConfig,
         },
         mcpToolAliases,
+        resolvedToolApprovalHooks,
       )
     : undefined;
   registerResolvedMCPToolAliases = (resolvedAgent) => {
