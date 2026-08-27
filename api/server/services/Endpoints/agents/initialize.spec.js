@@ -1021,6 +1021,7 @@ describe('initializeClient — subagent loading', () => {
         configId: expect.any(String),
         statefulCodeEnvironment: 'agent-user',
         memory_scope: 'agent',
+        memoryToolsRegistered: false,
       }),
     );
     expect(agentClientArgs.agent.lazySubagentConfigs[0]).not.toHaveProperty('tools');
