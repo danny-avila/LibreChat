@@ -44,10 +44,8 @@ const {
   getAgentCheckpointer,
   hasDurableAgentInterruptCheckpoint,
   isHITLEnabled,
-  isToolApprovalPauseCapable,
-  healToolApprovalPolicy,
   buildToolApprovalHooks,
-  resolvedToolApprovalHooksCanMatch,
+  canAgentGraphPauseForToolApproval,
   getPluginHookSource,
   captureAgentCheckpointGeneration,
   isContentFilterError,
@@ -56,7 +54,6 @@ const {
   LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY,
   agentRequestsAskUserQuestion,
   isAskUserQuestionAdminDisabled,
-  ASK_USER_QUESTION_TOOL_NAME,
   attachAskUserQuestionArgs,
   hydrateResumeRunSteps,
   createContentIndexOffsetHandlers,
@@ -3330,54 +3327,12 @@ class AgentClient extends BaseClient {
             appConfig,
           })
         : undefined;
-      const pluginHookSource = isHITLEnabled(agentsEConfig?.toolApproval)
-        ? getPluginHookSource()
-        : undefined;
       const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
-      const approvalAgents = collectReachableAgents(topLevelAgents);
-      const approvalToolNames = new Set();
-      const approvalToolAliases = [];
-      const approvalAliasesByToolName = new Map();
-      for (const agent of approvalAgents) {
-        for (const tool of agent.tools ?? []) {
-          const name = typeof tool === 'string' ? tool : tool?.name;
-          if (typeof name === 'string' && name !== ASK_USER_QUESTION_TOOL_NAME) {
-            approvalToolNames.add(name);
-          }
-        }
-        for (const name of agent.toolRegistry?.keys?.() ?? []) {
-          if (name !== ASK_USER_QUESTION_TOOL_NAME) {
-            approvalToolNames.add(name);
-          }
-        }
-        for (const definition of agent.toolDefinitions ?? []) {
-          if (definition?.name && definition.name !== ASK_USER_QUESTION_TOOL_NAME) {
-            approvalToolNames.add(definition.name);
-          }
-        }
-        for (const alias of agent.mcpToolAliases ?? []) {
-          approvalToolAliases.push(alias);
-          const names = approvalAliasesByToolName.get(alias.name) ?? [];
-          names.push(alias.aliasName);
-          approvalAliasesByToolName.set(alias.name, names);
-        }
-      }
-      const effectiveToolApprovalPolicy = healToolApprovalPolicy(
-        agentsEConfig?.toolApproval,
-        approvalToolAliases,
-      );
-      const toolApprovalCanPause = Array.from(approvalToolNames).some((toolName) => {
-        const matcherNames = [toolName, ...(approvalAliasesByToolName.get(toolName) ?? [])];
-        const requestHookCanAsk = resolvedToolApprovalHooksCanMatch(
-          resolvedToolApprovalHooks ?? [],
-          matcherNames,
-        );
-        const pluginHookCanAsk = pluginHookSource?.hasToolApprovalHooks?.([toolName]) === true;
-        return isToolApprovalPauseCapable(
-          effectiveToolApprovalPolicy,
-          requestHookCanAsk || pluginHookCanAsk,
-          [toolName],
-        );
+      const toolApprovalCanPause = canAgentGraphPauseForToolApproval({
+        policy: agentsEConfig?.toolApproval,
+        agents: topLevelAgents,
+        resolvedProgrammaticHooks: resolvedToolApprovalHooks,
+        pluginHookSource: getPluginHookSource(),
       });
       if (
         this.options.req?._isScheduledFire === true &&
