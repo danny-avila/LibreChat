@@ -533,7 +533,17 @@ if (cluster.isMaster) {
     app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
     app.use('/api/assistants', routes.assistants);
     app.use('/api/files', await routes.files.initialize());
-    app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
+    app.use(
+      '/images/',
+      createValidateImageRequest({
+        secureImageLinks: appConfig.secureImageLinks,
+        assistantEndpoints: [
+          appConfig.endpoints?.assistants,
+          appConfig.endpoints?.azureAssistants,
+        ].filter(Boolean),
+      }),
+      routes.staticRoute,
+    );
     app.use('/api/share', preAuthTenantMiddleware, routes.share);
     app.use('/api/roles', routes.roles);
     app.use('/api/agents', routes.agents);

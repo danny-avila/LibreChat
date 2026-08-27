@@ -9,15 +9,23 @@ jest.mock('@librechat/api', () => ({
 jest.mock('~/models', () => ({
   findSession: jest.fn(),
   getAgent: jest.fn(),
+  getAssistant: jest.fn(),
   getUserById: jest.fn(),
+  getUserPrincipals: jest.fn(),
+  hasCapabilityForPrincipals: jest.fn(),
+  hasPermission: jest.fn(),
 }));
-jest.mock('~/server/services/PermissionService', () => ({ checkPermission: jest.fn() }));
-jest.mock('~/server/middleware/roles/capabilities', () => ({ hasCapability: jest.fn() }));
 
 const { isEnabled } = require('@librechat/api');
-const { findSession, getAgent, getUserById } = require('~/models');
-const { checkPermission } = require('~/server/services/PermissionService');
-const { hasCapability } = require('~/server/middleware/roles/capabilities');
+const {
+  findSession,
+  getAgent,
+  getAssistant,
+  getUserById,
+  getUserPrincipals,
+  hasCapabilityForPrincipals,
+  hasPermission,
+} = require('~/models');
 
 describe('validateImageRequest middleware', () => {
   let req, res, next, validateImageRequest;
@@ -41,10 +49,12 @@ describe('validateImageRequest middleware', () => {
     // Default: OpenID token reuse disabled
     isEnabled.mockReturnValue(false);
     getAgent.mockResolvedValue(null);
-    getUserById.mockResolvedValue({ role: 'USER' });
+    getAssistant.mockResolvedValue(null);
+    getUserById.mockResolvedValue({ role: 'USER', tenantId: 'tenant-a', idOnTheSource: null });
     findSession.mockResolvedValue({ _id: 'session' });
-    hasCapability.mockResolvedValue(false);
-    checkPermission.mockResolvedValue(false);
+    getUserPrincipals.mockResolvedValue([{ principalType: 'user', principalId: validObjectId }]);
+    hasCapabilityForPrincipals.mockResolvedValue(false);
+    hasPermission.mockResolvedValue(false);
   });
 
   afterEach(() => {
@@ -107,6 +117,21 @@ describe('validateImageRequest middleware', () => {
       expect(next).toHaveBeenCalled();
     });
 
+    test('should reject a valid refresh token after its session is revoked', async () => {
+      const validToken = jwt.sign(
+        { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
+        process.env.JWT_REFRESH_SECRET,
+      );
+      findSession.mockResolvedValue(null);
+      req.headers.cookie = `refreshToken=${validToken}`;
+      req.originalUrl = `/images/${validObjectId}/example.jpg`;
+
+      await validateImageRequest(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+    });
+
     test('should return 403 for invalid image path', async () => {
       const validToken = jwt.sign(
         { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
@@ -127,16 +152,23 @@ describe('validateImageRequest middleware', () => {
       req.headers.cookie = `refreshToken=${validToken}`;
       req.originalUrl = '/images/65cfb246f7ecadb8b1e8036c/agent-agent_abc123-avatar-12345.png';
       getAgent.mockResolvedValue({ _id: '65cfb246f7ecadb8b1e8036c' });
-      checkPermission.mockResolvedValue(true);
+      hasPermission.mockResolvedValue(true);
       await validateImageRequest(req, res, next);
       expect(next).toHaveBeenCalled();
-      expect(checkPermission).toHaveBeenCalledWith({
-        userId: validObjectId,
-        role: 'USER',
-        resourceType: 'agent',
-        resourceId: '65cfb246f7ecadb8b1e8036c',
-        requiredPermission: 1,
-      });
+      expect(getUserPrincipals).toHaveBeenCalledTimes(1);
+      expect(hasPermission).toHaveBeenLastCalledWith(
+        [{ principalType: 'user', principalId: validObjectId }],
+        'agent',
+        '65cfb246f7ecadb8b1e8036c',
+        1,
+      );
+      expect(getAgent).toHaveBeenCalledWith(
+        {
+          id: 'agent_abc123',
+          'avatar.filepath': '/images/65cfb246f7ecadb8b1e8036c/agent-agent_abc123-avatar-12345.png',
+        },
+        { _id: 1 },
+      );
     });
 
     test('should deny an agent avatar when the user lacks VIEW access', async () => {
@@ -160,10 +192,55 @@ describe('validateImageRequest middleware', () => {
       req.headers.cookie = `refreshToken=${validToken}`;
       req.originalUrl = '/images/65cfb246f7ecadb8b1e8036c/agent-agent_abc123-avatar-12345.png';
       getAgent.mockResolvedValue({ _id: '65cfb246f7ecadb8b1e8036c' });
-      hasCapability.mockResolvedValue(true);
+      hasCapabilityForPrincipals.mockResolvedValue(true);
       await validateImageRequest(req, res, next);
       expect(next).toHaveBeenCalled();
-      expect(checkPermission).not.toHaveBeenCalled();
+      expect(hasCapabilityForPrincipals).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'tenant-a' }),
+      );
+      expect(hasPermission).not.toHaveBeenCalled();
+    });
+
+    test('should allow an anonymous viewer to load a publicly viewable agent avatar', async () => {
+      req.originalUrl = '/images/65cfb246f7ecadb8b1e8036c/agent-agent_abc123-avatar-12345.png';
+      getAgent.mockResolvedValue({ _id: '65cfb246f7ecadb8b1e8036c' });
+      hasPermission.mockResolvedValue(true);
+
+      await validateImageRequest(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(getUserPrincipals).not.toHaveBeenCalled();
+      expect(hasPermission).toHaveBeenCalledWith(
+        [{ principalType: 'public' }],
+        'agent',
+        '65cfb246f7ecadb8b1e8036c',
+        1,
+      );
+    });
+
+    test('should allow a shared assistant avatar for a different authenticated user', async () => {
+      validateImageRequest = createValidateImageRequest({
+        secureImageLinks: true,
+        assistantEndpoints: [{ privateAssistants: false }],
+      });
+      const validToken = jwt.sign(
+        { id: validObjectId, exp: Math.floor(Date.now() / 1000) + 3600 },
+        process.env.JWT_REFRESH_SECRET,
+      );
+      req.headers.cookie = `refreshToken=${validToken}`;
+      req.originalUrl = '/images/65cfb246f7ecadb8b1e8036c/assistant-avatar.png';
+      getAssistant.mockResolvedValue({
+        _id: '65cfb246f7ecadb8b1e8036d',
+        assistant_id: 'asst_shared',
+      });
+
+      await validateImageRequest(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(getAssistant).toHaveBeenCalledWith(
+        { 'avatar.filepath': '/images/65cfb246f7ecadb8b1e8036c/assistant-avatar.png' },
+        { _id: 1, assistant_id: 1 },
+      );
     });
 
     test('should prevent file traversal attempts', async () => {
@@ -271,7 +348,7 @@ describe('validateImageRequest middleware', () => {
       req.headers.cookie = `refreshToken=dummy-token; token_provider=openid; openid_user_id=${signedUserId}`;
       req.originalUrl = '/images/65cfb246f7ecadb8b1e8036c/agent-agent_abc123-avatar-12345.png';
       getAgent.mockResolvedValue({ _id: '65cfb246f7ecadb8b1e8036c' });
-      checkPermission.mockResolvedValue(true);
+      hasPermission.mockResolvedValue(true);
       await validateImageRequest(req, res, next);
       expect(next).toHaveBeenCalled();
     });
@@ -389,7 +466,7 @@ describe('validateImageRequest middleware', () => {
       req.originalUrl =
         '/librechat/images/65cfb246f7ecadb8b1e8036c/agent-agent_abc123-avatar-12345.png';
       getAgent.mockResolvedValue({ _id: '65cfb246f7ecadb8b1e8036c' });
-      checkPermission.mockResolvedValue(true);
+      hasPermission.mockResolvedValue(true);
 
       await validateImageRequest(req, res, next);
       expect(next).toHaveBeenCalled();

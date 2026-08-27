@@ -1,4 +1,4 @@
-import type { FilterQuery, Model } from 'mongoose';
+import type { FilterQuery, Model, ProjectionType } from 'mongoose';
 import type { IAssistant } from '~/types';
 
 export function createAssistantMethods(mongoose: typeof import('mongoose')): {
@@ -12,7 +12,10 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
     searchParams: FilterQuery<IAssistant>,
     select?: string | Record<string, number> | null,
   ) => Promise<IAssistant[]>;
-  getAssistant: (searchParams: FilterQuery<IAssistant>) => Promise<IAssistant | null>;
+  getAssistant: (
+    searchParams: FilterQuery<IAssistant>,
+    projection?: ProjectionType<IAssistant>,
+  ) => Promise<IAssistant | null>;
 } {
   /**
    * Update an assistant with new data without overwriting existing properties,
@@ -30,9 +33,12 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
   /**
    * Retrieves an assistant document based on the provided search params.
    */
-  async function getAssistant(searchParams: FilterQuery<IAssistant>): Promise<IAssistant | null> {
+  async function getAssistant(
+    searchParams: FilterQuery<IAssistant>,
+    projection?: ProjectionType<IAssistant>,
+  ): Promise<IAssistant | null> {
     const Assistant = mongoose.models.Assistant as Model<IAssistant>;
-    return await Assistant.findOne(searchParams).lean<IAssistant>();
+    return await Assistant.findOne(searchParams, projection).lean<IAssistant>();
   }
 
   /**

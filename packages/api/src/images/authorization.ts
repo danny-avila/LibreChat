@@ -1,0 +1,356 @@
+import jwt, { type JwtPayload } from 'jsonwebtoken';
+import {
+  ResourceCapabilityMap,
+  SystemCapabilities,
+  logger,
+  runAsSystem,
+  tenantStorage,
+} from '@librechat/data-schemas';
+import { PermissionBits, PrincipalType, ResourceType } from 'librechat-data-provider';
+import type { IAgent, IAssistant, SystemCapability } from '@librechat/data-schemas';
+import type { Request, Response, NextFunction, RequestHandler } from 'express';
+import type { FilterQuery, ProjectionType, Types } from 'mongoose';
+
+const MAX_URL_LENGTH = 2048;
+const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/i;
+const AGENT_AVATAR_PATTERN = /^agent-(.+)-avatar-\d+\.[^/]+$/;
+
+type Principal = {
+  principalType: PrincipalType;
+  principalId?: string | Types.ObjectId;
+};
+
+type ImageUser = {
+  role?: string | null;
+  tenantId?: string;
+  idOnTheSource?: string | null;
+};
+
+type AssistantConfig = {
+  privateAssistants?: boolean;
+  supportedIds?: string[];
+  excludedIds?: string[];
+};
+
+type ImagePath = {
+  ownerId: string;
+  filename: string;
+  canonicalPath: string;
+  agentId?: string;
+};
+
+type CookieAuthResult =
+  | { status: 'missing' }
+  | { status: 'invalid' }
+  | { status: 'authenticated'; userId: string };
+
+export interface ImageAuthorizationDeps {
+  parseCookies: (cookieHeader: string) => Record<string, string | undefined>;
+  isOpenIdReuseEnabled: () => boolean;
+  getBasePath: () => string;
+  findSession: (query: { userId: string; refreshToken: string }) => Promise<unknown | null>;
+  getUserById: (userId: string, select: string) => Promise<ImageUser | null>;
+  getAgent: (
+    query: FilterQuery<IAgent>,
+    projection?: ProjectionType<IAgent>,
+  ) => Promise<Pick<IAgent, '_id'> | null>;
+  getAssistant: (
+    query: FilterQuery<IAssistant>,
+    projection?: ProjectionType<IAssistant>,
+  ) => Promise<Pick<IAssistant, '_id' | 'assistant_id'> | null>;
+  getUserPrincipals: (params: {
+    userId: string;
+    role?: string | null;
+    idOnTheSource?: string | null;
+  }) => Promise<Principal[]>;
+  hasCapabilityForPrincipals: (params: {
+    principals: Principal[];
+    capability: SystemCapability;
+    tenantId?: string;
+  }) => Promise<boolean>;
+  hasPermission: (
+    principals: Principal[],
+    resourceType: ResourceType,
+    resourceId: string | Types.ObjectId,
+    permissionBit: number,
+  ) => Promise<boolean>;
+}
+
+export interface ImageAuthorizationOptions {
+  secureImageLinks?: boolean;
+  assistantEndpoints?: AssistantConfig[];
+}
+
+type ImageRequest = Request & {
+  session?: Request['session'] & {
+    openidTokens?: { refreshToken?: string };
+  };
+};
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function parseImagePath(originalUrl: string, basePath: string): ImagePath | null {
+  if (!originalUrl || originalUrl.length > MAX_URL_LENGTH || originalUrl.includes('\0')) {
+    return null;
+  }
+
+  let decodedUrl: string;
+  try {
+    decodedUrl = decodeURIComponent(originalUrl);
+  } catch {
+    return null;
+  }
+
+  if (decodedUrl.includes('\0')) {
+    return null;
+  }
+
+  const cleanPath = decodedUrl.split(/[?#]/, 1)[0];
+  const imagesPath = `${basePath}/images`;
+  const match = cleanPath.match(
+    new RegExp(`^${escapeRegExp(imagesPath)}/([a-f0-9]{24})/([^/]+)$`, 'i'),
+  );
+  if (!match) {
+    return null;
+  }
+
+  const [, ownerId, filename] = match;
+  if (filename === '.' || filename === '..' || filename.includes('\\')) {
+    return null;
+  }
+  return {
+    ownerId,
+    filename,
+    canonicalPath: `/images/${ownerId}/${filename}`,
+    agentId: filename.match(AGENT_AVATAR_PATTERN)?.[1],
+  };
+}
+
+function getSignedUserId(token: string | undefined): string | null {
+  const secret = process.env.JWT_REFRESH_SECRET;
+  if (!token || !secret) {
+    return null;
+  }
+  try {
+    const payload = jwt.verify(token, secret) as JwtPayload;
+    return typeof payload.id === 'string' && OBJECT_ID_PATTERN.test(payload.id) ? payload.id : null;
+  } catch (error) {
+    logger.warn('[imageAuthorization] Invalid signed user token', error);
+    return null;
+  }
+}
+
+async function authenticateRequest(
+  req: ImageRequest,
+  deps: ImageAuthorizationDeps,
+): Promise<CookieAuthResult> {
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader) {
+    return { status: 'missing' };
+  }
+
+  let parsed: Record<string, string | undefined>;
+  try {
+    parsed = deps.parseCookies(cookieHeader);
+  } catch {
+    return { status: 'invalid' };
+  }
+
+  const refreshToken = parsed.refreshToken;
+  if (!refreshToken) {
+    return { status: 'missing' };
+  }
+
+  if (parsed.token_provider === 'openid' && deps.isOpenIdReuseEnabled()) {
+    if (refreshToken !== req.session?.openidTokens?.refreshToken) {
+      return { status: 'invalid' };
+    }
+    const userId = getSignedUserId(parsed.openid_user_id);
+    return userId ? { status: 'authenticated', userId } : { status: 'invalid' };
+  }
+
+  const userId = getSignedUserId(refreshToken);
+  if (!userId) {
+    return { status: 'invalid' };
+  }
+  const session = await runAsSystem(() => deps.findSession({ userId, refreshToken }));
+  return session ? { status: 'authenticated', userId } : { status: 'invalid' };
+}
+
+function isSharedAssistant(assistantId: string, configs: AssistantConfig[]): boolean {
+  return configs.some((config) => {
+    if (config.privateAssistants) {
+      return false;
+    }
+    if (config.supportedIds?.length) {
+      return config.supportedIds.includes(assistantId);
+    }
+    if (config.excludedIds?.length) {
+      return !config.excludedIds.includes(assistantId);
+    }
+    return true;
+  });
+}
+
+async function loadPrincipals(
+  userId: string,
+  user: ImageUser,
+  deps: ImageAuthorizationDeps,
+): Promise<Principal[]> {
+  return deps.getUserPrincipals({
+    userId,
+    role: user.role,
+    idOnTheSource: user.idOnTheSource ?? null,
+  });
+}
+
+async function canViewAgentAvatar(
+  imagePath: ImagePath,
+  viewerId: string | undefined,
+  owner: ImageUser,
+  deps: ImageAuthorizationDeps,
+): Promise<boolean> {
+  const agent = await deps.getAgent(
+    { id: imagePath.agentId, 'avatar.filepath': imagePath.canonicalPath },
+    { _id: 1 },
+  );
+  if (!agent) {
+    return false;
+  }
+
+  const publicPrincipal: Principal[] = [{ principalType: PrincipalType.PUBLIC }];
+  if (!viewerId) {
+    return deps.hasPermission(publicPrincipal, ResourceType.AGENT, agent._id, PermissionBits.VIEW);
+  }
+
+  const viewer = await runAsSystem(() => deps.getUserById(viewerId, 'role tenantId idOnTheSource'));
+  if (!viewer || viewer.tenantId !== owner.tenantId) {
+    return deps.hasPermission(publicPrincipal, ResourceType.AGENT, agent._id, PermissionBits.VIEW);
+  }
+
+  const principals = await loadPrincipals(viewerId, viewer, deps);
+  let managesAgents = false;
+  try {
+    managesAgents = await deps.hasCapabilityForPrincipals({
+      principals,
+      capability: ResourceCapabilityMap[ResourceType.AGENT],
+      tenantId: owner.tenantId,
+    });
+  } catch (error) {
+    logger.warn('[imageAuthorization] Agent capability check failed', error);
+  }
+  return (
+    managesAgents ||
+    (await deps.hasPermission(principals, ResourceType.AGENT, agent._id, PermissionBits.VIEW))
+  );
+}
+
+async function canViewAssistantAvatar(
+  imagePath: ImagePath,
+  viewerId: string | undefined,
+  owner: ImageUser,
+  configs: AssistantConfig[],
+  deps: ImageAuthorizationDeps,
+): Promise<boolean> {
+  const assistant = await deps.getAssistant(
+    { 'avatar.filepath': imagePath.canonicalPath },
+    { _id: 1, assistant_id: 1 },
+  );
+  if (!assistant) {
+    return false;
+  }
+  if (isSharedAssistant(assistant.assistant_id, configs)) {
+    return true;
+  }
+  if (!viewerId) {
+    return false;
+  }
+
+  const viewer = await runAsSystem(() => deps.getUserById(viewerId, 'role tenantId idOnTheSource'));
+  if (!viewer || viewer.tenantId !== owner.tenantId) {
+    return false;
+  }
+  const principals = await loadPrincipals(viewerId, viewer, deps);
+  try {
+    return await deps.hasCapabilityForPrincipals({
+      principals,
+      capability: SystemCapabilities.MANAGE_ASSISTANTS,
+      tenantId: owner.tenantId,
+    });
+  } catch (error) {
+    logger.warn('[imageAuthorization] Assistant capability check failed', error);
+    return false;
+  }
+}
+
+function denyRequest(res: Response, auth: CookieAuthResult): void {
+  if (auth.status === 'missing') {
+    res.status(401).send('Unauthorized');
+    return;
+  }
+  res.status(403).send('Access Denied');
+}
+
+export function createImageAuthorizationMiddleware(
+  options: ImageAuthorizationOptions,
+  deps: ImageAuthorizationDeps,
+): RequestHandler {
+  if (options.secureImageLinks === false) {
+    return (_req: Request, _res: Response, next: NextFunction): void => next();
+  }
+
+  const assistantConfigs = options.assistantEndpoints ?? [];
+  return async function authorizeImageRequest(
+    req: ImageRequest,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const auth = await authenticateRequest(req, deps);
+      const imagePath = parseImagePath(req.originalUrl, deps.getBasePath());
+      if (!imagePath) {
+        denyRequest(res, auth);
+        return;
+      }
+
+      const viewerId = auth.status === 'authenticated' ? auth.userId : undefined;
+      if (viewerId === imagePath.ownerId) {
+        next();
+        return;
+      }
+
+      const owner = await runAsSystem(() => deps.getUserById(imagePath.ownerId, 'tenantId'));
+      if (!owner) {
+        denyRequest(res, auth);
+        return;
+      }
+
+      const authorizeSpecialAvatar = async (): Promise<boolean> => {
+        if (imagePath.agentId) {
+          return canViewAgentAvatar(imagePath, viewerId, owner, deps);
+        }
+        if (assistantConfigs.length > 0) {
+          return canViewAssistantAvatar(imagePath, viewerId, owner, assistantConfigs, deps);
+        }
+        return false;
+      };
+      const allowed = owner.tenantId
+        ? await tenantStorage.run(
+            { tenantId: owner.tenantId, userId: viewerId ?? imagePath.ownerId },
+            authorizeSpecialAvatar,
+          )
+        : await runAsSystem(authorizeSpecialAvatar);
+      if (allowed) {
+        next();
+        return;
+      }
+
+      denyRequest(res, auth);
+    } catch (error) {
+      logger.error('[imageAuthorization] Error authorizing image request', error);
+      res.status(500).send('Internal Server Error');
+    }
+  };
+}
