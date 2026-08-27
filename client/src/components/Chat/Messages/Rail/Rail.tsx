@@ -687,7 +687,12 @@ function Rail({
     const target = mid - col.clientHeight / 2;
     const max = Math.max(0, col.scrollHeight - col.clientHeight);
     col.scrollTop = Math.max(0, Math.min(target, max));
-  }, [railWindow, settleToken]);
+    /** `entries` is the rail's content-size signal. A reader pinned at the
+     *  bottom of a streaming thread keeps the same window — it was already
+     *  `atEnd` — while each appended rib grows the column underneath them, so
+     *  without this the newest ribs settle below the viewport and stay there
+     *  until some later interaction happens to change the window. */
+  }, [railWindow, settleToken, entries]);
 
   if (entries.length === 0) {
     return null;

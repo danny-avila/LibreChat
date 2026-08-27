@@ -2508,6 +2508,69 @@ describe('MessageNav', () => {
       restoreLayout();
     });
 
+    it('re-pins to the bottom as a streaming thread appends ribs', async () => {
+      // Pinned at the bottom, the window stays `atEnd` from one appended rib to
+      // the next, so the window alone cannot be the trigger: each new rib grows
+      // the column underneath the reader and the newest ones settle out of
+      // sight.
+      const messages = Array.from({ length: 6 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}` }),
+      );
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: messages });
+      const { scrollable, content } = buildDom(messages);
+      Object.defineProperty(scrollable, 'scrollTop', {
+        value: 2400,
+        writable: true,
+        configurable: true,
+      });
+      const scrollableRef = { current: scrollable } as RefObject<HTMLDivElement>;
+      const { container } = render(<MessageNav scrollableRef={scrollableRef} />);
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      const column = getColumn(container);
+      Object.defineProperty(column, 'clientHeight', { value: 30, configurable: true });
+      let columnContent = 100;
+      Object.defineProperty(column, 'scrollHeight', {
+        get: () => columnContent,
+        configurable: true,
+      });
+      Object.defineProperty(column, 'scrollTop', { value: 0, writable: true, configurable: true });
+
+      act(() => {
+        fireEvent.scroll(scrollable);
+        jest.advanceTimersByTime(64);
+      });
+      expect(column.scrollTop).toBe(70);
+
+      /** A response appends its row; the transcript stays at the bottom. */
+      const appended = document.createElement('div');
+      appended.id = 'm-6';
+      appended.className = 'message-render';
+      appended.textContent = 'message 6';
+      Object.defineProperty(appended, 'offsetTop', { value: 1300, configurable: true });
+      Object.defineProperty(appended, 'offsetHeight', { value: 150, configurable: true });
+      /** The MutationObserver delivers on a microtask, then the refresh debounce
+       *  runs, then the rail frames itself. */
+      await act(async () => {
+        content.appendChild(appended);
+        columnContent = 130;
+        await Promise.resolve();
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(250);
+        await Promise.resolve();
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(64);
+        await Promise.resolve();
+      });
+
+      expect(messageRibs(container)).toHaveLength(7);
+      expect(column.scrollTop).toBe(100);
+    });
+
     it('frames the window it missed once the gesture that froze it ends', () => {
       // A drag that reaches the end commits `atEnd` while the rail is frozen.
       // The owner hands back the same window afterwards, so releasing has to be
