@@ -314,6 +314,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     historyRebasedRef.current = false;
   }, [threadId]);
 
+  useEffect(() => {
+    if (data?.threadId === threadId && data.historyUnavailable === true) {
+      setHistoryBoundaryUnavailable(true);
+    }
+  }, [data?.historyUnavailable, data?.threadId, threadId]);
+
   const loadTurnDetails = useCallback(
     async (detailTaskId: string) => {
       const requestedThreadId = threadId;

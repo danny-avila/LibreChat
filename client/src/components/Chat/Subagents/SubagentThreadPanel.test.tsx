@@ -1803,6 +1803,47 @@ describe('SubagentThreadPanel', () => {
     ).toHaveTextContent('•••');
   });
 
+  it('preserves an unrecoverable boundary after the latest polling window moves', async () => {
+    let latestView: SubagentThreadView = {
+      ...completedView,
+      historyUnavailable: true,
+      nextCursor: 'older:assistant',
+      turns: [],
+    };
+    mockUseSubagentThreadQuery.mockImplementation(() => ({
+      data: latestView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    }));
+
+    const { rerender } = render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+    expect(
+      screen.getByRole('status', { name: 'com_ui_subagent_thread_history_truncated' }),
+    ).toBeInTheDocument();
+
+    latestView = {
+      ...latestView,
+      historyUnavailable: undefined,
+      nextCursor: 'new-boundary:assistant',
+    };
+    rerender(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('status', { name: 'com_ui_subagent_thread_history_truncated' }),
+      ).toBeInTheDocument(),
+    );
+  });
+
   it('rejects stale exact-detail responses across an actor A-B-A switch', async () => {
     let resolveStaleDetail: (view: SubagentThreadView) => void = () => undefined;
     const staleDetail = new Promise<SubagentThreadView>((resolve) => {
