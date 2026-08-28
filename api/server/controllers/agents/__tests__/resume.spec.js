@@ -742,8 +742,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockReleaseEventChildLease).toHaveBeenCalledTimes(1);
     });
 
-    it('does not record provider execution when client reconstruction fails before continuation', async () => {
+    it('preserves a pre-feature suspension when client reconstruction fails before continuation', async () => {
       configureEventActorResume();
+      const expectedAction = { toolName: 'lookup' };
       const suspension = {
         version: 1,
         suspensionId: 'suspension-init-failure',
@@ -771,7 +772,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           id: 'interrupt-init-failure',
           payload: {
             type: 'tool_approval',
-            _librechatEventActor: { expectedAction: { toolName: 'lookup' } },
+            _librechatEventActor: { expectedAction },
           },
         },
         suspensionDigest: 'signed-digest',
@@ -780,6 +781,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         makeToolApprovalJob({
           metadata: {
             idempotencyClientRequestId: 'trigger_event_delivery',
+            agentEventExpectedAction: expectedAction,
             agentEventSuspension: {
               version: 1,
               suspensionId: suspension.suspensionId,
@@ -800,6 +802,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           status: 'pending',
         },
       });
+      mockIsAgentEventActorDetachedActionProducerEnabled.mockReturnValue(false);
       mockInitializeClient.mockRejectedValue(new Error('client reconstruction failed'));
       mockResumeAgentEventActor.mockImplementation(async (input) => {
         expect(await input.claimProjection()).toBe(true);
