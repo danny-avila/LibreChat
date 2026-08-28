@@ -508,7 +508,7 @@ export function createAgentTriggerDeliveryMethods(
       {
         _id: publisherDeliveryId,
         orderingKey: lane._id,
-        status: staged?.status ?? 'staging',
+        status: { $in: ['staging', 'capability_staging'] },
       },
       {
         $set: {
