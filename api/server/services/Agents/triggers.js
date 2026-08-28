@@ -14,7 +14,7 @@ const completionResolver = createSubagentCompletionWakeupResolver({
 const service = createAgentTriggerService({
   methods,
   isPrincipalActive: methods.isAgentTriggerPrincipalActive,
-  supportsDetachedActionCompletion: () => GenerationJobManager.isRedis,
+  supportsDetachedActionCompletion: () => GenerationJobManager.supportsDetachedAgentEventActions,
   prepareContinue: createAgentEventContinueResolver({
     methods,
     getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),

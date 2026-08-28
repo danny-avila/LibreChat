@@ -12,6 +12,15 @@ import type { RecoveredSteerPayload } from '../SteerRecovery';
 import type { MCPRuntimeRequestBody } from '~/mcp/types';
 
 /**
+ * Detached Event Actor execution guarantee advertised by a generation store.
+ *
+ * `process_local` keeps the lifecycle coherent while this process is alive.
+ * `distributed` additionally permits restart recovery and replica handoff.
+ * Absence means the store cannot host detached Event Actor actions.
+ */
+export type DetachedAgentEventActionStoreMode = 'process_local' | 'distributed';
+
+/**
  * Rewrites string-enum members to their literal values, recursively. The SDK and
  * data-provider declare nominally distinct enums (`ContentTypes`, `StepTypes`, ...)
  * with identical string values; erasing that nominality is what lets the two run-step
@@ -849,6 +858,8 @@ export interface ResumeState {
  * store at runtime.
  */
 export interface IJobStore {
+  readonly detachedAgentEventActionStoreMode?: DetachedAgentEventActionStoreMode;
+
   initialize(): Promise<void>;
 
   createJob(

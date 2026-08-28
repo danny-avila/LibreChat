@@ -1385,7 +1385,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       if (
         durableEventActorSuspension != null &&
         durableEventActorRequiresDetachedProducer &&
-        !GenerationJobManager.isRedis
+        !GenerationJobManager.supportsDetachedAgentEventActions
       ) {
         const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
         await rollbackUnconsumedScheduleClaim(currentJob);
@@ -1397,7 +1397,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           503,
           {
             code: 'EVENT_ACTOR_RESUME_CAPABILITY_UNAVAILABLE',
-            error: 'A durable Event Actor resume worker is temporarily unavailable',
+            error: 'A compatible Event Actor resume worker is temporarily unavailable',
           },
           generationProtocolVersion,
         );
@@ -1474,7 +1474,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
               reserveAgentEventActorDetachedAction,
               markAgentEventActorDetachedActionRunning,
               settleAgentEventActorDetachedAction,
-              durableStoreAvailable: () => GenerationJobManager.isRedis,
+              storeMode: () => GenerationJobManager.detachedAgentEventActionStoreMode,
               persistTerminalEvidence: async (evidence) => {
                 const persisted =
                   await GenerationJobManager.persistAgentEventDetachedTerminalEvidence(

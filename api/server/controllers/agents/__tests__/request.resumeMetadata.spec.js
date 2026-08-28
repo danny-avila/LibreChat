@@ -9,6 +9,8 @@ const mockLogger = {
 
 const mockGenerationJobManager = {
   isRedis: false,
+  detachedAgentEventActionStoreMode: 'process_local',
+  supportsDetachedAgentEventActions: true,
   createJob: jest.fn(),
   getJob: jest.fn(),
   emitError: jest.fn(),
@@ -394,6 +396,8 @@ describe('ResumableAgentController resume metadata', () => {
     mockGenerationJobManager.getJob.mockResolvedValue(undefined);
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.isRedis = false;
+    mockGenerationJobManager.detachedAgentEventActionStoreMode = 'process_local';
+    mockGenerationJobManager.supportsDetachedAgentEventActions = true;
     mockGenerationJobManager.persistAgentEventDetachedTerminalEvidence.mockResolvedValue(true);
     mockGenerationJobManager.emitChunk.mockResolvedValue(undefined);
     mockGenerationJobManager.emitDone.mockResolvedValue(undefined);
@@ -4252,6 +4256,7 @@ describe('ResumableAgentController resume metadata', () => {
 
   it('resumes the original actor suspension from exact detached terminal evidence', async () => {
     mockGenerationJobManager.isRedis = true;
+    mockGenerationJobManager.detachedAgentEventActionStoreMode = 'distributed';
     mockGenerationJobManager.createJob.mockResolvedValue({
       createdAt: 2000,
       metadata: {
@@ -4384,9 +4389,9 @@ describe('ResumableAgentController resume metadata', () => {
     );
     const lifecycleDependencies =
       mockCreateAgentEventActorDetachedActionLifecycle.mock.calls.at(-1)[1];
-    expect(lifecycleDependencies.durableStoreAvailable()).toBe(true);
-    mockGenerationJobManager.isRedis = false;
-    expect(lifecycleDependencies.durableStoreAvailable()).toBe(false);
+    expect(lifecycleDependencies.storeMode()).toBe('distributed');
+    mockGenerationJobManager.detachedAgentEventActionStoreMode = 'process_local';
+    expect(lifecycleDependencies.storeMode()).toBe('process_local');
     expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
       'child-conversation',
       'user-123',

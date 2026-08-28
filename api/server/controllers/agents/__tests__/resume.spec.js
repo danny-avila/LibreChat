@@ -47,6 +47,8 @@ const mockJobStore = {
 };
 
 const mockGenerationJobManager = {
+  detachedAgentEventActionStoreMode: 'distributed',
+  supportsDetachedAgentEventActions: true,
   getJob: jest.fn(),
   getJobStore: jest.fn(() => mockJobStore),
   getResumeState: jest.fn(),
@@ -369,6 +371,8 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockGenerationJobManager.markProviderExecutionDrained.mockResolvedValue(true);
     mockGenerationJobManager.failPausePersistence.mockResolvedValue(true);
     mockGenerationJobManager.isRedis = true;
+    mockGenerationJobManager.detachedAgentEventActionStoreMode = 'distributed';
+    mockGenerationJobManager.supportsDetachedAgentEventActions = true;
     mockGenerationJobManager.persistAgentEventDetachedTerminalEvidence = jest
       .fn()
       .mockResolvedValue(true);
@@ -674,9 +678,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       ).toBeLessThan(mockInitializeClient.mock.invocationCallOrder[0]);
       const lifecycleDependencies =
         mockCreateAgentEventActorDetachedActionLifecycle.mock.calls[0][1];
-      expect(lifecycleDependencies.durableStoreAvailable()).toBe(true);
-      mockGenerationJobManager.isRedis = false;
-      expect(lifecycleDependencies.durableStoreAvailable()).toBe(false);
+      expect(lifecycleDependencies.storeMode()).toBe('distributed');
+      mockGenerationJobManager.detachedAgentEventActionStoreMode = 'process_local';
+      expect(lifecycleDependencies.storeMode()).toBe('process_local');
       expect(resumedClient.resumeCompletion).toHaveBeenCalledTimes(1);
       expect(mockGenerationJobManager.updateMetadata).toHaveBeenCalledWith(
         CONVO_ID,
@@ -742,6 +746,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         },
       });
       mockGenerationJobManager.isRedis = false;
+      mockGenerationJobManager.supportsDetachedAgentEventActions = false;
 
       const res = await post(approveBody());
 

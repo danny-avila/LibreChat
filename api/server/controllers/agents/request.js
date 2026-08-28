@@ -2102,7 +2102,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   reserveAgentEventActorDetachedAction,
                   markAgentEventActorDetachedActionRunning,
                   settleAgentEventActorDetachedAction,
-                  durableStoreAvailable: () => GenerationJobManager.isRedis,
+                  storeMode: () => GenerationJobManager.detachedAgentEventActionStoreMode,
                   persistTerminalEvidence: async (evidence) => {
                     const persisted =
                       await GenerationJobManager.persistAgentEventDetachedTerminalEvidence(

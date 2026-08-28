@@ -16,7 +16,7 @@ import type {
 } from './envelope';
 import type { EventActorDetachedActionLifecycle } from '../handlers';
 import type { AgentEventDetachedTerminalEvidence } from './types';
-import type { SerializableJobData } from '~/stream';
+import type { DetachedAgentEventActionStoreMode, SerializableJobData } from '~/stream';
 import { matchesExpectedAction } from './expectedAction';
 import { createAgentTriggerEnvelope } from './envelope';
 
@@ -136,7 +136,7 @@ interface DetachedActionDependencies {
   persistTerminalEvidence(input: AgentEventDetachedTerminalEvidence): Promise<void>;
   onTerminal(input: { taskId: string; idempotencyKey: string }): Promise<void>;
   waitForTerminalPersistenceRetry?(delayMs: number): Promise<void>;
-  durableStoreAvailable(): boolean;
+  storeMode(): DetachedAgentEventActionStoreMode | undefined;
   now?(): Date;
 }
 
@@ -274,7 +274,7 @@ export function createAgentEventActorDetachedActionLifecycle(
   deps: DetachedActionDependencies,
 ): AgentEventActorDetachedActionLifecycle {
   const now = deps.now ?? (() => new Date());
-  const durableStoreAvailable = deps.durableStoreAvailable();
+  const storeMode = deps.storeMode();
   let current: { taskId: string; idempotencyKey: string; launchAcknowledged: boolean } | undefined;
   const scope = {
     deliveryKey: owner.invocationId,
@@ -301,11 +301,11 @@ export function createAgentEventActorDetachedActionLifecycle(
       ) {
         return { status: 'ignored' };
       }
-      if (!durableStoreAvailable) {
+      if (storeMode == null) {
         return {
           status: 'conflict',
           error:
-            'Detached Event Actor production requires durable generation storage; no external action was launched',
+            'Detached Event Actor production requires a compatible generation store; no external action was launched',
         };
       }
       const reservedAt = now();

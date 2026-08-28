@@ -127,7 +127,9 @@ Bound child continuations are automatic after authentication and binding authori
 `endpoints.agents.eventDriven.selfUrl`; most deployments should omit both and use the bound
 listener.
 
-Detached Event Actor completion is automatic when durable Redis generation streams are active.
+Detached Event Actor completion is automatic for every built-in generation store. The in-memory
+adapter preserves the lifecycle while its process remains alive; Redis adds restart recovery and
+replica handoff without changing the Event Actor interface.
 Completion work is stored behind a mixed-version compatibility shield: older replicas retain lane
 and account-deletion safety but cannot claim, recover, requeue, or interpret the new work. Internal
 detached completions always target the capable worker's bound listener;

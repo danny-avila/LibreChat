@@ -1,6 +1,6 @@
 const mockCreateAgentTriggerService = jest.fn();
 const mockGenerationJobManager = {
-  isRedis: true,
+  supportsDetachedAgentEventActions: true,
   getJob: jest.fn(),
 };
 
@@ -19,7 +19,7 @@ describe('agent trigger service composition', () => {
   beforeEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
-    mockGenerationJobManager.isRedis = true;
+    mockGenerationJobManager.supportsDetachedAgentEventActions = true;
     mockCreateAgentTriggerService.mockReturnValue({
       initialize: jest.fn(),
       stop: jest.fn(),
@@ -36,13 +36,13 @@ describe('agent trigger service composition', () => {
     });
   });
 
-  it('advertises detached completion capability whenever durable Redis streams are active', () => {
+  it('advertises detached completion capability for every compatible generation store', () => {
     require('./triggers');
     const supportsDetachedActionCompletion =
       mockCreateAgentTriggerService.mock.calls[0][0].supportsDetachedActionCompletion;
 
     expect(supportsDetachedActionCompletion()).toBe(true);
-    mockGenerationJobManager.isRedis = false;
+    mockGenerationJobManager.supportsDetachedAgentEventActions = false;
     expect(supportsDetachedActionCompletion()).toBe(false);
   });
 });

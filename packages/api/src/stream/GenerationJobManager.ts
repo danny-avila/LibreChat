@@ -30,6 +30,7 @@ import type {
   IdempotencyClaimValue,
   PreemptMessage,
   SteerQueueItem,
+  DetachedAgentEventActionStoreMode,
 } from './interfaces/IJobStore';
 import type { AgentStartupTelemetry } from '~/agents/startup';
 import type { RecoveredSteerPayload } from './SteerRecovery';
@@ -902,6 +903,19 @@ class GenerationJobManagerClass {
    */
   get isRedis(): boolean {
     return this._isRedis;
+  }
+
+  /**
+   * Store-selected detached Event Actor execution guarantee. In-memory stores
+   * support the same lifecycle within one process; Redis additionally makes it
+   * recoverable across restarts and replica handoffs.
+   */
+  get detachedAgentEventActionStoreMode(): DetachedAgentEventActionStoreMode | undefined {
+    return this.jobStore.detachedAgentEventActionStoreMode;
+  }
+
+  get supportsDetachedAgentEventActions(): boolean {
+    return this.detachedAgentEventActionStoreMode != null;
   }
 
   /** Installs the application-owned approval-expiry hook without coupling the

@@ -52,7 +52,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         persistTerminalEvidence,
         onTerminal: wake,
         waitForTerminalPersistenceRetry,
-        durableStoreAvailable: () => true,
+        storeMode: () => 'distributed',
         now: () => new Date('2026-08-28T12:00:00.000Z'),
       },
     );
@@ -128,7 +128,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
     });
   });
 
-  it('fails closed before durable reservation when durable generation storage is unavailable', async () => {
+  it('fails closed before reservation when the generation store lacks detached-action support', async () => {
     const reserve = jest.fn();
     const lifecycle = createAgentEventActorDetachedActionLifecycle(
       {
@@ -146,7 +146,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         settleAgentEventActorDetachedAction: jest.fn(),
         persistTerminalEvidence: jest.fn(),
         onTerminal: jest.fn(),
-        durableStoreAvailable: () => false,
+        storeMode: () => undefined,
       },
     );
 
@@ -159,7 +159,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       }),
     ).resolves.toEqual({
       status: 'conflict',
-      error: expect.stringContaining('requires durable generation storage'),
+      error: expect.stringContaining('requires a compatible generation store'),
     });
     expect(reserve).not.toHaveBeenCalled();
     expect(lifecycle.readSuspension()).toBeUndefined();
@@ -202,7 +202,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         settleAgentEventActorDetachedAction: jest.fn(),
         persistTerminalEvidence: jest.fn(),
         onTerminal: jest.fn(),
-        durableStoreAvailable: () => true,
+        storeMode: () => 'distributed',
       },
     );
 
@@ -267,7 +267,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         persistTerminalEvidence,
         onTerminal: jest.fn(),
         waitForTerminalPersistenceRetry,
-        durableStoreAvailable: () => true,
+        storeMode: () => 'distributed',
       },
     );
     const reservation = await lifecycle.reserve({
@@ -334,7 +334,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         settleAgentEventActorDetachedAction: jest.fn(),
         persistTerminalEvidence: jest.fn(),
         onTerminal: jest.fn(),
-        durableStoreAvailable: () => true,
+        storeMode: () => 'distributed',
       },
     );
     const input = {
@@ -385,7 +385,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       settleAgentEventActorDetachedAction: jest.fn(),
       persistTerminalEvidence: jest.fn(),
       onTerminal: jest.fn(),
-      durableStoreAvailable: () => true,
+      storeMode: () => 'distributed',
       now: () => new Date('2026-08-28T12:00:00.000Z'),
     };
     const owner = {

@@ -32,8 +32,8 @@ const HISTORY_LIMIT = 64;
 const MAX_BATCH_SIZE = 8;
 const MAX_BATCH_BYTES = 512 * 1024;
 /** Capability work mirrors legacy lifecycle semantics without becoming
- * executable there: publishing is `staging`, queued/dead is far-future
- * `pending`, and only an executing private lease is outer `leased`. */
+ * executable there: publishing is `staging`, queued is far-future `pending`,
+ * executing is `leased`, and dead work is legacy-terminal `capability_dead`. */
 const LEGACY_CAPABILITY_SHIELD_AT = new Date('9999-12-31T23:59:59.999Z');
 const LEGACY_CAPABILITY_SHIELD_OWNER = 'librechat-capability-shield';
 
@@ -1208,6 +1208,16 @@ export function createAgentTriggerDeliveryMethods(
               status: 'capability_leased',
               leaseUntil: { $lte: expiredBefore },
             },
+            {
+              /** A pre-shield replica can explicitly requeue the legacy-visible
+               * dead shell. Its publication leaves the private lifecycle at
+               * `dead`; the capable claimant atomically adopts that requeue. */
+              requiredWorkerCapability: { $in: workerCapabilities },
+              status: 'capability_pending',
+              capabilityStatus: 'dead',
+              settledAt: { $exists: false },
+              availableAt: { $lte: input.now },
+            },
           ];
     const claimed = await Delivery()
       .findOneAndUpdate(
@@ -1231,9 +1241,27 @@ export function createAgentTriggerDeliveryMethods(
             $set: {
               status: {
                 $cond: [
-                  { $in: ['$status', ['capability_pending', 'capability_leased']] },
-                  'capability_leased',
+                  { $eq: [{ $type: '$capabilityStatus' }, 'missing'] },
+                  {
+                    $cond: [
+                      { $in: ['$status', ['capability_pending', 'capability_leased']] },
+                      'capability_leased',
+                      'leased',
+                    ],
+                  },
                   'leased',
+                ],
+              },
+              claimAvailableAt: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$status', 'capability_pending'] },
+                      { $eq: ['$capabilityStatus', 'dead'] },
+                    ],
+                  },
+                  '$availableAt',
+                  '$claimAvailableAt',
                 ],
               },
               capabilityStatus: {
@@ -2823,9 +2851,9 @@ export function createAgentTriggerDeliveryMethods(
       { _id: input.id, ...shieldCapabilityFence(input) },
       {
         $set: {
-          // A far-future pending shell remains nonclaimable to old workers but
-          // does not impersonate a live lease during account deletion.
-          status: 'pending',
+          // The pre-capability runtime already treats `capability_dead` as a
+          // terminal, requeueable state, so it cannot block a lane successor.
+          status: 'capability_dead',
           availableAt: LEGACY_CAPABILITY_SHIELD_AT,
           capabilityStatus: 'dead',
           settledAt: input.settledAt,

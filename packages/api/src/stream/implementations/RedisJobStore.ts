@@ -1724,6 +1724,8 @@ interface PendingChunkAppendBatch {
 }
 
 export class RedisJobStore implements IJobStoreV2 {
+  readonly detachedAgentEventActionStoreMode = 'distributed' as const;
+
   private redis: Redis | Cluster;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private ttl: typeof DEFAULT_TTL;
