@@ -6,6 +6,7 @@ export * from './Breadcrumb';
 export * from './Button';
 export * from './Chip';
 export * from './Checkbox';
+export * from './DisclosureChevron';
 export * from './Dialog';
 export * from './DropdownMenu';
 export * from './HoverCard';

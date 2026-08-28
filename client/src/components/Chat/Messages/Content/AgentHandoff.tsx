@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useMemo, useRef, useState, useCallback } from 'react';
+import copy from 'copy-to-clipboard';
 import { ChevronDown } from 'lucide-react';
 import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
@@ -123,17 +124,18 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
   const hasInfo = fields.length > 0;
   const agentName = targetAgent?.name || localize('com_ui_agent');
 
+  /** `copy-to-clipboard` rather than `navigator.clipboard`, matching the other
+   *  message-content copy controls: the async API is undefined on a
+   *  non-secure origin (a LAN deployment served over http), where
+   *  dereferencing it throws before any rejection handler can run and the
+   *  button silently does nothing. */
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(copyText).then(
-      () => {
-        clearTimeout(copiedTimerRef.current);
-        setIsCopied(true);
-        copiedTimerRef.current = setTimeout(() => setIsCopied(false), 2000);
-      },
-      () => {
-        setIsCopied(false);
-      },
-    );
+    if (!copy(copyText, { format: 'text/plain' })) {
+      return;
+    }
+    clearTimeout(copiedTimerRef.current);
+    setIsCopied(true);
+    copiedTimerRef.current = setTimeout(() => setIsCopied(false), 2000);
   }, [copyText]);
 
   return (
