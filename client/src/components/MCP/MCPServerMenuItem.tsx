@@ -88,12 +88,7 @@ export default function MCPServerMenuItem({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate text-sm font-medium text-text-primary">{displayName}</span>
-          {isRequired && (
-            <Lock
-              className="h-3.5 w-3.5 flex-shrink-0 text-text-secondary"
-              aria-label="Required MCP server"
-            />
-          )}
+          {isRequired && <Lock className="h-3.5 w-3.5 flex-shrink-0 text-text-secondary" />}
         </div>
         {server.config?.description && (
           <p className="truncate text-xs text-text-secondary">{server.config.description}</p>
