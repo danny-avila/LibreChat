@@ -20,6 +20,8 @@ import {
   getActivityLabelText,
 } from '~/utils';
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
+import { parseBackgroundHandle, splitBackgroundAttachments } from './Parts/handle';
+import { mapAttachments, filterAttachmentsForPart } from '~/utils/map';
 import { ToolAuthWarning, ToolAuthWarningContext } from './auth';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
@@ -94,7 +96,10 @@ function hasPendingAuth(part: TMessageContentParts): boolean {
   );
 }
 
-function getToolMeta(part: TMessageContentParts): ToolMeta | null {
+function getToolMeta(
+  part: TMessageContentParts,
+  attachmentsByToolCallId?: Record<string, TAttachment[] | undefined>,
+): ToolMeta | null {
   if (part.type !== ContentTypes.TOOL_CALL) {
     return null;
   }
@@ -109,7 +114,10 @@ function getToolMeta(part: TMessageContentParts): ToolMeta | null {
   const isStandard =
     'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
   if (isStandard) {
-    const tc = toolCall as Agents.ToolCall & { progress?: number };
+    /** `agentId` disambiguates attachments when a handoff response repeats a
+     *  provider tool-call id across agents; `filterAttachmentsForPart` reads it
+     *  the same way. */
+    const tc = toolCall as Agents.ToolCall & { progress?: number; agentId?: string };
     /** Subagents can finish with `progress === 1` and no final output
      *  text (the parent saw "" / undefined back). Fall back to progress
      *  so the group header flips from "Running N agents" to "Ran N
@@ -125,10 +133,23 @@ function getToolMeta(part: TMessageContentParts): ToolMeta | null {
       name === 'set_memory' || name === 'delete_memory'
         ? isMemoryFailureOutput(name, tc.output ?? '')
         : hasFailedOutput(tc.output);
+    /** A backgrounded bash/code task reports its verdict through a
+     *  `background_task_status` attachment, not its output: the dispatch step
+     *  keeps a benign handle and usually closes as `completed`. The child card
+     *  folds that marker in as `extraError`, so without it here the group
+     *  reported no failed action beside a card showing failure. Correlated the
+     *  same way the child is, since provider tool-call ids repeat across agents
+     *  in handoff responses. */
+    const backgroundFailed =
+      parseBackgroundHandle(tc.output) != null &&
+      splitBackgroundAttachments(
+        filterAttachmentsForPart(attachmentsByToolCallId?.[tc.id ?? ''], tc.agentId),
+        tc.id,
+      ).backgroundStatus === 'error';
     return {
       name,
       iconName,
-      ...resolveOutcome(runStepStatus, completed, failedOutput),
+      ...resolveOutcome(runStepStatus, completed, failedOutput || backgroundFailed),
     };
   }
 
@@ -205,12 +226,21 @@ export default function ToolCallGroup({
   const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
   const retainedForPendingApprovalRef = useRef(false);
 
+  /** Re-keyed by tool-call id so each part's metadata sees only its own
+   *  attachments: `groupAttachments` arrives flattened across the group. */
+  const attachmentsByToolCallId = useMemo(
+    () => mapAttachments(groupAttachments ?? []),
+    [groupAttachments],
+  );
   /** `parts` may include interleaved reasoning ("Thoughts") parts that render
    *  inside the body but are not actions. Count and summarize only the real
    *  tool calls so the header and stacked icons stay accurate. */
   const toolMetadata = useMemo(
-    () => parts.map((p) => getToolMeta(p.part)).filter((m): m is ToolMeta => m != null),
-    [parts],
+    () =>
+      parts
+        .map((p) => getToolMeta(p.part, attachmentsByToolCallId))
+        .filter((m): m is ToolMeta => m != null),
+    [parts, attachmentsByToolCallId],
   );
   const count = toolMetadata.length;
   /** Approval state is read from the RAW parts, not `toolMetadata`: a pending

@@ -124,7 +124,7 @@ export default function DiffView({ parsed }: { parsed: ParsedDiff }) {
   return (
     <div
       data-testid="diff-view"
-      className="max-h-[300px] overflow-y-auto bg-surface-chat py-2 font-mono text-xs leading-5 dark:bg-surface-primary-alt"
+      className="max-h-[300px] overflow-y-auto bg-surface-code py-2 font-mono text-xs leading-5"
     >
       {lines.map((line, index) => {
         if (line.type === 'hunk') {

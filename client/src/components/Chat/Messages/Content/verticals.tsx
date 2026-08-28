@@ -65,7 +65,10 @@ export function collectSearchVerticals(attachments?: TAttachment[]): SearchVerti
       }
     }
     for (const item of data.shopping ?? []) {
-      if (item.link) {
+      /** A card with no title has no accessible name and no visible identity:
+       *  the anchor carries no label, the image is decorative, and the title
+       *  span renders empty. */
+      if (item.link && item.title) {
         shopping.push(item);
       }
     }
