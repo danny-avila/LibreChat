@@ -661,15 +661,16 @@ const ContentPartsBody = memo(function ContentPartsBody({
       const baseGroupId = getToolGroupId(group.parts, fallbackScope);
       const occurrence =
         resolvedToolGroupOccurrences.get(getToolGroupAnchorIndex(group.parts)) ?? 1;
-      /** Legacy rows lack run-step identity. Their provider ids may repeat,
-       * so preserve the first group's historic stable key and distinguish
-       * later occurrences by sequence rather than a shifting content index. */
       const groupId = occurrence === 1 ? baseGroupId : `${baseGroupId}:occurrence:${occurrence}`;
-      /** Hoisted a level higher when a phase card owns the media row, so the
-       *  same file is not offered by both the block and the card. */
-      const groupAttachments = hideAttachments
-        ? undefined
-        : group.parts.flatMap(({ part }) => attachmentsForPart(part) ?? []);
+      const seenAttachments = new Set<TAttachment>();
+      if (!hideAttachments) {
+        for (const { part } of group.parts) {
+          for (const attachment of attachmentsForPart(part) ?? []) {
+            seenAttachments.add(attachment);
+          }
+        }
+      }
+      const groupAttachments = hideAttachments ? undefined : Array.from(seenAttachments);
       return { ...group, groupId, groupAttachments };
     });
   }, [

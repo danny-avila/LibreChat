@@ -7,8 +7,25 @@ import type {
   ShoppingResult,
 } from 'librechat-data-provider';
 import { isMacPlatform } from '~/utils/shortcuts';
+import { isSafeUrl } from '~/utils/markdown';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+
+/**
+ * Provider result payloads are copied into the attachment without URL
+ * validation, so a result can carry a `javascript:` or other non-network
+ * target. Anything a card turns into an `href` or an `img` src clears the same
+ * allowlist the markdown renderer uses, both when admitting the result and
+ * when rendering it, so the two can never disagree.
+ */
+const safeUrl = (value?: string): string | undefined =>
+  value != null && isSafeUrl(value) ? value : undefined;
+
+const imageSource = (image: ImageResult): string | undefined =>
+  safeUrl(image.thumbnailUrl) ?? safeUrl(image.imageUrl);
+
+const imageTarget = (image: ImageResult): string | undefined =>
+  safeUrl(image.link) ?? safeUrl(image.googleUrl) ?? safeUrl(image.imageUrl);
 
 const MAX_VERTICAL_ITEMS = 8;
 const MAX_PLACES = 5;
@@ -58,9 +75,7 @@ export function collectSearchVerticals(attachments?: TAttachment[]): SearchVerti
      *  an image needs both a src and somewhere to go, a product needs
      *  somewhere to go, and a place needs something to name. */
     for (const image of data.images ?? []) {
-      const hasSource = image.thumbnailUrl || image.imageUrl;
-      const hasTarget = image.link || image.googleUrl || image.imageUrl;
-      if (hasSource && hasTarget) {
+      if (imageSource(image) && imageTarget(image)) {
         images.push(image);
       }
     }
@@ -68,7 +83,7 @@ export function collectSearchVerticals(attachments?: TAttachment[]): SearchVerti
       /** A card with no title has no accessible name and no visible identity:
        *  the anchor carries no label, the image is decorative, and the title
        *  span renders empty. */
-      if (item.link && item.title) {
+      if (safeUrl(item.link) && item.title) {
         shopping.push(item);
       }
     }
@@ -98,7 +113,7 @@ function ImageStrip({ images, label }: { images: ImageResult[]; label: string })
   return (
     <ul className="flex list-none gap-2 overflow-x-auto pb-1" aria-label={label}>
       {images.slice(0, MAX_VERTICAL_ITEMS).map((image, i) => {
-        const href = image.link || image.googleUrl || image.imageUrl;
+        const href = imageTarget(image);
         const ratio =
           image.thumbnailWidth && image.thumbnailHeight
             ? `${image.thumbnailWidth} / ${image.thumbnailHeight}`
@@ -114,7 +129,7 @@ function ImageStrip({ images, label }: { images: ImageResult[]; label: string })
               style={{ aspectRatio: ratio }}
             >
               <img
-                src={image.thumbnailUrl || image.imageUrl}
+                src={imageSource(image)}
                 alt={image.title || ''}
                 className="h-full w-full object-cover"
                 loading="lazy"
@@ -133,15 +148,15 @@ function ShoppingStrip({ items, label }: { items: ShoppingResult[]; label: strin
       {items.slice(0, MAX_VERTICAL_ITEMS).map((item, i) => (
         <li key={item.productId || item.link || i} className="flex w-40 shrink-0">
           <a
-            href={item.link}
+            href={safeUrl(item.link)}
             target="_blank"
             rel="noopener noreferrer"
             className="flex w-full flex-col rounded-xl border border-border-light p-2 no-underline transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
           >
-            {item.imageUrl && (
+            {safeUrl(item.imageUrl) && (
               <div className="mb-2 aspect-square w-full shrink-0 overflow-hidden rounded-lg bg-surface-tertiary">
                 <img
-                  src={item.imageUrl}
+                  src={safeUrl(item.imageUrl)}
                   alt=""
                   className="h-full w-full object-cover"
                   loading="lazy"
