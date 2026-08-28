@@ -98,6 +98,15 @@ const resolveUploadMimeType = (file) =>
 const delimitedTextTypes = /^(?:text|application)\/csv$/i;
 const isDelimitedTextType = (mimetype) => delimitedTextTypes.test(mimetype);
 
+/**
+ * A parser result that names unread pages, or reports embedded artwork it converted to
+ * nothing, is text with holes in it. Enough to hand a model, not enough to call the
+ * document inspected, so every route that persists one has to fail closed while the
+ * uninspectable-content policy is active.
+ */
+const isPartialDocumentText = (result) =>
+  !!result?.pagesNeedingOcr?.length || result?.mayOmitContent === true;
+
 const isZipBombError = (err) => err?.code === 'ZIP_BOMB' || err?.name === 'ZipBombError';
 /* An archive the guard identified and then could not walk. Past detection there is no
  * third answer, so forwarding it to a configured OCR provider would hand the same bytes
@@ -1052,10 +1061,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           const hasLocalText = !!localResult?.text?.trim();
           /* pdf-inspector names unreadable pages. AnyDoc cannot, so it reports whether
            * the document embeds artwork that may carry content it converted to nothing. */
-          const localNeedsOCR =
-            !hasLocalText ||
-            !!localResult?.pagesNeedingOcr?.length ||
-            localResult?.mayOmitContent === true;
+          const localNeedsOCR = !hasLocalText || isPartialDocumentText(localResult);
 
           if (hasLocalText && !localNeedsOCR) {
             return localResult;
@@ -1166,6 +1172,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           throw new Error(
             `Unable to extract text from "${file.originalname}". RAG text extraction was unavailable and the built-in parser produced no result.`,
           );
+        }
+        /* The same fail-closed rule the primary parser path applies at its own partial
+         * result: no OCR service is configured on this route, so there is nothing left
+         * to complete the text with. */
+        if (isPartialDocumentText(documentText)) {
+          assertExtractedTextInspectable({ filters: appConfig?.filters, text: undefined });
         }
         return await createDocumentTextFile(documentText);
       }

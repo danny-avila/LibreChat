@@ -1735,6 +1735,53 @@ describe('processAgentFileUpload', () => {
       expect(created.type).toBe(DOCX_MIME);
     });
 
+    /**
+     * The fallback's own partial result: RAG is gone, this route configures no OCR
+     * service to complete the text with, and the parser read only part of the document.
+     * A nonempty string is not evidence the document was inspected, so the strict
+     * policy has to refuse it here exactly as it does on the primary parser path.
+     */
+    test('fails closed when the RAG fallback can only extract part of the document', async () => {
+      process.env.RAG_API_URL = 'http://rag-api.test';
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: DOCX_TEXT_REGEX }));
+      const { parseText } = require('@librechat/api');
+      parseText.mockRejectedValueOnce(new Error('native fallback is disabled'));
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockResolvedValue({
+          text: 'page one text',
+          bytes: 13,
+          filepath: FileSources.document_parser,
+          pagesNeedingOcr: [2, 3],
+        }),
+      });
+      assertExtractedTextInspectable.mockImplementationOnce(({ text }) => {
+        expect(text).toBeUndefined();
+        throw makeUninspectableExtractedTextError();
+      });
+      const req = makeReq({
+        mimetype: DOCX_MIME,
+        ocrConfig: null,
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              uninspectable: 'block',
+            },
+          },
+        },
+      });
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toMatchObject({
+        code: 'content_filter_uninspectable',
+        body: { field: 'extracted_text' },
+      });
+
+      expect(db.addAgentResourceFile).not.toHaveBeenCalled();
+      expect(db.createFile).not.toHaveBeenCalled();
+    });
+
     test('surfaces a persistence failure without retrying via the document parser', async () => {
       process.env.RAG_API_URL = 'http://rag-api.test';
       mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: DOCX_TEXT_REGEX }));
