@@ -121,7 +121,12 @@ export default function MemoryCall({
                       {memoryValue}
                     </div>
                   )}
-                  {!isSave && (
+                  {/* Only a completed delete actually removed anything. The
+                      panel opens as soon as the key streams in, and the phase
+                      can still land on cancelled, so an ungated confirmation
+                      claimed the memory was gone while the header said
+                      Cancelled. The key above already shows what was tried. */}
+                  {!isSave && phase === 'completed' && (
                     <div className="text-sm italic text-text-secondary">
                       {localize('com_ui_memory_deleted')}
                     </div>

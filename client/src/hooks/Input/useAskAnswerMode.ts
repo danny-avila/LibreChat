@@ -40,10 +40,16 @@ const askAnswerCheckedAtom = atom<number[]>({
   default: [],
 });
 
-/** Free-form answer handed between the composer and the in-message card. */
-const askAnswerTextAtom = atom<{ actionId: string | null; text: string }>({
+/**
+ * Free-form answers handed between the composer and the in-message card,
+ * keyed by pending action id. A single `{ actionId, text }` slot lost an
+ * unsent answer as soon as a second paused conversation's question claimed
+ * it: the reader is action-scoped, so returning to the first card showed an
+ * empty box with no route back to the text. Entries are dropped on submit.
+ */
+const askAnswerTextAtom = atom<Record<string, string>>({
   key: 'askAnswerModeText',
-  default: { actionId: null, text: '' },
+  default: {},
 });
 
 /**
@@ -79,7 +85,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
   const [collapsedIds, setCollapsedIds] = useRecoilState(collapsedAskActionsAtom);
   const [selected, setSelected] = useRecoilState(askAnswerSelectionAtom);
   const [checked, setChecked] = useRecoilState(askAnswerCheckedAtom);
-  const [answerDraft, setAnswerDraft] = useRecoilState(askAnswerTextAtom);
+  const [answerDrafts, setAnswerDrafts] = useRecoilState(askAnswerTextAtom);
   const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
   const { submitAskAnswer } = useResumeSubmit();
   /** Recoil-backed so the lock/status works from the composer, which renders
@@ -154,11 +160,11 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     () => splitOtherOption(batchMode ? undefined : liveAsk?.question.options),
     [batchMode, liveAsk],
   );
-  const answerText = answerDraft.actionId === liveAsk?.actionId ? answerDraft.text : '';
+  const answerText = liveAsk != null ? (answerDrafts[liveAsk.actionId] ?? '') : '';
   const setAnswerText = useCallback(
     (text: string) => {
       if (liveAsk && !batchMode) {
-        setAnswerDraft({ actionId: liveAsk.actionId, text });
+        setAnswerDrafts((current) => ({ ...current, [liveAsk.actionId]: text }));
         /** While the card owns the answer, `useAutoSave` is tracking the
          *  conversation draft instead. Keep the dormant ask draft current so
          *  expanding can restore this edit without clobbering that message. */
@@ -167,7 +173,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
         }
       }
     },
-    [batchMode, liveAsk, saveDrafts, setAnswerDraft],
+    [batchMode, liveAsk, saveDrafts, setAnswerDrafts],
   );
 
   /** Selection state is per-question: a new pause must never inherit a stale
@@ -187,7 +193,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       const composerAnswer = !batchMode ? (formContext?.getValues('text') ?? answerText) : '';
       morphTransition(() => {
         if (!batchMode) {
-          setAnswerDraft({ actionId: liveAsk.actionId, text: composerAnswer });
+          setAnswerDrafts((current) => ({ ...current, [liveAsk.actionId]: composerAnswer }));
           if (!saveDrafts) {
             formContext?.reset();
           }
@@ -197,7 +203,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
         );
       });
     }
-  }, [liveAsk, batchMode, formContext, answerText, saveDrafts, setAnswerDraft, setCollapsedIds]);
+  }, [liveAsk, batchMode, formContext, answerText, saveDrafts, setAnswerDrafts, setCollapsedIds]);
 
   const expand = useCallback(() => {
     if (liveAsk) {
@@ -265,11 +271,16 @@ export default function useAskAnswerMode(conversationId?: string | null) {
           }
           setSelected(null);
           setChecked([]);
-          setAnswerDraft((current) =>
-            current.actionId === submittedActionId
-              ? { actionId: submittedActionId, text: '' }
-              : current,
-          );
+          /** Drop only the answered question's entry, so a draft belonging to
+           *  another paused conversation survives and the map stays bounded. */
+          setAnswerDrafts((current) => {
+            if (current[submittedActionId] == null) {
+              return current;
+            }
+            const next = { ...current };
+            delete next[submittedActionId];
+            return next;
+          });
           if (
             (consumedComposerText || (wasActive && saveDrafts)) &&
             currentScope.formContext?.getValues('text') === submittedComposerText
@@ -290,7 +301,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       submitAskAnswer,
       setSelected,
       setChecked,
-      setAnswerDraft,
+      setAnswerDrafts,
     ],
   );
 

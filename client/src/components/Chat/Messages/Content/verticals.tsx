@@ -50,7 +50,15 @@ export function collectSearchVerticals(attachments?: TAttachment[]): SearchVerti
     if (!data) {
       continue;
     }
-    images.push(...(data.images ?? []));
+    /** Both image URLs are optional in the provider contract and `ImageStrip`
+     *  needs one for the `<img>` src. Keeping an entry with neither still
+     *  makes `images.length` nonzero, so the card renders a broken tile
+     *  instead of omitting the unusable result. */
+    for (const image of data.images ?? []) {
+      if (image.thumbnailUrl || image.imageUrl) {
+        images.push(image);
+      }
+    }
     shopping.push(...(data.shopping ?? []));
     places.push(...(data.places ?? []));
   }

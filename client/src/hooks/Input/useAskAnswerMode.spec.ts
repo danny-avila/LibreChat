@@ -5,11 +5,18 @@ const mockSetComposerText = jest.fn();
 const mockSetCollapsedIds = jest.fn();
 const mockSetSelected = jest.fn();
 const mockSetChecked = jest.fn();
-const mockSetAnswerDraft = jest.fn();
+let mockAnswerDrafts: Record<string, string> = {};
+/** Applies updater functions so the tests can assert the resulting drafts
+ *  rather than the setter's call shape. */
+const mockSetAnswerDrafts = jest.fn((update: unknown) => {
+  mockAnswerDrafts =
+    typeof update === 'function'
+      ? (update as (current: Record<string, string>) => Record<string, string>)(mockAnswerDrafts)
+      : (update as Record<string, string>);
+});
 const mockSetDraft = jest.fn();
 let mockSaveDrafts = false;
 let mockCollapsedIds: string[] = [];
-let mockAnswerDraft = { actionId: null as string | null, text: '' };
 
 jest.mock('~/data-provider', () => ({ useGetMessagesByConvoId: jest.fn() }));
 jest.mock('~/components/Chat/Messages/Content/ApprovalContext', () => ({
@@ -41,7 +48,7 @@ jest.mock('recoil', () => ({
       return [[], mockSetChecked];
     }
     if (state.key === 'askAnswerModeText') {
-      return [mockAnswerDraft, mockSetAnswerDraft];
+      return [mockAnswerDrafts, mockSetAnswerDrafts];
     }
     return [[], jest.fn()];
   },
@@ -74,7 +81,7 @@ describe('useAskAnswerMode', () => {
     jest.clearAllMocks();
     mockSaveDrafts = false;
     mockCollapsedIds = [];
-    mockAnswerDraft = { actionId: null, text: '' };
+    mockAnswerDrafts = {};
     mockGetComposerText.mockReturnValue('answer from A');
   });
 
@@ -126,13 +133,13 @@ describe('useAskAnswerMode', () => {
 
     act(() => result.current.collapse());
 
-    expect(mockSetAnswerDraft).not.toHaveBeenCalled();
+    expect(mockSetAnswerDrafts).not.toHaveBeenCalled();
     expect(mockResetComposer).not.toHaveBeenCalled();
   });
 
   it('does not overwrite normal composer text when expanding a batch', () => {
     mockCollapsedIds = ['a1'];
-    mockAnswerDraft = { actionId: 'a1', text: 'stale batch handoff' };
+    mockAnswerDrafts = { a1: 'stale batch handoff' };
     mockUseGetMessages.mockReturnValue({ data: batchAsk });
     const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
 
@@ -168,10 +175,7 @@ describe('useAskAnswerMode', () => {
 
     act(() => result.current.collapse());
 
-    expect(mockSetAnswerDraft).toHaveBeenCalledWith({
-      actionId: 'a1',
-      text: 'answer from A',
-    });
+    expect(mockAnswerDrafts).toEqual({ a1: 'answer from A' });
     expect(mockResetComposer).toHaveBeenCalledTimes(1);
   });
 
@@ -187,7 +191,7 @@ describe('useAskAnswerMode', () => {
 
   it('restores the card answer into the composer when drafts are disabled', () => {
     mockCollapsedIds = ['a1'];
-    mockAnswerDraft = { actionId: 'a1', text: 'answer edited in the card' };
+    mockAnswerDrafts = { a1: 'answer edited in the card' };
     mockUseGetMessages.mockReturnValue({ data: liveAsk });
     const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
 
@@ -203,14 +207,27 @@ describe('useAskAnswerMode', () => {
 
     act(() => result.current.setAnswerText('answer edited in the card'));
 
-    expect(mockSetAnswerDraft).toHaveBeenCalledWith({
-      actionId: 'a1',
-      text: 'answer edited in the card',
-    });
+    expect(mockAnswerDrafts).toEqual({ a1: 'answer edited in the card' });
     expect(mockSetDraft).toHaveBeenCalledWith({
       id: 'draft-a1',
       value: 'answer edited in the card',
     });
+  });
+
+  it("preserves another paused question's answer when a second one is edited", () => {
+    mockAnswerDrafts = { a1: 'answer from A' };
+    const otherAsk = {
+      actionId: 'a2',
+      question: { question: 'Pick one', options: [], multiSelect: false },
+    } as unknown as typeof liveAsk;
+    mockUseGetMessages.mockReturnValue({ data: otherAsk });
+    const { result } = renderHook(() => useAskAnswerMode('conversation-2'));
+
+    act(() => result.current.setAnswerText('answer from B'));
+
+    /** A single shared slot dropped A's unsent answer the moment B claimed
+     *  it, and the action-scoped reader then showed A an empty box. */
+    expect(mockAnswerDrafts).toEqual({ a1: 'answer from A', a2: 'answer from B' });
   });
 
   it('does not let a delayed answer success clear the composer or selection after navigation', () => {

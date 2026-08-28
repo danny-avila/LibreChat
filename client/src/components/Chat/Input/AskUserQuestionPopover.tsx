@@ -63,14 +63,15 @@ function AskUserQuestionsPopoverPanel({ ask }: { ask: ReturnType<typeof useAskAn
             description={localize('com_ui_ask_move_to_chat')}
             side="top"
             render={
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="icon"
                 aria-label={localize('com_ui_ask_move_to_chat')}
-                className="rounded-md p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+                className="size-auto rounded-md p-1 text-text-secondary"
                 onClick={collapse}
               >
                 <ChevronDown className="size-4" aria-hidden="true" />
-              </button>
+              </Button>
             }
           />
         </div>
@@ -171,14 +172,15 @@ function AskUserQuestionPopoverPanel({
             description={localize('com_ui_ask_move_to_chat')}
             side="top"
             render={
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="icon"
                 aria-label={localize('com_ui_ask_move_to_chat')}
-                className="rounded-md p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+                className="size-auto rounded-md p-1 text-text-secondary"
                 onClick={collapse}
               >
                 <ChevronDown className="size-4" aria-hidden="true" />
-              </button>
+              </Button>
             }
           />
         </div>
