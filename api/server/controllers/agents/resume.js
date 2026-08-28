@@ -1342,6 +1342,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
             suspensionRecord.handlingGenerationCreatedAt;
           durableEventActorRequiresDetachedProducer =
             job.metadata.agentEventDetachedActionProducerRequired === true ||
+            job.metadata.agentEventExpectedAction != null ||
             job.metadata.agentEventInvocationKey != null ||
             suspensionRecord.kind === 'internal_completion';
           const signedExpectedAction = getSuspendedEventActorExpectedAction(

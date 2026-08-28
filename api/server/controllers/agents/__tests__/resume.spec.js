@@ -678,7 +678,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockRecordAgentEventActorReconciliation).not.toHaveBeenCalled();
     });
 
-    it('refuses a producer-required suspension before claiming it on an incapable replica', async () => {
+    it('refuses a prior-head expected-action suspension before claiming it on an incapable replica', async () => {
       configureEventActorResume();
       requestStateOverrides._agentEventBindingId = 'binding-1';
       const expectedAction = { toolName: 'submit_move' };
@@ -703,7 +703,6 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           metadata: {
             idempotencyClientRequestId: 'trigger_event_delivery',
             agentEventDeliveryKey: 'trigger_event_delivery',
-            agentEventDetachedActionProducerRequired: true,
             agentEventExpectedAction: expectedAction,
             agentEventSuspension: {
               version: 1,
@@ -739,6 +738,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
       expect(mockResumeAgentEventActor).not.toHaveBeenCalled();
       expect(mockInitializeClient).not.toHaveBeenCalled();
+      expect(mockDecrementPendingRequest).toHaveBeenCalledTimes(1);
       expect(mockReleaseEventChildLease).toHaveBeenCalledTimes(1);
     });
 
