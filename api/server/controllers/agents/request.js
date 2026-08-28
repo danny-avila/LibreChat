@@ -33,9 +33,9 @@ const {
   executeAgentEventActor,
   findAgentEventAppliedAction,
   createAgentEventActionRecorder,
-  isEnabled,
   isHITLEnabled,
   agentRequestsAskUserQuestion,
+  resolveAgentTurnExecutionPlan,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -1682,6 +1682,59 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // this job on the same conversationId before acting on it.
     client.jobCreatedAt = jobCreatedAt;
 
+    const agentsConfig = req.config?.endpoints?.[EModelEndpoint.agents];
+    const eventActorAgents = [
+      client?.options?.agent,
+      ...(client?.agentConfigs?.values?.() ?? []),
+    ].filter(Boolean);
+    const eventActorMayPause =
+      isHITLEnabled(agentsConfig?.toolApproval) ||
+      eventActorAgents.some(agentRequestsAskUserQuestion);
+    const eventActorHasSkillPrimes =
+      client?.options?.primeInvokedSkills != null ||
+      (client?.options?.agent?.alwaysApplySkillPrimes?.length ?? 0) > 0 ||
+      (client?.options?.agent?.manualSkillPrimes?.length ?? 0) > 0;
+    const expectedActionToolName = agentEventDelivery?.expectedAction?.toolName;
+    const eventActorActionMayDetach =
+      typeof expectedActionToolName === 'string' &&
+      eventActorAgents.some((agent) =>
+        (agent.backgroundToolNames ?? []).some(
+          (name) =>
+            name === expectedActionToolName || name.startsWith(`${expectedActionToolName}_mcp_`),
+        ),
+      );
+    const turnExecutionPlan = resolveAgentTurnExecutionPlan({
+      conversationId,
+      parentMessageId,
+      isNewConversation: isNewConvo,
+      isSchedule: scheduleId != null,
+      isEvent: req._isAgentTrigger === true,
+      event:
+        agentEventDelivery?.event != null
+          ? {
+              type: agentEventDelivery.event.type,
+              ...(typeof boundEventBindingId === 'string' &&
+              boundEventBindingId.length > 0 &&
+              req._agentEventBindingParentConversationId != null
+                ? {
+                    binding: {
+                      bindingId: boundEventBindingId,
+                      parentConversationId: req._agentEventBindingParentConversationId,
+                    },
+                  }
+                : {}),
+              ...(agentEventDelivery?.expectedAction == null
+                ? {}
+                : { expectedAction: agentEventDelivery.expectedAction }),
+            }
+          : undefined,
+      canPause: eventActorMayPause,
+      checkpointerType: agentsConfig?.checkpointer?.type,
+      hasSkillPrimes: eventActorHasSkillPrimes,
+      hasMemoryContext: req.config?.memory != null && req.config.memory.disabled !== true,
+      expectedActionMayDetach: eventActorActionMayDetach,
+    });
+
     // Resolve title timing from the public agents endpoint first, then fall
     // back to the agent's actual backing provider/custom endpoint.
     titleTiming = resolveTitleTiming({
@@ -1999,86 +2052,29 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           },
         };
 
-        const checkpointForksEnabled =
-          req.config?.endpoints?.[EModelEndpoint.agents]?.eventDriven?.checkpointForks === true;
-        /** This is a deployment barrier, not a principal-scoped feature. It is
-         * populated from the base config before the listener starts; reading
-         * merged req.config here would let a user/role/tenant override bypass
-         * the mixed-version rollout fence. */
-        const durableActorReceiptsEnabled = isEnabled(
-          process.env.ENABLE_AGENT_EVENT_DURABLE_RECEIPTS,
-        );
-        const agentsConfig = req.config?.endpoints?.[EModelEndpoint.agents];
-        const eventActorAgents = [
-          client?.options?.agent,
-          ...(client?.agentConfigs?.values?.() ?? []),
-        ].filter(Boolean);
-        const eventActorMayPause =
-          isHITLEnabled(agentsConfig?.toolApproval) ||
-          eventActorAgents.some(agentRequestsAskUserQuestion);
-        /** Skill bodies are spliced or reconstructed into the message list
-         * ahead of the newest message, and a warm continuation forwards only
-         * that newest message — a checkpoint-restored actor would keep serving
-         * the bodies baked in at its last cold start and never observe an
-         * edited or newly attached skill. That covers request-time primes AND
-         * history-derived re-priming: `primeInvokedSkills` re-resolves any
-         * skill the actor previously invoked, so its mere presence (the skills
-         * capability) keeps the actor on the legacy path, which rebuilds fresh
-         * bodies every turn. #15235 tracks the context fingerprint that will
-         * restore warm continuation for skill-bearing actors. */
-        const eventActorHasSkillPrimes =
-          client?.options?.primeInvokedSkills != null ||
-          (client?.options?.agent?.alwaysApplySkillPrimes?.length ?? 0) > 0 ||
-          (client?.options?.agent?.manualSkillPrimes?.length ?? 0) > 0;
-        /** A background-opted expected action can detach: dispatch returns a
-         * launch handle the evidence fences correctly reject, and the later
-         * completion is provenance-marked as another turn's work — so a fork
-         * would classify actionless and settle before the external effect
-         * lands, with no receipt to stop a retry from dispatching it again.
-         * The name comparison mirrors matchesExpectedAction's MCP suffix. */
-        const expectedActionToolName = agentEventDelivery?.expectedAction?.toolName;
-        const eventActorActionMayDetach =
-          typeof expectedActionToolName === 'string' &&
-          eventActorAgents.some((agent) =>
-            (agent.backgroundToolNames ?? []).some(
-              (name) =>
-                name === expectedActionToolName ||
-                name.startsWith(`${expectedActionToolName}_mcp_`),
-            ),
-          );
-        const canUseEventActorFork =
-          checkpointForksEnabled &&
-          durableActorReceiptsEnabled &&
-          agentsConfig?.checkpointer?.type !== 'memory' &&
-          !eventActorMayPause &&
-          !eventActorHasSkillPrimes &&
-          !eventActorActionMayDetach &&
-          agentEventDelivery?.event != null &&
-          agentEventDelivery.expectedAction != null &&
-          typeof eventTaskId === 'string' &&
-          req._agentEventBindingParentConversationId != null;
+        const usesCheckpointStrategy = turnExecutionPlan.strategy === 'checkpoint';
         /** Authoritative action proof is captured in graph context the moment
          * the expected tool executes (see the observer tee in initialize.js);
          * run-step inspection stays only as a fallback, because the run-step
          * collection is populated asynchronously and can still be empty the
          * instant sendMessage resolves — misreading an applied invocation as
          * actionless would discard its fork and strand the actor cold. */
-        const eventActorActionRecorder = canUseEventActorFork
-          ? createAgentEventActionRecorder(agentEventDelivery.expectedAction)
+        const eventActorActionRecorder = usesCheckpointStrategy
+          ? createAgentEventActionRecorder(turnExecutionPlan.expectedAction)
           : undefined;
         if (eventActorActionRecorder != null) {
           req._agentEventActionObserver = eventActorActionRecorder.observeToolEnd;
         }
-        const sendPromise = canUseEventActorFork
+        const sendPromise = usesCheckpointStrategy
           ? executeAgentEventActor(
               {
                 user: userId,
                 ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
                 conversationId,
-                bindingId: boundEventBindingId,
+                bindingId: turnExecutionPlan.binding.bindingId,
                 invocationId: eventTaskId,
                 event: agentEventDelivery.event,
-                expectedAction: agentEventDelivery.expectedAction,
+                expectedAction: turnExecutionPlan.expectedAction,
                 signal: job.abortController.signal,
                 checkpointer: req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
                 invoke: async (actorContext) => {
@@ -2091,7 +2087,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 readAppliedAction: () =>
                   eventActorActionRecorder.read() ??
                   findAgentEventAppliedAction(
-                    agentEventDelivery.expectedAction,
+                    turnExecutionPlan.expectedAction,
                     client?.run?.getRunSteps?.() ?? [],
                     client?.contentParts ?? [],
                   ),

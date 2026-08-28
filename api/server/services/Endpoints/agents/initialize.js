@@ -1267,9 +1267,7 @@ const initializeClient = async ({
               ? { tenantId: req.user.tenantId }
               : {}),
           },
-          {
-            completionWakeups: subagentThreadTaskStore.completionWakeupsEnabled === true,
-          },
+          { completionWakeups: true },
         )
       : undefined;
   let hasExistingSubagentTask = false;

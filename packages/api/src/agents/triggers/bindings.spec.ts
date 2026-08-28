@@ -46,7 +46,6 @@ function dependencies() {
     })),
     deleteConvos: jest.fn(async () => ({ deletedCount: 1 })),
     reserveThread,
-    enabled: () => true,
   };
 }
 
@@ -69,25 +68,6 @@ function app(deps = dependencies()) {
 }
 
 describe('agent event bindings', () => {
-  it('keeps registration off until every API replica supports child turns', async () => {
-    const deps = dependencies();
-    deps.enabled = () => false;
-    const { server } = app(deps);
-    const response = await request(server)
-      .post('/bindings')
-      .set('Idempotency-Key', 'disabled-binding')
-      .send({
-        actorId: 'player-a',
-        parentConversationId: PARENT_ID,
-        parentMessageId: PARENT_MESSAGE_ID,
-        target: { agentId: CHILD_AGENT_ID },
-      });
-
-    expect(response.status).toBe(503);
-    expect(response.body.error.code).toBe('event_binding_unavailable');
-    expect(deps.reserveThread).not.toHaveBeenCalled();
-  });
-
   it('reserves a hidden depth-one actor thread bound to the authenticated API key', async () => {
     const { server, deps } = app();
     const response = await request(server)

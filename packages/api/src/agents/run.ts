@@ -58,6 +58,11 @@ import {
   stripBackgroundFromToolDefinitions,
 } from '~/agents/background';
 import {
+  createSubagentWakeupHandleHook,
+  agentUsesSubagentCompletionWakeups,
+  usesSubagentCompletionWakeups,
+} from '~/agents/subagentDelivery';
+import {
   resolveToolApprovalPolicy,
   healToolApprovalPolicy,
   exemptAskUserQuestionFromApproval,
@@ -66,10 +71,6 @@ import {
   ASK_USER_QUESTION_TOOL_NAME,
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
-import {
-  createSubagentWakeupHandleHook,
-  usesSubagentCompletionWakeups,
-} from '~/agents/subagentDelivery';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
 import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
@@ -1801,7 +1802,7 @@ export async function createRun({
       agentInput.toolDefinitions = registerBackgroundTaskTool({
         toolRegistry: agentInput.toolRegistry,
         toolDefinitions: agentInput.toolDefinitions,
-        subagentCompletionWakeups: usesSubagentCompletionWakeups(subagentTasks),
+        subagentCompletionWakeups: agentUsesSubagentCompletionWakeups(subagentTasks, agent.id),
       }).toolDefinitions;
     }
     agentInputs.push(agentInput);
@@ -1938,7 +1939,11 @@ export async function createRun({
     hooks = hooks ?? new HookRegistry();
     hooks.register('PostToolUse', {
       pattern: String(Constants.SUBAGENT),
-      hooks: [createSubagentWakeupHandleHook()],
+      hooks: [
+        createSubagentWakeupHandleHook((agentId) =>
+          agentUsesSubagentCompletionWakeups(subagentTasks, agentId),
+        ),
+      ],
       internal: true,
     });
   }

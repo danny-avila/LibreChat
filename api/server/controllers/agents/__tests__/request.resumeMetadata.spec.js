@@ -74,6 +74,37 @@ const mockIsScheduleLive = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn();
 const mockExecuteAgentEventActor = jest.fn();
 const mockFindAgentEventAppliedAction = jest.fn();
+const mockResolveAgentTurnExecutionPlan = jest.fn((input) => {
+  let origin = 'user';
+  if (input.isSchedule) {
+    origin = 'schedule';
+  } else if (input.isEvent || input.event) {
+    origin = 'event';
+  }
+  const checkpointCompatible =
+    input.event?.binding != null &&
+    input.event?.expectedAction != null &&
+    input.checkpointerType !== 'memory' &&
+    !input.canPause &&
+    !input.hasSkillPrimes &&
+    !input.hasMemoryContext &&
+    !input.expectedActionMayDetach;
+  let strategy = 'history';
+  if (input.isNewConversation) {
+    strategy = 'fresh';
+  } else if (checkpointCompatible) {
+    strategy = 'checkpoint';
+  }
+  return {
+    origin,
+    strategy,
+    conversationId: input.conversationId,
+    parentMessageId: input.parentMessageId,
+    canPause: input.canPause,
+    expectedAction: input.event?.expectedAction,
+    binding: input.event?.binding,
+  };
+});
 /** Faithful stand-in for the graph-context action recorder: first observed
  * tool end with a name becomes the receipt. Matching fences are unit-tested
  * against the real implementation in packages/api. */
@@ -169,7 +200,6 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
-  isEnabled: (value) => value === true || value === 'true' || value === '1',
   isScheduleFireRequest: (...args) => mockIsScheduleFireRequest(...args),
   exemptFromConcurrencyLimiter: (...args) => mockExemptFromConcurrencyLimiter(...args),
   toPendingSteer: jest.fn((item) => item),
@@ -232,6 +262,7 @@ jest.mock('@librechat/api', () => ({
   executeAgentEventActor: (...args) => mockExecuteAgentEventActor(...args),
   findAgentEventAppliedAction: (...args) => mockFindAgentEventAppliedAction(...args),
   createAgentEventActionRecorder: (...args) => mockCreateAgentEventActionRecorder(...args),
+  resolveAgentTurnExecutionPlan: (...args) => mockResolveAgentTurnExecutionPlan(...args),
   isHITLEnabled: (policy) => policy?.enabled === true,
   agentRequestsAskUserQuestion: (agent) =>
     agent?.toolDefinitions?.some((tool) => tool?.name === 'ask_user_question') === true,
@@ -321,7 +352,6 @@ function nextTick() {
 describe('ResumableAgentController resume metadata', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.ENABLE_AGENT_EVENT_DURABLE_RECEIPTS = 'true';
     mockMCPContexts = new WeakMap();
     mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: true });
     mockDecrementPendingRequest.mockResolvedValue(undefined);
@@ -3231,6 +3261,16 @@ describe('ResumableAgentController resume metadata', () => {
       );
       await flushBackgroundGeneration();
 
+      expect(mockResolveAgentTurnExecutionPlan).toHaveBeenCalledTimes(1);
+      expect(mockResolveAgentTurnExecutionPlan).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversationId,
+          isEvent: false,
+          event: undefined,
+        }),
+      );
+      expect(mockExecuteAgentEventActor).not.toHaveBeenCalled();
+      expect(mockCreateAgentEventActionRecorder).not.toHaveBeenCalled();
       expect(mockSaveMessage).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'user-123' }),
         expect.objectContaining({
@@ -4042,7 +4082,7 @@ describe('ResumableAgentController resume metadata', () => {
         },
       },
       config: {
-        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+        endpoints: { agents: {} },
       },
       _isAgentTrigger: true,
       _agentEventBindingId: 'binding-1',
@@ -4061,6 +4101,15 @@ describe('ResumableAgentController resume metadata', () => {
     );
     await nextTick();
 
+    expect(mockResolveAgentTurnExecutionPlan).toHaveBeenCalledTimes(1);
+    expect(mockResolveAgentTurnExecutionPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'child-conversation',
+        isNewConversation: false,
+        canPause: false,
+        expectedActionMayDetach: false,
+      }),
+    );
     expect(mockExecuteAgentEventActor).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationId: 'child-conversation',
@@ -4137,7 +4186,7 @@ describe('ResumableAgentController resume metadata', () => {
         },
       },
       config: {
-        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+        endpoints: { agents: {} },
       },
       _isAgentTrigger: true,
       _agentEventBindingId: 'binding-1',
@@ -4228,7 +4277,7 @@ describe('ResumableAgentController resume metadata', () => {
         },
       },
       config: {
-        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+        endpoints: { agents: {} },
       },
       _isAgentTrigger: true,
       _agentEventBindingId: 'binding-1',
@@ -4341,7 +4390,7 @@ describe('ResumableAgentController resume metadata', () => {
         },
       },
       config: {
-        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+        endpoints: { agents: {} },
       },
       _isAgentTrigger: true,
       _agentEventBindingId: 'binding-1',
@@ -4397,19 +4446,10 @@ describe('ResumableAgentController resume metadata', () => {
 
   it.each([
     [
-      'durable-receipt rollout disabled',
-      { toolDefinitions: [] },
-      { eventDriven: { checkpointForks: true } },
-      undefined,
-      undefined,
-      false,
-    ],
-    [
       'tool approval',
       { toolDefinitions: [] },
       {
         toolApproval: { enabled: true },
-        eventDriven: { checkpointForks: true, durableReceipts: true },
       },
       undefined,
       undefined,
@@ -4417,14 +4457,14 @@ describe('ResumableAgentController resume metadata', () => {
     [
       'primary ask_user_question',
       { toolDefinitions: [{ name: 'ask_user_question' }] },
-      { eventDriven: { checkpointForks: true, durableReceipts: true } },
+      {},
       undefined,
       undefined,
     ],
     [
       'added-agent ask_user_question',
       { toolDefinitions: [] },
-      { eventDriven: { checkpointForks: true, durableReceipts: true } },
+      {},
       new Map([['added-agent', { toolDefinitions: [{ name: 'ask_user_question' }] }]]),
       undefined,
     ],
@@ -4432,7 +4472,6 @@ describe('ResumableAgentController resume metadata', () => {
       'memory-checkpointer',
       { toolDefinitions: [] },
       {
-        eventDriven: { checkpointForks: true, durableReceipts: true },
         checkpointer: { type: 'memory' },
       },
       undefined,
@@ -4441,35 +4480,34 @@ describe('ResumableAgentController resume metadata', () => {
     [
       'always-apply skill prime',
       { toolDefinitions: [], alwaysApplySkillPrimes: [{ name: 'playbook', body: '# playbook' }] },
-      { eventDriven: { checkpointForks: true, durableReceipts: true } },
+      {},
       undefined,
       undefined,
     ],
     [
       'manual skill prime',
       { toolDefinitions: [], manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }] },
-      { eventDriven: { checkpointForks: true, durableReceipts: true } },
+      {},
       undefined,
       undefined,
     ],
     [
       'skills-capable (history-derived re-priming)',
       { toolDefinitions: [] },
-      { eventDriven: { checkpointForks: true, durableReceipts: true } },
+      {},
       undefined,
       { primeInvokedSkills: async () => undefined },
     ],
     [
       'background-capable expected action',
       { toolDefinitions: [], backgroundToolNames: ['submit_move_mcp_chess'] },
-      { eventDriven: { checkpointForks: true, durableReceipts: true } },
+      {},
       undefined,
       undefined,
     ],
   ])(
     'keeps %s event actors on the existing resumable path',
-    async (_label, agent, config, agentConfigs, clientOptions, durableReceiptsEnabled = true) => {
-      process.env.ENABLE_AGENT_EVENT_DURABLE_RECEIPTS = String(durableReceiptsEnabled);
+    async (_label, agent, config, agentConfigs, clientOptions) => {
       mockGenerationJobManager.claimGeneration.mockResolvedValue(
         wonGenerationClaim({
           streamId: 'child-conversation',
@@ -4602,7 +4640,7 @@ describe('ResumableAgentController resume metadata', () => {
         },
       },
       config: {
-        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+        endpoints: { agents: {} },
       },
       _isAgentTrigger: true,
       _agentEventBindingId: 'binding-1',
@@ -4677,7 +4715,7 @@ describe('ResumableAgentController resume metadata', () => {
         },
       },
       config: {
-        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+        endpoints: { agents: {} },
       },
       _isAgentTrigger: true,
       _agentEventBindingId: 'binding-1',
@@ -4748,7 +4786,7 @@ describe('ResumableAgentController resume metadata', () => {
         },
       },
       config: {
-        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+        endpoints: { agents: {} },
       },
       _isAgentTrigger: true,
       _agentEventBindingId: 'binding-1',
@@ -4830,7 +4868,7 @@ describe('ResumableAgentController resume metadata', () => {
         },
       },
       config: {
-        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+        endpoints: { agents: {} },
       },
       _isAgentTrigger: true,
       _agentEventBindingId: 'binding-1',

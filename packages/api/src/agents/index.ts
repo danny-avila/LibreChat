@@ -25,6 +25,7 @@ export * from './memory';
 export * from './orphans';
 export * from './migration';
 export * from './parameters';
+export * from './plan';
 export * from './prewarm';
 export * from './ptc';
 export * from './openai';
