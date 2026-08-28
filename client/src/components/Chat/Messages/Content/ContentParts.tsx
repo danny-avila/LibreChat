@@ -55,7 +55,12 @@ const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string =
   for (const { part, idx } of parts) {
     const toolCallId = getToolCallId(part);
     if (toolCallId) {
-      return `tool:${toolCallId}`;
+      /** Provider tool-call ids repeat across agents in a handoff transcript
+       *  (`call_0`), and a lone tool with reasoning now groups too, so two
+       *  sibling groups would otherwise share one React key and one expansion
+       *  override: toggling either would move both. */
+      const agentId = getPartAgentId(part);
+      return agentId ? `tool:${agentId}:${toolCallId}` : `tool:${toolCallId}`;
     }
     if (firstToolIdx === undefined && part?.type === ContentTypes.TOOL_CALL) {
       firstToolIdx = idx;

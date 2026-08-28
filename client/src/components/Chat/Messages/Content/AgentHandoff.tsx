@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useMemo, useRef, useState, useCallback } from 'react';
 import copy from 'copy-to-clipboard';
 import { ChevronDown } from 'lucide-react';
+import { Button } from '@librechat/client';
 import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import CopyButton from '~/components/Messages/Content/CopyButton';
@@ -140,13 +141,11 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
 
   return (
     <div className="my-2">
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         className={cn(
-          'tool-status-text flex appearance-none items-center gap-2.5 bg-transparent text-text-secondary',
-          hasInfo
-            ? 'transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy'
-            : 'pointer-events-none',
+          'tool-status-text h-auto justify-start gap-2.5 rounded-none p-0 font-normal text-text-secondary hover:bg-transparent hover:text-text-primary',
+          !hasInfo && 'pointer-events-none disabled:opacity-100',
         )}
         disabled={!hasInfo}
         onClick={hasInfo ? () => setShowInfo(!showInfo) : undefined}
@@ -176,7 +175,7 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
             aria-hidden="true"
           />
         )}
-      </button>
+      </Button>
       <div id={contentId} style={expandStyle} aria-hidden={!showInfo || undefined}>
         <div className="overflow-hidden" ref={expandRef}>
           {hasInfo && (

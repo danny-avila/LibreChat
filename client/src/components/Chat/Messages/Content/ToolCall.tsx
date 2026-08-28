@@ -12,9 +12,9 @@ import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
+import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { cn, getToolDisplayLabel, logger } from '~/utils';
 import { toolPanelSpacingClassName } from './disclosure';
-import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { useToolCallIntent } from './Parts/intent';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
@@ -117,8 +117,13 @@ export default function ToolCall({
 
   const toolIconType = useMemo(() => getToolIconType(name), [name]);
   const displayFunctionName = useMemo(
-    () => getToolDisplayLabel(function_name, localize, mcpServerNames),
-    [function_name, localize, mcpServerNames],
+    () =>
+      /** `function_name` has already had the MCP delimiter and server stripped
+       *  above, so re-parsing it would classify an MCP function that happens to
+       *  share a built-in's name (`read_file`, `set_memory`) as that native
+       *  tool and show, and announce, an unrelated label. */
+      isMCPToolCall ? function_name : getToolDisplayLabel(function_name, localize, mcpServerNames),
+    [function_name, isMCPToolCall, localize, mcpServerNames],
   );
   const mcpIconMap = useMCPIconMap();
   const mcpIconUrl = isMCPToolCall ? mcpIconMap.get(mcpServerName) : undefined;
