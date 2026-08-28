@@ -393,23 +393,27 @@ async function getAssistantToolDefinitions({ req, tools }) {
         )) ?? {
           tools: null,
         },
-      recoverServerTools: async (serverName, serverConfig) => {
-        const userMCPAuthMap = await getUserMCPAuthMap({
-          userId: req.user.id,
-          servers: [serverName],
-          findPluginAuthsByKeys,
-        });
-        const result = await reinitMCPServer({
-          user: req.user,
-          serverName,
-          serverConfig,
-          userMCPAuthMap,
-        });
-        return result?.availableTools ?? null;
-      },
+      recoverServerTools: (serverName, serverConfig) =>
+        recoverMCPServerToolCatalog({ user: req.user, serverName, serverConfig }),
       cacheMCPServerTools,
     },
   );
+}
+
+/** Reconnects a configured server and returns the catalog published by that connection. */
+async function recoverMCPServerToolCatalog({ user, serverName, serverConfig }) {
+  const userMCPAuthMap = await getUserMCPAuthMap({
+    userId: user.id,
+    servers: [serverName],
+    findPluginAuthsByKeys,
+  });
+  const result = await reinitMCPServer({
+    user,
+    serverName,
+    serverConfig,
+    userMCPAuthMap,
+  });
+  return result?.availableTools ?? null;
 }
 
 /**
@@ -1564,6 +1568,7 @@ module.exports = {
   getAccessibleMcpServerNames,
   healMcpToolNames,
   getAssistantToolDefinitions,
+  recoverMCPServerToolCatalog,
   resolveCollisionAuditNames,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,

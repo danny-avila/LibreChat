@@ -34,6 +34,7 @@ const {
   resolveConfigServers,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
+  recoverMCPServerToolCatalog,
 } = require('~/server/services/MCP');
 const {
   cacheMCPServerTools,
@@ -233,6 +234,17 @@ const getMCPTools = async (req, res) => {
       } catch (error) {
         logger.error(`[getMCPTools] Error fetching tools for server ${serverName}:`, error);
         continue;
+      }
+      if (!serverTools) {
+        try {
+          serverTools = await recoverMCPServerToolCatalog({
+            user: req.user,
+            serverName,
+            serverConfig: mcpConfig[serverName],
+          });
+        } catch (error) {
+          logger.error(`[getMCPTools] Error recovering tools for server ${serverName}:`, error);
+        }
       }
       if (!serverTools) {
         serversWithoutTools.push(serverName);

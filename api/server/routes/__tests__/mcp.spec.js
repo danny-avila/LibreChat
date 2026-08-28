@@ -149,6 +149,7 @@ jest.mock('~/server/services/MCP', () => ({
   resolveConfigServers: jest.fn().mockResolvedValue({}),
   resolveMcpConfigNames: (...args) => mockResolveMcpConfigNames(...args),
   resolveAllMcpConfigs: (...args) => mockResolveAllMcpConfigs(...args),
+  recoverMCPServerToolCatalog: jest.fn(),
   getServerConnectionStatus: jest.fn(),
 }));
 
@@ -3291,6 +3292,7 @@ describe('MCP Routes', () => {
 
     it('re-caches an authoritative empty live snapshot after a cache miss', async () => {
       const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
+      const { recoverMCPServerToolCatalog } = require('~/server/services/MCP');
       const serverConfig = { type: 'sse', url: 'https://empty.example.com/sse' };
       mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'empty-server': serverConfig });
       getMCPServerTools.mockResolvedValueOnce(null);
@@ -3311,6 +3313,47 @@ describe('MCP Routes', () => {
         serverTools: {},
         serverConfig,
         publicationGeneration: undefined,
+      });
+      expect(recoverMCPServerToolCatalog).not.toHaveBeenCalled();
+    });
+
+    it('recovers a connected server catalog when the cache and local connection are missing', async () => {
+      const { Constants } = require('librechat-data-provider');
+      const { getMCPServerTools } = require('~/server/services/Config');
+      const { recoverMCPServerToolCatalog } = require('~/server/services/MCP');
+      const pluginKey = `search${Constants.mcp_delimiter}connected-server`;
+      const serverTools = {
+        [pluginKey]: {
+          type: 'function',
+          function: {
+            name: pluginKey,
+            description: 'Search',
+            parameters: { type: 'object' },
+          },
+        },
+      };
+      const serverConfig = { type: 'sse', url: 'https://connected.example.com/sse' };
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'connected-server': serverConfig });
+      getMCPServerTools.mockResolvedValueOnce(null);
+      require('~/config').getMCPManager.mockReturnValue({
+        getServerToolFunctionsSnapshot: jest.fn().mockResolvedValue({ tools: null }),
+      });
+      recoverMCPServerToolCatalog.mockResolvedValueOnce(serverTools);
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(response.body.servers['connected-server'].tools).toEqual([
+        {
+          name: 'search',
+          pluginKey,
+          description: 'Search',
+        },
+      ]);
+      expect(recoverMCPServerToolCatalog).toHaveBeenCalledWith({
+        user: { id: 'test-user-id' },
+        serverName: 'connected-server',
+        serverConfig,
       });
     });
 
@@ -3388,6 +3431,7 @@ describe('MCP Routes', () => {
     it('should return configured servers when all cache lookups fail', async () => {
       const { logger } = require('@librechat/data-schemas');
       const { getMCPServerTools } = require('~/server/services/Config');
+      const { recoverMCPServerToolCatalog } = require('~/server/services/MCP');
 
       mockResolveAllMcpConfigs.mockResolvedValueOnce({
         'first-server': {
@@ -3427,6 +3471,7 @@ describe('MCP Routes', () => {
       );
       expect(logger.error).toHaveBeenCalledTimes(2);
       expect(mockGetServerToolFunctionsSnapshot).toHaveBeenCalledTimes(2);
+      expect(recoverMCPServerToolCatalog).toHaveBeenCalledTimes(2);
     });
   });
 
