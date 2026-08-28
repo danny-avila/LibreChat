@@ -12,8 +12,8 @@ import type {
 } from './envelope';
 import type { EventActorDetachedActionLifecycle } from '../handlers';
 import type { SerializableJobData } from '~/stream';
+import { matchesExpectedAction } from './expectedAction';
 import { createAgentTriggerEnvelope } from './envelope';
-import { matchesExpectedAction } from './outcome';
 
 const MAX_TERMINAL_RESULT_LENGTH = 32_768;
 const RESERVATION_RECOVERY_MS = 60_000;

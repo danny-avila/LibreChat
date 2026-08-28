@@ -7,12 +7,16 @@ import type {
 } from '@librechat/data-schemas';
 import type { Agents } from 'librechat-data-provider';
 import type { AgentEventActorDetachedResumeInput } from './detachedAction';
+import type { CompletedToolEvidence } from './expectedAction';
 import type { AgentTriggerExpectedAction } from './envelope';
 import type { AgentEventAppliedAction } from './types';
 import type { SerializableJobData } from '~/stream';
+import { matchesExpectedAction, parseAgentExpectedActionArguments } from './expectedAction';
 import { cancelAgentEventActor, createAgentEventActorActionAdmissionId } from './actor';
 
 export type { AgentEventAppliedAction } from './types';
+export { matchesExpectedAction } from './expectedAction';
+export type { CompletedToolEvidence } from './expectedAction';
 
 interface SettleAgentTriggerHandlingOutcomeInput {
   deliveryKey: string;
@@ -22,12 +26,6 @@ interface SettleAgentTriggerHandlingOutcomeInput {
   settledAt: Date;
   error?: string;
   action?: { toolName: string; toolCallId?: string };
-}
-
-export interface CompletedToolEvidence {
-  toolName: string;
-  toolCallId?: string;
-  arguments?: unknown;
 }
 
 export interface AgentEventRunOutcome {
@@ -57,7 +55,7 @@ async function hasDurableAgentEventHistory(input: {
 }
 
 function isBackgroundNonExecutionReceipt(value: unknown, argumentsValue: unknown): boolean {
-  const parsedArguments = parseArguments(argumentsValue);
+  const parsedArguments = parseAgentExpectedActionArguments(argumentsValue);
   if (
     parsedArguments == null ||
     typeof parsedArguments !== 'object' ||
@@ -66,7 +64,7 @@ function isBackgroundNonExecutionReceipt(value: unknown, argumentsValue: unknown
   ) {
     return false;
   }
-  const parsed = parseArguments(value);
+  const parsed = parseAgentExpectedActionArguments(value);
   if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return false;
   }
@@ -154,17 +152,6 @@ function nonExecutedHITLToolCallIds(
   return ids;
 }
 
-function parseArguments(value: unknown): unknown {
-  if (typeof value !== 'string') {
-    return value;
-  }
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return value;
-  }
-}
-
 /** Classifies terminal run evidence once for both checkpoint commit and public receipt. */
 export function classifyAgentEventRunOutcome(
   job: SerializableJobData,
@@ -206,39 +193,6 @@ export function findAgentEventAppliedAction(
           ? {}
           : { toolCallId: action.toolCallId.slice(0, MAX_RECEIPT_ID_LENGTH) }),
       };
-}
-
-function containsSubset(value: unknown, subset: unknown): boolean {
-  if (Array.isArray(subset)) {
-    return (
-      Array.isArray(value) &&
-      value.length === subset.length &&
-      subset.every((expected, index) => containsSubset(value[index], expected))
-    );
-  }
-  if (subset == null || typeof subset !== 'object') {
-    return Object.is(value, subset);
-  }
-  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-  return Object.entries(subset).every(([key, expected]) =>
-    containsSubset((value as Record<string, unknown>)[key], expected),
-  );
-}
-
-export function matchesExpectedAction(
-  evidence: CompletedToolEvidence,
-  expected: AgentTriggerExpectedAction,
-): boolean {
-  const nameMatches =
-    evidence.toolName === expected.toolName ||
-    evidence.toolName.startsWith(`${expected.toolName}_mcp_`);
-  return (
-    nameMatches &&
-    (expected.argumentSubset == null ||
-      containsSubset(parseArguments(evidence.arguments), expected.argumentSubset))
-  );
 }
 
 export interface AgentEventActionRecorder {
@@ -283,7 +237,7 @@ export function createAgentEventActionRecorder(
        * would be indistinguishable from a real result, so a call the model
        * detached can never qualify through this shape. */
       if (data.outputFiltered === true) {
-        const parsedInput = parseArguments(data.input);
+        const parsedInput = parseAgentExpectedActionArguments(data.input);
         if (
           parsedInput != null &&
           typeof parsedInput === 'object' &&
