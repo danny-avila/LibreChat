@@ -1,16 +1,30 @@
 const { logger } = require('@librechat/data-schemas');
 const {
+  formatMCPServerTools,
+  getUserMCPAuthMap,
   getMissingCustomUserVars,
+  loadMCPServerCatalogs: loadCatalogs,
   requiresEphemeralUserConnection,
   getMissingRuntimeBodyPlaceholderFields,
 } = require('@librechat/api');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
-const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
+const {
+  findToken,
+  createToken,
+  updateToken,
+  deleteTokens,
+  findPluginAuthsByKeys,
+} = require('~/models');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { exchangeOboToken } = require('~/server/services/OboTokenService');
 const { createOboTrustChecker } = require('~/server/services/OboPolicyService');
-const { getMCPToolsCacheGeneration, updateMCPServerTools } = require('~/server/services/Config');
+const {
+  getMCPServerTools,
+  cacheMCPServerTools,
+  getMCPToolsCacheGeneration,
+  updateMCPServerTools,
+} = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 
 const MCP_REINITIALIZE_FAILURE_REASONS = {
@@ -19,6 +33,38 @@ const MCP_REINITIALIZE_FAILURE_REASONS = {
   OAUTH_REQUIRED: 'oauth_required',
   INITIALIZATION_FAILED: 'initialization_failed',
 };
+
+/** Wires application dependencies into the passive, request-local catalog recovery service. */
+async function loadMCPServerCatalogs({ user, servers }) {
+  const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
+  const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
+  const mcpManager = getMCPManager();
+  return loadCatalogs(
+    { user, servers },
+    {
+      loadUserMCPAuthMap: (userId, serverNames) =>
+        getUserMCPAuthMap({
+          userId,
+          servers: serverNames,
+          findPluginAuthsByKeys,
+        }),
+      discoverServerTools: (options) =>
+        mcpManager.discoverServerTools({
+          ...options,
+          flowManager,
+          tokenMethods,
+          graphTokenResolver: getGraphApiToken,
+          oboTokenResolver: exchangeOboToken,
+          oboTrustChecker: createOboTrustChecker(),
+        }),
+      formatServerTools: formatMCPServerTools,
+      getCachedServerTools: getMCPServerTools,
+      getServerToolFunctionsSnapshot: (userId, serverName, serverConfig) =>
+        mcpManager.getServerToolFunctionsSnapshot(userId, serverName, serverConfig),
+      cacheServerTools: cacheMCPServerTools,
+    },
+  );
+}
 
 /**
  * Reinitializes an MCP server connection and discovers available tools.
@@ -375,4 +421,5 @@ async function reinitMCPServer({
 
 module.exports = {
   reinitMCPServer,
+  loadMCPServerCatalogs,
 };

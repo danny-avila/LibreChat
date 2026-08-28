@@ -261,9 +261,21 @@ export class MCPManager extends UserConnectionManager {
    */
   public async discoverServerTools(args: t.ToolDiscoveryOptions): Promise<t.ToolDiscoveryResult> {
     const { serverName, user } = args;
+    const registry = MCPServersRegistry.getInstance();
+    const serverConfig = await registry.getServerConfig(serverName, user?.id, args.configServers);
+
+    if (!serverConfig) {
+      logger.warn('[MCP][Discovery] Server configuration not found');
+      return { tools: null, oauthRequired: false, oauthUrl: null };
+    }
 
     try {
-      const existingAppConnection = await this.appConnections?.get(serverName);
+      const useAppConnection =
+        canUseAppConnection(serverConfig) &&
+        (await registry.isAppServerConfig(serverName, serverConfig));
+      const existingAppConnection = useAppConnection
+        ? await this.appConnections?.get(serverName)
+        : null;
       if (existingAppConnection && (await existingAppConnection.isConnected())) {
         const snapshot = await existingAppConnection.fetchOrderedToolsSnapshot();
         return {
@@ -274,17 +286,6 @@ export class MCPManager extends UserConnectionManager {
       }
     } catch {
       logger.debug('[MCP][Discovery] App connection unavailable; trying discovery mode');
-    }
-
-    const serverConfig = await MCPServersRegistry.getInstance().getServerConfig(
-      serverName,
-      user?.id,
-      args.configServers,
-    );
-
-    if (!serverConfig) {
-      logger.warn('[MCP][Discovery] Server configuration not found');
-      return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
     const missingBodyFields = getMissingRuntimeBodyPlaceholderFields(
@@ -298,7 +299,6 @@ export class MCPManager extends UserConnectionManager {
       return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
-    const registry = MCPServersRegistry.getInstance();
     const { allowedDomains, allowedAddresses, useSSRFProtection } =
       await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
     await this.assertResolvedRuntimeConfigAllowed({
