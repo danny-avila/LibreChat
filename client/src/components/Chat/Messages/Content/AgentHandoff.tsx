@@ -4,6 +4,7 @@ import { ChevronDown } from 'lucide-react';
 import { Button } from '@librechat/client';
 import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
+import type { TranslationKeys } from '~/hooks';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { unescapeJsonString } from './Parts/parseJsonField';
 import MessageIcon from '~/components/Share/MessageIcon';
@@ -78,7 +79,23 @@ function parseHandoffFields(args: string | Record<string, unknown>): HandoffFiel
   }
 }
 
-function fieldLabel(key: string): string {
+/**
+ * The SDK's own prompt keys, which are the ones that carry product meaning.
+ * Any other key is an admin-authored `promptKey` from the agent graph (see
+ * `handoffPromptKeyCompatibility`), so it is author content with no
+ * localization key to map to and is left as written, like an agent's own name.
+ */
+const HANDOFF_FIELD_LABELS: Record<string, TranslationKeys> = {
+  instruction: 'com_ui_handoff_field_instructions',
+  instructions: 'com_ui_handoff_field_instructions',
+  context: 'com_ui_handoff_field_context',
+};
+
+function fieldLabel(key: string, localize: (translationKey: TranslationKeys) => string): string {
+  const known = HANDOFF_FIELD_LABELS[key.toLowerCase()];
+  if (known) {
+    return localize(known);
+  }
   const words = key
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .replace(/[_-]+/g, ' ')
@@ -118,9 +135,9 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
       fields.length === 1
         ? fields[0].value
         : fields
-            .map(({ key, value }) => `${key ? `${fieldLabel(key)}\n` : ''}${value}`)
+            .map(({ key, value }) => `${key ? `${fieldLabel(key, localize)}\n` : ''}${value}`)
             .join('\n\n'),
-    [fields],
+    [fields, localize],
   );
   const hasInfo = fields.length > 0;
   const agentName = targetAgent?.name || localize('com_ui_agent');
@@ -215,7 +232,7 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
                     <div key={`${key ?? 'field'}-${index}`}>
                       {key && (
                         <dt className="mb-0.5 text-xs font-medium text-text-secondary">
-                          {fieldLabel(key)}
+                          {fieldLabel(key, localize)}
                         </dt>
                       )}
                       <dd className="whitespace-pre-wrap break-words text-sm leading-6 text-text-primary">

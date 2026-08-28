@@ -55,12 +55,7 @@ const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string =
   for (const { part, idx } of parts) {
     const toolCallId = getToolCallId(part);
     if (toolCallId) {
-      /** Provider tool-call ids repeat across agents in a handoff transcript
-       *  (`call_0`), and a lone tool with reasoning now groups too, so two
-       *  sibling groups would otherwise share one React key and one expansion
-       *  override: toggling either would move both. */
-      const agentId = getPartAgentId(part);
-      return agentId ? `tool:${agentId}:${toolCallId}` : `tool:${toolCallId}`;
+      return `tool:${toolCallId}`;
     }
     if (firstToolIdx === undefined && part?.type === ContentTypes.TOOL_CALL) {
       firstToolIdx = idx;
@@ -441,22 +436,30 @@ const ContentParts = memo(function ContentParts({
   }, [absoluteIndexAt, content]);
   const postSteerAuthors = resumeAuthors ?? detectedResumeAuthors;
 
-  const groupedParts = useMemo(
-    () =>
-      groupSequentialToolCalls(sequentialParts).map((group) => {
-        if (group.type === 'single') {
-          return group;
-        }
-        const groupId = getToolGroupId(group.parts, fallbackScope);
-        const groupAttachments = group.parts.flatMap(
-          ({ part }) =>
-            filterAttachmentsForPart(attachmentMap[getToolCallId(part)], getPartAgentId(part)) ??
-            [],
-        );
-        return { ...group, groupId, groupAttachments };
-      }),
-    [sequentialParts, attachmentMap, fallbackScope],
-  );
+  const groupedParts = useMemo(() => {
+    /** Provider tool-call ids are NOT unique: they repeat across agents in a
+     *  handoff transcript and restart per turn within one agent, and a lone
+     *  tool with reasoning now groups too, so sibling groups could share a
+     *  React key and one expansion override. Disambiguated by how many earlier
+     *  groups already claimed the same id, which is stable because group order
+     *  is append-only. The FIRST occurrence keeps the bare id, so an id that
+     *  never repeats is unchanged and survives a content-index shift. */
+    const claimedGroupIds = new Map<string, number>();
+    return groupSequentialToolCalls(sequentialParts).map((group) => {
+      if (group.type === 'single') {
+        return group;
+      }
+      const baseGroupId = getToolGroupId(group.parts, fallbackScope);
+      const claimed = claimedGroupIds.get(baseGroupId) ?? 0;
+      claimedGroupIds.set(baseGroupId, claimed + 1);
+      const groupId = claimed === 0 ? baseGroupId : `${baseGroupId}#${claimed}`;
+      const groupAttachments = group.parts.flatMap(
+        ({ part }) =>
+          filterAttachmentsForPart(attachmentMap[getToolCallId(part)], getPartAgentId(part)) ?? [],
+      );
+      return { ...group, groupId, groupAttachments };
+    });
+  }, [sequentialParts, attachmentMap, fallbackScope]);
 
   /** The re-attribution node for a part resuming after a steer block, shared
    *  by the sequential path and the parallel renderer's sequential stretches. */

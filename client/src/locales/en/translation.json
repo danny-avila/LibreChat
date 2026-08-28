@@ -1386,6 +1386,8 @@
   "com_ui_greeting_working_on": "What are we working on?",
   "com_ui_greeting_working_on_named": "What are we working on, {{name}}?",
   "com_ui_group": "Group",
+  "com_ui_handoff_field_context": "Context",
+  "com_ui_handoff_field_instructions": "Instructions",
   "com_ui_handoff_instructions": "Handoff instructions",
   "com_ui_happy_birthday": "It's my 1st birthday!",
   "com_ui_header_format": "Header Format",
