@@ -6,9 +6,11 @@ import { useLocalize } from '~/hooks';
 interface MCPIconProps {
   icon?: string;
   onIconChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  /** Id of the alert describing why the last pick was rejected, if any. */
+  errorId?: string;
 }
 
-export default function MCPIcon({ icon, onIconChange }: MCPIconProps) {
+export default function MCPIcon({ icon, onIconChange, errorId }: MCPIconProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const localize = useLocalize();
 
@@ -25,6 +27,8 @@ export default function MCPIcon({ icon, onIconChange }: MCPIconProps) {
         variant="ghost"
         onClick={handleClick}
         aria-label={localize('com_ui_upload_icon')}
+        aria-invalid={errorId != null}
+        aria-describedby={errorId}
         className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-border-medium bg-surface-secondary p-0 hover:bg-surface-hover"
       >
         {icon ? (

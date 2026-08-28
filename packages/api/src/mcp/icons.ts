@@ -25,6 +25,16 @@ import type createDOMPurify from 'dompurify';
 /** Matches an `image/svg+xml` data URI regardless of the encoding suffix. */
 const SVG_DATA_URI = /^data:image\/svg\+xml/i;
 
+/**
+ * Largest decoded SVG handed to the DOM sanitizer. An icon only survives if its
+ * base64 re-encoding fits `MAX_MCP_ICON_PATH_LENGTH`, which caps usable markup at
+ * roughly three quarters of that, so bounding the input at the full cap leaves
+ * ample headroom for markup the sanitizer strips. Checking it before parsing
+ * keeps a payload sized to the JSON body limit from being expanded into a jsdom
+ * tree only to be discarded by the length check at the end.
+ */
+const MAX_DECODED_SVG_LENGTH = MAX_MCP_ICON_PATH_LENGTH;
+
 type SvgPurifier = ReturnType<typeof createDOMPurify>;
 
 let purifier: SvgPurifier | null = null;
@@ -116,7 +126,7 @@ export function sanitizeMcpIconPath(iconPath: string): string {
     return iconPath.length > MAX_MCP_ICON_PATH_LENGTH ? '' : iconPath;
   }
   const svg = decodeSvgDataUri(normalized);
-  if (svg == null) {
+  if (svg == null || svg.length > MAX_DECODED_SVG_LENGTH) {
     return '';
   }
   const clean = restoreSvgTagCase(getSvgPurifier().sanitize(svg, SVG_SANITIZE_CONFIG));

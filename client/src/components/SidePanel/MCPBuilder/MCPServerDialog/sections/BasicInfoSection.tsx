@@ -1,10 +1,14 @@
 import { useFormContext } from 'react-hook-form';
 import { Input, Label, Textarea } from '@librechat/client';
-import { MCP_SERVER_TITLE_PATTERN } from 'librechat-data-provider';
+import { MAX_MCP_ICON_PATH_LENGTH, MCP_SERVER_TITLE_PATTERN } from 'librechat-data-provider';
 import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';
 import { cn, sanitizeSvg, svgToDataUri } from '~/utils';
 import { useLocalize } from '~/hooks';
+
+/** File size that still fits `MAX_MCP_ICON_PATH_LENGTH` once base64 inflates it by
+ *  4/3, in whole KB, so the error can name a limit the user can act on. */
+const MAX_ICON_FILE_KB = Math.floor((MAX_MCP_ICON_PATH_LENGTH * 3) / 4 / 1024);
 
 export default function BasicInfoSection() {
   const localize = useLocalize();
@@ -12,10 +16,26 @@ export default function BasicInfoSection() {
     register,
     watch,
     setValue,
+    setError,
+    clearErrors,
     formState: { errors },
   } = useFormContext<MCPServerFormData>();
 
   const iconValue = watch('icon');
+
+  /* The server drops any icon past the cap, so refuse it here rather than preview
+   * an icon that disappears on a save the user is told succeeded. */
+  const applyIcon = (dataUri: string) => {
+    if (dataUri.length > MAX_MCP_ICON_PATH_LENGTH) {
+      setError('icon', {
+        type: 'validate',
+        message: localize('com_ui_icon_too_large', { 0: MAX_ICON_FILE_KB }),
+      });
+      return;
+    }
+    clearErrors('icon');
+    setValue('icon', dataUri);
+  };
 
   const handleIconChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -30,8 +50,7 @@ export default function BasicInfoSection() {
         if (typeof reader.result !== 'string') {
           return;
         }
-        const sanitized = sanitizeSvg(reader.result);
-        setValue('icon', svgToDataUri(sanitized));
+        applyIcon(svgToDataUri(sanitizeSvg(reader.result)));
       };
       reader.readAsText(file);
       return;
@@ -41,7 +60,7 @@ export default function BasicInfoSection() {
       if (typeof reader.result !== 'string') {
         return;
       }
-      setValue('icon', reader.result);
+      applyIcon(reader.result);
     };
     reader.readAsDataURL(file);
   };
@@ -50,8 +69,17 @@ export default function BasicInfoSection() {
     <div className="space-y-3">
       {/* Icon + Name row */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-        <div className="flex-shrink-0">
-          <MCPIcon icon={iconValue} onIconChange={handleIconChange} />
+        <div className="flex-shrink-0 space-y-1.5">
+          <MCPIcon
+            icon={iconValue}
+            onIconChange={handleIconChange}
+            errorId={errors.icon ? 'mcp-icon-error' : undefined}
+          />
+          {errors.icon && (
+            <p id="mcp-icon-error" role="alert" className="text-xs text-text-destructive">
+              {errors.icon.message}
+            </p>
+          )}
         </div>
         <div className="w-full space-y-1.5 sm:flex-1">
           <Label htmlFor="mcp-title" className="text-sm font-medium">

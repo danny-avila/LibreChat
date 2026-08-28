@@ -67,6 +67,18 @@ describe('scanMonochrome', () => {
   it('is monochrome when a translucent glyph sits on genuinely empty pixels', () => {
     expect(scanMonochrome(rgba(128, 128, 128, 128, 0, 0, 0, 0))).toBe(true);
   });
+
+  it('rejects two deliberate tones, which one mask would flatten into one color', () => {
+    expect(scanMonochrome(rgba(0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 0))).toBe(false);
+  });
+
+  it('allows shading within a single tone', () => {
+    expect(scanMonochrome(rgba(34, 34, 34, 255, 85, 85, 85, 255, 0, 0, 0, 0))).toBe(true);
+  });
+
+  it('ignores tone spread carried by translucent edge samples', () => {
+    expect(scanMonochrome(rgba(0, 0, 0, 255, 255, 255, 255, 200, 0, 0, 0, 0))).toBe(true);
+  });
 });
 
 describe('detectMonochrome', () => {
@@ -126,6 +138,18 @@ describe('detectMonochrome', () => {
   it('is not monochrome when the icon reports no intrinsic size', async () => {
     registerFakeIcon('/sizeless.svg', { width: 0, height: 0, pixels: [0, 0, 0, 255] });
     await expect(detectMonochrome('/sizeless.svg')).resolves.toBe(false);
+  });
+
+  it('settles a load that never completes so its in-flight entry can be released', async () => {
+    jest.useFakeTimers();
+    try {
+      registerFakeIcon('/stalled.svg', { width: 24, height: 24, pending: true });
+      const verdict = detectMonochrome('/stalled.svg');
+      jest.advanceTimersByTime(10_000);
+      await expect(verdict).resolves.toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 

@@ -13,14 +13,31 @@
  * supply the element and attribute vocabulary, so it tracks DOMPurify's curated
  * lists instead of being restated here; `on*` handlers are dropped by default.
  * The forbidden tags remove active content, embedded HTML, navigation, external
- * raster references, stylesheets, and animation. `use` is added back for the
- * self-contained `<defs>` references exporters emit, with its target restricted
- * to the same document by `restrictSvgReferences`.
+ * raster references, stylesheets, and animation. The SVG profile admits the whole
+ * SMIL family, so each animation element is named rather than just `<animate>`;
+ * otherwise a stored icon could loop forever in every menu, card, and tool call
+ * that renders it. `use` is added back for the self-contained `<defs>` references
+ * exporters emit, with its target restricted to the same document by
+ * `restrictSvgReferences`, and `fr` for the radial-gradient focal radius the
+ * profile omits.
  */
 export const SVG_SANITIZE_CONFIG = {
   USE_PROFILES: { svg: true, svgFilters: true },
   ADD_TAGS: ['use'],
-  FORBID_TAGS: ['script', 'foreignObject', 'style', 'a', 'image', 'animate', 'set'],
+  ADD_ATTR: ['fr'],
+  FORBID_TAGS: [
+    'script',
+    'foreignObject',
+    'style',
+    'a',
+    'image',
+    'animate',
+    'animateColor',
+    'animateMotion',
+    'animateTransform',
+    'mpath',
+    'set',
+  ],
   FORBID_ATTR: ['style'],
 };
 
@@ -34,13 +51,42 @@ export interface SvgAttributeHost {
   removeAttribute(name: string): void;
 }
 
-/** Matches a same-document `url(#id)` reference, optionally quoted. */
-const LOCAL_URL_REFERENCE = /^url\(\s*['"]?#/i;
+/** Matches the opening of a `url()` token, up to the first character of its
+ *  target and past any quote. */
+const URL_TOKEN_PREFIX = /url\(\s*['"]?\s*/gi;
+
+/**
+ * True when an attribute value carries no reference that leaves the document.
+ * Presentation attributes hold CSS value lists, so `filter`, `mask`, and paint
+ * fallbacks can name several targets; testing only the first would admit
+ * `url(#safe) url(https://evil.example/f.svg#f)` with its external fetch intact,
+ * so every token is checked. A backslash rejects the value outright: CSS
+ * unescapes idents before tokenizing, so `u\72l(...)` is a `url()` this scan
+ * would never otherwise see, and no legitimate icon geometry or paint value
+ * contains one.
+ */
+function referencesOnlyFragments(value: string): boolean {
+  if (value.includes('\\')) {
+    return false;
+  }
+  if (!value.toLowerCase().includes('url(')) {
+    return true;
+  }
+  URL_TOKEN_PREFIX.lastIndex = 0;
+  let match: RegExpExecArray | null = URL_TOKEN_PREFIX.exec(value);
+  while (match !== null) {
+    if (value[URL_TOKEN_PREFIX.lastIndex] !== '#') {
+      return false;
+    }
+    match = URL_TOKEN_PREFIX.exec(value);
+  }
+  return true;
+}
 
 /**
  * DOMPurify hook that drops every reference leaving the document: `href` and
- * `xlink:href` values that are not fragments, and any attribute carrying a
- * `url()` that is not `url(#id)`. Restricting the URL shape rather than naming
+ * `xlink:href` values that are not fragments, and any attribute whose value
+ * fails `referencesOnlyFragments`. Restricting the URL shape rather than naming
  * the properties covers `fill`, `stroke`, `filter`, `mask`, `clip-path`, and
  * `marker-*` alike, so a new paint property cannot arrive unguarded.
  */
@@ -60,7 +106,7 @@ export function restrictSvgReferences(node: SvgAttributeHost): void {
       }
       continue;
     }
-    if (value.toLowerCase().includes('url(') && !LOCAL_URL_REFERENCE.test(value)) {
+    if (!referencesOnlyFragments(value)) {
       node.removeAttribute(name);
     }
   }

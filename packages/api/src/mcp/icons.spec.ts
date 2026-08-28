@@ -254,6 +254,66 @@ describe('sanitizeMcpIconPath', () => {
     const ok = `data:image/png;base64,${'A'.repeat(1000)}`;
     expect(sanitizeMcpIconPath(ok)).toBe(ok);
   });
+
+  it('strips every SMIL animation element so a stored icon cannot loop', () => {
+    const raw =
+      '<svg><rect width="1" height="1">' +
+      '<animate attributeName="x"/><set attributeName="y" to="1"/>' +
+      '<animateColor attributeName="fill"/>' +
+      '<animateTransform attributeName="transform" type="rotate" repeatCount="indefinite"/>' +
+      '<animateMotion dur="2s"><mpath href="#p"/></animateMotion>' +
+      '</rect></svg>';
+    const input = `data:image/svg+xml,${encodeURIComponent(raw)}`;
+    const clean = decode(sanitizeMcpIconPath(input)).toLowerCase();
+    for (const tag of [
+      '<animate',
+      '<animatecolor',
+      '<animatetransform',
+      '<animatemotion',
+      '<mpath',
+      '<set',
+    ]) {
+      expect(clean).not.toContain(tag);
+    }
+    expect(clean).toContain('rect');
+  });
+
+  it('drops an attribute whose later url() leaves the document', () => {
+    const raw =
+      '<svg><path filter="url(#safe) url(https://evil.example/f.svg#f)" ' +
+      'mask="url(#a), url(https://evil.example/m.svg#b)" d="M0 0h1v1z"/></svg>';
+    const input = `data:image/svg+xml,${encodeURIComponent(raw)}`;
+    const clean = decode(sanitizeMcpIconPath(input));
+    expect(clean).not.toContain('evil.example');
+    expect(clean).toContain('M0 0h1v1z');
+  });
+
+  it('drops a CSS-escaped url() the browser would still resolve', () => {
+    const raw = '<svg><path fill="u\\72l(https://evil.example/p.svg#x)" d="M0 0h1v1z"/></svg>';
+    const input = `data:image/svg+xml,${encodeURIComponent(raw)}`;
+    const clean = decode(sanitizeMcpIconPath(input));
+    expect(clean).not.toContain('evil.example');
+    expect(clean).toContain('M0 0h1v1z');
+  });
+
+  it('preserves radial-gradient focal geometry', () => {
+    const raw =
+      '<svg><radialGradient id="g" fx="0.1" fy="0.2" fr="0.3" spreadMethod="reflect">' +
+      '<stop stop-color="#000"/></radialGradient></svg>';
+    const input = `data:image/svg+xml,${encodeURIComponent(raw)}`;
+    const clean = decode(sanitizeMcpIconPath(input));
+    expect(clean).toContain('fr="0.3"');
+    expect(clean).toContain('spreadMethod="reflect"');
+  });
+
+  it('drops an oversized SVG before building a DOM for it', () => {
+    /* The payload sanitizes away to an empty `<svg>`, so only a size check that
+     * runs before parsing can reject it; reaching the sanitizer would store a
+     * short, valid icon and leave the jsdom parse cost unbounded. */
+    const raw = `<svg><script>${'a'.repeat(MAX_MCP_ICON_PATH_LENGTH + 1)}</script></svg>`;
+    const input = `data:image/svg+xml;base64,${Buffer.from(raw, 'utf-8').toString('base64')}`;
+    expect(sanitizeMcpIconPath(input)).toBe('');
+  });
 });
 
 describe('sanitizeMcpIconPath dependency loading', () => {
