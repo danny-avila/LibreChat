@@ -37,6 +37,9 @@ jest.mock('~/components/Share/MessageIcon', () => ({
 
 jest.mock('lucide-react', () => ({
   ChevronDown: () => <span data-testid="chevron-down" />,
+  /** The shared CopyButton/ActionButton composition renders both. */
+  Copy: () => <span data-testid="copy-icon" />,
+  Check: () => <span data-testid="check-icon" />,
 }));
 
 jest.mock('~/utils', () => ({

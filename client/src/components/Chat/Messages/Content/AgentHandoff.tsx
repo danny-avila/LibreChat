@@ -1,9 +1,8 @@
 import React, { useEffect, useId, useMemo, useRef, useState, useCallback } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { EModelEndpoint, Constants } from 'librechat-data-provider';
-import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
-import type { MouseEvent } from 'react';
+import CopyButton from '~/components/Messages/Content/CopyButton';
 import { unescapeJsonString } from './Parts/parseJsonField';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { toolPanelSpacingClassName } from './disclosure';
@@ -124,26 +123,18 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
   const hasInfo = fields.length > 0;
   const agentName = targetAgent?.name || localize('com_ui_agent');
 
-  const handleCopy = useCallback(
-    (e: MouseEvent<HTMLButtonElement>) => {
-      e.stopPropagation();
-      navigator.clipboard.writeText(copyText).then(
-        () => {
-          clearTimeout(copiedTimerRef.current);
-          setIsCopied(true);
-          copiedTimerRef.current = setTimeout(() => setIsCopied(false), 2000);
-        },
-        () => {
-          setIsCopied(false);
-        },
-      );
-    },
-    [copyText],
-  );
-
-  const copyLabel = isCopied
-    ? localize('com_ui_copied_to_clipboard')
-    : localize('com_ui_copy_to_clipboard');
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(copyText).then(
+      () => {
+        clearTimeout(copiedTimerRef.current);
+        setIsCopied(true);
+        copiedTimerRef.current = setTimeout(() => setIsCopied(false), 2000);
+      },
+      () => {
+        setIsCopied(false);
+      },
+    );
+  }, [copyText]);
 
   return (
     <div className="my-2">
@@ -201,27 +192,16 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
                 >
                   {localize('com_ui_handoff_instructions')}
                 </span>
-                <TooltipAnchor
-                  description={copyLabel}
-                  render={
-                    <button
-                      type="button"
-                      onClick={handleCopy}
-                      aria-label={copyLabel}
-                      className={cn(
-                        'flex shrink-0 items-center justify-center rounded-lg p-1 text-text-tertiary transition-opacity duration-150',
-                        'opacity-60 group-focus-within/handoff:opacity-100 group-hover/handoff:opacity-100',
-                        'hover:bg-surface-hover hover:text-text-primary',
-                        'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
-                      )}
-                    >
-                      {isCopied ? (
-                        <CheckMark className="h-3.5 w-3.5" aria-hidden="true" />
-                      ) : (
-                        <Clipboard size="14" aria-hidden="true" />
-                      )}
-                    </button>
-                  }
+                <CopyButton
+                  isCopied={isCopied}
+                  iconOnly
+                  onClick={handleCopy}
+                  label={localize('com_ui_copy_to_clipboard')}
+                  copiedLabel={localize('com_ui_copied_to_clipboard')}
+                  /** Only the reveal-on-hover behavior is local; the icon
+                   *  crossfade, tooltip, hover and focus ring come from the
+                   *  shared primitive. */
+                  className="shrink-0 opacity-60 focus-visible:opacity-100 group-focus-within/handoff:opacity-100 group-hover/handoff:opacity-100"
                 />
               </div>
               {fields.length === 1 ? (

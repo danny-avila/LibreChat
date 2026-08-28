@@ -62,6 +62,14 @@ function isReasoningPart(part: TMessageContentParts): boolean {
   return part.type === ContentTypes.THINK;
 }
 
+/** Assistant prose emitted mid-run. Grouping treats it as block-joining so a
+ *  labeled batch can still claim the tools around it, but an UNLABELED group
+ *  must never swallow it: that group auto-collapses once complete, which would
+ *  hide the prose behind a generic action header. */
+function isCommentaryPart(part: TMessageContentParts): boolean {
+  return part.type === ContentTypes.TEXT && (part as { phase?: string }).phase === 'commentary';
+}
+
 function countToolCalls(parts: PartWithIndex[]): number {
   let count = 0;
   for (const { part } of parts) {
@@ -117,25 +125,42 @@ export function groupSequentialToolCalls(parts: PartWithIndex[]): GroupedPart[] 
    *  before it belongs to earlier batches whose labels stayed empty. */
   let claimStart = 0;
 
+  /** Splits the block at commentary so an unlabeled group only ever holds
+   *  reasoning and tool calls; each surrounding run still has to earn the
+   *  grouped chrome on its own. */
   const flushWithoutLabel = () => {
-    const toolCallCount = countToolCalls(currentBlock);
-    const hasReasoning = currentBlock.some((p) => isReasoningPart(p.part));
-    if (toolCallCount >= 2 || (toolCallCount >= 1 && hasReasoning)) {
-      result.push({ type: 'tool-group', parts: [...currentBlock] });
-    } else {
-      for (const p of currentBlock) {
-        result.push({ type: 'single', part: p });
+    let run: PartWithIndex[] = [];
+    const emitRun = () => {
+      const toolCallCount = countToolCalls(run);
+      const hasReasoning = run.some((p) => isReasoningPart(p.part));
+      if (toolCallCount >= 2 || (toolCallCount >= 1 && hasReasoning)) {
+        result.push({ type: 'tool-group', parts: run });
+      } else {
+        for (const p of run) {
+          result.push({ type: 'single', part: p });
+        }
       }
+      run = [];
+    };
+    for (const p of currentBlock) {
+      if (isCommentaryPart(p.part)) {
+        emitRun();
+        result.push({ type: 'single', part: p });
+        continue;
+      }
+      run.push(p);
     }
+    emitRun();
     currentBlock = [];
     claimStart = 0;
   };
 
   for (const item of parts) {
-    const isCommentary =
-      item.part.type === ContentTypes.TEXT &&
-      (item.part as { phase?: string }).phase === 'commentary';
-    if (isGroupableToolCall(item.part) || item.part.type === ContentTypes.THINK || isCommentary) {
+    if (
+      isGroupableToolCall(item.part) ||
+      item.part.type === ContentTypes.THINK ||
+      isCommentaryPart(item.part)
+    ) {
       currentBlock.push(item);
       continue;
     }

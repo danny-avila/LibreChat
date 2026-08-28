@@ -50,17 +50,28 @@ export function collectSearchVerticals(attachments?: TAttachment[]): SearchVerti
     if (!data) {
       continue;
     }
-    /** Both image URLs are optional in the provider contract and `ImageStrip`
-     *  needs one for the `<img>` src. Keeping an entry with neither still
-     *  makes `images.length` nonzero, so the card renders a broken tile
-     *  instead of omitting the unusable result. */
+    /** Every field of these provider records is optional, and each strip
+     *  renders one as a link. An unusable entry still makes the array
+     *  nonempty, so the card shows a broken tile or an anchor with no
+     *  destination that looks actionable but cannot be opened. Drop them
+     *  here rather than teaching three strips to render half a result:
+     *  an image needs a src, a product needs somewhere to go, and a place
+     *  needs something to name. */
     for (const image of data.images ?? []) {
       if (image.thumbnailUrl || image.imageUrl) {
         images.push(image);
       }
     }
-    shopping.push(...(data.shopping ?? []));
-    places.push(...(data.places ?? []));
+    for (const item of data.shopping ?? []) {
+      if (item.link) {
+        shopping.push(item);
+      }
+    }
+    for (const place of data.places ?? []) {
+      if (place.name || place.address) {
+        places.push(place);
+      }
+    }
   }
   return { images, shopping, places };
 }
