@@ -1,11 +1,16 @@
 import type {
   AgentTriggerDeliveryMethods,
   ConversationMethods,
+  IAgentEventActorSuspension,
   MessageMethods,
 } from '@librechat/data-schemas';
 import type { Agents } from 'librechat-data-provider';
 import type { AgentTriggerExpectedAction } from './envelope';
+import type { AgentEventAppliedAction } from './types';
 import type { SerializableJobData } from '~/stream';
+import { cancelAgentEventActor, createAgentEventActorActionAdmissionId } from './actor';
+
+export type { AgentEventAppliedAction } from './types';
 
 interface SettleAgentTriggerHandlingOutcomeInput {
   deliveryKey: string;
@@ -27,8 +32,6 @@ export interface AgentEventRunOutcome {
   status: 'applied' | 'completed_no_action' | 'failed' | 'cancelled';
   action?: { toolName: string; toolCallId?: string };
 }
-
-export type AgentEventAppliedAction = NonNullable<AgentEventRunOutcome['action']>;
 
 const MAX_RECEIPT_ID_LENGTH = 256;
 
@@ -340,6 +343,10 @@ export function createAgentEventTerminalHandler(methods: {
   getAgentEventActorReceipt: AgentTriggerDeliveryMethods['getAgentEventActorReceipt'];
   backfillAgentEventActorReceipt: AgentTriggerDeliveryMethods['backfillAgentEventActorReceipt'];
   completeAgentEventActorLegacyTurn: ConversationMethods['completeAgentEventActorLegacyTurn'];
+  cancelAgentEventActorSuspension: ConversationMethods['cancelAgentEventActorSuspension'];
+  releaseAgentEventActorAction: AgentTriggerDeliveryMethods['releaseAgentEventActorAction'];
+  getAgentEventActorActionAdmission: AgentTriggerDeliveryMethods['getAgentEventActorActionAdmission'];
+  hasAgentEventActorActionAdmission: AgentTriggerDeliveryMethods['hasAgentEventActorActionAdmission'];
   getMessage: MessageMethods['getMessage'];
 }): (
   streamId: string,
@@ -362,11 +369,183 @@ export function createAgentEventTerminalHandler(methods: {
     let committedAction: AgentEventAppliedAction | undefined;
     let compensated = false;
     let actorReceiptSettled = false;
-    const snapshot = await methods.getAgentEventActorSnapshot({
+    const owner = {
       user: job.userId,
       conversationId,
       ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
-    });
+    };
+    let snapshot = await methods.getAgentEventActorSnapshot(owner);
+    let retiredWithoutAction: IAgentEventActorSuspension | undefined;
+    const isIrrecoverablyTerminal = job.status === 'aborted' || job.status === 'error';
+    const unprojectedSuspension = snapshot?.suspension;
+    if (
+      job.agentEventSuspension == null &&
+      isIrrecoverablyTerminal &&
+      unprojectedSuspension?.status === 'pending' &&
+      unprojectedSuspension.jobCreatedAt === job.createdAt &&
+      unprojectedSuspension.suspension.invocation.invocationId === job.agentEventDeliveryKey
+    ) {
+      /** Recovery for a crash after the canonical suspension write but before
+       * its version marker reached the job store, including a re-pause after
+       * the predecessor marker was cleared by resume. A terminal exact
+       * generation proves the unpublished pause can no longer be exposed. */
+      retiredWithoutAction = unprojectedSuspension;
+      const cancellation = await cancelAgentEventActor(
+        {
+          ...owner,
+          suspension: unprojectedSuspension.suspension,
+          cancelAttemptId: `terminal:${job.createdAt}`,
+          reason:
+            job.error === 'Approval expired before a decision was made' ? 'expired' : 'cancelled',
+        },
+        { cancelSuspension: methods.cancelAgentEventActorSuspension },
+      );
+      if (cancellation.status !== 'cancelled') {
+        throw new Error(
+          `Agent event actor ${job.agentEventDeliveryKey} unpublished suspension cancellation is indeterminate`,
+        );
+      }
+      snapshot = await methods.getAgentEventActorSnapshot(owner);
+    }
+    /** A retention/deletion winner may remove the private child before its
+     * already-aborted job hook replays. With no canonical owner or checkpoint
+     * left, cancellation is already physically complete; only the public
+     * delivery outcome remains. A successful generation still requires its
+     * actor proof and therefore fails closed here. */
+    if (job.agentEventSuspension != null && snapshot == null && !isIrrecoverablyTerminal) {
+      throw new Error(
+        `Agent event actor ${job.agentEventDeliveryKey} terminal suspension owner is unavailable`,
+      );
+    }
+    if (job.agentEventSuspension != null && snapshot != null) {
+      const current = snapshot?.suspension;
+      const currentMatches =
+        job.agentEventSuspension.version === 1 &&
+        current != null &&
+        current.suspension.suspensionId === job.agentEventSuspension.suspensionId &&
+        current.suspension.attempt === job.agentEventSuspension.attempt;
+      if (!currentMatches || current == null) {
+        throw new Error(
+          `Agent event actor ${job.agentEventDeliveryKey} terminal suspension is stale`,
+        );
+      }
+      if (current.status === 'pending') {
+        if (!isIrrecoverablyTerminal) {
+          throw new Error(
+            `Agent event actor ${job.agentEventDeliveryKey} terminated while its suspension remained pending`,
+          );
+        }
+        retiredWithoutAction = current;
+        const cancellation = await cancelAgentEventActor(
+          {
+            ...owner,
+            suspension: current.suspension,
+            cancelAttemptId: `terminal:${job.createdAt}`,
+            reason:
+              job.error === 'Approval expired before a decision was made' ? 'expired' : 'cancelled',
+          },
+          { cancelSuspension: methods.cancelAgentEventActorSuspension },
+        );
+        if (cancellation.status !== 'cancelled') {
+          throw new Error(
+            `Agent event actor ${job.agentEventDeliveryKey} suspension cancellation is indeterminate`,
+          );
+        }
+        snapshot = await methods.getAgentEventActorSnapshot(owner);
+      } else if (current.status === 'claimed') {
+        /** The provider-start CAS retains its exact execution identity after
+         * drain. A missing/different identity proves this claimed resume never
+         * crossed provider start (including schedule invalidation after claim
+         * projection); equality means execution began and must fail closed. */
+        const projectionNeverStarted =
+          isIrrecoverablyTerminal &&
+          current.resumeAttemptId != null &&
+          current.resumeAttemptId !== job.providerExecutionStartedId;
+        if (!projectionNeverStarted) {
+          throw new Error(
+            `Agent event actor ${job.agentEventDeliveryKey} terminal suspension claim is still in flight`,
+          );
+        }
+        retiredWithoutAction = current;
+        const cancellation = await cancelAgentEventActor(
+          {
+            ...owner,
+            suspension: current.suspension,
+            cancelAttemptId: `terminal:${job.createdAt}`,
+            reason:
+              job.error === 'Approval expired before a decision was made' ? 'expired' : 'cancelled',
+            claimedResumeAttemptId: current.resumeAttemptId,
+          },
+          { cancelSuspension: methods.cancelAgentEventActorSuspension },
+        );
+        if (cancellation.status !== 'cancelled') {
+          throw new Error(
+            `Agent event actor ${job.agentEventDeliveryKey} orphaned suspension claim is indeterminate`,
+          );
+        }
+        snapshot = await methods.getAgentEventActorSnapshot(owner);
+      }
+    }
+    /** Replay recovery after the Conversation CAS succeeded but the delivery
+     * admission was not yet released. Only exact closed no-action evidence is
+     * eligible; a committed suspension represents an applied action. */
+    const closed = snapshot?.suspension;
+    if (
+      retiredWithoutAction == null &&
+      closed?.status === 'closed' &&
+      (closed.outcome === 'settled' || closed.outcome === 'cancelled') &&
+      closed.jobCreatedAt === job.createdAt &&
+      closed.suspension.invocation.invocationId === job.agentEventDeliveryKey &&
+      (closed.outcome === 'settled'
+        ? closed.resumeAttemptId != null && closed.resumeAttemptId === job.providerExecutionId
+        : isIrrecoverablyTerminal &&
+          (closed.resumeAttemptId == null ||
+            closed.resumeAttemptId !== job.providerExecutionStartedId))
+    ) {
+      retiredWithoutAction = closed;
+    }
+    let retiredAdmissionId =
+      retiredWithoutAction == null
+        ? null
+        : createAgentEventActorActionAdmissionId(
+            retiredWithoutAction.suspension.invocation.invocationId,
+            retiredWithoutAction.suspension.invocation.fork,
+          );
+    if (
+      retiredAdmissionId == null &&
+      snapshot == null &&
+      isIrrecoverablyTerminal &&
+      job.agentEventBindingId != null
+    ) {
+      retiredAdmissionId = await methods.getAgentEventActorActionAdmission({
+        deliveryKey: job.agentEventDeliveryKey,
+        user: job.userId,
+        ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+        bindingId: job.agentEventBindingId,
+        conversationId,
+      });
+    }
+    if (retiredAdmissionId != null) {
+      if (job.agentEventBindingId == null) {
+        throw new Error(
+          `Agent event actor ${job.agentEventDeliveryKey} retired without binding identity`,
+        );
+      }
+      const admission = {
+        deliveryKey: job.agentEventDeliveryKey,
+        user: job.userId,
+        ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+        bindingId: job.agentEventBindingId,
+        conversationId,
+        admissionId: retiredAdmissionId,
+      };
+      const released = await methods.releaseAgentEventActorAction(admission);
+      if (!released && (await methods.hasAgentEventActorActionAdmission(admission))) {
+        throw new Error(
+          `Agent event actor ${job.agentEventDeliveryKey} action admission could not be released`,
+        );
+      }
+    }
     const lifecycle = snapshot?.reconciliations.find(
       (item) => item.invocationId === job.agentEventDeliveryKey,
     );

@@ -3410,12 +3410,135 @@ class AgentClient extends BaseClient {
     activityPhase?.complete?.();
   }
 
+  /** Returns the exact staged approval envelope the SDK signs into a suspension. */
+  readEventActorSuspension() {
+    const staged = this.stagedApproval;
+    if (staged == null || this.eventActorInvocationId == null) {
+      return undefined;
+    }
+    return {
+      actionId: staged.pendingAction.actionId,
+      jobCreatedAt: this.jobCreatedAt,
+      interrupt: {
+        id: staged.interruptId,
+        payload: { ...staged.pendingAction, type: staged.interruptType },
+      },
+    };
+  }
+
+  /** Projects an already-staged pause into the shared job store. Event Actors
+   * call this only after their signed Conversation suspension is durable. */
+  async publishStagedApproval(eventActorSuspension) {
+    const staged = this.stagedApproval;
+    if (staged == null) {
+      return false;
+    }
+    if (this.pendingApproval?.actionId === staged.pendingAction.actionId) {
+      return true;
+    }
+    const pauseProjection = {
+      expectedCreatedAt: this.jobCreatedAt,
+      ...(staged.discoveredTools.length > 0 ? { discoveredTools: staged.discoveredTools } : {}),
+      ...(staged.activityPhaseSnapshot == null
+        ? {}
+        : { activityPhaseSnapshot: staged.activityPhaseSnapshot }),
+      persistencePending: true,
+      ...(eventActorSuspension == null
+        ? {}
+        : {
+            agentEventSuspension: {
+              version: eventActorSuspension.version,
+              suspensionId: eventActorSuspension.suspensionId,
+              attempt: eventActorSuspension.attempt,
+            },
+          }),
+    };
+    let paused;
+    try {
+      paused = await GenerationJobManager.approvals.pause(
+        staged.streamId,
+        staged.pendingAction,
+        pauseProjection,
+      );
+    } catch (error) {
+      /** Redis may commit running -> requires_action and lose only its reply.
+       * The Conversation suspension is already canonical at this point, so
+       * confirm this exact generation/action/projection before declaring the
+       * publication failed and driving terminal compensation. */
+      const currentJob = await GenerationJobManager.getJob(staged.streamId).catch(() => null);
+      const projected = currentJob?.metadata?.agentEventSuspension;
+      const expectedProjection = pauseProjection.agentEventSuspension;
+      if (
+        currentJob?.createdAt === this.jobCreatedAt &&
+        currentJob.status === 'requires_action' &&
+        currentJob.metadata?.pendingAction?.actionId === staged.pendingAction.actionId &&
+        expectedProjection != null &&
+        projected?.version === expectedProjection.version &&
+        projected.suspensionId === expectedProjection.suspensionId &&
+        projected.attempt === expectedProjection.attempt
+      ) {
+        paused = true;
+      } else {
+        throw error;
+      }
+    }
+    if (!paused) {
+      logger.debug(
+        `[AgentClient] Interrupt fired but job ${staged.streamId} was not running; not pausing`,
+      );
+      return false;
+    }
+    this.pendingApproval = staged.pendingAction;
+    return true;
+  }
+
+  /** Exposes a durable pause after its controller-owned history barrier clears. */
+  async exposePendingApproval() {
+    const staged = this.stagedApproval;
+    if (
+      staged == null ||
+      this.pendingApproval?.actionId !== staged.pendingAction.actionId ||
+      this.exposedApprovalActionId === staged.pendingAction.actionId
+    ) {
+      return false;
+    }
+    if (!this.pendingRequestReleased) {
+      try {
+        if (this.options.req?._scheduleConcurrencyExempt !== true) {
+          await decrementPendingRequest(this.options.req?.user?.id);
+        }
+        this.pendingRequestReleased = true;
+      } catch (err) {
+        logger.error(
+          `[AgentClient] Failed to release request slot on pause ${staged.streamId}`,
+          getSafeErrorMetadata(err),
+        );
+      }
+    }
+    // Steers accepted before the pause remain in the shared store throughout
+    // review. The resumed run rehydrates them; exposing the action never moves
+    // their only copy into this replica's ephemeral client state.
+    await GenerationJobManager.emitChunk(
+      staged.streamId,
+      {
+        event: ApprovalEvents.ON_PENDING_ACTION,
+        data: toClientPendingAction(staged.pendingAction),
+      },
+      { expectedCreatedAt: this.jobCreatedAt },
+    );
+    this.exposedApprovalActionId = staged.pendingAction.actionId;
+    logger.debug(
+      `[AgentClient] Paused ${staged.streamId} for ${staged.interruptType} (action ${staged.pendingAction.actionId})`,
+    );
+    return true;
+  }
+
   /**
    * Surface any human-in-the-loop interrupt the SDK captured during the most
    * recent `processStream` / `resume`. When the run paused for tool approval (or
-   * an ask-user question), mark the job `requires_action`, persist the pending
-   * review record, and emit it to live clients — then set `this.pendingApproval`
-   * so the controller leaves the turn unfinalized for the resume route to continue.
+   * an ask-user question), stage its exact envelope. Ordinary turns immediately
+   * publish and expose it; Event Actors let the SDK persist signed suspension
+   * evidence first, then publish under the same history barrier.
    *
    * No-op when the run completed without an interrupt, or when the job was aborted
    * between the interrupt firing and this mark (a late interrupt must not pause a
@@ -3554,59 +3677,20 @@ class AgentClient extends BaseClient {
       );
     }
 
-    const paused = await GenerationJobManager.approvals.pause(streamId, pendingAction, {
-      expectedCreatedAt: this.jobCreatedAt,
-      ...(discoveredTools.length > 0 ? { discoveredTools } : {}),
-      ...(this.activityPhaseWiring?.snapshot != null && {
-        activityPhaseSnapshot: this.activityPhaseWiring.snapshot(),
-      }),
-      persistencePending: true,
-    });
-    if (!paused) {
-      logger.debug(
-        `[AgentClient] Interrupt fired but job ${streamId} was not running; not pausing`,
-      );
+    this.stagedApproval = {
+      streamId,
+      pendingAction,
+      interruptId: interrupt.interruptId,
+      interruptType: interrupt.payload.type,
+      discoveredTools,
+      activityPhaseSnapshot: this.activityPhaseWiring?.snapshot?.(),
+    };
+    if (this.eventActorInvocationId != null) {
       return;
     }
-
-    this.pendingApproval = pendingAction;
-    // Release the concurrency slot this request held the MOMENT the turn is durably
-    // paused — before the approval card is emitted — so the user's `/resume` can
-    // re-acquire one immediately. Otherwise a fast Approve races the HTTP-driver
-    // teardown (request.js pause branch / resume.js finally) that would otherwise
-    // release it, and `/resume` 429s under LIMIT_CONCURRENT_MESSAGES. Idempotent via
-    // the flag; if it fails here, the teardown still releases (it checks the flag).
-    if (!this.pendingRequestReleased) {
-      try {
-        if (this.options.req?._scheduleConcurrencyExempt !== true) {
-          await decrementPendingRequest(this.options.req?.user?.id);
-        }
-        this.pendingRequestReleased = true;
-      } catch (err) {
-        logger.error(
-          `[AgentClient] Failed to release request slot on pause ${streamId}`,
-          getSafeErrorMetadata(err),
-        );
-      }
+    if (await this.publishStagedApproval()) {
+      await this.exposePendingApproval();
     }
-    await GenerationJobManager.emitChunk(
-      streamId,
-      {
-        event: ApprovalEvents.ON_PENDING_ACTION,
-        data: toClientPendingAction(pendingAction),
-      },
-      { expectedCreatedAt: this.jobCreatedAt },
-    );
-    // Steers queued before this pause stay IN the store for the whole approval
-    // window: `resumeState.pendingSteers` re-seeds the client's chips on
-    // reload, and the resumed run drains them at its first tool boundary.
-    // Draining here would leave the only copy in ephemeral client state — a
-    // reload during the pause would silently lose the user's message. New
-    // steers are rejected while paused (enqueue is status-guarded), and the
-    // requires_action TTL extension keeps the queue key alive.
-    logger.debug(
-      `[AgentClient] Paused ${streamId} for ${interrupt.payload.type} (action ${pendingAction.actionId})`,
-    );
   }
 
   async chatCompletion({ payload, userMCPAuthMap, abortController = null }) {

@@ -737,6 +737,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
       return false;
     }
     job.providerDrained = false;
+    job.providerExecutionStartedId = providerExecutionId;
     return true;
   }
 

@@ -637,7 +637,7 @@ const PROVIDER_BEGIN_LUA =
   'if redis.call("HGET", KEYS[1], "providerExecutionId") ~= ARGV[2] then return 0 end ' +
   'if redis.call("HGET", KEYS[1], "status") ~= "running" then return 0 end ' +
   'if redis.call("HGET", KEYS[1], "providerDrained") ~= "1" then return 0 end ' +
-  'redis.call("HSET", KEYS[1], "providerDrained", "0") return 1';
+  'redis.call("HSET", KEYS[1], "providerDrained", "0", "providerExecutionStartedId", ARGV[2]) return 1';
 
 /** Single-winner promotion from abort-persistence pending to a consumable
  * terminal payload. Owner success/failure and stale-owner recovery share this
@@ -4742,6 +4742,9 @@ export class RedisJobStore implements IJobStoreV2 {
       agentEventExpectedAction: data.agentEventExpectedAction
         ? JSON.parse(data.agentEventExpectedAction)
         : undefined,
+      agentEventSuspension: data.agentEventSuspension
+        ? JSON.parse(data.agentEventSuspension)
+        : undefined,
       agentEventLegacyTurnToken: data.agentEventLegacyTurnToken || undefined,
       scheduleId: data.scheduleId || undefined,
       scheduledFor: data.scheduledFor || undefined,
@@ -4781,6 +4784,7 @@ export class RedisJobStore implements IJobStoreV2 {
       providerAbortReady:
         data.providerAbortReady != null ? data.providerAbortReady === '1' : undefined,
       providerExecutionId: data.providerExecutionId || undefined,
+      providerExecutionStartedId: data.providerExecutionStartedId || undefined,
       providerDrained: data.providerDrained != null ? data.providerDrained === '1' : undefined,
       titleEvent: data.titleEvent || undefined,
       replayEvents: data.replayEvents || undefined,

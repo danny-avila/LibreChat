@@ -1665,6 +1665,9 @@ describe('agent trigger delivery methods', () => {
      * the exact transport attempt is still leased. */
     await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(true);
     await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(true);
+    await expect(methods.getAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(
+      'admission-1',
+    );
     await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(false);
     const successorAdmission = { ...actionAdmission, admissionId: 'admission-2' };
     await expect(methods.admitAgentEventActorAction(successorAdmission)).resolves.toBe(false);
@@ -1675,6 +1678,7 @@ describe('agent trigger delivery methods', () => {
     await expect(methods.hasAgentEventActorActionAdmission(successorAdmission)).resolves.toBe(true);
     await expect(methods.releaseAgentEventActorAction(successorAdmission)).resolves.toBe(true);
     await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(false);
+    await expect(methods.getAgentEventActorActionAdmission(actionAdmission)).resolves.toBeNull();
     /** A pre-token worker's live admission must remain opaque but protected
      * throughout a rolling upgrade. New workers may observe the fence, but
      * cannot replace or release it without its (unavailable) owner token. */

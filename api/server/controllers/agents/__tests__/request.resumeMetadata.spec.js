@@ -85,8 +85,8 @@ const mockResolveAgentTurnExecutionPlan = jest.fn((input) => {
     input.event?.binding != null &&
     input.event?.expectedAction != null &&
     input.checkpointerType !== 'memory' &&
-    !input.canPause &&
-    !input.expectedActionMayDetach;
+    !input.expectedActionMayDetach &&
+    (!input.canPause || input.durableEventActorSuspensions);
   let strategy = 'history';
   if (input.isNewConversation) {
     strategy = 'fresh';
@@ -3042,10 +3042,12 @@ describe('ResumableAgentController resume metadata', () => {
     });
     let observedHookResult;
     const completedResponseWrite = jest.fn();
+    const exposePendingApproval = jest.fn().mockResolvedValue(undefined);
     const client = {
       options: {},
       jobCreatedAt: 1000,
       pendingApproval: { actionId: 'action-pause-barrier' },
+      exposePendingApproval,
       skipSaveUserMessage: false,
       skipSaveConvo: false,
       getSaveOptions: jest.fn(() => ({ endpoint: 'agents' })),
@@ -3123,6 +3125,9 @@ describe('ResumableAgentController resume metadata', () => {
       mockSaveMessage.mock.invocationCallOrder[0],
     );
     expect(mockSaveMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      mockGenerationJobManager.approvals.finishPausePersistence.mock.invocationCallOrder[0],
+    );
+    expect(exposePendingApproval.mock.invocationCallOrder[0]).toBeLessThan(
       mockGenerationJobManager.approvals.finishPausePersistence.mock.invocationCallOrder[0],
     );
     expect(mockGenerationJobManager.claimTerminalJob).not.toHaveBeenCalled();
@@ -4482,15 +4487,36 @@ describe('ResumableAgentController resume metadata', () => {
       undefined,
       undefined,
     ],
+    [
+      'pre-cutover pause-capable fleet',
+      { toolDefinitions: [] },
+      { toolApproval: { enabled: true } },
+      undefined,
+      undefined,
+      1,
+    ],
   ])(
-    'keeps %s event actors on the existing resumable path',
-    async (_label, agent, config, agentConfigs, clientOptions) => {
+    'routes %s event actors through the compatible continuation path',
+    async (_label, agent, config, agentConfigs, clientOptions, generationProtocolVersion = 2) => {
       mockGenerationJobManager.claimGeneration.mockResolvedValue(
         wonGenerationClaim({
           streamId: 'child-conversation',
           conversationId: 'child-conversation',
+          generationProtocolVersion,
         }),
       );
+      mockGenerationJobManager.createJob.mockResolvedValueOnce({
+        createdAt: 1000,
+        metadata: {
+          checkpointNamespace: '1000',
+          providerExecutionId: 'provider-segment-1',
+          providerDrained: true,
+          generationProtocolVersion,
+        },
+        readyPromise: Promise.resolve(),
+        abortController: new AbortController(),
+        emitter: { on: jest.fn() },
+      });
       mockGetConvo.mockResolvedValue({
         conversationId: 'parent-conversation',
         agent_id: 'parent-agent',
@@ -4503,12 +4529,28 @@ describe('ResumableAgentController resume metadata', () => {
           throw new Error('stop after legacy event invocation started');
         }),
       };
+      const shouldCheckpoint =
+        _label !== 'memory-checkpointer' &&
+        _label !== 'background-capable expected action' &&
+        _label !== 'pre-cutover pause-capable fleet';
+      if (shouldCheckpoint) {
+        mockExecuteAgentEventActor.mockImplementationOnce(async (input) => {
+          await input.invoke({
+            checkpointNamespace: 'event-actor/pause-capable',
+            checkpointId: 'checkpoint-pause-capable',
+            invocationId: 'req-event-hitl',
+            continuation: 'warm',
+            signal: input.signal,
+          });
+        });
+      }
       const req = {
         user: { id: 'user-123', tenantId: 'tenant-1' },
         body: {
           text: 'Continue with a pause-capable actor.',
           clientRequestId: 'req-event-hitl',
           conversationId: 'child-conversation',
+          generationProtocolVersion,
           endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
           agentEventDelivery: {
             deliveryKey: 'req-event-hitl',
@@ -4541,6 +4583,18 @@ describe('ResumableAgentController resume metadata', () => {
       );
       await nextTick();
 
+      if (shouldCheckpoint) {
+        expect(mockExecuteAgentEventActor).toHaveBeenCalled();
+        expect(mockGetMessages).not.toHaveBeenCalled();
+        expect(mockBeginAgentEventActorLegacyTurn).not.toHaveBeenCalled();
+        expect(mockGenerationJobManager.updateMetadata).not.toHaveBeenCalledWith(
+          'child-conversation',
+          expect.objectContaining({ agentEventLegacyTurnToken: expect.any(String) }),
+          1000,
+        );
+        expect(client.sendMessage).toHaveBeenCalledTimes(1);
+        return;
+      }
       expect(mockExecuteAgentEventActor).not.toHaveBeenCalled();
       expect(mockBeginAgentEventActorLegacyTurn).toHaveBeenCalledWith({
         user: 'user-123',

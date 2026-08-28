@@ -87,6 +87,7 @@ describe('RedisJobStore', () => {
     expect(script).toContain('HGET", KEYS[1], "status") ~= "running"');
     expect(script).toContain('HGET", KEYS[1], "providerDrained") ~= "1"');
     expect(script).toContain('HSET", KEYS[1], "providerDrained", "0"');
+    expect(script).toContain('"providerExecutionStartedId", ARGV[2]');
     expect([keyCount, jobKey, createdAt, providerExecutionId]).toEqual([
       1,
       'stream:{stream-provider-begin}:job',

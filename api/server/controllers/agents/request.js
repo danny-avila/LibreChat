@@ -51,6 +51,7 @@ const {
   getConvo,
   getAgentEventActorSnapshot,
   commitAgentEventActorState,
+  storeAgentEventActorSuspension,
   beginAgentEventActorLegacyTurn,
   completeAgentEventActorLegacyTurn,
   recordAgentEventActorReconciliation,
@@ -1725,6 +1726,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             }
           : undefined,
       canPause: eventActorMayPause,
+      /** Protocol v2 is the existing homogeneous-fleet cutover. Keeping
+       * pause-capable producers on the legacy path under v1 prevents an old
+       * `/resume` replica from consuming a signed suspension it cannot claim. */
+      durableEventActorSuspensions: generationProtocolVersion >= GENERATION_PROTOCOL_V2,
       checkpointerType: agentsConfig?.checkpointer?.type,
       expectedActionMayDetach: eventActorActionMayDetach,
     });
@@ -2087,10 +2092,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                     client?.run?.getRunSteps?.() ?? [],
                     client?.contentParts ?? [],
                   ),
+                readSuspension: () => client.readEventActorSuspension(),
               },
               {
                 getSnapshot: getAgentEventActorSnapshot,
                 commitState: commitAgentEventActorState,
+                storeSuspension: storeAgentEventActorSuspension,
                 recordReconciliation: recordAgentEventActorReconciliation,
                 resolveReconciliation: resolveAgentEventActorReconciliation,
                 admitAction: admitAgentEventActorAction,
@@ -2099,7 +2106,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 getReceipt: getAgentEventActorReceipt,
                 clearReconciliation: clearAgentEventActorReconciliation,
               },
-            ).then(({ value, execution }) => {
+            ).then(async ({ value, execution }) => {
               if (execution.status === 'applied') {
                 appliedEventActor = {
                   invocationId: eventTaskId,
@@ -2107,6 +2114,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   checkpoint: execution.head.checkpoint,
                   action: execution.result.action,
                 };
+              } else if (execution.status === 'suspended') {
+                if (!(await client.publishStagedApproval(execution.suspension))) {
+                  throw new Error('Event actor suspension could not be projected to its job');
+                }
               }
               logger.info('[event-actor] Bound child event completed', {
                 conversationId,
@@ -2313,6 +2324,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               }
               throw pausePersistenceError;
             }
+            await client.exposePendingApproval?.();
             const released = await GenerationJobManager.approvals.finishPausePersistence(
               streamId,
               pauseActionId,

@@ -34,6 +34,8 @@ export interface ApprovalPauseOptions {
   expectedCreatedAt?: number;
   /** Hold Stop/resume until the paused assistant row is durably unfinished. */
   persistencePending?: boolean;
+  /** Versioned pointer to the canonical signed Conversation suspension. */
+  agentEventSuspension?: import('~/agents/triggers/types').AgentEventSuspensionProjection;
 }
 
 export const PENDING_ACTION_EXPIRED_CODE = 'HITL_ACTION_EXPIRED';
@@ -142,6 +144,9 @@ export class ApprovalLifecycle {
             ? { discoveredTools: [...discoveredTools] }
             : {}),
           ...(activityPhaseSnapshot != null ? { activityPhaseSnapshot } : {}),
+          ...(options.agentEventSuspension != null
+            ? { agentEventSuspension: options.agentEventSuspension }
+            : {}),
         },
         expectCreatedAt: expectedCreatedAt,
         notAfterMs: pendingAction.expiresAt,
@@ -388,7 +393,16 @@ export class ApprovalLifecycle {
     const resumed = await this.store.transitionStatus(streamId, {
       from: 'requires_action',
       to: 'running',
-      clear: ['pendingAction', 'pendingActionId'],
+      /** The old suspension marker must not survive into the resumed provider
+       * segment. If that segment re-pauses, its canonical successor is stored
+       * before a new marker is published; clearing here makes a terminal job
+       * in that gap unambiguously recoverable as an unpublished re-pause. */
+      clear: [
+        'pendingAction',
+        'pendingActionId',
+        'agentEventSuspension',
+        'providerExecutionStartedId',
+      ],
       // Refresh the liveness basis so a long-paused run isn't reaped as stale
       // immediately after resuming (cleanup keys off lastActiveAt).
       /** Ownership can move across replicas on resume. Owner-specific fields

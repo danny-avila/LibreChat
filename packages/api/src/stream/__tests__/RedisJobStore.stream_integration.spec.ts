@@ -1332,6 +1332,11 @@ describe('RedisJobStore Integration Tests', () => {
           toolName: 'submit_move',
           argumentSubset: { gameId: 'game-1', expectedPly: 7 },
         },
+        agentEventSuspension: {
+          version: 1,
+          suspensionId: 'suspension-1',
+          attempt: 0,
+        },
         agentEventLegacyTurnToken: 'legacy-hitl-token',
         discoveredTools: ['deep_tool'],
         userSubmittedPaths: ['/content/0/tool_call/args'],
@@ -1345,6 +1350,11 @@ describe('RedisJobStore Integration Tests', () => {
       expect(turn1?.agentEventExpectedAction).toEqual({
         toolName: 'submit_move',
         argumentSubset: { gameId: 'game-1', expectedPly: 7 },
+      });
+      expect(turn1?.agentEventSuspension).toEqual({
+        version: 1,
+        suspensionId: 'suspension-1',
+        attempt: 0,
       });
       expect(turn1?.agentEventLegacyTurnToken).toBe('legacy-hitl-token');
       expect(turn1?.discoveredTools).toEqual(['deep_tool']);
@@ -1365,6 +1375,7 @@ describe('RedisJobStore Integration Tests', () => {
       expect(turn2?.agentEventDeliveryKey).toBeUndefined();
       expect(turn2?.agentEventBindingId).toBeUndefined();
       expect(turn2?.agentEventExpectedAction).toBeUndefined();
+      expect(turn2?.agentEventSuspension).toBeUndefined();
       expect(turn2?.agentEventLegacyTurnToken).toBeUndefined();
       expect(turn2?.discoveredTools).toBeUndefined();
       expect(turn2?.userSubmittedPaths).toBeUndefined();

@@ -99,10 +99,67 @@ export interface IAgentEventActorLegacyTurn {
   startedAt: Date;
 }
 
+/** JSON-safe value retained inside SDK-issued event-actor evidence. */
+export type TAgentEventActorEvent =
+  | null
+  | boolean
+  | number
+  | string
+  | TAgentEventActorEvent[]
+  | { [key: string]: TAgentEventActorEvent };
+
+export interface IAgentEventActorInvocationReference {
+  actorThreadId: string;
+  invocationId: string;
+  depth: number;
+  continuation: 'warm' | 'cold';
+  base: {
+    actorThreadId: string;
+    generation: number;
+    checkpoint?: Omit<IAgentEventActorCheckpoint, 'checkpointId'> & { checkpointId?: string };
+  };
+  fork: Omit<IAgentEventActorCheckpoint, 'checkpointId'> & {
+    checkpointId?: string;
+    invocationId: string;
+  };
+}
+
+/** Exact, signed SDK evidence for a paused invocation fork. */
+export interface IAgentEventActorSuspensionEvidence {
+  version: 1;
+  suspensionId: string;
+  attempt: number;
+  issuedAt: number;
+  expiresAt: number;
+  invocation: IAgentEventActorInvocationReference;
+  checkpoint: IAgentEventActorInvocationReference['fork'];
+  interrupt: {
+    id: string;
+    payload: TAgentEventActorEvent;
+  };
+  suspensionDigest: string;
+}
+
+/**
+ * Host-owned current suspension fence. SDK evidence authenticates the fork;
+ * the mirrored action/job identity binds it to LibreChat's approval CAS.
+ */
+export interface IAgentEventActorSuspension {
+  suspension: IAgentEventActorSuspensionEvidence;
+  actionId: string;
+  jobCreatedAt: number;
+  status: 'pending' | 'claimed' | 'closed';
+  resumeAttemptId?: string;
+  outcome?: 'committed' | 'stale' | 'settled' | 'cancelled';
+  closedAt?: Date;
+  observedAt: Date;
+}
+
 export interface IAgentEventActorSnapshot {
   state: IAgentEventActorState | null;
   reconciliations: IAgentEventActorReconciliation[];
   legacyTurn: IAgentEventActorLegacyTurn | null;
+  suspension: IAgentEventActorSuspension | null;
   /** Durable invalidation epoch. Every legacy-path event bumps it — including
    * for headless or already cold-marked actors, where the marker alone leaves
    * no CAS-visible trace — and the commit CAS requires the epoch observed at
@@ -180,6 +237,8 @@ export interface IConversation extends Document {
   agentEventActorEpoch?: number;
   /** Private in-flight legacy-turn fence; see {@link IAgentEventActorLegacyTurn}. */
   agentEventActorLegacyTurn?: IAgentEventActorLegacyTurn;
+  /** Private current suspended invocation; see {@link IAgentEventActorSuspension}. */
+  agentEventActorSuspension?: IAgentEventActorSuspension;
   assistant_id?: string;
   instructions?: string;
   stop?: string[];

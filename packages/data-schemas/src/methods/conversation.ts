@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { RetentionMode } from 'librechat-data-provider';
 import type { AnyBulkWriteOperation, FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
@@ -6,6 +7,7 @@ import type {
   IAgentEventActorReconciliation,
   IAgentEventActorSnapshot,
   IAgentEventActorState,
+  IAgentEventActorSuspensionEvidence,
   IAgentEventBindingRecord,
   IAgentTriggerDeliveryDocument,
   AppConfig,
@@ -39,6 +41,55 @@ import { decrementTagCounts } from './conversationTag';
 import logger from '~/config/winston';
 
 const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 90 * 24 * 60 * 60_000;
+const MAX_AGENT_EVENT_ACTOR_SUSPENSION_BYTES = 64 * 1_024;
+
+function validateAgentEventActorSuspension(
+  conversationId: string,
+  suspension: IAgentEventActorSuspensionEvidence,
+  actionId: string,
+  jobCreatedAt: number,
+  previous?: AgentEventActorSettlementAuthority,
+): void {
+  const invocation = suspension?.invocation;
+  const fork = invocation?.fork;
+  const checkpoint = suspension?.checkpoint;
+  if (
+    suspension?.version !== 1 ||
+    typeof suspension.suspensionId !== 'string' ||
+    suspension.suspensionId.length === 0 ||
+    !Number.isSafeInteger(suspension.attempt) ||
+    suspension.attempt < 0 ||
+    !Number.isSafeInteger(suspension.issuedAt) ||
+    !Number.isSafeInteger(suspension.expiresAt) ||
+    suspension.expiresAt <= suspension.issuedAt ||
+    invocation?.actorThreadId !== conversationId ||
+    fork?.threadId !== conversationId ||
+    checkpoint?.threadId !== conversationId ||
+    fork?.invocationId !== invocation?.invocationId ||
+    checkpoint?.invocationId !== invocation?.invocationId ||
+    checkpoint?.checkpointNs !== fork?.checkpointNs ||
+    typeof suspension.interrupt?.id !== 'string' ||
+    suspension.interrupt.id.length === 0 ||
+    typeof suspension.suspensionDigest !== 'string' ||
+    suspension.suspensionDigest.length === 0 ||
+    typeof actionId !== 'string' ||
+    actionId.length === 0 ||
+    !Number.isSafeInteger(jobCreatedAt) ||
+    jobCreatedAt < 0 ||
+    (previous == null ? suspension.attempt !== 0 : suspension.attempt !== previous.attempt + 1)
+  ) {
+    throw new Error('Event actor suspension evidence is invalid');
+  }
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(suspension);
+  } catch {
+    throw new Error('Event actor suspension evidence is not JSON-safe');
+  }
+  if (Buffer.byteLength(serialized, 'utf8') > MAX_AGENT_EVENT_ACTOR_SUSPENSION_BYTES) {
+    throw new RangeError('Event actor suspension exceeds maximum payload size');
+  }
+}
 
 type ConversationUpdateResult = {
   value:
@@ -75,6 +126,12 @@ export type AgentEventActorCommitResult =
       prunableCheckpoint?: IAgentEventActorCheckpoint;
     }
   | { status: 'stale'; state?: IAgentEventActorState };
+
+export interface AgentEventActorSettlementAuthority {
+  suspensionId: string;
+  attempt: number;
+  resumeAttemptId: string;
+}
 
 export interface AgentEventActorReconciliationStorageMetrics {
   pending: number;
@@ -257,7 +314,50 @@ export interface ConversationMethods {
     discoveredToolNames?: IAgentEventActorState['discoveredToolNames'];
     summary?: IAgentEventActorState['summary'];
     contextMeta?: IAgentEventActorState['contextMeta'];
+    settlementAuthority?: AgentEventActorSettlementAuthority;
   }): Promise<AgentEventActorCommitResult>;
+  storeAgentEventActorSuspension(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    suspension: IAgentEventActorSuspensionEvidence;
+    actionId: string;
+    jobCreatedAt: number;
+    /** The segment applied its expected action before publishing this successor pause. */
+    invalidateHead?: boolean;
+    previous?: AgentEventActorSettlementAuthority;
+  }): Promise<{ status: 'stored' | 'stale' }>;
+  claimAgentEventActorSuspension(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    suspensionId: string;
+    attempt: number;
+    actionId: string;
+    jobCreatedAt: number;
+    resumeAttemptId: string;
+  }): Promise<{ status: 'claimed' | 'stale' }>;
+  settleAgentEventActorSuspension(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    suspensionId: string;
+    attempt: number;
+    resumeAttemptId: string;
+    invocationId: string;
+    checkpoint: IAgentEventActorReconciliation['checkpoint'];
+  }): Promise<{ status: 'settled' | 'stale' }>;
+  cancelAgentEventActorSuspension(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    suspensionId: string;
+    attempt: number;
+    invocationId: string;
+    checkpoint: IAgentEventActorReconciliation['checkpoint'];
+    /** Exact orphaned resume claim proven not to have entered provider execution. */
+    claimedResumeAttemptId?: string;
+  }): Promise<{ status: 'cancelled' | 'stale' }>;
   beginAgentEventActorLegacyTurn(input: {
     user: string;
     conversationId: string;
@@ -522,7 +622,7 @@ export function createConversationMethods(
       ...activeExpirationFilter<IConversation>(),
     })
       .select(
-        '+agentEventActor +agentEventActorReconciliations +agentEventActorEpoch +agentEventActorLegacyTurn',
+        '+agentEventActor +agentEventActorReconciliations +agentEventActorEpoch +agentEventActorLegacyTurn +agentEventActorSuspension',
       )
       .lean<IConversation>();
     return conversation == null
@@ -531,8 +631,301 @@ export function createConversationMethods(
           state: conversation.agentEventActor ?? null,
           reconciliations: conversation.agentEventActorReconciliations ?? [],
           legacyTurn: conversation.agentEventActorLegacyTurn ?? null,
+          suspension: conversation.agentEventActorSuspension ?? null,
           epoch: conversation.agentEventActorEpoch ?? 0,
         };
+  }
+
+  /** Publishes one SDK-issued suspension, or atomically replaces its exact claimed predecessor. */
+  async function storeAgentEventActorSuspension(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    suspension: IAgentEventActorSuspensionEvidence;
+    actionId: string;
+    jobCreatedAt: number;
+    invalidateHead?: boolean;
+    previous?: AgentEventActorSettlementAuthority;
+  }): Promise<{ status: 'stored' | 'stale' }> {
+    validateAgentEventActorSuspension(
+      input.conversationId,
+      input.suspension,
+      input.actionId,
+      input.jobCreatedAt,
+      input.previous,
+    );
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const predecessor: FilterQuery<IConversation> =
+      input.previous == null
+        ? {
+            $or: [
+              { agentEventActorSuspension: { $exists: false } },
+              { 'agentEventActorSuspension.status': 'closed' },
+            ],
+          }
+        : {
+            'agentEventActorSuspension.status': 'claimed',
+            'agentEventActorSuspension.suspension.suspensionId': input.previous.suspensionId,
+            'agentEventActorSuspension.suspension.attempt': input.previous.attempt,
+            'agentEventActorSuspension.resumeAttemptId': input.previous.resumeAttemptId,
+          };
+    const ownership = {
+      user: input.user,
+      conversationId: input.conversationId,
+      subagentThread: { $exists: true },
+      agentEventBinding: { $exists: true },
+      agentEventActorReconciliations: {
+        $elemMatch: {
+          invocationId: input.suspension.invocation.invocationId,
+          status: 'invocation_pending',
+        },
+      },
+      ...subagentLeaseTenantFilter(input.tenantId),
+      ...activeExpirationFilter<IConversation>(),
+      ...predecessor,
+    };
+    const storeUpdate = {
+      $set: {
+        agentEventActorSuspension: {
+          suspension: input.suspension,
+          actionId: input.actionId,
+          jobCreatedAt: input.jobCreatedAt,
+          status: 'pending' as const,
+          observedAt: new Date(),
+        },
+        ...(input.invalidateHead === true ? { 'agentEventActor.requiresColdStart': true } : {}),
+      },
+    };
+    let stored = await Conversation.findOneAndUpdate(
+      {
+        ...ownership,
+        ...(input.invalidateHead === true ? { agentEventActor: { $exists: true } } : {}),
+      },
+      storeUpdate,
+      { new: false, timestamps: false },
+    )
+      .select('_id')
+      .lean<IConversation>();
+    /** A headless actor is already guaranteed to cold-start; publish the
+     * successor without manufacturing a partial canonical state. */
+    if (stored == null && input.invalidateHead === true) {
+      stored = await Conversation.findOneAndUpdate(
+        { ...ownership, agentEventActor: { $exists: false } },
+        {
+          $set: {
+            agentEventActorSuspension: {
+              suspension: input.suspension,
+              actionId: input.actionId,
+              jobCreatedAt: input.jobCreatedAt,
+              status: 'pending',
+              observedAt: new Date(),
+            },
+          },
+        },
+        { new: false, timestamps: false },
+      )
+        .select('_id')
+        .lean<IConversation>();
+    }
+    return { status: stored == null ? 'stale' : 'stored' };
+  }
+
+  /** One resume attempt wins the canonical Conversation-side suspension fence. */
+  async function claimAgentEventActorSuspension(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    suspensionId: string;
+    attempt: number;
+    actionId: string;
+    jobCreatedAt: number;
+    resumeAttemptId: string;
+  }): Promise<{ status: 'claimed' | 'stale' }> {
+    if (
+      input.suspensionId.length === 0 ||
+      !Number.isSafeInteger(input.attempt) ||
+      input.attempt < 0 ||
+      input.actionId.length === 0 ||
+      !Number.isSafeInteger(input.jobCreatedAt) ||
+      input.jobCreatedAt < 0 ||
+      input.resumeAttemptId.length === 0
+    ) {
+      throw new Error('Event actor suspension claim is invalid');
+    }
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const claimed = await Conversation.findOneAndUpdate(
+      {
+        user: input.user,
+        conversationId: input.conversationId,
+        subagentThread: { $exists: true },
+        agentEventBinding: { $exists: true },
+        'agentEventActorSuspension.status': 'pending',
+        'agentEventActorSuspension.suspension.suspensionId': input.suspensionId,
+        'agentEventActorSuspension.suspension.attempt': input.attempt,
+        'agentEventActorSuspension.actionId': input.actionId,
+        'agentEventActorSuspension.jobCreatedAt': input.jobCreatedAt,
+        ...subagentLeaseTenantFilter(input.tenantId),
+        ...activeExpirationFilter<IConversation>(),
+      },
+      {
+        $set: {
+          'agentEventActorSuspension.status': 'claimed',
+          'agentEventActorSuspension.resumeAttemptId': input.resumeAttemptId,
+          'agentEventActorSuspension.observedAt': new Date(),
+        },
+        $unset: {
+          'agentEventActorSuspension.outcome': 1,
+          'agentEventActorSuspension.closedAt': 1,
+        },
+      },
+      { new: false, timestamps: false },
+    )
+      .select('_id')
+      .lean<IConversation>();
+    return { status: claimed == null ? 'stale' : 'claimed' };
+  }
+
+  /** Closes a claimed no-action suspension while retaining one bounded retry receipt. */
+  async function settleAgentEventActorSuspension(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    suspensionId: string;
+    attempt: number;
+    resumeAttemptId: string;
+    invocationId: string;
+    checkpoint: IAgentEventActorReconciliation['checkpoint'];
+  }): Promise<{ status: 'settled' | 'stale' }> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const settled = await Conversation.findOneAndUpdate(
+      {
+        user: input.user,
+        conversationId: input.conversationId,
+        'agentEventActorSuspension.status': 'claimed',
+        'agentEventActorSuspension.suspension.suspensionId': input.suspensionId,
+        'agentEventActorSuspension.suspension.attempt': input.attempt,
+        'agentEventActorSuspension.resumeAttemptId': input.resumeAttemptId,
+        agentEventActorReconciliations: {
+          $elemMatch: {
+            invocationId: input.invocationId,
+            status: 'invocation_pending',
+            'checkpoint.threadId': input.checkpoint.threadId,
+            'checkpoint.checkpointNs': input.checkpoint.checkpointNs,
+            ...(input.checkpoint.checkpointId == null
+              ? { 'checkpoint.checkpointId': { $exists: false } }
+              : { 'checkpoint.checkpointId': input.checkpoint.checkpointId }),
+          },
+        },
+        ...subagentLeaseTenantFilter(input.tenantId),
+      },
+      {
+        $set: {
+          'agentEventActorSuspension.status': 'closed',
+          'agentEventActorSuspension.outcome': 'settled',
+          'agentEventActorSuspension.closedAt': new Date(),
+          'agentEventActorSuspension.observedAt': new Date(),
+        },
+        $pull: {
+          agentEventActorReconciliations: {
+            invocationId: input.invocationId,
+            status: 'invocation_pending',
+            'checkpoint.threadId': input.checkpoint.threadId,
+            'checkpoint.checkpointNs': input.checkpoint.checkpointNs,
+            ...(input.checkpoint.checkpointId == null
+              ? { 'checkpoint.checkpointId': { $exists: false } }
+              : { 'checkpoint.checkpointId': input.checkpoint.checkpointId }),
+          },
+        },
+      },
+      { new: false, timestamps: false },
+    )
+      .select('_id')
+      .lean<IConversation>();
+    if (settled != null) {
+      return { status: 'settled' };
+    }
+    const snapshot = await getAgentEventActorSnapshot(input);
+    return snapshot?.suspension?.status === 'closed' &&
+      snapshot.suspension.outcome === 'settled' &&
+      snapshot.suspension.suspension.suspensionId === input.suspensionId &&
+      snapshot.suspension.suspension.attempt === input.attempt &&
+      snapshot.suspension.resumeAttemptId === input.resumeAttemptId
+      ? { status: 'settled' }
+      : { status: 'stale' };
+  }
+
+  /** Cancellation races resume through the same current-suspension predicate. */
+  async function cancelAgentEventActorSuspension(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    suspensionId: string;
+    attempt: number;
+    invocationId: string;
+    checkpoint: IAgentEventActorReconciliation['checkpoint'];
+    claimedResumeAttemptId?: string;
+  }): Promise<{ status: 'cancelled' | 'stale' }> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const suspensionOwner =
+      input.claimedResumeAttemptId == null
+        ? { 'agentEventActorSuspension.status': 'pending' }
+        : {
+            'agentEventActorSuspension.status': 'claimed',
+            'agentEventActorSuspension.resumeAttemptId': input.claimedResumeAttemptId,
+          };
+    const cancelled = await Conversation.findOneAndUpdate(
+      {
+        user: input.user,
+        conversationId: input.conversationId,
+        ...suspensionOwner,
+        'agentEventActorSuspension.suspension.suspensionId': input.suspensionId,
+        'agentEventActorSuspension.suspension.attempt': input.attempt,
+        agentEventActorReconciliations: {
+          $elemMatch: {
+            invocationId: input.invocationId,
+            status: 'invocation_pending',
+            'checkpoint.threadId': input.checkpoint.threadId,
+            'checkpoint.checkpointNs': input.checkpoint.checkpointNs,
+            ...(input.checkpoint.checkpointId == null
+              ? { 'checkpoint.checkpointId': { $exists: false } }
+              : { 'checkpoint.checkpointId': input.checkpoint.checkpointId }),
+          },
+        },
+        ...subagentLeaseTenantFilter(input.tenantId),
+      },
+      {
+        $set: {
+          'agentEventActorSuspension.status': 'closed',
+          'agentEventActorSuspension.outcome': 'cancelled',
+          'agentEventActorSuspension.closedAt': new Date(),
+          'agentEventActorSuspension.observedAt': new Date(),
+        },
+        $pull: {
+          agentEventActorReconciliations: {
+            invocationId: input.invocationId,
+            status: 'invocation_pending',
+            'checkpoint.threadId': input.checkpoint.threadId,
+            'checkpoint.checkpointNs': input.checkpoint.checkpointNs,
+            ...(input.checkpoint.checkpointId == null
+              ? { 'checkpoint.checkpointId': { $exists: false } }
+              : { 'checkpoint.checkpointId': input.checkpoint.checkpointId }),
+          },
+        },
+      },
+      { new: false, timestamps: false },
+    )
+      .select('_id')
+      .lean<IConversation>();
+    if (cancelled != null) {
+      return { status: 'cancelled' };
+    }
+    const snapshot = await getAgentEventActorSnapshot(input);
+    return snapshot?.suspension?.status === 'closed' &&
+      snapshot.suspension.outcome === 'cancelled' &&
+      snapshot.suspension.suspension.suspensionId === input.suspensionId &&
+      snapshot.suspension.suspension.attempt === input.attempt
+      ? { status: 'cancelled' }
+      : { status: 'stale' };
   }
 
   /** Advances one actor head only when its complete prior identity still matches. */
@@ -550,6 +943,7 @@ export function createConversationMethods(
     discoveredToolNames?: IAgentEventActorState['discoveredToolNames'];
     summary?: IAgentEventActorState['summary'];
     contextMeta?: IAgentEventActorState['contextMeta'];
+    settlementAuthority?: AgentEventActorSettlementAuthority;
   }): Promise<AgentEventActorCommitResult> {
     if (input.checkpoint.threadId !== input.conversationId) {
       throw new Error('Event actor checkpoint changed its logical thread');
@@ -629,6 +1023,16 @@ export function createConversationMethods(
               input.expected.requiresColdStart === true ? true : { $ne: true },
           }),
     };
+    const settlementFilter: FilterQuery<IConversation> =
+      input.settlementAuthority == null
+        ? {}
+        : {
+            'agentEventActorSuspension.status': 'claimed',
+            'agentEventActorSuspension.suspension.suspensionId':
+              input.settlementAuthority.suspensionId,
+            'agentEventActorSuspension.suspension.attempt': input.settlementAuthority.attempt,
+            'agentEventActorSuspension.resumeAttemptId': input.settlementAuthority.resumeAttemptId,
+          };
     const nextState: IAgentEventActorState = {
       generation: (input.expected?.generation ?? 0) + 1,
       checkpoint: input.checkpoint,
@@ -656,6 +1060,7 @@ export function createConversationMethods(
         ...subagentLeaseTenantFilter(input.tenantId),
         ...activeExpirationFilter<IConversation>(),
         ...expectedFilter,
+        ...settlementFilter,
       },
       {
         $set: {
@@ -664,12 +1069,20 @@ export function createConversationMethods(
           'agentEventActorReconciliations.$.checkpoint': input.checkpoint,
           'agentEventActorReconciliations.$.action': input.action,
           'agentEventActorReconciliations.$.observedAt': new Date(),
+          ...(input.settlementAuthority == null
+            ? {}
+            : {
+                'agentEventActorSuspension.status': 'closed',
+                'agentEventActorSuspension.outcome': 'committed',
+                'agentEventActorSuspension.closedAt': new Date(),
+                'agentEventActorSuspension.observedAt': new Date(),
+              }),
         },
         $unset: { 'agentEventActorReconciliations.$.error': 1 },
       },
       { new: false, timestamps: false },
     )
-      .select('+agentEventActor')
+      .select('+agentEventActor +agentEventActorSuspension')
       .lean<IConversation>();
     if (previous != null) {
       return {
@@ -678,6 +1091,70 @@ export function createConversationMethods(
         ...(previous.agentEventActor?.previousCheckpoint == null
           ? {}
           : { prunableCheckpoint: previous.agentEventActor.previousCheckpoint }),
+      };
+    }
+    if (input.settlementAuthority != null) {
+      /** A resumed action must close its claim even when another head won.
+       * The negative full-head predicate makes this mutually exclusive with
+       * the commit CAS above; the retained closure is the ambiguous-reply receipt. */
+      const closedStale = await Conversation.findOneAndUpdate(
+        {
+          user: input.user,
+          conversationId: input.conversationId,
+          subagentThread: { $exists: true },
+          agentEventBinding: { $exists: true },
+          agentEventActorReconciliations: {
+            $elemMatch: {
+              invocationId: input.invocationId,
+              status: 'invocation_pending',
+            },
+          },
+          ...subagentLeaseTenantFilter(input.tenantId),
+          ...activeExpirationFilter<IConversation>(),
+          ...settlementFilter,
+          $nor: [expectedFilter],
+        },
+        {
+          $set: {
+            'agentEventActorSuspension.status': 'closed',
+            'agentEventActorSuspension.outcome': 'stale',
+            'agentEventActorSuspension.closedAt': new Date(),
+            'agentEventActorSuspension.observedAt': new Date(),
+          },
+        },
+        { new: false, timestamps: false },
+      )
+        .select('+agentEventActor +agentEventActorSuspension')
+        .lean<IConversation>();
+      if (closedStale != null) {
+        return {
+          status: 'stale',
+          ...(closedStale.agentEventActor == null ? {} : { state: closedStale.agentEventActor }),
+        };
+      }
+      const current = await getAgentEventActorSnapshot(input);
+      const receipt = current?.suspension;
+      const matchesAuthority =
+        receipt?.suspension.suspensionId === input.settlementAuthority.suspensionId &&
+        receipt?.suspension.attempt === input.settlementAuthority.attempt &&
+        receipt?.resumeAttemptId === input.settlementAuthority.resumeAttemptId;
+      if (matchesAuthority && receipt?.status === 'closed') {
+        if (receipt.outcome === 'committed' && current?.state != null) {
+          return { status: 'committed', state: current.state };
+        }
+        if (receipt.outcome === 'stale') {
+          return {
+            status: 'stale',
+            ...(current?.state == null ? {} : { state: current.state }),
+          };
+        }
+      }
+      if (matchesAuthority) {
+        throw new Error('Resumed event actor commit could not close its suspension fence');
+      }
+      return {
+        status: 'stale',
+        ...(current?.state == null ? {} : { state: current.state }),
       };
     }
     const current = await getAgentEventActorSnapshot(input);
@@ -2651,6 +3128,10 @@ export function createConversationMethods(
     getAgentEventBinding,
     getAgentEventActorSnapshot,
     commitAgentEventActorState,
+    storeAgentEventActorSuspension,
+    claimAgentEventActorSuspension,
+    settleAgentEventActorSuspension,
+    cancelAgentEventActorSuspension,
     beginAgentEventActorLegacyTurn,
     completeAgentEventActorLegacyTurn,
     recordAgentEventActorReconciliation,

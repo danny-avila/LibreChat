@@ -228,6 +228,28 @@ const convoSchema: Schema<IConversation> = new Schema(
       default: undefined,
       select: false,
     },
+    /** Current SDK-issued suspended invocation. The signed evidence remains
+     * opaque/Mixed so its exact versioned JSON shape survives round trips;
+     * mirrored host fields provide bounded CAS predicates. */
+    agentEventActorSuspension: {
+      type: {
+        suspension: { type: Schema.Types.Mixed, required: true },
+        actionId: { type: String, required: true },
+        jobCreatedAt: { type: Number, required: true },
+        status: { type: String, enum: ['pending', 'claimed', 'closed'], required: true },
+        resumeAttemptId: { type: String, default: undefined },
+        outcome: {
+          type: String,
+          enum: ['committed', 'stale', 'settled', 'cancelled'],
+          default: undefined,
+        },
+        closedAt: { type: Date, default: undefined },
+        observedAt: { type: Date, required: true },
+      },
+      _id: false,
+      default: undefined,
+      select: false,
+    },
     tags: {
       type: [String],
       default: [],
