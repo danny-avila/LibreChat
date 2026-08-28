@@ -8,13 +8,24 @@ import { useExpandCollapse, useLocalize } from '~/hooks';
 import MemoryInfo from './MemoryInfo';
 import { cn } from '~/utils';
 
+/** True for a memory attachment with no originating tool call. A call rendered
+ *  inline as a `MemoryCall` card already shows the same key, value and outcome,
+ *  so counting its attachment here too rendered one mutation twice ("Saved
+ *  memory" beside "Updated saved memory"), on reload as well as live. Legacy
+ *  attachments carry no `toolCallId` and keep this decoration as their only
+ *  surface. */
+const isUnlinkedMemoryArtifact = (
+  attachment?: TAttachment,
+): attachment is TAttachment & { [Tools.memory]: MemoryArtifact } =>
+  attachment?.[Tools.memory] != null && !attachment.toolCallId;
+
 /** Layout-gate predicate for callers that arrange around this component
  * (e.g. the thinking-dot nudge). Must stay in agreement with the memo's
- * collection condition inside the component — both key on
- * `attachment[Tools.memory]`. The component itself guards on its memoized
+ * collection condition inside the component: both key on
+ * `isUnlinkedMemoryArtifact`. The component itself guards on its memoized
  * list instead, avoiding a second pass per render. */
 export const hasMemoryArtifacts = (attachments?: TAttachment[]): boolean =>
-  attachments?.some((attachment) => attachment?.[Tools.memory] != null) ?? false;
+  attachments?.some(isUnlinkedMemoryArtifact) ?? false;
 
 export default function MemoryArtifacts({ attachments }: { attachments?: TAttachment[] }) {
   const contentId = useId();
@@ -31,7 +42,7 @@ export default function MemoryArtifacts({ attachments }: { attachments?: TAttach
     }
 
     for (const attachment of attachments) {
-      if (attachment?.[Tools.memory] != null) {
+      if (isUnlinkedMemoryArtifact(attachment)) {
         result.push(attachment[Tools.memory]);
 
         if (!hasErrors && attachment[Tools.memory].type === 'error') {
