@@ -50,6 +50,7 @@ const mockGenerationJobManager = {
   getJob: jest.fn(),
   getJobStore: jest.fn(() => mockJobStore),
   getResumeState: jest.fn(),
+  updateMetadata: jest.fn(),
   setContentParts: jest.fn(),
   /** Resume moves ownership and rebuilds armed interrupts from the durable queue. */
   rearmQueuedPreempts: jest.fn().mockResolvedValue(0),
@@ -342,6 +343,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     });
     mockJobStore.updateJob.mockResolvedValue(undefined);
     mockGenerationJobManager.getResumeState.mockResolvedValue({ aggregatedContent: [] });
+    mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.emitDone.mockResolvedValue(undefined);
     mockGenerationJobManager.emitError.mockResolvedValue(undefined);
     mockGenerationJobManager.emitChunk.mockResolvedValue(undefined);
@@ -544,6 +546,11 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         kind: 'internal_completion',
         actionId: 'detached-action-next',
       };
+      const repausedSuspension = {
+        ...suspension,
+        suspensionId: 'suspension-detached-next',
+        attempt: 1,
+      };
       mockCreateAgentEventActorDetachedActionLifecycle.mockReturnValue({
         readSuspension: () => detachedSuspension,
       });
@@ -577,6 +584,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         },
       });
       const resumedClient = makeClient({
+        publishStagedApproval: jest.fn(),
         contentParts: [makeToolCallContent({ output: 'human supplied output' })],
         run: {
           getRunSteps: () => [
@@ -625,10 +633,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           continuation: 'warm',
           signal: input.signal,
         });
-        expect(input.readAppliedAction()).toBeUndefined();
         return {
           value,
-          execution: { status: 'completed_no_action' },
+          execution: { status: 'suspended', suspension: repausedSuspension },
         };
       });
 
@@ -675,6 +682,18 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       mockGenerationJobManager.isRedis = false;
       expect(lifecycleDependencies.producerEnabled()).toBe(false);
       expect(resumedClient.resumeCompletion).toHaveBeenCalledTimes(1);
+      expect(mockGenerationJobManager.updateMetadata).toHaveBeenCalledWith(
+        CONVO_ID,
+        {
+          agentEventSuspension: {
+            version: repausedSuspension.version,
+            suspensionId: repausedSuspension.suspensionId,
+            attempt: repausedSuspension.attempt,
+          },
+        },
+        1000,
+      );
+      expect(resumedClient.publishStagedApproval).not.toHaveBeenCalled();
       expect(mockRecordAgentEventActorReconciliation).not.toHaveBeenCalled();
     });
 
@@ -742,88 +761,95 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockReleaseEventChildLease).toHaveBeenCalledTimes(1);
     });
 
-    it('preserves a pre-feature suspension when client reconstruction fails before continuation', async () => {
-      configureEventActorResume();
-      const expectedAction = { toolName: 'lookup' };
-      const suspension = {
-        version: 1,
-        suspensionId: 'suspension-init-failure',
-        attempt: 0,
-        issuedAt: Date.now(),
-        expiresAt: Date.now() + 60_000,
-        invocation: {
-          invocationId: 'trigger_event_delivery',
-          continuation: 'warm',
-          base: { actorThreadId: CONVO_ID, generation: 0 },
-          fork: {
+    it.each([
+      ['pre-feature expected-action', { toolName: 'lookup' }, undefined],
+      ['actionless PR-era', undefined, 1000],
+    ])(
+      'preserves a %s suspension when client reconstruction fails before continuation',
+      async (_case, expectedAction, handlingGenerationCreatedAt) => {
+        configureEventActorResume();
+        const suspension = {
+          version: 1,
+          suspensionId: 'suspension-init-failure',
+          attempt: 0,
+          issuedAt: Date.now(),
+          expiresAt: Date.now() + 60_000,
+          invocation: {
+            invocationId: 'trigger_event_delivery',
+            continuation: 'warm',
+            base: { actorThreadId: CONVO_ID, generation: 0 },
+            fork: {
+              threadId: CONVO_ID,
+              checkpointNs: 'event-actor',
+              checkpointId: 'checkpoint-paused',
+              invocationId: 'trigger_event_delivery',
+            },
+          },
+          checkpoint: {
             threadId: CONVO_ID,
             checkpointNs: 'event-actor',
             checkpointId: 'checkpoint-paused',
             invocationId: 'trigger_event_delivery',
           },
-        },
-        checkpoint: {
-          threadId: CONVO_ID,
-          checkpointNs: 'event-actor',
-          checkpointId: 'checkpoint-paused',
-          invocationId: 'trigger_event_delivery',
-        },
-        interrupt: {
-          id: 'interrupt-init-failure',
-          payload: {
-            type: 'tool_approval',
-            _librechatEventActor: { expectedAction },
-          },
-        },
-        suspensionDigest: 'signed-digest',
-      };
-      mockGenerationJobManager.getJob.mockResolvedValue(
-        makeToolApprovalJob({
-          metadata: {
-            idempotencyClientRequestId: 'trigger_event_delivery',
-            agentEventExpectedAction: expectedAction,
-            agentEventSuspension: {
-              version: 1,
-              suspensionId: suspension.suspensionId,
-              attempt: suspension.attempt,
+          interrupt: {
+            id: 'interrupt-init-failure',
+            payload: {
+              type: 'tool_approval',
+              _librechatEventActor: expectedAction == null ? {} : { expectedAction },
             },
           },
-        }),
-      );
-      mockGetAgentEventActorSnapshot.mockResolvedValue({
-        state: null,
-        epoch: 1,
-        legacyTurn: null,
-        reconciliations: [],
-        suspension: {
-          suspension,
-          actionId: ACTION_ID,
-          jobCreatedAt: 1000,
-          status: 'pending',
-        },
-      });
-      mockIsAgentEventActorDetachedActionProducerEnabled.mockReturnValue(false);
-      mockInitializeClient.mockRejectedValue(new Error('client reconstruction failed'));
-      mockResumeAgentEventActor.mockImplementation(async (input) => {
-        expect(await input.claimProjection()).toBe(true);
-        return input.resume({
-          checkpointNamespace: 'event-actor',
-          checkpointId: 'checkpoint-paused',
-          invocationId: 'trigger_event_delivery',
-          continuation: 'warm',
-          signal: input.signal,
+          suspensionDigest: 'signed-digest',
+        };
+        mockGenerationJobManager.getJob.mockResolvedValue(
+          makeToolApprovalJob({
+            metadata: {
+              idempotencyClientRequestId: 'trigger_event_delivery',
+              ...(expectedAction == null ? {} : { agentEventExpectedAction: expectedAction }),
+              agentEventSuspension: {
+                version: 1,
+                suspensionId: suspension.suspensionId,
+                attempt: suspension.attempt,
+              },
+            },
+          }),
+        );
+        mockGetAgentEventActorSnapshot.mockResolvedValue({
+          state: null,
+          epoch: 1,
+          legacyTurn: null,
+          reconciliations: [],
+          suspension: {
+            suspension,
+            ...(handlingGenerationCreatedAt == null ? {} : { handlingGenerationCreatedAt }),
+            actionId: ACTION_ID,
+            jobCreatedAt: 1000,
+            status: 'pending',
+          },
         });
-      });
+        mockIsAgentEventActorDetachedActionProducerEnabled.mockReturnValue(false);
+        mockInitializeClient.mockRejectedValue(new Error('client reconstruction failed'));
+        mockResumeAgentEventActor.mockImplementation(async (input) => {
+          expect(await input.claimProjection()).toBe(true);
+          return input.resume({
+            checkpointNamespace: 'event-actor',
+            checkpointId: 'checkpoint-paused',
+            invocationId: 'trigger_event_delivery',
+            continuation: 'warm',
+            signal: input.signal,
+          });
+        });
 
-      const res = await post(approveBody());
-      expect(res.status).toBe(200);
-      await settled;
-      await flush();
+        const res = await post(approveBody());
+        expect(res.status).toBe(200);
+        await settled;
+        await flush();
 
-      expect(mockInitializeClient).toHaveBeenCalledTimes(1);
-      expect(mockGenerationJobManager.beginProviderExecution).not.toHaveBeenCalled();
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalled();
-    });
+        expect(mockInitializeClient).toHaveBeenCalledTimes(1);
+        expect(mockCreateAgentEventActorDetachedActionLifecycle).not.toHaveBeenCalled();
+        expect(mockGenerationJobManager.beginProviderExecution).not.toHaveBeenCalled();
+        expect(mockGenerationJobManager.completeJob).toHaveBeenCalled();
+      },
+    );
 
     it('fails closed when a versioned job marker no longer matches canonical suspension', async () => {
       configureEventActorResume();

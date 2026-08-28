@@ -1342,7 +1342,8 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
             suspensionRecord.handlingGenerationCreatedAt;
           durableEventActorRequiresDetachedProducer =
             job.metadata.agentEventDetachedActionProducerRequired === true ||
-            suspensionRecord.handlingGenerationCreatedAt != null ||
+            (suspensionRecord.handlingGenerationCreatedAt != null &&
+              job.metadata.agentEventExpectedAction != null) ||
             job.metadata.agentEventInvocationKey != null ||
             suspensionRecord.kind === 'internal_completion';
           const signedExpectedAction = getSuspendedEventActorExpectedAction(
@@ -1452,6 +1453,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           actorInvocationGenerationCreatedAt = originalDelivery?.handling?.generationCreatedAt;
         }
         if (
+          durableEventActorRequiresDetachedProducer &&
           actorInvocationId != null &&
           Number.isSafeInteger(actorInvocationGenerationCreatedAt) &&
           req._agentEventBindingId != null
@@ -1844,7 +1846,20 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       });
       const actorResult = await eventActorResumePromise;
       if (actorResult.execution.status === 'suspended') {
-        if (!(await client.publishStagedApproval(actorResult.execution.suspension))) {
+        const suspensionKind = req._agentEventDetachedActionLifecycle?.readSuspension()?.kind;
+        if (suspensionKind === 'internal_completion') {
+          await GenerationJobManager.updateMetadata(
+            streamId,
+            {
+              agentEventSuspension: {
+                version: actorResult.execution.suspension.version,
+                suspensionId: actorResult.execution.suspension.suspensionId,
+                attempt: actorResult.execution.suspension.attempt,
+              },
+            },
+            job.createdAt,
+          );
+        } else if (!(await client.publishStagedApproval(actorResult.execution.suspension))) {
           throw new Error('Re-paused event actor suspension could not be projected to its job');
         }
       } else if (actorResult.execution.status === 'applied') {
