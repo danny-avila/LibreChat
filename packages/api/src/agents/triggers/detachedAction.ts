@@ -24,7 +24,10 @@ export const EVENT_ACTOR_DETACHED_COMPLETION_SOURCE = 'librechat-event-actor';
 export interface AgentEventActorDetachedCompletionProjection {
   version: 1;
   invocationId: string;
+  /** Generation that owns the original delivery's detached-action record. */
   generationCreatedAt: number;
+  /** Generation whose terminal handling enqueued this wake. */
+  wakeGenerationCreatedAt: number;
   taskId: string;
   idempotencyKey: string;
 }
@@ -43,6 +46,8 @@ export function parseAgentEventActorDetachedCompletion(
     input.invocationId.length > 128 ||
     !Number.isSafeInteger(input.generationCreatedAt) ||
     (input.generationCreatedAt as number) < 0 ||
+    !Number.isSafeInteger(input.wakeGenerationCreatedAt) ||
+    (input.wakeGenerationCreatedAt as number) < 0 ||
     typeof input.taskId !== 'string' ||
     input.taskId.length === 0 ||
     input.taskId.length > 128 ||
@@ -55,6 +60,7 @@ export function parseAgentEventActorDetachedCompletion(
     version: 1,
     invocationId: input.invocationId,
     generationCreatedAt: input.generationCreatedAt as number,
+    wakeGenerationCreatedAt: input.wakeGenerationCreatedAt as number,
     taskId: input.taskId,
     idempotencyKey: input.idempotencyKey,
   };
@@ -73,7 +79,6 @@ interface DetachedActionOwner {
 interface DetachedActionDependencies {
   reserveAgentEventActorDetachedAction: AgentTriggerDeliveryMethods['reserveAgentEventActorDetachedAction'];
   markAgentEventActorDetachedActionRunning: AgentTriggerDeliveryMethods['markAgentEventActorDetachedActionRunning'];
-  releaseAgentEventActorDetachedActionReservation: AgentTriggerDeliveryMethods['releaseAgentEventActorDetachedActionReservation'];
   settleAgentEventActorDetachedAction: AgentTriggerDeliveryMethods['settleAgentEventActorDetachedAction'];
   onTerminal(input: { taskId: string; idempotencyKey: string }): Promise<void>;
   now?(): Date;
@@ -93,6 +98,7 @@ export interface AgentEventActorDetachedActionLifecycle extends EventActorDetach
 export interface AgentEventActorDetachedResumeInput {
   streamId: string;
   job: SerializableJobData;
+  handlingGenerationCreatedAt: number;
   suspension: IAgentEventActorSuspensionEvidence;
   action: AgentEventActorDetachedAction;
 }
@@ -123,7 +129,11 @@ function renderDetachedCompletion(action: AgentEventActorDetachedAction): string
 export function createAgentEventDetachedResumeHandler(deps: DetachedResumeDependencies) {
   const nextRequestId = deps.requestId ?? randomUUID;
   const now = deps.now ?? Date.now;
-  return async ({ job, action }: AgentEventActorDetachedResumeInput): Promise<void> => {
+  return async ({
+    job,
+    action,
+    handlingGenerationCreatedAt,
+  }: AgentEventActorDetachedResumeInput): Promise<void> => {
     const delivery = await deps.getAgentTriggerDelivery(job.agentEventDeliveryKey as string);
     const envelope = delivery?.envelope as Partial<AgentContinueTriggerEnvelope> | undefined;
     if (
@@ -158,7 +168,8 @@ export function createAgentEventDetachedResumeHandler(deps: DetachedResumeDepend
         payload: {
           version: 1,
           invocationId: job.agentEventDeliveryKey as string,
-          generationCreatedAt: job.createdAt,
+          generationCreatedAt: handlingGenerationCreatedAt,
+          wakeGenerationCreatedAt: job.createdAt,
           taskId: action.taskId,
           idempotencyKey: action.idempotencyKey,
         },
@@ -288,30 +299,17 @@ export function createAgentEventActorDetachedActionLifecycle(
         observedAt,
         recoveryAfter: new Date(observedAt.getTime() + RUNNING_RECOVERY_MS),
       });
-      if (marked && current != null) {
+      const accepted = marked.status !== 'conflict';
+      if (accepted && current != null) {
         current.launchAcknowledged = true;
       }
-      return marked;
-    },
-    async releaseReservation(input) {
-      if (!matchesCurrent(input)) {
-        return false;
-      }
-      const released = await deps.releaseAgentEventActorDetachedActionReservation({
-        ...scope,
-        ...input,
-        observedAt: now(),
-      });
-      if (released) {
-        current = undefined;
-      }
-      return released;
+      return accepted;
     },
     async settle(input) {
       if (!matchesCurrent(input)) {
         return false;
       }
-      return deps.settleAgentEventActorDetachedAction({
+      const settled = await deps.settleAgentEventActorDetachedAction({
         ...scope,
         taskId: input.taskId,
         idempotencyKey: input.idempotencyKey,
@@ -321,6 +319,7 @@ export function createAgentEventActorDetachedActionLifecycle(
           : { error: String(input.error ?? 'Detached action failed').slice(0, 2_048) }),
         observedAt: now(),
       });
+      return settled.status !== 'conflict';
     },
     async wake(input) {
       if (matchesCurrent(input)) {

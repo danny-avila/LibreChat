@@ -22,9 +22,8 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       recoveryAfter: new Date('2026-08-28T12:01:00.000Z'),
     };
     const reserve = jest.fn(async () => ({ status: 'reserved' as const, action }));
-    const markRunning = jest.fn(async () => true);
-    const releaseReservation = jest.fn(async () => true);
-    const settle = jest.fn(async () => true);
+    const markRunning = jest.fn(async () => ({ status: 'applied' as const }));
+    const settle = jest.fn(async () => ({ status: 'applied' as const }));
     const wake = jest.fn(async () => undefined);
     const lifecycle = createAgentEventActorDetachedActionLifecycle(
       {
@@ -42,7 +41,6 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       {
         reserveAgentEventActorDetachedAction: reserve,
         markAgentEventActorDetachedActionRunning: markRunning,
-        releaseAgentEventActorDetachedActionReservation: releaseReservation,
         settleAgentEventActorDetachedAction: settle,
         onTerminal: wake,
         now: () => new Date('2026-08-28T12:00:00.000Z'),
@@ -136,7 +134,6 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
           action,
         })),
         markAgentEventActorDetachedActionRunning: jest.fn(),
-        releaseAgentEventActorDetachedActionReservation: jest.fn(),
         settleAgentEventActorDetachedAction: jest.fn(),
         onTerminal: jest.fn(),
       },
@@ -158,7 +155,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
     expect(lifecycle.readSuspension()).toBeUndefined();
   });
 
-  it('releases an unlaunched reservation and refuses an indeterminate replay', async () => {
+  it('refuses an indeterminate replay', async () => {
     const baseAction = {
       version: 1 as const,
       invocationId: 'delivery-1',
@@ -173,7 +170,6 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       observedAt: new Date('2026-08-28T12:00:00.000Z'),
       recoveryAfter: new Date('2026-08-28T12:01:00.000Z'),
     };
-    const releaseReservation = jest.fn(async () => true);
     const reserve = jest
       .fn()
       .mockResolvedValueOnce({ status: 'reserved' as const, action: baseAction })
@@ -184,7 +180,6 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
     const dependencies = {
       reserveAgentEventActorDetachedAction: reserve,
       markAgentEventActorDetachedActionRunning: jest.fn(),
-      releaseAgentEventActorDetachedActionReservation: releaseReservation,
       settleAgentEventActorDetachedAction: jest.fn(),
       onTerminal: jest.fn(),
       now: () => new Date('2026-08-28T12:00:00.000Z'),
@@ -204,12 +199,6 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       arguments: {},
     });
     expect(reservation.status).toBe('reserved');
-    await expect(
-      first.releaseReservation({
-        taskId: baseAction.taskId,
-        idempotencyKey: baseAction.idempotencyKey,
-      }),
-    ).resolves.toBe(true);
     expect(first.readSuspension()).toBeUndefined();
 
     const recovered = createAgentEventActorDetachedActionLifecycle(owner, dependencies);
@@ -292,6 +281,7 @@ describe('createAgentEventDetachedResumeHandler', () => {
     };
     const input = {
       streamId: 'conversation-1',
+      handlingGenerationCreatedAt: 1_786_999_999_000,
       job: {
         streamId: 'conversation-1',
         conversationId: 'conversation-1',
@@ -316,7 +306,12 @@ describe('createAgentEventDetachedResumeHandler', () => {
     expect(second.deliveryId).toBe(first.deliveryId);
     expect(second.requestId).not.toBe(first.requestId);
     expect(first.event.payload).toEqual(
-      expect.objectContaining({ invocationId: 'trigger_original', taskId: 'task-1' }),
+      expect.objectContaining({
+        invocationId: 'trigger_original',
+        generationCreatedAt: 1_786_999_999_000,
+        wakeGenerationCreatedAt: 1_787_000_000_000,
+        taskId: 'task-1',
+      }),
     );
   });
 });

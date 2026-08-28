@@ -50,6 +50,7 @@ function detachedCompletionEnvelope(generationCreatedAt: number): AgentContinueT
         version: 1,
         invocationId: 'delivery-1',
         generationCreatedAt,
+        wakeGenerationCreatedAt: generationCreatedAt,
         taskId: 'task-1',
         idempotencyKey: 'a'.repeat(64),
       },

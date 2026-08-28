@@ -1100,6 +1100,50 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(atCapacity).toBe(true);
   });
 
+  it('holds capacity permits before task registration and releases them explicitly', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const permits = Array.from({ length: 10 }, (_, index) =>
+      registry.reserveCapacity({
+        userId: 'u1',
+        conversationId: 'c-permits',
+        toolCallId: `call_${index}`,
+        runId: 'run-1',
+      }),
+    );
+    expect(permits.every((result) => 'permit' in result)).toBe(true);
+    expect(
+      registry.reserveCapacity({
+        userId: 'u1',
+        conversationId: 'c-permits',
+        toolCallId: 'call_rejected',
+        runId: 'run-1',
+      }),
+    ).toEqual({ atCapacity: true });
+    const first = permits[0];
+    if (!('permit' in first)) {
+      throw new Error('expected capacity permit');
+    }
+    registry.releaseCapacity(first.permit);
+    const replacement = registry.reserveCapacity({
+      userId: 'u1',
+      conversationId: 'c-permits',
+      toolCallId: 'call_replacement',
+      runId: 'run-1',
+    });
+    if (!('permit' in replacement)) {
+      throw new Error('expected replacement permit');
+    }
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c-permits',
+      toolCallId: 'call_replacement',
+      toolName: 'search_mcp_docs',
+      runId: 'run-1',
+      capacityPermit: replacement.permit,
+    });
+    expect('atCapacity' in created).toBe(false);
+  });
+
   it('evicts oldest settled tasks instead of blocking when the total cap is full', () => {
     const registry = new BackgroundTaskRegistryClass();
     for (let i = 0; i < 200; i++) {

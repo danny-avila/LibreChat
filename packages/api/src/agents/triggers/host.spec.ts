@@ -638,6 +638,7 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
       version: 1 as const,
       invocationId: 'original-delivery-1',
       generationCreatedAt: 1_787_000_000_000,
+      wakeGenerationCreatedAt: 1_787_000_000_000,
       taskId: 'event-actor-task-1',
       idempotencyKey: 'a'.repeat(64),
     };

@@ -294,6 +294,7 @@ export function createAgentEventTerminalHandler(
       input: SettleAgentTriggerHandlingOutcomeInput,
     ) => Promise<boolean>;
     getAgentEventActorSnapshot: ConversationMethods['getAgentEventActorSnapshot'];
+    recordAgentEventActorReconciliation: ConversationMethods['recordAgentEventActorReconciliation'];
     resolveAgentEventActorReconciliation: ConversationMethods['resolveAgentEventActorReconciliation'];
     clearAgentEventActorReconciliation: ConversationMethods['clearAgentEventActorReconciliation'];
     settleAgentEventActorReceipt: AgentTriggerDeliveryMethods['settleAgentEventActorReceipt'];
@@ -340,6 +341,26 @@ export function createAgentEventTerminalHandler(
     const conversationId = job.conversationId ?? streamId;
     const outcome = classifyAgentEventRunOutcome(job, runSteps, content);
     const settledAt = new Date(job.completedAt ?? Date.now());
+    const settleCompletionDelivery = async (
+      completionOutcome: AgentEventRunOutcome,
+      failureError = receivedJob.error ?? 'Generation failed',
+    ): Promise<void> => {
+      if (completionDeliveryKey == null) {
+        return;
+      }
+      const completionSettled = await methods.settleAgentTriggerHandlingOutcome({
+        deliveryKey: completionDeliveryKey,
+        conversationId,
+        generationCreatedAt: receivedJob.createdAt,
+        status: completionOutcome.status,
+        settledAt,
+        ...(completionOutcome.status === 'failed' && { error: failureError }),
+        ...(completionOutcome.action != null && { action: completionOutcome.action }),
+      });
+      if (!completionSettled) {
+        throw new Error(`Failed to settle internal completion delivery ${completionDeliveryKey}`);
+      }
+    };
     let committedAction: AgentEventAppliedAction | undefined;
     let detachedTerminalFailure: string | undefined;
     let compensated = false;
@@ -397,6 +418,69 @@ export function createAgentEventTerminalHandler(
             ? 'Detached expected action launch is indeterminate'
             : `Detached expected action ${detachedSuspensionAction.status}`);
       }
+      /** An aborted/error generation does not prove its detached side effect
+       * stopped. Retain the original delivery and suspension until exact
+       * terminal evidence arrives or the recovery fence records uncertainty. */
+      if (
+        isIrrecoverablyTerminal &&
+        detachedSuspensionAction != null &&
+        ['reserved', 'running'].includes(detachedSuspensionAction.status)
+      ) {
+        throw new Error(
+          `Agent event actor ${job.agentEventDeliveryKey} detached action is still in flight`,
+        );
+      }
+      if (detachedSuspensionAction?.status === 'launch_indeterminate') {
+        /** Quarantine is action truth, not a generation failure. Keep the
+         * original delivery open so a late exact callback remains admissible;
+         * no generic retry or ordinary cancellation may erase the uncertainty. */
+        throw new Error(
+          `Agent event actor ${job.agentEventDeliveryKey} detached action launch is indeterminate`,
+        );
+      }
+      if (isIrrecoverablyTerminal && detachedSuspensionAction?.status === 'succeeded') {
+        /** The side effect is authoritative but this aborted generation owns
+         * no committed actor checkpoint. Persist the existing reconciliation
+         * contract and wait for explicit compensation/repair instead of
+         * falsely reporting either cancellation or an applied actor turn. */
+        const marker = snapshot?.reconciliations.find(
+          (item) => item.invocationId === job.agentEventDeliveryKey,
+        );
+        if (marker?.status === 'settled' && marker.resolution === 'action_compensated') {
+          detachedTerminalFailure = 'Detached action was explicitly compensated';
+        } else {
+          if (marker?.status === 'invocation_pending') {
+            const recorded = await methods.recordAgentEventActorReconciliation({
+              ...owner,
+              reconciliation: {
+                invocationId: job.agentEventDeliveryKey,
+                actionAdmitted: marker.actionAdmitted,
+                status: 'commit_indeterminate',
+                checkpoint: marker.checkpoint,
+                action: {
+                  toolName: detachedSuspensionAction.toolName,
+                  toolCallId: detachedSuspensionAction.toolCallId,
+                },
+                error: 'Detached action succeeded after its generation terminated',
+                observedAt:
+                  detachedSuspensionAction.settledAt ?? detachedSuspensionAction.observedAt,
+              },
+            });
+            if (!recorded) {
+              throw new Error(
+                `Agent event actor ${job.agentEventDeliveryKey} detached reconciliation could not be recorded`,
+              );
+            }
+          } else if (marker?.status !== 'commit_indeterminate') {
+            throw new Error(
+              `Agent event actor ${job.agentEventDeliveryKey} detached reconciliation owner is unavailable`,
+            );
+          }
+          throw new Error(
+            `Agent event actor ${job.agentEventDeliveryKey} detached success requires commit_indeterminate reconciliation`,
+          );
+        }
+      }
     }
     if (
       unprojectedSuspension?.kind === 'internal_completion' &&
@@ -432,9 +516,14 @@ export function createAgentEventTerminalHandler(
       await options.resumeDetachedAction({
         streamId,
         job,
+        handlingGenerationCreatedAt,
         suspension: unprojectedSuspension.suspension,
         action,
       });
+      /** The successor is durable before its predecessor lane is retired. A
+       * crash between these writes leaves the successor safely blocked until
+       * idempotent terminal replay settles this completion delivery. */
+      await settleCompletionDelivery(outcome);
       return;
     }
     if (
@@ -892,29 +981,13 @@ export function createAgentEventTerminalHandler(
         throw new Error(`Failed to seal legacy event actor turn ${job.agentEventLegacyTurnToken}`);
       }
     }
-    const settleCompletionDelivery = async (): Promise<void> => {
-      if (completionDeliveryKey == null) {
-        return;
-      }
-      const completionSettled = await methods.settleAgentTriggerHandlingOutcome({
-        deliveryKey: completionDeliveryKey,
-        conversationId,
-        generationCreatedAt: receivedJob.createdAt,
-        status: settlementOutcome.status,
-        settledAt,
-        ...(settlementOutcome.status === 'failed' && {
-          error: compensated
-            ? 'Applied event actor action was explicitly compensated'
-            : (detachedTerminalFailure ?? receivedJob.error ?? 'Generation failed'),
-        }),
-        ...(settlementOutcome.action != null && { action: settlementOutcome.action }),
-      });
-      if (!completionSettled) {
-        throw new Error(`Failed to settle internal completion delivery ${completionDeliveryKey}`);
-      }
-    };
     if (actorReceiptSettled) {
-      await settleCompletionDelivery();
+      await settleCompletionDelivery(
+        settlementOutcome,
+        compensated
+          ? 'Applied event actor action was explicitly compensated'
+          : (detachedTerminalFailure ?? receivedJob.error ?? 'Generation failed'),
+      );
       return;
     }
     const settled = await methods.settleAgentTriggerHandlingOutcome({
@@ -933,6 +1006,11 @@ export function createAgentEventTerminalHandler(
     if (!settled) {
       throw new Error(`Failed to settle agent event delivery ${job.agentEventDeliveryKey}`);
     }
-    await settleCompletionDelivery();
+    await settleCompletionDelivery(
+      settlementOutcome,
+      compensated
+        ? 'Applied event actor action was explicitly compensated'
+        : (detachedTerminalFailure ?? receivedJob.error ?? 'Generation failed'),
+    );
   };
 }

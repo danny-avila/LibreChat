@@ -121,7 +121,8 @@ export function createAgentEventContinueResolver({
           ? parseAgentEventActorDetachedCompletion(envelope.event.payload)
           : undefined;
       const ownsTerminalWake =
-        detachedCompletion != null && active?.createdAt === detachedCompletion.generationCreatedAt;
+        detachedCompletion != null &&
+        active?.createdAt === detachedCompletion.wakeGenerationCreatedAt;
       if (
         active?.status === 'running' ||
         active?.status === 'requires_action' ||

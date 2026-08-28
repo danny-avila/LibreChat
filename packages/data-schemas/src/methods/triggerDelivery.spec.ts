@@ -1934,22 +1934,6 @@ describe('agent trigger delivery methods', () => {
       observedAt: new Date(generationCreatedAt + 2_000),
       recoveryAfter: new Date(generationCreatedAt + 1_802_000),
     };
-    await expect(methods.releaseAgentEventActorDetachedActionReservation(update)).resolves.toBe(
-      true,
-    );
-    await expect(
-      methods.getAgentEventActorDetachedAction({
-        deliveryKey: reservation.deliveryKey,
-        user: reservation.user,
-        bindingId,
-        conversationId,
-        generationCreatedAt,
-      }),
-    ).resolves.toBeNull();
-    await expect(methods.reserveAgentEventActorDetachedAction(reservation)).resolves.toEqual({
-      status: 'reserved',
-      action: contenders[0].action,
-    });
     /** The same durable state covers process death both before invoke and in
      * the unobservable invoke->acknowledgement window: neither permits relaunch. */
     await expect(
@@ -1957,29 +1941,32 @@ describe('agent trigger delivery methods', () => {
         ...update,
         observedAt: reservation.recoveryAfter,
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ status: 'applied' });
     await expect(
       methods.settleAgentEventActorDetachedAction({
         ...update,
         status: 'failed',
         error: 'move service unavailable',
       }),
-    ).resolves.toBe(true);
-    await expect(methods.markAgentEventActorDetachedActionRunning(update)).resolves.toBe(true);
+    ).resolves.toEqual({ status: 'applied' });
+    await expect(methods.markAgentEventActorDetachedActionRunning(update)).resolves.toEqual({
+      status: 'already_applied',
+    });
     await expect(
       methods.settleAgentEventActorDetachedAction({
         ...update,
+        observedAt: new Date(generationCreatedAt + 5_000),
         status: 'failed',
         error: 'move service unavailable',
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ status: 'already_applied' });
     await expect(
       methods.settleAgentEventActorDetachedAction({
         ...update,
         status: 'succeeded',
         result: 'conflicting result',
       }),
-    ).resolves.toBe(false);
+    ).resolves.toEqual({ status: 'conflict' });
     await expect(methods.reserveAgentEventActorDetachedAction(reservation)).resolves.toMatchObject({
       status: 'replay',
       action: { taskId: contenders[0].action.taskId, status: 'failed' },
@@ -2010,25 +1997,25 @@ describe('agent trigger delivery methods', () => {
         ...retryUpdate,
         recoveryAfter: new Date(generationCreatedAt + 1_804_000),
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ status: 'applied' });
     await expect(
       methods.markAgentEventActorDetachedActionLaunchIndeterminate({
         ...retryUpdate,
         observedAt: new Date(generationCreatedAt + 1_803_999),
       }),
-    ).resolves.toBe(false);
+    ).resolves.toEqual({ status: 'conflict' });
     await expect(
       methods.markAgentEventActorDetachedActionLaunchIndeterminate({
         ...retryUpdate,
         observedAt: new Date(generationCreatedAt + 1_804_000),
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ status: 'applied' });
     await expect(
       methods.markAgentEventActorDetachedActionLaunchIndeterminate({
         ...retryUpdate,
         observedAt: new Date(generationCreatedAt + 1_805_000),
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ status: 'already_applied' });
     await expect(
       methods.settleAgentEventActorDetachedAction({
         ...retryUpdate,
@@ -2036,7 +2023,7 @@ describe('agent trigger delivery methods', () => {
         status: 'succeeded',
         result: 'move accepted',
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ status: 'applied' });
     const stored = await Delivery.findOne({ deliveryKey: reservation.deliveryKey })
       .select('+actorDetachedAction +actorDetachedActionHistory')
       .lean();

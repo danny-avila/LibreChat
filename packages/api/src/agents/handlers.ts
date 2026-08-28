@@ -124,7 +124,6 @@ export interface EventActorDetachedActionLifecycle {
       }
   >;
   markRunning(input: { taskId: string; idempotencyKey: string }): Promise<boolean>;
-  releaseReservation(input: { taskId: string; idempotencyKey: string }): Promise<boolean>;
   settle(input: {
     taskId: string;
     idempotencyKey: string;
@@ -4428,12 +4427,51 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               if (filtered != null) {
                 return filtered;
               }
-              const detachedReservation = await eventActorDetachedAction?.reserve({
-                toolName: tc.name,
+              const registration = {
+                userId: backgroundUserId,
+                conversationId: backgroundConversationId,
                 toolCallId: tc.id,
-                arguments: normalizedArgs,
-              });
+                toolName: tc.name,
+                messageId: backgroundRunId,
+                harvestStarted: harvestEnabled,
+                /** Scope idempotency to the agent + run + turn so a later turn's
+                 *  or a second agent's repeated provider id (e.g. `call_0`)
+                 *  starts a fresh task instead of colliding. */
+                agentId,
+                runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
+              };
+              const capacityAdmission =
+                eventActorDetachedAction == null
+                  ? undefined
+                  : backgroundTaskRegistry.reserveCapacity(registration);
+              if (capacityAdmission != null && 'atCapacity' in capacityAdmission) {
+                return {
+                  toolCallId: tc.id,
+                  status: 'success' as const,
+                  content: buildBackgroundCapacityContent(tc.name),
+                };
+              }
+              const capacityPermit =
+                capacityAdmission != null && 'permit' in capacityAdmission
+                  ? capacityAdmission.permit
+                  : undefined;
+              let detachedReservation;
+              try {
+                detachedReservation = await eventActorDetachedAction?.reserve({
+                  toolName: tc.name,
+                  toolCallId: tc.id,
+                  arguments: normalizedArgs,
+                });
+              } catch (error) {
+                if (capacityPermit != null) {
+                  backgroundTaskRegistry.releaseCapacity(capacityPermit);
+                }
+                throw error;
+              }
               if (detachedReservation?.status === 'conflict') {
+                if (capacityPermit != null) {
+                  backgroundTaskRegistry.releaseCapacity(capacityPermit);
+                }
                 return {
                   toolCallId: tc.id,
                   status: 'error' as const,
@@ -4444,6 +4482,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 };
               }
               if (detachedReservation?.status === 'terminal') {
+                if (capacityPermit != null) {
+                  backgroundTaskRegistry.releaseCapacity(capacityPermit);
+                }
                 if (detachedReservation.outcome === 'succeeded') {
                   return {
                     toolCallId: tc.id,
@@ -4460,6 +4501,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 };
               }
               if (detachedReservation?.status === 'replay') {
+                if (capacityPermit != null) {
+                  backgroundTaskRegistry.releaseCapacity(capacityPermit);
+                }
                 return {
                   toolCallId: tc.id,
                   status: 'success' as const,
@@ -4474,30 +4518,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 ...(detachedReservation?.status === 'reserved'
                   ? { taskId: detachedReservation.taskId }
                   : {}),
-                userId: backgroundUserId,
-                conversationId: backgroundConversationId,
-                toolCallId: tc.id,
-                toolName: tc.name,
-                messageId: backgroundRunId,
-                harvestStarted: harvestEnabled,
-                /** Scope idempotency to the agent + run + turn so a later turn's
-                 *  or a second agent's repeated provider id (e.g. `call_0`)
-                 *  starts a fresh task instead of colliding. */
-                agentId,
-                runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
+                ...registration,
+                ...(capacityPermit == null ? {} : { capacityPermit }),
               });
               if ('atCapacity' in created) {
-                if (
-                  detachedReservation?.status === 'reserved' &&
-                  eventActorDetachedAction != null &&
-                  !(await eventActorDetachedAction.releaseReservation({
-                    taskId: detachedReservation.taskId,
-                    idempotencyKey: detachedReservation.idempotencyKey,
-                  }))
-                ) {
-                  throw new Error(
-                    'Detached Event Actor reservation could not be released after capacity rejection',
-                  );
+                if (detachedReservation?.status === 'reserved') {
+                  throw new Error('Detached Event Actor lost its pre-admitted background capacity');
                 }
                 return {
                   toolCallId: tc.id,

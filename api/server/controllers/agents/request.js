@@ -69,7 +69,6 @@ const {
   getAgentEventActorDetachedAction,
   reserveAgentEventActorDetachedAction,
   markAgentEventActorDetachedActionRunning,
-  releaseAgentEventActorDetachedActionReservation,
   settleAgentEventActorDetachedAction,
   claimAgentEventActorSuspension,
   settleAgentEventActorSuspension,
@@ -2094,7 +2093,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 {
                   reserveAgentEventActorDetachedAction,
                   markAgentEventActorDetachedActionRunning,
-                  releaseAgentEventActorDetachedActionReservation,
                   settleAgentEventActorDetachedAction,
                   /** Retry immediately when the generation already reached its
                    * terminal host-action fence. The same durable marker is

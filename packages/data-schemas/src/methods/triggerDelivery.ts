@@ -120,6 +120,12 @@ export interface AgentEventActorActionAdmissionInput extends GetAgentEventActorR
   admissionId: string;
 }
 
+/** Durable transition receipt. Storage unavailability remains an exception;
+ * callers never collapse it into a conflict or a negative acknowledgement. */
+export interface AgentEventActorDetachedTransitionResult {
+  status: 'applied' | 'already_applied' | 'conflict';
+}
+
 export interface ReserveAgentEventActorDetachedActionInput extends GetAgentEventActorReceiptInput {
   generationCreatedAt: number;
   invocationId: string;
@@ -220,16 +226,13 @@ export interface AgentTriggerDeliveryMethods {
   }>;
   markAgentEventActorDetachedActionRunning: (
     input: MarkAgentEventActorDetachedActionRunningInput,
-  ) => Promise<boolean>;
-  releaseAgentEventActorDetachedActionReservation: (
-    input: UpdateAgentEventActorDetachedActionInput,
-  ) => Promise<boolean>;
+  ) => Promise<AgentEventActorDetachedTransitionResult>;
   markAgentEventActorDetachedActionLaunchIndeterminate: (
     input: UpdateAgentEventActorDetachedActionInput,
-  ) => Promise<boolean>;
+  ) => Promise<AgentEventActorDetachedTransitionResult>;
   settleAgentEventActorDetachedAction: (
     input: SettleAgentEventActorDetachedActionInput,
-  ) => Promise<boolean>;
+  ) => Promise<AgentEventActorDetachedTransitionResult>;
   getAgentEventActorDetachedAction: (
     input: GetAgentEventActorReceiptInput & { generationCreatedAt: number },
   ) => Promise<AgentEventActorDetachedAction | null>;
@@ -1919,7 +1922,7 @@ export function createAgentTriggerDeliveryMethods(
   /** Acknowledges launch without regressing terminal evidence from a fast completion. */
   async function markAgentEventActorDetachedActionRunning(
     input: MarkAgentEventActorDetachedActionRunningInput,
-  ): Promise<boolean> {
+  ): Promise<AgentEventActorDetachedTransitionResult> {
     if (
       Number.isNaN(input.observedAt.getTime()) ||
       Number.isNaN(input.recoveryAfter.getTime()) ||
@@ -1940,38 +1943,23 @@ export function createAgentTriggerDeliveryMethods(
       },
     );
     if (running.modifiedCount === 1) {
-      return true;
+      return { status: 'applied' };
     }
-    return (
+    const alreadyApplied =
       (await Delivery().exists({
         ...scope,
         'actorDetachedAction.status': {
           $in: ['running', 'succeeded', 'failed', 'cancelled'],
         },
-      })) != null
-    );
-  }
-
-  /** Releases launch authority only while no launch has been acknowledged. */
-  async function releaseAgentEventActorDetachedActionReservation(
-    input: UpdateAgentEventActorDetachedActionInput,
-  ): Promise<boolean> {
-    if (Number.isNaN(input.observedAt.getTime())) {
-      throw new TypeError('observedAt must be a valid date');
-    }
-    const scope = detachedActionScope(input);
-    const released = await Delivery().updateOne(
-      { ...scope, 'actorDetachedAction.status': 'reserved' },
-      { $unset: { actorDetachedAction: 1 } },
-    );
-    return released.modifiedCount === 1;
+      })) != null;
+    return { status: alreadyApplied ? 'already_applied' : 'conflict' };
   }
 
   /** Converts an expired executor lease into durable uncertainty. This state
    * deliberately cannot be retried; only exact terminal proof may close it. */
   async function markAgentEventActorDetachedActionLaunchIndeterminate(
     input: UpdateAgentEventActorDetachedActionInput,
-  ): Promise<boolean> {
+  ): Promise<AgentEventActorDetachedTransitionResult> {
     if (Number.isNaN(input.observedAt.getTime())) {
       throw new TypeError('observedAt must be a valid date');
     }
@@ -1990,20 +1978,20 @@ export function createAgentTriggerDeliveryMethods(
       },
     );
     if (marked.modifiedCount === 1) {
-      return true;
+      return { status: 'applied' };
     }
-    return (
+    const alreadyApplied =
       (await Delivery().exists({
         ...scope,
         'actorDetachedAction.status': 'launch_indeterminate',
-      })) != null
-    );
+      })) != null;
+    return { status: alreadyApplied ? 'already_applied' : 'conflict' };
   }
 
   /** Persists exact terminal evidence once; identical callbacks replay safely. */
   async function settleAgentEventActorDetachedAction(
     input: SettleAgentEventActorDetachedActionInput,
-  ): Promise<boolean> {
+  ): Promise<AgentEventActorDetachedTransitionResult> {
     if (
       Number.isNaN(input.observedAt.getTime()) ||
       (input.result != null && input.result.length > 32_768) ||
@@ -2032,9 +2020,19 @@ export function createAgentTriggerDeliveryMethods(
       { $set: terminal },
     );
     if (settled.modifiedCount === 1) {
-      return true;
+      return { status: 'applied' };
     }
-    return (await Delivery().exists({ ...scope, ...terminal })) != null;
+    /** Callback observation time is transport metadata, not terminal identity.
+     * A retry may arrive later; match the exact durable outcome while retaining
+     * the first settlement timestamp. */
+    const alreadyApplied =
+      (await Delivery().exists({
+        ...scope,
+        'actorDetachedAction.status': input.status,
+        'actorDetachedAction.result': input.result == null ? { $exists: false } : input.result,
+        'actorDetachedAction.error': input.error == null ? { $exists: false } : input.error,
+      })) != null;
+    return { status: alreadyApplied ? 'already_applied' : 'conflict' };
   }
 
   async function getAgentEventActorDetachedAction(
@@ -2601,7 +2599,6 @@ export function createAgentTriggerDeliveryMethods(
     hasAgentEventActorActionAdmission,
     reserveAgentEventActorDetachedAction,
     markAgentEventActorDetachedActionRunning,
-    releaseAgentEventActorDetachedActionReservation,
     markAgentEventActorDetachedActionLaunchIndeterminate,
     settleAgentEventActorDetachedAction,
     getAgentEventActorDetachedAction,

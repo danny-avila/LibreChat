@@ -113,7 +113,6 @@ describe('createToolExecuteHandler — background tool calls', () => {
         events.push('running');
         return true;
       }),
-      releaseReservation: jest.fn(async () => true),
       settle: jest.fn(async () => {
         events.push('terminal');
         return true;
@@ -164,7 +163,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
     );
   });
 
-  it('releases durable launch authority when background capacity rejects admission', async () => {
+  it('rejects capacity before creating durable Event Actor launch authority', async () => {
     let invocations = 0;
     const tool = {
       name: 'submit_move_mcp_chess',
@@ -197,17 +196,16 @@ describe('createToolExecuteHandler — background tool calls', () => {
       metadata,
     });
 
-    const releaseReservation = jest.fn(async () => true);
+    const reserve = jest.fn(async () => ({
+      status: 'reserved' as const,
+      taskId: 'event-task-capacity',
+      idempotencyKey: 'f'.repeat(64),
+    }));
     const detachedHandler = createToolExecuteHandler({
       loadTools: async () => ({ loadedTools: [tool] }),
       eventActorDetachedAction: {
-        reserve: jest.fn(async () => ({
-          status: 'reserved' as const,
-          taskId: 'event-task-capacity',
-          idempotencyKey: 'f'.repeat(64),
-        })),
+        reserve,
         markRunning: jest.fn(async () => true),
-        releaseReservation,
         settle: jest.fn(async () => true),
         wake: jest.fn(async () => undefined),
       },
@@ -228,10 +226,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
 
     expect(rejected.content).toContain('Too many background tasks');
     expect(invocations).toBe(10);
-    expect(releaseReservation).toHaveBeenCalledWith({
-      taskId: 'event-task-capacity',
-      idempotencyKey: 'f'.repeat(64),
-    });
+    expect(reserve).not.toHaveBeenCalled();
   });
 
   it('persists a synchronous detached-tool rejection as terminal evidence', async () => {
@@ -250,7 +245,6 @@ describe('createToolExecuteHandler — background tool calls', () => {
         idempotencyKey: 'b'.repeat(64),
       })),
       markRunning: jest.fn(async () => true),
-      releaseReservation: jest.fn(async () => true),
       settle: jest.fn(async () => true),
       wake: jest.fn(async () => undefined),
     };
@@ -305,7 +299,6 @@ describe('createToolExecuteHandler — background tool calls', () => {
         idempotencyKey: 'c'.repeat(64),
       })),
       markRunning: jest.fn(async () => true),
-      releaseReservation: jest.fn(async () => true),
       settle: jest.fn(async () => true),
       wake: jest.fn(async () => undefined),
     };
