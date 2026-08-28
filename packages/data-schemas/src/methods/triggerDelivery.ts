@@ -401,6 +401,9 @@ export function createAgentTriggerDeliveryMethods(
       _id: lane._id,
       value: lane.value,
       publisherDeliveryId,
+      ...(lane.publisherRequeueCount == null
+        ? { publisherRequeueCount: { $exists: false } }
+        : { publisherRequeueCount: lane.publisherRequeueCount }),
     };
     if (lane.value === 1) {
       const deleted = await LaneSequence().deleteOne(publisherFence);
@@ -409,7 +412,7 @@ export function createAgentTriggerDeliveryMethods(
     const released = await LaneSequence().updateOne(publisherFence, {
       $inc: { value: -1 },
       $set: { cleanupRequestedAt: new Date() },
-      $unset: { publisherDeliveryId: 1, publisherStartedAt: 1 },
+      $unset: { publisherDeliveryId: 1, publisherRequeueCount: 1, publisherStartedAt: 1 },
     });
     return released.modifiedCount === 1;
   }
@@ -424,6 +427,26 @@ export function createAgentTriggerDeliveryMethods(
     }
 
     const staged = await Delivery().findById(publisherDeliveryId).lean<IAgentTriggerDelivery>();
+    const publicationGeneration = lane.publisherRequeueCount ?? staged?.requeueCount ?? 0;
+    if (lane.publisherRequeueCount == null) {
+      /** Upgrade a publisher acquired by a pre-generation binary before
+       * touching its delivery. The exact lane fence prevents a stale helper
+       * from adopting the requeue generation of a later publisher. */
+      const adopted = await LaneSequence().updateOne(
+        {
+          _id: lane._id,
+          value: lane.value,
+          publisherDeliveryId,
+          publisherRequeueCount: { $exists: false },
+        },
+        { $set: { publisherRequeueCount: publicationGeneration } },
+        { timestamps: false },
+      );
+      if (adopted.modifiedCount !== 1) {
+        return false;
+      }
+    }
+    const publicationLane = { ...lane, publisherRequeueCount: publicationGeneration };
     let batchRoot: IAgentTriggerDelivery | null = null;
     if (
       staged?._id != null &&
@@ -509,6 +532,7 @@ export function createAgentTriggerDeliveryMethods(
         _id: publisherDeliveryId,
         orderingKey: lane._id,
         status: { $in: ['staging', 'capability_staging'] },
+        requeueCount: publicationGeneration,
       },
       {
         $set: {
@@ -526,9 +550,12 @@ export function createAgentTriggerDeliveryMethods(
     if (published.modifiedCount === 0) {
       let current = await Delivery()
         .findById(publisherDeliveryId)
-        .select('orderingKey laneSequence status batchRootId')
+        .select('orderingKey laneSequence status batchRootId requeueCount')
         .lean<
-          Pick<IAgentTriggerDelivery, 'orderingKey' | 'laneSequence' | 'status' | 'batchRootId'>
+          Pick<
+            IAgentTriggerDelivery,
+            'orderingKey' | 'laneSequence' | 'status' | 'batchRootId' | 'requeueCount'
+          >
         >();
       if (
         batchRoot?._id != null &&
@@ -538,7 +565,12 @@ export function createAgentTriggerDeliveryMethods(
         current.laneSequence !== lane.value
       ) {
         await Delivery().updateOne(
-          { _id: publisherDeliveryId, orderingKey: lane._id, status: current.status },
+          {
+            _id: publisherDeliveryId,
+            orderingKey: lane._id,
+            status: current.status,
+            requeueCount: publicationGeneration,
+          },
           {
             $set: {
               laneSequence: lane.value,
@@ -549,17 +581,24 @@ export function createAgentTriggerDeliveryMethods(
         );
         current = await Delivery()
           .findById(publisherDeliveryId)
-          .select('orderingKey laneSequence status batchRootId')
+          .select('orderingKey laneSequence status batchRootId requeueCount')
           .lean<
-            Pick<IAgentTriggerDelivery, 'orderingKey' | 'laneSequence' | 'status' | 'batchRootId'>
+            Pick<
+              IAgentTriggerDelivery,
+              'orderingKey' | 'laneSequence' | 'status' | 'batchRootId' | 'requeueCount'
+            >
           >();
       }
       publicationCommitted =
         current != null &&
         current.orderingKey === lane._id &&
         !isStagingStatus(current.status) &&
+        current.requeueCount === publicationGeneration &&
         current.laneSequence === lane.value;
       if (current?.orderingKey === lane._id && isStagingStatus(current.status)) {
+        if (current.requeueCount !== publicationGeneration) {
+          return abandonLanePublisher(publicationLane);
+        }
         throw new Error('Failed to publish the reserved agent trigger delivery');
       }
     }
@@ -568,11 +607,12 @@ export function createAgentTriggerDeliveryMethods(
       _id: lane._id,
       value: lane.value,
       publisherDeliveryId,
+      publisherRequeueCount: publicationGeneration,
     };
     if (publicationCommitted) {
       const released = await LaneSequence().updateOne(publisherFence, {
         $set: { tailDeliveryId: publisherDeliveryId },
-        $unset: { publisherDeliveryId: 1, publisherStartedAt: 1 },
+        $unset: { publisherDeliveryId: 1, publisherRequeueCount: 1, publisherStartedAt: 1 },
       });
       return published.modifiedCount === 1 || released.modifiedCount === 1;
     }
@@ -581,7 +621,7 @@ export function createAgentTriggerDeliveryMethods(
     // reservation was acquired (or was removed by account cleanup). No later
     // reservation can exist while this fence is held, so the unused sequence
     // can be rolled back without creating a gap or regressing the lane tail.
-    return abandonLanePublisher(lane);
+    return abandonLanePublisher(publicationLane);
   }
 
   /** A dead batch root owns requeue before any constituent is reset. Staging
@@ -688,6 +728,7 @@ export function createAgentTriggerDeliveryMethods(
               $inc: { value: 1 },
               $set: {
                 publisherDeliveryId: next._id,
+                publisherRequeueCount: next.requeueCount ?? 0,
                 publisherStartedAt: new Date(),
               },
               $unset: { cleanupRequestedAt: 1 },
@@ -801,6 +842,9 @@ export function createAgentTriggerDeliveryMethods(
               _id: lane._id,
               value: lane.value,
               publisherDeliveryId: lane.publisherDeliveryId,
+              ...(lane.publisherRequeueCount == null
+                ? { publisherRequeueCount: { $exists: false } }
+                : { publisherRequeueCount: lane.publisherRequeueCount }),
               publisherStartedAt: lane.publisherStartedAt,
             },
             { $set: { publisherStartedAt: recoveryCursor } },
@@ -1911,6 +1955,20 @@ export function createAgentTriggerDeliveryMethods(
     const action = buildAction(0);
     const tenantScope =
       input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId };
+    const reservationOwner = {
+      $or: [
+        {
+          status: { $in: ['leased', 'capability_leased'] },
+          handling: { $exists: false },
+        },
+        {
+          status: { $in: ['succeeded', 'dead'] },
+          'handling.status': 'started',
+          'handling.conversationId': input.conversationId,
+          'handling.generationCreatedAt': input.generationCreatedAt,
+        },
+      ],
+    };
     const reserved = await Delivery()
       .findOneAndUpdate(
         {
@@ -1918,18 +1976,7 @@ export function createAgentTriggerDeliveryMethods(
           user: input.user,
           ...tenantScope,
           'envelope.target.bindingId': input.bindingId,
-          $or: [
-            {
-              status: { $in: ['leased', 'capability_leased'] },
-              handling: { $exists: false },
-            },
-            {
-              status: { $in: ['succeeded', 'dead'] },
-              'handling.status': 'started',
-              'handling.conversationId': input.conversationId,
-              'handling.generationCreatedAt': input.generationCreatedAt,
-            },
-          ],
+          ...reservationOwner,
           actorReceipt: { $exists: false },
           actorActionAdmittedAt: { $exists: true },
           actorDetachedAction: { $exists: false },
@@ -1948,18 +1995,7 @@ export function createAgentTriggerDeliveryMethods(
         user: input.user,
         ...tenantScope,
         'envelope.target.bindingId': input.bindingId,
-        $or: [
-          {
-            status: { $in: ['leased', 'capability_leased'] },
-            handling: { $exists: false },
-          },
-          {
-            status: { $in: ['succeeded', 'dead'] },
-            'handling.status': 'started',
-            'handling.conversationId': input.conversationId,
-            'handling.generationCreatedAt': input.generationCreatedAt,
-          },
-        ],
+        ...reservationOwner,
       })
       .select('+actorDetachedAction')
       .lean<Pick<IAgentTriggerDelivery, 'actorDetachedAction'>>();
@@ -1982,11 +2018,8 @@ export function createAgentTriggerDeliveryMethods(
           deliveryKey: input.deliveryKey,
           user: input.user,
           ...tenantScope,
-          status: { $in: ['succeeded', 'dead'] },
           'envelope.target.bindingId': input.bindingId,
-          'handling.status': 'started',
-          'handling.conversationId': input.conversationId,
-          'handling.generationCreatedAt': input.generationCreatedAt,
+          ...reservationOwner,
           actorReceipt: { $exists: false },
           actorActionAdmittedAt: { $exists: true },
           'actorDetachedAction.taskId': existing.actorDetachedAction.taskId,
@@ -2015,8 +2048,7 @@ export function createAgentTriggerDeliveryMethods(
         user: input.user,
         ...tenantScope,
         'envelope.target.bindingId': input.bindingId,
-        'handling.conversationId': input.conversationId,
-        'handling.generationCreatedAt': input.generationCreatedAt,
+        ...reservationOwner,
       })
       .select('+actorDetachedAction')
       .lean<Pick<IAgentTriggerDelivery, 'actorDetachedAction'>>();

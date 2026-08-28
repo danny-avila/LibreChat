@@ -169,6 +169,8 @@ export interface IAgentTriggerLaneSequence {
   tailDeliveryId?: Types.ObjectId;
   /** Delivery currently owning the serialized sequence/publication step. */
   publisherDeliveryId?: Types.ObjectId;
+  /** Requeue generation captured when this publisher reservation was acquired. */
+  publisherRequeueCount?: number;
   publisherStartedAt?: Date;
   cleanupRequestedAt?: Date;
   createdAt?: Date;

@@ -769,6 +769,93 @@ describe('agent event terminal outcomes', () => {
     expect(mockedCancelAgentEventActor).toHaveBeenCalledTimes(1);
   });
 
+  it('retires a failed detached action that became terminal before suspension storage', async () => {
+    const checkpoint = {
+      threadId: 'conversation-1',
+      checkpointNs: 'event-actor/trigger_1',
+    };
+    const initialSnapshot = {
+      state: null,
+      epoch: 1,
+      legacyTurn: null,
+      reconciliations: [
+        {
+          invocationId: 'trigger_1',
+          actionAdmitted: true,
+          status: 'invocation_pending' as const,
+          checkpoint,
+          action: { toolName: 'submit_move' },
+          observedAt: new Date(),
+        },
+      ],
+    };
+    const retiredSnapshot = { ...initialSnapshot, reconciliations: [] };
+    const getAgentEventActorSnapshot = jest
+      .fn()
+      .mockResolvedValueOnce(initialSnapshot)
+      .mockResolvedValue(retiredSnapshot);
+    const resolveAgentEventActorReconciliation = jest.fn().mockResolvedValue(true);
+    const getAgentEventActorActionAdmission = jest
+      .fn()
+      .mockResolvedValueOnce('admission-pre-suspension')
+      .mockResolvedValue(null);
+    const releaseAgentEventActorAction = jest.fn().mockResolvedValue(true);
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      getAgentEventActorSnapshot,
+      resolveAgentEventActorReconciliation,
+      getAgentEventActorActionAdmission,
+      releaseAgentEventActorAction,
+      getAgentEventActorDetachedAction: jest.fn().mockResolvedValue({
+        version: 1,
+        invocationId: 'trigger_1',
+        expectedToolName: 'submit_move',
+        toolName: 'submit_move_mcp_chess',
+        toolCallId: 'call-pre-suspension-failure',
+        taskId: 'task-pre-suspension-failure',
+        idempotencyKey: 'f'.repeat(64),
+        launchAttempt: 0,
+        status: 'failed',
+        reservedAt: new Date(),
+        observedAt: new Date(),
+        recoveryAfter: new Date(),
+        settledAt: new Date(),
+        error: 'detached action failed before suspension storage',
+      }),
+    });
+    const terminalJob = job({ agentEventBindingId: 'binding-1' });
+
+    await handler('conversation-1', terminalJob, []);
+    await handler('conversation-1', terminalJob, []);
+
+    expect(resolveAgentEventActorReconciliation).toHaveBeenCalledTimes(1);
+    expect(resolveAgentEventActorReconciliation).toHaveBeenCalledWith({
+      user: 'user-1',
+      conversationId: 'conversation-1',
+      invocationId: 'trigger_1',
+      checkpoint,
+      expectedActionAdmitted: true,
+      resolution: 'invocation_abandoned',
+    });
+    expect(releaseAgentEventActorAction).toHaveBeenCalledTimes(1);
+    expect(releaseAgentEventActorAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'trigger_1',
+        bindingId: 'binding-1',
+        admissionId: 'admission-pre-suspension',
+      }),
+    );
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledTimes(2);
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'trigger_1',
+        status: 'failed',
+        error: 'detached action failed before suspension storage',
+      }),
+    );
+  });
+
   it('records reconciliation when a detached action succeeds after generation abort', async () => {
     const suspension = suspensionEvidence('suspension-aborted-success');
     const recordAgentEventActorReconciliation = jest.fn().mockResolvedValue(true);

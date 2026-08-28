@@ -365,6 +365,7 @@ export function createAgentEventTerminalHandler(
     };
     let committedAction: AgentEventAppliedAction | undefined;
     let detachedTerminalFailure: string | undefined;
+    let detachedTerminalRetiredWithoutSuspension = false;
     let compensated = false;
     let actorReceiptSettled = false;
     const owner = {
@@ -511,6 +512,42 @@ export function createAgentEventTerminalHandler(
           throw new Error(
             `Agent event actor ${job.agentEventDeliveryKey} detached success requires commit_indeterminate reconciliation`,
           );
+        }
+      }
+      if (
+        unprojectedSuspension == null &&
+        (detachedSuspensionAction?.status === 'failed' ||
+          detachedSuspensionAction?.status === 'cancelled')
+      ) {
+        /** Exact negative terminal evidence proves the detached side effect no
+         * longer owns a future actor resume. Retire the pre-suspension
+         * invocation fence before releasing delivery-side admission; replay
+         * can repair either half independently. */
+        const marker = snapshot?.reconciliations.find(
+          (item) => item.invocationId === job.agentEventDeliveryKey,
+        );
+        if (marker?.status === 'invocation_pending') {
+          const abandoned = await methods.resolveAgentEventActorReconciliation({
+            ...owner,
+            invocationId: job.agentEventDeliveryKey,
+            checkpoint: marker.checkpoint,
+            expectedActionAdmitted: true,
+            resolution: 'invocation_abandoned',
+          });
+          snapshot = await methods.getAgentEventActorSnapshot(owner);
+          const remaining = snapshot?.reconciliations.find(
+            (item) => item.invocationId === job.agentEventDeliveryKey,
+          );
+          if (!abandoned && remaining?.status === 'invocation_pending') {
+            throw new Error(
+              `Agent event actor ${job.agentEventDeliveryKey} detached terminal lifecycle could not be retired`,
+            );
+          }
+          detachedTerminalRetiredWithoutSuspension = remaining == null;
+        } else if (marker == null) {
+          /** Re-entry after the conversation-side retirement committed but
+           * before delivery admission was released. */
+          detachedTerminalRetiredWithoutSuspension = true;
         }
       }
     }
@@ -693,8 +730,7 @@ export function createAgentEventTerminalHandler(
           );
     if (
       retiredAdmissionId == null &&
-      snapshot == null &&
-      isIrrecoverablyTerminal &&
+      ((snapshot == null && isIrrecoverablyTerminal) || detachedTerminalRetiredWithoutSuspension) &&
       job.agentEventBindingId != null
     ) {
       retiredAdmissionId = await methods.getAgentEventActorActionAdmission({

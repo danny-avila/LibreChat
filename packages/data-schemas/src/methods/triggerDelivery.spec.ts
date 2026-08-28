@@ -393,6 +393,86 @@ describe('agent trigger delivery methods', () => {
     );
   });
 
+  it('does not publish a later requeue through a stale lane reservation', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'stale-publication-generation';
+    const originalUpdateOne = Delivery.collection.updateOne.bind(Delivery.collection);
+    let releaseStalePublication!: () => void;
+    let stalePublicationPaused!: () => void;
+    const stalePublicationGate = new Promise<void>((resolve) => {
+      releaseStalePublication = resolve;
+    });
+    const stalePublicationObserved = new Promise<void>((resolve) => {
+      stalePublicationPaused = resolve;
+    });
+    let paused = false;
+    const updateSpy = jest
+      .spyOn(Delivery.collection, 'updateOne')
+      .mockImplementation(async (filter, update, options) => {
+        const status = filter.status as { $in?: string[] } | undefined;
+        if (
+          !paused &&
+          filter.orderingKey === orderingKey &&
+          status?.$in?.includes('staging') === true &&
+          filter.requeueCount === 0
+        ) {
+          paused = true;
+          stalePublicationPaused();
+          await stalePublicationGate;
+        }
+        return originalUpdateOne(filter, update, options);
+      });
+
+    try {
+      const enqueue = methods.enqueueAgentTriggerDelivery(enqueueInput({ user, orderingKey }));
+      await stalePublicationObserved;
+
+      await expect(methods.recoverAgentTriggerLanePublications(1)).resolves.toBe(1);
+      const published = await Delivery.findOne({ orderingKey }).lean();
+      expect(published).toMatchObject({ status: 'pending', laneSequence: 1, requeueCount: 0 });
+
+      await originalUpdateOne(
+        { _id: published!._id },
+        {
+          $set: {
+            status: 'staging',
+            laneSequence: 0,
+            requeueCount: 1,
+            stagingRecoveryAt: new Date(),
+          },
+        },
+      );
+      await LaneSequence.updateOne(
+        {
+          _id: orderingKey,
+          value: 1,
+          publisherDeliveryId: { $exists: false },
+        },
+        {
+          $inc: { value: 1 },
+          $set: {
+            publisherDeliveryId: published!._id,
+            publisherRequeueCount: 1,
+            publisherStartedAt: new Date(),
+          },
+        },
+      );
+
+      releaseStalePublication();
+      await expect(enqueue).resolves.toMatchObject({
+        delivery: { status: 'pending', laneSequence: 2, requeueCount: 1 },
+      });
+      await expect(Delivery.findById(published!._id).lean()).resolves.toMatchObject({
+        status: 'pending',
+        laneSequence: 2,
+        requeueCount: 1,
+      });
+    } finally {
+      releaseStalePublication();
+      updateSpy.mockRestore();
+    }
+  });
+
   it('coalesces a concurrent replica burst behind one claimable root and settles every receipt', async () => {
     const user = new mongoose.Types.ObjectId();
     const coalesceUntil = new Date(Date.now() + 60_000);
@@ -2089,6 +2169,101 @@ describe('agent trigger delivery methods', () => {
         generationCreatedAt,
       }),
     ).resolves.toEqual(expect.objectContaining({ status: 'succeeded', result: 'accepted' }));
+  });
+
+  it('reserves a detached retry for the exact leased owner before handling is persisted', async () => {
+    const bindingId = 'binding-detached-leased-retry';
+    const conversationId = 'conversation-detached-leased-retry';
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        awaitTerminalHandling: true,
+        tenantId: undefined,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-detached-leased-retry',
+      claimToken: 'claim-detached-leased-retry',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const generationCreatedAt = START.getTime() + 1_000;
+    await expect(
+      methods.admitAgentEventActorAction({
+        deliveryKey: queued.delivery.deliveryKey,
+        user: queued.delivery.user,
+        bindingId,
+        conversationId,
+        admittedAt: new Date(generationCreatedAt),
+        admissionId: 'admission-detached-leased-retry',
+      }),
+    ).resolves.toBe(true);
+    const first = await methods.reserveAgentEventActorDetachedAction({
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      bindingId,
+      conversationId,
+      generationCreatedAt,
+      turnId: 'response-detached-leased-retry:0',
+      invocationId: queued.delivery.deliveryKey,
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-detached-leased-retry-1',
+      reservedAt: new Date(generationCreatedAt + 1_000),
+      recoveryAfter: new Date(generationCreatedAt + 61_000),
+    });
+    await expect(
+      methods.settleAgentEventActorDetachedAction({
+        deliveryKey: queued.delivery.deliveryKey,
+        user: queued.delivery.user,
+        bindingId,
+        conversationId,
+        generationCreatedAt,
+        taskId: first.action.taskId,
+        idempotencyKey: first.action.idempotencyKey,
+        status: 'failed',
+        error: 'definite adapter failure',
+        observedAt: new Date(generationCreatedAt + 2_000),
+      }),
+    ).resolves.toEqual({ status: 'applied' });
+
+    const retry = await methods.reserveAgentEventActorDetachedAction({
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      bindingId,
+      conversationId,
+      generationCreatedAt,
+      turnId: 'response-detached-leased-retry:1',
+      invocationId: queued.delivery.deliveryKey,
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-detached-leased-retry-2',
+      reservedAt: new Date(generationCreatedAt + 3_000),
+      recoveryAfter: new Date(generationCreatedAt + 63_000),
+    });
+
+    expect(retry).toMatchObject({
+      status: 'reserved',
+      action: {
+        launchAttempt: 1,
+        toolCallId: 'call-detached-leased-retry-2',
+        status: 'reserved',
+      },
+    });
+    const stored = await Delivery.findOne({ deliveryKey: queued.delivery.deliveryKey })
+      .select('+actorDetachedActionHistory')
+      .lean();
+    expect(stored).toMatchObject({
+      status: 'leased',
+      actorDetachedActionHistory: [
+        expect.objectContaining({ taskId: first.action.taskId, status: 'failed' }),
+      ],
+    });
+    expect(stored).not.toHaveProperty('handling');
   });
 
   it('gives one replica the detached expected-action launch reservation', async () => {
