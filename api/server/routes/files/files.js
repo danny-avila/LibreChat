@@ -7,6 +7,7 @@ const {
   getApprovalTtlMs,
   refreshS3FileUrls,
   handleFilesUsageRequest,
+  buildDeleteFilesResponse,
   shouldUseUploadSse,
   startUploadSseStream,
   sendUploadPolicyError,
@@ -176,6 +177,9 @@ router.post('/usage', async (req, res) => {
 
 router.delete('/', async (req, res) => {
   try {
+    const sendDeleteResult = (result, successMessage) =>
+      res.status(200).json(buildDeleteFilesResponse(result, successMessage));
+
     const { files: _files } = req.body;
 
     /** @type {MongoFile[]} */
@@ -260,14 +264,14 @@ router.delete('/', async (req, res) => {
     }
 
     if (dbFiles.length > 0 && nonOwnedFiles.length === 0) {
-      await processDeleteRequest({ req, files: ownedFiles });
+      const result = await processDeleteRequest({ req, files: ownedFiles });
       logger.debug(
         `[/files] Files deleted successfully: ${ownedFiles
           .filter((f) => f.file_id)
           .map((f) => f.file_id)
           .join(', ')}`,
       );
-      res.status(200).json({ message: 'Files deleted successfully' });
+      sendDeleteResult(result, 'Files deleted successfully');
       return;
     }
 
@@ -290,20 +294,19 @@ router.delete('/', async (req, res) => {
       const toolResourceFiles = assistant.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
       const assistantFiles = files.filter((f) => toolResourceFiles.includes(f.file_id));
 
-      await processDeleteRequest({ req, files: assistantFiles });
-      res.status(200).json({ message: 'File associations removed successfully from assistant' });
+      const result = await processDeleteRequest({ req, files: assistantFiles });
+      sendDeleteResult(result, 'File associations removed successfully from assistant');
       return;
     } else if (
       req.body.assistant_id &&
       req.body.files?.[0]?.filepath === EModelEndpoint.azureAssistants
     ) {
-      await processDeleteRequest({ req, files: req.body.files });
-      return res
-        .status(200)
-        .json({ message: 'File associations removed successfully from Azure Assistant' });
+      const result = await processDeleteRequest({ req, files: req.body.files });
+      sendDeleteResult(result, 'File associations removed successfully from Azure Assistant');
+      return;
     }
 
-    await processDeleteRequest({ req, files: authorizedFiles });
+    const result = await processDeleteRequest({ req, files: authorizedFiles });
 
     logger.debug(
       `[/files] Files deleted successfully: ${authorizedFiles
@@ -311,7 +314,7 @@ router.delete('/', async (req, res) => {
         .map((f) => f.file_id)
         .join(', ')}`,
     );
-    res.status(200).json({ message: 'Files deleted successfully' });
+    sendDeleteResult(result, 'Files deleted successfully');
   } catch (error) {
     logger.error('[/files] Error deleting files:', error);
     res.status(400).json({ message: 'Error in request', error: error.message });

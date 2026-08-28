@@ -5,6 +5,7 @@ const mockGenerateAdminExchangeCode = jest.fn();
 const mockSyncUserEntraGroupMemberships = jest.fn();
 const mockSetAuthTokens = jest.fn();
 const mockSetOpenIDAuthTokens = jest.fn();
+const mockStoreOpenIDSession = jest.fn();
 const mockGetLogStores = jest.fn();
 const mockCheckBan = jest.fn();
 const mockGenerateToken = jest.fn();
@@ -33,6 +34,7 @@ jest.mock('~/server/services/PermissionService', () => ({
 jest.mock('~/server/services/AuthService', () => ({
   setAuthTokens: (...args) => mockSetAuthTokens(...args),
   setOpenIDAuthTokens: (...args) => mockSetOpenIDAuthTokens(...args),
+  storeOpenIDSession: (...args) => mockStoreOpenIDSession(...args),
 }));
 
 jest.mock(
@@ -92,6 +94,7 @@ describe('createOAuthHandler', () => {
     mockCheckBan.mockResolvedValue(undefined);
     mockGenerateToken.mockResolvedValue('jwt-token');
     mockGenerateAdminExchangeCode.mockResolvedValue('exchange-code');
+    mockStoreOpenIDSession.mockResolvedValue(true);
   });
 
   afterAll(() => {
@@ -147,6 +150,28 @@ describe('createOAuthHandler', () => {
     expect(mockSetOpenIDAuthTokens).not.toHaveBeenCalled();
     expect(mockSetAuthTokens).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('stores the OpenID refresh token before setting cookies for the standard app', async () => {
+    process.env.OPENID_REUSE_TOKENS = 'true';
+    mockIsAdminPanelRedirect.mockReturnValue(false);
+    const handler = createOAuthHandler('http://localhost:3080');
+    const req = buildReq();
+    const res = buildRes();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(mockStoreOpenIDSession).toHaveBeenCalledWith(
+      'user-123',
+      'openid-refresh-token',
+      undefined,
+    );
+    expect(mockSetOpenIDAuthTokens).toHaveBeenCalledWith(req.user.tokenset, req, res, {
+      userId: 'user-123',
+      tenantId: undefined,
+    });
+    expect(res.redirect).toHaveBeenCalledWith('http://localhost:3080');
   });
 
   it('forwards the refresh token from req.authInfo for non-openid admin providers', async () => {

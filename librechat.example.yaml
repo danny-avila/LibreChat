@@ -200,6 +200,9 @@ interface:
   # A deployment with Redis-backed resumable streams can run this on every replica.
   # A single-process deployment without Redis must also set
   # `SCHEDULES_SINGLE_PROCESS=true`; unsafe multi-replica writes fail closed.
+  # Scheduled agents that can pause require both `USE_REDIS_STREAMS=true` for
+  # shared action state and a durable shared checkpointer for graph continuation.
+  # MongoDB is currently the built-in durable checkpointer (and the default).
   # schedules:
   #   use: true
   #   create: true
@@ -568,6 +571,19 @@ endpoints:
   #   eventDriven:
   #     childTurns: false
   #     completionWakeups: false
+  #     # Serialize each authenticated bound actor's event lane through the
+  #     # authoritative terminal child-turn outcome. Enable only after every
+  #     # API replica supports terminal-handling mailbox blockers.
+  #     actorMailbox: false
+  #     # Reuse bound child state through isolated checkpoint forks. Enable only
+  #     # after every API replica supports this lifecycle. Requires the default
+  #     # Mongo checkpointer; it is incompatible with checkpointer.type: memory.
+  #     # The committed head is an ordinary checkpoint under `checkpointer.ttl`,
+  #     # so an actor idle for longer than that TTL rebuilds from message history
+  #     # on its next event. Lowering the TTL below an actor's event interval
+  #     # leaves it correct but never warm. Agents with skill primes also stay
+  #     # on the legacy path for now, so edited skills always reach the actor.
+  #     checkpointForks: false
   #     # Optional trusted origin for internal trigger delivery. By default, LibreChat
   #     # uses its own bound listener; override only for an internal TLS/front-door route.
   #     # selfUrl: 'https://librechat.internal'

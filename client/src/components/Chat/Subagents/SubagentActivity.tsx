@@ -278,34 +278,39 @@ function SubagentPrompt({ prompt }: { prompt: string }) {
   );
 }
 
-export default function SubagentActivity({
+export const hasTruncatedActivityDetails = (activity: ChildActivity): boolean =>
+  activity.items.some(
+    (item) =>
+      (item.type === 'writing' && item.textTruncated === true) ||
+      (item.type === 'activity_label' && item.labelTruncated === true) ||
+      (item.type === 'tool' && (item.inputTruncated === true || item.outputTruncated === true)),
+  );
+
+export function SubagentActivityContent({
   activity,
   activityId,
   state = 'ready',
-  embedded = false,
+  showPrompt = true,
+  showDetailTruncationNotice = true,
+  conversationId = null,
   onCancelControl,
 }: {
   activity: ChildActivity;
   activityId?: string;
   state?: 'ready' | 'loading' | 'error';
-  embedded?: boolean;
+  showPrompt?: boolean;
+  showDetailTruncationNotice?: boolean;
+  conversationId?: string | null;
   onCancelControl?: (controlId: string) => void;
 }) {
   const localize = useLocalize();
   const isSubmitting = activity.status === 'running' || activity.status === 'dispatched';
-  const StatusIcon = subagentStatusIcon(activity.status);
   const reasoningMarkerLabel = localize('com_ui_subagent_ticker_reasoning');
   const parts = useMemo(
     () => activity.items.map((item) => toContentPart(item, reasoningMarkerLabel)),
     [activity.items, reasoningMarkerLabel],
   );
-  const activityTruncated =
-    activity.activityTruncated === true ||
-    activity.items.some(
-      (item) =>
-        (item.type === 'writing' && item.textTruncated === true) ||
-        (item.type === 'tool' && (item.inputTruncated === true || item.outputTruncated === true)),
-    );
+  const activityDetailsTruncated = hasTruncatedActivityDetails(activity);
 
   let body: React.ReactNode;
   if (state === 'loading') {
@@ -331,7 +336,7 @@ export default function SubagentActivity({
       <ContentParts
         content={parts}
         messageId={activityId ?? 'subagent-activity-panel'}
-        conversationId={null}
+        conversationId={conversationId}
         isCreatedByUser={false}
         isLast
         isSubmitting={isSubmitting}
@@ -340,25 +345,9 @@ export default function SubagentActivity({
     );
   }
 
-  const statusHeader = (
-    <div className="shrink-0 border-b border-border-light px-4 py-2">
-      <div
-        className={cn(
-          'flex items-center gap-1 text-xs text-text-secondary',
-          activity.status === 'failed' || activity.status === 'interrupted'
-            ? 'text-status-error'
-            : '',
-        )}
-        aria-live="polite"
-      >
-        <StatusIcon size={13} aria-hidden />
-        <span>{localize(subagentStatusLabelKey(activity.status))}</span>
-      </div>
-    </div>
-  );
-  const content = (
+  return (
     <div className="flex max-w-full flex-col gap-0">
-      {activity.prompt != null && <SubagentPrompt prompt={activity.prompt} />}
+      {showPrompt && activity.prompt != null && <SubagentPrompt prompt={activity.prompt} />}
       <SubagentControlHistory
         controls={activity.controls ?? []}
         onCancelControl={onCancelControl}
@@ -368,13 +357,64 @@ export default function SubagentActivity({
           {localize('com_ui_subagent_control_history_truncated')}
         </div>
       )}
-      {activityTruncated && (
+      {showDetailTruncationNotice && activityDetailsTruncated && (
         <div className="mb-3 text-xs italic text-text-secondary">
-          {localize('com_ui_subagent_thread_history_truncated')}
+          {localize('com_ui_subagent_activity_details_truncated')}
         </div>
       )}
       {body}
     </div>
+  );
+}
+
+export function SubagentStatus({ activity }: { activity: ChildActivity }) {
+  const localize = useLocalize();
+  const StatusIcon = subagentStatusIcon(activity.status);
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-1 text-xs text-text-secondary',
+        activity.status === 'failed' || activity.status === 'interrupted'
+          ? 'text-status-error'
+          : '',
+      )}
+      aria-live="polite"
+    >
+      <StatusIcon size={13} aria-hidden />
+      <span>{localize(subagentStatusLabelKey(activity.status))}</span>
+    </div>
+  );
+}
+
+export default function SubagentActivity({
+  activity,
+  activityId,
+  state = 'ready',
+  embedded = false,
+  showPrompt = true,
+  onCancelControl,
+}: {
+  activity: ChildActivity;
+  activityId?: string;
+  state?: 'ready' | 'loading' | 'error';
+  embedded?: boolean;
+  showPrompt?: boolean;
+  onCancelControl?: (controlId: string) => void;
+}) {
+  const statusHeader =
+    activity.status === 'completed' ? null : (
+      <div className="shrink-0 border-b border-border-light px-4 py-2">
+        <SubagentStatus activity={activity} />
+      </div>
+    );
+  const content = (
+    <SubagentActivityContent
+      activity={activity}
+      activityId={activityId}
+      state={state}
+      showPrompt={showPrompt}
+      onCancelControl={onCancelControl}
+    />
   );
 
   if (embedded) {

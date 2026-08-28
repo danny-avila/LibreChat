@@ -1,7 +1,40 @@
 import type { Document, Types } from 'mongoose';
+import type { IAgentEventActorReconciliation } from './convo';
 
-export type AgentTriggerDeliveryStatus = 'staging' | 'pending' | 'leased' | 'succeeded' | 'dead';
+export type AgentTriggerDeliveryStatus =
+  | 'staging'
+  | 'batched'
+  | 'pending'
+  | 'leased'
+  | 'succeeded'
+  | 'dead';
 export type AgentTriggerDeliveryOutcome = 'succeeded' | 'retry' | 'dead';
+
+export interface AgentTriggerHandlingState {
+  status: 'started' | 'applied' | 'completed_no_action' | 'failed' | 'cancelled';
+  conversationId: string;
+  streamId: string;
+  generationCreatedAt: number;
+  startedAt: Date;
+  settledAt?: Date;
+  error?: string;
+  action?: {
+    toolName: string;
+    toolCallId?: string;
+  };
+}
+
+/** Private terminal proof for one delivery-owned event-actor invocation. */
+export interface AgentEventActorReceipt {
+  bindingId: string;
+  resolution: 'checkpoint_verified' | 'action_compensated' | 'history_repaired';
+  checkpoint: IAgentEventActorReconciliation['checkpoint'];
+  action: {
+    toolName: string;
+    toolCallId?: string;
+  };
+  settledAt: Date;
+}
 
 export interface AgentTriggerDeliveryFailure {
   code: string;
@@ -33,6 +66,26 @@ export interface IAgentTriggerDelivery {
   status: AgentTriggerDeliveryStatus;
   attempts: number;
   availableAt: Date;
+  envelopeBytes?: number;
+  coalesceKey?: string;
+  coalesceFrom?: Date;
+  coalesceUntil?: Date;
+  batchSize?: number;
+  batchBytes?: number;
+  batchMemberIds?: Types.ObjectId[];
+  batchRootId?: Types.ObjectId;
+  batchRootRequeueCount?: number;
+  batchMembersSettledAt?: Date;
+  /** Keeps this binding lane serialized until its admitted child turn reaches
+   *  an authoritative terminal handling outcome. */
+  awaitTerminalHandling?: boolean;
+  handling?: AgentTriggerHandlingState;
+  actorReceipt?: AgentEventActorReceipt;
+  /** Delivery-owned serialization point acquired exactly once before an event
+   * actor may invoke an external action. */
+  actorActionAdmittedAt?: Date;
+  /** Attempt identity that fences admission takeover and release. */
+  actorActionAdmissionId?: string;
   leaseBy?: string;
   leaseUntil?: Date;
   claimToken?: string;
@@ -71,6 +124,7 @@ export type AgentTriggerDeliveryStatusRecord = Pick<
   | 'settledAt'
   | 'result'
   | 'lastError'
+  | 'handling'
 >;
 
 export interface IAgentTriggerLaneSequence {
@@ -115,4 +169,5 @@ export interface AgentTriggerDeliveryClaim extends AgentTriggerDeliveryRecord {
 export interface AgentTriggerOrderingBlock {
   availableAt: Date;
   leaseUntil?: Date;
+  reason?: 'active_handling';
 }

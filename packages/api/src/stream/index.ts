@@ -39,6 +39,12 @@ export {
 } from './interfaces/IJobStore';
 export { SteeringLifecycle, toPendingSteer } from './SteeringLifecycle';
 export {
+  ApprovalLifecycle,
+  PendingActionExpiredError,
+  PENDING_ACTION_EXPIRED_CODE,
+} from './ApprovalLifecycle';
+export type { ApprovalLifecycleCallbacks, ApprovalPauseOptions } from './ApprovalLifecycle';
+export {
   assertJobStoreV2,
   getMissingJobStoreV2Methods,
   JOB_STORE_V2_REQUIRED_METHODS,

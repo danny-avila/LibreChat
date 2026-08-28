@@ -14,6 +14,65 @@ export interface IAgentEventBinding {
   actorId: string;
 }
 
+export interface IAgentEventActorCheckpoint {
+  threadId: string;
+  checkpointId: string;
+  checkpointNs: string;
+}
+
+/** Private committed checkpoint state for one event-bound child actor. */
+export interface IAgentEventActorState {
+  generation: number;
+  checkpoint: IAgentEventActorCheckpoint;
+  previousCheckpoint?: IAgentEventActorCheckpoint;
+  /** Forces the next qualifying event to rebuild from durable message history. */
+  requiresColdStart?: boolean;
+}
+
+export interface IAgentEventActorReconciliation {
+  invocationId: string;
+  /** New-protocol executions acquire the delivery-owned action admission CAS
+   * before the external action may run. Absent only on mixed-version rows. */
+  actionAdmitted?: boolean;
+  status:
+    | 'invocation_pending'
+    | 'persistence_pending'
+    | 'history_persisted'
+    | 'commit_conflict'
+    | 'commit_indeterminate'
+    | 'persistence_failed'
+    | 'settled';
+  checkpoint: Omit<IAgentEventActorCheckpoint, 'checkpointId'> & { checkpointId?: string };
+  action: { toolName: string; toolCallId?: string };
+  error?: string;
+  /** How a retained receipt reached `settled`. Absent on active lifecycle rows. */
+  resolution?: 'checkpoint_verified' | 'action_compensated' | 'history_repaired';
+  observedAt: Date;
+}
+
+/**
+ * Durable fence covering one legacy-path turn from before its execution until
+ * its history is persisted. While present, no fork may execute or commit — the
+ * turn's messages are not yet durable, so any rebuild would be incomplete. A
+ * crash leaves the token in place (fail-closed) until it is reclaimed.
+ */
+export interface IAgentEventActorLegacyTurn {
+  token: string;
+  startedAt: Date;
+}
+
+export interface IAgentEventActorSnapshot {
+  state: IAgentEventActorState | null;
+  reconciliations: IAgentEventActorReconciliation[];
+  legacyTurn: IAgentEventActorLegacyTurn | null;
+  /** Durable invalidation epoch. Every legacy-path event bumps it — including
+   * for headless or already cold-marked actors, where the marker alone leaves
+   * no CAS-visible trace — and the commit CAS requires the epoch observed at
+   * preparation, so a stale fork can never commit state built from history
+   * read before an intervening legacy turn. */
+  epoch: number;
+}
+
 export interface IAgentEventBindingRecord {
   conversationId: string;
   agentId: string;
@@ -75,6 +134,14 @@ export interface IConversation extends Document {
   subagentThreadLease?: ISubagentThreadLease;
   /** Internal event-source identity. Excluded from ordinary conversation reads. */
   agentEventBinding?: IAgentEventBinding;
+  /** Internal event-actor checkpoint head. Excluded from ordinary conversation reads. */
+  agentEventActor?: IAgentEventActorState;
+  /** Private invocation proof: active lifecycle fences plus settled same-ID receipts. */
+  agentEventActorReconciliations?: IAgentEventActorReconciliation[];
+  /** Private invalidation epoch; see {@link IAgentEventActorSnapshot.epoch}. */
+  agentEventActorEpoch?: number;
+  /** Private in-flight legacy-turn fence; see {@link IAgentEventActorLegacyTurn}. */
+  agentEventActorLegacyTurn?: IAgentEventActorLegacyTurn;
   assistant_id?: string;
   instructions?: string;
   stop?: string[];

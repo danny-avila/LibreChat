@@ -19,6 +19,14 @@ export type SubagentTaskControlReceiptStatus =
   | 'rejected'
   | 'failed';
 
+export type SubagentTriggerProjection = {
+  version: 1;
+  eventType: string;
+  sourceType: string;
+  occurredAt: Date;
+  expectedActionToolName?: string;
+};
+
 /** Server-private durable receipt for one parent-to-child control invocation. */
 export interface ISubagentTaskControlReceipt {
   invocationId: string;
@@ -87,6 +95,13 @@ export interface IMessage extends Document {
     mode: 'append' | 'replace';
     messagesJson: string;
   };
+  /** Server-private bounded rendering projection derived once at child settlement. */
+  subagentActivityProjection?: {
+    taskId: string;
+    version: 1;
+    activityJson: string;
+    truncated: boolean;
+  };
   /** Server-private durable idempotency marker for one detached subagent turn. */
   subagentTask?: {
     attemptKey: string;
@@ -101,6 +116,7 @@ export interface IMessage extends Document {
     };
     controlReceipts?: ISubagentTaskControlReceipt[];
   };
+  subagentTriggerProjection?: SubagentTriggerProjection;
   contextMeta?: {
     calibrationRatio?: number;
     encoding?: string;

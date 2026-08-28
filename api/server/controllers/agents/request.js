@@ -30,6 +30,12 @@ const {
   getAttachmentTitleText,
   createMCPRuntimeRequestBody,
   isAgentEventRetentionActive,
+  executeAgentEventActor,
+  findAgentEventAppliedAction,
+  createAgentEventActionRecorder,
+  isEnabled,
+  isHITLEnabled,
+  agentRequestsAskUserQuestion,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -43,6 +49,17 @@ const {
   saveConvo,
   getMessages,
   getConvo,
+  getAgentEventActorSnapshot,
+  commitAgentEventActorState,
+  beginAgentEventActorLegacyTurn,
+  completeAgentEventActorLegacyTurn,
+  recordAgentEventActorReconciliation,
+  resolveAgentEventActorReconciliation,
+  clearAgentEventActorReconciliation,
+  admitAgentEventActorAction,
+  releaseAgentEventActorAction,
+  hasAgentEventActorActionAdmission,
+  getAgentEventActorReceipt,
   isAgentTriggerPrincipalActive,
   isSubagentOwnerAdmissible,
 } = require('~/models');
@@ -123,6 +140,7 @@ function getPreliminaryResponseMessageId({ messageId, responseMessageId }) {
 function getPreliminaryUserMessage(
   { messageId, parentMessageId, text, quotes, files, manualSkills, alwaysAppliedSkills },
   conversationId,
+  subagentTriggerProjection,
 ) {
   if (typeof messageId !== 'string' || messageId.length === 0) {
     return null;
@@ -153,6 +171,36 @@ function getPreliminaryUserMessage(
     ...(Array.isArray(manualSkills) && manualSkills.length > 0 && { manualSkills }),
     ...(Array.isArray(alwaysAppliedSkills) &&
       alwaysAppliedSkills.length > 0 && { alwaysAppliedSkills }),
+    ...(subagentTriggerProjection != null && { subagentTriggerProjection }),
+  };
+}
+
+const DISPLAY_IDENTITY_CONTROLS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu;
+
+function sanitizeEventDisplayIdentity(value) {
+  if (typeof value !== 'string') return undefined;
+  const bounded = Array.from(value).slice(0, 512).join('');
+  const sanitized = bounded.normalize('NFC').replace(DISPLAY_IDENTITY_CONTROLS, ' ').trim();
+  return sanitized.length === 0 ? undefined : Array.from(sanitized).slice(0, 256).join('');
+}
+
+function getAgentEventTriggerProjection(agentEventDelivery) {
+  const event = agentEventDelivery?.event;
+  const occurredAt = new Date(event?.occurredAt);
+  const eventType = sanitizeEventDisplayIdentity(event?.type);
+  const sourceType = sanitizeEventDisplayIdentity(event?.source?.type);
+  if (eventType == null || sourceType == null || Number.isNaN(occurredAt.getTime())) {
+    return undefined;
+  }
+  const expectedActionToolName = sanitizeEventDisplayIdentity(
+    agentEventDelivery?.expectedAction?.toolName,
+  );
+  return {
+    version: 1,
+    eventType,
+    sourceType,
+    occurredAt,
+    ...(expectedActionToolName == null ? {} : { expectedActionToolName }),
   };
 }
 
@@ -254,7 +302,7 @@ async function saveErrorTurn(
                   alwaysAppliedSkills: req.body.alwaysAppliedSkills,
                 }),
             }
-          : getPreliminaryUserMessage(req.body, conversationId);
+          : getPreliminaryUserMessage(req.body, conversationId, req._agentEventTriggerProjection);
       if (!userMessage) {
         return;
       }
@@ -1243,6 +1291,18 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
     return recorded;
   };
+  /** The loopback trigger host binds this lifecycle identity to the same
+   * idempotency key that owns generation admission. Ignore mismatched or
+   * direct-chat metadata rather than letting callers relabel another run. */
+  const rawAgentEventDelivery = req.body?.agentEventDelivery;
+  const agentEventDelivery =
+    isTriggerContinuation &&
+    rawAgentEventDelivery != null &&
+    typeof rawAgentEventDelivery === 'object' &&
+    rawAgentEventDelivery.deliveryKey === clientRequestId
+      ? rawAgentEventDelivery
+      : undefined;
+  req._agentEventTriggerProjection = getAgentEventTriggerProjection(agentEventDelivery);
 
   try {
     logger.debug(`[ResumableAgentController] Creating job`, {
@@ -1257,6 +1317,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     const preliminaryUserMessage = getPreliminaryUserMessage(
       { ...req.body, messageId: preallocatedUserMessageId },
       conversationId,
+      req._agentEventTriggerProjection,
     );
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId, {
       startupTelemetry,
@@ -1288,6 +1349,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // Persist temporary-chat state so a HITL resume keeps the resumed response
         // non-persisted instead of trusting the resume request to re-send the flag.
         isTemporary: req._agentEventBindingRetention?.isTemporary ?? req.body?.isTemporary,
+        ...(agentEventDelivery != null && {
+          agentEventDeliveryKey: agentEventDelivery.deliveryKey,
+          agentEventBindingId: agentEventDelivery.target.bindingId,
+          ...(agentEventDelivery.expectedAction != null && {
+            agentEventExpectedAction: agentEventDelivery.expectedAction,
+          }),
+        }),
         ...(isRegenerate && { isRegenerate: true }),
         ...(scheduleId
           ? {
@@ -1765,6 +1833,61 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         });
         return titleEventPromise;
       };
+      const eventActorTenantId = req._agentEventBindingTenantId;
+      let appliedEventActor;
+      let eventActorPersistenceComplete = false;
+      let legacyEventActorTurnToken;
+      /** Closes the durable legacy-turn fence once this turn's history is
+       * persisted, clearing the token and advancing the epoch in one write. A
+       * failure here leaves the token SET, which keeps blocking forks until an
+       * explicit reconciliation proves the ambiguous turn safe to release. */
+      const sealLegacyEventActorTurn = async () => {
+        if (legacyEventActorTurnToken == null) {
+          return;
+        }
+        const token = legacyEventActorTurnToken;
+        legacyEventActorTurnToken = undefined;
+        try {
+          const sealed = await completeAgentEventActorLegacyTurn({
+            user: userId,
+            conversationId,
+            ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+            token,
+          });
+          if (!sealed) {
+            logger.error(
+              `[event-actor] Legacy turn fence ${token} was not sealed; forks stay blocked pending reconciliation`,
+            );
+          }
+        } catch (sealError) {
+          logger.error(
+            `[event-actor] Failed to seal legacy turn fence ${token}; forks stay blocked pending reconciliation`,
+            sealError,
+          );
+        }
+      };
+      const recordEventActorPersistenceFailure = async (error) => {
+        if (appliedEventActor == null || eventActorPersistenceComplete) {
+          return;
+        }
+        const recorded = await recordAgentEventActorReconciliation({
+          user: userId,
+          conversationId,
+          ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+          reconciliation: {
+            invocationId: appliedEventActor.invocationId,
+            ...(appliedEventActor.actionAdmitted === true && { actionAdmitted: true }),
+            status: 'persistence_failed',
+            checkpoint: appliedEventActor.checkpoint,
+            action: appliedEventActor.action,
+            error: String(error?.message ?? error).slice(0, 1024),
+            observedAt: new Date(),
+          },
+        });
+        if (!recorded) {
+          throw new Error('Failed to preserve applied event actor persistence reconciliation');
+        }
+      };
 
       try {
         const onStart = (userMsg, respMsgId, _isNewConvo) => {
@@ -1861,7 +1984,167 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           },
         };
 
-        const sendPromise = client.sendMessage(text, messageOptions);
+        const checkpointForksEnabled =
+          req.config?.endpoints?.[EModelEndpoint.agents]?.eventDriven?.checkpointForks === true;
+        /** This is a deployment barrier, not a principal-scoped feature. It is
+         * populated from the base config before the listener starts; reading
+         * merged req.config here would let a user/role/tenant override bypass
+         * the mixed-version rollout fence. */
+        const durableActorReceiptsEnabled = isEnabled(
+          process.env.ENABLE_AGENT_EVENT_DURABLE_RECEIPTS,
+        );
+        const agentsConfig = req.config?.endpoints?.[EModelEndpoint.agents];
+        const eventActorAgents = [
+          client?.options?.agent,
+          ...(client?.agentConfigs?.values?.() ?? []),
+        ].filter(Boolean);
+        const eventActorMayPause =
+          isHITLEnabled(agentsConfig?.toolApproval) ||
+          eventActorAgents.some(agentRequestsAskUserQuestion);
+        /** Skill bodies are spliced or reconstructed into the message list
+         * ahead of the newest message, and a warm continuation forwards only
+         * that newest message — a checkpoint-restored actor would keep serving
+         * the bodies baked in at its last cold start and never observe an
+         * edited or newly attached skill. That covers request-time primes AND
+         * history-derived re-priming: `primeInvokedSkills` re-resolves any
+         * skill the actor previously invoked, so its mere presence (the skills
+         * capability) keeps the actor on the legacy path, which rebuilds fresh
+         * bodies every turn. #15235 tracks the context fingerprint that will
+         * restore warm continuation for skill-bearing actors. */
+        const eventActorHasSkillPrimes =
+          client?.options?.primeInvokedSkills != null ||
+          (client?.options?.agent?.alwaysApplySkillPrimes?.length ?? 0) > 0 ||
+          (client?.options?.agent?.manualSkillPrimes?.length ?? 0) > 0;
+        /** A background-opted expected action can detach: dispatch returns a
+         * launch handle the evidence fences correctly reject, and the later
+         * completion is provenance-marked as another turn's work — so a fork
+         * would classify actionless and settle before the external effect
+         * lands, with no receipt to stop a retry from dispatching it again.
+         * The name comparison mirrors matchesExpectedAction's MCP suffix. */
+        const expectedActionToolName = agentEventDelivery?.expectedAction?.toolName;
+        const eventActorActionMayDetach =
+          typeof expectedActionToolName === 'string' &&
+          eventActorAgents.some((agent) =>
+            (agent.backgroundToolNames ?? []).some(
+              (name) =>
+                name === expectedActionToolName ||
+                name.startsWith(`${expectedActionToolName}_mcp_`),
+            ),
+          );
+        const canUseEventActorFork =
+          checkpointForksEnabled &&
+          durableActorReceiptsEnabled &&
+          agentsConfig?.checkpointer?.type !== 'memory' &&
+          !eventActorMayPause &&
+          !eventActorHasSkillPrimes &&
+          !eventActorActionMayDetach &&
+          agentEventDelivery?.event != null &&
+          agentEventDelivery.expectedAction != null &&
+          typeof eventTaskId === 'string' &&
+          req._agentEventBindingParentConversationId != null;
+        /** Authoritative action proof is captured in graph context the moment
+         * the expected tool executes (see the observer tee in initialize.js);
+         * run-step inspection stays only as a fallback, because the run-step
+         * collection is populated asynchronously and can still be empty the
+         * instant sendMessage resolves — misreading an applied invocation as
+         * actionless would discard its fork and strand the actor cold. */
+        const eventActorActionRecorder = canUseEventActorFork
+          ? createAgentEventActionRecorder(agentEventDelivery.expectedAction)
+          : undefined;
+        if (eventActorActionRecorder != null) {
+          req._agentEventActionObserver = eventActorActionRecorder.observeToolEnd;
+        }
+        const sendPromise = canUseEventActorFork
+          ? executeAgentEventActor(
+              {
+                user: userId,
+                ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+                conversationId,
+                bindingId: agentEventDelivery.target.bindingId,
+                invocationId: eventTaskId,
+                event: agentEventDelivery.event,
+                expectedAction: agentEventDelivery.expectedAction,
+                signal: job.abortController.signal,
+                checkpointer: req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
+                invoke: async (actorContext) => {
+                  client.checkpointNamespace = actorContext.checkpointNamespace;
+                  client.eventActorCheckpointId = actorContext.checkpointId;
+                  client.eventActorInvocationId = actorContext.invocationId;
+                  client.eventActorContinuation = actorContext.continuation;
+                  return client.sendMessage(text, messageOptions);
+                },
+                readAppliedAction: () =>
+                  eventActorActionRecorder.read() ??
+                  findAgentEventAppliedAction(
+                    agentEventDelivery.expectedAction,
+                    client?.run?.getRunSteps?.() ?? [],
+                    client?.contentParts ?? [],
+                  ),
+              },
+              {
+                getSnapshot: getAgentEventActorSnapshot,
+                commitState: commitAgentEventActorState,
+                recordReconciliation: recordAgentEventActorReconciliation,
+                resolveReconciliation: resolveAgentEventActorReconciliation,
+                admitAction: admitAgentEventActorAction,
+                releaseAction: releaseAgentEventActorAction,
+                hasActionAdmission: hasAgentEventActorActionAdmission,
+                getReceipt: getAgentEventActorReceipt,
+                clearReconciliation: clearAgentEventActorReconciliation,
+              },
+            ).then(({ value, execution }) => {
+              if (execution.status === 'applied') {
+                appliedEventActor = {
+                  invocationId: eventTaskId,
+                  actionAdmitted: typeof admitAgentEventActorAction === 'function',
+                  checkpoint: execution.head.checkpoint,
+                  action: execution.result.action,
+                };
+              }
+              logger.info('[event-actor] Bound child event completed', {
+                conversationId,
+                invocationId: eventTaskId,
+                status: execution.status,
+                continuation: execution.continuation,
+              });
+              return value;
+            })
+          : (async () => {
+              if (
+                agentEventDelivery?.event != null &&
+                req._agentEventBindingParentConversationId != null
+              ) {
+                const token = crypto.randomUUID();
+                /** Open the fence BEFORE execution so a fork can neither run
+                 * nor commit while this turn's messages are not yet durable. */
+                const legacyTurnOwner = {
+                  user: userId,
+                  conversationId,
+                  ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+                };
+                const acquiredLegacyTurn = await beginAgentEventActorLegacyTurn({
+                  ...legacyTurnOwner,
+                  token,
+                });
+                if (!acquiredLegacyTurn) {
+                  throw Object.assign(new Error('The event actor is temporarily unavailable'), {
+                    code: 'EVENT_ACTOR_NOT_READY',
+                    status: 409,
+                  });
+                }
+                /** The same exact token must survive a HITL pause. Retain local
+                 * ownership before the Redis write so a metadata failure can
+                 * still seal this token after its durable error turn is saved;
+                 * provider execution starts only after metadata persists. */
+                legacyEventActorTurnToken = token;
+                await GenerationJobManager.updateMetadata(
+                  streamId,
+                  { agentEventLegacyTurnToken: token },
+                  jobCreatedAt,
+                );
+              }
+              return client.sendMessage(text, messageOptions);
+            })();
 
         if (titleEligible && titleTiming === 'immediate') {
           immediateTitlePromise = addTitle(req, {
@@ -2095,6 +2378,24 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
           acceptsTitleEvents = false;
           resolveConvoReady();
+          try {
+            await recordEventActorPersistenceFailure(
+              new Error('Event actor terminal persistence claim was replaced'),
+            );
+          } catch (reconciliationError) {
+            /** The committing CAS already left a non-settled row that blocks
+             * later actor turns, so a failed status upgrade costs provenance,
+             * not safety. Never divert this clean exit past its cleanup. */
+            logger.error(
+              '[event-actor] Failed to preserve replaced-claim reconciliation',
+              reconciliationError,
+            );
+          }
+          /** This controller lost terminal persistence ownership, so it cannot
+           * prove the winning Stop/replacement has written the unfinished
+           * response yet. Keep the conversation fence closed; a HITL resume
+           * carries the exact token, while every other orphan is handled by
+           * bounded stale reclaim. */
           await finishResumableRequest(req, userId);
           disposeBackgroundClient();
           startupTelemetry?.end(job.abortController.signal.aborted ? 'aborted' : 'replaced');
@@ -2168,6 +2469,26 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               : 'Response message could not be persisted before terminal publication',
           );
         }
+        if (appliedEventActor != null) {
+          const recorded = await recordAgentEventActorReconciliation({
+            user: userId,
+            conversationId,
+            ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+            reconciliation: {
+              invocationId: appliedEventActor.invocationId,
+              ...(appliedEventActor.actionAdmitted === true && { actionAdmitted: true }),
+              status: 'history_persisted',
+              checkpoint: appliedEventActor.checkpoint,
+              action: appliedEventActor.action,
+              observedAt: new Date(),
+            },
+          });
+          if (!recorded) {
+            throw new Error('Applied event actor history barrier could not be durably recorded');
+          }
+        }
+        await sealLegacyEventActorTurn();
+        eventActorPersistenceComplete = true;
 
         // If the user stopped this turn — or an empty preempt boundary truncated
         // it, which persists under the same honest `unfinished` contract — cancel
@@ -2306,12 +2627,21 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
         acceptsTitleEvents = false;
         resolveConvoReady();
+        try {
+          await recordEventActorPersistenceFailure(error);
+        } catch (reconciliationError) {
+          logger.error(
+            '[event-actor] Failed to preserve terminal persistence reconciliation',
+            reconciliationError,
+          );
+        }
 
         // Once this controller owns terminal persistence, no competing error
         // transition can win. Settle its pending marker with conservative
         // reconciliation on any required-write/final-construction failure,
         // then release exactly that claim.
         let ownsScheduledFailure = false;
+        let legacyEventActorErrorHistoryDurable = false;
         if (terminalClaim && !terminalClaimFinished) {
           ownsScheduledFailure = true;
           try {
@@ -2368,6 +2698,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                     sender: client?.sender,
                   }),
               })) === true;
+            /** A true completion means this owner won the terminal CAS and
+             * the beforeErrorPublication barrier above finished. Only that
+             * combination proves the failed-turn rows are durable enough to
+             * let a checkpoint fork rebuild past this legacy turn. */
+            legacyEventActorErrorHistoryDurable = ownsScheduledFailure;
           } catch (completeErr) {
             logger.warn(
               '[ResumableAgentController] completeJob failed during generation-error cleanup',
@@ -2376,6 +2711,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           } finally {
             startupTelemetry?.end('error', error);
           }
+        }
+
+        /** Leave the fence set when terminal persistence loses ownership or
+         * fails. Time cannot prove whether an external action occurred, so an
+         * ambiguous fence remains fail-closed pending explicit reconciliation. */
+        if (legacyEventActorErrorHistoryDurable) {
+          await sealLegacyEventActorTurn();
         }
 
         if (ownsScheduledFailure && !scheduleTerminalOutcomeRecorded) {

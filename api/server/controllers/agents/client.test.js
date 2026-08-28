@@ -6,6 +6,7 @@ const mockRecordCollectedUsage = jest.fn();
 const mockDetachedUsageRecorder = jest.fn();
 const mockCreateDetachedSubagentUsageRecorder = jest.fn(() => mockDetachedUsageRecorder);
 const mockGetAgentCheckpointer = jest.fn();
+const mockHasDurableAgentInterruptCheckpoint = jest.fn().mockResolvedValue(true);
 const mockBuildAgentScopedContext = jest.fn((...args) =>
   jest.requireActual('@librechat/api').buildAgentScopedContext(...args),
 );
@@ -18,7 +19,14 @@ const mockFormatAgentMessages = jest.fn(() => ({
 
 const { Providers } = require('@librechat/agents');
 const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
-const { GenerationJobManager, createStreamServices } = require('@librechat/api');
+const {
+  GenerationJobManager,
+  createStreamServices,
+  registerToolApprovalHook,
+  clearToolApprovalHooks,
+  getPluginHookSource,
+  setPluginHookSource,
+} = require('@librechat/api');
 const BaseClient = require('~/app/clients/BaseClient');
 const AgentClient = require('./client');
 const { resolveConfigServers } = require('~/server/services/MCP');
@@ -66,6 +74,7 @@ jest.mock('@librechat/api', () => ({
   maybePrewarmCodeSandbox: jest.fn(),
   recordCollectedUsage: (...args) => mockRecordCollectedUsage(...args),
   getAgentCheckpointer: mockGetAgentCheckpointer,
+  hasDurableAgentInterruptCheckpoint: (...args) => mockHasDurableAgentInterruptCheckpoint(...args),
 }));
 
 describe('AgentClient - final model-bound content protection', () => {
@@ -463,6 +472,7 @@ describe('AgentClient - reasoning label accounting', () => {
 
 describe('AgentClient - interrupt discovery persistence', () => {
   beforeEach(async () => {
+    mockHasDurableAgentInterruptCheckpoint.mockClear();
     await GenerationJobManager.destroy();
     GenerationJobManager.configure({ ...createStreamServices(), cleanupOnComplete: false });
     GenerationJobManager.initialize();
@@ -566,6 +576,157 @@ describe('AgentClient - interrupt discovery persistence', () => {
     const paused = await GenerationJobManager.getJob(streamId);
     expect(paused?.metadata.pendingAction.expiresAt).toBeGreaterThanOrEqual(now + 4_900);
     expect(paused?.metadata.pendingAction.expiresAt).toBeLessThanOrEqual(now + 5_000);
+  });
+
+  it('does not expose an event-bound pause after its inherited deadline', async () => {
+    const streamId = 'conversation-expired-event-bound-pause';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: { checkpointer: { ttl: 3600 } } } },
+        _agentEventBindingRetention: {
+          isTemporary: false,
+          expiredAt: new Date(Date.now() - 1),
+        },
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-expired-event-bound-pause';
+    client.jobCreatedAt = job.createdAt;
+
+    await expect(
+      client.handleRunInterrupt(
+        {
+          getInterrupt: () => ({
+            interruptId: 'ask-interrupt',
+            threadId: streamId,
+            payload: {
+              type: 'ask_user_question',
+              question: { question: 'Proceed?' },
+            },
+          }),
+        },
+        streamId,
+      ),
+    ).rejects.toMatchObject({ code: 'HITL_ACTION_EXPIRED' });
+    const liveJob = await GenerationJobManager.getJob(streamId);
+    expect(liveJob?.status).toBe('running');
+    expect(liveJob?.metadata.pendingAction).toBeUndefined();
+  });
+
+  it('does not expose a scheduled pause without its shared action store', async () => {
+    const streamId = 'scheduled-missing-shared-store';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _isScheduledFire: true,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'scheduled-missing-shared-store-response';
+    client.jobCreatedAt = job.createdAt;
+    client.checkpointNamespace = job.metadata.checkpointNamespace;
+
+    await expect(
+      client.handleRunInterrupt(
+        {
+          getInterrupt: () => ({
+            interruptId: 'ask-interrupt',
+            threadId: streamId,
+            payload: {
+              type: 'ask_user_question',
+              question: { question: 'Proceed?' },
+            },
+          }),
+        },
+        streamId,
+      ),
+    ).rejects.toMatchObject({ code: 'SCHEDULED_HITL_REQUIRES_SHARED_STORE' });
+    expect(mockHasDurableAgentInterruptCheckpoint).not.toHaveBeenCalled();
+    await expect(GenerationJobManager.getJobStatus(streamId)).resolves.toBe('running');
+  });
+
+  it('does not expose a scheduled pause without its durable interrupt checkpoint', async () => {
+    const isRedisSpy = jest.spyOn(GenerationJobManager, 'isRedis', 'get').mockReturnValue(true);
+    const streamId = 'scheduled-missing-interrupt-checkpoint';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _isScheduledFire: true,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'scheduled-missing-checkpoint-response';
+    client.jobCreatedAt = job.createdAt;
+    client.checkpointNamespace = job.metadata.checkpointNamespace;
+    mockHasDurableAgentInterruptCheckpoint.mockResolvedValueOnce(false);
+
+    try {
+      await expect(
+        client.handleRunInterrupt(
+          {
+            getInterrupt: () => ({
+              interruptId: 'ask-interrupt',
+              checkpointId: 'checkpoint-current',
+              checkpointNs: 'nested-agent',
+              threadId: streamId,
+              payload: {
+                type: 'ask_user_question',
+                question: { question: 'Proceed?' },
+              },
+            }),
+          },
+          streamId,
+        ),
+      ).rejects.toMatchObject({ code: 'HITL_CHECKPOINT_UNAVAILABLE' });
+      expect(mockHasDurableAgentInterruptCheckpoint).toHaveBeenCalledWith(streamId, undefined, {
+        checkpointNamespace: job.metadata.checkpointNamespace,
+        checkpointId: 'checkpoint-current',
+        checkpointNs: 'nested-agent',
+        interruptId: 'ask-interrupt',
+      });
+      await expect(GenerationJobManager.getJobStatus(streamId)).resolves.toBe('running');
+    } finally {
+      isRedisSpy.mockRestore();
+    }
   });
 });
 
@@ -817,7 +978,278 @@ describe('AgentClient - activity phase completion', () => {
 
 describe('AgentClient - startup telemetry', () => {
   afterEach(() => {
+    clearToolApprovalHooks();
+    mockIsHITLEnabled.mockReturnValue(false);
     jest.restoreAllMocks();
+  });
+
+  it('refuses scheduled pause-capable runs before provider startup without Redis', async () => {
+    mockIsHITLEnabled.mockReturnValue(false);
+    const createRunBefore = mockCreateRun.mock.calls.length;
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _isScheduledFire: true,
+        _resumableStreamId: 'scheduled-hitl-no-redis',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        tools: [{ name: 'ask_user_question' }],
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'scheduled-hitl-no-redis';
+    client.responseMessageId = 'scheduled-hitl-response';
+    client.parentMessageId = 'scheduled-hitl-parent';
+
+    await expect(client.chatCompletion({ payload: [] })).rejects.toMatchObject({
+      code: 'SCHEDULED_HITL_REQUIRES_SHARED_STORE',
+      message: expect.stringContaining('USE_REDIS_STREAMS=true'),
+    });
+    expect(mockCreateRun).toHaveBeenCalledTimes(createRunBefore);
+  });
+
+  it('includes host-generated background tools in scheduled pause admission', async () => {
+    const createRunBefore = mockCreateRun.mock.calls.length;
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: {
+          endpoints: {
+            [EModelEndpoint.agents]: {
+              toolApproval: {
+                enabled: true,
+                mode: 'bypass',
+                ask: ['check_background_task'],
+              },
+            },
+          },
+        },
+        _isScheduledFire: true,
+        _resumableStreamId: 'scheduled-background-tool',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        tools: [{ name: 'read_file' }],
+      },
+      subagentTasks: {},
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'scheduled-background-tool';
+    client.responseMessageId = 'scheduled-background-response';
+    client.parentMessageId = 'scheduled-background-parent';
+
+    await expect(client.chatCompletion({ payload: [] })).rejects.toMatchObject({
+      code: 'SCHEDULED_HITL_REQUIRES_SHARED_STORE',
+    });
+    expect(mockCreateRun).toHaveBeenCalledTimes(createRunBefore);
+  });
+
+  it.each([
+    {
+      name: 'a bypass-only approval policy',
+      toolApproval: { enabled: true, mode: 'bypass' },
+      subagentAgentConfigs: undefined,
+    },
+    {
+      name: 'an approval rule that matches no selected tool',
+      toolApproval: { enabled: true, mode: 'bypass', ask: ['approval_probe'] },
+      subagentAgentConfigs: undefined,
+    },
+    {
+      name: 'ask_user_question denied by the approval policy',
+      toolApproval: { enabled: true, deny: ['ask_*'] },
+      primaryTools: [{ name: 'ask_user_question' }],
+      subagentAgentConfigs: undefined,
+    },
+    {
+      name: 'ask_user_question on a nested subagent only',
+      toolApproval: undefined,
+      subagentAgentConfigs: [
+        {
+          id: 'nested-agent',
+          tools: [{ name: 'ask_user_question' }],
+        },
+      ],
+    },
+  ])(
+    'does not reject scheduled runs for $name',
+    async ({ toolApproval, primaryTools, subagentAgentConfigs }) => {
+      mockDeleteAgentCheckpoint.mockReset().mockResolvedValue(undefined);
+      const processStream = jest.fn().mockResolvedValue();
+      mockCreateRun.mockResolvedValueOnce({
+        Graph: null,
+        processStream,
+        getCalibrationRatio: jest.fn(() => 0),
+        getInterrupt: jest.fn(() => undefined),
+      });
+      const createRunBefore = mockCreateRun.mock.calls.length;
+      const client = new AgentClient({
+        req: {
+          user: { id: 'user-123' },
+          body: {},
+          config: { endpoints: { [EModelEndpoint.agents]: { toolApproval } } },
+          _isScheduledFire: true,
+          _resumableStreamId: 'scheduled-non-pausing-policy',
+        },
+        res: {},
+        agent: {
+          id: 'agent-123',
+          endpoint: EModelEndpoint.openAI,
+          provider: EModelEndpoint.openAI,
+          model_parameters: { model: 'gpt-4' },
+          hide_sequential_outputs: false,
+          tools: primaryTools ?? [{ name: 'read_file' }],
+          subagentAgentConfigs,
+        },
+        endpointTokenConfig: {},
+        eventHandlers: {},
+        contentParts: [],
+        collectedUsage: [],
+        artifactPromises: [],
+      });
+      client.conversationId = 'scheduled-non-pausing-policy';
+      client.checkpointNamespace = 'scheduled-non-pausing-generation';
+      client.responseMessageId = 'scheduled-non-pausing-response';
+      client.parentMessageId = 'scheduled-non-pausing-parent';
+      client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+      await expect(client.chatCompletion({ payload: [] })).resolves.toBeUndefined();
+      expect(mockCreateRun).toHaveBeenCalledTimes(createRunBefore + 1);
+      expect(processStream).toHaveBeenCalledTimes(1);
+      if (toolApproval?.enabled === true) {
+        expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
+          'scheduled-non-pausing-policy',
+          undefined,
+          undefined,
+          {
+            throwOnError: true,
+            checkpointNamespace: 'scheduled-non-pausing-generation',
+          },
+        );
+      } else {
+        expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it('uses request-scoped hook resolution when deciding whether a scheduled run can pause', async () => {
+    mockIsHITLEnabled.mockReturnValue(true);
+    registerToolApprovalHook((context) =>
+      context.userId === 'different-user' ? async () => ({ decision: 'ask' }) : undefined,
+    );
+    const processStream = jest.fn().mockResolvedValue();
+    mockCreateRun.mockResolvedValueOnce({
+      Graph: null,
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+      getInterrupt: jest.fn(() => undefined),
+    });
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: {
+          endpoints: {
+            [EModelEndpoint.agents]: {
+              toolApproval: { enabled: true, mode: 'bypass' },
+            },
+          },
+        },
+        _isScheduledFire: true,
+        _resumableStreamId: 'scheduled-request-scoped-hook',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+        tools: [{ name: 'read_file' }],
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'scheduled-request-scoped-hook';
+    client.checkpointNamespace = 'scheduled-request-scoped-generation';
+    client.responseMessageId = 'scheduled-request-scoped-response';
+    client.parentMessageId = 'scheduled-request-scoped-parent';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await expect(client.chatCompletion({ payload: [] })).resolves.toBeUndefined();
+    expect(mockCreateRun.mock.calls.at(-1)?.[0]?.resolvedToolApprovalHooks).toEqual([]);
+  });
+
+  it('admits deployment PreToolUse hooks as pause-capable for scheduled runs', async () => {
+    mockIsHITLEnabled.mockReturnValue(true);
+    const previousSource = getPluginHookSource();
+    setPluginHookSource({
+      hasHooks: () => true,
+      hasToolApprovalHooks: () => true,
+      register: () => 1,
+    });
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: {
+          endpoints: {
+            [EModelEndpoint.agents]: {
+              toolApproval: { enabled: true, mode: 'bypass' },
+            },
+          },
+        },
+        _isScheduledFire: true,
+        _resumableStreamId: 'scheduled-deployment-hook',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        tools: [{ name: 'write_file' }],
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'scheduled-deployment-hook';
+    client.responseMessageId = 'scheduled-deployment-response';
+    client.parentMessageId = 'scheduled-deployment-parent';
+
+    try {
+      await expect(client.chatCompletion({ payload: [] })).rejects.toMatchObject({
+        code: 'SCHEDULED_HITL_REQUIRES_SHARED_STORE',
+      });
+    } finally {
+      setPluginHookSource(previousSource);
+    }
   });
 
   it('overlaps run creation with checkpoint pruning and joins both before stream processing', async () => {
@@ -853,7 +1285,9 @@ describe('AgentClient - startup telemetry', () => {
       req: {
         user: { id: 'user-123' },
         body: {},
-        config: { endpoints: { [EModelEndpoint.agents]: { toolApproval: {} } } },
+        config: {
+          endpoints: { [EModelEndpoint.agents]: { toolApproval: { enabled: true } } },
+        },
         _resumableStreamId: 'conversation-123',
       },
       res: {},
@@ -863,6 +1297,7 @@ describe('AgentClient - startup telemetry', () => {
         provider: EModelEndpoint.openAI,
         model_parameters: { model: 'gpt-4' },
         hide_sequential_outputs: false,
+        tools: [{ name: 'write_file' }],
       },
       endpointTokenConfig: {},
       eventHandlers: {},
@@ -992,6 +1427,84 @@ describe('AgentClient - startup telemetry', () => {
     );
   });
 
+  it('rehydrates a warm event actor from its fork and injects only the new event message', async () => {
+    jest.clearAllMocks();
+    const history = { _getType: () => 'human', content: 'old turn' };
+    const currentEvent = { _getType: () => 'human', content: 'new event' };
+    mockFormatAgentMessages.mockReturnValueOnce({
+      messages: [history, currentEvent],
+      indexTokenCountMap: { 0: 11, 1: 22 },
+      summary: { text: 'summary of earlier turns', tokenCount: 40 },
+      boundaryTokenAdjustment: undefined,
+    });
+    const processStream = jest.fn().mockResolvedValue();
+    mockCreateRun.mockResolvedValue({
+      Graph: null,
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-123',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-123';
+    client.responseMessageId = 'response-123';
+    client.parentMessageId = 'parent-123';
+    client.checkpointNamespace = 'event-actor/fork';
+    client.eventActorCheckpointId = 'checkpoint-base';
+    client.eventActorInvocationId = 'event-2';
+    client.eventActorContinuation = 'warm';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] });
+
+    expect(mockCreateRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: [history, currentEvent],
+        eventActorCheckpointing: true,
+        /** The DB-derived token map is positional over full history, which a
+         * checkpoint-restored graph state no longer matches. It must be blank
+         * so the pruner recounts against the messages actually in state. The
+         * cross-run summary stays: it summarizes pre-boundary turns that were
+         * excluded from the history the committed checkpoint was built from. */
+        indexTokenCountMap: {},
+        initialSummary: { text: 'summary of earlier turns', tokenCount: 40 },
+      }),
+    );
+    expect(processStream).toHaveBeenCalledWith(
+      { messages: [currentEvent] },
+      expect.objectContaining({
+        configurable: expect.objectContaining({
+          thread_id: 'conversation-123',
+          checkpoint_id: 'checkpoint-base',
+          __librechat_checkpoint_ns: 'event-actor/fork',
+          __librechat_event_actor_invocation_id: 'event-2',
+          event_actor_invocation_id: 'event-2',
+          event_actor_depth: 1,
+        }),
+      }),
+      expect.anything(),
+    );
+    expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+  });
+
   it('does not expose or process a fresh graph when strict checkpoint pruning fails', async () => {
     jest.clearAllMocks();
     const checkpointGeneration = {
@@ -1016,7 +1529,9 @@ describe('AgentClient - startup telemetry', () => {
       req: {
         user: { id: 'user-123' },
         body: {},
-        config: { endpoints: { [EModelEndpoint.agents]: { toolApproval: {} } } },
+        config: {
+          endpoints: { [EModelEndpoint.agents]: { toolApproval: { enabled: true } } },
+        },
         _resumableStreamId: 'conversation-123',
       },
       res: {},
@@ -1026,6 +1541,7 @@ describe('AgentClient - startup telemetry', () => {
         provider: EModelEndpoint.openAI,
         model_parameters: { model: 'gpt-4' },
         hide_sequential_outputs: false,
+        tools: [{ name: 'write_file' }],
       },
       endpointTokenConfig: {},
       eventHandlers: {},
@@ -1090,7 +1606,9 @@ describe('AgentClient - startup telemetry', () => {
       req: {
         user: { id: 'user-123' },
         body: {},
-        config: { endpoints: { [EModelEndpoint.agents]: { toolApproval: {} } } },
+        config: {
+          endpoints: { [EModelEndpoint.agents]: { toolApproval: { enabled: true } } },
+        },
         _resumableStreamId: 'conversation-123',
       },
       res: {},
@@ -1100,6 +1618,7 @@ describe('AgentClient - startup telemetry', () => {
         provider: EModelEndpoint.openAI,
         model_parameters: { model: 'gpt-4' },
         hide_sequential_outputs: false,
+        tools: [{ name: 'write_file' }],
       },
       endpointTokenConfig: {},
       eventHandlers: {},

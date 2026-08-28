@@ -415,6 +415,43 @@ describe('useFileHandling', () => {
       }
     });
 
+    it('validates a replacement without counting the source attachment', async () => {
+      mockFileConfig = mergeFileConfig({
+        endpoints: { default: { fileLimit: 1, totalSizeLimit: 7 } },
+      });
+      const source = makeSizedFile('original.txt', 'text/plain', 4 * megabyte);
+      const replacement = makeSizedFile('replacement.txt', 'text/plain', 4 * megabyte);
+      const sharedState = {
+        files: new Map([
+          [
+            'source-file',
+            {
+              file_id: 'source-file',
+              file: source,
+              filename: source.name,
+              type: source.type,
+              size: source.size,
+              progress: 1,
+            },
+          ],
+        ]),
+        setFiles: jest.fn(),
+        setFilesLoading: mockSetFilesLoading,
+      };
+      const { useFileHandlingNoChatContext } = await import('../useFileHandling');
+      const menu = renderHook(() => useFileHandlingNoChatContext(undefined, sharedState));
+
+      let accepted = false;
+      await act(async () => {
+        accepted = await menu.result.current.handleFiles([replacement], undefined, {
+          replacesFileId: 'source-file',
+        });
+      });
+
+      expect(accepted).toBe(true);
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+    });
+
     it('uploads the selected file when the input is reset before processing starts', async () => {
       const selectedFile = makeSizedFile('notes.txt', 'text/plain', 1024);
       /** Mirrors the live `FileList` an input clears in place when its value is reset */

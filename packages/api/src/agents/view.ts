@@ -6,6 +6,7 @@ import type {
   SubagentControlReceipt,
   SubagentThreadMessage,
   SubagentThreadStatus,
+  SubagentThreadTurn,
   SubagentThreadView,
 } from 'librechat-data-provider';
 import type {
@@ -17,7 +18,12 @@ import type {
 } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
-import { projectSubagentActivity, SUBAGENT_ACTIVITY_LIMITS } from './activity';
+import {
+  projectPersistedMessageActivity,
+  projectPersistedMessageActivityJson,
+  projectSubagentActivity,
+  SUBAGENT_ACTIVITY_LIMITS,
+} from './activity';
 
 const MAX_THREAD_MESSAGES = 50;
 const MAX_MESSAGE_TEXT_BYTES = 32 * 1024;
@@ -25,7 +31,7 @@ const MAX_MESSAGE_TEXT_BYTES = 32 * 1024;
 // keep the storage projection at or below the public byte ceiling.
 const MAX_MESSAGE_TEXT_PROJECTION_CODE_POINTS = Math.floor(MAX_MESSAGE_TEXT_BYTES / 4);
 const MAX_RESPONSE_TEXT_BYTES = 128 * 1024;
-const MAX_RESPONSE_BYTES = 160 * 1024;
+const MAX_RESPONSE_BYTES = 256 * 1024;
 const MAX_PUBLIC_ID_BYTES = 512;
 const MAX_TITLE_BYTES = 1024;
 const MAX_PARENT_CHILDREN = 64;
@@ -48,6 +54,13 @@ type ParentSubagentIndexDependencies = Pick<
 type SubagentThreadViewParams = {
   parentConversationId?: string;
   threadId?: string;
+};
+
+const validTaskMessageId = (value: unknown): value is string => {
+  if (typeof value !== 'string' || Buffer.byteLength(value, 'utf8') > MAX_PUBLIC_ID_BYTES) {
+    return false;
+  }
+  return taskIdFromMessageId(value) != null;
 };
 
 const validConversationId = (value: string | undefined): value is string =>
@@ -97,8 +110,9 @@ const truncateUtf8 = (
 const publicMessage = (
   message: SubagentThreadViewMessageRecord,
   byteLimit: number,
+  redactText = false,
 ): { message: SubagentThreadMessage; bytes: number } => {
-  const text = message.text ?? '';
+  const text = redactText ? '' : (message.text ?? '');
   const projected = truncateUtf8(text, Math.min(MAX_MESSAGE_TEXT_BYTES, byteLimit));
   return {
     message: {
@@ -163,7 +177,12 @@ const publicControlReceipts = (
           : {}),
       };
     });
-  return { receipts: retained, truncated: retained.length < visible.length };
+  return {
+    receipts: retained,
+    truncated:
+      (input?.subagentTask as { controlReceiptsProjectionTruncated?: boolean } | null | undefined)
+        ?.controlReceiptsProjectionTruncated === true || retained.length < visible.length,
+  };
 };
 
 const publicStatus = (
@@ -175,11 +194,9 @@ const publicStatus = (
     activeLeaseTaskId != null &&
     (requestedTaskId == null || requestedTaskId === activeLeaseTaskId)
   ) {
-    const activeTaskMessage = messages.find(
-      (message) =>
-        message.messageId === `${activeLeaseTaskId}:user` ||
-        message.messageId === `${activeLeaseTaskId}:assistant`,
-    );
+    const activeTaskMessage =
+      messages.find((message) => message.messageId === `${activeLeaseTaskId}:assistant`) ??
+      messages.find((message) => message.messageId === `${activeLeaseTaskId}:user`);
     if (
       activeTaskMessage?.subagentTask?.status == null ||
       activeTaskMessage.subagentTask.status === 'running'
@@ -188,9 +205,11 @@ const publicStatus = (
     }
     return publicStatus([activeTaskMessage], undefined);
   }
-  const message = messages.find(
+  const taskMessages = messages.filter(
     (candidate) => requestedTaskId == null || candidate.messageId.startsWith(`${requestedTaskId}:`),
   );
+  const message =
+    taskMessages.find((candidate) => candidate.messageId.endsWith(':assistant')) ?? taskMessages[0];
   let persistedStatus = message?.subagentTask?.status;
   if (persistedStatus == null && message != null) {
     if (message.isCreatedByUser) {
@@ -226,6 +245,146 @@ const taskIdFromMessageId = (messageId: string): string | undefined => {
   if (!messageId.endsWith(suffix)) return undefined;
   const taskId = messageId.slice(0, -suffix.length);
   return validTaskId(taskId) ? taskId : undefined;
+};
+
+const canonicalThreadBranch = (
+  newestFirst: SubagentThreadViewMessageRecord[],
+): SubagentThreadViewMessageRecord[] => {
+  const byId = new Map(newestFirst.map((message) => [message.messageId, message]));
+  const branch: SubagentThreadViewMessageRecord[] = [];
+  const visited = new Set<string>();
+  let current: SubagentThreadViewMessageRecord | undefined = newestFirst[0];
+  while (current != null && !visited.has(current.messageId)) {
+    branch.push(current);
+    visited.add(current.messageId);
+    current = current.parentMessageId == null ? undefined : byId.get(current.parentMessageId);
+  }
+  return branch.reverse();
+};
+
+const projectedTaskActivity = (
+  assistant: SubagentThreadViewMessageRecord | undefined,
+  input: SubagentThreadViewMessageRecord | undefined,
+  taskId: string,
+): ReturnType<typeof projectSubagentActivity> => {
+  if (assistant?.subagentActivityProjectionJson != null) {
+    return projectPersistedMessageActivityJson(
+      assistant.subagentActivityProjectionJson,
+      assistant.subagentActivityProjectionTruncated === true,
+    );
+  }
+  if (assistant?.subagentTranscriptProjectionTruncated === true) {
+    return { activity: [], truncated: true };
+  }
+  const transcript = assistant?.subagentTranscript;
+  if (transcript == null) {
+    return projectPersistedMessageActivity(
+      assistant?.subagentActivity,
+      assistant?.subagentActivityProjectionTruncated === true,
+    );
+  }
+  if (transcript.taskId !== taskId) return { activity: [], truncated: true };
+  return projectSubagentActivity(
+    transcript.messagesJson,
+    transcript.mode,
+    input?.textProjectionTruncated === true ? undefined : input?.text,
+  );
+};
+
+const publicThreadTurns = (
+  branch: SubagentThreadViewMessageRecord[],
+  publicMessagesById: Map<string, SubagentThreadMessage>,
+  activeLeaseTaskId: string | undefined,
+  eventThread: boolean,
+): SubagentThreadTurn[] => {
+  const records = new Map<
+    string,
+    {
+      taskId: string;
+      input?: SubagentThreadViewMessageRecord;
+      assistant?: SubagentThreadViewMessageRecord;
+    }
+  >();
+  const taskOrder: string[] = [];
+  for (const message of branch) {
+    const taskId = taskIdFromMessageId(message.messageId);
+    if (taskId == null) continue;
+    let record = records.get(taskId);
+    if (record == null) {
+      record = { taskId };
+      records.set(taskId, record);
+      taskOrder.push(taskId);
+    }
+    if (message.messageId.endsWith(':user')) record.input = message;
+    if (message.messageId.endsWith(':assistant')) record.assistant = message;
+  }
+
+  return taskOrder.flatMap((taskId): SubagentThreadTurn[] => {
+    const record = records.get(taskId);
+    if (record == null) return [];
+    const projected = projectedTaskActivity(record.assistant, record.input, taskId);
+    const input = record.input == null ? undefined : publicMessagesById.get(record.input.messageId);
+    const assistant =
+      record.assistant == null ? undefined : publicMessagesById.get(record.assistant.messageId);
+    const controls = publicControlReceipts(branch, taskId);
+    let triggerKind: SubagentThreadTurn['trigger']['kind'] = 'parent_continuation';
+    if (eventThread) triggerKind = 'external_event';
+    else if (
+      record.input != null &&
+      (record.input.parentMessageId == null ||
+        taskIdFromMessageId(record.input.parentMessageId) == null)
+    ) {
+      triggerKind = 'parent_dispatch';
+    }
+    return [
+      {
+        taskId,
+        trigger: {
+          kind: triggerKind,
+          summary: eventThread ? '' : (input?.text ?? ''),
+          ...(input?.createdAt == null ? {} : { createdAt: input.createdAt }),
+          ...(!eventThread && input?.textTruncated === true ? { summaryTruncated: true } : {}),
+          ...(eventThread &&
+          record.input?.subagentTriggerProjection?.version === 1 &&
+          isoDate(record.input.subagentTriggerProjection.occurredAt) != null
+            ? {
+                externalEvent: {
+                  eventType: truncateUtf8(
+                    record.input.subagentTriggerProjection.eventType,
+                    MAX_PUBLIC_ID_BYTES,
+                  ).text,
+                  sourceType: truncateUtf8(
+                    record.input.subagentTriggerProjection.sourceType,
+                    MAX_PUBLIC_ID_BYTES,
+                  ).text,
+                  occurredAt: isoDate(record.input.subagentTriggerProjection.occurredAt)!,
+                  ...(record.input.subagentTriggerProjection.expectedActionToolName == null
+                    ? {}
+                    : {
+                        expectedActionToolName: truncateUtf8(
+                          record.input.subagentTriggerProjection.expectedActionToolName,
+                          MAX_PUBLIC_ID_BYTES,
+                        ).text,
+                      }),
+                },
+              }
+            : {}),
+        },
+        status: publicStatus(
+          [record.assistant, record.input].filter(
+            (message): message is SubagentThreadViewMessageRecord => message != null,
+          ),
+          activeLeaseTaskId,
+          taskId,
+        ),
+        activity: projected.activity,
+        activityTruncated: projected.truncated,
+        controlReceipts: controls.receipts,
+        ...(controls.truncated ? { controlReceiptsTruncated: true } : {}),
+        messages: assistant == null ? [] : [assistant],
+      },
+    ];
+  });
 };
 
 const publicTaskStatus = (
@@ -410,12 +569,15 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
     const tenantId = req.user?.tenantId || undefined;
     const { parentConversationId, threadId } = req.params as SubagentThreadViewParams;
     const requestedTaskId = req.query?.taskId;
+    const historyCursor = req.query?.cursor;
     if (
       !userId ||
       !validConversationId(parentConversationId) ||
       !validConversationId(threadId) ||
       parentConversationId === threadId ||
-      (requestedTaskId != null && !validTaskId(requestedTaskId))
+      (requestedTaskId != null && !validTaskId(requestedTaskId)) ||
+      (historyCursor != null && !validTaskMessageId(historyCursor)) ||
+      (requestedTaskId != null && historyCursor != null)
     ) {
       notFound(res);
       return;
@@ -449,55 +611,106 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         conversationId: threadId,
         user: userId,
         ...(tenantId == null ? {} : { tenantId }),
+        ...(requestedTaskId == null ? {} : { selectedTaskId: requestedTaskId }),
+        ...(historyCursor == null ? {} : { beforeMessageId: historyCursor }),
         limit: MAX_THREAD_MESSAGES + 1,
         textCodePointLimit: MAX_MESSAGE_TEXT_PROJECTION_CODE_POINTS,
-        ...(requestedTaskId == null ? {} : { taskId: requestedTaskId }),
       });
 
-      const historyTruncated = messages.length > MAX_THREAD_MESSAGES;
-      const newestFirst = historyTruncated ? messages.slice(0, MAX_THREAD_MESSAGES) : messages;
+      let historyTruncated = messages.length > MAX_THREAD_MESSAGES;
+      const newestFirst = messages.slice(0, MAX_THREAD_MESSAGES);
+      const branch = canonicalThreadBranch(newestFirst);
+      /** A valid inclusive cursor returns at least its anchor. An empty cursor
+       * page means that the retained chain vanished between requests, so the
+       * public projection must expose the discontinuity instead of presenting
+       * the latest page as complete history. */
+      let historyUnavailable = historyCursor != null && messages.length === 0;
+      historyUnavailable ||= branch.length < newestFirst.length;
+      if (historyUnavailable) historyTruncated = true;
+      const branchRootParentId = branch[0]?.parentMessageId;
+      if (branchRootParentId != null && taskIdFromMessageId(branchRootParentId) != null) {
+        historyTruncated = true;
+      }
+      const nextCursor =
+        branchRootParentId != null && validTaskMessageId(branchRootParentId)
+          ? branchRootParentId
+          : undefined;
       const activeLeaseTaskId =
         child.subagentThreadLease != null && child.subagentThreadLease.expiresAt > now
           ? child.subagentThreadLease.taskId
           : undefined;
+      const eventThread = lineage.parentToolCallId.startsWith('event-binding:');
+      const selectedRecords =
+        requestedTaskId == null
+          ? []
+          : messages.filter(
+              (message) =>
+                message.messageId === `${requestedTaskId}:assistant` ||
+                message.messageId === `${requestedTaskId}:user`,
+            );
       const selectedMessage =
         requestedTaskId == null
           ? undefined
-          : newestFirst.find((message) => message.messageId === `${requestedTaskId}:assistant`);
-      const selectedTranscript = selectedMessage?.subagentTranscript;
+          : selectedRecords.find((message) => message.messageId === `${requestedTaskId}:assistant`);
       const selectedInput =
         requestedTaskId == null
           ? undefined
-          : newestFirst.find((message) => message.messageId === `${requestedTaskId}:user`);
-      let projectedActivity: ReturnType<typeof projectSubagentActivity> = {
-        activity: [],
-        truncated: false,
-      };
-      if (selectedMessage?.subagentTranscriptProjectionTruncated === true) {
-        projectedActivity = { activity: [], truncated: true };
-      } else if (selectedTranscript != null && selectedTranscript.taskId === requestedTaskId) {
-        projectedActivity = projectSubagentActivity(
-          selectedTranscript.messagesJson,
-          selectedTranscript.mode,
-          selectedInput?.textProjectionTruncated === true ? undefined : selectedInput?.text,
-        );
-      } else if (selectedTranscript != null) {
-        projectedActivity = { activity: [], truncated: true };
+          : selectedRecords.find((message) => message.messageId === `${requestedTaskId}:user`);
+      const projectedActivity =
+        requestedTaskId == null
+          ? { activity: [], truncated: false }
+          : projectedTaskActivity(selectedMessage, selectedInput, requestedTaskId);
+      const publicSource = [...branch];
+      const publicSourceIds = new Set(publicSource.map((message) => message.messageId));
+      for (const record of selectedRecords) {
+        if (!publicSourceIds.has(record.messageId)) publicSource.push(record);
       }
-      const projectedNewestFirst: SubagentThreadMessage[] = [];
-      let remainingTextBytes = MAX_RESPONSE_TEXT_BYTES;
-      for (const message of newestFirst) {
+      const selectedAssistantRecord = selectedRecords.find(
+        (message) => message.messageId === `${requestedTaskId}:assistant`,
+      );
+      const selectedAssistantProjection =
+        selectedAssistantRecord == null
+          ? undefined
+          : publicMessage(selectedAssistantRecord, MAX_MESSAGE_TEXT_BYTES);
+      const projectedById = new Map<string, SubagentThreadMessage>();
+      if (selectedAssistantProjection != null) {
+        projectedById.set(
+          selectedAssistantProjection.message.messageId,
+          selectedAssistantProjection.message,
+        );
+      }
+      let remainingTextBytes = MAX_RESPONSE_TEXT_BYTES - (selectedAssistantProjection?.bytes ?? 0);
+      for (const message of [...publicSource].reverse()) {
+        if (projectedById.has(message.messageId)) continue;
         if (remainingTextBytes === 0) {
           break;
         }
-        const projected = publicMessage(message, remainingTextBytes);
-        projectedNewestFirst.push(projected.message);
+        const projected = publicMessage(
+          message,
+          remainingTextBytes,
+          eventThread && message.isCreatedByUser,
+        );
+        projectedById.set(projected.message.messageId, projected.message);
         remainingTextBytes -= projected.bytes;
       }
       const projectedControls =
         requestedTaskId == null
           ? { receipts: [], truncated: false }
-          : publicControlReceipts(newestFirst, requestedTaskId);
+          : publicControlReceipts(selectedRecords, requestedTaskId);
+      const projectedMessages = publicSource.flatMap((message) => {
+        const projected = projectedById.get(message.messageId);
+        return projected == null ? [] : [projected];
+      });
+      if (projectedMessages.length < publicSource.length) historyUnavailable = true;
+      const projectedMessagesById = new Map(
+        projectedMessages.map((message) => [message.messageId, message]),
+      );
+      const turns = publicThreadTurns(
+        branch,
+        projectedMessagesById,
+        activeLeaseTaskId,
+        eventThread,
+      );
       const view: SubagentThreadView = {
         threadId,
         parentConversationId,
@@ -507,26 +720,57 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
           : `event-thread:${truncateUtf8(threadId, MAX_PUBLIC_ID_BYTES - 13).text}`,
         subagentType: truncateUtf8(lineage.subagentType, MAX_PUBLIC_ID_BYTES).text,
         subagentKind: lineage.subagentKind,
+        depth:
+          typeof lineage.depth === 'number' && Number.isFinite(lineage.depth)
+            ? Math.max(0, Math.min(1, lineage.depth))
+            : 1,
         ...(child.agent_id == null
           ? {}
           : { agentId: truncateUtf8(child.agent_id, MAX_PUBLIC_ID_BYTES).text }),
         title: truncateUtf8(child.title ?? `Subagent: ${lineage.subagentType}`, MAX_TITLE_BYTES)
           .text,
-        status: publicStatus(newestFirst, activeLeaseTaskId, requestedTaskId),
+        status: publicStatus(messages, activeLeaseTaskId, requestedTaskId),
         activity: projectedActivity.activity,
         activityTruncated: projectedActivity.truncated,
         controlReceipts: projectedControls.receipts,
         ...(projectedControls.truncated ? { controlReceiptsTruncated: true } : {}),
-        messages: projectedNewestFirst.reverse(),
-        historyTruncated: historyTruncated || projectedNewestFirst.length < newestFirst.length,
+        turns,
+        messages: projectedMessages,
+        historyTruncated: historyTruncated || projectedMessages.length < publicSource.length,
+        ...(historyUnavailable ? { historyUnavailable: true } : {}),
+        ...(nextCursor == null ? {} : { nextCursor }),
         ...(isoDate(child.updatedAt) == null ? {} : { updatedAt: isoDate(child.updatedAt) }),
       };
+      const selectedAssistantId =
+        requestedTaskId == null ? undefined : `${requestedTaskId}:assistant`;
       while (Buffer.byteLength(JSON.stringify(view), 'utf8') > MAX_RESPONSE_BYTES) {
-        if (view.messages.length === 0) {
-          throw new Error('Subagent thread projection exceeded its response limit');
+        if ((view.turns?.length ?? 0) > 1) {
+          const removedTurn = view.turns?.shift();
+          const removedTurnAnchor = [...branch]
+            .reverse()
+            .find(
+              (message) =>
+                removedTurn != null &&
+                taskIdFromMessageId(message.messageId) === removedTurn.taskId,
+            )?.messageId;
+          if (validTaskMessageId(removedTurnAnchor)) view.nextCursor = removedTurnAnchor;
+          view.historyTruncated = true;
+          continue;
         }
-        view.messages.shift();
-        view.historyTruncated = true;
+        const removableMessageIndex = view.messages.findIndex(
+          (message) => message.messageId !== selectedAssistantId,
+        );
+        if (removableMessageIndex >= 0) {
+          view.messages.splice(removableMessageIndex, 1);
+          view.historyTruncated = true;
+          continue;
+        }
+        if (view.turns?.length === 1) {
+          view.turns = [];
+          view.historyTruncated = true;
+          continue;
+        }
+        throw new Error('Subagent thread projection exceeded its response limit');
       }
       res.status(200).json(view);
     } catch (error) {

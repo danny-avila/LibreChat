@@ -122,6 +122,46 @@ describe('credentials', () => {
     expect(state.generated).toEqual(['CREDS_KEY', 'CREDS_IV']);
   });
 
+  it.each([
+    ['JWT_SECRET', '16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef'],
+    ['JWT_REFRESH_SECRET', 'eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418'],
+  ] as const)('rejects retired default %s values', (name, value) => {
+    process.env[name] = value;
+
+    expect(() => bootstrapCredentials()).toThrow(
+      `[credentials] ${name} uses a retired default value. Configure a unique replacement before starting LibreChat.`,
+    );
+  });
+
+  it.each([
+    ['JWT_SECRET', '16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef'],
+    ['JWT_REFRESH_SECRET', 'eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418'],
+  ] as const)('rejects retired default %s values from temporary credentials', (name, value) => {
+    fs.writeFileSync(tempFile, `${name}=${value}\n`);
+
+    expect(() => bootstrapCredentials()).toThrow(
+      `[credentials] ${name} uses a retired default value. Configure a unique replacement before starting LibreChat.`,
+    );
+  });
+
+  it('rejects a retired default adopted from a concurrent temporary credential write', () => {
+    fs.writeFileSync(tempFile, `CREDS_KEY=${'a'.repeat(64)}\nCREDS_IV=${'b'.repeat(32)}\n`);
+    fs.writeFileSync(
+      `${tempFile}.lock`,
+      [
+        `CREDS_KEY=${'a'.repeat(64)}`,
+        `CREDS_IV=${'b'.repeat(32)}`,
+        'JWT_SECRET=16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef',
+        `JWT_REFRESH_SECRET=${'c'.repeat(64)}`,
+      ].join('\n'),
+      { mode: 0o600 },
+    );
+
+    expect(() => bootstrapCredentials()).toThrow(
+      '[credentials] JWT_SECRET uses a retired default value. Configure a unique replacement before starting LibreChat.',
+    );
+  });
+
   it('does not overwrite an explicitly selected environment file', () => {
     const environmentFile = path.join(tempDirectory, '.env');
     process.env.LIBRECHAT_TEMP_CREDENTIALS_PATH = environmentFile;

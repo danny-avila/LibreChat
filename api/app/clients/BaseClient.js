@@ -490,6 +490,9 @@ class BaseClient {
       sender: 'User',
       text,
       isCreatedByUser: true,
+      ...(this.options?.req?._agentEventTriggerProjection != null && {
+        subagentTriggerProjection: this.options.req._agentEventTriggerProjection,
+      }),
     };
   }
 

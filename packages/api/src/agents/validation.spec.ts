@@ -1,10 +1,19 @@
 import {
+  EModelEndpoint,
   MAX_SUBAGENTS,
   setMaxSubagents,
   MAX_SUBAGENT_GRAPH_NODES,
   MAX_GRAPH_SUBAGENT_MEMBERS,
+  Providers,
 } from 'librechat-data-provider';
-import { agentCreateSchema, agentUpdateSchema, agentSubagentsSchema } from './validation';
+import type { Agent } from 'librechat-data-provider';
+import type { Request, Response } from 'express';
+import {
+  agentCreateSchema,
+  agentUpdateSchema,
+  agentSubagentsSchema,
+  validateAgentModel,
+} from './validation';
 
 describe('agentSubagentsSchema', () => {
   const graph = {
@@ -341,5 +350,58 @@ describe('agentUpdateSchema with subagents', () => {
     expect(result.tool_resources).toEqual({
       execute_code: { file_ids: ['kept'] },
     });
+  });
+});
+
+describe('validateAgentModel', () => {
+  const request = {} as Request<unknown, unknown, unknown>;
+  const response = {} as Response;
+  const logViolation = jest.fn().mockResolvedValue(undefined);
+
+  beforeEach(() => {
+    logViolation.mockClear();
+  });
+
+  it('uses the Google catalog for a Vertex AI agent', async () => {
+    const result = await validateAgentModel({
+      req: request,
+      res: response,
+      agent: { provider: Providers.VERTEXAI, model: 'gemini-3.7-flash' } as Agent,
+      modelsConfig: { [EModelEndpoint.google]: ['gemini-3.7-flash'] },
+      logViolation,
+    });
+
+    expect(result).toEqual({ isValid: true });
+    expect(logViolation).not.toHaveBeenCalled();
+  });
+
+  it('uses an exact Vertex AI catalog when configured', async () => {
+    const result = await validateAgentModel({
+      req: request,
+      res: response,
+      agent: { provider: Providers.VERTEXAI, model: 'custom-vertex-model' } as Agent,
+      modelsConfig: {
+        [EModelEndpoint.google]: ['gemini-3.7-flash'],
+        [Providers.VERTEXAI]: ['custom-vertex-model'],
+      },
+      logViolation,
+    });
+
+    expect(result).toEqual({ isValid: true });
+    expect(logViolation).not.toHaveBeenCalled();
+  });
+
+  it('rejects a model absent from the shared Google catalog', async () => {
+    const result = await validateAgentModel({
+      req: request,
+      res: response,
+      agent: { provider: Providers.VERTEXAI, model: 'gemini-not-available' } as Agent,
+      modelsConfig: { [EModelEndpoint.google]: ['gemini-3.7-flash'] },
+      logViolation,
+    });
+
+    expect(result.isValid).toBe(false);
+    expect(result.error?.message).toContain('illegal_model_request');
+    expect(logViolation).toHaveBeenCalledTimes(1);
   });
 });

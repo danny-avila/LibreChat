@@ -287,6 +287,30 @@ function getSteerUserSubmittedPaths(content: unknown): string[] {
  * being materialized merely to produce a 64 KiB public activity response.
  */
 export const SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT: number = 256 * 1024;
+const SUBAGENT_ACTIVITY_PROJECTION_SOURCE_BYTE_LIMIT = 64 * 1024;
+
+/**
+ * Maximum activity sources materialized for one child-view poll. New writers
+ * supply at most four 64 KiB public projections; legacy rows fall back to at
+ * most four 256 KiB private transcripts during a rolling deployment.
+ */
+export const SUBAGENT_TRANSCRIPT_PAGE_LIMIT: number = 4;
+const SUBAGENT_ACTIVITY_SOURCE_CANDIDATE_LIMIT = SUBAGENT_TRANSCRIPT_PAGE_LIMIT * 2;
+
+/**
+ * Ordinary persisted message content is the authoritative refresh source when
+ * an execution did not write a private subagent transcript. Project only the
+ * visible activity vocabulary and bound it before MongoDB returns the row.
+ */
+export const SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT: number = 16;
+const SUBAGENT_MESSAGE_ACTIVITY_TEXT_CODE_POINT_LIMIT = 2048;
+const SUBAGENT_MESSAGE_ACTIVITY_TOOL_INPUT_CODE_POINT_LIMIT = 512;
+const SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT = 1024;
+const SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT = 128;
+const SUBAGENT_MESSAGE_ACTIVITY_LABEL_CODE_POINT_LIMIT = 512;
+const SUBAGENT_MESSAGE_ACTIVITY_LABEL_IDS_LIMIT = 8;
+const SUBAGENT_VIEW_CONTROL_RECEIPT_LIMIT = 32;
+const SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT = 128;
 
 /**
  * Exclusion projection for message reads that feed the chat client (the
@@ -342,10 +366,22 @@ export type SubagentThreadViewMessageRecord = Pick<
   | 'error'
   | 'unfinished'
   | 'subagentTranscript'
-  | 'subagentTask'
+  | 'subagentTriggerProjection'
 > & {
   textProjectionTruncated?: boolean;
   subagentTranscriptProjectionTruncated?: boolean;
+  /** Storage-bounded visible content; validated into the public activity type by the API. */
+  subagentActivity?: unknown[];
+  subagentActivityProjectionJson?: string;
+  subagentActivityProjectionTruncated?: boolean;
+  /** Storage-bounded task state; private replay and execution fields never cross this seam. */
+  subagentTask?: {
+    status?: NonNullable<IMessage['subagentTask']>['status'];
+    controlReceipts?: Array<
+      Omit<StoredSubagentControlReceipt, 'fingerprint'> & { fingerprint?: never }
+    >;
+    controlReceiptsProjectionTruncated?: boolean;
+  };
 };
 
 export type ParentSubagentTaskRecord = {
@@ -463,9 +499,10 @@ export interface MessageMethods {
     user: string;
     conversationId: string;
     tenantId?: string;
+    selectedTaskId?: string;
+    beforeMessageId?: string;
     limit: number;
     textCodePointLimit: number;
-    taskId?: string;
   }): Promise<SubagentThreadViewMessageRecord[]>;
   listSubagentTasksForThreads(input: {
     user: string;
@@ -1426,14 +1463,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     user: string;
     conversationId: string;
     tenantId?: string;
+    selectedTaskId?: string;
+    beforeMessageId?: string;
     limit: number;
     textCodePointLimit: number;
-    taskId?: string;
   }): Promise<SubagentThreadViewMessageRecord[]> {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const selectedAssistantMessageId =
-        input.taskId == null ? undefined : `${input.taskId}:assistant`;
       const transcriptJsonBytes = {
         $strLenBytes: {
           $convert: {
@@ -1447,105 +1483,615 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       const transcriptIsString = {
         $eq: [{ $type: '$subagentTranscript.messagesJson' }, 'string'],
       };
-      return await Message.aggregate<SubagentThreadViewMessageRecord>([
-        {
-          $match: {
-            user: input.user,
-            conversationId: input.conversationId,
-            ...(input.tenantId == null
-              ? { tenantId: { $exists: false } }
-              : { tenantId: input.tenantId }),
-            ...(input.taskId == null
-              ? {}
-              : {
-                  messageId: {
-                    $in: [`${input.taskId}:user`, `${input.taskId}:assistant`],
-                  },
-                }),
+      const activityProjectionJsonBytes = {
+        $strLenBytes: {
+          $convert: {
+            input: '$subagentActivityProjection.activityJson',
+            to: 'string',
+            onError: '',
+            onNull: '',
           },
         },
-        { $sort: { createdAt: -1, _id: -1 } },
-        { $limit: input.limit },
-        ...(input.taskId == null
-          ? []
-          : [
-              {
-                $addFields: {
-                  _subagentTranscriptSourceBytes: transcriptJsonBytes,
-                  _subagentTranscriptSourceIsString: transcriptIsString,
+      };
+      const activityProjectionIsString = {
+        $eq: [{ $type: '$subagentActivityProjection.activityJson' }, 'string'],
+      };
+      const activityProjectionAvailable = {
+        $and: [
+          { $eq: ['$subagentActivityProjection.version', 1] },
+          '$_subagentActivityProjectionSourceIsString',
+          {
+            $lte: [
+              '$_subagentActivityProjectionSourceBytes',
+              SUBAGENT_ACTIVITY_PROJECTION_SOURCE_BYTE_LIMIT,
+            ],
+          },
+        ],
+      };
+      const transcriptAvailable = {
+        $and: [
+          '$_subagentTranscriptSourceIsString',
+          {
+            $lte: ['$_subagentTranscriptSourceBytes', SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT],
+          },
+        ],
+      };
+      const boundedString = (path: string, codePointLimit: number) => ({
+        $substrCP: [
+          {
+            $cond: [{ $eq: [{ $type: path }, 'string'] }, path, ''],
+          },
+          0,
+          codePointLimit,
+        ],
+      });
+      const stringProjectionTruncated = (path: string, codePointLimit: number) => ({
+        $gt: [
+          {
+            $strLenCP: {
+              $cond: [{ $eq: [{ $type: path }, 'string'] }, path, ''],
+            },
+          },
+          codePointLimit,
+        ],
+      });
+      const boundedStringArray = (path: string) => ({
+        $map: {
+          input: {
+            $slice: [
+              { $cond: [{ $isArray: path }, path, []] },
+              SUBAGENT_MESSAGE_ACTIVITY_LABEL_IDS_LIMIT,
+            ],
+          },
+          as: 'value',
+          in: boundedString('$$value', SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT),
+        },
+      });
+      const boundedControlReceipt = {
+        invocationId: boundedString(
+          '$$receipt.invocationId',
+          SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT,
+        ),
+        controlId: {
+          $cond: [
+            { $eq: [{ $type: '$$receipt.controlId' }, 'string'] },
+            boundedString('$$receipt.controlId', SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT),
+            '$$REMOVE',
+          ],
+        },
+        action: '$$receipt.action',
+        status: '$$receipt.status',
+        createdAt: '$$receipt.createdAt',
+        updatedAt: '$$receipt.updatedAt',
+        boundary: '$$receipt.boundary',
+        reason: {
+          $cond: [
+            { $eq: [{ $type: '$$receipt.reason' }, 'string'] },
+            boundedString('$$receipt.reason', SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT),
+            '$$REMOVE',
+          ],
+        },
+        message: {
+          $cond: [
+            { $eq: [{ $type: '$$receipt.message' }, 'string'] },
+            boundedString('$$receipt.message', SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT),
+            '$$REMOVE',
+          ],
+        },
+        messageTruncated: {
+          $or: [
+            { $eq: ['$$receipt.messageTruncated', true] },
+            stringProjectionTruncated(
+              '$$receipt.message',
+              SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT,
+            ),
+          ],
+        },
+      };
+      const boundedSubagentTask = {
+        $cond: [
+          { $eq: [{ $type: '$subagentTask' }, 'object'] },
+          {
+            status: '$subagentTask.status',
+            controlReceipts: {
+              $let: {
+                vars: {
+                  visible: {
+                    $filter: {
+                      input: {
+                        $cond: [
+                          { $isArray: '$subagentTask.controlReceipts' },
+                          '$subagentTask.controlReceipts',
+                          [],
+                        ],
+                      },
+                      as: 'receipt',
+                      cond: { $ne: ['$$receipt.status', 'reserved'] },
+                    },
+                  },
+                },
+                in: {
+                  $let: {
+                    vars: {
+                      accepted: {
+                        $slice: [
+                          {
+                            $filter: {
+                              input: '$$visible',
+                              as: 'receipt',
+                              cond: { $eq: ['$$receipt.status', 'accepted'] },
+                            },
+                          },
+                          SUBAGENT_VIEW_CONTROL_RECEIPT_LIMIT,
+                        ],
+                      },
+                      terminal: {
+                        $filter: {
+                          input: '$$visible',
+                          as: 'receipt',
+                          cond: { $ne: ['$$receipt.status', 'accepted'] },
+                        },
+                      },
+                    },
+                    in: {
+                      $map: {
+                        input: {
+                          $concatArrays: [
+                            '$$accepted',
+                            {
+                              $let: {
+                                vars: {
+                                  allowance: {
+                                    $subtract: [
+                                      SUBAGENT_VIEW_CONTROL_RECEIPT_LIMIT,
+                                      { $size: '$$accepted' },
+                                    ],
+                                  },
+                                },
+                                in: {
+                                  $cond: [
+                                    { $gt: ['$$allowance', 0] },
+                                    { $slice: ['$$terminal', { $multiply: [-1, '$$allowance'] }] },
+                                    [],
+                                  ],
+                                },
+                              },
+                            },
+                          ],
+                        },
+                        as: 'receipt',
+                        in: boundedControlReceipt,
+                      },
+                    },
+                  },
                 },
               },
-            ]),
+            },
+            controlReceiptsProjectionTruncated: {
+              $gt: [
+                {
+                  $size: {
+                    $filter: {
+                      input: {
+                        $cond: [
+                          { $isArray: '$subagentTask.controlReceipts' },
+                          '$subagentTask.controlReceipts',
+                          [],
+                        ],
+                      },
+                      as: 'receipt',
+                      cond: { $ne: ['$$receipt.status', 'reserved'] },
+                    },
+                  },
+                },
+                SUBAGENT_VIEW_CONTROL_RECEIPT_LIMIT,
+              ],
+            },
+          },
+          '$$REMOVE',
+        ],
+      };
+      const boundedActivityContent = {
+        $filter: {
+          input: {
+            $map: {
+              input: {
+                $slice: [
+                  { $cond: [{ $isArray: '$content' }, '$content', []] },
+                  -SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
+                ],
+              },
+              as: 'part',
+              in: {
+                $switch: {
+                  branches: [
+                    {
+                      case: { $eq: ['$$part.type', 'text'] },
+                      then: {
+                        type: 'writing',
+                        text: boundedString(
+                          '$$part.text',
+                          SUBAGENT_MESSAGE_ACTIVITY_TEXT_CODE_POINT_LIMIT,
+                        ),
+                        textTruncated: stringProjectionTruncated(
+                          '$$part.text',
+                          SUBAGENT_MESSAGE_ACTIVITY_TEXT_CODE_POINT_LIMIT,
+                        ),
+                      },
+                    },
+                    {
+                      case: { $in: ['$$part.type', ['think', 'reasoning']] },
+                      then: { type: 'reasoning' },
+                    },
+                    {
+                      case: { $eq: ['$$part.type', 'activity_label'] },
+                      then: {
+                        type: 'activity_label',
+                        label: boundedString(
+                          '$$part.activity_label',
+                          SUBAGENT_MESSAGE_ACTIVITY_LABEL_CODE_POINT_LIMIT,
+                        ),
+                        labelType: '$$part.activity_label_type',
+                        toolCallIds: boundedStringArray('$$part.tool_call_ids'),
+                        activityStartIndex: '$$part.activity_start_index',
+                        activityEndIndex: '$$part.activity_end_index',
+                        activityCount: '$$part.activity_count',
+                        agentIds: boundedStringArray('$$part.agent_ids'),
+                        status: '$$part.status',
+                        pending: '$$part.pending',
+                        labelTruncated: {
+                          $or: [
+                            stringProjectionTruncated(
+                              '$$part.activity_label',
+                              SUBAGENT_MESSAGE_ACTIVITY_LABEL_CODE_POINT_LIMIT,
+                            ),
+                            {
+                              $gt: [
+                                {
+                                  $size: {
+                                    $cond: [
+                                      { $isArray: '$$part.tool_call_ids' },
+                                      '$$part.tool_call_ids',
+                                      [],
+                                    ],
+                                  },
+                                },
+                                SUBAGENT_MESSAGE_ACTIVITY_LABEL_IDS_LIMIT,
+                              ],
+                            },
+                            {
+                              $gt: [
+                                {
+                                  $size: {
+                                    $cond: [
+                                      { $isArray: '$$part.agent_ids' },
+                                      '$$part.agent_ids',
+                                      [],
+                                    ],
+                                  },
+                                },
+                                SUBAGENT_MESSAGE_ACTIVITY_LABEL_IDS_LIMIT,
+                              ],
+                            },
+                          ],
+                        },
+                      },
+                    },
+                    {
+                      case: { $eq: ['$$part.type', 'tool_call'] },
+                      then: {
+                        type: 'tool',
+                        toolCallId: boundedString(
+                          '$$part.tool_call.id',
+                          SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT,
+                        ),
+                        name: boundedString(
+                          '$$part.tool_call.name',
+                          SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT,
+                        ),
+                        input: boundedString(
+                          '$$part.tool_call.args',
+                          SUBAGENT_MESSAGE_ACTIVITY_TOOL_INPUT_CODE_POINT_LIMIT,
+                        ),
+                        output: boundedString(
+                          '$$part.tool_call.output',
+                          SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT,
+                        ),
+                        progress: '$$part.tool_call.progress',
+                        runStepStatus: '$$part.tool_call.runStepStatus',
+                        inputValidationError: '$$part.tool_call.inputValidationError',
+                        inputTruncated: stringProjectionTruncated(
+                          '$$part.tool_call.args',
+                          SUBAGENT_MESSAGE_ACTIVITY_TOOL_INPUT_CODE_POINT_LIMIT,
+                        ),
+                        outputTruncated: stringProjectionTruncated(
+                          '$$part.tool_call.output',
+                          SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT,
+                        ),
+                      },
+                    },
+                  ],
+                  default: null,
+                },
+              },
+            },
+          },
+          as: 'activity',
+          cond: { $ne: ['$$activity', null] },
+        },
+      };
+      type ActivitySourceProjection = Pick<
+        SubagentThreadViewMessageRecord,
+        | 'messageId'
+        | 'subagentTranscript'
+        | 'subagentActivityProjectionJson'
+        | 'subagentActivityProjectionTruncated'
+      >;
+      const boundedMessageProjection = {
+        _id: 0,
+        messageId: 1,
+        parentMessageId: 1,
+        isCreatedByUser: 1,
+        text: {
+          $substrCP: [{ $ifNull: ['$text', ''] }, 0, input.textCodePointLimit],
+        },
+        textProjectionTruncated: {
+          $gt: [{ $strLenCP: { $ifNull: ['$text', ''] } }, input.textCodePointLimit],
+        },
+        createdAt: 1,
+        error: 1,
+        unfinished: 1,
+        subagentTranscriptProjectionTruncated: {
+          $cond: [
+            { $ne: [{ $type: '$subagentTranscript.messagesJson' }, 'missing'] },
+            true,
+            '$$REMOVE',
+          ],
+        },
+        subagentActivity: boundedActivityContent,
+        subagentActivityProjectionTruncated: {
+          $gt: [
+            {
+              $size: { $cond: [{ $isArray: '$content' }, '$content', []] },
+            },
+            SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
+          ],
+        },
+        subagentTask: boundedSubagentTask,
+        subagentTriggerProjection: {
+          $cond: [
+            { $eq: ['$subagentTriggerProjection.version', 1] },
+            {
+              version: 1,
+              eventType: boundedString(
+                '$subagentTriggerProjection.eventType',
+                SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT,
+              ),
+              sourceType: boundedString(
+                '$subagentTriggerProjection.sourceType',
+                SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT,
+              ),
+              occurredAt: '$subagentTriggerProjection.occurredAt',
+              expectedActionToolName: {
+                $cond: [
+                  {
+                    $eq: [{ $type: '$subagentTriggerProjection.expectedActionToolName' }, 'string'],
+                  },
+                  boundedString(
+                    '$subagentTriggerProjection.expectedActionToolName',
+                    SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT,
+                  ),
+                  '$$REMOVE',
+                ],
+              },
+            },
+            '$$REMOVE',
+          ],
+        },
+      };
+      const sourceMetadataProjection = {
+        _subagentTranscriptSourceBytes: transcriptJsonBytes,
+        _subagentTranscriptSourceIsString: transcriptIsString,
+        _subagentActivityProjectionSourceBytes: activityProjectionJsonBytes,
+        _subagentActivityProjectionSourceIsString: activityProjectionIsString,
+      };
+      const activitySourceProjection = {
+        _id: 0,
+        messageId: 1,
+        subagentActivityProjectionJson: {
+          $cond: [
+            activityProjectionAvailable,
+            '$subagentActivityProjection.activityJson',
+            '$$REMOVE',
+          ],
+        },
+        subagentActivityProjectionTruncated: {
+          $cond: [activityProjectionAvailable, '$subagentActivityProjection.truncated', '$$REMOVE'],
+        },
+        subagentTranscript: {
+          $cond: [
+            activityProjectionAvailable,
+            '$$REMOVE',
+            {
+              taskId: '$subagentTranscript.taskId',
+              mode: '$subagentTranscript.mode',
+              messagesJson: '$subagentTranscript.messagesJson',
+            },
+          ],
+        },
+      };
+      const baseMatch = {
+        user: input.user,
+        conversationId: input.conversationId,
+        ...(input.tenantId == null
+          ? { tenantId: { $exists: false } }
+          : { tenantId: input.tenantId }),
+      };
+      const anchor =
+        input.beforeMessageId == null
+          ? null
+          : await Message.findOne({ ...baseMatch, messageId: input.beforeMessageId })
+              .select('_id createdAt')
+              .lean<Pick<IMessage, '_id' | 'createdAt'>>();
+      if (input.beforeMessageId != null && anchor == null) return [];
+      const pageMatch =
+        anchor == null
+          ? baseMatch
+          : {
+              ...baseMatch,
+              $or: [
+                { createdAt: { $lt: anchor.createdAt } },
+                { createdAt: anchor.createdAt, _id: { $lte: anchor._id } },
+              ],
+            };
+      /** Keep rows as independent MongoDB results. A `$facet` would combine the
+       * complete page into one BSON document and could exceed MongoDB's 16 MiB
+       * document limit before the API applies its smaller public byte budget. */
+      const messagesPromise = Message.aggregate<SubagentThreadViewMessageRecord>([
+        { $match: pageMatch },
+        { $sort: { createdAt: -1, _id: -1 } },
+        { $limit: input.limit },
+        { $project: boundedMessageProjection },
+      ]);
+      const recentSourcesPromise = Message.aggregate<ActivitySourceProjection>([
+        { $match: pageMatch },
+        { $sort: { createdAt: -1, _id: -1 } },
+        { $limit: SUBAGENT_ACTIVITY_SOURCE_CANDIDATE_LIMIT },
         {
-          $project: {
-            _id: 0,
-            messageId: 1,
-            parentMessageId: 1,
-            isCreatedByUser: 1,
-            text: {
-              $substrCP: [{ $ifNull: ['$text', ''] }, 0, input.textCodePointLimit],
-            },
-            textProjectionTruncated: {
-              $gt: [{ $strLenCP: { $ifNull: ['$text', ''] } }, input.textCodePointLimit],
-            },
-            createdAt: 1,
-            error: 1,
-            unfinished: 1,
-            ...(input.taskId == null
+          $match: {
+            ...(input.selectedTaskId == null
               ? {}
-              : {
-                  subagentTranscript: {
-                    $cond: [
-                      {
-                        $and: [
-                          { $eq: ['$messageId', selectedAssistantMessageId] },
-                          '$_subagentTranscriptSourceIsString',
-                          {
-                            $lte: [
-                              '$_subagentTranscriptSourceBytes',
-                              SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
-                            ],
-                          },
-                        ],
-                      },
-                      {
-                        taskId: '$subagentTranscript.taskId',
-                        mode: '$subagentTranscript.mode',
-                        messagesJson: '$subagentTranscript.messagesJson',
-                      },
-                      '$$REMOVE',
-                    ],
-                  },
-                  subagentTranscriptProjectionTruncated: {
-                    $cond: [
-                      {
-                        $and: [
-                          { $eq: ['$messageId', selectedAssistantMessageId] },
-                          {
-                            $ne: [{ $type: '$subagentTranscript.messagesJson' }, 'missing'],
-                          },
-                          {
-                            $or: [
-                              { $eq: ['$_subagentTranscriptSourceIsString', false] },
-                              {
-                                $gt: [
-                                  '$_subagentTranscriptSourceBytes',
-                                  SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
-                                ],
-                              },
-                            ],
-                          },
-                        ],
-                      },
-                      true,
-                      '$$REMOVE',
-                    ],
-                  },
-                }),
-            subagentTask: 1,
+              : { messageId: { $ne: `${input.selectedTaskId}:assistant` } }),
+            $or: [
+              { 'subagentActivityProjection.activityJson': { $exists: true } },
+              { 'subagentTranscript.messagesJson': { $exists: true } },
+            ],
           },
         },
+        { $addFields: sourceMetadataProjection },
+        {
+          $match: {
+            $expr: {
+              $or: [
+                {
+                  $and: [
+                    activityProjectionAvailable,
+                    {
+                      $eq: [
+                        '$messageId',
+                        { $concat: ['$subagentActivityProjection.taskId', ':assistant'] },
+                      ],
+                    },
+                  ],
+                },
+                {
+                  $and: [
+                    transcriptAvailable,
+                    {
+                      $eq: [
+                        '$messageId',
+                        { $concat: ['$subagentTranscript.taskId', ':assistant'] },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        { $limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT - (input.selectedTaskId == null ? 0 : 1) },
+        { $project: activitySourceProjection },
       ]);
+      const selectedProjectionPromise =
+        input.selectedTaskId == null
+          ? Promise.resolve([
+              {
+                selectedMessages: [] as SubagentThreadViewMessageRecord[],
+                selectedSources: [] as ActivitySourceProjection[],
+              },
+            ])
+          : Message.aggregate<{
+              selectedMessages: SubagentThreadViewMessageRecord[];
+              selectedSources: ActivitySourceProjection[];
+            }>([
+              {
+                $match: {
+                  ...baseMatch,
+                  messageId: {
+                    $in: [`${input.selectedTaskId}:user`, `${input.selectedTaskId}:assistant`],
+                  },
+                },
+              },
+              { $limit: 2 },
+              {
+                $facet: {
+                  selectedMessages: [{ $project: boundedMessageProjection }],
+                  selectedSources: [
+                    { $match: { messageId: `${input.selectedTaskId}:assistant` } },
+                    { $limit: 1 },
+                    { $addFields: sourceMetadataProjection },
+                    {
+                      $match: {
+                        $or: [
+                          {
+                            'subagentActivityProjection.taskId': input.selectedTaskId,
+                            'subagentActivityProjection.version': 1,
+                            _subagentActivityProjectionSourceIsString: true,
+                            _subagentActivityProjectionSourceBytes: {
+                              $lte: SUBAGENT_ACTIVITY_PROJECTION_SOURCE_BYTE_LIMIT,
+                            },
+                          },
+                          {
+                            'subagentTranscript.taskId': input.selectedTaskId,
+                            _subagentTranscriptSourceIsString: true,
+                            _subagentTranscriptSourceBytes: {
+                              $lte: SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+                            },
+                          },
+                        ],
+                      },
+                    },
+                    { $project: activitySourceProjection },
+                  ],
+                },
+              },
+            ]);
+      const [messages, recentSources, [selectedProjection]] = await Promise.all([
+        messagesPromise,
+        recentSourcesPromise,
+        selectedProjectionPromise,
+      ]);
+      if (selectedProjection == null) return [];
+      const sourcesByMessageId = new Map(
+        [...selectedProjection.selectedSources, ...recentSources].map((record) => [
+          record.messageId,
+          record,
+        ]),
+      );
+      const retainedMessageIds = new Set(messages.map((message) => message.messageId));
+      for (const message of selectedProjection.selectedMessages) {
+        if (retainedMessageIds.has(message.messageId)) continue;
+        messages.push(message);
+        retainedMessageIds.add(message.messageId);
+      }
+      return messages.map((message) => {
+        const source = sourcesByMessageId.get(message.messageId);
+        if (source == null) return message;
+        const projected = { ...message };
+        if (source.subagentActivityProjectionJson != null) {
+          delete projected.subagentTranscriptProjectionTruncated;
+          return {
+            ...projected,
+            subagentActivityProjectionJson: source.subagentActivityProjectionJson,
+            ...(source.subagentActivityProjectionTruncated === true
+              ? { subagentActivityProjectionTruncated: true }
+              : {}),
+          };
+        }
+        if (source.subagentTranscript == null) return message;
+        delete projected.subagentTranscriptProjectionTruncated;
+        return { ...projected, subagentTranscript: source.subagentTranscript };
+      });
     } catch (err) {
       logger.error('Error getting bounded subagent thread messages:', err);
       throw err;

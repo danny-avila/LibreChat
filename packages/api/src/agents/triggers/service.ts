@@ -15,12 +15,13 @@ import type {
 import type { AgentTriggerEnqueueOptions, PreparedAgentTriggerDelivery } from './delivery';
 import type { BoundAddress } from '../../app/origin';
 import { AgentTriggerDeliveryDeferredError, createAgentTriggerDeliveryEngine } from './engine';
+import { AgentTriggerDeliveryError, prepareAgentTriggerDelivery } from './delivery';
 import { isShutdownInProgress, registerShutdownTask } from '../../app/shutdown';
 import { generateAgentTriggerToken } from '../../crypto/jwt';
 import { selfOriginFromAddress } from '../../app/origin';
-import { prepareAgentTriggerDelivery } from './delivery';
 import { createAgentTriggerExecutionHost } from './host';
 import { parseAgentTriggerEnvelope } from './envelope';
+import { isEnabled } from '../../utils/common';
 
 export const AGENT_TRIGGER_TOKEN_TTL = '60s';
 const DEFAULT_USER_DRAIN_TIMEOUT_MS = 35_000;
@@ -45,12 +46,14 @@ export interface AgentTriggerServiceDeps {
   userDrainPollMs?: number;
   purgeRecoveryIntervalMs?: number;
   purgeRecoveryLimit?: number;
+  coalescingEnabled?: () => boolean;
+  actorMailboxEnabled?: () => boolean;
 }
 
 export interface AgentTriggerDeliveryReceipt {
   id: string;
   deliveryKey: string;
-  status: AgentTriggerStoredRecord['status'];
+  status: Exclude<AgentTriggerStoredRecord['status'], 'batched'>;
   availableAt: Date;
   replayed: boolean;
 }
@@ -88,6 +91,7 @@ export interface AgentTriggerDeliveryPersistence {
   ) => Promise<{ delivery: AgentTriggerStoredRecord; replayed: boolean }>;
   claimNextAgentTriggerDelivery: AgentTriggerDeliveryStore['claimNext'];
   findEarlierAgentTriggerDelivery: AgentTriggerDeliveryStore['findEarlierUnsettled'];
+  getAgentTriggerDeliveryBatch: AgentTriggerDeliveryStore['getBatch'];
   releaseAgentTriggerDelivery: AgentTriggerDeliveryStore['release'];
   beginAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['beginAttempt'];
   deferAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['defer'];
@@ -108,6 +112,7 @@ export interface AgentTriggerDeliveryPersistence {
   ) => Promise<AgentTriggerStoredRecord | null>;
   countActiveAgentTriggerDeliveriesByUser: (userId: string, now: Date) => Promise<number>;
   recoverAgentTriggerLanePublications: (limit?: number) => Promise<number>;
+  recoverAgentTriggerBatchReceipts: (limit?: number) => Promise<number>;
   reclaimInactiveAgentTriggerLanes: (limit?: number) => Promise<number>;
   prepareAgentTriggerUserPurge: (
     userId: string,
@@ -116,6 +121,7 @@ export interface AgentTriggerDeliveryPersistence {
   ) => Promise<void>;
   cancelAgentTriggerUserPurge: (userId: string, fenceStartedAt: Date) => Promise<boolean>;
   recoverAgentTriggerUserPurges: (limit?: number) => Promise<number>;
+  expireLegacyAgentEventActorReceipts?: (now: Date, limit?: number) => Promise<number>;
   deleteAgentTriggerDeliveriesByUser: (userId: string) => Promise<void>;
 }
 
@@ -149,6 +155,7 @@ function createDeliveryStore(methods: AgentTriggerDeliveryPersistence): AgentTri
   return {
     claimNext: methods.claimNextAgentTriggerDelivery,
     findEarlierUnsettled: methods.findEarlierAgentTriggerDelivery,
+    getBatch: methods.getAgentTriggerDeliveryBatch,
     release: methods.releaseAgentTriggerDelivery,
     beginAttempt: methods.beginAgentTriggerDeliveryAttempt,
     defer: methods.deferAgentTriggerDeliveryAttempt,
@@ -156,6 +163,12 @@ function createDeliveryStore(methods: AgentTriggerDeliveryPersistence): AgentTri
     retry: methods.retryAgentTriggerDelivery,
     dead: methods.deadLetterAgentTriggerDelivery,
   };
+}
+
+function publicReceiptStatus(
+  status: AgentTriggerStoredRecord['status'],
+): AgentTriggerDeliveryReceipt['status'] {
+  return status === 'batched' ? 'pending' : status;
 }
 
 function requireDeliveryOrigin(boundOrigin: string | undefined): void {
@@ -182,6 +195,10 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   const purgeRecoveryIntervalMs =
     deps.purgeRecoveryIntervalMs ?? DEFAULT_PURGE_RECOVERY_INTERVAL_MS;
   const purgeRecoveryLimit = deps.purgeRecoveryLimit ?? DEFAULT_PURGE_RECOVERY_LIMIT;
+  const coalescingEnabled =
+    deps.coalescingEnabled ?? (() => isEnabled(process.env.ENABLE_AGENT_EVENT_COALESCING));
+  const actorMailboxEnabled =
+    deps.actorMailboxEnabled ?? (() => isEnabled(process.env.ENABLE_AGENT_EVENT_ACTOR_MAILBOX));
   if (!Number.isSafeInteger(userDrainTimeoutMs) || userDrainTimeoutMs <= 0) {
     throw new TypeError('userDrainTimeoutMs must be a positive integer');
   }
@@ -286,19 +303,31 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     }
     const methods = deps.methods;
     const current = runAsSystem(async () => {
-      const [purgedUsers, publishedLanes, reclaimedLanes] = await Promise.all([
-        methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit),
-        methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
-        methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit),
-      ]);
+      const [purgedUsers, publishedLanes, recoveredBatches, expiredLegacyActorReceipts] =
+        await Promise.all([
+          methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit),
+          methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
+          methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit),
+          methods.expireLegacyAgentEventActorReceipts?.(new Date(), purgeRecoveryLimit) ??
+            Promise.resolve(0),
+        ]);
+      const reclaimedLanes = await methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit);
       if (publishedLanes > 0) {
         deliveryEngine?.wake();
       }
-      if (purgedUsers > 0 || publishedLanes > 0 || reclaimedLanes > 0) {
+      if (
+        purgedUsers > 0 ||
+        publishedLanes > 0 ||
+        recoveredBatches > 0 ||
+        reclaimedLanes > 0 ||
+        expiredLegacyActorReceipts > 0
+      ) {
         logger.info('[agent-triggers] recovered durable delivery maintenance', {
           purgedUsers,
           publishedLanes,
+          recoveredBatches,
           reclaimedLanes,
+          expiredLegacyActorReceipts,
         });
       }
     })
@@ -387,9 +416,23 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     dispatch: dispatchForActivePrincipal,
     enqueue: async (envelope, options) => {
       const methods = requireMethods();
+      if (options?.coalesce != null && !coalescingEnabled()) {
+        throw new AgentTriggerDeliveryError('Agent event coalescing is not enabled on this server');
+      }
       const prepared = prepareAgentTriggerDelivery(envelope, options);
+      const awaitTerminalHandling =
+        actorMailboxEnabled() &&
+        prepared.envelope.mode === 'continue' &&
+        prepared.envelope.target.bindingId != null &&
+        prepared.envelope.target.sourceKeyId != null;
+      const durableDelivery: PreparedAgentTriggerDelivery = {
+        ...prepared,
+        ...(awaitTerminalHandling && { awaitTerminalHandling: true }),
+      };
       await requireActivePrincipal(String(prepared.user));
-      const queued = await runAsSystem(async () => methods.enqueueAgentTriggerDelivery(prepared));
+      const queued = await runAsSystem(async () =>
+        methods.enqueueAgentTriggerDelivery(durableDelivery),
+      );
       try {
         await requireActivePrincipal(String(prepared.user));
       } catch (error) {
@@ -402,11 +445,22 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       } else {
         deliveryEngine?.wake();
       }
+      const effective =
+        queued.delivery.status === 'batched'
+          ? await runAsSystem(async () =>
+              methods.getAgentTriggerDeliveryStatus(
+                prepared.deliveryKey,
+                prepared.user,
+                prepared.envelope.event.source.id,
+                prepared.tenantId,
+              ),
+            )
+          : null;
       return {
         id: queued.delivery.id,
         deliveryKey: queued.delivery.deliveryKey,
-        status: queued.delivery.status,
-        availableAt: queued.delivery.availableAt,
+        status: publicReceiptStatus(effective?.status ?? queued.delivery.status),
+        availableAt: effective?.availableAt ?? queued.delivery.availableAt,
         replayed: queued.replayed,
       };
     },

@@ -23,7 +23,12 @@ import { createMCPServerMethods, type MCPServerMethods } from './mcpServer';
 import { createPluginAuthMethods, type PluginAuthMethods } from './pluginAuth';
 /* Permissions */
 import { createAccessRoleMethods, type AccessRoleMethods } from './accessRole';
-import { createUserGroupMethods, type UserGroupMethods, type UserGroupDeps } from './userGroup';
+import {
+  createUserGroupMethods,
+  runAfterTransaction,
+  type UserGroupMethods,
+  type UserGroupDeps,
+} from './userGroup';
 import { createAclEntryMethods, permissionBitSupersets, type AclEntryMethods } from './aclEntry';
 import { createSystemGrantMethods, type SystemGrantMethods } from './systemGrant';
 import {
@@ -55,6 +60,7 @@ import {
 } from './message';
 import {
   createConversationMethods,
+  type AgentEventActorReconciliationStorageMetrics,
   type ConversationMethods,
   type ParentSubagentThreadRecord,
 } from './conversation';
@@ -109,7 +115,11 @@ import { createScheduleMethods, type ScheduleMethods } from './schedule';
 import {
   createAgentTriggerDeliveryMethods,
   AgentTriggerDeliveryConflictError,
+  recordAgentEventActorReceiptMetric,
+  setAgentEventActorReceiptMetricObserver,
   type AgentTriggerDeliveryMethods,
+  type AgentEventActorReceiptMetric,
+  type AgentEventActorReceiptStorageMetrics,
 } from './triggerDelivery';
 import { createSkillSyncMethods, type SkillSyncMethods } from './skillSync';
 import type {
@@ -139,6 +149,7 @@ import {
 import { createInsightsMethods, type InsightsMethods } from './insights';
 
 export {
+  runAfterTransaction,
   RoleConflictError,
   MCPAuthorityProofError,
   MAX_MCP_AUTHORITY_TARGETS,
@@ -275,22 +286,34 @@ export function createMethods(
       await aclEntryMethods.deleteAclEntries({ resourceType, resourceId });
     });
 
+  // Role and user-group methods with optional cache injection; user-group methods
+  // are created before prompt methods so prompt methods can resolve ACL principals.
+  // The membership hook is late-bound: prompt methods do not exist yet here.
+  const promptAccessInvalidator: { current?: () => Promise<void> } = {};
+  const roleDeps: RoleDeps = { getCache: deps.getCache };
+  const userGroupDeps: UserGroupDeps = {
+    getCache: deps.getCache,
+    onMemberGroupsInvalidated: () => promptAccessInvalidator.current?.(),
+  };
+  const roleMethods = createRoleMethods(mongoose, roleDeps);
+  const userGroupMethods = createUserGroupMethods(mongoose, userGroupDeps);
+
   const promptDeps: PromptDeps = {
     removeAllPermissions,
     getSoleOwnedResourceIds: aclEntryMethods.getSoleOwnedResourceIds,
+    getCache: deps.getCache,
+    getUserPrincipals: userGroupMethods.getUserPrincipals,
+    findAccessibleResources: aclEntryMethods.findAccessibleResources,
+    findPublicResourceIds: aclEntryMethods.findPublicResourceIds,
   };
   const promptMethods = createPromptMethods(mongoose, promptDeps);
+  promptAccessInvalidator.current = promptMethods.invalidatePromptGroupAccessContext;
 
   const skillDeps: SkillDeps = {
     removeAllPermissions,
     getSoleOwnedResourceIds: aclEntryMethods.getSoleOwnedResourceIds,
   };
   const skillMethods = createSkillMethods(mongoose, skillDeps);
-
-  // Role methods with optional cache injection
-  const roleDeps: RoleDeps = { getCache: deps.getCache };
-  const userGroupDeps: UserGroupDeps = { getCache: deps.getCache };
-  const roleMethods = createRoleMethods(mongoose, roleDeps);
 
   // Tier 1: action methods (created as variable for agent dependency)
   const actionMethods = createActionMethods(mongoose);
@@ -317,7 +340,7 @@ export function createMethods(
     ...createAgentApiKeyMethods(mongoose),
     ...createMCPServerMethods(mongoose),
     ...createAccessRoleMethods(mongoose),
-    ...createUserGroupMethods(mongoose, userGroupDeps),
+    ...userGroupMethods,
     ...aclEntryMethods,
     ...systemGrantMethods,
     ...createAuditLogMethods(mongoose),
@@ -388,6 +411,7 @@ export type {
   SubagentThreadViewMessageRecord,
   SubagentTaskResultClaim,
   ConversationMethods,
+  AgentEventActorReconciliationStorageMetrics,
   ChatProjectMethods,
   TxMethods,
   TransactionMethods,
@@ -408,6 +432,8 @@ export type {
   UpsertSkillSyncCredentialInput,
   SkillSyncMethods,
   AgentTriggerDeliveryMethods,
+  AgentEventActorReceiptMetric,
+  AgentEventActorReceiptStorageMetrics,
   ScheduleMethods,
   AgentMethods,
   ConfigMethods,
@@ -417,3 +443,5 @@ export type {
   MCPAuthorityCredentialSourceDocument,
   InsightsMethods,
 };
+
+export { recordAgentEventActorReceiptMetric, setAgentEventActorReceiptMetricObserver };

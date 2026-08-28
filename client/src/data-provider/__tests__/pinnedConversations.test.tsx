@@ -9,17 +9,18 @@ import type {
 } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import {
+  removeConvoFromAllQueries,
+  updateConvoInAllQueries,
+  upsertConvoInAllQueries,
+  collectPinnedConversations,
+  withoutListFlags,
+} from '~/utils/convos';
+import {
   useConversationTagMutation,
   useDeleteConversationMutation,
   useDeleteConversationTagMutation,
   usePinConversationMutation,
 } from '../mutations';
-import {
-  removeConvoFromAllQueries,
-  updateConvoInAllQueries,
-  upsertConvoInAllQueries,
-  collectPinnedConversations,
-} from '~/utils/convos';
 import { pinnedConversationsPageSize, usePinnedConversationsQuery } from '../queries';
 
 jest.mock('librechat-data-provider', () => {
@@ -313,6 +314,116 @@ describe('pinned list cache synchronization', () => {
         (c) => c.conversationId,
       ),
     ).toEqual(['convo-pinned', 'convo-other']);
+  });
+
+  /** A chat pinned while it is open never hears about the pin in its own conversation
+   * state, so the state the SSE handlers write back still says `pinned: false`. Sending
+   * a message then dropped the chat out of Pinned and back into the date groups. */
+  it('keeps a pin in the section when a new turn writes back stale chat state', () => {
+    const queryClient = createQueryClient();
+    queryClient.setQueryData(
+      [QueryKeys.pinnedConversations, { tags: undefined }],
+      listResponse([pinnedConvo]),
+    );
+
+    const staleChatState = { ...pinnedConvo, title: 'Replied', pinned: false } as TConversation;
+    updateConvoInAllQueries(
+      queryClient,
+      pinnedConversationId,
+      () => withoutListFlags(staleChatState),
+      true,
+    );
+
+    const conversations = readPinnedCache(queryClient)?.conversations;
+    expect(conversations?.map((c) => c.conversationId)).toEqual([pinnedConversationId]);
+    expect(conversations?.[0].pinned).toBe(true);
+    expect(conversations?.[0].title).toBe('Replied');
+  });
+
+  /** The date groups skip pinned chats, so losing the flag on the chats row put the same
+   * conversation back under Today beside the section it had just left. */
+  it('keeps the flag on the chats row when a new turn writes back stale chat state', () => {
+    const queryClient = createQueryClient();
+    queryClient.setQueryData([QueryKeys.allConversations, { tags: undefined }], {
+      pages: [{ conversations: [pinnedConvo], nextCursor: null }],
+      pageParams: [],
+    });
+
+    const staleChatState = { ...pinnedConvo, title: 'Replied', pinned: false } as TConversation;
+    updateConvoInAllQueries(
+      queryClient,
+      pinnedConversationId,
+      () => withoutListFlags(staleChatState),
+      true,
+    );
+
+    const data = queryClient.getQueryData<{
+      pages: Array<{ conversations: TConversation[] }>;
+    }>([QueryKeys.allConversations, { tags: undefined }]);
+    expect(data?.pages[0].conversations[0].pinned).toBe(true);
+  });
+
+  /** Root-level SSE updates take the upsert path, and an older pin may be outside the
+   * loaded chats pages. The dedicated row has to supply the sidebar-owned flags when
+   * upsert inserts the conversation into that cache. */
+  it('keeps list flags when an older pin upserts into the chats cache', () => {
+    const queryClient = createQueryClient();
+    const cachedPin = { ...pinnedConvo, isShared: true } as TConversation;
+    queryClient.setQueryData(
+      [QueryKeys.pinnedConversations, { tags: undefined }],
+      listResponse([cachedPin]),
+    );
+    queryClient.setQueryData([QueryKeys.allConversations, { tags: undefined }], {
+      pages: [
+        {
+          conversations: [
+            {
+              conversationId: 'other-recent',
+              title: 'Recent',
+              endpoint: 'openAI',
+            } as TConversation,
+          ],
+          nextCursor: 'cursor-2',
+        },
+      ],
+      pageParams: [undefined],
+    });
+
+    const staleChatState = {
+      ...cachedPin,
+      title: 'Replied',
+      pinned: false,
+      isShared: false,
+    } as TConversation;
+    upsertConvoInAllQueries(queryClient, withoutListFlags(staleChatState));
+
+    expect(readPinnedCache(queryClient)?.conversations[0]).toEqual(
+      expect.objectContaining({ pinned: true, isShared: true, title: 'Replied' }),
+    );
+    const chats = queryClient.getQueryData<{
+      pages: Array<{ conversations: TConversation[] }>;
+    }>([QueryKeys.allConversations, { tags: undefined }]);
+    expect(chats?.pages[0].conversations[0]).toEqual(
+      expect.objectContaining({
+        conversationId: pinnedConversationId,
+        pinned: true,
+        isShared: true,
+        title: 'Replied',
+      }),
+    );
+  });
+
+  it('withoutListFlags drops only the sidebar-owned flags', () => {
+    const stripped = withoutListFlags({
+      ...pinnedConvo,
+      pinned: false,
+      isShared: true,
+    } as TConversation);
+
+    expect('pinned' in stripped).toBe(false);
+    expect('isShared' in stripped).toBe(false);
+    expect(stripped.conversationId).toBe(pinnedConversationId);
+    expect(stripped.title).toBe(pinnedConvo.title);
   });
 
   it('leaves the pinned cache untouched for an unrelated conversation', () => {

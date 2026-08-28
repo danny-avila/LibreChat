@@ -48,6 +48,7 @@ import { createSubagentAttemptKey, createSubagentThreadId } from './subagentThre
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
 import { SUBAGENT_COMPLETION_DELIVERY } from './subagentDelivery';
 import { createConcurrencyLimiter } from '~/utils/promise';
+import { projectSubagentActivity } from './activity';
 import { InMemoryEventTransport } from '~/stream';
 import { aggregateEmittedUsage } from './usage';
 
@@ -3060,6 +3061,23 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       prepared.initialStoredMessages,
       result.messages,
     );
+    const activityProjection =
+      subagentTranscript == null
+        ? undefined
+        : projectSubagentActivity(
+            subagentTranscript.messagesJson,
+            subagentTranscript.mode,
+            request.input,
+          );
+    const subagentActivityProjection =
+      activityProjection == null
+        ? undefined
+        : {
+            taskId,
+            version: 1 as const,
+            activityJson: JSON.stringify(activityProjection.activity),
+            truncated: activityProjection.truncated,
+          };
     const conversation = await this.requireCurrentConversation(
       scope,
       request,
@@ -3078,6 +3096,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         isCreatedByUser: false,
         unfinished: false,
         ...(subagentTranscript == null ? {} : { subagentTranscript }),
+        ...(subagentActivityProjection == null ? {} : { subagentActivityProjection }),
         subagentTask: {
           attemptKey: prepared.attemptKey,
           parentRunId: request.parentRunId,

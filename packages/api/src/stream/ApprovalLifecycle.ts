@@ -8,6 +8,7 @@ import type {
 } from '~/stream/interfaces/IJobStore';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import {
+  JobStatusTransitionDeadlineError,
   isPendingActionExpired,
   isPendingActionStale,
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
@@ -33,6 +34,17 @@ export interface ApprovalPauseOptions {
   expectedCreatedAt?: number;
   /** Hold Stop/resume until the paused assistant row is durably unfinished. */
   persistencePending?: boolean;
+}
+
+export const PENDING_ACTION_EXPIRED_CODE = 'HITL_ACTION_EXPIRED';
+
+export class PendingActionExpiredError extends Error {
+  readonly code: typeof PENDING_ACTION_EXPIRED_CODE = PENDING_ACTION_EXPIRED_CODE;
+
+  constructor() {
+    super('The pending action expired before it could be exposed for review');
+    this.name = 'PendingActionExpiredError';
+  }
 }
 
 const PAUSE_PERSISTENCE_ACTION_PREFIX = 'pause-persistence:';
@@ -85,6 +97,9 @@ export class ApprovalLifecycle {
     pendingAction: Agents.PendingAction,
     options: ApprovalPauseOptions = {},
   ): Promise<boolean> {
+    if (isPendingActionExpired({ pendingAction })) {
+      throw new PendingActionExpiredError();
+    }
     const job = await this.store.getJob(streamId);
     if (
       !job ||
@@ -107,28 +122,37 @@ export class ApprovalLifecycle {
         : 0,
     );
     const persistenceStartedAt = Date.now();
-    const ok = await this.store.transitionStatus(streamId, {
-      from: 'running',
-      to: 'requires_action',
-      // pendingActionId is the flat mirror the atomic resolve/expire guard on.
-      patch: {
-        pendingAction,
-        pendingActionId:
-          options.persistencePending === true
-            ? pausePersistenceActionId(pendingAction.actionId)
-            : pendingAction.actionId,
-        ...(options.persistencePending === true && {
-          terminalPersistencePending: true,
-          terminalPersistenceStartedAt: persistenceStartedAt,
-        }),
-        ...(discoveredTools != null && discoveredTools.length > 0
-          ? { discoveredTools: [...discoveredTools] }
-          : {}),
-        ...(activityPhaseSnapshot != null ? { activityPhaseSnapshot } : {}),
-      },
-      expectCreatedAt: expectedCreatedAt,
-      steerReceiptTtlSeconds: pauseReceiptTtl,
-    });
+    let ok: boolean;
+    try {
+      ok = await this.store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        // pendingActionId is the flat mirror the atomic resolve/expire guard on.
+        patch: {
+          pendingAction,
+          pendingActionId:
+            options.persistencePending === true
+              ? pausePersistenceActionId(pendingAction.actionId)
+              : pendingAction.actionId,
+          ...(options.persistencePending === true && {
+            terminalPersistencePending: true,
+            terminalPersistenceStartedAt: persistenceStartedAt,
+          }),
+          ...(discoveredTools != null && discoveredTools.length > 0
+            ? { discoveredTools: [...discoveredTools] }
+            : {}),
+          ...(activityPhaseSnapshot != null ? { activityPhaseSnapshot } : {}),
+        },
+        expectCreatedAt: expectedCreatedAt,
+        notAfterMs: pendingAction.expiresAt,
+        steerReceiptTtlSeconds: pauseReceiptTtl,
+      });
+    } catch (error) {
+      if (error instanceof JobStatusTransitionDeadlineError) {
+        throw new PendingActionExpiredError();
+      }
+      throw error;
+    }
     if (ok) {
       this.callbacks.onPaused?.(streamId, expectedCreatedAt);
       logger.debug(
@@ -258,6 +282,7 @@ export class ApprovalLifecycle {
       patch: {
         completedAt,
         error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+        ...(job.agentEventDeliveryKey != null && { terminalHostActionPending: true }),
       },
       clear: [
         'pendingAction',
@@ -394,10 +419,10 @@ export class ApprovalLifecycle {
   }
 
   /**
-   * Expires the observed approval and returns the winning pre-transition job.
-   * Callers that need to notify runtime-local subscribers or run host lifecycle
-   * hooks get both the exact generation identity and its trusted metadata without
-   * a racy post-transition read (the terminal TTL may already remove the hash).
+   * Expires the observed approval and returns the winning terminal snapshot.
+   * Callers that run host lifecycle hooks get the trusted pre-CAS metadata plus
+   * the exact status/error/completion fields committed by this transition,
+   * without a racy post-transition read (the terminal TTL may remove the hash).
    */
   async expireWithIdentity(
     streamId: string,
@@ -413,11 +438,18 @@ export class ApprovalLifecycle {
     ) {
       return null;
     }
-    // Built-in in-memory stores may mutate the returned job object in place during
-    // transitionStatus. Snapshot it before the CAS so the host hook receives the
-    // observed generation metadata even when terminal TTL removes or rewrites it.
-    const expiredJob = { ...job };
     const createdAt = job.createdAt;
+    const completedAt = Date.now();
+    const error = 'Approval expired before a decision was made';
+    const expiredJob: SerializableJobData = {
+      ...job,
+      status: 'aborted',
+      error,
+      completedAt,
+      ...(options?.markHostActionPending === true && { terminalHostActionPending: true }),
+    };
+    delete expiredJob.pendingAction;
+    delete expiredJob.pendingActionId;
     const ok = await this.store.transitionStatus(streamId, {
       from: 'requires_action',
       to: 'aborted',
@@ -428,8 +460,8 @@ export class ApprovalLifecycle {
       // enumerable) until the adapter acknowledges — set ATOMICALLY here so a crash right
       // after this CAS still leaves the durable retry evidence.
       patch: {
-        error: 'Approval expired before a decision was made',
-        completedAt: Date.now(),
+        error,
+        completedAt,
         ...(options?.markHostActionPending === true && { terminalHostActionPending: true }),
       },
       expectActionId: expectedActionId,

@@ -204,6 +204,7 @@ test.describe('scheduled chat execution', () => {
    */
   test('edits a schedule through the UI with the cadence persisted', async ({ page }) => {
     test.setTimeout(120000);
+    await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto('/c/new', { timeout: 15000 });
     const token = await getAccessToken(page);
     const agent = await ensureAgent(page, token);
@@ -218,19 +219,20 @@ test.describe('scheduled chat execution', () => {
     const persisted = page.getByTestId('schedule-card').filter({ hasText: name });
     await expect(persisted).toContainText(/Runs weekly/i, { timeout: 15000 });
 
-    // EDIT through the dialog: rename and move the cadence to daily. The dialog
+    // EDIT through the dialog: rename and move the cadence to Custom. The dialog
     // pre-populates the agent from the schedule, so no picker interaction is needed.
     await persisted.getByRole('button', { name: 'Schedule options' }).click();
     await page.getByRole('menuitem', { name: 'Edit' }).click();
     const editDialog = page.getByRole('dialog');
     const renamed = `${name} edited`;
     await editDialog.locator('#schedule-name').fill(renamed);
-    await editDialog.getByRole('radio', { name: 'Daily' }).click();
-    // The dialog does not scroll at `md` and up, so its content has to fit the
-    // viewport: a field that adds a ROW pushes Save out of a 720px-tall window with
-    // no way to scroll it back. Asserted explicitly because the bare click below
-    // reports that as a 2-minute timeout on a visible, enabled button.
+    await editDialog.getByRole('radio', { name: 'Custom' }).click();
+    await editDialog.getByTestId('schedule-cron-input').fill('0 9 * * *');
+
+    // Custom adds a hint and validation message. On a 720px viewport, the dialog
+    // itself must scroll so the footer remains reachable.
     const save = editDialog.getByRole('button', { name: 'Save' });
+    await save.scrollIntoViewIfNeeded();
     await expect(save).toBeInViewport();
     await save.click();
 
@@ -238,7 +240,7 @@ test.describe('scheduled chat execution', () => {
     await openSchedulesPanel(page);
     const edited = page.getByTestId('schedule-card').filter({ hasText: renamed });
     await expect(edited).toBeVisible({ timeout: 15000 });
-    await expect(edited).toContainText(/Runs daily/i);
+    await expect(edited).toContainText(/Runs on cron 0 9 \* \* \*/i);
   });
 
   /**
