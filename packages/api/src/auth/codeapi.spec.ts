@@ -7,6 +7,7 @@ jest.mock(
   '@librechat/data-schemas',
   () => ({
     getTenantId: jest.fn(),
+    SYSTEM_TENANT_ID: '__SYSTEM__',
   }),
   { virtual: true },
 );
@@ -240,6 +241,51 @@ describe('Code API JWT minting', () => {
   it('rejects minting without tenant context in strict tenant mode', async () => {
     process.env.TENANT_ISOLATION_STRICT = 'true';
     mockGetTenantId.mockReturnValue(undefined);
+
+    await expect(mintCodeApiToken(baseRequest({ tenantId: undefined }))).rejects.toThrow(
+      'Code API JWT auth requires tenant context',
+    );
+  });
+
+  it('treats the system tenant sentinel as absent tenant context', async () => {
+    mockGetTenantId.mockReturnValue('__SYSTEM__');
+
+    const token = await mintCodeApiToken(baseRequest({ tenantId: undefined }));
+    const { claims } = decodeToken(token);
+
+    expect(claims.tenant_id).toBe('legacy');
+    expect(claims.auth_context_hash).toBe(
+      expectedContextHash({
+        userId: 'user_123',
+        tenantId: 'legacy',
+        role: 'USER',
+        principalSource: 'librechat_jwt',
+      }),
+    );
+  });
+
+  it('honors the single-tenant override under the system tenant sentinel', async () => {
+    process.env.CODEAPI_JWT_SINGLE_TENANT_ID = 'local-single-tenant';
+    mockGetTenantId.mockReturnValue('__SYSTEM__');
+
+    const token = await mintCodeApiToken(baseRequest({ tenantId: undefined }));
+    const { claims } = decodeToken(token);
+
+    expect(claims.tenant_id).toBe('local-single-tenant');
+  });
+
+  it('treats a system tenant sentinel on the user document as absent', async () => {
+    mockGetTenantId.mockReturnValue(undefined);
+
+    const token = await mintCodeApiToken(baseRequest({ tenantId: '__SYSTEM__' }));
+    const { claims } = decodeToken(token);
+
+    expect(claims.tenant_id).toBe('legacy');
+  });
+
+  it('rejects minting under the system tenant sentinel in strict tenant mode', async () => {
+    process.env.TENANT_ISOLATION_STRICT = 'true';
+    mockGetTenantId.mockReturnValue('__SYSTEM__');
 
     await expect(mintCodeApiToken(baseRequest({ tenantId: undefined }))).rejects.toThrow(
       'Code API JWT auth requires tenant context',
