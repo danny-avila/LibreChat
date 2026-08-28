@@ -68,7 +68,7 @@ export default function ShareButton({
         () => dataService.getMessagesByConvoId(conversationId),
         { staleTime: 0 },
       );
-      selectedMessageId = getActiveLatestMessage()?.messageId;
+      selectedMessageId = getActiveLatestMessage()?.messageId ?? null;
     }
 
     if (!selectedMessageId) {
