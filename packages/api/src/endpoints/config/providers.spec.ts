@@ -124,6 +124,86 @@ describe('getProviderConfig', () => {
     expect(result.customEndpointConfig?.name).toBe('My-LLM');
   });
 
+  describe('a declared custom endpoint outranks a case-folded builtin', () => {
+    /** `providerConfigMap` maps the known custom providers to `initializeCustom`. */
+    const initializeCustom = providerConfigMap[Providers.XAI];
+
+    it.each([
+      ['Anthropic', EModelEndpoint.anthropic],
+      ['Google', EModelEndpoint.google],
+      ['Bedrock', EModelEndpoint.bedrock],
+      ['VertexAI', EModelEndpoint.google],
+    ])('routes a custom endpoint named %s to the custom client', (name, nativeKey) => {
+      const appConfig = buildAppConfig([
+        { name, baseURL: 'https://gateway.example.com/v1', apiKey: 'sk-gateway' },
+      ]);
+
+      const result = getProviderConfig({ provider: name, appConfig });
+
+      expect(result.getOptions).toBe(initializeCustom);
+      expect(result.getOptions).not.toBe(providerConfigMap[nativeKey]);
+      expect(result.overrideProvider).toBe(Providers.OPENAI);
+      expect(result.customEndpointConfig?.baseURL).toBe('https://gateway.example.com/v1');
+    });
+
+    it('still routes a genuine native provider to its own initializer', () => {
+      const result = getProviderConfig({
+        provider: EModelEndpoint.anthropic,
+        appConfig: buildAppConfig([]),
+      });
+
+      expect(result.getOptions).toBe(providerConfigMap[EModelEndpoint.anthropic]);
+      expect(result.customEndpointConfig).toBeUndefined();
+    });
+
+    it('keeps the native provider on an exact-case request even when a custom endpoint shares its name', () => {
+      const appConfig = buildAppConfig([
+        { name: 'Anthropic', baseURL: 'https://gateway.example.com/v1', apiKey: 'sk-gateway' },
+      ]);
+
+      const result = getProviderConfig({ provider: EModelEndpoint.anthropic, appConfig });
+
+      expect(result.getOptions).toBe(providerConfigMap[EModelEndpoint.anthropic]);
+      expect(result.overrideProvider).toBe(EModelEndpoint.anthropic);
+    });
+
+    it('falls back to the case-folded builtin when no custom endpoint claims the name', () => {
+      const result = getProviderConfig({ provider: 'Anthropic', appConfig: buildAppConfig([]) });
+
+      expect(result.getOptions).toBe(providerConfigMap[EModelEndpoint.anthropic]);
+      expect(result.overrideProvider).toBe(EModelEndpoint.anthropic);
+    });
+
+    it('honours provider:anthropic on a custom endpoint named Anthropic', () => {
+      const appConfig = buildAppConfig([
+        {
+          name: 'Anthropic',
+          baseURL: 'https://gateway.example.com/v1',
+          apiKey: 'sk-gateway',
+          provider: EModelEndpoint.anthropic,
+        },
+      ]);
+
+      const result = getProviderConfig({ provider: 'Anthropic', appConfig });
+
+      expect(result.getOptions).toBe(initializeCustom);
+      expect(result.overrideProvider).toBe(Providers.ANTHROPIC);
+      expect(result.customEndpointConfig?.baseURL).toBe('https://gateway.example.com/v1');
+    });
+
+    it('keeps a CamelCase known custom provider on its own normalized name', () => {
+      const appConfig = buildAppConfig([
+        { name: 'OpenRouter', baseURL: 'https://openrouter.ai/api/v1', apiKey: 'sk-test' },
+      ]);
+
+      const result = getProviderConfig({ provider: 'OpenRouter', appConfig });
+
+      expect(result.getOptions).toBe(initializeCustom);
+      expect(result.overrideProvider).toBe(Providers.OPENROUTER);
+      expect(result.customEndpointConfig?.name).toBe('OpenRouter');
+    });
+  });
+
   it('applies provider:anthropic even when the endpoint name collides with a known custom provider', () => {
     // `openrouter` resolves via `providerConfigMap` first (skipping the generic
     // custom branch); the override must still be re-applied from the config so

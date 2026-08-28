@@ -145,16 +145,32 @@ export function getProviderConfig({
   let overrideProvider = provider;
   let customEndpointConfig: Partial<TEndpoint> | undefined;
 
-  if (!getOptions && providerConfigMap[provider.toLowerCase()] != null) {
-    overrideProvider = provider.toLowerCase();
-    getOptions = providerConfigMap[overrideProvider];
-  } else if (!getOptions) {
+  if (!getOptions) {
+    /**
+     * A declared custom endpoint outranks a case-folded builtin. Without this an
+     * endpoint named `Anthropic` case-folds onto the native `anthropic` provider
+     * and is initialized from the environment, never reading its own `baseURL`,
+     * `apiKey` or headers — `initializeAnthropic` then throws on the missing
+     * `ANTHROPIC_API_KEY`. `Google`, `Bedrock` and `VertexAI` misroute the same
+     * way. The exact-case lookup above still gives a genuine native provider
+     * priority, since the agent flow re-enters here with enum values.
+     */
     customEndpointConfig = getCustomEndpointConfig({ endpoint: provider, appConfig });
-    if (!customEndpointConfig) {
+    const nativeOptions = providerConfigMap[provider.toLowerCase()];
+
+    if (customEndpointConfig) {
+      getOptions = initializeCustom;
+      /* A known custom provider keeps its own normalized name: it selects the
+         token and context-window maps. */
+      overrideProvider = isKnownCustomProvider(provider)
+        ? provider.toLowerCase()
+        : Providers.OPENAI;
+    } else if (nativeOptions != null) {
+      overrideProvider = provider.toLowerCase();
+      getOptions = nativeOptions;
+    } else {
       throw new Error(`Provider ${provider} not supported`);
     }
-    getOptions = initializeCustom;
-    overrideProvider = Providers.OPENAI;
   }
 
   if (isKnownCustomProvider(overrideProvider) && !customEndpointConfig) {
