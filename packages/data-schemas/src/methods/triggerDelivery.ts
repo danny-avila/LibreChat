@@ -346,7 +346,7 @@ function toRecord(delivery: IAgentTriggerDelivery): AgentTriggerDeliveryRecord {
     user: delivery.user,
     status: projectedStatus,
     attempts: delivery.attempts,
-    availableAt: delivery.capabilityAvailableAt ?? delivery.availableAt,
+    availableAt: delivery.availableAt,
     createdAt: delivery.createdAt,
     ...(delivery.tenantId != null && { tenantId: delivery.tenantId }),
     ...(delivery.requiredWorkerCapability != null && {
@@ -832,7 +832,6 @@ export function createAgentTriggerDeliveryMethods(
           ? {}
           : {
               capabilityStatus: 'publishing',
-              capabilityAvailableAt: input.availableAt,
               leaseBy: LEGACY_CAPABILITY_SHIELD_OWNER,
               leaseUntil: LEGACY_CAPABILITY_SHIELD_AT,
               claimToken: LEGACY_CAPABILITY_SHIELD_OWNER,
@@ -1131,7 +1130,7 @@ export function createAgentTriggerDeliveryMethods(
             {
               requiredWorkerCapability: { $in: workerCapabilities },
               capabilityStatus: 'pending',
-              capabilityAvailableAt: { $lte: input.now },
+              availableAt: { $lte: input.now },
               status: 'leased',
             },
             {
@@ -1546,7 +1545,6 @@ export function createAgentTriggerDeliveryMethods(
           status: 'leased',
           availableAt: input.availableAt,
           capabilityStatus: 'pending',
-          capabilityAvailableAt: input.availableAt,
           leaseBy: LEGACY_CAPABILITY_SHIELD_OWNER,
           leaseUntil: LEGACY_CAPABILITY_SHIELD_AT,
           claimToken: LEGACY_CAPABILITY_SHIELD_OWNER,
@@ -1625,7 +1623,6 @@ export function createAgentTriggerDeliveryMethods(
           status: 'leased',
           availableAt: input.availableAt,
           capabilityStatus: 'pending',
-          capabilityAvailableAt: input.availableAt,
           leaseBy: LEGACY_CAPABILITY_SHIELD_OWNER,
           leaseUntil: LEGACY_CAPABILITY_SHIELD_AT,
           claimToken: LEGACY_CAPABILITY_SHIELD_OWNER,
@@ -1692,7 +1689,6 @@ export function createAgentTriggerDeliveryMethods(
             leaseUntil: 1,
             claimToken: 1,
             capabilityStatus: 1,
-            capabilityAvailableAt: 1,
             capabilityLeaseBy: 1,
             capabilityLeaseUntil: 1,
             capabilityClaimToken: 1,
@@ -2666,7 +2662,6 @@ export function createAgentTriggerDeliveryMethods(
           status: 'leased',
           availableAt: input.availableAt,
           capabilityStatus: 'pending',
-          capabilityAvailableAt: input.availableAt,
           leaseBy: LEGACY_CAPABILITY_SHIELD_OWNER,
           leaseUntil: LEGACY_CAPABILITY_SHIELD_AT,
           claimToken: LEGACY_CAPABILITY_SHIELD_OWNER,
@@ -2927,7 +2922,6 @@ export function createAgentTriggerDeliveryMethods(
             availableAt,
             ...(shieldedCapability && {
               capabilityStatus: 'publishing',
-              capabilityAvailableAt: availableAt,
               leaseBy: LEGACY_CAPABILITY_SHIELD_OWNER,
               leaseUntil: LEGACY_CAPABILITY_SHIELD_AT,
               claimToken: LEGACY_CAPABILITY_SHIELD_OWNER,
