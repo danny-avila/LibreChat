@@ -4706,8 +4706,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         : policyError;
                       if (
                         !(await persistDetachedTerminal({
-                          status: 'failed',
-                          error: errorOutput,
+                          status: 'succeeded',
+                          result: errorOutput,
                         }))
                       ) {
                         return;

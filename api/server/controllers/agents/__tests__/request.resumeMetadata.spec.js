@@ -4396,6 +4396,7 @@ describe('ResumableAgentController resume metadata', () => {
         initialMetadata: expect.objectContaining({
           agentEventDeliveryKey: 'detached-resume-generation-1',
           agentEventInvocationKey: 'original-delivery-1',
+          agentEventInvocationGenerationCreatedAt: 1000,
         }),
       }),
     );

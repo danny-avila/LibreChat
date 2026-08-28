@@ -2627,6 +2627,7 @@ class GenerationJobManagerClass {
         isTemporary: jobData.isTemporary,
         agentEventDeliveryKey: jobData.agentEventDeliveryKey,
         agentEventInvocationKey: jobData.agentEventInvocationKey,
+        agentEventInvocationGenerationCreatedAt: jobData.agentEventInvocationGenerationCreatedAt,
         agentEventDetachedTerminalEvidence: jobData.agentEventDetachedTerminalEvidence,
         agentEventBindingId: jobData.agentEventBindingId,
         agentEventExpectedAction: jobData.agentEventExpectedAction,

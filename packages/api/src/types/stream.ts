@@ -50,6 +50,8 @@ export interface GenerationJobMetadata {
   agentEventDeliveryKey?: string;
   /** Original actor invocation when the current mailbox delivery is an internal completion. */
   agentEventInvocationKey?: string;
+  /** Original actor invocation generation retained across completion HITL resumes. */
+  agentEventInvocationGenerationCreatedAt?: number;
   /** Durable retry payload captured before detached terminal evidence reaches Mongo. */
   agentEventDetachedTerminalEvidence?: AgentEventDetachedTerminalEvidence;
   /** Trusted actor binding copied from the authenticated delivery envelope. */

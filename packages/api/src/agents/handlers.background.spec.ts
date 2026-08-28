@@ -166,6 +166,64 @@ describe('createToolExecuteHandler — background tool calls', () => {
     );
   });
 
+  it('records filtered detached output as successful side-effect evidence', async () => {
+    const protectedValue = 'Authorization: Bearer detached-secret';
+    const tool = {
+      name: 'submit_move_mcp_chess',
+      description: 'submits a move',
+      schema: z.object({ move: z.string() }),
+      invoke: jest.fn(async () => ({ content: protectedValue })),
+    } as unknown as StructuredToolInterface;
+    const eventActorDetachedAction = {
+      reserve: jest.fn(async () => ({
+        status: 'reserved' as const,
+        taskId: 'event-task-filtered',
+        idempotencyKey: 'e'.repeat(64),
+      })),
+      markRunning: jest.fn(async () => true),
+      settle: jest.fn(async () => true),
+      wake: jest.fn(async () => undefined),
+    };
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      eventActorDetachedAction,
+    });
+
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-event-filtered',
+          name: tool.name,
+          args: { move: 'e4', run_in_background: true },
+        },
+      ],
+      agentId: 'agent-player',
+      configurable: buildConfig([tool.name], {
+        toolArguments: {
+          pii: { fields: ['output'], starterPatterns: ['bearer_header'] },
+        },
+      }),
+      metadata: { thread_id: 'event-filtered-conversation', run_id: 'event-filtered-turn' },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(eventActorDetachedAction.settle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'event-task-filtered',
+        status: 'succeeded',
+        result: expect.stringContaining('content_filter_block'),
+      }),
+    );
+    expect(JSON.stringify(eventActorDetachedAction.settle.mock.calls)).not.toContain(
+      protectedValue,
+    );
+    expect(eventActorDetachedAction.settle).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'failed' }),
+    );
+    expect(eventActorDetachedAction.wake).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects capacity before creating durable Event Actor launch authority', async () => {
     let invocations = 0;
     const tool = {

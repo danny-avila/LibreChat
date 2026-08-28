@@ -42,6 +42,10 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   if (metadata.agentEventInvocationKey) {
     patch.agentEventInvocationKey = metadata.agentEventInvocationKey;
   }
+  if (metadata.agentEventInvocationGenerationCreatedAt !== undefined) {
+    patch.agentEventInvocationGenerationCreatedAt =
+      metadata.agentEventInvocationGenerationCreatedAt;
+  }
   if (metadata.agentEventDetachedTerminalEvidence) {
     patch.agentEventDetachedTerminalEvidence = metadata.agentEventDetachedTerminalEvidence;
   }

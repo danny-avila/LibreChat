@@ -286,6 +286,8 @@ export interface SerializableJobData {
   agentEventDeliveryKey?: string;
   /** Original actor invocation when an internal completion delivery owns this generation. */
   agentEventInvocationKey?: string;
+  /** Original actor invocation generation retained across completion HITL resumes. */
+  agentEventInvocationGenerationCreatedAt?: number;
   /** Durable retry payload captured before detached terminal evidence is written to Mongo. */
   agentEventDetachedTerminalEvidence?: AgentEventDetachedTerminalEvidence;
   /** Trusted actor binding copied from the authenticated delivery envelope. */
@@ -414,6 +416,7 @@ export type JobMetadataPatch = Partial<
     | 'isTemporary'
     | 'agentEventDeliveryKey'
     | 'agentEventInvocationKey'
+    | 'agentEventInvocationGenerationCreatedAt'
     | 'agentEventDetachedTerminalEvidence'
     | 'agentEventBindingId'
     | 'agentEventExpectedAction'

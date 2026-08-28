@@ -110,6 +110,12 @@ const mockClaimAgentEventActorSuspension = jest.fn();
 const mockSettleAgentEventActorSuspension = jest.fn();
 const mockRecordAgentEventActorReconciliation = jest.fn();
 const mockResumeAgentEventActor = jest.fn();
+const mockCreateAgentEventActorDetachedActionLifecycle = jest.fn();
+const mockIsAgentEventActorDetachedActionProducerEnabled = jest.fn();
+const mockGetAgentTriggerDelivery = jest.fn();
+const mockReserveAgentEventActorDetachedAction = jest.fn();
+const mockMarkAgentEventActorDetachedActionRunning = jest.fn();
+const mockSettleAgentEventActorDetachedAction = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -132,6 +138,10 @@ jest.mock('@librechat/api', () => ({
   getAgentCheckpointer: (...args) => mockGetAgentCheckpointer(...args),
   checkAccess: (...args) => mockCheckAccess(...args),
   resumeAgentEventActor: (...args) => mockResumeAgentEventActor(...args),
+  createAgentEventActorDetachedActionLifecycle: (...args) =>
+    mockCreateAgentEventActorDetachedActionLifecycle(...args),
+  isAgentEventActorDetachedActionProducerEnabled: () =>
+    mockIsAgentEventActorDetachedActionProducerEnabled(),
 }));
 
 jest.mock('~/models', () => ({
@@ -143,6 +153,7 @@ jest.mock('~/models', () => ({
   getActions: (...args) => mockGetActions(...args),
   getUserMemories: (...args) => mockGetUserMemories(...args),
   getRoleByName: (...args) => mockGetRoleByName(...args),
+  getAgentTriggerDelivery: (...args) => mockGetAgentTriggerDelivery(...args),
   isSubagentOwnerAdmissible: (...args) => mockIsSubagentOwnerAdmissible(...args),
   completeAgentEventActorLegacyTurn: (...args) => mockCompleteAgentEventActorLegacyTurn(...args),
   getAgentEventActorSnapshot: (...args) => mockGetAgentEventActorSnapshot(...args),
@@ -152,6 +163,12 @@ jest.mock('~/models', () => ({
   settleAgentEventActorSuspension: (...args) => mockSettleAgentEventActorSuspension(...args),
   recordAgentEventActorReconciliation: (...args) =>
     mockRecordAgentEventActorReconciliation(...args),
+  reserveAgentEventActorDetachedAction: (...args) =>
+    mockReserveAgentEventActorDetachedAction(...args),
+  markAgentEventActorDetachedActionRunning: (...args) =>
+    mockMarkAgentEventActorDetachedActionRunning(...args),
+  settleAgentEventActorDetachedAction: (...args) =>
+    mockSettleAgentEventActorDetachedAction(...args),
 }));
 
 jest.mock('~/server/services/Endpoints/agents/eventChildLease', () => ({
@@ -352,6 +369,11 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockGenerationJobManager.beginProviderExecution.mockResolvedValue(true);
     mockGenerationJobManager.markProviderExecutionDrained.mockResolvedValue(true);
     mockGenerationJobManager.failPausePersistence.mockResolvedValue(true);
+    mockGenerationJobManager.isRedis = true;
+    mockGenerationJobManager.persistAgentEventDetachedTerminalEvidence = jest
+      .fn()
+      .mockResolvedValue(true);
+    mockGenerationJobManager.retryTerminalHostAction = jest.fn().mockResolvedValue(undefined);
     mockGenerationJobManager.approvals.resolve.mockResolvedValue(true);
     mockGenerationJobManager.approvals.ownsPausePersistence.mockResolvedValue(true);
     mockGenerationJobManager.approvals.finishPausePersistence.mockResolvedValue(true);
@@ -375,6 +397,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockClaimAgentEventActorSuspension.mockResolvedValue({ status: 'claimed' });
     mockSettleAgentEventActorSuspension.mockResolvedValue({ status: 'settled' });
     mockRecordAgentEventActorReconciliation.mockResolvedValue(true);
+    mockIsAgentEventActorDetachedActionProducerEnabled.mockReturnValue(true);
+    mockGetAgentTriggerDelivery.mockResolvedValue(undefined);
+    mockCreateAgentEventActorDetachedActionLifecycle.mockReturnValue(undefined);
     endpointAgent = {
       _id: 'mongo-agent-abc',
       id: AGENT_ID,
@@ -501,6 +526,8 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       const pausedJob = makeToolApprovalJob({
         metadata: {
           idempotencyClientRequestId: 'trigger_event_delivery',
+          agentEventDeliveryKey: 'completion-delivery-1',
+          agentEventInvocationKey: 'trigger_event_delivery',
           agentEventExpectedAction: expectedAction,
           agentEventSuspension: {
             version: 1,
@@ -513,6 +540,16 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         { tool_call_id: 'tc1', allowed_decisions: ['respond'] },
       ];
       mockGenerationJobManager.getJob.mockResolvedValue(pausedJob);
+      mockGetAgentTriggerDelivery.mockResolvedValue({
+        handling: { generationCreatedAt: 500 },
+      });
+      const detachedSuspension = {
+        kind: 'internal_completion',
+        actionId: 'detached-action-next',
+      };
+      mockCreateAgentEventActorDetachedActionLifecycle.mockReturnValue({
+        readSuspension: () => detachedSuspension,
+      });
       let projectedProviderExecutionId;
       mockGenerationJobManager.approvals.resolve.mockImplementation(
         async (_streamId, _actionId, resumePatch) => {
@@ -562,8 +599,14 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           ],
         },
       });
-      mockInitializeClient.mockResolvedValue({ client: resumedClient, userMCPAuthMap: {} });
+      mockInitializeClient.mockImplementation(async ({ req }) => {
+        expect(req._agentEventDetachedActionLifecycle).toBe(
+          mockCreateAgentEventActorDetachedActionLifecycle.mock.results[0].value,
+        );
+        return { client: resumedClient, userMCPAuthMap: {} };
+      });
       mockResumeAgentEventActor.mockImplementation(async (input, dependencies) => {
+        expect(input.readSuspension()).toBe(detachedSuspension);
         await dependencies.claimSuspension({
           user: USER_ID,
           tenantId: TENANT_ID,
@@ -610,6 +653,28 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         mockGenerationJobManager.approvals.resolve.mock.invocationCallOrder[0],
       );
       expect(mockGenerationJobManager.getJob).toHaveBeenCalledTimes(2);
+      expect(mockGetAgentTriggerDelivery).toHaveBeenCalledWith('trigger_event_delivery');
+      expect(mockCreateAgentEventActorDetachedActionLifecycle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invocationId: 'trigger_event_delivery',
+          generationCreatedAt: 500,
+          turnCreatedAt: 1000,
+          expectedAction,
+        }),
+        expect.objectContaining({
+          reserveAgentEventActorDetachedAction: expect.any(Function),
+          markAgentEventActorDetachedActionRunning: expect.any(Function),
+          settleAgentEventActorDetachedAction: expect.any(Function),
+        }),
+      );
+      expect(
+        mockCreateAgentEventActorDetachedActionLifecycle.mock.invocationCallOrder[0],
+      ).toBeLessThan(mockInitializeClient.mock.invocationCallOrder[0]);
+      const lifecycleDependencies =
+        mockCreateAgentEventActorDetachedActionLifecycle.mock.calls[0][1];
+      expect(lifecycleDependencies.producerEnabled()).toBe(true);
+      mockGenerationJobManager.isRedis = false;
+      expect(lifecycleDependencies.producerEnabled()).toBe(false);
       expect(resumedClient.resumeCompletion).toHaveBeenCalledTimes(1);
       expect(mockRecordAgentEventActorReconciliation).not.toHaveBeenCalled();
     });

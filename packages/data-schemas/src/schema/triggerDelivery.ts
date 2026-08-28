@@ -166,6 +166,7 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     },
     actorActionAdmittedAt: { type: Date, select: false },
     actorActionAdmissionId: { type: String, maxlength: 64, select: false },
+    actorActionAdmissionClosedAt: { type: Date, select: false },
     leaseBy: { type: String },
     leaseUntil: { type: Date },
     claimToken: { type: String },

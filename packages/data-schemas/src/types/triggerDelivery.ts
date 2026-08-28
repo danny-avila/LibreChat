@@ -121,6 +121,8 @@ export interface IAgentTriggerDelivery {
   actorActionAdmittedAt?: Date;
   /** Attempt identity that fences admission takeover and release. */
   actorActionAdmissionId?: string;
+  /** Account-deletion fence that atomically closes action admission on this delivery. */
+  actorActionAdmissionClosedAt?: Date;
   leaseBy?: string;
   leaseUntil?: Date;
   claimToken?: string;

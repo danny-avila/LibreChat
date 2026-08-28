@@ -1975,6 +1975,14 @@ describe('agent trigger delivery methods', () => {
     await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(true);
     await expect(methods.settleAgentEventActorReceipt(settlement)).resolves.toBe(true);
     await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(false);
+    const settledDelivery = await Delivery.findOne({ deliveryKey: settlement.deliveryKey })
+      .select('+actorActionAdmittedAt +actorActionAdmissionId')
+      .lean();
+    expect(settledDelivery).not.toHaveProperty('actorActionAdmittedAt');
+    expect(settledDelivery).not.toHaveProperty('actorActionAdmissionId');
+    await expect(
+      methods.countActiveAgentTriggerDeliveriesByUser(queued.delivery.user, settlement.settledAt),
+    ).resolves.toBe(0);
     /** Simulate a receipt written by the pre-normalization build after
      * transport dead-lettered the root. Exact replay must retire that dead
      * state instead of leaving a non-requeueable dead letter. */
@@ -3421,6 +3429,67 @@ describe('agent trigger delivery methods', () => {
     ).toBe(0);
   });
 
+  it('serializes account deletion against action admission on each delivery row', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const fenceStartedAt = new Date(START);
+    await User.create({
+      _id: user,
+      email: 'admission-fence@example.com',
+      provider: 'local',
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
+    const first = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        envelope: { mode: 'continue', target: { bindingId: 'binding-purge' } },
+      }),
+    );
+    const second = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        envelope: { mode: 'continue', target: { bindingId: 'binding-purge' } },
+      }),
+    );
+    await Delivery.updateMany({ user }, { $set: { status: 'succeeded' } });
+    const admission = {
+      deliveryKey: first.delivery.deliveryKey,
+      user,
+      tenantId: 'tenant-1',
+      bindingId: 'binding-purge',
+      conversationId: 'conversation-purge',
+      admittedAt: START,
+      admissionId: 'admission-before-purge',
+    };
+
+    await expect(methods.admitAgentEventActorAction(admission)).resolves.toBe(true);
+    await methods.prepareAgentTriggerUserPurge(user, fenceStartedAt);
+    await expect(
+      methods.countActiveAgentTriggerDeliveriesByUser(user, new Date(START.getTime() + 60_001)),
+    ).resolves.toBe(1);
+    await expect(
+      methods.admitAgentEventActorAction({
+        ...admission,
+        deliveryKey: second.delivery.deliveryKey,
+        admissionId: 'admission-after-purge',
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      Delivery.countDocuments({ user, actorActionAdmissionClosedAt: fenceStartedAt }),
+    ).resolves.toBe(2);
+
+    await expect(methods.cancelAgentTriggerUserPurge(user, fenceStartedAt)).resolves.toBe(true);
+    await expect(
+      Delivery.countDocuments({ user, actorActionAdmissionClosedAt: { $exists: true } }),
+    ).resolves.toBe(0);
+    await expect(
+      methods.admitAgentEventActorAction({
+        ...admission,
+        deliveryKey: second.delivery.deliveryKey,
+        admissionId: 'admission-after-cancel',
+      }),
+    ).resolves.toBe(true);
+  });
+
   it('deletes all queued payloads for an erased user', async () => {
     const user = new mongoose.Types.ObjectId();
     const fenceStartedAt = new Date(START);
@@ -3510,6 +3579,9 @@ describe('agent trigger delivery methods', () => {
 
     await expect(methods.recoverAgentTriggerUserPurges()).resolves.toBe(0);
     expect(await Delivery.countDocuments({ user })).toBe(1);
+    expect(
+      await Delivery.countDocuments({ user, actorActionAdmissionClosedAt: { $exists: true } }),
+    ).toBe(0);
     expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
   });
 

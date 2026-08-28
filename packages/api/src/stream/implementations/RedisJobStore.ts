@@ -4739,6 +4739,9 @@ export class RedisJobStore implements IJobStoreV2 {
       isTemporary: data.isTemporary != null ? data.isTemporary === '1' : undefined,
       agentEventDeliveryKey: data.agentEventDeliveryKey || undefined,
       agentEventInvocationKey: data.agentEventInvocationKey || undefined,
+      agentEventInvocationGenerationCreatedAt: data.agentEventInvocationGenerationCreatedAt
+        ? parseInt(data.agentEventInvocationGenerationCreatedAt, 10)
+        : undefined,
       agentEventDetachedTerminalEvidence: data.agentEventDetachedTerminalEvidence
         ? JSON.parse(data.agentEventDetachedTerminalEvidence)
         : undefined,

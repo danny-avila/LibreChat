@@ -42,6 +42,8 @@ const {
   isAgentEventRetentionActive,
   resumeAgentEventActor,
   createAgentEventActionRecorder,
+  createAgentEventActorDetachedActionLifecycle,
+  isAgentEventActorDetachedActionProducerEnabled,
   findAgentEventAppliedAction,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
@@ -60,6 +62,7 @@ const {
   getActions,
   getUserMemories,
   getRoleByName,
+  getAgentTriggerDelivery,
   isSubagentOwnerAdmissible,
   getAgentEventActorSnapshot,
   commitAgentEventActorState,
@@ -68,6 +71,9 @@ const {
   settleAgentEventActorSuspension,
   recordAgentEventActorReconciliation,
   completeAgentEventActorLegacyTurn,
+  reserveAgentEventActorDetachedAction,
+  markAgentEventActorDetachedActionRunning,
+  settleAgentEventActorDetachedAction,
 } = require('~/models');
 const {
   acquireEventChildGenerationLease,
@@ -1401,6 +1407,63 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         const claimGate = deferred();
         eventActorStartGate = deferred();
         const expectedAction = getSuspendedEventActorExpectedAction(durableEventActorSuspension);
+        const actorInvocationId =
+          job.metadata.agentEventInvocationKey ?? job.metadata.agentEventDeliveryKey;
+        let actorInvocationGenerationCreatedAt =
+          job.metadata.agentEventInvocationGenerationCreatedAt ??
+          (job.metadata.agentEventInvocationKey == null ? job.createdAt : undefined);
+        if (
+          actorInvocationGenerationCreatedAt == null &&
+          job.metadata.agentEventInvocationKey != null
+        ) {
+          const originalDelivery = await getAgentTriggerDelivery(
+            job.metadata.agentEventInvocationKey,
+          );
+          actorInvocationGenerationCreatedAt = originalDelivery?.handling?.generationCreatedAt;
+        }
+        if (
+          actorInvocationId != null &&
+          Number.isSafeInteger(actorInvocationGenerationCreatedAt) &&
+          req._agentEventBindingId != null
+        ) {
+          req._agentEventDetachedActionLifecycle = createAgentEventActorDetachedActionLifecycle(
+            {
+              user: userId,
+              ...(req._agentEventBindingTenantId == null
+                ? {}
+                : { tenantId: req._agentEventBindingTenantId }),
+              bindingId: req._agentEventBindingId,
+              conversationId,
+              generationCreatedAt: actorInvocationGenerationCreatedAt,
+              turnCreatedAt: job.createdAt,
+              invocationId: actorInvocationId,
+              expectedAction,
+            },
+            {
+              reserveAgentEventActorDetachedAction,
+              markAgentEventActorDetachedActionRunning,
+              settleAgentEventActorDetachedAction,
+              producerEnabled: () =>
+                GenerationJobManager.isRedis && isAgentEventActorDetachedActionProducerEnabled(),
+              persistTerminalEvidence: async (evidence) => {
+                const persisted =
+                  await GenerationJobManager.persistAgentEventDetachedTerminalEvidence(
+                    streamId,
+                    job.createdAt,
+                    evidence,
+                  );
+                if (!persisted) {
+                  throw new Error(
+                    'Detached Event Actor terminal retry evidence could not be staged',
+                  );
+                }
+              },
+              onTerminal: async () => {
+                await GenerationJobManager.retryTerminalHostAction(streamId, job.createdAt);
+              },
+            },
+          );
+        }
         eventActorActionRecorder = createAgentEventActionRecorder(expectedAction);
         req._agentEventActionObserver = eventActorActionRecorder.observeToolEnd;
         eventActorResumePromise = resumeAgentEventActor(
@@ -1454,7 +1517,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
                 client?.contentParts ?? [],
                 { userSubmittedMessageFieldPaths },
               ),
-            readSuspension: () => client?.readEventActorSuspension(),
+            readSuspension: () =>
+              req._agentEventDetachedActionLifecycle?.readSuspension() ??
+              client?.readEventActorSuspension(),
             readResultContext: () => client?.getEventActorContext(),
           },
           {

@@ -1700,6 +1700,10 @@ export function createAgentTriggerDeliveryMethods(
           },
           $unset: {
             lastError: 1,
+            ...(input.requiresActionAdmission === true && {
+              actorActionAdmittedAt: 1,
+              actorActionAdmissionId: 1,
+            }),
             ...(applied && { 'handling.error': 1 }),
             ...(!applied && { 'handling.action': 1 }),
           },
@@ -1743,7 +1747,13 @@ export function createAgentTriggerDeliveryMethods(
             $max: {
               expiresAt: new Date(actorReceipt.settledAt.getTime() + SUCCESS_RETENTION_MS),
             },
-            $unset: { lastError: 1 },
+            $unset: {
+              lastError: 1,
+              ...(input.requiresActionAdmission === true && {
+                actorActionAdmittedAt: 1,
+                actorActionAdmissionId: 1,
+              }),
+            },
           },
           { new: true },
         )
@@ -1807,6 +1817,7 @@ export function createAgentTriggerDeliveryMethods(
         'envelope.target.bindingId': input.bindingId,
         actorReceipt: { $exists: false },
         actorActionAdmittedAt: { $exists: false },
+        actorActionAdmissionClosedAt: { $exists: false },
         $or: [
           { handling: { $exists: false } },
           {
@@ -2667,7 +2678,10 @@ export function createAgentTriggerDeliveryMethods(
     return Delivery().countDocuments({
       user,
       $or: [
-        { actorActionAdmittedAt: { $exists: true } },
+        {
+          actorActionAdmittedAt: { $exists: true },
+          actorReceipt: { $exists: false },
+        },
         {
           status: { $in: ['leased', 'capability_leased'] },
           leaseUntil: { $gt: now },
@@ -2711,6 +2725,10 @@ export function createAgentTriggerDeliveryMethods(
       },
       { upsert: true },
     );
+    await Delivery().updateMany(
+      { user },
+      { $set: { actorActionAdmissionClosedAt: fenceStartedAt } },
+    );
   }
 
   /** Disarms only the pre-commit deletion attempt that owns this marker. */
@@ -2726,8 +2744,12 @@ export function createAgentTriggerDeliveryMethods(
     if (ownsLiveFence == null) {
       return false;
     }
-    const result = await UserPurge().deleteOne({ _id: user, fenceStartedAt });
-    return result.deletedCount === 1;
+    await Delivery().updateMany(
+      { user, actorActionAdmissionClosedAt: fenceStartedAt },
+      { $unset: { actorActionAdmissionClosedAt: 1 } },
+    );
+    await UserPurge().deleteOne({ _id: user, fenceStartedAt });
+    return true;
   }
 
   /** Recovers cleanup markers whose users are gone; active-user markers are never destructive. */
@@ -2757,6 +2779,10 @@ export function createAgentTriggerDeliveryMethods(
           );
           continue;
         }
+        await Delivery().updateMany(
+          { user: marker._id, actorActionAdmissionClosedAt: marker.fenceStartedAt },
+          { $unset: { actorActionAdmissionClosedAt: 1 } },
+        );
         await UserPurge().deleteOne({ _id: marker._id, fenceStartedAt: marker.fenceStartedAt });
         continue;
       }

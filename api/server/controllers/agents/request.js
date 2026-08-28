@@ -1390,7 +1390,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           agentEventDeliveryKey: agentEventDelivery.deliveryKey,
           ...(internalDetachedCompletion == null
             ? {}
-            : { agentEventInvocationKey: internalDetachedCompletion.invocationId }),
+            : {
+                agentEventInvocationKey: internalDetachedCompletion.invocationId,
+                agentEventInvocationGenerationCreatedAt:
+                  internalDetachedCompletion.generationCreatedAt,
+              }),
           agentEventBindingId: boundEventBindingId,
           ...(agentEventDelivery.expectedAction != null && {
             agentEventExpectedAction: agentEventDelivery.expectedAction,
