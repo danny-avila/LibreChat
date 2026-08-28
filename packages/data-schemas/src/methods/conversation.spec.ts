@@ -4264,8 +4264,13 @@ describe('Conversation Operations', () => {
           suspension: evidence,
           actionId: 'action-stale',
           jobCreatedAt: 456,
+          invalidateHead: true,
         }),
       ).resolves.toEqual({ status: 'stored' });
+      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+        state: { ...baseState, requiresColdStart: true },
+        suspension: { status: 'pending' },
+      });
       await expect(
         methods.claimAgentEventActorSuspension({
           ...owner,

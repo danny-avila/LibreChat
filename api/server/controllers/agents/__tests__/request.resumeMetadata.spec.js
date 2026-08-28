@@ -3042,10 +3042,12 @@ describe('ResumableAgentController resume metadata', () => {
     });
     let observedHookResult;
     const completedResponseWrite = jest.fn();
+    const exposePendingApproval = jest.fn().mockResolvedValue(undefined);
     const client = {
       options: {},
       jobCreatedAt: 1000,
       pendingApproval: { actionId: 'action-pause-barrier' },
+      exposePendingApproval,
       skipSaveUserMessage: false,
       skipSaveConvo: false,
       getSaveOptions: jest.fn(() => ({ endpoint: 'agents' })),
@@ -3123,6 +3125,9 @@ describe('ResumableAgentController resume metadata', () => {
       mockSaveMessage.mock.invocationCallOrder[0],
     );
     expect(mockSaveMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      mockGenerationJobManager.approvals.finishPausePersistence.mock.invocationCallOrder[0],
+    );
+    expect(exposePendingApproval.mock.invocationCallOrder[0]).toBeLessThan(
       mockGenerationJobManager.approvals.finishPausePersistence.mock.invocationCallOrder[0],
     );
     expect(mockGenerationJobManager.claimTerminalJob).not.toHaveBeenCalled();

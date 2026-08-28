@@ -1198,6 +1198,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   let durableEventActorSuspension;
   let eventActorResumePromise;
   let eventActorStartGate;
+  let eventActorContinuationStarted = false;
   let eventActorActionRecorder;
   let appliedEventActor;
   const providerExecutionId = randomUUID();
@@ -1661,17 +1662,6 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   let pausePersistenceFailed = false;
   let pausePersistenceFailureFinalized = false;
   try {
-    if (
-      !(await GenerationJobManager.beginProviderExecution(
-        streamId,
-        job.createdAt,
-        providerExecutionId,
-      ))
-    ) {
-      throw Object.assign(new Error('Generation stopped before provider resume'), {
-        code: 'RUN_REPLACED',
-      });
-    }
     if (userSubmittedPaths.length > 0) {
       job.metadata.userSubmittedPaths = userSubmittedPaths;
     }
@@ -1735,9 +1725,21 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         discoveredToolNames: job.metadata?.discoveredTools,
         activityPhaseSnapshot: job.metadata?.activityPhaseSnapshot,
       });
+    if (
+      !(await GenerationJobManager.beginProviderExecution(
+        streamId,
+        job.createdAt,
+        providerExecutionId,
+      ))
+    ) {
+      throw Object.assign(new Error('Generation stopped before provider resume'), {
+        code: 'RUN_REPLACED',
+      });
+    }
     if (eventActorResumePromise == null) {
       await resumeClient();
     } else {
+      eventActorContinuationStarted = true;
       eventActorStartGate.resolve(async (actorContext) => {
         client.checkpointNamespace = actorContext.checkpointNamespace;
         client.eventActorCheckpointId = actorContext.checkpointId;
@@ -1801,6 +1803,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           }
           throw pausePersistenceError;
         }
+        await client.exposePendingApproval?.();
         const released = await GenerationJobManager.approvals.finishPausePersistence(
           streamId,
           pauseActionId,
@@ -1811,7 +1814,6 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
             `[ResumeAgentController] Re-pause persistence barrier changed before release: ${streamId}`,
           );
         }
-        await client.exposePendingApproval?.();
         if (scheduleId) {
           await recordScheduleOutcome({
             scheduleId,
@@ -1864,6 +1866,14 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       appliedEventActor,
     });
   } catch (err) {
+    if (
+      eventActorResumePromise != null &&
+      eventActorStartGate != null &&
+      !eventActorContinuationStarted
+    ) {
+      eventActorStartGate.reject(err);
+      await eventActorResumePromise.catch(() => {});
+    }
     logger.error('[ResumeAgentController] Resume failed', getSafeErrorMetadata(err));
     if (pausePersistenceFailed) {
       // failPausePersistence already performed the exact requires_action ->

@@ -239,6 +239,7 @@ export async function executeAgentEventActor<T>(
   let pendingSuspension:
     | { actionId: string; jobCreatedAt: number; interrupt: EventActorInterrupt }
     | undefined;
+  let actionAppliedBeforePause = false;
   const adapter: EventActorHostAdapter<EventActorEvent, EventActorResult> = {
     async prepare(request, context) {
       if (context.signal.aborted) {
@@ -537,6 +538,7 @@ export async function executeAgentEventActor<T>(
        * remains in the checkpoint and is classified after the pause resumes. */
       pendingSuspension = input.readSuspension?.();
       if (pendingSuspension != null) {
+        actionAppliedBeforePause = input.readAppliedAction() != null;
         const checkpoint = await captureAgentEventCheckpoint(
           input.conversationId,
           invocation.fork.checkpointNs,
@@ -617,6 +619,7 @@ export async function executeAgentEventActor<T>(
         suspension: request.suspension as IAgentEventActorSuspensionEvidence,
         actionId: pendingSuspension.actionId,
         jobCreatedAt: pendingSuspension.jobCreatedAt,
+        ...(actionAppliedBeforePause ? { invalidateHead: true } : {}),
         ...(request.previous == null ? {} : { previous: request.previous }),
       });
     },
@@ -899,6 +902,7 @@ export async function resumeAgentEventActor<T>(
   let pendingSuspension:
     | { actionId: string; jobCreatedAt: number; interrupt: EventActorInterrupt }
     | undefined;
+  let actionAppliedBeforePause = false;
 
   const owner = {
     user: input.user,
@@ -977,6 +981,7 @@ export async function resumeAgentEventActor<T>(
        * without any resumable host action. */
       pendingSuspension = input.readSuspension?.();
       if (pendingSuspension != null) {
+        actionAppliedBeforePause = input.readAppliedAction() != null;
         const checkpoint = await captureAgentEventCheckpoint(
           input.conversationId,
           request.suspension.checkpoint.checkpointNs,
@@ -1076,6 +1081,7 @@ export async function resumeAgentEventActor<T>(
         suspension: request.suspension as IAgentEventActorSuspensionEvidence,
         actionId: pendingSuspension.actionId,
         jobCreatedAt: pendingSuspension.jobCreatedAt,
+        ...(actionAppliedBeforePause ? { invalidateHead: true } : {}),
         ...(request.previous == null ? {} : { previous: request.previous }),
       });
     },

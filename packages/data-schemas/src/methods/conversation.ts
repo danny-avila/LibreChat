@@ -323,6 +323,8 @@ export interface ConversationMethods {
     suspension: IAgentEventActorSuspensionEvidence;
     actionId: string;
     jobCreatedAt: number;
+    /** The segment applied its expected action before publishing this successor pause. */
+    invalidateHead?: boolean;
     previous?: AgentEventActorSettlementAuthority;
   }): Promise<{ status: 'stored' | 'stale' }>;
   claimAgentEventActorSuspension(input: {
@@ -642,6 +644,7 @@ export function createConversationMethods(
     suspension: IAgentEventActorSuspensionEvidence;
     actionId: string;
     jobCreatedAt: number;
+    invalidateHead?: boolean;
     previous?: AgentEventActorSettlementAuthority;
   }): Promise<{ status: 'stored' | 'stale' }> {
     validateAgentEventActorSuspension(
@@ -666,37 +669,64 @@ export function createConversationMethods(
             'agentEventActorSuspension.suspension.attempt': input.previous.attempt,
             'agentEventActorSuspension.resumeAttemptId': input.previous.resumeAttemptId,
           };
-    const stored = await Conversation.findOneAndUpdate(
-      {
-        user: input.user,
-        conversationId: input.conversationId,
-        subagentThread: { $exists: true },
-        agentEventBinding: { $exists: true },
-        agentEventActorReconciliations: {
-          $elemMatch: {
-            invocationId: input.suspension.invocation.invocationId,
-            status: 'invocation_pending',
-          },
-        },
-        ...subagentLeaseTenantFilter(input.tenantId),
-        ...activeExpirationFilter<IConversation>(),
-        ...predecessor,
-      },
-      {
-        $set: {
-          agentEventActorSuspension: {
-            suspension: input.suspension,
-            actionId: input.actionId,
-            jobCreatedAt: input.jobCreatedAt,
-            status: 'pending',
-            observedAt: new Date(),
-          },
+    const ownership = {
+      user: input.user,
+      conversationId: input.conversationId,
+      subagentThread: { $exists: true },
+      agentEventBinding: { $exists: true },
+      agentEventActorReconciliations: {
+        $elemMatch: {
+          invocationId: input.suspension.invocation.invocationId,
+          status: 'invocation_pending',
         },
       },
+      ...subagentLeaseTenantFilter(input.tenantId),
+      ...activeExpirationFilter<IConversation>(),
+      ...predecessor,
+    };
+    const storeUpdate = {
+      $set: {
+        agentEventActorSuspension: {
+          suspension: input.suspension,
+          actionId: input.actionId,
+          jobCreatedAt: input.jobCreatedAt,
+          status: 'pending' as const,
+          observedAt: new Date(),
+        },
+        ...(input.invalidateHead === true ? { 'agentEventActor.requiresColdStart': true } : {}),
+      },
+    };
+    let stored = await Conversation.findOneAndUpdate(
+      {
+        ...ownership,
+        ...(input.invalidateHead === true ? { agentEventActor: { $exists: true } } : {}),
+      },
+      storeUpdate,
       { new: false, timestamps: false },
     )
       .select('_id')
       .lean<IConversation>();
+    /** A headless actor is already guaranteed to cold-start; publish the
+     * successor without manufacturing a partial canonical state. */
+    if (stored == null && input.invalidateHead === true) {
+      stored = await Conversation.findOneAndUpdate(
+        { ...ownership, agentEventActor: { $exists: false } },
+        {
+          $set: {
+            agentEventActorSuspension: {
+              suspension: input.suspension,
+              actionId: input.actionId,
+              jobCreatedAt: input.jobCreatedAt,
+              status: 'pending',
+              observedAt: new Date(),
+            },
+          },
+        },
+        { new: false, timestamps: false },
+      )
+        .select('_id')
+        .lean<IConversation>();
+    }
     return { status: stored == null ? 'stale' : 'stored' };
   }
 

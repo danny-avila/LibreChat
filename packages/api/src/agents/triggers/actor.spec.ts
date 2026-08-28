@@ -446,6 +446,7 @@ describe('event actor host adapter', () => {
     expect(dependencies.storeSuspension).toHaveBeenLastCalledWith(
       expect.objectContaining({
         actionId: 'action-second',
+        invalidateHead: true,
         previous: {
           suspensionId: initial.execution.suspension.suspensionId,
           attempt: 0,

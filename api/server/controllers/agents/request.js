@@ -2324,6 +2324,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               }
               throw pausePersistenceError;
             }
+            await client.exposePendingApproval?.();
             const released = await GenerationJobManager.approvals.finishPausePersistence(
               streamId,
               pauseActionId,
@@ -2334,7 +2335,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 `[ResumableAgentController] Pause persistence barrier changed before release: ${streamId}`,
               );
             }
-            await client.exposePendingApproval?.();
             // The pause projection is what moves the run row off `started` and frees its
             // GLOBAL capacity slot. recordScheduleOutcome already retried it; a `false`
             // here means every attempt failed, leaving the row `started` while the job
