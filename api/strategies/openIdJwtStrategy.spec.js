@@ -413,6 +413,19 @@ describe('openIdJwtStrategy – token source handling', () => {
     expect(user.federatedTokens.access_token).toBe(rawToken);
   });
 
+  it('should decline a multi-audience ID token that also names a configured resource', async () => {
+    withEnv({ OPENID_CLIENT_ID: 'client-id', OPENID_AUDIENCE: 'api://resource-app' }, () => {
+      openIdJwtLogin(mockOpenIdConfig);
+    });
+
+    const claims = { ...payload, aud: ['client-id', 'api://resource-app'], nonce: 'n-0S6_WzA2Mj' };
+    const req = { headers: { authorization: `Bearer ${makeJwt(claims)}` } };
+
+    const { user } = await invokeVerify(req, claims);
+
+    expect(user.federatedTokens.access_token).toBeUndefined();
+  });
+
   it('should reuse a raw Bearer token whose audience names a configured resource', async () => {
     withEnv({ OPENID_CLIENT_ID: 'client-id', OPENID_AUDIENCE: 'api://resource-app' }, () => {
       openIdJwtLogin(mockOpenIdConfig);

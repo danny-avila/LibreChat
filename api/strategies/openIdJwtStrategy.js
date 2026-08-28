@@ -44,10 +44,13 @@ const getOpenIdJwtAudience = () => {
   return uniqueAudiences.length > 1 ? uniqueAudiences : uniqueAudiences[0];
 };
 
-/** Audiences that name a protected resource rather than the OIDC client, so a token bearing one cannot be an ID token */
-const getOpenIdResourceAudiences = () => {
+/** The configured audiences a reused bearer is weighed against when deciding whether it is an access token */
+const getOpenIdAudienceConfig = () => {
   const clientId = process.env.OPENID_CLIENT_ID;
-  return new Set(parseOpenIdAudiences().filter((audience) => audience !== clientId));
+  return {
+    clientId,
+    resources: new Set(parseOpenIdAudiences().filter((audience) => audience !== clientId)),
+  };
 };
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -127,7 +130,7 @@ const openIdJwtLogin = (openIdConfig) => {
     jwksRsaOptions.requestAgent = requestAgent;
   }
 
-  const resourceAudiences = getOpenIdResourceAudiences();
+  const audienceConfig = getOpenIdAudienceConfig();
 
   return new JwtStrategy(
     {
@@ -253,12 +256,13 @@ const openIdJwtLogin = (openIdConfig) => {
            */
           let reusableRawToken;
           if (!accessToken) {
-            reusableRawToken = isAccessTokenJwt(rawToken, payload, resourceAudiences)
+            reusableRawToken = isAccessTokenJwt(rawToken, payload, audienceConfig)
               ? rawToken
               : undefined;
             if (!reusableRawToken) {
-              logger.warn(
-                '[openIdJwtLogin] No stored OpenID access token, and the request bearer is not identifiable as one. Leaving it unset; downstream OBO exchanges will report that re-authentication is required.',
+              /** Per-request on the reuse path, so the actionable warning is left to the consumer that actually needs the credential */
+              logger.debug(
+                '[openIdJwtLogin] No stored OpenID access token, and the request bearer is not identifiable as one; leaving it unset',
               );
             }
           }

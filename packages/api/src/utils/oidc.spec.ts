@@ -771,6 +771,7 @@ describe('OpenID Token Utilities', () => {
     const encodeSegment = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64');
     const makeJwt = (claims: object, header: object = { alg: 'RS256' }) =>
       `${encodeSegment(header)}.${encodeSegment(claims)}.signature`;
+    const audiences = { resources: new Set(['api://resource-app']), clientId: 'client-id' };
 
     it('accepts a token carrying the Entra `scp` scope claim', () => {
       const claims = { aud: 'client-id', scp: 'User.Read Files.Read' };
@@ -792,12 +793,17 @@ describe('OpenID Token Utilities', () => {
 
     it('accepts a token whose audience names a configured resource', () => {
       const claims = { aud: 'api://resource-app' };
-      expect(isAccessTokenJwt(makeJwt(claims), claims, new Set(['api://resource-app']))).toBe(true);
+      expect(isAccessTokenJwt(makeJwt(claims), claims, audiences)).toBe(true);
     });
 
-    it('accepts a resource audience listed among several', () => {
-      const claims = { aud: ['api://resource-app', 'client-id'] };
-      expect(isAccessTokenJwt(makeJwt(claims), claims, new Set(['api://resource-app']))).toBe(true);
+    it('accepts a resource audience listed among several non-client audiences', () => {
+      const claims = { aud: ['api://resource-app', 'api://other-app'] };
+      expect(isAccessTokenJwt(makeJwt(claims), claims, audiences)).toBe(true);
+    });
+
+    it('rejects a multi-audience ID token that also names a configured resource', () => {
+      const claims = { aud: ['client-id', 'api://resource-app'], nonce: 'n-0S6_WzA2Mj' };
+      expect(isAccessTokenJwt(makeJwt(claims), claims, audiences)).toBe(false);
     });
 
     it('rejects an Entra-shaped ID token', () => {
@@ -817,9 +823,7 @@ describe('OpenID Token Utilities', () => {
 
     it('rejects a token whose audience is only the OIDC client id', () => {
       const claims = { aud: 'client-id' };
-      expect(isAccessTokenJwt(makeJwt(claims), claims, new Set(['api://resource-app']))).toBe(
-        false,
-      );
+      expect(isAccessTokenJwt(makeJwt(claims), claims, audiences)).toBe(false);
     });
 
     it('does not treat `nonce` or `auth_time` as disqualifying on a scoped token', () => {

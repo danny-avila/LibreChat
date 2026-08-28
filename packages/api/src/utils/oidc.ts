@@ -28,6 +28,8 @@ export const OPENID_TOKEN_FIELDS = [
   'EXPIRES_AT',
 ] as const;
 
+export type OpenIDTokenField = (typeof OPENID_TOKEN_FIELDS)[number];
+
 /**
  * Placeholder for Microsoft Graph API access token.
  * This placeholder is resolved asynchronously via OBO (On-Behalf-Of) flow
@@ -51,6 +53,14 @@ export interface JwtTypeClaims {
   scope?: unknown;
   at_hash?: unknown;
   c_hash?: unknown;
+}
+
+/** The configured audiences a verified JWT is weighed against. */
+export interface AccessTokenAudiences {
+  /** Audiences that name a protected resource rather than the OIDC client. */
+  resources?: ReadonlySet<string>;
+  /** The OIDC client id, so an `aud` that still names it is not read as resource-bound. */
+  clientId?: string;
 }
 
 /** RFC 9068 media type for a JWT access token, as it appears in the `typ` header (compared case-insensitively). */
@@ -82,7 +92,7 @@ function audienceList(aud: string | string[] | undefined): string[] {
  * risking a mis-typed assertion:
  * - an RFC 9068 `at+jwt` header type,
  * - an OAuth scope claim (`scp` or `scope`), which OIDC does not define for an ID token,
- * - an audience naming a protected resource rather than the OIDC client.
+ * - an audience naming a protected resource and not also the OIDC client.
  *
  * `at_hash` and `c_hash` veto regardless, since they exist only to bind an ID token to its
  * companion access token or code. `nonce` and `auth_time` are deliberately not vetoes: some
@@ -91,7 +101,7 @@ function audienceList(aud: string | string[] | undefined): string[] {
 export function isAccessTokenJwt(
   token: string | undefined,
   claims: JwtTypeClaims | undefined,
-  resourceAudiences?: ReadonlySet<string>,
+  audiences?: AccessTokenAudiences,
 ): boolean {
   if (!token || !claims) {
     return false;
@@ -110,11 +120,21 @@ export function isAccessTokenJwt(
     return true;
   }
 
-  if (!resourceAudiences?.size) {
+  if (!audiences?.resources?.size) {
     return false;
   }
 
-  return audienceList(claims.aud).some((audience) => resourceAudiences.has(audience));
+  /**
+   * OIDC permits an ID token to carry several audiences, and this strategy's own check admits
+   * the token as soon as one of them is the client id. A resource audience is therefore only
+   * evidence of an access token while the client id is absent from the list.
+   */
+  const tokenAudiences = audienceList(claims.aud);
+  if (audiences.clientId != null && tokenAudiences.includes(audiences.clientId)) {
+    return false;
+  }
+
+  return tokenAudiences.some((audience) => audiences.resources!.has(audience));
 }
 
 /**
@@ -221,9 +241,15 @@ export function isOpenIDTokenValid(tokenInfo: OpenIDTokenInfo | null): boolean {
   return true;
 }
 
+/**
+ * @param fields Restricts which placeholders may resolve. Callers holding a token set whose
+ * access token is unusable pass `['ID_TOKEN']`, so the ID token resolves on its own expiry while
+ * every other placeholder keeps its literal-then-strip behaviour.
+ */
 export function processOpenIDPlaceholders(
   value: string,
   tokenInfo: OpenIDTokenInfo | null,
+  fields: readonly OpenIDTokenField[] = OPENID_TOKEN_FIELDS,
 ): string {
   if (!tokenInfo || typeof value !== 'string') {
     return value;
@@ -231,7 +257,7 @@ export function processOpenIDPlaceholders(
 
   let processedValue = value;
 
-  for (const field of OPENID_TOKEN_FIELDS) {
+  for (const field of fields) {
     const placeholder = `{{LIBRECHAT_OPENID_${field}}}`;
     if (!processedValue.includes(placeholder)) {
       continue;
@@ -271,7 +297,7 @@ export function processOpenIDPlaceholders(
   }
 
   const genericPlaceholder = '{{LIBRECHAT_OPENID_TOKEN}}';
-  if (processedValue.includes(genericPlaceholder)) {
+  if (fields.includes('ACCESS_TOKEN') && processedValue.includes(genericPlaceholder)) {
     const replacementValue = tokenInfo.accessToken || '';
     processedValue = processedValue.replace(new RegExp(genericPlaceholder, 'g'), replacementValue);
   }
