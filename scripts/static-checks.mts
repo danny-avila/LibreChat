@@ -12,6 +12,11 @@
  * Like the CI job, every selected check runs even after one fails, and the
  * failures are summarized at the end.
  *
+ * The per-file checks see the exact staged content of a commit, because the
+ * pre-commit hook runs them through lint-staged. The tree-wide gates read the
+ * working tree, the same as running them by hand — reading the index instead
+ * would mean materializing a second checkout with its own installs and builds.
+ *
  * Runs on Node 24+ via native type-stripping (`.mts` keeps ESM semantics under
  * the CommonJS repo root):
  *
@@ -110,7 +115,7 @@ const I18N_SOURCE_DIRS = [
 
 const SOURCE_EXTENSIONS = ['.js', '.jsx', '.ts', '.tsx'];
 const IMPORT_EXTENSIONS = [...SOURCE_EXTENSIONS, '.mjs', '.cjs', '.mts', '.cts'];
-const SKIP_DIR_NAMES = new Set(['node_modules', 'dist', 'coverage', '.turbo', '.git']);
+const SKIP_DIR_NAMES = new Set(['node_modules', 'dist', 'coverage']);
 
 /** Argument batch size, so a large diff cannot overflow the command line. */
 const BATCH_SIZE = 400;
@@ -142,6 +147,8 @@ interface Check {
 interface Executable {
   command: string;
   args: string[];
+  /** Windows resolves `.cmd` shims only through a shell. */
+  shell?: boolean;
 }
 
 interface CommandResult {
@@ -203,6 +210,7 @@ function runCommand(executable: Executable, args: string[], cwd = ROOT): Command
     cwd,
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
+    shell: executable.shell === true,
   });
   const stdout = result.stdout ?? '';
   const stderr = result.stderr ?? (result.error ? `${result.error.message}\n` : '');
@@ -229,6 +237,11 @@ function runOnFiles(executable: Executable, args: string[], files: string[]): Co
 }
 
 const GIT: Executable = { command: 'git', args: [] };
+
+const NPM: Executable =
+  process.platform === 'win32'
+    ? { command: 'npm.cmd', args: [], shell: true }
+    : { command: 'npm', args: [] };
 
 function captureStdout(executable: Executable, args: string[]): string {
   const result = runCommand(executable, args);
@@ -307,44 +320,62 @@ function groupIsActive(files: string[], patterns: readonly string[]): boolean {
 
 interface Target {
   label: string;
+  /** Every changed path, deletions included — this is what activates a group. */
   files: string[];
+  /** Only paths the per-file checks can open, matching the CI job's file list. */
+  existing: string[];
+}
+
+/**
+ * Two lists, because CI derives two. `dorny/paths-filter` matches added,
+ * modified AND deleted paths when it decides which checks are affected, while
+ * the ESLint/Prettier/import-sort steps narrow to `--diff-filter=ACMRTUXB`
+ * so they never hand a deleted path to a tool. Activating gates off the
+ * narrowed list would let a delete-only commit — the last reference to a
+ * translation key, say — slip past the i18n and depcheck gates.
+ */
+function diffPaths(args: string[]): { files: string[]; existing: string[] } {
+  const split = (output: string): string[] => output.split('\0').filter(Boolean);
+  return {
+    files: split(captureStdout(GIT, args)),
+    existing: split(captureStdout(GIT, [...args, '--diff-filter=ACMRTUXB'])),
+  };
 }
 
 function resolveTarget(): Target {
   if (FILE_ARGS.length > 0) {
     const files = FILE_ARGS.map((file) => relative(ROOT, resolve(file)).split('\\').join('/'));
-    return { label: 'files from the command line', files };
+    return { label: 'files from the command line', files, existing: files };
   }
 
-  const diffFilter = '--diff-filter=ACMRTUXB';
   if (OPTIONS.commit) {
-    const output = captureStdout(GIT, [
-      'diff-tree',
-      '--root',
-      '--no-commit-id',
-      '-r',
-      '-z',
-      '--name-only',
-      diffFilter,
-      OPTIONS.commit,
-    ]);
-    return { label: `commit ${OPTIONS.commit}`, files: output.split('\0').filter(Boolean) };
+    // -m is load-bearing: without it a merge commit yields no paths at all.
+    return {
+      label: `commit ${OPTIONS.commit}`,
+      ...diffPaths([
+        'diff-tree',
+        '--root',
+        '-m',
+        '--no-commit-id',
+        '-r',
+        '-z',
+        '--name-only',
+        OPTIONS.commit,
+      ]),
+    };
   }
 
   if (OPTIONS.against) {
-    const output = captureStdout(GIT, [
-      'diff',
-      '-z',
-      '--name-only',
-      diffFilter,
-      OPTIONS.against,
-      'HEAD',
-    ]);
-    return { label: `${OPTIONS.against}..HEAD`, files: output.split('\0').filter(Boolean) };
+    return {
+      label: `${OPTIONS.against}..HEAD`,
+      ...diffPaths(['diff', '-z', '--name-only', OPTIONS.against, 'HEAD']),
+    };
   }
 
-  const output = captureStdout(GIT, ['diff', '-z', '--cached', '--name-only', diffFilter]);
-  return { label: 'staged diff', files: output.split('\0').filter(Boolean) };
+  return {
+    label: 'staged diff',
+    ...diffPaths(['diff', '-z', '--cached', '--name-only']),
+  };
 }
 
 /** Recursively yields repo-relative paths of source files under `dir`. */
@@ -358,7 +389,9 @@ async function* walkSourceFiles(dir: string, extensions: string[]): AsyncGenerat
   for (const entry of entries) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (SKIP_DIR_NAMES.has(entry.name)) continue;
+      // Dot directories hold tooling, not product code, and one of them —
+      // .claude/worktrees — can hold a full checkout per branch.
+      if (entry.name.startsWith('.') || SKIP_DIR_NAMES.has(entry.name)) continue;
       yield* walkSourceFiles(path, extensions);
     } else if (entry.isFile() && extensions.some((ext) => entry.name.endsWith(ext))) {
       yield path;
@@ -475,17 +508,21 @@ async function validatePackageJson(): Promise<CheckOutcome> {
 
 // --------------------------------------------------------------- config migration tests
 
-/** Workspace builds the config suite loads through `@librechat/*` imports. */
-const CONFIG_TEST_DISTS = [
-  'packages/data-provider/dist',
-  'packages/data-schemas/dist',
-  'packages/api/dist',
-];
+/**
+ * The config suite reaches these workspaces through their `dist` exports, so
+ * CI builds them before running it. Building here too — rather than skipping
+ * when `dist` is absent — keeps a fresh checkout from reporting a pass for a
+ * gate that never ran, and keeps a stale `dist` from being tested instead of
+ * the working tree. Each is a sub-second tsdown build.
+ */
+const CONFIG_TEST_BUILDS = ['build:data-provider', 'build:data-schemas', 'build:api'];
 
 function runConfigTests(): CheckOutcome {
-  const unbuilt = CONFIG_TEST_DISTS.filter((dist) => !existsSync(resolve(ROOT, dist)));
-  if (unbuilt.length > 0) {
-    return { ok: true, skipped: `${unbuilt.join(', ')} missing — run npm run build:packages` };
+  for (const script of CONFIG_TEST_BUILDS) {
+    const build = runCommand(NPM, ['run', script]);
+    if (build.status !== 0) {
+      return { ok: false, output: `npm run ${script} failed:\n${build.output}` };
+    }
   }
 
   mkdirSync(resolve(ROOT, 'api/data'), { recursive: true });
@@ -646,7 +683,14 @@ async function workspaceDependencies(manifest: Manifest | null): Promise<Set<str
 
 /** Falls back to a global install, which is how CI provides depcheck. */
 function resolveDepcheck(): Executable {
-  return resolveBin('depcheck') ?? { command: 'depcheck', args: [] };
+  return (
+    resolveBin('depcheck') ?? {
+      command: 'depcheck',
+      args: [],
+      // A global install is `depcheck.cmd` on Windows, which needs a shell.
+      shell: process.platform === 'win32',
+    }
+  );
 }
 
 function unusedDependencies(depcheck: Executable, cwd: string): string[] | null {
@@ -816,7 +860,7 @@ async function main(): Promise<void> {
   const context: CheckContext = {
     files: target.files,
     groups,
-    sourceFiles: target.files
+    sourceFiles: target.existing
       .filter((file) => SOURCE_FILE_PATTERN.test(file))
       .filter((file) => existsSync(resolve(ROOT, file))),
   };
