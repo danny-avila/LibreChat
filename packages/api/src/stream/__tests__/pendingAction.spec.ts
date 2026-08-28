@@ -669,6 +669,32 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       expect(await manager.approvals.peek(streamId)).toBeNull();
     });
 
+    test('clears the predecessor Event Actor suspension projection on resume', async () => {
+      const streamId = 'stream-resolve-event-actor-suspension';
+      const job = await manager.createJob(streamId, 'user-1', streamId, {
+        initialMetadata: { providerExecutionId: 'provider-paused' },
+      });
+      const action = buildAction(streamId);
+      await manager.approvals.pause(streamId, action, {
+        expectedCreatedAt: job.createdAt,
+        agentEventSuspension: { version: 1, suspensionId: 'suspension-1', attempt: 0 },
+      });
+
+      expect(
+        await manager.approvals.resolve(
+          streamId,
+          action.actionId,
+          { providerExecutionId: 'provider-resume', providerDrained: true },
+          job.createdAt,
+        ),
+      ).toBe(true);
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({
+        status: 'running',
+        metadata: { providerExecutionId: 'provider-resume' },
+      });
+      expect((await manager.getJob(streamId))?.metadata.agentEventSuspension).toBeUndefined();
+    });
+
     test('a concurrent double-resolve wins exactly once (race-safe)', async () => {
       const streamId = 'stream-double-resolve';
       await manager.createJob(streamId, 'user-1');

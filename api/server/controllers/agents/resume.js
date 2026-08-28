@@ -1411,7 +1411,10 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
               : { tenantId: req._agentEventBindingTenantId }),
             bindingId: req._agentEventBindingId,
             suspension: durableEventActorSuspension,
-            resumeAttemptId: randomUUID(),
+            /** One identity spans the Conversation claim and the job's
+             * provider-owner CAS. A terminal hook can therefore prove whether
+             * an abort won before or after the resume projection. */
+            resumeAttemptId: providerExecutionId,
             resumeValue: mapped.resumeValue,
             signal: job.abortController.signal,
             checkpointer: checkpointerCfg,

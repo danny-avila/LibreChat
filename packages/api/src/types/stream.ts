@@ -1,10 +1,10 @@
 import type { Agents, UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { EventEmitter } from 'events';
-import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type {
   AgentEventSuspensionProjection,
   AgentTriggerExpectedAction,
 } from '../agents/triggers/types';
+import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '../agents/hitl/resume';
 import type { MCPRuntimeRequestBody } from '../mcp/types';
 import type { ServerSentEvent } from './events';

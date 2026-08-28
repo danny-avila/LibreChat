@@ -6,6 +6,7 @@ const baseInput = (): ResolveAgentTurnExecutionPlanInput => ({
   parentMessageId: 'message-1',
   isNewConversation: false,
   canPause: false,
+  durableEventActorSuspensions: false,
   expectedActionMayDetach: false,
 });
 
@@ -57,6 +58,7 @@ describe('resolveAgentTurnExecutionPlan', () => {
         ...baseInput(),
         event: boundEvent(),
         canPause: true,
+        durableEventActorSuspensions: true,
       }).strategy,
     ).toBe('checkpoint');
   });
@@ -66,6 +68,10 @@ describe('resolveAgentTurnExecutionPlan', () => {
     ['no expected action', { event: { ...boundEvent(), expectedAction: undefined } }],
     ['memory checkpointer', { event: boundEvent(), checkpointerType: 'memory' }],
     ['detachable action', { event: boundEvent(), expectedActionMayDetach: true }],
+    [
+      'pre-cutover pause consumer fleet',
+      { event: boundEvent(), canPause: true, durableEventActorSuspensions: false },
+    ],
   ] as const)('falls back to history for %s', (_label, overrides) => {
     expect(resolveAgentTurnExecutionPlan({ ...baseInput(), ...overrides }).strategy).toBe(
       'history',

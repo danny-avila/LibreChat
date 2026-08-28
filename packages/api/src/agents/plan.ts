@@ -34,6 +34,9 @@ export interface ResolveAgentTurnExecutionPlanInput {
     expectedAction?: AgentTriggerExpectedAction;
   };
   canPause: boolean;
+  /** Fleet-wide producer gate. Shared-store deployments enable this only
+   * after every resume consumer understands signed Event Actor suspensions. */
+  durableEventActorSuspensions: boolean;
   checkpointerType?: TCheckpointerType;
   expectedActionMayDetach: boolean;
 }
@@ -70,7 +73,8 @@ export function resolveAgentTurnExecutionPlan(
     binding != null &&
     expectedAction != null &&
     input.checkpointerType !== 'memory' &&
-    !input.expectedActionMayDetach;
+    !input.expectedActionMayDetach &&
+    (!input.canPause || input.durableEventActorSuspensions);
   let strategy: AgentTurnContinuationStrategy = 'history';
   if (input.isNewConversation) {
     strategy = 'fresh';

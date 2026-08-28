@@ -1726,6 +1726,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             }
           : undefined,
       canPause: eventActorMayPause,
+      /** Protocol v2 is the existing homogeneous-fleet cutover. Keeping
+       * pause-capable producers on the legacy path under v1 prevents an old
+       * `/resume` replica from consuming a signed suspension it cannot claim. */
+      durableEventActorSuspensions: generationProtocolVersion >= GENERATION_PROTOCOL_V2,
       checkpointerType: agentsConfig?.checkpointer?.type,
       expectedActionMayDetach: eventActorActionMayDetach,
     });

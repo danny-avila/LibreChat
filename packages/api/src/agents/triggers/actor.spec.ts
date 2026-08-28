@@ -1,16 +1,18 @@
 import type {
   IAgentEventActorReconciliation,
   IAgentEventActorState,
+  IAgentEventActorSuspension,
 } from '@librechat/data-schemas';
+import type { EventActorInterrupt } from '@librechat/agents';
 import {
   captureAgentEventCheckpoint,
   deleteAgentCheckpoint,
   forkAgentEventCheckpoint,
   getAgentCheckpointer,
 } from '../checkpointer';
+import { cancelAgentEventActor, executeAgentEventActor, resumeAgentEventActor } from './actor';
 import { createAgentEventActionRecorder, findAgentEventAppliedAction } from './outcome';
 import { createAgentContextFingerprint } from '../compatibility';
-import { cancelAgentEventActor, executeAgentEventActor, resumeAgentEventActor } from './actor';
 
 jest.mock('../checkpointer', () => ({
   ...jest.requireActual('../checkpointer'),
@@ -67,6 +69,7 @@ describe('event actor host adapter', () => {
       state,
       reconciliations: [] as IAgentEventActorReconciliation[],
       legacyTurn,
+      suspension: null as IAgentEventActorSuspension | null,
       epoch,
     })),
     commitState: jest.fn(
@@ -227,8 +230,8 @@ describe('event actor host adapter', () => {
   });
 
   it('resumes signed evidence on a new executor and consumes its claim with the head CAS', async () => {
-    let storedSuspension;
-    let action;
+    let storedSuspension: IAgentEventActorSuspension | undefined;
+    let action: { toolName: string; toolCallId?: string } | undefined;
     const dependencies = {
       ...deps(),
       storeSuspension: jest.fn(async (input) => {
@@ -242,6 +245,9 @@ describe('event actor host adapter', () => {
         return { status: 'stored' as const };
       }),
       claimSuspension: jest.fn(async ({ resumeAttemptId }) => {
+        if (storedSuspension == null) {
+          throw new Error('test setup did not store a suspension');
+        }
         storedSuspension = { ...storedSuspension, status: 'claimed', resumeAttemptId };
         return { status: 'claimed' as const };
       }),
@@ -275,6 +281,9 @@ describe('event actor host adapter', () => {
       },
       dependencies,
     );
+    if (paused.execution.status !== 'suspended') {
+      throw new Error('test setup did not suspend');
+    }
     const evidence = JSON.parse(JSON.stringify(paused.execution.suspension));
     dependencies.getSnapshot.mockClear();
     dependencies.claimSuspension.mockClear();
@@ -326,8 +335,10 @@ describe('event actor host adapter', () => {
   });
 
   it('atomically replaces a claimed suspension on re-pause and settles a later no-action reply', async () => {
-    let storedSuspension;
-    let pendingPause;
+    let storedSuspension: IAgentEventActorSuspension | undefined;
+    let pendingPause:
+      | { actionId: string; jobCreatedAt: number; interrupt: EventActorInterrupt }
+      | undefined;
     const dependencies = {
       ...deps(),
       storeSuspension: jest.fn(async (input) => {
@@ -341,6 +352,9 @@ describe('event actor host adapter', () => {
         return { status: 'stored' as const };
       }),
       claimSuspension: jest.fn(async ({ resumeAttemptId }) => {
+        if (storedSuspension == null) {
+          throw new Error('test setup did not store a suspension');
+        }
         storedSuspension = { ...storedSuspension, status: 'claimed', resumeAttemptId };
         return { status: 'claimed' as const };
       }),
@@ -1065,6 +1079,7 @@ describe('event actor host adapter', () => {
           state: baseState,
           reconciliations: [],
           legacyTurn: null,
+          suspension: null,
           epoch: 0,
         })
         .mockRejectedValueOnce(new Error('readback unavailable')),
@@ -1122,6 +1137,7 @@ describe('event actor host adapter', () => {
       state: authoritative,
       reconciliations: [marker],
       legacyTurn: null,
+      suspension: null,
       epoch: 0,
     });
 
@@ -1167,6 +1183,7 @@ describe('event actor host adapter', () => {
           },
         ],
         legacyTurn: null,
+        suspension: null,
         epoch: 0,
       })),
     };
@@ -1206,6 +1223,7 @@ describe('event actor host adapter', () => {
           },
         ],
         legacyTurn: null,
+        suspension: null,
         epoch: 0,
       })),
       commitState: jest.fn(),
@@ -1279,6 +1297,7 @@ describe('event actor host adapter', () => {
           },
         ],
         legacyTurn: null,
+        suspension: null,
         epoch: 0,
       })),
       getReceipt: jest.fn(async () => ({
@@ -1421,6 +1440,7 @@ describe('event actor host adapter', () => {
         },
       ],
       legacyTurn: null,
+      suspension: null,
       epoch: 0,
     });
 
@@ -1548,6 +1568,7 @@ describe('event actor host adapter', () => {
         },
       ],
       legacyTurn: null,
+      suspension: null,
       epoch: 0,
     });
 

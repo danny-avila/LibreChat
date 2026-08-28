@@ -32,7 +32,7 @@ import {
 import { agentContextFingerprintsMatch } from '../compatibility';
 
 interface EventActorResult extends Record<string, EventActorEvent> {
-  action: AgentEventAppliedAction;
+  action: AgentEventAppliedAction & EventActorEvent;
   checkpointCaptureError: string | null;
 }
 
@@ -53,8 +53,6 @@ export interface ExecuteAgentEventActorInput<T> {
   invocationId: string;
   event: EventActorEvent;
   expectedAction?: AgentTriggerExpectedAction;
-  /** Projects the claimed Conversation fence into the exact job/action CAS. */
-  claimProjection?(): Promise<boolean>;
   signal: AbortSignal;
   checkpointer?: TCheckpointerConfig;
   contextFingerprint?: AgentContextFingerprint;
@@ -114,6 +112,8 @@ export interface ResumeAgentEventActorInput<T> {
   signal: AbortSignal;
   checkpointer?: TCheckpointerConfig;
   expectedAction?: AgentTriggerExpectedAction;
+  /** Projects the claimed Conversation fence into the exact job/action CAS. */
+  claimProjection?(): Promise<boolean>;
   resume(context: AgentEventActorInvocationContext): Promise<T>;
   readAppliedAction(): AgentEventAppliedAction | undefined;
   readSuspension?():
@@ -182,6 +182,17 @@ function asError(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value));
 }
 
+/** The host action receipt contains strings only, so this copy is also a
+ * valid SDK event value without weakening the application-facing type. */
+function toEventActorAppliedAction(
+  action: AgentEventAppliedAction,
+): AgentEventAppliedAction & EventActorEvent {
+  return {
+    toolName: action.toolName,
+    ...(action.toolCallId == null ? {} : { toolCallId: action.toolCallId }),
+  };
+}
+
 function checkpointMatches(
   state: IAgentEventActorState,
   checkpoint: { threadId: string; checkpointId?: string; checkpointNs: string },
@@ -194,7 +205,7 @@ function checkpointMatches(
   );
 }
 
-function actionAdmissionId(
+export function createAgentEventActorActionAdmissionId(
   invocationId: string,
   checkpoint: { threadId: string; checkpointId?: string; checkpointNs: string },
 ): string {
@@ -290,7 +301,7 @@ export async function executeAgentEventActor<T>(
         (item) => item.invocationId === input.invocationId && item.status === 'invocation_pending',
       );
       if (pendingInvocation != null && input.bindingId != null && deps.hasActionAdmission != null) {
-        const pendingAdmissionId = actionAdmissionId(
+        const pendingAdmissionId = createAgentEventActorActionAdmissionId(
           input.invocationId,
           pendingInvocation.checkpoint,
         );
@@ -435,7 +446,10 @@ export async function executeAgentEventActor<T>(
        * and terminal settlement. A plain receipt read cannot close the final
        * read-before-invoke race across two Mongo documents. */
       if (input.bindingId != null && deps.admitAction != null) {
-        const admissionId = actionAdmissionId(input.invocationId, invocation.fork);
+        const admissionId = createAgentEventActorActionAdmissionId(
+          input.invocationId,
+          invocation.fork,
+        );
         const admitted = await deps.admitAction({
           deliveryKey: input.invocationId,
           user: input.user,
@@ -516,7 +530,8 @@ export async function executeAgentEventActor<T>(
       } catch (error) {
         invocationError = error;
       }
-      const action = input.readAppliedAction();
+      const observedAction = input.readAppliedAction();
+      const action = observedAction == null ? undefined : toEventActorAppliedAction(observedAction);
       if (action == null) {
         if (invocationError != null) {
           throw invocationError;
@@ -951,7 +966,8 @@ export async function resumeAgentEventActor<T>(
       } catch (error) {
         invocationError = error;
       }
-      const action = input.readAppliedAction();
+      const observedAction = input.readAppliedAction();
+      const action = observedAction == null ? undefined : toEventActorAppliedAction(observedAction);
       if (action == null) {
         pendingSuspension = input.readSuspension?.();
         if (pendingSuspension != null) {

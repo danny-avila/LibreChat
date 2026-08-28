@@ -393,7 +393,11 @@ export class ApprovalLifecycle {
     const resumed = await this.store.transitionStatus(streamId, {
       from: 'requires_action',
       to: 'running',
-      clear: ['pendingAction', 'pendingActionId'],
+      /** The old suspension marker must not survive into the resumed provider
+       * segment. If that segment re-pauses, its canonical successor is stored
+       * before a new marker is published; clearing here makes a terminal job
+       * in that gap unambiguously recoverable as an unpublished re-pause. */
+      clear: ['pendingAction', 'pendingActionId', 'agentEventSuspension'],
       // Refresh the liveness basis so a long-paused run isn't reaped as stale
       // immediately after resuming (cleanup keys off lastActiveAt).
       /** Ownership can move across replicas on resume. Owner-specific fields

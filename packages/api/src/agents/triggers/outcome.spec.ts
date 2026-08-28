@@ -1,13 +1,16 @@
 import { StepTypes } from 'librechat-data-provider';
 import type { Agents } from 'librechat-data-provider';
 import type { SerializableJobData } from '~/stream';
-import { cancelAgentEventActor } from './actor';
 import {
   createAgentEventTerminalHandler as createAgentEventTerminalHandlerImpl,
   createAgentEventActionRecorder,
 } from './outcome';
+import { cancelAgentEventActor } from './actor';
 
-jest.mock('./actor', () => ({ cancelAgentEventActor: jest.fn() }));
+jest.mock('./actor', () => ({
+  ...jest.requireActual('./actor'),
+  cancelAgentEventActor: jest.fn(),
+}));
 const mockedCancelAgentEventActor = jest.mocked(cancelAgentEventActor);
 
 const createAgentEventTerminalHandler = (
@@ -27,6 +30,8 @@ const createAgentEventTerminalHandler = (
     backfillAgentEventActorReceipt: jest.fn().mockResolvedValue(true),
     completeAgentEventActorLegacyTurn: jest.fn().mockResolvedValue(true),
     cancelAgentEventActorSuspension: jest.fn().mockResolvedValue({ status: 'cancelled' }),
+    releaseAgentEventActorAction: jest.fn().mockResolvedValue(true),
+    hasAgentEventActorActionAdmission: jest.fn().mockResolvedValue(false),
     ...methods,
   });
 
@@ -61,6 +66,37 @@ function completedToolStep(): Agents.RunStep {
         },
       ],
     },
+  };
+}
+
+function suspensionEvidence(suspensionId: string, attempt = 0) {
+  return {
+    version: 1 as const,
+    suspensionId,
+    attempt,
+    issuedAt: 1,
+    expiresAt: 2,
+    invocation: {
+      actorThreadId: 'conversation-1',
+      invocationId: 'trigger_1',
+      depth: 1,
+      continuation: 'warm' as const,
+      base: { actorThreadId: 'conversation-1', generation: 1 },
+      fork: {
+        threadId: 'conversation-1',
+        checkpointNs: 'event-actor/trigger-1',
+        checkpointId: `checkpoint-${attempt}`,
+        invocationId: 'trigger_1',
+      },
+    },
+    checkpoint: {
+      threadId: 'conversation-1',
+      checkpointNs: 'event-actor/trigger-1',
+      checkpointId: `checkpoint-${attempt}`,
+      invocationId: 'trigger_1',
+    },
+    interrupt: { id: `interrupt-${attempt}`, payload: { type: 'tool_approval' } },
+    suspensionDigest: `signed-digest-${attempt}`,
   };
 }
 
@@ -130,6 +166,7 @@ describe('agent event terminal outcomes', () => {
       job({
         status: 'aborted',
         error: 'Approval expired before a decision was made',
+        agentEventBindingId: 'binding-1',
         agentEventSuspension: { version: 1, suspensionId: 'suspension-1', attempt: 0 },
       }),
       [],
@@ -205,6 +242,8 @@ describe('agent event terminal outcomes', () => {
       job({
         status: 'aborted',
         error: 'Approval expired before a decision was made',
+        agentEventBindingId: 'binding-1',
+        providerExecutionId: 'provider-paused',
         agentEventSuspension: {
           version: 1,
           suspensionId: suspension.suspensionId,
@@ -261,6 +300,252 @@ describe('agent event terminal outcomes', () => {
     expect(mockedCancelAgentEventActor).not.toHaveBeenCalled();
     expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'completed_no_action' }),
+    );
+  });
+
+  it('cancels a pending suspension when paused-history persistence terminalizes the job', async () => {
+    const suspension = suspensionEvidence('suspension-persistence-error');
+    const releaseAgentEventActorAction = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome: jest.fn().mockResolvedValue(true),
+      releaseAgentEventActorAction,
+      getAgentEventActorSnapshot: jest
+        .fn()
+        .mockResolvedValueOnce({
+          state: null,
+          epoch: 1,
+          legacyTurn: null,
+          reconciliations: [],
+          suspension: {
+            suspension,
+            actionId: 'action-1',
+            jobCreatedAt: 1_787_000_000_000,
+            status: 'pending',
+            observedAt: new Date(),
+          },
+        })
+        .mockResolvedValueOnce({
+          state: null,
+          epoch: 1,
+          legacyTurn: null,
+          reconciliations: [],
+          suspension: {
+            suspension,
+            actionId: 'action-1',
+            jobCreatedAt: 1_787_000_000_000,
+            status: 'closed',
+            outcome: 'cancelled',
+            observedAt: new Date(),
+          },
+        }),
+    });
+
+    await handler(
+      'conversation-1',
+      job({
+        status: 'error',
+        error: 'Failed to persist the paused response',
+        agentEventBindingId: 'binding-1',
+        agentEventSuspension: {
+          version: 1,
+          suspensionId: suspension.suspensionId,
+          attempt: suspension.attempt,
+        },
+      }),
+      [],
+    );
+
+    expect(mockedCancelAgentEventActor).toHaveBeenCalledWith(
+      expect.objectContaining({ suspension, reason: 'cancelled' }),
+      expect.any(Object),
+    );
+    expect(releaseAgentEventActorAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'trigger_1',
+        bindingId: 'binding-1',
+        admissionId: expect.any(String),
+      }),
+    );
+  });
+
+  it('compensates a claimed resume when abort wins before its provider projection', async () => {
+    const suspension = suspensionEvidence('suspension-pre-projection');
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome: jest.fn().mockResolvedValue(true),
+      getAgentEventActorSnapshot: jest
+        .fn()
+        .mockResolvedValueOnce({
+          state: null,
+          epoch: 1,
+          legacyTurn: null,
+          reconciliations: [],
+          suspension: {
+            suspension,
+            actionId: 'action-1',
+            jobCreatedAt: 1_787_000_000_000,
+            status: 'claimed',
+            resumeAttemptId: 'provider-new',
+            observedAt: new Date(),
+          },
+        })
+        .mockResolvedValueOnce({
+          state: null,
+          epoch: 1,
+          legacyTurn: null,
+          reconciliations: [],
+          suspension: null,
+        }),
+    });
+
+    await handler(
+      'conversation-1',
+      job({
+        status: 'aborted',
+        providerExecutionId: 'provider-old',
+        agentEventBindingId: 'binding-1',
+        agentEventSuspension: {
+          version: 1,
+          suspensionId: suspension.suspensionId,
+          attempt: suspension.attempt,
+        },
+      }),
+      [],
+    );
+
+    expect(mockedCancelAgentEventActor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        suspension,
+        claimedResumeAttemptId: 'provider-new',
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('cancels an unprojected successor re-pause after its predecessor marker was cleared', async () => {
+    const suspension = suspensionEvidence('suspension-repause', 1);
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome: jest.fn().mockResolvedValue(true),
+      getAgentEventActorSnapshot: jest
+        .fn()
+        .mockResolvedValueOnce({
+          state: null,
+          epoch: 1,
+          legacyTurn: null,
+          reconciliations: [],
+          suspension: {
+            suspension,
+            actionId: 'action-repause',
+            jobCreatedAt: 1_787_000_000_000,
+            status: 'pending',
+            observedAt: new Date(),
+          },
+        })
+        .mockResolvedValueOnce({
+          state: null,
+          epoch: 1,
+          legacyTurn: null,
+          reconciliations: [],
+          suspension: null,
+        }),
+    });
+
+    await handler(
+      'conversation-1',
+      job({
+        status: 'aborted',
+        providerExecutionId: 'provider-resume',
+        agentEventBindingId: 'binding-1',
+        agentEventSuspension: undefined,
+      }),
+      [],
+    );
+
+    expect(mockedCancelAgentEventActor).toHaveBeenCalledWith(
+      expect.objectContaining({ suspension, reason: 'cancelled' }),
+      expect.any(Object),
+    );
+  });
+
+  it('does not compensate a claimed resume after its provider projection succeeded', async () => {
+    const suspension = suspensionEvidence('suspension-projected');
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome: jest.fn().mockResolvedValue(true),
+      getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+        state: null,
+        epoch: 1,
+        legacyTurn: null,
+        reconciliations: [],
+        suspension: {
+          suspension,
+          actionId: 'action-1',
+          jobCreatedAt: 1_787_000_000_000,
+          status: 'claimed',
+          resumeAttemptId: 'provider-new',
+          observedAt: new Date(),
+        },
+      }),
+    });
+
+    await expect(
+      handler(
+        'conversation-1',
+        job({
+          status: 'aborted',
+          providerExecutionId: 'provider-new',
+          agentEventSuspension: {
+            version: 1,
+            suspensionId: suspension.suspensionId,
+            attempt: suspension.attempt,
+          },
+        }),
+        [],
+      ),
+    ).rejects.toThrow('claim is still in flight');
+    expect(mockedCancelAgentEventActor).not.toHaveBeenCalled();
+  });
+
+  it('releases the exact action admission after a resumed no-action settlement', async () => {
+    const suspension = suspensionEvidence('suspension-no-action');
+    const releaseAgentEventActorAction = jest.fn().mockResolvedValue(true);
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      releaseAgentEventActorAction,
+      getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+        state: null,
+        epoch: 1,
+        legacyTurn: null,
+        reconciliations: [],
+        suspension: {
+          suspension,
+          actionId: 'action-1',
+          jobCreatedAt: 1_787_000_000_000,
+          status: 'closed',
+          resumeAttemptId: 'provider-resume',
+          outcome: 'settled',
+          observedAt: new Date(),
+        },
+      }),
+    });
+
+    await handler(
+      'conversation-1',
+      job({
+        agentEventBindingId: 'binding-1',
+        providerExecutionId: 'provider-resume',
+      }),
+      [],
+    );
+
+    expect(releaseAgentEventActorAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'trigger_1',
+        bindingId: 'binding-1',
+        admissionId: expect.any(String),
+      }),
+    );
+    expect(releaseAgentEventActorAction.mock.invocationCallOrder[0]).toBeLessThan(
+      settleAgentTriggerHandlingOutcome.mock.invocationCallOrder[0],
     );
   });
 

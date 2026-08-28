@@ -510,8 +510,10 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         },
       });
       mockGenerationJobManager.getJob.mockResolvedValue(pausedJob);
+      let projectedProviderExecutionId;
       mockGenerationJobManager.approvals.resolve.mockImplementation(
         async (_streamId, _actionId, resumePatch) => {
+          projectedProviderExecutionId = resumePatch.providerExecutionId;
           mockGenerationJobManager.getJob.mockResolvedValue({
             ...pausedJob,
             status: 'running',
@@ -549,6 +551,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           resumeAttemptId: input.resumeAttemptId,
         });
         expect(await input.claimProjection()).toBe(true);
+        expect(input.resumeAttemptId).toBe(projectedProviderExecutionId);
         const value = await input.resume({
           checkpointNamespace: 'event-actor',
           checkpointId: 'checkpoint-paused',
