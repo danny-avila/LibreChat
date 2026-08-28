@@ -20,8 +20,11 @@ const {
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
-  sanitizeFilename,
   parseText,
+  fileExtension,
+  resolveVectorId,
+  sanitizeFilename,
+  hashFileContent,
   processAudioFile,
   extractInspectableFileText,
   assertExtractedTextInspectable,
@@ -34,6 +37,10 @@ const {
   sendUploadSuccess,
   getStorageMetadata,
   contentFilterBlockResponse,
+  pickVectorReuseSource,
+  reclaimOrphanedVectors,
+  suppressSharedVectorDeletes,
+  USER_OWNED_EMBEDDING_CONTEXT,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
@@ -216,8 +223,12 @@ const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMeth
  * @returns {Promise<{ deletedFileIds: string[], failedFileIds: string[] }>}
  * @throws {Error} When storage deletion cannot be scheduled or file metadata cleanup fails.
  */
-const processDeleteRequest = async ({ req, files }) => {
+const processDeleteRequest = async ({ req, files: requestedFiles }) => {
   const appConfig = req.config;
+  const { files, deferredVectorIds } = await suppressSharedVectorDeletes(
+    requestedFiles,
+    db.countVectorReferences,
+  );
   const resolvedFileIds = new Set();
   const failedFileIds = new Set();
   const deletionMethods = {};
@@ -324,6 +335,28 @@ const processDeleteRequest = async ({ req, files }) => {
       } catch (error) {
         logger.error('Error cleaning up orphaned agent file references', error);
       }
+    }
+
+    /* Runs strictly after this request's records are gone, so a concurrent
+     * delete of the file we stood down for cannot leave the embeddings
+     * stranded — whichever request commits last sees no references left and
+     * clears them. Failure here leaks vectors rather than losing data, so it
+     * must not fail a delete whose metadata is already removed. */
+    try {
+      const reclaimed = await reclaimOrphanedVectors({
+        vectorIds: deferredVectorIds,
+        countVectorReferences: db.countVectorReferences,
+        deleteVectors: (vectorId) =>
+          getDeleteMethod({ source: FileSources.vectordb, deletionMethods })(req, {
+            file_id: vectorId,
+            embedded: true,
+          }),
+      });
+      if (reclaimed.length > 0) {
+        logger.debug(`[processDeleteRequest] Reclaimed shared vectors: ${reclaimed.join(', ')}`);
+      }
+    } catch (error) {
+      logger.error('Error reclaiming shared vectors after delete', error);
     }
   }
 
@@ -665,6 +698,42 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
 };
 
 /**
+ * Finds an already-embedded file with identical content whose vectors this
+ * upload can point at, instead of paying to embed the same document again.
+ *
+ * `vectorOwner` carries the whole ownership question: the RAG API stamps it
+ * on the chunks and refuses reads from anyone else, so matching it is both
+ * necessary and sufficient — for an agent's knowledge as much as for a user's
+ * own attachments. The uploader has already cleared the agent's upload
+ * permission by the time this runs, so reusing what that agent owns is within
+ * their reach no matter which editor embedded it first.
+ *
+ * @param {object} params
+ * @param {ServerRequest} params.req - The Express request object.
+ * @param {string} params.hash - Hex SHA-256 of the uploaded bytes.
+ * @param {string} params.type - Mime type of the upload.
+ * @param {string} params.extension - Lowercased extension of the staged filename.
+ * @param {string} params.vectorOwner - Who the RAG API will stamp on this upload.
+ * @param {FileContext} params.context - Upload context, which pins the record's lifecycle.
+ * @returns {Promise<MongoFile | null>}
+ */
+const findVectorReuseSource = async ({ req, hash, type, extension, vectorOwner, context }) => {
+  if (!hash) {
+    return null;
+  }
+
+  const candidates = await db.findVectorReuseCandidates({
+    hash,
+    type,
+    context,
+    extension,
+    vectorOwner,
+    tenantId: req.user.tenantId,
+  });
+  return pickVectorReuseSource(candidates) ?? null;
+};
+
+/**
  * Applies the current strategy for file uploads.
  * Saves file metadata to the database with an expiry TTL.
  * Files must be deleted from the server filesystem manually.
@@ -973,10 +1042,17 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
   // Dual storage pattern for RAG files: Storage + Vector DB
   let storageResult, embeddingResult;
+  let contentHash, vectorId, vectorOwner, vectorExtension;
   const isImageFile = file.mimetype.startsWith('image');
   const source = getFileStrategy(appConfig, { isImage: isImageFile });
 
   if (tool_resource === EToolResources.file_search) {
+    contentHash = await hashFileContent(file.path);
+    /* Mirrors what `uploadVectors` hands the RAG API as `entity_id`, which
+     * is what it stamps on the chunks. */
+    vectorOwner = entity_id ?? req.user.id;
+    vectorExtension = fileExtension(sanitizeFilename(file.originalname));
+
     // FIRST: Upload to Storage for permanent backup (S3/local/etc.)
     const { handleFileUpload } = getStrategyFunctions(source);
     const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
@@ -988,15 +1064,37 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       entity_id,
     });
 
-    // SECOND: Upload to Vector DB
-    const { uploadVectors } = require('./VectorDB/crud');
-
-    embeddingResult = await uploadVectors({
+    /* Resolved after the storage upload rather than before it: between
+     * choosing a source and persisting the record that borrows from it,
+     * a concurrent delete of that source can drop the vectors this record
+     * would point at, leaving it silently unsearchable. Keeping the storage
+     * upload out of that gap narrows it to a single write. */
+    const reuseSource = await findVectorReuseSource({
       req,
-      file,
-      file_id,
-      entity_id,
+      vectorOwner,
+      hash: contentHash,
+      type: file.mimetype,
+      extension: vectorExtension,
+      context: messageAttachment ? USER_OWNED_EMBEDDING_CONTEXT : FileContext.agents,
     });
+
+    // SECOND: Upload to Vector DB, unless identical content is already embedded
+    if (reuseSource) {
+      vectorId = resolveVectorId(reuseSource);
+      embeddingResult = { embedded: true };
+      logger.debug(
+        `[processAgentFileUpload] Reusing embeddings of ${vectorId} for identical upload ${file_id}`,
+      );
+    } else {
+      const { uploadVectors } = require('./VectorDB/crud');
+
+      embeddingResult = await uploadVectors({
+        req,
+        file,
+        file_id,
+        entity_id,
+      });
+    }
 
     // Vector status will be stored at root level, no need for metadata
     fileInfoMetadata = {};
@@ -1080,6 +1178,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       model: messageAttachment ? undefined : req.body.model,
       metadata: fileInfoMetadata,
       type: file.mimetype,
+      hash: contentHash,
+      vectorId,
+      vectorOwner,
+      vectorExtension,
       embedded,
       source,
       height,

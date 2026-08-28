@@ -18,4 +18,5 @@ export * from './sse';
 export * from './sweep';
 export * from './usage';
 export * from './validation';
+export * from './vectors';
 export * from './text';

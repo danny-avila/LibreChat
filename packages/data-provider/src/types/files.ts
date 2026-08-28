@@ -120,6 +120,28 @@ export type TFile = {
   temp_file_id?: string;
   bytes: number;
   embedded: boolean;
+  /**
+   * Hex SHA-256 of the uploaded bytes, present on `file_search` uploads
+   * so identical content can be recognized on a later upload.
+   */
+  hash?: string;
+  /**
+   * The `file_id` the RAG API holds this file's chunks under, present
+   * only when the record borrows another file's embeddings. Resolve
+   * through `resolveVectorId` so files owning their own vectors work too.
+   */
+  vectorId?: string;
+  /**
+   * Lowercased extension of the filename the RAG API was given, which decides
+   * how it chunked the document.
+   */
+  vectorExtension?: string;
+  /**
+   * Who the RAG API stamped as the owner of this file's chunks — the agent
+   * id for knowledge files, the user id for chat attachments. Two records
+   * may only share embeddings when this matches.
+   */
+  vectorOwner?: string;
   filename: string;
   filepath: string;
   object: 'file';

@@ -3,19 +3,23 @@ const axios = require('axios');
 const FormData = require('form-data');
 const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
-const { logAxiosError, generateShortLivedToken } = require('@librechat/api');
+const { logAxiosError, generateShortLivedToken, resolveVectorId } = require('@librechat/api');
 
 /**
- * Deletes a file from the vector database. This function takes a file object, constructs the full path, and
- * verifies the path's validity before deleting the file. If the path is invalid, an error is thrown.
+ * Deletes a file's chunks from the vector database, addressing them by the
+ * document the file actually points at — files that borrow another upload's
+ * embeddings carry a `vectorId`.
+ *
+ * Whether the chunks may go at all is decided upstream in
+ * `processDeleteRequest`, which clears `embedded` on records whose vectors
+ * another file still needs.
  *
  * @param {ServerRequest} req - The request object from Express.
- * @param {MongoFile} file - The file object to be deleted. It should have a `filepath` property that is
- *                           a string representing the path of the file relative to the publicPath.
+ * @param {MongoFile} file - The file object to be deleted.
  *
  * @returns {Promise<void>}
- *          A promise that resolves when the file has been successfully deleted, or throws an error if the
- *          file path is invalid or if there is an error in deletion.
+ *          A promise that resolves once the chunks are gone, or throws if the
+ *          RAG API answered with anything other than success or a 404.
  */
 const deleteVectors = async (req, file) => {
   if (!file.embedded || !process.env.RAG_API_URL) {
@@ -30,7 +34,7 @@ const deleteVectors = async (req, file) => {
         'Content-Type': 'application/json',
         accept: 'application/json',
       },
-      data: [file.file_id],
+      data: [resolveVectorId(file)],
     });
   } catch (error) {
     logAxiosError({
