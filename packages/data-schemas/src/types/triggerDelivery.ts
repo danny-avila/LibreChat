@@ -98,6 +98,8 @@ export interface IAgentTriggerDelivery {
   /** Private lifecycle for capability-owned work. The outer delivery status
    * remains a legacy-known, nonclaimable compatibility shield. */
   capabilityStatus?: 'publishing' | 'pending' | 'leased' | 'dead';
+  /** Canonical claim ordering timestamp. Old rows omit it and sort first. */
+  claimAvailableAt?: Date;
   capabilityLeaseBy?: string;
   capabilityLeaseUntil?: Date;
   capabilityClaimToken?: string;

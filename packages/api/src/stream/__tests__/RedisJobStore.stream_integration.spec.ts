@@ -1218,10 +1218,9 @@ describe('RedisJobStore Integration Tests', () => {
       // completion delivery and lose the original invocation identity.
       await expect(ioredisClient.sismember('stream:terminal_host_action', member)).resolves.toBe(0);
       await expect(ioredisClient.hgetall(`stream:{${streamId}}:job`)).resolves.toMatchObject({
-        status: 'running',
+        status: 'detached_terminal_pending_v1',
         detachedAgentEventTerminalStatus: 'complete',
         detachedAgentEventTerminalHostActionPending: '1',
-        lastActiveAt: String(Date.parse('9999-12-31T23:59:59.999Z')),
       });
       await expect(store.getJob(streamId)).resolves.toMatchObject({
         status: 'complete',
@@ -1238,6 +1237,13 @@ describe('RedisJobStore Integration Tests', () => {
           agentEventInvocationGenerationCreatedAt: invocationGenerationCreatedAt,
         }),
       ]);
+
+      // The current creator reports an ordinary predecessor conflict, while a
+      // pre-detached creator rejects the raw versioned status as corrupt. Both
+      // outcomes fence replacement even when its caller permits active replacement.
+      await expect(store.createJob(streamId, 'user-1', streamId)).rejects.toMatchObject({
+        name: 'JobPredecessorMismatchError',
+      });
 
       await store.clearTerminalHostAction(streamId, job.createdAt);
       await expect(ioredisClient.hgetall(`stream:{${streamId}}:job`)).resolves.toMatchObject({

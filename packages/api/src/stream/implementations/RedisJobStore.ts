@@ -371,8 +371,11 @@ const JOB_CREATE_LUA =
   'and value <= MAX_SAFE_EPOCH and value == math.floor(value) end ' +
   'local function isValidJobStatus(value) return value == "running" or value == "requires_action" ' +
   'or value == "complete" or value == "error" or value == "aborted" end ' +
+  'local detachedTerminalShield = replacedStatus == "detached_terminal_pending_v1" ' +
+  'and replacedDetachedTerminalHostActionPending == "1" ' +
   'local replacedEpoch = tonumber(replacedCreatedAt) local previousCreatedAt = replacedEpoch ' +
-  'if previousJobExists == 1 and (not isSafeEpoch(replacedEpoch) or not isValidJobStatus(replacedStatus)) then ' +
+  'if previousJobExists == 1 and (not isSafeEpoch(replacedEpoch) ' +
+  'or (not isValidJobStatus(replacedStatus) and not detachedTerminalShield)) then ' +
   'return { "", "", "0", "replacement_receipt_corrupt" } end ' +
   'if (replacedProviderExecutionId and not replacedProviderDrained) ' +
   'or (replacedProviderDrained and not replacedProviderExecutionId) ' +
@@ -1598,9 +1601,9 @@ const KEYS = {
   idempotency: (key: string) => `stream:idem:${key}`,
 };
 
-/** Keeps pre-detached replicas from replacing or reaping a terminal completion
- * whose private recovery marker they intentionally cannot interpret. */
-const DETACHED_TERMINAL_LEGACY_LAST_ACTIVE_AT = Date.parse('9999-12-31T23:59:59.999Z');
+/** Pre-detached creation scripts reject an unknown status before replacement,
+ * while capable readers project the private logical terminal status. */
+const DETACHED_TERMINAL_LEGACY_STATUS = 'detached_terminal_pending_v1';
 
 interface TerminalHostActionMember {
   streamId: string;
@@ -2570,14 +2573,13 @@ export class RedisJobStore implements IJobStoreV2 {
     const persistedPatch = detachedTerminalHostActionPending
       ? {
           ...patch,
-          status: 'running' as const,
+          status: DETACHED_TERMINAL_LEGACY_STATUS,
           terminalHostActionPending: undefined,
           detachedAgentEventTerminalHostActionPending: true,
           detachedAgentEventTerminalStatus: to as Extract<
             JobStatus,
             'complete' | 'aborted' | 'error'
           >,
-          lastActiveAt: DETACHED_TERMINAL_LEGACY_LAST_ACTIVE_AT,
         }
       : patch;
 
@@ -4922,10 +4924,7 @@ export class RedisJobStore implements IJobStoreV2 {
       pendingAction: this.parsePendingAction(data.pendingAction),
       resolvedAskUserQuestions: this.parseResolvedAskUserQuestions(data.resolvedAskUserQuestions),
       pendingActionId: data.pendingActionId || undefined,
-      lastActiveAt:
-        detachedAgentEventTerminalStatus == null && data.lastActiveAt
-          ? parseInt(data.lastActiveAt, 10)
-          : undefined,
+      lastActiveAt: data.lastActiveAt ? parseInt(data.lastActiveAt, 10) : undefined,
       /** `markActivityLabels` persists this, so it has to be read back:
        *  without it every Redis reload leaves the flag undefined and resume
        *  skips activity-label gap reconciliation, silently dropping a label

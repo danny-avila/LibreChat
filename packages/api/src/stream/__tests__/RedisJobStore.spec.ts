@@ -1108,7 +1108,7 @@ describe('RedisJobStore', () => {
     ]);
     const transitionCall = evalTransition.mock.calls[0];
     expect(transitionCall).toContain('status');
-    expect(transitionCall).toContain('running');
+    expect(transitionCall).toContain('detached_terminal_pending_v1');
     expect(transitionCall).toContain('detachedAgentEventTerminalStatus');
     expect(transitionCall).toContain('complete');
   });

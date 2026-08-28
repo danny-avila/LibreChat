@@ -239,7 +239,7 @@ export interface SerializableJobData {
    * keep the persisted field distinct so legacy reconciliation cannot index or
    * claim the completion through the ordinary terminal-action lane. */
   detachedAgentEventTerminalHostActionPending?: boolean;
-  /** Logical terminal state hidden behind a legacy-visible running shell while
+  /** Logical terminal state hidden behind a versioned fail-closed shell while
    * a detached Event Actor host action remains unacknowledged. */
   detachedAgentEventTerminalStatus?: Extract<JobStatus, 'complete' | 'aborted' | 'error'>;
   /**
