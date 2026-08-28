@@ -1041,7 +1041,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           try {
             localResult = await resolveDocumentText();
           } catch (err) {
-            if (isParserOutputLimitError(err) && isDelimitedTextType(effectiveMimeType)) {
+            if (isParserOutputLimitError(err) && isDelimitedTextType(parserResolvedMimeType)) {
               const rawResult = await resolveDelimitedTextAsIs();
               if (rawResult) {
                 return rawResult;
@@ -1077,7 +1077,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
             });
             return localResult;
           }
-          return isDelimitedTextType(effectiveMimeType)
+          return isDelimitedTextType(parserResolvedMimeType)
             ? await resolveDelimitedTextAsIs()
             : undefined;
         },

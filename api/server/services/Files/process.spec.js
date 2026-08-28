@@ -757,6 +757,36 @@ describe('processAgentFileUpload', () => {
       expect(parseText).not.toHaveBeenCalled();
     });
 
+    /**
+     * A configured alias admits the upload and anydoc routes it by extension, so the
+     * same source file has to reach the same fallback. The alias itself never matches
+     * the delimited predicate; only the canonical type the parser resolved does.
+     */
+    test('falls back to the bytes for a configured CSV alias refused on size', async () => {
+      const vendorMime = 'application/vnd.example.csv';
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({
+          documentParserSupportedMimeTypes: [vendorMime],
+          textSupportedMimeTypes: [/^[\w.-]+\/[\w.-]+$/],
+        }),
+      );
+      const refusal = Object.assign(new Error('anydoc extracted 22MB of text'), {
+        name: 'ParserOutputLimitError',
+        code: 'PARSER_OUTPUT_LIMIT',
+      });
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockRejectedValue(refusal),
+      });
+      const { parseText, parseTextNative } = require('@librechat/api');
+      parseTextNative.mockResolvedValueOnce({ text: 'a,b\n1,2\n', bytes: 8 });
+      const req = makeReq({ mimetype: vendorMime, originalname: 'rows.csv', ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(db.createFile.mock.calls[0][0].text).toBe('a,b\n1,2\n');
+      expect(parseText).not.toHaveBeenCalled();
+    });
+
     test('surfaces a size refusal for a document with no readable raw form', async () => {
       const refusal = Object.assign(new Error('pdf-inspector extracted 22MB of text'), {
         name: 'ParserOutputLimitError',
