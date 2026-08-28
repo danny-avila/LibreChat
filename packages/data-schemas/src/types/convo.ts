@@ -146,6 +146,15 @@ export interface IAgentEventActorSuspensionEvidence {
  */
 export interface IAgentEventActorSuspension {
   suspension: IAgentEventActorSuspensionEvidence;
+  /** Host-side reason for suspension. Missing legacy values are human decisions. */
+  kind?: 'human_decision' | 'internal_completion';
+  /** Expected-action evidence already applied before a later re-pause. */
+  appliedAction?: {
+    toolName: string;
+    toolCallId?: string;
+  };
+  /** Original delivery-handling generation retained across resumed generations. */
+  handlingGenerationCreatedAt?: number;
   actionId: string;
   jobCreatedAt: number;
   status: 'pending' | 'claimed' | 'closed';

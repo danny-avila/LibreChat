@@ -321,6 +321,9 @@ export interface ConversationMethods {
     conversationId: string;
     tenantId?: string;
     suspension: IAgentEventActorSuspensionEvidence;
+    kind?: 'human_decision' | 'internal_completion';
+    appliedAction?: { toolName: string; toolCallId?: string };
+    handlingGenerationCreatedAt?: number;
     actionId: string;
     jobCreatedAt: number;
     /** The segment applied its expected action before publishing this successor pause. */
@@ -642,6 +645,9 @@ export function createConversationMethods(
     conversationId: string;
     tenantId?: string;
     suspension: IAgentEventActorSuspensionEvidence;
+    kind?: 'human_decision' | 'internal_completion';
+    appliedAction?: { toolName: string; toolCallId?: string };
+    handlingGenerationCreatedAt?: number;
     actionId: string;
     jobCreatedAt: number;
     invalidateHead?: boolean;
@@ -684,15 +690,19 @@ export function createConversationMethods(
       ...activeExpirationFilter<IConversation>(),
       ...predecessor,
     };
+    const suspension = {
+      suspension: input.suspension,
+      kind: input.kind ?? 'human_decision',
+      ...(input.appliedAction == null ? {} : { appliedAction: input.appliedAction }),
+      handlingGenerationCreatedAt: input.handlingGenerationCreatedAt ?? input.jobCreatedAt,
+      actionId: input.actionId,
+      jobCreatedAt: input.jobCreatedAt,
+      status: 'pending' as const,
+      observedAt: new Date(),
+    };
     const storeUpdate = {
       $set: {
-        agentEventActorSuspension: {
-          suspension: input.suspension,
-          actionId: input.actionId,
-          jobCreatedAt: input.jobCreatedAt,
-          status: 'pending' as const,
-          observedAt: new Date(),
-        },
+        agentEventActorSuspension: suspension,
         ...(input.invalidateHead === true ? { 'agentEventActor.requiresColdStart': true } : {}),
       },
     };
@@ -713,13 +723,7 @@ export function createConversationMethods(
         { ...ownership, agentEventActor: { $exists: false } },
         {
           $set: {
-            agentEventActorSuspension: {
-              suspension: input.suspension,
-              actionId: input.actionId,
-              jobCreatedAt: input.jobCreatedAt,
-              status: 'pending',
-              observedAt: new Date(),
-            },
+            agentEventActorSuspension: suspension,
           },
         },
         { new: false, timestamps: false },

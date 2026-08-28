@@ -105,6 +105,35 @@ export interface ToolEndCallbackData {
   };
 }
 
+export interface EventActorDetachedActionLifecycle {
+  reserve(input: { toolName: string; toolCallId: string; arguments: unknown }): Promise<
+    | { status: 'ignored' }
+    | { status: 'conflict'; error?: string }
+    | {
+        status: 'terminal';
+        taskId: string;
+        idempotencyKey: string;
+        outcome: 'succeeded' | 'failed' | 'cancelled';
+        result?: string;
+        error?: string;
+      }
+    | {
+        status: 'reserved' | 'replay';
+        taskId: string;
+        idempotencyKey: string;
+      }
+  >;
+  markRunning(input: { taskId: string; idempotencyKey: string }): Promise<boolean>;
+  settle(input: {
+    taskId: string;
+    idempotencyKey: string;
+    status: 'succeeded' | 'failed' | 'cancelled';
+    result?: unknown;
+    error?: string;
+  }): Promise<boolean>;
+  wake(input: { taskId: string; idempotencyKey: string }): Promise<void>;
+}
+
 export interface ToolEndCallbackMetadata {
   run_id?: string;
   thread_id?: string;
@@ -134,6 +163,8 @@ export interface ToolExecuteOptions {
   subagentTasks?: SubagentTaskConfig;
   /** Callback to process tool artifacts (code output files, file citations, etc.) */
   toolEndCallback?: ToolEndCallback;
+  /** Durable internal-completion adapter, present only for an Event Actor invocation. */
+  eventActorDetachedAction?: EventActorDetachedActionLifecycle;
   /**
    * Persists a backgrounded code-execution result onto the dispatch turn once
    * the detached call settles: downloads/persists generated files, patches the
@@ -4232,6 +4263,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
   const {
     loadTools,
     toolEndCallback,
+    eventActorDetachedAction,
     persistBackgroundCodeResult,
     emitAttachment,
     emitPtcProgress,
@@ -4367,7 +4399,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             const backgroundRunId = (metadata as Record<string, unknown>)?.run_id as
               | string
               | undefined;
-            const dispatchBackgroundToolCall = (tc: ToolCallRequest): ToolExecuteResult => {
+            const dispatchBackgroundToolCall = async (
+              tc: ToolCallRequest,
+            ): Promise<ToolExecuteResult> => {
               /** A tool that failed to load must error immediately (matching the
                *  foreground path) — a synthetic "started" handle would tell the
                *  model a side effect is in flight that never executed. */
@@ -4393,7 +4427,52 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               if (filtered != null) {
                 return filtered;
               }
+              const detachedReservation = await eventActorDetachedAction?.reserve({
+                toolName: tc.name,
+                toolCallId: tc.id,
+                arguments: normalizedArgs,
+              });
+              if (detachedReservation?.status === 'conflict') {
+                return {
+                  toolCallId: tc.id,
+                  status: 'error' as const,
+                  content: '',
+                  errorMessage:
+                    detachedReservation.error ??
+                    'Detached Event Actor action conflicts with its durable launch authority',
+                };
+              }
+              if (detachedReservation?.status === 'terminal') {
+                if (detachedReservation.outcome === 'succeeded') {
+                  return {
+                    toolCallId: tc.id,
+                    status: 'success' as const,
+                    content: detachedReservation.result ?? '',
+                  };
+                }
+                return {
+                  toolCallId: tc.id,
+                  status: 'error' as const,
+                  content: '',
+                  errorMessage:
+                    detachedReservation.error ?? `Detached action ${detachedReservation.outcome}`,
+                };
+              }
+              if (detachedReservation?.status === 'replay') {
+                return {
+                  toolCallId: tc.id,
+                  status: 'success' as const,
+                  content: buildBackgroundHandleContent({
+                    id: detachedReservation.taskId,
+                    toolName: tc.name,
+                    status: 'running',
+                  }),
+                };
+              }
               const created = backgroundTaskRegistry.create({
+                ...(detachedReservation?.status === 'reserved'
+                  ? { taskId: detachedReservation.taskId }
+                  : {}),
                 userId: backgroundUserId,
                 conversationId: backgroundConversationId,
                 toolCallId: tc.id,
@@ -4495,17 +4574,82 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     }
                   })();
                 };
-                void (async () => {
-                  try {
-                    const result = (await tool.invoke(normalizedArgs, {
+                let invokePromise: Promise<{ content?: unknown; artifact?: unknown }>;
+                try {
+                  invokePromise = Promise.resolve(
+                    tool.invoke(normalizedArgs, {
                       /** Full invoke config (not just identity): a detached
                        *  code call still needs `session_id`/`_injected_files`/
                        *  `_runtime_session_hint` or it runs fileless on the
                        *  Code API's default runtime session. */
                       toolCall: buildToolCallConfig(tc, mergedConfigurable),
-                      configurable: mergedConfigurable,
+                      configurable: {
+                        ...mergedConfigurable,
+                        ...(detachedReservation?.status === 'reserved'
+                          ? {
+                              eventActorDetachedAction: {
+                                taskId: detachedReservation.taskId,
+                                idempotencyKey: detachedReservation.idempotencyKey,
+                              },
+                            }
+                          : {}),
+                      },
                       metadata,
-                    } as Record<string, unknown>)) as { content?: unknown; artifact?: unknown };
+                    } as Record<string, unknown>),
+                  ) as Promise<{ content?: unknown; artifact?: unknown }>;
+                } catch (error) {
+                  /** Structured tools are permitted to reject synchronously.
+                   * Preserve the durable reservation and route that rejection
+                   * through the same terminal-evidence path as an async one. */
+                  invokePromise = Promise.reject(error);
+                }
+                const persistDetachedTerminal = async (
+                  input:
+                    | { status: 'succeeded'; result: unknown }
+                    | { status: 'failed' | 'cancelled'; error: string },
+                ): Promise<boolean> => {
+                  if (
+                    detachedReservation?.status !== 'reserved' ||
+                    eventActorDetachedAction == null
+                  ) {
+                    return true;
+                  }
+                  try {
+                    return await eventActorDetachedAction.settle({
+                      taskId: detachedReservation.taskId,
+                      idempotencyKey: detachedReservation.idempotencyKey,
+                      ...input,
+                    });
+                  } catch (settlementError) {
+                    logger.error(
+                      `[event-actor] Failed to persist detached terminal evidence for ${detachedReservation.taskId}`,
+                      settlementError,
+                    );
+                    return false;
+                  }
+                };
+                const wakeDetachedActor = async (): Promise<void> => {
+                  if (
+                    detachedReservation?.status !== 'reserved' ||
+                    eventActorDetachedAction == null
+                  ) {
+                    return;
+                  }
+                  try {
+                    await eventActorDetachedAction.wake({
+                      taskId: detachedReservation.taskId,
+                      idempotencyKey: detachedReservation.idempotencyKey,
+                    });
+                  } catch (wakeError) {
+                    logger.warn(
+                      `[event-actor] Failed to wake detached action ${detachedReservation.taskId}`,
+                      wakeError,
+                    );
+                  }
+                };
+                void (async () => {
+                  try {
+                    const result = await invokePromise;
                     if (isCodeCall) {
                       markCodeSandboxWarm();
                     }
@@ -4523,6 +4667,14 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       const errorOutput = isCodeCall
                         ? toCodeToolFailure(tc.name, policyError)
                         : policyError;
+                      if (
+                        !(await persistDetachedTerminal({
+                          status: 'failed',
+                          error: errorOutput,
+                        }))
+                      ) {
+                        return;
+                      }
                       backgroundTaskRegistry.fail(
                         backgroundUserId,
                         backgroundConversationId,
@@ -4531,6 +4683,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         { harvestStarted: harvestEnabled },
                       );
                       harvestCodeResult({ output: errorOutput });
+                      await wakeDetachedActor();
                       return;
                     }
                     /** Hold any artifact (images, files, UI resources,
@@ -4540,6 +4693,14 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                      *  artifactPromises are already awaited and the stream is
                      *  closed, so that push would be silently dropped. The poll
                      *  turn delivers it live in `check_background_task`. */
+                    if (
+                      !(await persistDetachedTerminal({
+                        status: 'succeeded',
+                        result: content,
+                      }))
+                    ) {
+                      return;
+                    }
                     backgroundTaskRegistry.complete(
                       backgroundUserId,
                       backgroundConversationId,
@@ -4550,6 +4711,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       output: typeof content === 'string' ? content : undefined,
                       artifact: result.artifact,
                     });
+                    await wakeDetachedActor();
                   } catch (toolError) {
                     const policyError =
                       toolError instanceof ContentFilterError
@@ -4569,6 +4731,20 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       isCodeCall && (policyError != null || filteredError != null)
                         ? toCodeToolFailure(tc.name, neutralizedError)
                         : neutralizedError;
+                    const detachedTerminalStatus =
+                      toolError instanceof Error &&
+                      (toolError.name === 'AbortError' ||
+                        (toolError as Error & { code?: string }).code === 'ABORT_ERR')
+                        ? 'cancelled'
+                        : 'failed';
+                    if (
+                      !(await persistDetachedTerminal({
+                        status: detachedTerminalStatus,
+                        error: deliveredError,
+                      }))
+                    ) {
+                      return;
+                    }
                     backgroundTaskRegistry.fail(
                       backgroundUserId,
                       backgroundConversationId,
@@ -4580,8 +4756,19 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       { harvestStarted: harvestEnabled },
                     );
                     harvestCodeResult({ output: deliveredError });
+                    await wakeDetachedActor();
                   }
                 })();
+                if (
+                  detachedReservation?.status === 'reserved' &&
+                  eventActorDetachedAction != null &&
+                  !(await eventActorDetachedAction.markRunning({
+                    taskId: detachedReservation.taskId,
+                    idempotencyKey: detachedReservation.idempotencyKey,
+                  }))
+                ) {
+                  throw new Error('Detached Event Actor launch acknowledgement is stale');
+                }
               }
               return {
                 toolCallId: tc.id,
@@ -4836,7 +5023,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     persistBackgroundCodeResult == null
                   )
                 ) {
-                  return reportResult(dispatchBackgroundToolCall(tc));
+                  return reportResult(await dispatchBackgroundToolCall(tc));
                 }
 
                 const execute = async (

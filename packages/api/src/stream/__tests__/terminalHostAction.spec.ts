@@ -89,6 +89,29 @@ describe('GenerationJobManager terminal host actions', () => {
     );
   });
 
+  it('retries an exact pending terminal host action when late evidence arrives', async () => {
+    const handler = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('detached action is still running'))
+      .mockResolvedValue(undefined);
+    manager.setTerminalHostActionHandler(handler);
+    const streamId = 'conversation-late-terminal-evidence';
+    const job = await manager.createJob(streamId, 'user-1', streamId, {
+      initialMetadata: { agentEventDeliveryKey: 'trigger-late-evidence' },
+    });
+
+    await expect(manager.completeJob(streamId, undefined, job.createdAt)).resolves.toBe(true);
+    await expect(store.getJob(streamId)).resolves.toMatchObject({
+      terminalHostActionPending: true,
+    });
+
+    await expect(manager.retryTerminalHostAction(streamId, job.createdAt + 1)).resolves.toBe(false);
+    expect(handler).toHaveBeenCalledTimes(1);
+    await expect(manager.retryTerminalHostAction(streamId, job.createdAt)).resolves.toBe(true);
+    expect(handler).toHaveBeenCalledTimes(2);
+    await expect(store.getJob(streamId)).resolves.not.toHaveProperty('terminalHostActionPending');
+  });
+
   it('waits for the provider evidence fence and retains a failed tool close', async () => {
     const handler = jest.fn().mockResolvedValue(undefined);
     manager.setTerminalHostActionHandler(handler);

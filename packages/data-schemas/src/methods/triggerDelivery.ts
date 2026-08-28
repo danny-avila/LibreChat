@@ -1,5 +1,7 @@
 import type { Model, Types } from 'mongoose';
+import { createHash } from 'node:crypto';
 import type {
+  AgentEventActorDetachedAction,
   AgentTriggerDeliveryClaim,
   AgentEventActorReceipt,
   AgentTriggerDeliveryFailure,
@@ -118,6 +120,29 @@ export interface AgentEventActorActionAdmissionInput extends GetAgentEventActorR
   admissionId: string;
 }
 
+export interface ReserveAgentEventActorDetachedActionInput extends GetAgentEventActorReceiptInput {
+  generationCreatedAt: number;
+  invocationId: string;
+  expectedToolName: string;
+  toolName: string;
+  toolCallId: string;
+  reservedAt: Date;
+}
+
+export interface UpdateAgentEventActorDetachedActionInput extends GetAgentEventActorReceiptInput {
+  generationCreatedAt: number;
+  taskId: string;
+  idempotencyKey: string;
+  observedAt: Date;
+}
+
+export interface SettleAgentEventActorDetachedActionInput
+  extends UpdateAgentEventActorDetachedActionInput {
+  status: 'succeeded' | 'failed' | 'cancelled';
+  result?: string;
+  error?: string;
+}
+
 export interface GetAgentEventActorReceiptInput {
   deliveryKey: string;
   user: string | Types.ObjectId;
@@ -181,6 +206,21 @@ export interface AgentTriggerDeliveryMethods {
   hasAgentEventActorActionAdmission: (
     input: AgentEventActorActionAdmissionInput,
   ) => Promise<boolean>;
+  reserveAgentEventActorDetachedAction: (
+    input: ReserveAgentEventActorDetachedActionInput,
+  ) => Promise<{
+    status: 'reserved' | 'replay' | 'conflict';
+    action: AgentEventActorDetachedAction;
+  }>;
+  markAgentEventActorDetachedActionRunning: (
+    input: UpdateAgentEventActorDetachedActionInput,
+  ) => Promise<boolean>;
+  settleAgentEventActorDetachedAction: (
+    input: SettleAgentEventActorDetachedActionInput,
+  ) => Promise<boolean>;
+  getAgentEventActorDetachedAction: (
+    input: GetAgentEventActorReceiptInput & { generationCreatedAt: number },
+  ) => Promise<AgentEventActorDetachedAction | null>;
   settleAgentEventActorReceipt: (input: SettleAgentEventActorReceiptInput) => Promise<boolean>;
   getAgentEventActorReceipt: (
     input: GetAgentEventActorReceiptInput,
@@ -1689,6 +1729,261 @@ export function createAgentTriggerDeliveryMethods(
       : null;
   }
 
+  /** Atomically gives one replica launch authority for an exact detached expected action. */
+  async function reserveAgentEventActorDetachedAction(
+    input: ReserveAgentEventActorDetachedActionInput,
+  ): Promise<{
+    status: 'reserved' | 'replay' | 'conflict';
+    action: AgentEventActorDetachedAction;
+  }> {
+    const identity = [
+      String(input.user),
+      input.tenantId ?? '',
+      input.deliveryKey,
+      input.bindingId,
+      input.conversationId,
+      String(input.generationCreatedAt),
+      input.invocationId,
+      input.expectedToolName,
+      input.toolName,
+      input.toolCallId,
+    ];
+    if (
+      identity.some((value) => value.length === 0) ||
+      !Number.isSafeInteger(input.generationCreatedAt) ||
+      input.generationCreatedAt < 0 ||
+      Number.isNaN(input.reservedAt.getTime())
+    ) {
+      throw new TypeError('Detached event actor action identity is invalid');
+    }
+    const buildAction = (launchAttempt: number): AgentEventActorDetachedAction => {
+      const idempotencyKey = createHash('sha256')
+        .update([...identity, String(launchAttempt)].join('\0'))
+        .digest('hex');
+      return {
+        version: 1,
+        invocationId: input.invocationId,
+        expectedToolName: input.expectedToolName,
+        toolName: input.toolName,
+        toolCallId: input.toolCallId,
+        /** Public task handles must not disclose the adapter idempotency secret. */
+        taskId: `event_actor_${createHash('sha256')
+          .update('librechat:event-actor:task:v1\0')
+          .update(idempotencyKey)
+          .digest('hex')}`,
+        idempotencyKey,
+        launchAttempt,
+        status: 'reserved',
+        reservedAt: input.reservedAt,
+        observedAt: input.reservedAt,
+      };
+    };
+    const action = buildAction(0);
+    const tenantScope =
+      input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId };
+    const reserved = await Delivery()
+      .findOneAndUpdate(
+        {
+          deliveryKey: input.deliveryKey,
+          user: input.user,
+          ...tenantScope,
+          status: { $in: ['succeeded', 'dead'] },
+          'envelope.target.bindingId': input.bindingId,
+          'handling.status': 'started',
+          'handling.conversationId': input.conversationId,
+          'handling.generationCreatedAt': input.generationCreatedAt,
+          actorReceipt: { $exists: false },
+          actorActionAdmittedAt: { $exists: true },
+          actorDetachedAction: { $exists: false },
+        },
+        { $set: { actorDetachedAction: action } },
+        { new: true },
+      )
+      .select('+actorDetachedAction')
+      .lean<Pick<IAgentTriggerDelivery, 'actorDetachedAction'>>();
+    if (reserved?.actorDetachedAction != null) {
+      return { status: 'reserved', action: reserved.actorDetachedAction };
+    }
+    const existing = await Delivery()
+      .findOne({
+        deliveryKey: input.deliveryKey,
+        user: input.user,
+        ...tenantScope,
+        'envelope.target.bindingId': input.bindingId,
+        'handling.conversationId': input.conversationId,
+        'handling.generationCreatedAt': input.generationCreatedAt,
+      })
+      .select('+actorDetachedAction')
+      .lean<Pick<IAgentTriggerDelivery, 'actorDetachedAction'>>();
+    if (existing?.actorDetachedAction == null) {
+      throw new Error('Detached event actor action reservation owner is unavailable');
+    }
+    if (existing.actorDetachedAction.idempotencyKey === action.idempotencyKey) {
+      return { status: 'replay', action: existing.actorDetachedAction };
+    }
+    if (
+      !['failed', 'cancelled'].includes(existing.actorDetachedAction.status) ||
+      existing.actorDetachedAction.launchAttempt >= 15
+    ) {
+      return { status: 'conflict', action: existing.actorDetachedAction };
+    }
+    const retryAction = buildAction(existing.actorDetachedAction.launchAttempt + 1);
+    const retried = await Delivery()
+      .findOneAndUpdate(
+        {
+          deliveryKey: input.deliveryKey,
+          user: input.user,
+          ...tenantScope,
+          status: { $in: ['succeeded', 'dead'] },
+          'envelope.target.bindingId': input.bindingId,
+          'handling.status': 'started',
+          'handling.conversationId': input.conversationId,
+          'handling.generationCreatedAt': input.generationCreatedAt,
+          actorReceipt: { $exists: false },
+          actorActionAdmittedAt: { $exists: true },
+          'actorDetachedAction.taskId': existing.actorDetachedAction.taskId,
+          'actorDetachedAction.idempotencyKey': existing.actorDetachedAction.idempotencyKey,
+          'actorDetachedAction.status': existing.actorDetachedAction.status,
+        },
+        {
+          $set: { actorDetachedAction: retryAction },
+          $push: {
+            actorDetachedActionHistory: {
+              $each: [existing.actorDetachedAction],
+              $slice: -8,
+            },
+          },
+        },
+        { new: true },
+      )
+      .select('+actorDetachedAction')
+      .lean<Pick<IAgentTriggerDelivery, 'actorDetachedAction'>>();
+    if (retried?.actorDetachedAction != null) {
+      return { status: 'reserved', action: retried.actorDetachedAction };
+    }
+    const winner = await Delivery()
+      .findOne({
+        deliveryKey: input.deliveryKey,
+        user: input.user,
+        ...tenantScope,
+        'envelope.target.bindingId': input.bindingId,
+        'handling.conversationId': input.conversationId,
+        'handling.generationCreatedAt': input.generationCreatedAt,
+      })
+      .select('+actorDetachedAction')
+      .lean<Pick<IAgentTriggerDelivery, 'actorDetachedAction'>>();
+    if (winner?.actorDetachedAction == null) {
+      throw new Error('Detached event actor retry reservation owner is unavailable');
+    }
+    return {
+      status:
+        winner.actorDetachedAction.idempotencyKey === retryAction.idempotencyKey
+          ? 'replay'
+          : 'conflict',
+      action: winner.actorDetachedAction,
+    };
+  }
+
+  function detachedActionScope(input: UpdateAgentEventActorDetachedActionInput) {
+    return {
+      deliveryKey: input.deliveryKey,
+      user: input.user,
+      ...(input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId }),
+      status: { $in: ['succeeded', 'dead'] },
+      'envelope.target.bindingId': input.bindingId,
+      'handling.status': 'started',
+      'handling.conversationId': input.conversationId,
+      'handling.generationCreatedAt': input.generationCreatedAt,
+      actorReceipt: { $exists: false },
+      actorActionAdmittedAt: { $exists: true },
+      'actorDetachedAction.taskId': input.taskId,
+      'actorDetachedAction.idempotencyKey': input.idempotencyKey,
+    };
+  }
+
+  /** Acknowledges launch without regressing terminal evidence from a fast completion. */
+  async function markAgentEventActorDetachedActionRunning(
+    input: UpdateAgentEventActorDetachedActionInput,
+  ): Promise<boolean> {
+    if (Number.isNaN(input.observedAt.getTime())) {
+      throw new TypeError('observedAt must be a valid date');
+    }
+    const scope = detachedActionScope(input);
+    const running = await Delivery().updateOne(
+      { ...scope, 'actorDetachedAction.status': 'reserved' },
+      {
+        $set: {
+          'actorDetachedAction.status': 'running',
+          'actorDetachedAction.launchedAt': input.observedAt,
+          'actorDetachedAction.observedAt': input.observedAt,
+        },
+      },
+    );
+    if (running.modifiedCount === 1) {
+      return true;
+    }
+    return (
+      (await Delivery().exists({
+        ...scope,
+        'actorDetachedAction.status': {
+          $in: ['running', 'succeeded', 'failed', 'cancelled'],
+        },
+      })) != null
+    );
+  }
+
+  /** Persists exact terminal evidence once; identical callbacks replay safely. */
+  async function settleAgentEventActorDetachedAction(
+    input: SettleAgentEventActorDetachedActionInput,
+  ): Promise<boolean> {
+    if (
+      Number.isNaN(input.observedAt.getTime()) ||
+      (input.result != null && input.result.length > 32_768) ||
+      (input.error != null && input.error.length > 2_048)
+    ) {
+      throw new TypeError('Detached event actor terminal evidence is invalid');
+    }
+    if (input.status === 'succeeded' ? input.error != null : input.result != null) {
+      throw new TypeError('Detached event actor terminal evidence conflicts with its status');
+    }
+    const terminal = {
+      'actorDetachedAction.status': input.status,
+      'actorDetachedAction.settledAt': input.observedAt,
+      'actorDetachedAction.observedAt': input.observedAt,
+      ...(input.result == null ? {} : { 'actorDetachedAction.result': input.result }),
+      ...(input.error == null ? {} : { 'actorDetachedAction.error': input.error }),
+    };
+    const scope = detachedActionScope(input);
+    const settled = await Delivery().updateOne(
+      { ...scope, 'actorDetachedAction.status': { $in: ['reserved', 'running'] } },
+      { $set: terminal },
+    );
+    if (settled.modifiedCount === 1) {
+      return true;
+    }
+    return (await Delivery().exists({ ...scope, ...terminal })) != null;
+  }
+
+  async function getAgentEventActorDetachedAction(
+    input: GetAgentEventActorReceiptInput & { generationCreatedAt: number },
+  ): Promise<AgentEventActorDetachedAction | null> {
+    const delivery = await Delivery()
+      .findOne({
+        deliveryKey: input.deliveryKey,
+        user: input.user,
+        ...(input.tenantId == null
+          ? { tenantId: { $exists: false } }
+          : { tenantId: input.tenantId }),
+        'envelope.target.bindingId': input.bindingId,
+        'handling.conversationId': input.conversationId,
+        'handling.generationCreatedAt': input.generationCreatedAt,
+        actorDetachedAction: { $exists: true },
+      })
+      .select('+actorDetachedAction')
+      .lean<Pick<IAgentTriggerDelivery, 'actorDetachedAction'>>();
+    return delivery?.actorDetachedAction ?? null;
+  }
+
   async function getAgentEventActorReceipt(
     input: GetAgentEventActorReceiptInput,
   ): Promise<AgentEventActorReceipt | null> {
@@ -2231,6 +2526,10 @@ export function createAgentTriggerDeliveryMethods(
     releaseAgentEventActorAction,
     getAgentEventActorActionAdmission,
     hasAgentEventActorActionAdmission,
+    reserveAgentEventActorDetachedAction,
+    markAgentEventActorDetachedActionRunning,
+    settleAgentEventActorDetachedAction,
+    getAgentEventActorDetachedAction,
     settleAgentEventActorReceipt,
     getAgentEventActorReceipt,
     backfillAgentEventActorReceipt,

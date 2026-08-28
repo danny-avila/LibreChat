@@ -19,22 +19,27 @@ const createAgentEventTerminalHandler = (
     'settleAgentTriggerHandlingOutcome'
   > &
     Partial<Parameters<typeof createAgentEventTerminalHandlerImpl>[0]>,
+  options?: Parameters<typeof createAgentEventTerminalHandlerImpl>[1],
 ) =>
-  createAgentEventTerminalHandlerImpl({
-    getAgentEventActorSnapshot: jest.fn().mockResolvedValue(undefined),
-    getMessage: jest.fn().mockResolvedValue(null),
-    resolveAgentEventActorReconciliation: jest.fn().mockResolvedValue(true),
-    clearAgentEventActorReconciliation: jest.fn().mockResolvedValue(true),
-    settleAgentEventActorReceipt: jest.fn().mockResolvedValue(true),
-    getAgentEventActorReceipt: jest.fn().mockResolvedValue(null),
-    backfillAgentEventActorReceipt: jest.fn().mockResolvedValue(true),
-    completeAgentEventActorLegacyTurn: jest.fn().mockResolvedValue(true),
-    cancelAgentEventActorSuspension: jest.fn().mockResolvedValue({ status: 'cancelled' }),
-    releaseAgentEventActorAction: jest.fn().mockResolvedValue(true),
-    getAgentEventActorActionAdmission: jest.fn().mockResolvedValue(null),
-    hasAgentEventActorActionAdmission: jest.fn().mockResolvedValue(false),
-    ...methods,
-  });
+  createAgentEventTerminalHandlerImpl(
+    {
+      getAgentEventActorSnapshot: jest.fn().mockResolvedValue(undefined),
+      getMessage: jest.fn().mockResolvedValue(null),
+      resolveAgentEventActorReconciliation: jest.fn().mockResolvedValue(true),
+      clearAgentEventActorReconciliation: jest.fn().mockResolvedValue(true),
+      settleAgentEventActorReceipt: jest.fn().mockResolvedValue(true),
+      getAgentEventActorReceipt: jest.fn().mockResolvedValue(null),
+      backfillAgentEventActorReceipt: jest.fn().mockResolvedValue(true),
+      completeAgentEventActorLegacyTurn: jest.fn().mockResolvedValue(true),
+      cancelAgentEventActorSuspension: jest.fn().mockResolvedValue({ status: 'cancelled' }),
+      releaseAgentEventActorAction: jest.fn().mockResolvedValue(true),
+      getAgentEventActorActionAdmission: jest.fn().mockResolvedValue(null),
+      hasAgentEventActorActionAdmission: jest.fn().mockResolvedValue(false),
+      getAgentEventActorDetachedAction: jest.fn().mockResolvedValue(null),
+      ...methods,
+    },
+    options,
+  );
 
 function job(overrides: Partial<SerializableJobData> = {}): SerializableJobData {
   return {
@@ -105,6 +110,156 @@ describe('agent event terminal outcomes', () => {
   beforeEach(() => {
     mockedCancelAgentEventActor.mockReset();
     mockedCancelAgentEventActor.mockResolvedValue({ status: 'cancelled' });
+  });
+
+  it('hands a terminal internal suspension to the durable resume adapter without settling', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const resumeDetachedAction = jest.fn().mockResolvedValue(undefined);
+    const suspension = {
+      version: 1 as const,
+      suspensionId: 'suspension-detached-1',
+      attempt: 0,
+      issuedAt: 1,
+      expiresAt: 2,
+      invocation: {
+        actorThreadId: 'conversation-1',
+        invocationId: 'trigger_1',
+        depth: 0,
+        continuation: 'warm' as const,
+        base: { actorThreadId: 'conversation-1', generation: 1 },
+        fork: {
+          threadId: 'conversation-1',
+          checkpointNs: 'event-actor/trigger-1',
+          checkpointId: 'checkpoint-1',
+          invocationId: 'trigger_1',
+        },
+      },
+      checkpoint: {
+        threadId: 'conversation-1',
+        checkpointNs: 'event-actor/trigger-1',
+        checkpointId: 'checkpoint-1',
+        invocationId: 'trigger_1',
+      },
+      interrupt: { id: 'task-1', payload: { type: 'event_actor_detached_action' } },
+      suspensionDigest: 'signed-digest',
+    };
+    const detachedAction = {
+      version: 1 as const,
+      invocationId: 'trigger_1',
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-1',
+      taskId: 'task-1',
+      idempotencyKey: 'a'.repeat(64),
+      launchAttempt: 0 as const,
+      status: 'succeeded' as const,
+      reservedAt: new Date(),
+      launchedAt: new Date(),
+      settledAt: new Date(),
+      observedAt: new Date(),
+      result: 'move accepted',
+    };
+    const handler = createAgentEventTerminalHandler(
+      {
+        settleAgentTriggerHandlingOutcome,
+        getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+          state: null,
+          epoch: 1,
+          legacyTurn: null,
+          reconciliations: [],
+          suspension: {
+            kind: 'internal_completion',
+            suspension,
+            actionId: 'task-1',
+            jobCreatedAt: 1_787_000_000_000,
+            status: 'pending',
+            observedAt: new Date(),
+          },
+        }),
+        getAgentEventActorDetachedAction: jest.fn().mockResolvedValue(detachedAction),
+      },
+      { resumeDetachedAction },
+    );
+
+    await handler(
+      'conversation-1',
+      job({
+        agentEventBindingId: 'binding-1',
+        agentEventSuspension: {
+          version: 1,
+          suspensionId: suspension.suspensionId,
+          attempt: 0,
+        },
+      }),
+      [],
+    );
+
+    expect(resumeDetachedAction).toHaveBeenCalledWith(
+      expect.objectContaining({ streamId: 'conversation-1', suspension, action: detachedAction }),
+    );
+    expect(settleAgentTriggerHandlingOutcome).not.toHaveBeenCalled();
+  });
+
+  it('settles a resumed detached failure honestly after its suspension closes', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const getAgentEventActorDetachedAction = jest.fn().mockResolvedValue({
+      version: 1,
+      invocationId: 'trigger_1',
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-failed',
+      taskId: 'task-failed',
+      idempotencyKey: 'b'.repeat(64),
+      launchAttempt: 0,
+      status: 'failed',
+      reservedAt: new Date(),
+      observedAt: new Date(),
+      settledAt: new Date(),
+      error: 'move service rejected the request',
+    });
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      getAgentEventActorDetachedAction,
+      getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+        state: null,
+        epoch: 1,
+        legacyTurn: null,
+        reconciliations: [],
+        suspension: {
+          kind: 'internal_completion',
+          suspension: {
+            version: 1,
+            suspensionId: 'suspension-failed',
+            attempt: 0,
+            invocation: { invocationId: 'trigger_1' },
+          },
+          actionId: 'task-failed',
+          jobCreatedAt: 1_787_000_000_000,
+          handlingGenerationCreatedAt: 1_787_000_000_000,
+          status: 'closed',
+          outcome: 'settled',
+          observedAt: new Date(),
+        },
+      }),
+    });
+
+    await handler(
+      'conversation-1',
+      job({ createdAt: 1_787_000_010_000, agentEventBindingId: 'binding-1' }),
+      [],
+    );
+
+    expect(getAgentEventActorDetachedAction).toHaveBeenCalledWith(
+      expect.objectContaining({ generationCreatedAt: 1_787_000_000_000 }),
+    );
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'trigger_1',
+        generationCreatedAt: 1_787_000_000_000,
+        status: 'failed',
+        error: 'move service rejected the request',
+      }),
+    );
   });
 
   it('cancels a versioned paused actor before settling its expired delivery', async () => {

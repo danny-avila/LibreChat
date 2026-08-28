@@ -3,6 +3,7 @@ export * from './bindings';
 export * from './actor';
 export * from './bindingResolver';
 export * from './delivery';
+export * from './detachedAction';
 export * from './envelope';
 export * from './host';
 export * from './ingress';

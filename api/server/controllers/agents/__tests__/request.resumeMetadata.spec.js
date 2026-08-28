@@ -73,6 +73,7 @@ const mockRecordScheduleOutcome = jest.fn();
 const mockIsScheduleLive = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn();
 const mockExecuteAgentEventActor = jest.fn();
+const mockResumeAgentEventActor = jest.fn();
 const mockFindAgentEventAppliedAction = jest.fn();
 const mockResolveAgentTurnExecutionPlan = jest.fn((input) => {
   let origin = 'user';
@@ -85,7 +86,6 @@ const mockResolveAgentTurnExecutionPlan = jest.fn((input) => {
     input.event?.binding != null &&
     input.event?.expectedAction != null &&
     input.checkpointerType !== 'memory' &&
-    !input.expectedActionMayDetach &&
     (!input.canPause || input.durableEventActorSuspensions);
   let strategy = 'history';
   if (input.isNewConversation) {
@@ -131,6 +131,9 @@ const mockAdmitAgentEventActorAction = jest.fn();
 const mockReleaseAgentEventActorAction = jest.fn();
 const mockHasAgentEventActorActionAdmission = jest.fn();
 const mockGetAgentEventActorReceipt = jest.fn();
+const mockGetAgentEventActorDetachedAction = jest.fn();
+const mockClaimAgentEventActorSuspension = jest.fn();
+const mockSettleAgentEventActorSuspension = jest.fn();
 const mockStartupTelemetry = {
   mark: jest.fn(),
   setStreamId: jest.fn(),
@@ -258,6 +261,11 @@ jest.mock('@librechat/api', () => ({
   },
   deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
   executeAgentEventActor: (...args) => mockExecuteAgentEventActor(...args),
+  resumeAgentEventActor: (...args) => mockResumeAgentEventActor(...args),
+  createAgentEventActorDetachedActionLifecycle: jest.fn(() => undefined),
+  parseAgentEventActorDetachedCompletion: (value) => (value?.version === 1 ? value : undefined),
+  EVENT_ACTOR_DETACHED_COMPLETION_SOURCE: 'librechat-event-actor',
+  EVENT_ACTOR_DETACHED_COMPLETION_TYPE: 'librechat.event_actor.detached_completion',
   findAgentEventAppliedAction: (...args) => mockFindAgentEventAppliedAction(...args),
   createAgentEventActionRecorder: (...args) => mockCreateAgentEventActionRecorder(...args),
   resolveAgentTurnExecutionPlan: (...args) => mockResolveAgentTurnExecutionPlan(...args),
@@ -307,6 +315,9 @@ jest.mock('~/models', () => ({
   releaseAgentEventActorAction: (...args) => mockReleaseAgentEventActorAction(...args),
   hasAgentEventActorActionAdmission: (...args) => mockHasAgentEventActorActionAdmission(...args),
   getAgentEventActorReceipt: (...args) => mockGetAgentEventActorReceipt(...args),
+  getAgentEventActorDetachedAction: (...args) => mockGetAgentEventActorDetachedAction(...args),
+  claimAgentEventActorSuspension: (...args) => mockClaimAgentEventActorSuspension(...args),
+  settleAgentEventActorSuspension: (...args) => mockSettleAgentEventActorSuspension(...args),
   isAgentTriggerPrincipalActive: (...args) => mockIsAgentTriggerPrincipalActive(...args),
   isSubagentOwnerAdmissible: (...args) => mockIsSubagentOwnerAdmissible(...args),
 }));
@@ -433,6 +444,9 @@ describe('ResumableAgentController resume metadata', () => {
     mockReleaseAgentEventActorAction.mockResolvedValue(true);
     mockHasAgentEventActorActionAdmission.mockResolvedValue(false);
     mockGetAgentEventActorReceipt.mockResolvedValue(null);
+    mockGetAgentEventActorDetachedAction.mockResolvedValue(null);
+    mockClaimAgentEventActorSuspension.mockResolvedValue({ status: 'claimed' });
+    mockSettleAgentEventActorSuspension.mockResolvedValue({ status: 'settled' });
   });
 
   it.each([
@@ -4110,7 +4124,6 @@ describe('ResumableAgentController resume metadata', () => {
         conversationId: 'child-conversation',
         isNewConversation: false,
         canPause: false,
-        expectedActionMayDetach: false,
       }),
     );
     expect(mockExecuteAgentEventActor).toHaveBeenCalledWith(
@@ -4120,7 +4133,7 @@ describe('ResumableAgentController resume metadata', () => {
         event,
         expectedAction: { toolName: 'submit_\u200Fmove', argumentSubset: { expectedPly: 8 } },
       }),
-      {
+      expect.objectContaining({
         getSnapshot: expect.any(Function),
         commitState: expect.any(Function),
         recordReconciliation: expect.any(Function),
@@ -4130,7 +4143,7 @@ describe('ResumableAgentController resume metadata', () => {
         releaseAction: expect.any(Function),
         hasActionAdmission: expect.any(Function),
         getReceipt: expect.any(Function),
-      },
+      }),
     );
     expect(mockExecuteAgentEventActor.mock.calls[0][0]).not.toHaveProperty('tenantId');
     expect(req._agentEventTriggerProjection).toEqual({
@@ -4229,6 +4242,113 @@ describe('ResumableAgentController resume metadata', () => {
     expect(typeof req._agentEventActionObserver).toBe('function');
     expect(observedRead).toEqual({ toolName: 'submit_move', toolCallId: 'call-9' });
     expect(mockFindAgentEventAppliedAction).not.toHaveBeenCalled();
+  });
+
+  it('resumes the original actor suspension from exact detached terminal evidence', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    const suspension = {
+      version: 1,
+      suspensionId: 'suspension-detached-1',
+      attempt: 0,
+      invocation: { invocationId: 'original-delivery-1' },
+    };
+    mockGetAgentEventActorSnapshot.mockResolvedValue({
+      state: null,
+      reconciliations: [],
+      suspension: {
+        kind: 'internal_completion',
+        suspension,
+        actionId: 'task-detached-1',
+        status: 'pending',
+      },
+    });
+    mockGetAgentEventActorDetachedAction.mockResolvedValue({
+      invocationId: 'original-delivery-1',
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-detached-1',
+      taskId: 'task-detached-1',
+      idempotencyKey: 'a'.repeat(64),
+      status: 'succeeded',
+      result: 'move accepted',
+    });
+    mockResumeAgentEventActor.mockRejectedValueOnce(new Error('stop after resume contract'));
+    const client = { options: { agent: {} }, sendMessage: jest.fn() };
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Trusted detached completion.',
+        clientRequestId: 'detached-resume-generation-1',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'original-delivery-1',
+          target: { bindingId: 'binding-1' },
+          expectedAction: { toolName: 'submit_move' },
+          event: {
+            id: 'task-detached-1',
+            type: 'librechat.event_actor.detached_completion',
+            occurredAt: Date.now(),
+            source: { id: 'librechat-event-actor', type: 'internal' },
+          },
+          internalCompletion: {
+            version: 1,
+            invocationId: 'original-delivery-1',
+            generationCreatedAt: 1000,
+            taskId: 'task-detached-1',
+            idempotencyKey: 'a'.repeat(64),
+          },
+        },
+      },
+      config: { endpoints: { agents: {} } },
+      _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    await nextTick();
+
+    expect(mockExecuteAgentEventActor).not.toHaveBeenCalled();
+    expect(mockResumeAgentEventActor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'child-conversation',
+        bindingId: 'binding-1',
+        suspension,
+        resumeAttemptId: 'detached-resume-generation-1',
+        resumeValue: expect.objectContaining({
+          taskId: 'task-detached-1',
+          status: 'succeeded',
+          result: 'move accepted',
+        }),
+      }),
+      expect.objectContaining({
+        claimSuspension: expect.any(Function),
+        settleSuspension: expect.any(Function),
+      }),
+    );
+    expect(mockGetAgentEventActorDetachedAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'original-delivery-1',
+        generationCreatedAt: 1000,
+      }),
+    );
   });
 
   it('records reconciliation when persistence fails after an event action commits', async () => {
@@ -4530,9 +4650,7 @@ describe('ResumableAgentController resume metadata', () => {
         }),
       };
       const shouldCheckpoint =
-        _label !== 'memory-checkpointer' &&
-        _label !== 'background-capable expected action' &&
-        _label !== 'pre-cutover pause-capable fleet';
+        _label !== 'memory-checkpointer' && _label !== 'pre-cutover pause-capable fleet';
       if (shouldCheckpoint) {
         mockExecuteAgentEventActor.mockImplementationOnce(async (input) => {
           await input.invoke({

@@ -1,7 +1,9 @@
 import type {
+  AgentEventActorDetachedAction,
   AgentTriggerDeliveryMethods,
   ConversationMethods,
   IAgentEventActorSuspension,
+  IAgentEventActorSuspensionEvidence,
   MessageMethods,
 } from '@librechat/data-schemas';
 import type { Agents } from 'librechat-data-provider';
@@ -22,7 +24,7 @@ interface SettleAgentTriggerHandlingOutcomeInput {
   action?: { toolName: string; toolCallId?: string };
 }
 
-interface CompletedToolEvidence {
+export interface CompletedToolEvidence {
   toolName: string;
   toolCallId?: string;
   arguments?: unknown;
@@ -225,7 +227,7 @@ function containsSubset(value: unknown, subset: unknown): boolean {
   );
 }
 
-function matchesExpectedAction(
+export function matchesExpectedAction(
   evidence: CompletedToolEvidence,
   expected: AgentTriggerExpectedAction,
 ): boolean {
@@ -332,23 +334,36 @@ export function createAgentEventActionRecorder(
   };
 }
 
-export function createAgentEventTerminalHandler(methods: {
-  settleAgentTriggerHandlingOutcome: (
-    input: SettleAgentTriggerHandlingOutcomeInput,
-  ) => Promise<boolean>;
-  getAgentEventActorSnapshot: ConversationMethods['getAgentEventActorSnapshot'];
-  resolveAgentEventActorReconciliation: ConversationMethods['resolveAgentEventActorReconciliation'];
-  clearAgentEventActorReconciliation: ConversationMethods['clearAgentEventActorReconciliation'];
-  settleAgentEventActorReceipt: AgentTriggerDeliveryMethods['settleAgentEventActorReceipt'];
-  getAgentEventActorReceipt: AgentTriggerDeliveryMethods['getAgentEventActorReceipt'];
-  backfillAgentEventActorReceipt: AgentTriggerDeliveryMethods['backfillAgentEventActorReceipt'];
-  completeAgentEventActorLegacyTurn: ConversationMethods['completeAgentEventActorLegacyTurn'];
-  cancelAgentEventActorSuspension: ConversationMethods['cancelAgentEventActorSuspension'];
-  releaseAgentEventActorAction: AgentTriggerDeliveryMethods['releaseAgentEventActorAction'];
-  getAgentEventActorActionAdmission: AgentTriggerDeliveryMethods['getAgentEventActorActionAdmission'];
-  hasAgentEventActorActionAdmission: AgentTriggerDeliveryMethods['hasAgentEventActorActionAdmission'];
-  getMessage: MessageMethods['getMessage'];
-}): (
+export interface AgentEventActorDetachedResumeInput {
+  streamId: string;
+  job: SerializableJobData;
+  suspension: IAgentEventActorSuspensionEvidence;
+  action: AgentEventActorDetachedAction;
+}
+
+export function createAgentEventTerminalHandler(
+  methods: {
+    settleAgentTriggerHandlingOutcome: (
+      input: SettleAgentTriggerHandlingOutcomeInput,
+    ) => Promise<boolean>;
+    getAgentEventActorSnapshot: ConversationMethods['getAgentEventActorSnapshot'];
+    resolveAgentEventActorReconciliation: ConversationMethods['resolveAgentEventActorReconciliation'];
+    clearAgentEventActorReconciliation: ConversationMethods['clearAgentEventActorReconciliation'];
+    settleAgentEventActorReceipt: AgentTriggerDeliveryMethods['settleAgentEventActorReceipt'];
+    getAgentEventActorReceipt: AgentTriggerDeliveryMethods['getAgentEventActorReceipt'];
+    backfillAgentEventActorReceipt: AgentTriggerDeliveryMethods['backfillAgentEventActorReceipt'];
+    completeAgentEventActorLegacyTurn: ConversationMethods['completeAgentEventActorLegacyTurn'];
+    cancelAgentEventActorSuspension: ConversationMethods['cancelAgentEventActorSuspension'];
+    releaseAgentEventActorAction: AgentTriggerDeliveryMethods['releaseAgentEventActorAction'];
+    getAgentEventActorActionAdmission: AgentTriggerDeliveryMethods['getAgentEventActorActionAdmission'];
+    hasAgentEventActorActionAdmission: AgentTriggerDeliveryMethods['hasAgentEventActorActionAdmission'];
+    getAgentEventActorDetachedAction: AgentTriggerDeliveryMethods['getAgentEventActorDetachedAction'];
+    getMessage: MessageMethods['getMessage'];
+  },
+  options: {
+    resumeDetachedAction?(input: AgentEventActorDetachedResumeInput): Promise<void>;
+  } = {},
+): (
   streamId: string,
   job: SerializableJobData,
   runSteps: Agents.RunStep[],
@@ -367,6 +382,7 @@ export function createAgentEventTerminalHandler(methods: {
     const outcome = classifyAgentEventRunOutcome(job, runSteps, content);
     const settledAt = new Date(job.completedAt ?? Date.now());
     let committedAction: AgentEventAppliedAction | undefined;
+    let detachedTerminalFailure: string | undefined;
     let compensated = false;
     let actorReceiptSettled = false;
     const owner = {
@@ -378,6 +394,66 @@ export function createAgentEventTerminalHandler(methods: {
     let retiredWithoutAction: IAgentEventActorSuspension | undefined;
     const isIrrecoverablyTerminal = job.status === 'aborted' || job.status === 'error';
     const unprojectedSuspension = snapshot?.suspension;
+    const handlingGenerationCreatedAt =
+      unprojectedSuspension?.suspension.invocation.invocationId === job.agentEventDeliveryKey
+        ? (unprojectedSuspension.handlingGenerationCreatedAt ?? job.createdAt)
+        : job.createdAt;
+    let detachedSuspensionAction: AgentEventActorDetachedAction | null = null;
+    if (
+      unprojectedSuspension?.kind === 'internal_completion' &&
+      unprojectedSuspension.suspension.invocation.invocationId === job.agentEventDeliveryKey &&
+      job.agentEventBindingId != null
+    ) {
+      detachedSuspensionAction = await methods.getAgentEventActorDetachedAction({
+        deliveryKey: job.agentEventDeliveryKey,
+        user: job.userId,
+        ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+        bindingId: job.agentEventBindingId,
+        conversationId,
+        generationCreatedAt: handlingGenerationCreatedAt,
+      });
+      if (
+        detachedSuspensionAction?.status === 'failed' ||
+        detachedSuspensionAction?.status === 'cancelled'
+      ) {
+        detachedTerminalFailure =
+          detachedSuspensionAction.error ??
+          `Detached expected action ${detachedSuspensionAction.status}`;
+      }
+    }
+    if (
+      unprojectedSuspension?.kind === 'internal_completion' &&
+      unprojectedSuspension.status === 'pending' &&
+      unprojectedSuspension.suspension.invocation.invocationId === job.agentEventDeliveryKey
+    ) {
+      const projection = job.agentEventSuspension;
+      if (
+        projection == null ||
+        projection.suspensionId !== unprojectedSuspension.suspension.suspensionId ||
+        projection.attempt !== unprojectedSuspension.suspension.attempt ||
+        job.agentEventBindingId == null
+      ) {
+        throw new Error(
+          `Agent event actor ${job.agentEventDeliveryKey} internal suspension projection is stale`,
+        );
+      }
+      const action = detachedSuspensionAction;
+      if (action == null || !['succeeded', 'failed', 'cancelled'].includes(action.status)) {
+        throw new Error(
+          `Agent event actor ${job.agentEventDeliveryKey} detached action is not terminal`,
+        );
+      }
+      if (options.resumeDetachedAction == null) {
+        throw new Error('Detached Event Actor resume adapter is unavailable');
+      }
+      await options.resumeDetachedAction({
+        streamId,
+        job,
+        suspension: unprojectedSuspension.suspension,
+        action,
+      });
+      return;
+    }
     if (
       job.agentEventSuspension == null &&
       isIrrecoverablyTerminal &&
@@ -570,7 +646,7 @@ export function createAgentEventTerminalHandler(methods: {
         ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
         bindingId: durableReceipt.bindingId,
         conversationId,
-        generationCreatedAt: job.createdAt,
+        generationCreatedAt: handlingGenerationCreatedAt,
         status: durableReceipt.resolution === 'action_compensated' ? 'failed' : 'applied',
         settledAt: durableReceipt.settledAt,
         ...(durableReceipt.resolution === 'action_compensated' && {
@@ -626,7 +702,7 @@ export function createAgentEventTerminalHandler(methods: {
           const terminalized = await methods.settleAgentTriggerHandlingOutcome({
             deliveryKey: job.agentEventDeliveryKey,
             conversationId,
-            generationCreatedAt: job.createdAt,
+            generationCreatedAt: handlingGenerationCreatedAt,
             status: legacyStatus,
             settledAt: lifecycle.observedAt,
             ...(legacyError == null ? {} : { error: legacyError }),
@@ -643,7 +719,7 @@ export function createAgentEventTerminalHandler(methods: {
             ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
             bindingId: job.agentEventBindingId,
             conversationId,
-            generationCreatedAt: job.createdAt,
+            generationCreatedAt: handlingGenerationCreatedAt,
             status: legacyStatus,
             settledAt: lifecycle.observedAt,
             ...(legacyError == null ? {} : { error: legacyError }),
@@ -704,7 +780,7 @@ export function createAgentEventTerminalHandler(methods: {
           ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
           bindingId: job.agentEventBindingId,
           conversationId,
-          generationCreatedAt: job.createdAt,
+          generationCreatedAt: handlingGenerationCreatedAt,
           status: 'applied',
           settledAt,
           ...(lifecycle.actionAdmitted === true && { requiresActionAdmission: true }),
@@ -803,6 +879,8 @@ export function createAgentEventTerminalHandler(methods: {
       settlementOutcome = { status: 'failed' };
     } else if (committedAction != null) {
       settlementOutcome = { status: 'applied', action: committedAction };
+    } else if (detachedTerminalFailure != null) {
+      settlementOutcome = { status: 'failed' };
     }
     if (job.agentEventLegacyTurnToken != null && snapshot?.legacyTurn != null) {
       if (snapshot.legacyTurn.token !== job.agentEventLegacyTurnToken) {
@@ -837,13 +915,13 @@ export function createAgentEventTerminalHandler(methods: {
     const settled = await methods.settleAgentTriggerHandlingOutcome({
       deliveryKey: job.agentEventDeliveryKey,
       conversationId,
-      generationCreatedAt: job.createdAt,
+      generationCreatedAt: handlingGenerationCreatedAt,
       status: settlementOutcome.status,
       settledAt,
       ...(settlementOutcome.status === 'failed' && {
         error: compensated
           ? 'Applied event actor action was explicitly compensated'
-          : (job.error ?? 'Generation failed'),
+          : (detachedTerminalFailure ?? job.error ?? 'Generation failed'),
       }),
       ...(settlementOutcome.action != null && { action: settlementOutcome.action }),
     });

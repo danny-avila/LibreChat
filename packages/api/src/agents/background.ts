@@ -774,6 +774,7 @@ export class BackgroundTaskRegistryClass {
    * task and hand back a stale/foreign result instead of executing.
    */
   create(params: {
+    taskId?: string;
     userId: string;
     conversationId: string;
     toolCallId: string;
@@ -829,7 +830,7 @@ export class BackgroundTaskRegistryClass {
     }
 
     const task: BackgroundTask = {
-      id: randomUUID(),
+      id: params.taskId ?? randomUUID(),
       toolName: params.toolName,
       toolCallId: params.toolCallId,
       messageId: params.messageId,
@@ -1050,7 +1051,9 @@ export class BackgroundTaskRegistryClass {
 export const backgroundTaskRegistry = new BackgroundTaskRegistryClass();
 
 /** Content for the synthetic ToolMessage returned when a call is backgrounded. */
-export function buildBackgroundHandleContent(task: BackgroundTask): string {
+export function buildBackgroundHandleContent(
+  task: Pick<BackgroundTask, 'id' | 'toolName' | 'status'>,
+): string {
   return JSON.stringify({
     background_task_id: task.id,
     tool: task.toolName,

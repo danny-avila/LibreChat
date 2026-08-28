@@ -10,6 +10,11 @@ import type {
 import type { AgentTriggerDispatchContext } from './dispatch';
 import type { AgentRunPrincipal } from '../envelope';
 import { dispatchAgentTrigger } from './dispatch';
+import {
+  EVENT_ACTOR_DETACHED_COMPLETION_SOURCE,
+  EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
+  parseAgentEventActorDetachedCompletion,
+} from './detachedAction';
 
 const DEFAULT_FIRE_TIMEOUT_MS = 30_000;
 const MAX_RESPONSE_BODY_BYTES = 64 * 1024;
@@ -534,6 +539,13 @@ async function startRun(
   timeoutMs: number,
 ): Promise<AgentTriggerContinueResult | AgentTriggerFireResult> {
   const mode = envelope.mode;
+  const detachedCompletion =
+    mode === 'continue' &&
+    envelope.event.type === EVENT_ACTOR_DETACHED_COMPLETION_TYPE &&
+    envelope.event.source.type === 'internal' &&
+    envelope.event.source.id === EVENT_ACTOR_DETACHED_COMPLETION_SOURCE
+      ? parseAgentEventActorDetachedCompletion(envelope.event.payload)
+      : undefined;
   const scope = abortScope(context.signal, timeoutMs);
   let preparation: AgentTriggerContinuePreparation | undefined;
   try {
@@ -618,7 +630,7 @@ async function startRun(
           ...(envelope.mode === 'continue' &&
             envelope.target.bindingId != null && {
               agentEventDelivery: {
-                deliveryKey: context.idempotencyKey,
+                deliveryKey: detachedCompletion?.invocationId ?? context.idempotencyKey,
                 /** Identity only, matching the `fire` body: the actor uses this
                  * to bind an invocation, never to build the turn's prompt. The
                  * source payload is unbounded and would push large deliveries
@@ -632,6 +644,7 @@ async function startRun(
                 ...(envelope.expectedAction != null && {
                   expectedAction: envelope.expectedAction,
                 }),
+                ...(detachedCompletion == null ? {} : { internalCompletion: detachedCompletion }),
               },
             }),
           ...(envelope.mode === 'fire' && {

@@ -7,7 +7,6 @@ const baseInput = (): ResolveAgentTurnExecutionPlanInput => ({
   isNewConversation: false,
   canPause: false,
   durableEventActorSuspensions: false,
-  expectedActionMayDetach: false,
 });
 
 const boundEvent = () => ({
@@ -67,7 +66,6 @@ describe('resolveAgentTurnExecutionPlan', () => {
     ['no binding', { event: { ...boundEvent(), binding: undefined } }],
     ['no expected action', { event: { ...boundEvent(), expectedAction: undefined } }],
     ['memory checkpointer', { event: boundEvent(), checkpointerType: 'memory' }],
-    ['detachable action', { event: boundEvent(), expectedActionMayDetach: true }],
     [
       'pre-cutover pause consumer fleet',
       { event: boundEvent(), canPause: true, durableEventActorSuspensions: false },

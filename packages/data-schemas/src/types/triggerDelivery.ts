@@ -36,6 +36,25 @@ export interface AgentEventActorReceipt {
   settledAt: Date;
 }
 
+/** Private launch authority for one delivery-owned detached expected action. */
+export interface AgentEventActorDetachedAction {
+  version: 1;
+  invocationId: string;
+  expectedToolName: string;
+  toolName: string;
+  toolCallId: string;
+  taskId: string;
+  idempotencyKey: string;
+  launchAttempt: number;
+  status: 'reserved' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+  reservedAt: Date;
+  observedAt: Date;
+  launchedAt?: Date;
+  settledAt?: Date;
+  result?: string;
+  error?: string;
+}
+
 export interface AgentTriggerDeliveryFailure {
   code: string;
   message: string;
@@ -81,6 +100,10 @@ export interface IAgentTriggerDelivery {
   awaitTerminalHandling?: boolean;
   handling?: AgentTriggerHandlingState;
   actorReceipt?: AgentEventActorReceipt;
+  /** Durable launch identity; excluded from ordinary delivery reads. */
+  actorDetachedAction?: AgentEventActorDetachedAction;
+  /** Bounded audit trail for terminal attempts replaced by an explicit retry. */
+  actorDetachedActionHistory?: AgentEventActorDetachedAction[];
   /** Delivery-owned serialization point acquired exactly once before an event
    * actor may invoke an external action. */
   actorActionAdmittedAt?: Date;

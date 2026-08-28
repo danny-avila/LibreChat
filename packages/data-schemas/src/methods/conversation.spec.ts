@@ -4027,6 +4027,9 @@ describe('Conversation Operations', () => {
           jobCreatedAt: 123,
         }),
       ).resolves.toEqual({ status: 'stored' });
+      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+        suspension: { kind: 'human_decision' },
+      });
       await expect(
         methods.storeAgentEventActorSuspension({
           ...owner,
@@ -4056,6 +4059,7 @@ describe('Conversation Operations', () => {
         methods.storeAgentEventActorSuspension({
           ...owner,
           suspension: second,
+          kind: 'internal_completion',
           actionId: 'action-second',
           jobCreatedAt: 123,
           previous: {
@@ -4065,6 +4069,12 @@ describe('Conversation Operations', () => {
           },
         }),
       ).resolves.toEqual({ status: 'stored' });
+      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+        suspension: {
+          kind: 'internal_completion',
+          suspension: { suspensionId: second.suspensionId },
+        },
+      });
       await expect(
         methods.claimAgentEventActorSuspension({
           ...owner,

@@ -85,6 +85,31 @@ const actorReceiptSchema = new Schema(
   { _id: false },
 );
 
+const actorDetachedActionSchema = new Schema(
+  {
+    version: { type: Number, enum: [1], required: true },
+    invocationId: { type: String, required: true, maxlength: 128 },
+    expectedToolName: { type: String, required: true, maxlength: 256 },
+    toolName: { type: String, required: true, maxlength: 256 },
+    toolCallId: { type: String, required: true, maxlength: 256 },
+    taskId: { type: String, required: true, maxlength: 128 },
+    idempotencyKey: { type: String, required: true, minlength: 64, maxlength: 64 },
+    launchAttempt: { type: Number, min: 0, max: 15, required: true },
+    status: {
+      type: String,
+      enum: ['reserved', 'running', 'succeeded', 'failed', 'cancelled'],
+      required: true,
+    },
+    reservedAt: { type: Date, required: true },
+    observedAt: { type: Date, required: true },
+    launchedAt: { type: Date },
+    settledAt: { type: Date },
+    result: { type: String, maxlength: 32_768 },
+    error: { type: String, maxlength: 2_048 },
+  },
+  { _id: false },
+);
+
 const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
   {
     deliveryKey: { type: String, required: true, maxlength: 128 },
@@ -119,6 +144,12 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     awaitTerminalHandling: { type: Boolean },
     handling: { type: handlingSchema },
     actorReceipt: { type: actorReceiptSchema, select: false },
+    actorDetachedAction: { type: actorDetachedActionSchema, select: false },
+    actorDetachedActionHistory: {
+      type: [actorDetachedActionSchema],
+      default: undefined,
+      select: false,
+    },
     actorActionAdmittedAt: { type: Date, select: false },
     actorActionAdmissionId: { type: String, maxlength: 64, select: false },
     leaseBy: { type: String },

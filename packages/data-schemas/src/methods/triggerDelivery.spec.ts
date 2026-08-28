@@ -1833,6 +1833,188 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toBeNull();
   });
 
+  it('gives one replica the detached expected-action launch reservation', async () => {
+    const bindingId = 'binding-detached-1';
+    const conversationId = 'conversation-detached-1';
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        awaitTerminalHandling: true,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const claimed = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-detached-1',
+      claimToken: 'claim-detached-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claimed!.id,
+      workerId: 'worker-detached-1',
+      claimToken: 'claim-detached-1',
+      now: START,
+    });
+    const generationCreatedAt = START.getTime() + 1_000;
+    const admission = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      tenantId: 'tenant-1',
+      bindingId,
+      conversationId,
+      admittedAt: new Date(generationCreatedAt),
+      admissionId: 'admission-detached-1',
+    };
+    await expect(methods.admitAgentEventActorAction(admission)).resolves.toBe(true);
+    await methods.completeAgentTriggerDelivery({
+      id: claimed!.id,
+      workerId: 'worker-detached-1',
+      claimToken: 'claim-detached-1',
+      attempt: attempt!,
+      result: { status: 'started' },
+      settledAt: new Date(generationCreatedAt),
+      awaitTerminalHandling: true,
+      handling: {
+        status: 'started',
+        conversationId,
+        streamId: conversationId,
+        generationCreatedAt,
+        startedAt: new Date(generationCreatedAt),
+      },
+    });
+    const reservation = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      tenantId: 'tenant-1',
+      bindingId,
+      conversationId,
+      generationCreatedAt,
+      invocationId: queued.delivery.deliveryKey,
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-detached-1',
+      reservedAt: new Date(generationCreatedAt + 1_000),
+    };
+
+    const contenders = await Promise.all([
+      methods.reserveAgentEventActorDetachedAction(reservation),
+      methods.reserveAgentEventActorDetachedAction(reservation),
+    ]);
+
+    expect(contenders.map((result) => result.status).sort()).toEqual(['replay', 'reserved']);
+    expect(contenders[0].action).toEqual(contenders[1].action);
+    expect(contenders[0].action).toMatchObject({
+      version: 1,
+      invocationId: reservation.invocationId,
+      expectedToolName: reservation.expectedToolName,
+      toolName: reservation.toolName,
+      toolCallId: reservation.toolCallId,
+      taskId: expect.stringMatching(/^event_actor_[a-f0-9]{64}$/),
+      status: 'reserved',
+      launchAttempt: 0,
+      reservedAt: reservation.reservedAt,
+    });
+    expect(contenders[0].action.idempotencyKey).toMatch(/^[a-f0-9]{64}$/);
+    await expect(methods.reserveAgentEventActorDetachedAction(reservation)).resolves.toEqual({
+      status: 'replay',
+      action: contenders[0].action,
+    });
+
+    const update = {
+      deliveryKey: reservation.deliveryKey,
+      user: reservation.user,
+      tenantId: reservation.tenantId,
+      bindingId,
+      conversationId,
+      generationCreatedAt,
+      taskId: contenders[0].action.taskId,
+      idempotencyKey: contenders[0].action.idempotencyKey,
+      observedAt: new Date(generationCreatedAt + 2_000),
+    };
+    await expect(
+      methods.settleAgentEventActorDetachedAction({
+        ...update,
+        status: 'failed',
+        error: 'move service unavailable',
+      }),
+    ).resolves.toBe(true);
+    await expect(methods.markAgentEventActorDetachedActionRunning(update)).resolves.toBe(true);
+    await expect(
+      methods.settleAgentEventActorDetachedAction({
+        ...update,
+        status: 'failed',
+        error: 'move service unavailable',
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      methods.settleAgentEventActorDetachedAction({
+        ...update,
+        status: 'succeeded',
+        result: 'conflicting result',
+      }),
+    ).resolves.toBe(false);
+    await expect(methods.reserveAgentEventActorDetachedAction(reservation)).resolves.toMatchObject({
+      status: 'replay',
+      action: { taskId: contenders[0].action.taskId, status: 'failed' },
+    });
+    const retryReservation = await methods.reserveAgentEventActorDetachedAction({
+      ...reservation,
+      toolCallId: 'call-detached-2',
+      reservedAt: new Date(generationCreatedAt + 3_000),
+    });
+    expect(retryReservation).toMatchObject({
+      status: 'reserved',
+      action: {
+        launchAttempt: 1,
+        toolCallId: 'call-detached-2',
+        status: 'reserved',
+      },
+    });
+    expect(retryReservation.action.taskId).not.toBe(contenders[0].action.taskId);
+    await expect(
+      methods.settleAgentEventActorDetachedAction({
+        ...update,
+        taskId: retryReservation.action.taskId,
+        idempotencyKey: retryReservation.action.idempotencyKey,
+        observedAt: new Date(generationCreatedAt + 4_000),
+        status: 'succeeded',
+        result: 'move accepted',
+      }),
+    ).resolves.toBe(true);
+    const stored = await Delivery.findOne({ deliveryKey: reservation.deliveryKey })
+      .select('+actorDetachedAction +actorDetachedActionHistory')
+      .lean();
+    expect(stored?.actorDetachedAction).toMatchObject({
+      status: 'succeeded',
+      result: 'move accepted',
+      launchAttempt: 1,
+    });
+    expect(stored?.actorDetachedActionHistory).toEqual([
+      expect.objectContaining({
+        taskId: contenders[0].action.taskId,
+        status: 'failed',
+        error: 'move service unavailable',
+      }),
+    ]);
+    await expect(
+      methods.getAgentEventActorDetachedAction({
+        deliveryKey: reservation.deliveryKey,
+        user: reservation.user,
+        tenantId: reservation.tenantId,
+        bindingId,
+        conversationId,
+        generationCreatedAt,
+      }),
+    ).resolves.toMatchObject({
+      taskId: retryReservation.action.taskId,
+      status: 'succeeded',
+      result: 'move accepted',
+    });
+  });
+
   it('serializes no-action settlement against renewed action admission', async () => {
     const queued = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({
