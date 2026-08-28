@@ -1,5 +1,5 @@
-import type { Model, Types } from 'mongoose';
 import { createHash } from 'node:crypto';
+import type { Model, Types } from 'mongoose';
 import type {
   AgentEventActorDetachedAction,
   AgentTriggerDeliveryClaim,

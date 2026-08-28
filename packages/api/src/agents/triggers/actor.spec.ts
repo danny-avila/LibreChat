@@ -496,9 +496,15 @@ describe('event actor host adapter', () => {
   });
 
   it('carries applied expected-action evidence across a later re-pause', async () => {
-    let storedSuspension;
-    let pendingPause;
-    let observedAction;
+    let storedSuspension: IAgentEventActorSuspension | undefined;
+    let pendingPause:
+      | {
+          actionId: string;
+          jobCreatedAt: number;
+          interrupt: EventActorInterrupt;
+        }
+      | undefined;
+    let observedAction: { toolName: string; toolCallId?: string } | undefined;
     const dependencies = {
       ...deps(),
       storeSuspension: jest.fn(async (input) => {
@@ -513,6 +519,9 @@ describe('event actor host adapter', () => {
         return { status: 'stored' as const };
       }),
       claimSuspension: jest.fn(async ({ resumeAttemptId }) => {
+        if (storedSuspension == null) {
+          throw new Error('test suspension was not stored');
+        }
         storedSuspension = { ...storedSuspension, status: 'claimed', resumeAttemptId };
         return { status: 'claimed' as const };
       }),

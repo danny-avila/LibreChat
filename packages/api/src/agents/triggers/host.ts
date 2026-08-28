@@ -9,12 +9,12 @@ import type {
 } from './envelope';
 import type { AgentTriggerDispatchContext } from './dispatch';
 import type { AgentRunPrincipal } from '../envelope';
-import { dispatchAgentTrigger } from './dispatch';
 import {
   EVENT_ACTOR_DETACHED_COMPLETION_SOURCE,
   EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
   parseAgentEventActorDetachedCompletion,
 } from './detachedAction';
+import { dispatchAgentTrigger } from './dispatch';
 
 const DEFAULT_FIRE_TIMEOUT_MS = 30_000;
 const MAX_RESPONSE_BODY_BYTES = 64 * 1024;

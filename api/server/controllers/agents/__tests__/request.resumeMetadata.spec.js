@@ -4789,7 +4789,7 @@ describe('ResumableAgentController resume metadata', () => {
         },
       },
       config: {
-        endpoints: { agents: {} },
+        endpoints: { agents: { checkpointer: { type: 'memory' } } },
       },
       _isAgentTrigger: true,
       _agentEventBindingId: 'binding-1',
@@ -4864,7 +4864,7 @@ describe('ResumableAgentController resume metadata', () => {
         },
       },
       config: {
-        endpoints: { agents: {} },
+        endpoints: { agents: { checkpointer: { type: 'memory' } } },
       },
       _isAgentTrigger: true,
       _agentEventBindingId: 'binding-1',
@@ -4935,7 +4935,7 @@ describe('ResumableAgentController resume metadata', () => {
         },
       },
       config: {
-        endpoints: { agents: {} },
+        endpoints: { agents: { checkpointer: { type: 'memory' } } },
       },
       _isAgentTrigger: true,
       _agentEventBindingId: 'binding-1',
@@ -5017,7 +5017,7 @@ describe('ResumableAgentController resume metadata', () => {
         },
       },
       config: {
-        endpoints: { agents: {} },
+        endpoints: { agents: { checkpointer: { type: 'memory' } } },
       },
       _isAgentTrigger: true,
       _agentEventBindingId: 'binding-1',

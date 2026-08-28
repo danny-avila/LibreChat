@@ -3,13 +3,13 @@ import type { ConversationMethods, MessageMethods } from '@librechat/data-schema
 import type { AgentTriggerContinuePreparation, AgentTriggerExecutionHostDeps } from './host';
 import type { AgentContinueTriggerEnvelope } from './envelope';
 import type { AgentTriggerDispatchContext } from './dispatch';
-import { isAgentEventRetentionActive } from '../eventRetention';
-import { AgentTriggerExecutionError } from './host';
 import {
   EVENT_ACTOR_DETACHED_COMPLETION_SOURCE,
   EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
   parseAgentEventActorDetachedCompletion,
 } from './detachedAction';
+import { isAgentEventRetentionActive } from '../eventRetention';
+import { AgentTriggerExecutionError } from './host';
 
 type ContinueResolver = NonNullable<AgentTriggerExecutionHostDeps['prepareContinue']>;
 
