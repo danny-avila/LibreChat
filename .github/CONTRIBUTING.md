@@ -45,6 +45,8 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 
 1. Before starting work, make sure your main branch has the latest commits with `npm run update`.
 2. Run linting command to find errors: `npm run lint`. Alternatively, ensure husky pre-commit checks are functioning.
+    - `npm install` sets the hooks up for you; set `HUSKY=0` to opt out.
+    - The pre-commit hook runs the Static Checks CI job locally, scoped to the files in the commit. Run it by hand with `npm run static-checks`, against a base ref with `npm run static-checks -- --against origin/dev`, or with the slow gates (config migration tests, unused i18n keys, unused npm packages) via `npm run static-checks:full`.
 3. After your changes, reinstall packages in your current branch using `npm run reinstall` and ensure everything still works. 
     - Restart the ESLint server ("ESLint: Restart ESLint Server" in VS Code command bar) and your IDE after reinstalling or updating.
 4. Clear web app localStorage and cookies before and after changes.

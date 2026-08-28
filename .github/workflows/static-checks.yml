@@ -40,6 +40,8 @@ jobs:
           # config via git show — a shallow checkout breaks both.
           fetch-depth: 0
 
+      # scripts/static-checks.mts mirrors these filters to run the same checks
+      # locally on a commit's diff — keep the two in sync.
       - name: Detect affected checks
         id: paths
         uses: dorny/paths-filter@v4
