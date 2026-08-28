@@ -1,12 +1,12 @@
 import type { AgentEventActorDetachedAction } from '@librechat/data-schemas';
-import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
-import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
-import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
-import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 import {
   createAgentEventActorDetachedActionLifecycle,
   createAgentEventDetachedResumeHandler,
 } from '~/agents/triggers/detachedAction';
+import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
+import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
+import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
+import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 
 describe('GenerationJobManager terminal host actions', () => {
   let manager: GenerationJobManagerClass;

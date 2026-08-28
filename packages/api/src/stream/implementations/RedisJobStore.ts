@@ -2962,6 +2962,17 @@ export class RedisJobStore implements IJobStoreV2 {
         if (job.providerDrained !== false) {
           readyByGeneration.set(generationKey, job);
         }
+      } else if (
+        job != null &&
+        indexedMember.createdAt != null &&
+        indexedMember.createdAt === job.createdAt
+      ) {
+        /** The terminal transition pre-arms this exact generation before its
+         * hash CAS. Do not delete that hint merely because the CAS has not
+         * become visible yet: the producer can commit and die before its
+         * post-CAS reconciliation. The hint becomes removable once the exact
+         * generation hash is replaced or reaped. */
+        continue;
       } else {
         stale.push(indexedMember.member);
       }

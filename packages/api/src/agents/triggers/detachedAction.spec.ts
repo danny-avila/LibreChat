@@ -385,7 +385,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       settleAgentEventActorDetachedAction: jest.fn(),
       persistTerminalEvidence: jest.fn(),
       onTerminal: jest.fn(),
-      storeMode: () => 'distributed',
+      storeMode: () => 'distributed' as const,
       now: () => new Date('2026-08-28T12:00:00.000Z'),
     };
     const owner = {

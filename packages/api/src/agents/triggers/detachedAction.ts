@@ -14,9 +14,9 @@ import type {
   AgentTriggerEnvelope,
   AgentTriggerExpectedAction,
 } from './envelope';
+import type { DetachedAgentEventActionStoreMode, SerializableJobData } from '~/stream';
 import type { EventActorDetachedActionLifecycle } from '../handlers';
 import type { AgentEventDetachedTerminalEvidence } from './types';
-import type { DetachedAgentEventActionStoreMode, SerializableJobData } from '~/stream';
 import { matchesExpectedAction } from './expectedAction';
 import { createAgentTriggerEnvelope } from './envelope';
 

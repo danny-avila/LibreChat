@@ -31,9 +31,9 @@ const MAX_PURGE_RECOVERY_LIMIT = 200;
 const HISTORY_LIMIT = 64;
 const MAX_BATCH_SIZE = 8;
 const MAX_BATCH_BYTES = 512 * 1024;
-/** Capability work mirrors legacy lifecycle semantics without becoming
- * executable there: publishing is `staging`, queued is far-future `pending`,
- * executing is `leased`, and dead work is legacy-terminal `capability_dead`. */
+/** Capability work is inert to legacy claimers while preserving their lane
+ * behavior: publishing is `staging`; queued work is `leased` without a lease
+ * owner/deadline; execution adds a private lease; dead work is terminal. */
 const LEGACY_CAPABILITY_SHIELD_AT = new Date('9999-12-31T23:59:59.999Z');
 const LEGACY_CAPABILITY_SHIELD_OWNER = 'librechat-capability-shield';
 
@@ -558,7 +558,7 @@ export function createAgentTriggerDeliveryMethods(
     if (batchRoot != null) {
       publishedStatus = 'batched';
     } else if (staged?.capabilityStatus === 'publishing') {
-      publishedStatus = 'pending';
+      publishedStatus = 'leased';
     } else if (staged?.requiredWorkerCapability != null) {
       publishedStatus = 'capability_pending';
     }
@@ -575,14 +575,21 @@ export function createAgentTriggerDeliveryMethods(
           laneSequence: lane.value,
           ...(staged?.capabilityStatus === 'publishing' && {
             capabilityStatus: 'pending',
-            availableAt: LEGACY_CAPABILITY_SHIELD_AT,
+            availableAt: staged.claimAvailableAt ?? staged.availableAt,
           }),
           ...(batchRoot?._id != null && {
             batchRootId: batchRoot._id,
             batchRootRequeueCount: batchRoot.requeueCount ?? 0,
           }),
         },
-        $unset: { stagingRecoveryAt: 1 },
+        $unset: {
+          stagingRecoveryAt: 1,
+          ...(staged?.capabilityStatus === 'publishing' && {
+            leaseBy: 1,
+            leaseUntil: 1,
+            claimToken: 1,
+          }),
+        },
       },
     );
     let publicationCommitted = published.modifiedCount === 1;
@@ -738,7 +745,7 @@ export function createAgentTriggerDeliveryMethods(
       if (
         candidate._id == null ||
         candidate.capabilityStatus !== 'publishing' ||
-        candidate.status !== 'pending' ||
+        !['pending', 'capability_pending'].includes(candidate.status) ||
         candidate.laneSequence <= 0
       ) {
         return null;
@@ -747,16 +754,22 @@ export function createAgentTriggerDeliveryMethods(
         .findOneAndUpdate(
           {
             _id: candidate._id,
-            status: 'pending',
+            status: { $in: ['pending', 'capability_pending'] },
             capabilityStatus: 'publishing',
             laneSequence: candidate.laneSequence,
           },
           {
             $set: {
+              status: 'leased',
               capabilityStatus: 'pending',
-              availableAt: LEGACY_CAPABILITY_SHIELD_AT,
+              availableAt: candidate.claimAvailableAt ?? candidate.availableAt,
             },
-            $unset: { stagingRecoveryAt: 1 },
+            $unset: {
+              stagingRecoveryAt: 1,
+              leaseBy: 1,
+              leaseUntil: 1,
+              claimToken: 1,
+            },
           },
           { new: true },
         )
@@ -802,7 +815,7 @@ export function createAgentTriggerDeliveryMethods(
       const legacyPublished = await Delivery()
         .findOne({
           orderingKey,
-          status: 'pending',
+          status: { $in: ['pending', 'capability_pending'] },
           capabilityStatus: 'publishing',
           laneSequence: { $gt: 0 },
         })
@@ -891,6 +904,7 @@ export function createAgentTriggerDeliveryMethods(
           : {
               capabilityStatus: 'publishing',
               claimAvailableAt: input.availableAt,
+              leaseUntil: LEGACY_CAPABILITY_SHIELD_AT,
             }),
         ...(input.coalesceKey == null
           ? {}
@@ -1652,8 +1666,8 @@ export function createAgentTriggerDeliveryMethods(
       { _id: input.id, ...shieldCapabilityFence(input) },
       {
         $set: {
-          status: 'pending',
-          availableAt: LEGACY_CAPABILITY_SHIELD_AT,
+          status: 'leased',
+          availableAt: input.availableAt,
           capabilityStatus: 'pending',
           claimAvailableAt: input.availableAt,
         },
@@ -1739,8 +1753,8 @@ export function createAgentTriggerDeliveryMethods(
       {
         $inc: update.$inc,
         $set: {
-          status: 'pending',
-          availableAt: LEGACY_CAPABILITY_SHIELD_AT,
+          status: 'leased',
+          availableAt: input.availableAt,
           capabilityStatus: 'pending',
           claimAvailableAt: input.availableAt,
         },
@@ -2785,8 +2799,8 @@ export function createAgentTriggerDeliveryMethods(
       { _id: input.id, ...shieldCapabilityFence(input) },
       {
         $set: {
-          status: 'pending',
-          availableAt: LEGACY_CAPABILITY_SHIELD_AT,
+          status: 'leased',
+          availableAt: input.availableAt,
           capabilityStatus: 'pending',
           claimAvailableAt: input.availableAt,
           lastError: error,

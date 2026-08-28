@@ -1113,6 +1113,57 @@ describe('RedisJobStore', () => {
     expect(transitionCall).toContain('complete');
   });
 
+  test('retains an exact detached recovery hint until its terminal CAS is visible', async () => {
+    const member = '["stream-detached-prearm-race",100]';
+    const detachedIdentity = {
+      agentEventDeliveryKey: 'completion-delivery',
+      agentEventInvocationKey: 'original-invocation',
+      agentEventInvocationGenerationCreatedAt: '90',
+    };
+    const srem = jest.fn().mockResolvedValue(1);
+    const redis = {
+      isCluster: true,
+      smembers: jest.fn().mockResolvedValue([member]),
+      srem,
+      sadd: jest.fn().mockResolvedValue(1),
+      expire: jest.fn().mockResolvedValue(1),
+      hgetall: jest
+        .fn()
+        .mockResolvedValueOnce({
+          streamId: 'stream-detached-prearm-race',
+          userId: 'user-1',
+          status: 'running',
+          createdAt: '100',
+          syncSent: '0',
+          ...detachedIdentity,
+        })
+        .mockResolvedValueOnce({
+          streamId: 'stream-detached-prearm-race',
+          userId: 'user-1',
+          status: 'detached_terminal_pending_v1',
+          detachedAgentEventTerminalStatus: 'complete',
+          detachedAgentEventTerminalHostActionPending: '1',
+          createdAt: '100',
+          completedAt: '200',
+          syncSent: '0',
+          ...detachedIdentity,
+        }),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(store.getDetachedAgentEventTerminalHostActionJobs()).resolves.toEqual([]);
+    expect(srem).not.toHaveBeenCalledWith(
+      'stream:agent_event_detached:terminal_host_action:v1',
+      member,
+    );
+    await expect(store.getDetachedAgentEventTerminalHostActionJobs()).resolves.toEqual([
+      expect.objectContaining({
+        streamId: 'stream-detached-prearm-race',
+        terminalHostActionPending: true,
+      }),
+    ]);
+  });
+
   test('acknowledges evidence TTLs without removing a successor retry member', async () => {
     const evalClear = jest.fn().mockResolvedValue(1);
     const srem = jest.fn().mockResolvedValue(1);

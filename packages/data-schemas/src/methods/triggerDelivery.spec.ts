@@ -249,15 +249,16 @@ describe('agent trigger delivery methods', () => {
     );
     const stored = await Delivery.findById(queued.delivery.id).lean();
     expect(stored).toMatchObject({
-      status: 'pending',
+      status: 'leased',
       capabilityStatus: 'pending',
       claimAvailableAt: START,
       requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
     });
-    expect(stored!.availableAt.getUTCFullYear()).toBe(9999);
+    expect(stored!.availableAt).toEqual(START);
+    expect(stored!.leaseUntil).toBeUndefined();
 
-    /** Exact pre-#15307 claim semantics: ordinary pending work or an expired
-     * legacy lease. The outer shield is known to the old query but never due. */
+    /** Exact pre-shield claim semantics: ordinary pending work or an expired
+     * lease. The inert outer lease has no deadline, so it is never claimable. */
     const oldClaim = await Delivery.findOneAndUpdate(
       {
         $or: [
@@ -280,28 +281,77 @@ describe('agent trigger delivery methods', () => {
     ).lean();
     expect(oldClaim).toBeNull();
 
-    /** Exact old lane-retention semantics preserve ordering, while queued work
-     * correctly does not impersonate a live account-deletion lease. */
-    await expect(
-      Delivery.exists({
+    const successor = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
         orderingKey: 'legacy-visible-capability-lane',
-        status: { $in: ['staging', 'batched', 'pending', 'leased', 'dead'] },
+        deliveryKey: 'ordinary-after-shielded-capability',
       }),
-    ).resolves.not.toBeNull();
+    );
+    const oldSuccessorClaim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'old-worker',
+      claimToken: 'old-successor-claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    expect(oldSuccessorClaim).toMatchObject({ id: successor.delivery.id });
+    /** Exact pre-shield ordering semantics see the inert lease, but its real
+     * due time and missing lease deadline produce a bounded recheck instead of
+     * copying the year-9999 claim fence onto the successor. */
+    const oldEarlier = await Delivery.findOne({
+      orderingKey: 'legacy-visible-capability-lane',
+      laneSequence: { $lt: successor.delivery.laneSequence },
+      status: { $in: ['pending', 'capability_pending', 'leased', 'capability_leased'] },
+    }).lean();
+    expect(oldEarlier).toMatchObject({ status: 'leased', availableAt: START });
+    expect(oldEarlier!.leaseUntil).toBeUndefined();
+    const successorRecheckAt = new Date(START.getTime() + 5_000);
+    await expect(
+      methods.releaseAgentTriggerDelivery({
+        id: oldSuccessorClaim!.id,
+        workerId: 'old-worker',
+        claimToken: 'old-successor-claim',
+        availableAt: successorRecheckAt,
+      }),
+    ).resolves.toBe(true);
     await expect(
       Delivery.countDocuments({ user, status: 'leased', leaseUntil: { $gt: START } }),
     ).resolves.toBe(0);
 
-    await methods.claimNextAgentTriggerDelivery({
+    const capabilityClaim = await methods.claimNextAgentTriggerDelivery({
       workerId: 'capable-worker',
       claimToken: 'capable-claim',
       now: START,
       leaseUntil: new Date(START.getTime() + 60_000),
       workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
     });
+    expect(capabilityClaim).toMatchObject({ id: queued.delivery.id });
     await expect(
       Delivery.countDocuments({ user, status: 'leased', leaseUntil: { $gt: START } }),
     ).resolves.toBe(1);
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: capabilityClaim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'capable-claim',
+      now: START,
+    });
+    await methods.deadLetterAgentTriggerDelivery({
+      id: capabilityClaim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'capable-claim',
+      attempt: attempt!,
+      error: transientFailure(),
+      settledAt: START,
+    });
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'new-worker',
+        claimToken: 'successor-after-capability',
+        now: successorRecheckAt,
+        leaseUntil: new Date(successorRecheckAt.getTime() + 60_000),
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+      }),
+    ).resolves.toMatchObject({ id: successor.delivery.id });
   });
 
   it('keeps capability-fenced work limited to capable workers through lease recovery', async () => {
@@ -480,6 +530,7 @@ describe('agent trigger delivery methods', () => {
       capabilityStatus: 'publishing',
       claimAvailableAt: START,
       availableAt: new Date('9999-12-31T23:59:59.999Z'),
+      leaseUntil: new Date('9999-12-31T23:59:59.999Z'),
       laneSequence: 0,
       attempts: 0,
       requeueCount: 0,
@@ -498,7 +549,7 @@ describe('agent trigger delivery methods', () => {
     await Delivery.updateOne(
       { _id: capability._id, orderingKey, status: 'staging' },
       {
-        $set: { status: 'pending', laneSequence: 1 },
+        $set: { status: 'capability_pending', laneSequence: 1 },
         $unset: { stagingRecoveryAt: 1 },
       },
     );
@@ -515,7 +566,7 @@ describe('agent trigger delivery methods', () => {
     );
 
     await expect(Delivery.findById(capability._id).lean()).resolves.toMatchObject({
-      status: 'pending',
+      status: 'leased',
       capabilityStatus: 'pending',
       laneSequence: 1,
     });
