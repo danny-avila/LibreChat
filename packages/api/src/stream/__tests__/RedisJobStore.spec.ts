@@ -1106,6 +1106,11 @@ describe('RedisJobStore', () => {
       'stream:terminal_host_action',
       '["stream-detached-host-action",100]',
     ]);
+    const transitionCall = evalTransition.mock.calls[0];
+    expect(transitionCall).toContain('status');
+    expect(transitionCall).toContain('running');
+    expect(transitionCall).toContain('detachedAgentEventTerminalStatus');
+    expect(transitionCall).toContain('complete');
   });
 
   test('acknowledges evidence TTLs without removing a successor retry member', async () => {
@@ -1136,6 +1141,9 @@ describe('RedisJobStore', () => {
       '300',
       '7',
       '11',
+    );
+    expect(evalClear.mock.calls[0][0]).toContain(
+      'redis.call("HSET", KEYS[1], "status", detachedStatus)',
     );
     expect(srem).toHaveBeenCalledWith(
       'stream:terminal_host_action',

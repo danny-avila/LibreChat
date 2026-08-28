@@ -239,6 +239,9 @@ export interface SerializableJobData {
    * keep the persisted field distinct so legacy reconciliation cannot index or
    * claim the completion through the ordinary terminal-action lane. */
   detachedAgentEventTerminalHostActionPending?: boolean;
+  /** Logical terminal state hidden behind a legacy-visible running shell while
+   * a detached Event Actor host action remains unacknowledged. */
+  detachedAgentEventTerminalStatus?: Extract<JobStatus, 'complete' | 'aborted' | 'error'>;
   /**
    * Last time a cleanup pass enumerated this pending host action for retry. Retention is
    * measured from this rather than `completedAt`, so evidence survives as long as some

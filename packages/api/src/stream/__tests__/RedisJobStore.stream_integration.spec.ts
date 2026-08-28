@@ -1217,6 +1217,16 @@ describe('RedisJobStore Integration Tests', () => {
       // never become visible there, because it would deserialize only the
       // completion delivery and lose the original invocation identity.
       await expect(ioredisClient.sismember('stream:terminal_host_action', member)).resolves.toBe(0);
+      await expect(ioredisClient.hgetall(`stream:{${streamId}}:job`)).resolves.toMatchObject({
+        status: 'running',
+        detachedAgentEventTerminalStatus: 'complete',
+        detachedAgentEventTerminalHostActionPending: '1',
+        lastActiveAt: String(Date.parse('9999-12-31T23:59:59.999Z')),
+      });
+      await expect(store.getJob(streamId)).resolves.toMatchObject({
+        status: 'complete',
+        terminalHostActionPending: true,
+      });
       await expect(store.getTerminalHostActionJobs()).resolves.not.toEqual(
         expect.arrayContaining([expect.objectContaining({ streamId })]),
       );
@@ -1230,6 +1240,12 @@ describe('RedisJobStore Integration Tests', () => {
       ]);
 
       await store.clearTerminalHostAction(streamId, job.createdAt);
+      await expect(ioredisClient.hgetall(`stream:{${streamId}}:job`)).resolves.toMatchObject({
+        status: 'complete',
+      });
+      await expect(
+        ioredisClient.hget(`stream:{${streamId}}:job`, 'detachedAgentEventTerminalStatus'),
+      ).resolves.toBeNull();
       await expect(
         ioredisClient.sismember('stream:agent_event_detached:terminal_host_action:v1', member),
       ).resolves.toBe(0);

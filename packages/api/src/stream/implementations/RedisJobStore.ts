@@ -1598,6 +1598,10 @@ const KEYS = {
   idempotency: (key: string) => `stream:idem:${key}`,
 };
 
+/** Keeps pre-detached replicas from replacing or reaping a terminal completion
+ * whose private recovery marker they intentionally cannot interpret. */
+const DETACHED_TERMINAL_LEGACY_LAST_ACTIVE_AT = Date.parse('9999-12-31T23:59:59.999Z');
+
 interface TerminalHostActionMember {
   streamId: string;
   createdAt?: number;
@@ -2566,8 +2570,14 @@ export class RedisJobStore implements IJobStoreV2 {
     const persistedPatch = detachedTerminalHostActionPending
       ? {
           ...patch,
+          status: 'running' as const,
           terminalHostActionPending: undefined,
           detachedAgentEventTerminalHostActionPending: true,
+          detachedAgentEventTerminalStatus: to as Extract<
+            JobStatus,
+            'complete' | 'aborted' | 'error'
+          >,
+          lastActiveAt: DETACHED_TERMINAL_LEGACY_LAST_ACTIVE_AT,
         }
       : patch;
 
@@ -2996,7 +3006,10 @@ export class RedisJobStore implements IJobStoreV2 {
     // member includes this generation, so removing it cannot affect a successor.
     const cleared = (await this.redis.eval(
       'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
-        'redis.call("HDEL", KEYS[1], "terminalHostActionPending", "detachedAgentEventTerminalHostActionPending") ' +
+        'local detachedStatus = redis.call("HGET", KEYS[1], "detachedAgentEventTerminalStatus") ' +
+        'if detachedStatus then redis.call("HSET", KEYS[1], "status", detachedStatus) end ' +
+        'redis.call("HDEL", KEYS[1], "terminalHostActionPending", "detachedAgentEventTerminalHostActionPending", "detachedAgentEventTerminalStatus") ' +
+        'if detachedStatus then redis.call("HDEL", KEYS[1], "lastActiveAt") end ' +
         'if tonumber(ARGV[2]) > 0 then redis.call("EXPIRE", KEYS[1], ARGV[2]) else redis.call("DEL", KEYS[1]) end ' +
         'if tonumber(ARGV[3]) > 0 then redis.call("EXPIRE", KEYS[2], ARGV[3]) else redis.call("DEL", KEYS[2]) end ' +
         'if tonumber(ARGV[4]) > 0 then redis.call("EXPIRE", KEYS[3], ARGV[4]) else redis.call("DEL", KEYS[3]) end ' +
@@ -4790,11 +4803,17 @@ export class RedisJobStore implements IJobStoreV2 {
    * Deserialize job data from Redis hash.
    */
   private deserializeJob(data: Record<string, string>): SerializableJobData {
+    const detachedAgentEventTerminalStatus =
+      data.detachedAgentEventTerminalStatus === 'complete' ||
+      data.detachedAgentEventTerminalStatus === 'aborted' ||
+      data.detachedAgentEventTerminalStatus === 'error'
+        ? data.detachedAgentEventTerminalStatus
+        : undefined;
     const job: CreatedJobData = {
       streamId: data.streamId,
       userId: data.userId,
       tenantId: data.tenantId || undefined,
-      status: data.status as JobStatus,
+      status: detachedAgentEventTerminalStatus ?? (data.status as JobStatus),
       createdAt: parseInt(data.createdAt, 10),
       generationProtocolVersion: data.generationProtocolVersion === '2' ? 2 : 1,
       checkpointNamespace: data.checkpointNamespace || undefined,
@@ -4875,6 +4894,7 @@ export class RedisJobStore implements IJobStoreV2 {
         data.detachedAgentEventTerminalHostActionPending != null
           ? data.detachedAgentEventTerminalHostActionPending === '1'
           : undefined,
+      detachedAgentEventTerminalStatus,
       // Deferred tools discovered before a HITL pause; replayed into createRun on resume.
       discoveredTools: data.discoveredTools ? JSON.parse(data.discoveredTools) : undefined,
       activityPhaseSnapshot: data.activityPhaseSnapshot
@@ -4902,7 +4922,10 @@ export class RedisJobStore implements IJobStoreV2 {
       pendingAction: this.parsePendingAction(data.pendingAction),
       resolvedAskUserQuestions: this.parseResolvedAskUserQuestions(data.resolvedAskUserQuestions),
       pendingActionId: data.pendingActionId || undefined,
-      lastActiveAt: data.lastActiveAt ? parseInt(data.lastActiveAt, 10) : undefined,
+      lastActiveAt:
+        detachedAgentEventTerminalStatus == null && data.lastActiveAt
+          ? parseInt(data.lastActiveAt, 10)
+          : undefined,
       /** `markActivityLabels` persists this, so it has to be read back:
        *  without it every Redis reload leaves the flag undefined and resume
        *  skips activity-label gap reconciliation, silently dropping a label
