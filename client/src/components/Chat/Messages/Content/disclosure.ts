@@ -1,4 +1,3 @@
-export const disclosureChevronClassName =
-  'shrink-0 text-text-secondary opacity-0 transition-transform duration-200 ease-out group-focus-within/disclosure:opacity-100 group-hover/disclosure:opacity-100 motion-reduce:transition-none';
-
+/** Panel spacing is genuine feature layout, so it stays here. The chevron
+ *  appearance lives in `@librechat/client` as `disclosureChevronVariants`. */
 export const toolPanelSpacingClassName = 'mb-2 mt-0';

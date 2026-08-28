@@ -1,11 +1,10 @@
 import { ChevronDown } from 'lucide-react';
-import { Button } from '@librechat/client';
 import { useTranslation } from 'react-i18next';
 import * as Popover from '@radix-ui/react-popover';
+import { Button, disclosureChevronVariants } from '@librechat/client';
 import { isReportableRunStepDuration } from 'librechat-data-provider';
 import type { ToolCallPhase } from '~/utils/toolCallPhase';
 import { cn, getRunStepDurationLabels } from '~/utils';
-import { disclosureChevronClassName } from './disclosure';
 import CancelledIcon from './CancelledIcon';
 import { useLocalize } from '~/hooks';
 
@@ -147,9 +146,8 @@ export default function ProgressText({
         {hasInput && (
           <ChevronDown
             className={cn(
-              disclosureChevronClassName,
+              disclosureChevronVariants({ expanded: isExpanded }),
               'size-4 translate-y-[1px]',
-              isExpanded && 'rotate-180',
             )}
             aria-hidden="true"
           />

@@ -2,9 +2,9 @@ import { memo, useMemo, useState, useEffect, useCallback, useRef, useId } from '
 import { useAtomValue } from 'jotai';
 import { Lightbulb, ChevronDown } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
+import { disclosureChevronVariants } from '@librechat/client';
 import type { MouseEvent, FocusEvent } from 'react';
 import { ThinkingContent, ThinkingButton, FloatingThinkingBar, useInViewport } from './Thinking';
-import { disclosureChevronClassName } from '~/components/Chat/Messages/Content/disclosure';
 import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import CopyButton from '~/components/Messages/Content/CopyButton';
@@ -322,9 +322,8 @@ export const ReasoningCompact = memo(
             <span className="tool-status-text font-medium">{label}</span>
             <ChevronDown
               className={cn(
-                disclosureChevronClassName,
+                disclosureChevronVariants({ expanded: isExpanded }),
                 'size-4 translate-y-[1px]',
-                isExpanded && 'rotate-180',
               )}
               aria-hidden="true"
             />

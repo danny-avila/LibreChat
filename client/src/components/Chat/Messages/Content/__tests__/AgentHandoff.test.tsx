@@ -46,6 +46,12 @@ jest.mock('~/utils', () => ({
   cn: (...classes: (string | boolean | undefined)[]) => classes.filter(Boolean).join(' '),
 }));
 
+const mockCopy = jest.fn(() => true);
+jest.mock('copy-to-clipboard', () => ({
+  __esModule: true,
+  default: (...args: unknown[]) => mockCopy(...(args as [])),
+}));
+
 const renderAgentHandoff = (props: {
   name: string;
   args: string | Record<string, unknown>;
@@ -58,6 +64,11 @@ const renderAgentHandoff = (props: {
   );
 
 describe('AgentHandoff', () => {
+  beforeEach(() => {
+    mockCopy.mockClear();
+    mockCopy.mockReturnValue(true);
+  });
+
   it('A11Y-01: renders a semantic button element when hasInfo is true', () => {
     renderAgentHandoff({
       name: 'lc_transfer_to_agent-123',
@@ -118,11 +129,6 @@ describe('AgentHandoff', () => {
   });
 
   it('copies the readable instruction rather than its JSON wrapper', async () => {
-    const writeText = jest.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText },
-    });
     renderAgentHandoff({
       name: 'lc_transfer_to_agent-123',
       args: JSON.stringify({ instructions: 'Review the rollout.' }),
@@ -131,8 +137,24 @@ describe('AgentHandoff', () => {
     fireEvent.click(screen.getByRole('button', { name: /Transferred to/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Copy to clipboard' }));
 
-    expect(writeText).toHaveBeenCalledWith('Review the rollout.');
+    expect(mockCopy).toHaveBeenCalledWith('Review the rollout.', { format: 'text/plain' });
     expect(await screen.findByRole('button', { name: 'Copied to clipboard' })).toBeInTheDocument();
+  });
+
+  it('leaves the control idle when the clipboard is unavailable', () => {
+    /** `copy-to-clipboard` returns false when it cannot reach a clipboard,
+     *  which is the case the async API turns into a synchronous throw. */
+    mockCopy.mockReturnValueOnce(false);
+    renderAgentHandoff({
+      name: 'lc_transfer_to_agent-123',
+      args: JSON.stringify({ instructions: 'Review the rollout.' }),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Transferred to/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy to clipboard' }));
+
+    expect(screen.getByRole('button', { name: 'Copy to clipboard' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copied to clipboard' })).not.toBeInTheDocument();
   });
 
   it('supports object args and a custom handoff prompt key', () => {

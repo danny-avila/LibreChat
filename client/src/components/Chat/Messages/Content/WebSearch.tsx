@@ -2,7 +2,13 @@ import { useMemo, useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Tools } from 'librechat-data-provider';
 import { Globe, ChevronDown, Info } from 'lucide-react';
-import { HoverCard, HoverCardTrigger, HoverCardPortal, HoverCardContent } from '@librechat/client';
+import {
+  HoverCard,
+  HoverCardTrigger,
+  HoverCardPortal,
+  HoverCardContent,
+  disclosureChevronVariants,
+} from '@librechat/client';
 import type {
   TAttachment,
   ValidSource,
@@ -10,10 +16,10 @@ import type {
   PartMetadata,
   AnswerBoxResult,
 } from 'librechat-data-provider';
-import { disclosureChevronClassName, toolPanelSpacingClassName } from './disclosure';
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import { StackedFavicons } from '~/components/Web/Sources';
+import { toolPanelSpacingClassName } from './disclosure';
 import parseJsonField from './Parts/parseJsonField';
 import { useToolCallIntent } from './Parts/intent';
 import { useSearchContext } from '~/Providers';
@@ -292,11 +298,7 @@ export default function WebSearch({
             <span className="min-w-0 truncate font-medium">{completedText}</span>
             {hasSourceData && (
               <ChevronDown
-                className={cn(
-                  disclosureChevronClassName,
-                  'size-3.5',
-                  showSourceList && 'rotate-180',
-                )}
+                className={cn(disclosureChevronVariants({ expanded: showSourceList }), 'size-3.5')}
                 aria-hidden="true"
               />
             )}

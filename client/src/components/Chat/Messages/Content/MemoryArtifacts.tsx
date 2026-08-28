@@ -1,8 +1,9 @@
 import { useId, useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
+import { disclosureChevronVariants } from '@librechat/client';
 import type { MemoryArtifact, TAttachment } from 'librechat-data-provider';
-import { disclosureChevronClassName, toolPanelSpacingClassName } from './disclosure';
+import { toolPanelSpacingClassName } from './disclosure';
 import { useExpandCollapse, useLocalize } from '~/hooks';
 import MemoryInfo from './MemoryInfo';
 import { cn } from '~/utils';
@@ -87,9 +88,8 @@ export default function MemoryArtifacts({ attachments }: { attachments?: TAttach
           </span>
           <ChevronDown
             className={cn(
-              disclosureChevronClassName,
+              disclosureChevronVariants({ expanded: showInfo }),
               'size-4 translate-y-[1px]',
-              showInfo && 'rotate-180',
             )}
             aria-hidden="true"
           />

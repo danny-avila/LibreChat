@@ -76,6 +76,13 @@ function hasPendingAuth(part: TMessageContentParts): boolean {
   if (!toolCall || !('args' in toolCall)) {
     return false;
   }
+  /** A step the run already closed can never be waiting on a sign-in, whatever
+   *  its progress says. `ToolCall` hides the sign-in button on a terminal
+   *  status, so counting it as pending here left the group showing a trust
+   *  warning with no authentication action behind it. */
+  if (toolCall.runStepStatus != null) {
+    return false;
+  }
   const standardToolCall = toolCall as Agents.ToolCall & { progress?: number };
   const progress = standardToolCall.progress ?? 0.1;
 

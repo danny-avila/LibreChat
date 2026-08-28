@@ -55,10 +55,12 @@ export function collectSearchVerticals(attachments?: TAttachment[]): SearchVerti
      *  nonempty, so the card shows a broken tile or an anchor with no
      *  destination that looks actionable but cannot be opened. Drop them
      *  here rather than teaching three strips to render half a result:
-     *  an image needs a src, a product needs somewhere to go, and a place
-     *  needs something to name. */
+     *  an image needs both a src and somewhere to go, a product needs
+     *  somewhere to go, and a place needs something to name. */
     for (const image of data.images ?? []) {
-      if (image.thumbnailUrl || image.imageUrl) {
+      const hasSource = image.thumbnailUrl || image.imageUrl;
+      const hasTarget = image.link || image.googleUrl || image.imageUrl;
+      if (hasSource && hasTarget) {
         images.push(image);
       }
     }
