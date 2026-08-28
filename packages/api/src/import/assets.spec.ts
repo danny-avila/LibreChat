@@ -3,6 +3,7 @@ import type { Archive } from './archive';
 import { buildFixtureExport, cleanupFixtureExport } from './__data__/fixture';
 import { ASSET_NAMES_ENTRY, parseManifest, resolveLayout } from './manifest';
 import { pointerToEntry, ingestAssets } from './assets';
+import { throttleCancelCheck } from './cancel';
 import { openArchive } from './archive';
 
 /** Redirects reads of the asset name map to `raw`, delegating every other
@@ -443,6 +444,44 @@ describe('ingestAssets', () => {
     expect(result.imported).toBe(1);
     expect(result.map.size).toBe(1);
 
+    archive.close();
+  });
+
+  it('treats cancellation-store failures as not cancelled and continues importing', async () => {
+    const filepath = await buildFixtureExport();
+    const archive = await openArchive(filepath);
+    const layout = resolveLayout(
+      archive.entries,
+      parseManifest(await archive.read('export_manifest.json')),
+    );
+
+    let cancelChecks = 0;
+    const checkCancelled = throttleCancelCheck(async () => {
+      cancelChecks += 1;
+      throw new Error('cancellation store unavailable');
+    });
+
+    await expect(checkCancelled()).resolves.toBe(false);
+
+    const result = await ingestAssets({
+      archive,
+      layout,
+      userId: 'u1',
+      tenantId: undefined,
+      pointers: ['file-service://file-one', 'file-service://file-two'],
+      isCancelled: checkCancelled,
+      deps: {
+        saveBuffer: async ({ fileName }) => ({
+          filepath: `/uploads/u1/${fileName}`,
+          source: 'local',
+        }),
+        createFile: async (data) => ({ file_id: data.file_id as string }),
+      },
+    });
+
+    expect(result.imported).toBe(2);
+    expect(result.map.size).toBe(2);
+    expect(cancelChecks).toBe(1);
     archive.close();
   });
 

@@ -213,11 +213,12 @@ export async function resolveExpiredFileSweepConfig({
 }
 
 /**
- * Deletes upload-temp files (e.g. conversation import archives left behind by
- * an inspected-but-never-started or never-cancelled import job) older than
- * `maxAgeMs`. Unlike the rest of this module, these files never become a
- * `File` document, so they are invisible to `getExpiredFiles`/
- * `processDeleteRequest` and need their own filesystem-level sweep.
+ * Deletes upload-temp files and abandoned legacy extraction directories (e.g.
+ * conversation import archives left behind by an inspected-but-never-started or
+ * never-cancelled import job) older than `maxAgeMs`. Unlike the rest of this
+ * module, these paths never become a `File` document, so they are invisible to
+ * `getExpiredFiles`/`processDeleteRequest` and need their own filesystem-level
+ * sweep.
  * @param uploadsPath - `appConfig.paths.uploads`; a no-op when unset.
  */
 export async function sweepStaleTempUploads(
@@ -255,10 +256,15 @@ export async function sweepStaleTempUploads(
       result.scanned += 1;
       try {
         const stats = await fs.promises.stat(entryPath);
-        if (!stats.isFile() || stats.mtimeMs > cutoff) {
+        const isLegacyExtractionDirectory = stats.isDirectory() && entry.startsWith('legacy-');
+        if (stats.mtimeMs > cutoff || (!stats.isFile() && !isLegacyExtractionDirectory)) {
           continue;
         }
-        await fs.promises.unlink(entryPath);
+        if (isLegacyExtractionDirectory) {
+          await fs.promises.rm(entryPath, { recursive: true, force: true });
+        } else {
+          await fs.promises.unlink(entryPath);
+        }
         result.deleted += 1;
       } catch (error) {
         result.failed += 1;

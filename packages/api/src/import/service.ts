@@ -169,7 +169,14 @@ async function scanExport(
         ) {
           continue;
         }
-        scanConversation(conv, scan, seen);
+        try {
+          scanConversation(conv, scan, seen);
+        } catch (error) {
+          recordError(
+            errors,
+            `${shard}[${index}]: ${sanitizeImportError(error, `scan conversation ${conv.conversation_id}`)}`,
+          );
+        }
       }
     } catch (error) {
       recordError(errors, `${shard}: ${describeShardError(error, shard)}`);

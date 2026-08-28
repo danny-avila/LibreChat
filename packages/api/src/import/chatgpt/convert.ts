@@ -16,6 +16,14 @@ import { buildCitations } from './citations';
 import { orderTree } from '~/import/tree';
 import { resolveModel } from './models';
 
+function toTimestamp(value: unknown): number | null {
+  if (value == null || value === '') {
+    return null;
+  }
+  const timestamp = Number(value) * 1000;
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
 const SKIPPED_CONTENT = new Set(['thoughts', 'reasoning_recap']);
 
 export interface ConvertOptions {
@@ -180,7 +188,7 @@ export function convertConversation(
   /** Shared by every `findParent` call in this conversation; see the backfill
    * there. Scoped per conversation because `mapping` and `ids` are. */
   const resolvedParents = new Map<string, string>();
-  const fallbackTime = conv.create_time ? conv.create_time * 1000 : Date.now();
+  const fallbackTime = toTimestamp(conv.create_time) ?? Date.now();
   const messages: ConvertedMessage[] = [];
 
   for (const [nodeId, node] of Object.entries(mapping)) {
@@ -209,7 +217,7 @@ export function convertConversation(
       sender: isCreatedByUser ? 'user' : sender,
       isCreatedByUser,
       model,
-      createdAt: new Date(message.create_time ? message.create_time * 1000 : fallbackTime),
+      createdAt: new Date(toTimestamp(message.create_time) ?? fallbackTime),
       assetPointers: collectAssetPointers(message),
     };
 

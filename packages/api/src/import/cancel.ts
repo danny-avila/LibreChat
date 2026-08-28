@@ -1,3 +1,5 @@
+import { logger } from '@librechat/data-schemas';
+
 /** Minimum gap between cancellation reads inside the conversation loop. The
  * job store can be Redis, so an unthrottled check is a network round trip per
  * conversation, tens of thousands of them on a large export, for a signal a
@@ -22,7 +24,12 @@ export function throttleCancelCheck(isCancelled?: () => Promise<boolean>): () =>
       return false;
     }
     lastCheck = now;
-    lastResult = await isCancelled();
+    try {
+      lastResult = await isCancelled();
+    } catch (error) {
+      logger.error('[import] Could not read asset-import cancellation state', error);
+      lastResult = false;
+    }
     return lastResult;
   };
 }

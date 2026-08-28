@@ -367,7 +367,7 @@ describe('Import panel', () => {
     expect(screen.getByRole('button', { name: /import another/i })).toBeInTheDocument();
   });
 
-  it('expands the error list on the final report when there are errors', () => {
+  it('localizes a known background failure detail and expands the error list', () => {
     dataProvider.useImportJobQuery.mockReturnValue({
       data: job({
         phase: 'failed',
@@ -384,7 +384,7 @@ describe('Import panel', () => {
           assetsUnavailable: 0,
           errors: ['conversation 11 malformed'],
         },
-        error: 'archive truncated',
+        error: 'A storage error occurred while processing the import',
       }),
     });
 
@@ -393,7 +393,24 @@ describe('Import panel', () => {
        repeated in the status block above, which this assertion enshrined. */
     expect(screen.getAllByText(/^1 items could not be imported$/i)).toHaveLength(1);
     expect(screen.getByText(/conversation 11 malformed/i)).toBeInTheDocument();
-    expect(screen.getByText(/archive truncated/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/A storage error occurred while processing the import/i),
+    ).toBeInTheDocument();
+  });
+
+  it('uses the localized generic failure for an unknown background error detail', () => {
+    dataProvider.useImportJobQuery.mockReturnValue({
+      data: job({
+        phase: 'failed',
+        status: 'failed',
+        error: 'unexpected internal failure',
+      }),
+    });
+
+    render(<Import />);
+
+    expect(screen.getByRole('status')).toHaveTextContent(/There was an error importing your data/i);
+    expect(screen.queryByText(/unexpected internal failure/i)).not.toBeInTheDocument();
   });
 
   it('shows the error count for more than one failure', () => {

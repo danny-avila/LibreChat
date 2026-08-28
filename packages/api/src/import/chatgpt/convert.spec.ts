@@ -490,4 +490,27 @@ describe('convertConversation', () => {
 
     expect(child.createdAt.getTime()).toBeGreaterThan(parent.createdAt.getTime());
   });
+
+  it('falls back to the conversation timestamp for a nonnumeric message timestamp', () => {
+    const result = convertConversation(
+      conversation({
+        root: { id: 'root', message: null, parent: null, children: ['a'] },
+        a: {
+          id: 'a',
+          message: {
+            id: 'a',
+            author: { role: 'user', name: null },
+            create_time: 'not-a-timestamp' as unknown as number,
+            content: { content_type: 'text', parts: ['hello'] },
+          },
+          parent: 'root',
+          children: [],
+        },
+      }),
+      OPTIONS,
+    );
+
+    expect(Number.isFinite(result.createdAt.getTime())).toBe(true);
+    expect(result.createdAt.getTime()).toBe(result.messages[0].createdAt.getTime());
+  });
 });

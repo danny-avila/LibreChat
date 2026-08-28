@@ -653,6 +653,69 @@ describe('runImport', () => {
       'Other shard',
     ]);
   });
+  it('records a malformed mapping entry and still ingests assets from later conversations in the shard', async () => {
+    const malformed = {
+      ...textConversation('ext-malformed-mapping', 'Malformed mapping', 1700009400),
+      mapping: { broken: null },
+    };
+    const later = {
+      ...textConversation('ext-later-asset', 'Later asset', 1700009500),
+      mapping: {
+        root: { id: 'root', message: null, parent: null, children: ['u1'] },
+        u1: {
+          id: 'u1',
+          parent: 'root',
+          children: [],
+          message: {
+            id: 'u1',
+            author: { role: 'user', name: null },
+            create_time: 1700009501,
+            content: {
+              content_type: 'multimodal_text',
+              parts: [
+                {
+                  content_type: 'image_asset_pointer',
+                  asset_pointer: 'file-service://file-second',
+                },
+              ],
+            },
+            metadata: {
+              attachments: [
+                {
+                  id: 'file-second',
+                  name: 'second.png',
+                  mime_type: 'image/png',
+                  size: 4,
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const filepath = await writeZip({
+      'conversations-000.json': JSON.stringify([malformed, later]),
+      'conversation_asset_file_names.json': JSON.stringify({ 'file-second.dat': 'second.png' }),
+      'file-second.dat': JSON.stringify([0x89, 0x50, 0x4e, 0x47]),
+      'export_manifest.json': shardedManifest(['conversations-000.json']),
+    });
+    const { sink, recorded } = recorder();
+
+    const report = await runImport({
+      filepath,
+      userId: 'u1',
+      defaultModel: 'gpt-4o',
+      deps: DEPS,
+      batch: sink,
+      existingExternalIds: new Set(),
+    });
+
+    expect(report.imported).toBe(1);
+    expect(report.assetsImported).toBe(1);
+    expect(report.errors).toHaveLength(2);
+    expect(report.errors[0]).toContain('conversations-000.json[0]');
+    expect(recorded.messages.find((message) => message.text === '')?.files).toHaveLength(1);
+  });
 
   it('records a conversation that fails to convert and still imports the others', async () => {
     const good = textConversation('ext-good2', 'Good convo two', 1700003000);

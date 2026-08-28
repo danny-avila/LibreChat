@@ -127,6 +127,31 @@ describe('expired file sweep helpers', () => {
       expect(fs.existsSync(staleFile)).toBe(false);
       expect(fs.existsSync(freshFile)).toBe(true);
     });
+
+    it('removes stale legacy extraction directories but keeps recent ones', async () => {
+      const userDir = path.join(uploadsDir, 'temp', 'user-123');
+      fs.mkdirSync(userDir, { recursive: true });
+
+      const staleDirectory = fs.mkdtempSync(path.join(userDir, 'legacy-'));
+      const staleFile = path.join(staleDirectory, 'legacy.json');
+      fs.writeFileSync(staleFile, 'stale');
+      const staleTime = new Date(Date.now() - 25 * 60 * 60 * 1000);
+      fs.utimesSync(staleDirectory, staleTime, staleTime);
+
+      const freshDirectory = fs.mkdtempSync(path.join(userDir, 'legacy-'));
+      const freshFile = path.join(freshDirectory, 'legacy.json');
+      fs.writeFileSync(freshFile, 'fresh');
+
+      const result = await sweepStaleTempUploads(uploadsDir, {
+        logger,
+        maxAgeMs: 24 * 60 * 60 * 1000,
+      });
+
+      expect(result).toEqual({ scanned: 2, deleted: 1, failed: 0 });
+      expect(fs.existsSync(staleDirectory)).toBe(false);
+      expect(fs.existsSync(freshDirectory)).toBe(true);
+      expect(fs.existsSync(freshFile)).toBe(true);
+    });
   });
 
   it('keeps stale cleanup running when the retention sweep is disabled', async () => {
