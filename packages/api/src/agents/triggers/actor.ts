@@ -21,7 +21,7 @@ import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { AgentEventCheckpointMessageOverlay } from '../checkpointer';
 import type { AgentContextFingerprint } from '../compatibility';
 import type { AgentTriggerExpectedAction } from './envelope';
-import type { AgentEventAppliedAction } from './outcome';
+import type { AgentEventAppliedAction } from './types';
 import {
   captureAgentEventCheckpoint,
   deleteAgentCheckpoint,

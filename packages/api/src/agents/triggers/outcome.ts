@@ -5,8 +5,11 @@ import type {
 } from '@librechat/data-schemas';
 import type { Agents } from 'librechat-data-provider';
 import type { AgentTriggerExpectedAction } from './envelope';
+import type { AgentEventAppliedAction } from './types';
 import { cancelAgentEventActor } from './actor';
 import type { SerializableJobData } from '~/stream';
+
+export type { AgentEventAppliedAction } from './types';
 
 interface SettleAgentTriggerHandlingOutcomeInput {
   deliveryKey: string;
@@ -28,8 +31,6 @@ export interface AgentEventRunOutcome {
   status: 'applied' | 'completed_no_action' | 'failed' | 'cancelled';
   action?: { toolName: string; toolCallId?: string };
 }
-
-export type AgentEventAppliedAction = NonNullable<AgentEventRunOutcome['action']>;
 
 const MAX_RECEIPT_ID_LENGTH = 256;
 

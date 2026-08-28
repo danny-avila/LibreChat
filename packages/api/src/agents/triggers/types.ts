@@ -16,3 +16,9 @@ export interface AgentEventSuspensionProjection {
   suspensionId: string;
   attempt: number;
 }
+
+/** Durable host evidence for the exact external action an Event Actor applied. */
+export interface AgentEventAppliedAction {
+  toolName: string;
+  toolCallId?: string;
+}
