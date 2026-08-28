@@ -85,7 +85,9 @@ const FILTERS = {
     'config/circular-deps.mjs',
     '!**.md',
   ],
-  typecheck: ['client/**', 'packages/**', '!**.md'],
+  // The review workflows trigger their TypeScript jobs on the root manifests
+  // too, since a dependency or @types bump can break compilation on its own.
+  typecheck: ['client/**', 'packages/**', 'package.json', 'package-lock.json', '!**.md'],
   unused_packages: [
     'api/**',
     'client/**',
@@ -114,7 +116,10 @@ const PACKAGE_JSON_FILES = [
   'package.json',
   'client/package.json',
   'api/package.json',
+  'packages/api/package.json',
   'packages/client/package.json',
+  'packages/data-provider/package.json',
+  'packages/data-schemas/package.json',
 ];
 
 const I18N_FILE = 'client/src/locales/en/translation.json';
@@ -444,9 +449,12 @@ function resolveTarget(): Target {
   }
 
   if (OPTIONS.against) {
+    // Three dots: diff from the merge base, not between the two tips. Once the
+    // base branch advances, a two-dot diff reports its commits in reverse as
+    // part of this target, activating gates for files the branch never touched.
     return {
-      label: `${OPTIONS.against}..HEAD`,
-      ...diffPaths(['diff', '-z', '--name-only', OPTIONS.against, 'HEAD']),
+      label: `${OPTIONS.against}...HEAD`,
+      ...diffPaths(['diff', '-z', '--name-only', `${OPTIONS.against}...HEAD`]),
     };
   }
 
@@ -718,30 +726,44 @@ function findCircularDependencies(): CheckOutcome {
  * projects that consume it; `requires` lists the builds its imports resolve
  * through, mirroring those jobs' dependency on the build artifacts.
  */
+const ROOT_MANIFESTS = ['package.json', 'package-lock.json'];
+
 const TYPECHECK_PROJECTS = [
   {
     project: 'packages/data-provider/tsconfig.json',
-    paths: ['packages/data-provider/**', '!**.md'],
+    paths: ['packages/data-provider/**', ...ROOT_MANIFESTS, '!**.md'],
     requires: [],
   },
   {
     project: 'packages/data-schemas/tsconfig.json',
-    paths: ['packages/data-provider/**', 'packages/data-schemas/**', '!**.md'],
+    paths: ['packages/data-provider/**', 'packages/data-schemas/**', ...ROOT_MANIFESTS, '!**.md'],
     requires: ['build:data-provider'],
   },
   {
     project: 'packages/api/tsconfig.json',
-    paths: ['packages/data-provider/**', 'packages/data-schemas/**', 'packages/api/**', '!**.md'],
+    paths: [
+      'packages/data-provider/**',
+      'packages/data-schemas/**',
+      'packages/api/**',
+      ...ROOT_MANIFESTS,
+      '!**.md',
+    ],
     requires: ['build:data-provider', 'build:data-schemas'],
   },
   {
     project: 'packages/client/tsconfig.json',
-    paths: ['packages/data-provider/**', 'packages/client/**', '!**.md'],
+    paths: ['packages/data-provider/**', 'packages/client/**', ...ROOT_MANIFESTS, '!**.md'],
     requires: ['build:data-provider'],
   },
   {
     project: 'client/tsconfig.json',
-    paths: ['client/**', 'packages/data-provider/**', 'packages/client/**', '!**.md'],
+    paths: [
+      'client/**',
+      'packages/data-provider/**',
+      'packages/client/**',
+      ...ROOT_MANIFESTS,
+      '!**.md',
+    ],
     requires: ['build:data-provider', 'build:client-package'],
   },
 ];

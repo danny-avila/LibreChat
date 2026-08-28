@@ -220,7 +220,10 @@ jobs:
         run: |
           BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")
           node scripts/static-checks.mts --against "$BASE_SHA" --list
-          node scripts/static-checks.mts --against "$BASE_SHA" --only json
+          # An explicit target, because --list never executes a check and a
+          # script-only PR activates no group — so neither would exercise the
+          # execution path this step exists to protect.
+          node scripts/static-checks.mts package.json --only json
 
       - name: Validate ESLint config on config changes
         id: eslint_config
@@ -413,7 +416,7 @@ jobs:
         if: always() && steps.paths.outputs.unused_packages == 'true'
         continue-on-error: true
         run: |
-          for FILE in package.json client/package.json api/package.json packages/client/package.json; do
+          for FILE in package.json client/package.json api/package.json packages/api/package.json packages/client/package.json packages/data-provider/package.json packages/data-schemas/package.json; do
             if [[ -f "$FILE" ]]; then
               jq empty "$FILE" || (echo "::error title=Invalid JSON::$FILE is invalid" && exit 1)
             fi
