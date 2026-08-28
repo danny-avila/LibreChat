@@ -44,6 +44,11 @@ interface TrayProps {
   setFiles: FileSetter;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   isRTL: boolean;
+  index: number;
+  isPastedTextFile: (file: ExtendedFile) => boolean;
+  isPasteActionPending: (file: ExtendedFile) => boolean;
+  onEditPastedText: (file: ExtendedFile) => void;
+  onMovePastedTextInline: (file: ExtendedFile) => void;
 }
 
 /**
@@ -56,7 +61,19 @@ interface TrayProps {
  * source are drawn, and where aborting a part-done upload differs from deleting
  * a finished one.
  */
-function Tray({ items, conversation, files, setFiles, setFilesLoading, isRTL }: TrayProps) {
+function Tray({
+  items,
+  conversation,
+  files,
+  setFiles,
+  setFilesLoading,
+  isRTL,
+  index,
+  isPastedTextFile,
+  isPasteActionPending,
+  onEditPastedText,
+  onMovePastedTextInline,
+}: TrayProps) {
   const localize = useLocalize();
   const { abortUpload } = useFileHandlingNoChatContext(undefined, {
     files,
@@ -77,6 +94,11 @@ function Tray({ items, conversation, files, setFiles, setFilesLoading, isRTL }: 
         isRTL={isRTL}
         abortUpload={abortUpload}
         setFilesLoading={setFilesLoading}
+        index={index}
+        isPastedTextFile={isPastedTextFile}
+        isPasteActionPending={isPasteActionPending}
+        onEditPastedText={onEditPastedText}
+        onMovePastedTextInline={onMovePastedTextInline}
       />
       {items.length > 0 && (
         <div

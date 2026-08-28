@@ -32,10 +32,11 @@ import {
   useAssistantsMapContext,
   BadgeRowProvider,
 } from '~/Providers';
-import { cn, getModelSpec, hasIncompleteFiles, removeFocusRings } from '~/utils';
+import usePastedTextEdit from '~/hooks/Files/usePastedTextEdit';
 import useComposerRestore from '~/hooks/Input/useComposerRestore';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
+import PastedTextDialog from './Files/PastedTextDialog';
 import useComposerItems from '~/hooks/Input/useComposerItems';
 import useAttachTarget from '~/hooks/Input/useAttachTarget';
 import InterruptSteerButton from './InterruptSteerButton';
@@ -52,7 +53,7 @@ import Waveform from './Composer/Waveform';
 import CollapseChat from './CollapseChat';
 import { mainTextareaId } from '~/common';
 import QuoteButton from './QuoteButton';
-import StreamAudio from './StreamAudio';
+import AutoPlayAudio from './AutoPlayAudio';
 import ToolDialogs from './ToolDialogs';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
@@ -101,6 +102,7 @@ const ChatForm = memo(function ChatForm({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [, setIsScrollable] = useState(false);
   const [visualRowCount, setVisualRowCount] = useState(1);
+  const [isTextAreaFocused, setIsTextAreaFocused] = useState(false);
   /** Last measured row count, so an unchanged measurement never schedules a
    *  render at all rather than relying on a state-equality bailout. */
   const measuredRowCountRef = useRef(1);
@@ -187,6 +189,15 @@ const ChatForm = memo(function ChatForm({
       setIsCollapsed(false);
     }
   }, [isCollapsed]);
+
+  const handleTextareaFocus = useCallback(() => {
+    handleFocusOrClick();
+    setIsTextAreaFocused(true);
+  }, [handleFocusOrClick]);
+
+  const handleTextareaBlur = useCallback(() => {
+    setIsTextAreaFocused(false);
+  }, []);
 
   const answerMode = useAskAnswerMode(conversationId);
   const answerPlaceholder = answerMode.batchMode
@@ -615,6 +626,16 @@ const ChatForm = memo(function ChatForm({
                 setFiles={setFiles}
                 setFilesLoading={setFilesLoading}
                 isRTL={isRTL}
+                index={index}
+                isPastedTextFile={isPastedTextFile}
+                isPasteActionPending={isPasteActionPending}
+                onEditPastedText={pastedTextEdit.openEditor}
+                onMovePastedTextInline={pastedTextEdit.moveInline}
+              />
+              <PastedTextDialog
+                edit={pastedTextEdit.editing}
+                onClose={pastedTextEdit.closeEditor}
+                onSave={pastedTextEdit.saveEdit}
               />
               {endpoint && (
                 <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>
@@ -655,7 +676,8 @@ const ChatForm = memo(function ChatForm({
                       tabIndex={0}
                       data-testid="text-input"
                       rows={1}
-                      onFocus={handleFocusOrClick}
+                      onFocus={handleTextareaFocus}
+                      onBlur={handleTextareaBlur}
                       aria-label={localize('com_ui_message_input')}
                       aria-describedby={composerHintId(index)}
                       onClick={handleFocusOrClick}
@@ -726,7 +748,7 @@ const ChatForm = memo(function ChatForm({
                 />
                 <ToolDialogs />
               </BadgeRowProvider>
-              {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
+              {TextToSpeech && automaticPlayback && <AutoPlayAudio index={index} />}
             </div>
           </div>
           {/* Sibling of the composer row, not a child: inside that flex-row it

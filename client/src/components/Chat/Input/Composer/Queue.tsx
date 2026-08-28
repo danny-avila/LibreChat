@@ -2,7 +2,7 @@ import { memo, useId, useRef, useMemo, useState, useCallback } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useDrag, useDrop } from 'react-dnd';
-import { X, Pencil, GripVertical } from 'lucide-react';
+import { X, Pencil, TextQuote, TriangleAlert, GripVertical } from 'lucide-react';
 import { Button, IconButton, useMediaQuery, useToastContext } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
@@ -82,6 +82,24 @@ function QueueRow({
   const rowRef = useRef<HTMLDivElement>(null);
   const gripRef = useRef<HTMLButtonElement>(null);
   const { reorderQueued, restoreQueuedOrder } = steering;
+  const [actionPending, setActionPending] = useState(false);
+  const isRejected = message.server?.status === 'rejected';
+  const isIndeterminate = message.server?.status === 'indeterminate';
+  const isUnconfirmed =
+    message.server?.status === 'uncertain' && message.server.reconciliationExpired === true;
+  const serverActionable =
+    message.server == null ||
+    isRejected ||
+    (message.server.id != null && message.server.status === 'queued');
+  let statusLabel:
+    | 'com_ui_queued_turn_reconciliation_required'
+    | 'com_ui_steer_delivery_unconfirmed'
+    | 'com_ui_queued_turn_failed' = 'com_ui_queued_turn_failed';
+  if (isIndeterminate) {
+    statusLabel = 'com_ui_queued_turn_reconciliation_required';
+  } else if (isUnconfirmed) {
+    statusLabel = 'com_ui_steer_delivery_unconfirmed';
+  }
   /* The queue is sent in order, so one message cannot be ahead of or behind
      itself: the handle only means something once there is somewhere to go. */
   const reorderable = total > 1;
@@ -150,11 +168,13 @@ function QueueRow({
       if (!claimQueuedIntent(message.id)) {
         return;
       }
+      setActionPending(true);
       let handedOff = false;
       try {
         handedOff = await transfer();
       } finally {
         releaseQueuedIntent(message.id);
+        setActionPending(false);
         /* The row is going back to the queue. A run end that landed while it was
            claimed found nothing unclaimed to drain and spent its one-shot
            signal on nothing, so put one back: otherwise these words sit here
@@ -226,13 +246,18 @@ function QueueRow({
   drag(gripRef);
 
   const fileCount = message.files?.length ?? 0;
+  const quoteCount = message.quotes?.length ?? 0;
   /** Any submission-owned non-steerable state (approval pause, answer mode,
    *  Assistants still generating): `sendQueuedNow` has no immediate route and
    *  would no-op. Prefer the flag the hook already exposes over re-deriving it. */
   /* A recovered item is consumed atomically only when it starts a normal
      generation. Escalating it would leave or duplicate the parked source. */
   const isRecovered = message.recoverySteerId != null;
-  const sendDisabled = !steering.canSendQueuedNow || (isRecovered && steering.duringRunActive);
+  const sendDisabled =
+    actionPending ||
+    !serverActionable ||
+    !steering.canSendQueuedNow ||
+    (isRecovered && steering.duringRunActive);
   /** Shown for the whole run, disabled whenever steering cannot reach it:
    *  an approval pause, or the window before the start POST installs the
    *  generation epoch. Both are states the control must sit out, and hiding it
@@ -287,6 +312,15 @@ function QueueRow({
       <span className="min-w-0 flex-1 truncate text-text-primary" title={message.text}>
         {message.text}
       </span>
+      {quoteCount > 0 && (
+        <span className="flex shrink-0 items-center gap-0.5 text-xs text-text-secondary">
+          <TextQuote className="h-3.5 w-3.5" aria-hidden="true" />
+          <span aria-hidden="true">{quoteCount}</span>
+          <span className="sr-only">
+            {localize('com_ui_queued_quote_count', { 0: String(quoteCount) })}
+          </span>
+        </span>
+      )}
       {fileCount > 0 && (
         <span
           className="shrink-0 text-xs text-text-secondary"
@@ -302,12 +336,18 @@ function QueueRow({
           </span>
         </span>
       )}
+      {(isRejected || isUnconfirmed || isIndeterminate) && (
+        <span className="flex shrink-0 items-center gap-1 text-xs text-status-warning">
+          <TriangleAlert className="h-4 w-4" aria-hidden="true" />
+          {localize(statusLabel)}
+        </span>
+      )}
       <Button
         variant="ghost"
         size="sm"
         disabled={sendDisabled}
         aria-disabled={sendDisabled}
-        title={sendDisabled ? localize('com_ui_send_now_paused') : undefined}
+        title={!steering.canSendQueuedNow ? localize('com_ui_send_now_paused') : undefined}
         onClick={() => steering.sendQueuedNow(message)}
         className="h-auto shrink-0 px-2 py-0.5 text-text-primary disabled:pointer-events-auto disabled:cursor-not-allowed"
       >
@@ -317,22 +357,26 @@ function QueueRow({
         <EscalateNowButton
           surface="queued"
           messageText={message.text}
-          disabled={!steering.canSteer || interruptPending}
+          disabled={!steering.canSteer || interruptPending || actionPending || !serverActionable}
           onClick={() => steering.sendQueuedNow(message, { preempt: true })}
         />
       )}
       <IconButton
         label={localize('com_ui_edit_message')}
         size="xs"
+        disabled={actionPending || !serverActionable}
         onClick={editToComposer}
         className="text-text-secondary hover:text-text-primary"
       >
         <Pencil className="h-4 w-4" aria-hidden="true" />
       </IconButton>
       <IconButton
-        label={localize('com_ui_remove_queued')}
+        label={localize(
+          isUnconfirmed ? 'com_ui_dismiss_unconfirmed_delivery' : 'com_ui_remove_queued',
+        )}
         size="xs"
-        onClick={removeToComposer}
+        disabled={actionPending || (!serverActionable && !isUnconfirmed)}
+        onClick={isUnconfirmed ? () => steering.removeQueued(message.id) : removeToComposer}
         className="text-text-secondary hover:text-text-primary"
       >
         <X className="h-4 w-4" aria-hidden="true" />
@@ -426,6 +470,11 @@ function Queue({ steering, conversationId, onEditToComposer, onRestoreToComposer
           />
         ))}
       </div>
+      {steering.duringRunActive && (
+        <div className="px-3 py-1.5 text-xs text-text-secondary" data-testid="queued-caption">
+          {localize('com_ui_steer_queued_info')}
+        </div>
+      )}
       {queued.length > 1 && (
         <span id={reorderHintId} className="sr-only">
           {localize('com_ui_queue_reorder_hint')}

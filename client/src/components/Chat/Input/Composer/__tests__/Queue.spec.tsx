@@ -494,6 +494,93 @@ describe('Queue', () => {
     expect(screen.getByText('com_ui_queued_attachment_count:2')).toHaveClass('sr-only');
   });
 
+  it('shows a quoted-excerpt count when quotes ride along', () => {
+    renderQueue([queued({ quotes: ['first', 'second'] })]);
+
+    expect(screen.getByText('2')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByText('com_ui_queued_quote_count:2')).toHaveClass('sr-only');
+  });
+
+  it('keeps the during-run caption outside the ARIA list', () => {
+    renderQueue([queued()]);
+
+    const list = screen.getByTestId('composer-queue');
+    const caption = screen.getByTestId('queued-caption');
+    expect(caption).toHaveTextContent('com_ui_steer_queued_info');
+    expect(list).not.toContainElement(caption);
+  });
+
+  it('hides the queued caption after the run ends', () => {
+    renderQueue([queued()], steeringWith({ duringRunActive: false }));
+    expect(screen.queryByTestId('queued-caption')).not.toBeInTheDocument();
+  });
+
+  describe('server-owned queue states', () => {
+    it.each(['sending', 'claimed', 'uncertain'] as const)(
+      'disables local actions while a %s row remains server-owned',
+      (status) => {
+        renderQueue([queued({ server: { id: 'server-q1', status } })]);
+
+        expect(screen.getByText('com_ui_send_now')).toBeDisabled();
+        expect(screen.getByLabelText('com_ui_edit_message')).toBeDisabled();
+        expect(screen.getByLabelText('com_ui_remove_queued')).toBeDisabled();
+        expect(screen.getByTestId('queued-interrupt-now')).toBeDisabled();
+      },
+    );
+
+    it('keeps a rejected row actionable and labels its failure', () => {
+      renderQueue([queued({ server: { status: 'rejected' } })]);
+
+      expect(screen.getByText('com_ui_queued_turn_failed')).toBeInTheDocument();
+      expect(screen.getByText('com_ui_send_now')).toBeEnabled();
+      expect(screen.getByLabelText('com_ui_edit_message')).toBeEnabled();
+      expect(screen.getByLabelText('com_ui_remove_queued')).toBeEnabled();
+    });
+
+    it('keeps an acknowledged queued server row actionable', () => {
+      renderQueue([queued({ server: { id: 'server-q1', status: 'queued' } })]);
+
+      expect(screen.getByText('com_ui_send_now')).toBeEnabled();
+      expect(screen.getByLabelText('com_ui_edit_message')).toBeEnabled();
+      expect(screen.getByLabelText('com_ui_remove_queued')).toBeEnabled();
+    });
+
+    it('requires reconciliation and blocks removal for an indeterminate row', () => {
+      renderQueue([queued({ server: { id: 'server-q1', status: 'indeterminate' } })]);
+
+      expect(screen.getByText('com_ui_queued_turn_reconciliation_required')).toBeInTheDocument();
+      expect(screen.getByText('com_ui_send_now')).toBeDisabled();
+      expect(screen.getByLabelText('com_ui_edit_message')).toBeDisabled();
+      expect(screen.getByLabelText('com_ui_remove_queued')).toBeDisabled();
+    });
+
+    it('dismisses an expired uncertain row without discarding or restoring it', () => {
+      const onRestore = jest.fn();
+      renderQueue(
+        [
+          queued({
+            server: {
+              id: 'server-q1',
+              status: 'uncertain',
+              reconciliationExpired: true,
+            },
+          }),
+        ],
+        steering,
+        { onRestoreToComposer: onRestore },
+      );
+
+      expect(screen.getByText('com_ui_steer_delivery_unconfirmed')).toBeInTheDocument();
+      expect(screen.getByText('com_ui_send_now')).toBeDisabled();
+      expect(screen.getByLabelText('com_ui_edit_message')).toBeDisabled();
+
+      fireEvent.click(screen.getByLabelText('com_ui_dismiss_unconfirmed_delivery'));
+      expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
+      expect(mockDiscardQueued).not.toHaveBeenCalled();
+      expect(onRestore).not.toHaveBeenCalled();
+    });
+  });
+
   /* Escalation is the only way to make a waiting message interrupt the reply
      rather than wait for its next tool step. Send now sends it as an ordinary
      steer; this sends it as an interrupt. */

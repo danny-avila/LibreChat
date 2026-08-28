@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
+import { TextQuote } from 'lucide-react';
 import EscalateNowButton from '~/components/Chat/Input/EscalateNowButton';
 import { useSteerMoveToQueue } from '~/hooks/Chat/useSteerCancel';
 import useSteerEscalate from '~/hooks/Chat/useSteerEscalate';
@@ -82,6 +83,7 @@ function PendingSteers({ conversationId }: PendingSteersProps) {
       {steers.map((steer) => {
         const deliveryUncertain = steer.deliveryUncertain === true;
         const retrySafe = !isLegacyDeliveryUncertain(steer);
+        const quoteCount = steer.quotes?.length ?? 0;
         return (
           <div
             key={steer.steerId}
@@ -96,6 +98,15 @@ function PendingSteers({ conversationId }: PendingSteersProps) {
             />
             {steer.status === 'failed' ? (
               <div className="-mt-2 mb-2 flex items-center gap-3 pl-9 text-xs">
+                {quoteCount > 0 && (
+                  <span className="flex items-center gap-0.5 text-text-secondary">
+                    <TextQuote className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span aria-hidden="true">{quoteCount}</span>
+                    <span className="sr-only">
+                      {localize('com_ui_queued_quote_count', { 0: String(quoteCount) })}
+                    </span>
+                  </span>
+                )}
                 <span className="text-text-destructive">
                   {localize(
                     deliveryUncertain
