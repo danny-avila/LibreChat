@@ -25,6 +25,15 @@ export const DEFAULT_OAUTH_TOKEN_TTL_SECONDS = 3600;
  */
 const EXPIRED_CACHE_TTL_MS = 1;
 
+/**
+ * Longest lifetime that can still produce a valid `Date`. The ECMAScript time value range ends at
+ * ±8.64e15 ms, and every derived timestamp adds `Date.now()`, so the bound is halved to leave room
+ * for it. A provider sending something beyond this — `"1e13"` seconds is roughly 317,000 years — is
+ * not describing a credential lifetime, and accepting it would yield the Invalid Date this module
+ * exists to prevent. Such a value is reported as unusable so callers take their fallback.
+ */
+const MAX_EXPIRES_IN_SECONDS = 4_320_000_000_000;
+
 function parseExpiresIn(expiresIn: unknown): number | undefined {
   if (typeof expiresIn === 'number') {
     return expiresIn;
@@ -48,7 +57,11 @@ function parseExpiresIn(expiresIn: unknown): number | undefined {
  */
 export function normalizeExpiresIn(expiresIn: unknown): number | undefined {
   const parsed = parseExpiresIn(expiresIn);
-  return parsed != null && Number.isFinite(parsed) ? parsed : undefined;
+  if (parsed == null || !Number.isFinite(parsed)) {
+    return undefined;
+  }
+
+  return Math.abs(parsed) <= MAX_EXPIRES_IN_SECONDS ? parsed : undefined;
 }
 
 /**

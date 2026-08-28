@@ -30,6 +30,24 @@ describe('normalizeExpiresIn', () => {
     expect(normalizeExpiresIn(-Infinity)).toBeUndefined();
   });
 
+  /**
+   * Parsing the complete string is what makes this reachable — `parseInt('1e13', 10)` was `1` and
+   * masked it. `1e13` seconds overruns the ECMAScript time range, so every derived timestamp would
+   * be an Invalid Date whose `toISOString()` throws: the very failure this module removes.
+   */
+  it('rejects a lifetime that would overflow the Date range', () => {
+    expect(normalizeExpiresIn('1e13')).toBeUndefined();
+    expect(normalizeExpiresIn(1e13)).toBeUndefined();
+    expect(normalizeExpiresIn(-1e13)).toBeUndefined();
+    expect(normalizeExpiresIn(Number.MAX_SAFE_INTEGER)).toBeUndefined();
+  });
+
+  it('still accepts lifetimes far longer than any real credential', () => {
+    const oneYear = 365 * 24 * 60 * 60;
+    expect(normalizeExpiresIn(oneYear)).toBe(oneYear);
+    expect(normalizeExpiresIn(oneYear * 100)).toBe(oneYear * 100);
+  });
+
   /** An explicit non-positive value is the provider saying the credential is already dead, which is
    *  information — collapsing it into "unknown" would hand it the fallback lifetime and revive it. */
   it('preserves an explicitly elapsed lifetime rather than calling it unknown', () => {
@@ -76,8 +94,10 @@ describe('getTokenCacheTtlMs', () => {
   });
 
   it('never returns 0, which Keyv would store as no expiry', () => {
-    for (const value of [undefined, null, NaN, Infinity, 0, -1, '0', 'abc', {}]) {
-      expect(getTokenCacheTtlMs(value, DEFAULT_OAUTH_TOKEN_TTL_SECONDS)).toBeGreaterThan(0);
+    for (const value of [undefined, null, NaN, Infinity, 0, -1, '0', 'abc', {}, '1e13', 1e300]) {
+      const ttl = getTokenCacheTtlMs(value, DEFAULT_OAUTH_TOKEN_TTL_SECONDS);
+      expect(ttl).toBeGreaterThan(0);
+      expect(Number.isFinite(ttl)).toBe(true);
     }
   });
 
@@ -122,7 +142,7 @@ describe('getTokenExpiresAt', () => {
 
   /** `new Date(NaN).toISOString()` throws `RangeError: Invalid time value`, which is the ActionService failure */
   it('never yields a value whose toISOString throws', () => {
-    for (const value of [undefined, null, NaN, Infinity, 'abc', '', 0, -60, 3600]) {
+    for (const value of [undefined, null, NaN, Infinity, 'abc', '', 0, -60, 3600, '1e13', 1e300]) {
       expect(() => getTokenExpiresAt(value)?.toISOString()).not.toThrow();
     }
   });
