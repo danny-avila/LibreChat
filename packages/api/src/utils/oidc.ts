@@ -88,15 +88,18 @@ function audienceList(aud: string | string[] | undefined): string[] {
  * OIDC ID token is minted for the client id and satisfies the same check, and using one as the
  * On-Behalf-Of assertion is rejected by the IdP (Entra answers `AADSTS240002`).
  *
- * Only positive evidence qualifies a token, so an unrecognised shape fails closed rather than
- * risking a mis-typed assertion:
- * - an RFC 9068 `at+jwt` header type,
- * - an OAuth scope claim (`scp` or `scope`), which OIDC does not define for an ID token,
- * - an audience naming a protected resource and not also the OIDC client.
+ * Only two signals distinguish the two by specification rather than by provider convention:
+ * - an RFC 9068 `at+jwt` header type, which is defined for access tokens alone;
+ * - an `aud` that omits the OIDC client id, which OIDC Core §2 requires every ID token to carry,
+ *   so a token without it cannot be an ID token for this deployment.
+ *
+ * Claim presence is deliberately not proof on its own. Providers add claims freely in both
+ * directions — Keycloak has emitted `nonce` and `auth_time` in access tokens, and maps `scope`
+ * into ID tokens — so `scp`/`scope` only qualifies a token whose audience has already ruled out
+ * an ID token. While the client id is in `aud` the token may be either, and it fails closed.
  *
  * `at_hash` and `c_hash` veto regardless, since they exist only to bind an ID token to its
- * companion access token or code. `nonce` and `auth_time` are deliberately not vetoes: some
- * providers (Keycloak) have emitted them in genuine access tokens.
+ * companion access token or code.
  */
 export function isAccessTokenJwt(
   token: string | undefined,
@@ -111,30 +114,28 @@ export function isAccessTokenJwt(
     return false;
   }
 
-  if (claims.scp != null || claims.scope != null) {
-    return true;
-  }
-
   const headerType = decodeJwtHeaderType(token);
   if (headerType != null && ACCESS_TOKEN_JWT_TYPES.has(headerType)) {
     return true;
   }
 
-  if (!audiences?.resources?.size) {
+  /** Without a configured client id the audience can rule nothing out, so nothing but `at+jwt` qualifies */
+  if (audiences?.clientId == null) {
     return false;
   }
 
-  /**
-   * OIDC permits an ID token to carry several audiences, and this strategy's own check admits
-   * the token as soon as one of them is the client id. A resource audience is therefore only
-   * evidence of an access token while the client id is absent from the list.
-   */
   const tokenAudiences = audienceList(claims.aud);
-  if (audiences.clientId != null && tokenAudiences.includes(audiences.clientId)) {
+  if (tokenAudiences.includes(audiences.clientId)) {
     return false;
   }
 
-  return tokenAudiences.some((audience) => audiences.resources!.has(audience));
+  if (audiences.resources?.size) {
+    if (tokenAudiences.some((audience) => audiences.resources!.has(audience))) {
+      return true;
+    }
+  }
+
+  return claims.scp != null || claims.scope != null;
 }
 
 /**

@@ -349,6 +349,8 @@ describe('openIdJwtStrategy – token source handling', () => {
   const makeJwt = (claims, header = { alg: 'RS256' }) =>
     `${encodeSegment(header)}.${encodeSegment(claims)}.signature`;
 
+  const resourceEnv = { OPENID_CLIENT_ID: 'client-id', OPENID_AUDIENCE: 'api://resource-app' };
+
   it('should decline the raw Bearer token when nothing identifies it as an access token', async () => {
     const req = {
       headers: {
@@ -366,16 +368,9 @@ describe('openIdJwtStrategy – token source handling', () => {
   });
 
   it('should decline an Entra-shaped ID token rather than reuse it as the OBO assertion', async () => {
-    const idTokenClaims = { ...payload, aud: 'client-id', nonce: 'n-0S6_WzA2Mj', tid: 'tenant-1' };
-    const req = { headers: { authorization: `Bearer ${makeJwt(idTokenClaims)}` } };
+    withEnv(resourceEnv, () => openIdJwtLogin(mockOpenIdConfig));
 
-    const { user } = await invokeVerify(req, idTokenClaims);
-
-    expect(user.federatedTokens.access_token).toBeUndefined();
-  });
-
-  it('should decline a raw Bearer token carrying the ID-token-only at_hash claim', async () => {
-    const claims = { ...payload, scp: 'User.Read', at_hash: 'HK6E_P6Dh8Y93mRNtsDB1Q' };
+    const claims = { ...payload, aud: 'client-id', nonce: 'n-0S6_WzA2Mj', tid: 'tenant-1' };
     const req = { headers: { authorization: `Bearer ${makeJwt(claims)}` } };
 
     const { user } = await invokeVerify(req, claims);
@@ -383,8 +378,43 @@ describe('openIdJwtStrategy – token source handling', () => {
     expect(user.federatedTokens.access_token).toBeUndefined();
   });
 
-  it('should reuse a raw Bearer token bearing an OAuth `scp` claim', async () => {
-    const claims = { ...payload, scp: 'User.Read Files.Read' };
+  it('should decline a multi-audience ID token that also names a configured resource', async () => {
+    withEnv(resourceEnv, () => openIdJwtLogin(mockOpenIdConfig));
+
+    const claims = { ...payload, aud: ['client-id', 'api://resource-app'], nonce: 'n-0S6' };
+    const req = { headers: { authorization: `Bearer ${makeJwt(claims)}` } };
+
+    const { user } = await invokeVerify(req, claims);
+
+    expect(user.federatedTokens.access_token).toBeUndefined();
+  });
+
+  it('should decline an ID token carrying a provider-added scope claim', async () => {
+    withEnv(resourceEnv, () => openIdJwtLogin(mockOpenIdConfig));
+
+    const claims = { ...payload, aud: 'client-id', scope: 'openid email profile' };
+    const req = { headers: { authorization: `Bearer ${makeJwt(claims)}` } };
+
+    const { user } = await invokeVerify(req, claims);
+
+    expect(user.federatedTokens.access_token).toBeUndefined();
+  });
+
+  it('should decline a raw Bearer token carrying the ID-token-only at_hash claim', async () => {
+    withEnv(resourceEnv, () => openIdJwtLogin(mockOpenIdConfig));
+
+    const claims = { ...payload, aud: 'api://resource-app', at_hash: 'HK6E_P6Dh8Y93mRN' };
+    const req = { headers: { authorization: `Bearer ${makeJwt(claims)}` } };
+
+    const { user } = await invokeVerify(req, claims);
+
+    expect(user.federatedTokens.access_token).toBeUndefined();
+  });
+
+  it('should reuse a raw Bearer token whose audience names a configured resource', async () => {
+    withEnv(resourceEnv, () => openIdJwtLogin(mockOpenIdConfig));
+
+    const claims = { ...payload, aud: 'api://resource-app' };
     const rawToken = makeJwt(claims);
     const req = { headers: { authorization: `Bearer ${rawToken}` } };
 
@@ -394,48 +424,13 @@ describe('openIdJwtStrategy – token source handling', () => {
     expect(user.federatedTokens.expires_at).toBe(payload.exp);
   });
 
-  it('should reuse a raw Bearer token bearing an OAuth `scope` claim', async () => {
-    const claims = { ...payload, scope: 'openid profile api.read' };
-    const rawToken = makeJwt(claims);
-    const req = { headers: { authorization: `Bearer ${rawToken}` } };
-
-    const { user } = await invokeVerify(req, claims);
-
-    expect(user.federatedTokens.access_token).toBe(rawToken);
-  });
-
   it('should reuse a raw Bearer token declaring the RFC 9068 `at+jwt` header type', async () => {
+    withEnv(resourceEnv, () => openIdJwtLogin(mockOpenIdConfig));
+
     const rawToken = makeJwt(payload, { alg: 'RS256', typ: 'at+JWT' });
     const req = { headers: { authorization: `Bearer ${rawToken}` } };
 
     const { user } = await invokeVerify(req, payload);
-
-    expect(user.federatedTokens.access_token).toBe(rawToken);
-  });
-
-  it('should decline a multi-audience ID token that also names a configured resource', async () => {
-    withEnv({ OPENID_CLIENT_ID: 'client-id', OPENID_AUDIENCE: 'api://resource-app' }, () => {
-      openIdJwtLogin(mockOpenIdConfig);
-    });
-
-    const claims = { ...payload, aud: ['client-id', 'api://resource-app'], nonce: 'n-0S6_WzA2Mj' };
-    const req = { headers: { authorization: `Bearer ${makeJwt(claims)}` } };
-
-    const { user } = await invokeVerify(req, claims);
-
-    expect(user.federatedTokens.access_token).toBeUndefined();
-  });
-
-  it('should reuse a raw Bearer token whose audience names a configured resource', async () => {
-    withEnv({ OPENID_CLIENT_ID: 'client-id', OPENID_AUDIENCE: 'api://resource-app' }, () => {
-      openIdJwtLogin(mockOpenIdConfig);
-    });
-
-    const claims = { ...payload, aud: 'api://resource-app' };
-    const rawToken = makeJwt(claims);
-    const req = { headers: { authorization: `Bearer ${rawToken}` } };
-
-    const { user } = await invokeVerify(req, claims);
 
     expect(user.federatedTokens.access_token).toBe(rawToken);
   });
@@ -445,7 +440,7 @@ describe('openIdJwtStrategy – token source handling', () => {
       openIdJwtLogin(mockOpenIdConfig);
     });
 
-    const claims = { ...payload, aud: 'client-id' };
+    const claims = { ...payload, aud: 'client-id', scp: 'User.Read' };
     const req = { headers: { authorization: `Bearer ${makeJwt(claims)}` } };
 
     const { user } = await invokeVerify(req, claims);
