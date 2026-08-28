@@ -18,31 +18,56 @@
  */
 export const DEFAULT_OAUTH_TOKEN_TTL_SECONDS = 3600;
 
-/** The lifetime a token response actually declares, in seconds, or `undefined` when it declares none usable. */
-export function normalizeExpiresIn(expiresIn: unknown): number | undefined {
+/**
+ * Floor for a cache TTL derived from an already-elapsed lifetime. Keyv reads a TTL of exactly `0`
+ * as "no expiry" (`data.ttl === 0` becomes `undefined`), so a credential the provider declared
+ * expired must never be written as `0` — that is the very failure this module exists to prevent.
+ */
+const EXPIRED_CACHE_TTL_MS = 1;
+
+function parseExpiresIn(expiresIn: unknown): number | undefined {
   if (typeof expiresIn === 'number') {
-    return Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : undefined;
+    return expiresIn;
   }
 
-  if (typeof expiresIn === 'string') {
-    const parsed = Number.parseInt(expiresIn, 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  if (typeof expiresIn !== 'string') {
+    return undefined;
   }
 
-  return undefined;
+  /** `Number` over `parseInt`, which truncates a complete numeric string such as `"3.6e3"` to `3` */
+  const trimmed = expiresIn.trim();
+  return trimmed.length === 0 ? undefined : Number(trimmed);
+}
+
+/**
+ * The lifetime a token response declares, in seconds, or `undefined` when it declares none usable.
+ *
+ * A non-positive value is preserved rather than discarded: the provider is stating the credential
+ * is already expired, which is information, and collapsing it into "unknown" would hand it the
+ * fallback lifetime and keep a dead credential alive.
+ */
+export function normalizeExpiresIn(expiresIn: unknown): number | undefined {
+  const parsed = parseExpiresIn(expiresIn);
+  return parsed != null && Number.isFinite(parsed) ? parsed : undefined;
 }
 
 /**
  * Cache TTL in milliseconds for a token response. A provider that omits `expires_in` gets
- * `fallbackSeconds` rather than an entry that outlives the credential it holds.
+ * `fallbackSeconds` rather than an entry that outlives the credential it holds; one that declares
+ * an elapsed lifetime gets the shortest positive TTL rather than `0`, which Keyv reads as no expiry.
  */
 export function getTokenCacheTtlMs(expiresIn: unknown, fallbackSeconds: number): number {
-  return (normalizeExpiresIn(expiresIn) ?? fallbackSeconds) * 1000;
+  const seconds = normalizeExpiresIn(expiresIn);
+  if (seconds == null) {
+    return fallbackSeconds * 1000;
+  }
+  return Math.max(seconds * 1000, EXPIRED_CACHE_TTL_MS);
 }
 
 /**
  * Absolute expiry for a token response, or `undefined` when its lifetime is unknown. Callers store
- * nothing rather than an Invalid Date, so an unknown expiry stays distinguishable from an elapsed one.
+ * nothing rather than an Invalid Date, so an unknown expiry stays distinguishable from an elapsed
+ * one — an elapsed lifetime still yields a past timestamp, so callers refresh instead of guessing.
  */
 export function getTokenExpiresAt(expiresIn: unknown): Date | undefined {
   const seconds = normalizeExpiresIn(expiresIn);
