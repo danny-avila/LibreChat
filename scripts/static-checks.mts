@@ -51,7 +51,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  * Path filters, mirroring the `dorny/paths-filter` block in
  * .github/workflows/static-checks.yml. A group is active when some changed
  * file matches one of its patterns and no exclusion (`!`) pattern.
- * Keep the two in sync.
+ * Keep the two in sync — the workflow additionally defines a `runner` group
+ * for its own smoke test of this script, which has no local counterpart.
  */
 const FILTERS = {
   eslint: [
@@ -172,6 +173,19 @@ function parseList(value: string | undefined): string[] {
 
 const argv = process.argv.slice(2);
 
+/** Every accepted flag, so a typo fails loudly instead of changing the run. */
+const KNOWN_FLAGS = new Set([
+  '--against',
+  '--commit',
+  '--only',
+  '--skip',
+  '--staged',
+  '--full',
+  '--fast',
+  '--list',
+  '--verbose',
+]);
+
 function readOption(name: string): string | undefined {
   const index = argv.indexOf(name);
   if (index === -1) return undefined;
@@ -201,6 +215,11 @@ const OPTIONS = {
 const OPTION_VALUES = new Set(
   Object.values(VALUED_OPTIONS).filter((value): value is string => value !== undefined),
 );
+
+const UNKNOWN_FLAGS = argv.filter((arg) => arg.startsWith('-') && !KNOWN_FLAGS.has(arg));
+if (UNKNOWN_FLAGS.length > 0) {
+  fail(`unknown option(s): ${UNKNOWN_FLAGS.join(', ')}`);
+}
 
 const FILE_ARGS = argv.filter((arg) => !arg.startsWith('-') && !OPTION_VALUES.has(arg));
 
@@ -272,8 +291,14 @@ function resolveBin(name: string, binName = name): Executable | null {
   }
 }
 
+/**
+ * A checker that cannot run is a failure, not a skip: reporting "all affected
+ * static checks passed" without having linted anything is worse than saying
+ * nothing. Only depcheck, which CI installs globally and this treats as
+ * optional, is allowed to skip.
+ */
 function missingBin(name: string): CheckOutcome {
-  return { ok: true, skipped: `${name} is not installed — run npm ci` };
+  return { ok: false, output: `${name} is not installed — run npm ci` };
 }
 
 function globToRegExp(pattern: string): RegExp {
@@ -349,6 +374,23 @@ function resolveTarget(): Target {
   }
 
   if (OPTIONS.commit) {
+    // Paths come from the commit but contents come from the working tree, so
+    // any other revision would be checked against the wrong file contents —
+    // an added-then-deleted file would vanish, a since-modified one would be
+    // read at its newer contents. Use --against for a range instead.
+    const requested = captureStdout(GIT, [
+      'rev-parse',
+      '--verify',
+      `${OPTIONS.commit}^{commit}`,
+    ]).trim();
+    const head = captureStdout(GIT, ['rev-parse', '--verify', 'HEAD^{commit}']).trim();
+    if (requested !== head) {
+      fail(
+        `--commit ${OPTIONS.commit} (${requested.slice(0, 10)}) is not the checked-out commit ` +
+          `(${head.slice(0, 10)}). These checks read the working tree, so check that commit out ` +
+          `first, or use --against <ref> to scope by a range.`,
+      );
+    }
     // -m is load-bearing: without it a merge commit yields no paths at all.
     return {
       label: `commit ${OPTIONS.commit}`,
@@ -909,7 +951,14 @@ async function main(): Promise<void> {
     }
 
     const started = Date.now();
-    const outcome = await check.run(context);
+    // The CI job gives every step continue-on-error; a check that throws
+    // (malformed translation JSON, say) must not cancel the ones after it.
+    let outcome: CheckOutcome;
+    try {
+      outcome = await check.run(context);
+    } catch (error) {
+      outcome = { ok: false, output: `${check.title} threw: ${(error as Error).stack ?? error}` };
+    }
     const elapsed = `${((Date.now() - started) / 1000).toFixed(1)}s`;
 
     if (outcome.skipped) {
