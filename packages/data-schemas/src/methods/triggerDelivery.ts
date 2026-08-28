@@ -1083,49 +1083,49 @@ export function createAgentTriggerDeliveryMethods(
     if (workerCapabilities.some((value) => value.length === 0 || value.length > 128)) {
       throw new TypeError('Agent trigger worker capability is invalid');
     }
-    if (workerCapabilities.length > 0) {
-      const capabilityClaim = await Delivery()
-        .findOneAndUpdate(
-          {
-            requiredWorkerCapability: { $in: workerCapabilities },
-            $or: [
-              { status: 'capability_pending', availableAt: { $lte: input.now } },
-              { status: 'capability_leased', leaseUntil: { $lte: expiredBefore } },
-            ],
-          },
-          {
-            $set: {
-              status: 'capability_leased',
-              leaseBy: input.workerId,
-              leaseUntil: input.leaseUntil,
-              claimToken: input.claimToken,
+    const capabilityConditions =
+      workerCapabilities.length === 0
+        ? []
+        : [
+            {
+              requiredWorkerCapability: { $in: workerCapabilities },
+              status: 'capability_pending',
+              availableAt: { $lte: input.now },
             },
-            $unset: { settledAt: 1, expiresAt: 1 },
-          },
-          { new: true, sort: { availableAt: 1, createdAt: 1, _id: 1 } },
-        )
-        .lean<IAgentTriggerDelivery>();
-      if (capabilityClaim != null) {
-        return requireClaim(capabilityClaim);
-      }
-    }
+            {
+              requiredWorkerCapability: { $in: workerCapabilities },
+              status: 'capability_leased',
+              leaseUntil: { $lte: expiredBefore },
+            },
+          ];
     const claimed = await Delivery()
       .findOneAndUpdate(
         {
           $or: [
             { status: 'pending', availableAt: { $lte: input.now } },
             { status: 'leased', leaseUntil: { $lte: expiredBefore } },
+            ...capabilityConditions,
           ],
         },
-        {
-          $set: {
-            status: 'leased',
-            leaseBy: input.workerId,
-            leaseUntil: input.leaseUntil,
-            claimToken: input.claimToken,
+        [
+          {
+            $set: {
+              status: {
+                $cond: [
+                  { $in: ['$status', ['capability_pending', 'capability_leased']] },
+                  'capability_leased',
+                  'leased',
+                ],
+              },
+              leaseBy: input.workerId,
+              leaseUntil: input.leaseUntil,
+              claimToken: input.claimToken,
+              settledAt: '$$REMOVE',
+              expiresAt: '$$REMOVE',
+              updatedAt: input.now,
+            },
           },
-          $unset: { settledAt: 1, expiresAt: 1 },
-        },
+        ],
         { new: true, sort: { availableAt: 1, createdAt: 1, _id: 1 } },
       )
       .lean<IAgentTriggerDelivery>();

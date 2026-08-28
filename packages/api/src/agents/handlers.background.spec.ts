@@ -232,6 +232,46 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(reserve).not.toHaveBeenCalled();
   });
 
+  it('does not launch an expected action when staged production is disabled', async () => {
+    const invoke = jest.fn(async () => ({ content: 'move accepted' }));
+    const tool = {
+      name: 'submit_move_mcp_chess',
+      description: 'submits a move',
+      schema: z.object({ move: z.string() }),
+      invoke,
+    } as unknown as StructuredToolInterface;
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      eventActorDetachedAction: {
+        reserve: jest.fn(async () => ({
+          status: 'conflict' as const,
+          error: 'Detached Event Actor production is not activated',
+        })),
+        markRunning: jest.fn(async () => true),
+        settle: jest.fn(async () => true),
+        wake: jest.fn(async () => undefined),
+      },
+    });
+
+    await expect(
+      runBatch(handler, {
+        toolCalls: [
+          {
+            id: 'call-disabled',
+            name: tool.name,
+            args: { move: 'e4', run_in_background: true },
+          },
+        ],
+        agentId: 'agent-player',
+        configurable: buildConfig([tool.name]),
+        metadata: { thread_id: 'event-conversation', run_id: 'event-response' },
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({ content: '', errorMessage: expect.stringContaining('activated') }),
+    ]);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   it('persists a synchronous detached-tool rejection as terminal evidence', async () => {
     const tool = {
       name: 'submit_move_mcp_chess',

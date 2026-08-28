@@ -363,6 +363,34 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toBeNull();
   });
 
+  it('claims the oldest eligible delivery without capability traffic priority', async () => {
+    const ordinary = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'ordinary-older',
+        eventId: 'ordinary-older',
+        availableAt: new Date(START.getTime() - 2_000),
+      }),
+    );
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'capability-newer',
+        eventId: 'capability-newer',
+        availableAt: new Date(START.getTime() - 1_000),
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+    );
+
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'capable-worker',
+        claimToken: 'claim-oldest',
+        now: START,
+        leaseUntil: new Date(START.getTime() + 60_000),
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+      }),
+    ).resolves.toMatchObject({ id: ordinary.delivery.id, status: 'leased' });
+  });
+
   it('allocates a replica-stable monotonic sequence within an ordering lane', async () => {
     const user = new mongoose.Types.ObjectId();
     const replicas = [
