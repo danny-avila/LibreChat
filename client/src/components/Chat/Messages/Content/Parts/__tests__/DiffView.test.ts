@@ -39,4 +39,29 @@ describe('parseUnifiedDiff', () => {
     expect(parsed.additions).toBe(1);
     expect(parsed.deletions).toBe(1);
   });
+
+  it('skips the separator pair before every batched edit', () => {
+    const parsed = parseUnifiedDiff(
+      [
+        '--- old_text 1',
+        '+++ new_text 1',
+        '@@',
+        '-first old',
+        '+first new',
+        '',
+        '--- old_text 2',
+        '+++ new_text 2',
+        '@@',
+        '-second old',
+        '+second new',
+      ].join('\n'),
+    );
+
+    /** The second edit's synthetic pair used to be counted as a real deletion
+     *  and addition, inflating both statistics and rendering marker rows. */
+    expect(parsed.deletions).toBe(2);
+    expect(parsed.additions).toBe(2);
+    expect(parsed.lines.some((line) => line.text.includes('old_text'))).toBe(false);
+    expect(parsed.lines.some((line) => line.text.includes('new_text'))).toBe(false);
+  });
 });
