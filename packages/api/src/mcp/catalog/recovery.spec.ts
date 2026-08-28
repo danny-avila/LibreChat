@@ -1,11 +1,21 @@
 import { Constants } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
-import type { ParsedServerConfig } from '../types';
+import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
 import { loadMCPServerCatalogs, recoverMCPServerCatalogs } from './recovery';
 
 const user = { id: 'user-1' } as IUser;
 const serverConfig = (name: string): ParsedServerConfig =>
   ({ type: 'streamable-http', url: `https://${name}.example.com/mcp` }) as ParsedServerConfig;
+const availableTools = (name: string): LCAvailableTools => ({
+  [name]: {
+    type: 'function',
+    function: {
+      name,
+      description: '',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+});
 
 describe('recoverMCPServerCatalogs', () => {
   it('loads user auth once and preserves config-only lookup context for each server', async () => {
@@ -16,15 +26,12 @@ describe('recoverMCPServerCatalogs', () => {
     const loadUserMCPAuthMap = jest.fn().mockResolvedValue({
       [`${Constants.mcp_prefix}alpha`]: { API_KEY: 'alpha-secret' },
     });
-    const discoverServerTools = jest.fn(async ({ serverName }) => ({
-      tools: [{ name: `${serverName}-tool`, inputSchema: { type: 'object' } }],
+    const discoverServerTools = jest.fn(async ({ serverName }: ToolDiscoveryOptions) => ({
+      tools: [{ name: `${serverName}-tool`, inputSchema: { type: 'object' as const } }],
     }));
-    const formatServerTools = jest.fn((serverName) => ({
-      [`tool${Constants.mcp_delimiter}${serverName}`]: {
-        type: 'function',
-        function: { name: `tool${Constants.mcp_delimiter}${serverName}` },
-      },
-    }));
+    const formatServerTools = jest.fn((serverName: string) =>
+      availableTools(`tool${Constants.mcp_delimiter}${serverName}`),
+    );
 
     const result = await recoverMCPServerCatalogs(
       { user, servers },
@@ -91,7 +98,7 @@ describe('recoverMCPServerCatalogs', () => {
       { user, servers },
       {
         loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
-        discoverServerTools: jest.fn(async ({ serverName }) => {
+        discoverServerTools: jest.fn(async ({ serverName }: ToolDiscoveryOptions) => {
           if (serverName === 'failed') {
             throw new Error('offline');
           }
@@ -107,14 +114,18 @@ describe('recoverMCPServerCatalogs', () => {
 
 describe('loadMCPServerCatalogs', () => {
   it('loads cache hits and connected snapshots in parallel, then caches only the snapshot', async () => {
-    const cachedTools = { cached: { type: 'function', function: { name: 'cached' } } };
-    const snapshotTools = { live: { type: 'function', function: { name: 'live' } } };
+    const cachedTools = availableTools('cached');
+    const snapshotTools = availableTools('live');
     const servers = [
       { serverName: 'cached-server', serverConfig: serverConfig('cached') },
       { serverName: 'live-server', serverConfig: serverConfig('live') },
     ];
-    const getCachedServerTools = jest.fn(async (_userId, serverName) =>
-      serverName === 'cached-server' ? cachedTools : null,
+    const getCachedServerTools = jest.fn(
+      async (
+        _userId: string,
+        serverName: string,
+        _serverConfig: ParsedServerConfig,
+      ): Promise<LCAvailableTools | null> => (serverName === 'cached-server' ? cachedTools : null),
     );
     const getServerToolFunctionsSnapshot = jest.fn().mockResolvedValue({
       tools: snapshotTools,
@@ -157,9 +168,7 @@ describe('loadMCPServerCatalogs', () => {
 
   it('serves passive recovery only to the request and does not cache it without a fence', async () => {
     const servers = [{ serverName: 'cold-server', serverConfig: serverConfig('cold') }];
-    const recoveredTools = {
-      recovered: { type: 'function', function: { name: 'recovered' } },
-    };
+    const recoveredTools = availableTools('recovered');
     const cacheServerTools = jest.fn();
 
     const result = await loadMCPServerCatalogs(
@@ -170,7 +179,7 @@ describe('loadMCPServerCatalogs', () => {
         cacheServerTools,
         loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
         discoverServerTools: jest.fn().mockResolvedValue({
-          tools: [{ name: 'recovered', inputSchema: { type: 'object' } }],
+          tools: [{ name: 'recovered', inputSchema: { type: 'object' as const } }],
         }),
         formatServerTools: jest.fn().mockReturnValue(recoveredTools),
       },
@@ -197,7 +206,7 @@ describe('loadMCPServerCatalogs', () => {
           .mockResolvedValueOnce({ tools: null }),
         cacheServerTools: jest.fn(),
         loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
-        discoverServerTools: jest.fn(async ({ serverName }) => ({
+        discoverServerTools: jest.fn(async ({ serverName }: ToolDiscoveryOptions) => ({
           tools: serverName === 'recovered' ? [] : null,
         })),
         formatServerTools: jest.fn().mockReturnValue({}),
