@@ -63,7 +63,8 @@ const publishWithTailRetry = async <T,>(
   try {
     return await publish(await resolveTargetMessageId());
   } catch (error) {
-    if (getSharePublicationErrorCode(error) !== 'TARGET_MESSAGE_NOT_FOUND') {
+    const code = getSharePublicationErrorCode(error);
+    if (code !== 'TARGET_MESSAGE_NOT_FOUND' && code !== 'NO_MESSAGES') {
       throw error;
     }
   }

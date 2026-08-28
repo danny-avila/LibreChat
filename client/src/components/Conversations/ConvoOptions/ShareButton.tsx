@@ -16,7 +16,7 @@ import {
   OGDialogContent,
   OGDialogDescription,
 } from '@librechat/client';
-import { useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
+import { useGetLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
 import SharedLinkCopyButton from './SharedLinkCopyButton';
 import { useGetStartupConfig } from '~/data-provider';
 import SharedLinkButton from './SharedLinkButton';
@@ -53,30 +53,35 @@ export default function ShareButton({
   const shareFilesSwitchRef = React.useRef<HTMLButtonElement>(null);
   const activeConversationId = useRecoilValue(store.conversationIdByIndex(0));
   const activeLatestMessageId = useLatestMessageId(0);
+  const getActiveLatestMessage = useGetLatestMessage(0);
   /** `useLatestMessageId` resolves the active pane's branch tail, so it only describes
    * this dialog's conversation when the two match. Sharing another conversation from
    * the list sends no target, which shares it in full instead of a foreign message. */
   const isActiveConversation = activeConversationId === conversationId;
   const latestMessageId = isActiveConversation ? activeLatestMessageId : null;
   const resolveTargetMessageId = useCallback(async (): Promise<string> => {
-    if (!latestMessageId) {
+    let selectedMessageId = getActiveLatestMessage()?.messageId ?? latestMessageId;
+
+    if (!selectedMessageId) {
+      await queryClient.fetchQuery(
+        [QueryKeys.messages, conversationId],
+        () => dataService.getMessagesByConvoId(conversationId),
+        { staleTime: 0 },
+      );
+      selectedMessageId = getActiveLatestMessage()?.messageId;
+    }
+
+    if (!selectedMessageId) {
       throw createShareTargetError('NO_MESSAGES');
     }
 
-    const persistedMessages = await queryClient.fetchQuery(
-      [QueryKeys.shareTargetMessages, conversationId],
-      () => dataService.getMessagesByConvoId(conversationId),
-      { staleTime: 0 },
-    );
-    if (persistedMessages.length === 0) {
-      throw createShareTargetError('NO_MESSAGES');
-    }
-    if (!persistedMessages.some((message) => message.messageId === latestMessageId)) {
+    const persistedMessages = await dataService.getMessageById(conversationId, selectedMessageId);
+    if (!persistedMessages.some((message) => message.messageId === selectedMessageId)) {
       throw createShareTargetError('TARGET_MESSAGE_NOT_FOUND');
     }
 
-    return latestMessageId;
-  }, [conversationId, latestMessageId, queryClient]);
+    return selectedMessageId;
+  }, [conversationId, getActiveLatestMessage, latestMessageId, queryClient]);
   const { data: share, isLoading } = useGetSharedLinkQuery(conversationId);
   const shareId = share?.shareId ?? '';
 

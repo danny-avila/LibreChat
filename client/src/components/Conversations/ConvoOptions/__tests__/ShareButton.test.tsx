@@ -19,7 +19,9 @@ let mockShare: {
 const mockCopyLink = jest.fn(() => true);
 const mockAnnouncePolite = jest.fn();
 const mockGetMessagesByConvoId = jest.fn();
+const mockGetMessageById = jest.fn();
 let mockResolveTargetMessageId: (() => Promise<string>) | undefined;
+let mockLatestMessageId: string | null = 'message-1';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -28,6 +30,7 @@ jest.mock('librechat-data-provider', () => {
     dataService: {
       ...actual.dataService,
       getMessagesByConvoId: (...args: unknown[]) => mockGetMessagesByConvoId(...args),
+      getMessageById: (...args: unknown[]) => mockGetMessageById(...args),
     },
   };
 });
@@ -41,7 +44,9 @@ jest.mock('~/data-provider', () => ({
 }));
 
 jest.mock('~/hooks/Messages/useLatestMessage', () => ({
-  useLatestMessageId: () => 'message-1',
+  useLatestMessageId: () => mockLatestMessageId,
+  useGetLatestMessage: () => () =>
+    mockLatestMessageId == null ? null : { messageId: mockLatestMessageId },
 }));
 
 jest.mock('~/hooks', () => ({
@@ -118,6 +123,8 @@ describe('ShareButton', () => {
     mockCopyLink.mockReturnValue(true);
     mockAnnouncePolite.mockClear();
     mockGetMessagesByConvoId.mockReset();
+    mockGetMessageById.mockReset();
+    mockLatestMessageId = 'message-1';
     mockResolveTargetMessageId = undefined;
   });
 
@@ -212,23 +219,50 @@ describe('ShareButton', () => {
     );
   });
 
-  it('verifies the selected branch tail against freshly persisted messages', async () => {
-    mockGetMessagesByConvoId.mockResolvedValue([{ messageId: 'message-1' }]);
+  it('verifies the selected branch tail with a bounded persisted-message read', async () => {
+    mockGetMessageById.mockResolvedValue([{ messageId: 'message-1' }]);
     renderShareButton();
 
     await expect(mockResolveTargetMessageId?.()).resolves.toBe('message-1');
     await expect(mockResolveTargetMessageId?.()).resolves.toBe('message-1');
-    expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(2);
-    expect(mockGetMessagesByConvoId).toHaveBeenCalledWith(ACTIVE_CONVERSATION_ID);
+    expect(mockGetMessageById).toHaveBeenCalledTimes(2);
+    expect(mockGetMessageById).toHaveBeenCalledWith(ACTIVE_CONVERSATION_ID, 'message-1');
+    expect(mockGetMessagesByConvoId).not.toHaveBeenCalled();
   });
 
   it('rejects an unsaved selected tail instead of dropping the branch target', async () => {
-    mockGetMessagesByConvoId.mockResolvedValue([{ messageId: 'different-branch-message' }]);
+    mockGetMessageById.mockResolvedValue([]);
     renderShareButton();
 
     await expect(mockResolveTargetMessageId?.()).rejects.toMatchObject({
       code: 'TARGET_MESSAGE_NOT_FOUND',
     });
+  });
+
+  it('hydrates the message cache before deciding an initially unloaded chat is empty', async () => {
+    mockLatestMessageId = null;
+    mockGetMessagesByConvoId.mockImplementation(async () => {
+      mockLatestMessageId = 'persisted-message';
+      return [{ messageId: 'persisted-message' }];
+    });
+    mockGetMessageById.mockResolvedValue([{ messageId: 'persisted-message' }]);
+    renderShareButton();
+
+    await expect(mockResolveTargetMessageId?.()).resolves.toBe('persisted-message');
+    expect(mockGetMessagesByConvoId).toHaveBeenCalledWith(ACTIVE_CONVERSATION_ID);
+    expect(mockGetMessageById).toHaveBeenCalledWith(ACTIVE_CONVERSATION_ID, 'persisted-message');
+  });
+
+  it('reports an empty chat only after checking persisted messages', async () => {
+    mockLatestMessageId = null;
+    mockGetMessagesByConvoId.mockResolvedValue([]);
+    renderShareButton();
+
+    await expect(mockResolveTargetMessageId?.()).rejects.toMatchObject({
+      code: 'NO_MESSAGES',
+    });
+    expect(mockGetMessagesByConvoId).toHaveBeenCalledWith(ACTIVE_CONVERSATION_ID);
+    expect(mockGetMessageById).not.toHaveBeenCalled();
   });
 
   it('sends no target message when sharing a conversation other than the open one', () => {
