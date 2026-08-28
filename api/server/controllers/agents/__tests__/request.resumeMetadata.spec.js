@@ -78,6 +78,48 @@ const mockIsScheduleLive = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn();
 const mockExecuteAgentEventActor = jest.fn();
 const mockResumeAgentEventActor = jest.fn();
+const mockCreateAgentEventActorTurn = jest.fn((input, dependencies) => {
+  let historyToken;
+  let historyOwner;
+  return {
+    run: async () => {
+      if (input.strategy === 'checkpoint') {
+        const result =
+          input.checkpoint.kind === 'resume'
+            ? await mockResumeAgentEventActor(input.checkpoint.input, dependencies.actor)
+            : await mockExecuteAgentEventActor(input.checkpoint.input, dependencies.actor);
+        return { adapter: 'checkpoint', ...result };
+      }
+      const token = 'event-actor-history-token';
+      const acquired = await dependencies.history.begin({ ...input.history.owner, token });
+      if (!acquired) {
+        throw Object.assign(new Error('The event actor is temporarily unavailable'), {
+          code: 'EVENT_ACTOR_NOT_READY',
+          status: 409,
+        });
+      }
+      historyToken = token;
+      historyOwner = input.history.owner;
+      try {
+        await input.history.persistToken(token);
+      } catch (error) {
+        historyToken = undefined;
+        historyOwner = undefined;
+        await dependencies.history.complete({ ...input.history.owner, token });
+        throw error;
+      }
+      return { adapter: 'history', value: await input.history.invoke() };
+    },
+    historyPersisted: async () => {
+      if (historyToken == null) {
+        return;
+      }
+      const token = historyToken;
+      historyToken = undefined;
+      await dependencies.history.complete({ ...historyOwner, token });
+    },
+  };
+});
 const mockCreateAgentEventActorDetachedActionLifecycle = jest.fn(() => undefined);
 const mockFindAgentEventAppliedAction = jest.fn();
 const mockResolveAgentTurnExecutionPlan = jest.fn((input) => {
@@ -265,8 +307,7 @@ jest.mock('@librechat/api', () => ({
     return messages.length === 0;
   },
   deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
-  executeAgentEventActor: (...args) => mockExecuteAgentEventActor(...args),
-  resumeAgentEventActor: (...args) => mockResumeAgentEventActor(...args),
+  createAgentEventActorTurn: (...args) => mockCreateAgentEventActorTurn(...args),
   createAgentEventActorDetachedActionLifecycle: (...args) =>
     mockCreateAgentEventActorDetachedActionLifecycle(...args),
   parseAgentEventActorDetachedCompletion: (value) => (value?.version === 1 ? value : undefined),
@@ -4664,7 +4705,7 @@ describe('ResumableAgentController resume metadata', () => {
       undefined,
     ],
     [
-      'pre-cutover pause-capable fleet',
+      'pre-capability pause consumer fleet',
       { toolDefinitions: [] },
       { toolApproval: { enabled: true } },
       undefined,
@@ -4706,7 +4747,7 @@ describe('ResumableAgentController resume metadata', () => {
         }),
       };
       const shouldCheckpoint =
-        _label !== 'memory-checkpointer' && _label !== 'pre-cutover pause-capable fleet';
+        _label !== 'memory-checkpointer' && _label !== 'pre-capability pause consumer fleet';
       if (shouldCheckpoint) {
         mockExecuteAgentEventActor.mockImplementationOnce(async (input) => {
           await input.invoke({

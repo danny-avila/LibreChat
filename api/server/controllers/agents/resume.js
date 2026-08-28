@@ -41,6 +41,7 @@ const {
   getSafeErrorMetadata,
   isAgentEventRetentionActive,
   resumeAgentEventActor,
+  settleAgentEventActorHistoryTurn,
   createAgentEventActionRecorder,
   createAgentEventActorDetachedActionLifecycle,
   findAgentEventAppliedAction,
@@ -154,12 +155,15 @@ async function sealResumedLegacyEventActorTurn({ userId, conversationId, metadat
     return;
   }
   try {
-    const sealed = await completeAgentEventActorLegacyTurn({
-      user: userId,
-      conversationId,
-      ...(metadata?.tenantId == null ? {} : { tenantId: metadata.tenantId }),
-      token,
-    });
+    const sealed = await settleAgentEventActorHistoryTurn(
+      {
+        user: userId,
+        conversationId,
+        ...(metadata?.tenantId == null ? {} : { tenantId: metadata.tenantId }),
+        token,
+      },
+      completeAgentEventActorLegacyTurn,
+    );
     if (!sealed) {
       logger.error(
         `[event-actor] Resumed legacy turn fence ${token} was not sealed; forks stay blocked until bounded reclaim`,

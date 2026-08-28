@@ -30,8 +30,7 @@ const {
   getAttachmentTitleText,
   createMCPRuntimeRequestBody,
   isAgentEventRetentionActive,
-  executeAgentEventActor,
-  resumeAgentEventActor,
+  createAgentEventActorTurn,
   createAgentEventActorDetachedActionLifecycle,
   parseAgentEventActorDetachedCompletion,
   EVENT_ACTOR_DETACHED_COMPLETION_SOURCE,
@@ -1747,9 +1746,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             }
           : undefined,
       canPause: eventActorMayPause,
-      /** Protocol v2 is the existing homogeneous-fleet cutover. Keeping
-       * pause-capable producers on the legacy path under v1 prevents an old
-       * `/resume` replica from consuming a signed suspension it cannot claim. */
+      /** Old trusted producers can coexist during a direct rolling upgrade.
+       * Their immutable v1 request keeps pause-capable turns on the history
+       * adapter until every consumer understands durable suspensions. */
       durableEventActorSuspensions: generationProtocolVersion >= GENERATION_PROTOCOL_V2,
       checkpointerType: agentsConfig?.checkpointer?.type,
     });
@@ -1923,36 +1922,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       const eventActorTenantId = req._agentEventBindingTenantId;
       let appliedEventActor;
       let eventActorPersistenceComplete = false;
-      let legacyEventActorTurnToken;
-      /** Closes the durable legacy-turn fence once this turn's history is
-       * persisted, clearing the token and advancing the epoch in one write. A
-       * failure here leaves the token SET, which keeps blocking forks until an
-       * explicit reconciliation proves the ambiguous turn safe to release. */
-      const sealLegacyEventActorTurn = async () => {
-        if (legacyEventActorTurnToken == null) {
-          return;
-        }
-        const token = legacyEventActorTurnToken;
-        legacyEventActorTurnToken = undefined;
-        try {
-          const sealed = await completeAgentEventActorLegacyTurn({
-            user: userId,
-            conversationId,
-            ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
-            token,
-          });
-          if (!sealed) {
-            logger.error(
-              `[event-actor] Legacy turn fence ${token} was not sealed; forks stay blocked pending reconciliation`,
-            );
-          }
-        } catch (sealError) {
-          logger.error(
-            `[event-actor] Failed to seal legacy turn fence ${token}; forks stay blocked pending reconciliation`,
-            sealError,
-          );
-        }
-      };
+      let eventActorTurn;
       const recordEventActorPersistenceFailure = async (error) => {
         if (appliedEventActor == null || eventActorPersistenceComplete) {
           return;
@@ -2191,73 +2161,108 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           getReceipt: getAgentEventActorReceipt,
           clearReconciliation: clearAgentEventActorReconciliation,
         };
-        const sendPromise = usesCheckpointStrategy
-          ? (isInternalDetachedCompletion
-              ? resumeAgentEventActor(
-                  {
+        let checkpointTurn;
+        if (usesCheckpointStrategy && isInternalDetachedCompletion) {
+          checkpointTurn = {
+            kind: 'resume',
+            input: {
+              user: userId,
+              ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+              conversationId,
+              bindingId: turnExecutionPlan.binding.bindingId,
+              suspension: internalDetachedSuspension.suspension,
+              resumeAttemptId: clientRequestId,
+              resumeValue: {
+                type: EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
+                taskId: internalDetachedAction.taskId,
+                status: internalDetachedAction.status,
+                ...(internalDetachedAction.result == null
+                  ? {}
+                  : { result: internalDetachedAction.result }),
+                ...(internalDetachedAction.error == null
+                  ? {}
+                  : { error: internalDetachedAction.error }),
+              },
+              signal: job.abortController.signal,
+              checkpointer: req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
+              expectedAction: turnExecutionPlan.expectedAction,
+              resume: async (actorContext) => {
+                client.checkpointNamespace = actorContext.checkpointNamespace;
+                client.eventActorCheckpointId = actorContext.checkpointId;
+                client.eventActorInvocationId = actorContext.invocationId;
+                client.eventActorContinuation = actorContext.continuation;
+                return client.sendMessage(text, messageOptions);
+              },
+              readAppliedAction: readAppliedEventAction,
+              readSuspension: () =>
+                eventActorDetachedAction?.readSuspension() ?? client.readEventActorSuspension(),
+              readResultContext: () => client.getEventActorContext(),
+            },
+          };
+        } else if (usesCheckpointStrategy) {
+          checkpointTurn = {
+            kind: 'execute',
+            input: {
+              user: userId,
+              ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+              conversationId,
+              bindingId: turnExecutionPlan.binding.bindingId,
+              invocationId: actorInvocationId,
+              event: agentEventDelivery.event,
+              expectedAction: turnExecutionPlan.expectedAction,
+              signal: job.abortController.signal,
+              checkpointer: req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
+              resolveContext: (state) => client.prepareEventActorContext(state),
+              readResultContext: () => client.getEventActorContext(),
+              invoke: async (actorContext) => {
+                client.checkpointNamespace = actorContext.checkpointNamespace;
+                client.eventActorCheckpointId = actorContext.checkpointId;
+                client.eventActorInvocationId = actorContext.invocationId;
+                client.eventActorContinuation = actorContext.continuation;
+                return client.sendMessage(text, messageOptions);
+              },
+              readAppliedAction: readAppliedEventAction,
+              readSuspension: () =>
+                eventActorDetachedAction?.readSuspension() ?? client.readEventActorSuspension(),
+            },
+          };
+        }
+        const isBoundEventActor =
+          agentEventDelivery?.event != null && req._agentEventBindingParentConversationId != null;
+        eventActorTurn = isBoundEventActor
+          ? createAgentEventActorTurn(
+              {
+                strategy: turnExecutionPlan.strategy,
+                ...(checkpointTurn == null ? {} : { checkpoint: checkpointTurn }),
+                history: {
+                  owner: {
                     user: userId,
-                    ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
                     conversationId,
-                    bindingId: turnExecutionPlan.binding.bindingId,
-                    suspension: internalDetachedSuspension.suspension,
-                    resumeAttemptId: clientRequestId,
-                    resumeValue: {
-                      type: EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
-                      taskId: internalDetachedAction.taskId,
-                      status: internalDetachedAction.status,
-                      ...(internalDetachedAction.result == null
-                        ? {}
-                        : { result: internalDetachedAction.result }),
-                      ...(internalDetachedAction.error == null
-                        ? {}
-                        : { error: internalDetachedAction.error }),
-                    },
-                    signal: job.abortController.signal,
-                    checkpointer: req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
-                    expectedAction: turnExecutionPlan.expectedAction,
-                    resume: async (actorContext) => {
-                      client.checkpointNamespace = actorContext.checkpointNamespace;
-                      client.eventActorCheckpointId = actorContext.checkpointId;
-                      client.eventActorInvocationId = actorContext.invocationId;
-                      client.eventActorContinuation = actorContext.continuation;
-                      return client.sendMessage(text, messageOptions);
-                    },
-                    readAppliedAction: readAppliedEventAction,
-                    readSuspension: () =>
-                      eventActorDetachedAction?.readSuspension() ??
-                      client.readEventActorSuspension(),
-                    readResultContext: () => client.getEventActorContext(),
-                  },
-                  actorDependencies,
-                )
-              : executeAgentEventActor(
-                  {
-                    user: userId,
                     ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
-                    conversationId,
-                    bindingId: turnExecutionPlan.binding.bindingId,
-                    invocationId: actorInvocationId,
-                    event: agentEventDelivery.event,
-                    expectedAction: turnExecutionPlan.expectedAction,
-                    signal: job.abortController.signal,
-                    checkpointer: req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
-                    resolveContext: (state) => client.prepareEventActorContext(state),
-                    readResultContext: () => client.getEventActorContext(),
-                    invoke: async (actorContext) => {
-                      client.checkpointNamespace = actorContext.checkpointNamespace;
-                      client.eventActorCheckpointId = actorContext.checkpointId;
-                      client.eventActorInvocationId = actorContext.invocationId;
-                      client.eventActorContinuation = actorContext.continuation;
-                      return client.sendMessage(text, messageOptions);
-                    },
-                    readAppliedAction: readAppliedEventAction,
-                    readSuspension: () =>
-                      eventActorDetachedAction?.readSuspension() ??
-                      client.readEventActorSuspension(),
                   },
-                  actorDependencies,
-                )
-            ).then(async ({ value, execution }) => {
+                  persistToken: (token) =>
+                    GenerationJobManager.updateMetadata(
+                      streamId,
+                      { agentEventLegacyTurnToken: token },
+                      jobCreatedAt,
+                    ),
+                  invoke: () => client.sendMessage(text, messageOptions),
+                },
+              },
+              {
+                actor: actorDependencies,
+                history: {
+                  begin: beginAgentEventActorLegacyTurn,
+                  complete: completeAgentEventActorLegacyTurn,
+                },
+              },
+            )
+          : undefined;
+        const sendPromise = eventActorTurn
+          ? eventActorTurn.run().then(async ({ adapter, value, execution }) => {
+              if (adapter !== 'checkpoint') {
+                return value;
+              }
               if (execution.status === 'applied') {
                 appliedEventActor = {
                   invocationId: actorInvocationId,
@@ -2291,42 +2296,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               });
               return value;
             })
-          : (async () => {
-              if (
-                agentEventDelivery?.event != null &&
-                req._agentEventBindingParentConversationId != null
-              ) {
-                const token = crypto.randomUUID();
-                /** Open the fence BEFORE execution so a fork can neither run
-                 * nor commit while this turn's messages are not yet durable. */
-                const legacyTurnOwner = {
-                  user: userId,
-                  conversationId,
-                  ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
-                };
-                const acquiredLegacyTurn = await beginAgentEventActorLegacyTurn({
-                  ...legacyTurnOwner,
-                  token,
-                });
-                if (!acquiredLegacyTurn) {
-                  throw Object.assign(new Error('The event actor is temporarily unavailable'), {
-                    code: 'EVENT_ACTOR_NOT_READY',
-                    status: 409,
-                  });
-                }
-                /** The same exact token must survive a HITL pause. Retain local
-                 * ownership before the Redis write so a metadata failure can
-                 * still seal this token after its durable error turn is saved;
-                 * provider execution starts only after metadata persists. */
-                legacyEventActorTurnToken = token;
-                await GenerationJobManager.updateMetadata(
-                  streamId,
-                  { agentEventLegacyTurnToken: token },
-                  jobCreatedAt,
-                );
-              }
-              return client.sendMessage(text, messageOptions);
-            })();
+          : client.sendMessage(text, messageOptions);
 
         if (titleEligible && titleTiming === 'immediate') {
           immediateTitlePromise = addTitle(req, {
@@ -2670,7 +2640,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             throw new Error('Applied event actor history barrier could not be durably recorded');
           }
         }
-        await sealLegacyEventActorTurn();
+        await eventActorTurn?.historyPersisted();
         eventActorPersistenceComplete = true;
 
         // If the user stopped this turn — or an empty preempt boundary truncated
@@ -2900,7 +2870,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
          * fails. Time cannot prove whether an external action occurred, so an
          * ambiguous fence remains fail-closed pending explicit reconciliation. */
         if (legacyEventActorErrorHistoryDurable) {
-          await sealLegacyEventActorTurn();
+          await eventActorTurn?.historyPersisted();
         }
 
         if (ownsScheduledFailure && !scheduleTerminalOutcomeRecorded) {

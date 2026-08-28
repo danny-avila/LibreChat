@@ -67,7 +67,7 @@ describe('resolveAgentTurnExecutionPlan', () => {
     ['no expected action', { event: { ...boundEvent(), expectedAction: undefined } }],
     ['memory checkpointer', { event: boundEvent(), checkpointerType: 'memory' }],
     [
-      'pre-cutover pause consumer fleet',
+      'pre-capability pause consumer fleet',
       { event: boundEvent(), canPause: true, durableEventActorSuspensions: false },
     ],
   ] as const)('falls back to history for %s', (_label, overrides) => {
