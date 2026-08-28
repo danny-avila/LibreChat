@@ -26,6 +26,12 @@ jest.mock('~/hooks', () => ({
     if (key === 'com_ui_one_action_failed') {
       return '1 failed';
     }
+    if (key === 'com_ui_n_actions_cancelled') {
+      return `${values?.[0]} cancelled`;
+    }
+    if (key === 'com_ui_one_action_cancelled') {
+      return '1 cancelled';
+    }
     if (key === 'com_ui_web_searched') {
       return 'Searched the web';
     }
@@ -789,6 +795,35 @@ describe('ToolCallGroup image hoisting', () => {
      *  failure even though the empty output never parses as an error. */
     expect(
       screen.getByRole('button', { name: 'Ran 2 actions, Create File ×2 · 1 failed' }),
+    ).toBeInTheDocument();
+  });
+
+  it('names a cancelled action in the header before collapsing', () => {
+    const cancelled = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: {
+        id: 'c2',
+        name: 'create_file',
+        args: '{}',
+        output: '',
+        runStepStatus: 'cancelled',
+      },
+    } as unknown as TMessageContentParts;
+
+    renderGroup({
+      ...baseProps,
+      parts: [
+        { part: makePart('c1', 'created', 'create_file'), idx: 0 },
+        { part: cancelled, idx: 1 },
+      ],
+      lastContentIdx: 1,
+    });
+
+    /** A stopped action is settled but not successful, and the group collapses
+     *  over the only other notice, so the header must carry it and must not
+     *  count it as a failure. */
+    expect(
+      screen.getByRole('button', { name: 'Ran 2 actions, Create File ×2 · 1 cancelled' }),
     ).toBeInTheDocument();
   });
 
