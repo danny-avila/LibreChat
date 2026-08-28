@@ -30,10 +30,21 @@ export default function CodeWindowHeader({ language, code, diffStats }: CodeWind
         <LangIcon lang={language} className="size-3.5 shrink-0" />
         {language}
         {diffStats && (
-          <span className="flex items-center gap-1 font-normal tabular-nums" aria-hidden="true">
-            <span className="text-status-success">+{diffStats.additions}</span>
-            <span className="text-status-error">-{diffStats.deletions}</span>
-          </span>
+          <>
+            <span className="flex items-center gap-1 font-normal tabular-nums" aria-hidden="true">
+              <span className="text-status-success">+{diffStats.additions}</span>
+              <span className="text-status-error">-{diffStats.deletions}</span>
+            </span>
+            {/* The glyphs above carry the meaning visually through color and
+                sign, which neither reaches a screen reader, so the counts are
+                announced as words instead of being dropped. */}
+            <span className="sr-only">
+              {localize('com_ui_diff_stats', {
+                0: String(diffStats.additions),
+                1: String(diffStats.deletions),
+              })}
+            </span>
+          </>
         )}
       </span>
       <CopyButton isCopied={isCopied} onClick={handleCopy} label={localize('com_ui_copy_code')} />

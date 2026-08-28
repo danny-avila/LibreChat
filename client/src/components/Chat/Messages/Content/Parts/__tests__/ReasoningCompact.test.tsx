@@ -8,6 +8,11 @@ jest.mock('~/hooks', () => ({
     style: { display: 'grid', gridTemplateRows: isExpanded ? '1fr' : '0fr' },
     ref: { current: null },
   }),
+  useLazyCollapseBody: (isExpanded: boolean) => ({
+    shouldRenderBody: isExpanded,
+    mountBody: jest.fn(),
+    handleTransitionEnd: jest.fn(),
+  }),
 }));
 
 jest.mock('../Thinking', () => ({
@@ -58,5 +63,15 @@ describe('ReasoningCompact', () => {
 
     expect(row).toHaveClass('mb-1', 'mt-0');
     expect(row).not.toHaveClass('mt-1');
+  });
+
+  it('leaves the full reasoning text unmounted while collapsed', () => {
+    /** Collapsed is the default whenever thoughts are hidden, and a streaming
+     *  THINK part re-renders on every delta, so keeping the whole text mounted
+     *  behind the invisible panel cost layout work for nothing. */
+    render(<ReasoningCompact reasoning="A long stream of reasoning" label="Thoughts" />);
+
+    expect(screen.getByRole('button', { name: 'Thoughts' })).toBeInTheDocument();
+    expect(screen.queryByText('A long stream of reasoning')).not.toBeInTheDocument();
   });
 });
