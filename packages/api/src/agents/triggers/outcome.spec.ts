@@ -856,6 +856,108 @@ describe('agent event terminal outcomes', () => {
     );
   });
 
+  it('retires the claimed predecessor when a successor fails before re-pause storage', async () => {
+    const predecessor = suspensionEvidence('suspension-claimed-predecessor', 1);
+    const initialSnapshot = {
+      state: null,
+      epoch: 1,
+      legacyTurn: null,
+      reconciliations: [
+        {
+          invocationId: 'trigger_1',
+          actionAdmitted: true,
+          status: 'invocation_pending' as const,
+          checkpoint: predecessor.checkpoint,
+          action: { toolName: 'submit_move' },
+          observedAt: new Date(),
+        },
+      ],
+      suspension: {
+        kind: 'internal_completion' as const,
+        suspension: predecessor,
+        actionId: 'task-predecessor',
+        jobCreatedAt: 1_787_000_000_000,
+        handlingGenerationCreatedAt: 1_787_000_000_000,
+        status: 'claimed' as const,
+        resumeAttemptId: 'trigger_completion_failed_successor',
+        observedAt: new Date(),
+      },
+    };
+    const closedSnapshot = {
+      ...initialSnapshot,
+      reconciliations: [],
+      suspension: {
+        ...initialSnapshot.suspension,
+        status: 'closed' as const,
+        outcome: 'cancelled' as const,
+      },
+    };
+    const getAgentEventActorSnapshot = jest
+      .fn()
+      .mockResolvedValueOnce(initialSnapshot)
+      .mockResolvedValue(closedSnapshot);
+    const releaseAgentEventActorAction = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('delivery store unavailable'))
+      .mockResolvedValue(true);
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      getAgentEventActorSnapshot,
+      releaseAgentEventActorAction,
+      getAgentEventActorDetachedAction: jest.fn().mockResolvedValue({
+        version: 1,
+        invocationId: 'trigger_1',
+        expectedToolName: 'submit_move',
+        toolName: 'submit_move_mcp_chess',
+        toolCallId: 'call-failed-successor',
+        taskId: 'task-failed-successor',
+        idempotencyKey: '6'.repeat(64),
+        launchAttempt: 1,
+        status: 'failed',
+        reservedAt: new Date(),
+        observedAt: new Date(),
+        recoveryAfter: new Date(),
+        settledAt: new Date(),
+        error: 'successor failed before re-pause storage',
+      }),
+    });
+
+    const terminalJob = job({
+      createdAt: 1_787_000_010_000,
+      agentEventDeliveryKey: 'trigger_completion_failed_successor',
+      agentEventInvocationKey: 'trigger_1',
+      agentEventBindingId: 'binding-1',
+      agentEventSuspension: undefined,
+    });
+
+    await expect(handler('conversation-1', terminalJob, [])).rejects.toThrow(
+      'delivery store unavailable',
+    );
+    await handler('conversation-1', terminalJob, []);
+
+    expect(mockedCancelAgentEventActor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        suspension: predecessor,
+        claimedResumeAttemptId: 'trigger_completion_failed_successor',
+        reason: 'cancelled',
+      }),
+      expect.any(Object),
+    );
+    expect(releaseAgentEventActorAction).toHaveBeenCalledTimes(2);
+    expect(releaseAgentEventActorAction).toHaveBeenLastCalledWith(
+      expect.objectContaining({ deliveryKey: 'trigger_1', bindingId: 'binding-1' }),
+    );
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledTimes(2);
+    expect(
+      settleAgentTriggerHandlingOutcome.mock.calls.map(([input]) => input.deliveryKey),
+    ).toEqual(['trigger_1', 'trigger_completion_failed_successor']);
+    expect(settleAgentTriggerHandlingOutcome.mock.calls[0][0]).toMatchObject({
+      status: 'failed',
+      error: 'successor failed before re-pause storage',
+    });
+  });
+
   it('records reconciliation when a detached action succeeds after generation abort', async () => {
     const suspension = suspensionEvidence('suspension-aborted-success');
     const recordAgentEventActorReconciliation = jest.fn().mockResolvedValue(true);

@@ -451,6 +451,37 @@ export function createAgentEventTerminalHandler(
             ? 'Detached expected action launch is indeterminate'
             : `Detached expected action ${detachedSuspensionAction.status}`);
       }
+      if (
+        job.agentEventSuspension == null &&
+        completionDeliveryKey != null &&
+        (detachedSuspensionAction?.status === 'failed' ||
+          detachedSuspensionAction?.status === 'cancelled') &&
+        unprojectedSuspension?.status === 'claimed' &&
+        unprojectedSuspension.resumeAttemptId === completionDeliveryKey &&
+        unprojectedSuspension.suspension.invocation.invocationId === job.agentEventDeliveryKey
+      ) {
+        /** A resumed hop can persist exact negative terminal evidence before
+         * replacing its claimed predecessor with the successor suspension.
+         * The completion delivery key is also the resume-attempt fence, so it
+         * authorizes retiring only this generation's claimed predecessor. */
+        retiredWithoutAction = unprojectedSuspension;
+        const cancellation = await cancelAgentEventActor(
+          {
+            ...owner,
+            suspension: unprojectedSuspension.suspension,
+            cancelAttemptId: `terminal:${job.createdAt}`,
+            reason: 'cancelled',
+            claimedResumeAttemptId: completionDeliveryKey,
+          },
+          { cancelSuspension: methods.cancelAgentEventActorSuspension },
+        );
+        if (cancellation.status !== 'cancelled') {
+          throw new Error(
+            `Agent event actor ${job.agentEventDeliveryKey} detached predecessor cancellation is indeterminate`,
+          );
+        }
+        snapshot = await methods.getAgentEventActorSnapshot(owner);
+      }
       /** An aborted/error generation does not prove its detached side effect
        * stopped. Retain the original delivery and suspension until exact
        * terminal evidence arrives or the recovery fence records uncertainty. */
@@ -707,17 +738,27 @@ export function createAgentEventTerminalHandler(
      * admission was not yet released. Only exact closed no-action evidence is
      * eligible; a committed suspension represents an applied action. */
     const closed = snapshot?.suspension;
+    const closedDetachedPredecessor =
+      job.agentEventSuspension == null &&
+      completionDeliveryKey != null &&
+      (detachedSuspensionAction?.status === 'failed' ||
+        detachedSuspensionAction?.status === 'cancelled') &&
+      closed?.status === 'closed' &&
+      closed.outcome === 'cancelled' &&
+      closed.resumeAttemptId === completionDeliveryKey &&
+      closed.suspension.invocation.invocationId === job.agentEventDeliveryKey;
     if (
       retiredWithoutAction == null &&
       closed?.status === 'closed' &&
       (closed.outcome === 'settled' || closed.outcome === 'cancelled') &&
-      closed.jobCreatedAt === job.createdAt &&
       closed.suspension.invocation.invocationId === job.agentEventDeliveryKey &&
-      (closed.outcome === 'settled'
-        ? closed.resumeAttemptId != null && closed.resumeAttemptId === job.providerExecutionId
-        : isIrrecoverablyTerminal &&
-          (closed.resumeAttemptId == null ||
-            closed.resumeAttemptId !== job.providerExecutionStartedId))
+      (closedDetachedPredecessor ||
+        (closed.jobCreatedAt === job.createdAt &&
+          (closed.outcome === 'settled'
+            ? closed.resumeAttemptId != null && closed.resumeAttemptId === job.providerExecutionId
+            : isIrrecoverablyTerminal &&
+              (closed.resumeAttemptId == null ||
+                closed.resumeAttemptId !== job.providerExecutionStartedId))))
     ) {
       retiredWithoutAction = closed;
     }
