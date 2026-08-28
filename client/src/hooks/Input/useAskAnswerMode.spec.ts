@@ -266,6 +266,39 @@ describe('useAskAnswerMode', () => {
     expect(mockReleasedComposerText).toEqual({});
   });
 
+  it('hands the released text back for an option answer too', () => {
+    /** Only the free-text path sets `consumedComposerText`, so gating the
+     *  restore on it discarded the stash whenever the user answered by
+     *  clicking an option (or skipping) instead of typing. */
+    mockReleasedComposerText = { a1: 'an ordinary unsent message' };
+    const askWithOptions = {
+      actionId: 'a1',
+      question: {
+        question: 'Pick one',
+        options: [
+          { label: 'Blue', value: 'blue' },
+          { label: 'Green', value: 'green' },
+        ],
+        multiSelect: false,
+      },
+    } as unknown as typeof liveAsk;
+    mockUseGetMessages.mockReturnValue({ data: askWithOptions });
+    mockSubmitAskAnswer.mockImplementation(
+      (_actionId: string, _answer: string, options?: { onSuccess?: () => void }) => {
+        options?.onSuccess?.();
+      },
+    );
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+
+    act(() => {
+      result.current.submitOption(0);
+    });
+
+    expect(mockSubmitAskAnswer).toHaveBeenCalledWith('a1', 'blue', expect.anything());
+    expect(mockSetComposerText).toHaveBeenLastCalledWith('text', 'an ordinary unsent message');
+    expect(mockReleasedComposerText).toEqual({});
+  });
+
   it('does not let a delayed answer success clear the composer or selection after navigation', () => {
     let finishAnswer: (() => void) | undefined;
     mockUseGetMessages.mockReturnValue({ data: liveAsk });

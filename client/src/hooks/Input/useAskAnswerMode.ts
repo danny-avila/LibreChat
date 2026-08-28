@@ -369,20 +369,23 @@ export default function useAskAnswerMode(conversationId?: string | null) {
             return next;
           });
           /** A successful answer never goes through `collapse`, so the released
-           *  text has to be handed back here too or the user's ordinary
-           *  message dies with the question. Restored in place of the reset
-           *  when one is stashed; the entry is dropped either way so the map
-           *  stays bounded. */
+           *  text has to be handed back here too or the user's ordinary message
+           *  dies with the question.
+           *
+           *  Restored whenever one is stashed, independently of the reset
+           *  condition below: only the free-text path sets
+           *  `consumedComposerText`, so gating on it discarded the stash on an
+           *  option click or Skip. The stash also outranks whatever the
+           *  composer currently holds, which is the answer draft this
+           *  submission just consumed. */
           const released = releasedComposerTextRef.current[submittedActionId];
-          if (
+          if (released) {
+            currentScope.formContext?.setValue('text', released);
+          } else if (
             (consumedComposerText || (wasActive && saveDrafts)) &&
             currentScope.formContext?.getValues('text') === submittedComposerText
           ) {
-            if (released) {
-              currentScope.formContext.setValue('text', released);
-            } else {
-              currentScope.formContext.reset();
-            }
+            currentScope.formContext.reset();
           }
           setReleasedComposerText((current) => {
             if (current[submittedActionId] == null) {
