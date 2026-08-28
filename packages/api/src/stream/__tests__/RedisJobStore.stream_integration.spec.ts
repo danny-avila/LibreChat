@@ -52,10 +52,6 @@ describe('RedisJobStore Integration Tests', () => {
     process.env.REDIS_KEY_PREFIX = testPrefix;
     process.env.REDIS_PING_INTERVAL = '0';
     process.env.REDIS_RETRY_MAX_ATTEMPTS = '5';
-    // This suite exercises the receipt-safe current behavior. Rollout-specific
-    // v1 defaults and mixed-client downgrade paths live in protocolRollout.
-    process.env.GENERATION_PROTOCOL_VERSION = '2';
-
     jest.resetModules();
 
     // Import Redis client

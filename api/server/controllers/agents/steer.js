@@ -1,6 +1,5 @@
 const {
   checkAccess,
-  GenerationJobManager,
   handleSteerRequest,
   handleSteerCancel,
   handleSteerArm,
@@ -25,7 +24,7 @@ const db = require('~/models');
 
 /** Upper bound before the package reads the immutable live-job marker. */
 const getHostGenerationProtocol = (req) =>
-  Math.min(getRequestedGenerationProtocol(req), getServerGenerationProtocol(GenerationJobManager));
+  Math.min(getRequestedGenerationProtocol(req), getServerGenerationProtocol());
 
 /** The package returns its job-capped effective marker in every body. Keep the
  * header and JSON inseparable at this final serialization boundary. */

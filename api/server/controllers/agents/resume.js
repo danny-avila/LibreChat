@@ -691,7 +691,7 @@ async function finalizeResumedTurn({
  */
 const ResumeAgentController = async (req, res, next, initializeClient, addTitle) => {
   const userId = req.user.id;
-  let generationProtocolVersion = negotiateNewGenerationProtocol(req, GenerationJobManager);
+  let generationProtocolVersion = negotiateNewGenerationProtocol(req);
   const { conversationId, actionId, generationCreatedAt } = req.body;
   const streamId = conversationId;
 
