@@ -634,7 +634,17 @@ interface TaskBucket {
   tasks: Map<string, BackgroundTask>;
   /** toolCallId -> taskId, for dispatch idempotency across graph re-execution. */
   byToolCall: Map<string, string>;
+  /** Caller-owned local permits acquired before a caller persists external
+   * launch authority. They prevent capacity rejection from creating a durable
+   * action that was definitely never launched. */
+  capacityPermits: Map<string, { dedupeKey: string }>;
   lastAccess: number;
+}
+
+export interface BackgroundTaskCapacityPermit {
+  id: string;
+  userId: string;
+  conversationId: string;
 }
 
 const COMPLETED_TASK_TTL_MS = 60 * 60 * 1000;
@@ -742,7 +752,7 @@ export class BackgroundTaskRegistryClass {
     }
     this.lastGlobalSweepAt = now;
     for (const [bucketKey, bucket] of this.buckets) {
-      if (now - bucket.lastAccess > IDLE_BUCKET_TTL_MS) {
+      if (now - bucket.lastAccess > IDLE_BUCKET_TTL_MS && bucket.capacityPermits.size === 0) {
         this.buckets.delete(bucketKey);
         continue;
       }
@@ -754,11 +764,75 @@ export class BackgroundTaskRegistryClass {
     const bucketKey = this.key(userId, conversationId);
     let bucket = this.buckets.get(bucketKey);
     if (!bucket) {
-      bucket = { tasks: new Map(), byToolCall: new Map(), lastAccess: now };
+      bucket = {
+        tasks: new Map(),
+        byToolCall: new Map(),
+        capacityPermits: new Map(),
+        lastAccess: now,
+      };
       this.buckets.set(bucketKey, bucket);
     }
     bucket.lastAccess = now;
     return bucket;
+  }
+
+  private dedupeKey(params: { toolCallId: string; runId?: string; agentId?: string }): string {
+    return `${params.agentId ?? ''}::${params.runId ?? ''}::${params.toolCallId}`;
+  }
+
+  private runningCount(bucket: TaskBucket): number {
+    let running = 0;
+    for (const task of bucket.tasks.values()) {
+      if (task.status === 'running') {
+        running++;
+      }
+    }
+    return running;
+  }
+
+  /** Acquires process-local capacity before a caller persists launch authority.
+   * The synchronous permit closes the capacity-rejection crash window without
+   * making ordinary background tasks durable. */
+  reserveCapacity(params: {
+    userId: string;
+    conversationId: string;
+    toolCallId: string;
+    runId?: string;
+    agentId?: string;
+  }):
+    | { permit: BackgroundTaskCapacityPermit }
+    | { task: BackgroundTask; isNew: false }
+    | { atCapacity: true } {
+    const now = Date.now();
+    this.sweep(now);
+    const bucket = this.getBucket(params.userId, params.conversationId, now);
+    this.sweepBucketTasks(bucket, now);
+    const dedupeKey = this.dedupeKey(params);
+    const existingId = bucket.byToolCall.get(dedupeKey);
+    const existing = existingId == null ? undefined : bucket.tasks.get(existingId);
+    if (existing != null) {
+      return { task: existing, isNew: false };
+    }
+    if (this.runningCount(bucket) + bucket.capacityPermits.size >= MAX_RUNNING_PER_BUCKET) {
+      return { atCapacity: true };
+    }
+    const permit: BackgroundTaskCapacityPermit = {
+      id: randomUUID(),
+      userId: params.userId,
+      conversationId: params.conversationId,
+    };
+    /** The permit is owned by the in-flight caller until it is consumed or
+     * explicitly released. Expiring it by wall clock could strand a durable
+     * reservation when MongoDB is slow; process death already clears local
+     * permits without pretending the external launch happened. */
+    bucket.capacityPermits.set(permit.id, { dedupeKey });
+    return { permit };
+  }
+
+  releaseCapacity(permit: BackgroundTaskCapacityPermit): void {
+    this.buckets
+      .get(this.key(permit.userId, permit.conversationId))
+      ?.capacityPermits.delete(permit.id);
   }
 
   /**
@@ -774,6 +848,7 @@ export class BackgroundTaskRegistryClass {
    * task and hand back a stale/foreign result instead of executing.
    */
   create(params: {
+    taskId?: string;
     userId: string;
     conversationId: string;
     toolCallId: string;
@@ -785,29 +860,41 @@ export class BackgroundTaskRegistryClass {
      *  never settle (reaped as timed out) still take the marker/heal path
      *  instead of leaving the original card on "running" forever. */
     harvestStarted?: boolean;
+    capacityPermit?: BackgroundTaskCapacityPermit;
   }): { task: BackgroundTask; isNew: boolean } | { atCapacity: true } {
     const now = Date.now();
     this.sweep(now);
     const bucket = this.getBucket(params.userId, params.conversationId, now);
     this.sweepBucketTasks(bucket, now);
 
-    const dedupeKey = `${params.agentId ?? ''}::${params.runId ?? ''}::${params.toolCallId}`;
+    const dedupeKey = this.dedupeKey(params);
     const existingId = bucket.byToolCall.get(dedupeKey);
     if (existingId) {
       const existing = bucket.tasks.get(existingId);
       if (existing) {
+        if (params.capacityPermit != null) {
+          this.releaseCapacity(params.capacityPermit);
+        }
         return { task: existing, isNew: false };
       }
     }
 
-    let running = 0;
-    for (const task of bucket.tasks.values()) {
-      if (task.status === 'running') {
-        running++;
+    if (params.capacityPermit != null) {
+      const permit = bucket.capacityPermits.get(params.capacityPermit.id);
+      if (
+        params.capacityPermit.userId !== params.userId ||
+        params.capacityPermit.conversationId !== params.conversationId ||
+        permit?.dedupeKey !== dedupeKey
+      ) {
+        throw new Error('Background task capacity permit is stale');
       }
+      bucket.capacityPermits.delete(params.capacityPermit.id);
     }
     /** Only *running* tasks gate dispatch. */
-    if (running >= MAX_RUNNING_PER_BUCKET) {
+    if (
+      params.capacityPermit == null &&
+      this.runningCount(bucket) + bucket.capacityPermits.size >= MAX_RUNNING_PER_BUCKET
+    ) {
       return { atCapacity: true };
     }
     /** The total-tasks cap bounds memory but must NOT block new work: evict the
@@ -829,7 +916,7 @@ export class BackgroundTaskRegistryClass {
     }
 
     const task: BackgroundTask = {
-      id: randomUUID(),
+      id: params.taskId ?? randomUUID(),
       toolName: params.toolName,
       toolCallId: params.toolCallId,
       messageId: params.messageId,
@@ -1050,7 +1137,9 @@ export class BackgroundTaskRegistryClass {
 export const backgroundTaskRegistry = new BackgroundTaskRegistryClass();
 
 /** Content for the synthetic ToolMessage returned when a call is backgrounded. */
-export function buildBackgroundHandleContent(task: BackgroundTask): string {
+export function buildBackgroundHandleContent(
+  task: Pick<BackgroundTask, 'id' | 'toolName' | 'status'>,
+): string {
   return JSON.stringify({
     background_task_id: task.id,
     tool: task.toolName,

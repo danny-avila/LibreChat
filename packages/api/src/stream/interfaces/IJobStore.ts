@@ -5,6 +5,7 @@ import type {
   UserSubmittedMessageFieldPath,
 } from 'librechat-data-provider';
 import type { RunStep, StandardGraph } from '@librechat/agents';
+import type { AgentEventDetachedTerminalEvidence } from '~/agents/triggers/types';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '../SteerRecovery';
@@ -283,6 +284,14 @@ export interface SerializableJobData {
    */
   isTemporary?: boolean;
   agentEventDeliveryKey?: string;
+  /** Original actor invocation when an internal completion delivery owns this generation. */
+  agentEventInvocationKey?: string;
+  /** Original actor invocation generation retained across completion HITL resumes. */
+  agentEventInvocationGenerationCreatedAt?: number;
+  /** This generation must resume on a durable detached-action producer. */
+  agentEventDetachedActionProducerRequired?: boolean;
+  /** Durable retry payload captured before detached terminal evidence is written to Mongo. */
+  agentEventDetachedTerminalEvidence?: AgentEventDetachedTerminalEvidence;
   /** Trusted actor binding copied from the authenticated delivery envelope. */
   agentEventBindingId?: string;
   agentEventExpectedAction?: import('~/agents/triggers/types').AgentTriggerExpectedAction;
@@ -408,6 +417,10 @@ export type JobMetadataPatch = Partial<
     | 'agent_id'
     | 'isTemporary'
     | 'agentEventDeliveryKey'
+    | 'agentEventInvocationKey'
+    | 'agentEventInvocationGenerationCreatedAt'
+    | 'agentEventDetachedActionProducerRequired'
+    | 'agentEventDetachedTerminalEvidence'
     | 'agentEventBindingId'
     | 'agentEventExpectedAction'
     | 'agentEventSuspension'

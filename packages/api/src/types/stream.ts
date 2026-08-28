@@ -1,6 +1,7 @@
 import type { Agents, UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { EventEmitter } from 'events';
 import type {
+  AgentEventDetachedTerminalEvidence,
   AgentEventSuspensionProjection,
   AgentTriggerExpectedAction,
 } from '../agents/triggers/types';
@@ -47,6 +48,14 @@ export interface GenerationJobMetadata {
   isTemporary?: boolean;
   /** Exact durable delivery whose accepted continuation created this generation. */
   agentEventDeliveryKey?: string;
+  /** Original actor invocation when the current mailbox delivery is an internal completion. */
+  agentEventInvocationKey?: string;
+  /** Original actor invocation generation retained across completion HITL resumes. */
+  agentEventInvocationGenerationCreatedAt?: number;
+  /** This generation must resume on a durable detached-action producer. */
+  agentEventDetachedActionProducerRequired?: boolean;
+  /** Durable retry payload captured before detached terminal evidence reaches Mongo. */
+  agentEventDetachedTerminalEvidence?: AgentEventDetachedTerminalEvidence;
   /** Trusted actor binding copied from the authenticated delivery envelope. */
   agentEventBindingId?: string;
   /** Optional action evidence contract declared by the authenticated event source. */

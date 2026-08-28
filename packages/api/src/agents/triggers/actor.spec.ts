@@ -495,6 +495,114 @@ describe('event actor host adapter', () => {
     expect(dependencies.commitState).not.toHaveBeenCalled();
   });
 
+  it('carries applied expected-action evidence across a later re-pause', async () => {
+    let storedSuspension: IAgentEventActorSuspension | undefined;
+    let pendingPause:
+      | {
+          actionId: string;
+          jobCreatedAt: number;
+          interrupt: EventActorInterrupt;
+        }
+      | undefined;
+    let observedAction: { toolName: string; toolCallId?: string } | undefined;
+    const dependencies = {
+      ...deps(),
+      storeSuspension: jest.fn(async (input) => {
+        storedSuspension = {
+          suspension: input.suspension,
+          actionId: input.actionId,
+          jobCreatedAt: input.jobCreatedAt,
+          appliedAction: input.appliedAction,
+          status: 'pending',
+          observedAt: new Date(),
+        };
+        return { status: 'stored' as const };
+      }),
+      claimSuspension: jest.fn(async ({ resumeAttemptId }) => {
+        if (storedSuspension == null) {
+          throw new Error('test suspension was not stored');
+        }
+        storedSuspension = { ...storedSuspension, status: 'claimed', resumeAttemptId };
+        return { status: 'claimed' as const };
+      }),
+      settleSuspension: jest.fn(async () => ({ status: 'settled' as const })),
+    };
+    dependencies.getSnapshot.mockImplementation(async () => ({
+      state,
+      reconciliations: [],
+      legacyTurn: null,
+      suspension: storedSuspension ?? null,
+      epoch,
+    }));
+    const initial = await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-action-repause',
+        event: { id: 'event-action-repause' },
+        signal: new AbortController().signal,
+        invoke: async () => 'initial-pause',
+        readAppliedAction: () => undefined,
+        readSuspension: () => ({
+          actionId: 'detached-task',
+          jobCreatedAt: 801,
+          interrupt: { id: 'detached-task', payload: { type: 'detached' } },
+        }),
+      },
+      dependencies,
+    );
+    if (initial.execution.status !== 'suspended') {
+      throw new Error('test setup did not suspend');
+    }
+    observedAction = { toolName: 'submit_move', toolCallId: 'call-detached' };
+    pendingPause = {
+      actionId: 'ask-user',
+      jobCreatedAt: 802,
+      interrupt: { id: 'ask-user', payload: { type: 'ask_user_question' } },
+    };
+    const repaused = await resumeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        suspension: initial.execution.suspension,
+        resumeAttemptId: 'resume-detached',
+        resumeValue: { status: 'succeeded' },
+        signal: new AbortController().signal,
+        resume: async () => 'asks-user',
+        readAppliedAction: () => observedAction,
+        readSuspension: () => pendingPause,
+      },
+      dependencies,
+    );
+    expect(repaused.execution.status).toBe('suspended');
+    expect(dependencies.storeSuspension).toHaveBeenLastCalledWith(
+      expect.objectContaining({ appliedAction: observedAction }),
+    );
+    if (repaused.execution.status !== 'suspended') {
+      throw new Error('test setup did not re-pause');
+    }
+    observedAction = undefined;
+    pendingPause = undefined;
+    const completed = await resumeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        suspension: repaused.execution.suspension,
+        resumeAttemptId: 'resume-human',
+        resumeValue: { answer: 'continue' },
+        signal: new AbortController().signal,
+        resume: async () => 'completed',
+        readAppliedAction: () => observedAction,
+        readSuspension: () => pendingPause,
+      },
+      dependencies,
+    );
+    expect(completed.execution).toMatchObject({
+      status: 'applied',
+      result: { action: { toolName: 'submit_move', toolCallId: 'call-detached' } },
+    });
+  });
+
   it('cold-starts once, then forks and warm-continues only the next event', async () => {
     const dependencies = deps();
     const invocations: Array<{ continuation: string; checkpointId?: string }> = [];

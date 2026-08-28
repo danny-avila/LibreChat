@@ -339,6 +339,10 @@ describe('RedisJobStore', () => {
       model: 'test-model',
       agent_id: 'agent-1',
       isTemporary: false,
+      agentEventDeliveryKey: 'completion-delivery-1',
+      agentEventInvocationKey: 'original-delivery-1',
+      agentEventInvocationGenerationCreatedAt: 987654,
+      agentEventDetachedActionProducerRequired: true,
       scheduleId: 'schedule-1',
       scheduledFor: '2026-08-17T12:00:00.000Z',
       scheduleConfigRevision: 4,
@@ -397,6 +401,10 @@ describe('RedisJobStore', () => {
         parentMessageId: 'parent-1',
       },
       responseMessageId: 'response-1',
+      agentEventDeliveryKey: 'completion-delivery-1',
+      agentEventInvocationKey: 'original-delivery-1',
+      agentEventInvocationGenerationCreatedAt: 987654,
+      agentEventDetachedActionProducerRequired: true,
       mcpRequestBody: {
         messageId: 'response-1',
         conversationId: 'overridden-conversation',
@@ -492,6 +500,35 @@ describe('RedisJobStore', () => {
     await expect(store.getJob('stream-malformed-answer')).resolves.toMatchObject({
       streamId: 'stream-malformed-answer',
       resolvedAskUserQuestions: undefined,
+    });
+  });
+
+  test('restores detached terminal outbox evidence from Redis', async () => {
+    const evidence = {
+      version: 1 as const,
+      deliveryKey: 'trigger-1',
+      generationCreatedAt: 100,
+      taskId: 'task-1',
+      idempotencyKey: 'a'.repeat(64),
+      status: 'succeeded' as const,
+      result: 'accepted',
+      observedAt: 150,
+    };
+    const redis = {
+      isCluster: true,
+      hgetall: jest.fn().mockResolvedValue({
+        streamId: 'stream-detached-terminal',
+        userId: 'user-1',
+        status: 'complete',
+        createdAt: '100',
+        syncSent: '0',
+        agentEventDetachedTerminalEvidence: JSON.stringify(evidence),
+      }),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(store.getJob('stream-detached-terminal')).resolves.toMatchObject({
+      agentEventDetachedTerminalEvidence: evidence,
     });
   });
 

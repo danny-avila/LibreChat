@@ -46,6 +46,7 @@ const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { initializeAgentTriggerService } = require('./services/Agents/triggers');
+const { resumeAgentEventDetachedAction } = require('./services/Agents/detachedActionResume');
 const {
   recordExpiredScheduleApproval,
   initializeScheduleErasureSweep,
@@ -295,7 +296,9 @@ if (cluster.isMaster) {
   // its durable run when the generic approval runtime expires it.
   GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);
   GenerationJobManager.setTerminalHostActionHandler(
-    createAgentEventTerminalHandler(agentEventMethods),
+    createAgentEventTerminalHandler(agentEventMethods, {
+      resumeDetachedAction: resumeAgentEventDetachedAction,
+    }),
   );
   GenerationJobManager.initialize();
   /**

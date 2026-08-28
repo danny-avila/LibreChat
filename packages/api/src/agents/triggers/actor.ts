@@ -64,6 +64,7 @@ export interface ExecuteAgentEventActorInput<T> {
   readAppliedAction(): AgentEventAppliedAction | undefined;
   readSuspension?():
     | {
+        kind?: 'human_decision' | 'internal_completion';
         actionId: string;
         jobCreatedAt: number;
         interrupt: EventActorInterrupt;
@@ -118,6 +119,7 @@ export interface ResumeAgentEventActorInput<T> {
   readAppliedAction(): AgentEventAppliedAction | undefined;
   readSuspension?():
     | {
+        kind?: 'human_decision' | 'internal_completion';
         actionId: string;
         jobCreatedAt: number;
         interrupt: EventActorInterrupt;
@@ -237,7 +239,14 @@ export async function executeAgentEventActor<T>(
   let preparedContext: AgentEventActorContext | undefined;
   let resultContext: AgentEventActorContext | undefined;
   let pendingSuspension:
-    | { actionId: string; jobCreatedAt: number; interrupt: EventActorInterrupt }
+    | {
+        kind?: 'human_decision' | 'internal_completion';
+        appliedAction?: AgentEventAppliedAction;
+        handlingGenerationCreatedAt?: number;
+        actionId: string;
+        jobCreatedAt: number;
+        interrupt: EventActorInterrupt;
+      }
     | undefined;
   let actionAppliedBeforePause = false;
   const adapter: EventActorHostAdapter<EventActorEvent, EventActorResult> = {
@@ -617,6 +626,10 @@ export async function executeAgentEventActor<T>(
         conversationId: input.conversationId,
         ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
         suspension: request.suspension as IAgentEventActorSuspensionEvidence,
+        ...(pendingSuspension.kind == null ? {} : { kind: pendingSuspension.kind }),
+        ...(pendingSuspension.handlingGenerationCreatedAt == null
+          ? {}
+          : { handlingGenerationCreatedAt: pendingSuspension.handlingGenerationCreatedAt }),
         actionId: pendingSuspension.actionId,
         jobCreatedAt: pendingSuspension.jobCreatedAt,
         ...(actionAppliedBeforePause ? { invalidateHead: true } : {}),
@@ -900,7 +913,14 @@ export async function resumeAgentEventActor<T>(
   let observedEpoch: number | undefined;
   let resultContext: AgentEventActorContext | undefined;
   let pendingSuspension:
-    | { actionId: string; jobCreatedAt: number; interrupt: EventActorInterrupt }
+    | {
+        kind?: 'human_decision' | 'internal_completion';
+        appliedAction?: AgentEventAppliedAction;
+        handlingGenerationCreatedAt?: number;
+        actionId: string;
+        jobCreatedAt: number;
+        interrupt: EventActorInterrupt;
+      }
     | undefined;
   let actionAppliedBeforePause = false;
 
@@ -979,9 +999,17 @@ export async function resumeAgentEventActor<T>(
        * human boundary. Publish the successor suspension before considering
        * the segment terminal; otherwise the successor checkpoint is committed
        * without any resumable host action. */
-      pendingSuspension = input.readSuspension?.();
-      if (pendingSuspension != null) {
-        actionAppliedBeforePause = input.readAppliedAction() != null;
+      const observedAction = input.readAppliedAction() ?? hostSuspension.appliedAction;
+      const action = observedAction == null ? undefined : toEventActorAppliedAction(observedAction);
+      const observedSuspension = input.readSuspension?.();
+      if (observedSuspension != null) {
+        pendingSuspension = {
+          ...observedSuspension,
+          ...(observedAction == null ? {} : { appliedAction: observedAction }),
+          handlingGenerationCreatedAt:
+            hostSuspension.handlingGenerationCreatedAt ?? hostSuspension.jobCreatedAt,
+        };
+        actionAppliedBeforePause = observedAction != null;
         const checkpoint = await captureAgentEventCheckpoint(
           input.conversationId,
           request.suspension.checkpoint.checkpointNs,
@@ -1006,8 +1034,6 @@ export async function resumeAgentEventActor<T>(
           },
         };
       }
-      const observedAction = input.readAppliedAction();
-      const action = observedAction == null ? undefined : toEventActorAppliedAction(observedAction);
       if (action == null) {
         if (invocationError != null) {
           return { status: 'claimed_failed', error: asError(invocationError) };
@@ -1079,6 +1105,13 @@ export async function resumeAgentEventActor<T>(
       return deps.storeSuspension({
         ...owner,
         suspension: request.suspension as IAgentEventActorSuspensionEvidence,
+        ...(pendingSuspension.kind == null ? {} : { kind: pendingSuspension.kind }),
+        ...(pendingSuspension.appliedAction == null
+          ? {}
+          : { appliedAction: pendingSuspension.appliedAction }),
+        ...(pendingSuspension.handlingGenerationCreatedAt == null
+          ? {}
+          : { handlingGenerationCreatedAt: pendingSuspension.handlingGenerationCreatedAt }),
         actionId: pendingSuspension.actionId,
         jobCreatedAt: pendingSuspension.jobCreatedAt,
         ...(actionAppliedBeforePause ? { invalidateHead: true } : {}),

@@ -84,6 +84,350 @@ const runBatch = async (
 };
 
 describe('createToolExecuteHandler — background tool calls', () => {
+  it('persists an Event Actor launch before invoking and terminal evidence before wakeup', async () => {
+    const events: string[] = [];
+    let finishTool: ((value: { content: string }) => void) | undefined;
+    const tool = {
+      name: 'submit_move_mcp_chess',
+      description: 'submits a move',
+      schema: z.object({ move: z.string() }),
+      invoke: () => {
+        events.push('invoke');
+        return new Promise<{ content: string }>((resolve) => {
+          finishTool = resolve;
+        });
+      },
+    } as unknown as StructuredToolInterface;
+    let reservations = 0;
+    const eventActorDetachedAction = {
+      reserve: jest.fn(async () => {
+        events.push('reserve');
+        reservations += 1;
+        return {
+          status: reservations === 1 ? ('reserved' as const) : ('replay' as const),
+          taskId: 'event-task-stable-1',
+          idempotencyKey: 'a'.repeat(64),
+        };
+      }),
+      markRunning: jest.fn(async () => {
+        events.push('running');
+        return true;
+      }),
+      settle: jest.fn(async () => {
+        events.push('terminal');
+        return true;
+      }),
+      wake: jest.fn(async () => {
+        events.push('wake');
+      }),
+    };
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      eventActorDetachedAction,
+    });
+    const request = {
+      toolCalls: [
+        {
+          id: 'call-event-detached',
+          name: tool.name,
+          args: { move: 'e4', run_in_background: true },
+        },
+      ],
+      agentId: 'agent-player',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'event-conversation', run_id: 'event-response' },
+    };
+
+    const first = await runBatch(handler, request);
+
+    expect(JSON.parse(first[0].content)).toMatchObject({
+      status: 'running',
+      background_task_id: 'event-task-stable-1',
+    });
+    expect(events).toEqual(['reserve', 'invoke', 'running']);
+    finishTool?.({ content: 'move accepted' });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(events).toEqual(['reserve', 'invoke', 'running', 'terminal', 'wake']);
+    expect(eventActorDetachedAction.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({ turnId: 'event-response:' }),
+    );
+
+    const replay = await runBatch(handler, request);
+
+    expect(JSON.parse(replay[0].content).background_task_id).toBe('event-task-stable-1');
+    expect(events).toEqual(['reserve', 'invoke', 'running', 'terminal', 'wake', 'reserve']);
+    expect(eventActorDetachedAction.settle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'event-task-stable-1',
+        status: 'succeeded',
+        result: 'move accepted',
+      }),
+    );
+  });
+
+  it('records filtered detached output as successful side-effect evidence', async () => {
+    const protectedValue = 'Authorization: Bearer detached-secret';
+    const tool = {
+      name: 'submit_move_mcp_chess',
+      description: 'submits a move',
+      schema: z.object({ move: z.string() }),
+      invoke: jest.fn(async () => ({ content: protectedValue })),
+    } as unknown as StructuredToolInterface;
+    const eventActorDetachedAction = {
+      reserve: jest.fn(async () => ({
+        status: 'reserved' as const,
+        taskId: 'event-task-filtered',
+        idempotencyKey: 'e'.repeat(64),
+      })),
+      markRunning: jest.fn(async () => true),
+      settle: jest.fn(async () => true),
+      wake: jest.fn(async () => undefined),
+    };
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      eventActorDetachedAction,
+    });
+
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-event-filtered',
+          name: tool.name,
+          args: { move: 'e4', run_in_background: true },
+        },
+      ],
+      agentId: 'agent-player',
+      configurable: buildConfig([tool.name], {
+        toolArguments: {
+          pii: { fields: ['output'], starterPatterns: ['bearer_header'] },
+        },
+      }),
+      metadata: { thread_id: 'event-filtered-conversation', run_id: 'event-filtered-turn' },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(eventActorDetachedAction.settle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'event-task-filtered',
+        status: 'succeeded',
+        result: expect.stringContaining('content_filter_block'),
+      }),
+    );
+    expect(JSON.stringify(eventActorDetachedAction.settle.mock.calls)).not.toContain(
+      protectedValue,
+    );
+    expect(eventActorDetachedAction.settle).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'failed' }),
+    );
+    expect(eventActorDetachedAction.wake).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects capacity before creating durable Event Actor launch authority', async () => {
+    let invocations = 0;
+    const tool = {
+      name: 'submit_move_mcp_chess',
+      description: 'submits a move',
+      schema: z.object({ move: z.string() }),
+      invoke: () => {
+        invocations += 1;
+        return new Promise(() => undefined);
+      },
+    } as unknown as StructuredToolInterface;
+    const configurable = {
+      req: {
+        user: { id: 'capacity-user' },
+        body: { conversationId: 'capacity-conversation' },
+      },
+      backgroundToolNames: [tool.name],
+    };
+    const metadata = { thread_id: 'capacity-conversation', run_id: 'capacity-run' };
+    const ordinaryHandler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+    });
+    await runBatch(ordinaryHandler, {
+      toolCalls: Array.from({ length: 10 }, (_, index) => ({
+        id: `capacity-${index}`,
+        name: tool.name,
+        args: { move: 'e4', run_in_background: true },
+      })),
+      agentId: 'agent-player',
+      configurable,
+      metadata,
+    });
+
+    const reserve = jest.fn(async () => ({
+      status: 'reserved' as const,
+      taskId: 'event-task-capacity',
+      idempotencyKey: 'f'.repeat(64),
+    }));
+    const detachedHandler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      eventActorDetachedAction: {
+        reserve,
+        markRunning: jest.fn(async () => true),
+        settle: jest.fn(async () => true),
+        wake: jest.fn(async () => undefined),
+      },
+    });
+
+    const [rejected] = await runBatch(detachedHandler, {
+      toolCalls: [
+        {
+          id: 'capacity-detached',
+          name: tool.name,
+          args: { move: 'e5', run_in_background: true },
+        },
+      ],
+      agentId: 'agent-player',
+      configurable,
+      metadata,
+    });
+
+    expect(rejected.content).toContain('Too many background tasks');
+    expect(invocations).toBe(10);
+    expect(reserve).not.toHaveBeenCalled();
+  });
+
+  it('does not launch an expected action when staged production is disabled', async () => {
+    const invoke = jest.fn(async () => ({ content: 'move accepted' }));
+    const tool = {
+      name: 'submit_move_mcp_chess',
+      description: 'submits a move',
+      schema: z.object({ move: z.string() }),
+      invoke,
+    } as unknown as StructuredToolInterface;
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      eventActorDetachedAction: {
+        reserve: jest.fn(async () => ({
+          status: 'conflict' as const,
+          error: 'Detached Event Actor production is not activated',
+        })),
+        markRunning: jest.fn(async () => true),
+        settle: jest.fn(async () => true),
+        wake: jest.fn(async () => undefined),
+      },
+    });
+
+    await expect(
+      runBatch(handler, {
+        toolCalls: [
+          {
+            id: 'call-disabled',
+            name: tool.name,
+            args: { move: 'e4', run_in_background: true },
+          },
+        ],
+        agentId: 'agent-player',
+        configurable: buildConfig([tool.name]),
+        metadata: { thread_id: 'event-conversation', run_id: 'event-response' },
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({ content: '', errorMessage: expect.stringContaining('activated') }),
+    ]);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('persists a synchronous detached-tool rejection as terminal evidence', async () => {
+    const tool = {
+      name: 'submit_move_mcp_chess',
+      description: 'submits a move',
+      schema: z.object({ move: z.string() }),
+      invoke: () => {
+        throw new Error('launch rejected synchronously');
+      },
+    } as unknown as StructuredToolInterface;
+    const eventActorDetachedAction = {
+      reserve: jest.fn(async () => ({
+        status: 'reserved' as const,
+        taskId: 'event-task-sync-error',
+        idempotencyKey: 'b'.repeat(64),
+      })),
+      markRunning: jest.fn(async () => true),
+      settle: jest.fn(async () => true),
+      wake: jest.fn(async () => undefined),
+    };
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      eventActorDetachedAction,
+    });
+
+    await expect(
+      runBatch(handler, {
+        toolCalls: [
+          {
+            id: 'call-sync-error',
+            name: tool.name,
+            args: { move: 'e4', run_in_background: true },
+          },
+        ],
+        agentId: 'agent-player',
+        configurable: buildConfig([tool.name]),
+        metadata: { thread_id: 'event-conversation', run_id: 'event-response' },
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({ content: expect.stringContaining('event-task-sync-error') }),
+    ]);
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(eventActorDetachedAction.settle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'event-task-sync-error',
+        status: 'failed',
+        error: expect.stringContaining('launch rejected synchronously'),
+      }),
+    );
+    expect(eventActorDetachedAction.wake).toHaveBeenCalledTimes(1);
+  });
+
+  it('records an aborted detached expected action as cancelled', async () => {
+    const abortError = Object.assign(new Error('operation aborted'), { name: 'AbortError' });
+    const tool = {
+      name: 'submit_move_mcp_chess',
+      description: 'submits a move',
+      schema: z.object({ move: z.string() }),
+      invoke: async () => {
+        throw abortError;
+      },
+    } as unknown as StructuredToolInterface;
+    const eventActorDetachedAction = {
+      reserve: jest.fn(async () => ({
+        status: 'reserved' as const,
+        taskId: 'event-task-cancelled',
+        idempotencyKey: 'c'.repeat(64),
+      })),
+      markRunning: jest.fn(async () => true),
+      settle: jest.fn(async () => true),
+      wake: jest.fn(async () => undefined),
+    };
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      eventActorDetachedAction,
+    });
+
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-cancelled',
+          name: tool.name,
+          args: { move: 'e4', run_in_background: true },
+        },
+      ],
+      agentId: 'agent-player',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'event-conversation', run_id: 'event-response' },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(eventActorDetachedAction.settle).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'cancelled', error: 'operation aborted' }),
+    );
+  });
+
   it('returns a handle immediately, runs the tool once detached, and yields the result via check_background_task', async () => {
     const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
     const searchTool = makeSearchTool(state);

@@ -234,6 +234,20 @@ const convoSchema: Schema<IConversation> = new Schema(
     agentEventActorSuspension: {
       type: {
         suspension: { type: Schema.Types.Mixed, required: true },
+        kind: {
+          type: String,
+          enum: ['human_decision', 'internal_completion'],
+          default: 'human_decision',
+        },
+        appliedAction: {
+          type: {
+            toolName: { type: String, required: true },
+            toolCallId: { type: String, default: undefined },
+          },
+          _id: false,
+          default: undefined,
+        },
+        handlingGenerationCreatedAt: { type: Number, min: 0, default: undefined },
         actionId: { type: String, required: true },
         jobCreatedAt: { type: Number, required: true },
         status: { type: String, enum: ['pending', 'claimed', 'closed'], required: true },

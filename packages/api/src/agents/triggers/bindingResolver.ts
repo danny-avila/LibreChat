@@ -3,6 +3,11 @@ import type { ConversationMethods, MessageMethods } from '@librechat/data-schema
 import type { AgentTriggerContinuePreparation, AgentTriggerExecutionHostDeps } from './host';
 import type { AgentContinueTriggerEnvelope } from './envelope';
 import type { AgentTriggerDispatchContext } from './dispatch';
+import {
+  EVENT_ACTOR_DETACHED_COMPLETION_SOURCE,
+  EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
+  parseAgentEventActorDetachedCompletion,
+} from './detachedAction';
 import { isAgentEventRetentionActive } from '../eventRetention';
 import { AgentTriggerExecutionError } from './host';
 
@@ -14,6 +19,7 @@ export interface AgentEventContinueResolverDeps {
   getGenerationJob?: (conversationId: string) => Promise<
     | {
         status?: string;
+        createdAt?: number;
         metadata?: { terminalPersistencePending?: boolean };
       }
     | null
@@ -108,10 +114,19 @@ export function createAgentEventContinueResolver({
           true,
         );
       }
+      const detachedCompletion =
+        envelope.event.type === EVENT_ACTOR_DETACHED_COMPLETION_TYPE &&
+        envelope.event.source.type === 'internal' &&
+        envelope.event.source.id === EVENT_ACTOR_DETACHED_COMPLETION_SOURCE
+          ? parseAgentEventActorDetachedCompletion(envelope.event.payload)
+          : undefined;
+      const ownsTerminalWake =
+        detachedCompletion != null &&
+        active?.createdAt === detachedCompletion.wakeGenerationCreatedAt;
       if (
         active?.status === 'running' ||
         active?.status === 'requires_action' ||
-        active?.metadata?.terminalPersistencePending === true
+        (active?.metadata?.terminalPersistencePending === true && !ownsTerminalWake)
       ) {
         throw new AgentTriggerExecutionError('The event actor is still handling an earlier turn.', {
           mode: 'continue',

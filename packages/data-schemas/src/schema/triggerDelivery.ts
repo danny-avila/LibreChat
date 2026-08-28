@@ -85,6 +85,33 @@ const actorReceiptSchema = new Schema(
   { _id: false },
 );
 
+const actorDetachedActionSchema = new Schema(
+  {
+    version: { type: Number, enum: [1], required: true },
+    invocationId: { type: String, required: true, maxlength: 128 },
+    expectedToolName: { type: String, required: true, maxlength: 256 },
+    toolName: { type: String, required: true, maxlength: 256 },
+    toolCallId: { type: String, required: true, maxlength: 256 },
+    turnId: { type: String, required: true, maxlength: 512 },
+    taskId: { type: String, required: true, maxlength: 128 },
+    idempotencyKey: { type: String, required: true, minlength: 64, maxlength: 64 },
+    launchAttempt: { type: Number, min: 0, max: 15, required: true },
+    status: {
+      type: String,
+      enum: ['reserved', 'running', 'launch_indeterminate', 'succeeded', 'failed', 'cancelled'],
+      required: true,
+    },
+    reservedAt: { type: Date, required: true },
+    observedAt: { type: Date, required: true },
+    recoveryAfter: { type: Date, required: true },
+    launchedAt: { type: Date },
+    settledAt: { type: Date },
+    result: { type: String, maxlength: 32_768 },
+    error: { type: String, maxlength: 2_048 },
+  },
+  { _id: false },
+);
+
 const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
   {
     deliveryKey: { type: String, required: true, maxlength: 128 },
@@ -97,10 +124,22 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     tenantId: { type: String, index: true },
     status: {
       type: String,
-      enum: ['staging', 'batched', 'pending', 'leased', 'succeeded', 'dead'],
+      enum: [
+        'staging',
+        'capability_staging',
+        'batched',
+        'pending',
+        'capability_pending',
+        'leased',
+        'capability_leased',
+        'succeeded',
+        'capability_dead',
+        'dead',
+      ],
       required: true,
       default: 'pending',
     },
+    requiredWorkerCapability: { type: String, maxlength: 128 },
     attempts: { type: Number, required: true, default: 0, min: 0 },
     availableAt: { type: Date, required: true },
     envelopeBytes: { type: Number, min: 0 },
@@ -119,8 +158,15 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     awaitTerminalHandling: { type: Boolean },
     handling: { type: handlingSchema },
     actorReceipt: { type: actorReceiptSchema, select: false },
+    actorDetachedAction: { type: actorDetachedActionSchema, select: false },
+    actorDetachedActionHistory: {
+      type: [actorDetachedActionSchema],
+      default: undefined,
+      select: false,
+    },
     actorActionAdmittedAt: { type: Date, select: false },
     actorActionAdmissionId: { type: String, maxlength: 64, select: false },
+    actorActionAdmissionClosedAt: { type: Date, select: false },
     leaseBy: { type: String },
     leaseUntil: { type: Date },
     claimToken: { type: String },
@@ -155,6 +201,7 @@ triggerDeliverySchema.index(
 );
 triggerDeliverySchema.index({ status: 1, updatedAt: -1 });
 triggerDeliverySchema.index({ 'actorReceipt.resolution': 1 }, { sparse: true });
+triggerDeliverySchema.index({ user: 1, actorActionAdmittedAt: 1 }, { sparse: true });
 triggerDeliverySchema.index({ stagingRecoveryAt: 1 }, { sparse: true });
 triggerDeliverySchema.index({ laneCleanupPendingAt: 1 }, { sparse: true });
 // Only successful rows receive expiresAt. Dead letters remain available until

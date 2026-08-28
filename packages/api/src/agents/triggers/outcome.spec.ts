@@ -19,22 +19,32 @@ const createAgentEventTerminalHandler = (
     'settleAgentTriggerHandlingOutcome'
   > &
     Partial<Parameters<typeof createAgentEventTerminalHandlerImpl>[0]>,
+  options?: Parameters<typeof createAgentEventTerminalHandlerImpl>[1],
 ) =>
-  createAgentEventTerminalHandlerImpl({
-    getAgentEventActorSnapshot: jest.fn().mockResolvedValue(undefined),
-    getMessage: jest.fn().mockResolvedValue(null),
-    resolveAgentEventActorReconciliation: jest.fn().mockResolvedValue(true),
-    clearAgentEventActorReconciliation: jest.fn().mockResolvedValue(true),
-    settleAgentEventActorReceipt: jest.fn().mockResolvedValue(true),
-    getAgentEventActorReceipt: jest.fn().mockResolvedValue(null),
-    backfillAgentEventActorReceipt: jest.fn().mockResolvedValue(true),
-    completeAgentEventActorLegacyTurn: jest.fn().mockResolvedValue(true),
-    cancelAgentEventActorSuspension: jest.fn().mockResolvedValue({ status: 'cancelled' }),
-    releaseAgentEventActorAction: jest.fn().mockResolvedValue(true),
-    getAgentEventActorActionAdmission: jest.fn().mockResolvedValue(null),
-    hasAgentEventActorActionAdmission: jest.fn().mockResolvedValue(false),
-    ...methods,
-  });
+  createAgentEventTerminalHandlerImpl(
+    {
+      getAgentEventActorSnapshot: jest.fn().mockResolvedValue(undefined),
+      recordAgentEventActorReconciliation: jest.fn().mockResolvedValue(true),
+      getMessage: jest.fn().mockResolvedValue(null),
+      resolveAgentEventActorReconciliation: jest.fn().mockResolvedValue(true),
+      clearAgentEventActorReconciliation: jest.fn().mockResolvedValue(true),
+      settleAgentEventActorReceipt: jest.fn().mockResolvedValue(true),
+      getAgentEventActorReceipt: jest.fn().mockResolvedValue(null),
+      backfillAgentEventActorReceipt: jest.fn().mockResolvedValue(true),
+      completeAgentEventActorLegacyTurn: jest.fn().mockResolvedValue(true),
+      cancelAgentEventActorSuspension: jest.fn().mockResolvedValue({ status: 'cancelled' }),
+      releaseAgentEventActorAction: jest.fn().mockResolvedValue(true),
+      getAgentEventActorActionAdmission: jest.fn().mockResolvedValue(null),
+      hasAgentEventActorActionAdmission: jest.fn().mockResolvedValue(false),
+      getAgentEventActorDetachedAction: jest.fn().mockResolvedValue(null),
+      settleAgentEventActorDetachedAction: jest.fn().mockResolvedValue({ status: 'applied' }),
+      markAgentEventActorDetachedActionLaunchIndeterminate: jest
+        .fn()
+        .mockResolvedValue({ status: 'applied' }),
+      ...methods,
+    },
+    options,
+  );
 
 function job(overrides: Partial<SerializableJobData> = {}): SerializableJobData {
   return {
@@ -105,6 +115,994 @@ describe('agent event terminal outcomes', () => {
   beforeEach(() => {
     mockedCancelAgentEventActor.mockReset();
     mockedCancelAgentEventActor.mockResolvedValue({ status: 'cancelled' });
+  });
+
+  it('hands a terminal internal suspension to the durable resume adapter without settling', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const resumeDetachedAction = jest.fn().mockResolvedValue(undefined);
+    const suspension = {
+      version: 1 as const,
+      suspensionId: 'suspension-detached-1',
+      attempt: 0,
+      issuedAt: 1,
+      expiresAt: 2,
+      invocation: {
+        actorThreadId: 'conversation-1',
+        invocationId: 'trigger_1',
+        depth: 0,
+        continuation: 'warm' as const,
+        base: { actorThreadId: 'conversation-1', generation: 1 },
+        fork: {
+          threadId: 'conversation-1',
+          checkpointNs: 'event-actor/trigger-1',
+          checkpointId: 'checkpoint-1',
+          invocationId: 'trigger_1',
+        },
+      },
+      checkpoint: {
+        threadId: 'conversation-1',
+        checkpointNs: 'event-actor/trigger-1',
+        checkpointId: 'checkpoint-1',
+        invocationId: 'trigger_1',
+      },
+      interrupt: { id: 'task-1', payload: { type: 'event_actor_detached_action' } },
+      suspensionDigest: 'signed-digest',
+    };
+    const detachedAction = {
+      version: 1 as const,
+      invocationId: 'trigger_1',
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-1',
+      taskId: 'task-1',
+      idempotencyKey: 'a'.repeat(64),
+      launchAttempt: 0 as const,
+      status: 'succeeded' as const,
+      reservedAt: new Date(),
+      recoveryAfter: new Date(),
+      launchedAt: new Date(),
+      settledAt: new Date(),
+      observedAt: new Date(),
+      result: 'move accepted',
+    };
+    const settleAgentEventActorDetachedAction = jest
+      .fn()
+      .mockResolvedValue({ status: 'already_achieved' });
+    const handler = createAgentEventTerminalHandler(
+      {
+        settleAgentTriggerHandlingOutcome,
+        settleAgentEventActorDetachedAction,
+        getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+          state: null,
+          epoch: 1,
+          legacyTurn: null,
+          reconciliations: [],
+          suspension: {
+            kind: 'internal_completion',
+            suspension,
+            actionId: 'task-1',
+            jobCreatedAt: 1_787_000_000_000,
+            status: 'pending',
+            observedAt: new Date(),
+          },
+        }),
+        getAgentEventActorDetachedAction: jest.fn().mockResolvedValue(detachedAction),
+      },
+      { resumeDetachedAction },
+    );
+
+    await handler(
+      'conversation-1',
+      job({
+        agentEventBindingId: 'binding-1',
+        agentEventDetachedTerminalEvidence: {
+          version: 1,
+          deliveryKey: 'trigger_1',
+          generationCreatedAt: 1_787_000_000_000,
+          taskId: detachedAction.taskId,
+          idempotencyKey: detachedAction.idempotencyKey,
+          status: 'succeeded',
+          result: 'move accepted',
+          observedAt: 1_787_000_000_500,
+        },
+        agentEventSuspension: {
+          version: 1,
+          suspensionId: suspension.suspensionId,
+          attempt: 0,
+        },
+      }),
+      [],
+    );
+
+    expect(resumeDetachedAction).toHaveBeenCalledWith(
+      expect.objectContaining({ streamId: 'conversation-1', suspension, action: detachedAction }),
+    );
+    expect(settleAgentEventActorDetachedAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'trigger_1',
+        generationCreatedAt: 1_787_000_000_000,
+        taskId: detachedAction.taskId,
+        status: 'succeeded',
+        result: 'move accepted',
+        observedAt: new Date(1_787_000_000_500),
+      }),
+    );
+    expect(settleAgentTriggerHandlingOutcome).not.toHaveBeenCalled();
+  });
+
+  it('durably enqueues a re-pause successor before settling its completion predecessor', async () => {
+    const events: string[] = [];
+    const suspension = suspensionEvidence('suspension-repause-successor', 1);
+    const action = {
+      version: 1 as const,
+      invocationId: 'trigger_1',
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-successor',
+      taskId: 'task-successor',
+      idempotencyKey: '9'.repeat(64),
+      launchAttempt: 1,
+      status: 'succeeded' as const,
+      reservedAt: new Date(),
+      recoveryAfter: new Date(),
+      observedAt: new Date(),
+      settledAt: new Date(),
+      result: 'accepted',
+    };
+    const settleAgentTriggerHandlingOutcome = jest.fn(async () => {
+      events.push('settle-predecessor');
+      return true;
+    });
+    const resumeDetachedAction = jest.fn(async () => {
+      events.push('enqueue-successor');
+    });
+    const handler = createAgentEventTerminalHandler(
+      {
+        settleAgentTriggerHandlingOutcome,
+        getAgentEventActorDetachedAction: jest.fn().mockResolvedValue(action),
+        getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+          state: null,
+          epoch: 1,
+          legacyTurn: null,
+          reconciliations: [],
+          suspension: {
+            kind: 'internal_completion',
+            suspension,
+            actionId: action.taskId,
+            jobCreatedAt: 1_787_000_010_000,
+            handlingGenerationCreatedAt: 1_787_000_000_000,
+            status: 'pending',
+            observedAt: new Date(),
+          },
+        }),
+      },
+      { resumeDetachedAction },
+    );
+
+    await handler(
+      'conversation-1',
+      job({
+        createdAt: 1_787_000_010_000,
+        agentEventDeliveryKey: 'trigger_completion_1',
+        agentEventInvocationKey: 'trigger_1',
+        agentEventBindingId: 'binding-1',
+        agentEventSuspension: {
+          version: 1,
+          suspensionId: suspension.suspensionId,
+          attempt: suspension.attempt,
+        },
+      }),
+      [],
+    );
+
+    expect(events).toEqual(['enqueue-successor', 'settle-predecessor']);
+    expect(resumeDetachedAction).toHaveBeenCalledWith(
+      expect.objectContaining({ handlingGenerationCreatedAt: 1_787_000_000_000 }),
+    );
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'trigger_completion_1',
+        generationCreatedAt: 1_787_000_010_000,
+        status: 'completed_no_action',
+      }),
+    );
+  });
+
+  it('preserves original ownership and retires every predecessor across three completion hops', async () => {
+    const events: string[] = [];
+    const originalGenerationCreatedAt = 1_787_000_000_000;
+    const suspensions = [
+      suspensionEvidence('suspension-hop-1', 1),
+      suspensionEvidence('suspension-hop-2', 2),
+    ];
+    const actions = suspensions.map((_, index) => ({
+      version: 1 as const,
+      invocationId: 'trigger_1',
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: `call-hop-${index + 1}`,
+      taskId: `task-hop-${index + 1}`,
+      idempotencyKey: String(index + 1).repeat(64),
+      launchAttempt: index + 1,
+      status: 'succeeded' as const,
+      reservedAt: new Date(),
+      recoveryAfter: new Date(),
+      observedAt: new Date(),
+      settledAt: new Date(),
+      result: 'accepted',
+    }));
+    const getAgentEventActorSnapshot = jest
+      .fn()
+      .mockResolvedValueOnce({
+        state: null,
+        epoch: 1,
+        legacyTurn: null,
+        reconciliations: [],
+        suspension: {
+          kind: 'internal_completion',
+          suspension: suspensions[0],
+          actionId: actions[0].taskId,
+          jobCreatedAt: originalGenerationCreatedAt + 10_000,
+          handlingGenerationCreatedAt: originalGenerationCreatedAt,
+          status: 'pending',
+          observedAt: new Date(),
+        },
+      })
+      .mockResolvedValueOnce({
+        state: null,
+        epoch: 2,
+        legacyTurn: null,
+        reconciliations: [],
+        suspension: {
+          kind: 'internal_completion',
+          suspension: suspensions[1],
+          actionId: actions[1].taskId,
+          jobCreatedAt: originalGenerationCreatedAt + 20_000,
+          handlingGenerationCreatedAt: originalGenerationCreatedAt,
+          status: 'pending',
+          observedAt: new Date(),
+        },
+      });
+    const getAgentEventActorDetachedAction = jest
+      .fn()
+      .mockResolvedValueOnce(actions[0])
+      .mockResolvedValueOnce(actions[1]);
+    const settleAgentTriggerHandlingOutcome = jest.fn(async (input) => {
+      events.push(`settle:${input.deliveryKey}`);
+      return true;
+    });
+    const resumeDetachedAction = jest.fn(async (input) => {
+      events.push(`enqueue:${input.action.taskId}`);
+    });
+    const handler = createAgentEventTerminalHandler(
+      {
+        settleAgentTriggerHandlingOutcome,
+        getAgentEventActorSnapshot,
+        getAgentEventActorDetachedAction,
+      },
+      { resumeDetachedAction },
+    );
+
+    for (let index = 0; index < 2; index++) {
+      await handler(
+        'conversation-1',
+        job({
+          createdAt: originalGenerationCreatedAt + (index + 1) * 10_000,
+          agentEventDeliveryKey: `trigger_completion_${index + 1}`,
+          agentEventInvocationKey: 'trigger_1',
+          agentEventBindingId: 'binding-1',
+          agentEventSuspension: {
+            version: 1,
+            suspensionId: suspensions[index].suspensionId,
+            attempt: suspensions[index].attempt,
+          },
+        }),
+        [],
+      );
+    }
+
+    expect(events).toEqual([
+      'enqueue:task-hop-1',
+      'settle:trigger_completion_1',
+      'enqueue:task-hop-2',
+      'settle:trigger_completion_2',
+    ]);
+    expect(getAgentEventActorDetachedAction).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ generationCreatedAt: originalGenerationCreatedAt }),
+    );
+    expect(getAgentEventActorDetachedAction).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ generationCreatedAt: originalGenerationCreatedAt }),
+    );
+    expect(resumeDetachedAction).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ handlingGenerationCreatedAt: originalGenerationCreatedAt }),
+    );
+  });
+
+  it('repairs a crash after successor enqueue by replaying enqueue and predecessor settlement', async () => {
+    const suspension = suspensionEvidence('suspension-handoff-retry', 1);
+    const action = {
+      version: 1 as const,
+      invocationId: 'trigger_1',
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-handoff-retry',
+      taskId: 'task-handoff-retry',
+      idempotencyKey: '6'.repeat(64),
+      launchAttempt: 1,
+      status: 'succeeded' as const,
+      reservedAt: new Date(),
+      recoveryAfter: new Date(),
+      observedAt: new Date(),
+      settledAt: new Date(),
+      result: 'accepted',
+    };
+    const snapshot = {
+      state: null,
+      epoch: 1,
+      legacyTurn: null,
+      reconciliations: [],
+      suspension: {
+        kind: 'internal_completion' as const,
+        suspension,
+        actionId: action.taskId,
+        jobCreatedAt: 1_787_000_010_000,
+        handlingGenerationCreatedAt: 1_787_000_000_000,
+        status: 'pending' as const,
+        observedAt: new Date(),
+      },
+    };
+    const resumeDetachedAction = jest.fn().mockResolvedValue(undefined);
+    const settleAgentTriggerHandlingOutcome = jest
+      .fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    const handler = createAgentEventTerminalHandler(
+      {
+        settleAgentTriggerHandlingOutcome,
+        getAgentEventActorDetachedAction: jest.fn().mockResolvedValue(action),
+        getAgentEventActorSnapshot: jest.fn().mockResolvedValue(snapshot),
+      },
+      { resumeDetachedAction },
+    );
+    const completionJob = job({
+      createdAt: 1_787_000_010_000,
+      agentEventDeliveryKey: 'trigger_completion_retry',
+      agentEventInvocationKey: 'trigger_1',
+      agentEventBindingId: 'binding-1',
+      agentEventSuspension: {
+        version: 1,
+        suspensionId: suspension.suspensionId,
+        attempt: suspension.attempt,
+      },
+    });
+
+    await expect(handler('conversation-1', completionJob, [])).rejects.toThrow(
+      'Failed to settle internal completion delivery',
+    );
+    await expect(handler('conversation-1', completionJob, [])).resolves.toBeUndefined();
+    expect(resumeDetachedAction).toHaveBeenCalledTimes(2);
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledTimes(2);
+  });
+
+  it('settles both the original invocation and its internal completion delivery', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const getAgentEventActorDetachedAction = jest.fn().mockResolvedValue({
+      version: 1,
+      invocationId: 'trigger_1',
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-failed',
+      taskId: 'task-failed',
+      idempotencyKey: 'b'.repeat(64),
+      launchAttempt: 0,
+      status: 'failed',
+      reservedAt: new Date(),
+      recoveryAfter: new Date(),
+      observedAt: new Date(),
+      settledAt: new Date(),
+      error: 'move service rejected the request',
+    });
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      getAgentEventActorDetachedAction,
+      getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+        state: null,
+        epoch: 1,
+        legacyTurn: null,
+        reconciliations: [],
+        suspension: {
+          kind: 'internal_completion',
+          suspension: {
+            version: 1,
+            suspensionId: 'suspension-failed',
+            attempt: 0,
+            invocation: { invocationId: 'trigger_1' },
+          },
+          actionId: 'task-failed',
+          jobCreatedAt: 1_787_000_000_000,
+          handlingGenerationCreatedAt: 1_787_000_000_000,
+          status: 'closed',
+          outcome: 'settled',
+          observedAt: new Date(),
+        },
+      }),
+    });
+
+    await handler(
+      'conversation-1',
+      job({
+        createdAt: 1_787_000_010_000,
+        agentEventDeliveryKey: 'trigger_completion_1',
+        agentEventInvocationKey: 'trigger_1',
+        agentEventBindingId: 'binding-1',
+      }),
+      [],
+    );
+
+    expect(getAgentEventActorDetachedAction).toHaveBeenCalledWith(
+      expect.objectContaining({ generationCreatedAt: 1_787_000_000_000 }),
+    );
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        deliveryKey: 'trigger_1',
+        generationCreatedAt: 1_787_000_000_000,
+        status: 'failed',
+        error: 'move service rejected the request',
+      }),
+    );
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        deliveryKey: 'trigger_completion_1',
+        generationCreatedAt: 1_787_000_010_000,
+        status: 'failed',
+        error: 'move service rejected the request',
+      }),
+    );
+  });
+
+  it('marks an expired detached launch indeterminate without resuming or relaunching', async () => {
+    const suspension = suspensionEvidence('suspension-indeterminate');
+    const getAgentEventActorDetachedAction = jest
+      .fn()
+      .mockResolvedValueOnce({
+        version: 1,
+        invocationId: 'trigger_1',
+        expectedToolName: 'submit_move',
+        toolName: 'submit_move_mcp_chess',
+        toolCallId: 'call-indeterminate',
+        taskId: 'task-indeterminate',
+        idempotencyKey: 'c'.repeat(64),
+        launchAttempt: 0,
+        status: 'running',
+        reservedAt: new Date(0),
+        observedAt: new Date(0),
+        recoveryAfter: new Date(1),
+      })
+      .mockResolvedValueOnce({
+        version: 1,
+        invocationId: 'trigger_1',
+        expectedToolName: 'submit_move',
+        toolName: 'submit_move_mcp_chess',
+        toolCallId: 'call-indeterminate',
+        taskId: 'task-indeterminate',
+        idempotencyKey: 'c'.repeat(64),
+        launchAttempt: 0,
+        status: 'launch_indeterminate',
+        reservedAt: new Date(0),
+        observedAt: new Date(),
+        recoveryAfter: new Date(1),
+      });
+    const markIndeterminate = jest.fn().mockResolvedValue({ status: 'applied' });
+    const resumeDetachedAction = jest.fn();
+    const handler = createAgentEventTerminalHandler(
+      {
+        settleAgentTriggerHandlingOutcome: jest.fn(),
+        getAgentEventActorDetachedAction,
+        markAgentEventActorDetachedActionLaunchIndeterminate: markIndeterminate,
+        getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+          state: null,
+          epoch: 1,
+          legacyTurn: null,
+          reconciliations: [],
+          suspension: {
+            kind: 'internal_completion',
+            suspension,
+            actionId: 'task-indeterminate',
+            jobCreatedAt: 1_787_000_000_000,
+            status: 'pending',
+            observedAt: new Date(),
+          },
+        }),
+      },
+      { resumeDetachedAction },
+    );
+
+    await expect(
+      handler(
+        'conversation-1',
+        job({
+          agentEventBindingId: 'binding-1',
+          agentEventSuspension: {
+            version: 1,
+            suspensionId: suspension.suspensionId,
+            attempt: suspension.attempt,
+          },
+        }),
+        [],
+      ),
+    ).rejects.toThrow('detached action launch is indeterminate');
+    expect(markIndeterminate).toHaveBeenCalledTimes(1);
+    expect(resumeDetachedAction).not.toHaveBeenCalled();
+  });
+
+  it('keeps an indeterminate action owner open when the executor dies before suspension', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const markIndeterminate = jest.fn().mockResolvedValue({ status: 'applied' });
+    const action = {
+      version: 1,
+      invocationId: 'trigger_1',
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-unacknowledged',
+      taskId: 'task-unacknowledged',
+      idempotencyKey: 'e'.repeat(64),
+      launchAttempt: 0,
+      status: 'running',
+      reservedAt: new Date(0),
+      observedAt: new Date(0),
+      recoveryAfter: new Date(1),
+    };
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      markAgentEventActorDetachedActionLaunchIndeterminate: markIndeterminate,
+      getAgentEventActorDetachedAction: jest
+        .fn()
+        .mockResolvedValueOnce(action)
+        .mockResolvedValueOnce({ ...action, status: 'launch_indeterminate' }),
+    });
+
+    await expect(
+      handler(
+        'conversation-1',
+        job({ status: 'error', error: 'executor exited', agentEventBindingId: 'binding-1' }),
+        [],
+      ),
+    ).rejects.toThrow('detached action launch is indeterminate');
+
+    expect(markIndeterminate).toHaveBeenCalledTimes(1);
+    expect(settleAgentTriggerHandlingOutcome).not.toHaveBeenCalled();
+  });
+
+  it('keeps an unexpired detached launch open after generation failure', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn();
+    const markIndeterminate = jest.fn();
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      markAgentEventActorDetachedActionLaunchIndeterminate: markIndeterminate,
+      getAgentEventActorDetachedAction: jest.fn().mockResolvedValue({
+        version: 1,
+        invocationId: 'trigger_1',
+        expectedToolName: 'submit_move',
+        toolName: 'submit_move_mcp_chess',
+        toolCallId: 'call-running',
+        taskId: 'task-running',
+        idempotencyKey: '8'.repeat(64),
+        launchAttempt: 0,
+        status: 'running',
+        reservedAt: new Date(),
+        observedAt: new Date(),
+        recoveryAfter: new Date(Date.now() + 60_000),
+      }),
+    });
+
+    await expect(
+      handler(
+        'conversation-1',
+        job({ status: 'error', error: 'generation failed', agentEventBindingId: 'binding-1' }),
+        [],
+      ),
+    ).rejects.toThrow('detached action is still in flight');
+    expect(markIndeterminate).not.toHaveBeenCalled();
+    expect(settleAgentTriggerHandlingOutcome).not.toHaveBeenCalled();
+  });
+
+  it('cancels an aborted internal completion instead of waking it', async () => {
+    const suspension = suspensionEvidence('suspension-aborted-internal');
+    const resumeDetachedAction = jest.fn();
+    const handler = createAgentEventTerminalHandler(
+      {
+        settleAgentTriggerHandlingOutcome: jest.fn().mockResolvedValue(true),
+        getAgentEventActorDetachedAction: jest.fn().mockResolvedValue({
+          version: 1,
+          invocationId: 'trigger_1',
+          expectedToolName: 'submit_move',
+          toolName: 'submit_move_mcp_chess',
+          toolCallId: 'call-aborted',
+          taskId: 'task-aborted',
+          idempotencyKey: 'd'.repeat(64),
+          launchAttempt: 0,
+          status: 'failed',
+          reservedAt: new Date(),
+          observedAt: new Date(),
+          recoveryAfter: new Date(),
+          settledAt: new Date(),
+          error: 'detached action failed',
+        }),
+        getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+          state: null,
+          epoch: 1,
+          legacyTurn: null,
+          reconciliations: [],
+          suspension: {
+            kind: 'internal_completion',
+            suspension,
+            actionId: 'task-aborted',
+            jobCreatedAt: 1_787_000_000_000,
+            status: 'pending',
+            observedAt: new Date(),
+          },
+        }),
+      },
+      { resumeDetachedAction },
+    );
+
+    await handler(
+      'conversation-1',
+      job({
+        status: 'aborted',
+        agentEventBindingId: 'binding-1',
+        agentEventSuspension: {
+          version: 1,
+          suspensionId: suspension.suspensionId,
+          attempt: suspension.attempt,
+        },
+      }),
+      [],
+    );
+
+    expect(resumeDetachedAction).not.toHaveBeenCalled();
+    expect(mockedCancelAgentEventActor).toHaveBeenCalledTimes(1);
+  });
+
+  it('retires a failed detached action that became terminal before suspension storage', async () => {
+    const checkpoint = {
+      threadId: 'conversation-1',
+      checkpointNs: 'event-actor/trigger_1',
+    };
+    const initialSnapshot = {
+      state: null,
+      epoch: 1,
+      legacyTurn: null,
+      reconciliations: [
+        {
+          invocationId: 'trigger_1',
+          actionAdmitted: true,
+          status: 'invocation_pending' as const,
+          checkpoint,
+          action: { toolName: 'submit_move' },
+          observedAt: new Date(),
+        },
+      ],
+    };
+    const retiredSnapshot = { ...initialSnapshot, reconciliations: [] };
+    const getAgentEventActorSnapshot = jest
+      .fn()
+      .mockResolvedValueOnce(initialSnapshot)
+      .mockResolvedValue(retiredSnapshot);
+    const resolveAgentEventActorReconciliation = jest.fn().mockResolvedValue(true);
+    const getAgentEventActorActionAdmission = jest
+      .fn()
+      .mockResolvedValueOnce('admission-pre-suspension')
+      .mockResolvedValue(null);
+    const releaseAgentEventActorAction = jest.fn().mockResolvedValue(true);
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      getAgentEventActorSnapshot,
+      resolveAgentEventActorReconciliation,
+      getAgentEventActorActionAdmission,
+      releaseAgentEventActorAction,
+      getAgentEventActorDetachedAction: jest.fn().mockResolvedValue({
+        version: 1,
+        invocationId: 'trigger_1',
+        expectedToolName: 'submit_move',
+        toolName: 'submit_move_mcp_chess',
+        toolCallId: 'call-pre-suspension-failure',
+        taskId: 'task-pre-suspension-failure',
+        idempotencyKey: 'f'.repeat(64),
+        launchAttempt: 0,
+        status: 'failed',
+        reservedAt: new Date(),
+        observedAt: new Date(),
+        recoveryAfter: new Date(),
+        settledAt: new Date(),
+        error: 'detached action failed before suspension storage',
+      }),
+    });
+    const terminalJob = job({ agentEventBindingId: 'binding-1' });
+
+    await handler('conversation-1', terminalJob, []);
+    await handler('conversation-1', terminalJob, []);
+
+    expect(resolveAgentEventActorReconciliation).toHaveBeenCalledTimes(1);
+    expect(resolveAgentEventActorReconciliation).toHaveBeenCalledWith({
+      user: 'user-1',
+      conversationId: 'conversation-1',
+      invocationId: 'trigger_1',
+      checkpoint,
+      expectedActionAdmitted: true,
+      resolution: 'invocation_abandoned',
+    });
+    expect(releaseAgentEventActorAction).toHaveBeenCalledTimes(1);
+    expect(releaseAgentEventActorAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'trigger_1',
+        bindingId: 'binding-1',
+        admissionId: 'admission-pre-suspension',
+      }),
+    );
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledTimes(2);
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'trigger_1',
+        status: 'failed',
+        error: 'detached action failed before suspension storage',
+      }),
+    );
+  });
+
+  it('retires the claimed predecessor when a successor fails before re-pause storage', async () => {
+    const predecessor = suspensionEvidence('suspension-claimed-predecessor', 1);
+    const initialSnapshot = {
+      state: null,
+      epoch: 1,
+      legacyTurn: null,
+      reconciliations: [
+        {
+          invocationId: 'trigger_1',
+          actionAdmitted: true,
+          status: 'invocation_pending' as const,
+          checkpoint: predecessor.checkpoint,
+          action: { toolName: 'submit_move' },
+          observedAt: new Date(),
+        },
+      ],
+      suspension: {
+        kind: 'internal_completion' as const,
+        suspension: predecessor,
+        actionId: 'task-predecessor',
+        jobCreatedAt: 1_787_000_000_000,
+        handlingGenerationCreatedAt: 1_787_000_000_000,
+        status: 'claimed' as const,
+        resumeAttemptId: 'trigger_completion_failed_successor',
+        observedAt: new Date(),
+      },
+    };
+    const closedSnapshot = {
+      ...initialSnapshot,
+      reconciliations: [],
+      suspension: {
+        ...initialSnapshot.suspension,
+        status: 'closed' as const,
+        outcome: 'cancelled' as const,
+      },
+    };
+    const getAgentEventActorSnapshot = jest
+      .fn()
+      .mockResolvedValueOnce(initialSnapshot)
+      .mockResolvedValue(closedSnapshot);
+    const releaseAgentEventActorAction = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('delivery store unavailable'))
+      .mockResolvedValue(true);
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      getAgentEventActorSnapshot,
+      releaseAgentEventActorAction,
+      getAgentEventActorDetachedAction: jest.fn().mockResolvedValue({
+        version: 1,
+        invocationId: 'trigger_1',
+        expectedToolName: 'submit_move',
+        toolName: 'submit_move_mcp_chess',
+        toolCallId: 'call-failed-successor',
+        taskId: 'task-failed-successor',
+        idempotencyKey: '6'.repeat(64),
+        launchAttempt: 1,
+        status: 'failed',
+        reservedAt: new Date(),
+        observedAt: new Date(),
+        recoveryAfter: new Date(),
+        settledAt: new Date(),
+        error: 'successor failed before re-pause storage',
+      }),
+    });
+
+    const terminalJob = job({
+      createdAt: 1_787_000_010_000,
+      agentEventDeliveryKey: 'trigger_completion_failed_successor',
+      agentEventInvocationKey: 'trigger_1',
+      agentEventBindingId: 'binding-1',
+      agentEventSuspension: undefined,
+    });
+
+    await expect(handler('conversation-1', terminalJob, [])).rejects.toThrow(
+      'delivery store unavailable',
+    );
+    await handler('conversation-1', terminalJob, []);
+
+    expect(mockedCancelAgentEventActor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        suspension: predecessor,
+        claimedResumeAttemptId: 'trigger_completion_failed_successor',
+        reason: 'cancelled',
+      }),
+      expect.any(Object),
+    );
+    expect(releaseAgentEventActorAction).toHaveBeenCalledTimes(2);
+    expect(releaseAgentEventActorAction).toHaveBeenLastCalledWith(
+      expect.objectContaining({ deliveryKey: 'trigger_1', bindingId: 'binding-1' }),
+    );
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledTimes(2);
+    expect(
+      settleAgentTriggerHandlingOutcome.mock.calls.map(([input]) => input.deliveryKey),
+    ).toEqual(['trigger_1', 'trigger_completion_failed_successor']);
+    expect(settleAgentTriggerHandlingOutcome.mock.calls[0][0]).toMatchObject({
+      status: 'failed',
+      error: 'successor failed before re-pause storage',
+    });
+  });
+
+  it('releases admission after an exact completion predecessor settled normally', async () => {
+    const predecessor = suspensionEvidence('suspension-settled-predecessor', 1);
+    const completionDeliveryKey = 'trigger_completion_settled_successor';
+    const releaseAgentEventActorAction = jest.fn().mockResolvedValue(true);
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      releaseAgentEventActorAction,
+      getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+        state: null,
+        epoch: 1,
+        legacyTurn: null,
+        reconciliations: [],
+        suspension: {
+          kind: 'internal_completion',
+          suspension: predecessor,
+          actionId: 'task-settled-predecessor',
+          jobCreatedAt: 1_787_000_000_000,
+          handlingGenerationCreatedAt: 1_787_000_000_000,
+          status: 'closed',
+          outcome: 'settled',
+          resumeAttemptId: completionDeliveryKey,
+          observedAt: new Date(),
+        },
+      }),
+      getAgentEventActorDetachedAction: jest.fn().mockResolvedValue({
+        version: 1,
+        invocationId: 'trigger_1',
+        expectedToolName: 'submit_move',
+        toolName: 'submit_move_mcp_chess',
+        toolCallId: 'call-settled-successor',
+        turnId: 'response-settled-successor:0',
+        taskId: 'task-settled-successor',
+        idempotencyKey: '8'.repeat(64),
+        launchAttempt: 1,
+        status: 'succeeded',
+        reservedAt: new Date(),
+        observedAt: new Date(),
+        recoveryAfter: new Date(),
+        settledAt: new Date(),
+        result: 'accepted',
+      }),
+    });
+
+    await handler(
+      'conversation-1',
+      job({
+        createdAt: 1_787_000_010_000,
+        agentEventDeliveryKey: completionDeliveryKey,
+        agentEventInvocationKey: 'trigger_1',
+        agentEventBindingId: 'binding-1',
+        agentEventSuspension: undefined,
+      }),
+      [],
+    );
+
+    expect(releaseAgentEventActorAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'trigger_1',
+        bindingId: 'binding-1',
+        admissionId: expect.any(String),
+      }),
+    );
+    expect(
+      settleAgentTriggerHandlingOutcome.mock.calls.map(([input]) => input.deliveryKey),
+    ).toEqual(['trigger_1', completionDeliveryKey]);
+  });
+
+  it('records reconciliation when a detached action succeeds after generation abort', async () => {
+    const suspension = suspensionEvidence('suspension-aborted-success');
+    const recordAgentEventActorReconciliation = jest.fn().mockResolvedValue(true);
+    const settleAgentTriggerHandlingOutcome = jest.fn();
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      recordAgentEventActorReconciliation,
+      getAgentEventActorDetachedAction: jest.fn().mockResolvedValue({
+        version: 1,
+        invocationId: 'trigger_1',
+        expectedToolName: 'submit_move',
+        toolName: 'submit_move_mcp_chess',
+        toolCallId: 'call-aborted-success',
+        taskId: 'task-aborted-success',
+        idempotencyKey: '7'.repeat(64),
+        launchAttempt: 0,
+        status: 'succeeded',
+        reservedAt: new Date(),
+        observedAt: new Date(),
+        recoveryAfter: new Date(),
+        settledAt: new Date(),
+        result: 'accepted',
+      }),
+      getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+        state: null,
+        epoch: 1,
+        legacyTurn: null,
+        reconciliations: [
+          {
+            invocationId: 'trigger_1',
+            actionAdmitted: true,
+            status: 'invocation_pending',
+            checkpoint: suspension.checkpoint,
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(),
+          },
+        ],
+        suspension: {
+          kind: 'internal_completion',
+          suspension,
+          actionId: 'task-aborted-success',
+          jobCreatedAt: job().createdAt,
+          status: 'pending',
+          observedAt: new Date(),
+        },
+      }),
+    });
+
+    await expect(
+      handler(
+        'conversation-1',
+        job({
+          status: 'aborted',
+          agentEventBindingId: 'binding-1',
+          agentEventSuspension: {
+            version: 1,
+            suspensionId: suspension.suspensionId,
+            attempt: suspension.attempt,
+          },
+        }),
+        [],
+      ),
+    ).rejects.toThrow('requires commit_indeterminate reconciliation');
+    expect(recordAgentEventActorReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reconciliation: expect.objectContaining({
+          invocationId: 'trigger_1',
+          status: 'commit_indeterminate',
+          action: {
+            toolName: 'submit_move_mcp_chess',
+            toolCallId: 'call-aborted-success',
+          },
+        }),
+      }),
+    );
+    expect(mockedCancelAgentEventActor).not.toHaveBeenCalled();
+    expect(settleAgentTriggerHandlingOutcome).not.toHaveBeenCalled();
   });
 
   it('cancels a versioned paused actor before settling its expired delivery', async () => {

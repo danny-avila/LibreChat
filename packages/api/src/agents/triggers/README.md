@@ -127,6 +127,17 @@ Bound child continuations are automatic after authentication and binding authori
 `endpoints.agents.eventDriven.selfUrl`; most deployments should omit both and use the bound
 listener.
 
+Detached Event Actor completion production has an explicit rolling-deployment fence. It remains
+fail-closed until Redis generation streams are active and
+`AGENT_TRIGGERS_DETACHED_ACTIONS_PRODUCER_ENABLED=true` is set. Deploy the new version to every
+replica first, verify that no old API or worker replica remains, and only then enable the producer
+across the Redis-backed fleet. This ordering ensures Redis recovery, HTTP completion consumers,
+account-deletion drains, lane maintenance, and operational requeue/dead-letter paths all understand
+capability-fenced completion work before any is created. For rollback, disable the producer, drain
+all detached completion work, and only then start an older version. Internal detached completions
+always target the current replica's bound listener; `AGENT_TRIGGERS_SELF_URL` remains available for
+ordinary trigger dispatch but cannot route capability-owned completion work to another replica.
+
 ```http
 POST /api/agents/v1/events/bindings
 Authorization: Bearer <remote-agents-api-key>

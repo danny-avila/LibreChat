@@ -1100,6 +1100,80 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(atCapacity).toBe(true);
   });
 
+  it('holds capacity permits before task registration and releases them explicitly', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const permits = Array.from({ length: 10 }, (_, index) =>
+      registry.reserveCapacity({
+        userId: 'u1',
+        conversationId: 'c-permits',
+        toolCallId: `call_${index}`,
+        runId: 'run-1',
+      }),
+    );
+    expect(permits.every((result) => 'permit' in result)).toBe(true);
+    expect(
+      registry.reserveCapacity({
+        userId: 'u1',
+        conversationId: 'c-permits',
+        toolCallId: 'call_rejected',
+        runId: 'run-1',
+      }),
+    ).toEqual({ atCapacity: true });
+    const first = permits[0];
+    if (!('permit' in first)) {
+      throw new Error('expected capacity permit');
+    }
+    registry.releaseCapacity(first.permit);
+    const replacement = registry.reserveCapacity({
+      userId: 'u1',
+      conversationId: 'c-permits',
+      toolCallId: 'call_replacement',
+      runId: 'run-1',
+    });
+    if (!('permit' in replacement)) {
+      throw new Error('expected replacement permit');
+    }
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c-permits',
+      toolCallId: 'call_replacement',
+      toolName: 'search_mcp_docs',
+      runId: 'run-1',
+      capacityPermit: replacement.permit,
+    });
+    expect('atCapacity' in created).toBe(false);
+  });
+
+  it('retains an in-flight capacity permit until durable reservation completes', () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_787_000_000_000);
+    const registry = new BackgroundTaskRegistryClass();
+    const admission = registry.reserveCapacity({
+      userId: 'u1',
+      conversationId: 'c-slow-reservation',
+      toolCallId: 'call_slow',
+      runId: 'run-1',
+    });
+    if (!('permit' in admission)) {
+      throw new Error('expected capacity permit');
+    }
+
+    /** Cross both the former one-minute permit timeout and idle-bucket TTL.
+     * A slow durable reservation still owns this slot until its caller
+     * consumes or releases it. */
+    now.mockReturnValue(1_787_000_000_000 + 7 * 60 * 60 * 1000);
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c-slow-reservation',
+      toolCallId: 'call_slow',
+      toolName: 'search_mcp_docs',
+      runId: 'run-1',
+      capacityPermit: admission.permit,
+    });
+
+    expect('atCapacity' in created).toBe(false);
+    now.mockRestore();
+  });
+
   it('evicts oldest settled tasks instead of blocking when the total cap is full', () => {
     const registry = new BackgroundTaskRegistryClass();
     for (let i = 0; i < 200; i++) {

@@ -9,6 +9,11 @@ import type {
 } from './envelope';
 import type { AgentTriggerDispatchContext } from './dispatch';
 import type { AgentRunPrincipal } from '../envelope';
+import {
+  EVENT_ACTOR_DETACHED_COMPLETION_SOURCE,
+  EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
+  parseAgentEventActorDetachedCompletion,
+} from './detachedAction';
 import { dispatchAgentTrigger } from './dispatch';
 
 const DEFAULT_FIRE_TIMEOUT_MS = 30_000;
@@ -119,7 +124,7 @@ export type AgentTriggerExecutionResult =
 
 export interface AgentTriggerExecutionHostDeps {
   /** Trusted root URL for this LibreChat server. */
-  getBaseUrl: () => string;
+  getBaseUrl: (options?: { localOnly?: boolean }) => string;
   /** Mint a short-lived token for the envelope's already-authenticated principal. */
   mintToken: (principal: AgentRunPrincipal, envelope: AgentTriggerEnvelope) => MaybePromise<string>;
   /** Optional user-timezone resolver for dynamic date variables in a new run. */
@@ -534,6 +539,13 @@ async function startRun(
   timeoutMs: number,
 ): Promise<AgentTriggerContinueResult | AgentTriggerFireResult> {
   const mode = envelope.mode;
+  const detachedCompletion =
+    mode === 'continue' &&
+    envelope.event.type === EVENT_ACTOR_DETACHED_COMPLETION_TYPE &&
+    envelope.event.source.type === 'internal' &&
+    envelope.event.source.id === EVENT_ACTOR_DETACHED_COMPLETION_SOURCE
+      ? parseAgentEventActorDetachedCompletion(envelope.event.payload)
+      : undefined;
   const scope = abortScope(context.signal, timeoutMs);
   let preparation: AgentTriggerContinuePreparation | undefined;
   try {
@@ -574,7 +586,12 @@ async function startRun(
         scope,
         context.signal,
       ),
-      setupValue(() => deps.getBaseUrl(), mode, scope, context.signal),
+      setupValue(
+        () => deps.getBaseUrl(detachedCompletion == null ? undefined : { localOnly: true }),
+        mode,
+        scope,
+        context.signal,
+      ),
     ]).catch((error: unknown) => {
       scope.abort();
       throw error;
@@ -632,6 +649,7 @@ async function startRun(
                 ...(envelope.expectedAction != null && {
                   expectedAction: envelope.expectedAction,
                 }),
+                ...(detachedCompletion == null ? {} : { internalCompletion: detachedCompletion }),
               },
             }),
           ...(envelope.mode === 'fire' && {

@@ -38,7 +38,6 @@ export interface ResolveAgentTurnExecutionPlanInput {
    * after every resume consumer understands signed Event Actor suspensions. */
   durableEventActorSuspensions: boolean;
   checkpointerType?: TCheckpointerType;
-  expectedActionMayDetach: boolean;
 }
 
 const COMPLETION_EVENT_TYPE = 'subagent.completion';
@@ -73,7 +72,6 @@ export function resolveAgentTurnExecutionPlan(
     binding != null &&
     expectedAction != null &&
     input.checkpointerType !== 'memory' &&
-    !input.expectedActionMayDetach &&
     (!input.canPause || input.durableEventActorSuspensions);
   let strategy: AgentTurnContinuationStrategy = 'history';
   if (input.isNewConversation) {
