@@ -370,22 +370,22 @@ export default function useAskAnswerMode(conversationId?: string | null) {
           });
           /** A successful answer never goes through `collapse`, so the released
            *  text has to be handed back here too or the user's ordinary message
-           *  dies with the question.
-           *
-           *  Restored whenever one is stashed, independently of the reset
-           *  condition below: only the free-text path sets
+           *  dies with the question. Restored on EVERY submission path, not
+           *  just the free-text one: only that path sets
            *  `consumedComposerText`, so gating on it discarded the stash on an
-           *  option click or Skip. The stash also outranks whatever the
-           *  composer currently holds, which is the answer draft this
-           *  submission just consumed. */
+           *  option click or Skip.
+           *
+           *  Both writes require the composer to still hold what was
+           *  submitted. The textarea stays editable while the resume is in
+           *  flight, and anything typed since is newer than both the stash and
+           *  the answer, so it wins. */
           const released = releasedComposerTextRef.current[submittedActionId];
-          if (released) {
-            currentScope.formContext?.setValue('text', released);
-          } else if (
-            (consumedComposerText || (wasActive && saveDrafts)) &&
-            currentScope.formContext?.getValues('text') === submittedComposerText
-          ) {
-            currentScope.formContext.reset();
+          if (currentScope.formContext?.getValues('text') === submittedComposerText) {
+            if (released) {
+              currentScope.formContext.setValue('text', released);
+            } else if (consumedComposerText || (wasActive && saveDrafts)) {
+              currentScope.formContext.reset();
+            }
           }
           setReleasedComposerText((current) => {
             if (current[submittedActionId] == null) {
