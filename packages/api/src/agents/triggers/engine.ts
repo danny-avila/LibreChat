@@ -68,6 +68,7 @@ export type AgentTriggerDeliveryStatus =
   | 'leased'
   | 'capability_leased'
   | 'succeeded'
+  | 'capability_dead'
   | 'dead';
 
 export interface AgentTriggerDeliveryFailure {

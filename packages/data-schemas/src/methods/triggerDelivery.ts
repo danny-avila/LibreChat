@@ -916,6 +916,7 @@ export function createAgentTriggerDeliveryMethods(
               'capability_pending',
               'leased',
               'capability_leased',
+              'capability_dead',
               'dead',
             ],
           },
@@ -2360,7 +2361,7 @@ export function createAgentTriggerDeliveryMethods(
         actorReceipt: { $exists: false },
       }),
       Delivery().countDocuments({
-        status: 'dead',
+        status: { $in: ['dead', 'capability_dead'] },
         'envelope.target.bindingId': { $exists: true },
         'handling.status': 'started',
         actorReceipt: { $exists: false },
@@ -2424,29 +2425,33 @@ export function createAgentTriggerDeliveryMethods(
     },
   ): Promise<boolean> {
     const error = normalizeFailure(input.error);
-    const dead = await Delivery()
-      .findOneAndUpdate(
-        fence(input),
-        {
-          $set: { status: 'dead', settledAt: input.settledAt, lastError: error },
-          $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, expiresAt: 1 },
-          $push: {
-            history: {
-              $each: [
-                {
-                  attempt: input.attempt,
-                  outcome: 'dead',
-                  at: input.settledAt,
-                  workerId: input.workerId,
-                  error,
-                },
-              ],
-              $slice: -HISTORY_LIMIT,
+    const deadUpdate = (status: 'dead' | 'capability_dead') => ({
+      $set: { status, settledAt: input.settledAt, lastError: error },
+      $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, expiresAt: 1 },
+      $push: {
+        history: {
+          $each: [
+            {
+              attempt: input.attempt,
+              outcome: 'dead' as const,
+              at: input.settledAt,
+              workerId: input.workerId,
+              error,
             },
-          },
+          ],
+          $slice: -HISTORY_LIMIT,
         },
-        { new: true },
-      )
+      },
+    });
+    const capabilityDead = await Delivery().updateOne(
+      capabilityFence(input),
+      deadUpdate('capability_dead'),
+    );
+    if (capabilityDead.modifiedCount === 1) {
+      return true;
+    }
+    const dead = await Delivery()
+      .findOneAndUpdate(fence(input), deadUpdate('dead'), { new: true })
       .select('_id orderingKey batchMemberIds batchMembersSettledAt requeueCount')
       .lean<
         Pick<
@@ -2547,7 +2552,7 @@ export function createAgentTriggerDeliveryMethods(
     }
     const boundedLimit = Math.min(limit, MAX_DEAD_LETTER_LIMIT);
     const deliveries = await Delivery()
-      .find({ status: 'dead', batchRootId: { $exists: false } })
+      .find({ status: { $in: ['dead', 'capability_dead'] }, batchRootId: { $exists: false } })
       .sort({ updatedAt: -1, _id: -1 })
       .limit(boundedLimit)
       .lean<IAgentTriggerDelivery[]>();
@@ -2561,7 +2566,7 @@ export function createAgentTriggerDeliveryMethods(
     const candidate = await Delivery()
       .findOne({
         _id: id,
-        status: 'dead',
+        status: { $in: ['dead', 'capability_dead'] },
         batchRootId: { $exists: false },
         actorReceipt: { $exists: false },
         actorActionAdmittedAt: { $exists: false },
@@ -2579,7 +2584,7 @@ export function createAgentTriggerDeliveryMethods(
       .findOneAndUpdate(
         {
           _id: candidate._id,
-          status: 'dead',
+          status: candidate.status,
           batchRootId: { $exists: false },
           actorReceipt: { $exists: false },
           actorActionAdmittedAt: { $exists: false },

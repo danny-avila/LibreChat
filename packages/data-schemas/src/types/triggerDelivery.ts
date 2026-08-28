@@ -10,6 +10,7 @@ export type AgentTriggerDeliveryStatus =
   | 'leased'
   | 'capability_leased'
   | 'succeeded'
+  | 'capability_dead'
   | 'dead';
 export const AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 = 'event_actor_detached_action_v1';
 export type AgentTriggerDeliveryOutcome = 'succeeded' | 'retry' | 'dead';

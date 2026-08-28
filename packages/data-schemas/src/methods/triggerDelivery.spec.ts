@@ -7,7 +7,6 @@ import type {
   IAgentTriggerLaneSequenceDocument,
   IAgentTriggerUserPurgeDocument,
 } from '~/types/triggerDelivery';
-import { AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 } from '~/types/triggerDelivery';
 import type { IUser } from '~/types/user';
 import {
   AgentTriggerDeliveryConflictError,
@@ -16,6 +15,7 @@ import {
   setAgentEventActorReceiptMetricObserver,
   type AgentTriggerDeliveryMethods,
 } from './triggerDelivery';
+import { AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 } from '~/types/triggerDelivery';
 import { createAgentTriggerLaneSequenceModel } from '../models/triggerLaneSequence';
 import { createAgentTriggerUserPurgeModel } from '../models/triggerUserPurge';
 import { createAgentTriggerDeliveryModel } from '../models/triggerDelivery';
@@ -281,15 +281,48 @@ describe('agent trigger delivery methods', () => {
         leaseUntil: new Date(recoveryNow.getTime() + 60_000),
       }),
     ).resolves.toBeNull();
+    const recovered = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'capable-worker-2',
+      claimToken: 'capable-recovery',
+      now: recoveryNow,
+      leaseUntil: new Date(recoveryNow.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    expect(recovered).toMatchObject({ status: 'capability_leased' });
+
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: recovered!.id,
+      workerId: 'capable-worker-2',
+      claimToken: 'capable-recovery',
+      now: recoveryNow,
+    });
+    expect(attempt).toBe(1);
     await expect(
-      methods.claimNextAgentTriggerDelivery({
+      methods.deadLetterAgentTriggerDelivery({
+        id: recovered!.id,
         workerId: 'capable-worker-2',
         claimToken: 'capable-recovery',
+        attempt: 1,
+        error: transientFailure(recoveryNow),
+        settledAt: recoveryNow,
+      }),
+    ).resolves.toBe(true);
+    await expect(Delivery.findById(recovered!.id).lean()).resolves.toMatchObject({
+      status: 'capability_dead',
+    });
+
+    const [deadLetter] = await methods.getAgentTriggerDeadLetters();
+    expect(deadLetter).toMatchObject({ id: recovered!.id, status: 'capability_dead' });
+    const requeued = await methods.requeueAgentTriggerDelivery(recovered!.id, recoveryNow);
+    expect(requeued).toMatchObject({ status: 'capability_pending' });
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'old-worker',
+        claimToken: 'old-requeue',
         now: recoveryNow,
         leaseUntil: new Date(recoveryNow.getTime() + 60_000),
-        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
       }),
-    ).resolves.toMatchObject({ status: 'capability_leased' });
+    ).resolves.toBeNull();
   });
 
   it('allocates a replica-stable monotonic sequence within an ordering lane', async () => {

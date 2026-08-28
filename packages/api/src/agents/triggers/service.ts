@@ -183,6 +183,9 @@ function publicReceiptStatus(
   if (status === 'capability_staging') {
     return 'staging';
   }
+  if (status === 'capability_dead') {
+    return 'dead';
+  }
   return status === 'capability_leased' ? 'leased' : status;
 }
 

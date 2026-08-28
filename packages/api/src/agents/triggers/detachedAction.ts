@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 } from '@librechat/data-schemas';
 import type {
   AgentEventActorDetachedAction,
   AgentTriggerDeliveryMethods,
   IAgentEventActorSuspensionEvidence,
 } from '@librechat/data-schemas';
-import { AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 } from '@librechat/data-schemas';
 import type { EventActorInterrupt } from '@librechat/agents';
 import type {
   AgentContinueTriggerEnvelope,

@@ -132,6 +132,7 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
         'leased',
         'capability_leased',
         'succeeded',
+        'capability_dead',
         'dead',
       ],
       required: true,
