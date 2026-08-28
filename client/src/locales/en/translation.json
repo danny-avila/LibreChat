@@ -1183,6 +1183,7 @@
   "com_ui_description_placeholder": "Optional: Enter a description to display for the prompt",
   "com_ui_detailed": "Detailed",
   "com_ui_details": "Details",
+  "com_ui_diff_stats": "{{0}} additions, {{1}} deletions",
   "com_ui_disabled": "Disabled",
   "com_ui_disabling": "Disabling...",
   "com_ui_done": "Done",

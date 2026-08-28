@@ -3,7 +3,7 @@ import copy from 'copy-to-clipboard';
 import { useAtomValue } from 'jotai';
 import { Lightbulb, ChevronDown } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
-import { disclosureChevronVariants } from '@librechat/client';
+import { Button, disclosureChevronVariants } from '@librechat/client';
 import type { MouseEvent, FocusEvent } from 'react';
 import { ThinkingContent, ThinkingButton, FloatingThinkingBar, useInViewport } from './Thinking';
 import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
@@ -280,13 +280,22 @@ export const ReasoningCompact = memo(
     const containerRef = useRef<HTMLDivElement>(null);
     const { ref: headerRef, inViewport: headerInViewport } = useInViewport();
     const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
+    /** Collapsed is the default whenever thoughts are hidden, and a streaming
+     *  THINK part re-renders on every delta. Keeping the full text mounted
+     *  behind the invisible panel made long reasoning streams progressively
+     *  more expensive on top of the visible peek. */
+    const { shouldRenderBody, mountBody, handleTransitionEnd } = useLazyCollapseBody(isExpanded);
 
     const reasoningText = useMemo(() => stripThinkTags(reasoning), [reasoning]);
 
-    const handleToggle = useCallback((e: MouseEvent<HTMLButtonElement>) => {
-      e.preventDefault();
-      setIsExpanded((prev) => !prev);
-    }, []);
+    const handleToggle = useCallback(
+      (e: MouseEvent<HTMLButtonElement>) => {
+        e.preventDefault();
+        mountBody();
+        setIsExpanded((prev) => !prev);
+      },
+      [mountBody],
+    );
 
     const handleCopy = useCallback(() => {
       if (!copy(reasoningText, { format: 'text/plain' })) {
@@ -322,12 +331,12 @@ export const ReasoningCompact = memo(
         onBlur={handleBlur}
       >
         <div ref={headerRef} className="relative flex h-5 shrink-0 items-center gap-1.5">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={handleToggle}
             aria-expanded={isExpanded}
             aria-controls={contentId}
-            className="group/disclosure inline-flex min-w-0 flex-1 items-center gap-2 text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+            className="group/disclosure h-auto min-w-0 flex-1 justify-start gap-2 rounded-none p-0 font-normal text-text-secondary hover:bg-transparent"
           >
             <Lightbulb className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
             <span className="tool-status-text font-medium">{label}</span>
@@ -338,7 +347,7 @@ export const ReasoningCompact = memo(
               )}
               aria-hidden="true"
             />
-          </button>
+          </Button>
           {isExpanded && (
             <CopyButton
               isCopied={isCopied}
@@ -361,18 +370,23 @@ export const ReasoningCompact = memo(
           aria-label={label}
           aria-hidden={!isExpanded || undefined}
           style={expandStyle}
+          onTransitionEnd={handleTransitionEnd}
         >
           <div className="overflow-hidden" ref={expandRef}>
-            <div className="relative my-2 rounded-2xl border border-border-light bg-surface-secondary p-4 pb-9 text-text-secondary">
-              <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>{reasoningText}</p>
-              <FloatingThinkingBar
-                isVisible={isBarVisible && isExpanded && !headerInViewport}
-                isExpanded={isExpanded}
-                onClick={handleToggle}
-                content={reasoningText}
-                contentId={contentId}
-              />
-            </div>
+            {shouldRenderBody && (
+              <div className="relative my-2 rounded-2xl border border-border-light bg-surface-secondary p-4 pb-9 text-text-secondary">
+                <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>
+                  {reasoningText}
+                </p>
+                <FloatingThinkingBar
+                  isVisible={isBarVisible && isExpanded && !headerInViewport}
+                  isExpanded={isExpanded}
+                  onClick={handleToggle}
+                  content={reasoningText}
+                  contentId={contentId}
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>

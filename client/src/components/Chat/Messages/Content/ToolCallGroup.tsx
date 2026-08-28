@@ -23,6 +23,7 @@ import { ToolAuthWarning, ToolAuthWarningContext } from './auth';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { AttachmentGroup, ReasoningCompact } from './Parts';
+import { isMemoryFailureOutput } from './Parts/MemoryCall';
 import { isError, StackedToolIcons } from './ToolOutput';
 import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
@@ -114,10 +115,18 @@ function getToolMeta(part: TMessageContentParts): ToolMeta | null {
     const completed = !!tc.output || tc.progress === 1;
     const name = tc.name ?? '';
     const iconName = isBashProgrammaticToolCall(name, tc.args) ? Tools.bash_tool : name;
+    /** Memory tools report failure in prose ("Invalid key ...") that generic
+     *  `isError` parsing does not recognize, so `MemoryCall` classifies it with
+     *  its own predicate. Reuse that here or a persisted call with no terminal
+     *  status shows a failed card inside a group claiming success. */
+    const failedOutput =
+      name === 'set_memory' || name === 'delete_memory'
+        ? isMemoryFailureOutput(name, tc.output ?? '')
+        : hasFailedOutput(tc.output);
     return {
       name,
       iconName,
-      ...resolveOutcome(runStepStatus, completed, hasFailedOutput(tc.output)),
+      ...resolveOutcome(runStepStatus, completed, failedOutput),
     };
   }
 
