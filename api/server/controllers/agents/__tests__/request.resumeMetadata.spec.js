@@ -267,7 +267,6 @@ jest.mock('@librechat/api', () => ({
   resumeAgentEventActor: (...args) => mockResumeAgentEventActor(...args),
   createAgentEventActorDetachedActionLifecycle: (...args) =>
     mockCreateAgentEventActorDetachedActionLifecycle(...args),
-  isAgentEventActorDetachedActionProducerEnabled: () => true,
   parseAgentEventActorDetachedCompletion: (value) => (value?.version === 1 ? value : undefined),
   EVENT_ACTOR_DETACHED_COMPLETION_SOURCE: 'librechat-event-actor',
   EVENT_ACTOR_DETACHED_COMPLETION_TYPE: 'librechat.event_actor.detached_completion',
@@ -4385,9 +4384,9 @@ describe('ResumableAgentController resume metadata', () => {
     );
     const lifecycleDependencies =
       mockCreateAgentEventActorDetachedActionLifecycle.mock.calls.at(-1)[1];
-    expect(lifecycleDependencies.producerEnabled()).toBe(true);
+    expect(lifecycleDependencies.durableStoreAvailable()).toBe(true);
     mockGenerationJobManager.isRedis = false;
-    expect(lifecycleDependencies.producerEnabled()).toBe(false);
+    expect(lifecycleDependencies.durableStoreAvailable()).toBe(false);
     expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
       'child-conversation',
       'user-123',

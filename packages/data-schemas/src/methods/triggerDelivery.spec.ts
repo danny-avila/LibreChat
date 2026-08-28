@@ -238,6 +238,60 @@ describe('agent trigger delivery methods', () => {
     expect(claims.filter((claim) => claim != null)).toHaveLength(1);
   });
 
+  it('keeps capability work visible but nonclaimable to pre-capability consumers', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        orderingKey: 'legacy-visible-capability-lane',
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+    );
+    const stored = await Delivery.findById(queued.delivery.id).lean();
+    expect(stored).toMatchObject({
+      status: 'leased',
+      capabilityStatus: 'pending',
+      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+    });
+    expect(stored!.leaseUntil!.getUTCFullYear()).toBe(9999);
+
+    /** Exact pre-#15307 claim semantics: ordinary pending work or an expired
+     * legacy lease. The outer shield is known to the old query but never due. */
+    const oldClaim = await Delivery.findOneAndUpdate(
+      {
+        $or: [
+          { status: 'pending', availableAt: { $lte: START } },
+          {
+            status: 'leased',
+            leaseUntil: { $lte: new Date(START.getTime() - 30_000) },
+          },
+        ],
+      },
+      {
+        $set: {
+          status: 'leased',
+          leaseBy: 'old-worker',
+          leaseUntil: new Date(START.getTime() + 60_000),
+          claimToken: 'old-claim',
+        },
+      },
+      { new: true },
+    ).lean();
+    expect(oldClaim).toBeNull();
+
+    /** Exact old lane-retention and account-drain predicates continue to see
+     * the shield, so neither ordering state nor its user can be purged. */
+    await expect(
+      Delivery.exists({
+        orderingKey: 'legacy-visible-capability-lane',
+        status: { $in: ['staging', 'batched', 'pending', 'leased', 'dead'] },
+      }),
+    ).resolves.not.toBeNull();
+    await expect(
+      Delivery.countDocuments({ user, status: 'leased', leaseUntil: { $gt: START } }),
+    ).resolves.toBe(1);
+  });
+
   it('keeps capability-fenced work limited to capable workers through lease recovery', async () => {
     const queued = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({
@@ -270,7 +324,7 @@ describe('agent trigger delivery methods', () => {
 
     await Delivery.updateOne(
       { _id: capable!.id },
-      { $set: { leaseUntil: new Date(START.getTime() - 60_000) } },
+      { $set: { capabilityLeaseUntil: new Date(START.getTime() - 60_000) } },
     );
     const recoveryNow = new Date(START.getTime() + 60_000);
     await expect(
@@ -308,7 +362,8 @@ describe('agent trigger delivery methods', () => {
       }),
     ).resolves.toBe(true);
     await expect(Delivery.findById(recovered!.id).lean()).resolves.toMatchObject({
-      status: 'capability_dead',
+      status: 'leased',
+      capabilityStatus: 'dead',
     });
 
     const [deadLetter] = await methods.getAgentTriggerDeadLetters();
@@ -409,7 +464,10 @@ describe('agent trigger delivery methods', () => {
     const updateSpy = jest
       .spyOn(Delivery.collection, 'updateOne')
       .mockImplementation(async (filter, update, options) => {
-        const status = filter.status as { $in?: string[] } | undefined;
+        const status = (filter.status ??
+          (filter.$or as Array<{ status?: { $in?: string[] } }> | undefined)?.find(
+            (condition) => condition.status != null,
+          )?.status) as { $in?: string[] } | undefined;
         if (
           !paused &&
           filter.orderingKey === orderingKey &&

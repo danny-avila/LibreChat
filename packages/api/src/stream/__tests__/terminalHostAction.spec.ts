@@ -394,6 +394,47 @@ describe('GenerationJobManager terminal host actions', () => {
     );
   });
 
+  it('recovers detached completion jobs from the capability-isolated terminal lane', async () => {
+    const streamId = 'conversation-detached-terminal-lane';
+    const invocationKey = 'trigger-original-invocation';
+    const completionDeliveryKey = 'trigger-internal-completion';
+    const invocationGenerationCreatedAt = 42;
+    const job = await manager.createJob(streamId, 'user-1', streamId, {
+      initialMetadata: {
+        agentEventDeliveryKey: completionDeliveryKey,
+        agentEventInvocationKey: invocationKey,
+        agentEventInvocationGenerationCreatedAt: invocationGenerationCreatedAt,
+      },
+    });
+    await store.transitionStatus(streamId, {
+      from: 'running',
+      to: 'complete',
+      expectCreatedAt: job.createdAt,
+      patch: { completedAt: Date.now(), terminalHostActionPending: true },
+    });
+    const terminalJob = (await store.getJob(streamId))!;
+    jest.spyOn(store, 'getTerminalHostActionJobs').mockResolvedValue([]);
+    Object.assign(store, {
+      getDetachedAgentEventTerminalHostActionJobs: jest.fn().mockResolvedValue([terminalJob]),
+    });
+    const handler = jest.fn().mockResolvedValue(undefined);
+    manager.setTerminalHostActionHandler(handler);
+
+    await (manager as unknown as { cleanup: () => Promise<void> }).cleanup();
+
+    expect(handler).toHaveBeenCalledWith(
+      streamId,
+      expect.objectContaining({
+        agentEventDeliveryKey: completionDeliveryKey,
+        agentEventInvocationKey: invocationKey,
+        agentEventInvocationGenerationCreatedAt: invocationGenerationCreatedAt,
+      }),
+      expect.any(Array),
+      expect.any(Array),
+    );
+    await expect(store.getJob(streamId)).resolves.not.toHaveProperty('terminalHostActionPending');
+  });
+
   it('retains completed run-step evidence through repeated host-action failures', async () => {
     const handler = jest
       .fn()

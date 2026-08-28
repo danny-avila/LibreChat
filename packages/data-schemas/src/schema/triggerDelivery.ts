@@ -140,6 +140,11 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
       default: 'pending',
     },
     requiredWorkerCapability: { type: String, maxlength: 128 },
+    capabilityStatus: { type: String, enum: ['publishing', 'pending', 'leased', 'dead'] },
+    capabilityAvailableAt: { type: Date },
+    capabilityLeaseBy: { type: String },
+    capabilityLeaseUntil: { type: Date },
+    capabilityClaimToken: { type: String },
     attempts: { type: Number, required: true, default: 0, min: 0 },
     availableAt: { type: Date, required: true },
     envelopeBytes: { type: Number, min: 0 },
@@ -185,6 +190,18 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
 triggerDeliverySchema.index({ deliveryKey: 1 }, { unique: true });
 triggerDeliverySchema.index({ status: 1, availableAt: 1, createdAt: 1 });
 triggerDeliverySchema.index({ status: 1, leaseUntil: 1, createdAt: 1 });
+triggerDeliverySchema.index({
+  requiredWorkerCapability: 1,
+  capabilityStatus: 1,
+  capabilityAvailableAt: 1,
+  createdAt: 1,
+});
+triggerDeliverySchema.index({
+  requiredWorkerCapability: 1,
+  capabilityStatus: 1,
+  capabilityLeaseUntil: 1,
+  createdAt: 1,
+});
 triggerDeliverySchema.index({ orderingKey: 1, status: 1, laneSequence: 1 });
 triggerDeliverySchema.index({
   orderingKey: 1,

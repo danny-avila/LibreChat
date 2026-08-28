@@ -25,13 +25,8 @@ const TERMINAL_PERSIST_RETRY_INITIAL_MS = 100;
 const TERMINAL_PERSIST_RETRY_MAX_MS = 30_000;
 const RESERVATION_RECOVERY_MS = 60_000;
 const RUNNING_RECOVERY_MS = 30 * 60_000;
-const DETACHED_ACTION_PRODUCER_ENV = 'AGENT_TRIGGERS_DETACHED_ACTIONS_PRODUCER_ENABLED';
 export const EVENT_ACTOR_DETACHED_COMPLETION_TYPE = 'librechat.event_actor.detached_completion';
 export const EVENT_ACTOR_DETACHED_COMPLETION_SOURCE = 'librechat-event-actor';
-
-export function isAgentEventActorDetachedActionProducerEnabled(): boolean {
-  return process.env[DETACHED_ACTION_PRODUCER_ENV]?.trim().toLowerCase() === 'true';
-}
 
 export function parseAgentEventDetachedTerminalEvidence(
   value: unknown,
@@ -141,7 +136,7 @@ interface DetachedActionDependencies {
   persistTerminalEvidence(input: AgentEventDetachedTerminalEvidence): Promise<void>;
   onTerminal(input: { taskId: string; idempotencyKey: string }): Promise<void>;
   waitForTerminalPersistenceRetry?(delayMs: number): Promise<void>;
-  producerEnabled(): boolean;
+  durableStoreAvailable(): boolean;
   now?(): Date;
 }
 
@@ -279,7 +274,7 @@ export function createAgentEventActorDetachedActionLifecycle(
   deps: DetachedActionDependencies,
 ): AgentEventActorDetachedActionLifecycle {
   const now = deps.now ?? (() => new Date());
-  const producerEnabled = deps.producerEnabled();
+  const durableStoreAvailable = deps.durableStoreAvailable();
   let current: { taskId: string; idempotencyKey: string; launchAcknowledged: boolean } | undefined;
   const scope = {
     deliveryKey: owner.invocationId,
@@ -306,11 +301,11 @@ export function createAgentEventActorDetachedActionLifecycle(
       ) {
         return { status: 'ignored' };
       }
-      if (!producerEnabled) {
+      if (!durableStoreAvailable) {
         return {
           status: 'conflict',
           error:
-            'Detached Event Actor production is not activated for this deployment; no external action was launched',
+            'Detached Event Actor production requires durable generation storage; no external action was launched',
         };
       }
       const reservedAt = now();

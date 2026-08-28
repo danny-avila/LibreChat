@@ -43,7 +43,6 @@ const {
   resumeAgentEventActor,
   createAgentEventActionRecorder,
   createAgentEventActorDetachedActionLifecycle,
-  isAgentEventActorDetachedActionProducerEnabled,
   findAgentEventAppliedAction,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
@@ -1386,7 +1385,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       if (
         durableEventActorSuspension != null &&
         durableEventActorRequiresDetachedProducer &&
-        (!GenerationJobManager.isRedis || !isAgentEventActorDetachedActionProducerEnabled())
+        !GenerationJobManager.isRedis
       ) {
         const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
         await rollbackUnconsumedScheduleClaim(currentJob);
@@ -1475,8 +1474,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
               reserveAgentEventActorDetachedAction,
               markAgentEventActorDetachedActionRunning,
               settleAgentEventActorDetachedAction,
-              producerEnabled: () =>
-                GenerationJobManager.isRedis && isAgentEventActorDetachedActionProducerEnabled(),
+              durableStoreAvailable: () => GenerationJobManager.isRedis,
               persistTerminalEvidence: async (evidence) => {
                 const persisted =
                   await GenerationJobManager.persistAgentEventDetachedTerminalEvidence(

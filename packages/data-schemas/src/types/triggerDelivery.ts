@@ -95,6 +95,13 @@ export interface IAgentTriggerDelivery {
   status: AgentTriggerDeliveryStatus;
   /** Keeps a delivery invisible to pre-capability workers during rolling deploys. */
   requiredWorkerCapability?: string;
+  /** Private lifecycle for capability-owned work. The outer delivery status
+   * remains a legacy-known, nonclaimable compatibility shield. */
+  capabilityStatus?: 'publishing' | 'pending' | 'leased' | 'dead';
+  capabilityAvailableAt?: Date;
+  capabilityLeaseBy?: string;
+  capabilityLeaseUntil?: Date;
+  capabilityClaimToken?: string;
   attempts: number;
   availableAt: Date;
   envelopeBytes?: number;

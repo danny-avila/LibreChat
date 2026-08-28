@@ -112,7 +112,6 @@ const mockSettleAgentEventActorSuspension = jest.fn();
 const mockRecordAgentEventActorReconciliation = jest.fn();
 const mockResumeAgentEventActor = jest.fn();
 const mockCreateAgentEventActorDetachedActionLifecycle = jest.fn();
-const mockIsAgentEventActorDetachedActionProducerEnabled = jest.fn();
 const mockGetAgentTriggerDelivery = jest.fn();
 const mockReserveAgentEventActorDetachedAction = jest.fn();
 const mockMarkAgentEventActorDetachedActionRunning = jest.fn();
@@ -141,8 +140,6 @@ jest.mock('@librechat/api', () => ({
   resumeAgentEventActor: (...args) => mockResumeAgentEventActor(...args),
   createAgentEventActorDetachedActionLifecycle: (...args) =>
     mockCreateAgentEventActorDetachedActionLifecycle(...args),
-  isAgentEventActorDetachedActionProducerEnabled: () =>
-    mockIsAgentEventActorDetachedActionProducerEnabled(),
 }));
 
 jest.mock('~/models', () => ({
@@ -399,7 +396,6 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockClaimAgentEventActorSuspension.mockResolvedValue({ status: 'claimed' });
     mockSettleAgentEventActorSuspension.mockResolvedValue({ status: 'settled' });
     mockRecordAgentEventActorReconciliation.mockResolvedValue(true);
-    mockIsAgentEventActorDetachedActionProducerEnabled.mockReturnValue(true);
     mockGetAgentTriggerDelivery.mockResolvedValue(undefined);
     mockCreateAgentEventActorDetachedActionLifecycle.mockReturnValue(undefined);
     endpointAgent = {
@@ -678,9 +674,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       ).toBeLessThan(mockInitializeClient.mock.invocationCallOrder[0]);
       const lifecycleDependencies =
         mockCreateAgentEventActorDetachedActionLifecycle.mock.calls[0][1];
-      expect(lifecycleDependencies.producerEnabled()).toBe(true);
+      expect(lifecycleDependencies.durableStoreAvailable()).toBe(true);
       mockGenerationJobManager.isRedis = false;
-      expect(lifecycleDependencies.producerEnabled()).toBe(false);
+      expect(lifecycleDependencies.durableStoreAvailable()).toBe(false);
       expect(resumedClient.resumeCompletion).toHaveBeenCalledTimes(1);
       expect(mockGenerationJobManager.updateMetadata).toHaveBeenCalledWith(
         CONVO_ID,
@@ -745,7 +741,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           status: 'pending',
         },
       });
-      mockIsAgentEventActorDetachedActionProducerEnabled.mockReturnValue(false);
+      mockGenerationJobManager.isRedis = false;
 
       const res = await post(approveBody());
 
@@ -826,7 +822,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
             status: 'pending',
           },
         });
-        mockIsAgentEventActorDetachedActionProducerEnabled.mockReturnValue(false);
+        mockGenerationJobManager.isRedis = false;
         mockInitializeClient.mockRejectedValue(new Error('client reconstruction failed'));
         mockResumeAgentEventActor.mockImplementation(async (input) => {
           expect(await input.claimProjection()).toBe(true);

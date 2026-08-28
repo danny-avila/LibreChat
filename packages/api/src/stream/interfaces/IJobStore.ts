@@ -234,6 +234,11 @@ export interface SerializableJobData {
    * no action clears it immediately on its no-op success, so nothing accumulates.
    */
   terminalHostActionPending?: boolean;
+  /** Redis-only durable marker for a detached Event Actor completion hook.
+   * Capable stores expose it through `terminalHostActionPending` as well, but
+   * keep the persisted field distinct so legacy reconciliation cannot index or
+   * claim the completion through the ordinary terminal-action lane. */
+  detachedAgentEventTerminalHostActionPending?: boolean;
   /**
    * Last time a cleanup pass enumerated this pending host action for retry. Retention is
    * measured from this rather than `completedAt`, so evidence survives as long as some
@@ -877,6 +882,11 @@ export interface IJobStore {
    * retry the host adapter after a restart / on another replica, even though the job is
    * no longer in the requires_action index. */
   getTerminalHostActionJobs?(): Promise<SerializableJobData[]>;
+  /** Enumerates detached Event Actor completion generations from a versioned
+   * retry lane known only to capable consumers. Redis keeps this lane separate
+   * from `getTerminalHostActionJobs` so a rolling-deployment replica that only
+   * understands the legacy job identity can never claim it. */
+  getDetachedAgentEventTerminalHostActionJobs?(): Promise<SerializableJobData[]>;
   /** Clears the pending-host-action marker once the adapter acknowledges success.
    * Identity-fenced on `expectedCreatedAt` so a replacement generation at the same
    * streamId is never cleared through its predecessor. */

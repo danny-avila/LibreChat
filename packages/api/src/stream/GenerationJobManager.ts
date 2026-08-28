@@ -7612,6 +7612,22 @@ class GenerationJobManagerClass {
         logger.error('[GenerationJobManager] Failed to enumerate pending host actions', err);
       }
     }
+    // Detached completion generations live in a versioned recovery lane. An
+    // older replica knows only the ordinary terminal-host-action index and
+    // therefore cannot deserialize away the original invocation identity or
+    // acknowledge the completion against the wrong mailbox delivery.
+    if (this.jobStore.getDetachedAgentEventTerminalHostActionJobs) {
+      try {
+        for (const job of await this.jobStore.getDetachedAgentEventTerminalHostActionJobs()) {
+          candidates.set(job.streamId, job);
+        }
+      } catch (err) {
+        logger.error(
+          '[GenerationJobManager] Failed to enumerate detached Event Actor host actions',
+          err,
+        );
+      }
+    }
     const streamIds = new Set([...this.runtimeState.keys(), ...candidates.keys()]);
     for (const streamId of streamIds) {
       let job: SerializableJobData | null;

@@ -3,30 +3,7 @@ import type { AgentTriggerEnvelope } from './envelope';
 import {
   createAgentEventActorDetachedActionLifecycle,
   createAgentEventDetachedResumeHandler,
-  isAgentEventActorDetachedActionProducerEnabled,
 } from './detachedAction';
-
-describe('isAgentEventActorDetachedActionProducerEnabled', () => {
-  const key = 'AGENT_TRIGGERS_DETACHED_ACTIONS_PRODUCER_ENABLED';
-  const original = process.env[key];
-
-  afterEach(() => {
-    if (original == null) {
-      delete process.env[key];
-      return;
-    }
-    process.env[key] = original;
-  });
-
-  it('requires an explicit true activation', () => {
-    delete process.env[key];
-    expect(isAgentEventActorDetachedActionProducerEnabled()).toBe(false);
-    process.env[key] = 'false';
-    expect(isAgentEventActorDetachedActionProducerEnabled()).toBe(false);
-    process.env[key] = ' TRUE ';
-    expect(isAgentEventActorDetachedActionProducerEnabled()).toBe(true);
-  });
-});
 
 describe('createAgentEventActorDetachedActionLifecycle', () => {
   it('owns only the exact expected action and exposes a suspension after launch', async () => {
@@ -75,7 +52,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         persistTerminalEvidence,
         onTerminal: wake,
         waitForTerminalPersistenceRetry,
-        producerEnabled: () => true,
+        durableStoreAvailable: () => true,
         now: () => new Date('2026-08-28T12:00:00.000Z'),
       },
     );
@@ -151,7 +128,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
     });
   });
 
-  it('fails closed before durable reservation until detached production is activated', async () => {
+  it('fails closed before durable reservation when durable generation storage is unavailable', async () => {
     const reserve = jest.fn();
     const lifecycle = createAgentEventActorDetachedActionLifecycle(
       {
@@ -169,7 +146,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         settleAgentEventActorDetachedAction: jest.fn(),
         persistTerminalEvidence: jest.fn(),
         onTerminal: jest.fn(),
-        producerEnabled: () => false,
+        durableStoreAvailable: () => false,
       },
     );
 
@@ -182,7 +159,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       }),
     ).resolves.toEqual({
       status: 'conflict',
-      error: expect.stringContaining('not activated'),
+      error: expect.stringContaining('requires durable generation storage'),
     });
     expect(reserve).not.toHaveBeenCalled();
     expect(lifecycle.readSuspension()).toBeUndefined();
@@ -225,7 +202,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         settleAgentEventActorDetachedAction: jest.fn(),
         persistTerminalEvidence: jest.fn(),
         onTerminal: jest.fn(),
-        producerEnabled: () => true,
+        durableStoreAvailable: () => true,
       },
     );
 
@@ -290,7 +267,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         persistTerminalEvidence,
         onTerminal: jest.fn(),
         waitForTerminalPersistenceRetry,
-        producerEnabled: () => true,
+        durableStoreAvailable: () => true,
       },
     );
     const reservation = await lifecycle.reserve({
@@ -357,7 +334,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         settleAgentEventActorDetachedAction: jest.fn(),
         persistTerminalEvidence: jest.fn(),
         onTerminal: jest.fn(),
-        producerEnabled: () => true,
+        durableStoreAvailable: () => true,
       },
     );
     const input = {
@@ -408,7 +385,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       settleAgentEventActorDetachedAction: jest.fn(),
       persistTerminalEvidence: jest.fn(),
       onTerminal: jest.fn(),
-      producerEnabled: () => true,
+      durableStoreAvailable: () => true,
       now: () => new Date('2026-08-28T12:00:00.000Z'),
     };
     const owner = {
