@@ -699,6 +699,99 @@ describe('agent trigger delivery methods', () => {
     });
   });
 
+  it('accepts legacy success as terminal over stale private dead state', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        orderingKey: 'legacy-completed-dead-capability',
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'capable-worker',
+      claimToken: 'claim-before-legacy-success',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'claim-before-legacy-success',
+      now: START,
+    });
+    await methods.deadLetterAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'claim-before-legacy-success',
+      attempt: 1,
+      error: transientFailure(),
+      settledAt: START,
+    });
+
+    const requeueAt = new Date(START.getTime() + 1_000);
+    await Delivery.updateOne(
+      { _id: claim!.id, status: 'capability_dead', capabilityStatus: 'dead' },
+      {
+        $set: { status: 'capability_pending', availableAt: requeueAt },
+        $unset: { settledAt: 1, lastError: 1 },
+        $inc: { requeueCount: 1 },
+      },
+    );
+    const legacyLeaseUntil = new Date(requeueAt.getTime() + 60_000);
+    const legacyClaim = await Delivery.findOneAndUpdate(
+      { _id: claim!.id, status: 'capability_pending', availableAt: { $lte: requeueAt } },
+      {
+        $set: {
+          status: 'capability_leased',
+          leaseBy: 'old-worker',
+          leaseUntil: legacyLeaseUntil,
+          claimToken: 'old-success-claim',
+        },
+      },
+      { new: true },
+    ).lean();
+    expect(legacyClaim).toMatchObject({
+      status: 'capability_leased',
+      capabilityStatus: 'dead',
+    });
+
+    const completedAt = new Date(requeueAt.getTime() + 1_000);
+    /** Exact terminal write left by the pre-shield worker: the outer lifecycle
+     * succeeds while the private lifecycle remains unknown and stale. */
+    await Delivery.updateOne(
+      {
+        _id: claim!.id,
+        status: 'capability_leased',
+        leaseBy: 'old-worker',
+        claimToken: 'old-success-claim',
+      },
+      {
+        $set: {
+          status: 'succeeded',
+          attempts: 2,
+          result: { status: 'legacy-complete' },
+          settledAt: completedAt,
+        },
+        $unset: {
+          leaseBy: 1,
+          leaseUntil: 1,
+          claimToken: 1,
+          lastError: 1,
+        },
+      },
+    );
+
+    await expect(
+      methods.getAgentTriggerDelivery(queued.delivery.deliveryKey),
+    ).resolves.toMatchObject({
+      status: 'succeeded',
+      result: { status: 'legacy-complete' },
+    });
+    await expect(methods.getAgentTriggerDeadLetters()).resolves.not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: claim!.id })]),
+    );
+  });
+
   it('allocates a replica-stable monotonic sequence within an ordering lane', async () => {
     const user = new mongoose.Types.ObjectId();
     const replicas = [

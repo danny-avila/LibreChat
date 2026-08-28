@@ -331,8 +331,13 @@ function toRecord(delivery: IAgentTriggerDelivery): AgentTriggerDeliveryRecord {
   if (delivery._id == null || delivery.createdAt == null) {
     throw new Error('Persisted agent trigger delivery is missing its identity or creation time');
   }
+  /** A pre-shield worker can requeue and finish a capability delivery without
+   * knowing to update its private lifecycle. Its terminal success is exact
+   * execution evidence, so stale private metadata cannot override it. */
   const shieldedCapability =
-    delivery.requiredWorkerCapability != null ? delivery.capabilityStatus : undefined;
+    delivery.requiredWorkerCapability != null && delivery.status !== 'succeeded'
+      ? delivery.capabilityStatus
+      : undefined;
   const projectedStatus =
     shieldedCapability == null ? delivery.status : capabilityStatusProjection[shieldedCapability];
   return {
@@ -3000,7 +3005,10 @@ export function createAgentTriggerDeliveryMethods(
     const boundedLimit = Math.min(limit, MAX_DEAD_LETTER_LIMIT);
     const deliveries = await Delivery()
       .find({
-        $or: [{ status: { $in: ['dead', 'capability_dead'] } }, { capabilityStatus: 'dead' }],
+        $or: [
+          { status: { $in: ['dead', 'capability_dead'] } },
+          { status: { $ne: 'succeeded' }, capabilityStatus: 'dead' },
+        ],
         batchRootId: { $exists: false },
       })
       .sort({ updatedAt: -1, _id: -1 })
