@@ -44,6 +44,79 @@ export const DEFAULT_GRAPH_SCOPES = 'https://graph.microsoft.com/.default';
 /** Shared with AuthController's OpenID session reuse check: a token within the buffer would expire in transit and 401 downstream */
 export const OPENID_EXPIRY_BUFFER_SECONDS = 30;
 
+/** Claims consulted when deciding whether a verified JWT is an access token rather than an ID token. */
+export interface JwtTypeClaims {
+  aud?: string | string[];
+  scp?: unknown;
+  scope?: unknown;
+  at_hash?: unknown;
+  c_hash?: unknown;
+}
+
+/** RFC 9068 media type for a JWT access token, as it appears in the `typ` header (compared case-insensitively). */
+const ACCESS_TOKEN_JWT_TYPES = new Set(['at+jwt', 'application/at+jwt']);
+
+function decodeJwtHeaderType(token: string): string | undefined {
+  try {
+    const header = JSON.parse(Buffer.from(token.split('.')[0], 'base64').toString());
+    return typeof header?.typ === 'string' ? header.typ.toLowerCase() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function audienceList(aud: string | string[] | undefined): string[] {
+  if (typeof aud === 'string') {
+    return [aud];
+  }
+  return Array.isArray(aud) ? aud : [];
+}
+
+/**
+ * Decides whether a verified bearer JWT is an OAuth 2.0 access token, so it may stand in for a
+ * stored access token. Passing this strategy's audience check does not settle the question: an
+ * OIDC ID token is minted for the client id and satisfies the same check, and using one as the
+ * On-Behalf-Of assertion is rejected by the IdP (Entra answers `AADSTS240002`).
+ *
+ * Only positive evidence qualifies a token, so an unrecognised shape fails closed rather than
+ * risking a mis-typed assertion:
+ * - an RFC 9068 `at+jwt` header type,
+ * - an OAuth scope claim (`scp` or `scope`), which OIDC does not define for an ID token,
+ * - an audience naming a protected resource rather than the OIDC client.
+ *
+ * `at_hash` and `c_hash` veto regardless, since they exist only to bind an ID token to its
+ * companion access token or code. `nonce` and `auth_time` are deliberately not vetoes: some
+ * providers (Keycloak) have emitted them in genuine access tokens.
+ */
+export function isAccessTokenJwt(
+  token: string | undefined,
+  claims: JwtTypeClaims | undefined,
+  resourceAudiences?: ReadonlySet<string>,
+): boolean {
+  if (!token || !claims) {
+    return false;
+  }
+
+  if (claims.at_hash != null || claims.c_hash != null) {
+    return false;
+  }
+
+  if (claims.scp != null || claims.scope != null) {
+    return true;
+  }
+
+  const headerType = decodeJwtHeaderType(token);
+  if (headerType != null && ACCESS_TOKEN_JWT_TYPES.has(headerType)) {
+    return true;
+  }
+
+  if (!resourceAudiences?.size) {
+    return false;
+  }
+
+  return audienceList(claims.aud).some((audience) => resourceAudiences.has(audience));
+}
+
 /**
  * Signals that the stored OpenID credentials cannot satisfy a placeholder, so the user must
  * re-authenticate. `ErrorController` maps this to a 401, and `statusCode` additionally lets

@@ -45,6 +45,7 @@ jest.mock('@librechat/api', () => ({
   invalidateCachedAuthUserDoc: jest.fn(),
   setCachedAuthUserDoc: jest.fn(),
   getHttpsProxyAgent: jest.fn(() => undefined),
+  isAccessTokenJwt: jest.requireActual('@librechat/api').isAccessTokenJwt,
   math: jest.fn((val, fallback) => fallback),
 }));
 jest.mock('~/models', () => ({
@@ -344,7 +345,11 @@ describe('openIdJwtStrategy – token source handling', () => {
     });
   });
 
-  it('should use raw Bearer token as access_token fallback when neither session nor cookie has one', async () => {
+  const encodeSegment = (value) => Buffer.from(JSON.stringify(value)).toString('base64');
+  const makeJwt = (claims, header = { alg: 'RS256' }) =>
+    `${encodeSegment(header)}.${encodeSegment(claims)}.signature`;
+
+  it('should decline the raw Bearer token when nothing identifies it as an access token', async () => {
     const req = {
       headers: {
         authorization: 'Bearer raw-bearer-token',
@@ -354,10 +359,85 @@ describe('openIdJwtStrategy – token source handling', () => {
 
     const { user } = await invokeVerify(req, payload);
 
-    expect(user.federatedTokens.access_token).toBe('raw-bearer-token');
+    expect(user.federatedTokens.access_token).toBeUndefined();
     expect(user.federatedTokens.id_token).toBe('cookie-id');
     expect(user.federatedTokens.refresh_token).toBe('cookie-refresh');
+    expect(user.federatedTokens.expires_at).toBeUndefined();
+  });
+
+  it('should decline an Entra-shaped ID token rather than reuse it as the OBO assertion', async () => {
+    const idTokenClaims = { ...payload, aud: 'client-id', nonce: 'n-0S6_WzA2Mj', tid: 'tenant-1' };
+    const req = { headers: { authorization: `Bearer ${makeJwt(idTokenClaims)}` } };
+
+    const { user } = await invokeVerify(req, idTokenClaims);
+
+    expect(user.federatedTokens.access_token).toBeUndefined();
+  });
+
+  it('should decline a raw Bearer token carrying the ID-token-only at_hash claim', async () => {
+    const claims = { ...payload, scp: 'User.Read', at_hash: 'HK6E_P6Dh8Y93mRNtsDB1Q' };
+    const req = { headers: { authorization: `Bearer ${makeJwt(claims)}` } };
+
+    const { user } = await invokeVerify(req, claims);
+
+    expect(user.federatedTokens.access_token).toBeUndefined();
+  });
+
+  it('should reuse a raw Bearer token bearing an OAuth `scp` claim', async () => {
+    const claims = { ...payload, scp: 'User.Read Files.Read' };
+    const rawToken = makeJwt(claims);
+    const req = { headers: { authorization: `Bearer ${rawToken}` } };
+
+    const { user } = await invokeVerify(req, claims);
+
+    expect(user.federatedTokens.access_token).toBe(rawToken);
     expect(user.federatedTokens.expires_at).toBe(payload.exp);
+  });
+
+  it('should reuse a raw Bearer token bearing an OAuth `scope` claim', async () => {
+    const claims = { ...payload, scope: 'openid profile api.read' };
+    const rawToken = makeJwt(claims);
+    const req = { headers: { authorization: `Bearer ${rawToken}` } };
+
+    const { user } = await invokeVerify(req, claims);
+
+    expect(user.federatedTokens.access_token).toBe(rawToken);
+  });
+
+  it('should reuse a raw Bearer token declaring the RFC 9068 `at+jwt` header type', async () => {
+    const rawToken = makeJwt(payload, { alg: 'RS256', typ: 'at+JWT' });
+    const req = { headers: { authorization: `Bearer ${rawToken}` } };
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(user.federatedTokens.access_token).toBe(rawToken);
+  });
+
+  it('should reuse a raw Bearer token whose audience names a configured resource', async () => {
+    withEnv({ OPENID_CLIENT_ID: 'client-id', OPENID_AUDIENCE: 'api://resource-app' }, () => {
+      openIdJwtLogin(mockOpenIdConfig);
+    });
+
+    const claims = { ...payload, aud: 'api://resource-app' };
+    const rawToken = makeJwt(claims);
+    const req = { headers: { authorization: `Bearer ${rawToken}` } };
+
+    const { user } = await invokeVerify(req, claims);
+
+    expect(user.federatedTokens.access_token).toBe(rawToken);
+  });
+
+  it('should decline a raw Bearer token whose only audience is the OIDC client id', async () => {
+    withEnv({ OPENID_CLIENT_ID: 'client-id', OPENID_AUDIENCE: 'client-id' }, () => {
+      openIdJwtLogin(mockOpenIdConfig);
+    });
+
+    const claims = { ...payload, aud: 'client-id' };
+    const req = { headers: { authorization: `Bearer ${makeJwt(claims)}` } };
+
+    const { user } = await invokeVerify(req, claims);
+
+    expect(user.federatedTokens.access_token).toBeUndefined();
   });
 
   it('should decode expires_at from a session access token that is itself a JWT', async () => {

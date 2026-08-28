@@ -4,6 +4,7 @@ import {
   extractOpenIDTokenInfo,
   isOpenIDTokenValid,
   processOpenIDPlaceholders,
+  isAccessTokenJwt,
 } from './oidc';
 
 describe('OpenID Token Utilities', () => {
@@ -763,6 +764,73 @@ describe('OpenID Token Utilities', () => {
 
       const tokenInfo = extractOpenIDTokenInfo(user);
       expect(tokenInfo).toBeNull();
+    });
+  });
+
+  describe('isAccessTokenJwt', () => {
+    const encodeSegment = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64');
+    const makeJwt = (claims: object, header: object = { alg: 'RS256' }) =>
+      `${encodeSegment(header)}.${encodeSegment(claims)}.signature`;
+
+    it('accepts a token carrying the Entra `scp` scope claim', () => {
+      const claims = { aud: 'client-id', scp: 'User.Read Files.Read' };
+      expect(isAccessTokenJwt(makeJwt(claims), claims)).toBe(true);
+    });
+
+    it('accepts a token carrying the `scope` claim', () => {
+      const claims = { aud: 'client-id', scope: 'openid api.read' };
+      expect(isAccessTokenJwt(makeJwt(claims), claims)).toBe(true);
+    });
+
+    it('accepts an RFC 9068 `at+jwt` header type regardless of case', () => {
+      const claims = { aud: 'client-id' };
+      expect(isAccessTokenJwt(makeJwt(claims, { alg: 'RS256', typ: 'at+JWT' }), claims)).toBe(true);
+      expect(
+        isAccessTokenJwt(makeJwt(claims, { alg: 'RS256', typ: 'application/at+jwt' }), claims),
+      ).toBe(true);
+    });
+
+    it('accepts a token whose audience names a configured resource', () => {
+      const claims = { aud: 'api://resource-app' };
+      expect(isAccessTokenJwt(makeJwt(claims), claims, new Set(['api://resource-app']))).toBe(true);
+    });
+
+    it('accepts a resource audience listed among several', () => {
+      const claims = { aud: ['api://resource-app', 'client-id'] };
+      expect(isAccessTokenJwt(makeJwt(claims), claims, new Set(['api://resource-app']))).toBe(true);
+    });
+
+    it('rejects an Entra-shaped ID token', () => {
+      const claims = { aud: 'client-id', nonce: 'n-0S6_WzA2Mj', tid: 'tenant-1', oid: 'object-1' };
+      expect(isAccessTokenJwt(makeJwt(claims), claims)).toBe(false);
+    });
+
+    it('rejects a token bearing the ID-token-only `at_hash` claim even when scoped', () => {
+      const claims = { aud: 'client-id', scp: 'User.Read', at_hash: 'HK6E_P6Dh8Y93mRNtsDB1Q' };
+      expect(isAccessTokenJwt(makeJwt(claims), claims)).toBe(false);
+    });
+
+    it('rejects a token bearing the ID-token-only `c_hash` claim', () => {
+      const claims = { aud: 'client-id', scope: 'api.read', c_hash: 'LDktKdoQak3Pk0cnXxCltA' };
+      expect(isAccessTokenJwt(makeJwt(claims), claims)).toBe(false);
+    });
+
+    it('rejects a token whose audience is only the OIDC client id', () => {
+      const claims = { aud: 'client-id' };
+      expect(isAccessTokenJwt(makeJwt(claims), claims, new Set(['api://resource-app']))).toBe(
+        false,
+      );
+    });
+
+    it('does not treat `nonce` or `auth_time` as disqualifying on a scoped token', () => {
+      const claims = { aud: 'client-id', scope: 'api.read', nonce: 'abc', auth_time: 1700000000 };
+      expect(isAccessTokenJwt(makeJwt(claims), claims)).toBe(true);
+    });
+
+    it('rejects a missing token, missing claims, or an unparseable header', () => {
+      expect(isAccessTokenJwt(undefined, { aud: 'client-id' })).toBe(false);
+      expect(isAccessTokenJwt('a.b.c', undefined)).toBe(false);
+      expect(isAccessTokenJwt('not-a-jwt', { aud: 'client-id' })).toBe(false);
     });
   });
 });
