@@ -202,6 +202,13 @@ export default function WebSearch({
     }
     return undefined;
   }, [attachments]);
+  /** `snippet` and `snippetHighlighted` are independently optional, and
+   *  `hasDetails` opens the card for ANY answer box, so a provider result
+   *  carrying only highlights rendered a heading with an empty body. */
+  const answerText = useMemo(
+    () => answerBox?.snippet || answerBox?.snippetHighlighted?.join(' ') || undefined,
+    [answerBox],
+  );
 
   // Show favicons from the raw SERP results immediately rather than waiting for
   // each source to flip to `processed`; the agents scrape barrier would otherwise
@@ -345,16 +352,16 @@ export default function WebSearch({
                         { count: sourceCount },
                       )}
                     </div>
-                    {answerBox && (answerBox.title || answerBox.snippet) && (
+                    {answerBox && (answerBox.title || answerText) && (
                       <div className="border-t border-border-light pt-2">
                         {answerBox.title && (
                           <div className="text-sm font-medium text-text-primary">
                             {answerBox.title}
                           </div>
                         )}
-                        {answerBox.snippet && (
+                        {answerText && (
                           <div className="mt-1 text-xs leading-relaxed text-text-secondary">
-                            {answerBox.snippet}
+                            {answerText}
                           </div>
                         )}
                       </div>

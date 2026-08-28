@@ -205,15 +205,19 @@ function AskUserQuestionPopoverPanel({
           </div>
         )}
         <div className="flex shrink-0 items-center justify-between gap-2 p-2">
-          <button
-            type="button"
-            className="cursor-text rounded-md text-xs text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+          {/* Shared primitive with the fill suppressed, the same way Summary's
+              quiet text buttons compose it: this reads as a hint, not a
+              control with a surface, but the focus ring and disabled handling
+              should still come from the recipe. */}
+          <Button
+            variant="ghost"
+            className="h-auto cursor-text rounded-md p-0 text-xs font-normal text-text-secondary hover:bg-transparent hover:text-text-primary"
             onClick={() => textAreaRef?.current?.focus()}
           >
             {options.length === 0
               ? localize('com_ui_ask_type_below_only')
               : localize('com_ui_ask_type_below')}
-          </button>
+          </Button>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" disabled={locked} onClick={() => skip()}>
               {localize('com_ui_skip')}

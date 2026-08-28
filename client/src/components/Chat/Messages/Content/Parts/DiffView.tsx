@@ -2,6 +2,10 @@ import { cn } from '~/utils';
 
 const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
 
+/** The separator pair `formatEditPreview` writes ahead of each batched edit,
+ *  numbered once a batch holds more than one. */
+const EDIT_SECTION_MARKER = /^(?:---|\+\+\+) (?:old_text|new_text)(?: \d+)?$/;
+
 export interface DiffLine {
   type: 'add' | 'del' | 'context' | 'hunk';
   text: string;
@@ -33,6 +37,15 @@ export function parseUnifiedDiff(diff: string): ParsedDiff {
   let inHunk = false;
 
   for (const raw of diff.replace(/\n$/, '').split('\n')) {
+    /** `formatEditPreview` emits a `--- old_text N` / `+++ new_text N` pair
+     *  before EACH batched edit's `@@`. Gating on `!inHunk` alone recognized
+     *  only the first pair, then counted every later one as a deletion plus an
+     *  addition — inflating the statistics and rendering marker rows. Matching
+     *  the synthetic pair by name catches every batch while leaving real
+     *  content lines that merely begin with `-`/`+` alone. */
+    if (EDIT_SECTION_MARKER.test(raw)) {
+      continue;
+    }
     if (!inHunk && (raw.startsWith('--- ') || raw.startsWith('+++ '))) {
       continue;
     }
