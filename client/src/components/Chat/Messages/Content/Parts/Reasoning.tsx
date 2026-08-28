@@ -1,4 +1,5 @@
 import { memo, useMemo, useState, useEffect, useCallback, useRef, useId } from 'react';
+import copy from 'copy-to-clipboard';
 import { useAtomValue } from 'jotai';
 import { Lightbulb, ChevronDown } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
@@ -35,7 +36,15 @@ const lastSentences = (text: string): string => {
 
 /** Symmetric top + bottom edge fade so streaming text dissolves in at the
  *  bottom and out at the top, framed by the same rounded outline the expanded
- *  panel uses. */
+ *  panel uses.
+ *
+ *  Custom-CSS exception, narrowly scoped: this is a `mask-image` stencil, not
+ *  paint. Only the alpha channel is read, so `#000` means "keep this pixel"
+ *  and `transparent` means "hide it" — the hue never reaches the screen and no
+ *  theme could meaningfully restyle it. Routing it through a theme role would
+ *  invite a token with alpha, which would silently wash out the text the mask
+ *  is supposed to keep. Tailwind has no mask-image utility that expresses a
+ *  four-stop gradient with `calc()` offsets, hence the inline style. */
 const PEEK_FADE =
   'linear-gradient(to bottom, transparent, #000 1.25rem, #000 calc(100% - 1.25rem), transparent)';
 
@@ -280,7 +289,9 @@ export const ReasoningCompact = memo(
     }, []);
 
     const handleCopy = useCallback(() => {
-      navigator.clipboard.writeText(reasoningText);
+      if (!copy(reasoningText, { format: 'text/plain' })) {
+        return;
+      }
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     }, [reasoningText]);

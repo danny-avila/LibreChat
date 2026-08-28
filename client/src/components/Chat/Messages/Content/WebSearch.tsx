@@ -3,6 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { Tools } from 'librechat-data-provider';
 import { Globe, ChevronDown, Info } from 'lucide-react';
 import {
+  Button,
   HoverCard,
   HoverCardTrigger,
   HoverCardPortal,
@@ -305,19 +306,25 @@ export default function WebSearch({
           </button>
           {hasDetails && (
             <HoverCard openDelay={50} open={showDetails} onOpenChange={setShowDetails}>
-              <HoverCardTrigger
-                tabIndex={0}
-                className={cn(
-                  'ml-auto inline-flex cursor-help items-center justify-center rounded-md p-1 text-text-secondary opacity-0 transition-all duration-200 ease-out',
-                  'hover:bg-surface-hover hover:text-text-primary',
-                  'group-focus-within/websearch:opacity-100 group-hover/websearch:opacity-100',
-                  'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
-                )}
-                onFocus={() => setShowDetails(true)}
-                onBlur={() => setShowDetails(false)}
-                aria-label={localize('com_ui_web_search_details')}
-              >
-                <Info className="size-3.5" aria-hidden="true" />
+              {/* Composed through `asChild` so the shared Button owns the
+                  rounding, hover fill, focus ring and motion (and gives a real
+                  <button> instead of Radix's default anchor). Only the
+                  hover-card reveal and the icon geometry stay local. */}
+              <HoverCardTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    'ml-auto size-auto cursor-help rounded-md p-1 text-text-secondary opacity-0',
+                    'group-focus-within/websearch:opacity-100 group-hover/websearch:opacity-100',
+                    'focus-visible:opacity-100',
+                  )}
+                  onFocus={() => setShowDetails(true)}
+                  onBlur={() => setShowDetails(false)}
+                  aria-label={localize('com_ui_web_search_details')}
+                >
+                  <Info className="size-3.5" aria-hidden="true" />
+                </Button>
               </HoverCardTrigger>
               <HoverCardPortal>
                 <HoverCardContent side="top" className="z-[999] w-80">
