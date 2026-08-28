@@ -1,10 +1,15 @@
 import { useMemo } from 'react';
 import { FilePenLine, FilePlus2 } from 'lucide-react';
 import type { TAttachment, PartMetadata } from 'librechat-data-provider';
+import DiffView, {
+  parseUnifiedDiff,
+  buildEditPreviewDiff,
+  diffPreviewText,
+  type TextEditPreview,
+} from './DiffView';
 import parseJsonField, { parseJsonFieldOccurrences } from './parseJsonField';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import { toolPanelSpacingClassName } from '../disclosure';
-import DiffView, { parseUnifiedDiff } from './DiffView';
 import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
 import CodeWindowHeader from './CodeWindowHeader';
@@ -18,11 +23,6 @@ import { cn } from '~/utils';
 type FileAuthoringToolName = 'create_file' | 'edit_file';
 
 type ToolCallArgs = string | Record<string, unknown> | undefined;
-
-interface TextEditPreview {
-  oldText: string;
-  newText: string;
-}
 
 function hasDiff(output: string): boolean {
   return /\n@@\s/.test(output) || output.includes('\n--- ') || output.includes('\n+++ ');
@@ -50,32 +50,13 @@ function textValue(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-function editPreviewLines(prefix: '-' | '+', text: string): string {
-  return text
-    .split('\n')
-    .map((line) => `${prefix}${line}`)
-    .join('\n');
-}
-
-function formatEditPreview(edits: TextEditPreview[]): string {
-  return edits
-    .map((edit, index) => {
-      const suffix = edits.length > 1 ? ` ${index + 1}` : '';
-      return [
-        `--- old_text${suffix}`,
-        `+++ new_text${suffix}`,
-        '@@',
-        editPreviewLines('-', edit.oldText),
-        editPreviewLines('+', edit.newText),
-      ].join('\n');
-    })
-    .join('\n\n');
-}
-
-function buildEditArgsPreview(args: ToolCallArgs): string {
+/** Structured edits for the args preview. Never formatted into diff text:
+ *  `buildEditPreviewDiff` renders them directly, so no separator has to be
+ *  invented and later told apart from real content. */
+function buildEditArgsPreview(args: ToolCallArgs): TextEditPreview[] {
   const parsed = parseArgsObject(args);
   if (Array.isArray(parsed?.edits) && parsed.edits.length > 0) {
-    const edits = parsed.edits
+    return parsed.edits
       .map((edit): TextEditPreview | undefined => {
         if (typeof edit !== 'object' || edit === null || Array.isArray(edit)) {
           return undefined;
@@ -86,24 +67,22 @@ function buildEditArgsPreview(args: ToolCallArgs): string {
         return oldText || newText ? { oldText, newText } : undefined;
       })
       .filter((edit): edit is TextEditPreview => !!edit);
-    return formatEditPreview(edits);
   }
 
   if (parsed) {
     const oldText = textValue(parsed.old_text);
     const newText = textValue(parsed.new_text);
-    return oldText || newText ? formatEditPreview([{ oldText, newText }]) : '';
+    return oldText || newText ? [{ oldText, newText }] : [];
   }
 
   /** Partial JSON during streaming: pair up field occurrences in document order, covering both single-replacement and batched `edits` args */
   const oldTexts = parseJsonFieldOccurrences(args, 'old_text');
   const newTexts = parseJsonFieldOccurrences(args, 'new_text');
   const editCount = Math.max(oldTexts.length, newTexts.length);
-  const edits = Array.from({ length: editCount }, (_, index) => ({
+  return Array.from({ length: editCount }, (_, index) => ({
     oldText: oldTexts[index] ?? '',
     newText: newTexts[index] ?? '',
   })).filter((edit) => edit.oldText || edit.newText);
-  return formatEditPreview(edits);
 }
 
 export default function FileAuthoringCall({
@@ -141,23 +120,35 @@ export default function FileAuthoringCall({
   );
   const intent = useToolCallIntent(args);
   const authoredContent = useMemo(() => parseJsonField(args, 'content'), [args]);
-  const editArgsPreview = useMemo(() => buildEditArgsPreview(args), [args]);
+  const editArgs = useMemo(() => buildEditArgsPreview(args), [args]);
   const fileName = filePath.split('/').pop() || filePath || localize('com_ui_file').toLowerCase();
   const fileLang = useMemo(() => langFromPath(filePath), [filePath]);
-  const argsPreview = isCreate ? authoredContent : editArgsPreview;
   const outputIsDiff = hasDiff(output);
-  /** A diff in the output supersedes the args preview — it carries the input with real file context */
-  const preview = outputIsDiff ? output : argsPreview || output;
+  /** A diff in the output supersedes the args preview: it carries the input
+   *  with real file context. Only the output is ever PARSED; the args preview
+   *  is built from structured edits, so it never round-trips through diff text
+   *  where a separator could be confused with a real changed line. */
+  const parsedDiff = useMemo(() => {
+    if (outputIsDiff) {
+      return parseUnifiedDiff(output);
+    }
+    return !isCreate && editArgs.length > 0 ? buildEditPreviewDiff(editArgs) : null;
+  }, [outputIsDiff, output, isCreate, editArgs]);
+  /** Plain text for the non-diff pane, and the copy payload either way. */
+  const preview = useMemo(() => {
+    if (isCreate) {
+      return authoredContent || output;
+    }
+    if (outputIsDiff) {
+      return output;
+    }
+    return parsedDiff ? diffPreviewText(parsedDiff) : output;
+  }, [isCreate, authoredContent, outputIsDiff, output, parsedDiff]);
   const showOutputSection = !!output && preview !== output;
-  const previewIsDiff = outputIsDiff || (!isCreate && !!editArgsPreview && preview !== output);
   let previewLang = 'plaintext';
   if (isCreate && authoredContent && preview === authoredContent) {
     previewLang = fileLang;
   }
-  const parsedDiff = useMemo(
-    () => (previewIsDiff && preview ? parseUnifiedDiff(preview) : null),
-    [previewIsDiff, preview],
-  );
 
   const { showCode, toggleCode, expandStyle, expandRef, phase } = useToolCallState({
     initialProgress,
