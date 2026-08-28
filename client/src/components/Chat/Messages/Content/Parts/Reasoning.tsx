@@ -40,7 +40,7 @@ const lastSentences = (text: string): string => {
  *
  *  Custom-CSS exception, narrowly scoped: this is a `mask-image` stencil, not
  *  paint. Only the alpha channel is read, so `#000` means "keep this pixel"
- *  and `transparent` means "hide it" — the hue never reaches the screen and no
+ *  and `transparent` means "hide it". The hue never reaches the screen and no
  *  theme could meaningfully restyle it. Routing it through a theme role would
  *  invite a token with alpha, which would silently wash out the text the mask
  *  is supposed to keep. Tailwind has no mask-image utility that expresses a
