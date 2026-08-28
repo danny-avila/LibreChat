@@ -16,6 +16,8 @@ export interface OpenAIConfigOptions {
   modelOptions?: OpenAIModelOptions;
   directEndpoint?: boolean;
   reverseProxyUrl?: string | null;
+  baseURLIsUserProvided?: boolean;
+  allowedAddresses?: string[] | null;
   defaultQuery?: Record<string, string | undefined>;
   headers?: Record<string, string>;
   proxy?: string | null;
@@ -30,7 +32,10 @@ export type OpenAIConfiguration = OpenAIClientOptions['configuration'];
 
 export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
   include_reasoning?: boolean;
+  /** Replays `reasoning_content` on tool-bearing turns (DeepSeek thinking-mode, #13366). */
+  includeReasoningContent?: boolean;
   promptCache?: boolean;
+  promptCacheTtl?: '5m' | '1h';
   _lc_stream_delay?: number;
   verbosity?: string | null;
 };

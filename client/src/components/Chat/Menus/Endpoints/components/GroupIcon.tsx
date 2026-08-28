@@ -1,38 +1,38 @@
 import React, { memo, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
-import type { IconMapProps } from '~/common';
-import { icons } from '~/hooks/Endpoint/Icons';
+import { ProviderIcon } from '@librechat/client';
+import { resolveProviderId } from 'librechat-data-provider';
+import { EntityEndpointMark, isEntityEndpoint } from '~/components/Endpoints/EntityEndpointMark';
+import { isImageURL } from '~/utils/icons';
 
 interface GroupIconProps {
   iconURL: string;
   groupName: string;
 }
 
-type IconType = (props: IconMapProps) => React.JSX.Element;
-
 const GroupIcon: React.FC<GroupIconProps> = ({ iconURL, groupName }) => {
   const [imageError, setImageError] = useState(false);
+  const provider = resolveProviderId(iconURL);
 
   const handleImageError = () => {
     setImageError(true);
   };
 
-  // Check if the iconURL is a built-in icon key
-  if (iconURL in icons) {
-    const Icon: IconType = (icons[iconURL] ?? icons.unknown) as IconType;
-    return <Icon size={20} context="menu-item" className="icon-md shrink-0 text-text-primary" />;
+  if (isEntityEndpoint(iconURL)) {
+    return (
+      <div className="relative" style={{ width: 20, height: 20, margin: '2px' }} title={groupName}>
+        <EntityEndpointMark endpoint={iconURL} />
+      </div>
+    );
   }
 
-  if (imageError) {
-    const DefaultIcon: IconType = icons.unknown as IconType;
+  if (provider || !isImageURL(iconURL) || imageError) {
     return (
       <div className="relative" style={{ width: 20, height: 20, margin: '2px' }}>
-        <div className="icon-md shrink-0 overflow-hidden rounded-full">
-          <DefaultIcon context="menu-item" size={20} />
-        </div>
-        {imageError && iconURL && (
+        <ProviderIcon provider={provider} size={20} className="icon-md shrink-0" />
+        {imageError && (
           <div
-            className="absolute flex items-center justify-center rounded-full bg-red-500"
+            className="absolute flex items-center justify-center rounded-full bg-surface-destructive"
             style={{ width: '14px', height: '14px', top: 0, right: 0 }}
           >
             <AlertCircle size={10} className="text-white" />

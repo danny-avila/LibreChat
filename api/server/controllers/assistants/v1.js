@@ -1,5 +1,13 @@
 const fs = require('fs').promises;
 const { logger } = require('@librechat/data-schemas');
+const {
+  inspectContent,
+  extractFileContent,
+  hasActiveFileFieldPolicy,
+  contentFilterBlockResponse,
+  contentFilterUninspectableResponse,
+  getBlockedUninspectableFileField,
+} = require('@librechat/api');
 const { FileContext } = require('librechat-data-provider');
 const { deleteFileByFilter, updateAssistantDoc, getAssistants } = require('~/models');
 const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
@@ -7,8 +15,12 @@ const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { deleteAssistantActions } = require('~/server/services/ActionService');
 const { getOpenAIClient, fetchAssistants } = require('./helpers');
-const { getCachedTools } = require('~/server/services/Config');
-const { manifestToolMap } = require('~/app/clients/tools');
+const {
+  healMcpToolNames,
+  getAssistantToolDefinitions,
+  toProviderToolDefinition,
+} = require('~/server/services/MCP');
+const { manifestToolMap, isAgentsOnlyTool } = require('~/app/clients/tools');
 
 /**
  * Create an assistant.
@@ -30,10 +42,28 @@ const createAssistant = async (req, res) => {
     delete assistantData.conversation_starters;
     delete assistantData.append_current_datetime;
 
-    const toolDefinitions = (await getCachedTools()) ?? {};
+    const { toolDefinitions, accessibleServerNames } = await getAssistantToolDefinitions({
+      req,
+      tools,
+    });
+    const healedTools = await healMcpToolNames({
+      req,
+      tools,
+      toolDefinitions,
+      accessibleServerNames,
+    });
 
-    assistantData.tools = tools
+    assistantData.tools = healedTools
       .map((tool) => {
+        /** Agents-runtime-only tools (e.g. ask_user_question) cannot execute on
+         *  the assistants runtime — drop them even when posted directly, since
+         *  the tools-dialog scoping doesn't gate REST clients or stale payloads. */
+        if (isAgentsOnlyTool(tool)) {
+          logger.warn('[/assistants] Dropping agents-only tool from assistant payload', {
+            toolShape: typeof tool === 'string' ? 'name' : 'definition',
+          });
+          return undefined;
+        }
         if (typeof tool !== 'string') {
           return tool;
         }
@@ -49,7 +79,8 @@ const createAssistant = async (req, res) => {
         return toolDef;
       })
       .filter((tool) => tool)
-      .flat();
+      .flat()
+      .map(toProviderToolDefinition);
 
     let azureModelIdentifier = null;
     if (openai.locals?.azureOptions) {
@@ -64,7 +95,7 @@ const createAssistant = async (req, res) => {
 
     const assistant = await openai.beta.assistants.create(assistantData);
 
-    const createData = { user: req.user.id };
+    const createData = { user: req.user.id, endpoint };
     if (conversation_starters) {
       createData.conversation_starters = conversation_starters;
     }
@@ -86,7 +117,11 @@ const createAssistant = async (req, res) => {
       assistant.append_current_datetime = append_current_datetime;
     }
 
-    logger.debug('/assistants/', assistant);
+    logger.debug('[/assistants] Assistant created', {
+      assistantId: assistant.id,
+      toolCount: assistantData.tools.length,
+      hasConversationStarters: Array.isArray(document.conversation_starters),
+    });
     res.status(201).json(assistant);
   } catch (error) {
     logger.error('[/assistants] Error creating assistant', error);
@@ -135,10 +170,28 @@ const patchAssistant = async (req, res) => {
       ...updateData
     } = req.body;
 
-    const toolDefinitions = (await getCachedTools()) ?? {};
+    const { toolDefinitions, accessibleServerNames } = await getAssistantToolDefinitions({
+      req,
+      tools: updateData.tools,
+    });
+    const healedTools = await healMcpToolNames({
+      req,
+      tools: updateData.tools,
+      toolDefinitions,
+      accessibleServerNames,
+    });
 
-    updateData.tools = (updateData.tools ?? [])
+    updateData.tools = healedTools
       .map((tool) => {
+        /** Agents-runtime-only tools (e.g. ask_user_question) cannot execute on
+         *  the assistants runtime — drop them even when posted directly, since
+         *  the tools-dialog scoping doesn't gate REST clients or stale payloads. */
+        if (isAgentsOnlyTool(tool)) {
+          logger.warn(
+            `[/assistants] Dropping agents-only tool from assistant payload: ${typeof tool === 'string' ? tool : tool?.function?.name}`,
+          );
+          return undefined;
+        }
         if (typeof tool !== 'string') {
           return tool;
         }
@@ -154,7 +207,8 @@ const patchAssistant = async (req, res) => {
         return toolDef;
       })
       .filter((tool) => tool)
-      .flat();
+      .flat()
+      .map(toProviderToolDefinition);
 
     if (openai.locals?.azureOptions && updateData.model) {
       updateData.model = openai.locals.azureOptions.azureOpenAIApiDeploymentName;
@@ -298,7 +352,21 @@ const uploadAssistantAvatar = async (req, res) => {
   try {
     const appConfig = req.config;
     filterFile({ req, file: req.file, image: true, isAvatar: true });
+    if (hasActiveFileFieldPolicy(req.config?.filters, ['name', 'content'])) {
+      const finding = inspectContent(extractFileContent({ name: req.file.originalname }), {
+        filters: req.config.filters,
+      });
+      if (finding != null) {
+        return res.status(400).json(contentFilterBlockResponse(finding));
+      }
+      const uninspectableField = getBlockedUninspectableFileField(req.config.filters, ['content']);
+      if (uninspectableField != null) {
+        return res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
+      }
+    }
+
     const { assistant_id } = req.params;
+    const endpoint = req.body?.endpoint ?? req.query?.endpoint;
     if (!assistant_id) {
       return res.status(400).json({ message: 'Assistant ID is required' });
     }
@@ -355,6 +423,7 @@ const uploadAssistantAvatar = async (req, res) => {
             source: appConfig.fileStrategy,
           },
           user: req.user.id,
+          endpoint,
         },
       ),
     );

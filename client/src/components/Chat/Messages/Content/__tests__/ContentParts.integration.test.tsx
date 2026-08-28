@@ -1,8 +1,8 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
-import { render, screen } from '@testing-library/react';
 import ContentParts from '../ContentParts';
 
 jest.mock('~/hooks', () => ({
@@ -16,12 +16,18 @@ jest.mock('~/hooks', () => ({
     style: { display: 'grid', gridTemplateRows: isExpanded ? '1fr' : '0fr' },
     ref: { current: null },
   }),
+  useLazyCollapseBody: jest.requireActual('~/hooks/Messages/useLazyCollapseBody').default,
   useProgress: (initial: number) => (initial >= 1 ? 1 : initial),
+  scheduleMessageContentLayoutReconcile: jest.fn(() => jest.fn()),
 }));
 
-jest.mock('~/hooks/MCP', () => ({
-  useMCPIconMap: () => new Map(),
-}));
+jest.mock('~/hooks/MCP', () => {
+  const mcpServerNames: string[] = [];
+  return {
+    useMCPIconMap: () => new Map(),
+    useMCPServerNames: () => mcpServerNames,
+  };
+});
 
 jest.mock('../ToolOutput', () => ({
   StackedToolIcons: () => <span data-testid="stacked-icons" />,
@@ -52,7 +58,14 @@ jest.mock('lucide-react', () => ({
 }));
 
 jest.mock('@librechat/client', () => ({
-  Button: ({ children }: { children?: React.ReactNode }) => <button>{children}</button>,
+  Button: ({
+    children,
+    variant: _variant,
+    size: _size,
+    ...props
+  }: React.ComponentProps<'button'> & { variant?: string; size?: string }) => (
+    <button {...props}>{children}</button>
+  ),
 }));
 
 jest.mock('../Parts', () => ({
@@ -66,7 +79,6 @@ jest.mock('../Parts', () => ({
   Reasoning: () => <div data-testid="reasoning" />,
   Summary: () => <div data-testid="summary" />,
   Text: ({ text }: { text?: string }) => <div data-testid="text">{text}</div>,
-  EditTextPart: () => <div data-testid="edit-text" />,
 }));
 
 jest.mock('../MemoryArtifacts', () => ({
@@ -125,6 +137,19 @@ const makeMcpToolCall = (id: string, hasOutput = true): TMessageContentParts =>
       output: hasOutput ? 'image_returned' : '',
     },
   }) as unknown as TMessageContentParts;
+
+const makeMcpToolCallWithoutId = (name: string, hasOutput = true): TMessageContentParts =>
+  ({
+    type: ContentTypes.TOOL_CALL,
+    [ContentTypes.TOOL_CALL]: {
+      name: `${name}${MCP_DELIMITER}Everything`,
+      args: '{}',
+      output: hasOutput ? 'image_returned' : '',
+    },
+  }) as unknown as TMessageContentParts;
+
+const makeTextPart = (text: string): TMessageContentParts =>
+  ({ type: ContentTypes.TEXT, text }) as unknown as TMessageContentParts;
 
 const imageAttachment = (toolCallId: string, name = 'tiny.png'): TAttachment =>
   ({
@@ -221,5 +246,119 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     });
 
     expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();
+  });
+
+  it('keeps a manually expanded completed tool group open when its content index shifts', () => {
+    const content = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];
+    const nextContent = [makeTextPart('streamed preface'), ...content];
+
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={content} />
+      </RecoilRoot>,
+    );
+
+    const toggle = screen.getByRole('button', { name: 'Used 2 tools' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={nextContent} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
+  it('keeps a running tool group open when an individual tool is expanded before completion', () => {
+    const runningContent = [makeMcpToolCall('t1', false), makeMcpToolCall('t2', false)];
+    const completedContent = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];
+
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} isSubmitting isLatestMessage content={runningContent} />
+      </RecoilRoot>,
+    );
+
+    const toggle = screen.getByRole('button', { name: 'Used 2 tools' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(screen.getAllByTestId('progress-text')[0]);
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts
+          {...baseProps}
+          isSubmitting={false}
+          isLatestMessage
+          content={completedContent}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
+  it('does not reuse fallback-index expansion state across message ids', () => {
+    const content = [makeMcpToolCallWithoutId('first'), makeMcpToolCallWithoutId('second')];
+
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} messageId="msg1" content={content} />
+      </RecoilRoot>,
+    );
+
+    const toggle = screen.getByRole('button', { name: 'Used 2 tools' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts {...baseProps} messageId="msg2" content={content} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  });
+
+  it('keeps id-backed expansion state across transient message id changes', () => {
+    const content = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];
+
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} messageId="placeholder-msg" content={content} />
+      </RecoilRoot>,
+    );
+
+    const toggle = screen.getByRole('button', { name: 'Used 2 tools' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts {...baseProps} messageId="server-msg" content={content} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
   });
 });

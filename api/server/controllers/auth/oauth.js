@@ -7,7 +7,11 @@ const {
   generateAdminExchangeCode,
 } = require('@librechat/api');
 const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionService');
-const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
+const {
+  setAuthTokens,
+  setOpenIDAuthTokens,
+  storeOpenIDSession,
+} = require('~/server/services/AuthService');
 const getLogStores = require('~/cache/getLogStores');
 const { checkBan } = require('~/server/middleware');
 const { generateToken } = require('~/models');
@@ -36,18 +40,22 @@ function createOAuthHandler(redirectUri = domains.client) {
         return;
       }
 
-      /** Check if this is an admin panel redirect (cross-origin) */
+      /** Check if this is an admin panel redirect (cross-origin or same-origin subpath) */
       if (isAdminPanelRedirect(redirectUri, getAdminPanelUrl(), domains.client)) {
         /** For admin panel, generate exchange code instead of setting cookies */
         const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
         const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
         const token = await generateToken(req.user, sessionExpiry);
 
-        /** Get refresh token from tokenset for OpenID users */
-        const refreshToken =
-          req.user.provider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS) === true
-            ? req.user.tokenset?.refresh_token || req.user.federatedTokens?.refresh_token
-            : undefined;
+        let refreshToken;
+        if (req.user.provider === 'openid') {
+          if (isEnabled(process.env.OPENID_REUSE_TOKENS) === true) {
+            refreshToken =
+              req.user.tokenset?.refresh_token || req.user.federatedTokens?.refresh_token;
+          }
+        } else if (req.user.provider === 'google') {
+          refreshToken = req.authInfo?.refreshToken;
+        }
         const expiresAt = Date.now() + sessionExpiry;
 
         const callbackUrl = new URL(redirectUri);
@@ -72,6 +80,11 @@ function createOAuthHandler(redirectUri = domains.client) {
         isEnabled(process.env.OPENID_REUSE_TOKENS) === true
       ) {
         await syncUserEntraGroupMemberships(req.user, req.user.tokenset.access_token);
+        await storeOpenIDSession(
+          req.user._id.toString(),
+          req.user.tokenset.refresh_token,
+          req.user.tenantId,
+        );
         setOpenIDAuthTokens(req.user.tokenset, req, res, {
           userId: req.user._id.toString(),
           tenantId: req.user.tenantId,

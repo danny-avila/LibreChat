@@ -6,6 +6,7 @@ import type {
 } from '@codesandbox/sandpack-react';
 import type { TStartupConfig, TAttachment, TFile } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
+import { MERMAID_ARTIFACT_TYPE } from '~/common/artifacts';
 
 const artifactFilename = {
   'application/vnd.react': 'App.tsx',
@@ -178,9 +179,14 @@ export const sharedOptions: SandpackProviderProps['options'] = {
   externalResources: [TAILWIND_CDN],
 };
 
+export type SandpackStartupConfig = Pick<
+  Partial<TStartupConfig>,
+  'bundlerURL' | 'staticBundlerURL'
+>;
+
 export function buildSandpackOptions(
   template: SandpackProviderProps['template'],
-  startupConfig?: TStartupConfig,
+  startupConfig?: SandpackStartupConfig,
 ): SandpackProviderProps['options'] {
   if (!startupConfig) {
     return sharedOptions;
@@ -279,7 +285,7 @@ export const TOOL_ARTIFACT_TYPES = {
   HTML: 'text/html',
   REACT: 'application/vnd.react',
   MARKDOWN: 'text/markdown',
-  MERMAID: 'application/vnd.mermaid',
+  MERMAID: MERMAID_ARTIFACT_TYPE,
   PLAIN_TEXT: 'text/plain',
   CODE: 'application/vnd.code',
   /* Office-format rich previews. The backend renders the binary file as a
@@ -584,6 +590,7 @@ const EXTENSION_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
   xls: TOOL_ARTIFACT_TYPES.SPREADSHEET,
   ods: TOOL_ARTIFACT_TYPES.SPREADSHEET,
   pptx: TOOL_ARTIFACT_TYPES.PRESENTATION,
+  potx: TOOL_ARTIFACT_TYPES.PRESENTATION,
 };
 
 /* Append every entry in `CODE_EXTENSION_TO_LANGUAGE` to the routing map
@@ -660,6 +667,8 @@ const MIME_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
    * backend has already produced full HTML for it. */
   'text/comma-separated-values': TOOL_ARTIFACT_TYPES.SPREADSHEET,
   'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+    TOOL_ARTIFACT_TYPES.PRESENTATION,
+  'application/vnd.openxmlformats-officedocument.presentationml.template':
     TOOL_ARTIFACT_TYPES.PRESENTATION,
   // Note: bare `text/plain` is NOT mapped here. The extension map handles
   // `.txt` explicitly; routing every unrecognized-extension `text/plain`
@@ -837,6 +846,8 @@ export function fileToArtifact(
         | 'textFormat'
         | 'updatedAt'
         | 'createdAt'
+        | 'source'
+        | 'user'
       >
   >,
   options?: FileToArtifactOptions,
@@ -889,6 +900,18 @@ export function fileToArtifact(
     language,
     messageId: attachment.messageId ?? undefined,
     lastUpdateTime: toLastUpdate(attachment),
+    /* Preserve the original-file download coordinates so the panel's
+     * download button can fetch the real file (matching the inline
+     * card's `useAttachmentLink` path). Critical for office buckets
+     * whose `content` is a server-rendered HTML preview, not the
+     * binary — serializing `content` would hand the user the preview
+     * instead of the .pptx/.xlsx/.docx. */
+    download: {
+      filepath: attachment.filepath,
+      file_id: attachment.file_id,
+      source: attachment.source,
+      user: attachment.user,
+    },
   };
 }
 

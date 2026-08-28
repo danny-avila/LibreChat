@@ -1,13 +1,26 @@
+import type { ParsedServerConfig } from '~/mcp/types';
 import {
   buildOAuthToolCallName,
   normalizeServerName,
+  normalizeAgentToolKeys,
+  findShadowedServerNames,
+  splitMCPToolKey,
   redactAllServerSecrets,
   redactServerSecrets,
+  requiresUserScopedConnection,
   isInvalidClientMessage,
   isClientRejectionMessage,
+  getMissingCustomUserVars,
+  hasCustomUserVars,
+  hasRuntimeUrlPlaceholders,
+  getMCPRequestScope,
+  hasRuntimeContextPlaceholders,
+  getRuntimeBodyPlaceholderFields,
+  getMissingRuntimeBodyPlaceholderFields,
   isUserSourced,
+  validateMCPServerConfig,
+  requiresEphemeralUserConnection,
 } from '~/mcp/utils';
-import type { ParsedServerConfig } from '~/mcp/types';
 
 describe('normalizeServerName', () => {
   it('should not modify server names that already match the pattern', () => {
@@ -33,6 +46,167 @@ describe('normalizeServerName', () => {
     const result = normalizeServerName('!server-name!');
     expect(result).toBe('server-name');
     expect(result).toMatch(/^[a-zA-Z0-9_.-]+$/);
+  });
+});
+
+describe('splitMCPToolKey', () => {
+  it('should return the tool name unchanged with an undefined server name when there is no delimiter', () => {
+    expect(splitMCPToolKey('plainToolName')).toEqual(['plainToolName', undefined]);
+  });
+
+  it('should split a normal single-occurrence key the same way String.split would', () => {
+    expect(splitMCPToolKey('search_mcp_myserver')).toEqual(['search', 'myserver']);
+  });
+
+  it('should resolve a raw tool name that itself contains the delimiter substring by using the last occurrence', () => {
+    // Regression test: a tool whose own (possibly gateway-prefixed) name
+    // already contains "_mcp_" - e.g. LiteLLM's MCP gateway prefixes
+    // aggregated tool names with "{server}-", so GitLab's own
+    // "get_mcp_server_version" tool becomes "gitlab-get_mcp_server_version"
+    // before LibreChat appends its own "_mcp_gitlab" suffix. A naive
+    // `.split(delimiter)` produces 3 segments here and silently drops the
+    // 3rd, yielding a bogus server name ("server_version" instead of
+    // "gitlab"). See https://github.com/danny-avila/LibreChat/issues/14440
+    expect(splitMCPToolKey('gitlab-get_mcp_server_version_mcp_gitlab')).toEqual([
+      'gitlab-get_mcp_server_version',
+      'gitlab',
+    ]);
+  });
+
+  it('should handle a raw tool name with multiple delimiter occurrences by always taking the last segment as the server name', () => {
+    expect(splitMCPToolKey('a_mcp_b_mcp_c_mcp_server')).toEqual(['a_mcp_b_mcp_c', 'server']);
+  });
+});
+
+describe('findShadowedServerNames', () => {
+  it('flags later names whose normalized form an earlier different name claimed', () => {
+    const shadowed = findShadowedServerNames(['Sales Force', 'Sales:Force', 'other']);
+    expect(shadowed).toEqual(new Set(['Sales:Force']));
+  });
+
+  it('does not flag exact duplicates or safe distinct names', () => {
+    expect(findShadowedServerNames(['srv', 'srv', 'other']).size).toBe(0);
+    expect(findShadowedServerNames(['Sales Force', 'Sales_Force2']).size).toBe(0);
+  });
+
+  it('an identity name always wins over a colliding raw name, in either order', () => {
+    /** A server literally named `Sales_Force` owns that key segment; the
+     *  special-character `Sales Force` is the shadowed one regardless of
+     *  configuration order — mirroring `buildServerNameAliases` routing. */
+    expect(findShadowedServerNames(['Sales_Force', 'Sales Force'])).toEqual(
+      new Set(['Sales Force']),
+    );
+    expect(findShadowedServerNames(['Sales Force', 'Sales_Force'])).toEqual(
+      new Set(['Sales Force']),
+    );
+  });
+});
+
+describe('normalizeAgentToolKeys', () => {
+  const rawServerNames = ['plain', 'Connector: Company'];
+
+  it('rewrites legacy raw-keyed tools and tool_options to the normalized form', () => {
+    const { tools, toolOptions } = normalizeAgentToolKeys({
+      tools: ['web_search', 'search_mcp_plain', 'search_mcp_Connector: Company'],
+      toolOptions: {
+        'search_mcp_Connector: Company': { run_in_background: true, describe_intent: true },
+        search_mcp_plain: { defer_loading: true },
+      },
+      rawServerNames,
+    });
+    expect(tools).toEqual(['web_search', 'search_mcp_plain', 'search_mcp_Connector__Company']);
+    expect(toolOptions).toEqual({
+      search_mcp_Connector__Company: { run_in_background: true, describe_intent: true },
+      search_mcp_plain: { defer_loading: true },
+    });
+  });
+
+  it('returns the same references when no configured name needs rewriting (fast path)', () => {
+    const tools = ['search_mcp_plain'];
+    const toolOptions = { search_mcp_plain: { defer_loading: true } };
+    const result = normalizeAgentToolKeys({
+      tools,
+      toolOptions,
+      rawServerNames: ['plain', 'safe-name.v2'],
+    });
+    expect(result.tools).toBe(tools);
+    expect(result.toolOptions).toBe(toolOptions);
+  });
+
+  it('returns the same references when keys are already normalized', () => {
+    const tools = ['search_mcp_Connector__Company'];
+    const toolOptions = { search_mcp_Connector__Company: { describe_intent: true } };
+    const result = normalizeAgentToolKeys({ tools, toolOptions, rawServerNames });
+    expect(result.tools).toBe(tools);
+    expect(result.toolOptions).toBe(toolOptions);
+  });
+
+  it('leaves placeholder and server-pin tokens untouched (config-identity references)', () => {
+    const tools = [
+      'sys__all__sys_mcp_Connector: Company',
+      'sys__server__sys_mcp_Connector: Company',
+      'search_mcp_Connector: Company',
+    ];
+    const result = normalizeAgentToolKeys({ tools, toolOptions: undefined, rawServerNames });
+    expect(result.tools).toEqual([
+      'sys__all__sys_mcp_Connector: Company',
+      'sys__server__sys_mcp_Connector: Company',
+      'search_mcp_Connector__Company',
+    ]);
+  });
+
+  it('handles undefined tools and options', () => {
+    const result = normalizeAgentToolKeys({
+      tools: undefined,
+      toolOptions: undefined,
+      rawServerNames,
+    });
+    expect(result.tools).toBeUndefined();
+    expect(result.toolOptions).toBeUndefined();
+  });
+
+  it('the CURRENT (normalized) entry wins when both spellings carry options', () => {
+    /** A client can write the new spelling before cleaning up the legacy
+     *  entry; object insertion order must not let stale legacy settings
+     *  clobber it. */
+    const rawLater = normalizeAgentToolKeys({
+      tools: undefined,
+      toolOptions: {
+        search_mcp_Connector__Company: { run_in_background: false },
+        'search_mcp_Connector: Company': { run_in_background: true, defer_loading: true },
+      },
+      rawServerNames: ['Connector: Company'],
+    });
+    expect(rawLater.toolOptions).toEqual({
+      search_mcp_Connector__Company: { run_in_background: false, defer_loading: true },
+    });
+
+    const rawFirst = normalizeAgentToolKeys({
+      tools: undefined,
+      toolOptions: {
+        'search_mcp_Connector: Company': { run_in_background: true, defer_loading: true },
+        search_mcp_Connector__Company: { run_in_background: false },
+      },
+      rawServerNames: ['Connector: Company'],
+    });
+    expect(rawFirst.toolOptions).toEqual({
+      search_mcp_Connector__Company: { run_in_background: false, defer_loading: true },
+    });
+  });
+
+  it('never heals a SHADOWED server key into the first server’s key', () => {
+    /** Rewriting `search__Sales:Force` would produce exactly the key of the
+     *  earlier `Sales Force` server — the persisted tool would silently
+     *  execute the wrong server's action. Left raw, it fails visibly. */
+    const result = normalizeAgentToolKeys({
+      tools: ['search_mcp_Sales:Force', 'search_mcp_Connector: Company'],
+      toolOptions: { 'search_mcp_Sales:Force': { run_in_background: true } },
+      rawServerNames: ['Sales Force', 'Sales:Force', 'Connector: Company'],
+    });
+    expect(result.tools).toEqual(['search_mcp_Sales:Force', 'search_mcp_Connector__Company']);
+    expect(result.toolOptions).toEqual({
+      'search_mcp_Sales:Force': { run_in_background: true },
+    });
   });
 });
 
@@ -227,13 +401,125 @@ describe('redactServerSecrets', () => {
     expect(redacted.customUserVars).toEqual(config.customUserVars);
   });
 
-  it('should pass URLs through unchanged', () => {
+  it('should expose request-scoped behavior without exposing placeholder-bearing fields', () => {
+    const config: ParsedServerConfig = {
+      type: 'streamable-http',
+      url: 'https://infra.internal/mcp',
+      source: 'yaml',
+      headers: { 'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+    };
+
+    const redacted = redactServerSecrets(config);
+
+    expect(redacted.requestScoped).toBe(true);
+    expect(redacted.url).toBeUndefined();
+    expect((redacted as Record<string, unknown>).headers).toBeUndefined();
+  });
+
+  it('should omit request-scoped metadata for ordinary and unsupported BODY placeholders', () => {
+    expect(
+      redactServerSecrets({
+        type: 'streamable-http',
+        url: 'https://example.com/mcp',
+        source: 'yaml',
+      }).requestScoped,
+    ).toBeUndefined();
+    expect(
+      redactServerSecrets({
+        type: 'streamable-http',
+        url: 'https://example.com/{{LIBRECHAT_BODY_TENANT}}/mcp',
+        source: 'yaml',
+      }).requestScoped,
+    ).toBeUndefined();
+  });
+
+  it('should pass URLs through unchanged when caller has edit authority', () => {
     const config: ParsedServerConfig = {
       type: 'sse',
-      url: 'https://mcp.example.com/sse?param=value',
+      url: 'https://infra.internal/mcp',
+      source: 'config',
+    };
+    const redacted = redactServerSecrets(config, { canEdit: true });
+    expect(redacted.url).toBe('https://infra.internal/mcp');
+  });
+
+  it('should strip url and oauth flow URLs for non-user-sourced configs without edit authority', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://infra.internal/mcp',
+      source: 'config',
+      oauth: {
+        client_id: 'cid',
+        authorization_url: 'https://infra.internal/oauth/authorize',
+        token_url: 'https://infra.internal/oauth/token',
+        revocation_endpoint: 'https://infra.internal/oauth/revoke',
+        scope: 'read',
+      },
     };
     const redacted = redactServerSecrets(config);
-    expect(redacted.url).toBe('https://mcp.example.com/sse?param=value');
+    expect(redacted.url).toBeUndefined();
+    expect(redacted.oauth?.authorization_url).toBeUndefined();
+    expect(redacted.oauth?.token_url).toBeUndefined();
+    expect(redacted.oauth?.revocation_endpoint).toBeUndefined();
+    expect(redacted.oauth?.client_id).toBe('cid');
+    expect(redacted.oauth?.scope).toBe('read');
+  });
+
+  it('should strip url for a VIEW-shared user-sourced config when caller lacks edit', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://owner-private.example.com/mcp',
+      source: 'user',
+      dbId: 'abc123',
+      oauth: {
+        client_id: 'cid',
+        authorization_url: 'https://owner-private.example.com/oauth/authorize',
+        token_url: 'https://owner-private.example.com/oauth/token',
+      },
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.url).toBeUndefined();
+    expect(redacted.oauth?.authorization_url).toBeUndefined();
+    expect(redacted.oauth?.token_url).toBeUndefined();
+    expect(redacted.oauth?.client_id).toBe('cid');
+  });
+
+  it('should retain non-sensitive oauth fields when stripping oauth flow URLs', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://infra.internal/mcp',
+      source: 'config',
+      oauth: {
+        client_id: 'cid',
+        client_secret: 'csecret',
+        authorization_url: 'https://infra.internal/oauth/authorize',
+        token_url: 'https://infra.internal/oauth/token',
+        scope: 'read',
+        redirect_uri: 'https://app.example.com/callback',
+      },
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.oauth?.client_secret).toBeUndefined();
+    expect(redacted.oauth?.authorization_url).toBeUndefined();
+    expect(redacted.oauth?.token_url).toBeUndefined();
+    expect(redacted.oauth?.client_id).toBe('cid');
+    expect(redacted.oauth?.scope).toBe('read');
+    expect(redacted.oauth?.redirect_uri).toBe('https://app.example.com/callback');
+  });
+
+  it('should preserve customUserVars metadata for non-user-sourced configs without edit authority', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://infra.internal/mcp',
+      source: 'config',
+      customUserVars: {
+        API_KEY: { title: 'API Key', description: 'Your key', sensitive: true },
+      },
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.customUserVars).toEqual({
+      API_KEY: { title: 'API Key', description: 'Your key', sensitive: true },
+    });
   });
 
   it('should only include explicitly allowlisted fields', () => {
@@ -246,6 +532,17 @@ describe('redactServerSecrets', () => {
     const redacted = redactServerSecrets(config);
     expect((redacted as Record<string, unknown>).someNewSensitiveField).toBeUndefined();
     expect(redacted.title).toBe('Test');
+  });
+
+  it('should preserve obo config', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://example.com/mcp',
+      title: 'OBO Server',
+      obo: { scopes: 'api://client-id/.default' },
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.obo).toEqual({ scopes: 'api://client-id/.default' });
   });
 });
 
@@ -274,6 +571,55 @@ describe('redactAllServerSecrets', () => {
     expect(redacted['server-b'].oauth?.client_secret).toBeUndefined();
     expect(redacted['server-b'].oauth?.client_id).toBe('cid-b');
     expect((redacted['server-c'] as Record<string, unknown>).command).toBeUndefined();
+  });
+
+  it('should pass canEdit through per-server via canEditByServer map', () => {
+    const configs: Record<string, ParsedServerConfig> = {
+      'config-server': {
+        type: 'sse',
+        url: 'https://infra.internal/mcp',
+        source: 'config',
+        oauth: {
+          client_id: 'cid',
+          authorization_url: 'https://infra.internal/oauth/authorize',
+        },
+      },
+      'user-server-owner': {
+        type: 'sse',
+        url: 'https://owner.example.com/mcp',
+        source: 'user',
+        dbId: 'owner-id',
+      },
+      'user-server-shared': {
+        type: 'sse',
+        url: 'https://shared.example.com/mcp',
+        source: 'user',
+        dbId: 'shared-id',
+      },
+    };
+    const canEditByServer = new Map<string, boolean>([
+      ['config-server', false],
+      ['user-server-owner', true],
+      ['user-server-shared', false],
+    ]);
+    const redacted = redactAllServerSecrets(configs, { canEditByServer });
+    expect(redacted['config-server'].url).toBeUndefined();
+    expect(redacted['config-server'].oauth?.authorization_url).toBeUndefined();
+    expect(redacted['user-server-owner'].url).toBe('https://owner.example.com/mcp');
+    expect(redacted['user-server-shared'].url).toBeUndefined();
+  });
+
+  it('should expose URL for non-user-sourced configs when canEditByServer is true', () => {
+    const configs: Record<string, ParsedServerConfig> = {
+      'config-server': {
+        type: 'sse',
+        url: 'https://infra.internal/mcp',
+        source: 'config',
+      },
+    };
+    const canEditByServer = new Map<string, boolean>([['config-server', true]]);
+    const redacted = redactAllServerSecrets(configs, { canEditByServer });
+    expect(redacted['config-server'].url).toBe('https://infra.internal/mcp');
   });
 });
 
@@ -338,5 +684,371 @@ describe('isUserSourced', () => {
 
   it('returns false when both source and dbId are absent (pre-upgrade YAML server)', () => {
     expect(isUserSourced({})).toBe(false);
+  });
+});
+
+describe('requiresUserScopedConnection', () => {
+  it('returns true for OAuth servers', () => {
+    expect(requiresUserScopedConnection({ requiresOAuth: true })).toBe(true);
+  });
+
+  it('returns true for OBO servers', () => {
+    expect(
+      requiresUserScopedConnection({
+        obo: { scopes: 'api://client-id/.default' },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns true for servers with customUserVars', () => {
+    expect(
+      requiresUserScopedConnection({
+        customUserVars: {
+          API_KEY: { title: 'API Key', description: 'Your key' },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns true for trusted config with runtime user placeholders', () => {
+    expect(
+      requiresUserScopedConnection({
+        source: 'yaml',
+        headers: {
+          'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns false for user-sourced config with runtime user placeholders', () => {
+    expect(
+      requiresUserScopedConnection({
+        source: 'user',
+        dbId: 'server-123',
+        headers: {
+          'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('returns false for app-shareable servers', () => {
+    expect(
+      requiresUserScopedConnection({
+        requiresOAuth: false,
+        customUserVars: {},
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('hasRuntimeContextPlaceholders', () => {
+  it('detects trusted runtime placeholders across connection fields', () => {
+    expect(
+      hasRuntimeContextPlaceholders({
+        source: 'config',
+        url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}',
+          'X-Graph-Access-Token': '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('detects trusted runtime placeholders in oauth_headers', () => {
+    expect(
+      hasRuntimeContextPlaceholders({
+        source: 'yaml',
+        url: 'https://example.com/mcp',
+        oauth_headers: {
+          'X-User': '{{LIBRECHAT_USER_ID}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores custom user variable placeholders', () => {
+    expect(
+      hasRuntimeContextPlaceholders({
+        source: 'yaml',
+        headers: {
+          Authorization: 'Bearer {{MCP_API_KEY}}',
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('ignores runtime placeholders in user-sourced configs', () => {
+    expect(
+      hasRuntimeContextPlaceholders({
+        source: 'user',
+        dbId: 'server-123',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}',
+        },
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('hasRuntimeUrlPlaceholders', () => {
+  it('detects trusted runtime placeholders in the server URL', () => {
+    expect(
+      hasRuntimeUrlPlaceholders({
+        source: 'yaml',
+        url: 'https://example.com/users/{{LIBRECHAT_USER_USERNAME}}/mcp',
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores runtime URL placeholders in user-sourced configs', () => {
+    expect(
+      hasRuntimeUrlPlaceholders({
+        source: 'user',
+        dbId: 'server-123',
+        url: 'https://example.com/users/{{LIBRECHAT_USER_USERNAME}}/mcp',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('getMCPRequestScope', () => {
+  it('detects trusted runtime BODY placeholders across connection fields', () => {
+    expect(
+      getMCPRequestScope({
+        source: 'yaml',
+        url: 'https://example.com/conversations/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
+      }).requestScoped,
+    ).toBe(true);
+
+    expect(
+      getMCPRequestScope({
+        source: 'config',
+        headers: {
+          'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
+        },
+      }).requestScoped,
+    ).toBe(true);
+  });
+
+  it('ignores BODY placeholders in user-sourced configs', () => {
+    expect(
+      getMCPRequestScope({
+        source: 'user',
+        dbId: 'server-123',
+        url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+      }).requestScoped,
+    ).toBe(false);
+  });
+
+  it('ignores unsupported BODY placeholder names that the resolver leaves literal', () => {
+    const config = {
+      source: 'yaml' as const,
+      url: 'https://example.com/{{LIBRECHAT_BODY_TENANT}}/mcp',
+    };
+
+    expect(hasRuntimeContextPlaceholders(config)).toBe(false);
+    expect(hasRuntimeUrlPlaceholders(config)).toBe(false);
+    expect(getMCPRequestScope(config).requestScoped).toBe(false);
+    expect(getRuntimeBodyPlaceholderFields(config)).toEqual([]);
+    expect(getMissingRuntimeBodyPlaceholderFields(config)).toEqual([]);
+    expect(requiresEphemeralUserConnection(config)).toBe(false);
+    expect(requiresUserScopedConnection(config)).toBe(false);
+  });
+
+  it('ignores BODY and USER literals in plugin-sourced configs', () => {
+    const config = {
+      source: 'plugin' as const,
+      url: 'https://example.com/users/{{LIBRECHAT_USER_ID}}/mcp',
+      headers: {
+        'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      },
+    };
+
+    expect(hasRuntimeContextPlaceholders(config)).toBe(false);
+    expect(hasRuntimeUrlPlaceholders(config)).toBe(false);
+    expect(getMCPRequestScope(config).requestScoped).toBe(false);
+    expect(getRuntimeBodyPlaceholderFields(config)).toEqual([]);
+    expect(getMissingRuntimeBodyPlaceholderFields(config)).toEqual([]);
+    expect(requiresEphemeralUserConnection(config)).toBe(false);
+    expect(requiresUserScopedConnection(config)).toBe(false);
+  });
+});
+
+describe('getMissingRuntimeBodyPlaceholderFields', () => {
+  const config = {
+    source: 'yaml',
+    url: 'https://example.com/conversations/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
+    headers: {
+      'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
+      'X-Parent': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+    },
+  } as const;
+
+  it('returns the request body fields required by trusted runtime placeholders', () => {
+    expect(getRuntimeBodyPlaceholderFields(config)).toEqual([
+      'messageId',
+      'parentMessageId',
+      'conversationId',
+    ]);
+  });
+
+  it('returns missing or blank request body fields', () => {
+    expect(
+      getMissingRuntimeBodyPlaceholderFields(config, {
+        conversationId: 'conv-123',
+        messageId: ' ',
+      }),
+    ).toEqual(['messageId', 'parentMessageId']);
+  });
+
+  it('ignores BODY placeholders in user-sourced configs', () => {
+    expect(
+      getMissingRuntimeBodyPlaceholderFields({
+        source: 'user',
+        dbId: 'server-123',
+        url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe('validateMCPServerConfig', () => {
+  it('preserves server-managed metadata on a valid effective config', () => {
+    const config = {
+      type: 'streamable-http' as const,
+      url: 'https://example.com/mcp',
+      source: 'config' as const,
+      dbId: 'server-123',
+    };
+
+    expect(validateMCPServerConfig(config)).toBe(config);
+    expect(validateMCPServerConfig(config)).toMatchObject({
+      source: 'config',
+      dbId: 'server-123',
+    });
+  });
+
+  it('rejects an incomplete effective config', () => {
+    expect(() => validateMCPServerConfig({ type: 'streamable-http' })).toThrow(
+      'Invalid effective MCP server configuration',
+    );
+  });
+});
+
+describe('requiresEphemeralUserConnection', () => {
+  it('returns true when BODY placeholders affect oauth_headers', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        url: 'https://example.com/mcp',
+        oauth_headers: {
+          'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns true when BODY placeholders affect connection fields', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        url: 'https://example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+      }),
+    ).toBe(true);
+  });
+
+  it('does not treat Graph placeholders as request-scoped by themselves', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'config',
+        env: {
+          GRAPH_TOKEN: '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('does not treat OpenID token placeholders as request-scoped by themselves', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        args: ['--id-token={{LIBRECHAT_OPENID_ID_TOKEN}}'],
+      }),
+    ).toBe(false);
+
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('returns true when BODY placeholders affect remote transport headers', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        headers: {
+          'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
+        },
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('getMissingCustomUserVars', () => {
+  const configWithVars = (keys: string[]): Pick<ParsedServerConfig, 'customUserVars'> => ({
+    customUserVars: Object.fromEntries(
+      keys.map((key) => [key, { title: key, description: `${key} description` }]),
+    ),
+  });
+
+  it('returns an empty array when the server declares no customUserVars', () => {
+    expect(getMissingCustomUserVars({}, {})).toEqual([]);
+    expect(getMissingCustomUserVars({ customUserVars: undefined }, undefined)).toEqual([]);
+  });
+
+  it('returns an empty array when customUserVars is an empty object', () => {
+    const config: Pick<ParsedServerConfig, 'customUserVars'> = { customUserVars: {} };
+    expect(hasCustomUserVars(config)).toBe(false);
+    expect(getMissingCustomUserVars(config, undefined)).toEqual([]);
+  });
+
+  it('reports every declared variable when no values are provided', () => {
+    const config = configWithVars(['THINGY_TOKEN', 'THINGY_REGION']);
+    expect(getMissingCustomUserVars(config, undefined)).toEqual(['THINGY_TOKEN', 'THINGY_REGION']);
+    expect(getMissingCustomUserVars(config, null)).toEqual(['THINGY_TOKEN', 'THINGY_REGION']);
+    expect(getMissingCustomUserVars(config, {})).toEqual(['THINGY_TOKEN', 'THINGY_REGION']);
+  });
+
+  it('reports only the variables the user has not set', () => {
+    const config = configWithVars(['THINGY_TOKEN', 'THINGY_REGION']);
+    expect(getMissingCustomUserVars(config, { THINGY_TOKEN: 'abc123' })).toEqual(['THINGY_REGION']);
+  });
+
+  it('treats empty-string and whitespace-only values as missing', () => {
+    const config = configWithVars(['THINGY_TOKEN']);
+    expect(getMissingCustomUserVars(config, { THINGY_TOKEN: '' })).toEqual(['THINGY_TOKEN']);
+    expect(getMissingCustomUserVars(config, { THINGY_TOKEN: '   ' })).toEqual(['THINGY_TOKEN']);
+    expect(getMissingCustomUserVars(config, { THINGY_TOKEN: '\t\n ' })).toEqual(['THINGY_TOKEN']);
+  });
+
+  it('returns an empty array when every declared variable has a value', () => {
+    const config = configWithVars(['THINGY_TOKEN', 'THINGY_REGION']);
+    expect(
+      getMissingCustomUserVars(config, { THINGY_TOKEN: 'abc123', THINGY_REGION: 'eu-west-1' }),
+    ).toEqual([]);
+  });
+
+  it('ignores provided values for variables the server does not declare', () => {
+    const config = configWithVars(['THINGY_TOKEN']);
+    expect(
+      getMissingCustomUserVars(config, { THINGY_TOKEN: 'abc123', UNRELATED: 'value' }),
+    ).toEqual([]);
   });
 });

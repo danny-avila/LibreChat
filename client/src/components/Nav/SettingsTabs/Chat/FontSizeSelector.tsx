@@ -29,7 +29,7 @@ export default function FontSizeSelector() {
         options={options}
         onChange={handleChange}
         testId="font-size-selector"
-        sizeClasses="w-[150px]"
+        sizeClasses="z-50 w-[150px]"
         className="z-50"
         aria-labelledby={labelId}
       />

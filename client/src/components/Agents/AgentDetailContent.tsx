@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, Pin, PinOff } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { OGDialogContent, Button, useToastContext } from '@librechat/client';
+import { OGDialogContent, Button, TooltipAnchor, useToastContext } from '@librechat/client';
 import {
   QueryKeys,
   Constants,
@@ -14,18 +14,10 @@ import type t from 'librechat-data-provider';
 import { useLocalize, useDefaultConvo, useFavorites } from '~/hooks';
 import { renderAgentAvatar, clearMessagesCache } from '~/utils';
 import { useChatContext } from '~/Providers';
-
-interface SupportContact {
-  name?: string;
-  email?: string;
-}
-
-interface AgentWithSupport extends t.Agent {
-  support_contact?: SupportContact;
-}
+import AgentContact from './AgentContact';
 
 interface AgentDetailContentProps {
-  agent: AgentWithSupport;
+  agent: t.Agent;
 }
 
 /**
@@ -106,37 +98,6 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent }) => {
       });
   };
 
-  /**
-   * Format contact information with mailto links when appropriate
-   */
-  const formatContact = () => {
-    if (!agent?.support_contact) return null;
-
-    const { name, email } = agent.support_contact;
-
-    if (name && email) {
-      return (
-        <a href={`mailto:${email}`} className="text-primary hover:underline">
-          {name}
-        </a>
-      );
-    }
-
-    if (email) {
-      return (
-        <a href={`mailto:${email}`} className="text-primary hover:underline">
-          {email}
-        </a>
-      );
-    }
-
-    if (name) {
-      return <span>{name}</span>;
-    }
-
-    return null;
-  };
-
   return (
     <OGDialogContent className="max-h-[90vh] w-11/12 max-w-lg overflow-y-auto">
       {/* Agent avatar */}
@@ -149,12 +110,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent }) => {
         </h2>
       </div>
 
-      {/* Contact info */}
-      {agent?.support_contact && formatContact() && (
-        <div className="mt-1 text-center text-sm text-text-secondary">
-          {localize('com_agents_contact')}: {formatContact()}
-        </div>
-      )}
+      <AgentContact agent={agent} className="mt-1 justify-center text-center text-sm" />
 
       {/* Agent description */}
       <div className="mt-4 whitespace-pre-wrap px-6 text-center text-base text-text-primary">
@@ -163,24 +119,32 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent }) => {
 
       {/* Action button */}
       <div className="mb-4 mt-6 flex justify-center gap-2">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={handleFavoriteClick}
-          title={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
-          aria-label={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
-        >
-          {isFavorite ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
-        </Button>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={handleCopyLink}
-          title={localize('com_agents_copy_link')}
-          aria-label={localize('com_agents_copy_link')}
-        >
-          <Link className="h-4 w-4" aria-hidden="true" />
-        </Button>
+        <TooltipAnchor
+          description={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
+          render={
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleFavoriteClick}
+              aria-label={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
+            >
+              {isFavorite ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+            </Button>
+          }
+        />
+        <TooltipAnchor
+          description={localize('com_agents_copy_link')}
+          render={
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleCopyLink}
+              aria-label={localize('com_agents_copy_link')}
+            >
+              <Link className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          }
+        />
         <Button
           variant="submit"
           className="w-full max-w-xs"

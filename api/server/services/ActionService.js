@@ -29,7 +29,7 @@ const {
   deleteActions,
   deleteAssistant,
 } = require('~/models');
-const { getFlowStateManager } = require('~/config');
+const { getActionFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -175,6 +175,7 @@ async function loadActionSets(searchParams) {
  * @param {import('zod').ZodTypeAny | undefined} [params.zodSchema] - The Zod schema for tool input validation/definition
  * @param {{ oauth_client_id?: string; oauth_client_secret?: string; }} params.encrypted - The encrypted values for the action.
  * @param {string | null} [params.streamId] - The stream ID for resumable streams.
+ * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted events.
  * @param {boolean} [params.useSSRFProtection] - When true, uses SSRF-safe HTTP agents that validate resolved IPs at connect time.
  * @param {string[] | null} [params.allowedAddresses] - Optional admin exemption list of host:port pairs that bypass the SSRF private-IP block.
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
@@ -189,6 +190,7 @@ async function createActionTool({
   description,
   encrypted,
   streamId = null,
+  jobCreatedAt,
   useSSRFProtection = false,
   allowedAddresses,
 }) {
@@ -243,14 +245,16 @@ async function createActionTool({
                   },
                 };
                 const flowsCache = getLogStores(CacheKeys.FLOWS);
-                const flowManager = getFlowStateManager(flowsCache);
+                const flowManager = getActionFlowStateManager(flowsCache);
                 await flowManager.createFlowWithHandler(
                   `${identifier}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`,
                   'oauth_login',
                   async () => {
                     const eventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
                     if (streamId) {
-                      await GenerationJobManager.emitChunk(streamId, eventData);
+                      await GenerationJobManager.emitChunk(streamId, eventData, {
+                        expectedCreatedAt: jobCreatedAt,
+                      });
                     } else {
                       sendEvent(res, eventData);
                     }
@@ -281,7 +285,9 @@ async function createActionTool({
                 data.delta.expires_at = undefined;
                 const successEventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
                 if (streamId) {
-                  await GenerationJobManager.emitChunk(streamId, successEventData);
+                  await GenerationJobManager.emitChunk(streamId, successEventData, {
+                    expectedCreatedAt: jobCreatedAt,
+                  });
                 } else {
                   sendEvent(res, successEventData);
                 }
@@ -341,7 +347,7 @@ async function createActionTool({
                     },
                   );
                 const flowsCache = getLogStores(CacheKeys.FLOWS);
-                const flowManager = getFlowStateManager(flowsCache);
+                const flowManager = getActionFlowStateManager(flowsCache);
                 const refreshData = await flowManager.createFlowWithHandler(
                   `${identifier}:refresh`,
                   'oauth_refresh',

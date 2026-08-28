@@ -1027,6 +1027,44 @@ describe('Environment Variable Extraction (MCP)', () => {
       ]);
     });
 
+    it('should resolve graph tokens in args and oauth fields before processMCPEnv', async () => {
+      const user = createTestUser({
+        id: 'user-args-oauth',
+        provider: 'openid',
+      }) as unknown as IUser;
+
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'node',
+        args: ['server.js', '--graph-token={{LIBRECHAT_GRAPH_ACCESS_TOKEN}}'],
+        oauth: {
+          client_id: 'client-id',
+          client_secret: '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+          scope: 'profile {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        },
+      };
+
+      const graphProcessedConfig = await preProcessGraphTokens(options, {
+        user,
+        graphTokenResolver: mockGraphTokenResolver,
+      });
+
+      const finalConfig = processMCPEnv({
+        options: graphProcessedConfig,
+        user,
+      });
+
+      expect('args' in finalConfig && finalConfig.args).toEqual([
+        'server.js',
+        '--graph-token=resolved-graph-api-token',
+      ]);
+      expect(finalConfig.oauth).toEqual({
+        client_id: 'client-id',
+        client_secret: 'resolved-graph-api-token',
+        scope: 'profile resolved-graph-api-token',
+      });
+    });
+
     it('should resolve graph tokens in URL alongside other placeholders', async () => {
       const user = createTestUser({
         id: 'user-789',

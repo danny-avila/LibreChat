@@ -2,13 +2,15 @@ const path = require('path');
 const axios = require('axios');
 const yaml = require('js-yaml');
 const keyBy = require('lodash/keyBy');
-const { loadYaml } = require('@librechat/api');
+const { loadYaml, redactConfigSecretMaps } = require('@librechat/api');
 const { Providers } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
 const {
   configSchema,
   paramSettings,
+  EModelEndpoint,
   EImageOutputType,
+  setMaxSubagents,
   agentParamSettings,
   validateSettingDefinitions,
 } = require('librechat-data-provider');
@@ -109,6 +111,11 @@ async function loadCustomConfig(printConfig = true) {
     }
   }
 
+  // Applied before parsing so specs validated in the same pass (whose subagent
+  // presets share the cap) check against the configured limit. Invalid values
+  // are ignored here and rejected by the schema parse below.
+  setMaxSubagents(customConfig?.endpoints?.[EModelEndpoint.agents]?.maxSubagents);
+
   const result = configSchema.strict().safeParse(customConfig);
   if (result?.error?.errors?.some((err) => err?.path && err.path?.includes('imageOutputType'))) {
     throw new Error(
@@ -156,9 +163,12 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
     process.exit(1);
   } else {
     if (printConfig) {
+      // Masks map-valued secrets (e.g. `langfuse.headers`) so literal gateway
+      // credentials are not copied into application logs on every startup.
+      const loggableConfig = redactConfigSecretMaps(customConfig);
       logger.info('Custom config file loaded:');
-      logger.info(JSON.stringify(customConfig, null, 2));
-      logger.debug('Custom config:', customConfig);
+      logger.info(JSON.stringify(loggableConfig, null, 2));
+      logger.debug('Custom config:', loggableConfig);
     }
   }
 
@@ -177,7 +187,8 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
 
 // Validate and fill out missing values for custom parameters
 function parseCustomParams(endpointName, customParams) {
-  const paramEndpoint = customParams.defaultParamsEndpoint;
+  const paramEndpoint = customParams.defaultParamsEndpoint ?? 'custom';
+  customParams.defaultParamsEndpoint = paramEndpoint;
   customParams.paramDefinitions = customParams.paramDefinitions || [];
 
   // Checks if `defaultParamsEndpoint` is a key in `paramSettings`.

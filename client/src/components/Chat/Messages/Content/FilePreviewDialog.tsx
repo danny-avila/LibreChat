@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import copy from 'copy-to-clipboard';
-import { useRecoilValue } from 'recoil';
 import { Download } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
+import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
+import { revokeDownloadURL, useFileDownload, useSharedFileDownload } from '~/data-provider';
+import { getFileExtension, getPreviewKind, shouldUseSharedFileDownload } from './preview';
 import CopyButton from '~/components/Messages/Content/CopyButton';
-import { logger, sortPagesByRelevance, triggerDownload } from '~/utils';
-import { useFileDownload } from '~/data-provider';
+import { useShareContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -14,71 +16,13 @@ interface FilePreviewDialogProps {
   onOpenChange: (open: boolean) => void;
   fileName: string;
   fileId?: string;
+  filePath?: string;
   relevance?: number;
   pages?: number[];
   pageRelevance?: Record<number, number>;
   fileType?: string;
+  fileSource?: string;
   fileSize?: number;
-}
-
-function getFileExtension(filename: string): string {
-  const dot = filename.lastIndexOf('.');
-  return dot > 0 ? filename.slice(dot + 1).toLowerCase() : '';
-}
-
-function canPreviewByMime(mime?: string): 'pdf' | 'text' | false {
-  if (!mime) {
-    return false;
-  }
-  if (mime.includes('pdf')) {
-    return 'pdf';
-  }
-  if (
-    mime.startsWith('text/') ||
-    mime.includes('json') ||
-    mime.includes('xml') ||
-    mime.includes('javascript') ||
-    mime.includes('typescript') ||
-    mime.includes('yaml') ||
-    mime.includes('csv')
-  ) {
-    return 'text';
-  }
-  return false;
-}
-
-function canPreviewByExt(filename: string): 'pdf' | 'text' | false {
-  const ext = getFileExtension(filename);
-  if (ext === 'pdf') {
-    return 'pdf';
-  }
-  const textExts = new Set([
-    'txt',
-    'md',
-    'csv',
-    'json',
-    'xml',
-    'yaml',
-    'yml',
-    'html',
-    'css',
-    'js',
-    'ts',
-    'jsx',
-    'tsx',
-    'py',
-    'rb',
-    'java',
-    'c',
-    'cpp',
-    'h',
-    'go',
-    'rs',
-    'sh',
-    'sql',
-    'log',
-  ]);
-  return textExts.has(ext) ? 'text' : false;
 }
 
 /** Formats bytes with unit suffix (differs from ~/utils/formatBytes which returns a raw number). */
@@ -132,11 +76,26 @@ export default function FilePreviewDialog({
   pages,
   pageRelevance,
   fileType,
+  fileSource,
   fileSize,
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
-  const { refetch: downloadFile } = useFileDownload(user?.id ?? '', fileId, { direct: false });
+  const { shareId } = useShareContext();
+  // Preview reads revoke their blob after consumption, so they need a separate
+  // query identity from user-triggered downloads that may be in flight concurrently.
+  const { refetch: downloadOwned } = useFileDownload(user?.id ?? '', fileId, { direct: false });
+  const { refetch: downloadShared } = useSharedFileDownload(shareId, fileId);
+  const { refetch: previewOwned } = useFileDownload(user?.id ?? '', fileId, {
+    direct: false,
+    purpose: 'preview',
+  });
+  const { refetch: previewShared } = useSharedFileDownload(shareId, fileId, 'preview');
+  // A shared viewer must stay inside the share-scoped authorization boundary;
+  // citation and retrieval previews do not carry a rewritten filepath signal.
+  const useShared = shouldUseSharedFileDownload(shareId, fileId);
+  const downloadFile = useShared ? downloadShared : downloadOwned;
+  const previewFile = useShared ? previewShared : previewOwned;
 
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [fileBlobUrl, setFileBlobUrl] = useState<string | null>(null);
@@ -145,7 +104,8 @@ export default function FilePreviewDialog({
   const [isCopied, setIsCopied] = useState(false);
   const loadingRef = useRef(false);
 
-  const previewKind = canPreviewByMime(fileType) || canPreviewByExt(fileName);
+  const previewKind = getPreviewKind(fileName, fileType, fileSource);
+  const downloadFilename = getDownloadFilename(fileName, fileId, fileSource);
 
   const cancelledRef = useRef(false);
 
@@ -159,16 +119,25 @@ export default function FilePreviewDialog({
     setPreviewError(false);
 
     try {
-      const result = await downloadFile();
-      if (cancelledRef.current || !result.data) {
+      const result = await previewFile();
+      if (!result.data) {
         if (!cancelledRef.current) {
           setPreviewError(true);
         }
         return;
       }
+      if (cancelledRef.current) {
+        revokeDownloadURL(result.data);
+        return;
+      }
 
-      const resp = await fetch(result.data);
-      const blob = await resp.blob();
+      let blob: Blob;
+      try {
+        const resp = await fetch(result.data);
+        blob = await resp.blob();
+      } finally {
+        revokeDownloadURL(result.data);
+      }
 
       if (cancelledRef.current) {
         return;
@@ -190,7 +159,7 @@ export default function FilePreviewDialog({
         setLoading(false);
       }
     }
-  }, [fileId, previewKind, downloadFile]);
+  }, [fileId, previewKind, previewFile]);
 
   const handleDownload = useCallback(async () => {
     if (!fileId) {
@@ -201,14 +170,14 @@ export default function FilePreviewDialog({
       if (!result.data) {
         return;
       }
-      triggerDownload(result.data, fileName);
+      triggerDownload(result.data, downloadFilename);
     } catch (err) {
       logger.error('[FilePreviewDialog] Download failed:', err);
     }
-  }, [downloadFile, fileId, fileName]);
+  }, [downloadFile, downloadFilename, fileId]);
 
   useEffect(() => {
-    if (open && previewKind && !fileContent && !fileBlobUrl) {
+    if (open && previewKind && fileContent === null && !fileBlobUrl) {
       loadPreview();
     }
   }, [open, previewKind, fileContent, fileBlobUrl, loadPreview]);
@@ -306,7 +275,7 @@ export default function FilePreviewDialog({
               className="h-[70vh] w-full rounded-lg border border-border-light"
             />
           )}
-          {fileContent && (
+          {fileContent !== null && (
             <>
               <div className="pointer-events-none sticky top-0 z-10 flex justify-end pr-1">
                 <CopyButton

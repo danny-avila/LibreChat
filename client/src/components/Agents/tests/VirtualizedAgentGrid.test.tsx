@@ -1,7 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { jest } from '@jest/globals';
 import type t from 'librechat-data-provider';
 import VirtualizedAgentGrid from '../VirtualizedAgentGrid';
 
@@ -161,14 +160,16 @@ jest.mock('~/hooks', () => ({
   },
 }));
 
-jest.mock('../SmartLoader', () => ({
-  useHasData: () => true,
-}));
-
 jest.mock('../AgentCard', () => {
-  return function MockAgentCard({ agent, onClick }: { agent: t.Agent; onClick: () => void }) {
+  return function MockAgentCard({
+    agent,
+    onSelect,
+  }: {
+    agent: t.Agent;
+    onSelect: (agent: t.Agent) => void;
+  }) {
     return (
-      <div data-testid={`agent-card-${agent.id}`} onClick={onClick}>
+      <div data-testid={`agent-card-${agent.id}`} onClick={() => onSelect(agent)}>
         <h3>{agent.name}</h3>
         <p>{agent.description}</p>
       </div>
@@ -258,7 +259,22 @@ describe('VirtualizedAgentGrid', () => {
     // Should show loading spinner
     const spinner = document.querySelector('.spinner');
     expect(spinner).toBeInTheDocument();
-    expect(spinner).toHaveClass('h-8 w-8 text-primary');
+    expect(spinner).toHaveClass('h-8 w-8 text-text-primary');
+  });
+
+  it('retains cached agents while refetching', () => {
+    const useMarketplaceAgentsInfiniteQuery = (
+      jest.requireMock('~/data-provider/Agents') as MarketplaceAgentsMock
+    ).useMarketplaceAgentsInfiniteQuery;
+    useMarketplaceAgentsInfiniteQuery.mockImplementation(() =>
+      createMockInfiniteQuery({ isFetching: true }),
+    );
+
+    renderComponent();
+
+    expect(screen.getByTestId('virtual-list')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-card-1')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-card-2')).toBeInTheDocument();
   });
 
   it('has proper accessibility attributes', () => {

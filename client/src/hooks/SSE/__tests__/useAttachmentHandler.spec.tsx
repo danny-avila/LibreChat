@@ -14,33 +14,45 @@
  * unrelated citations both show up.
  */
 
-import { renderHook, act } from '@testing-library/react';
+import { Tools } from 'librechat-data-provider';
 import { RecoilRoot, useRecoilValue } from 'recoil';
 import { QueryClient } from '@tanstack/react-query';
-import { Tools } from 'librechat-data-provider';
+import { renderHook, act } from '@testing-library/react';
+import type {
+  TFile,
+  TAttachment,
+  EventSubmission,
+  TAttachmentMetadata,
+} from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import type { TAttachment, EventSubmission } from 'librechat-data-provider';
 import useAttachmentHandler from '../useAttachmentHandler';
 import store from '~/store';
+
+type AttachmentFixture = TFile & TAttachmentMetadata;
 
 const wrapper = ({ children }: { children: ReactNode }) => <RecoilRoot>{children}</RecoilRoot>;
 
 const submission = {} as EventSubmission;
 const messageId = 'msg-1';
 
-function makeAttachment(overrides: Partial<TAttachment>): TAttachment {
+function makeAttachment(overrides: Partial<AttachmentFixture>): AttachmentFixture {
   return {
+    user: 'user-1',
+    object: 'file',
+    bytes: 1024,
+    embedded: false,
+    usage: 0,
     file_id: 'fid-1',
     filename: 'data.xlsx',
     filepath: '/uploads/data.xlsx',
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    type: Tools.execute_code,
     messageId,
     toolCallId: 'tc-1',
-    text: null,
-    textFormat: null,
+    text: undefined,
+    textFormat: undefined,
     status: 'pending',
     ...overrides,
-  } as unknown as TAttachment;
+  };
 }
 
 /* Co-mount the handler and a reader of the messageAttachmentsMap atom in
@@ -132,6 +144,37 @@ describe('useAttachmentHandler upsert-by-file_id', () => {
     expect(ctx.list).toHaveLength(2);
   });
 
+  it('keeps sibling tool calls separate when they share a file_id (distinct toolCallIds)', () => {
+    /* Two background code calls regenerated the same filename — same
+     * claimed file_id, different toolCallId. Each card anchors its own
+     * attachment, so the second emit must append, not replace. A bare
+     * update (no toolCallId) still merges by file key (wildcard). */
+    const ctx = setup();
+    ctx.handle(makeAttachment({ status: 'ready' }));
+    ctx.handle(makeAttachment({ status: 'ready', toolCallId: 'tc-2' }));
+    expect(ctx.list).toHaveLength(2);
+  });
+
+  it('keeps handoff agents separate when file_id AND toolCallId collide (distinct agentIds)', () => {
+    /* Two handoff agents both emitted `call_0` and wrote the same
+     * filename — same claimed file_id, same provider toolCallId,
+     * different agentId. Merging would overwrite the first agent's
+     * agentId and leave ContentParts one attachment short. A record
+     * with no agentId still merges (wildcard, single-agent runs). */
+    const ctx = setup();
+    ctx.handle({ ...makeAttachment({ status: 'ready' }), agentId: 'agent_a' } as TAttachment);
+    ctx.handle({ ...makeAttachment({ status: 'ready' }), agentId: 'agent_b' } as TAttachment);
+    expect(ctx.list).toHaveLength(2);
+    expect(ctx.list.map((a) => (a as { agentId?: string }).agentId).sort()).toEqual([
+      'agent_a',
+      'agent_b',
+    ]);
+    ctx.handle(makeAttachment({ status: 'failed', previewError: 'timeout' }));
+    /* Bare-agent update merged into the FIRST compatible entry, not appended. */
+    expect(ctx.list).toHaveLength(2);
+    expect((ctx.list[0] as { previewError?: string }).previewError).toBe('timeout');
+  });
+
   it('preserves fields from the first event when the second omits them', () => {
     /* The deferred preview update only carries the deltas (text, status,
      * textFormat). Fields set in the initial emit (filename, type, etc.)
@@ -162,7 +205,7 @@ describe('useAttachmentHandler upsert-by-file_id', () => {
      * downgrade it. Otherwise the chip flickers back to "pending" and
      * polling restarts until the lazy sweep catches up. (Codex P1.) */
     const ctx = setup();
-    ctx.handle(makeAttachment({ status: 'pending', text: null }));
+    ctx.handle(makeAttachment({ status: 'pending', text: undefined }));
     ctx.handle({
       file_id: 'fid-1',
       messageId,
@@ -171,7 +214,7 @@ describe('useAttachmentHandler upsert-by-file_id', () => {
       textFormat: 'html',
     } as unknown as TAttachment);
     /* Phase-1 replay arrives last (finalHandler at stream end). */
-    ctx.handle(makeAttachment({ status: 'pending', text: null }));
+    ctx.handle(makeAttachment({ status: 'pending', text: undefined }));
     expect(ctx.list).toHaveLength(1);
     expect(ctx.list[0]).toMatchObject({
       status: 'ready',

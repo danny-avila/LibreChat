@@ -1,11 +1,11 @@
 import axios from 'axios';
-import { logger, encryptV2, decryptV2 } from '@librechat/data-schemas';
 import { TokenExchangeMethodEnum } from 'librechat-data-provider';
-import type { TokenMethods } from '@librechat/data-schemas';
+import { logger, encryptV2, decryptV2 } from '@librechat/data-schemas';
+import type { IToken, TokenMethods } from '@librechat/data-schemas';
 import type { AxiosError } from 'axios';
+import { validateActionOAuthEndpoint } from './validation';
 import { createSSRFSafeAgents } from '~/auth';
 import { logAxiosError } from '~/utils';
-import { validateActionOAuthEndpoint } from './validation';
 
 const actionOAuthAgents = createSSRFSafeAgents();
 const actionOAuthAgentsByAddress = new Map<string, ReturnType<typeof createSSRFSafeAgents>>();
@@ -59,7 +59,7 @@ export function createHandleOAuthToken({
     expiresIn?: number | string | null;
     metadata?: Record<string, unknown>;
     type?: string;
-  }) {
+  }): Promise<IToken | null> {
     const encrypedToken = await encryptV2(token);
     let expiresInNumber = 3600;
     if (typeof expiresIn === 'number') {

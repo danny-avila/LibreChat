@@ -1,8 +1,9 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { webcrypto } = require('node:crypto');
+const { createHash, webcrypto } = require('node:crypto');
 const {
   logger,
+  getTenantId,
   DEFAULT_SESSION_EXPIRY,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
 } = require('@librechat/data-schemas');
@@ -10,6 +11,7 @@ const { ErrorTypes, SystemRoles, errorsToString } = require('librechat-data-prov
 const {
   math,
   isEnabled,
+  storeOpenIdSession,
   checkEmailConfig,
   setCloudFrontCookies,
   getCloudFrontConfig,
@@ -31,6 +33,7 @@ const {
   deleteTokens,
   deleteSession,
   createSession,
+  upsertSession,
   generateToken,
   deleteUserById,
   generateRefreshToken,
@@ -44,8 +47,112 @@ const domains = {
   server: process.env.DOMAIN_SERVER,
 };
 
+const AuthTokenTypes = Object.freeze({
+  EMAIL_VERIFICATION: 'email_verification',
+  PASSWORD_RESET: 'password_reset',
+});
+
+const latestAuthTokenOptions = Object.freeze({ sort: { createdAt: -1 } });
 const genericVerificationMessage = 'Please check your email to verify your email address.';
+const invalidEmailVerificationMessage = 'Invalid or expired email verification token';
 const OPENID_SESSION_ID_TOKEN_EXPIRY_BUFFER_SECONDS = 30;
+
+const findPasswordResetToken = async (userId) => {
+  const typedToken = await findToken(
+    {
+      userId,
+      type: AuthTokenTypes.PASSWORD_RESET,
+    },
+    latestAuthTokenOptions,
+  );
+
+  if (typedToken) {
+    return typedToken;
+  }
+
+  return await findToken(
+    {
+      userId,
+      email: null,
+      identifier: null,
+      type: null,
+    },
+    latestAuthTokenOptions,
+  );
+};
+
+const findEmailVerificationToken = async (user) => {
+  const typedToken = await findToken(
+    {
+      userId: user._id,
+      email: user.email,
+      type: AuthTokenTypes.EMAIL_VERIFICATION,
+    },
+    latestAuthTokenOptions,
+  );
+
+  if (typedToken) {
+    return typedToken;
+  }
+
+  return await findToken(
+    {
+      userId: user._id,
+      email: user.email,
+      identifier: null,
+      type: null,
+    },
+    latestAuthTokenOptions,
+  );
+};
+
+const deleteEmailVerificationTokens = (user) =>
+  Promise.all([
+    deleteTokens({
+      userId: user._id,
+      email: user.email,
+      type: AuthTokenTypes.EMAIL_VERIFICATION,
+    }),
+    deleteTokens({
+      userId: user._id,
+      email: user.email,
+      identifier: null,
+      type: null,
+    }),
+  ]);
+
+const getEmailVerificationTokenDeleteQuery = (emailVerificationToken) => {
+  if (!emailVerificationToken.identifier && !emailVerificationToken.type) {
+    return {
+      token: emailVerificationToken.token,
+      userId: emailVerificationToken.userId,
+      email: emailVerificationToken.email,
+      identifier: null,
+      type: null,
+    };
+  }
+
+  return {
+    token: emailVerificationToken.token,
+    type: AuthTokenTypes.EMAIL_VERIFICATION,
+  };
+};
+
+const getPasswordResetTokenDeleteQuery = (passwordResetToken) => {
+  if (!passwordResetToken.email && !passwordResetToken.type) {
+    return {
+      token: passwordResetToken.token,
+      email: null,
+      identifier: null,
+      type: null,
+    };
+  }
+
+  return {
+    token: passwordResetToken.token,
+    type: AuthTokenTypes.PASSWORD_RESET,
+  };
+};
 
 const getUnexpiredOpenIDSessionIdToken = (idToken) => {
   if (!idToken) {
@@ -113,16 +220,17 @@ const createTokenHash = () => {
  */
 const sendVerificationEmail = async (user) => {
   const [verifyToken, hash] = createTokenHash();
+  const email = user.email.toLowerCase();
 
   const verificationLink = `${
     domains.client
-  }/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
+  }/verify?token=${verifyToken}&email=${encodeURIComponent(email)}`;
   await sendEmail({
-    email: user.email,
+    email,
     subject: 'Verify your email',
     payload: {
       appName: process.env.APP_TITLE || 'LibreChat',
-      name: user.name || user.username || user.email,
+      name: user.name || user.username || email,
       verificationLink: verificationLink,
       year: new Date().getFullYear(),
     },
@@ -131,13 +239,14 @@ const sendVerificationEmail = async (user) => {
 
   await createToken({
     userId: user._id,
-    email: user.email,
+    email,
+    type: AuthTokenTypes.EMAIL_VERIFICATION,
     token: hash,
     createdAt: Date.now(),
     expiresIn: 900,
   });
 
-  logger.info(`[sendVerificationEmail] Verification link issued. [Email: ${user.email}]`);
+  logger.info(`[sendVerificationEmail] Verification link issued. [Email: ${email}]`);
 };
 
 /**
@@ -146,25 +255,46 @@ const sendVerificationEmail = async (user) => {
  */
 const verifyEmail = async (req) => {
   const { email, token } = req.body;
-  const decodedEmail = decodeURIComponent(email);
+
+  if (typeof email !== 'string' || typeof token !== 'string' || !email || !token) {
+    logger.warn('[verifyEmail] [Invalid email verification request]');
+    return new Error(invalidEmailVerificationMessage);
+  }
+
+  let decodedEmail;
+  try {
+    decodedEmail = decodeURIComponent(email);
+  } catch {
+    logger.warn(`[verifyEmail] [Invalid email encoding] [Email: ${email}]`);
+    return new Error(invalidEmailVerificationMessage);
+  }
 
   const user = await findUser({ email: decodedEmail }, 'email _id emailVerified');
 
   if (!user) {
     logger.warn(`[verifyEmail] [User not found] [Email: ${decodedEmail}]`);
-    return new Error('User not found');
+    return new Error(invalidEmailVerificationMessage);
   }
 
-  if (user.emailVerified) {
-    logger.info(`[verifyEmail] Email already verified [Email: ${decodedEmail}]`);
-    return { message: 'Email already verified', status: 'success' };
-  }
-
-  let emailVerificationData = await findToken({ email: decodedEmail }, { sort: { createdAt: -1 } });
+  const emailVerificationData = await findEmailVerificationToken(user);
 
   if (!emailVerificationData) {
     logger.warn(`[verifyEmail] [No email verification data found] [Email: ${decodedEmail}]`);
-    return new Error('Invalid or expired password reset token');
+    return new Error(invalidEmailVerificationMessage);
+  }
+
+  if (!emailVerificationData.token) {
+    logger.warn(
+      `[verifyEmail] [Email verification token data is invalid] [Email: ${decodedEmail}]`,
+    );
+    return new Error(invalidEmailVerificationMessage);
+  }
+
+  const tokenUserId = emailVerificationData.userId?.toString();
+  const userId = user._id?.toString();
+  if (!tokenUserId || tokenUserId !== userId) {
+    logger.warn(`[verifyEmail] [Email verification token user mismatch] [Email: ${decodedEmail}]`);
+    return new Error(invalidEmailVerificationMessage);
   }
 
   const isValid = bcrypt.compareSync(token, emailVerificationData.token);
@@ -173,17 +303,23 @@ const verifyEmail = async (req) => {
     logger.warn(
       `[verifyEmail] [Invalid or expired email verification token] [Email: ${decodedEmail}]`,
     );
-    return new Error('Invalid or expired email verification token');
+    return new Error(invalidEmailVerificationMessage);
+  }
+
+  if (user.emailVerified) {
+    await deleteTokens(getEmailVerificationTokenDeleteQuery(emailVerificationData));
+    logger.info(`[verifyEmail] Email already verified [Email: ${decodedEmail}]`);
+    return { message: 'Email verification was successful', status: 'success' };
   }
 
   const updatedUser = await updateUser(emailVerificationData.userId, { emailVerified: true });
 
   if (!updatedUser) {
     logger.warn(`[verifyEmail] [User update failed] [Email: ${decodedEmail}]`);
-    return new Error('Failed to update user verification status');
+    return new Error(invalidEmailVerificationMessage);
   }
 
-  await deleteTokens({ token: emailVerificationData.token });
+  await deleteTokens(getEmailVerificationTokenDeleteQuery(emailVerificationData));
   logger.info(`[verifyEmail] Email verification successful [Email: ${decodedEmail}]`);
   return { message: 'Email verification was successful', status: 'success' };
 };
@@ -191,13 +327,13 @@ const verifyEmail = async (req) => {
 /**
  * Register a new user.
  * @param {IUser} user <email, password, name, username>
- * @param {Partial<IUser>} [additionalData={}]
+ * @param {Partial<IUser>} [additionalData={}] Trusted server-provided fields, such as CLI overrides.
  * @returns {Promise<{status: number, message: string, user?: IUser}>}
  */
 const registerUser = async (user, additionalData = {}) => {
-  const { error } = registerSchema.safeParse(user);
-  if (error) {
-    const errorMessage = errorsToString(error.errors);
+  const result = registerSchema.safeParse(user);
+  if (!result.success) {
+    const errorMessage = errorsToString(result.error.errors);
     logger.info(
       'Route: register - Validation Error',
       { name: 'Request params:', value: user },
@@ -207,11 +343,13 @@ const registerUser = async (user, additionalData = {}) => {
     return { status: 404, message: errorMessage };
   }
 
-  const { email, password, name, username, provider } = user;
+  const { email, password, name, username } = result.data;
+  const { provider, ...trustedAdditionalData } = additionalData ?? {};
 
   let newUserId;
   try {
-    const appConfig = await getAppConfig({ baseOnly: true });
+    const tenantId = getTenantId();
+    const appConfig = await getAppConfig(tenantId ? { tenantId } : {});
     if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
       const errorMessage =
         'The email address provided cannot be used. Please use a different email address.';
@@ -233,8 +371,9 @@ const registerUser = async (user, additionalData = {}) => {
       return { status: 200, message: genericVerificationMessage };
     }
 
-    //determine if this is the first registered user (not counting anonymous_user)
-    const isFirstRegisteredUser = (await countUsers()) === 0;
+    // Only the first user in the unscoped, single-tenant deployment bootstraps ADMIN.
+    // Tenant administrators must be provisioned through a trusted administrative flow.
+    const isFirstRegisteredUser = !tenantId && (await countUsers()) === 0;
 
     const salt = bcrypt.genSaltSync(10);
     const newUserData = {
@@ -245,7 +384,7 @@ const registerUser = async (user, additionalData = {}) => {
       avatar: null,
       role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
       password: bcrypt.hashSync(password, salt),
-      ...additionalData,
+      ...trustedAdditionalData,
     };
 
     const emailEnabled = checkEmailConfig();
@@ -334,12 +473,16 @@ const requestPasswordReset = async (req) => {
     };
   }
 
-  await deleteTokens({ userId: user._id });
+  await Promise.all([
+    deleteTokens({ userId: user._id, type: AuthTokenTypes.PASSWORD_RESET }),
+    deleteTokens({ userId: user._id, email: null, identifier: null, type: null }),
+  ]);
 
   const [resetToken, hash] = createTokenHash();
 
   await createToken({
     userId: user._id,
+    type: AuthTokenTypes.PASSWORD_RESET,
     token: hash,
     createdAt: Date.now(),
     expiresIn: 900,
@@ -383,12 +526,7 @@ const requestPasswordReset = async (req) => {
  * @returns
  */
 const resetPassword = async (userId, token, password) => {
-  let passwordResetToken = await findToken(
-    {
-      userId,
-    },
-    { sort: { createdAt: -1 } },
-  );
+  const passwordResetToken = await findPasswordResetToken(userId);
 
   if (!passwordResetToken) {
     return new Error('Invalid or expired password reset token');
@@ -416,7 +554,7 @@ const resetPassword = async (userId, token, password) => {
     });
   }
 
-  await deleteTokens({ token: passwordResetToken.token });
+  await deleteTokens(getPasswordResetTokenDeleteQuery(passwordResetToken));
   logger.info(`[resetPassword] Password reset successful. [Email: ${user.email}]`);
   return { message: 'Password reset was successful' };
 };
@@ -690,10 +828,13 @@ const setOpenIDAuthTokens = (
       sameSite: 'strict',
     });
     if (userId && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
-      /** JWT-signed user ID cookie for image path validation when OPENID_REUSE_TOKENS is enabled */
-      const signedUserId = jwt.sign({ id: userId }, process.env.JWT_REFRESH_SECRET, {
-        expiresIn: expiryInMilliseconds / 1000,
-      });
+      /** Bind image cookie identity to the durable refresh-token session. */
+      const refreshTokenHash = createHash('sha256').update(refreshToken).digest('base64url');
+      const signedUserId = jwt.sign(
+        { id: userId, refreshTokenHash },
+        process.env.JWT_REFRESH_SECRET,
+        { expiresIn: expiryInMilliseconds / 1000 },
+      );
       res.cookie('openid_user_id', signedUserId, {
         expires: expirationDate,
         httpOnly: true,
@@ -711,6 +852,14 @@ const setOpenIDAuthTokens = (
   }
 };
 
+/** Stores OpenID refresh-token state independently of the shorter Express session. */
+const storeOpenIDSession = async (userId, refreshToken, tenantId, previousRefreshToken) => {
+  return storeOpenIdSession(
+    { userId, refreshToken, tenantId, previousRefreshToken },
+    { upsertSession, deleteSession },
+  );
+};
+
 /**
  * Resend Verification Email
  * @param {Object} req
@@ -721,13 +870,14 @@ const setOpenIDAuthTokens = (
 const resendVerificationEmail = async (req) => {
   try {
     const { email } = req.body;
-    await deleteTokens({ email });
     const user = await findUser({ email }, 'email _id name');
 
     if (!user) {
       logger.warn(`[resendVerificationEmail] [No user found] [Email: ${email}]`);
       return { status: 200, message: genericVerificationMessage };
     }
+
+    await deleteEmailVerificationTokens(user);
 
     const [verifyToken, hash] = createTokenHash();
 
@@ -750,6 +900,7 @@ const resendVerificationEmail = async (req) => {
     await createToken({
       userId: user._id,
       email: user.email,
+      type: AuthTokenTypes.EMAIL_VERIFICATION,
       token: hash,
       createdAt: Date.now(),
       expiresIn: 900,
@@ -777,6 +928,7 @@ module.exports = {
   setAuthTokens,
   resetPassword,
   setOpenIDAuthTokens,
+  storeOpenIDSession,
   setCloudFrontAuthCookies,
   requestPasswordReset,
   resendVerificationEmail,

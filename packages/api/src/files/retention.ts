@@ -34,6 +34,12 @@ export type RetentionExpiry = {
   expiredAt?: Date | null;
 };
 
+export type AgentFileRetentionRequest = {
+  req: RetentionRequest | null | undefined;
+  messageAttachment?: boolean | null;
+  toolResource?: string | null;
+};
+
 export type RetentionLogger = {
   error: (message: string, error?: unknown) => void;
 };
@@ -70,7 +76,7 @@ export const getConversationExpirationDate = (
   return Number.isNaN(expiredAt.getTime()) ? null : expiredAt;
 };
 
-export const isActiveExpirationDate = (expiredAt: Date, now = new Date()): boolean =>
+export const isActiveExpirationDate = (expiredAt: Date, now: Date = new Date()): boolean =>
   expiredAt > now;
 
 const createRetentionExpiry = (
@@ -158,6 +164,35 @@ export async function getRetentionExpiry(
   const promise = computeRetentionExpiry(req, dependencies);
   retentionExpiryCache.set(req, { key, promise });
   return promise;
+}
+
+const isPersistentAgentResourceUpload = ({
+  messageAttachment,
+  toolResource,
+}: Omit<AgentFileRetentionRequest, 'req'>): boolean => !messageAttachment && !!toolResource;
+
+const shouldRetainPersistentAgentFile = ({
+  req,
+  messageAttachment,
+  toolResource,
+}: AgentFileRetentionRequest): boolean => {
+  const interfaceConfig = req?.config?.interfaceConfig;
+  return (
+    isPersistentAgentResourceUpload({ messageAttachment, toolResource }) &&
+    (interfaceConfig?.retentionMode !== RetentionMode.ALL ||
+      interfaceConfig?.retainAgentFiles === true)
+  );
+};
+
+export async function getAgentFileRetentionExpiry(
+  params: AgentFileRetentionRequest,
+  dependencies: RetentionDependencies,
+): Promise<RetentionExpiry> {
+  if (shouldRetainPersistentAgentFile(params)) {
+    return {};
+  }
+
+  return await getRetentionExpiry(params.req, dependencies);
 }
 
 /**

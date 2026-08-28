@@ -33,17 +33,21 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Types } from 'mongoose';
+import { logger } from '@librechat/data-schemas';
 import { HumanMessage, AIMessage } from '@librechat/agents/langchain/messages';
 import {
   scopeSkillIds,
   resolveSkillActive,
   resolveAgentScopedSkillIds,
+  resolveModelSpecSkillIds,
   injectSkillCatalog,
   buildSkillPrimeMessage,
   resolveManualSkills,
   resolveAlwaysApplySkills,
   injectManualSkillPrimes,
   injectSkillPrimes,
+  selectSkillPrimesForTurn,
+  collectFreshSkillPrimeNames,
   extractManualSkills,
   isSkillPrimeMessage,
   buildSkillPrimeContentParts,
@@ -252,9 +256,9 @@ describe('scopeSkillIds', () => {
     expect(scopeSkillIds(accessible, null)).toBe(accessible);
   });
 
-  it('returns [] when agentSkills is an empty array (explicit none)', () => {
+  it('returns the full set when agentSkills is an empty array (no allowlist)', () => {
     const accessible = [makeId(), makeId()];
-    expect(scopeSkillIds(accessible, [])).toEqual([]);
+    expect(scopeSkillIds(accessible, [])).toBe(accessible);
   });
 
   it('returns intersection when agentSkills overlaps accessibleSkillIds', () => {
@@ -312,9 +316,11 @@ describe('resolveAgentScopedSkillIds', () => {
   });
   const ephemeralAgent = (
     skills?: string[],
+    skills_enabled?: boolean,
   ): { id: string; skills?: string[]; skills_enabled?: boolean } => ({
     id: 'ephemeral_convo_xyz',
     skills,
+    skills_enabled,
   });
 
   it('returns [] when the skills capability is disabled, even with every other signal on', () => {
@@ -366,14 +372,50 @@ describe('resolveAgentScopedSkillIds', () => {
       expect(scoped.map((o) => o.toString()).sort()).toEqual([a.toString(), b.toString()].sort());
     });
 
-    it('ignores any `skills` field on an ephemeral agent (toggle is the only signal)', () => {
+    it('returns the full accessible catalog when a model spec enables skills', () => {
+      const a = makeId();
+      const b = makeId();
+      const scoped = resolveAgentScopedSkillIds({
+        agent: ephemeralAgent(undefined, true),
+        accessibleSkillIds: [a, b],
+        skillsCapabilityEnabled: true,
+        ephemeralSkillsToggle: false,
+      });
+      expect(scoped.map((o) => o.toString()).sort()).toEqual([a.toString(), b.toString()].sort());
+    });
+
+    it('returns the model-spec allowlist intersection when configured', () => {
+      const a = makeId();
+      const b = makeId();
+      const scoped = resolveAgentScopedSkillIds({
+        agent: ephemeralAgent([a.toString()], true),
+        accessibleSkillIds: [a, b],
+        skillsCapabilityEnabled: true,
+        ephemeralSkillsToggle: false,
+      });
+      expect(scoped.map((o) => o.toString())).toEqual([a.toString()]);
+    });
+
+    it('treats an empty model-spec allowlist as explicit none', () => {
       const a = makeId();
       expect(
         resolveAgentScopedSkillIds({
-          agent: ephemeralAgent([a.toString()]),
+          agent: ephemeralAgent([], true),
           accessibleSkillIds: [a],
           skillsCapabilityEnabled: true,
-          ephemeralSkillsToggle: false,
+          ephemeralSkillsToggle: true,
+        }),
+      ).toEqual([]);
+    });
+
+    it('lets an explicit model-spec skills=false override the badge toggle', () => {
+      const a = makeId();
+      expect(
+        resolveAgentScopedSkillIds({
+          agent: ephemeralAgent(undefined, false),
+          accessibleSkillIds: [a],
+          skillsCapabilityEnabled: true,
+          ephemeralSkillsToggle: true,
         }),
       ).toEqual([]);
     });
@@ -470,6 +512,95 @@ describe('resolveAgentScopedSkillIds', () => {
   });
 });
 
+describe('resolveModelSpecSkillIds', () => {
+  const userObjectId = new Types.ObjectId();
+
+  it('resolves configured names against accessible skills and skips misses without failing', async () => {
+    const knownId = new Types.ObjectId();
+    const getSkillByName = jest.fn(async (name: string) => {
+      if (name === 'known-skill') {
+        return {
+          _id: knownId,
+          name,
+          body: 'body',
+          author: userObjectId,
+        };
+      }
+      if (name === 'throws') {
+        throw new Error('lookup failed');
+      }
+      return null;
+    });
+
+    const result = await resolveModelSpecSkillIds({
+      names: [' known-skill ', 'missing-skill', 'throws', 'known-skill'],
+      accessibleSkillIds: [knownId],
+      getSkillByName,
+    });
+
+    expect(result.map((id) => id.toString())).toEqual([knownId.toString()]);
+    expect(getSkillByName).toHaveBeenCalledTimes(3);
+    expect(getSkillByName).toHaveBeenCalledWith('known-skill', [knownId], {
+      preferModelInvocable: true,
+    });
+  });
+
+  it('resolves configured names sequentially to avoid query bursts', async () => {
+    const firstId = new Types.ObjectId();
+    const secondId = new Types.ObjectId();
+    const order: string[] = [];
+    let releaseFirst!: () => void;
+    const firstLookup = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const getSkillByName = jest.fn(async (name: string) => {
+      order.push(`start:${name}`);
+      if (name === 'first') {
+        await firstLookup;
+        order.push(`end:${name}`);
+        return {
+          _id: firstId,
+          name,
+          body: 'body',
+          author: userObjectId,
+        };
+      }
+      order.push(`end:${name}`);
+      return {
+        _id: secondId,
+        name,
+        body: 'body',
+        author: userObjectId,
+      };
+    });
+
+    const promise = resolveModelSpecSkillIds({
+      names: ['first', 'second'],
+      accessibleSkillIds: [firstId, secondId],
+      getSkillByName,
+    });
+
+    await Promise.resolve();
+    expect(order).toEqual(['start:first']);
+
+    releaseFirst();
+    const result = await promise;
+
+    expect(result.map((id) => id.toString())).toEqual([firstId.toString(), secondId.toString()]);
+    expect(order).toEqual(['start:first', 'end:first', 'start:second', 'end:second']);
+  });
+
+  it('returns [] when no skill lookup is available', async () => {
+    const result = await resolveModelSpecSkillIds({
+      names: ['known-skill'],
+      accessibleSkillIds: [new Types.ObjectId()],
+      getSkillByName: undefined,
+    });
+
+    expect(result).toEqual([]);
+  });
+});
+
 describe('resolveSkillActive', () => {
   const makeSkill = (author: Types.ObjectId) => ({ _id: new Types.ObjectId(), author });
 
@@ -521,6 +652,30 @@ describe('resolveSkillActive', () => {
         defaultActiveOnShare: true,
       }),
     ).toBe(false);
+  });
+
+  it('respects explicit override = false even for deployment skills', () => {
+    const deploymentSkill = { ...makeSkill(new Types.ObjectId()), deployment: true };
+    expect(
+      resolveSkillActive({
+        skill: deploymentSkill,
+        skillStates: { [deploymentSkill._id.toString()]: false },
+        userId: undefined,
+        defaultActiveOnShare: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('defaults deployment skills to active without ownership or shared defaults', () => {
+    const deploymentSkill = { ...makeSkill(new Types.ObjectId()), deployment: true };
+    expect(
+      resolveSkillActive({
+        skill: deploymentSkill,
+        skillStates: {},
+        userId: undefined,
+        defaultActiveOnShare: false,
+      }),
+    ).toBe(true);
   });
 
   it('owned skills default to active when no override is present', () => {
@@ -742,6 +897,58 @@ describe('injectSkillCatalog', () => {
     await injectSkillCatalog(baseParams({ listSkillsByAccess, agent }));
     expect(agent.additional_instructions).toContain('my-skill');
     expect(agent.additional_instructions).toContain('desc-my-skill');
+  });
+
+  it('warns when a skill description exceeds the catalog entry cap', async () => {
+    const { logger } = await import('@librechat/data-schemas');
+    const warnSpy = jest.spyOn(logger, 'warn');
+    const longDesc = 'x'.repeat(400);
+    const longSkill: PageSkill = {
+      ...makeSkill('long-skill', userObjectId),
+      description: longDesc,
+    };
+    const shortSkill = makeSkill('short-skill', userObjectId);
+    const listSkillsByAccess = buildPager([[longSkill, shortSkill]]);
+    const agent = makeAgent();
+    await injectSkillCatalog(baseParams({ listSkillsByAccess, agent }));
+
+    const truncWarns = warnSpy.mock.calls
+      .map((call) => String(call[0]))
+      .filter((msg) => msg.includes('truncated to'));
+    expect(truncWarns).toHaveLength(1);
+    expect(truncWarns[0]).toContain('"long-skill"');
+    expect(truncWarns[0]).toContain('was 400');
+    /* Short description is not flagged. */
+    expect(
+      warnSpy.mock.calls
+        .map((call) => String(call[0]))
+        .filter((msg) => msg.includes('"short-skill"') && msg.includes('truncated')),
+    ).toHaveLength(0);
+
+    /* The catalog still reaches the model — the warning is additive. */
+    expect(agent.additional_instructions).toContain('long-skill');
+    expect(agent.additional_instructions).toContain('short-skill');
+    warnSpy.mockRestore();
+  });
+
+  it('honors a configured maxCatalogSkills below the default hard limit', async () => {
+    const first = makeSkill('first-skill', userObjectId);
+    const second = makeSkill('second-skill', userObjectId);
+    const third = makeSkill('third-skill', userObjectId);
+    const listSkillsByAccess = buildPager([[first, second, third]]);
+    const agent = makeAgent();
+    const result = await injectSkillCatalog(
+      baseParams({ listSkillsByAccess, agent, maxCatalogSkills: 2 }),
+    );
+
+    expect(result.skillCount).toBe(2);
+    expect(result.activeSkillIds.map((id) => id.toString())).toEqual([
+      first._id.toString(),
+      second._id.toString(),
+    ]);
+    expect(agent.additional_instructions).toContain('first-skill');
+    expect(agent.additional_instructions).toContain('second-skill');
+    expect(agent.additional_instructions).not.toContain('third-skill');
   });
 
   it('fails closed when userId is absent (shared skills drop, owned would need override)', async () => {
@@ -990,6 +1197,7 @@ describe('resolveManualSkills', () => {
     author: Types.ObjectId;
     allowedTools?: string[];
     userInvocable?: boolean;
+    deployment?: boolean;
   };
 
   const buildGetSkillByName =
@@ -1095,6 +1303,25 @@ describe('resolveManualSkills', () => {
     expect(result).toEqual([{ _id: real._id, name: 'real', body: 'body of real' }]);
   });
 
+  it('does not log a raw submitted name when the requested skill cannot be resolved', async () => {
+    const submittedName = 'PRIVATE-SKILL-NAME';
+    const warn = jest.spyOn(logger, 'warn');
+
+    const result = await resolveManualSkills({
+      names: [submittedName],
+      getSkillByName: buildGetSkillByName({}),
+      accessibleSkillIds: [new Types.ObjectId()],
+      userId,
+    });
+
+    expect(result).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(
+      '[resolveManualSkills] Requested skill not found or not accessible',
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(submittedName);
+    warn.mockRestore();
+  });
+
   it('silently skips skills with userInvocable: false, preserving the rest of the batch', async () => {
     const open = mkSkill('open', userOid);
     const modelOnly: SkillDoc = { ...mkSkill('model-only', userOid), userInvocable: false };
@@ -1197,6 +1424,21 @@ describe('resolveManualSkills', () => {
       defaultActiveOnShare: true,
     });
     expect(result).toEqual([{ _id: shared._id, name: 'shared', body: 'shared-body' }]);
+  });
+
+  it('allows deployment skills even when shared skills default inactive', async () => {
+    const deployment = {
+      ...mkSkill('deployment', otherAuthor, 'deployment-body'),
+      deployment: true,
+    };
+    const result = await resolveManualSkills({
+      names: ['deployment'],
+      getSkillByName: buildGetSkillByName({ deployment }),
+      accessibleSkillIds: [deployment._id],
+      userId,
+      defaultActiveOnShare: false,
+    });
+    expect(result).toEqual([{ _id: deployment._id, name: 'deployment', body: 'deployment-body' }]);
   });
 
   it('drops explicitly-deactivated skills (skillStates override wins over ownership default)', async () => {
@@ -1633,6 +1875,7 @@ describe('resolveAlwaysApplySkills', () => {
     body: string;
     author: Types.ObjectId | string;
     allowedTools?: string[];
+    deployment?: boolean;
   };
 
   const mkRow = (
@@ -1718,6 +1961,22 @@ describe('resolveAlwaysApplySkills', () => {
       defaultActiveOnShare: true,
     });
     expect(result).toEqual([{ _id: shared._id, name: 'shared-on', body: 'shared-body' }]);
+  });
+
+  it('allows deployment always-apply skills even when shared skills default inactive', async () => {
+    const deployment: AlwaysApplyRow = {
+      ...mkRow('deployment-always', otherAuthor, 'deployment body'),
+      deployment: true,
+    };
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: buildLister([deployment]),
+      accessibleSkillIds: [deployment._id],
+      userId,
+      defaultActiveOnShare: false,
+    });
+    expect(result).toEqual([
+      { _id: deployment._id, name: 'deployment-always', body: 'deployment body' },
+    ]);
   });
 
   it('honors explicit deactivation override even for owned skills', async () => {
@@ -1885,6 +2144,23 @@ describe('injectSkillPrimes', () => {
   const manual = (name: string, body: string) => ({ name, body });
   const always = (name: string, body: string) => ({ name, body });
 
+  it('selects the shared model-bound prime set before downstream consumers run', () => {
+    const selected = selectSkillPrimesForTurn({
+      manualSkillPrimes: [manual('shared', 'manual'), manual('explicit', 'explicit')],
+      alwaysApplySkillPrimes: [
+        always('shared', 'discarded'),
+        always('ambient-1', 'ambient-1'),
+        always('ambient-2', 'ambient-2'),
+      ],
+      maxPrimesPerTurn: 3,
+    });
+
+    expect(selected.manualSkillPrimes.map(({ name }) => name)).toEqual(['shared', 'explicit']);
+    expect(selected.alwaysApplySkillPrimes.map(({ name }) => name)).toEqual(['ambient-1']);
+    expect(selected.alwaysApplyDedupedFromManual).toBe(1);
+    expect(selected.alwaysApplyDropped).toBe(1);
+  });
+
   it('splices both lists with always-apply first, manual last (closer to user msg)', () => {
     const userMsg = new HumanMessage('what next?');
     const messages = [userMsg];
@@ -2040,5 +2316,47 @@ describe('injectSkillPrimes', () => {
     expect(result.alwaysApplyDedupedFromManual).toBe(1);
     expect(result.alwaysApplyDropped).toBe(0);
     expect(result.inserted).toBe(2);
+  });
+});
+
+describe('collectFreshSkillPrimeNames', () => {
+  it('returns the union of manual + always-apply prime names', () => {
+    const names = collectFreshSkillPrimeNames({
+      manualSkillPrimes: [{ name: 'pdf-analyzer' }, { name: 'code-review' }],
+      alwaysApplySkillPrimes: [{ name: 'clickhouse-best-practices' }],
+    });
+    expect(names).toEqual(new Set(['pdf-analyzer', 'code-review', 'clickhouse-best-practices']));
+  });
+
+  it('dedupes a skill that is both manual and always-apply', () => {
+    const names = collectFreshSkillPrimeNames({
+      manualSkillPrimes: [{ name: 'clickhouse-best-practices' }],
+      alwaysApplySkillPrimes: [{ name: 'clickhouse-best-practices' }],
+    });
+    expect(names.size).toBe(1);
+    expect(names.has('clickhouse-best-practices')).toBe(true);
+  });
+
+  it('handles undefined / empty inputs', () => {
+    expect(collectFreshSkillPrimeNames({}).size).toBe(0);
+    expect(
+      collectFreshSkillPrimeNames({
+        manualSkillPrimes: [],
+        alwaysApplySkillPrimes: [],
+      }).size,
+    ).toBe(0);
+  });
+
+  it('collects names from only one side when the other is absent', () => {
+    expect(
+      collectFreshSkillPrimeNames({
+        alwaysApplySkillPrimes: [{ name: 'only-always' }],
+      }),
+    ).toEqual(new Set(['only-always']));
+    expect(
+      collectFreshSkillPrimeNames({
+        manualSkillPrimes: [{ name: 'only-manual' }],
+      }),
+    ).toEqual(new Set(['only-manual']));
   });
 });

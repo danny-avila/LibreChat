@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 import {
+  AuthType,
   AgentCapabilities,
   EModelEndpoint,
   PrincipalType,
@@ -37,9 +38,7 @@ function createAppConfigCache() {
   };
 }
 
-type ConfigPrincipals = NonNullable<
-  Parameters<AppConfigServiceDeps['getApplicableConfigs']>[0]
->;
+type ConfigPrincipals = NonNullable<Parameters<AppConfigServiceDeps['getApplicableConfigs']>[0]>;
 
 function createMockDeps(overrides: Partial<EndpointsConfigDeps> = {}): EndpointsConfigDeps {
   return {
@@ -165,6 +164,7 @@ describe('createEndpointsConfigService', () => {
               [EModelEndpoint.agents]: {
                 allowedProviders: ['openAI', 'anthropic'],
                 capabilities: [AgentCapabilities.execute_code],
+                maxSubagents: 20,
               },
             },
           }),
@@ -174,6 +174,31 @@ describe('createEndpointsConfigService', () => {
       const result = await getEndpointsConfig(fakeReq());
 
       expect(result?.[EModelEndpoint.agents]?.allowedProviders).toEqual(['openAI', 'anthropic']);
+      expect(result?.[EModelEndpoint.agents]?.maxSubagents).toBe(20);
+    });
+
+    it('exposes the deployment stateful environment allowlist', async () => {
+      const deps = createMockDeps({
+        loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
+          [EModelEndpoint.agents]: { userProvide: false, order: 0 },
+        }),
+        getAppConfig: jest.fn().mockResolvedValue(
+          appConfig({
+            endpoints: {
+              [EModelEndpoint.agents]: {
+                statefulCodeSessions: { allowedEnvironments: ['user', 'agent-user'] },
+              },
+            },
+          }),
+        ),
+      });
+      const { getEndpointsConfig } = createEndpointsConfigService(deps);
+
+      const result = await getEndpointsConfig(fakeReq());
+
+      expect(result?.[EModelEndpoint.agents]?.statefulCodeSessions).toEqual({
+        allowedEnvironments: ['user', 'agent-user'],
+      });
     });
 
     it('merges bedrock availableRegions', async () => {
@@ -198,6 +223,47 @@ describe('createEndpointsConfigService', () => {
       ]);
     });
 
+    it('exposes Bedrock user-provided credential options', async () => {
+      const previousEnv = {
+        BEDROCK_AWS_ACCESS_KEY_ID: process.env.BEDROCK_AWS_ACCESS_KEY_ID,
+        BEDROCK_AWS_SECRET_ACCESS_KEY: process.env.BEDROCK_AWS_SECRET_ACCESS_KEY,
+        BEDROCK_AWS_SESSION_TOKEN: process.env.BEDROCK_AWS_SESSION_TOKEN,
+        BEDROCK_AWS_BEARER_TOKEN: process.env.BEDROCK_AWS_BEARER_TOKEN,
+      };
+
+      process.env.BEDROCK_AWS_ACCESS_KEY_ID = AuthType.USER_PROVIDED;
+      process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = AuthType.USER_PROVIDED;
+      process.env.BEDROCK_AWS_SESSION_TOKEN = AuthType.USER_PROVIDED;
+      process.env.BEDROCK_AWS_BEARER_TOKEN = AuthType.USER_PROVIDED;
+
+      try {
+        const deps = createMockDeps({
+          loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
+            [EModelEndpoint.bedrock]: { userProvide: false, order: 0 },
+          }),
+        });
+        const { getEndpointsConfig } = createEndpointsConfigService(deps);
+        const result = await getEndpointsConfig(fakeReq());
+
+        expect(result?.[EModelEndpoint.bedrock]).toEqual(
+          expect.objectContaining({
+            userProvideAccessKeyId: true,
+            userProvideSecretAccessKey: true,
+            userProvideSessionToken: true,
+            userProvideBearerToken: true,
+          }),
+        );
+      } finally {
+        Object.entries(previousEnv).forEach(([key, value]) => {
+          if (value == null) {
+            delete process.env[key];
+          } else {
+            process.env[key] = value;
+          }
+        });
+      }
+    });
+
     it('uses req.config when available instead of calling getAppConfig', async () => {
       const mockGetAppConfig = jest.fn();
       const deps = createMockDeps({ getAppConfig: mockGetAppConfig });
@@ -213,13 +279,12 @@ describe('createEndpointsConfigService', () => {
       const deps = createMockDeps({ getAppConfig: mockGetAppConfig });
       const { getEndpointsConfig } = createEndpointsConfigService(deps);
 
-      await getEndpointsConfig(
-        fakeReq({ user: { id: 'u1', role: 'USER', tenantId: 'tenant-a' } }),
-      );
+      await getEndpointsConfig(fakeReq({ user: { id: 'u1', role: 'USER', tenantId: 'tenant-a' } }));
 
       expect(mockGetAppConfig).toHaveBeenCalledWith({
         role: 'USER',
         userId: 'u1',
+        idOnTheSource: undefined,
         tenantId: 'tenant-a',
       });
     });
@@ -276,7 +341,10 @@ describe('createEndpointsConfigService', () => {
 
       const result = await getEndpointsConfig(fakeReq({ user: { id: 'u1', role: 'USER' } }));
 
-      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: 'u1', role: 'USER' });
+      expect(getUserPrincipals).toHaveBeenCalledWith({
+        userId: 'u1',
+        role: 'USER',
+      });
       expect(getApplicableConfigs).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({ principalType: PrincipalType.GROUP, principalId: groupId }),

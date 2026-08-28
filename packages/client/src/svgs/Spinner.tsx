@@ -1,4 +1,6 @@
+import { JSX } from 'react/jsx-runtime';
 import { cn } from '~/utils/';
+import './Spinner.css';
 
 interface SpinnerProps {
   className?: string;
@@ -8,13 +10,21 @@ interface SpinnerProps {
   speed?: number;
 }
 
+/**
+ * Accessible loading spinner.
+ *
+ * Animation is defined in Spinner.css (extracted into the package style bundle),
+ * never an embedded <style> tag: stylesheet text inside the SVG becomes part of
+ * the ancestor's textContent, leaking raw CSS into label readouts of any control
+ * that wraps a spinner.
+ */
 export default function Spinner({
   className = 'm-auto',
   size = 20,
   color = 'currentColor',
   bgOpacity = 0.1,
   speed = 0.75,
-}: SpinnerProps) {
+}: SpinnerProps): JSX.Element {
   const cssVars = {
     '--spinner-speed': `${speed}s`,
   } as React.CSSProperties;
@@ -28,20 +38,9 @@ export default function Spinner({
       xmlns="http://www.w3.org/2000/svg"
       style={cssVars}
       aria-hidden="true"
+      focusable="false"
+      role="presentation"
     >
-      <defs>
-        <style type="text/css">{`
-          .spinner {
-            transform-origin: center;
-            overflow: visible;
-            animation: spinner-rotate var(--spinner-speed) linear infinite;
-          }
-          @keyframes spinner-rotate {
-            to { transform: rotate(360deg); }
-          }
-        `}</style>
-      </defs>
-
       <circle
         cx="20"
         cy="20"

@@ -2,10 +2,16 @@ import { useMemo, useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Tools } from 'librechat-data-provider';
 import { Globe, ChevronDown } from 'lucide-react';
-import type { TAttachment, ValidSource, SearchResultData } from 'librechat-data-provider';
+import type {
+  TAttachment,
+  ValidSource,
+  SearchResultData,
+  PartMetadata,
+} from 'librechat-data-provider';
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
+import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import { StackedFavicons } from '~/components/Web/Sources';
-import { useLocalize, useExpandCollapse } from '~/hooks';
+import { useToolCallIntent } from './Parts/intent';
 import { useSearchContext } from '~/Providers';
 import cn from '~/utils/cn';
 import store from '~/store';
@@ -80,18 +86,30 @@ export default function WebSearch({
   initialProgress: progress = 0.1,
   isSubmitting,
   isLast,
+  args,
   output,
   attachments,
+  onExpand,
+  runStepStatus,
 }: {
   isLast?: boolean;
   isSubmitting: boolean;
+  args?: string | Record<string, unknown>;
   output?: string | null;
   initialProgress: number;
   attachments?: TAttachment[];
+  onExpand?: () => void;
+  runStepStatus?: PartMetadata['runStepStatus'];
 }) {
   const localize = useLocalize();
+  /** Model-authored live label (web_search carries `intent` natively);
+   *  persists as the settled label like the other tool cards. */
+  const intent = useToolCallIntent(args);
   const { searchResults } = useSearchContext();
-  const error = typeof output === 'string' && output.toLowerCase().includes('error processing');
+  const error =
+    (typeof output === 'string' && output.toLowerCase().includes('error processing')) ||
+    runStepStatus === 'failed';
+  const isClosed = runStepStatus != null;
 
   // Server tool calls (srvtoolu_) never receive ON_RUN_STEP_COMPLETED, so progress
   // stays at the default 0.1. Treat the search as complete if attachments have results.
@@ -100,11 +118,27 @@ export default function WebSearch({
       attachments?.some((att) => att.type === Tools.web_search && att[Tools.web_search]) ?? false,
     [attachments],
   );
-  const effectiveProgress = hasResults && !isSubmitting ? 1 : progress;
-  const cancelled = (!isSubmitting && effectiveProgress < 1) || error === true;
+  const effectiveProgress = isClosed || (hasResults && !isSubmitting) ? 1 : progress;
+  /**
+   * `error` folds into this branch deliberately: an errored search has always
+   * rendered as nothing (the `cancelled` early-return below), so a step closed
+   * as `failed` lands in the same place rather than inventing a failure UI
+   * this component has never had — or worse, falling through to the streaming
+   * branch and shimmering forever.
+   */
+  const cancelled = isClosed
+    ? runStepStatus === 'cancelled' || error
+    : (!isSubmitting && effectiveProgress < 1) || error === true;
 
-  const complete = !isLast && effectiveProgress === 1;
-  const finalizing = isSubmitting && isLast && effectiveProgress === 1;
+  const finalizing = !isClosed && isSubmitting && isLast && effectiveProgress === 1;
+  /** A search that is the message's FINAL part stays "finalizing" only while
+   *  the submission is live — afterwards it must settle like any other call,
+   *  or the completed label (and its settled intent announcement) never
+   *  renders and the card shimmers forever. A closed step settles immediately
+   *  on its own status instead of waiting for the submission to end. */
+  const complete = isClosed
+    ? !cancelled
+    : effectiveProgress === 1 && !finalizing && (!isLast || !isSubmitting);
 
   const ownTurn = useMemo((): string => {
     if (!attachments) {
@@ -139,27 +173,25 @@ export default function WebSearch({
     return [];
   }, [searchResults, attachments, ownTurn]);
 
-  const processedSources = useMemo(() => {
+  // Show favicons from the raw SERP results immediately rather than waiting for
+  // each source to flip to `processed`; the agents scrape barrier would otherwise
+  // freeze the stack on "Searching the web" for the slowest scrape's duration.
+  const streamingSources = useMemo(() => {
     if (complete && !finalizing) {
       return [];
     }
-    if (!searchResults) {
-      return [];
-    }
-    const result = searchResults[ownTurn];
+    const result = searchResults?.[ownTurn];
     if (!result) {
       return [];
     }
-    if (finalizing) {
-      return [...(result.organic || []), ...(result.topStories || [])];
-    }
-    return [...(result.organic || []), ...(result.topStories || [])].filter(
-      (source) => source.processed === true,
-    );
+    return [...(result.organic || []), ...(result.topStories || [])];
   }, [searchResults, complete, finalizing, ownTurn]);
 
-  const showSources = processedSources.length > 0;
-  const progressText = useMemo(() => {
+  const showSources = streamingSources.length > 0;
+  /** Stable phase text: the live region must not re-announce the growing
+   *  intent on every delta, so it always gets this value while streaming;
+   *  the settled intent is announced once via the completed branch. */
+  const genericProgressText = useMemo(() => {
     let text: ProgressKeys =
       ownTurn !== '0' ? 'com_ui_web_searching_again' : 'com_ui_web_searching';
     if (showSources) {
@@ -170,11 +202,13 @@ export default function WebSearch({
     }
     return localize(text);
   }, [ownTurn, localize, showSources, finalizing]);
+  const progressText = intent ?? genericProgressText;
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const sourceCount = allSources.length;
   const [showSourceList, setShowSourceList] = useState(() => autoExpand && sourceCount > 0);
   const { style: sourceExpandStyle, ref: sourceExpandRef } = useExpandCollapse(showSourceList);
+  const { shouldRenderBody, mountBody, handleTransitionEnd } = useLazyCollapseBody(showSourceList);
 
   useEffect(() => {
     if (autoExpand && sourceCount > 0) {
@@ -182,13 +216,24 @@ export default function WebSearch({
     }
   }, [autoExpand, sourceCount]);
 
+  const handleToggleSources = () => {
+    mountBody();
+    setShowSourceList((prev) => {
+      const next = !prev;
+      if (next) {
+        onExpand?.();
+      }
+      return next;
+    });
+  };
+
   if (cancelled) {
     return null;
   }
 
   if (complete) {
     const hasSourceData = sourceCount > 0;
-    const completedText = localize('com_ui_web_searched');
+    const completedText = intent ?? localize('com_ui_web_searched');
 
     return (
       <div className="mb-2">
@@ -204,7 +249,7 @@ export default function WebSearch({
               : 'pointer-events-none text-text-secondary',
           )}
           disabled={!hasSourceData}
-          onClick={hasSourceData ? () => setShowSourceList((prev) => !prev) : undefined}
+          onClick={hasSourceData ? handleToggleSources : undefined}
           aria-expanded={hasSourceData ? showSourceList : undefined}
           aria-label={
             hasSourceData
@@ -217,7 +262,7 @@ export default function WebSearch({
           ) : (
             <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
           )}
-          <span className="font-medium">{completedText}</span>
+          <span className="min-w-0 truncate font-medium">{completedText}</span>
           {hasSourceData && (
             <ChevronDown
               className={cn(
@@ -229,31 +274,33 @@ export default function WebSearch({
           )}
         </button>
         {hasSourceData && (
-          <div style={sourceExpandStyle}>
+          <div style={sourceExpandStyle} onTransitionEnd={handleTransitionEnd}>
             <div className="overflow-hidden" ref={sourceExpandRef}>
-              <div className="my-2 max-h-[280px] overflow-y-auto rounded-lg border border-border-light">
-                {allSources.map((source, i) => {
-                  const domain = getCleanDomain(source.link);
-                  return (
-                    <a
-                      key={source.link}
-                      href={source.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={cn(
-                        'flex items-center gap-2.5 px-3 py-2 transition-colors hover:bg-surface-hover',
-                        i > 0 && 'border-t border-border-light',
-                      )}
-                    >
-                      <FaviconImage domain={domain} className="size-4 shrink-0 rounded-sm" />
-                      <span className="min-w-0 flex-1 truncate text-xs font-medium text-text-primary">
-                        {source.title || domain}
-                      </span>
-                      <span className="shrink-0 text-[11px] text-text-secondary">{domain}</span>
-                    </a>
-                  );
-                })}
-              </div>
+              {shouldRenderBody && (
+                <div className="my-2 max-h-[280px] overflow-y-auto rounded-lg border border-border-light">
+                  {allSources.map((source, i) => {
+                    const domain = getCleanDomain(source.link);
+                    return (
+                      <a
+                        key={source.link}
+                        href={source.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={cn(
+                          'flex items-center gap-2.5 px-3 py-2 transition-colors hover:bg-surface-hover',
+                          i > 0 && 'border-t border-border-light',
+                        )}
+                      >
+                        <FaviconImage domain={domain} className="size-4 shrink-0 rounded-sm" />
+                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-text-primary">
+                          {source.title || domain}
+                        </span>
+                        <span className="shrink-0 text-[11px] text-text-secondary">{domain}</span>
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -264,11 +311,11 @@ export default function WebSearch({
   return (
     <div className="my-1 flex items-center gap-2.5">
       <span className="sr-only" aria-live="polite" aria-atomic="true">
-        {progressText}
+        {genericProgressText}
       </span>
-      {showSources && <StackedFavicons sources={processedSources} start={-5} />}
+      {showSources && <StackedFavicons sources={streamingSources} start={-5} />}
       <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
-      <span className="tool-status-text shimmer font-medium text-text-secondary">
+      <span className="tool-status-text shimmer min-w-0 truncate font-medium text-text-secondary">
         {progressText}
       </span>
     </div>

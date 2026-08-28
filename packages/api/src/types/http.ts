@@ -1,5 +1,5 @@
-import type { TConversation, TEndpointOption } from 'librechat-data-provider';
-import type { IUser, AppConfig } from '@librechat/data-schemas';
+import type { IUser, AppConfig, IConversation } from '@librechat/data-schemas';
+import type { TEndpointOption } from 'librechat-data-provider';
 import type { Request } from 'express';
 
 /**
@@ -16,6 +16,8 @@ export type RequestBody = {
   model?: string;
   key?: string;
   endpointOption?: Partial<TEndpointOption>;
+  /** Browser IANA timezone used to resolve local-time prompt variables (e.g. `{{current_datetime}}`). */
+  timezone?: string;
 };
 
 export type ServerRequest = Request<unknown, unknown, RequestBody> & {
@@ -23,8 +25,9 @@ export type ServerRequest = Request<unknown, unknown, RequestBody> & {
   config?: AppConfig;
   /** Server-captured conversation creation time used to anchor dynamic prompt variables. */
   conversationCreatedAt?: string;
-  /** Conversation loaded while resolving the prompt timestamp anchor, reused by save logic. */
-  resolvedConversation?: Partial<TConversation> | null;
+  /** Conversation read by request middleware (`null` = looked up, absent), reused by the
+   *  subagent guard, agent initialization, and the first save instead of re-reading it. */
+  resolvedConversation?: Partial<IConversation> | null;
   /** Passport strategy that populated req.user for this request. */
   authStrategy?: string;
 };

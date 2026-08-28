@@ -1,19 +1,23 @@
 /// <reference types="jest" />
-import { EventEmitter } from 'events';
 import express from 'express';
+import request from 'supertest';
+import { EventEmitter } from 'events';
+import { recordAgentEventActorReceiptMetric } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import {
   createMetrics,
   instrumentMongooseQueryMetrics,
   normalizePath,
+  recordAgentStartupMilestone,
+  recordAgentStartupResult,
   recordGenerationJob,
   recordGenerationStreamResumePendingEvents,
   recordGenerationStreamSubscription,
   recordOpenIDUserLookup,
+  recordRedisOperation,
+  recordRumProxyRequest,
   setGenerationJobsInFlight,
 } from './metrics';
-
-const request = require('supertest') as (app: express.Express) => any;
 
 describe('normalizePath', () => {
   it.each([
@@ -127,6 +131,89 @@ describe('createMetrics', () => {
     expect(response.text).toMatch(
       /http_request_body_bytes_sum\{method="POST",path="\/api\/files\/#id"\} 42/,
     );
+  });
+
+  it('exposes bounded event actor receipt settlement, replay, conflict, and migration metrics', async () => {
+    const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
+    const { metricsRouter } = createMetrics();
+    app.use('/metrics', metricsRouter);
+
+    recordAgentEventActorReceiptMetric({
+      operation: 'settle',
+      outcome: 'success',
+      resolution: 'checkpoint_verified',
+    });
+    recordAgentEventActorReceiptMetric({
+      operation: 'read',
+      outcome: 'hit',
+      resolution: 'checkpoint_verified',
+    });
+    recordAgentEventActorReceiptMetric({
+      operation: 'settle',
+      outcome: 'conflict',
+      resolution: 'action_compensated',
+    });
+    recordAgentEventActorReceiptMetric({
+      operation: 'backfill',
+      outcome: 'success',
+      resolution: 'history_repaired',
+    });
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).toContain(
+      'agent_event_actor_receipt_operations_total{operation="settle",outcome="success",resolution="checkpoint_verified"} 1',
+    );
+    expect(response.text).toContain(
+      'agent_event_actor_receipt_operations_total{operation="read",outcome="hit",resolution="checkpoint_verified"} 1',
+    );
+    expect(response.text).toContain(
+      'agent_event_actor_receipt_operations_total{operation="settle",outcome="conflict",resolution="action_compensated"} 1',
+    );
+    expect(response.text).toContain(
+      'agent_event_actor_receipt_operations_total{operation="backfill",outcome="success",resolution="history_repaired"} 1',
+    );
+  });
+
+  it('collects truthful event actor receipt, reconciliation, retry, and TTL gauges', async () => {
+    const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
+    const collectAgentEventActorStorageMetrics = jest.fn(async () => ({
+      retainedByResolution: {
+        checkpoint_verified: 7,
+        action_compensated: 2,
+        history_repaired: 1,
+      },
+      expiryEligible: 3,
+      retryDeliveries: 4,
+      deadDeliveries: 5,
+      pendingReconciliations: 6,
+      oldestPendingAgeSeconds: 91,
+    }));
+    const { metricsRouter } = createMetrics({
+      collectAgentEventActorStorageMetrics,
+    });
+    app.use('/metrics', metricsRouter);
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).toContain(
+      'agent_event_actor_receipts_retained{resolution="checkpoint_verified"} 7',
+    );
+    expect(response.text).toContain('agent_event_actor_receipts_expiry_eligible 3');
+    expect(response.text).toContain('agent_event_actor_reconciliations_pending 6');
+    expect(response.text).toContain('agent_event_actor_oldest_reconciliation_age_seconds 91');
+    expect(response.text).toContain('agent_event_actor_deliveries{state="retry"} 4');
+    expect(response.text).toContain('agent_event_actor_deliveries{state="dead"} 5');
+    await request(app).get('/metrics').set('Authorization', 'Bearer test-secret').expect(200);
+    expect(collectAgentEventActorStorageMetrics).toHaveBeenCalledTimes(1);
   });
 
   it('tracks SSE stream counts, active gauges, and stream duration', async () => {
@@ -272,6 +359,61 @@ describe('createMetrics', () => {
     expect(response.text).toMatch(/openid_user_lookup_duration_seconds_sum\{result="found"\} 0.2/);
   });
 
+  it('tracks Redis operation outcomes and latency by use case', async () => {
+    const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
+    const { metricsRouter } = createMetrics();
+    app.use('/metrics', metricsRouter);
+
+    recordRedisOperation('keyv', 'auth_user_doc', 'get', 'success', 0.02);
+    recordRedisOperation('ioredis', 'rate_limit', 'eval', 'error', 0.05);
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).toMatch(
+      /redis_operations_total\{client="keyv",use_case="auth_user_doc",operation="get",status="success"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /redis_operation_duration_seconds_count\{client="ioredis",use_case="rate_limit",operation="eval",status="error"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /redis_operation_duration_seconds_sum\{client="ioredis",use_case="rate_limit",operation="eval",status="error"\} 0.05/,
+    );
+  });
+
+  it('tracks RUM proxy request outcomes', async () => {
+    const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
+    const { metricsRouter } = createMetrics();
+    app.use('/metrics', metricsRouter);
+
+    recordRumProxyRequest('traces', 'success');
+    recordRumProxyRequest('traces', 'auth_drop');
+    recordRumProxyRequest('logs', 'auth_error');
+    recordRumProxyRequest('logs', 'collector_5xx');
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).toMatch(
+      /rum_proxy_requests_total\{endpoint="traces",result="success"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /rum_proxy_requests_total\{endpoint="traces",result="auth_drop"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /rum_proxy_requests_total\{endpoint="logs",result="auth_error"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /rum_proxy_requests_total\{endpoint="logs",result="collector_5xx"\} 1/,
+    );
+  });
+
   it('tracks mongoose query counts and latency by model and operation', async () => {
     class FakeQuery {
       model = { modelName: 'User' };
@@ -379,5 +521,36 @@ describe('createMetrics', () => {
     expect(response.text).toMatch(
       /generation_stream_resume_pending_events_total\{store="memory"\} 3/,
     );
+  });
+
+  it('tracks cumulative agent startup milestones and terminal results', async () => {
+    const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
+    const { metricsRouter } = createMetrics();
+    app.use('/metrics', metricsRouter);
+
+    recordAgentStartupMilestone('job_created', 0.125);
+    recordAgentStartupMilestone('first_response_event_queued', 0.75);
+    recordAgentStartupResult('content_queued');
+    Reflect.apply(recordAgentStartupMilestone, undefined, ['unbounded-user-value', 1]);
+    Reflect.apply(recordAgentStartupMilestone, undefined, ['job_created', Number.NaN]);
+    Reflect.apply(recordAgentStartupResult, undefined, ['unbounded-user-value']);
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).toMatch(
+      /agent_startup_milestone_duration_seconds_count\{milestone="job_created"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /agent_startup_milestone_duration_seconds_sum\{milestone="job_created"\} 0.125/,
+    );
+    expect(response.text).toMatch(
+      /agent_startup_milestone_duration_seconds_count\{milestone="first_response_event_queued"\} 1/,
+    );
+    expect(response.text).toMatch(/agent_startups_total\{result="content_queued"\} 1/);
+    expect(response.text).not.toContain('unbounded-user-value');
   });
 });

@@ -1,8 +1,8 @@
 import { Socket } from 'node:net';
 import { IncomingMessage } from 'node:http';
 import { Agent as HttpsAgent } from 'node:https';
-import type { Span } from '@opentelemetry/api';
 import type { RequestOptions } from 'node:http';
+import type { Span } from '@opentelemetry/api';
 
 interface HttpInstrumentationOptions {
   requestHook?: (span: Span, request: object) => void;
@@ -191,6 +191,20 @@ describe('telemetry SDK lifecycle', () => {
     expect(mockExpressInstrumentation).toHaveBeenCalledTimes(1);
     expect(mockMongoDBInstrumentation).toHaveBeenCalledTimes(1);
     expect(mockMongooseInstrumentation).toHaveBeenCalledTimes(1);
+    expect(mockIORedisInstrumentation).not.toHaveBeenCalled();
+    expect(mockUndiciInstrumentation).toHaveBeenCalledTimes(1);
+  });
+
+  it('enables ioredis instrumentation when explicitly configured', () => {
+    initializeTelemetry({
+      OTEL_IOREDIS_TRACING_ENABLED: 'true',
+      OTEL_TRACING_ENABLED: 'true',
+    });
+
+    expect(mockMongooseInstrumentation).toHaveBeenCalledTimes(1);
+    expect(mockHttpInstrumentation).toHaveBeenCalledTimes(1);
+    expect(mockExpressInstrumentation).toHaveBeenCalledTimes(1);
+    expect(mockMongoDBInstrumentation).toHaveBeenCalledTimes(1);
     expect(mockIORedisInstrumentation).toHaveBeenCalledTimes(1);
     expect(mockUndiciInstrumentation).toHaveBeenCalledTimes(1);
   });
@@ -498,7 +512,9 @@ describe('telemetry SDK lifecycle', () => {
     const { registerShutdownTask } = await import('../app/shutdown');
     initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
 
-    expect(registerShutdownTask).toHaveBeenCalledWith('telemetry', expect.any(Function));
+    expect(registerShutdownTask).toHaveBeenCalledWith('telemetry', expect.any(Function), {
+      priority: -100,
+    });
   });
 
   it('the registered shutdown task warns when telemetry shutdown rejects', async () => {
@@ -506,15 +522,15 @@ describe('telemetry SDK lifecycle', () => {
     mockShutdown.mockRejectedValueOnce(new Error('flush failed'));
     initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
 
-    const taskFn = (registerShutdownTask as jest.Mock).mock.calls.at(-1)?.[1] as
+    const shutdownTaskCalls = (registerShutdownTask as jest.Mock).mock.calls;
+    const taskFn = shutdownTaskCalls[shutdownTaskCalls.length - 1]?.[1] as
       | (() => Promise<void>)
       | undefined;
     expect(taskFn).toBeDefined();
     await taskFn?.();
 
-    expect(emitWarningSpy).toHaveBeenCalledWith(
-      'OpenTelemetry shutdown failed: flush failed',
-      { code: 'LIBRECHAT_OTEL' },
-    );
+    expect(emitWarningSpy).toHaveBeenCalledWith('OpenTelemetry shutdown failed: flush failed', {
+      code: 'LIBRECHAT_OTEL',
+    });
   });
 });

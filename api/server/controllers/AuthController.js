@@ -3,14 +3,17 @@ const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const {
+  math,
   isEnabled,
   findOpenIDUser,
   getOpenIdIssuer,
   buildOpenIDRefreshParams,
+  OPENID_EXPIRY_BUFFER_SECONDS,
 } = require('@librechat/api');
 const {
   requestPasswordReset,
   setOpenIDAuthTokens,
+  storeOpenIDSession,
   setCloudFrontAuthCookies,
   resetPassword,
   setAuthTokens,
@@ -27,9 +30,18 @@ const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 
 const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
-const OPENID_REUSE_EXPIRY_BUFFER_SECONDS = 30;
-/** Mirrors the default SESSION_EXPIRY to bound IdP revocation lag for session-token reuse. */
-const OPENID_REUSE_MAX_SESSION_AGE_MS = 15 * 60 * 1000;
+/**
+ * Max age (ms) LibreChat reuses a cached OpenID session token before forcing an IdP refresh.
+ * Env-overridable (accepts an arithmetic expression, e.g. `60 * 60 * 24 * 1000`, like
+ * `SESSION_EXPIRY`): deployments whose IdP revokes the previous access token on refresh can
+ * widen this to the access-token lifetime so a still-valid token is not rotated/revoked out
+ * from under downstream consumers (e.g. MCP servers that introspect the bearer). Defaults to
+ * 15 minutes.
+ */
+const OPENID_REUSE_MAX_SESSION_AGE_MS = math(
+  process.env.OPENID_REUSE_MAX_SESSION_AGE_MS,
+  15 * 60 * 1000,
+);
 
 const registrationController = async (req, res) => {
   try {
@@ -99,7 +111,7 @@ const getReusableOpenIDSessionToken = (openidTokens) => {
     if (
       decoded &&
       typeof decoded === 'object' &&
-      decoded.exp > now + OPENID_REUSE_EXPIRY_BUFFER_SECONDS
+      decoded.exp > now + OPENID_EXPIRY_BUFFER_SECONDS
     ) {
       return candidate;
     }
@@ -231,6 +243,13 @@ const refreshController = async (req, res) => {
         );
       }
 
+      const activeRefreshToken = tokenset.refresh_token || refreshToken;
+      await storeOpenIDSession(
+        user._id.toString(),
+        activeRefreshToken,
+        user.tenantId,
+        refreshToken,
+      );
       const token = setOpenIDAuthTokens(tokenset, req, res, {
         userId: user._id.toString(),
         existingRefreshToken: refreshToken,

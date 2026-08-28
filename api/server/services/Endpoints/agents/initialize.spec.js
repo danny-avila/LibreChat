@@ -6,11 +6,22 @@ const {
   PrincipalModel,
   MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_GRAPH_NODES,
+  MAX_SUBAGENT_RUN_CONFIGS,
+  Constants,
+  ErrorTypes,
 } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 const mockInitializeAgent = jest.fn();
 const mockValidateAgentModel = jest.fn();
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
 
 jest.mock('@librechat/agents', () => ({
   ...jest.requireActual('@librechat/agents'),
@@ -33,9 +44,15 @@ jest.mock('@librechat/api', () => ({
  *  `ON_TOOL_EXECUTE` pipeline with a real subagent id and observe whether
  *  the tool context (agent, tool_resources, skill ACLs) was preserved. */
 let capturedToolExecuteOptions;
+let capturedDefaultHandlerOptions;
+const mockArtifactToolEndCallback = jest.fn();
 jest.mock('~/server/controllers/agents/callbacks', () => ({
-  createToolEndCallback: jest.fn(() => jest.fn()),
+  createToolEndCallback: jest.fn(() => mockArtifactToolEndCallback),
+  createAttachmentEmitter: jest.fn(() => jest.fn()),
+  createPtcProgressEmitter: jest.fn(() => jest.fn()),
+  createBackgroundCodeResultHandler: jest.fn(() => jest.fn()),
   getDefaultHandlers: jest.fn((opts) => {
+    capturedDefaultHandlerOptions = opts;
     capturedToolExecuteOptions = opts?.toolExecuteOptions;
     return {};
   }),
@@ -45,6 +62,12 @@ const mockLoadToolsForExecution = jest.fn();
 jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn(),
   loadToolsForExecution: (...args) => mockLoadToolsForExecution(...args),
+  isFatalAgentInitializationError: (error) =>
+    [
+      'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      'resource_recovery_required',
+      'stateful_code_environment_not_allowed',
+    ].includes(error?.code),
 }));
 
 jest.mock('~/server/controllers/ModelController', () => ({
@@ -68,9 +91,14 @@ jest.mock('~/cache', () => ({
 }));
 
 const { initializeClient } = require('./initialize');
+const { processAddedConvo } = require('./addedConvo');
+const { getSkillDbMethods, getSkillToolDeps } = require('./skillDeps');
+const { loadAgentTools } = require('~/server/services/ToolService');
+const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { logger } = require('@librechat/data-schemas');
 const { User, AclEntry } = require('~/db/models');
-const { createAgent } = require('~/models');
+const { createAgent, createSkill, updateAgent } = require('~/models');
+const db = require('~/models');
 
 jest.spyOn(logger, 'warn').mockImplementation(() => {});
 
@@ -96,6 +124,7 @@ describe('initializeClient — processAgent ACL gate', () => {
     await mongoose.connection.dropDatabase();
     jest.clearAllMocks();
     agentClientArgs = undefined;
+    capturedDefaultHandlerOptions = undefined;
 
     testUser = await User.create({
       email: 'test@example.com',
@@ -110,6 +139,7 @@ describe('initializeClient — processAgent ACL gate', () => {
   const makeReq = () => ({
     user: { id: testUser._id.toString(), role: 'USER' },
     body: { conversationId: 'conv_1', files: [] },
+    resolvedConversation: null,
     config: { endpoints: {} },
     _resumableStreamId: null,
   });
@@ -136,6 +166,212 @@ describe('initializeClient — processAgent ACL gate', () => {
     tool_resources: {},
     resendFiles: true,
     maxContextTokens: 4096,
+    codeExecutionContext: {
+      baseUrl: 'https://code-default.example.com',
+      codeSessionKey: 'execute_code',
+      executionProfile: 'default',
+      statefulSessions: false,
+    },
+  });
+
+  it('replaces untrusted artifact route metadata with the executing agent context', async () => {
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+
+    await initializeClient({
+      req: makeReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    const data = { output: { name: 'execute_code', artifact: { files: [] } } };
+    await capturedDefaultHandlerOptions.toolEndCallback(data, {
+      langgraph_node: `tools=${PRIMARY_ID}`,
+      codeExecutionContext: {
+        baseUrl: 'https://attacker.invalid',
+        executionProfile: 'stateful',
+      },
+    });
+
+    expect(mockArtifactToolEndCallback).toHaveBeenLastCalledWith(
+      data,
+      expect.objectContaining({
+        codeExecutionContext: expect.objectContaining({
+          baseUrl: 'https://code-default.example.com',
+          executionProfile: 'default',
+        }),
+      }),
+    );
+  });
+
+  it('threads the owning job epoch into resumable event handlers', async () => {
+    const {
+      createAttachmentEmitter,
+      createPtcProgressEmitter,
+      createToolEndCallback,
+    } = require('~/server/controllers/agents/callbacks');
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const req = makeReq();
+    req._resumableStreamId = 'conv_1';
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+      jobCreatedAt: 1234,
+    });
+
+    expect(capturedDefaultHandlerOptions).toEqual(
+      expect.objectContaining({
+        streamId: 'conv_1',
+        jobCreatedAt: 1234,
+      }),
+    );
+    expect(createToolEndCallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        streamId: 'conv_1',
+        jobCreatedAt: 1234,
+      }),
+    );
+    expect(createAttachmentEmitter).toHaveBeenCalledWith({
+      res: {},
+      streamId: 'conv_1',
+      jobCreatedAt: 1234,
+    });
+    /** The PTC trace emitter is generation-fenced like every other resumable
+     *  emitter; a stale epoch would leak one run's inner calls into the next. */
+    expect(createPtcProgressEmitter).toHaveBeenCalledWith({
+      res: {},
+      streamId: 'conv_1',
+      jobCreatedAt: 1234,
+    });
+
+    mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [], configurable: {} });
+    await capturedToolExecuteOptions.loadTools([], PRIMARY_ID);
+    expect(mockLoadToolsForExecution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        streamId: 'conv_1',
+        jobCreatedAt: 1234,
+      }),
+    );
+  });
+
+  it('publishes event-root activity through the owning child task stream', async () => {
+    const subagentThreadTaskStore = require('./subagentThreadStore');
+    const publishTaskActivity = jest
+      .spyOn(subagentThreadTaskStore, 'publishTaskActivity')
+      .mockResolvedValueOnce(undefined);
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const req = makeReq();
+    req._resumableStreamId = 'child-conversation';
+    req.body.conversationId = 'child-conversation';
+    req._agentEventTaskId = 'event-task';
+    req._agentEventBindingParentConversationId = 'parent-conversation';
+    req._agentEventBindingParentAgentId = 'parent-agent';
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(capturedDefaultHandlerOptions.eventChildActivity).toEqual(
+      expect.objectContaining({
+        runId: 'child-conversation',
+        parentRunId: 'parent-conversation',
+        subagentRunId: 'event-task',
+        subagentType: PRIMARY_ID,
+        subagentAgentId: PRIMARY_ID,
+        parentAgentId: 'parent-agent',
+      }),
+    );
+    await capturedDefaultHandlerOptions.eventChildActivity.publish({
+      phase: 'writing',
+      label: 'Drafting response',
+    });
+    expect(publishTaskActivity).toHaveBeenCalledWith('child-conversation', 'event-task', {
+      phase: 'writing',
+      label: 'Drafting response',
+    });
+  });
+
+  it('propagates an expected-MCP-tools failure from the runtime tool loader', async () => {
+    const toolError = Object.assign(new Error('Expected MCP tools are unavailable'), {
+      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      statusCode: 503,
+    });
+    loadAgentTools.mockRejectedValueOnce(toolError);
+    mockInitializeAgent.mockImplementationOnce(async ({ req, res, loadTools, agent }) => {
+      await loadTools({
+        req,
+        res,
+        tools: ['run_query_mcp_warehouse'],
+        model: agent.model,
+        agentId: agent.id,
+        provider: agent.provider,
+      });
+      return makePrimaryConfig([]);
+    });
+
+    await expect(
+      initializeClient({
+        req: makeReq(),
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toBe(toolError);
+  });
+
+  it('aborts the run when a handoff target resolves none of its expected MCP tools', async () => {
+    const target = await createAgent({
+      id: AUTHORIZED_ID,
+      name: 'Target Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: ['run_query_mcp_warehouse'],
+    });
+    await AclEntry.create({
+      principalType: PrincipalType.USER,
+      principalId: testUser._id,
+      principalModel: PrincipalModel.USER,
+      resourceType: ResourceType.AGENT,
+      resourceId: target._id,
+      permBits: PermissionBits.VIEW,
+      grantedBy: testUser._id,
+    });
+
+    const toolError = Object.assign(new Error('Target Agent expected MCP tools are unavailable'), {
+      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      statusCode: 503,
+    });
+    loadAgentTools.mockRejectedValueOnce(toolError);
+    mockInitializeAgent
+      .mockResolvedValueOnce(
+        makePrimaryConfig([{ from: PRIMARY_ID, to: AUTHORIZED_ID, edgeType: 'handoff' }]),
+      )
+      .mockImplementationOnce(async ({ req, res, loadTools, agent }) => {
+        await loadTools({
+          req,
+          res,
+          tools: agent.tools,
+          model: agent.model,
+          agentId: agent.id,
+          provider: agent.provider,
+        });
+      });
+
+    await expect(
+      initializeClient({
+        req: makeReq(),
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toBe(toolError);
   });
 
   it('should skip handoff agent and filter its edge when user lacks VIEW access', async () => {
@@ -226,6 +462,184 @@ describe('initializeClient — processAgent ACL gate', () => {
       handoffContextAttachment,
     ]);
   });
+
+  it('does not enable skill authoring for VIEW-only shared skills', async () => {
+    const { skill } = await createSkill({
+      name: 'shared-view-only',
+      description: 'Use for read-only sharing.',
+      body: '# Shared view-only skill\n',
+      author: new mongoose.Types.ObjectId(),
+      authorName: 'Skill Owner',
+    });
+    await AclEntry.create({
+      principalType: PrincipalType.USER,
+      principalId: testUser._id,
+      principalModel: PrincipalModel.USER,
+      resourceType: ResourceType.SKILL,
+      resourceId: skill._id,
+      permBits: PermissionBits.VIEW,
+      grantedBy: testUser._id,
+    });
+
+    const endpointOption = makeEndpointOption();
+    endpointOption.agent = Promise.resolve({
+      id: PRIMARY_ID,
+      name: 'Primary',
+      provider: 'openai',
+      model: 'gpt-4',
+      tools: [],
+      skills_enabled: true,
+    });
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const req = makeReq();
+    req.config.endpoints.agents = { capabilities: ['skills'] };
+    const canCreateSkillSpy = jest
+      .spyOn(getSkillToolDeps(), 'canCreateSkill')
+      .mockResolvedValue(false);
+
+    try {
+      await initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption,
+      });
+    } finally {
+      canCreateSkillSpy.mockRestore();
+    }
+
+    const initializeParams = mockInitializeAgent.mock.calls[0][0];
+    expect(initializeParams.accessibleSkillIds.map(String)).toContain(skill._id.toString());
+    expect(initializeParams.skillAuthoringAvailable).toBe(false);
+  });
+
+  it('enables skill authoring when model specs enable skills for an ephemeral agent', async () => {
+    const endpointOption = makeEndpointOption();
+    endpointOption.spec = 'spec-skills';
+    endpointOption.agent = Promise.resolve({
+      id: Constants.EPHEMERAL_AGENT_ID,
+      name: 'Ephemeral Primary',
+      provider: 'openai',
+      model: 'gpt-4',
+      tools: [],
+    });
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const req = makeReq();
+    req.config.endpoints.agents = { capabilities: ['skills'] };
+    req.config.modelSpecs = {
+      list: [{ name: 'spec-skills', skills: true }],
+    };
+    const canCreateSkillSpy = jest
+      .spyOn(getSkillToolDeps(), 'canCreateSkill')
+      .mockResolvedValue(true);
+
+    try {
+      await initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption,
+      });
+    } finally {
+      canCreateSkillSpy.mockRestore();
+    }
+
+    const initializeParams = mockInitializeAgent.mock.calls[0][0];
+    expect(initializeParams.agent.skills_enabled).toBe(true);
+    expect(initializeParams.skillAuthoringAvailable).toBe(true);
+  });
+
+  it('loads model validation and skill permissions without serial waits', async () => {
+    const models = deferred();
+    const createPermission = deferred();
+    const req = makeReq();
+    req.config.endpoints.agents = { capabilities: ['skills'] };
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    getModelsConfig.mockReturnValueOnce(models.promise);
+    const canCreateSkillSpy = jest
+      .spyOn(getSkillToolDeps(), 'canCreateSkill')
+      .mockReturnValue(createPermission.promise);
+
+    try {
+      const initialization = initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      });
+
+      expect(getModelsConfig).toHaveBeenCalledWith(req);
+      expect(canCreateSkillSpy).toHaveBeenCalledWith({ req });
+
+      models.resolve({});
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockValidateAgentModel).toHaveBeenCalledTimes(1);
+      expect(mockInitializeAgent).not.toHaveBeenCalled();
+
+      createPermission.resolve(false);
+      await initialization;
+      expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+    } finally {
+      canCreateSkillSpy.mockRestore();
+    }
+  });
+
+  it('resolves model-spec skill names through deployment-aware skill methods', async () => {
+    const deploymentSkillId = new mongoose.Types.ObjectId();
+    await AclEntry.create({
+      principalType: PrincipalType.USER,
+      principalId: testUser._id,
+      principalModel: PrincipalModel.USER,
+      resourceType: ResourceType.SKILL,
+      resourceId: new mongoose.Types.ObjectId(),
+      permBits: PermissionBits.VIEW,
+      grantedBy: testUser._id,
+    });
+    const endpointOption = makeEndpointOption();
+    endpointOption.spec = 'spec-deployment-skill';
+    endpointOption.agent = Promise.resolve({
+      id: Constants.EPHEMERAL_AGENT_ID,
+      name: 'Ephemeral Primary',
+      provider: 'openai',
+      model: 'gpt-4',
+      tools: [],
+    });
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const req = makeReq();
+    req.config.endpoints.agents = { capabilities: ['skills'] };
+    req.config.modelSpecs = {
+      list: [{ name: 'spec-deployment-skill', skills: ['deployment-skill'] }],
+    };
+    const getSkillByNameSpy = jest.spyOn(getSkillDbMethods(), 'getSkillByName').mockResolvedValue({
+      _id: deploymentSkillId,
+      name: 'deployment-skill',
+      source: 'deployment',
+    });
+    const canCreateSkillSpy = jest
+      .spyOn(getSkillToolDeps(), 'canCreateSkill')
+      .mockResolvedValue(false);
+
+    try {
+      await initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption,
+      });
+
+      expect(getSkillByNameSpy).toHaveBeenCalledWith(
+        'deployment-skill',
+        expect.any(Array),
+        expect.any(Object),
+      );
+      const initializeParams = mockInitializeAgent.mock.calls[0][0];
+      expect(initializeParams.agent.skills_enabled).toBe(true);
+      expect(initializeParams.agent.skills).toEqual([deploymentSkillId.toString()]);
+    } finally {
+      getSkillByNameSpy.mockRestore();
+      canCreateSkillSpy.mockRestore();
+    }
+  });
 });
 
 describe('initializeClient — subagent loading', () => {
@@ -252,7 +666,7 @@ describe('initializeClient — subagent loading', () => {
     agentClientArgs = undefined;
     capturedToolExecuteOptions = undefined;
     mockLoadToolsForExecution.mockReset();
-    mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [] });
+    mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [], configurable: {} });
 
     testUser = await User.create({
       email: 'subagent@example.com',
@@ -281,6 +695,7 @@ describe('initializeClient — subagent loading', () => {
   const makeSubagentReq = () => ({
     user: { id: testUser._id.toString(), role: 'USER' },
     body: { conversationId: 'conv_sub', files: [] },
+    resolvedConversation: null,
     config: {
       endpoints: {
         agents: {
@@ -336,7 +751,7 @@ describe('initializeClient — subagent loading', () => {
     subagents: { enabled: true, allowSelf: false, agent_ids: childIds },
   });
 
-  const createViewableAgent = async (id) => {
+  const createViewableAgent = async (id, subagents) => {
     const agent = await createAgent({
       id,
       name: id,
@@ -344,12 +759,225 @@ describe('initializeClient — subagent loading', () => {
       model: 'gpt-4',
       author: new mongoose.Types.ObjectId(),
       tools: [],
+      subagents,
     });
     await grantView(agent);
     return agent;
   };
 
-  it('loads a configured subagent, populates `subagentAgentConfigs`, and keeps it out of `agentConfigs`', async () => {
+  it('creates one trusted durable thread scope for detached subagents', async () => {
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+      }),
+    );
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('run_in_background');
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.subagentTasks).toBe(capturedToolExecuteOptions.subagentTasks);
+    expect(agentClientArgs.subagentTasks.store.supportsThreadContinuation).toBe(true);
+    expect(JSON.parse(agentClientArgs.subagentTasks.scopeId)).toEqual({
+      version: 1,
+      userId: testUser._id.toString(),
+      parentConversationId: 'conv_sub',
+    });
+  });
+
+  it('uses one normalized MCP body for discovery, deferred execution, and AgentClient', async () => {
+    const requestBody = Object.freeze({
+      messageId: 'response-message',
+      conversationId: 'conv_sub',
+      parentMessageId: 'user-message',
+    });
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig({}));
+    mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [], configurable: {} });
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+      requestBody,
+    });
+
+    expect(mockInitializeAgent.mock.calls[0][0].requestBody).toBe(requestBody);
+    expect(agentClientArgs.mcpRequestBody).toBe(requestBody);
+
+    await capturedToolExecuteOptions.loadTools([], PRIMARY_ID);
+    expect(mockLoadToolsForExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ requestBody }),
+    );
+  });
+
+  it('keeps an existing detached task controllable after subagent config is disabled', async () => {
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+      }),
+    );
+    const initialReq = makeSubagentReq();
+    initialReq.config.endpoints.agents.capabilities.push('run_in_background');
+    await initializeClient({
+      req: initialReq,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    const existingConfig = agentClientArgs.subagentTasks;
+    const hasTasksSpy = jest.spyOn(existingConfig.store, 'hasTasks').mockResolvedValueOnce(true);
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig({}));
+    const changedReq = makeSubagentReq();
+    changedReq.config.endpoints.agents.capabilities.push('run_in_background');
+
+    await initializeClient({
+      req: changedReq,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.subagentTasks).toEqual(existingConfig);
+    expect(capturedToolExecuteOptions.subagentTasks).toEqual(existingConfig);
+    expect(agentClientArgs.agent.subagents).toBeUndefined();
+    hasTasksSpy.mockRestore();
+  });
+
+  it('disables every nested subagent path at the durable child-thread depth limit', async () => {
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+    });
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('run_in_background');
+    req.resolvedConversation = {
+      conversationId: 'conv_sub',
+      subagentThread: { depth: 1 },
+    };
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.subagentTasks).toBeUndefined();
+    expect(capturedToolExecuteOptions.subagentTasks).toBeUndefined();
+    expect(agentClientArgs.agent.subagents).toBeUndefined();
+  });
+
+  it('keeps detached subagents disabled without the admin background capability', async () => {
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+      }),
+    );
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.subagentTasks).toBeUndefined();
+    expect(capturedToolExecuteOptions.subagentTasks).toBeUndefined();
+  });
+
+  it('defers pure-subagent MCP initialization until the descriptor is selected', async () => {
+    const subAgent = await createAgent({
+      id: SUBAGENT_ID,
+      name: 'Data Subagent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: ['run_query_mcp_warehouse'],
+    });
+    await grantView(subAgent);
+
+    const toolError = Object.assign(new Error('Subagent expected MCP tools are unavailable'), {
+      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      statusCode: 503,
+    });
+    loadAgentTools.mockRejectedValueOnce(toolError);
+    mockInitializeAgent
+      .mockResolvedValueOnce(
+        makePrimaryConfig({
+          subagents: { enabled: true, allowSelf: true, agent_ids: [SUBAGENT_ID] },
+        }),
+      )
+      .mockImplementationOnce(async ({ req, res, loadTools, agent }) => {
+        await loadTools({
+          req,
+          res,
+          tools: agent.tools,
+          model: agent.model,
+          agentId: agent.id,
+          provider: agent.provider,
+        });
+      });
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+    await expect(
+      agentClientArgs.agent.lazySubagentConfigs[0].resolve({
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBe(toolError);
+  });
+
+  it('defers pure-subagent resource recovery until the descriptor is selected', async () => {
+    const subAgent = await createAgent({
+      id: SUBAGENT_ID,
+      name: 'Code Subagent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: ['execute_code'],
+    });
+    await grantView(subAgent);
+
+    const resourceRecoveryError = Object.assign(new Error('resource recovery required'), {
+      code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+      status: 409,
+      statusCode: 409,
+    });
+    mockInitializeAgent
+      .mockResolvedValueOnce(
+        makePrimaryConfig({
+          subagents: { enabled: true, allowSelf: true, agent_ids: [SUBAGENT_ID] },
+        }),
+      )
+      .mockRejectedValueOnce(resourceRecoveryError);
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    await expect(
+      agentClientArgs.agent.lazySubagentConfigs[0].resolve({
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBe(resourceRecoveryError);
+  });
+
+  it('advertises a configured subagent without initializing it, then initializes it on selection', async () => {
     const subAgent = await createAgent({
       id: SUBAGENT_ID,
       name: 'Explicit Subagent',
@@ -357,6 +985,7 @@ describe('initializeClient — subagent loading', () => {
       model: 'gpt-4',
       author: new mongoose.Types.ObjectId(),
       tools: ['web'],
+      stateful_code_environment: 'agent-user',
     });
     await grantView(subAgent);
 
@@ -383,21 +1012,167 @@ describe('initializeClient — subagent loading', () => {
       endpointOption: makeEndpointOption(),
     });
 
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+    expect(agentClientArgs.agent.lazySubagentConfigs).toHaveLength(1);
+    expect(agentClientArgs.agent.lazySubagentConfigs[0]).toEqual(
+      expect.objectContaining({
+        id: SUBAGENT_ID,
+        configId: expect.any(String),
+        statefulCodeEnvironment: 'agent-user',
+      }),
+    );
+    expect(agentClientArgs.agent.lazySubagentConfigs[0]).not.toHaveProperty('tools');
+    expect(agentClientArgs.agent.lazySubagentConfigs[0]).not.toHaveProperty('tool_resources');
+    expect(agentClientArgs.agent.lazySubagentConfigs[0]).not.toHaveProperty('_id');
+
+    await agentClientArgs.agent.lazySubagentConfigs[0].resolve({
+      signal: new AbortController().signal,
+    });
+
     expect(mockInitializeAgent).toHaveBeenCalledTimes(2);
     const subagentDbDeps = mockInitializeAgent.mock.calls[1][1];
     expect(subagentDbDeps.getConvoFiles).toBeInstanceOf(Function);
     expect(subagentDbDeps.db).toBeUndefined();
     expect(subagentConvoFileIds).toEqual([]);
 
-    /** The subagent's AgentConfig is attached to the primary for run.ts to
-     *  turn into `SubagentConfig[]` on the parent's `AgentInputs`. */
-    expect(agentClientArgs.agent.subagentAgentConfigs).toHaveLength(1);
-    expect(agentClientArgs.agent.subagentAgentConfigs[0].id).toBe(SUBAGENT_ID);
-
     /** Subagent-only agents must NOT appear in `agentConfigs` — otherwise the
      *  graph would treat them as a parallel/handoff node. */
     expect(agentClientArgs.agentConfigs).toBeDefined();
     expect(agentClientArgs.agentConfigs.has(SUBAGENT_ID)).toBe(false);
+  });
+
+  it('rejects a disallowed lazy subagent scope before exposing it for prewarm', async () => {
+    const subAgent = await createAgent({
+      id: SUBAGENT_ID,
+      name: 'Disallowed Stateful Subagent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: ['execute_code'],
+      stateful_code_sessions: true,
+      stateful_code_environment: 'conversation',
+    });
+    await grantView(subAgent);
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
+      }),
+    );
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('execute_code', 'stateful_code_sessions');
+    req.config.endpoints.agents.statefulCodeSessions = { allowedEnvironments: ['user'] };
+
+    await expect(
+      initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+    });
+
+    expect(agentClientArgs).toBeUndefined();
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('omits a descriptor when its metadata lookup fails without aborting the primary run', async () => {
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
+    });
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+    jest.spyOn(db, 'getAgentWithVersionCount').mockRejectedValueOnce(new Error('transient read'));
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.agent.lazySubagentConfigs).toEqual([]);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining(`Error loading subagent metadata ${SUBAGENT_ID}`),
+      expect.any(Error),
+    );
+  });
+
+  it('uses exact custom-endpoint identity for descriptor reasoning history', async () => {
+    const subAgent = await createAgent({
+      id: SUBAGENT_ID,
+      name: 'Custom Subagent',
+      provider: 'caseprovider',
+      model: 'custom-model',
+      author: new mongoose.Types.ObjectId(),
+      tools: [],
+    });
+    await grantView(subAgent);
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
+      }),
+    );
+    const req = makeSubagentReq();
+    req.config.endpoints.custom = [
+      { name: 'CaseProvider', customParams: { includeReasoningHistory: true } },
+      { name: 'caseprovider', customParams: { includeReasoningHistory: false } },
+    ];
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.agent.lazySubagentConfigs[0].includeReasoningHistory).toBe(false);
+  });
+
+  it('fails closed when a selected subagent configuration changes after advertisement', async () => {
+    await createViewableAgent(SUBAGENT_ID);
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
+    });
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    await updateAgent({ id: SUBAGENT_ID }, { instructions: 'Changed after descriptor creation.' });
+
+    await expect(
+      agentClientArgs.agent.lazySubagentConfigs[0].resolve({
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow(`Subagent ${SUBAGENT_ID} changed`);
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('rechecks VIEW permission when a descriptor is selected', async () => {
+    const subAgent = await createViewableAgent(SUBAGENT_ID);
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
+    });
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    await AclEntry.deleteMany({ resourceId: subAgent._id });
+
+    await expect(
+      agentClientArgs.agent.lazySubagentConfigs[0].resolve({
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow(`no longer have access to subagent ${SUBAGENT_ID}`);
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
   });
 
   it('preserves subagent tool context for ON_TOOL_EXECUTE (Codex P1 regression guard)', async () => {
@@ -434,6 +1209,9 @@ describe('initializeClient — subagent loading', () => {
       endpointOption: makeEndpointOption(),
     });
 
+    await agentClientArgs.agent.lazySubagentConfigs[0].resolve({
+      signal: new AbortController().signal,
+    });
     expect(capturedToolExecuteOptions?.loadTools).toBeInstanceOf(Function);
 
     /** Invoke the real closure with the subagent's id. If `agentToolContexts`
@@ -449,6 +1227,48 @@ describe('initializeClient — subagent loading', () => {
     expect(arg.toolRegistry).toBeInstanceOf(Map);
     expect(arg.tool_resources).toEqual({ file_search: { file_ids: ['file_1'] } });
     expect(arg.actionsEnabled).toBe(true);
+  });
+
+  it('threads run-scoped MCP tool definitions into ON_TOOL_EXECUTE loading', async () => {
+    /** Regression guard for the request-scoped MCP/PTC handoff: the
+     *  `mcpAvailableTools` discovered at run start must survive
+     *  `buildAgentToolContext` and reach `loadToolsForExecution`, otherwise
+     *  request-scoped servers reinitialize on every programmatic tool call
+     *  and can trip the MCP circuit breaker under parallel calls. */
+    const mcpTool = 'list_tables_mcp_ClickHouse';
+    const mcpAvailableTools = {
+      ClickHouse: {
+        [mcpTool]: {
+          type: 'function',
+          function: {
+            name: mcpTool,
+            description: 'List tables',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      },
+    };
+    const primaryConfig = {
+      ...makePrimaryConfig({}),
+      toolRegistry: new Map([[mcpTool, { name: mcpTool }]]),
+      mcpAvailableTools,
+    };
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(capturedToolExecuteOptions?.loadTools).toBeInstanceOf(Function);
+    await capturedToolExecuteOptions.loadTools([mcpTool], PRIMARY_ID);
+
+    expect(mockLoadToolsForExecution).toHaveBeenCalledTimes(1);
+    expect(mockLoadToolsForExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ mcpAvailableTools }),
+    );
   });
 
   it('deduplicates repeated ids in subagents.agent_ids', async () => {
@@ -471,12 +1291,425 @@ describe('initializeClient — subagent loading', () => {
         agent_ids: [DUPLICATE_SUBAGENT_ID, DUPLICATE_SUBAGENT_ID, DUPLICATE_SUBAGENT_ID],
       },
     });
-    const subagentConfig = makeSubagentConfig(DUPLICATE_SUBAGENT_ID);
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
 
-    let initCalls = 0;
-    mockInitializeAgent.mockImplementation(() => {
-      initCalls += 1;
-      return Promise.resolve(initCalls === 1 ? primaryConfig : subagentConfig);
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    /** Repeated ids produce one lightweight descriptor and no eager child initialization. */
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+    expect(agentClientArgs.agent.lazySubagentConfigs).toHaveLength(1);
+  });
+
+  it('does not initialize a descriptor after its SDK cancellation signal aborts', async () => {
+    await createViewableAgent(SUBAGENT_ID);
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
+    });
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    const controller = new AbortController();
+    controller.abort(new Error('cancelled'));
+
+    await expect(
+      agentClientArgs.agent.lazySubagentConfigs[0].resolve({ signal: controller.signal }),
+    ).rejects.toThrow('cancelled');
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects promptly when cancellation occurs during lazy initialization', async () => {
+    await createViewableAgent(SUBAGENT_ID);
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
+    });
+    const initialization = deferred();
+    const initializationStarted = deferred();
+    mockInitializeAgent.mockResolvedValueOnce(primaryConfig).mockImplementationOnce((params) => {
+      initializationStarted.resolve(params);
+      return initialization.promise;
+    });
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    const controller = new AbortController();
+    const resolution = agentClientArgs.agent.lazySubagentConfigs[0].resolve({
+      signal: controller.signal,
+    });
+    const selectedInitParams = await initializationStarted.promise;
+    controller.abort(new Error('cancelled in flight'));
+
+    await expect(resolution).rejects.toThrow('cancelled in flight');
+    expect(selectedInitParams.loadTools).not.toBe(mockInitializeAgent.mock.calls[0][0].loadTools);
+    initialization.resolve(makeSubagentConfig(SUBAGENT_ID));
+  });
+
+  it('resolves a graph subagent as an isolated all-member team', async () => {
+    const memberIds = ['agent_graph_researcher', 'agent_graph_writer'];
+    for (const memberId of memberIds) {
+      await createViewableAgent(memberId);
+    }
+    const definition = {
+      type: 'research_team',
+      name: 'Research team',
+      description: 'Researches and writes a final answer',
+      agent_ids: memberIds,
+      edges: [{ from: memberIds[0], to: memberIds[1], edgeType: 'direct' }],
+      entry_agent_id: memberIds[0],
+      result_agent_id: memberIds[1],
+    };
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, graphs: [definition] },
+    });
+    const memberConfigs = new Map(
+      memberIds.map((id, index) => [
+        id,
+        {
+          ...makeSubagentConfig(id),
+          userMCPAuthMap: { [`server_${index}`]: { token: `token_${index}` } },
+        },
+      ]),
+    );
+    mockInitializeAgent.mockImplementation(({ agent }) =>
+      Promise.resolve(agent.id === PRIMARY_ID ? primaryConfig : memberConfigs.get(agent.id)),
+    );
+
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('run_in_background');
+    const { userMCPAuthMap } = await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.agent.subagentGraphConfigs).toEqual([
+      {
+        definition,
+        memberConfigs: memberIds.map((id) => memberConfigs.get(id)),
+      },
+    ]);
+    expect(memberIds.every((id) => !agentClientArgs.agentConfigs.has(id))).toBe(true);
+    expect(agentClientArgs.subagentTasks).toBe(capturedToolExecuteOptions.subagentTasks);
+    expect(userMCPAuthMap).toEqual({
+      server_0: { token: 'token_0' },
+      server_1: { token: 'token_1' },
+    });
+  });
+
+  it('resolves graph teams only after their lazy parent is selected', async () => {
+    const childId = 'agent_lazy_graph_parent';
+    const memberId = 'agent_lazy_graph_member';
+    const definition = {
+      type: 'lazy_team',
+      name: 'Lazy team',
+      description: 'Loads with its selected parent',
+      agent_ids: [childId, memberId],
+      edges: [{ from: childId, to: memberId, edgeType: 'direct' }],
+      entry_agent_id: childId,
+      result_agent_id: memberId,
+    };
+    await createViewableAgent(childId, {
+      enabled: true,
+      allowSelf: false,
+      graphs: [definition],
+    });
+    const memberAgent = await createAgent({
+      id: memberId,
+      name: memberId,
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: ['execute_code'],
+      stateful_code_sessions: true,
+    });
+    await grantView(memberAgent);
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: [childId] },
+    });
+    const memberMCPAuthMap = { late_server: { token: 'late_token' } };
+    mockInitializeAgent.mockImplementation(({ agent }) =>
+      Promise.resolve(
+        agent.id === PRIMARY_ID
+          ? primaryConfig
+          : {
+              ...makeSubagentConfig(agent.id),
+              subagents: agent.subagents,
+              ...(agent.id === memberId ? { userMCPAuthMap: memberMCPAuthMap } : {}),
+            },
+      ),
+    );
+
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push(
+      'execute_code',
+      'run_in_background',
+      'tool_intents',
+      'stateful_code_sessions',
+    );
+    const { userMCPAuthMap } = await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+    const descriptor = agentClientArgs.agent.lazySubagentConfigs[0];
+    expect(descriptor.subagentGraphMemberMetadata).toEqual([
+      expect.objectContaining({
+        id: memberId,
+        codeEnvAvailable: true,
+        statefulCodeSessions: true,
+      }),
+    ]);
+    expect(userMCPAuthMap).toEqual({});
+    const resolvedChild = await descriptor.resolve({
+      signal: new AbortController().signal,
+    });
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(3);
+    expect(mockInitializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: expect.objectContaining({ id: memberId }),
+        backgroundToolsAvailable: true,
+        toolIntentsAvailable: true,
+      }),
+      expect.anything(),
+    );
+    expect(resolvedChild.subagentGraphConfigs).toEqual([
+      {
+        definition,
+        memberConfigs: [resolvedChild, expect.objectContaining({ id: memberId })],
+      },
+    ]);
+    expect(userMCPAuthMap).toEqual(memberMCPAuthMap);
+  });
+
+  it('aborts lazy graph member initialization with the descriptor signal', async () => {
+    const childId = 'agent_lazy_cancel_parent';
+    const memberId = 'agent_lazy_cancel_member';
+    const definition = {
+      type: 'lazy_cancel_team',
+      name: 'Lazy cancel team',
+      description: 'Stops member initialization with its selected parent',
+      agent_ids: [memberId],
+      edges: [],
+      entry_agent_id: memberId,
+      result_agent_id: memberId,
+    };
+    await createViewableAgent(childId, {
+      enabled: true,
+      allowSelf: false,
+      graphs: [definition],
+    });
+    await createViewableAgent(memberId);
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: [childId] },
+    });
+    const memberInitialization = deferred();
+    const memberStarted = deferred();
+    mockInitializeAgent.mockImplementation(({ agent }) => {
+      if (agent.id === PRIMARY_ID) return Promise.resolve(primaryConfig);
+      if (agent.id === childId) {
+        return Promise.resolve({ ...makeSubagentConfig(childId), subagents: agent.subagents });
+      }
+      memberStarted.resolve();
+      return memberInitialization.promise;
+    });
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    const controller = new AbortController();
+    const resolution = agentClientArgs.agent.lazySubagentConfigs[0].resolve({
+      signal: controller.signal,
+    });
+    await memberStarted.promise;
+    controller.abort(new Error('cancelled graph resolution'));
+
+    await expect(resolution).rejects.toThrow('cancelled graph resolution');
+    memberInitialization.resolve(makeSubagentConfig(memberId));
+  });
+
+  it('coalesces shared graph member initialization across parallel lazy resolutions', async () => {
+    const childIds = ['agent_lazy_shared_parent_a', 'agent_lazy_shared_parent_b'];
+    const memberId = 'agent_lazy_shared_member';
+    for (const childId of childIds) {
+      await createViewableAgent(childId, {
+        enabled: true,
+        allowSelf: false,
+        graphs: [
+          {
+            type: `shared_team_${childId}`,
+            name: `Shared team ${childId}`,
+            description: 'Loads one shared member',
+            agent_ids: [memberId],
+            edges: [],
+            entry_agent_id: memberId,
+            result_agent_id: memberId,
+          },
+        ],
+      });
+    }
+    await createViewableAgent(memberId);
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: childIds },
+    });
+    const memberStarted = deferred();
+    const memberRelease = deferred();
+    mockInitializeAgent.mockImplementation(async ({ agent }) => {
+      if (agent.id === PRIMARY_ID) return primaryConfig;
+      if (childIds.includes(agent.id)) {
+        return { ...makeSubagentConfig(agent.id), subagents: agent.subagents };
+      }
+      memberStarted.resolve();
+      await memberRelease.promise;
+      return makeSubagentConfig(memberId);
+    });
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    const resolutions = agentClientArgs.agent.lazySubagentConfigs.map((descriptor) =>
+      descriptor.resolve({ signal: new AbortController().signal }),
+    );
+    await memberStarted.promise;
+    memberRelease.resolve();
+    const resolvedChildren = await Promise.all(resolutions);
+
+    expect(
+      mockInitializeAgent.mock.calls.filter(([{ agent }]) => agent.id === memberId),
+    ).toHaveLength(1);
+    expect(resolvedChildren).toHaveLength(2);
+    expect(
+      resolvedChildren.every(
+        (child) => child.subagentGraphConfigs[0].memberConfigs[0].id === memberId,
+      ),
+    ).toBe(true);
+  });
+
+  it('loads independent graph members concurrently', async () => {
+    const memberIds = ['agent_graph_parallel_a', 'agent_graph_parallel_b'];
+    for (const memberId of memberIds) {
+      await createViewableAgent(memberId);
+    }
+    const definition = {
+      type: 'parallel_team',
+      name: 'Parallel team',
+      description: 'Loads independent members concurrently',
+      agent_ids: memberIds,
+      edges: [{ from: memberIds[0], to: memberIds[1], edgeType: 'direct' }],
+      entry_agent_id: memberIds[0],
+      result_agent_id: memberIds[1],
+    };
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, graphs: [definition] },
+    });
+    const memberStarts = new Map(memberIds.map((id) => [id, deferred()]));
+    const memberReleases = new Map(memberIds.map((id) => [id, deferred()]));
+    mockInitializeAgent.mockImplementation(async ({ agent }) => {
+      if (agent.id === PRIMARY_ID) {
+        return primaryConfig;
+      }
+      memberStarts.get(agent.id)?.resolve();
+      await memberReleases.get(agent.id)?.promise;
+      return makeSubagentConfig(agent.id);
+    });
+    const getAgentWithVersionCount = jest.spyOn(db, 'getAgentWithVersionCount');
+
+    const initialization = initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    await Promise.all(memberIds.map((id) => memberStarts.get(id)?.promise));
+    for (const release of memberReleases.values()) {
+      release.resolve();
+    }
+    await initialization;
+
+    expect(agentClientArgs.agent.subagentGraphConfigs[0].memberConfigs).toHaveLength(2);
+    for (const memberId of memberIds) {
+      expect(
+        getAgentWithVersionCount.mock.calls.filter(([query]) => query.id === memberId),
+      ).toHaveLength(1);
+    }
+  });
+
+  it('reuses the primary config when the parent is a graph member', async () => {
+    const memberId = 'agent_graph_self_worker';
+    await createViewableAgent(memberId);
+    const definition = {
+      type: 'self_team',
+      name: 'Self team',
+      description: 'Uses the parent as the entry member',
+      agent_ids: [PRIMARY_ID, memberId],
+      edges: [{ from: PRIMARY_ID, to: memberId, edgeType: 'direct' }],
+      entry_agent_id: PRIMARY_ID,
+      result_agent_id: memberId,
+    };
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, graphs: [definition] },
+    });
+    const memberConfig = makeSubagentConfig(memberId);
+    mockInitializeAgent.mockImplementation(({ agent }) =>
+      Promise.resolve(agent.id === PRIMARY_ID ? primaryConfig : memberConfig),
+    );
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(2);
+    expect(agentClientArgs.agent.subagentGraphConfigs).toEqual([
+      { definition, memberConfigs: [primaryConfig, memberConfig] },
+    ]);
+    expect(agentClientArgs.agentConfigs.has(PRIMARY_ID)).toBe(false);
+  });
+
+  it('keeps an added-conversation agent that is also a graph member', async () => {
+    const addedAgentId = 'agent_added_graph_member';
+    const definition = {
+      type: 'added_member_team',
+      name: 'Added member team',
+      description: 'Runs the selected parallel agent as a graph member',
+      agent_ids: [addedAgentId],
+      edges: [],
+      entry_agent_id: addedAgentId,
+      result_agent_id: addedAgentId,
+    };
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, graphs: [definition] },
+    });
+    const addedConfig = makeSubagentConfig(addedAgentId);
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+    processAddedConvo.mockImplementationOnce(async ({ agentConfigs }) => {
+      agentConfigs.set(addedAgentId, addedConfig);
+      return { userMCPAuthMap: undefined };
     });
 
     await initializeClient({
@@ -486,9 +1719,102 @@ describe('initializeClient — subagent loading', () => {
       endpointOption: makeEndpointOption(),
     });
 
-    /** One call for primary, one for the subagent — not four. */
-    expect(mockInitializeAgent).toHaveBeenCalledTimes(2);
-    expect(agentClientArgs.agent.subagentAgentConfigs).toHaveLength(1);
+    expect(agentClientArgs.agentConfigs.get(addedAgentId)).toBe(addedConfig);
+    expect(agentClientArgs.agent.subagentGraphConfigs).toEqual([
+      { definition, memberConfigs: [addedConfig] },
+    ]);
+  });
+
+  it('skips the whole graph subagent when one persisted member is missing', async () => {
+    const existingId = 'agent_graph_existing';
+    const missingId = 'agent_graph_missing';
+    await createViewableAgent(existingId);
+    const definition = {
+      type: 'incomplete_team',
+      name: 'Incomplete team',
+      description: 'Legacy graph with a deleted member',
+      agent_ids: [existingId, missingId],
+      edges: [{ from: existingId, to: missingId, edgeType: 'direct' }],
+      entry_agent_id: existingId,
+      result_agent_id: missingId,
+    };
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, graphs: [definition] },
+    });
+    mockInitializeAgent.mockImplementation(({ agent }) =>
+      Promise.resolve(agent.id === PRIMARY_ID ? primaryConfig : makeSubagentConfig(agent.id)),
+    );
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.agent.subagentGraphConfigs).toEqual([]);
+    expect(agentClientArgs.agentConfigs.has(existingId)).toBe(false);
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[initializeClient] Skipping incomplete graph subagent',
+      expect.objectContaining({ graphType: 'incomplete_team', resolvedMemberCount: 1 }),
+    );
+  });
+
+  it('counts initialized members from incomplete graph teams against the global node limit', async () => {
+    const retainedMemberIds = Array.from(
+      { length: 31 },
+      (_, index) => `agent_incomplete_retained_${index}`,
+    );
+    const overflowMemberIds = Array.from(
+      { length: 20 },
+      (_, index) => `agent_incomplete_overflow_${index}`,
+    );
+    await Promise.all(
+      [...retainedMemberIds, ...overflowMemberIds].map((id) => createViewableAgent(id)),
+    );
+    const definitions = [
+      {
+        type: 'incomplete_retained_team',
+        name: 'Incomplete retained team',
+        description: 'Loads members before discovering a missing result',
+        agent_ids: [...retainedMemberIds, 'agent_incomplete_missing_result'],
+        edges: [],
+        entry_agent_id: retainedMemberIds[0],
+        result_agent_id: 'agent_incomplete_missing_result',
+      },
+      {
+        type: 'incomplete_overflow_team',
+        name: 'Incomplete overflow team',
+        description: 'Must be rejected before loading any more members',
+        agent_ids: [...overflowMemberIds, 'agent_incomplete_missing_overflow'],
+        edges: [],
+        entry_agent_id: overflowMemberIds[0],
+        result_agent_id: 'agent_incomplete_missing_overflow',
+      },
+    ];
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, graphs: definitions },
+    });
+    mockInitializeAgent.mockImplementation(({ agent }) =>
+      Promise.resolve(agent.id === PRIMARY_ID ? primaryConfig : makeSubagentConfig(agent.id)),
+    );
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(1 + retainedMemberIds.length);
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[initializeClient] Subagent graph node limit exceeded',
+      expect.objectContaining({
+        loadedSubagentCount: retainedMemberIds.length + 1,
+        stagedSubagentCount: overflowMemberIds.length + 1,
+        maxSubagentGraphNodes: MAX_SUBAGENT_GRAPH_NODES,
+      }),
+    );
   });
 
   it('rejects nested subagent chains deeper than MAX_SUBAGENT_DEPTH', async () => {
@@ -496,23 +1822,18 @@ describe('initializeClient — subagent loading', () => {
       { length: MAX_SUBAGENT_DEPTH + 1 },
       (_, index) => `agent_depth_${index}`,
     );
-    for (const id of ids) {
-      await createViewableAgent(id);
+    for (const [index, id] of ids.entries()) {
+      await createViewableAgent(id, {
+        enabled: true,
+        allowSelf: false,
+        agent_ids: index < ids.length - 1 ? [ids[index + 1]] : [],
+      });
     }
 
     const primaryConfig = makePrimaryConfig({
       subagents: { enabled: true, allowSelf: false, agent_ids: [ids[0]] },
     });
-    const nestedConfigs = new Map(
-      ids.map((id, index) => [
-        id,
-        makeNestedSubagentConfig(id, index < ids.length - 1 ? [ids[index + 1]] : []),
-      ]),
-    );
-
-    mockInitializeAgent.mockImplementation(({ agent }) =>
-      Promise.resolve(agent.id === PRIMARY_ID ? primaryConfig : nestedConfigs.get(agent.id)),
-    );
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
 
     await expect(
       initializeClient({
@@ -525,11 +1846,10 @@ describe('initializeClient — subagent loading', () => {
     expect(logger.warn).toHaveBeenCalledWith(
       '[initializeClient] Subagent graph depth limit exceeded',
       expect.objectContaining({
-        agentId: `agent_depth_${MAX_SUBAGENT_DEPTH - 1}`,
+        agentId: ids[MAX_SUBAGENT_DEPTH - 1],
         primaryAgentId: PRIMARY_ID,
         depth: MAX_SUBAGENT_DEPTH,
         maxSubagentDepth: MAX_SUBAGENT_DEPTH,
-        childCount: 1,
       }),
     );
     expect(agentClientArgs).toBeUndefined();
@@ -540,9 +1860,17 @@ describe('initializeClient — subagent loading', () => {
       { length: MAX_SUBAGENT_DEPTH },
       (_, index) => `agent_overlap_depth_${index}`,
     );
-    const allIds = [HANDOFF_AND_SUB_ID, ...chainIds];
-    for (const id of allIds) {
-      await createViewableAgent(id);
+    await createViewableAgent(HANDOFF_AND_SUB_ID, {
+      enabled: true,
+      allowSelf: false,
+      agent_ids: [chainIds[0]],
+    });
+    for (const [index, id] of chainIds.entries()) {
+      await createViewableAgent(id, {
+        enabled: true,
+        allowSelf: false,
+        agent_ids: index < chainIds.length - 1 ? [chainIds[index + 1]] : [],
+      });
     }
 
     const edges = [{ from: PRIMARY_ID, to: HANDOFF_AND_SUB_ID, edgeType: 'handoff' }];
@@ -550,16 +1878,9 @@ describe('initializeClient — subagent loading', () => {
       edges,
       subagents: { enabled: true, allowSelf: false, agent_ids: [HANDOFF_AND_SUB_ID] },
     });
-    const nestedConfigs = new Map([
-      [HANDOFF_AND_SUB_ID, makeNestedSubagentConfig(HANDOFF_AND_SUB_ID, [chainIds[0]])],
-      ...chainIds.map((id, index) => [
-        id,
-        makeNestedSubagentConfig(id, index < chainIds.length - 1 ? [chainIds[index + 1]] : []),
-      ]),
-    ]);
-
+    const sharedConfig = makeNestedSubagentConfig(HANDOFF_AND_SUB_ID, [chainIds[0]]);
     mockInitializeAgent.mockImplementation(({ agent }) =>
-      Promise.resolve(agent.id === PRIMARY_ID ? primaryConfig : nestedConfigs.get(agent.id)),
+      Promise.resolve(agent.id === PRIMARY_ID ? primaryConfig : sharedConfig),
     );
 
     await expect(
@@ -570,15 +1891,6 @@ describe('initializeClient — subagent loading', () => {
         endpointOption: makeEndpointOption(),
       }),
     ).rejects.toThrow(`maximum depth of ${MAX_SUBAGENT_DEPTH}`);
-    expect(logger.warn).toHaveBeenCalledWith(
-      '[initializeClient] Subagent graph depth limit exceeded',
-      expect.objectContaining({
-        primaryAgentId: PRIMARY_ID,
-        depth: MAX_SUBAGENT_DEPTH,
-        maxSubagentDepth: MAX_SUBAGENT_DEPTH,
-        childCount: 1,
-      }),
-    );
     expect(agentClientArgs).toBeUndefined();
   });
 
@@ -590,25 +1902,21 @@ describe('initializeClient — subagent loading', () => {
         Array.from({ length: 5 }, (_, index) => `${id}_child_${index}`),
       ]),
     );
-    const allIds = [...firstLevelIds, ...Array.from(secondLevelIdsByParent.values()).flat()];
-
-    for (const id of allIds) {
-      await createViewableAgent(id);
+    for (const id of firstLevelIds) {
+      await createViewableAgent(id, {
+        enabled: true,
+        allowSelf: false,
+        agent_ids: secondLevelIdsByParent.get(id),
+      });
+    }
+    for (const id of Array.from(secondLevelIdsByParent.values()).flat()) {
+      await createViewableAgent(id, { enabled: true, allowSelf: false, agent_ids: [] });
     }
 
     const primaryConfig = makePrimaryConfig({
       subagents: { enabled: true, allowSelf: false, agent_ids: firstLevelIds },
     });
-    const nestedConfigs = new Map(
-      firstLevelIds.map((id) => [id, makeNestedSubagentConfig(id, secondLevelIdsByParent.get(id))]),
-    );
-    for (const id of Array.from(secondLevelIdsByParent.values()).flat()) {
-      nestedConfigs.set(id, makeNestedSubagentConfig(id));
-    }
-
-    mockInitializeAgent.mockImplementation(({ agent }) =>
-      Promise.resolve(agent.id === PRIMARY_ID ? primaryConfig : nestedConfigs.get(agent.id)),
-    );
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
 
     await expect(
       initializeClient({
@@ -624,6 +1932,101 @@ describe('initializeClient — subagent loading', () => {
         primaryAgentId: PRIMARY_ID,
         loadedSubagentCount: MAX_SUBAGENT_GRAPH_NODES,
         maxSubagentGraphNodes: MAX_SUBAGENT_GRAPH_NODES,
+      }),
+    );
+    expect(agentClientArgs).toBeUndefined();
+  });
+
+  it('bounds capability metadata reads across lazy graph teams', async () => {
+    const firstChildId = 'agent_lazy_graph_cap_first';
+    const secondChildId = 'agent_lazy_graph_cap_second';
+    const firstMemberIds = Array.from({ length: 32 }, (_, index) => `agent_cap_first_${index}`);
+    const secondMemberIds = Array.from({ length: 17 }, (_, index) => `agent_cap_second_${index}`);
+    const makeGraph = (type, memberIds) => ({
+      type,
+      name: type,
+      description: type,
+      agent_ids: memberIds,
+      edges: memberIds.slice(0, -1).map((memberId, index) => ({
+        from: memberId,
+        to: memberIds[index + 1],
+        edgeType: 'direct',
+      })),
+      entry_agent_id: memberIds[0],
+      result_agent_id: memberIds.at(-1),
+    });
+    await createViewableAgent(firstChildId, {
+      enabled: true,
+      allowSelf: false,
+      graphs: [makeGraph('first_capability_team', firstMemberIds)],
+    });
+    await createViewableAgent(secondChildId, {
+      enabled: true,
+      allowSelf: false,
+      graphs: [makeGraph('second_capability_team', secondMemberIds)],
+    });
+    await Promise.all(
+      [...firstMemberIds, ...secondMemberIds].map((memberId) => createViewableAgent(memberId)),
+    );
+    const primaryConfig = makePrimaryConfig({
+      subagents: {
+        enabled: true,
+        allowSelf: false,
+        agent_ids: [firstChildId, secondChildId],
+      },
+    });
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+
+    await expect(
+      initializeClient({
+        req: makeSubagentReq(),
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toThrow(`maximum of ${MAX_SUBAGENT_GRAPH_NODES} unique agents`);
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[initializeClient] Subagent graph node limit exceeded',
+      expect.objectContaining({
+        loadedSubagentCount: 34,
+        stagedSubagentCount: secondMemberIds.length,
+        maxSubagentGraphNodes: MAX_SUBAGENT_GRAPH_NODES,
+      }),
+    );
+  });
+
+  it('rejects a branching DAG that exceeds expanded descriptor capacity', async () => {
+    const width = 3;
+    const layers = Array.from({ length: MAX_SUBAGENT_DEPTH }, (_, level) =>
+      Array.from({ length: width }, (_, index) => `agent_descriptor_${level}_${index}`),
+    );
+    for (let level = 0; level < layers.length; level++) {
+      const childIds = level < layers.length - 1 ? layers[level + 1] : [];
+      for (const id of layers[level]) {
+        await createViewableAgent(id, { enabled: true, allowSelf: false, agent_ids: childIds });
+      }
+    }
+
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: layers[0] },
+    });
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+
+    await expect(
+      initializeClient({
+        req: makeSubagentReq(),
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toThrow(`maximum of ${MAX_SUBAGENT_RUN_CONFIGS} expanded entries`);
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[initializeClient] Subagent run configuration limit exceeded',
+      expect.objectContaining({
+        expandedConfigCount: MAX_SUBAGENT_RUN_CONFIGS + 1,
+        maxSubagentRunConfigs: MAX_SUBAGENT_RUN_CONFIGS,
+        rootAgentIds: [PRIMARY_ID],
       }),
     );
     expect(agentClientArgs).toBeUndefined();

@@ -4,6 +4,11 @@ import type { TFile, TMessage } from 'librechat-data-provider';
 /** Minimal shape for request file entries (from `req.body.files`) */
 type RequestFile = { file_id?: string };
 
+type GetMessagesByParentId = (
+  filter: { user: string; messageId: string; conversationId?: string },
+  select: '_id',
+) => Promise<unknown[]>;
+
 /** Fields to strip from files before client transmission */
 const FILE_STRIP_FIELDS = ['text', '_id', '__v'] as const;
 
@@ -90,6 +95,37 @@ export function sanitizeMessageForTransmit<T extends Partial<TMessage>>(
   }
 
   return sanitized;
+}
+
+export function isPreliminaryMessageId(messageId: unknown): messageId is string {
+  return typeof messageId === 'string' && messageId.endsWith('_');
+}
+
+export async function isUnpersistedPreliminaryParent({
+  userId,
+  conversationId,
+  parentMessageId,
+  getMessages,
+}: {
+  userId: string;
+  conversationId?: string | null;
+  parentMessageId?: string | null;
+  getMessages: GetMessagesByParentId;
+}): Promise<boolean> {
+  if (!isPreliminaryMessageId(parentMessageId)) {
+    return false;
+  }
+
+  const filter: { user: string; messageId: string; conversationId?: string } = {
+    user: userId,
+    messageId: parentMessageId,
+  };
+  if (conversationId && conversationId !== Constants.NEW_CONVO) {
+    filter.conversationId = conversationId;
+  }
+
+  const messages = await getMessages(filter, '_id');
+  return messages.length === 0;
 }
 
 /** Minimal message shape for thread traversal.

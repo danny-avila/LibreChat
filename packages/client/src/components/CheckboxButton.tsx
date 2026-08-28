@@ -3,7 +3,20 @@ import { useEffect } from 'react';
 import { Checkbox, useStoreState, useCheckboxStore } from '@ariakit/react';
 import { cn } from '~/utils';
 
-const CheckboxButton = React.forwardRef<
+const CheckboxButton: React.ForwardRefExoticComponent<
+  {
+    icon?: React.ReactNode;
+    label: string;
+    className?: string;
+    checked?: boolean;
+    defaultChecked?: boolean;
+    isCheckedClassName?: string;
+    setValue?: (values: {
+      e?: React.ChangeEvent<HTMLInputElement>;
+      value: boolean | string;
+    }) => void;
+  } & React.RefAttributes<HTMLInputElement>
+> = React.forwardRef<
   HTMLInputElement,
   {
     icon?: React.ReactNode;
@@ -49,9 +62,9 @@ const CheckboxButton = React.forwardRef<
       onChange={onChange}
       className={cn(
         // Base styling from MultiSelect's selectClassName
-        'group relative inline-flex items-center justify-center gap-1.5',
-        'rounded-full border border-border-medium text-sm font-medium',
-        'size-9 p-2 transition-all md:w-full md:p-3',
+        'group relative inline-flex items-center justify-center gap-theme-compact',
+        'rounded-theme-control-round border border-border-medium text-sm font-medium',
+        'size-theme-control max-w-fit p-theme-compact transition-all md:w-full md:px-theme-normal',
         'bg-transparent shadow-sm hover:bg-surface-hover hover:shadow-md active:shadow-inner',
 
         // Checked state styling

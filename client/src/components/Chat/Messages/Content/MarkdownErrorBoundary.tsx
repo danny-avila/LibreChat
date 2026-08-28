@@ -4,9 +4,9 @@ import supersub from 'remark-supersub';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import type { PluggableList } from 'unified';
-import { code, codeNoExecution, a, p } from './MarkdownComponents';
+import { code, codeNoExecution, a, p, table } from './MarkdownComponents';
+import { langSubset, remarkApproxTilde } from '~/utils';
 import { CodeBlockProvider } from '~/Providers';
-import { langSubset } from '~/utils';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -61,6 +61,7 @@ class MarkdownErrorBoundary extends React.Component<
         <CodeBlockProvider>
           <ReactMarkdown
             remarkPlugins={[
+              remarkApproxTilde,
               /** @ts-ignore */
               supersub,
               remarkGfm,
@@ -72,6 +73,7 @@ class MarkdownErrorBoundary extends React.Component<
                 code: codeExecution ? code : codeNoExecution,
                 a,
                 p,
+                table,
               } as {
                 [nodeType: string]: React.ElementType;
               }

@@ -15,18 +15,17 @@
  *    are never closed — proving the fix is necessary.
  */
 
-import * as http from 'http';
 import * as net from 'net';
+import * as http from 'http';
 import { randomUUID } from 'crypto';
+import { logger } from '@librechat/data-schemas';
 import { Agent, fetch as undiciFetch } from 'undici';
-import { Server as McpServerCore } from '@modelcontextprotocol/sdk/server/index.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { Server as McpServerCore } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { logger } from '@librechat/data-schemas';
-import { MCPConnection } from '~/mcp/connection';
-
 import type { Socket } from 'net';
+import { MCPConnection } from '~/mcp/connection';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -45,7 +44,13 @@ jest.mock('~/auth', () => ({
 }));
 
 jest.mock('~/mcp/mcpConfig', () => ({
-  mcpConfig: { CONNECTION_CHECK_TTL: 0 },
+  mcpConfig: {
+    CONNECTION_CHECK_TTL: 0,
+    TOOLS_LIST_MAX_PAGES: 50,
+    TOOLS_LIST_MAX_TOOLS: 1000,
+    TOOLS_LIST_MAX_BYTES: 5 * 1024 * 1024,
+    TOOLS_LIST_TIMEOUT_MS: 30000,
+  },
 }));
 
 const mockLogger = logger as jest.Mocked<typeof logger>;
@@ -544,12 +549,13 @@ describe('MCPConnection SSE 404 handling – session-aware', () => {
     conn: MCPConnection,
     transport: ReturnType<typeof makeTransportStub>,
     code = 404,
-  ) {
+  ): Error {
     (
       conn as unknown as { setupTransportErrorHandlers: (t: unknown) => void }
     ).setupTransportErrorHandlers(transport);
     const sseError = Object.assign(new Error('Failed to open SSE stream'), { code });
     transport.onerror?.(sseError);
+    return sseError;
   }
 
   beforeEach(() => {
@@ -609,6 +615,19 @@ describe('MCPConnection SSE 404 handling – session-aware', () => {
 
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('session lost'));
     expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
+  });
+  it('marks an OAuth-challenged connection unusable without blindly reconnecting', async () => {
+    const conn = makeConn();
+    const transport = makeTransportStub();
+    conn.emit('connectionChange', 'connected');
+    const emitSpy = jest.spyOn(conn, 'emit');
+
+    const oauthError = fireSSEError(conn, transport, 401);
+
+    expect(emitSpy).toHaveBeenCalledWith('oauthError', expect.any(Error));
+    expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
+    expect(await conn.isConnected()).toBe(false);
+    expect(conn.getLastConnectionCheckError()).toBe(oauthError);
   });
 });
 

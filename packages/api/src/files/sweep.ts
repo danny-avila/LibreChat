@@ -73,7 +73,7 @@ export type ExpiredFileSweepResult = {
 };
 
 export function getFileRetentionSweepInterval(
-  interval = process.env.FILE_RETENTION_SWEEP_INTERVAL_MS,
+  interval: string | undefined = process.env.FILE_RETENTION_SWEEP_INTERVAL_MS,
 ): number {
   if (interval == null || interval.trim() === '') {
     return DEFAULT_FILE_RETENTION_SWEEP_INTERVAL_MS;
@@ -90,7 +90,10 @@ export function getExpiredFileEndpoint(source?: string): string {
   return source === FileSources.azure ? EModelEndpoint.azureAssistants : EModelEndpoint.assistants;
 }
 
-export function hasExpiredFileEndpointConfig(appConfig: AppConfig | undefined, source?: string) {
+export function hasExpiredFileEndpointConfig(
+  appConfig: AppConfig | undefined,
+  source?: string,
+): boolean {
   if (source === FileSources.azure) {
     return Boolean(appConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants);
   }
@@ -201,7 +204,7 @@ export async function resolveExpiredFileSweepConfig({
 }
 
 export async function sweepExpiredFiles(
-  { appConfig, limit = 100, loadAppConfig }: ExpiredFileSweepOptions = {},
+  { appConfig, limit = 100, loadAppConfig }: ExpiredFileSweepOptions | undefined = {},
   { getExpiredFiles, processDeleteRequest, logger }: SweepDependencies,
 ): Promise<ExpiredFileSweepResult> {
   const files = (await getExpiredFiles(limit)) ?? [];
@@ -254,7 +257,7 @@ export async function sweepExpiredFiles(
 }
 
 export function startExpiredFileSweep(
-  options: ExpiredFileSweepOptions = {},
+  options: ExpiredFileSweepOptions | undefined = {},
   { sweepExpiredFiles, runAsSystem, logger }: StartSweepDependencies,
 ): NodeJS.Timeout | null {
   const intervalMs = getFileRetentionSweepInterval();

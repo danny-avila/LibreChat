@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import type { IBalance } from '..';
 import type { ITransaction } from '~/schema/transaction';
 import type { TxData } from './transaction';
-import type { IBalance } from '..';
-import { createTxMethods, tokenValues, premiumTokenValues } from './tx';
+import { createTxMethods, tokenValues, premiumTokenValues, defaultRate } from './tx';
 import { matchModelName, findMatchingPattern } from './test-helpers';
 import { createSpendTokensMethods } from './spendTokens';
 import { createTransactionMethods } from './transaction';
@@ -613,6 +613,36 @@ describe('Transactions Config Tests', () => {
     expect(transactions[0].readTokens).toBe(-5);
     const balance = await Balance.findOne({ user: userId });
     expect(balance?.tokenCredits).toBe(initialBalance);
+  });
+});
+
+describe('Partial endpointTokenConfig fallback', () => {
+  const endpointTokenConfig = {
+    'custom-model': { prompt: 1.5, completion: 4.5, read: 0.3 },
+  };
+
+  test('uses override rates for a listed model', () => {
+    expect(getMultiplier({ model: 'custom-model', tokenType: 'prompt', endpointTokenConfig })).toBe(
+      1.5,
+    );
+    expect(
+      getCacheMultiplier({ model: 'custom-model', cacheType: 'read', endpointTokenConfig }),
+    ).toBe(0.3);
+  });
+
+  test('falls back to standard tables for a model absent from the override', () => {
+    const fallbackPrompt = getMultiplier({ model: 'gpt-4', tokenType: 'prompt' });
+    expect(getMultiplier({ model: 'gpt-4', tokenType: 'prompt', endpointTokenConfig })).toBe(
+      fallbackPrompt,
+    );
+    expect(getMultiplier({ model: 'gpt-4', tokenType: 'prompt', endpointTokenConfig })).not.toBe(
+      defaultRate,
+    );
+
+    const fallbackCacheRead = getCacheMultiplier({ model: 'claude-3-5-sonnet', cacheType: 'read' });
+    expect(
+      getCacheMultiplier({ model: 'claude-3-5-sonnet', cacheType: 'read', endpointTokenConfig }),
+    ).toBe(fallbackCacheRead);
   });
 });
 

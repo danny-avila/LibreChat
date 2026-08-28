@@ -1,7 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { jest } from '@jest/globals';
 import type * as t from 'librechat-data-provider';
 import VirtualizedAgentGrid from '../VirtualizedAgentGrid';
 
@@ -48,7 +47,9 @@ const mockRowRenderer = jest.fn();
 
 jest.mock('react-virtualized', () => {
   const ReactActual = jest.requireActual<typeof import('react')>('react');
-  const mockRowRendererRef = { current: jest.fn() };
+  const mockRowRendererRef: { current: VirtualListMockProps['rowRenderer'] | null } = {
+    current: null,
+  };
 
   return {
     AutoSizer: ({

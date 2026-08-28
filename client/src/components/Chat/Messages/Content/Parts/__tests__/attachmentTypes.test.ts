@@ -1,5 +1,4 @@
 import type { TAttachment } from 'librechat-data-provider';
-import { TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import {
   artifactTypeForAttachment,
   attachmentSalience,
@@ -8,6 +7,7 @@ import {
   isInternalSandboxArtifact,
   isTextAttachment,
 } from '../attachmentTypes';
+import { TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 
 const baseAttachment = (overrides: Partial<TAttachment> = {}): TAttachment =>
   ({
@@ -138,9 +138,8 @@ describe('artifactTypeForAttachment', () => {
      * pipeline instead. */
     const attachment = baseAttachment({
       filename: 'photo.jpg',
-      type: 'image/jpeg',
       text: undefined,
-    } as Partial<TAttachment>);
+    });
     expect(artifactTypeForAttachment(attachment)).toBeNull();
   });
 });

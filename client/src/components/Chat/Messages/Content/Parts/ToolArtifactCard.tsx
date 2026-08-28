@@ -13,8 +13,8 @@ import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { isCodeOnlyArtifact } from '~/utils/artifacts';
 import { displayFilename } from './attachmentTypes';
 import { useAttachmentLink } from './LogLink';
-import { useLocalize } from '~/hooks';
 import { cn, getFileType } from '~/utils';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 interface ToolArtifactCardProps {

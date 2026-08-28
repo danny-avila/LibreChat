@@ -3,6 +3,8 @@
  * Tests that recordCollectedUsage is called correctly for token spending
  */
 
+const { ErrorTypes, ResourceType } = require('librechat-data-provider');
+
 const mockSpendTokens = jest.fn().mockResolvedValue({});
 const mockSpendStructuredTokens = jest.fn().mockResolvedValue({});
 const mockRecordCollectedUsage = jest
@@ -10,6 +12,142 @@ const mockRecordCollectedUsage = jest
   .mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
 const mockGetBalanceConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockGetTransactionsConfig = jest.fn().mockReturnValue({ enabled: true });
+const mockResolveMemoryAvailability = jest.fn().mockResolvedValue(true);
+const mockInitialSessions = new Map([['execute_code', { session_id: 'seeded' }]]);
+const mockInspectContent = jest.fn().mockReturnValue(null);
+const mockResolveConversationTitle = jest.fn(({ filters, candidate, fallback = 'New Chat' }) => {
+  const resolveAllowedTitle = (value) => {
+    if (typeof value !== 'string' || value.trim() === '') {
+      return null;
+    }
+    const finding = mockInspectContent(
+      [{ source: 'conversation_title', field: 'title', text: value }],
+      { filters },
+    );
+    return finding == null ? value : null;
+  };
+
+  return (
+    resolveAllowedTitle(candidate) ??
+    (fallback === candidate ? null : resolveAllowedTitle(fallback))
+  );
+});
+const mockHasActivePiiPatterns = (config) =>
+  config != null &&
+  (config.starterPatterns == null ||
+    config.starterPatterns.length > 0 ||
+    (config.customPatterns?.length ?? 0) > 0);
+const mockHasModelBoundContentProtection = (filters, legacyPii) => {
+  const sourcePolicies = [
+    legacyPii,
+    filters?.messages?.pii,
+    filters?.agentInstructions?.pii,
+    filters?.conversationStarters?.pii,
+    filters?.skills?.pii,
+    filters?.memories?.pii,
+    filters?.files?.pii,
+    filters?.toolArguments?.pii,
+    filters?.modelParameters?.pii,
+    filters?.actionMetadata?.pii,
+  ];
+  if (sourcePolicies.some(mockHasActivePiiPatterns)) {
+    return true;
+  }
+  const filePolicy = filters?.files?.pii;
+  return (
+    filePolicy?.uninspectable === 'block' &&
+    (filePolicy.fields == null ||
+      filePolicy.fields.some((field) =>
+        ['content', 'extracted_text', 'transcript'].includes(field),
+      ))
+  );
+};
+class MockAgentRunEnvelopeError extends TypeError {
+  constructor(message) {
+    super(message);
+    this.name = 'AgentRunEnvelopeError';
+  }
+}
+const mockCreateAgentRunEnvelope = jest.fn(
+  ({ protocol, requestId, receivedAt, principal, payload }) => ({
+    version: 1,
+    protocol,
+    requestId,
+    receivedAt,
+    principal: {
+      userId: principal.id,
+      ...(principal.role != null && { role: principal.role }),
+      ...(principal.tenantId != null && { tenantId: principal.tenantId }),
+    },
+    payload: JSON.parse(JSON.stringify(payload)),
+  }),
+);
+const mockGetSafeErrorMetadata = jest.fn((error) => {
+  const status = error?.status ?? error?.statusCode ?? error?.response?.status;
+  return {
+    type: error instanceof Error ? 'Error' : 'UnknownError',
+    ...(Number.isInteger(status) && status >= 100 && status <= 599 && { status }),
+  };
+});
+const mockBuildSkillPrimedIdsByName = jest.fn((manualSkillPrimes, alwaysApplySkillPrimes) => {
+  const primed = {};
+  for (const skill of alwaysApplySkillPrimes ?? []) {
+    primed[skill.name] = skill._id.toString();
+  }
+  for (const skill of manualSkillPrimes ?? []) {
+    primed[skill.name] = skill._id.toString();
+  }
+  return Object.keys(primed).length > 0 ? primed : undefined;
+});
+const mockEnrichWithSkillConfigurable = jest.fn((result) => result);
+const mockBuildAgentToolContext = jest.fn(({ agent, config }) => ({
+  agent,
+  endpointTokenConfig: config.endpointTokenConfig,
+  toolRegistry: config.toolRegistry,
+  userMCPAuthMap: config.userMCPAuthMap,
+  tool_resources: config.tool_resources,
+  actionsEnabled: config.actionsEnabled,
+  accessibleSkillIds: config.accessibleSkillIds,
+  activeSkillNames: config.activeSkillNames,
+  codeEnvAvailable: config.codeEnvAvailable,
+  skillAuthoringAvailable: config.skillAuthoringAvailable,
+  fileAuthoringToolNames: config.fileAuthoringToolNames,
+  skillPrimedIdsByName:
+    mockBuildSkillPrimedIdsByName(config.manualSkillPrimes, config.alwaysApplySkillPrimes) ?? {},
+}));
+const mockEnrichLoadedToolsWithAgentContext = jest.fn(({ result, req, ctx }) =>
+  mockEnrichWithSkillConfigurable({
+    result,
+    context: {
+      req,
+      accessibleSkillIds: ctx.accessibleSkillIds,
+      codeEnvAvailable: ctx.codeEnvAvailable === true,
+      skillPrimedIdsByName: ctx.skillPrimedIdsByName,
+      activeSkillNames: ctx.activeSkillNames,
+      skillAuthoringAvailable: ctx.skillAuthoringAvailable === true,
+      fileAuthoringToolNames: ctx.fileAuthoringToolNames,
+    },
+  }),
+);
+const mockCanAuthorSkillFiles = jest.fn(
+  ({ scopedEditableSkillIds = [], skillCreateAllowed }) =>
+    scopedEditableSkillIds.length > 0 || skillCreateAllowed === true,
+);
+const mockGetSkillToolDeps = jest.fn(() => ({}));
+const mockBuildAgentScopedContext = jest.fn().mockResolvedValue(new Map());
+const mockBuildAgentContextAttachmentsByAgentId = jest.fn().mockReturnValue(new Map());
+const mockBuildInlineMemoryContext = jest.fn().mockResolvedValue('');
+const mockApplyContextToAgent = jest.fn().mockResolvedValue(undefined);
+const mockResponsesUsage = {
+  input_tokens: 125,
+  output_tokens: 50,
+  total_tokens: 175,
+  input_tokens_details: { cached_tokens: 0 },
+  output_tokens_details: { reasoning_tokens: 0 },
+  primary: { input_tokens: 100, output_tokens: 40, total_tokens: 140 },
+  subagent: { input_tokens: 25, output_tokens: 10, total_tokens: 35 },
+};
+const mockBuildResponsesUsage = jest.fn().mockReturnValue(mockResponsesUsage);
 
 jest.mock('nanoid', () => ({
   nanoid: jest.fn(() => 'mock-nanoid-123'),
@@ -37,10 +175,46 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  SAFE_CONVERSATION_TITLE: 'New Chat',
+  resolveConversationTitle: (...args) => mockResolveConversationTitle(...args),
+  /** Pass-through: the controller strips UI-only activity-label parts
+   *  before SDK formatting; the mock must expose it like any other used
+   *  export or the call throws before the assertions run. */
+  stripActivityLabelParts: jest.fn((payload) => payload),
+  collectReachableAgents: (roots) => {
+    const agents = [];
+    const pending = [...roots];
+    const visited = new Set();
+    for (let index = 0; index < pending.length; index++) {
+      const agent = pending[index];
+      if (!agent || visited.has(agent)) {
+        continue;
+      }
+      visited.add(agent);
+      agents.push(agent);
+      pending.push(...(agent.subagentAgentConfigs ?? []));
+    }
+    return agents;
+  },
   createRun: jest.fn().mockResolvedValue({
     processStream: jest.fn().mockResolvedValue(undefined),
   }),
+  buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
+  applyContextToAgent: (...args) => mockApplyContextToAgent(...args),
   buildToolSet: jest.fn().mockReturnValue(new Set()),
+  AgentRunEnvelopeError: MockAgentRunEnvelopeError,
+  createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
+  createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
+    messageId,
+    conversationId,
+    ...(parentMessageId !== undefined && {
+      parentMessageId: parentMessageId ?? '00000000-0000-0000-0000-000000000000',
+    }),
+  }),
+  buildAgentScopedContext: (...args) => mockBuildAgentScopedContext(...args),
+  buildInlineMemoryContext: (...args) => mockBuildInlineMemoryContext(...args),
+  buildAgentContextAttachmentsByAgentId: (...args) =>
+    mockBuildAgentContextAttachmentsByAgentId(...args),
   scopeSkillIds: jest.fn().mockImplementation((ids) => ids),
   resolveAgentScopedSkillIds: jest
     .fn()
@@ -53,16 +227,36 @@ jest.mock('@librechat/api', () => ({
     model_parameters: {},
     toolRegistry: {},
     edges: [],
+    agentContextAttachments: [],
   }),
-  discoverConnectedAgents: jest.fn().mockResolvedValue({
-    agentConfigs: new Map(),
-    edges: [],
-    skippedAgentIds: new Set(),
-    userMCPAuthMap: undefined,
+  discoverConnectedAgents: jest.fn().mockImplementation(async (computedParams, deps) => {
+    // Call onAgentInitialized for each agent config if provided by the mock setup
+    if (deps?.onAgentInitialized && mockGlobalDiscoveredAgentConfigs) {
+      for (const [agentId, config] of mockGlobalDiscoveredAgentConfigs) {
+        deps.onAgentInitialized(agentId, config, config);
+      }
+    }
+    return {
+      agentConfigs: mockGlobalDiscoveredAgentConfigs ?? new Map(),
+      edges: [],
+      skippedAgentIds: new Set(),
+      userMCPAuthMap: undefined,
+    };
   }),
+  resolveSubagentGraphs: jest.fn().mockResolvedValue(undefined),
   getBalanceConfig: mockGetBalanceConfig,
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
+  createSubagentUsageSink: jest.fn().mockReturnValue(jest.fn()),
+  CHILD_THREAD_READ_ONLY_ERROR:
+    'This subagent thread is view-only. Continue it from its parent agent or create a separate chat.',
+  getLangfuseTraceMessageFields: jest.fn().mockResolvedValue({
+    langfuseSampled: true,
+    langfuseDestinationIds: ['destination-1'],
+  }),
+  resolveAgentTokenConfig: jest.fn(({ agentId, byAgentId, fallback }) =>
+    agentId != null && byAgentId?.has(agentId) ? byAgentId.get(agentId) : fallback,
+  ),
   extractManualSkills: jest.fn().mockReturnValue(undefined),
   injectSkillPrimes: jest.fn().mockReturnValue({
     initialMessages: [],
@@ -78,10 +272,39 @@ jest.mock('@librechat/api', () => ({
   buildResponse: jest.fn().mockReturnValue({ id: 'resp_123', output: [] }),
   generateResponseId: jest.fn().mockReturnValue('resp_mock-123'),
   isValidationFailure: jest.fn().mockReturnValue(false),
+  inspectContent: mockInspectContent,
+  extractConversationTitleContent: jest.fn(({ title }) => [
+    { source: 'conversation_title', field: 'title', text: title },
+  ]),
+  extractAgentContent: jest.fn().mockReturnValue([]),
+  extractFileContent: jest.fn().mockReturnValue([]),
+  extractMessageContent: jest.fn().mockReturnValue([]),
+  extractModelParameterContent: jest.fn().mockReturnValue([]),
+  extractSkillContent: jest.fn().mockReturnValue([]),
+  extractToolArgumentContent: jest.fn().mockReturnValue([]),
+  getBlockedOpaqueFileField: jest.fn().mockReturnValue(null),
+  getContentTraversalFragments: jest.fn().mockReturnValue([]),
+  isContentTraversalProtected: jest.fn().mockReturnValue(true),
+  isContentTraversalLimitError: jest.fn((error) => error?.code === 'content_filter_uninspectable'),
+  prependContentTraversalFragments: jest.fn(),
+  assertModelBoundContent: jest.fn(),
+  hasModelBoundContentProtection: mockHasModelBoundContentProtection,
+  isContentFilterError: jest.fn((error) => error?.code === 'content_filter_block'),
+  getSafeErrorMetadata: mockGetSafeErrorMetadata,
+  contentFilterBlockResponse: jest.fn().mockReturnValue({
+    error: 'content_filter_block',
+    message: 'Submitted content was blocked.',
+  }),
+  contentFilterUninspectableResponse: jest.fn().mockReturnValue({
+    error: 'content_filter_uninspectable',
+    message: 'Submitted file content could not be inspected before processing.',
+    source: 'file',
+    field: 'content',
+  }),
   emitResponseCreated: jest.fn(),
   createResponseContext: jest.fn().mockReturnValue({ responseId: 'resp_123' }),
   createResponseTracker: jest.fn().mockReturnValue({
-    usage: { promptTokens: 100, completionTokens: 50 },
+    usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, cachedTokens: 0 },
   }),
   setupStreamingResponse: jest.fn(),
   emitResponseInProgress: jest.fn(),
@@ -95,8 +318,9 @@ jest.mock('@librechat/api', () => ({
     output: [],
     usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
   }),
+  buildResponsesUsage: mockBuildResponsesUsage,
   createResponseAggregator: jest.fn().mockReturnValue({
-    usage: { promptTokens: 100, completionTokens: 50 },
+    usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, cachedTokens: 0 },
   }),
   sendResponsesErrorResponse: jest.fn(),
   createResponsesEventHandlers: jest.fn().mockReturnValue({
@@ -121,6 +345,8 @@ jest.mock('@librechat/api', () => ({
 jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn().mockResolvedValue([]),
   loadToolsForExecution: jest.fn().mockResolvedValue([]),
+  isFatalAgentInitializationError: (error) =>
+    ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
 }));
 
 const mockGetMultiplier = jest.fn().mockReturnValue(1);
@@ -131,7 +357,7 @@ jest.mock('~/server/controllers/agents/callbacks', () => {
   return {
     createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
     createResponsesToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
-    markSummarizationUsage: jest.fn().mockImplementation((usage) => usage),
+    contextualizeModelUsage: jest.fn().mockImplementation((usage) => usage),
     agentLogHandlerObj: noop,
     buildSummarizationHandlers: jest.fn().mockReturnValue({
       on_summarize_start: noop,
@@ -150,8 +376,28 @@ jest.mock('~/server/controllers/ModelController', () => ({
   getModelsConfig: jest.fn().mockResolvedValue({}),
 }));
 
+jest.mock('~/server/services/MCP', () => ({
+  resolveConfigServers: jest.fn().mockResolvedValue({}),
+}));
+
+jest.mock('~/config', () => ({
+  getMCPManager: jest.fn().mockReturnValue({}),
+}));
+
 jest.mock('~/server/services/Files/permissions', () => ({
   filterFilesByAgentAccess: jest.fn(),
+}));
+
+jest.mock('~/server/services/Endpoints/agents/skillDeps', () => ({
+  getSkillToolDeps: mockGetSkillToolDeps,
+  getSkillDbMethods: jest.fn(() => ({})),
+  canAuthorSkillFiles: mockCanAuthorSkillFiles,
+  withDeploymentSkillIds: jest.fn((ids = []) => ids),
+  enrichWithSkillConfigurable: mockEnrichWithSkillConfigurable,
+  buildSkillPrimedIdsByName: mockBuildSkillPrimedIdsByName,
+  buildAgentToolContext: mockBuildAgentToolContext,
+  resolveMemoryAvailability: mockResolveMemoryAvailability,
+  enrichLoadedToolsWithAgentContext: mockEnrichLoadedToolsWithAgentContext,
 }));
 
 jest.mock('~/cache', () => ({
@@ -192,9 +438,12 @@ jest.mock('~/models', () => ({
   getMultiplier: mockGetMultiplier,
   getCacheMultiplier: mockGetCacheMultiplier,
   getConvoFiles: jest.fn().mockResolvedValue([]),
+  getFormattedMemories: jest.fn().mockResolvedValue({ withKeys: '', withoutKeys: '' }),
   saveConvo: jest.fn().mockResolvedValue({}),
   getConvo: jest.fn().mockResolvedValue(null),
 }));
+
+let mockGlobalDiscoveredAgentConfigs = null;
 
 describe('createResponse controller', () => {
   let createResponse;
@@ -202,6 +451,8 @@ describe('createResponse controller', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGlobalDiscoveredAgentConfigs = null;
+    require('@librechat/api').inspectContent.mockReset().mockReturnValue(null);
 
     const controller = require('../responses');
     createResponse = controller.createResponse;
@@ -229,6 +480,1028 @@ describe('createResponse controller', () => {
       end: jest.fn(),
       write: jest.fn(),
     };
+  });
+
+  it('resolves saved graph subagents for remote Responses API runs', async () => {
+    const { initializeAgent, resolveSubagentGraphs } = require('@librechat/api');
+    const primaryConfig = {
+      id: 'agent-123',
+      model: 'claude-3',
+      endpointTokenConfig: { 'claude-3': { prompt: 1 } },
+      model_parameters: {},
+      toolRegistry: {},
+      edges: [],
+      agentContextAttachments: [],
+      subagents: {
+        enabled: true,
+        graphs: [{ type: 'team', agent_ids: ['agent-123'], edges: [] }],
+      },
+    };
+    initializeAgent.mockResolvedValueOnce(primaryConfig);
+    const memberConfig = {
+      id: 'agent-graph-member',
+      endpointTokenConfig: { 'custom-model': { prompt: 7 } },
+      agentContextAttachments: [{ file_id: 'member-file' }],
+    };
+    resolveSubagentGraphs.mockImplementationOnce(async ({ rootConfigs }, deps) => {
+      rootConfigs[0].subagentGraphConfigs = [
+        { definition: { type: 'team' }, memberConfigs: [memberConfig] },
+      ];
+      deps.onAgentInitialized(memberConfig.id, memberConfig, memberConfig);
+    });
+    req.config.endpoints.agents.capabilities = ['subagents'];
+
+    await createResponse(req, res);
+
+    expect(resolveSubagentGraphs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        primaryConfig,
+        rootConfigs: [primaryConfig],
+        resourceType: ResourceType.REMOTE_AGENT,
+        memoryAvailable: true,
+      }),
+      expect.objectContaining({ getAgent: expect.any(Function) }),
+    );
+    expect(mockBuildAgentContextAttachmentsByAgentId).toHaveBeenCalledWith([
+      primaryConfig,
+      memberConfig,
+    ]);
+    expect(mockBuildAgentScopedContext).toHaveBeenCalledWith(
+      expect.objectContaining({ agentIds: ['agent-123', 'agent-graph-member'] }),
+    );
+    expect(mockApplyContextToAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: memberConfig, agentId: 'agent-graph-member' }),
+    );
+    expect(mockBuildInlineMemoryContext).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: memberConfig, memoryAvailable: true }),
+    );
+    const usageParams = mockRecordCollectedUsage.mock.calls[0][1];
+    expect(usageParams.endpointTokenConfig).toBe(primaryConfig.endpointTokenConfig);
+    expect(usageParams.resolveEndpointTokenConfig({ agentId: memberConfig.id })).toBe(
+      memberConfig.endpointTokenConfig,
+    );
+    expect(mockResolveMemoryAvailability).toHaveBeenCalledWith(
+      expect.objectContaining({ enabledCapabilities: expect.any(Set), user: req.user }),
+    );
+    const { createRun } = require('@librechat/api');
+    expect(createRun).toHaveBeenCalledWith(
+      expect.objectContaining({ initialSessions: mockInitialSessions }),
+    );
+  });
+
+  it('returns 503 when an agent expects MCP tools but resolves none', async () => {
+    const { initializeAgent, sendResponsesErrorResponse } = require('@librechat/api');
+    const { loadAgentTools } = require('~/server/services/ToolService');
+    const toolError = Object.assign(new Error('Expected MCP tools are unavailable'), {
+      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      status: 503,
+      statusCode: 503,
+    });
+    loadAgentTools.mockRejectedValueOnce(toolError);
+    initializeAgent.mockImplementationOnce(async ({ req, res, loadTools, agent }) => {
+      await loadTools({
+        req,
+        res,
+        tools: ['run_query_mcp_warehouse'],
+        model: agent.model,
+        agentId: agent.id,
+        provider: agent.provider,
+      });
+    });
+
+    await createResponse(req, res);
+
+    expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+      res,
+      503,
+      'Expected MCP tools are unavailable',
+      'server_error',
+      'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+    );
+  });
+
+  it('returns the resource recovery status and code before model invocation', async () => {
+    const { initializeAgent, sendResponsesErrorResponse } = require('@librechat/api');
+    const { loadAgentTools } = require('~/server/services/ToolService');
+    const toolError = Object.assign(new Error('resource recovery required'), {
+      code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+      status: 409,
+      statusCode: 409,
+    });
+    loadAgentTools.mockRejectedValueOnce(toolError);
+    initializeAgent.mockImplementationOnce(async ({ req, res, loadTools, agent }) => {
+      await loadTools({
+        req,
+        res,
+        tools: ['execute_code'],
+        model: agent.model,
+        agentId: agent.id,
+        provider: agent.provider,
+      });
+    });
+
+    await createResponse(req, res);
+
+    expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+      res,
+      409,
+      'resource recovery required',
+      'invalid_request',
+      ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+    );
+  });
+
+  it('stores Langfuse trace markers with a persisted response', async () => {
+    const api = require('@librechat/api');
+    const { saveMessage } = require('~/models');
+    api.validateResponseRequest.mockReturnValueOnce({
+      request: { ...req.body, store: true },
+    });
+
+    await createResponse(req, res);
+
+    expect(api.getLangfuseTraceMessageFields).toHaveBeenCalledWith(req.config, 'resp_mock-123');
+    expect(saveMessage).toHaveBeenCalledWith(
+      req,
+      expect.objectContaining({
+        messageId: 'resp_mock-123',
+        isCreatedByUser: false,
+        langfuseSampled: true,
+        langfuseDestinationIds: ['destination-1'],
+        tokenCount: 50,
+      }),
+      { context: 'Responses API - save assistant response' },
+    );
+  });
+
+  describe('execution envelope', () => {
+    it('creates the portable run input before agent initialization', async () => {
+      req.user = {
+        id: 'user-123',
+        role: 'USER',
+        tenantId: 'tenant-123',
+        federatedTokens: { access_token: 'secret' },
+      };
+      const requestBody = {
+        ...req.body,
+        ephemeralAgent: { skills: true },
+        manualSkills: ['review-code'],
+        timezone: 'America/New_York',
+        isTemporary: true,
+      };
+      req.body = requestBody;
+      const { validateResponseRequest, initializeAgent } = require('@librechat/api');
+      validateResponseRequest.mockReturnValueOnce({ request: requestBody });
+
+      await createResponse(req, res);
+
+      expect(mockCreateAgentRunEnvelope).toHaveBeenCalledWith(
+        expect.objectContaining({
+          protocol: 'responses',
+          principal: req.user,
+          payload: requestBody,
+          requestId: expect.any(String),
+          receivedAt: expect.any(Number),
+        }),
+      );
+      expect(mockCreateAgentRunEnvelope.mock.invocationCallOrder[0]).toBeLessThan(
+        initializeAgent.mock.invocationCallOrder[0],
+      );
+      expect(initializeAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: {
+            messageId: 'resp_mock-123',
+            conversationId: expect.any(String),
+          },
+        }),
+        expect.anything(),
+      );
+      expect(req.body).not.toBe(requestBody);
+      expect(req.body).toEqual(requestBody);
+      expect(JSON.stringify(mockCreateAgentRunEnvelope.mock.results[0].value)).not.toContain(
+        'secret',
+      );
+    });
+
+    it('returns a protocol 400 when the envelope rejects a non-JSON payload', async () => {
+      const message = 'payload.max_output_tokens must contain only finite numbers';
+      const { sendResponsesErrorResponse, initializeAgent } = require('@librechat/api');
+      mockCreateAgentRunEnvelope.mockImplementationOnce(() => {
+        throw new MockAgentRunEnvelopeError(message);
+      });
+
+      await createResponse(req, res);
+
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(res, 400, message, 'invalid_request');
+      expect(initializeAgent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('content filtering', () => {
+    it('replaces a blocked agent-derived conversation title before persistence', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          store: true,
+        },
+      });
+      api.inspectContent.mockImplementation((fragments) =>
+        fragments[0]?.source === 'conversation_title' && fragments[0]?.text === 'BLOCKED-AGENT'
+          ? { detectorId: 'pii-pattern' }
+          : null,
+      );
+      db.getAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        name: 'BLOCKED-AGENT',
+        model: 'claude-3',
+        provider: 'anthropic',
+      });
+      req.config.filters = {
+        conversationTitles: {
+          pii: {
+            starterPatterns: [],
+            customPatterns: [{ id: 'blocked', label: 'blocked', regex: 'BLOCKED' }],
+          },
+        },
+      };
+
+      await createResponse(req, res);
+
+      expect(db.saveConvo).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          title: 'New Chat',
+        }),
+        expect.anything(),
+      );
+    });
+
+    it('blocks opaque response input before conversion or agent loading', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      const input = [
+        {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_file', file_data: 'do-not-echo' }],
+        },
+      ];
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input, stream: false },
+      });
+      api.getBlockedOpaqueFileField.mockReturnValueOnce('extracted_text');
+      api.contentFilterUninspectableResponse.mockReturnValueOnce({
+        error: 'content_filter_uninspectable',
+        message: 'Submitted file content could not be inspected before processing.',
+        source: 'file',
+        field: 'extracted_text',
+      });
+
+      await createResponse(req, res);
+
+      expect(api.getBlockedOpaqueFileField).toHaveBeenCalledWith(req.config.filters, input);
+      expect(api.convertInputToMessages).not.toHaveBeenCalled();
+      expect(db.getAgent).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'Submitted file content could not be inspected before processing.',
+        'invalid_request',
+        'content_filter_uninspectable',
+      );
+      expect(JSON.stringify(api.sendResponsesErrorResponse.mock.calls)).not.toContain(
+        'do-not-echo',
+      );
+    });
+
+    it('returns a raw-free error when nested response input exhausts its budget', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      req.config.filters = { messages: { pii: { starterPatterns: [] } } };
+      api.extractMessageContent.mockImplementationOnce(() => {
+        throw {
+          code: 'content_filter_uninspectable',
+          statusCode: 400,
+          body: {
+            error: 'content_filter_uninspectable',
+            message: 'Submitted content could not be completely inspected before processing.',
+            source: 'message',
+            field: 'content_part',
+          },
+        };
+      });
+
+      await createResponse(req, res);
+
+      expect(db.getAgent).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'Submitted content could not be completely inspected before processing.',
+        'invalid_request',
+        'content_filter_uninspectable',
+      );
+    });
+
+    it('continues when exhausted response parameters are outside the active policy', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      api.extractModelParameterContent.mockImplementationOnce(() => {
+        throw {
+          code: 'content_filter_uninspectable',
+          statusCode: 400,
+          body: {
+            error: 'content_filter_uninspectable',
+            message: 'Submitted content could not be completely inspected before processing.',
+            source: 'model_parameter',
+            field: 'request_fields',
+          },
+        };
+      });
+      api.isContentTraversalProtected.mockReturnValueOnce(false);
+
+      await createResponse(req, res);
+
+      expect(db.getAgent).toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).not.toHaveBeenCalledWith(
+        res,
+        400,
+        expect.anything(),
+        'invalid_request',
+        'content_filter_uninspectable',
+      );
+    });
+
+    it('retains earlier request fragments when a function schema exhausts traversal', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      const instructionFragment = {
+        id: 'agent.instructions',
+        path: '/instructions',
+        text: 'PRIVATE-INSTRUCTION',
+        source: 'agent_instruction',
+        field: 'instructions',
+      };
+      const partialToolFragment = {
+        id: 'tool.arguments.partial',
+        path: '/arguments/safe',
+        text: 'safe',
+        source: 'tool_argument',
+        field: 'arguments',
+      };
+      const traversalError = Object.assign(new Error('Traversal limit exceeded'), {
+        code: 'content_filter_uninspectable',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_uninspectable',
+          message: 'Submitted content could not be completely inspected before processing.',
+          source: 'tool_argument',
+          field: 'arguments',
+        },
+      });
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          instructions: 'PRIVATE-INSTRUCTION',
+          tools: [{ type: 'function', name: 'lookup', parameters: { safe: true } }],
+          stream: false,
+        },
+      });
+      api.extractAgentContent.mockReturnValueOnce([instructionFragment]);
+      api.extractToolArgumentContent.mockImplementationOnce(() => {
+        throw traversalError;
+      });
+      api.getContentTraversalFragments.mockReturnValueOnce([
+        instructionFragment,
+        partialToolFragment,
+      ]);
+      api.inspectContent.mockReturnValueOnce({
+        detectorId: 'pii-pattern',
+        ruleId: 'private',
+        label: 'private value',
+        source: 'agent_instruction',
+        field: 'instructions',
+      });
+      req.config.filters = {
+        agentInstructions: {
+          pii: {
+            fields: ['instructions'],
+            starterPatterns: [],
+            customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE' }],
+          },
+        },
+      };
+
+      await createResponse(req, res);
+
+      expect(api.prependContentTraversalFragments).toHaveBeenCalledWith(
+        traversalError,
+        expect.arrayContaining([instructionFragment]),
+      );
+      expect(api.inspectContent).toHaveBeenCalledWith(
+        expect.arrayContaining([instructionFragment, partialToolFragment]),
+        expect.anything(),
+      );
+      expect(db.getAgent).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'Submitted content was blocked.',
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
+    it('blocks instructions and input before loading the agent', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          metadata: { label: 'submitted metadata' },
+          text: {
+            format: {
+              type: 'json_schema',
+              json_schema: { description: 'submitted response schema' },
+            },
+          },
+        },
+      });
+      api.inspectContent.mockReturnValueOnce({
+        detectorId: 'pii-pattern',
+        ruleId: 'sk_prefix',
+        label: 'sk- prefix token',
+        source: 'agent_instruction',
+        field: 'instructions',
+      });
+
+      await createResponse(req, res);
+
+      expect(api.extractAgentContent).toHaveBeenCalled();
+      expect(api.extractMessageContent).toHaveBeenCalled();
+      expect(api.extractModelParameterContent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: { label: 'submitted metadata' },
+          response_format: {
+            type: 'json_schema',
+            json_schema: { description: 'submitted response schema' },
+          },
+        }),
+      );
+      expect(db.getAgent).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'Submitted content was blocked.',
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
+    it('blocks manually selected skill names before resolving the skill', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      req.body.manualSkills = ['PRIVATE-SKILL'];
+      api.extractManualSkills.mockReturnValueOnce(['PRIVATE-SKILL']);
+      api.inspectContent.mockReturnValueOnce({
+        detectorId: 'pii-pattern',
+        ruleId: 'private',
+        label: 'private value',
+        source: 'skill',
+        field: 'name',
+      });
+
+      await createResponse(req, res);
+
+      expect(api.extractSkillContent).toHaveBeenCalledWith({ name: 'PRIVATE-SKILL' });
+      expect(db.getAgent).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'Submitted content was blocked.',
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
+    it('blocks previously stored model-bound content before provider invocation', async () => {
+      const api = require('@librechat/api');
+      const blockedError = Object.assign(
+        new Error('Submitted content contains a private value. Remove it and try again.'),
+        {
+          code: 'content_filter_block',
+          statusCode: 400,
+          body: {
+            error: 'content_filter_block',
+            message: 'Submitted content contains a private value. Remove it and try again.',
+            source: 'message',
+            field: 'text',
+          },
+        },
+      );
+      api.assertModelBoundContent.mockImplementationOnce(() => {
+        throw blockedError;
+      });
+
+      await createResponse(req, res);
+
+      expect(api.assertModelBoundContent).toHaveBeenCalled();
+      expect(api.createRun).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        blockedError.body.message,
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
+    it('preserves imported whole-assistant provenance and blocks its stored text', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      const storedMessage = {
+        messageId: 'imported-assistant',
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+        text: 'sk-imported-secret',
+      };
+      const blockedError = Object.assign(new Error('Submitted content was blocked.'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted content was blocked.',
+          source: 'message',
+          field: 'text',
+        },
+      });
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          previous_response_id: 'resp_imported',
+        },
+      });
+      db.getConvo.mockResolvedValueOnce({ conversationId: 'resp_imported', user: 'user-123' });
+      db.getMessages.mockResolvedValueOnce([storedMessage]);
+      api.assertModelBoundContent.mockImplementationOnce(({ storedMessages }) => {
+        expect(storedMessages).toEqual([
+          expect.objectContaining({
+            messageId: 'imported-assistant',
+            isCreatedByUser: false,
+            isUserSubmitted: true,
+            text: 'sk-imported-secret',
+            content: 'sk-imported-secret',
+          }),
+        ]);
+        throw blockedError;
+      });
+
+      await createResponse(req, res);
+
+      expect(api.initializeAgent).not.toHaveBeenCalled();
+      expect(api.discoverConnectedAgents).not.toHaveBeenCalled();
+      expect(mockBuildAgentScopedContext).not.toHaveBeenCalled();
+      expect(mockApplyContextToAgent).not.toHaveBeenCalled();
+      expect(db.updateFilesUsage).not.toHaveBeenCalled();
+      expect(api.createRun).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        blockedError.body.message,
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
+    it('preserves path-marked assistant content and blocks only the submitted block', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      const content = [
+        { type: 'text', text: 'neighboring model prose' },
+        { type: 'text', text: 'sk-path-secret' },
+      ];
+      const blockedError = Object.assign(new Error('Submitted content was blocked.'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted content was blocked.',
+          source: 'message',
+          field: 'content_part',
+        },
+      });
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          previous_response_id: 'resp_path_marked',
+        },
+      });
+      db.getConvo.mockResolvedValueOnce({
+        conversationId: 'resp_path_marked',
+        user: 'user-123',
+      });
+      db.getMessages.mockResolvedValueOnce([
+        {
+          messageId: 'mixed-assistant',
+          isCreatedByUser: false,
+          text: 'assistant summary text',
+          content,
+          userSubmittedPaths: ['/content/1/text'],
+          userSubmittedMessageFieldPaths: [{ path: '/content/1/text', field: 'decision_response' }],
+        },
+      ]);
+      api.assertModelBoundContent.mockImplementationOnce(({ storedMessages }) => {
+        expect(storedMessages).toEqual([
+          expect.objectContaining({
+            text: 'assistant summary text',
+            content,
+            userSubmittedPaths: ['/content/1/text'],
+            userSubmittedMessageFieldPaths: [
+              { path: '/content/1/text', field: 'decision_response' },
+            ],
+          }),
+        ]);
+        throw blockedError;
+      });
+
+      await createResponse(req, res);
+
+      expect(api.initializeAgent).not.toHaveBeenCalled();
+      expect(api.createRun).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        blockedError.body.message,
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
+    it('allows neighboring unmarked assistant prose when marked content is safe', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      const content = [
+        { type: 'text', text: 'sk-model-generated-prose' },
+        { type: 'text', text: 'safe submitted correction' },
+      ];
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          previous_response_id: 'resp_neighboring_model_output',
+        },
+      });
+      db.getConvo.mockResolvedValueOnce({
+        conversationId: 'resp_neighboring_model_output',
+        user: 'user-123',
+      });
+      db.getMessages.mockResolvedValueOnce([
+        {
+          messageId: 'mixed-assistant',
+          isCreatedByUser: false,
+          content,
+          userSubmittedPaths: ['/content/1/text'],
+        },
+      ]);
+      api.assertModelBoundContent.mockImplementationOnce(({ storedMessages }) => {
+        const [message] = storedMessages;
+        expect(message.content).toEqual(content);
+        expect(message.userSubmittedPaths).toEqual(['/content/1/text']);
+        expect(message.content[1].text).toBe('safe submitted correction');
+      });
+
+      await createResponse(req, res);
+
+      expect(api.createRun).toHaveBeenCalledTimes(1);
+      expect(api.sendResponsesErrorResponse).not.toHaveBeenCalledWith(
+        res,
+        400,
+        expect.anything(),
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
+    it('preflights request and context attachments from every run agent under a files-only policy', async () => {
+      const api = require('@librechat/api');
+      const primaryRequestFile = { filename: 'primary-request.txt', content: 'primary request' };
+      const primaryContextFile = { filename: 'primary-context.txt', content: 'primary context' };
+      const handoffRequestFile = { filename: 'handoff-request.txt', content: 'handoff request' };
+      const handoffContextFile = {
+        filename: 'handoff-context.txt',
+        content: 'sk-handoff-context',
+      };
+      const blockedError = Object.assign(new Error('Submitted file content was blocked.'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted file content was blocked.',
+          source: 'file',
+          field: 'content',
+        },
+      });
+      req.config.filters = {
+        files: { pii: { fields: ['content'], starterPatterns: ['sk-'] } },
+      };
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input: 'Hello', stream: true },
+      });
+      api.initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [{ source: 'agent-123', target: 'agent-handoff' }],
+        requestAttachments: [primaryRequestFile],
+        agentContextAttachments: [primaryContextFile],
+      });
+      mockGlobalDiscoveredAgentConfigs = new Map([
+        [
+          'agent-handoff',
+          {
+            id: 'agent-handoff',
+            model: 'claude-3',
+            model_parameters: {},
+            requestAttachments: [handoffRequestFile],
+            agentContextAttachments: [handoffContextFile],
+          },
+        ],
+      ]);
+      api.assertModelBoundContent
+        .mockImplementationOnce(() => undefined)
+        .mockImplementationOnce(({ filters, files }) => {
+          expect(filters).toEqual(req.config.filters);
+          expect(files).toEqual([
+            primaryRequestFile,
+            primaryContextFile,
+            handoffRequestFile,
+            handoffContextFile,
+          ]);
+          throw blockedError;
+        });
+
+      await createResponse(req, res);
+
+      expect(api.createRun).not.toHaveBeenCalled();
+      expect(api.setupStreamingResponse).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        blockedError.body.message,
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
+    it('preflights each exact synthesized dynamic tool context as file content', async () => {
+      const api = require('@librechat/api');
+      const nestedPureSubagent = {
+        id: 'agent-nested-pure',
+        model: 'claude-3',
+        model_parameters: {},
+        toolDefinitions: [
+          {
+            name: 'nested_lookup',
+            description: 'late-loaded nested tool definition',
+            parameters: { type: 'object' },
+          },
+        ],
+        dynamicToolContextMap: {
+          nested_lookup: 'sk-nested-dynamic-context',
+        },
+      };
+      const blockedError = Object.assign(new Error('Submitted file content was blocked.'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted file content was blocked.',
+          source: 'file',
+          field: 'content',
+        },
+      });
+      req.config.filters = {
+        files: { pii: { fields: ['content'], starterPatterns: ['sk-'] } },
+      };
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input: 'Hello', stream: true },
+      });
+      api.initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [{ source: 'agent-123', target: 'agent-handoff' }],
+        dynamicToolContextMap: {
+          execute_code: '  primary safe context',
+          ignored_empty: '',
+          file_search: 'primary context  ',
+          ignored_non_string: 42,
+        },
+        subagentAgentConfigs: [
+          {
+            id: 'agent-pure',
+            model: 'claude-3',
+            model_parameters: {},
+            subagentAgentConfigs: [nestedPureSubagent],
+          },
+        ],
+      });
+      mockGlobalDiscoveredAgentConfigs = new Map([
+        [
+          'agent-handoff',
+          {
+            id: 'agent-handoff',
+            model: 'claude-3',
+            model_parameters: {},
+            dynamicToolContextMap: {
+              execute_code: 'handoff safe context',
+              file_search: 'sk-handoff-dynamic-context',
+            },
+          },
+        ],
+      ]);
+      api.assertModelBoundContent
+        .mockImplementationOnce(() => undefined)
+        .mockImplementationOnce(({ filters, agents, files }) => {
+          expect(filters).toEqual(req.config.filters);
+          expect(agents.map(({ id }) => id)).toEqual([
+            'agent-123',
+            'agent-handoff',
+            'agent-pure',
+            'agent-nested-pure',
+          ]);
+          expect(files).toEqual([
+            { content: 'primary safe context\nprimary context' },
+            { content: 'handoff safe context\nsk-handoff-dynamic-context' },
+            { content: 'sk-nested-dynamic-context' },
+          ]);
+          throw blockedError;
+        });
+
+      await createResponse(req, res);
+
+      expect(api.createRun).not.toHaveBeenCalled();
+      expect(api.setupStreamingResponse).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        blockedError.body.message,
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
+    it('re-inspects agents after dynamic context is applied', async () => {
+      const api = require('@librechat/api');
+      const blockedError = Object.assign(new Error('Submitted content was blocked.'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted content was blocked.',
+          source: 'agent_instruction',
+          field: 'instructions',
+        },
+      });
+      mockApplyContextToAgent.mockImplementationOnce(async ({ agent }) => {
+        agent.instructions = 'PRIVATE-DYNAMIC-INSTRUCTION';
+      });
+      api.assertModelBoundContent
+        .mockImplementationOnce(() => undefined)
+        .mockImplementationOnce(({ agents }) => {
+          if (agents?.some((agent) => agent.instructions === 'PRIVATE-DYNAMIC-INSTRUCTION')) {
+            throw blockedError;
+          }
+        });
+
+      await createResponse(req, res);
+
+      expect(api.assertModelBoundContent).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          agents: [expect.objectContaining({ instructions: 'PRIVATE-DYNAMIC-INSTRUCTION' })],
+        }),
+      );
+      expect(api.createRun).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        blockedError.body.message,
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+  });
+
+  describe('safe error logging', () => {
+    it('logs bounded metadata and returns a raw-free provider error', async () => {
+      const api = require('@librechat/api');
+      const { logger } = require('@librechat/data-schemas');
+      const rawValue = 'PRIVATE-RESPONSES-PROVIDER-PAYLOAD';
+      const providerError = Object.assign(new Error(`Provider echoed ${rawValue}`), {
+        code: 'ERR_REMOTE',
+        response: {
+          status: 502,
+          headers: { authorization: rawValue },
+          data: { prompt: rawValue },
+        },
+      });
+      req.config.filters = { messages: { pii: {} } };
+      api.createRun.mockRejectedValueOnce(providerError);
+
+      await createResponse(req, res);
+
+      expect(mockGetSafeErrorMetadata).toHaveBeenCalledWith(providerError);
+      const errorLog = logger.error.mock.calls.find(
+        ([message]) => message === '[Responses API] Error:',
+      );
+      expect(errorLog).toEqual(['[Responses API] Error:', { type: 'Error', status: 502 }]);
+      expect(JSON.stringify(errorLog)).not.toContain(rawValue);
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        500,
+        'An error occurred while processing the request',
+        'server_error',
+      );
+      expect(JSON.stringify(api.sendResponsesErrorResponse.mock.calls)).not.toContain(rawValue);
+    });
+
+    it('preserves the legacy provider error when protection is inactive', async () => {
+      const api = require('@librechat/api');
+      const rawValue = 'LEGACY-RESPONSES-PROVIDER-ERROR';
+      api.createRun.mockRejectedValueOnce(
+        Object.assign(new Error(rawValue), { code: 'ERR_LEGACY_REMOTE' }),
+      );
+
+      await createResponse(req, res);
+
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        500,
+        rawValue,
+        'server_error',
+        'ERR_LEGACY_REMOTE',
+      );
+    });
+
+    it.each([
+      ['a management-only prompt', { prompts: { pii: {} } }],
+      ['an inert message', { messages: { pii: { starterPatterns: [] } } }],
+    ])('preserves the legacy provider error for %s policy', async (_policy, filters) => {
+      const api = require('@librechat/api');
+      const rawValue = 'LEGACY-RESPONSES-CONFIGURED-PROVIDER-ERROR';
+      req.config.filters = filters;
+      api.createRun.mockRejectedValueOnce(new Error(rawValue));
+
+      await createResponse(req, res);
+
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        500,
+        rawValue,
+        'server_error',
+      );
+    });
+
+    it('logs bounded metadata for tool callback failures', async () => {
+      const api = require('@librechat/api');
+      const { logger } = require('@librechat/data-schemas');
+      const rawValue = 'PRIVATE-RESPONSES-TOOL-PAYLOAD';
+      const toolError = Object.assign(new Error(`Tool echoed ${rawValue}`), {
+        code: 'ERR_TOOL',
+        response: { status: 422, data: { output: rawValue } },
+      });
+      api.createRun.mockResolvedValueOnce({
+        processStream: jest.fn().mockImplementation(async (_input, _config, options) => {
+          options.callbacks.TOOL_ERROR({}, toolError, 'file_search');
+        }),
+      });
+
+      await createResponse(req, res);
+
+      expect(mockGetSafeErrorMetadata).toHaveBeenCalledWith(toolError);
+      const errorLog = logger.error.mock.calls.find(([message]) =>
+        message.includes('Tool Error "file_search"'),
+      );
+      expect(errorLog).toEqual([
+        '[Responses API] Tool Error "file_search"',
+        { type: 'Error', status: 422 },
+      ]);
+      expect(JSON.stringify(errorLog)).not.toContain(rawValue);
+    });
   });
 
   describe('conversation ownership validation', () => {
@@ -304,6 +1577,41 @@ describe('createResponse controller', () => {
       );
     });
 
+    it('rejects a remote response continuation of a view-only subagent thread', async () => {
+      const {
+        validateResponseRequest,
+        sendResponsesErrorResponse,
+        CHILD_THREAD_READ_ONLY_ERROR,
+      } = require('@librechat/api');
+      const { getConvo, saveConvo, saveMessage } = require('~/models');
+      validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Mutate the child.',
+          stream: false,
+          store: true,
+          previous_response_id: 'child-thread',
+        },
+      });
+      getConvo.mockResolvedValueOnce({
+        conversationId: 'child-thread',
+        user: 'user-123',
+        subagentThread: { parentConversationId: 'parent-thread' },
+      });
+
+      await createResponse(req, res);
+
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        409,
+        CHILD_THREAD_READ_ONLY_ERROR,
+        'invalid_request',
+        'conversation_read_only',
+      );
+      expect(saveConvo).not.toHaveBeenCalled();
+      expect(saveMessage).not.toHaveBeenCalled();
+    });
+
     it('should return 500 when getConvo throws a DB error', async () => {
       const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
       const { getConvo } = require('~/models');
@@ -323,6 +1631,49 @@ describe('createResponse controller', () => {
         500,
         expect.any(String),
         expect.any(String),
+      );
+    });
+  });
+
+  describe('remote-agent file authorization', () => {
+    it('threads the remote-agent permission boundary through initialization and tool loading', async () => {
+      const { initializeAgent, createToolExecuteHandler } = require('@librechat/api');
+      const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
+      const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+
+      await createResponse(req, res);
+
+      const [initializeParams, dbMethods] = initializeAgent.mock.calls.at(-1);
+      const filterParams = {
+        files: [{ file_id: 'owner-file', user: 'agent-owner' }],
+        userId: 'user-123',
+        role: 'USER',
+        agentId: 'agent-123',
+      };
+      await dbMethods.filterFilesByAgentAccess(filterParams);
+      expect(filterFilesByAgentAccess).toHaveBeenLastCalledWith({
+        ...filterParams,
+        resourceType: ResourceType.REMOTE_AGENT,
+      });
+
+      await initializeParams.loadTools({
+        agentId: 'agent-123',
+        tools: ['file_search'],
+        provider: 'anthropic',
+        model: 'claude-3',
+        tool_resources: { file_search: { file_ids: ['owner-file'] } },
+      });
+      expect(loadAgentTools).toHaveBeenLastCalledWith(
+        expect.objectContaining({ agentResourceType: ResourceType.REMOTE_AGENT }),
+      );
+
+      const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
+      await toolExecuteOptions.loadTools(['file_search'], 'agent-123');
+      expect(loadToolsForExecution).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          agentResourceType: ResourceType.REMOTE_AGENT,
+          requestBody: initializeParams.requestBody,
+        }),
       );
     });
   });
@@ -392,6 +1743,89 @@ describe('createResponse controller', () => {
     });
   });
 
+  describe('agent context parity with UI path', () => {
+    it('applies agent-scoped attachment context before createRun', async () => {
+      const api = require('@librechat/api');
+      api.initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [],
+        agentContextAttachments: [{ file_id: 'file-1', filename: 'ocr_file.pdf' }],
+      });
+      mockBuildAgentContextAttachmentsByAgentId.mockReturnValueOnce(
+        new Map([['agent-123', [{ file_id: 'file-1', filename: 'ocr_file.pdf' }]]]),
+      );
+      mockBuildAgentScopedContext.mockResolvedValueOnce(
+        new Map([['agent-123', 'PDF context: ocr_file.pdf']]),
+      );
+
+      await createResponse(req, res);
+
+      expect(mockBuildAgentContextAttachmentsByAgentId).toHaveBeenCalledWith([
+        expect.objectContaining({ id: 'agent-123' }),
+      ]);
+      expect(mockBuildAgentScopedContext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentIds: ['agent-123'],
+          attachmentsByAgentId: expect.any(Map),
+          req,
+        }),
+      );
+      expect(mockApplyContextToAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent: expect.objectContaining({ id: 'agent-123' }),
+          agentId: 'agent-123',
+          sharedRunContext: 'PDF context: ocr_file.pdf',
+        }),
+      );
+    });
+
+    it('applies context to primary and discovered handoff agents', async () => {
+      const api = require('@librechat/api');
+      const handoffConfig = {
+        id: 'agent-handoff',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [],
+        agentContextAttachments: [{ file_id: 'file-2', filename: 'handoff_context.pdf' }],
+      };
+
+      // Set primary agent to have edges pointing to handoff agent
+      api.initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [{ source: 'agent-123', target: 'agent-handoff' }],
+        agentContextAttachments: [{ file_id: 'file-1', filename: 'primary_context.pdf' }],
+      });
+
+      // Set global config so discoverConnectedAgents mock can invoke onAgentInitialized
+      mockGlobalDiscoveredAgentConfigs = new Map([['agent-handoff', handoffConfig]]);
+
+      mockBuildAgentScopedContext.mockResolvedValueOnce(
+        new Map([
+          ['agent-123', 'Primary context'],
+          ['agent-handoff', 'Handoff context'],
+        ]),
+      );
+
+      await createResponse(req, res);
+
+      const appliedAgentIds = mockApplyContextToAgent.mock.calls.map((call) => call[0].agentId);
+      expect(appliedAgentIds).toEqual(expect.arrayContaining(['agent-123', 'agent-handoff']));
+      expect(mockApplyContextToAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentId: 'agent-handoff',
+          sharedRunContext: 'Handoff context',
+        }),
+      );
+    });
+  });
+
   describe('token usage recording - streaming', () => {
     beforeEach(() => {
       req.body.stream = true;
@@ -456,6 +1890,119 @@ describe('createResponse controller', () => {
           ]),
         }),
       );
+    });
+
+    it('uses collected usage for the non-streaming response', async () => {
+      const api = require('@librechat/api');
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input: 'Hello', stream: false },
+      });
+
+      await createResponse(req, res);
+
+      const collectedUsage = mockRecordCollectedUsage.mock.calls.at(-1)[1].collectedUsage;
+      expect(mockBuildResponsesUsage).toHaveBeenCalledWith(collectedUsage);
+      expect(api.buildAggregatedResponse).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        mockResponsesUsage,
+      );
+    });
+
+    it('uses collected usage for the completed streaming event', async () => {
+      const api = require('@librechat/api');
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input: 'Hello', stream: true },
+      });
+
+      await createResponse(req, res);
+
+      const finalizeStream =
+        api.createResponsesEventHandlers.mock.results.at(-1).value.finalizeStream;
+      expect(finalizeStream).toHaveBeenCalledWith(mockResponsesUsage);
+    });
+  });
+
+  describe('sub-agent skill priming', () => {
+    it('passes the sub-agent primed skill IDs into non-streaming tool execution', async () => {
+      const {
+        initializeAgent,
+        discoverConnectedAgents,
+        createToolExecuteHandler,
+      } = require('@librechat/api');
+      const { loadToolsForExecution } = require('~/server/services/ToolService');
+      const subAgent = { id: 'agent-sub', name: 'Sub Agent' };
+      const subConfig = {
+        id: 'agent-sub',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: new Map(),
+        userMCPAuthMap: { sub: { token: 'sub-token' } },
+        tool_resources: { code_interpreter: { file_ids: ['sub-file'] } },
+        actionsEnabled: true,
+        accessibleSkillIds: ['sub-skill-id'],
+        activeSkillNames: ['sub-hidden-skill'],
+        codeEnvAvailable: true,
+        skillAuthoringAvailable: true,
+        fileAuthoringToolNames: ['create_file', 'edit_file'],
+        manualSkillPrimes: [{ name: 'sub-hidden-skill', _id: { toString: () => 'sub-manual-id' } }],
+        alwaysApplySkillPrimes: [
+          { name: 'sub-always-skill', _id: { toString: () => 'sub-always-id' } },
+        ],
+      };
+
+      initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: new Map(),
+        edges: [{ source: 'agent-123', target: 'agent-sub' }],
+        accessibleSkillIds: ['primary-skill-id'],
+        activeSkillNames: ['primary-skill'],
+        codeEnvAvailable: false,
+        skillAuthoringAvailable: false,
+        fileAuthoringToolNames: [],
+        manualSkillPrimes: [{ name: 'primary-skill', _id: { toString: () => 'primary-skill-id' } }],
+      });
+      discoverConnectedAgents.mockImplementationOnce(async (_params, deps) => {
+        deps.onAgentInitialized('agent-sub', subAgent, subConfig);
+        return {
+          agentConfigs: new Map([['agent-sub', subConfig]]),
+          edges: [],
+          skippedAgentIds: new Set(),
+          userMCPAuthMap: undefined,
+        };
+      });
+
+      await createResponse(req, res);
+
+      const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
+      await toolExecuteOptions.loadTools(['read_file'], 'agent-sub');
+
+      expect(loadToolsForExecution).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          agent: subAgent,
+          toolRegistry: subConfig.toolRegistry,
+          userMCPAuthMap: subConfig.userMCPAuthMap,
+          tool_resources: subConfig.tool_resources,
+          actionsEnabled: true,
+        }),
+      );
+      expect(mockEnrichWithSkillConfigurable).toHaveBeenLastCalledWith({
+        result: expect.anything(),
+        context: {
+          req,
+          accessibleSkillIds: ['sub-skill-id'],
+          codeEnvAvailable: true,
+          skillPrimedIdsByName: {
+            'sub-always-skill': 'sub-always-id',
+            'sub-hidden-skill': 'sub-manual-id',
+          },
+          activeSkillNames: ['sub-hidden-skill'],
+          skillAuthoringAvailable: true,
+          fileAuthoringToolNames: ['create_file', 'edit_file'],
+        },
+      });
     });
   });
 });

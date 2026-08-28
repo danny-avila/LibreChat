@@ -18,6 +18,7 @@ import type {
   ReasoningTextContent,
   ItemStatus,
   ResponseStatus,
+  Usage,
 } from './types';
 
 /* =============================================================================
@@ -124,6 +125,7 @@ export function buildResponse(
   context: ResponseContext,
   tracker: ResponseTracker,
   status: ResponseStatus = 'in_progress',
+  usageOverride?: Usage,
 ): Response {
   const isCompleted = status === 'completed';
 
@@ -153,13 +155,13 @@ export function buildResponse(
     reasoning: null,
     user: null,
     usage: isCompleted
-      ? {
+      ? (usageOverride ?? {
           input_tokens: tracker.usage.inputTokens,
           output_tokens: tracker.usage.outputTokens,
           total_tokens: tracker.usage.inputTokens + tracker.usage.outputTokens,
           input_tokens_details: { cached_tokens: tracker.usage.cachedTokens },
           output_tokens_details: { reasoning_tokens: tracker.usage.reasoningTokens },
-        }
+        })
       : null,
     max_output_tokens: null,
     max_tool_calls: null,
@@ -308,10 +310,10 @@ export function emitResponseInProgress(config: StreamHandlerConfig): void {
 /**
  * Emit response.completed event
  */
-export function emitResponseCompleted(config: StreamHandlerConfig): void {
+export function emitResponseCompleted(config: StreamHandlerConfig, usage?: Usage): void {
   const { res, context, tracker } = config;
   tracker.status = 'completed';
-  const response = buildResponse(context, tracker, 'completed');
+  const response = buildResponse(context, tracker, 'completed', usage);
   writeEvent(res, {
     type: 'response.completed',
     sequence_number: tracker.nextSequence(),

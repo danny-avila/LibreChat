@@ -2,13 +2,20 @@ import * as React from 'react';
 import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
 import { cn } from '~/utils';
 
-const HoverCard = HoverCardPrimitive.Root;
+const HoverCard: React.FC<HoverCardPrimitive.HoverCardProps> = HoverCardPrimitive.Root;
 
-const HoverCardTrigger = HoverCardPrimitive.Trigger;
+const HoverCardTrigger: React.ForwardRefExoticComponent<
+  HoverCardPrimitive.HoverCardTriggerProps & React.RefAttributes<HTMLAnchorElement>
+> = HoverCardPrimitive.Trigger;
 
-const HoverCardPortal = HoverCardPrimitive.Portal;
+const HoverCardPortal: React.FC<HoverCardPrimitive.HoverCardPortalProps> =
+  HoverCardPrimitive.Portal;
 
-const HoverCardContent = React.forwardRef<
+const HoverCardContent: React.ForwardRefExoticComponent<
+  Omit<HoverCardPrimitive.HoverCardContentProps & React.RefAttributes<HTMLDivElement>, 'ref'> & {
+    disabled?: boolean;
+  } & React.RefAttributes<HTMLDivElement>
+> = React.forwardRef<
   React.ElementRef<typeof HoverCardPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof HoverCardPrimitive.Content> & { disabled?: boolean }
 >(({ className = '', align = 'center', sideOffset = 6, disabled = false, ...props }, ref) => {

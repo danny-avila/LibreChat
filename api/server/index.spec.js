@@ -5,6 +5,8 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
 jest.mock('~/server/services/Config', () => ({
+  syncStaticTools: jest.fn().mockResolvedValue(undefined),
+  mergeAppTools: jest.fn().mockResolvedValue(undefined),
   loadCustomConfig: jest.fn(() => Promise.resolve({})),
   getAppConfig: jest.fn().mockResolvedValue({
     paths: {
@@ -33,6 +35,14 @@ jest.mock('~/config', () => ({
   }),
 }));
 
+jest.mock('~/server/services/Agents/triggers', () => ({
+  initializeAgentTriggerService: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('~/server/services/Schedules', () => ({
+  initializeScheduleEngine: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock(
   '@librechat/api/telemetry',
   () => ({
@@ -50,13 +60,17 @@ jest.mock(
 describe('Telemetry wiring', () => {
   const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
 
-  it('loads telemetry before other server imports', () => {
-    const firstStatement = source
+  it('loads credentials before telemetry and other server imports', () => {
+    const firstStatements = source
       .split('\n')
       .map((line) => line.trim())
-      .find(Boolean);
+      .filter(Boolean)
+      .slice(0, 2);
 
-    expect(firstStatement).toBe("const telemetry = require('./telemetry');");
+    expect(firstStatements).toEqual([
+      "require('../config/credentials');",
+      "const telemetry = require('./telemetry');",
+    ]);
   });
 
   it('mounts telemetry middleware after static assets and before routes', () => {
@@ -80,6 +94,115 @@ describe('Telemetry wiring', () => {
     expect(telemetryErrorMiddlewareIndex).toBeGreaterThan(-1);
     expect(errorControllerIndex).toBeGreaterThan(-1);
     expect(telemetryErrorMiddlewareIndex).toBeLessThan(errorControllerIndex);
+  });
+
+  it('captures agent ingress before parsing and creates its recorder before auth routes', () => {
+    const ingressIndex = source.indexOf(
+      "app.use('/api/agents/chat', agentStartupIngressMiddleware);",
+    );
+    const jsonParserIndex = source.indexOf("app.use(express.json({ limit: '3mb' }));");
+    const recorderIndex = source.indexOf(
+      "app.use('/api/agents/chat', agentStartupTelemetryMiddleware);",
+    );
+    const tracingIndex = source.indexOf('app.use(telemetry.telemetryMiddleware);');
+    const agentsRouteIndex = source.indexOf("app.use('/api/agents', routes.agents);");
+
+    expect(ingressIndex).toBeGreaterThan(-1);
+    expect(recorderIndex).toBeGreaterThan(-1);
+    expect(ingressIndex).toBeLessThan(jsonParserIndex);
+    expect(tracingIndex).toBeLessThan(recorderIndex);
+    expect(recorderIndex).toBeLessThan(agentsRouteIndex);
+  });
+});
+
+describe('Startup readiness wiring', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+
+  it('awaits the shared Redis client before startup cache access', () => {
+    const redisReadyIndex = source.indexOf('await waitForKeyvRedisClient();');
+    const connectDbIndex = source.indexOf('await connectDb();');
+    const appConfigIndex = source.indexOf('await getAppConfig({ baseOnly: true });');
+
+    expect(redisReadyIndex).toBeGreaterThan(-1);
+    expect(connectDbIndex).toBeGreaterThan(redisReadyIndex);
+    expect(appConfigIndex).toBeGreaterThan(redisReadyIndex);
+  });
+
+  it('configures generation streams before the server accepts requests', () => {
+    const streamConfigIndex = source.indexOf('configureGenerationStreams();');
+    const listenIndex = source.indexOf('const server = app.listen');
+    const postListenMcpIndex = source.indexOf('await initializeMCPs();');
+
+    expect(streamConfigIndex).toBeGreaterThan(-1);
+    expect(listenIndex).toBeGreaterThan(-1);
+    expect(postListenMcpIndex).toBeGreaterThan(-1);
+    expect(streamConfigIndex).toBeLessThan(listenIndex);
+    expect(streamConfigIndex).toBeLessThan(postListenMcpIndex);
+  });
+
+  it('configures subagent task routing before the server accepts requests', () => {
+    const routingIndex = source.indexOf('await configureSubagentTaskRouting();');
+    const listenIndex = source.indexOf('const server = app.listen');
+
+    expect(routingIndex).toBeGreaterThan(-1);
+    expect(listenIndex).toBeGreaterThan(routingIndex);
+  });
+
+  it('registers generation stream cleanup with the graceful shutdown coordinator', () => {
+    const shutdownRegistrationIndex = source.indexOf(
+      "registerShutdownTask('generation job manager'",
+    );
+    const listenIndex = source.indexOf('const server = app.listen');
+
+    expect(shutdownRegistrationIndex).toBeGreaterThan(-1);
+    expect(shutdownRegistrationIndex).toBeLessThan(listenIndex);
+  });
+
+  it('configures HTTP timeouts before graceful shutdown handling', () => {
+    const listenIndex = source.indexOf('const server = app.listen');
+    const timeoutConfigIndex = source.indexOf('configureServerTimeouts(server);');
+    const shutdownIndex = source.indexOf('setupGracefulShutdown(server);');
+
+    expect(listenIndex).toBeGreaterThan(-1);
+    expect(timeoutConfigIndex).toBeGreaterThan(-1);
+    expect(shutdownIndex).toBeGreaterThan(-1);
+    expect(listenIndex).toBeLessThan(timeoutConfigIndex);
+    expect(timeoutConfigIndex).toBeLessThan(shutdownIndex);
+  });
+
+  it('registers security headers ahead of the health endpoints in both server entries', () => {
+    const experimental = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
+
+    for (const [name, contents] of [
+      ['index.js', source],
+      ['experimental.js', experimental],
+    ]) {
+      const headersIndex = contents.indexOf('const securityHeaders = createSecurityHeaders();');
+      const healthIndex = contents.indexOf("app.get('/health'");
+
+      expect([name, headersIndex > -1]).toEqual([name, true]);
+      expect([name, healthIndex > -1]).toEqual([name, true]);
+      expect([name, headersIndex < healthIndex]).toEqual([name, true]);
+    }
+  });
+
+  it('mounts the chat-start readiness gate before agent routes', () => {
+    const readinessGateIndex = source.indexOf(
+      "app.use('/api/agents/chat', rejectChatStartsUntilReady);",
+    );
+    const agentsRouteIndex = source.indexOf("app.use('/api/agents', routes.agents);");
+
+    expect(readinessGateIndex).toBeGreaterThan(-1);
+    expect(agentsRouteIndex).toBeGreaterThan(-1);
+    expect(readinessGateIndex).toBeLessThan(agentsRouteIndex);
+  });
+
+  it('awaits durable trigger delivery before reporting readiness', () => {
+    const triggerDeliveryIndex = source.indexOf('await initializeAgentTriggerService(');
+    const readyIndex = source.indexOf('serverReady = true;');
+
+    expect(triggerDeliveryIndex).toBeGreaterThan(-1);
+    expect(readyIndex).toBeGreaterThan(triggerDeliveryIndex);
   });
 });
 
@@ -143,6 +266,27 @@ describe('Server Configuration', () => {
     expect(response.text).toBe('OK');
   });
 
+  it('should set baseline security headers on health checks', async () => {
+    const response = await request(app).get('/health');
+
+    expect(response.headers['strict-transport-security']).toBe('max-age=31536000');
+    expect(response.headers['x-frame-options']).toBe('SAMEORIGIN');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['cross-origin-opener-policy']).toBe('same-origin');
+    expect(response.headers['cross-origin-resource-policy']).toBe('same-origin');
+    expect(response.headers['referrer-policy']).toBe('no-referrer');
+  });
+
+  it('should set baseline security headers on the index page without a CSP', async () => {
+    const response = await request(app).get('/');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['x-frame-options']).toBe('SAMEORIGIN');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['content-security-policy']).toBeUndefined();
+    expect(response.headers['content-security-policy-report-only']).toBeUndefined();
+  });
+
   it('should not cache index page', async () => {
     const response = await request(app).get('/');
     expect(response.status).toBe(200);
@@ -183,6 +327,32 @@ describe('Server Configuration', () => {
     const response = await request(app).get('/this/does/not/exist');
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toMatch(/html/);
+  });
+
+  it('should gate React Query Devtools config in SPA HTML by debug header', async () => {
+    const defaultResponse = await request(app).get('/this/does/not/exist');
+    const debugResponse = await request(app)
+      .get('/this/does/not/exist')
+      .set('x-librechat-enable-query-devtools', '1');
+    const directIndexResponse = await request(app)
+      .get('/index.html')
+      .set('x-librechat-enable-query-devtools', '1');
+
+    expect(defaultResponse.status).toBe(200);
+    expect(defaultResponse.headers.vary).toContain('x-librechat-enable-query-devtools');
+    expect(defaultResponse.text).not.toContain('enableQueryDevtools');
+
+    expect(debugResponse.status).toBe(200);
+    expect(debugResponse.headers.vary).toContain('x-librechat-enable-query-devtools');
+    expect(debugResponse.text).toContain('window.__LIBRECHAT_CONFIG__');
+    expect(debugResponse.text).toContain('data-librechat-query-devtools="true"');
+    expect(debugResponse.text).toContain('"enableQueryDevtools":true');
+
+    expect(directIndexResponse.status).toBe(200);
+    expect(directIndexResponse.headers.vary).toContain('x-librechat-enable-query-devtools');
+    expect(directIndexResponse.text).toContain('window.__LIBRECHAT_CONFIG__');
+    expect(directIndexResponse.text).toContain('data-librechat-query-devtools="true"');
+    expect(directIndexResponse.text).toContain('"enableQueryDevtools":true');
   });
 
   it('should return 500 for unknown errors via ErrorController', async () => {

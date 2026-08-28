@@ -18,7 +18,7 @@ jest.mock('~/server/services/Files/process', () => ({
   saveBase64Image: jest.fn(),
 }));
 
-const { ModelEndHandler } = require('../callbacks');
+const { ModelEndHandler, contextualizeModelUsage } = require('../callbacks');
 
 const buildGraph = () => ({
   getAgentContext: () => ({
@@ -28,6 +28,46 @@ const buildGraph = () => ({
 });
 
 describe('ModelEndHandler — Vertex thoughtSignature capture (issue #13006 follow-up)', () => {
+  it('leaves usage usable when graph context is unavailable', () => {
+    const usage = { input_tokens: 10, output_tokens: 5 };
+
+    expect(contextualizeModelUsage(usage, undefined, undefined)).toEqual(usage);
+    expect(contextualizeModelUsage(usage, undefined, null)).toEqual(usage);
+  });
+
+  it('prefers the actually invoked fallback provider and model', () => {
+    const usage = { input_tokens: 10, output_tokens: 5 };
+    const result = contextualizeModelUsage(
+      usage,
+      {
+        __invoked_provider: 'anthropic',
+        __invoked_model: 'claude-fallback',
+      },
+      {
+        provider: 'bedrock',
+        agentId: 'agent-1',
+        clientOptions: { model: 'configured-model' },
+      },
+    );
+
+    expect(result).toEqual({
+      ...usage,
+      provider: 'anthropic',
+      model: 'claude-fallback',
+      agentId: 'agent-1',
+    });
+  });
+
+  it('prefers provider-reported model metadata over the invoked fallback model', () => {
+    expect(
+      contextualizeModelUsage(
+        { input_tokens: 10, output_tokens: 5 },
+        { ls_model_name: 'reported-model', __invoked_model: 'fallback-model' },
+        { clientOptions: { model: 'configured-model' } },
+      ).model,
+    ).toBe('reported-model');
+  });
+
   it('maps non-empty signatures onto tool_call_ids in order', async () => {
     const collectedUsage = [];
     const collectedThoughtSignatures = {};
@@ -148,6 +188,47 @@ describe('ModelEndHandler — Vertex thoughtSignature capture (issue #13006 foll
     );
 
     expect(collectedThoughtSignatures).toEqual({});
+  });
+
+  it('tags the producing agent on collected + emitted usage for per-endpoint pricing', async () => {
+    const collectedUsage = [];
+    const emitUsage = jest.fn();
+    const handler = new ModelEndHandler(collectedUsage, null, emitUsage);
+    const graph = {
+      getAgentContext: () => ({
+        provider: 'openai',
+        agentId: 'agent_sub',
+        clientOptions: { model: 'gpt-4' },
+      }),
+    };
+
+    await handler.handle(
+      'on_chat_model_end',
+      { output: { usage_metadata: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } } },
+      { ls_model_name: 'gpt-4', run_id: 'r1', user_id: 'u1' },
+      graph,
+    );
+
+    expect(collectedUsage[0].agentId).toBe('agent_sub');
+    expect(collectedUsage[0].provider).toBe('openai');
+    expect(collectedUsage[0].model).toBe('gpt-4');
+    expect(emitUsage).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'agent_sub' }));
+  });
+
+  it('leaves usage untagged when the graph context has no agentId (single-endpoint)', async () => {
+    const collectedUsage = [];
+    const emitUsage = jest.fn();
+    const handler = new ModelEndHandler(collectedUsage, null, emitUsage);
+
+    await handler.handle(
+      'on_chat_model_end',
+      { output: { usage_metadata: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } } },
+      { ls_model_name: 'gemini-3.1-flash-lite-preview', run_id: 'r1', user_id: 'u1' },
+      buildGraph(),
+    );
+
+    expect(collectedUsage[0].agentId).toBeUndefined();
+    expect(emitUsage).toHaveBeenCalledWith(expect.objectContaining({ agentId: undefined }));
   });
 
   it('throws when collectedUsage is not an array (existing contract)', () => {

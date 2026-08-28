@@ -37,16 +37,20 @@ class SseStreamSpanTelemetry implements SseStreamTelemetry {
   private plannedEndReason: StreamEndReason | undefined;
 
   constructor({ isResume, req, res, streamId }: SseStreamTelemetryOptions) {
-    this.span = trace.getTracer('librechat.telemetry').startSpan(STREAM_SPAN_NAME, {
-      kind: SpanKind.INTERNAL,
-      attributes: {
-        'http.request.method': req.method,
-        'http.route': STREAM_ROUTE,
-        'librechat.stream.id': streamId,
-        'librechat.stream.resume': isResume,
-        'librechat.stream.route': STREAM_ROUTE,
+    this.span = trace.getTracer('librechat.telemetry').startSpan(
+      STREAM_SPAN_NAME,
+      {
+        kind: SpanKind.INTERNAL,
+        attributes: {
+          'http.request.method': req.method,
+          'http.route': STREAM_ROUTE,
+          'librechat.stream.id': streamId,
+          'librechat.stream.resume': isResume,
+          'librechat.stream.route': STREAM_ROUTE,
+        },
       },
-    }, context.active());
+      context.active(),
+    );
 
     res.once('finish', () => {
       this.end(this.plannedEndReason ?? (this.errorEventEmitted ? 'server_error' : 'done'));
@@ -138,8 +142,6 @@ class SseStreamSpanTelemetry implements SseStreamTelemetry {
   }
 }
 
-export function createSseStreamTelemetry(
-  options: SseStreamTelemetryOptions,
-): SseStreamTelemetry {
+export function createSseStreamTelemetry(options: SseStreamTelemetryOptions): SseStreamTelemetry {
   return new SseStreamSpanTelemetry(options);
 }
