@@ -9,6 +9,7 @@ const mockSetupOpenId = jest.fn();
 const mockSetupSaml = jest.fn();
 const mockIsEnabled = jest.fn();
 const mockShouldUseSecureCookie = jest.fn(() => true);
+const mockLogger = { error: jest.fn(), info: jest.fn() };
 const mockMath = jest.fn((value, fallback) => {
   if (value == null || value === '') {
     return fallback;
@@ -45,7 +46,7 @@ jest.mock('@librechat/api', () => ({
 }));
 jest.mock('@librechat/data-schemas', () => ({
   DEFAULT_SESSION_EXPIRY: 900000,
-  logger: { error: jest.fn(), info: jest.fn() },
+  logger: mockLogger,
 }));
 jest.mock('~/cache', () => ({ getLogStores: (...args) => mockGetLogStores(...args) }));
 jest.mock('~/strategies', () => ({
@@ -137,6 +138,19 @@ describe('configureSocialLogins OpenID session expiry', () => {
       expect.objectContaining({
         cookie: expect.objectContaining({ maxAge: 900000 }),
       }),
+    );
+    expect(mockPassportUse).not.toHaveBeenCalled();
+  });
+
+  it('rejects startup when OpenID initialization fails', async () => {
+    mockSetupOpenId.mockResolvedValue(null);
+    const app = { use: jest.fn() };
+
+    await expect(configureSocialLogins(app)).rejects.toThrow(
+      'OpenID Connect initialization failed - strategy not registered.',
+    );
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'OpenID Connect initialization failed - strategy not registered. Server startup will terminate.',
     );
     expect(mockPassportUse).not.toHaveBeenCalled();
   });
