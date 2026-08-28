@@ -1923,7 +1923,6 @@
   "com_ui_sandbox_starting": "Starting sandbox environment",
   "com_ui_save": "Save",
   "com_ui_save_before_rerun": "Rerunning applies one edited section at a time. Save to keep all of these changes.",
-  "com_ui_save_changes": "Save Changes",
   "com_ui_save_key_error": "Failed to save API key. Please try again.",
   "com_ui_save_key_success": "API key saved successfully",
   "com_ui_save_message_error": "The message could not be saved. Your changes are still in the editor.",

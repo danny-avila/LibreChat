@@ -2,6 +2,7 @@ import React from 'react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import SteerPart from '../SteerPart';
 import store from '~/store';
