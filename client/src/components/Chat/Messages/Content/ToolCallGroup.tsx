@@ -8,6 +8,7 @@ import type {
   TMessageContentParts,
   Agents,
   FunctionToolCall,
+  PartMetadata,
 } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
 import {
@@ -20,6 +21,7 @@ import {
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
 import { ToolAuthWarning, ToolAuthWarningContext } from './auth';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
+import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { AttachmentGroup, ReasoningCompact } from './Parts';
 import { isError, StackedToolIcons } from './ToolOutput';
 import { isBashProgrammaticToolCall } from './routing';
@@ -36,6 +38,34 @@ interface ToolMeta {
 
 function hasFailedOutput(output: unknown): boolean {
   return typeof output === 'string' && isError(output);
+}
+
+/**
+ * Group metadata must agree with the individual card, which resolves its
+ * outcome from the run step's terminal verdict through `resolveToolCallPhase`.
+ * Reading output alone leaves a step the run closed as `failed` with empty or
+ * benign output counted as neither failed nor finished, so the group sits on
+ * "Running" until the response ends and then reports that it ran successfully
+ * with no failures while the card beside it shows the failure. A closed step
+ * is never running. Parts carrying no terminal status keep the legacy
+ * output/progress signal, which is all the older endpoints emit.
+ */
+function resolveOutcome(
+  runStepStatus: PartMetadata['runStepStatus'],
+  completed: boolean,
+  hasError: boolean,
+): Pick<ToolMeta, 'hasOutput' | 'failed'> {
+  if (runStepStatus == null) {
+    return { hasOutput: completed, failed: hasError };
+  }
+  const phase = resolveToolCallPhase({
+    runStepStatus,
+    displayProgress: 1,
+    reportedProgress: 1,
+    isSubmitting: false,
+    hasError,
+  });
+  return { hasOutput: phase !== 'running', failed: phase === 'failed' };
 }
 
 function hasPendingAuth(part: TMessageContentParts): boolean {
@@ -62,6 +92,9 @@ function getToolMeta(part: TMessageContentParts): ToolMeta | null {
   if (!toolCall) {
     return null;
   }
+  /** Terminal verdict lives on the outer `tool_call` object (`PartMetadata`),
+   *  not on the per-variant payload, so it is read before any narrowing cast. */
+  const runStepStatus = toolCall.runStepStatus;
 
   const isStandard =
     'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
@@ -74,7 +107,11 @@ function getToolMeta(part: TMessageContentParts): ToolMeta | null {
     const completed = !!tc.output || tc.progress === 1;
     const name = tc.name ?? '';
     const iconName = isBashProgrammaticToolCall(name, tc.args) ? Tools.bash_tool : name;
-    return { name, iconName, hasOutput: completed, failed: hasFailedOutput(tc.output) };
+    return {
+      name,
+      iconName,
+      ...resolveOutcome(runStepStatus, completed, hasFailedOutput(tc.output)),
+    };
   }
 
   if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
@@ -82,8 +119,7 @@ function getToolMeta(part: TMessageContentParts): ToolMeta | null {
     return {
       name: 'code_interpreter',
       iconName: 'code_interpreter',
-      hasOutput: (ci?.outputs?.length ?? 0) > 0,
-      failed: false,
+      ...resolveOutcome(runStepStatus, (ci?.outputs?.length ?? 0) > 0, false),
     };
   }
 
@@ -92,8 +128,7 @@ function getToolMeta(part: TMessageContentParts): ToolMeta | null {
     return {
       name: 'file_search',
       iconName: 'file_search',
-      hasOutput: !!output,
-      failed: hasFailedOutput(output),
+      ...resolveOutcome(runStepStatus, !!output, hasFailedOutput(output)),
     };
   }
 
@@ -102,8 +137,7 @@ function getToolMeta(part: TMessageContentParts): ToolMeta | null {
     return {
       name: fn.name,
       iconName: fn.name,
-      hasOutput: !!fn.output,
-      failed: hasFailedOutput(fn.output),
+      ...resolveOutcome(runStepStatus, !!fn.output, hasFailedOutput(fn.output)),
     };
   }
 
@@ -526,9 +560,12 @@ export default function ToolCallGroup({
                     const streaming = isSubmitting && idx === lastContentIdx;
                     const isAfterTool =
                       partIndex > 0 && parts[partIndex - 1]?.part.type === ContentTypes.TOOL_CALL;
-                    const label = streaming
-                      ? localize('com_ui_thinking')
-                      : localize('com_ui_thoughts');
+                    /** Mirrors the standalone `Reasoning` path: the authored
+                     *  label wins, generic text is only a fallback. */
+                    const generatedLabel = part.reasoning_label?.trim();
+                    const label =
+                      generatedLabel ||
+                      (streaming ? localize('com_ui_thinking') : localize('com_ui_thoughts'));
                     return (
                       <ReasoningCompact
                         key={`reasoning-${idx}`}

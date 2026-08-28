@@ -762,6 +762,36 @@ describe('ToolCallGroup image hoisting', () => {
     ).toBeInTheDocument();
   });
 
+  it('honors a terminal failed run step whose output reads as benign', () => {
+    const closedFailure = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: {
+        id: 'c2',
+        name: 'create_file',
+        args: '{}',
+        output: '',
+        runStepStatus: 'failed',
+      },
+    } as unknown as TMessageContentParts;
+
+    renderGroup({
+      ...baseProps,
+      isSubmitting: true,
+      parts: [
+        { part: makePart('c1', 'created', 'create_file'), idx: 0 },
+        { part: closedFailure, idx: 1 },
+      ],
+      lastContentIdx: 1,
+    });
+
+    /** The run closed this step as failed, so the group must read it as
+     *  settled (past tense while still submitting) and count it as a
+     *  failure even though the empty output never parses as an error. */
+    expect(
+      screen.getByRole('button', { name: 'Ran 2 actions, Create File ×2 · 1 failed' }),
+    ).toBeInTheDocument();
+  });
+
   it('labels a homogeneous ask_user_question group as its own category', () => {
     renderGroup({
       ...baseProps,

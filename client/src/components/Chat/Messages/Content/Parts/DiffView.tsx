@@ -121,8 +121,8 @@ export default function DiffView({ parsed }: { parsed: ParsedDiff }) {
             key={index}
             className={cn(
               'flex',
-              line.type === 'add' && 'bg-green-500/10',
-              line.type === 'del' && 'bg-red-500/10',
+              line.type === 'add' && 'bg-status-success-subtle',
+              line.type === 'del' && 'bg-status-error-subtle',
             )}
           >
             {hasLineNumbers && (
@@ -134,8 +134,8 @@ export default function DiffView({ parsed }: { parsed: ParsedDiff }) {
               className={cn(
                 'shrink-0 select-none text-center font-semibold',
                 hasLineNumbers ? 'w-5' : 'w-6',
-                line.type === 'add' && 'text-green-600 dark:text-green-400',
-                line.type === 'del' && 'text-red-600 dark:text-red-400',
+                line.type === 'add' && 'text-status-success',
+                line.type === 'del' && 'text-status-error',
               )}
             >
               {LINE_MARKERS[line.type]}

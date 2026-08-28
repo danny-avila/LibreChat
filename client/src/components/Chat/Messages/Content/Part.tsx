@@ -160,6 +160,7 @@ const Part = memo(function Part({
         provider={part.provider}
         tokenCount={part.tokenCount}
         summarizing={part.summarizing}
+        failed={part.failed}
       />
     );
   } else if (part.type === ContentTypes.ACTIVITY_LABEL) {

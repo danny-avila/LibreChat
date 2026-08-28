@@ -1465,8 +1465,13 @@ export default function useStepHandler({
            * content-position == step-index invariant that `updateContent`
            * writes rely on. Flipping the flag alone hides an empty row
            * (`Summary` renders null without text) and matches the persisted
-           * message, which retains the part server-side.
+           * message, which retains the part server-side. An errored round
+           * carries `failed` so partial deltas that already streamed in are
+           * not presented as a completed summary.
            */
+          if (completeData.error) {
+            return { ...part, summarizing: false, failed: true } as SummaryContentPart;
+          }
           return { ...part, summarizing: false } as SummaryContentPart;
         });
         if (didFinalize) {

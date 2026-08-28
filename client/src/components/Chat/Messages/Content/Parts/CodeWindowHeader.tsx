@@ -31,8 +31,8 @@ export default function CodeWindowHeader({ language, code, diffStats }: CodeWind
         {language}
         {diffStats && (
           <span className="flex items-center gap-1 font-normal tabular-nums" aria-hidden="true">
-            <span className="text-green-600 dark:text-green-400">+{diffStats.additions}</span>
-            <span className="text-red-600 dark:text-red-400">-{diffStats.deletions}</span>
+            <span className="text-status-success">+{diffStats.additions}</span>
+            <span className="text-status-error">-{diffStats.deletions}</span>
           </span>
         )}
       </span>
