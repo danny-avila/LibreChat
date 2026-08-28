@@ -6,6 +6,8 @@ import type { IMessage } from '..';
 import {
   createMessageMethods,
   CLIENT_MESSAGE_SELECT,
+  SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
+  SUBAGENT_TRANSCRIPT_PAGE_LIMIT,
   SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
 } from './message';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
@@ -1090,7 +1092,82 @@ describe('Message Operations', () => {
       expect(messages[0]).not.toHaveProperty('conversationId');
     });
 
-    it('projects the private transcript only for the explicitly selected task', async () => {
+    it('anchors older pages by an exact scoped message without exposing Mongo ids', async () => {
+      const conversationId = uuidv4();
+      for (let index = 0; index < 4; index += 1) {
+        await saveMessage(mockCtx, {
+          messageId: `task-${index}:assistant`,
+          conversationId,
+          text: `Answer ${index}`,
+          user: 'user123',
+          createdAt: new Date(Date.UTC(2026, 7, 21, 12, index)),
+        });
+      }
+      await saveMessage(mockCtx, {
+        messageId: 'foreign:user',
+        conversationId: uuidv4(),
+        text: 'Foreign anchor',
+        user: 'user123',
+      });
+
+      const page = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        beforeMessageId: 'task-2:assistant',
+        limit: 2,
+        textCodePointLimit: 8_192,
+      });
+      const foreign = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        beforeMessageId: 'foreign:user',
+        limit: 2,
+        textCodePointLimit: 8_192,
+      });
+
+      expect(page.map((message) => message.messageId)).toEqual([
+        'task-2:assistant',
+        'task-1:assistant',
+      ]);
+      expect(page[0]).not.toHaveProperty('_id');
+      expect(foreign).toEqual([]);
+    });
+
+    it('projects only the bounded display-safe external event identity', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'event:user',
+        conversationId,
+        text: 'Private event payload',
+        user: 'user123',
+        subagentTriggerProjection: {
+          version: 1,
+          eventType: 'chess.turn.ready',
+          sourceType: 'speed-chess',
+          occurredAt: new Date('2026-08-21T12:00:00.000Z'),
+          expectedActionToolName: 'submit_move',
+        },
+      });
+
+      const [projected] = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+      });
+
+      expect(projected.subagentTriggerProjection).toEqual({
+        version: 1,
+        eventType: 'chess.turn.ready',
+        sourceType: 'speed-chess',
+        occurredAt: new Date('2026-08-21T12:00:00.000Z'),
+        expectedActionToolName: 'submit_move',
+      });
+      expect(projected.subagentTriggerProjection).not.toHaveProperty('deliveryId');
+      expect(projected.subagentTriggerProjection).not.toHaveProperty('sourceId');
+    });
+
+    it('projects bounded private transcripts for the retained linear history', async () => {
       const conversationId = uuidv4();
       await saveMessage(mockCtx, {
         messageId: 'task-a:assistant',
@@ -1120,12 +1197,232 @@ describe('Message Operations', () => {
         conversationId,
         limit: 10,
         textCodePointLimit: 8_192,
-        taskId: 'task-a',
+      });
+
+      expect(messages).toHaveLength(2);
+      expect(messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            messageId: 'task-a:assistant',
+            subagentTranscript: expect.objectContaining({ taskId: 'task-a' }),
+          }),
+          expect.objectContaining({
+            messageId: 'task-b:assistant',
+            subagentTranscript: expect.objectContaining({ taskId: 'task-b' }),
+          }),
+        ]),
+      );
+    });
+
+    it('bounds ordinary persisted child activity before returning it to the API', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-content:assistant',
+        conversationId,
+        text: '',
+        user: 'user123',
+        content: [
+          ...Array.from({ length: SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT + 2 }, (_, index) => ({
+            type: 'text',
+            text: `activity-${index}`,
+          })),
+          {
+            type: 'tool_call',
+            tool_call: {
+              id: 'move-1',
+              name: 'submit_move',
+              args: 'x'.repeat(2_000),
+              output: 'y'.repeat(4_000),
+              progress: 1,
+              inputValidationError: true,
+            },
+          },
+          {
+            type: 'activity_label',
+            activity_label: 'Coordinating agents',
+            tool_call_ids: Array.from({ length: 32 }, (_, index) => `tool-${index}`),
+            agent_ids: Array.from({ length: 32 }, (_, index) => `agent-${index}`),
+          },
+        ],
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
       });
 
       expect(messages).toHaveLength(1);
-      expect(messages[0]).toHaveProperty('messageId', 'task-a:assistant');
-      expect(messages[0]).toHaveProperty('subagentTranscript.taskId', 'task-a');
+      expect(messages[0].subagentActivity).toHaveLength(SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT);
+      expect(messages[0].subagentActivityProjectionTruncated).toBe(true);
+      const retainedTool = messages[0].subagentActivity?.find(
+        (activity) => (activity as { type?: string }).type === 'tool',
+      ) as {
+        input: string;
+        output: string;
+      };
+      expect(retainedTool).toEqual(
+        expect.objectContaining({
+          type: 'tool',
+          toolCallId: 'move-1',
+          name: 'submit_move',
+          inputValidationError: true,
+          inputTruncated: true,
+          outputTruncated: true,
+        }),
+      );
+      expect(retainedTool.input.length).toBeLessThan(2_000);
+      expect(retainedTool.output.length).toBeLessThan(4_000);
+      const retainedLabel = messages[0].subagentActivity?.find(
+        (activity) => (activity as { type?: string }).type === 'activity_label',
+      ) as { agentIds: string[]; labelTruncated: boolean; toolCallIds: string[] };
+      expect(retainedLabel.toolCallIds).toHaveLength(8);
+      expect(retainedLabel.agentIds).toHaveLength(8);
+      expect(retainedLabel.labelTruncated).toBe(true);
+      expect(JSON.stringify(messages[0])).not.toContain('activity-0');
+      expect(JSON.stringify(messages[0])).not.toContain('x'.repeat(1_000));
+      expect(JSON.stringify(messages[0])).not.toContain('y'.repeat(2_000));
+    });
+
+    it('bounds public control receipts before materializing the message page', async () => {
+      const conversationId = uuidv4();
+      const createdAt = new Date('2026-08-21T12:00:00.000Z');
+      const accepted = Array.from({ length: 16 }, (_, index) => ({
+        invocationId: `accepted-${index}`,
+        fingerprint: `private-fingerprint-${index}`,
+        action: 'steer' as const,
+        status: 'accepted' as const,
+        createdAt,
+        updatedAt: createdAt,
+        message: 'a'.repeat(4_096),
+      }));
+      const terminal = Array.from({ length: 48 }, (_, index) => ({
+        invocationId: `applied-${index}`,
+        fingerprint: `private-fingerprint-terminal-${index}`,
+        action: 'queue' as const,
+        status: 'applied' as const,
+        createdAt,
+        updatedAt: createdAt,
+        message: 't'.repeat(4_096),
+      }));
+      await saveMessage(mockCtx, {
+        messageId: 'task-controls:user',
+        conversationId,
+        text: 'Control the child.',
+        user: 'user123',
+        subagentTask: {
+          attemptKey: 'private-attempt-key',
+          requestFingerprint: 'private-request-fingerprint',
+          status: 'running',
+          controlReceipts: [...accepted, ...terminal],
+        },
+      });
+
+      const [message] = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+      });
+
+      expect(message.subagentTask?.status).toBe('running');
+      expect(message.subagentTask?.controlReceipts).toHaveLength(32);
+      expect(message.subagentTask?.controlReceiptsProjectionTruncated).toBe(true);
+      expect(message.subagentTask?.controlReceipts?.slice(0, 16)).toEqual(
+        expect.arrayContaining(
+          accepted.map((receipt) =>
+            expect.objectContaining({ invocationId: receipt.invocationId, status: 'accepted' }),
+          ),
+        ),
+      );
+      expect(message.subagentTask?.controlReceipts?.slice(16)).toEqual(
+        terminal
+          .slice(-16)
+          .map((receipt) =>
+            expect.objectContaining({ invocationId: receipt.invocationId, status: 'applied' }),
+          ),
+      );
+      for (const receipt of message.subagentTask?.controlReceipts ?? []) {
+        expect(Buffer.byteLength(receipt.message ?? '', 'utf8')).toBeLessThanOrEqual(512);
+        expect(receipt.messageTruncated).toBe(true);
+        expect(receipt).not.toHaveProperty('fingerprint');
+      }
+      expect(message.subagentTask).not.toHaveProperty('attemptKey');
+      expect(message.subagentTask).not.toHaveProperty('requestFingerprint');
+    });
+
+    it('bounds transcript materialization while retaining the exact selected task', async () => {
+      const conversationId = uuidv4();
+      const aggregateSpy = jest.spyOn(Message, 'aggregate');
+      for (let index = 0; index < SUBAGENT_TRANSCRIPT_PAGE_LIMIT + 6; index += 1) {
+        await saveMessage(mockCtx, {
+          messageId: `task-${index}:assistant`,
+          conversationId,
+          text: `Answer ${index}`,
+          user: 'user123',
+          createdAt: new Date(Date.UTC(2026, 7, 21, 12, index)),
+          subagentTranscript: {
+            taskId: `task-${index}`,
+            mode: 'append',
+            messagesJson: JSON.stringify([{ type: 'ai', data: { content: `Answer ${index}` } }]),
+          },
+        });
+      }
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        selectedTaskId: 'task-0',
+        limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT,
+        textCodePointLimit: 8_192,
+      });
+
+      const materialized = messages.filter((message) => message.subagentTranscript != null);
+      expect(messages).toHaveLength(SUBAGENT_TRANSCRIPT_PAGE_LIMIT + 1);
+      expect(materialized).toHaveLength(SUBAGENT_TRANSCRIPT_PAGE_LIMIT);
+      expect(materialized).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            messageId: 'task-0:assistant',
+            subagentTranscript: expect.objectContaining({ taskId: 'task-0' }),
+          }),
+        ]),
+      );
+      expect(
+        messages.filter(
+          (message) =>
+            message.subagentTranscript == null &&
+            message.subagentTranscriptProjectionTruncated === true,
+        ),
+      ).toHaveLength(1);
+      expect(aggregateSpy).toHaveBeenCalledTimes(3);
+      const messagesPipeline = aggregateSpy.mock.calls[0][0] as unknown as Array<
+        Record<string, unknown>
+      >;
+      const recentSourcesPipeline = aggregateSpy.mock.calls[1][0] as unknown as Array<
+        Record<string, unknown>
+      >;
+      const selectedPipeline = aggregateSpy.mock.calls[2][0] as unknown as Array<
+        Record<string, unknown>
+      >;
+      expect(messagesPipeline[2]).toEqual({ $limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT });
+      expect(messagesPipeline).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ $facet: expect.anything() })]),
+      );
+      expect(recentSourcesPipeline[2]).toEqual({
+        $limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT * 2,
+      });
+      expect(selectedPipeline[0]).toEqual(
+        expect.objectContaining({
+          $match: expect.objectContaining({
+            messageId: {
+              $in: ['task-0:user', 'task-0:assistant'],
+            },
+          }),
+        }),
+      );
+      aggregateSpy.mockRestore();
     });
 
     it('omits an oversized private transcript before returning the application result', async () => {
@@ -1152,13 +1449,53 @@ describe('Message Operations', () => {
         conversationId,
         limit: 1,
         textCodePointLimit: 8_192,
-        taskId: 'task-large',
       });
 
       expect(messages).toHaveLength(1);
       expect(messages[0].text).toBe('The bounded public answer remains available.');
       expect(messages[0]).not.toHaveProperty('subagentTranscript');
       expect(messages[0].subagentTranscriptProjectionTruncated).toBe(true);
+    });
+
+    it('prefers the bounded settlement projection without materializing its private transcript', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-projected:assistant',
+        conversationId,
+        text: 'The public answer remains available.',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-projected',
+          mode: 'append',
+          messagesJson: JSON.stringify([
+            {
+              type: 'ai',
+              data: { content: 'private'.repeat(SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT) },
+            },
+          ]),
+        },
+        subagentActivityProjection: {
+          taskId: 'task-projected',
+          version: 1,
+          activityJson: JSON.stringify([{ type: 'writing', text: 'Public result.' }]),
+          truncated: false,
+        },
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        selectedTaskId: 'task-projected',
+        limit: 1,
+        textCodePointLimit: 8_192,
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0].subagentActivityProjectionJson).toBe(
+        JSON.stringify([{ type: 'writing', text: 'Public result.' }]),
+      );
+      expect(messages[0]).not.toHaveProperty('subagentTranscript');
+      expect(messages[0]).not.toHaveProperty('subagentTranscriptProjectionTruncated');
     });
   });
 

@@ -200,9 +200,9 @@ describe('RedisJobStore', () => {
       }),
     ).resolves.toBe(false);
 
-    // ARGV[4] is the terminal job TTL. The persistence owner/recovery path
+    // ARGV[5] is the terminal job TTL. The persistence owner/recovery path
     // gets five minutes even when ordinary completed records are immediate.
-    expect(evalTransition.mock.calls[0][15]).toBe('300');
+    expect(evalTransition.mock.calls[0][16]).toBe('300');
   });
 
   test('retains the generation epoch beyond the paused job TTL', async () => {
@@ -223,9 +223,9 @@ describe('RedisJobStore', () => {
     expect(transitionCall[0]).toContain(
       'redis.call("SET", KEYS[8], currentCreatedAt, "EX", ttl + generationEpochGraceTtl)',
     );
-    expect(transitionCall[15]).toBe('4621');
-    expect(transitionCall[16]).toBe('0');
-    expect(transitionCall[20]).toBe('300');
+    expect(transitionCall[16]).toBe('4621');
+    expect(transitionCall[17]).toBe('0');
+    expect(transitionCall[21]).toBe('300');
   });
 
   test('seeds the guarded epoch when reaping a legacy job without a marker', async () => {
@@ -915,7 +915,7 @@ describe('RedisJobStore', () => {
     ]);
   });
 
-  test('guards run-step saves with the expected epoch and active status inside Redis Lua', async () => {
+  test('guards run-step saves with the expected epoch and pending host-action window inside Redis Lua', async () => {
     const evalCommand = jest.fn().mockResolvedValue(0);
     const redis = {
       isCluster: true,
@@ -930,6 +930,10 @@ describe('RedisJobStore', () => {
     expect(saveCall[0]).toContain('currentCreatedAt ~= ARGV[3]');
     expect(saveCall[0]).toContain('currentStatus ~= "running"');
     expect(saveCall[0]).toContain('currentStatus ~= "requires_action"');
+    expect(saveCall[0]).toContain('terminalHostActionPending ~= "1"');
+    expect(saveCall[0]).toContain(
+      'currentStatus == "requires_action" or terminalHostActionPending == "1"',
+    );
     expect(saveCall.slice(1)).toEqual([
       2,
       'stream:{stream-runstep-guarded}:runsteps',
@@ -938,6 +942,97 @@ describe('RedisJobStore', () => {
       '1500',
       '100',
     ]);
+  });
+
+  test('arms terminal host-action discovery before committing the terminal hash', async () => {
+    const evalTransition = jest.fn().mockResolvedValue(1);
+    const sadd = jest.fn().mockResolvedValue(1);
+    const redis = {
+      isCluster: true,
+      eval: evalTransition,
+      sadd,
+      srem: jest.fn().mockResolvedValue(1),
+      expire: jest.fn().mockResolvedValue(1),
+      hgetall: jest
+        .fn()
+        .mockResolvedValueOnce({
+          streamId: 'stream-host-action-prearm',
+          userId: 'user-1',
+          status: 'running',
+          createdAt: '100',
+          syncSent: '0',
+        })
+        .mockResolvedValue({
+          streamId: 'stream-host-action-prearm',
+          userId: 'user-1',
+          status: 'complete',
+          createdAt: '100',
+          completedAt: '200',
+          terminalHostActionPending: '1',
+          syncSent: '0',
+        }),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(
+      store.transitionStatus('stream-host-action-prearm', {
+        from: 'running',
+        to: 'complete',
+        expectCreatedAt: 100,
+        patch: { completedAt: 200, terminalHostActionPending: true },
+      }),
+    ).resolves.toBe(true);
+
+    expect(sadd.mock.calls[0]).toEqual([
+      'stream:terminal_host_action',
+      '["stream-host-action-prearm",100]',
+    ]);
+    expect(sadd.mock.invocationCallOrder[0]).toBeLessThan(
+      evalTransition.mock.invocationCallOrder[0],
+    );
+    const transitionCall = evalTransition.mock.calls[0];
+    expect(transitionCall[16]).toBe('86400');
+    expect(transitionCall[18]).toBe('86400');
+    expect(transitionCall[19]).toBe('86400');
+  });
+
+  test('acknowledges evidence TTLs without removing a successor retry member', async () => {
+    const evalClear = jest.fn().mockResolvedValue(1);
+    const srem = jest.fn().mockResolvedValue(1);
+    const redis = {
+      isCluster: true,
+      eval: evalClear,
+      srem,
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis, {
+      completedTtl: 300,
+      chunksAfterCompleteTtl: 7,
+      runStepsAfterCompleteTtl: 11,
+    });
+
+    await store.clearTerminalHostAction('stream-host-action-clear', 100);
+
+    expect(evalClear).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'if tonumber(ARGV[2]) > 0 then redis.call("EXPIRE", KEYS[1], ARGV[2]) else redis.call("DEL", KEYS[1]) end',
+      ),
+      3,
+      'stream:{stream-host-action-clear}:job',
+      'stream:{stream-host-action-clear}:chunks',
+      'stream:{stream-host-action-clear}:runsteps',
+      '100',
+      '300',
+      '7',
+      '11',
+    );
+    expect(srem).toHaveBeenCalledWith(
+      'stream:terminal_host_action',
+      '["stream-host-action-clear",100]',
+    );
+    expect(srem).not.toHaveBeenCalledWith(
+      'stream:terminal_host_action',
+      '["stream-host-action-clear",101]',
+    );
   });
 
   test('guards asynchronous content cleanup against a replacement epoch', async () => {

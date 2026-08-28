@@ -21,12 +21,17 @@ const endpointsConfig: TEndpointsConfig = {
 };
 
 describe('excludedKeys', () => {
-  it.each(['_id', 'user', 'conversationId', 'agentEventBinding', '__v'])(
-    'excludes system field "%s"',
-    (field) => {
-      expect(excludedKeys.has(field)).toBe(true);
-    },
-  );
+  it.each([
+    '_id',
+    'user',
+    'conversationId',
+    'agentEventBinding',
+    'agentEventActor',
+    'agentEventActorReconciliations',
+    '__v',
+  ])('excludes system field "%s"', (field) => {
+    expect(excludedKeys.has(field)).toBe(true);
+  });
 
   it('does not exclude tenantId (plugin-level guard owns this)', () => {
     expect(excludedKeys.has('tenantId')).toBe(false);
@@ -70,6 +75,10 @@ describe('agent event runtime config', () => {
           eventDriven: {
             childTurns: true,
             completionWakeups: false,
+            coalescing: true,
+            actorMailbox: true,
+            checkpointForks: true,
+            durableReceipts: true,
             selfUrl: 'https://triggers.internal',
           },
         },
@@ -86,12 +95,37 @@ describe('agent event runtime config', () => {
     expect(result.data.endpoints?.agents?.eventDriven).toEqual({
       childTurns: true,
       completionWakeups: false,
+      coalescing: true,
+      actorMailbox: true,
+      checkpointForks: true,
+      durableReceipts: true,
       selfUrl: 'https://triggers.internal',
     });
     expect(result.data.rateLimits?.agentEvents).toEqual({
       userMax: 80,
       userWindowInMinutes: 2,
     });
+  });
+
+  it('rejects checkpoint forks with the process-local memory checkpointer', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          eventDriven: { checkpointForks: true },
+          checkpointer: { type: 'memory' },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: ['endpoints', 'agents', 'eventDriven', 'checkpointForks'],
+        }),
+      ]),
+    );
   });
 });
 

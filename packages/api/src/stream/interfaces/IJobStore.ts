@@ -69,6 +69,11 @@ export function toWireRunSteps(steps: readonly RunStep[]): Agents.RunStep[] {
  */
 export const PAUSE_PERSISTENCE_TIMEOUT_MS = 30_000;
 export const PAUSE_PERSISTENCE_TIMEOUT_ERROR = 'Paused response persistence timed out';
+/** Maximum time a terminal provider owner may remain undrained before its
+ * process is treated as lost. Terminal host settlement retains the last
+ * durable evidence through this grace period, then releases the lane from a
+ * crashed owner instead of refreshing its fence forever. */
+export const PROVIDER_DRAIN_TIMEOUT_MS = 30_000;
 
 /**
  * Job status enum.
@@ -273,6 +278,12 @@ export interface SerializableJobData {
    * resume request can't be trusted to re-send the flag.
    */
   isTemporary?: boolean;
+  agentEventDeliveryKey?: string;
+  /** Trusted actor binding copied from the authenticated delivery envelope. */
+  agentEventBindingId?: string;
+  agentEventExpectedAction?: import('~/agents/triggers/types').AgentTriggerExpectedAction;
+  /** Exact durable legacy-turn fence carried across a HITL pause/resume. */
+  agentEventLegacyTurnToken?: string;
 
   /**
    * Set when status is `requires_action`. Describes the human review the
@@ -390,6 +401,10 @@ export type JobMetadataPatch = Partial<
     | 'model'
     | 'agent_id'
     | 'isTemporary'
+    | 'agentEventDeliveryKey'
+    | 'agentEventBindingId'
+    | 'agentEventExpectedAction'
+    | 'agentEventLegacyTurnToken'
     | 'scheduleId'
     | 'scheduledFor'
     | 'scheduleConfigRevision'
@@ -550,6 +565,17 @@ export const STEER_ENQUEUE_QUEUE_FULL = -2;
  * so idempotency evidence is never evicted inside its recovery window. */
 export const STEER_ENQUEUE_RECEIPT_FULL = -3;
 
+/** The store rejected a status CAS because its atomic deadline had elapsed. */
+export class JobStatusTransitionDeadlineError extends Error {
+  readonly notAfterMs: number;
+
+  constructor(notAfterMs: number) {
+    super('The status transition deadline elapsed before the transition could commit');
+    this.name = 'JobStatusTransitionDeadlineError';
+    this.notAfterMs = notAfterMs;
+  }
+}
+
 /**
  * Arguments for an atomic {@link IJobStore.transitionStatus} compare-and-set.
  */
@@ -574,6 +600,12 @@ export interface JobStatusTransition {
    * the same stream ID.
    */
   expectCreatedAt?: number;
+  /**
+   * Additional guard: reject the transition when the store's clock has reached
+   * this absolute deadline. The comparison is part of the same atomic operation
+   * as the status change, so queueing or storage latency cannot publish stale state.
+   */
+  notAfterMs?: number;
   /** Extend all current steer receipts in the SAME atomic step as this
    * transition. Used by running→requires_action so no enqueue can land between
    * a pre-pause TTL pass and the status CAS. */

@@ -95,6 +95,10 @@ const fitNewestItemToSerializedBudget = (item: SubagentActivityItem): SubagentAc
   if (serializedBytes([item]) <= MAX_ACTIVITY_BYTES) return item;
   if (item.type === 'writing') return shrinkStringField(item, 'text', 'textTruncated');
   if (item.type === 'reasoning') return item;
+  if (item.type === 'activity_label') {
+    const withoutAssociations = { ...item, toolCallIds: undefined, agentIds: undefined };
+    return shrinkStringField(withoutAssociations, 'label', 'labelTruncated');
+  }
 
   // Preserve the terminal output as long as possible: discard oversized input
   // first, then trim output and finally public identity fields if a provider
@@ -107,6 +111,145 @@ const fitNewestItemToSerializedBudget = (item: SubagentActivityItem): SubagentAc
   if (serializedBytes([tool]) <= MAX_ACTIVITY_BYTES) return tool;
   return shrinkStringField(tool, 'toolCallId');
 };
+
+const boundActivity = (items: SubagentActivityItem[], sourceTruncated: boolean): Projection => {
+  let activity = items;
+  let truncated = sourceTruncated;
+  if (activity.length > MAX_ACTIVITY_ITEMS) {
+    activity = activity.slice(-MAX_ACTIVITY_ITEMS);
+    truncated = true;
+  }
+  while (activity.length > 1 && serializedBytes(activity) > MAX_ACTIVITY_BYTES) {
+    activity.shift();
+    truncated = true;
+  }
+  if (activity.length === 1 && serializedBytes(activity) > MAX_ACTIVITY_BYTES) {
+    activity[0] = fitNewestItemToSerializedBudget(activity[0]);
+    truncated = true;
+  }
+  return { activity, truncated };
+};
+
+const visibleStatus = (value: unknown): 'running' | 'completed' | 'failed' | 'cancelled' => {
+  if (value === 'completed' || value === 'failed' || value === 'cancelled') return value;
+  return 'running';
+};
+
+const finiteNumber = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+
+const stringArray = (value: unknown): string[] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const result = value.filter((candidate): candidate is string => typeof candidate === 'string');
+  return result.length === 0 ? undefined : result;
+};
+
+/**
+ * Validates the storage-bounded ordinary message-content projection. This is
+ * the durable fallback for runs that persisted normal LibreChat content but
+ * did not write a separate private subagent transcript.
+ */
+export function projectPersistedMessageActivity(
+  value: unknown,
+  sourceTruncated = false,
+): Projection {
+  if (!Array.isArray(value)) return { activity: [], truncated: sourceTruncated };
+  let truncated = sourceTruncated;
+  const activity = value.flatMap((candidate): SubagentActivityItem[] => {
+    if (!isRecord(candidate) || typeof candidate.type !== 'string') {
+      truncated = true;
+      return [];
+    }
+    if (candidate.type === 'writing') {
+      if (typeof candidate.text !== 'string') {
+        truncated = true;
+        return [];
+      }
+      return [
+        {
+          type: 'writing',
+          text: candidate.text,
+          ...(candidate.textTruncated === true ? { textTruncated: true } : {}),
+        },
+      ];
+    }
+    if (candidate.type === 'reasoning') return [{ type: 'reasoning' }];
+    if (candidate.type === 'activity_label') {
+      if (typeof candidate.label !== 'string') {
+        truncated = true;
+        return [];
+      }
+      const toolCallIds = stringArray(candidate.toolCallIds);
+      const agentIds = stringArray(candidate.agentIds);
+      const activityStartIndex = finiteNumber(candidate.activityStartIndex);
+      const activityEndIndex = finiteNumber(candidate.activityEndIndex);
+      const activityCount = finiteNumber(candidate.activityCount);
+      return [
+        {
+          type: 'activity_label',
+          label: candidate.label,
+          ...(candidate.labelType === 'phase' ? { labelType: 'phase' as const } : {}),
+          ...(toolCallIds == null ? {} : { toolCallIds }),
+          ...(activityStartIndex == null ? {} : { activityStartIndex }),
+          ...(activityEndIndex == null ? {} : { activityEndIndex }),
+          ...(activityCount == null ? {} : { activityCount }),
+          ...(agentIds == null ? {} : { agentIds }),
+          ...(candidate.status === 'ok' ||
+          candidate.status === 'partial' ||
+          candidate.status === 'failed'
+            ? { status: candidate.status }
+            : {}),
+          ...(typeof candidate.pending === 'boolean' ? { pending: candidate.pending } : {}),
+          ...(candidate.labelTruncated === true ? { labelTruncated: true } : {}),
+        },
+      ];
+    }
+    if (candidate.type !== 'tool') {
+      truncated = true;
+      return [];
+    }
+    if (typeof candidate.toolCallId !== 'string' || typeof candidate.name !== 'string') {
+      truncated = true;
+      return [];
+    }
+    const completed =
+      finiteNumber(candidate.progress) != null && finiteNumber(candidate.progress)! >= 1;
+    const output = typeof candidate.output === 'string' ? candidate.output : undefined;
+    const runStepStatus = visibleStatus(candidate.runStepStatus);
+    let status: MutableToolActivity['status'] = runStepStatus;
+    if (candidate.runStepStatus == null) {
+      status = completed || output != null ? 'completed' : 'running';
+    }
+    return [
+      {
+        type: 'tool',
+        toolCallId: candidate.toolCallId,
+        name: candidate.name,
+        ...(typeof candidate.input === 'string' && candidate.input !== ''
+          ? { input: candidate.input }
+          : {}),
+        ...(output == null || output === '' ? {} : { output }),
+        status,
+        ...(candidate.inputValidationError === true ? { inputValidationError: true } : {}),
+        ...(candidate.inputTruncated === true ? { inputTruncated: true } : {}),
+        ...(candidate.outputTruncated === true ? { outputTruncated: true } : {}),
+      },
+    ];
+  });
+  return boundActivity(activity, truncated);
+}
+
+/** Validates a storage-bounded, settlement-time public activity projection. */
+export function projectPersistedMessageActivityJson(
+  activityJson: string,
+  sourceTruncated = false,
+): Projection {
+  try {
+    return projectPersistedMessageActivity(JSON.parse(activityJson) as unknown, sourceTruncated);
+  } catch {
+    return { activity: [], truncated: true };
+  }
+}
 
 const visibleContent = (value: unknown): { text: string; hasReasoning: boolean } => {
   if (typeof value === 'string') return { text: value, hasReasoning: false };
@@ -292,20 +435,8 @@ export function projectSubagentActivity(
     append(orphan);
   }
 
-  let boundedActivity = activity.filter((entry) => entry.active).map((entry) => entry.item);
-  if (boundedActivity.length > MAX_ACTIVITY_ITEMS) {
-    boundedActivity = boundedActivity.slice(-MAX_ACTIVITY_ITEMS);
-    truncated = true;
-  }
-  while (boundedActivity.length > 1 && serializedBytes(boundedActivity) > MAX_ACTIVITY_BYTES) {
-    boundedActivity.shift();
-    truncated = true;
-  }
-  if (boundedActivity.length === 1 && serializedBytes(boundedActivity) > MAX_ACTIVITY_BYTES) {
-    boundedActivity[0] = fitNewestItemToSerializedBudget(boundedActivity[0]);
-    truncated = true;
-  }
-  return { activity: boundedActivity, truncated };
+  const boundedActivity = activity.filter((entry) => entry.active).map((entry) => entry.item);
+  return boundActivity(boundedActivity, truncated);
 }
 
 export const SUBAGENT_ACTIVITY_LIMITS = {

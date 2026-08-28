@@ -1,13 +1,8 @@
 import { HookRegistry, createToolPolicyHook } from '@librechat/agents';
 import type { TToolApprovalPolicy } from 'librechat-data-provider';
+import type { ResolvedToolApprovalHook, ToolApprovalHookContext } from './hooks';
 import type { MCPToolAlias } from '~/tools/classification';
-import type { ToolApprovalHookContext } from './hooks';
-import {
-  isHITLEnabled,
-  mapToolApprovalPolicy,
-  collectAliasMatcherNames,
-  buildAliasMatcherPattern,
-} from './policy';
+import { isHITLEnabled, mapToolApprovalPolicy } from './policy';
 import { buildToolApprovalHooks } from './hooks';
 
 /**
@@ -21,6 +16,11 @@ import { buildToolApprovalHooks } from './hooks';
 export interface HITLRunWiring {
   humanInTheLoop: { enabled: true };
   hooks: HookRegistry;
+  /** Adds aliases discovered while a lazy subagent resolves. */
+  addMCPToolAliases: (
+    aliases: readonly MCPToolAlias[],
+    policy: TToolApprovalPolicy | undefined,
+  ) => void;
 }
 
 /**
@@ -40,40 +40,78 @@ export function buildHITLRunWiring(
   policy: TToolApprovalPolicy | undefined,
   context: ToolApprovalHookContext = {},
   mcpToolAliases: readonly MCPToolAlias[] = [],
+  resolvedProgrammaticHooks?: readonly ResolvedToolApprovalHook[],
 ): HITLRunWiring | undefined {
   if (!isHITLEnabled(policy)) {
     return undefined;
   }
 
   const registry = new HookRegistry();
+  let activePolicy: TToolApprovalPolicy | undefined = policy;
+  const aliases = [...mcpToolAliases];
+  const registeredAliases = new Set(
+    aliases.map(({ name, aliasName }) => `${name}\u0000${aliasName}`),
+  );
   // Static config-driven policy (mode/allow/deny/ask) — the baseline.
   registry.register('PreToolUse', {
-    hooks: [createToolPolicyHook(mapToolApprovalPolicy(policy) ?? {})],
+    hooks: [
+      async (input, signal) =>
+        createToolPolicyHook(mapToolApprovalPolicy(activePolicy) ?? {})(input, signal),
+    ],
   });
 
-  // Host-registered programmatic hooks — context-aware, layered after the baseline so their
-  // `updatedInput` / `allowedDecisions` win the SDK's last-writer-wins precedence. Each can
-  // carry its own tool-name matcher; the SDK still folds decisions deny > ask > allow.
-  for (const { hook, matcher } of buildToolApprovalHooks(context)) {
-    registry.register(
-      'PreToolUse',
-      matcher ? { pattern: matcher, hooks: [hook] } : { hooks: [hook] },
-    );
-    /** A matcher written against a tool's OTHER key spelling (pre-strip or
-     *  current) would silently never fire for the renamed instance, skipping
-     *  its argument/user/tenant-specific deny or ask. The SAME hook is
-     *  registered again under an exact-name pattern for those aliased names
-     *  — a separate entry keeps the admin's regex semantics and the SDK's
-     *  pattern-length cap intact, and the name sets are disjoint so the hook
-     *  never fires twice for one call. */
-    const aliasNames = matcher ? collectAliasMatcherNames(matcher, mcpToolAliases) : [];
-    if (aliasNames.length > 0) {
-      registry.register('PreToolUse', {
-        pattern: buildAliasMatcherPattern(aliasNames),
-        hooks: [hook],
-      });
+  // Host-registered programmatic hooks — context-aware, layered after the static-policy hook.
+  const programmaticHooks = resolvedProgrammaticHooks ?? buildToolApprovalHooks(context);
+  for (const { hook, matcher } of programmaticHooks) {
+    if (matcher == null) {
+      registry.register('PreToolUse', { hooks: [hook] });
+      continue;
     }
+    registry.register('PreToolUse', {
+      hooks: [
+        async (input, signal) => {
+          let regex: RegExp;
+          try {
+            regex = new RegExp(matcher);
+          } catch {
+            return {};
+          }
+          regex.lastIndex = 0;
+          if (regex.test(input.toolName)) {
+            return hook(input, signal);
+          }
+          for (const { name, aliasName } of aliases) {
+            if (name !== input.toolName) {
+              continue;
+            }
+            regex.lastIndex = 0;
+            if (regex.test(aliasName)) {
+              return hook(input, signal);
+            }
+          }
+          return {};
+        },
+      ],
+    });
   }
 
-  return { humanInTheLoop: { enabled: true }, hooks: registry };
+  return {
+    humanInTheLoop: { enabled: true },
+    hooks: registry,
+    addMCPToolAliases(newAliasCandidates, updatedPolicy) {
+      const newAliases = newAliasCandidates.filter(({ name, aliasName }) => {
+        const key = `${name}\u0000${aliasName}`;
+        if (registeredAliases.has(key)) {
+          return false;
+        }
+        registeredAliases.add(key);
+        return true;
+      });
+      if (newAliases.length === 0) {
+        return;
+      }
+      aliases.push(...newAliases);
+      activePolicy = updatedPolicy;
+    },
+  };
 }

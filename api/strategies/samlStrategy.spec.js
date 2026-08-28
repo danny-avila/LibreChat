@@ -7,6 +7,7 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: {
     info: jest.fn(),
     debug: jest.fn(),
+    warn: jest.fn(),
     error: jest.fn(),
   },
   hashToken: jest.fn().mockResolvedValue('hashed-token'),
@@ -15,6 +16,7 @@ jest.mock('~/models', () => ({
   findUser: jest.fn(),
   createUser: jest.fn(),
   updateUser: jest.fn(),
+  claimSamlIdentity: jest.fn(),
 }));
 jest.mock('~/server/services/Config', () => ({
   config: {
@@ -44,6 +46,8 @@ jest.mock('@librechat/api', () => ({
       : params;
   }),
   resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
+  resolveSamlSubject: jest.fn((profile) => ({ nameID: profile.nameID })),
+  TRANSIENT_SAML_NAME_ID_FORMAT: 'urn:oasis:names:tc:SAML:2.0:nameid-format:transient',
 }));
 jest.mock('~/server/services/Config/EndpointService', () => ({
   config: {},
@@ -76,15 +80,11 @@ jest.mocked(fs).existsSync = jest.fn();
 jest.mocked(fs).statSync = jest.fn();
 jest.mocked(fs).readFileSync = jest.fn();
 
-// To capture the verify callback from the strategy, we grab it from the mock constructor.
-// setupSaml() registers both 'saml' (regular) and 'samlAdmin' strategies, so we capture
-// only the first callback per setupSaml() call (the regular one).
-let verifyCallback;
+const verifyCallbacks = new Map();
 SamlStrategy.mockImplementation((options, verify) => {
-  if (!verifyCallback) {
-    verifyCallback = verify;
-  }
-  return { name: 'saml', options, verify };
+  const strategyName = options.callbackUrl?.includes('/api/admin/') ? 'samlAdmin' : 'saml';
+  verifyCallbacks.set(strategyName, verify);
+  return { name: strategyName, options, verify };
 });
 
 describe('getCertificateContent', () => {
@@ -217,9 +217,9 @@ u7wlOSk+oFzDIO/UILIA
 
 describe('setupSaml', () => {
   // Helper to wrap the verify callback in a promise
-  const validate = (profile) =>
+  const validate = (profile, strategyName = 'saml') =>
     new Promise((resolve, reject) => {
-      verifyCallback(profile, (err, user, details) => {
+      verifyCallbacks.get(strategyName)(profile, (err, user, details) => {
         if (err) {
           reject(err);
         } else {
@@ -241,11 +241,10 @@ describe('setupSaml', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    // Reset so the mock captures the regular (non-admin) callback on next setupSaml() call
-    verifyCallback = null;
+    verifyCallbacks.clear();
 
     // Configure mocks
-    const { findUser, createUser, updateUser } = require('~/models');
+    const { findUser, createUser, updateUser, claimSamlIdentity } = require('~/models');
     findUser.mockResolvedValue(null);
     createUser.mockImplementation(async (userData) => ({
       _id: 'mock-user-id',
@@ -255,6 +254,11 @@ describe('setupSaml', () => {
       _id: id,
       ...userData,
     }));
+    claimSamlIdentity.mockImplementation(async (id, samlId, userData) => {
+      const result = findUser.mock.results[findUser.mock.results.length - 1];
+      const existingUser = result ? await result.value : {};
+      return { ...existingUser, _id: id, ...userData, samlId };
+    });
 
     const cert = `
 -----BEGIN CERTIFICATE-----
@@ -291,6 +295,8 @@ u7wlOSk+oFzDIO/UILIA
     delete process.env.SAML_FAMILY_NAME_CLAIM;
     delete process.env.SAML_PICTURE_CLAIM;
     delete process.env.SAML_NAME_CLAIM;
+    delete process.env.SAML_NAME_ID_FORMAT;
+    delete process.env.SAML_IDP_ISSUER;
 
     resizeAvatar.mockResolvedValue(Buffer.from('safe avatar'));
 
@@ -426,6 +432,141 @@ u7wlOSk+oFzDIO/UILIA
     expect(user.email).toBe(baseProfile.email);
   });
 
+  it('should preserve a matching NameID binding', async () => {
+    const { findUser, claimSamlIdentity } = require('~/models');
+    const existingUser = {
+      _id: 'existing-user-id',
+      provider: 'saml',
+      email: baseProfile.email,
+      samlId: baseProfile.nameID,
+    };
+    findUser.mockResolvedValueOnce(existingUser);
+
+    const { user } = await validate(baseProfile);
+
+    expect(user.samlId).toBe(baseProfile.nameID);
+    expect(claimSamlIdentity).toHaveBeenCalledWith(
+      existingUser._id,
+      baseProfile.nameID,
+      expect.objectContaining({ username: baseProfile.username }),
+    );
+  });
+
+  it('should atomically bind a legacy SAML account found by email', async () => {
+    const { findUser, claimSamlIdentity } = require('~/models');
+    const existingUser = {
+      _id: 'legacy-user-id',
+      provider: 'saml',
+      email: baseProfile.email,
+    };
+    findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existingUser);
+
+    const { user } = await validate(baseProfile);
+
+    expect(user.samlId).toBe(baseProfile.nameID);
+    expect(claimSamlIdentity).toHaveBeenCalledWith(
+      existingUser._id,
+      baseProfile.nameID,
+      expect.objectContaining({ username: baseProfile.username }),
+    );
+  });
+
+  it('should reject a concurrent first-time binding that loses the atomic claim', async () => {
+    const { findUser, updateUser, claimSamlIdentity } = require('~/models');
+    const existingUser = {
+      _id: 'legacy-user-id',
+      provider: 'saml',
+      email: baseProfile.email,
+    };
+    findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existingUser);
+    claimSamlIdentity.mockResolvedValueOnce(null);
+
+    const result = await validate(baseProfile);
+
+    expect(result.user).toBe(false);
+    expect(result.details.message).toBe(require('librechat-data-provider').ErrorTypes.AUTH_FAILED);
+    expect(updateUser).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, '', '   '])('should reject an invalid NameID value: %p', async (nameID) => {
+    const { findUser, claimSamlIdentity } = require('~/models');
+    const { resolveSamlSubject } = require('@librechat/api');
+    resolveSamlSubject.mockReturnValueOnce({ error: 'missing_name_id' });
+
+    const result = await validate({ ...baseProfile, nameID });
+
+    expect(result.user).toBe(false);
+    expect(result.details.message).toBe(require('librechat-data-provider').ErrorTypes.AUTH_FAILED);
+    expect(findUser).not.toHaveBeenCalled();
+    expect(claimSamlIdentity).not.toHaveBeenCalled();
+  });
+
+  it('should reject a transient NameID', async () => {
+    const { findUser } = require('~/models');
+    const { resolveSamlSubject } = require('@librechat/api');
+    resolveSamlSubject.mockReturnValueOnce({ error: 'transient_name_id' });
+    const result = await validate({
+      ...baseProfile,
+      nameIDFormat: 'urn:oasis:names:tc:SAML:2.0:nameid-format:transient',
+    });
+
+    expect(result.user).toBe(false);
+    expect(result.details.message).toBe(require('librechat-data-provider').ErrorTypes.AUTH_FAILED);
+    expect(findUser).not.toHaveBeenCalled();
+  });
+
+  it('should reject an assertion from a different IdP issuer when configured', async () => {
+    const { findUser } = require('~/models');
+    const { resolveSamlSubject } = require('@librechat/api');
+    resolveSamlSubject.mockReturnValueOnce({ error: 'issuer_mismatch' });
+    process.env.SAML_IDP_ISSUER = 'https://idp.example.com';
+
+    const result = await validate({ ...baseProfile, issuer: 'https://other-idp.example.com' });
+
+    expect(result.user).toBe(false);
+    expect(result.details.message).toBe(require('librechat-data-provider').ErrorTypes.AUTH_FAILED);
+    expect(findUser).not.toHaveBeenCalled();
+    expect(resolveSamlSubject).toHaveBeenCalledWith(
+      expect.objectContaining({ issuer: 'https://other-idp.example.com' }),
+      'https://idp.example.com',
+    );
+  });
+
+  it('should reject an email match bound to a different NameID', async () => {
+    const { findUser, updateUser, claimSamlIdentity } = require('~/models');
+    const existingUser = {
+      _id: 'existing-user-id',
+      provider: 'saml',
+      email: baseProfile.email,
+      samlId: 'original-name-id',
+    };
+    findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existingUser);
+
+    const result = await validate(baseProfile);
+
+    expect(result.user).toBe(false);
+    expect(result.details.message).toBe(require('librechat-data-provider').ErrorTypes.AUTH_FAILED);
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(claimSamlIdentity).not.toHaveBeenCalled();
+  });
+
+  it('should enforce the NameID binding for the admin SAML callback', async () => {
+    const { findUser, claimSamlIdentity } = require('~/models');
+    const existingUser = {
+      _id: 'existing-admin-id',
+      provider: 'saml',
+      email: baseProfile.email,
+      samlId: 'original-name-id',
+    };
+    findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existingUser);
+
+    const result = await validate(baseProfile, 'samlAdmin');
+
+    expect(result.user).toBe(false);
+    expect(result.details.message).toBe(require('librechat-data-provider').ErrorTypes.AUTH_FAILED);
+    expect(claimSamlIdentity).not.toHaveBeenCalled();
+  });
+
   it('should block login when email exists with different provider', async () => {
     // Set up findUser to return a user with different provider
     const { findUser } = require('~/models');
@@ -486,7 +627,6 @@ u7wlOSk+oFzDIO/UILIA
 
   it('uses the configured SAML picture claim for shared avatar processing', async () => {
     process.env.SAML_PICTURE_CLAIM = 'avatar_url';
-    verifyCallback = null;
     await setupSaml();
 
     const profile = {
@@ -502,6 +642,54 @@ u7wlOSk+oFzDIO/UILIA
       input: 'https://idp.example.com/custom-avatar.png',
     });
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('should pass the configured NameID format to both SAML strategies', async () => {
+    process.env.SAML_NAME_ID_FORMAT = 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent';
+    process.env.SAML_IDP_ISSUER = 'https://idp.example.com';
+
+    await setupSaml();
+
+    const calls = SamlStrategy.mock.calls.slice(-2);
+    for (const [options] of calls) {
+      expect(options).toEqual(
+        expect.objectContaining({
+          identifierFormat: 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent',
+        }),
+      );
+    }
+  });
+
+  it('should refuse to configure a transient NameID format', async () => {
+    const { logger } = require('@librechat/data-schemas');
+    process.env.SAML_NAME_ID_FORMAT = 'urn:oasis:names:tc:SAML:2.0:nameid-format:transient';
+    const callCount = SamlStrategy.mock.calls.length;
+
+    await setupSaml();
+
+    expect(SamlStrategy).toHaveBeenCalledTimes(callCount);
+    expect(logger.error).toHaveBeenCalledWith(
+      '[samlStrategy]',
+      expect.objectContaining({
+        message: 'SAML_NAME_ID_FORMAT must provide a stable, non-transient identifier',
+      }),
+    );
+  });
+
+  it('should not log raw NameID or profile attributes', async () => {
+    const { logger } = require('@librechat/data-schemas');
+    const sensitiveValue = 'sensitive-profile-attribute';
+
+    await validate({ ...baseProfile, sensitiveAttribute: sensitiveValue });
+
+    const logOutput = JSON.stringify([
+      ...logger.info.mock.calls,
+      ...logger.debug.mock.calls,
+      ...logger.warn.mock.calls,
+      ...logger.error.mock.calls,
+    ]);
+    expect(logOutput).not.toContain(baseProfile.nameID);
+    expect(logOutput).not.toContain(sensitiveValue);
   });
 
   it('should save CloudFront SAML avatars under the shared avatar prefix', async () => {

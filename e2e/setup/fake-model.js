@@ -12,6 +12,7 @@
 const { FakeChatModel } = require('@librechat/agents');
 const { ChatGenerationChunk } = require('@langchain/core/outputs');
 const { AIMessageChunk } = require('@langchain/core/messages');
+const { tryBindReplay } = require('./model-replay');
 
 const MOCK_REPLY = process.env.MOCK_LLM_REPLY || 'E2E mock reply: pong';
 const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
@@ -2393,6 +2394,21 @@ module.exports = function fakeModelHook(run, context) {
   }
 
   const text = getLatestUserText(context?.messages);
+  /** Recorded-session replay outranks marker routing: a conversation whose
+   * prompt matches a fixture's next recorded invocation streams that recording
+   * through the real pipeline instead of a scripted mock response. */
+  if (
+    tryBindReplay({
+      graph,
+      text,
+      agents: context?.agents,
+      messages: context?.messages,
+      conversationId: context?.conversationId,
+      modelCallbacks: context?.modelCallbacks,
+    })
+  ) {
+    return;
+  }
   const toolNames = collectToolNames(context?.agents);
   const handoffScript = parseHandoffScript(text);
   const {

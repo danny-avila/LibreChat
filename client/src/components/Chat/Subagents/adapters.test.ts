@@ -4,12 +4,19 @@ import type {
   SubagentUpdateEvent,
   TMessageContentParts,
 } from 'librechat-data-provider';
+import type { ChildConversationTurn } from './adapters';
+import {
+  adaptDurableThreadActivity,
+  adaptLivePersistedActivity,
+  MAX_RETAINED_MOVING_WINDOW_TURNS,
+  mergeChildConversationTurns,
+  retainBoundedMovingWindowTurns,
+} from './adapters';
 import {
   aggregateSubagentContent,
   initSubagentAggregatorState,
   initSubagentTickerState,
 } from '~/utils/subagentContent';
-import { adaptDurableThreadActivity, adaptLivePersistedActivity } from './adapters';
 
 describe('child activity adapters', () => {
   it('prefers authoritative parent persistence over a partial live foreground trace', () => {
@@ -396,6 +403,7 @@ describe('child activity adapters', () => {
           input: '{"query":"release"}',
           output: 'Found it.',
           status: 'completed',
+          inputValidationError: true,
         },
         { type: 'writing', text: 'Durable answer.' },
       ],
@@ -424,6 +432,9 @@ describe('child activity adapters', () => {
         status: 'completed',
         items: view.activity,
       }),
+    );
+    expect(adaptDurableThreadActivity(view, 'task').items[0]).toEqual(
+      expect.objectContaining({ inputValidationError: true }),
     );
   });
 
@@ -529,6 +540,58 @@ describe('child activity adapters', () => {
 
     expect(adaptDurableThreadActivity(oldView, 'task')).toEqual(
       expect.objectContaining({ status: 'completed', items: [{ type: 'writing', text: 'Done.' }] }),
+    );
+  });
+
+  it('merges a page-split task trigger with its newer assistant activity', () => {
+    const triggerHalf: ChildConversationTurn = {
+      taskId: 'task',
+      trigger: {
+        kind: 'external_event',
+        summary: 'Play the next move.',
+        createdAt: '2026-08-27T12:00:00.000Z',
+        externalEvent: {
+          eventType: 'chess.turn.ready',
+          sourceType: 'speed-chess',
+          occurredAt: '2026-08-27T12:00:00.000Z',
+        },
+      },
+      activity: { title: 'Player', status: 'running', items: [] },
+    };
+    const assistantHalf: ChildConversationTurn = {
+      taskId: 'task',
+      trigger: { kind: 'parent_continuation', summary: '' },
+      activity: {
+        title: 'Player',
+        status: 'completed',
+        items: [{ type: 'writing', text: 'Played e4.' }],
+      },
+    };
+
+    expect(mergeChildConversationTurns([triggerHalf], [assistantHalf])).toEqual([
+      {
+        taskId: 'task',
+        trigger: triggerHalf.trigger,
+        activity: expect.objectContaining({
+          status: 'completed',
+          items: [{ type: 'writing', text: 'Played e4.' }],
+        }),
+      },
+    ]);
+  });
+
+  it('bounds automatically retained moving-window turns', () => {
+    const turns = Array.from(
+      { length: MAX_RETAINED_MOVING_WINDOW_TURNS + 3 },
+      (_, index): ChildConversationTurn => ({
+        taskId: `task-${index}`,
+        trigger: { kind: 'parent_continuation', summary: '' },
+        activity: { title: 'Player', status: 'completed', items: [] },
+      }),
+    );
+
+    expect(retainBoundedMovingWindowTurns([], turns).map((turn) => turn.taskId)).toEqual(
+      turns.slice(-MAX_RETAINED_MOVING_WINDOW_TURNS).map((turn) => turn.taskId),
     );
   });
 });

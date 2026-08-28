@@ -72,6 +72,36 @@ const mockExemptFromConcurrencyLimiter = jest.fn();
 const mockRecordScheduleOutcome = jest.fn();
 const mockIsScheduleLive = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn();
+const mockExecuteAgentEventActor = jest.fn();
+const mockFindAgentEventAppliedAction = jest.fn();
+/** Faithful stand-in for the graph-context action recorder: first observed
+ * tool end with a name becomes the receipt. Matching fences are unit-tested
+ * against the real implementation in packages/api. */
+const mockCreateAgentEventActionRecorder = jest.fn(() => {
+  let receipt;
+  return {
+    observeToolEnd: (data) => {
+      if (receipt == null && data?.output?.name != null) {
+        receipt = {
+          toolName: data.output.name,
+          ...(data.output.tool_call_id == null ? {} : { toolCallId: data.output.tool_call_id }),
+        };
+      }
+    },
+    read: () => receipt,
+  };
+});
+const mockGetAgentEventActorSnapshot = jest.fn();
+const mockCommitAgentEventActorState = jest.fn();
+const mockBeginAgentEventActorLegacyTurn = jest.fn();
+const mockCompleteAgentEventActorLegacyTurn = jest.fn();
+const mockRecordAgentEventActorReconciliation = jest.fn();
+const mockResolveAgentEventActorReconciliation = jest.fn();
+const mockClearAgentEventActorReconciliation = jest.fn();
+const mockAdmitAgentEventActorAction = jest.fn();
+const mockReleaseAgentEventActorAction = jest.fn();
+const mockHasAgentEventActorActionAdmission = jest.fn();
+const mockGetAgentEventActorReceipt = jest.fn();
 const mockStartupTelemetry = {
   mark: jest.fn(),
   setStreamId: jest.fn(),
@@ -139,6 +169,7 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  isEnabled: (value) => value === true || value === 'true' || value === '1',
   isScheduleFireRequest: (...args) => mockIsScheduleFireRequest(...args),
   exemptFromConcurrencyLimiter: (...args) => mockExemptFromConcurrencyLimiter(...args),
   toPendingSteer: jest.fn((item) => item),
@@ -198,6 +229,12 @@ jest.mock('@librechat/api', () => ({
     return messages.length === 0;
   },
   deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
+  executeAgentEventActor: (...args) => mockExecuteAgentEventActor(...args),
+  findAgentEventAppliedAction: (...args) => mockFindAgentEventAppliedAction(...args),
+  createAgentEventActionRecorder: (...args) => mockCreateAgentEventActionRecorder(...args),
+  isHITLEnabled: (policy) => policy?.enabled === true,
+  agentRequestsAskUserQuestion: (agent) =>
+    agent?.toolDefinitions?.some((tool) => tool?.name === 'ask_user_question') === true,
   isAgentEventRetentionActive: (expiredAt) =>
     expiredAt == null || new Date(expiredAt).getTime() > Date.now(),
   createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
@@ -228,6 +265,19 @@ jest.mock('~/models', () => ({
   saveConvo: (...args) => mockSaveConvo(...args),
   getMessages: (...args) => mockGetMessages(...args),
   getConvo: (...args) => mockGetConvo(...args),
+  getAgentEventActorSnapshot: (...args) => mockGetAgentEventActorSnapshot(...args),
+  commitAgentEventActorState: (...args) => mockCommitAgentEventActorState(...args),
+  beginAgentEventActorLegacyTurn: (...args) => mockBeginAgentEventActorLegacyTurn(...args),
+  completeAgentEventActorLegacyTurn: (...args) => mockCompleteAgentEventActorLegacyTurn(...args),
+  recordAgentEventActorReconciliation: (...args) =>
+    mockRecordAgentEventActorReconciliation(...args),
+  resolveAgentEventActorReconciliation: (...args) =>
+    mockResolveAgentEventActorReconciliation(...args),
+  clearAgentEventActorReconciliation: (...args) => mockClearAgentEventActorReconciliation(...args),
+  admitAgentEventActorAction: (...args) => mockAdmitAgentEventActorAction(...args),
+  releaseAgentEventActorAction: (...args) => mockReleaseAgentEventActorAction(...args),
+  hasAgentEventActorActionAdmission: (...args) => mockHasAgentEventActorActionAdmission(...args),
+  getAgentEventActorReceipt: (...args) => mockGetAgentEventActorReceipt(...args),
   isAgentTriggerPrincipalActive: (...args) => mockIsAgentTriggerPrincipalActive(...args),
   isSubagentOwnerAdmissible: (...args) => mockIsSubagentOwnerAdmissible(...args),
 }));
@@ -271,6 +321,7 @@ function nextTick() {
 describe('ResumableAgentController resume metadata', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.ENABLE_AGENT_EVENT_DURABLE_RECEIPTS = 'true';
     mockMCPContexts = new WeakMap();
     mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: true });
     mockDecrementPendingRequest.mockResolvedValue(undefined);
@@ -343,6 +394,17 @@ describe('ResumableAgentController resume metadata', () => {
     mockSaveMessage.mockResolvedValue({});
     mockSaveConvo.mockResolvedValue({});
     mockDeleteAgentCheckpoint.mockResolvedValue(undefined);
+    mockGetAgentEventActorSnapshot.mockResolvedValue({ state: null, reconciliations: [] });
+    mockCommitAgentEventActorState.mockResolvedValue({ status: 'stale' });
+    mockBeginAgentEventActorLegacyTurn.mockResolvedValue(true);
+    mockCompleteAgentEventActorLegacyTurn.mockResolvedValue(true);
+    mockRecordAgentEventActorReconciliation.mockResolvedValue(true);
+    mockResolveAgentEventActorReconciliation.mockResolvedValue(true);
+    mockClearAgentEventActorReconciliation.mockResolvedValue(true);
+    mockAdmitAgentEventActorAction.mockResolvedValue(true);
+    mockReleaseAgentEventActorAction.mockResolvedValue(true);
+    mockHasAgentEventActorActionAdmission.mockResolvedValue(false);
+    mockGetAgentEventActorReceipt.mockResolvedValue(null);
   });
 
   it.each([
@@ -3888,11 +3950,21 @@ describe('ResumableAgentController resume metadata', () => {
       body: {
         text: 'Continue from event.',
         messageId: 'user-msg',
+        parentMessageId: 'response-previous',
         clientRequestId: 'req-event',
+        agentEventDelivery: {
+          deliveryKey: 'req-event',
+          target: { bindingId: 'binding-1' },
+          expectedAction: {
+            toolName: 'submit_move',
+            argumentSubset: { gameId: 'game-1', expectedPly: 7 },
+          },
+        },
         conversationId: 'child-conversation',
         endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
       },
       config: {},
+      _isAgentTrigger: true,
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
       _agentEventBindingTenantId: 'tenant-1',
@@ -3915,8 +3987,866 @@ describe('ResumableAgentController resume metadata', () => {
       expect.objectContaining({
         responseMessageId: 'req-event:assistant',
         userMessage: expect.objectContaining({ messageId: 'req-event:user' }),
+        agentEventDeliveryKey: 'req-event',
+        agentEventExpectedAction: {
+          toolName: 'submit_move',
+          argumentSubset: { gameId: 'game-1', expectedPly: 7 },
+        },
       }),
     );
+  });
+
+  it('routes an enabled authenticated event through the checkpoint-fork executor', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+    });
+    const client = {
+      options: {},
+      sendMessage: jest.fn(async () => {
+        throw new Error('stop after event actor invocation started');
+      }),
+    };
+    mockExecuteAgentEventActor.mockImplementationOnce(async (input) => {
+      await input.invoke({
+        checkpointNamespace: 'event-actor/fork',
+        checkpointId: 'checkpoint-base',
+        invocationId: 'req-event-fork',
+        continuation: 'warm',
+        signal: input.signal,
+      });
+    });
+    const event = {
+      id: 'game-1:ply-8',
+      type: 'chess.\u202Eturn',
+      occurredAt: Date.now(),
+      source: { id: 'speed-chess', type: 'm\u2066cp' },
+      payload: { gameId: 'game-1', expectedPly: 8 },
+    };
+    const req = {
+      user: { id: 'user-123', tenantId: '' },
+      body: {
+        text: 'Play the next move.',
+        clientRequestId: 'req-event-fork',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-fork',
+          target: { bindingId: 'binding-1' },
+          event,
+          expectedAction: { toolName: 'submit_\u200Fmove', argumentSubset: { expectedPly: 8 } },
+        },
+      },
+      config: {
+        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+      },
+      _isAgentTrigger: true,
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: undefined,
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    await nextTick();
+
+    expect(mockExecuteAgentEventActor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'child-conversation',
+        invocationId: 'req-event-fork',
+        event,
+        expectedAction: { toolName: 'submit_\u200Fmove', argumentSubset: { expectedPly: 8 } },
+      }),
+      {
+        getSnapshot: expect.any(Function),
+        commitState: expect.any(Function),
+        recordReconciliation: expect.any(Function),
+        resolveReconciliation: expect.any(Function),
+        clearReconciliation: expect.any(Function),
+        admitAction: expect.any(Function),
+        releaseAction: expect.any(Function),
+        hasActionAdmission: expect.any(Function),
+        getReceipt: expect.any(Function),
+      },
+    );
+    expect(mockExecuteAgentEventActor.mock.calls[0][0]).not.toHaveProperty('tenantId');
+    expect(req._agentEventTriggerProjection).toEqual({
+      version: 1,
+      eventType: 'chess. turn',
+      sourceType: 'm cp',
+      occurredAt: new Date(event.occurredAt),
+      expectedActionToolName: 'submit_ move',
+    });
+    expect(client).toMatchObject({
+      checkpointNamespace: 'event-actor/fork',
+      eventActorCheckpointId: 'checkpoint-base',
+      eventActorInvocationId: 'req-event-fork',
+      eventActorContinuation: 'warm',
+    });
+  });
+
+  it('prefers the execution-time action receipt over lagging run steps', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+    });
+    mockFindAgentEventAppliedAction.mockReturnValue(undefined);
+    let observedRead;
+    mockExecuteAgentEventActor.mockImplementationOnce(async (input) => {
+      await input.invoke({
+        checkpointNamespace: 'event-actor/fork',
+        checkpointId: 'checkpoint-base',
+        invocationId: 'req-event-receipt',
+        continuation: 'warm',
+        signal: input.signal,
+      });
+      observedRead = input.readAppliedAction();
+      throw new Error('stop after evidence read');
+    });
+    const req = {
+      user: { id: 'user-123', tenantId: '' },
+      body: {
+        text: 'Play the next move.',
+        clientRequestId: 'req-event-receipt',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-receipt',
+          target: { bindingId: 'binding-1' },
+          event: {
+            id: 'game-1:ply-9',
+            type: 'chess.turn',
+            occurredAt: Date.now(),
+            source: { id: 'speed-chess', type: 'mcp' },
+          },
+          expectedAction: { toolName: 'submit_move', argumentSubset: { expectedPly: 9 } },
+        },
+      },
+      config: {
+        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+      },
+      _isAgentTrigger: true,
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: undefined,
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+    /** Reproduces the observed race: the tool executed (graph context fires
+     * the observer during sendMessage) but the run-step collection is still
+     * empty when the executor reads evidence right after resolution. */
+    const client = {
+      options: {},
+      sendMessage: jest.fn(async () => {
+        req._agentEventActionObserver({
+          input: { expectedPly: 9 },
+          output: { name: 'submit_move', tool_call_id: 'call-9', content: '{"ok":true}' },
+        });
+        return {};
+      }),
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    await nextTick();
+
+    expect(mockExecuteAgentEventActor).toHaveBeenCalledTimes(1);
+    expect(mockCreateAgentEventActionRecorder).toHaveBeenCalledWith({
+      toolName: 'submit_move',
+      argumentSubset: { expectedPly: 9 },
+    });
+    expect(typeof req._agentEventActionObserver).toBe('function');
+    expect(observedRead).toEqual({ toolName: 'submit_move', toolCallId: 'call-9' });
+    expect(mockFindAgentEventAppliedAction).not.toHaveBeenCalled();
+  });
+
+  it('records reconciliation when persistence fails after an event action commits', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    const checkpoint = {
+      threadId: 'child-conversation',
+      checkpointId: 'checkpoint-applied',
+      checkpointNs: 'event-actor/applied',
+    };
+    mockExecuteAgentEventActor.mockResolvedValueOnce({
+      value: {
+        messageId: 'req-event-persistence:assistant',
+        databasePromise: Promise.resolve().then(() => {
+          throw new Error('response persistence unavailable');
+        }),
+      },
+      execution: {
+        status: 'applied',
+        continuation: 'warm',
+        head: { actorThreadId: 'child-conversation', generation: 2, checkpoint },
+        result: { action: { toolName: 'submit_move', toolCallId: 'call-move' } },
+      },
+    });
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Play the next move.',
+        clientRequestId: 'req-event-persistence',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-persistence',
+          target: { bindingId: 'binding-1' },
+          event: {
+            id: 'event-persistence',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+          expectedAction: { toolName: 'submit_move' },
+        },
+      },
+      config: {
+        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+      },
+      _isAgentTrigger: true,
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client: { options: {} } }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockRecordAgentEventActorReconciliation.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+
+    expect(mockExecuteAgentEventActor).toHaveBeenCalledTimes(1);
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      '[event-actor] Bound child event completed',
+      expect.any(Object),
+    );
+    expect(mockRecordAgentEventActorReconciliation).toHaveBeenCalledWith({
+      user: 'user-123',
+      tenantId: 'tenant-1',
+      conversationId: 'child-conversation',
+      reconciliation: expect.objectContaining({
+        invocationId: 'req-event-persistence',
+        status: 'persistence_failed',
+        checkpoint,
+        action: { toolName: 'submit_move', toolCallId: 'call-move' },
+      }),
+    });
+  });
+
+  it('records the applied actor history barrier only after both deterministic messages persist', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    const checkpoint = {
+      threadId: 'child-conversation',
+      checkpointId: 'checkpoint-applied',
+      checkpointNs: 'event-actor/applied',
+    };
+    const userMessage = {
+      messageId: 'req-event-success:user',
+      parentMessageId: 'parent-message',
+      conversationId: 'child-conversation',
+      text: 'Play the next move.',
+    };
+    const client = {
+      options: {},
+      skipSaveUserMessage: false,
+      sendMessage: jest.fn(async (_text, options) => {
+        options.onStart(userMessage, 'req-event-success:assistant');
+        return {
+          messageId: 'req-event-success:assistant',
+          text: 'Move submitted.',
+          databasePromise: Promise.resolve({
+            conversation: { conversationId: 'child-conversation' },
+          }),
+        };
+      }),
+    };
+    mockExecuteAgentEventActor.mockImplementationOnce(async (input) => ({
+      value: await input.invoke({
+        checkpointNamespace: checkpoint.checkpointNs,
+        checkpointId: checkpoint.checkpointId,
+        invocationId: 'req-event-success',
+        continuation: 'warm',
+        signal: input.signal,
+      }),
+      execution: {
+        status: 'applied',
+        continuation: 'warm',
+        head: { actorThreadId: 'child-conversation', generation: 2, checkpoint },
+        result: { action: { toolName: 'submit_move', toolCallId: 'call-move' } },
+      },
+    }));
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: userMessage.text,
+        clientRequestId: 'req-event-success',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-success',
+          target: { bindingId: 'binding-1' },
+          event: {
+            id: 'event-success',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+          expectedAction: { toolName: 'submit_move' },
+        },
+      },
+      config: {
+        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+      },
+      _isAgentTrigger: true,
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockRecordAgentEventActorReconciliation.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+
+    expect(mockSaveMessage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ messageId: 'req-event-success:user' }),
+      expect.any(Object),
+    );
+    expect(mockSaveMessage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ messageId: 'req-event-success:assistant' }),
+      expect.any(Object),
+    );
+    expect(mockRecordAgentEventActorReconciliation).toHaveBeenCalledWith({
+      user: 'user-123',
+      tenantId: 'tenant-1',
+      conversationId: 'child-conversation',
+      reconciliation: {
+        invocationId: 'req-event-success',
+        status: 'history_persisted',
+        checkpoint,
+        action: { toolName: 'submit_move', toolCallId: 'call-move' },
+        actionAdmitted: true,
+        observedAt: expect.any(Date),
+      },
+    });
+    const lastMessageWrite = Math.max(...mockSaveMessage.mock.invocationCallOrder);
+    expect(lastMessageWrite).toBeLessThan(
+      mockRecordAgentEventActorReconciliation.mock.invocationCallOrder[0],
+    );
+  });
+
+  it.each([
+    [
+      'durable-receipt rollout disabled',
+      { toolDefinitions: [] },
+      { eventDriven: { checkpointForks: true } },
+      undefined,
+      undefined,
+      false,
+    ],
+    [
+      'tool approval',
+      { toolDefinitions: [] },
+      {
+        toolApproval: { enabled: true },
+        eventDriven: { checkpointForks: true, durableReceipts: true },
+      },
+      undefined,
+      undefined,
+    ],
+    [
+      'primary ask_user_question',
+      { toolDefinitions: [{ name: 'ask_user_question' }] },
+      { eventDriven: { checkpointForks: true, durableReceipts: true } },
+      undefined,
+      undefined,
+    ],
+    [
+      'added-agent ask_user_question',
+      { toolDefinitions: [] },
+      { eventDriven: { checkpointForks: true, durableReceipts: true } },
+      new Map([['added-agent', { toolDefinitions: [{ name: 'ask_user_question' }] }]]),
+      undefined,
+    ],
+    [
+      'memory-checkpointer',
+      { toolDefinitions: [] },
+      {
+        eventDriven: { checkpointForks: true, durableReceipts: true },
+        checkpointer: { type: 'memory' },
+      },
+      undefined,
+      undefined,
+    ],
+    [
+      'always-apply skill prime',
+      { toolDefinitions: [], alwaysApplySkillPrimes: [{ name: 'playbook', body: '# playbook' }] },
+      { eventDriven: { checkpointForks: true, durableReceipts: true } },
+      undefined,
+      undefined,
+    ],
+    [
+      'manual skill prime',
+      { toolDefinitions: [], manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }] },
+      { eventDriven: { checkpointForks: true, durableReceipts: true } },
+      undefined,
+      undefined,
+    ],
+    [
+      'skills-capable (history-derived re-priming)',
+      { toolDefinitions: [] },
+      { eventDriven: { checkpointForks: true, durableReceipts: true } },
+      undefined,
+      { primeInvokedSkills: async () => undefined },
+    ],
+    [
+      'background-capable expected action',
+      { toolDefinitions: [], backgroundToolNames: ['submit_move_mcp_chess'] },
+      { eventDriven: { checkpointForks: true, durableReceipts: true } },
+      undefined,
+      undefined,
+    ],
+  ])(
+    'keeps %s event actors on the existing resumable path',
+    async (_label, agent, config, agentConfigs, clientOptions, durableReceiptsEnabled = true) => {
+      process.env.ENABLE_AGENT_EVENT_DURABLE_RECEIPTS = String(durableReceiptsEnabled);
+      mockGenerationJobManager.claimGeneration.mockResolvedValue(
+        wonGenerationClaim({
+          streamId: 'child-conversation',
+          conversationId: 'child-conversation',
+        }),
+      );
+      mockGetConvo.mockResolvedValue({
+        conversationId: 'parent-conversation',
+        agent_id: 'parent-agent',
+        tenantId: 'tenant-1',
+      });
+      const client = {
+        options: { agent, ...(clientOptions ?? {}) },
+        agentConfigs,
+        sendMessage: jest.fn(async () => {
+          throw new Error('stop after legacy event invocation started');
+        }),
+      };
+      const req = {
+        user: { id: 'user-123', tenantId: 'tenant-1' },
+        body: {
+          text: 'Continue with a pause-capable actor.',
+          clientRequestId: 'req-event-hitl',
+          conversationId: 'child-conversation',
+          endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+          agentEventDelivery: {
+            deliveryKey: 'req-event-hitl',
+            target: { bindingId: 'binding-1' },
+            expectedAction: { toolName: 'submit_move' },
+            event: {
+              id: 'event-hitl',
+              type: 'test.event',
+              occurredAt: Date.now(),
+              source: { id: 'test', type: 'api' },
+              payload: {},
+            },
+          },
+        },
+        config: { endpoints: { agents: config } },
+        _isAgentTrigger: true,
+        _agentEventBindingParentConversationId: 'parent-conversation',
+        _agentEventBindingParentAgentId: 'parent-agent',
+        _agentEventBindingTenantId: 'tenant-1',
+        _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+      };
+
+      await AgentController(
+        req,
+        createResumableResponse(),
+        jest.fn(),
+        jest.fn().mockResolvedValue({ client }),
+        null,
+      );
+      await nextTick();
+
+      expect(mockExecuteAgentEventActor).not.toHaveBeenCalled();
+      expect(mockBeginAgentEventActorLegacyTurn).toHaveBeenCalledWith({
+        user: 'user-123',
+        tenantId: 'tenant-1',
+        conversationId: 'child-conversation',
+        token: expect.any(String),
+      });
+      expect(client.sendMessage).toHaveBeenCalledTimes(1);
+      /** The fence must open before execution and close only after this
+       * turn's history is durable, under the same token. */
+      const fenceToken = mockBeginAgentEventActorLegacyTurn.mock.calls[0][0].token;
+      expect(mockBeginAgentEventActorLegacyTurn.mock.invocationCallOrder[0]).toBeLessThan(
+        client.sendMessage.mock.invocationCallOrder[0],
+      );
+      expect(mockGenerationJobManager.updateMetadata).toHaveBeenCalledWith(
+        'child-conversation',
+        { agentEventLegacyTurnToken: fenceToken },
+        1000,
+      );
+      expect(mockGenerationJobManager.updateMetadata.mock.invocationCallOrder[0]).toBeLessThan(
+        client.sendMessage.mock.invocationCallOrder[0],
+      );
+      expect(mockCompleteAgentEventActorLegacyTurn).toHaveBeenCalledWith({
+        user: 'user-123',
+        tenantId: 'tenant-1',
+        conversationId: 'child-conversation',
+        token: fenceToken,
+      });
+      expect(mockCompleteAgentEventActorLegacyTurn.mock.invocationCallOrder[0]).toBeGreaterThan(
+        client.sendMessage.mock.invocationCallOrder[0],
+      );
+    },
+  );
+
+  it('retains local fence ownership when Redis metadata persistence fails', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    mockGenerationJobManager.updateMetadata.mockRejectedValueOnce(
+      new Error('redis metadata unavailable'),
+    );
+    const client = {
+      options: {
+        agent: {
+          toolDefinitions: [],
+          manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }],
+        },
+      },
+      sendMessage: jest.fn(),
+    };
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Persist ownership before Redis metadata.',
+        clientRequestId: 'req-event-metadata-failure',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-metadata-failure',
+          target: { bindingId: 'binding-1' },
+          expectedAction: { toolName: 'submit_move' },
+          event: {
+            id: 'event-metadata-failure',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+        },
+      },
+      config: {
+        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+      },
+      _isAgentTrigger: true,
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockCompleteAgentEventActorLegacyTurn.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+
+    const fenceToken = mockBeginAgentEventActorLegacyTurn.mock.calls[0][0].token;
+    expect(client.sendMessage).not.toHaveBeenCalled();
+    expect(mockCompleteAgentEventActorLegacyTurn).toHaveBeenCalledWith({
+      user: 'user-123',
+      tenantId: 'tenant-1',
+      conversationId: 'child-conversation',
+      token: fenceToken,
+    });
+  });
+
+  it('does not execute a legacy event turn when its durable fence is not acquired', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    mockBeginAgentEventActorLegacyTurn.mockResolvedValueOnce(false);
+    const client = {
+      options: {
+        agent: {
+          toolDefinitions: [],
+          manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }],
+        },
+      },
+      sendMessage: jest.fn(async () => ({ messageId: 'must-not-run' })),
+    };
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Do not run without the fence.',
+        clientRequestId: 'req-event-fence-lost',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-fence-lost',
+          target: { bindingId: 'binding-1' },
+          expectedAction: { toolName: 'submit_move' },
+          event: {
+            id: 'event-fence-lost',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+        },
+      },
+      config: {
+        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+      },
+      _isAgentTrigger: true,
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockBeginAgentEventActorLegacyTurn.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+
+    expect(mockBeginAgentEventActorLegacyTurn).toHaveBeenCalledTimes(1);
+    expect(client.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('keeps the legacy event fence open when failed-turn persistence cannot complete', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    mockGenerationJobManager.completeJob.mockRejectedValueOnce(new Error('job store unavailable'));
+    const client = {
+      options: {
+        agent: {
+          toolDefinitions: [],
+          manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }],
+        },
+      },
+      sendMessage: jest.fn(async () => {
+        throw new Error('provider failed');
+      }),
+    };
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Persist the failed turn before releasing the fence.',
+        clientRequestId: 'req-event-error-persistence',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-error-persistence',
+          target: { bindingId: 'binding-1' },
+          expectedAction: { toolName: 'submit_move' },
+          event: {
+            id: 'event-error-persistence',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+        },
+      },
+      config: {
+        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+      },
+      _isAgentTrigger: true,
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockGenerationJobManager.completeJob.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+    await nextTick();
+
+    expect(mockBeginAgentEventActorLegacyTurn).toHaveBeenCalledTimes(1);
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledTimes(1);
+    expect(mockCompleteAgentEventActorLegacyTurn).not.toHaveBeenCalled();
+  });
+
+  it('does not replay a stale ambiguous legacy fence based only on age', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    mockBeginAgentEventActorLegacyTurn.mockResolvedValueOnce(false);
+    mockGetAgentEventActorSnapshot.mockResolvedValueOnce({
+      state: null,
+      reconciliations: [],
+      epoch: 0,
+      legacyTurn: {
+        token: 'crashed-legacy-turn',
+        startedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      },
+    });
+    const client = {
+      options: {
+        agent: {
+          toolDefinitions: [],
+          manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }],
+        },
+      },
+      sendMessage: jest.fn(async () => {
+        throw new Error('stop after recovered execution starts');
+      }),
+    };
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Recover the abandoned legacy fence.',
+        clientRequestId: 'req-event-stale-legacy',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-stale-legacy',
+          target: { bindingId: 'binding-1' },
+          expectedAction: { toolName: 'submit_move' },
+          event: {
+            id: 'event-stale-legacy',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+        },
+      },
+      config: {
+        endpoints: { agents: { eventDriven: { checkpointForks: true, durableReceipts: true } } },
+      },
+      _isAgentTrigger: true,
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockBeginAgentEventActorLegacyTurn.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+
+    expect(mockBeginAgentEventActorLegacyTurn).toHaveBeenCalledTimes(1);
+    expect(client.sendMessage).not.toHaveBeenCalled();
   });
 
   it('uses the guard-normalized tenant for a legacy untenanted event actor', async () => {

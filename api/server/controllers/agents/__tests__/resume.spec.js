@@ -102,6 +102,7 @@ const mockReleaseScheduleResumeFence = jest.fn();
 const mockAcquireEventChildGenerationLease = jest.fn();
 const mockReleaseEventChildLease = jest.fn();
 const mockIsSubagentOwnerAdmissible = jest.fn();
+const mockCompleteAgentEventActorLegacyTurn = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -135,6 +136,7 @@ jest.mock('~/models', () => ({
   getUserMemories: (...args) => mockGetUserMemories(...args),
   getRoleByName: (...args) => mockGetRoleByName(...args),
   isSubagentOwnerAdmissible: (...args) => mockIsSubagentOwnerAdmissible(...args),
+  completeAgentEventActorLegacyTurn: (...args) => mockCompleteAgentEventActorLegacyTurn(...args),
 }));
 
 jest.mock('~/server/services/Endpoints/agents/eventChildLease', () => ({
@@ -351,6 +353,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockAcquireEventChildGenerationLease.mockResolvedValue(mockReleaseEventChildLease);
     mockReleaseEventChildLease.mockResolvedValue(undefined);
     mockIsSubagentOwnerAdmissible.mockResolvedValue(true);
+    mockCompleteAgentEventActorLegacyTurn.mockResolvedValue(true);
     endpointAgent = {
       _id: 'mongo-agent-abc',
       id: AGENT_ID,
@@ -379,6 +382,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         files: req.body.files,
         isTemporary: req.body.isTemporary,
         conversationCreatedAt: req.conversationCreatedAt,
+        isScheduledFire: req._isScheduledFire,
         timezone: req.body.timezone,
         checkpointNamespace,
         requestBody,
@@ -718,6 +722,8 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       const res = await post(approveBody());
       expect(res.status).toBe(200);
       await settled;
+
+      expect(capturedInit.isScheduledFire).toBe(true);
 
       expect(mockClaimScheduleResume).toHaveBeenCalledWith('schedule-1', scheduledFor, {
         expectedConfigRevision: 4,
@@ -2089,6 +2095,27 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
   });
 
   describe('happy path: approve -> reconstruct -> resume -> finalize', () => {
+    it('seals the exact paused legacy-event fence only after resumed history persists', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { agentEventLegacyTurnToken: 'legacy-hitl-token' } }),
+      );
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockCompleteAgentEventActorLegacyTurn).toHaveBeenCalledWith({
+        user: USER_ID,
+        tenantId: TENANT_ID,
+        conversationId: CONVO_ID,
+        token: 'legacy-hitl-token',
+      });
+      expect(mockSaveMessage.mock.invocationCallOrder[0]).toBeLessThan(
+        mockCompleteAgentEventActorLegacyTurn.mock.invocationCallOrder[0],
+      );
+    });
+
     it('ACKs immediately and claims the action atomically with the submitted actionId', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       const res = await post(approveBody());

@@ -222,6 +222,7 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
               const deliveryStatus = delivery?.status;
               if (
                 deliveryStatus === 'staging' ||
+                deliveryStatus === 'batched' ||
                 deliveryStatus === 'pending' ||
                 deliveryStatus === 'leased'
               ) {

@@ -57,6 +57,7 @@ const {
   getUserMemories,
   getRoleByName,
   isSubagentOwnerAdmissible,
+  completeAgentEventActorLegacyTurn,
 } = require('~/models');
 const {
   acquireEventChildGenerationLease,
@@ -111,6 +112,31 @@ function deleteResumedGenerationCheckpoint({
     });
   }
   return deleteAgentCheckpoint(conversationId, checkpointerCfg, checkpointGeneration);
+}
+
+async function sealResumedLegacyEventActorTurn({ userId, conversationId, metadata }) {
+  const token = metadata?.agentEventLegacyTurnToken;
+  if (typeof token !== 'string' || token === '') {
+    return;
+  }
+  try {
+    const sealed = await completeAgentEventActorLegacyTurn({
+      user: userId,
+      conversationId,
+      ...(metadata?.tenantId == null ? {} : { tenantId: metadata.tenantId }),
+      token,
+    });
+    if (!sealed) {
+      logger.error(
+        `[event-actor] Resumed legacy turn fence ${token} was not sealed; forks stay blocked until bounded reclaim`,
+      );
+    }
+  } catch (error) {
+    logger.error(
+      `[event-actor] Failed to seal resumed legacy turn fence ${token}; forks stay blocked until bounded reclaim`,
+      getSafeErrorMetadata(error),
+    );
+  }
 }
 
 /** Error-path checkpoint cleanup runs after the HTTP ACK. A storage failure
@@ -472,6 +498,14 @@ async function finalizeResumedTurn({
     if (!savedResponseMessage) {
       throw new Error('Resumed response could not be persisted before terminal publication');
     }
+    /** The response row is now the durable history barrier for the resumed
+     * legacy turn. Seal its exact pre-pause token before publishing FINAL; a
+     * failed seal remains fail-closed and is recovered by the bounded path. */
+    await sealResumedLegacyEventActorTurn({
+      userId,
+      conversationId,
+      metadata: meta,
+    });
 
     const convo = await getConvo(userId, conversationId);
     const conversation = { ...(convo ?? {}), conversationId };
@@ -678,6 +712,13 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
 
   const scheduleId = job.metadata?.scheduleId;
   const scheduledFor = job.metadata?.scheduledFor;
+  // A resumed schedule is still an unattended scheduled run. Preserve that
+  // provenance on the rebuilt client so every later pause (a second approval
+  // or follow-up question) must prove its durable checkpoint before the job is
+  // exposed as `requires_action` again.
+  if (scheduleId) {
+    req._isScheduledFire = true;
+  }
   if (
     scheduleId &&
     !(await isScheduleLive(scheduleId, job.metadata?.scheduleConfigRevision, {

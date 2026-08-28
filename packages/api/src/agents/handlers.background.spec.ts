@@ -381,8 +381,13 @@ describe('createToolExecuteHandler — background tool calls', () => {
     });
     expect(JSON.parse(allowedPoll.content).result).toBe('safe historical result');
     expect(toolEndCallback).toHaveBeenCalledTimes(1);
+    /** Delivery callbacks must carry provenance: they report the ORIGINAL
+     * tool's name with the poll call's arguments, so identity-fencing
+     * consumers (the event-actor action recorder) can exclude them. */
     expect(toolEndCallback).toHaveBeenCalledWith(
       expect.objectContaining({
+        backgroundDelivery: true,
+        input: { background_task_id: taskId },
         output: expect.objectContaining({ artifact }),
       }),
       expect.any(Object),

@@ -661,7 +661,57 @@ describe('createToolExecuteHandler', () => {
       expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedValue);
       expect(result.artifact).toBeUndefined();
-      expect(toolEndCallback).not.toHaveBeenCalled();
+      /** The execution already happened, so identity-only evidence flows —
+       * with blank content and no artifact, never the blocked output. */
+      expect(toolEndCallback).toHaveBeenCalledTimes(1);
+      expect(toolEndCallback).toHaveBeenCalledWith(
+        {
+          input: {},
+          outputFiltered: true,
+          output: {
+            name: 'filtered_output_tool',
+            tool_call_id: 'call_filtered_output',
+            content: '',
+          },
+        },
+        expect.any(Object),
+      );
+      expect(JSON.stringify(toolEndCallback.mock.calls)).not.toContain(protectedValue);
+    });
+
+    it('supplies the executed arguments alongside the output to the tool end callback', async () => {
+      const toolEndCallback = jest.fn();
+      const tool = {
+        name: 'submit_move',
+        invoke: jest.fn(async () => ({ content: '{"ok":true}' })),
+      };
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+      }));
+      const handler = createToolExecuteHandler({ loadTools, toolEndCallback });
+
+      const [result] = await invokeHandler(handler, [
+        { id: 'call_submit_move', name: 'submit_move', args: { gameId: 'game-1', expectedPly: 8 } },
+      ]);
+
+      expect(result.content).toBe('{"ok":true}');
+      /** The stream-consumer tool-end path cannot reconstruct execution input,
+       * so the execution handler — which owns both halves — must supply it.
+       * The event-actor action recorder fences its declared argument subset
+       * against exactly this field; without it, warm continuation silently
+       * degrades to cold history rebuilds (proven by live canary). */
+      expect(toolEndCallback).toHaveBeenCalledTimes(1);
+      expect(toolEndCallback).toHaveBeenCalledWith(
+        {
+          input: { gameId: 'game-1', expectedPly: 8 },
+          output: expect.objectContaining({
+            name: 'submit_move',
+            tool_call_id: 'call_submit_move',
+            content: '{"ok":true}',
+          }),
+        },
+        expect.any(Object),
+      );
     });
 
     it.each([
@@ -767,7 +817,13 @@ describe('createToolExecuteHandler', () => {
       expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedValue);
       expect(result.artifact).toBeUndefined();
-      expect(toolEndCallback).not.toHaveBeenCalled();
+      /** Execution identity flows despite the blocked output; the protected
+       * content itself never reaches the callback. */
+      expect(toolEndCallback).toHaveBeenCalledWith(
+        expect.objectContaining({ outputFiltered: true }),
+        expect.any(Object),
+      );
+      expect(JSON.stringify(toolEndCallback.mock.calls)).not.toContain(protectedValue);
     });
 
     it('fails closed when tool output cannot be completely traversed', async () => {
@@ -819,7 +875,14 @@ describe('createToolExecuteHandler', () => {
       expect(result.status).toBe('error');
       expect(result.errorMessage).toContain('could not be completely inspected');
       expect(result.artifact).toBeUndefined();
-      expect(toolEndCallback).not.toHaveBeenCalled();
+      /** The tool did execute; only its uninspectable output is withheld. */
+      expect(toolEndCallback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          outputFiltered: true,
+          output: expect.objectContaining({ content: '' }),
+        }),
+        expect.any(Object),
+      );
     });
   });
 

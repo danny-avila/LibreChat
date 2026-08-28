@@ -310,6 +310,21 @@ describe('Tool Handlers', () => {
       expect(mockPluginService.getUserPluginAuthValue).toHaveBeenCalledTimes(2);
     });
 
+    it('marks credentials without an operator value as user-provided', async () => {
+      class CapturingTool {
+        constructor(fields) {
+          this.userProvidedAuthFields = fields.userProvidedAuthFields;
+        }
+      }
+
+      process.env.SD_WEBUI_URL = 'user_provided';
+      const initToolFunction = loadToolWithAuth('userId', ['SD_WEBUI_URL'], CapturingTool);
+      const tool = await initToolFunction();
+
+      expect(tool.userProvidedAuthFields).toEqual(new Set(['SD_WEBUI_URL']));
+      delete process.env.SD_WEBUI_URL;
+    });
+
     it('should throw an error for an unauthenticated tool', async () => {
       try {
         await loadTool2();

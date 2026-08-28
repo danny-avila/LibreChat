@@ -120,7 +120,7 @@ describe('AppService', () => {
         mcpConfig: null,
         imageOutputType: expect.any(String),
         fileConfig: undefined,
-        secureImageLinks: undefined,
+        secureImageLinks: true,
         balance: { enabled: true },
         filteredTools: undefined,
         includedTools: undefined,
@@ -161,6 +161,14 @@ describe('AppService', () => {
         imageOutputType: EImageOutputType.WEBP,
       }),
     );
+  });
+
+  it('should require authentication for image links unless explicitly disabled', async () => {
+    const secureResult = await AppService({ config: {} });
+    const legacyResult = await AppService({ config: { secureImageLinks: false } });
+
+    expect(secureResult.secureImageLinks).toBe(true);
+    expect(legacyResult.secureImageLinks).toBe(false);
   });
 
   it('should default to `PNG` `imageOutputType` with no provided type', async () => {
