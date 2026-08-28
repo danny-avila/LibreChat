@@ -4,7 +4,8 @@ import type { GrokExport, ImportProgress, GrokConversationEntry } from '~/import
 import type { ConvertedGrokConversation } from './convert';
 import type { Archive } from '~/import/archive';
 import { isGrokExport, isGrokConversationEntry } from '~/import/manifest';
-import { recordError, sanitizeImportError } from '~/import/errors';
+import { recordError, classifyImportError } from '~/import/errors';
+import type { TImportError } from 'librechat-data-provider';
 import { convertGrokConversation } from './convert';
 import { isUsableExternalId } from '~/import/sink';
 import { throttleCancelCheck } from '../cancel';
@@ -31,11 +32,14 @@ async function parseShard(archive: Archive, shard: string): Promise<GrokExport> 
   return parsed;
 }
 
-function describeShardError(error: unknown, shard: string): string {
+function describeShardError(error: unknown, shard: string): TImportError {
   if (error instanceof ShardShapeError) {
-    return error.message;
+    return { code: 'shard_wrong_shape', location: shard };
   }
-  return sanitizeImportError(error, `import shard ${shard}`);
+  return {
+    code: classifyImportError(error, `import shard ${shard}`),
+    location: shard,
+  };
 }
 
 function toSaveMessageDetails(
@@ -115,7 +119,7 @@ export async function runGrokImport(context: ProviderImportContext): Promise<voi
     try {
       parsed = await parseShard(archive, shard);
     } catch (error) {
-      recordError(report.errors, `${shard}: ${describeShardError(error, shard)}`);
+      recordError(report.errors, describeShardError(error, shard));
       continue;
     }
 
@@ -128,7 +132,7 @@ export async function runGrokImport(context: ProviderImportContext): Promise<voi
       }
 
       if (!isGrokConversationEntry(entry)) {
-        recordError(report.errors, `${shard}: malformed Grok conversation record`);
+        recordError(report.errors, { code: 'record_malformed', location: shard });
         progress.conversations.done += 1;
         await input.onProgress?.(progress);
         continue;
@@ -157,8 +161,14 @@ export async function runGrokImport(context: ProviderImportContext): Promise<voi
           }
         }
       } catch (error) {
+        /** A conversation with no usable id still has to be nameable in the
+         * report, so the entry falls back to a generic location rather than
+         * an empty one. */
         const label = externalId || 'conversation';
-        recordError(report.errors, `${label}: ${sanitizeImportError(error, `import ${label}`)}`);
+        recordError(report.errors, {
+          code: classifyImportError(error, `import ${label}`),
+          location: label,
+        });
       }
 
       progress.conversations.done += 1;

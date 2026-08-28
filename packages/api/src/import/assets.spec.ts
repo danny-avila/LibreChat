@@ -51,7 +51,10 @@ describe('ingestAssets', () => {
     });
 
     expect(result.unavailable).toBe(2);
-    expect(result.errors).toEqual(['Invalid empty asset pointer', 'Invalid empty asset pointer']);
+    expect(result.errors).toEqual([
+      { code: 'asset_pointer_invalid' },
+      { code: 'asset_pointer_invalid' },
+    ]);
   });
 
   it('imports referenced assets and reports the missing ones', async () => {
@@ -145,10 +148,9 @@ describe('ingestAssets', () => {
 
     expect(result.imported).toBe(1);
     expect(result.errors).toHaveLength(1);
-    // The raw storage-driver message never reaches the client; only a
-    // stable, sanitized category message does (see errors.spec.ts).
-    expect(result.errors[0]).not.toContain('quota exceeded');
-    expect(result.errors[0]).toContain('The import could not be completed');
+    // The raw storage-driver message never reaches the client. Only a stable
+    // error code and export-supplied location reach the report.
+    expect(result.errors[0]).toEqual({ code: 'failed', location: 'file-one.dat' });
 
     archive.close();
   });

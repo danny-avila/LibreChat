@@ -13,13 +13,14 @@ export { ZipBombError };
 const DEFAULT_MAX_ENTRIES = 20000;
 const DEFAULT_MAX_TOTAL_BYTES = 4096 * megabyte;
 /**
- * Hard ceiling on the per-entry cap for zip archives, whatever a deployment
- * configures. V8 caps a string at 536,870,888 characters
+ * Hard ceiling on the per-entry cap for every archive type, whatever a
+ * deployment configures. V8 caps a string at 536,870,888 characters
  * (`buffer.constants.MAX_STRING_LENGTH`), just under 512 MiB, so a larger
  * archive entry can never survive the `.toString('utf8')` every reader
  * performs; allowing one would trade a clear rejection for an opaque V8
- * allocation failure. Bare uploads use the configured import file limit
- * instead, which is also the limit enforced by the upload route.
+ * allocation failure. Bare uploads use the shard limit as well because their
+ * JSON is read as one in-memory entry, not the larger upload limit sized for
+ * a ZIP container.
  */
 const ABSOLUTE_MAX_ENTRY_BYTES = 512 * megabyte;
 /** Local file header signature every ZIP file begins with. Its absence
@@ -380,13 +381,15 @@ export async function openArchive(
   options: ArchiveOptions = {},
 ): Promise<Archive> {
   const bare = !(await isZipFile(filepath));
-  const configuredMaxEntryBytes =
-    options.maxEntryBytes ?? (bare ? resolveImportMaxFileSize() : resolveImportMaxShardSize());
+  /**
+   * Bare imports deliberately use the shard cap instead of the upload limit.
+   * The upload limit is sized for a ZIP container, while bare JSON is parsed
+   * as one in-memory entry and must stay within the shard and V8-safe limits.
+   */
+  const configuredMaxEntryBytes = options.maxEntryBytes ?? resolveImportMaxShardSize();
   const limits: ArchiveLimits = {
     maxEntries: options.maxEntries ?? DEFAULT_MAX_ENTRIES,
-    maxEntryBytes: bare
-      ? configuredMaxEntryBytes
-      : Math.min(configuredMaxEntryBytes, ABSOLUTE_MAX_ENTRY_BYTES),
+    maxEntryBytes: Math.min(configuredMaxEntryBytes, ABSOLUTE_MAX_ENTRY_BYTES),
     maxTotalBytes: options.maxTotalBytes ?? DEFAULT_MAX_TOTAL_BYTES,
   };
   const totals: ArchiveTotals = { bytesRead: 0, counted: new Set() };

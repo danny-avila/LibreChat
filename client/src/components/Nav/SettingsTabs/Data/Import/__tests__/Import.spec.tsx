@@ -382,7 +382,7 @@ describe('Import panel', () => {
           skipped: 0,
           assetsImported: 0,
           assetsUnavailable: 0,
-          errors: ['conversation 11 malformed'],
+          errors: [{ code: 'record_malformed', location: 'conversation 11' }],
         },
         error: 'A storage error occurred while processing the import',
       }),
@@ -392,7 +392,9 @@ describe('Import panel', () => {
     /* Exactly once: the count is the <details> summary. It used to also be
        repeated in the status block above, which this assertion enshrined. */
     expect(screen.getAllByText(/^1 items could not be imported$/i)).toHaveLength(1);
-    expect(screen.getByText(/conversation 11 malformed/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/conversation 11: A conversation record could not be read/i),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(/A storage error occurred while processing the import/i),
     ).toBeInTheDocument();
@@ -423,7 +425,10 @@ describe('Import panel', () => {
           skipped: 0,
           assetsImported: 0,
           assetsUnavailable: 0,
-          errors: ['conversation 11 malformed', 'conversation 12 malformed'],
+          errors: [
+            { code: 'record_malformed', location: 'conversation 11' },
+            { code: 'errors_truncated', params: { count: 10 } },
+          ],
         },
       }),
     });
@@ -431,6 +436,7 @@ describe('Import panel', () => {
     render(<Import />);
 
     expect(screen.getByText(/^2 items could not be imported$/i)).toBeInTheDocument();
+    expect(screen.getByText(/10 further failures were not recorded/i)).toBeInTheDocument();
   });
 
   it('moves focus back to the import control after starting another import', () => {

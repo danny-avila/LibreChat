@@ -564,7 +564,10 @@ describe('runImport', () => {
 
     expect(report.imported).toBe(1);
     expect(report.errors).toHaveLength(1);
-    expect(report.errors[0]).toContain('conversations-000.json');
+    expect(report.errors[0]).toEqual({
+      code: 'archive_corrupt',
+      location: 'conversations-000.json',
+    });
     expect(recorded.conversations).toHaveLength(1);
     expect(recorded.conversations[0].title).toBe('Good convo');
   });
@@ -590,8 +593,10 @@ describe('runImport', () => {
 
     expect(report.imported).toBe(1);
     expect(report.errors).toHaveLength(1);
-    expect(report.errors[0]).toContain('conversations-000.json');
-    expect(report.errors[0]).toContain('expected an array');
+    expect(report.errors[0]).toEqual({
+      code: 'shard_not_array',
+      location: 'conversations-000.json',
+    });
     expect(recorded.conversations).toHaveLength(1);
     expect(recorded.conversations[0].title).toBe('Good convo three');
   });
@@ -617,8 +622,10 @@ describe('runImport', () => {
 
     expect(report.imported).toBe(1);
     expect(report.errors).toHaveLength(1);
-    expect(report.errors[0]).toContain('conversations-000.json');
-    expect(report.errors[0]).toContain('expected ChatGPT conversation objects');
+    expect(report.errors[0]).toEqual({
+      code: 'shard_wrong_shape',
+      location: 'conversations-000.json',
+    });
     expect(recorded.conversations).toHaveLength(1);
     expect(recorded.conversations[0].title).toBe('Good convo five');
   });
@@ -646,7 +653,10 @@ describe('runImport', () => {
 
     expect(report.imported).toBe(3);
     expect(report.errors).toHaveLength(1);
-    expect(report.errors[0]).toContain('conversations-000.json');
+    expect(report.errors[0]).toEqual({
+      code: 'record_malformed',
+      location: 'conversations-000.json',
+    });
     expect(recorded.conversations.map((conversation) => conversation.title)).toEqual([
       'Before malformed entry',
       'After malformed shard',
@@ -713,7 +723,10 @@ describe('runImport', () => {
     expect(report.imported).toBe(1);
     expect(report.assetsImported).toBe(1);
     expect(report.errors).toHaveLength(2);
-    expect(report.errors[0]).toContain('conversations-000.json[0]');
+    expect(report.errors[0]).toEqual({
+      code: 'failed',
+      location: 'ext-malformed-mapping',
+    });
     expect(recorded.messages.find((message) => message.text === '')?.files).toHaveLength(1);
   });
 
@@ -761,7 +774,10 @@ describe('runImport', () => {
 
     expect(report.imported).toBe(1);
     expect(report.errors).toHaveLength(1);
-    expect(report.errors[0]).toContain('ext-broken');
+    expect(report.errors[0]).toEqual({
+      code: 'failed',
+      location: 'ext-broken',
+    });
     expect(recorded.conversations).toHaveLength(1);
     expect(recorded.conversations[0].title).toBe('Good convo two');
   });
@@ -793,10 +809,10 @@ describe('runImport', () => {
     expect(report.assetsImported).toBe(2);
     expect(report.assetsUnavailable).toBe(1);
     expect(report.errors).toHaveLength(1);
-    // The raw storage-driver message ('quota exceeded') is never returned to the
-    // client; only a stable, sanitized category message is (see errors.spec.ts).
-    expect(report.errors[0]).not.toContain('quota exceeded');
-    expect(report.errors[0]).toContain('The import could not be completed');
+    expect(report.errors[0]).toEqual({
+      code: 'failed',
+      location: 'file_generated.dat',
+    });
     expect(recorded.conversations).toHaveLength(2);
   });
 

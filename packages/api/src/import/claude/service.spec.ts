@@ -134,7 +134,10 @@ describe('inspectExport for a Claude export', () => {
     expect(recorded.conversations).toHaveLength(2);
     expect(report.imported).toBe(2);
     expect(report.errors).toHaveLength(1);
-    expect(report.errors[0]).toContain('malformed Claude conversation record');
+    expect(report.errors[0]).toEqual({
+      code: 'record_malformed',
+      location: 'conversations-001.json',
+    });
   });
 
   /** `uuid` is the external id the skip set and the `importedFrom` marker are
@@ -426,7 +429,10 @@ describe('runImport for a Claude export', () => {
 
     expect(report.imported).toBe(0);
     expect(report.errors).toHaveLength(1);
-    expect(report.errors[0]).toContain('expected an array of conversations');
+    expect(report.errors[0]).toEqual({
+      code: 'shard_not_array',
+      location: 'conversations.json',
+    });
   });
 
   it('records a shard whose entries are not Claude-shaped', async () => {
@@ -444,7 +450,10 @@ describe('runImport for a Claude export', () => {
     });
 
     expect(report.imported).toBe(0);
-    expect(report.errors[0]).toContain('expected Claude conversation objects');
+    expect(report.errors[0]).toEqual({
+      code: 'shard_wrong_shape',
+      location: 'conversations.json',
+    });
   });
 
   it('imports the valid records of a shard containing a malformed later entry', async () => {
@@ -469,8 +478,10 @@ describe('runImport for a Claude export', () => {
 
     expect(report.imported).toBe(2);
     expect(report.errors).toHaveLength(1);
-    expect(report.errors[0]).toContain('conversations-000.json');
-    expect(report.errors[0]).toContain('malformed Claude conversation record');
+    expect(report.errors[0]).toEqual({
+      code: 'record_malformed',
+      location: 'conversations-000.json',
+    });
     expect(recorded.conversations.map((conversation) => conversation.title)).toEqual([
       'Before malformed entry',
       'After malformed shard',
@@ -500,8 +511,10 @@ describe('runImport for a Claude export', () => {
 
     expect(report.imported).toBe(1);
     expect(report.errors).toHaveLength(1);
-    expect(report.errors[0]).toContain('conversations-000.json');
-    expect(report.errors[0]).toContain('expected Claude conversation objects');
+    expect(report.errors[0]).toEqual({
+      code: 'shard_wrong_shape',
+      location: 'conversations-000.json',
+    });
     expect(recorded.conversations.map((conversation) => conversation.title)).toEqual([
       'Good shard',
     ]);
@@ -526,7 +539,10 @@ describe('runImport for a Claude export', () => {
 
     expect(report.imported).toBe(1);
     expect(report.errors).toHaveLength(1);
-    expect(report.errors[0]).toContain('expected Claude conversation objects');
+    expect(report.errors[0]).toEqual({
+      code: 'shard_wrong_shape',
+      location: 'conversations-000.json',
+    });
     expect(recorded.conversations.map((conversation) => conversation.title)).toEqual([
       'Good shard',
     ]);

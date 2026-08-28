@@ -1,5 +1,5 @@
 import { Button, Spinner } from '@librechat/client';
-import type { TImportJob, TImportPhase } from 'librechat-data-provider';
+import type { TImportErrorCode, TImportJob, TImportPhase } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
 import useAutoFocus from './useAutoFocus';
 import { useLocalize } from '~/hooks';
@@ -22,6 +22,21 @@ const IMPORT_ERROR_KEYS: Record<string, TranslationKeys> = {
   'A storage error occurred while processing the import':
     'com_ui_import_conversation_storage_error',
   'The import could not be completed': 'com_ui_import_conversation_failed',
+};
+
+const IMPORT_REPORT_ERROR_KEYS: Record<TImportErrorCode, TranslationKeys> = {
+  unsupported_type: 'com_ui_import_error_unsupported_type',
+  archive_too_large: 'com_ui_import_error_archive_too_large',
+  file_too_large: 'com_ui_import_error_file_too_large',
+  archive_corrupt: 'com_ui_import_error_archive_corrupt',
+  storage_error: 'com_ui_import_error_storage_error',
+  failed: 'com_ui_import_error_failed',
+  shard_not_array: 'com_ui_import_error_shard_not_array',
+  shard_wrong_shape: 'com_ui_import_error_shard_wrong_shape',
+  shard_missing: 'com_ui_import_error_shard_missing',
+  record_malformed: 'com_ui_import_error_record_malformed',
+  asset_pointer_invalid: 'com_ui_import_error_asset_pointer_invalid',
+  errors_truncated: 'com_ui_import_error_truncated',
 };
 
 interface ProgressProps {
@@ -134,9 +149,21 @@ export default function Progress({ job, onCancel, onReset, isCancelling }: Progr
             {localize('com_ui_import_errors', { 0: job.report.errors.length })}
           </summary>
           <ul className="mt-2 list-inside list-disc text-sm text-text-secondary">
-            {job.report.errors.map((error, index) => (
-              <li key={index}>{error}</li>
-            ))}
+            {job.report.errors.map((error, index) => {
+              const reasonKey =
+                IMPORT_REPORT_ERROR_KEYS[error.code] ?? 'com_ui_import_error_failed';
+              const reason = localize(
+                reasonKey,
+                error.code === 'errors_truncated' ? { 0: error.params?.count ?? 0 } : error.params,
+              );
+              return (
+                <li key={index}>
+                  {error.location
+                    ? localize('com_ui_import_error_at', { 0: error.location, 1: reason })
+                    : reason}
+                </li>
+              );
+            })}
           </ul>
         </details>
       )}

@@ -1,3 +1,4 @@
+import type { TImportError, TImportFailureCode } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
 
 const UNSUPPORTED_IMPORT_TYPE = 'Unsupported import type';
@@ -53,34 +54,52 @@ function errorCode(error: Error): string | undefined {
 
 /**
  * Classifies a raw import failure into one of a small set of stable,
- * non-revealing messages before it is stored on a job record or returned
+ * non-revealing codes before it is stored on a job record or returned
  * to a client. Node's `fs` errors (`ENOENT`, `EACCES`, ...) embed the
  * server's absolute upload path in `.message`, and a raw `ZipBombError`
  * or archive-parsing error can embed attacker-controlled entry names;
  * none of that detail is ever forwarded. The original error is logged
  * here, server-side, and only here; callers should not also log it.
  */
-export function sanitizeImportError(error: unknown, context: string): string {
+export function classifyImportError(error: unknown, context: string): TImportFailureCode {
   const normalized = error instanceof Error ? error : new Error(String(error));
   logger.error(`[import] ${context}`, normalized);
 
   const code = errorCode(normalized);
   if (code === 'IMPORT_FILE_TOO_LARGE') {
-    return FILE_TOO_LARGE_MESSAGE;
+    return 'file_too_large';
   }
   if (code === 'ZIP_BOMB') {
-    return ARCHIVE_TOO_LARGE_MESSAGE;
+    return 'archive_too_large';
   }
   if (normalized.message === UNSUPPORTED_IMPORT_TYPE) {
-    return UNSUPPORTED_IMPORT_TYPE;
+    return 'unsupported_type';
   }
   if (code !== undefined && FS_ERROR_CODES.has(code)) {
-    return STORAGE_FAILURE_MESSAGE;
+    return 'storage_error';
   }
   if (normalized instanceof SyntaxError || CORRUPT_ARCHIVE_PATTERN.test(normalized.message)) {
-    return ARCHIVE_CORRUPT_MESSAGE;
+    return 'archive_corrupt';
   }
-  return IMPORT_FAILED_MESSAGE;
+  return 'failed';
+}
+
+/**
+ * The English rendering of each code. Only for `job.error` and other places
+ * that must be a single string; the per-item report carries codes instead and
+ * is localized on the client.
+ */
+const MESSAGE_BY_CODE: Record<TImportFailureCode, string> = {
+  unsupported_type: UNSUPPORTED_IMPORT_TYPE,
+  archive_too_large: ARCHIVE_TOO_LARGE_MESSAGE,
+  file_too_large: FILE_TOO_LARGE_MESSAGE,
+  archive_corrupt: ARCHIVE_CORRUPT_MESSAGE,
+  storage_error: STORAGE_FAILURE_MESSAGE,
+  failed: IMPORT_FAILED_MESSAGE,
+};
+
+export function sanitizeImportError(error: unknown, context: string): string {
+  return MESSAGE_BY_CODE[classifyImportError(error, context)];
 }
 
 /** How many per-item failures a report keeps. A systematically broken export
@@ -95,13 +114,13 @@ export const MAX_REPORT_ERRORS = 100;
  * replacing the rest with a single running count. Returns nothing: callers
  * push through this rather than onto the array directly.
  */
-export function recordError(errors: string[], message: string): void {
+export function recordError(errors: TImportError[], entry: TImportError): void {
   if (errors.length < MAX_REPORT_ERRORS) {
-    errors.push(message);
+    errors.push(entry);
     return;
   }
 
   const suffix = errors[MAX_REPORT_ERRORS];
-  const hidden = suffix ? Number(suffix.match(/^(\d+)/)?.[1] ?? 0) + 1 : 1;
-  errors[MAX_REPORT_ERRORS] = `${hidden} further failures were not recorded`;
+  const hidden = Number(suffix?.params?.count ?? 0) + 1;
+  errors[MAX_REPORT_ERRORS] = { code: 'errors_truncated', params: { count: hidden } };
 }

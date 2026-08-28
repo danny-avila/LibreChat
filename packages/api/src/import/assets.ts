@@ -1,12 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '@librechat/data-schemas';
 import { FileContext } from 'librechat-data-provider';
+import type { TImportError } from 'librechat-data-provider';
 import type { ChatGptAttachment, ImportedAsset } from './types';
 import type { AssetReference } from './chatgpt/content';
 import type { ExportLayout } from './manifest';
 import type { Archive } from './archive';
 import { FILENAME_SEGMENT_MAX_BYTES, sanitizeFilename } from '~/utils/files';
-import { recordError, sanitizeImportError } from './errors';
+import { classifyImportError, recordError } from './errors';
 import { ASSET_NAMES_ENTRY } from './manifest';
 
 export interface SaveBufferInput {
@@ -92,7 +93,7 @@ export interface IngestResult {
   map: Map<string, ImportedAsset>;
   imported: number;
   unavailable: number;
-  errors: string[];
+  errors: TImportError[];
 }
 
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -390,7 +391,7 @@ export async function ingestAssets(input: IngestInput): Promise<IngestResult> {
   const names = await readAssetNames(archive, layout);
 
   const map = new Map<string, ImportedAsset>();
-  const errors: string[] = [];
+  const errors: TImportError[] = [];
   let imported = 0;
   let unavailable = 0;
 
@@ -401,7 +402,7 @@ export async function ingestAssets(input: IngestInput): Promise<IngestResult> {
     if (typeof pointer !== 'string' || pointer.trim().length === 0) {
       unavailable += 1;
       processed += 1;
-      recordError(errors, 'Invalid empty asset pointer');
+      recordError(errors, { code: 'asset_pointer_invalid' });
       await input.onProgress?.(processed);
       continue;
     }
@@ -429,10 +430,10 @@ export async function ingestAssets(input: IngestInput): Promise<IngestResult> {
       map.set(pointer, asset);
       imported += 1;
     } catch (error) {
-      recordError(
-        errors,
-        `${entryName}: ${sanitizeImportError(error, `import asset ${entryName}`)}`,
-      );
+      recordError(errors, {
+        code: classifyImportError(error, `import asset ${entryName}`),
+        location: entryName,
+      });
     }
 
     processed += 1;

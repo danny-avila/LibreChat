@@ -394,7 +394,10 @@ describe('runImport for a Grok export', () => {
 
     expect(report.imported).toBe(0);
     expect(report.errors).toHaveLength(1);
-    expect(report.errors[0]).toContain('expected a Grok export object');
+    expect(report.errors[0]).toEqual({
+      code: 'shard_wrong_shape',
+      location: GROK_ENTRY_PATH,
+    });
   });
 
   it('records a conversation missing its id without aborting the rest of the shard', async () => {
@@ -417,8 +420,11 @@ describe('runImport for a Grok export', () => {
       existingExternalIds: new Set(),
     });
 
-    expect(report.imported).toBe(2);
     expect(report.errors).toHaveLength(1);
+    expect(report.errors[0]).toEqual({
+      code: 'record_malformed',
+      location: GROK_ENTRY_PATH,
+    });
     expect(recorded.conversations.map((entry) => entry.convo.importedFrom.externalId)).toEqual([
       'ok-1',
       'ok-2',
@@ -447,7 +453,10 @@ describe('runImport for a Grok export', () => {
 
     expect(report.imported).toBe(2);
     expect(report.errors).toHaveLength(1);
-    expect(report.errors[0]).toContain('malformed Grok conversation record');
+    expect(report.errors[0]).toEqual({
+      code: 'record_malformed',
+      location: GROK_ENTRY_PATH,
+    });
     expect(recorded.conversations.map((entry) => entry.convo.importedFrom.externalId)).toEqual([
       'ok-1',
       'ok-2',

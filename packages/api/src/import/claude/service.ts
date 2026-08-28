@@ -3,7 +3,8 @@ import type { SaveMessageDetails, RunImportInput, ProviderImportContext } from '
 import type { ClaudeConversation, ImportProgress } from '~/import/types';
 import type { ConvertedClaudeConversation } from './convert';
 import type { Archive } from '~/import/archive';
-import { recordError, sanitizeImportError } from '~/import/errors';
+import type { TImportError } from 'librechat-data-provider';
+import { recordError, classifyImportError } from '~/import/errors';
 import { hasClaudeConversationShape, isClaudeConversation } from '~/import/manifest';
 import { convertClaudeConversation } from './convert';
 import { throttleCancelCheck } from '../cancel';
@@ -31,11 +32,20 @@ async function parseShard(archive: Archive, shard: string): Promise<unknown[]> {
   return parsed;
 }
 
-function describeShardError(error: unknown, shard: string): string {
+function describeShardError(error: unknown, shard: string): TImportError {
   if (error instanceof ShardShapeError) {
-    return error.message;
+    return {
+      code:
+        error.message === 'expected an array of conversations'
+          ? 'shard_not_array'
+          : 'shard_wrong_shape',
+      location: shard,
+    };
   }
-  return sanitizeImportError(error, `import shard ${shard}`);
+  return {
+    code: classifyImportError(error, `import shard ${shard}`),
+    location: shard,
+  };
 }
 
 function toSaveMessageDetails(
@@ -117,7 +127,7 @@ export async function runClaudeImport(context: ProviderImportContext): Promise<v
     try {
       conversations = await parseShard(archive, shard);
     } catch (error) {
-      recordError(report.errors, `${shard}: ${describeShardError(error, shard)}`);
+      recordError(report.errors, describeShardError(error, shard));
       continue;
     }
 
@@ -129,7 +139,7 @@ export async function runClaudeImport(context: ProviderImportContext): Promise<v
         break;
       }
       if (!isClaudeConversation(conv)) {
-        recordError(report.errors, `${shard}: malformed Claude conversation record`);
+        recordError(report.errors, { code: 'record_malformed', location: shard });
         progress.conversations.done += 1;
         await input.onProgress?.(progress);
         continue;
@@ -152,10 +162,10 @@ export async function runClaudeImport(context: ProviderImportContext): Promise<v
          * within one export would otherwise import twice. */
         input.existingExternalIds.add(conv.uuid);
       } catch (error) {
-        recordError(
-          report.errors,
-          `${conv.uuid}: ${sanitizeImportError(error, `import conversation ${conv.uuid}`)}`,
-        );
+        recordError(report.errors, {
+          code: classifyImportError(error, `import conversation ${conv.uuid}`),
+          location: conv.uuid,
+        });
       }
 
       progress.conversations.done += 1;

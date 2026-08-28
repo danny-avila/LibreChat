@@ -9,6 +9,7 @@ import type {
   ImportProgress,
   ImportReport,
 } from './types';
+import type { TImportError } from 'librechat-data-provider';
 import type { SaveMessageDetails, RunImportInput, ProviderImportContext } from './sink';
 import type { AssetReference } from './chatgpt/content';
 import type { Archive } from './archive';
@@ -20,7 +21,7 @@ import {
   hasChatGptConversationShape,
   isChatGptConversation,
 } from './manifest';
-import { recordError, sanitizeImportError } from './errors';
+import { classifyImportError, recordError } from './errors';
 import { collectAssetReferences } from './chatgpt/content';
 import { convertConversation } from './chatgpt/convert';
 import { runClaudeImport } from './claude/service';
@@ -73,11 +74,20 @@ async function parseShard(archive: Archive, shard: string): Promise<ChatGptConve
   return asChatGptConversations(await readShardJson(archive, shard));
 }
 
-function describeShardError(error: unknown, shard: string): string {
+function describeShardError(error: unknown, shard: string): TImportError {
   if (error instanceof ShardShapeError) {
-    return error.message;
+    return {
+      code:
+        error.message === 'expected an array of conversations'
+          ? 'shard_not_array'
+          : 'shard_wrong_shape',
+      location: shard,
+    };
   }
-  return sanitizeImportError(error, `import shard ${shard}`);
+  return {
+    code: classifyImportError(error, `import shard ${shard}`),
+    location: shard,
+  };
 }
 
 function scanConversation(conv: ChatGptConversation, scan: ExportScan, seen: Set<string>): void {
@@ -120,7 +130,7 @@ function scanConversation(conv: ChatGptConversation, scan: ExportScan, seen: Set
 async function scanExport(
   archive: Archive,
   shards: string[],
-  errors: string[],
+  errors: TImportError[],
   existingExternalIds: ReadonlySet<string>,
   isCancelled?: () => Promise<boolean>,
 ): Promise<ExportScan> {
@@ -158,9 +168,9 @@ async function scanExport(
       const conversations = asChatGptConversations(parsed);
       scan.shards.push(shard);
       scan.conversations += conversations.length;
-      for (const [index, conv] of conversations.entries()) {
+      for (const conv of conversations) {
         if (!isChatGptConversation(conv)) {
-          recordError(errors, `${shard}[${index}]: expected ChatGPT conversation object`);
+          recordError(errors, { code: 'record_malformed', location: shard });
           continue;
         }
         if (
@@ -172,14 +182,14 @@ async function scanExport(
         try {
           scanConversation(conv, scan, seen);
         } catch (error) {
-          recordError(
-            errors,
-            `${shard}[${index}]: ${sanitizeImportError(error, `scan conversation ${conv.conversation_id}`)}`,
-          );
+          recordError(errors, {
+            code: classifyImportError(error, `scan conversation ${conv.conversation_id}`),
+            location: conv.conversation_id,
+          });
         }
       }
     } catch (error) {
-      recordError(errors, `${shard}: ${describeShardError(error, shard)}`);
+      recordError(errors, describeShardError(error, shard));
     }
   }
 
@@ -338,7 +348,7 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
      * an absent feature: without this the run imports what survived and reports
      * success, and the user never learns which conversations were skipped. */
     for (const shard of layout.missingShards) {
-      recordError(report.errors, `${shard}: listed in the manifest but missing from the archive`);
+      recordError(report.errors, { code: 'shard_missing', location: shard });
     }
 
     const providerRun: ProviderImportContext = {
@@ -433,7 +443,7 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
       try {
         conversations = await parseShard(archive, shard);
       } catch (error) {
-        recordError(report.errors, `${shard}: ${describeShardError(error, shard)}`);
+        recordError(report.errors, describeShardError(error, shard));
         continue;
       }
 
@@ -478,10 +488,10 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
             input.existingExternalIds.add(externalId);
           }
         } catch (error) {
-          recordError(
-            report.errors,
-            `${conv.conversation_id}: ${sanitizeImportError(error, `import conversation ${conv.conversation_id}`)}`,
-          );
+          recordError(report.errors, {
+            code: classifyImportError(error, `import conversation ${conv.conversation_id}`),
+            location: conv.conversation_id,
+          });
         }
 
         progress.conversations.done += 1;

@@ -233,17 +233,19 @@ describe('openArchive (bare / non-zip upload)', () => {
     archive.close();
   });
 
-  it('uses the configured import file limit for bare uploads', async () => {
+  it('uses the configured shard limit for bare uploads', async () => {
     const originalFileLimit = process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES;
     const originalShardLimit = process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES;
     process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = '1000';
     process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES = '100';
 
     try {
-      const filepath = writeBareFile('x'.repeat(700), 'large.json');
-      const archive = await openArchive(filepath);
+      const oversized = writeBareFile('x'.repeat(700), 'large.json');
+      await expect(openArchive(oversized)).rejects.toThrow(ImportFileTooLargeError);
 
-      await expect(archive.read('large.json')).resolves.toHaveLength(700);
+      const filepath = writeBareFile('x'.repeat(50), 'small.json');
+      const archive = await openArchive(filepath);
+      await expect(archive.read('small.json')).resolves.toHaveLength(50);
       archive.close();
     } finally {
       if (originalFileLimit === undefined) {

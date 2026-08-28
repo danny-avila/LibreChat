@@ -696,12 +696,52 @@ export type TImportSummary = {
   starred: number;
 };
 
+/**
+ * How a thrown import failure was classified. Every raw error is reduced to
+ * one of these before it leaves the server, because `fs` errors embed the
+ * upload's absolute path and archive errors embed attacker-controlled entry
+ * names.
+ */
+export type TImportFailureCode =
+  | 'unsupported_type'
+  | 'archive_too_large'
+  | 'file_too_large'
+  | 'archive_corrupt'
+  | 'storage_error'
+  | 'failed';
+
+/**
+ * Why one item of an import failed. A code rather than prose because these
+ * entries are rendered to the user, who may not read English, and the server
+ * has no locale to render in.
+ */
+export type TImportErrorCode =
+  | TImportFailureCode
+  | 'shard_not_array'
+  | 'shard_wrong_shape'
+  | 'shard_missing'
+  | 'record_malformed'
+  | 'asset_pointer_invalid'
+  | 'errors_truncated';
+
+export type TImportError = {
+  code: TImportErrorCode;
+  /**
+   * Which part of the export failed: a shard filename, a conversation's
+   * external id, or an asset entry name. An identifier the export itself
+   * supplied, never prose, so it is shown verbatim in every locale.
+   */
+  location?: string;
+  /** Interpolation values for the code's message, currently only `count`. */
+  params?: Record<string, string | number>;
+};
+
 export type TImportReport = {
   imported: number;
   skipped: number;
   assetsImported: number;
   assetsUnavailable: number;
-  errors: string[];
+  errors: TImportError[];
 };
 
 export type TImportPhase =
