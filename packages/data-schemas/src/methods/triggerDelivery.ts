@@ -50,6 +50,12 @@ function isStagingDelivery(
 const stagingDeliveryScope = {
   $or: [{ status: { $in: ['staging', 'capability_staging'] } }, { capabilityStatus: 'publishing' }],
 };
+const capabilityStatusProjection = {
+  publishing: 'capability_staging',
+  pending: 'capability_pending',
+  leased: 'capability_leased',
+  dead: 'capability_dead',
+} as const;
 
 type DuplicateKeyError = { code?: number };
 
@@ -325,17 +331,10 @@ function toRecord(delivery: IAgentTriggerDelivery): AgentTriggerDeliveryRecord {
   if (delivery._id == null || delivery.createdAt == null) {
     throw new Error('Persisted agent trigger delivery is missing its identity or creation time');
   }
-  const shieldedCapability = delivery.requiredWorkerCapability != null && delivery.capabilityStatus;
+  const shieldedCapability =
+    delivery.requiredWorkerCapability != null ? delivery.capabilityStatus : undefined;
   const projectedStatus =
-    shieldedCapability === 'publishing'
-      ? 'capability_staging'
-      : shieldedCapability === 'pending'
-        ? 'capability_pending'
-        : shieldedCapability === 'leased'
-          ? 'capability_leased'
-          : shieldedCapability === 'dead'
-            ? 'capability_dead'
-            : delivery.status;
+    shieldedCapability == null ? delivery.status : capabilityStatusProjection[shieldedCapability];
   return {
     id: String(delivery._id),
     deliveryKey: delivery.deliveryKey,
@@ -2894,6 +2893,12 @@ export function createAgentTriggerDeliveryMethods(
     }
     const previousRequeueCount = candidate.requeueCount ?? 0;
     const shieldedCapability = candidate.capabilityStatus === 'dead';
+    let stagedStatus: IAgentTriggerDelivery['status'] = 'capability_staging';
+    if (candidate.requiredWorkerCapability == null) {
+      stagedStatus = 'staging';
+    } else if (shieldedCapability) {
+      stagedStatus = 'leased';
+    }
     /** Claim the root before touching members. A terminal receipt and requeue
      * now serialize on this CAS; staging recovery finishes member preparation
      * if the process exits before publication. */
@@ -2911,12 +2916,7 @@ export function createAgentTriggerDeliveryMethods(
         },
         {
           $set: {
-            status:
-              candidate.requiredWorkerCapability == null
-                ? 'staging'
-                : shieldedCapability
-                  ? 'leased'
-                  : 'capability_staging',
+            status: stagedStatus,
             laneSequence: 0,
             attempts: 0,
             availableAt,
