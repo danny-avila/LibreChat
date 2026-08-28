@@ -89,6 +89,30 @@ describe('Event Actor turn module', () => {
     });
   });
 
+  it('retains an unstarted history fence until transient release failure can be retried', async () => {
+    const complete = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('conversation store unavailable'))
+      .mockResolvedValueOnce(true);
+    const turn = createAgentEventActorTurn(
+      {
+        strategy: 'history',
+        history: {
+          owner,
+          persistToken: jest.fn().mockRejectedValue(new Error('metadata unavailable')),
+          invoke: jest.fn(),
+        },
+      },
+      { history: { begin: jest.fn().mockResolvedValue(true), complete } },
+    );
+
+    await expect(turn.run()).rejects.toThrow('metadata unavailable');
+    await turn.historyPersisted();
+
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[1][0]).toEqual(complete.mock.calls[0][0]);
+  });
+
   it('retains an invoked history fence until durable history is acknowledged', async () => {
     const complete = jest.fn().mockResolvedValue(true);
     const turn = createAgentEventActorTurn(

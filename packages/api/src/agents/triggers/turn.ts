@@ -133,10 +133,16 @@ export function createAgentEventActorTurn<T>(
     try {
       await turn.persistToken(token);
     } catch (error) {
-      historyToken = undefined;
-      historyOwner = undefined;
       try {
-        await completeHistoryTurn(turn.owner, token, history.complete);
+        const completed = await completeHistoryTurn(turn.owner, token, history.complete);
+        if (completed) {
+          historyToken = undefined;
+          historyOwner = undefined;
+        } else {
+          logger.error(
+            `[event-actor] Unstarted history turn ${token} was not released; durable error handling will retry`,
+          );
+        }
       } catch (completionError) {
         logger.error('[event-actor] Failed to release an unstarted history turn', completionError);
       }
@@ -151,11 +157,12 @@ export function createAgentEventActorTurn<T>(
     }
     const token = historyToken;
     const owner = historyOwner;
-    historyToken = undefined;
-    historyOwner = undefined;
     try {
       const completed = await completeHistoryTurn(owner, token, deps.history.complete);
-      if (!completed) {
+      if (completed) {
+        historyToken = undefined;
+        historyOwner = undefined;
+      } else {
         logger.error(
           `[event-actor] History turn ${token} was not settled; invocation forks remain blocked`,
         );
