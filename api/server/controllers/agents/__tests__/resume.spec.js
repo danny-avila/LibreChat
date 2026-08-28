@@ -140,6 +140,7 @@ jest.mock('@librechat/api', () => ({
   getAgentCheckpointer: (...args) => mockGetAgentCheckpointer(...args),
   checkAccess: (...args) => mockCheckAccess(...args),
   resumeAgentEventActor: (...args) => mockResumeAgentEventActor(...args),
+  settleAgentEventActorHistoryTurn: (input, complete) => complete(input),
   createAgentEventActorDetachedActionLifecycle: (...args) =>
     mockCreateAgentEventActorDetachedActionLifecycle(...args),
 }));
