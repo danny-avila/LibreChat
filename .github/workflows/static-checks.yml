@@ -81,6 +81,11 @@ jobs:
               - 'client/**'
               - 'packages/api/**'
               - 'packages/client/**'
+              # Every workspace manifest the JSON validation step covers, plus
+              # the ones whose dependencies feed the unused-package calculation
+              # through api/package.json's @librechat/data-schemas entry.
+              - 'packages/data-provider/package.json'
+              - 'packages/data-schemas/package.json'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/static-checks.yml'

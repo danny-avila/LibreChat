@@ -83,16 +83,30 @@ const FILTERS = {
     'package.json',
     'package-lock.json',
     'config/circular-deps.mjs',
+    '.github/workflows/backend-review.yml',
     '!**.md',
   ],
   // The review workflows trigger their TypeScript jobs on the root manifests
   // too, since a dependency or @types bump can break compilation on its own.
-  typecheck: ['client/**', 'packages/**', 'package.json', 'package-lock.json', '!**.md'],
+  typecheck: [
+    'client/**',
+    'packages/**',
+    'package.json',
+    'package-lock.json',
+    '.github/workflows/backend-review.yml',
+    '.github/workflows/frontend-review.yml',
+    '!**.md',
+  ],
   unused_packages: [
     'api/**',
     'client/**',
     'packages/api/**',
     'packages/client/**',
+    // Every workspace manifest PACKAGE_JSON_FILES validates, plus the ones
+    // whose dependencies feed the unused-package calculation through
+    // api/package.json's @librechat/data-schemas entry.
+    'packages/data-provider/package.json',
+    'packages/data-schemas/package.json',
     'package.json',
     'package-lock.json',
     '.github/workflows/static-checks.yml',
@@ -135,8 +149,15 @@ const SOURCE_EXTENSIONS = ['.js', '.jsx', '.ts', '.tsx'];
 const IMPORT_EXTENSIONS = [...SOURCE_EXTENSIONS, '.mjs', '.cjs', '.mts', '.cts'];
 const SKIP_DIR_NAMES = new Set(['node_modules', 'dist', 'coverage']);
 
-/** Argument batch size, so a large diff cannot overflow the command line. */
+/**
+ * Batch limits, so a large diff cannot overflow the command line. Windows caps
+ * a command line at 32767 characters — far below POSIX ARG_MAX — and a count
+ * alone does not bound that: 400 of this repo's longer paths already approach
+ * it, so the character budget is the real constraint and the count is a
+ * secondary guard.
+ */
 const BATCH_SIZE = 400;
+const BATCH_CHARS = 24000;
 
 type Tier = 'fast' | 'slow';
 
@@ -259,12 +280,33 @@ function runCommand(executable: Executable, args: string[], cwd = ROOT): Command
 }
 
 /** Runs a command in batches so a large file list stays under the arg limit. */
+function batchFiles(files: string[]): string[][] {
+  const batches: string[][] = [];
+  let batch: string[] = [];
+  let length = 0;
+  for (const file of files) {
+    const cost = file.length + 1;
+    const full = batch.length >= BATCH_SIZE || length + cost > BATCH_CHARS;
+    // A single path longer than the budget still gets its own batch rather
+    // than an empty one.
+    if (batch.length > 0 && full) {
+      batches.push(batch);
+      batch = [];
+      length = 0;
+    }
+    batch.push(file);
+    length += cost;
+  }
+  if (batch.length > 0) batches.push(batch);
+  return batches;
+}
+
 function runOnFiles(executable: Executable, args: string[], files: string[]): CommandResult {
   let status = 0;
   let stdout = '';
   let stderr = '';
-  for (let index = 0; index < files.length; index += BATCH_SIZE) {
-    const result = runCommand(executable, [...args, ...files.slice(index, index + BATCH_SIZE)]);
+  for (const batch of batchFiles(files)) {
+    const result = runCommand(executable, [...args, ...batch]);
     if (status === 0) status = result.status;
     stdout += result.stdout;
     stderr += result.stderr;
@@ -728,15 +770,25 @@ function findCircularDependencies(): CheckOutcome {
  */
 const ROOT_MANIFESTS = ['package.json', 'package-lock.json'];
 
+/** Each imported gate reruns in CI when its owning workflow changes. */
+const BACKEND_REVIEW = '.github/workflows/backend-review.yml';
+const FRONTEND_REVIEW = '.github/workflows/frontend-review.yml';
+
 const TYPECHECK_PROJECTS = [
   {
     project: 'packages/data-provider/tsconfig.json',
-    paths: ['packages/data-provider/**', ...ROOT_MANIFESTS, '!**.md'],
+    paths: ['packages/data-provider/**', ...ROOT_MANIFESTS, BACKEND_REVIEW, '!**.md'],
     requires: [],
   },
   {
     project: 'packages/data-schemas/tsconfig.json',
-    paths: ['packages/data-provider/**', 'packages/data-schemas/**', ...ROOT_MANIFESTS, '!**.md'],
+    paths: [
+      'packages/data-provider/**',
+      'packages/data-schemas/**',
+      ...ROOT_MANIFESTS,
+      BACKEND_REVIEW,
+      '!**.md',
+    ],
     requires: ['build:data-provider'],
   },
   {
@@ -746,13 +798,20 @@ const TYPECHECK_PROJECTS = [
       'packages/data-schemas/**',
       'packages/api/**',
       ...ROOT_MANIFESTS,
+      BACKEND_REVIEW,
       '!**.md',
     ],
     requires: ['build:data-provider', 'build:data-schemas'],
   },
   {
     project: 'packages/client/tsconfig.json',
-    paths: ['packages/data-provider/**', 'packages/client/**', ...ROOT_MANIFESTS, '!**.md'],
+    paths: [
+      'packages/data-provider/**',
+      'packages/client/**',
+      ...ROOT_MANIFESTS,
+      BACKEND_REVIEW,
+      '!**.md',
+    ],
     requires: ['build:data-provider'],
   },
   {
@@ -762,6 +821,7 @@ const TYPECHECK_PROJECTS = [
       'packages/data-provider/**',
       'packages/client/**',
       ...ROOT_MANIFESTS,
+      FRONTEND_REVIEW,
       '!**.md',
     ],
     requires: ['build:data-provider', 'build:client-package'],
