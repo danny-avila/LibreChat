@@ -227,16 +227,14 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       runHandoff(() => {
         if (!batchMode) {
           setAnswerDrafts((current) => ({ ...current, [liveAsk.actionId]: composerAnswer }));
-          if (!saveDrafts) {
-            /** Hand back whatever ordinary message was typed while this
-             *  question owned the card, rather than clearing the composer and
-             *  losing it. */
-            const released = releasedComposerText[liveAsk.actionId];
-            if (released) {
-              formContext?.setValue('text', released);
-            } else {
-              formContext?.reset();
-            }
+          /** An existing stash is restored regardless of the CURRENT
+           *  preference: it was captured while saving was off, so it never
+           *  reached the conversation draft and this is its only recovery path.
+           *  Gating on `!saveDrafts` dropped it whenever the user enabled
+           *  saving between expanding and collapsing. */
+          const released = releasedComposerText[liveAsk.actionId];
+          if (released) {
+            formContext?.setValue('text', released);
             setReleasedComposerText((current) => {
               if (current[liveAsk.actionId] == null) {
                 return current;
@@ -245,6 +243,8 @@ export default function useAskAnswerMode(conversationId?: string | null) {
               delete next[liveAsk.actionId];
               return next;
             });
+          } else if (!saveDrafts) {
+            formContext?.reset();
           }
         }
         setCollapsedIds((prev) =>
