@@ -174,6 +174,14 @@ type ContentPartsProps = {
   resumeAuthors?: ReadonlyMap<number, string | undefined>;
   /** Message-wide tool-group expansion overrides retained across phase slices. */
   toolGroupExpansionState?: Map<string, ToolCallGroupExpansionState>;
+  /** Occurrence ordinal of each tool call, keyed by ABSOLUTE content index and
+   *  computed once for the whole message. Provider tool-call ids repeat across
+   *  agents and restart per turn, so the ordinal is what makes a group identity
+   *  unique, and it has to be message-wide: phase slices render through
+   *  separate nested instances that share the expansion map, and a group must
+   *  keep its identity when a completing phase moves it from the flat render
+   *  into a slice. */
+  toolCallOccurrences?: ReadonlyMap<number, number>;
 };
 
 /**
@@ -205,6 +213,7 @@ const ContentParts = memo(function ContentParts({
   contentIndices,
   resumeAuthors,
   toolGroupExpansionState,
+  toolCallOccurrences,
 }: ContentPartsProps) {
   const { inlineAttachments, workspaceChanges } = useMemo(
     () =>
@@ -436,30 +445,61 @@ const ContentParts = memo(function ContentParts({
   }, [absoluteIndexAt, content]);
   const postSteerAuthors = resumeAuthors ?? detectedResumeAuthors;
 
+  /** Own occurrence ordinals when this is the top-level instance; a nested
+   *  phase slice is handed the message-wide map instead, since counting inside
+   *  a slice would restart at zero and collide with a sibling slice. */
+  const localToolCallOccurrences = useMemo(() => {
+    const occurrences = new Map<number, number>();
+    const seenCounts = new Map<string, number>();
+    (content ?? []).forEach((part, localIdx) => {
+      const toolCallId = part ? getToolCallId(part) : '';
+      if (!toolCallId) {
+        return;
+      }
+      const seen = seenCounts.get(toolCallId) ?? 0;
+      seenCounts.set(toolCallId, seen + 1);
+      occurrences.set(absoluteIndexAt(localIdx), seen);
+    });
+    return occurrences;
+  }, [content, absoluteIndexAt]);
+  const occurrenceByIndex = toolCallOccurrences ?? localToolCallOccurrences;
+
   const groupedParts = useMemo(() => {
-    /** Provider tool-call ids are NOT unique: they repeat across agents in a
-     *  handoff transcript and restart per turn within one agent, and a lone
-     *  tool with reasoning now groups too, so sibling groups could share a
-     *  React key and one expansion override. Disambiguated by how many earlier
-     *  groups already claimed the same id, which is stable because group order
-     *  is append-only. The FIRST occurrence keeps the bare id, so an id that
-     *  never repeats is unchanged and survives a content-index shift. */
-    const claimedGroupIds = new Map<string, number>();
     return groupSequentialToolCalls(sequentialParts).map((group) => {
       if (group.type === 'single') {
         return group;
       }
       const baseGroupId = getToolGroupId(group.parts, fallbackScope);
-      const claimed = claimedGroupIds.get(baseGroupId) ?? 0;
-      claimedGroupIds.set(baseGroupId, claimed + 1);
-      const groupId = claimed === 0 ? baseGroupId : `${baseGroupId}#${claimed}`;
-      const groupAttachments = group.parts.flatMap(
-        ({ part }) =>
-          filterAttachmentsForPart(attachmentMap[getToolCallId(part)], getPartAgentId(part)) ?? [],
-      );
+      /** Provider tool-call ids are NOT unique: they repeat across agents in a
+       *  handoff transcript and restart per turn within one agent, and a lone
+       *  tool with reasoning now groups too, so sibling groups could otherwise
+       *  share a React key and one expansion override. The message-wide
+       *  ordinal settles it and is stable under content-index shifts, because
+       *  the relative order of same-id calls never changes. Ordinal 0 keeps the
+       *  bare id, so a non-repeating call is byte-identical to before and its
+       *  override survives a phase completing around it. */
+      const firstToolPart = group.parts.find(({ part }) => getToolCallId(part));
+      const occurrence = firstToolPart ? (occurrenceByIndex.get(firstToolPart.idx) ?? 0) : 0;
+      const groupId = occurrence === 0 ? baseGroupId : `${baseGroupId}#${occurrence}`;
+      /** A union, not a concatenation: repeated provider ids inside one group
+       *  resolve to the SAME attachment bucket, so appending per part rendered
+       *  each file and search snapshot once per repeated call. */
+      const seenAttachments = new Set<TAttachment>();
+      const groupAttachments: TAttachment[] = [];
+      for (const { part } of group.parts) {
+        const partAttachments =
+          filterAttachmentsForPart(attachmentMap[getToolCallId(part)], getPartAgentId(part)) ?? [];
+        for (const attachment of partAttachments) {
+          if (seenAttachments.has(attachment)) {
+            continue;
+          }
+          seenAttachments.add(attachment);
+          groupAttachments.push(attachment);
+        }
+      }
       return { ...group, groupId, groupAttachments };
     });
-  }, [sequentialParts, attachmentMap, fallbackScope]);
+  }, [sequentialParts, attachmentMap, fallbackScope, occurrenceByIndex]);
 
   /** The re-attribution node for a part resuming after a steer block, shared
    *  by the sequential path and the parallel renderer's sequential stretches. */
@@ -534,6 +574,7 @@ const ContentParts = memo(function ContentParts({
           contentIndices={segmentIndices}
           resumeAuthors={postSteerAuthors}
           toolGroupExpansionState={expansionState}
+          toolCallOccurrences={occurrenceByIndex}
         />
       );
     };
