@@ -28,13 +28,11 @@ const ScrollButton = memo(function ScrollButton({
   messagesEndRef,
   scrollHandler,
   onNearBottomChange,
-  overlayHeight,
 }: {
   scrollableRef: React.RefObject<HTMLDivElement | null>;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   scrollHandler: (event: React.MouseEvent<HTMLButtonElement, MouseEvent>) => void;
   onNearBottomChange: (isNearBottom: boolean) => void;
-  overlayHeight: number;
 }) {
   const scrollButtonPreference = useRecoilValue(store.showScrollButton);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -83,7 +81,6 @@ const ScrollButton = memo(function ScrollButton({
       <ScrollToBottom
         ref={scrollToBottomRef}
         scrollHandler={scrollHandler}
-        overlayHeight={overlayHeight}
         interactive={isSettled}
       />
     </CSSTransition>
@@ -184,7 +181,6 @@ function MessagesViewContent({
             messagesEndRef={messagesEndRef}
             scrollHandler={handleSmoothToRef}
             onNearBottomChange={handleNearBottomChange}
-            overlayHeight={steerOverlayHeight}
           />
 
           <MessageNav scrollableRef={scrollableRef} />

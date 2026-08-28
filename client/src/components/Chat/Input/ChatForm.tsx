@@ -101,6 +101,9 @@ const ChatForm = memo(function ChatForm({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [, setIsScrollable] = useState(false);
   const [visualRowCount, setVisualRowCount] = useState(1);
+  /** Last measured row count, so an unchanged measurement never schedules a
+   *  render at all rather than relying on a state-equality bailout. */
+  const measuredRowCountRef = useRef(1);
 
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
@@ -337,12 +340,25 @@ const ChatForm = memo(function ChatForm({
 
   const textValue = useWatch({ control: methods.control, name: 'text' });
 
+  /** The composer commits once per keystroke for the row count and the send
+   *  button; a second commit for a row count that did not move (or that no
+   *  layout engine can measure, where `lineHeight` is not a number) doubles the
+   *  cost of the app's busiest surface for nothing. */
   useEffect(() => {
-    if (textAreaRef.current) {
-      const style = window.getComputedStyle(textAreaRef.current);
-      const lineHeight = parseFloat(style.lineHeight);
-      setVisualRowCount(Math.floor(textAreaRef.current.scrollHeight / lineHeight));
+    const textarea = textAreaRef.current;
+    if (!textarea) {
+      return;
     }
+    const lineHeight = parseFloat(window.getComputedStyle(textarea).lineHeight);
+    if (!(lineHeight > 0)) {
+      return;
+    }
+    const nextRowCount = Math.floor(textarea.scrollHeight / lineHeight);
+    if (nextRowCount === measuredRowCountRef.current) {
+      return;
+    }
+    measuredRowCountRef.current = nextRowCount;
+    setVisualRowCount(nextRowCount);
   }, [textValue]);
 
   const isMoreThanThreeRows = visualRowCount > 3;
