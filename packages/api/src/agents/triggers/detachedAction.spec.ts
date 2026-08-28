@@ -1,4 +1,9 @@
-import { createAgentEventActorDetachedActionLifecycle } from './detachedAction';
+import type { AgentTriggerDeliveryRecord } from '@librechat/data-schemas';
+import type { AgentTriggerEnvelope } from './envelope';
+import {
+  createAgentEventActorDetachedActionLifecycle,
+  createAgentEventDetachedResumeHandler,
+} from './detachedAction';
 
 describe('createAgentEventActorDetachedActionLifecycle', () => {
   it('owns only the exact expected action and exposes a suspension after launch', async () => {
@@ -14,9 +19,11 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       status: 'reserved' as const,
       reservedAt: new Date('2026-08-28T12:00:00.000Z'),
       observedAt: new Date('2026-08-28T12:00:00.000Z'),
+      recoveryAfter: new Date('2026-08-28T12:01:00.000Z'),
     };
     const reserve = jest.fn(async () => ({ status: 'reserved' as const, action }));
     const markRunning = jest.fn(async () => true);
+    const releaseReservation = jest.fn(async () => true);
     const settle = jest.fn(async () => true);
     const wake = jest.fn(async () => undefined);
     const lifecycle = createAgentEventActorDetachedActionLifecycle(
@@ -35,6 +42,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       {
         reserveAgentEventActorDetachedAction: reserve,
         markAgentEventActorDetachedActionRunning: markRunning,
+        releaseAgentEventActorDetachedActionReservation: releaseReservation,
         settleAgentEventActorDetachedAction: settle,
         onTerminal: wake,
         now: () => new Date('2026-08-28T12:00:00.000Z'),
@@ -110,6 +118,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       reservedAt: new Date(),
       observedAt: new Date(),
       settledAt: new Date(),
+      recoveryAfter: new Date(),
       error: 'service unavailable',
     };
     const lifecycle = createAgentEventActorDetachedActionLifecycle(
@@ -127,6 +136,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
           action,
         })),
         markAgentEventActorDetachedActionRunning: jest.fn(),
+        releaseAgentEventActorDetachedActionReservation: jest.fn(),
         settleAgentEventActorDetachedAction: jest.fn(),
         onTerminal: jest.fn(),
       },
@@ -146,5 +156,167 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       error: action.error,
     });
     expect(lifecycle.readSuspension()).toBeUndefined();
+  });
+
+  it('releases an unlaunched reservation and refuses an indeterminate replay', async () => {
+    const baseAction = {
+      version: 1 as const,
+      invocationId: 'delivery-1',
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-release',
+      taskId: `event_actor_${'c'.repeat(64)}`,
+      idempotencyKey: 'c'.repeat(64),
+      launchAttempt: 0,
+      status: 'reserved' as const,
+      reservedAt: new Date('2026-08-28T12:00:00.000Z'),
+      observedAt: new Date('2026-08-28T12:00:00.000Z'),
+      recoveryAfter: new Date('2026-08-28T12:01:00.000Z'),
+    };
+    const releaseReservation = jest.fn(async () => true);
+    const reserve = jest
+      .fn()
+      .mockResolvedValueOnce({ status: 'reserved' as const, action: baseAction })
+      .mockResolvedValueOnce({
+        status: 'replay' as const,
+        action: { ...baseAction, status: 'launch_indeterminate' as const },
+      });
+    const dependencies = {
+      reserveAgentEventActorDetachedAction: reserve,
+      markAgentEventActorDetachedActionRunning: jest.fn(),
+      releaseAgentEventActorDetachedActionReservation: releaseReservation,
+      settleAgentEventActorDetachedAction: jest.fn(),
+      onTerminal: jest.fn(),
+      now: () => new Date('2026-08-28T12:00:00.000Z'),
+    };
+    const owner = {
+      user: 'user-1',
+      bindingId: 'binding-1',
+      conversationId: 'conversation-1',
+      generationCreatedAt: 123,
+      invocationId: 'delivery-1',
+      expectedAction: { toolName: 'submit_move' },
+    };
+    const first = createAgentEventActorDetachedActionLifecycle(owner, dependencies);
+    const reservation = await first.reserve({
+      toolName: baseAction.toolName,
+      toolCallId: baseAction.toolCallId,
+      arguments: {},
+    });
+    expect(reservation.status).toBe('reserved');
+    await expect(
+      first.releaseReservation({
+        taskId: baseAction.taskId,
+        idempotencyKey: baseAction.idempotencyKey,
+      }),
+    ).resolves.toBe(true);
+    expect(first.readSuspension()).toBeUndefined();
+
+    const recovered = createAgentEventActorDetachedActionLifecycle(owner, dependencies);
+    await expect(
+      recovered.reserve({
+        toolName: baseAction.toolName,
+        toolCallId: baseAction.toolCallId,
+        arguments: {},
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        status: 'conflict',
+        error: expect.stringContaining('indeterminate'),
+      }),
+    );
+  });
+});
+
+describe('createAgentEventDetachedResumeHandler', () => {
+  it('enqueues duplicate completion wakes under one stable mailbox identity', async () => {
+    const envelope = {
+      version: 1 as const,
+      mode: 'continue' as const,
+      requestId: 'request-original',
+      deliveryId: 'delivery-original',
+      receivedAt: 1,
+      principal: { userId: 'user-1' },
+      event: {
+        id: 'event-1',
+        type: 'game.move',
+        occurredAt: 1,
+        source: { id: 'source-1', type: 'remote_api_key' },
+      },
+      target: {
+        agentId: 'agent-1',
+        conversationId: 'conversation-1',
+        parentMessageId: 'message-1',
+        bindingId: 'binding-1',
+        sourceKeyId: 'source-key-1',
+      },
+      input: 'play',
+      expectedAction: { toolName: 'submit_move' },
+    };
+    const delivery = {
+      id: 'row-1',
+      deliveryKey: 'trigger_original',
+      fingerprint: 'fingerprint',
+      orderingKey: 'lane',
+      laneSequence: 1,
+      envelope,
+      user: 'user-1',
+      status: 'succeeded',
+      attempts: 1,
+      availableAt: new Date(),
+      createdAt: new Date(),
+    } as unknown as AgentTriggerDeliveryRecord;
+    const enqueueAgentTrigger = jest.fn(async (_envelope: AgentTriggerEnvelope) => undefined);
+    let request = 0;
+    const resume = createAgentEventDetachedResumeHandler({
+      getAgentTriggerDelivery: jest.fn(async () => delivery),
+      enqueueAgentTrigger,
+      requestId: () => `wake-${++request}`,
+      now: () => 1_787_000_001_000,
+    });
+    const action = {
+      version: 1 as const,
+      invocationId: 'trigger_original',
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-1',
+      taskId: 'task-1',
+      idempotencyKey: 'a'.repeat(64),
+      launchAttempt: 0,
+      status: 'succeeded' as const,
+      reservedAt: new Date(),
+      observedAt: new Date(),
+      recoveryAfter: new Date(),
+      settledAt: new Date(1_787_000_000_500),
+      result: 'accepted',
+    };
+    const input = {
+      streamId: 'conversation-1',
+      job: {
+        streamId: 'conversation-1',
+        conversationId: 'conversation-1',
+        userId: 'user-1',
+        status: 'complete' as const,
+        createdAt: 1_787_000_000_000,
+        syncSent: false,
+        agentEventDeliveryKey: 'trigger_original',
+        agentEventBindingId: 'binding-1',
+      },
+      suspension: {} as never,
+      action,
+    };
+
+    await resume(input);
+    await resume(input);
+
+    expect(enqueueAgentTrigger).toHaveBeenCalledTimes(2);
+    const [first] = enqueueAgentTrigger.mock.calls[0];
+    const [second] = enqueueAgentTrigger.mock.calls[1];
+    expect(first.deliveryId).toBe('detached_completion:task-1');
+    expect(second.deliveryId).toBe(first.deliveryId);
+    expect(second.requestId).not.toBe(first.requestId);
+    expect(first.event.payload).toEqual(
+      expect.objectContaining({ invocationId: 'trigger_original', taskId: 'task-1' }),
+    );
   });
 });

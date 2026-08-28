@@ -671,7 +671,7 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
     const body = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
     expect(body.clientRequestId).toBe(getAgentTriggerIdempotencyKey(envelope));
     expect(body.agentEventDelivery).toMatchObject({
-      deliveryKey: completion.invocationId,
+      deliveryKey: getAgentTriggerIdempotencyKey(envelope),
       internalCompletion: completion,
     });
     expect(body.agentEventDelivery.event).not.toHaveProperty('payload');

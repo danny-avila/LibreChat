@@ -630,7 +630,7 @@ async function startRun(
           ...(envelope.mode === 'continue' &&
             envelope.target.bindingId != null && {
               agentEventDelivery: {
-                deliveryKey: detachedCompletion?.invocationId ?? context.idempotencyKey,
+                deliveryKey: context.idempotencyKey,
                 /** Identity only, matching the `fire` body: the actor uses this
                  * to bind an invocation, never to build the turn's prompt. The
                  * source payload is unbounded and would push large deliveries

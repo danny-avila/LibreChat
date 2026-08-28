@@ -127,6 +127,7 @@ export interface ReserveAgentEventActorDetachedActionInput extends GetAgentEvent
   toolName: string;
   toolCallId: string;
   reservedAt: Date;
+  recoveryAfter: Date;
 }
 
 export interface UpdateAgentEventActorDetachedActionInput extends GetAgentEventActorReceiptInput {
@@ -134,6 +135,11 @@ export interface UpdateAgentEventActorDetachedActionInput extends GetAgentEventA
   taskId: string;
   idempotencyKey: string;
   observedAt: Date;
+}
+
+export interface MarkAgentEventActorDetachedActionRunningInput
+  extends UpdateAgentEventActorDetachedActionInput {
+  recoveryAfter: Date;
 }
 
 export interface SettleAgentEventActorDetachedActionInput
@@ -213,6 +219,12 @@ export interface AgentTriggerDeliveryMethods {
     action: AgentEventActorDetachedAction;
   }>;
   markAgentEventActorDetachedActionRunning: (
+    input: MarkAgentEventActorDetachedActionRunningInput,
+  ) => Promise<boolean>;
+  releaseAgentEventActorDetachedActionReservation: (
+    input: UpdateAgentEventActorDetachedActionInput,
+  ) => Promise<boolean>;
+  markAgentEventActorDetachedActionLaunchIndeterminate: (
     input: UpdateAgentEventActorDetachedActionInput,
   ) => Promise<boolean>;
   settleAgentEventActorDetachedAction: (
@@ -1736,9 +1748,8 @@ export function createAgentTriggerDeliveryMethods(
     status: 'reserved' | 'replay' | 'conflict';
     action: AgentEventActorDetachedAction;
   }> {
-    const identity = [
+    const requiredIdentity = [
       String(input.user),
-      input.tenantId ?? '',
       input.deliveryKey,
       input.bindingId,
       input.conversationId,
@@ -1748,11 +1759,14 @@ export function createAgentTriggerDeliveryMethods(
       input.toolName,
       input.toolCallId,
     ];
+    const identity = [String(input.user), input.tenantId ?? '', ...requiredIdentity.slice(1)];
     if (
-      identity.some((value) => value.length === 0) ||
+      requiredIdentity.some((value) => value.length === 0) ||
       !Number.isSafeInteger(input.generationCreatedAt) ||
       input.generationCreatedAt < 0 ||
-      Number.isNaN(input.reservedAt.getTime())
+      Number.isNaN(input.reservedAt.getTime()) ||
+      Number.isNaN(input.recoveryAfter.getTime()) ||
+      input.recoveryAfter <= input.reservedAt
     ) {
       throw new TypeError('Detached event actor action identity is invalid');
     }
@@ -1776,6 +1790,7 @@ export function createAgentTriggerDeliveryMethods(
         status: 'reserved',
         reservedAt: input.reservedAt,
         observedAt: input.reservedAt,
+        recoveryAfter: input.recoveryAfter,
       };
     };
     const action = buildAction(0);
@@ -1903,10 +1918,14 @@ export function createAgentTriggerDeliveryMethods(
 
   /** Acknowledges launch without regressing terminal evidence from a fast completion. */
   async function markAgentEventActorDetachedActionRunning(
-    input: UpdateAgentEventActorDetachedActionInput,
+    input: MarkAgentEventActorDetachedActionRunningInput,
   ): Promise<boolean> {
-    if (Number.isNaN(input.observedAt.getTime())) {
-      throw new TypeError('observedAt must be a valid date');
+    if (
+      Number.isNaN(input.observedAt.getTime()) ||
+      Number.isNaN(input.recoveryAfter.getTime()) ||
+      input.recoveryAfter <= input.observedAt
+    ) {
+      throw new TypeError('Detached event actor running lease is invalid');
     }
     const scope = detachedActionScope(input);
     const running = await Delivery().updateOne(
@@ -1916,6 +1935,7 @@ export function createAgentTriggerDeliveryMethods(
           'actorDetachedAction.status': 'running',
           'actorDetachedAction.launchedAt': input.observedAt,
           'actorDetachedAction.observedAt': input.observedAt,
+          'actorDetachedAction.recoveryAfter': input.recoveryAfter,
         },
       },
     );
@@ -1928,6 +1948,54 @@ export function createAgentTriggerDeliveryMethods(
         'actorDetachedAction.status': {
           $in: ['running', 'succeeded', 'failed', 'cancelled'],
         },
+      })) != null
+    );
+  }
+
+  /** Releases launch authority only while no launch has been acknowledged. */
+  async function releaseAgentEventActorDetachedActionReservation(
+    input: UpdateAgentEventActorDetachedActionInput,
+  ): Promise<boolean> {
+    if (Number.isNaN(input.observedAt.getTime())) {
+      throw new TypeError('observedAt must be a valid date');
+    }
+    const scope = detachedActionScope(input);
+    const released = await Delivery().updateOne(
+      { ...scope, 'actorDetachedAction.status': 'reserved' },
+      { $unset: { actorDetachedAction: 1 } },
+    );
+    return released.modifiedCount === 1;
+  }
+
+  /** Converts an expired executor lease into durable uncertainty. This state
+   * deliberately cannot be retried; only exact terminal proof may close it. */
+  async function markAgentEventActorDetachedActionLaunchIndeterminate(
+    input: UpdateAgentEventActorDetachedActionInput,
+  ): Promise<boolean> {
+    if (Number.isNaN(input.observedAt.getTime())) {
+      throw new TypeError('observedAt must be a valid date');
+    }
+    const scope = detachedActionScope(input);
+    const marked = await Delivery().updateOne(
+      {
+        ...scope,
+        'actorDetachedAction.status': { $in: ['reserved', 'running'] },
+        'actorDetachedAction.recoveryAfter': { $lte: input.observedAt },
+      },
+      {
+        $set: {
+          'actorDetachedAction.status': 'launch_indeterminate',
+          'actorDetachedAction.observedAt': input.observedAt,
+        },
+      },
+    );
+    if (marked.modifiedCount === 1) {
+      return true;
+    }
+    return (
+      (await Delivery().exists({
+        ...scope,
+        'actorDetachedAction.status': 'launch_indeterminate',
       })) != null
     );
   }
@@ -1955,7 +2023,12 @@ export function createAgentTriggerDeliveryMethods(
     };
     const scope = detachedActionScope(input);
     const settled = await Delivery().updateOne(
-      { ...scope, 'actorDetachedAction.status': { $in: ['reserved', 'running'] } },
+      {
+        ...scope,
+        'actorDetachedAction.status': {
+          $in: ['reserved', 'running', 'launch_indeterminate'],
+        },
+      },
       { $set: terminal },
     );
     if (settled.modifiedCount === 1) {
@@ -2528,6 +2601,8 @@ export function createAgentTriggerDeliveryMethods(
     hasAgentEventActorActionAdmission,
     reserveAgentEventActorDetachedAction,
     markAgentEventActorDetachedActionRunning,
+    releaseAgentEventActorDetachedActionReservation,
+    markAgentEventActorDetachedActionLaunchIndeterminate,
     settleAgentEventActorDetachedAction,
     getAgentEventActorDetachedAction,
     settleAgentEventActorReceipt,

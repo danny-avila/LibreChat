@@ -283,6 +283,8 @@ export interface SerializableJobData {
    */
   isTemporary?: boolean;
   agentEventDeliveryKey?: string;
+  /** Original actor invocation when an internal completion delivery owns this generation. */
+  agentEventInvocationKey?: string;
   /** Trusted actor binding copied from the authenticated delivery envelope. */
   agentEventBindingId?: string;
   agentEventExpectedAction?: import('~/agents/triggers/types').AgentTriggerExpectedAction;
@@ -408,6 +410,7 @@ export type JobMetadataPatch = Partial<
     | 'agent_id'
     | 'isTemporary'
     | 'agentEventDeliveryKey'
+    | 'agentEventInvocationKey'
     | 'agentEventBindingId'
     | 'agentEventExpectedAction'
     | 'agentEventSuspension'

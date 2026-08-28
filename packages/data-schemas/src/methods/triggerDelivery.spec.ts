@@ -1839,6 +1839,7 @@ describe('agent trigger delivery methods', () => {
     const queued = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({
         awaitTerminalHandling: true,
+        tenantId: undefined,
         envelope: {
           mode: 'continue',
           target: { bindingId },
@@ -1862,7 +1863,6 @@ describe('agent trigger delivery methods', () => {
     const admission = {
       deliveryKey: queued.delivery.deliveryKey,
       user: queued.delivery.user,
-      tenantId: 'tenant-1',
       bindingId,
       conversationId,
       admittedAt: new Date(generationCreatedAt),
@@ -1888,7 +1888,6 @@ describe('agent trigger delivery methods', () => {
     const reservation = {
       deliveryKey: queued.delivery.deliveryKey,
       user: queued.delivery.user,
-      tenantId: 'tenant-1',
       bindingId,
       conversationId,
       generationCreatedAt,
@@ -1897,6 +1896,7 @@ describe('agent trigger delivery methods', () => {
       toolName: 'submit_move_mcp_chess',
       toolCallId: 'call-detached-1',
       reservedAt: new Date(generationCreatedAt + 1_000),
+      recoveryAfter: new Date(generationCreatedAt + 61_000),
     };
 
     const contenders = await Promise.all([
@@ -1926,14 +1926,38 @@ describe('agent trigger delivery methods', () => {
     const update = {
       deliveryKey: reservation.deliveryKey,
       user: reservation.user,
-      tenantId: reservation.tenantId,
       bindingId,
       conversationId,
       generationCreatedAt,
       taskId: contenders[0].action.taskId,
       idempotencyKey: contenders[0].action.idempotencyKey,
       observedAt: new Date(generationCreatedAt + 2_000),
+      recoveryAfter: new Date(generationCreatedAt + 1_802_000),
     };
+    await expect(methods.releaseAgentEventActorDetachedActionReservation(update)).resolves.toBe(
+      true,
+    );
+    await expect(
+      methods.getAgentEventActorDetachedAction({
+        deliveryKey: reservation.deliveryKey,
+        user: reservation.user,
+        bindingId,
+        conversationId,
+        generationCreatedAt,
+      }),
+    ).resolves.toBeNull();
+    await expect(methods.reserveAgentEventActorDetachedAction(reservation)).resolves.toEqual({
+      status: 'reserved',
+      action: contenders[0].action,
+    });
+    /** The same durable state covers process death both before invoke and in
+     * the unobservable invoke->acknowledgement window: neither permits relaunch. */
+    await expect(
+      methods.markAgentEventActorDetachedActionLaunchIndeterminate({
+        ...update,
+        observedAt: reservation.recoveryAfter,
+      }),
+    ).resolves.toBe(true);
     await expect(
       methods.settleAgentEventActorDetachedAction({
         ...update,
@@ -1964,6 +1988,7 @@ describe('agent trigger delivery methods', () => {
       ...reservation,
       toolCallId: 'call-detached-2',
       reservedAt: new Date(generationCreatedAt + 3_000),
+      recoveryAfter: new Date(generationCreatedAt + 63_000),
     });
     expect(retryReservation).toMatchObject({
       status: 'reserved',
@@ -1974,12 +1999,40 @@ describe('agent trigger delivery methods', () => {
       },
     });
     expect(retryReservation.action.taskId).not.toBe(contenders[0].action.taskId);
+    const retryUpdate = {
+      ...update,
+      taskId: retryReservation.action.taskId,
+      idempotencyKey: retryReservation.action.idempotencyKey,
+      observedAt: new Date(generationCreatedAt + 4_000),
+    };
+    await expect(
+      methods.markAgentEventActorDetachedActionRunning({
+        ...retryUpdate,
+        recoveryAfter: new Date(generationCreatedAt + 1_804_000),
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      methods.markAgentEventActorDetachedActionLaunchIndeterminate({
+        ...retryUpdate,
+        observedAt: new Date(generationCreatedAt + 1_803_999),
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      methods.markAgentEventActorDetachedActionLaunchIndeterminate({
+        ...retryUpdate,
+        observedAt: new Date(generationCreatedAt + 1_804_000),
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      methods.markAgentEventActorDetachedActionLaunchIndeterminate({
+        ...retryUpdate,
+        observedAt: new Date(generationCreatedAt + 1_805_000),
+      }),
+    ).resolves.toBe(true);
     await expect(
       methods.settleAgentEventActorDetachedAction({
-        ...update,
-        taskId: retryReservation.action.taskId,
-        idempotencyKey: retryReservation.action.idempotencyKey,
-        observedAt: new Date(generationCreatedAt + 4_000),
+        ...retryUpdate,
+        observedAt: new Date(generationCreatedAt + 1_806_000),
         status: 'succeeded',
         result: 'move accepted',
       }),
@@ -2003,7 +2056,6 @@ describe('agent trigger delivery methods', () => {
       methods.getAgentEventActorDetachedAction({
         deliveryKey: reservation.deliveryKey,
         user: reservation.user,
-        tenantId: reservation.tenantId,
         bindingId,
         conversationId,
         generationCreatedAt,

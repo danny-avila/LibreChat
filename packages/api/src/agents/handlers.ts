@@ -124,6 +124,7 @@ export interface EventActorDetachedActionLifecycle {
       }
   >;
   markRunning(input: { taskId: string; idempotencyKey: string }): Promise<boolean>;
+  releaseReservation(input: { taskId: string; idempotencyKey: string }): Promise<boolean>;
   settle(input: {
     taskId: string;
     idempotencyKey: string;
@@ -4486,6 +4487,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
               });
               if ('atCapacity' in created) {
+                if (
+                  detachedReservation?.status === 'reserved' &&
+                  eventActorDetachedAction != null &&
+                  !(await eventActorDetachedAction.releaseReservation({
+                    taskId: detachedReservation.taskId,
+                    idempotencyKey: detachedReservation.idempotencyKey,
+                  }))
+                ) {
+                  throw new Error(
+                    'Detached Event Actor reservation could not be released after capacity rejection',
+                  );
+                }
                 return {
                   toolCallId: tc.id,
                   status: 'success' as const,

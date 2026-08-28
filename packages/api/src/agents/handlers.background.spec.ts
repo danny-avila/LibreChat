@@ -113,6 +113,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
         events.push('running');
         return true;
       }),
+      releaseReservation: jest.fn(async () => true),
       settle: jest.fn(async () => {
         events.push('terminal');
         return true;
@@ -163,6 +164,76 @@ describe('createToolExecuteHandler — background tool calls', () => {
     );
   });
 
+  it('releases durable launch authority when background capacity rejects admission', async () => {
+    let invocations = 0;
+    const tool = {
+      name: 'submit_move_mcp_chess',
+      description: 'submits a move',
+      schema: z.object({ move: z.string() }),
+      invoke: () => {
+        invocations += 1;
+        return new Promise(() => undefined);
+      },
+    } as unknown as StructuredToolInterface;
+    const configurable = {
+      req: {
+        user: { id: 'capacity-user' },
+        body: { conversationId: 'capacity-conversation' },
+      },
+      backgroundToolNames: [tool.name],
+    };
+    const metadata = { thread_id: 'capacity-conversation', run_id: 'capacity-run' };
+    const ordinaryHandler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+    });
+    await runBatch(ordinaryHandler, {
+      toolCalls: Array.from({ length: 10 }, (_, index) => ({
+        id: `capacity-${index}`,
+        name: tool.name,
+        args: { move: 'e4', run_in_background: true },
+      })),
+      agentId: 'agent-player',
+      configurable,
+      metadata,
+    });
+
+    const releaseReservation = jest.fn(async () => true);
+    const detachedHandler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      eventActorDetachedAction: {
+        reserve: jest.fn(async () => ({
+          status: 'reserved' as const,
+          taskId: 'event-task-capacity',
+          idempotencyKey: 'f'.repeat(64),
+        })),
+        markRunning: jest.fn(async () => true),
+        releaseReservation,
+        settle: jest.fn(async () => true),
+        wake: jest.fn(async () => undefined),
+      },
+    });
+
+    const [rejected] = await runBatch(detachedHandler, {
+      toolCalls: [
+        {
+          id: 'capacity-detached',
+          name: tool.name,
+          args: { move: 'e5', run_in_background: true },
+        },
+      ],
+      agentId: 'agent-player',
+      configurable,
+      metadata,
+    });
+
+    expect(rejected.content).toContain('Too many background tasks');
+    expect(invocations).toBe(10);
+    expect(releaseReservation).toHaveBeenCalledWith({
+      taskId: 'event-task-capacity',
+      idempotencyKey: 'f'.repeat(64),
+    });
+  });
+
   it('persists a synchronous detached-tool rejection as terminal evidence', async () => {
     const tool = {
       name: 'submit_move_mcp_chess',
@@ -179,6 +250,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
         idempotencyKey: 'b'.repeat(64),
       })),
       markRunning: jest.fn(async () => true),
+      releaseReservation: jest.fn(async () => true),
       settle: jest.fn(async () => true),
       wake: jest.fn(async () => undefined),
     };
@@ -233,6 +305,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
         idempotencyKey: 'c'.repeat(64),
       })),
       markRunning: jest.fn(async () => true),
+      releaseReservation: jest.fn(async () => true),
       settle: jest.fn(async () => true),
       wake: jest.fn(async () => undefined),
     };

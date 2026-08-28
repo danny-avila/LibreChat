@@ -1,10 +1,23 @@
-import type { AgentTriggerDeliveryMethods } from '@librechat/data-schemas';
+import { randomUUID } from 'node:crypto';
+import type {
+  AgentEventActorDetachedAction,
+  AgentTriggerDeliveryMethods,
+  IAgentEventActorSuspensionEvidence,
+} from '@librechat/data-schemas';
 import type { EventActorInterrupt } from '@librechat/agents';
+import type {
+  AgentContinueTriggerEnvelope,
+  AgentTriggerEnvelope,
+  AgentTriggerExpectedAction,
+} from './envelope';
 import type { EventActorDetachedActionLifecycle } from '../handlers';
-import type { AgentTriggerExpectedAction } from './envelope';
+import type { SerializableJobData } from '~/stream';
+import { createAgentTriggerEnvelope } from './envelope';
 import { matchesExpectedAction } from './outcome';
 
 const MAX_TERMINAL_RESULT_LENGTH = 32_768;
+const RESERVATION_RECOVERY_MS = 60_000;
+const RUNNING_RECOVERY_MS = 30 * 60_000;
 export const EVENT_ACTOR_DETACHED_COMPLETION_TYPE = 'librechat.event_actor.detached_completion';
 export const EVENT_ACTOR_DETACHED_COMPLETION_SOURCE = 'librechat-event-actor';
 
@@ -60,6 +73,7 @@ interface DetachedActionOwner {
 interface DetachedActionDependencies {
   reserveAgentEventActorDetachedAction: AgentTriggerDeliveryMethods['reserveAgentEventActorDetachedAction'];
   markAgentEventActorDetachedActionRunning: AgentTriggerDeliveryMethods['markAgentEventActorDetachedActionRunning'];
+  releaseAgentEventActorDetachedActionReservation: AgentTriggerDeliveryMethods['releaseAgentEventActorDetachedActionReservation'];
   settleAgentEventActorDetachedAction: AgentTriggerDeliveryMethods['settleAgentEventActorDetachedAction'];
   onTerminal(input: { taskId: string; idempotencyKey: string }): Promise<void>;
   now?(): Date;
@@ -74,6 +88,87 @@ export interface AgentEventActorInternalSuspension {
 
 export interface AgentEventActorDetachedActionLifecycle extends EventActorDetachedActionLifecycle {
   readSuspension(): AgentEventActorInternalSuspension | undefined;
+}
+
+export interface AgentEventActorDetachedResumeInput {
+  streamId: string;
+  job: SerializableJobData;
+  suspension: IAgentEventActorSuspensionEvidence;
+  action: AgentEventActorDetachedAction;
+}
+
+interface DetachedResumeDependencies {
+  getAgentTriggerDelivery: AgentTriggerDeliveryMethods['getAgentTriggerDelivery'];
+  enqueueAgentTrigger(envelope: AgentTriggerEnvelope): Promise<unknown>;
+  requestId?(): string;
+  now?(): number;
+}
+
+function renderDetachedCompletion(action: AgentEventActorDetachedAction): string {
+  const terminal =
+    action.status === 'succeeded'
+      ? `succeeded with this result:\n${action.result ?? ''}`
+      : `${action.status} with this error:\n${action.error ?? 'No error detail was recorded.'}`;
+  return [
+    'A detached expected action from your preceding event turn has now reached an authoritative terminal state.',
+    `Tool: ${action.toolName}`,
+    `Tool call: ${action.toolCallId}`,
+    `The action ${terminal}`,
+    'Continue the same event invocation using this trusted internal completion. Do not launch the same action again.',
+  ].join('\n');
+}
+
+/** Builds the exact internal continuation in the typed trigger layer. The app
+ * server supplies only persistence and dispatch composition dependencies. */
+export function createAgentEventDetachedResumeHandler(deps: DetachedResumeDependencies) {
+  const nextRequestId = deps.requestId ?? randomUUID;
+  const now = deps.now ?? Date.now;
+  return async ({ job, action }: AgentEventActorDetachedResumeInput): Promise<void> => {
+    const delivery = await deps.getAgentTriggerDelivery(job.agentEventDeliveryKey as string);
+    const envelope = delivery?.envelope as Partial<AgentContinueTriggerEnvelope> | undefined;
+    if (
+      delivery == null ||
+      String(delivery.user) !== job.userId ||
+      (delivery.tenantId ?? undefined) !== job.tenantId ||
+      envelope?.mode !== 'continue' ||
+      envelope.principal?.userId !== job.userId ||
+      (envelope.principal?.tenantId ?? undefined) !== job.tenantId ||
+      envelope.target?.bindingId !== job.agentEventBindingId ||
+      envelope.target?.conversationId !== job.conversationId ||
+      envelope.expectedAction?.toolName !== action.expectedToolName
+    ) {
+      throw new Error('Detached Event Actor completion owner is unavailable');
+    }
+    const target = envelope.target as AgentContinueTriggerEnvelope['target'];
+    const receivedAt = now();
+    const continuation = createAgentTriggerEnvelope({
+      mode: 'continue',
+      requestId: nextRequestId(),
+      deliveryId: `detached_completion:${action.taskId}`,
+      receivedAt,
+      principal: {
+        id: job.userId,
+        ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+      },
+      event: {
+        id: action.taskId,
+        type: EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
+        occurredAt: action.settledAt?.getTime() ?? action.observedAt.getTime(),
+        source: { id: EVENT_ACTOR_DETACHED_COMPLETION_SOURCE, type: 'internal' },
+        payload: {
+          version: 1,
+          invocationId: job.agentEventDeliveryKey as string,
+          generationCreatedAt: job.createdAt,
+          taskId: action.taskId,
+          idempotencyKey: action.idempotencyKey,
+        },
+      },
+      target,
+      input: renderDetachedCompletion(action),
+      expectedAction: envelope.expectedAction,
+    });
+    await deps.enqueueAgentTrigger(continuation);
+  };
 }
 
 function serializeTerminalResult(value: unknown): string {
@@ -126,13 +221,15 @@ export function createAgentEventActorDetachedActionLifecycle(
       ) {
         return { status: 'ignored' };
       }
+      const reservedAt = now();
       const reservation = await deps.reserveAgentEventActorDetachedAction({
         ...scope,
         invocationId: owner.invocationId,
         expectedToolName: owner.expectedAction.toolName,
         toolName: input.toolName,
         toolCallId: input.toolCallId,
-        reservedAt: now(),
+        reservedAt,
+        recoveryAfter: new Date(reservedAt.getTime() + RESERVATION_RECOVERY_MS),
       });
       if (reservation.status === 'conflict') {
         return {
@@ -153,10 +250,26 @@ export function createAgentEventActorDetachedActionLifecycle(
           ...(reservation.action.error == null ? {} : { error: reservation.action.error }),
         };
       }
+      if (reservation.action.status === 'launch_indeterminate') {
+        return {
+          status: 'conflict',
+          error:
+            'The detached Event Actor launch outcome is indeterminate; exact terminal proof is required before this invocation can continue',
+        };
+      }
+      if (reservation.status === 'replay') {
+        return {
+          status: 'conflict',
+          error:
+            reservation.action.status === 'running'
+              ? 'The detached Event Actor action was already launched by another executor'
+              : 'The detached Event Actor launch acknowledgement is still pending',
+        };
+      }
       current = {
         taskId: reservation.action.taskId,
         idempotencyKey: reservation.action.idempotencyKey,
-        launchAcknowledged: reservation.action.status !== 'reserved',
+        launchAcknowledged: false,
       };
       return {
         status: reservation.status,
@@ -168,15 +281,31 @@ export function createAgentEventActorDetachedActionLifecycle(
       if (!matchesCurrent(input)) {
         return false;
       }
+      const observedAt = now();
       const marked = await deps.markAgentEventActorDetachedActionRunning({
         ...scope,
         ...input,
-        observedAt: now(),
+        observedAt,
+        recoveryAfter: new Date(observedAt.getTime() + RUNNING_RECOVERY_MS),
       });
       if (marked && current != null) {
         current.launchAcknowledged = true;
       }
       return marked;
+    },
+    async releaseReservation(input) {
+      if (!matchesCurrent(input)) {
+        return false;
+      }
+      const released = await deps.releaseAgentEventActorDetachedActionReservation({
+        ...scope,
+        ...input,
+        observedAt: now(),
+      });
+      if (released) {
+        current = undefined;
+      }
+      return released;
     },
     async settle(input) {
       if (!matchesCurrent(input)) {

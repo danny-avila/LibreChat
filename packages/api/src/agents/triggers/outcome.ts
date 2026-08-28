@@ -3,10 +3,10 @@ import type {
   AgentTriggerDeliveryMethods,
   ConversationMethods,
   IAgentEventActorSuspension,
-  IAgentEventActorSuspensionEvidence,
   MessageMethods,
 } from '@librechat/data-schemas';
 import type { Agents } from 'librechat-data-provider';
+import type { AgentEventActorDetachedResumeInput } from './detachedAction';
 import type { AgentTriggerExpectedAction } from './envelope';
 import type { AgentEventAppliedAction } from './types';
 import type { SerializableJobData } from '~/stream';
@@ -334,13 +334,6 @@ export function createAgentEventActionRecorder(
   };
 }
 
-export interface AgentEventActorDetachedResumeInput {
-  streamId: string;
-  job: SerializableJobData;
-  suspension: IAgentEventActorSuspensionEvidence;
-  action: AgentEventActorDetachedAction;
-}
-
 export function createAgentEventTerminalHandler(
   methods: {
     settleAgentTriggerHandlingOutcome: (
@@ -358,6 +351,7 @@ export function createAgentEventTerminalHandler(
     getAgentEventActorActionAdmission: AgentTriggerDeliveryMethods['getAgentEventActorActionAdmission'];
     hasAgentEventActorActionAdmission: AgentTriggerDeliveryMethods['hasAgentEventActorActionAdmission'];
     getAgentEventActorDetachedAction: AgentTriggerDeliveryMethods['getAgentEventActorDetachedAction'];
+    markAgentEventActorDetachedActionLaunchIndeterminate: AgentTriggerDeliveryMethods['markAgentEventActorDetachedActionLaunchIndeterminate'];
     getMessage: MessageMethods['getMessage'];
   },
   options: {
@@ -371,13 +365,24 @@ export function createAgentEventTerminalHandler(
 ) => Promise<void> {
   return async (
     streamId: string,
-    job: SerializableJobData,
+    receivedJob: SerializableJobData,
     runSteps: Agents.RunStep[],
     content: Agents.MessageContentComplex[] = [],
   ) => {
-    if (job.agentEventDeliveryKey == null) {
+    if (receivedJob.agentEventDeliveryKey == null) {
       return;
     }
+    const completionDeliveryKey =
+      receivedJob.agentEventInvocationKey == null ? undefined : receivedJob.agentEventDeliveryKey;
+    /** Actor state remains owned by the original invocation. The internal
+     * completion delivery separately owns this generation's mailbox lane. */
+    const job: SerializableJobData & { agentEventDeliveryKey: string } =
+      receivedJob.agentEventInvocationKey == null
+        ? { ...receivedJob, agentEventDeliveryKey: receivedJob.agentEventDeliveryKey }
+        : {
+            ...receivedJob,
+            agentEventDeliveryKey: receivedJob.agentEventInvocationKey,
+          };
     const conversationId = job.conversationId ?? streamId;
     const outcome = classifyAgentEventRunOutcome(job, runSteps, content);
     const settledAt = new Date(job.completedAt ?? Date.now());
@@ -399,32 +404,51 @@ export function createAgentEventTerminalHandler(
         ? (unprojectedSuspension.handlingGenerationCreatedAt ?? job.createdAt)
         : job.createdAt;
     let detachedSuspensionAction: AgentEventActorDetachedAction | null = null;
-    if (
-      unprojectedSuspension?.kind === 'internal_completion' &&
-      unprojectedSuspension.suspension.invocation.invocationId === job.agentEventDeliveryKey &&
-      job.agentEventBindingId != null
-    ) {
-      detachedSuspensionAction = await methods.getAgentEventActorDetachedAction({
+    if (job.agentEventBindingId != null) {
+      const detachedActionOwner = {
         deliveryKey: job.agentEventDeliveryKey,
         user: job.userId,
         ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
         bindingId: job.agentEventBindingId,
         conversationId,
         generationCreatedAt: handlingGenerationCreatedAt,
-      });
+      };
+      detachedSuspensionAction =
+        await methods.getAgentEventActorDetachedAction(detachedActionOwner);
+      const recoveryObservedAt = new Date();
+      if (
+        detachedSuspensionAction != null &&
+        ['reserved', 'running'].includes(detachedSuspensionAction.status) &&
+        detachedSuspensionAction.recoveryAfter <= recoveryObservedAt
+      ) {
+        await methods.markAgentEventActorDetachedActionLaunchIndeterminate({
+          ...detachedActionOwner,
+          taskId: detachedSuspensionAction.taskId,
+          idempotencyKey: detachedSuspensionAction.idempotencyKey,
+          observedAt: recoveryObservedAt,
+        });
+        /** Re-read after the CAS so a concurrent exact terminal callback wins
+         * over recovery and can immediately continue the suspended actor. */
+        detachedSuspensionAction =
+          await methods.getAgentEventActorDetachedAction(detachedActionOwner);
+      }
       if (
         detachedSuspensionAction?.status === 'failed' ||
-        detachedSuspensionAction?.status === 'cancelled'
+        detachedSuspensionAction?.status === 'cancelled' ||
+        detachedSuspensionAction?.status === 'launch_indeterminate'
       ) {
         detachedTerminalFailure =
           detachedSuspensionAction.error ??
-          `Detached expected action ${detachedSuspensionAction.status}`;
+          (detachedSuspensionAction.status === 'launch_indeterminate'
+            ? 'Detached expected action launch is indeterminate'
+            : `Detached expected action ${detachedSuspensionAction.status}`);
       }
     }
     if (
       unprojectedSuspension?.kind === 'internal_completion' &&
       unprojectedSuspension.status === 'pending' &&
-      unprojectedSuspension.suspension.invocation.invocationId === job.agentEventDeliveryKey
+      unprojectedSuspension.suspension.invocation.invocationId === job.agentEventDeliveryKey &&
+      !isIrrecoverablyTerminal
     ) {
       const projection = job.agentEventSuspension;
       if (
@@ -438,6 +462,11 @@ export function createAgentEventTerminalHandler(
         );
       }
       const action = detachedSuspensionAction;
+      if (action?.status === 'launch_indeterminate') {
+        throw new Error(
+          `Agent event actor ${job.agentEventDeliveryKey} detached action launch is indeterminate`,
+        );
+      }
       if (action == null || !['succeeded', 'failed', 'cancelled'].includes(action.status)) {
         throw new Error(
           `Agent event actor ${job.agentEventDeliveryKey} detached action is not terminal`,
@@ -909,7 +938,29 @@ export function createAgentEventTerminalHandler(
         throw new Error(`Failed to seal legacy event actor turn ${job.agentEventLegacyTurnToken}`);
       }
     }
+    const settleCompletionDelivery = async (): Promise<void> => {
+      if (completionDeliveryKey == null) {
+        return;
+      }
+      const completionSettled = await methods.settleAgentTriggerHandlingOutcome({
+        deliveryKey: completionDeliveryKey,
+        conversationId,
+        generationCreatedAt: receivedJob.createdAt,
+        status: settlementOutcome.status,
+        settledAt,
+        ...(settlementOutcome.status === 'failed' && {
+          error: compensated
+            ? 'Applied event actor action was explicitly compensated'
+            : (detachedTerminalFailure ?? receivedJob.error ?? 'Generation failed'),
+        }),
+        ...(settlementOutcome.action != null && { action: settlementOutcome.action }),
+      });
+      if (!completionSettled) {
+        throw new Error(`Failed to settle internal completion delivery ${completionDeliveryKey}`);
+      }
+    };
     if (actorReceiptSettled) {
+      await settleCompletionDelivery();
       return;
     }
     const settled = await methods.settleAgentTriggerHandlingOutcome({
@@ -928,5 +979,6 @@ export function createAgentEventTerminalHandler(
     if (!settled) {
       throw new Error(`Failed to settle agent event delivery ${job.agentEventDeliveryKey}`);
     }
+    await settleCompletionDelivery();
   };
 }

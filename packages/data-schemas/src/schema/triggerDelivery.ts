@@ -97,11 +97,12 @@ const actorDetachedActionSchema = new Schema(
     launchAttempt: { type: Number, min: 0, max: 15, required: true },
     status: {
       type: String,
-      enum: ['reserved', 'running', 'succeeded', 'failed', 'cancelled'],
+      enum: ['reserved', 'running', 'launch_indeterminate', 'succeeded', 'failed', 'cancelled'],
       required: true,
     },
     reservedAt: { type: Date, required: true },
     observedAt: { type: Date, required: true },
+    recoveryAfter: { type: Date, required: true },
     launchedAt: { type: Date },
     settledAt: { type: Date },
     result: { type: String, maxlength: 32_768 },

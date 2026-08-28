@@ -46,9 +46,12 @@ export interface AgentEventActorDetachedAction {
   taskId: string;
   idempotencyKey: string;
   launchAttempt: number;
-  status: 'reserved' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+  status: 'reserved' | 'running' | 'launch_indeterminate' | 'succeeded' | 'failed' | 'cancelled';
   reservedAt: Date;
   observedAt: Date;
+  /** A recovery fence, not relaunch authority. Expiry only permits the exact
+   * launch to be marked indeterminate while late terminal proof remains valid. */
+  recoveryAfter: Date;
   launchedAt?: Date;
   settledAt?: Date;
   result?: string;

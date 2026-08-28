@@ -69,6 +69,7 @@ const {
   getAgentEventActorDetachedAction,
   reserveAgentEventActorDetachedAction,
   markAgentEventActorDetachedActionRunning,
+  releaseAgentEventActorDetachedActionReservation,
   settleAgentEventActorDetachedAction,
   claimAgentEventActorSuspension,
   settleAgentEventActorSuspension,
@@ -1326,7 +1327,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   );
   const isInternalDetachedCompletion =
     internalDetachedCompletion != null &&
-    rawAgentEventDelivery?.deliveryKey === internalDetachedCompletion.invocationId &&
+    rawAgentEventDelivery?.deliveryKey === clientRequestId &&
     rawAgentEventDelivery?.event?.type === EVENT_ACTOR_DETACHED_COMPLETION_TYPE &&
     rawAgentEventDelivery?.event?.source?.type === 'internal' &&
     rawAgentEventDelivery?.event?.source?.id === EVENT_ACTOR_DETACHED_COMPLETION_SOURCE;
@@ -1387,6 +1388,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         isTemporary: req._agentEventBindingRetention?.isTemporary ?? req.body?.isTemporary,
         ...(agentEventDelivery != null && {
           agentEventDeliveryKey: agentEventDelivery.deliveryKey,
+          ...(internalDetachedCompletion == null
+            ? {}
+            : { agentEventInvocationKey: internalDetachedCompletion.invocationId }),
           agentEventBindingId: boundEventBindingId,
           ...(agentEventDelivery.expectedAction != null && {
             agentEventExpectedAction: agentEventDelivery.expectedAction,
@@ -2090,6 +2094,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 {
                   reserveAgentEventActorDetachedAction,
                   markAgentEventActorDetachedActionRunning,
+                  releaseAgentEventActorDetachedActionReservation,
                   settleAgentEventActorDetachedAction,
                   /** Retry immediately when the generation already reached its
                    * terminal host-action fence. The same durable marker is
@@ -2198,7 +2203,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                       return client.sendMessage(text, messageOptions);
                     },
                     readAppliedAction: readAppliedEventAction,
-                    readSuspension: () => client.readEventActorSuspension(),
+                    readSuspension: () =>
+                      eventActorDetachedAction?.readSuspension() ??
+                      client.readEventActorSuspension(),
                     readResultContext: () => client.getEventActorContext(),
                   },
                   actorDependencies,

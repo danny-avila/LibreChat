@@ -47,6 +47,8 @@ export interface GenerationJobMetadata {
   isTemporary?: boolean;
   /** Exact durable delivery whose accepted continuation created this generation. */
   agentEventDeliveryKey?: string;
+  /** Original actor invocation when the current mailbox delivery is an internal completion. */
+  agentEventInvocationKey?: string;
   /** Trusted actor binding copied from the authenticated delivery envelope. */
   agentEventBindingId?: string;
   /** Optional action evidence contract declared by the authenticated event source. */

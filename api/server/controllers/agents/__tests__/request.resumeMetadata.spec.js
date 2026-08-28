@@ -74,6 +74,7 @@ const mockIsScheduleLive = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn();
 const mockExecuteAgentEventActor = jest.fn();
 const mockResumeAgentEventActor = jest.fn();
+const mockCreateAgentEventActorDetachedActionLifecycle = jest.fn(() => undefined);
 const mockFindAgentEventAppliedAction = jest.fn();
 const mockResolveAgentTurnExecutionPlan = jest.fn((input) => {
   let origin = 'user';
@@ -262,7 +263,8 @@ jest.mock('@librechat/api', () => ({
   deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
   executeAgentEventActor: (...args) => mockExecuteAgentEventActor(...args),
   resumeAgentEventActor: (...args) => mockResumeAgentEventActor(...args),
-  createAgentEventActorDetachedActionLifecycle: jest.fn(() => undefined),
+  createAgentEventActorDetachedActionLifecycle: (...args) =>
+    mockCreateAgentEventActorDetachedActionLifecycle(...args),
   parseAgentEventActorDetachedCompletion: (value) => (value?.version === 1 ? value : undefined),
   EVENT_ACTOR_DETACHED_COMPLETION_SOURCE: 'librechat-event-actor',
   EVENT_ACTOR_DETACHED_COMPLETION_TYPE: 'librechat.event_actor.detached_completion',
@@ -4279,7 +4281,14 @@ describe('ResumableAgentController resume metadata', () => {
       status: 'succeeded',
       result: 'move accepted',
     });
-    mockResumeAgentEventActor.mockRejectedValueOnce(new Error('stop after resume contract'));
+    const repaused = { kind: 'internal_completion', actionId: 'task-detached-2' };
+    mockCreateAgentEventActorDetachedActionLifecycle.mockReturnValueOnce({
+      readSuspension: () => repaused,
+    });
+    mockResumeAgentEventActor.mockImplementationOnce(async (input) => {
+      expect(input.readSuspension()).toBe(repaused);
+      throw new Error('stop after resume contract');
+    });
     const client = { options: { agent: {} }, sendMessage: jest.fn() };
     const req = {
       user: { id: 'user-123', tenantId: 'tenant-1' },
@@ -4289,7 +4298,7 @@ describe('ResumableAgentController resume metadata', () => {
         conversationId: 'child-conversation',
         endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
         agentEventDelivery: {
-          deliveryKey: 'original-delivery-1',
+          deliveryKey: 'detached-resume-generation-1',
           target: { bindingId: 'binding-1' },
           expectedAction: { toolName: 'submit_move' },
           event: {
@@ -4347,6 +4356,17 @@ describe('ResumableAgentController resume metadata', () => {
       expect.objectContaining({
         deliveryKey: 'original-delivery-1',
         generationCreatedAt: 1000,
+      }),
+    );
+    expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
+      'child-conversation',
+      'user-123',
+      'child-conversation',
+      expect.objectContaining({
+        initialMetadata: expect.objectContaining({
+          agentEventDeliveryKey: 'detached-resume-generation-1',
+          agentEventInvocationKey: 'original-delivery-1',
+        }),
       }),
     );
   });
