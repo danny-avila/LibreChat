@@ -53,6 +53,7 @@ export const defaultTheme: IThemeRGB = {
   'rgb-surface-destructive': '185 28 28', // #b91c1c (red-700)
   'rgb-surface-destructive-hover': '153 27 27', // #991b1b (red-800)
   'rgb-surface-chat': '255 255 255', // #fff (white)
+  'rgb-surface-code': '247 247 248', // #f7f7f8 (gray-50)
   'rgb-surface-inverted': '23 23 23', // #171717 (gray-850)
   'rgb-surface-inverted-hover': '47 47 47', // #2f2f2f (gray-700)
   'rgb-text-inverted': '255 255 255', // #fff (white)

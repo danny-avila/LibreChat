@@ -53,6 +53,7 @@ export const darkTheme: IThemeRGB = {
   'rgb-surface-destructive': '153 27 27', // #991b1b (red-800)
   'rgb-surface-destructive-hover': '127 29 29', // #7f1d1d (red-900)
   'rgb-surface-chat': '47 47 47', // #2f2f2f (gray-700)
+  'rgb-surface-code': '33 33 33', // #212121 (gray-800)
   'rgb-surface-inverted': '255 255 255', // #fff (white)
   'rgb-surface-inverted-hover': '236 236 236', // #ececec (gray-100)
   'rgb-text-inverted': '23 23 23', // #171717 (gray-850)
