@@ -573,7 +573,7 @@ function rejectMissingTriggerParentMessageId(res, generationProtocolVersion) {
  */
 const ResumableAgentController = async (req, res, next, initializeClient, addTitle) => {
   const startupTelemetry = getAgentStartupTelemetry(req);
-  let generationProtocolVersion = negotiateNewGenerationProtocol(req, GenerationJobManager);
+  let generationProtocolVersion = negotiateNewGenerationProtocol(req);
   const {
     text,
     isRegenerate,

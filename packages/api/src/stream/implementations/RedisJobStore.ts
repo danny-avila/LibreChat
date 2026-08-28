@@ -1907,14 +1907,12 @@ export class RedisJobStore implements IJobStoreV2 {
     }
     const safeInitialMetadata = { ...initialMetadata };
     delete safeInitialMetadata.providerDrained;
-    let generationProtocolVersion: 1 | 2 = 1;
+    let generationProtocolVersion: 1 | 2 = 2;
     if (
       initialMetadata.generationProtocolVersion === 1 ||
       initialMetadata.generationProtocolVersion === 2
     ) {
       generationProtocolVersion = initialMetadata.generationProtocolVersion;
-    } else if (process.env.GENERATION_PROTOCOL_VERSION === '2') {
-      generationProtocolVersion = 2;
     }
     const job: CreatedJobData = {
       ...safeInitialMetadata,

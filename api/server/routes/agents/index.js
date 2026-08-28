@@ -64,10 +64,7 @@ function hasTenantMismatch(job, user) {
  * validation, not-found, and authorization envelopes; it never leaks an
  * existing job's marker to an unauthorized caller. */
 function negotiateRequestGenerationProtocol(req) {
-  return Math.min(
-    getRequestedGenerationProtocol(req),
-    getServerGenerationProtocol(GenerationJobManager),
-  );
+  return Math.min(getRequestedGenerationProtocol(req), getServerGenerationProtocol());
 }
 
 /** Every generation-control JSON envelope carries the exact numeric protocol
@@ -94,9 +91,7 @@ async function sendJoblessStatus(req, res, conversationId) {
   );
   const generationProtocolVersion = Math.min(
     requestedProtocolVersion,
-    claimed.steers.length > 0
-      ? claimed.generationProtocolVersion
-      : getServerGenerationProtocol(GenerationJobManager),
+    claimed.steers.length > 0 ? claimed.generationProtocolVersion : getServerGenerationProtocol(),
   );
   res.set(GENERATION_PROTOCOL_HEADER, String(generationProtocolVersion));
   return res.json({
