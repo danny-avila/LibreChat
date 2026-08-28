@@ -4,8 +4,9 @@ import type { ClaudeConversation, ImportProgress } from '~/import/types';
 import type { ConvertedClaudeConversation } from './convert';
 import type { Archive } from '~/import/archive';
 import { recordError, sanitizeImportError } from '~/import/errors';
-import { hasClaudeConversationShape } from '~/import/manifest';
+import { hasClaudeConversationShape, isClaudeConversation } from '~/import/manifest';
 import { convertClaudeConversation } from './convert';
+import { throttleCancelCheck } from '../cancel';
 
 export const CLAUDE_SOURCE = 'claude';
 
@@ -19,7 +20,7 @@ class ShardShapeError extends Error {}
  * they are done with it, so peak heap stays at one shard rather than the whole
  * export.
  */
-async function parseShard(archive: Archive, shard: string): Promise<ClaudeConversation[]> {
+async function parseShard(archive: Archive, shard: string): Promise<unknown[]> {
   const parsed: unknown = JSON.parse((await archive.read(shard)).toString('utf8'));
   if (!Array.isArray(parsed)) {
     throw new ShardShapeError('expected an array of conversations');
@@ -27,7 +28,7 @@ async function parseShard(archive: Archive, shard: string): Promise<ClaudeConver
   if (!hasClaudeConversationShape(parsed)) {
     throw new ShardShapeError('expected Claude conversation objects');
   }
-  return parsed as ClaudeConversation[];
+  return parsed;
 }
 
 function describeShardError(error: unknown, shard: string): string {
@@ -106,12 +107,13 @@ export async function runClaudeImport(context: ProviderImportContext): Promise<v
   await input.onPhase?.('conversations');
 
   let cancelled = false;
+  const checkCancelled = throttleCancelCheck(input.isCancelled);
   for (const shard of context.shards) {
     if (cancelled) {
       break;
     }
 
-    let conversations: ClaudeConversation[];
+    let conversations: unknown[];
     try {
       conversations = await parseShard(archive, shard);
     } catch (error) {
@@ -122,9 +124,15 @@ export async function runClaudeImport(context: ProviderImportContext): Promise<v
     progress.conversations.total += conversations.length;
 
     for (const conv of conversations) {
-      if (input.isCancelled && (await input.isCancelled())) {
+      if (await checkCancelled()) {
         cancelled = true;
         break;
+      }
+      if (!isClaudeConversation(conv)) {
+        recordError(report.errors, `${shard}: malformed Claude conversation record`);
+        progress.conversations.done += 1;
+        await input.onProgress?.(progress);
+        continue;
       }
 
       if (input.existingExternalIds.has(conv.uuid)) {

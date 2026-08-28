@@ -22,6 +22,8 @@ export interface SaveMessageDetails {
   files?: ConvertedMessage['files'];
 }
 
+export type FlushOutcome = 'none' | 'not_committed' | 'ambiguous' | 'committed';
+
 export interface ConversationOverrides {
   isArchived: boolean;
   pinned: boolean;
@@ -58,6 +60,9 @@ export interface BatchSink {
    * difference. */
   maybeFlush(): Promise<boolean>;
   saveBatch(): Promise<void>;
+  /** Reports whether the most recent rejected flush could have committed.
+   * Sinks that cannot report an outcome leave pending assets unclaimed. */
+  getLastFlushOutcome?(): FlushOutcome;
 }
 
 /** Everything a per-provider run needs from `runImport`. Providers whose

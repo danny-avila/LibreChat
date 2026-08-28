@@ -111,16 +111,17 @@ describe('inspectExport for a Claude export', () => {
     expect(inspected.summary.conversations).toBe(2);
   });
 
-  it('inspects intact shards and reports a malformed later shard during import', async () => {
+  it('inspects mixed shards and reports malformed records during import', async () => {
     const valid = claudeConversation('valid', 'Valid');
+    const secondValid = claudeConversation('valid-2', 'Second valid');
     const filepath = await writeZip({
       'conversations-000.json': JSON.stringify([valid]),
-      'conversations-001.json': JSON.stringify([valid, null]),
+      'conversations-001.json': JSON.stringify([secondValid, null]),
     });
     const inspected = await inspectExport(filepath);
     const { sink, recorded } = recorder();
 
-    expect(inspected.summary).toMatchObject({ conversations: 1, shards: 1 });
+    expect(inspected.summary).toMatchObject({ conversations: 2, shards: 2 });
 
     const report = await runImport({
       ...BASE,
@@ -130,9 +131,10 @@ describe('inspectExport for a Claude export', () => {
       existingExternalIds: new Set(),
     });
 
-    expect(recorded.conversations).toHaveLength(1);
+    expect(recorded.conversations).toHaveLength(2);
+    expect(report.imported).toBe(2);
     expect(report.errors).toHaveLength(1);
-    expect(report.errors[0]).toContain('conversations-001.json');
+    expect(report.errors[0]).toContain('malformed Claude conversation record');
   });
 
   /** `uuid` is the external id the skip set and the `importedFrom` marker are
@@ -382,6 +384,12 @@ describe('runImport for a Claude export', () => {
     const filepath = await buildClaudeFixtureExport();
     const { sink, recorded } = recorder();
     let calls = 0;
+    /** The run reads cancellation at most once per second so a Redis-backed
+     * job store is not hit once per conversation, so the clock has to move
+     * for the second conversation's check to reach the store at all. */
+    const start = Date.now();
+    let elapsed = 0;
+    const now = jest.spyOn(Date, 'now').mockImplementation(() => start + elapsed);
 
     const report = await runImport({
       ...BASE,
@@ -391,9 +399,12 @@ describe('runImport for a Claude export', () => {
       existingExternalIds: new Set(),
       isCancelled: async () => {
         calls += 1;
+        elapsed += 2000;
         return calls > 1;
       },
     });
+
+    now.mockRestore();
 
     expect(report.imported).toBe(1);
     expect(recorded.conversations).toHaveLength(1);
@@ -436,7 +447,7 @@ describe('runImport for a Claude export', () => {
     expect(report.errors[0]).toContain('expected Claude conversation objects');
   });
 
-  it('skips a shard containing a malformed later entry and continues with the next shard', async () => {
+  it('imports the valid records of a shard containing a malformed later entry', async () => {
     const filepath = await writeZip({
       'conversations-000.json': JSON.stringify([
         claudeConversation('before-null', 'Before malformed entry'),
@@ -456,11 +467,12 @@ describe('runImport for a Claude export', () => {
       existingExternalIds: new Set(),
     });
 
-    expect(report.imported).toBe(1);
+    expect(report.imported).toBe(2);
     expect(report.errors).toHaveLength(1);
     expect(report.errors[0]).toContain('conversations-000.json');
-    expect(report.errors[0]).toContain('expected Claude conversation objects');
+    expect(report.errors[0]).toContain('malformed Claude conversation record');
     expect(recorded.conversations.map((conversation) => conversation.title)).toEqual([
+      'Before malformed entry',
       'After malformed shard',
     ]);
   });

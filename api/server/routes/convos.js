@@ -1,5 +1,4 @@
 const fs = require('fs');
-const path = require('path');
 const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
@@ -11,7 +10,6 @@ const {
   GROK_ENDPOINT,
   inspectExport,
   ImportJobStore,
-  ZipBombError,
   deleteAgentCheckpoints,
   sanitizeImportError,
   extractLegacyArchiveEntry,
@@ -616,13 +614,24 @@ async function runImportJob(context, job) {
   }
 }
 
+async function isZipUpload(filepath) {
+  const handle = await fs.promises.open(filepath, 'r');
+  try {
+    const signature = Buffer.alloc(4);
+    const { bytesRead } = await handle.read(signature, 0, signature.length, 0);
+    return (
+      bytesRead === signature.length && signature.equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))
+    );
+  } finally {
+    await handle.close();
+  }
+}
+
 /**
  * Imports a bare export synchronously through the old, un-jobbed importer.
  * Reached only for uploads that are neither a zip nor recognizable ChatGPT,
- * Claude or Grok content: ChatbotUI and LibreChat exports are detected by CONTENT
- * (`getImporter`, invoked inside `importConversations`), not by file extension.
- * The `.zip` exclusion is load-bearing: this path reads `req.file.path` as
- * JSON, which no archive can satisfy.
+ * Claude or Grok content: `getImporter`, invoked inside `importConversations`,
+ * detects ChatbotUI and LibreChat exports from their content.
  * @param {object} req
  * @param {object} res
  * @returns {Promise<void>}
@@ -661,14 +670,13 @@ async function importLegacyZip(req, res) {
 /**
  * Imports a conversation export and saves it to the database.
  *
- * `.zip` uploads and bare `.json` ChatGPT, Claude and Grok exports share one
- * pipeline: `openArchive` wraps a non-zip file in a single-entry archive, so
- * `inspectExport` sees the same shape either way and this request only
- * inspects the upload and returns a summary awaiting confirmation; the
- * actual import runs after POST /import/jobs/:jobId/start. A bare `.json`
- * upload matching none of those shapes (ChatbotUI, LibreChat) falls back to
- * the legacy synchronous importer, which is the only path that understands
- * those layouts.
+ * `.zip` uploads and bare ChatGPT, Claude and Grok exports share one pipeline:
+ * `openArchive` wraps a non-zip file in a single-entry archive, so
+ * `inspectExport` sees the same shape either way and this request only inspects
+ * the upload and returns a summary awaiting confirmation; the actual import
+ * runs after POST /import/jobs/:jobId/start. An unsupported export first tries
+ * the bounded sole-JSON archive fallback, then the legacy synchronous importer
+ * for bare JSON layouts.
  * @route POST /import
  * @param {Express.Multer.File} req.file - The uploaded export file.
  * @returns {object} 201 - legacy (non-ChatGPT) JSON import succeeded
@@ -701,29 +709,28 @@ router.post(
       return;
     }
 
-    const isZip = path.extname(req.file.originalname).toLowerCase() === '.zip';
-
     let inspected;
+
     activeImportStages += 1;
     try {
       inspected = await inspectExport(req.file.path);
     } catch (error) {
-      if (!isZip && error instanceof Error && error.message === 'Unsupported import type') {
+      if (error instanceof Error && error.message === 'Unsupported import type') {
         try {
-          await importLegacyConversation(req, res);
-        } finally {
-          await fs.promises.unlink(req.file.path).catch(() => undefined);
-        }
-        return;
-      }
-      if (
-        isZip &&
-        error instanceof Error &&
-        (error.message === 'Unsupported import type' || error instanceof ZipBombError)
-      ) {
-        try {
-          if (await importLegacyZip(req, res)) {
-            await fs.promises.unlink(req.file.path).catch(() => undefined);
+          if (await isZipUpload(req.file.path)) {
+            if (await importLegacyZip(req, res)) {
+              await fs.promises.unlink(req.file.path).catch(() => undefined);
+              return;
+            }
+          } else {
+            /** The bare legacy importer reads the upload in place, so the
+             * temporary file has to be removed here: this branch returns
+             * before the shared cleanup below. */
+            try {
+              await importLegacyConversation(req, res);
+            } finally {
+              await fs.promises.unlink(req.file.path).catch(() => undefined);
+            }
             return;
           }
         } catch (legacyError) {
@@ -781,6 +788,17 @@ router.post(
  * of a deployment is `replicas x CONVERSATION_IMPORT_MAX_CONCURRENT`. That is
  * a resource limit, not a correctness one, since each job now runs on exactly
  * one replica.
+ *
+ * No import limiter runs here. The upload request already consumed that
+ * budget, and this confirmation is mandatory for every inspected job, so
+ * charging the same limiter twice would reject the second half of an import
+ * the first half was allowed to make. What bounds this route instead is the
+ * job claim plus the two concurrency ceilings below.
+ *
+ * The archive itself stays on the disk of the replica that received the
+ * upload, so a scaled deployment needs the upload and its confirmation to
+ * reach the same replica: run the backend behind session affinity, or give
+ * `uploads/temp` shared storage.
  * @route POST /import/jobs/:jobId/start
  * @returns {object} 202 - the job has started
  * @returns {object} 404 - no such job for this user
@@ -788,75 +806,69 @@ router.post(
  * @returns {object} 503 - the shared job store could not hand out the claim, so
  *   the job is untouched and the client should retry
  */
-router.post(
-  '/import/jobs/:jobId/start',
-  importIpLimiter,
-  importUserLimiter,
-  configMiddleware,
-  async (req, res) => {
-    const result = await importJobs.confirmStart(req.user.id, req.params.jobId);
+router.post('/import/jobs/:jobId/start', configMiddleware, async (req, res) => {
+  const result = await importJobs.confirmStart(req.user.id, req.params.jobId);
 
-    if (result.status === 'not_found') {
-      res.status(404).json({ message: 'Import job not found' });
-      return;
-    }
-    /** A replay of the job that is already running lands here, not on the
-     * concurrency check below: it has left `awaiting_confirmation`, so the
-     * honest answer is that this job already started. */
-    if (result.status === 'conflict') {
-      res.status(409).json({ message: 'Import job is not awaiting confirmation' });
-      return;
-    }
-    /** The shared store could not hand out the job's claim, so this replica
-     * cannot prove it is the only one confirming. Nothing was written: the job
-     * is still awaiting confirmation, so this is retryable rather than a
-     * failure of the job itself, and the client's retry starts it once the
-     * store recovers. */
-    if (result.status === 'lock_unavailable') {
-      res.set('Retry-After', String(IMPORT_CLAIM_RETRY_AFTER_SECONDS));
-      res.status(503).json({ message: 'Import service is busy, try again shortly' });
-      return;
-    }
+  if (result.status === 'not_found') {
+    res.status(404).json({ message: 'Import job not found' });
+    return;
+  }
+  /** A replay of the job that is already running lands here, not on the
+   * concurrency check below: it has left `awaiting_confirmation`, so the
+   * honest answer is that this job already started. */
+  if (result.status === 'conflict') {
+    res.status(409).json({ message: 'Import job is not awaiting confirmation' });
+    return;
+  }
+  /** The shared store could not hand out the job's claim, so this replica
+   * cannot prove it is the only one confirming. Nothing was written: the job
+   * is still awaiting confirmation, so this is retryable rather than a
+   * failure of the job itself, and the client's retry starts it once the
+   * store recovers. */
+  if (result.status === 'lock_unavailable') {
+    res.set('Retry-After', String(IMPORT_CLAIM_RETRY_AFTER_SECONDS));
+    res.status(503).json({ message: 'Import service is busy, try again shortly' });
+    return;
+  }
 
-    /** Checked after the transition so it only ever rejects a *different*
-     * import. The job is handed back to `awaiting_confirmation` rather than
-     * failed, so the user can start it once the running one finishes. */
-    if (activeImportCount(req.user.id) >= MAX_CONCURRENT_IMPORTS_PER_USER) {
-      await importJobs.patch(req.user.id, result.job.jobId, { phase: 'awaiting_confirmation' });
-      res.status(429).json({ message: 'Another import is already running' });
-      return;
-    }
+  /** Checked after the transition so it only ever rejects a *different*
+   * import. The job is handed back to `awaiting_confirmation` rather than
+   * failed, so the user can start it once the running one finishes. */
+  if (activeImportCount(req.user.id) >= MAX_CONCURRENT_IMPORTS_PER_USER) {
+    await importJobs.patch(req.user.id, result.job.jobId, { phase: 'awaiting_confirmation' });
+    res.status(429).json({ message: 'Another import is already running' });
+    return;
+  }
 
-    /** Same handling for the node-wide ceiling: this user is within their own
-     * limit, but the process is not, so the job waits where it was rather than
-     * failing. */
-    if (atImportCapacity()) {
-      await importJobs.patch(req.user.id, result.job.jobId, { phase: 'awaiting_confirmation' });
-      res.status(429).json({ message: 'Too many imports are running, try again shortly' });
-      return;
-    }
+  /** Same handling for the node-wide ceiling: this user is within their own
+   * limit, but the process is not, so the job waits where it was rather than
+   * failing. */
+  if (atImportCapacity()) {
+    await importJobs.patch(req.user.id, result.job.jobId, { phase: 'awaiting_confirmation' });
+    res.status(429).json({ message: 'Too many imports are running, try again shortly' });
+    return;
+  }
 
-    /** Everything the background run needs, read while the request is still
-     * the thing being handled. Holding `req` instead would pin the socket and
-     * its buffers for the length of a multi-minute import, per concurrent job. */
-    const context = {
-      userId: req.user.id,
-      userRole: req.user.role,
-      tenantId: req.user.tenantId,
-      appConfig: req.config,
-    };
+  /** Everything the background run needs, read while the request is still
+   * the thing being handled. Holding `req` instead would pin the socket and
+   * its buffers for the length of a multi-minute import, per concurrent job. */
+  const context = {
+    userId: req.user.id,
+    userRole: req.user.role,
+    tenantId: req.user.tenantId,
+    appConfig: req.config,
+  };
 
-    trackImportStart(context.userId);
-    res.status(202).json({ jobId: result.job.jobId });
+  trackImportStart(context.userId);
+  res.status(202).json({ jobId: result.job.jobId });
 
-    /** Detached on purpose, so the terminal catch is the only thing standing
-     * between a rejection in the run's own error handling and an unhandled
-     * rejection in a process that serves live chat streams. */
-    runImportJob(context, result.job).catch((error) => {
-      logger.error(`[startImportJob] Background import job ${result.job.jobId} crashed`, error);
-    });
-  },
-);
+  /** Detached on purpose, so the terminal catch is the only thing standing
+   * between a rejection in the run's own error handling and an unhandled
+   * rejection in a process that serves live chat streams. */
+  runImportJob(context, result.job).catch((error) => {
+    logger.error(`[startImportJob] Background import job ${result.job.jobId} crashed`, error);
+  });
+});
 
 /**
  * Returns the status of an import job. `filepath` and `userId` are always

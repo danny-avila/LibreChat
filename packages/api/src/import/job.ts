@@ -7,6 +7,11 @@ import type { ImportJob } from './types';
 const DEFAULT_TTL = 24 * 60 * 60 * 1000;
 const USER_MUTATION_LOCK_WAIT_MS = 250;
 const MIN_LOCK_RENEW_INTERVAL_MS = 10;
+/**
+ * Keep required background mutations from holding capacity slots forever when
+ * the shared claim store remains unavailable.
+ */
+const MAX_CLAIM_RETRY_ATTEMPTS = 3;
 
 /**
  * The `_LOCK` suffix keeps claim keys disjoint from the Keyv data keys of the
@@ -227,8 +232,9 @@ export class ImportJobStore {
    * restore the duplicate-run race for as long as the store stays degraded.
    * User-facing start and cancel operations return an unavailable result, so
    * routes can fail closed with a retryable response. Required background
-   * state transitions keep retrying, while best-effort progress writes return
-   * without changing the job when the claim is unavailable.
+   * state transitions retry a few times before surfacing store unavailability,
+   * while best-effort progress writes return without changing the job when the
+   * claim is unavailable.
    *
    * A store with no claim helpers is the in-memory fallback, which no second
    * replica can be reading, so `claimed` runs on the in-process lock alone.
@@ -248,25 +254,32 @@ export class ImportJobStore {
     if (!setIfLockOwned) {
       return unavailable();
     }
-
+    let acquisitionAttempts = 0;
     while (true) {
       let token: string | null = null;
       const waitUntil = Date.now() + USER_MUTATION_LOCK_WAIT_MS;
       while (!token) {
+        let acquisitionError: unknown;
         try {
           token = await acquireLock(lockKey);
-        } catch {
-          if (acquisitionBehavior === 'bounded') {
-            return unavailable();
-          }
+        } catch (error) {
+          acquisitionError = error;
         }
         if (!token) {
+          if (acquisitionError && acquisitionBehavior === 'bounded') {
+            return unavailable();
+          }
+          acquisitionAttempts += 1;
           if (acquisitionBehavior === 'bounded' && Date.now() >= waitUntil) {
             return unavailable();
+          }
+          if (acquisitionBehavior === 'retry' && acquisitionAttempts >= MAX_CLAIM_RETRY_ATTEMPTS) {
+            throw acquisitionError ?? new Error('Import job mutation lock unavailable');
           }
           await new Promise((resolve) => setTimeout(resolve, 25));
         }
       }
+      acquisitionAttempts = 0;
 
       let lockLost = false;
       let renewal: Promise<void> | null = null;

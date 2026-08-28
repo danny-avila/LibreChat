@@ -72,7 +72,7 @@ describe('inspectExport', () => {
       mapping: {},
     };
     const zip = new JSZip();
-    zip.file('conversations-000.json', JSON.stringify([valid]));
+    zip.file('conversations-000.json', JSON.stringify([valid, null]));
     zip.file('conversations-001.json', '{malformed');
     const buffer = await zip.generateAsync({ type: 'nodebuffer' });
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lc-import-recoverable-inspect-'));

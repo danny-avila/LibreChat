@@ -352,6 +352,12 @@ describe('runImport for a Grok export', () => {
     const filepath = await buildGrokFixtureExport();
     const { sink, recorded } = recorder();
     let calls = 0;
+    /** The run reads cancellation at most once per second so a Redis-backed
+     * job store is not hit once per conversation, so the clock has to move
+     * for the second conversation's check to reach the store at all. */
+    const start = Date.now();
+    let elapsed = 0;
+    const now = jest.spyOn(Date, 'now').mockImplementation(() => start + elapsed);
 
     const report = await runImport({
       ...BASE,
@@ -361,9 +367,12 @@ describe('runImport for a Grok export', () => {
       existingExternalIds: new Set(),
       isCancelled: async () => {
         calls += 1;
+        elapsed += 2000;
         return calls > 1;
       },
     });
+
+    now.mockRestore();
 
     expect(report.imported).toBe(1);
     expect(recorded.conversations).toHaveLength(1);

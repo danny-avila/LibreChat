@@ -129,19 +129,29 @@ describe('expired file sweep helpers', () => {
     });
   });
 
-  it('does not start the interval when the sweep is disabled', () => {
+  it('keeps stale cleanup running when the retention sweep is disabled', async () => {
+    jest.useFakeTimers();
     process.env.FILE_RETENTION_SWEEP_INTERVAL_MS = '0';
+    const sweepStaleTempUploads = jest.fn().mockResolvedValue({
+      scanned: 0,
+      deleted: 0,
+      failed: 0,
+    });
 
     const interval = startExpiredFileSweep(
       { appConfig: {} as AppConfig },
       {
         sweepExpiredFiles: jest.fn(),
+        sweepStaleTempUploads,
         runAsSystem: jest.fn((fn) => fn()),
         logger,
       },
     );
 
     expect(interval).toBeNull();
+    expect(sweepStaleTempUploads).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(60 * 60 * 1000);
+    expect(sweepStaleTempUploads).toHaveBeenCalledTimes(2);
     expect(logger.info).toHaveBeenCalledWith(
       '[sweepExpiredFiles] Disabled by FILE_RETENTION_SWEEP_INTERVAL_MS=0',
     );

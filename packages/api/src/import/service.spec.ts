@@ -274,14 +274,9 @@ describe('runImport', () => {
   });
 
   /** A conversation is only buffered when it is converted; the flush is what
-   * writes it. Claiming its assets at buffer time meant a flush that rejected
-   * left those files behind, referenced by a conversation that was never
-   * written and skipped by the cleanup. */
-  /** A rejected save does not prove nothing was written: a bulk write can
-   * commit and still reject. Releasing the buffered conversations' assets on
-   * that rejection deleted the images of conversations that did commit, so the
-   * pointers are claimed instead and only storage is wasted. */
-  it('keeps the assets of conversations buffered into a save that rejected', async () => {
+   * writes it. Pending pointers are promoted only after a successful flush, or
+   * when the sink reports an ambiguous conversation write. */
+  it('releases assets when a batch save reports no commit outcome', async () => {
     const filepath = await buildFixtureExport();
     const deleted: string[] = [];
     const recorded: string[] = [];
@@ -313,7 +308,7 @@ describe('runImport', () => {
     ).rejects.toThrow('mongo unavailable');
 
     expect(recorded.length).toBeGreaterThan(0);
-    expect(deleted).toEqual([]);
+    expect(deleted).toHaveLength(3);
   });
 
   it('reports progress as it advances', async () => {
@@ -628,14 +623,13 @@ describe('runImport', () => {
     expect(recorded.conversations[0].title).toBe('Good convo five');
   });
 
-  it('rejects a shard containing any malformed conversation and imports the other shards', async () => {
+  it('records malformed conversations and still imports valid records in the shard', async () => {
+    const before = textConversation('ext-before-null', 'Before malformed entry', 1700009100);
+    const after = textConversation('ext-after-null', 'After malformed shard', 1700009200);
     const filepath = await writeZip({
-      'conversations-000.json': JSON.stringify([
-        textConversation('ext-before-null', 'Before malformed entry', 1700009100),
-        null,
-      ]),
+      'conversations-000.json': JSON.stringify([before, null, after]),
       'conversations-001.json': JSON.stringify([
-        textConversation('ext-after-null', 'After malformed shard', 1700009200),
+        textConversation('ext-other-shard', 'Other shard', 1700009300),
       ]),
       'export_manifest.json': shardedManifest(['conversations-000.json', 'conversations-001.json']),
     });
@@ -650,12 +644,14 @@ describe('runImport', () => {
       existingExternalIds: new Set(),
     });
 
-    expect(report.imported).toBe(1);
+    expect(report.imported).toBe(3);
     expect(report.errors).toHaveLength(1);
     expect(report.errors[0]).toContain('conversations-000.json');
-    expect(report.errors[0]).toContain('expected ChatGPT conversation objects');
-    expect(recorded.conversations).toHaveLength(1);
-    expect(recorded.conversations[0].title).toBe('After malformed shard');
+    expect(recorded.conversations.map((conversation) => conversation.title)).toEqual([
+      'Before malformed entry',
+      'After malformed shard',
+      'Other shard',
+    ]);
   });
 
   it('records a conversation that fails to convert and still imports the others', async () => {
@@ -865,7 +861,7 @@ describe('runImport asset cleanup', () => {
         }
         if (phase === 'assets') {
           assetChecks += 1;
-          if (assetChecks === 2) {
+          if (assetChecks === 1) {
             throw new Error('cancellation store unavailable');
           }
         }
@@ -883,13 +879,14 @@ describe('runImport asset cleanup', () => {
    * later conversations the run never reached are genuinely unreferenced: the
    * fixture's first conversation claims one of its three assets, and the two
    * belonging to the conversation that was never converted are released. */
-  it('keeps the assets buffered before an incremental flush rejected', async () => {
+  it('keeps the assets buffered before an ambiguous incremental flush rejection', async () => {
     const filepath = await buildFixtureExport();
     const { sink } = recorder();
     const { deleted, deps } = recordingDeps();
     sink.maybeFlush = async () => {
       throw new Error('write concern timeout');
     };
+    sink.getLastFlushOutcome = () => 'ambiguous';
 
     await expect(
       runImport({

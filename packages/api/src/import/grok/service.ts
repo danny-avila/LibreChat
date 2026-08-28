@@ -7,6 +7,7 @@ import { isGrokExport, isGrokConversationEntry } from '~/import/manifest';
 import { recordError, sanitizeImportError } from '~/import/errors';
 import { convertGrokConversation } from './convert';
 import { isUsableExternalId } from '~/import/sink';
+import { throttleCancelCheck } from '../cancel';
 
 export const GROK_SOURCE = 'grok';
 
@@ -104,6 +105,7 @@ export async function runGrokImport(context: ProviderImportContext): Promise<voi
   await input.onPhase?.('conversations');
 
   let cancelled = false;
+  const checkCancelled = throttleCancelCheck(input.isCancelled);
   for (const shard of context.shards) {
     if (cancelled) {
       break;
@@ -120,7 +122,7 @@ export async function runGrokImport(context: ProviderImportContext): Promise<voi
     progress.conversations.total += parsed.conversations.length;
 
     for (const entry of parsed.conversations) {
-      if (input.isCancelled && (await input.isCancelled())) {
+      if (await checkCancelled()) {
         cancelled = true;
         break;
       }

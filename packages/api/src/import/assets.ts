@@ -256,8 +256,8 @@ function resolveOriginalName(
 }
 
 /**
- * The name map is optional decoration, so any shape other than an object of
- * strings is discarded rather than allowed to fail the assets that reference
+ * The name map is optional decoration, so any shape other than a plain object
+ * of strings is discarded rather than allowed to fail the assets that reference
  * it. `JSON.parse` succeeds for `null`, an array, and a nested object, and each
  * of those reaches `originalLeafName` and throws on `.split`, losing an
  * attachment over a cosmetic file the import does not need.
@@ -267,13 +267,17 @@ function asNameMap(parsed: unknown): Record<string, string> {
     return {};
   }
 
-  const names: Record<string, string> = {};
-  for (const [key, value] of Object.entries(parsed)) {
-    if (typeof value === 'string') {
-      names[key] = value;
-    }
+  const prototype = Object.getPrototypeOf(parsed);
+  if (prototype !== Object.prototype && prototype !== null) {
+    return {};
   }
-  return names;
+
+  const entries = Object.entries(parsed);
+  if (entries.some(([, value]) => typeof value !== 'string')) {
+    return {};
+  }
+
+  return Object.fromEntries(entries) as Record<string, string>;
 }
 
 async function readAssetNames(

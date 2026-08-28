@@ -13,11 +13,13 @@ export { ZipBombError };
 const DEFAULT_MAX_ENTRIES = 20000;
 const DEFAULT_MAX_TOTAL_BYTES = 4096 * megabyte;
 /**
- * Hard ceiling on the per-entry cap, whatever a deployment configures. V8 caps
- * a string at 536,870,888 characters (`buffer.constants.MAX_STRING_LENGTH`),
- * just under 512 MiB, so a larger entry can never survive the
- * `.toString('utf8')` every reader performs; allowing one would trade a clear
- * rejection for an opaque V8 allocation failure.
+ * Hard ceiling on the per-entry cap for zip archives, whatever a deployment
+ * configures. V8 caps a string at 536,870,888 characters
+ * (`buffer.constants.MAX_STRING_LENGTH`), just under 512 MiB, so a larger
+ * archive entry can never survive the `.toString('utf8')` every reader
+ * performs; allowing one would trade a clear rejection for an opaque V8
+ * allocation failure. Bare uploads use the configured import file limit
+ * instead, which is also the limit enforced by the upload route.
  */
 const ABSOLUTE_MAX_ENTRY_BYTES = 512 * megabyte;
 /** Local file header signature every ZIP file begins with. Its absence
@@ -309,13 +311,10 @@ async function openSingleFileArchive(
   const stat = await fs.promises.stat(filepath);
 
   /**
-   * Checked up front rather than after streaming the file: the upload limit
-   * (`CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES`, 1 GiB by default) is sized for
-   * a `.zip`, whose individual shards are each far below the per-entry cap, so
-   * a bare `.json` between the two limits passes both the client-side check
-   * and multer and only fails here. Failing on the stat means it fails
-   * immediately and for the real reason, instead of after reading half a
-   * gigabyte and reporting it as an oversized archive.
+   * Checked up front against the same configured import limit enforced by
+   * multer. Failing on the stat means a direct archive read of an oversized
+   * bare upload fails immediately and for the real reason, instead of after
+   * reading the whole file and reporting it as an oversized archive.
    */
   if (stat.size > limits.maxEntryBytes) {
     throw new ImportFileTooLargeError(
@@ -380,17 +379,19 @@ export async function openArchive(
   filepath: string,
   options: ArchiveOptions = {},
 ): Promise<Archive> {
+  const bare = !(await isZipFile(filepath));
+  const configuredMaxEntryBytes =
+    options.maxEntryBytes ?? (bare ? resolveImportMaxFileSize() : resolveImportMaxShardSize());
   const limits: ArchiveLimits = {
     maxEntries: options.maxEntries ?? DEFAULT_MAX_ENTRIES,
-    maxEntryBytes: Math.min(
-      options.maxEntryBytes ?? resolveImportMaxShardSize(),
-      ABSOLUTE_MAX_ENTRY_BYTES,
-    ),
+    maxEntryBytes: bare
+      ? configuredMaxEntryBytes
+      : Math.min(configuredMaxEntryBytes, ABSOLUTE_MAX_ENTRY_BYTES),
     maxTotalBytes: options.maxTotalBytes ?? DEFAULT_MAX_TOTAL_BYTES,
   };
   const totals: ArchiveTotals = { bytesRead: 0, counted: new Set() };
 
-  if (!(await isZipFile(filepath))) {
+  if (bare) {
     return openSingleFileArchive(filepath, limits, totals);
   }
 

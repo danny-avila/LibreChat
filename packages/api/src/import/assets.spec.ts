@@ -905,6 +905,7 @@ describe('ingestAssets with a malformed asset-name map', () => {
     ['an array', '[1,2,3]'],
     ['a non-string value', '{"file-one.dat":{"nested":true}}'],
     ['a number value', '{"file-one.dat":42}'],
+    ['a mixed string and non-string value', '{"file-one.dat":"override.txt","other.dat":42}'],
   ])('ignores a map that is %s and still imports the asset', async (_label, names) => {
     const archive = stubArchive(names);
     const layout = resolveLayout(archive.entries, null);
@@ -921,6 +922,7 @@ describe('ingestAssets with a malformed asset-name map', () => {
     expect(result.imported).toBe(1);
     expect(result.errors).toEqual([]);
     expect(result.map.get('file-service://file-one')?.type).toBe('image/png');
+    expect(result.map.get('file-service://file-one')?.filename).toBe('file-one');
   });
 
   it('still honours a well-formed map', async () => {

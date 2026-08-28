@@ -477,6 +477,21 @@ describe('ImportJobStore', () => {
           assets: { done: 0, total: 0 },
         });
       });
+      it('rejects a required patch after bounded claim retries', async () => {
+        const jobId = await awaitingJob();
+        let attempts = 0;
+        backing.acquireLock = async () => {
+          attempts += 1;
+          throw new Error('Redis unavailable');
+        };
+
+        await expect(
+          replicaA.patch('u1', jobId, {
+            phase: 'conversations',
+          }),
+        ).rejects.toThrow('Redis unavailable');
+        expect(attempts).toBeLessThanOrEqual(3);
+      });
 
       it('does not write when the atomic commit reports that ownership was lost', async () => {
         const jobId = await awaitingJob();

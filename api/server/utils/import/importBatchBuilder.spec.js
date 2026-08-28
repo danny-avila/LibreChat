@@ -111,15 +111,17 @@ describe('ImportBatchBuilder flushing', () => {
    * re-import. This is the one window in which the conversation write is known
    * not to have started, so it is the one window cleanup may run in. */
   it('removes the messages it wrote when the message write fails', async () => {
-    bulkSaveMessages.mockRejectedValueOnce(new Error('message write failed'));
+    const error = new Error('message write failed');
+    bulkSaveMessages.mockRejectedValueOnce(error);
 
     const builder = new ImportBatchBuilder('u1', undefined, { flushThreshold: 5 });
     builder.startConversation();
     const message = builder.addUserMessage('hello');
     builder.finishConversation('Chat', new Date());
 
-    await expect(builder.saveBatch()).rejects.toThrow('message write failed');
+    await expect(builder.saveBatch()).rejects.toBe(error);
 
+    expect(builder.getLastFlushOutcome()).toBe('not_committed');
     expect(bulkSaveConvos).not.toHaveBeenCalled();
     expect(deleteMessages).toHaveBeenCalledWith({
       user: 'u1',
@@ -131,7 +133,8 @@ describe('ImportBatchBuilder flushing', () => {
    * dropped response, a partially applied batch. Deleting the messages on that
    * rejection turns a committed conversation into a permanently empty one. */
   it('keeps every message when the conversation write rejects ambiguously', async () => {
-    bulkSaveConvos.mockRejectedValueOnce(new Error('conversation write outcome unknown'));
+    const error = new Error('conversation write outcome unknown');
+    bulkSaveConvos.mockRejectedValueOnce(error);
 
     const builder = new ImportBatchBuilder('u1', undefined, { flushThreshold: 5 });
     builder.startConversation();
@@ -141,8 +144,9 @@ describe('ImportBatchBuilder flushing', () => {
     builder.addUserMessage('second');
     builder.finishConversation('Second', new Date());
 
-    await expect(builder.saveBatch()).rejects.toThrow('conversation write outcome unknown');
+    await expect(builder.saveBatch()).rejects.toBe(error);
 
+    expect(builder.getLastFlushOutcome()).toBe('ambiguous');
     expect(deleteMessages).not.toHaveBeenCalled();
   });
 

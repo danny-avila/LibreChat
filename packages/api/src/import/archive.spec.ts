@@ -233,6 +233,32 @@ describe('openArchive (bare / non-zip upload)', () => {
     archive.close();
   });
 
+  it('uses the configured import file limit for bare uploads', async () => {
+    const originalFileLimit = process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES;
+    const originalShardLimit = process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES;
+    process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = '1000';
+    process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES = '100';
+
+    try {
+      const filepath = writeBareFile('x'.repeat(700), 'large.json');
+      const archive = await openArchive(filepath);
+
+      await expect(archive.read('large.json')).resolves.toHaveLength(700);
+      archive.close();
+    } finally {
+      if (originalFileLimit === undefined) {
+        delete process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES;
+      } else {
+        process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES = originalFileLimit;
+      }
+      if (originalShardLimit === undefined) {
+        delete process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES;
+      } else {
+        process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES = originalShardLimit;
+      }
+    }
+  });
+
   /** The upload limit is sized for a `.zip`, so a bare JSON between the two
    * caps clears both the client-side check and multer. Rejecting on the stat
    * means it fails in milliseconds and as its own error, rather than after

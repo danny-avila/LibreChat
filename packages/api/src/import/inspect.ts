@@ -1,9 +1,11 @@
-import type { ChatGptConversation, ExportFormat, GrokExport, ImportSummary } from './types';
+import type { ExportFormat, GrokExport, ImportSummary } from './types';
 import type { ExportLayout } from './manifest';
 import {
   MANIFEST_ENTRY,
   isGrokExport,
   isGrokConversationEntry,
+  isClaudeConversation,
+  isChatGptConversation,
   parseManifest,
   resolveLayout,
   detectExportFormat,
@@ -19,14 +21,25 @@ interface ShardTotals {
   shards: number;
 }
 
-function tallyChatGptShard(conversations: ChatGptConversation[], totals: ShardTotals): void {
-  for (const conv of conversations) {
+function tallyChatGptShard(conversations: unknown[], totals: ShardTotals): void {
+  for (const conversation of conversations) {
+    if (!isChatGptConversation(conversation)) {
+      continue;
+    }
     totals.conversations += 1;
-    if (conv.is_archived === true) {
+    if (conversation.is_archived === true) {
       totals.archived += 1;
     }
-    if (conv.is_starred === true || conv.pinned_time != null) {
+    if (conversation.is_starred === true || conversation.pinned_time != null) {
       totals.starred += 1;
+    }
+  }
+}
+
+function tallyClaudeShard(conversations: unknown[], totals: ShardTotals): void {
+  for (const conversation of conversations) {
+    if (isClaudeConversation(conversation)) {
+      totals.conversations += 1;
     }
   }
 }
@@ -65,7 +78,7 @@ export async function inspectExport(
      * valid shard's parsed shape, the only thing distinguishing a Claude
      * export (whose conversations carry `chat_messages`) or a Grok one (an
      * object keyed by `conversations`) from a ChatGPT one. Malformed shards
-     * are left for `runImport` to report and skip. */
+     * and records are left for `runImport` to report and skip. */
     const totals: ShardTotals = { conversations: 0, archived: 0, starred: 0, shards: 0 };
     let format: ExportFormat | null = null;
 
@@ -95,7 +108,7 @@ export async function inspectExport(
           if (!hasClaudeConversationShape(parsed)) {
             continue;
           }
-          totals.conversations += parsed.length;
+          tallyClaudeShard(parsed, totals);
           totals.shards += 1;
           continue;
         }
@@ -103,7 +116,7 @@ export async function inspectExport(
         if (!hasChatGptConversationShape(parsed)) {
           continue;
         }
-        tallyChatGptShard(parsed as ChatGptConversation[], totals);
+        tallyChatGptShard(parsed, totals);
         totals.shards += 1;
       } catch {
         continue;

@@ -48,6 +48,7 @@ class ImportBatchBuilder {
     this.messages = [];
     this.retentionFields = undefined;
     this.flushThreshold = options.flushThreshold ?? 250;
+    this.lastFlushOutcome = 'none';
   }
 
   getRetentionFields() {
@@ -70,6 +71,14 @@ class ImportBatchBuilder {
       this.retentionFields = { isTemporary: false, expiredAt: createFallbackRetentionDate() };
     }
     return this.retentionFields;
+  }
+
+  /**
+   * Returns the outcome of the most recent flush attempt.
+   * @returns {'none'|'not_committed'|'ambiguous'|'committed'}
+   */
+  getLastFlushOutcome() {
+    return this.lastFlushOutcome;
   }
 
   /**
@@ -169,8 +178,11 @@ class ImportBatchBuilder {
    */
   async flush() {
     if (this.conversations.length === 0 && this.messages.length === 0) {
+      this.lastFlushOutcome = 'none';
       return;
     }
+
+    this.lastFlushOutcome = 'not_committed';
 
     const conversations = this.conversations;
     const messages = this.messages;
@@ -183,6 +195,7 @@ class ImportBatchBuilder {
     try {
       await bulkSaveMessages(messages, true);
     } catch (error) {
+      this.lastFlushOutcome = 'not_committed';
       logger.error('Error saving batch messages', error);
       await this.discardOrphanedMessages(messages);
       throw error;
@@ -196,7 +209,13 @@ class ImportBatchBuilder {
      * meant to avoid, so nothing is removed here. Tag maintenance runs after
      * for the same reason: it can only fail once the commit markers exist.
      */
-    await bulkSaveConvos(conversations);
+    try {
+      await bulkSaveConvos(conversations);
+    } catch (error) {
+      this.lastFlushOutcome = 'ambiguous';
+      throw error;
+    }
+    this.lastFlushOutcome = 'committed';
     await bulkIncrementTagCounts(
       this.requestUserId,
       conversations.flatMap((convo) => convo.tags),

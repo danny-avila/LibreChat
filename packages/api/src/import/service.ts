@@ -18,6 +18,7 @@ import {
   resolveLayout,
   detectExportFormat,
   hasChatGptConversationShape,
+  isChatGptConversation,
 } from './manifest';
 import { recordError, sanitizeImportError } from './errors';
 import { collectAssetReferences } from './chatgpt/content';
@@ -27,6 +28,7 @@ import { runGrokImport } from './grok/service';
 import { isUsableExternalId } from './sink';
 import { openArchive } from './archive';
 import { ingestAssets } from './assets';
+import { throttleCancelCheck } from './cancel';
 
 interface ExportScan {
   /** Shards that parsed and validated, in export order. The conversion pass
@@ -47,35 +49,6 @@ interface ExportScan {
 }
 
 class ShardShapeError extends Error {}
-
-/** Minimum gap between cancellation reads inside the conversation loop. The
- * job store can be Redis, so an unthrottled check is a network round trip per
- * conversation, tens of thousands of them on a large export, for a signal a
- * user produces at most once. The first check is never delayed, and a second
- * of extra work after a cancel is under the client's own poll interval. */
-const CANCEL_CHECK_INTERVAL_MS = 1000;
-
-/** Wraps a cancellation check so it hits the store at most once per interval
- * and answers from the last read in between. */
-function throttleCancelCheck(isCancelled?: () => Promise<boolean>): () => Promise<boolean> {
-  if (!isCancelled) {
-    return async () => false;
-  }
-  let lastCheck = 0;
-  let lastResult = false;
-  return async () => {
-    if (lastResult) {
-      return true;
-    }
-    const now = Date.now();
-    if (now - lastCheck < CANCEL_CHECK_INTERVAL_MS) {
-      return false;
-    }
-    lastCheck = now;
-    lastResult = await isCancelled();
-    return lastResult;
-  };
-}
 
 async function readShardJson(archive: Archive, shard: string): Promise<unknown> {
   return JSON.parse((await archive.read(shard)).toString('utf8')) as unknown;
@@ -185,7 +158,11 @@ async function scanExport(
       const conversations = asChatGptConversations(parsed);
       scan.shards.push(shard);
       scan.conversations += conversations.length;
-      for (const conv of conversations) {
+      for (const [index, conv] of conversations.entries()) {
+        if (!isChatGptConversation(conv)) {
+          recordError(errors, `${shard}[${index}]: expected ChatGPT conversation object`);
+          continue;
+        }
         if (
           isUsableExternalId(conv.conversation_id) &&
           existingExternalIds.has(conv.conversation_id)
@@ -304,8 +281,8 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
   const ingested = new Map<string, ImportedAsset>();
   /** Claimed: referenced by a conversation the sink has actually committed. */
   const usedPointers = new Set<string>();
-  /** Buffered but not yet flushed. Promoted on a successful flush, dropped if
-   * one rejects: the conversations it held were never written. */
+  /** Buffered but not yet flushed. Promoted on a successful flush, or on an
+   * ambiguous rejection that may have committed the conversations. */
   const pendingPointers = new Set<string>();
 
   const commitPending = (): void => {
@@ -316,21 +293,23 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
   };
 
   /**
-   * Claims the buffered pointers when a flush rejects, then rethrows.
+   * Claims buffered pointers only when a rejected flush reports that its
+   * conversation write may have committed, then rethrows.
    *
-   * A rejected bulk write does not mean nothing was written: it can commit and
-   * still reject on a write concern timeout, a dropped response or a partially
-   * applied batch, which is why the batch builder no longer removes the
-   * messages of a failed conversation write either. Dropping the pointers here
-   * would send their assets to `releaseUnusedAssets`, so a conversation that
-   * did commit would come back with every image deleted from storage. An
-   * orphaned asset only costs storage, so the ambiguous case keeps it.
+   * A message-write rejection is known not to have committed a conversation,
+   * so those assets are released. A conversation-write rejection is ambiguous:
+   * it can commit and still reject on a write concern timeout, a dropped
+   * response, or a partially applied batch. Those pointers are retained so a
+   * committed conversation never loses its assets.
    */
   const claimPendingOnFailure = async <T>(flush: () => Promise<T>): Promise<T> => {
     try {
       return await flush();
     } catch (error) {
-      commitPending();
+      const outcome = input.batch.getLastFlushOutcome?.();
+      if (outcome === 'ambiguous' || outcome === 'committed') {
+        commitPending();
+      }
       throw error;
     }
   };
@@ -405,9 +384,9 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
       messages: { done: 0, total: 0 },
       assets: { done: 0, total: scan.pointers.length },
     };
-
     await input.onPhase?.('assets');
 
+    const checkAssetCancelled = throttleCancelCheck(input.isCancelled);
     const assetResult = await ingestAssets({
       archive,
       layout,
@@ -418,7 +397,7 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
       attachments: scan.attachments,
       references: scan.references,
       deps: input.deps,
-      isCancelled: input.isCancelled,
+      isCancelled: checkAssetCancelled,
       onProgress: async (done) => {
         progress.assets.done = done;
         await input.onProgress?.(progress);
@@ -452,6 +431,12 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
       }
 
       for (const conv of conversations) {
+        if (!isChatGptConversation(conv)) {
+          progress.conversations.done += 1;
+          await input.onProgress?.(progress);
+          continue;
+        }
+
         if (await checkCancelled()) {
           cancelled = true;
           break;

@@ -6,6 +6,7 @@ import {
   detectExportFormat,
   isClaudeConversation,
   hasClaudeConversationShape,
+  hasChatGptConversationShape,
 } from './manifest';
 
 function entries(...names: string[]): ArchiveEntry[] {
@@ -291,8 +292,8 @@ describe('detectExportFormat', () => {
     expect(detectExportFormat('nope')).toBeNull();
   });
 
-  it('rejects a Claude array containing a malformed later entry', () => {
-    expect(detectExportFormat([{ uuid: 'c1', chat_messages: [] }, null])).toBeNull();
+  it('detects Claude when a malformed record follows a valid one', () => {
+    expect(detectExportFormat([{ uuid: 'c1', chat_messages: [] }, null])).toBe('claude');
   });
 
   /** `uuid` keys the skip set and the `importedFrom` marker a re-import
@@ -313,13 +314,13 @@ describe('detectExportFormat', () => {
     expect(detectExportFormat([{ uuid: 'c1' }])).toBeNull();
   });
 
-  it('rejects a Claude array whose malformed entry follows valid ones', () => {
+  it('detects Claude when malformed records are mixed with valid ones', () => {
     expect(
       detectExportFormat([
         { uuid: 'c1', chat_messages: [] },
         { uuid: 'c2', chat_messages: null },
       ]),
-    ).toBeNull();
+    ).toBe('claude');
   });
 });
 
@@ -342,17 +343,22 @@ describe('isClaudeConversation', () => {
     expect(isClaudeConversation({ uuid: 'c1' })).toBe(false);
   });
 });
-
 describe('hasClaudeConversationShape', () => {
-  it('requires a nonempty array of well-formed conversations', () => {
+  it('requires at least one well-formed conversation', () => {
     expect(hasClaudeConversationShape([{ uuid: 'c1', chat_messages: [] }])).toBe(true);
     expect(hasClaudeConversationShape([])).toBe(false);
-    expect(
-      hasClaudeConversationShape([
-        { uuid: 'c1', chat_messages: [] },
-        { uuid: 'c2', chat_messages: undefined },
-      ]),
-    ).toBe(false);
+    expect(hasClaudeConversationShape([{ uuid: 'c1', chat_messages: [] }, { uuid: 'c2' }])).toBe(
+      true,
+    );
+    expect(hasClaudeConversationShape([{ uuid: 'c2' }])).toBe(false);
+  });
+});
+
+describe('hasChatGptConversationShape', () => {
+  it('allows malformed records when a valid conversation remains', () => {
+    expect(hasChatGptConversationShape([{ conversation_id: 'c1', mapping: {} }, null])).toBe(true);
+    expect(hasChatGptConversationShape([null])).toBe(false);
+    expect(hasChatGptConversationShape([])).toBe(true);
   });
 });
 

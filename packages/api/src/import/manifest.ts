@@ -1,5 +1,11 @@
 import { logger } from '@librechat/data-schemas';
-import type { GrokExport, ExportFormat, ClaudeConversation, GrokConversationEntry } from './types';
+import type {
+  GrokExport,
+  ExportFormat,
+  ChatGptConversation,
+  ClaudeConversation,
+  GrokConversationEntry,
+} from './types';
 import type { ArchiveEntry } from './archive';
 
 export const MANIFEST_ENTRY = 'export_manifest.json';
@@ -142,18 +148,18 @@ function shardsFromFilenames(
 
 /**
  * Shallow content check mirroring `getImporter`'s ChatGPT detection
- * (`api/server/utils/import/importers.js`): an empty array is trivially
- * fine, otherwise every element must look like a ChatGPT conversation (a
- * `mapping` tree), not a Claude (`chat_messages`) or other export shape.
- * Without this, a shard that merely satisfies `Array.isArray`
- * would be silently misread as ChatGPT and produce conversations with no
- * messages instead of a reported error.
+ * (`api/server/utils/import/importers.js`): an empty array is a valid
+ * ChatGPT shard, otherwise at least one element must look like a ChatGPT
+ * conversation (a `mapping` tree), not a Claude (`chat_messages`) or other
+ * export shape. Malformed records remain in the shard so the import loop can
+ * report and skip them individually.
  */
+export function isChatGptConversation(value: unknown): value is ChatGptConversation {
+  return typeof value === 'object' && value !== null && 'mapping' in value;
+}
+
 export function hasChatGptConversationShape(conversations: unknown[]): boolean {
-  return conversations.every(
-    (conversation) =>
-      typeof conversation === 'object' && conversation !== null && 'mapping' in conversation,
-  );
+  return conversations.length === 0 || conversations.some(isChatGptConversation);
 }
 
 /**
@@ -174,10 +180,12 @@ export function isClaudeConversation(value: unknown): value is ClaudeConversatio
 
 /**
  * Counterpart to `hasChatGptConversationShape` for Claude exports, whose
- * conversations carry a flat `chat_messages` array instead of a `mapping` tree.
+ * conversations carry a flat `chat_messages` array instead of a `mapping`
+ * tree. A shard qualifies when at least one conversation is valid, while
+ * malformed records remain available for per-record error reporting.
  */
 export function hasClaudeConversationShape(conversations: unknown[]): boolean {
-  return conversations.length > 0 && conversations.every(isClaudeConversation);
+  return conversations.some(isClaudeConversation);
 }
 
 /**

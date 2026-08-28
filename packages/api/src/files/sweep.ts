@@ -14,6 +14,7 @@ const DEFAULT_FILE_RETENTION_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
  * (or one whose job record already expired from the cache) is no more useful
  * than the job it belongs to, so its temp upload is swept on the same clock. */
 const DEFAULT_STALE_UPLOAD_AGE_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_STALE_UPLOAD_SWEEP_INTERVAL_MS = DEFAULT_FILE_RETENTION_SWEEP_INTERVAL_MS;
 
 type ExpiredFile = {
   file_id: string;
@@ -63,6 +64,7 @@ type SweepDependencies = {
 
 type StartSweepDependencies = {
   sweepExpiredFiles: (options?: ExpiredFileSweepOptions) => Promise<ExpiredFileSweepResult>;
+  sweepStaleTempUploads?: typeof sweepStaleTempUploads;
   runAsSystem: <T>(fn: () => Promise<T>) => Promise<T>;
   logger: SweepLogger;
 };
@@ -324,19 +326,53 @@ export async function sweepExpiredFiles(
     );
   }
 
-  const staleUploads = await sweepStaleTempUploads(resolvedAppConfig?.paths?.uploads, { logger });
-
   return {
-    scanned: files.length + staleUploads.scanned,
-    deleted: deleted + staleUploads.deleted,
-    failed: failed + staleUploads.failed,
+    scanned: files.length,
+    deleted,
+    failed,
   };
 }
-
 export function startExpiredFileSweep(
   options: ExpiredFileSweepOptions | undefined = {},
-  { sweepExpiredFiles, runAsSystem, logger }: StartSweepDependencies,
+  {
+    sweepExpiredFiles,
+    sweepStaleTempUploads: sweepStaleTempUploadsWithDeps = sweepStaleTempUploads,
+    runAsSystem,
+    logger,
+  }: StartSweepDependencies,
 ): NodeJS.Timeout | null {
+  let isSweepingStaleUploads = false;
+  const runStaleUploadSweep = async () => {
+    if (isSweepingStaleUploads) {
+      return;
+    }
+
+    isSweepingStaleUploads = true;
+    try {
+      let uploadsPath = options.appConfig?.paths?.uploads;
+      if (!uploadsPath && options.loadAppConfig) {
+        uploadsPath = (await options.loadAppConfig())?.paths?.uploads;
+      }
+      await runAsSystem(() => sweepStaleTempUploadsWithDeps(uploadsPath, { logger }));
+    } catch (error) {
+      logger.error('[sweepStaleTempUploads] Background sweep failed:', error);
+    } finally {
+      isSweepingStaleUploads = false;
+    }
+  };
+
+  /*
+   * Temporary imports are stored on the upload-serving process's local disk,
+   * so their cleanup must continue even when the database file-retention sweep
+   * is disabled.
+   */
+  runStaleUploadSweep();
+  const staleUploadsInterval = setInterval(
+    runStaleUploadSweep,
+    DEFAULT_STALE_UPLOAD_SWEEP_INTERVAL_MS,
+  );
+  staleUploadsInterval.unref?.();
+
   const intervalMs = getFileRetentionSweepInterval();
   if (intervalMs === 0) {
     logger.info('[sweepExpiredFiles] Disabled by FILE_RETENTION_SWEEP_INTERVAL_MS=0');
