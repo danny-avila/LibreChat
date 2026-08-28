@@ -40,6 +40,7 @@ interface ToolMeta {
   iconName: string;
   hasOutput: boolean;
   failed: boolean;
+  cancelled: boolean;
 }
 
 function hasFailedOutput(output: unknown): boolean {
@@ -60,9 +61,9 @@ function resolveOutcome(
   runStepStatus: PartMetadata['runStepStatus'],
   completed: boolean,
   hasError: boolean,
-): Pick<ToolMeta, 'hasOutput' | 'failed'> {
+): Pick<ToolMeta, 'hasOutput' | 'failed' | 'cancelled'> {
   if (runStepStatus == null) {
-    return { hasOutput: completed, failed: hasError };
+    return { hasOutput: completed, failed: hasError, cancelled: false };
   }
   const phase = resolveToolCallPhase({
     runStepStatus,
@@ -71,7 +72,15 @@ function resolveOutcome(
     isSubmitting: false,
     hasError,
   });
-  return { hasOutput: phase !== 'running', failed: phase === 'failed' };
+  return {
+    hasOutput: phase !== 'running',
+    failed: phase === 'failed',
+    /** Tracked separately from `failed`: a stopped step is settled and not an
+     *  error, but the group still must not auto-collapse under a
+     *  success-sounding header with the only cancellation notice hidden in the
+     *  panel. */
+    cancelled: phase === 'cancelled',
+  };
 }
 
 function hasPendingAuth(part: TMessageContentParts): boolean {
@@ -286,6 +295,7 @@ export default function ToolCallGroup({
     let subagentCount = 0;
     let askQuestionCount = 0;
     let failedCount = 0;
+    let cancelledCount = 0;
 
     for (const tool of toolMetadata) {
       if (tool.name === Tools.web_search) {
@@ -299,6 +309,9 @@ export default function ToolCallGroup({
       }
       if (tool.failed) {
         failedCount++;
+      }
+      if (tool.cancelled) {
+        cancelledCount++;
       }
       if (!tool.name) {
         continue;
@@ -321,6 +334,7 @@ export default function ToolCallGroup({
       subagentCount,
       askQuestionCount,
       failedCount,
+      cancelledCount,
       toolNameSummary,
     };
   }, [toolMetadata, localize, mcpServerNames]);
@@ -526,6 +540,19 @@ export default function ToolCallGroup({
       localize(
         activitySummary.failedCount === 1 ? 'com_ui_one_action_failed' : 'com_ui_n_actions_failed',
         { 0: String(activitySummary.failedCount) },
+      ),
+    );
+  }
+  /** A stopped action is settled but not successful, and its only other notice
+   *  lives inside the panel the group is about to collapse, so the header has
+   *  to say so. */
+  if (activitySummary.cancelledCount > 0) {
+    groupDetailParts.push(
+      localize(
+        activitySummary.cancelledCount === 1
+          ? 'com_ui_one_action_cancelled'
+          : 'com_ui_n_actions_cancelled',
+        { 0: String(activitySummary.cancelledCount) },
       ),
     );
   }

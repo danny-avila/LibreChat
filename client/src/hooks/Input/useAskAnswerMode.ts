@@ -53,6 +53,18 @@ const askAnswerTextAtom = atom<Record<string, string>>({
 });
 
 /**
+ * Ordinary composer text typed AFTER a question moved to the chat card, keyed
+ * by pending action id. Expanding hands the composer back to the answer, which
+ * would otherwise overwrite an unsent normal message with no route back to it.
+ * Only needed while Save drafts is off; with saving on the conversation draft
+ * already holds that text.
+ */
+const releasedComposerTextAtom = atom<Record<string, string>>({
+  key: 'askAnswerModeReleasedComposerText',
+  default: {},
+});
+
+/**
  * First-class "answer mode" for a live `ask_user_question` pause. Clicking an
  * option submits it immediately (multi-select clicks toggle instead, confirmed
  * by an explicit Submit); arrows/digits from the EMPTY composer steer a
@@ -86,6 +98,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
   const [selected, setSelected] = useRecoilState(askAnswerSelectionAtom);
   const [checked, setChecked] = useRecoilState(askAnswerCheckedAtom);
   const [answerDrafts, setAnswerDrafts] = useRecoilState(askAnswerTextAtom);
+  const [releasedComposerText, setReleasedComposerText] = useRecoilState(releasedComposerTextAtom);
   const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
   const { submitAskAnswer } = useResumeSubmit();
   /** Recoil-backed so the lock/status works from the composer, which renders
@@ -187,15 +200,47 @@ export default function useAskAnswerMode(conversationId?: string | null) {
   /** Popover ⇄ chat-card handoffs run inside a view transition: both
    *  surfaces carry the same `view-transition-name`, so the browser morphs
    *  one into the other instead of swapping. Both are user-event driven,
-   *  which morphTransition's synchronous flush requires. */
+   *  which morphTransition's synchronous flush requires.
+   *
+   *  Batches opt out: only the single-question surfaces declare
+   *  `view-transition-name: ask-question`, so wrapping a batch handoff would
+   *  give the browser nothing to pair and it would cross-fade the whole root
+   *  (chat plus composer) instead. */
+  const runHandoff = useCallback(
+    (update: () => void) => {
+      if (batchMode) {
+        update();
+        return;
+      }
+      morphTransition(update);
+    },
+    [batchMode],
+  );
+
   const collapse = useCallback(() => {
     if (liveAsk) {
       const composerAnswer = !batchMode ? (formContext?.getValues('text') ?? answerText) : '';
-      morphTransition(() => {
+      runHandoff(() => {
         if (!batchMode) {
           setAnswerDrafts((current) => ({ ...current, [liveAsk.actionId]: composerAnswer }));
           if (!saveDrafts) {
-            formContext?.reset();
+            /** Hand back whatever ordinary message was typed while this
+             *  question owned the card, rather than clearing the composer and
+             *  losing it. */
+            const released = releasedComposerText[liveAsk.actionId];
+            if (released) {
+              formContext?.setValue('text', released);
+            } else {
+              formContext?.reset();
+            }
+            setReleasedComposerText((current) => {
+              if (current[liveAsk.actionId] == null) {
+                return current;
+              }
+              const next = { ...current };
+              delete next[liveAsk.actionId];
+              return next;
+            });
           }
         }
         setCollapsedIds((prev) =>
@@ -203,14 +248,35 @@ export default function useAskAnswerMode(conversationId?: string | null) {
         );
       });
     }
-  }, [liveAsk, batchMode, formContext, answerText, saveDrafts, setAnswerDrafts, setCollapsedIds]);
+  }, [
+    liveAsk,
+    batchMode,
+    formContext,
+    answerText,
+    saveDrafts,
+    releasedComposerText,
+    setReleasedComposerText,
+    setAnswerDrafts,
+    setCollapsedIds,
+    runHandoff,
+  ]);
 
   const expand = useCallback(() => {
     if (liveAsk) {
-      morphTransition(() => {
+      /** Read before the transition: the composer is about to be handed back
+       *  to the answer, and an ordinary unsent message typed while the card
+       *  owned the question must survive the round trip. */
+      const released = !batchMode && !saveDrafts ? (formContext?.getValues('text') ?? '') : '';
+      runHandoff(() => {
         /** Autosave restores the ask-specific draft after the key switch. If
          *  drafts are disabled, perform that handoff directly. */
         if (!batchMode && !saveDrafts) {
+          if (released) {
+            setReleasedComposerText((current) => ({
+              ...current,
+              [liveAsk.actionId]: released,
+            }));
+          }
           formContext?.setValue('text', answerText);
         } else if (!batchMode && answerText) {
           /** Drafts were re-enabled after this answer was captured with saving
@@ -224,7 +290,16 @@ export default function useAskAnswerMode(conversationId?: string | null) {
         setCollapsedIds((prev) => prev.filter((id) => id !== liveAsk.actionId));
       });
     }
-  }, [liveAsk, batchMode, saveDrafts, formContext, answerText, setCollapsedIds]);
+  }, [
+    liveAsk,
+    batchMode,
+    saveDrafts,
+    formContext,
+    answerText,
+    setReleasedComposerText,
+    setCollapsedIds,
+    runHandoff,
+  ]);
 
   /** Pure check toggle: the keyboard highlight is steered only by the
    *  composer's digit/arrow shortcuts, so a mouse toggle never leaves a
