@@ -141,7 +141,7 @@ interface DetachedActionDependencies {
   persistTerminalEvidence(input: AgentEventDetachedTerminalEvidence): Promise<void>;
   onTerminal(input: { taskId: string; idempotencyKey: string }): Promise<void>;
   waitForTerminalPersistenceRetry?(delayMs: number): Promise<void>;
-  producerEnabled?(): boolean;
+  producerEnabled(): boolean;
   now?(): Date;
 }
 
@@ -279,9 +279,7 @@ export function createAgentEventActorDetachedActionLifecycle(
   deps: DetachedActionDependencies,
 ): AgentEventActorDetachedActionLifecycle {
   const now = deps.now ?? (() => new Date());
-  const producerEnabled = (
-    deps.producerEnabled ?? isAgentEventActorDetachedActionProducerEnabled
-  )();
+  const producerEnabled = deps.producerEnabled();
   let current: { taskId: string; idempotencyKey: string; launchAcknowledged: boolean } | undefined;
   const scope = {
     deliveryKey: owner.invocationId,

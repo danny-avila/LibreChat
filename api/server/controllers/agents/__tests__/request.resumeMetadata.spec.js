@@ -8,6 +8,7 @@ const mockLogger = {
 };
 
 const mockGenerationJobManager = {
+  isRedis: false,
   createJob: jest.fn(),
   getJob: jest.fn(),
   emitError: jest.fn(),
@@ -266,6 +267,7 @@ jest.mock('@librechat/api', () => ({
   resumeAgentEventActor: (...args) => mockResumeAgentEventActor(...args),
   createAgentEventActorDetachedActionLifecycle: (...args) =>
     mockCreateAgentEventActorDetachedActionLifecycle(...args),
+  isAgentEventActorDetachedActionProducerEnabled: () => true,
   parseAgentEventActorDetachedCompletion: (value) => (value?.version === 1 ? value : undefined),
   EVENT_ACTOR_DETACHED_COMPLETION_SOURCE: 'librechat-event-actor',
   EVENT_ACTOR_DETACHED_COMPLETION_TYPE: 'librechat.event_actor.detached_completion',
@@ -392,6 +394,7 @@ describe('ResumableAgentController resume metadata', () => {
     mockGenerationJobManager.getResumeState.mockResolvedValue(null);
     mockGenerationJobManager.getJob.mockResolvedValue(undefined);
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
+    mockGenerationJobManager.isRedis = false;
     mockGenerationJobManager.persistAgentEventDetachedTerminalEvidence.mockResolvedValue(true);
     mockGenerationJobManager.emitChunk.mockResolvedValue(undefined);
     mockGenerationJobManager.emitDone.mockResolvedValue(undefined);
@@ -4249,6 +4252,7 @@ describe('ResumableAgentController resume metadata', () => {
   });
 
   it('resumes the original actor suspension from exact detached terminal evidence', async () => {
+    mockGenerationJobManager.isRedis = true;
     mockGenerationJobManager.createJob.mockResolvedValue({
       createdAt: 2000,
       metadata: {
@@ -4379,6 +4383,11 @@ describe('ResumableAgentController resume metadata', () => {
       }),
       expect.any(Object),
     );
+    const lifecycleDependencies =
+      mockCreateAgentEventActorDetachedActionLifecycle.mock.calls.at(-1)[1];
+    expect(lifecycleDependencies.producerEnabled()).toBe(true);
+    mockGenerationJobManager.isRedis = false;
+    expect(lifecycleDependencies.producerEnabled()).toBe(false);
     expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
       'child-conversation',
       'user-123',

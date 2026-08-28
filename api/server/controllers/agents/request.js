@@ -33,6 +33,7 @@ const {
   executeAgentEventActor,
   resumeAgentEventActor,
   createAgentEventActorDetachedActionLifecycle,
+  isAgentEventActorDetachedActionProducerEnabled,
   parseAgentEventActorDetachedCompletion,
   EVENT_ACTOR_DETACHED_COMPLETION_SOURCE,
   EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
@@ -2095,6 +2096,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   reserveAgentEventActorDetachedAction,
                   markAgentEventActorDetachedActionRunning,
                   settleAgentEventActorDetachedAction,
+                  producerEnabled: () =>
+                    GenerationJobManager.isRedis &&
+                    isAgentEventActorDetachedActionProducerEnabled(),
                   persistTerminalEvidence: async (evidence) => {
                     const persisted =
                       await GenerationJobManager.persistAgentEventDetachedTerminalEvidence(

@@ -3129,10 +3129,10 @@ describe('agent trigger delivery methods', () => {
     });
   });
 
-  it('counts only live leases while an account deletion drains', async () => {
+  it('counts live leases and detached launch authority while an account deletion drains', async () => {
     const user = new mongoose.Types.ObjectId();
-    await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
-    await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    const leased = await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    const detached = await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
     await methods.claimNextAgentTriggerDelivery({
       workerId: 'worker-1',
       claimToken: 'claim-1',
@@ -3140,7 +3140,52 @@ describe('agent trigger delivery methods', () => {
       leaseUntil: new Date(START.getTime() + 60_000),
     });
 
-    expect(await methods.countActiveAgentTriggerDeliveriesByUser(user, START)).toBe(1);
+    await Delivery.updateOne(
+      { _id: detached.delivery.id },
+      {
+        $set: {
+          status: 'succeeded',
+          actorDetachedAction: {
+            version: 1,
+            invocationId: detached.delivery.deliveryKey,
+            expectedToolName: 'submit_move',
+            toolName: 'submit_move_mcp_chess',
+            toolCallId: 'call-delete-drain',
+            taskId: `event_actor_${'d'.repeat(64)}`,
+            idempotencyKey: 'd'.repeat(64),
+            launchAttempt: 0,
+            status: 'running',
+            reservedAt: START,
+            observedAt: START,
+            recoveryAfter: new Date(START.getTime() + 60_000),
+            launchedAt: START,
+          },
+        },
+      },
+    );
+
+    expect(leased.delivery.id).not.toBe(detached.delivery.id);
+    expect(await methods.countActiveAgentTriggerDeliveriesByUser(user, START)).toBe(2);
+    expect(
+      await methods.countActiveAgentTriggerDeliveriesByUser(
+        user,
+        new Date(START.getTime() + 60_001),
+      ),
+    ).toBe(1);
+    await Delivery.updateOne(
+      { _id: detached.delivery.id },
+      { $set: { 'actorDetachedAction.status': 'launch_indeterminate' } },
+    );
+    expect(
+      await methods.countActiveAgentTriggerDeliveriesByUser(
+        user,
+        new Date(START.getTime() + 60_001),
+      ),
+    ).toBe(1);
+    await Delivery.updateOne(
+      { _id: detached.delivery.id },
+      { $set: { 'actorDetachedAction.status': 'succeeded' } },
+    );
     expect(
       await methods.countActiveAgentTriggerDeliveriesByUser(
         user,

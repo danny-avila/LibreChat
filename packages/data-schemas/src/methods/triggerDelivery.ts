@@ -2620,8 +2620,17 @@ export function createAgentTriggerDeliveryMethods(
   ): Promise<number> {
     return Delivery().countDocuments({
       user,
-      status: { $in: ['leased', 'capability_leased'] },
-      leaseUntil: { $gt: now },
+      $or: [
+        {
+          status: { $in: ['leased', 'capability_leased'] },
+          leaseUntil: { $gt: now },
+        },
+        {
+          'actorDetachedAction.status': {
+            $in: ['reserved', 'running', 'launch_indeterminate'],
+          },
+        },
+      ],
     });
   }
 

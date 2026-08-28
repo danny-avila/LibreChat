@@ -128,12 +128,13 @@ Bound child continuations are automatic after authentication and binding authori
 listener.
 
 Detached Event Actor completion production has an explicit rolling-deployment fence. It remains
-fail-closed until `AGENT_TRIGGERS_DETACHED_ACTIONS_PRODUCER_ENABLED=true` is set. Deploy the new
-version to every replica first, verify that no old API or worker replica remains, and only then
-enable the producer across the new fleet. This ordering ensures Redis recovery, HTTP completion
-consumers, account-deletion drains, lane maintenance, and operational requeue/dead-letter paths all
-understand capability-fenced completion work before any is created. For rollback, disable the
-producer, drain all detached completion work, and only then start an older version. A shared
+fail-closed until Redis generation streams are active and
+`AGENT_TRIGGERS_DETACHED_ACTIONS_PRODUCER_ENABLED=true` is set. Deploy the new version to every
+replica first, verify that no old API or worker replica remains, and only then enable the producer
+across the Redis-backed fleet. This ordering ensures Redis recovery, HTTP completion consumers,
+account-deletion drains, lane maintenance, and operational requeue/dead-letter paths all understand
+capability-fenced completion work before any is created. For rollback, disable the producer, drain
+all detached completion work, and only then start an older version. A shared
 `AGENT_TRIGGERS_SELF_URL` is safe only after this consumer-first activation sequence is complete.
 
 ```http
