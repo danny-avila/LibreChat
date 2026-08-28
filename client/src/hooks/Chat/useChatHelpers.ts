@@ -3,8 +3,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
+import {
+  useGetStartupConfig,
+  useAbortStreamMutation,
+  supportsGenerationProtocolV2,
+} from '~/data-provider';
 import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
-import { supportsGenerationProtocolV2, useAbortStreamMutation } from '~/data-provider';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { resolveAbortSteerTarget } from '~/utils';
@@ -377,6 +381,13 @@ export default function useChatHelpers(index = 0, paramId?: string) {
   const [abortScroll, setAbortScroll] = useRecoilState(store.abortScrollFamily(index));
   const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettingsFamily(index));
 
+  /** Read once per chat rather than per message row: message rows never unmount, so a
+   *  per-row config observer would accumulate for the length of the conversation.
+   *  Stays disabled until the config resolves, so a `feedback: false` deployment never
+   *  flashes controls whose writes the server rejects. */
+  const { data: startupConfig } = useGetStartupConfig();
+  const feedbackEnabled = startupConfig != null && startupConfig.interface?.feedback !== false;
+
   return useMemo(
     () => ({
       newConversation,
@@ -408,6 +419,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
       setFiles,
       filesLoading,
       setFilesLoading,
+      feedbackEnabled,
     }),
     [
       newConversation,
@@ -439,6 +451,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
       setFiles,
       filesLoading,
       setFilesLoading,
+      feedbackEnabled,
     ],
   );
 }

@@ -17,6 +17,8 @@ const mockGenerationJobManager = {
   publishTerminalClaim: jest.fn(),
   finishTerminalJob: jest.fn(),
   completeJob: jest.fn(),
+  beginProviderExecution: jest.fn(),
+  markProviderExecutionDrained: jest.fn(),
   failPausePersistence: jest.fn(),
   getResumeState: jest.fn(),
   updateMetadata: jest.fn(),
@@ -61,7 +63,74 @@ const mockFilterPersistableAbortContent = jest.fn((content) =>
 const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
 const mockSaveMessage = jest.fn();
+const mockSaveConvo = jest.fn();
+const mockIsAgentTriggerPrincipalActive = jest.fn();
+const mockIsSubagentOwnerAdmissible = jest.fn();
+const mockAcquireEventChildGenerationLease = jest.fn();
+const mockIsScheduleFireRequest = jest.fn();
+const mockExemptFromConcurrencyLimiter = jest.fn();
+const mockRecordScheduleOutcome = jest.fn();
+const mockIsScheduleLive = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn();
+const mockExecuteAgentEventActor = jest.fn();
+const mockFindAgentEventAppliedAction = jest.fn();
+const mockResolveAgentTurnExecutionPlan = jest.fn((input) => {
+  let origin = 'user';
+  if (input.isSchedule) {
+    origin = 'schedule';
+  } else if (input.isEvent || input.event) {
+    origin = 'event';
+  }
+  const checkpointCompatible =
+    input.event?.binding != null &&
+    input.event?.expectedAction != null &&
+    input.checkpointerType !== 'memory' &&
+    !input.expectedActionMayDetach &&
+    (!input.canPause || input.durableEventActorSuspensions);
+  let strategy = 'history';
+  if (input.isNewConversation) {
+    strategy = 'fresh';
+  } else if (checkpointCompatible) {
+    strategy = 'checkpoint';
+  }
+  return {
+    origin,
+    strategy,
+    conversationId: input.conversationId,
+    parentMessageId: input.parentMessageId,
+    canPause: input.canPause,
+    expectedAction: input.event?.expectedAction,
+    binding: input.event?.binding,
+  };
+});
+/** Faithful stand-in for the graph-context action recorder: first observed
+ * tool end with a name becomes the receipt. Matching fences are unit-tested
+ * against the real implementation in packages/api. */
+const mockCreateAgentEventActionRecorder = jest.fn(() => {
+  let receipt;
+  return {
+    observeToolEnd: (data) => {
+      if (receipt == null && data?.output?.name != null) {
+        receipt = {
+          toolName: data.output.name,
+          ...(data.output.tool_call_id == null ? {} : { toolCallId: data.output.tool_call_id }),
+        };
+      }
+    },
+    read: () => receipt,
+  };
+});
+const mockGetAgentEventActorSnapshot = jest.fn();
+const mockCommitAgentEventActorState = jest.fn();
+const mockBeginAgentEventActorLegacyTurn = jest.fn();
+const mockCompleteAgentEventActorLegacyTurn = jest.fn();
+const mockRecordAgentEventActorReconciliation = jest.fn();
+const mockResolveAgentEventActorReconciliation = jest.fn();
+const mockClearAgentEventActorReconciliation = jest.fn();
+const mockAdmitAgentEventActorAction = jest.fn();
+const mockReleaseAgentEventActorAction = jest.fn();
+const mockHasAgentEventActorActionAdmission = jest.fn();
+const mockGetAgentEventActorReceipt = jest.fn();
 const mockStartupTelemetry = {
   mark: jest.fn(),
   setStreamId: jest.fn(),
@@ -129,6 +198,8 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  isScheduleFireRequest: (...args) => mockIsScheduleFireRequest(...args),
+  exemptFromConcurrencyLimiter: (...args) => mockExemptFromConcurrencyLimiter(...args),
   toPendingSteer: jest.fn((item) => item),
   /** Recorded onto the job so the steer route can honour the OWNING replica's
    *  seal capability rather than its own probe. */
@@ -186,6 +257,20 @@ jest.mock('@librechat/api', () => ({
     return messages.length === 0;
   },
   deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
+  executeAgentEventActor: (...args) => mockExecuteAgentEventActor(...args),
+  findAgentEventAppliedAction: (...args) => mockFindAgentEventAppliedAction(...args),
+  createAgentEventActionRecorder: (...args) => mockCreateAgentEventActionRecorder(...args),
+  resolveAgentTurnExecutionPlan: (...args) => mockResolveAgentTurnExecutionPlan(...args),
+  isHITLEnabled: (policy) => policy?.enabled === true,
+  agentRequestsAskUserQuestion: (agent) =>
+    agent?.toolDefinitions?.some((tool) => tool?.name === 'ask_user_question') === true,
+  isAgentEventRetentionActive: (expiredAt) =>
+    expiredAt == null || new Date(expiredAt).getTime() > Date.now(),
+  createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
+    messageId,
+    conversationId,
+    parentMessageId,
+  }),
 }));
 
 jest.mock('~/server/cleanup', () => ({
@@ -206,11 +291,37 @@ jest.mock('~/cache', () => ({
 
 jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
+  saveConvo: (...args) => mockSaveConvo(...args),
   getMessages: (...args) => mockGetMessages(...args),
   getConvo: (...args) => mockGetConvo(...args),
+  getAgentEventActorSnapshot: (...args) => mockGetAgentEventActorSnapshot(...args),
+  commitAgentEventActorState: (...args) => mockCommitAgentEventActorState(...args),
+  beginAgentEventActorLegacyTurn: (...args) => mockBeginAgentEventActorLegacyTurn(...args),
+  completeAgentEventActorLegacyTurn: (...args) => mockCompleteAgentEventActorLegacyTurn(...args),
+  recordAgentEventActorReconciliation: (...args) =>
+    mockRecordAgentEventActorReconciliation(...args),
+  resolveAgentEventActorReconciliation: (...args) =>
+    mockResolveAgentEventActorReconciliation(...args),
+  clearAgentEventActorReconciliation: (...args) => mockClearAgentEventActorReconciliation(...args),
+  admitAgentEventActorAction: (...args) => mockAdmitAgentEventActorAction(...args),
+  releaseAgentEventActorAction: (...args) => mockReleaseAgentEventActorAction(...args),
+  hasAgentEventActorActionAdmission: (...args) => mockHasAgentEventActorActionAdmission(...args),
+  getAgentEventActorReceipt: (...args) => mockGetAgentEventActorReceipt(...args),
+  isAgentTriggerPrincipalActive: (...args) => mockIsAgentTriggerPrincipalActive(...args),
+  isSubagentOwnerAdmissible: (...args) => mockIsSubagentOwnerAdmissible(...args),
+}));
+
+jest.mock('~/server/services/Endpoints/agents/eventChildLease', () => ({
+  acquireEventChildGenerationLease: (...args) => mockAcquireEventChildGenerationLease(...args),
+}));
+
+jest.mock('~/server/services/Schedules', () => ({
+  recordScheduleOutcome: (...args) => mockRecordScheduleOutcome(...args),
+  isScheduleLive: (...args) => mockIsScheduleLive(...args),
 }));
 
 const AgentController = require('../request');
+const { ErrorTypes } = require('librechat-data-provider');
 const { disposeClient: mockDisposeClient } = require('~/server/cleanup');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 
@@ -244,9 +355,22 @@ describe('ResumableAgentController resume metadata', () => {
     mockDecrementPendingRequest.mockResolvedValue(undefined);
     mockGetConvo.mockResolvedValue({ createdAt: '2026-06-07T00:00:00.000Z' });
     mockGetMessages.mockResolvedValue([]);
+    mockIsAgentTriggerPrincipalActive.mockResolvedValue(true);
+    mockIsSubagentOwnerAdmissible.mockResolvedValue(true);
+    mockAcquireEventChildGenerationLease.mockResolvedValue(jest.fn());
+    mockIsScheduleFireRequest.mockImplementation((req) => req?._isScheduledFire === true);
+    mockExemptFromConcurrencyLimiter.mockImplementation(
+      (req) => req?._isScheduledFire === true && req?._isManualScheduledFire !== true,
+    );
+    mockRecordScheduleOutcome.mockResolvedValue(true);
+    mockIsScheduleLive.mockResolvedValue(true);
     mockGenerationJobManager.createJob.mockResolvedValue({
       createdAt: 1000,
-      metadata: { checkpointNamespace: '1000' },
+      metadata: {
+        checkpointNamespace: '1000',
+        providerExecutionId: 'provider-segment-1',
+        providerDrained: true,
+      },
       readyPromise: Promise.resolve(),
       abortController: new AbortController(),
       emitter: { on: jest.fn() },
@@ -276,7 +400,14 @@ describe('ResumableAgentController resume metadata', () => {
       }),
     );
     mockGenerationJobManager.finishTerminalJob.mockResolvedValue(undefined);
-    mockGenerationJobManager.completeJob.mockResolvedValue(undefined);
+    mockGenerationJobManager.completeJob.mockImplementation(
+      async (_streamId, _error, _createdAt, options) => {
+        await options?.beforeErrorPublication?.();
+        return true;
+      },
+    );
+    mockGenerationJobManager.beginProviderExecution.mockResolvedValue(true);
+    mockGenerationJobManager.markProviderExecutionDrained.mockResolvedValue(true);
     mockGenerationJobManager.failPausePersistence.mockResolvedValue(true);
     mockGenerationJobManager.claimGeneration.mockResolvedValue(wonGenerationClaim());
     mockGenerationJobManager.resumeClaimedGeneration.mockResolvedValue(null);
@@ -289,7 +420,19 @@ describe('ResumableAgentController resume metadata', () => {
     mockGenerationJobManager.steering.park.mockResolvedValue(undefined);
     mockGenerationJobManager.steering.consumeRecovered.mockResolvedValue(true);
     mockSaveMessage.mockResolvedValue({});
+    mockSaveConvo.mockResolvedValue({});
     mockDeleteAgentCheckpoint.mockResolvedValue(undefined);
+    mockGetAgentEventActorSnapshot.mockResolvedValue({ state: null, reconciliations: [] });
+    mockCommitAgentEventActorState.mockResolvedValue({ status: 'stale' });
+    mockBeginAgentEventActorLegacyTurn.mockResolvedValue(true);
+    mockCompleteAgentEventActorLegacyTurn.mockResolvedValue(true);
+    mockRecordAgentEventActorReconciliation.mockResolvedValue(true);
+    mockResolveAgentEventActorReconciliation.mockResolvedValue(true);
+    mockClearAgentEventActorReconciliation.mockResolvedValue(true);
+    mockAdmitAgentEventActorAction.mockResolvedValue(true);
+    mockReleaseAgentEventActorAction.mockResolvedValue(true);
+    mockHasAgentEventActorActionAdmission.mockResolvedValue(false);
+    mockGetAgentEventActorReceipt.mockResolvedValue(null);
   });
 
   it.each([
@@ -347,6 +490,35 @@ describe('ResumableAgentController resume metadata', () => {
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ code: 'INVALID_GENERATION_PREDECESSOR' }),
+      );
+      expect(mockGenerationJobManager.claimGeneration).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
+      expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['overrideUserMessageId', 'overrideConvoId'])(
+    'rejects a non-string %s before admission',
+    async (field) => {
+      const req = {
+        user: { id: 'user-123' },
+        body: {
+          text: 'Invalid override identity',
+          messageId: 'user-message',
+          clientRequestId: 'override-request',
+          conversationId: 'conversation-123',
+          endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+          [field]: { malformed: true },
+        },
+        config: {},
+      };
+      const res = { json: jest.fn(), status: jest.fn(() => res) };
+
+      await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'INVALID_OVERRIDE_ID' }),
       );
       expect(mockGenerationJobManager.claimGeneration).not.toHaveBeenCalled();
       expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
@@ -507,6 +679,120 @@ describe('ResumableAgentController resume metadata', () => {
     );
   });
 
+  it('defers a trusted trigger resume while its parent generation is still active', async () => {
+    const conversationId = 'conversation-123';
+    mockGetMessages.mockResolvedValue([{ _id: 'persisted-parent' }]);
+    mockGenerationJobManager.getJob.mockResolvedValue({
+      status: 'running',
+      metadata: { userId: 'user-123' },
+    });
+    const initializeClient = jest.fn();
+    const req = {
+      _isAgentTrigger: true,
+      user: { id: 'user-123' },
+      body: {
+        text: 'Collect the completed child.',
+        messageId: 'wakeup-user-message',
+        parentMessageId: 'persisted-response_',
+        conversationId,
+        clientRequestId: 'trigger_resume_1',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'PARENT_NOT_READY' }));
+    expect(mockGenerationJobManager.claimGeneration).not.toHaveBeenCalled();
+    expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+    expect(initializeClient).not.toHaveBeenCalled();
+  });
+
+  it('labels a trigger parent-state lookup failure as provably pre-admission', async () => {
+    const conversationId = 'conversation-123';
+    mockGetMessages.mockResolvedValue([{ _id: 'persisted-parent' }]);
+    mockGenerationJobManager.getJob.mockRejectedValue(new Error('redis unavailable'));
+    const initializeClient = jest.fn();
+    const req = {
+      _isAgentTrigger: true,
+      user: { id: 'user-123' },
+      body: {
+        text: 'Collect the completed child.',
+        messageId: 'wakeup-user-message',
+        parentMessageId: 'persisted-response_',
+        conversationId,
+        clientRequestId: 'trigger_resume_1',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(res.set).toHaveBeenCalledWith('Retry-After', '1');
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'PARENT_STATE_UNAVAILABLE' }),
+    );
+    expect(mockGenerationJobManager.claimGeneration).not.toHaveBeenCalled();
+    expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+    expect(initializeClient).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates the active continuation whose admission response was lost', async () => {
+    const conversationId = 'conversation-123';
+    mockGetMessages.mockResolvedValue([{ _id: 'persisted-parent' }]);
+    mockGenerationJobManager.getJob.mockResolvedValue({
+      createdAt: 1000,
+      status: 'requires_action',
+      metadata: {
+        userId: 'user-123',
+        idempotencyClientRequestId: 'trigger_resume_1',
+      },
+    });
+    mockGenerationJobManager.claimGeneration.mockResolvedValue({
+      claimed: false,
+      existing: {
+        streamId: conversationId,
+        conversationId,
+        claimedAt: 100,
+        claimToken: 'existing-token',
+        startedAt: 1000,
+      },
+    });
+    const req = {
+      _isAgentTrigger: true,
+      user: { id: 'user-123' },
+      body: {
+        text: 'Collect the completed child.',
+        messageId: 'wakeup-user-message',
+        parentMessageId: 'persisted-response_',
+        conversationId,
+        clientRequestId: 'trigger_resume_1',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+    expect(res.status).not.toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      streamId: conversationId,
+      conversationId,
+      generationCreatedAt: 1000,
+      status: 'resumed',
+      generationProtocolVersion: 1,
+    });
+    expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
+    expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+  });
+
   it('creates the job with the in-flight turn before MCP initialization can emit OAuth', async () => {
     const conversationId = 'conversation-123';
     const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));
@@ -550,11 +836,17 @@ describe('ResumableAgentController resume metadata', () => {
           model: 'gpt-3.5-turbo',
           /** The OWNING replica's seal capability, read by the steer route. */
           preemptCapable: true,
+          steerQuotesCapable: true,
           agent_id: undefined,
           isTemporary: true,
-          responseMessageId: 'follow-up-user_',
+          responseMessageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+          mcpRequestBody: {
+            messageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+            conversationId,
+            parentMessageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+          },
           userMessage: {
-            messageId: 'follow-up-user',
+            messageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
             parentMessageId: 'original-response',
             conversationId,
             text: 'Check Google Workspace availability.',
@@ -618,6 +910,163 @@ describe('ResumableAgentController resume metadata', () => {
       status: 'started',
       generationProtocolVersion: 2,
     });
+  });
+
+  it('rejects any session fenced after authentication before generation execution starts', async () => {
+    mockIsAgentTriggerPrincipalActive.mockResolvedValue(false);
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Run after a slow trigger admission.',
+        messageId: 'user-message',
+        clientRequestId: 'trigger-request',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+    const initializeClient = jest.fn();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(mockGenerationJobManager.createJob).toHaveBeenCalledTimes(1);
+    expect(mockIsAgentTriggerPrincipalActive).toHaveBeenCalledWith('user-123');
+    expect(mockGenerationJobManager.createJob.mock.invocationCallOrder[0]).toBeLessThan(
+      mockIsAgentTriggerPrincipalActive.mock.invocationCallOrder[0],
+    );
+    expect(mockGenerationJobManager.beginProviderExecution).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      status: 409,
+      code: 'ACCOUNT_DELETION_IN_PROGRESS',
+      error: 'Account deletion is in progress',
+      generationProtocolVersion: 1,
+    });
+    expect(initializeClient).not.toHaveBeenCalled();
+    expect(mockAcceptAgentStartupTelemetry).not.toHaveBeenCalled();
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+      'conversation-123',
+      JSON.stringify({
+        status: 409,
+        code: 'ACCOUNT_DELETION_IN_PROGRESS',
+        error: 'Account deletion is in progress',
+      }),
+      1000,
+    );
+    expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith(
+      'user-123',
+      'trigger-request',
+      'conversation-123',
+      DEFAULT_OWNED_CLAIM,
+    );
+    expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
+  });
+
+  it('rejects a superseded automatic occurrence after durable job creation and preserves its outcome', async () => {
+    const conversationId = 'scheduled-conversation-123';
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: conversationId, conversationId }),
+    );
+    mockIsScheduleLive.mockResolvedValue(false);
+    const req = {
+      _isScheduledFire: true,
+      _isManualScheduledFire: false,
+      user: { id: 'user-123' },
+      body: {
+        text: 'Run the scheduled digest.',
+        messageId: 'scheduled-user-message',
+        clientRequestId: 'sched:schedule-1:2026-08-17T12:00:00-000Z',
+        conversationId: 'new',
+        newConversationId: conversationId,
+        scheduleId: 'schedule-1',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+        scheduleConfigRevision: 7,
+        endpointOption: { endpoint: 'agents', agent_id: 'agent-1' },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+    const initializeClient = jest.fn();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+    expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
+      conversationId,
+      'user-123',
+      conversationId,
+      expect.objectContaining({
+        initialMetadata: expect.objectContaining({
+          scheduleId: 'schedule-1',
+          scheduledFor: '2026-08-17T12:00:00.000Z',
+          scheduleConfigRevision: 7,
+          preserveForScheduleReconcile: true,
+        }),
+      }),
+    );
+    // `scheduledFor` identifies the OCCURRENCE, matching the resume path: the run row
+    // is reserved before this loopback request is dispatched, so a pin introduced while
+    // it sat queued must not be validated in place of the destination the envelope was
+    // already built with.
+    expect(mockIsScheduleLive).toHaveBeenCalledWith('schedule-1', 7, {
+      automatic: true,
+      policy: true,
+      scheduledFor: '2026-08-17T12:00:00.000Z',
+    });
+    expect(initializeClient).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      status: 409,
+      code: 'SCHEDULE_NO_LONGER_ACTIVE',
+      error: 'This scheduled occurrence is no longer active',
+      generationProtocolVersion: 1,
+    });
+    expect(mockRecordScheduleOutcome).toHaveBeenCalledWith({
+      scheduleId: 'schedule-1',
+      scheduledFor: '2026-08-17T12:00:00.000Z',
+      streamId: conversationId,
+      jobCreatedAt: 1000,
+      status: 'interrupted',
+      conversationId,
+      clearConversationId: false,
+      error: 'This scheduled occurrence is no longer active',
+    });
+    expect(mockDecrementPendingRequest).not.toHaveBeenCalled();
+  });
+
+  it('does not start a provider when account deletion or replacement wins the startup CAS', async () => {
+    mockGenerationJobManager.beginProviderExecution.mockResolvedValue(false);
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Race destructive cleanup.',
+        messageId: 'user-message',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+    const initializeClient = jest.fn();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(mockIsAgentTriggerPrincipalActive).toHaveBeenCalledWith('user-123');
+    expect(mockIsAgentTriggerPrincipalActive.mock.invocationCallOrder[0]).toBeLessThan(
+      mockGenerationJobManager.beginProviderExecution.mock.invocationCallOrder[0],
+    );
+    expect(initializeClient).not.toHaveBeenCalled();
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+      'conversation-123',
+      expect.stringContaining('Generation stopped before provider startup'),
+      1000,
+    );
+    expect(mockGenerationJobManager.markProviderExecutionDrained).toHaveBeenCalledWith(
+      'conversation-123',
+      1000,
+      'provider-segment-1',
+    );
   });
 
   it('prefetches conversation state before admission and joins it with job metadata', async () => {
@@ -723,6 +1172,89 @@ describe('ResumableAgentController resume metadata', () => {
     );
   });
 
+  it('preallocates response-scoped MCP identities before native Agent initialization', async () => {
+    const initializeClient = jest.fn().mockRejectedValue(new Error('stop after MCP discovery'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Use request-scoped headers.',
+        messageId: 'incoming-client-message',
+        parentMessageId: 'previous-response',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+
+    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+
+    expect(initializeClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestBody: {
+          messageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+          conversationId: 'conversation-123',
+          parentMessageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        },
+      }),
+    );
+    const [{ requestBody }] = initializeClient.mock.calls[0];
+    const jobOptions = mockGenerationJobManager.createJob.mock.calls[0][3];
+    expect(jobOptions.initialMetadata.responseMessageId).toBe(requestBody.messageId);
+    expect(jobOptions.initialMetadata.userMessage.messageId).toBe(requestBody.parentMessageId);
+    expect(jobOptions.initialMetadata.mcpRequestBody).toBe(requestBody);
+    expect(requestBody.messageId).not.toBe(req.body.messageId);
+  });
+
+  it('uses the effective overridden conversation in the MCP request body', async () => {
+    const initializeClient = jest.fn().mockRejectedValue(new Error('stop after MCP discovery'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Continue in the overridden conversation.',
+        messageId: 'incoming-client-message',
+        parentMessageId: 'previous-response',
+        conversationId: 'source-conversation',
+        overrideConvoId: 'overridden-conversation__0',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+
+    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+
+    const [{ requestBody }] = initializeClient.mock.calls[0];
+    const jobOptions = mockGenerationJobManager.createJob.mock.calls[0][3];
+    expect(requestBody.conversationId).toBe('overridden-conversation');
+    expect(jobOptions.initialMetadata.mcpRequestBody).toBe(requestBody);
+  });
+
+  it('preallocates the replacement response as the MCP parent for edited content', async () => {
+    const initializeClient = jest.fn().mockRejectedValue(new Error('stop after MCP discovery'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Edited response text.',
+        messageId: 'existing-user-message',
+        responseMessageId: 'existing-response-message',
+        parentMessageId: 'previous-response',
+        overrideParentMessageId: 'existing-user-message',
+        editedContent: { index: 0, type: 'text', text: 'Edited response text.' },
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+
+    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+
+    const [{ requestBody }] = initializeClient.mock.calls[0];
+    const jobOptions = mockGenerationJobManager.createJob.mock.calls[0][3];
+    expect(requestBody.messageId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(requestBody.parentMessageId).toBe(requestBody.messageId);
+    expect(requestBody.messageId).not.toBe('existing-response-message');
+    expect(jobOptions.initialMetadata.mcpRequestBody).toBe(requestBody);
+  });
+
   it('stores model spec icon fallbacks and agent ids in early resume metadata', async () => {
     const conversationId = 'conversation-123';
     const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));
@@ -775,6 +1307,48 @@ describe('ResumableAgentController resume metadata', () => {
           model: 'agent_resume_spec',
           agent_id: 'agent_resume_spec',
           isTemporary: true,
+        }),
+      }),
+    );
+  });
+
+  it('records regeneration ownership for exact-ID resume reconstruction', async () => {
+    const conversationId = 'conversation-123';
+    const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Regenerate the edited response.',
+        messageId: 'user-message',
+        parentMessageId: 'parent-message',
+        responseMessageId: 'edited-response',
+        isRegenerate: true,
+        conversationId,
+        endpointOption: {
+          endpoint: 'agents',
+          modelOptions: { model: 'gpt-4.1' },
+        },
+      },
+      config: {},
+    };
+    const res = {
+      headersSent: true,
+      json: jest.fn(() => {
+        res.headersSent = true;
+      }),
+      status: jest.fn(() => res),
+    };
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
+      conversationId,
+      'user-123',
+      conversationId,
+      expect.objectContaining({
+        initialMetadata: expect.objectContaining({
+          responseMessageId: 'edited-response',
+          isRegenerate: true,
         }),
       }),
     );
@@ -886,6 +1460,8 @@ describe('ResumableAgentController resume metadata', () => {
 
     await AgentController(req, res, jest.fn(), initializeClient, null);
     expect(allSubscribersLeftHandler).toEqual(expect.any(Function));
+    mockSaveMessage.mockClear();
+    mockSaveConvo.mockClear();
 
     const oauthPart = {
       type: 'tool_call',
@@ -1749,6 +2325,112 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
   });
 
+  it('returns a typed recovery conflict before acknowledging generation startup', async () => {
+    const recoveryError = new Error('Attached resources could not be restored');
+    recoveryError.code = ErrorTypes.RESOURCE_RECOVERY_REQUIRED;
+    mockGenerationJobManager.createJob.mockRejectedValue(recoveryError);
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Describe the attached image.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      status: 409,
+      code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+      error: 'Attached resources could not be restored',
+      generationProtocolVersion: 1,
+    });
+    expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
+  });
+
+  it('preserves the recovery code in the durable error after acknowledging startup', async () => {
+    const recoveryError = new Error('Attached resources could not be restored');
+    recoveryError.code = ErrorTypes.RESOURCE_RECOVERY_REQUIRED;
+    const initializeClient = jest.fn().mockRejectedValue(recoveryError);
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Describe the attached image.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      streamId: 'conversation-123',
+      conversationId: 'conversation-123',
+      generationCreatedAt: 1000,
+      status: 'started',
+      generationProtocolVersion: 1,
+    });
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+      'conversation-123',
+      JSON.stringify({
+        status: 409,
+        code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+        error: 'Attached resources could not be restored',
+      }),
+      1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
+    );
+  });
+
+  it('preserves a stateful scope policy denial in the durable initialization error', async () => {
+    const policyError = Object.assign(
+      new Error('Stateful code environment is not allowed by this deployment: conversation'),
+      {
+        code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+        status: 403,
+        statusCode: 403,
+      },
+    );
+    const initializeClient = jest.fn().mockRejectedValue(policyError);
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Run code.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+      'conversation-123',
+      JSON.stringify({
+        status: 403,
+        code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+        error: 'Stateful code environment is not allowed by this deployment: conversation',
+      }),
+      1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
+    );
+  });
+
   it('returns a recovery conflict when the atomic store rejects changed source content', async () => {
     const mismatch = new Error('recovery mismatch');
     mismatch.code = 'RECOVERY_PAYLOAD_MISMATCH';
@@ -1936,6 +2618,7 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       'provider init failed',
       1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
     );
   });
 
@@ -1972,6 +2655,7 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       'Recovered steer cannot skip user message persistence',
       1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
     );
   });
 
@@ -2358,10 +3042,12 @@ describe('ResumableAgentController resume metadata', () => {
     });
     let observedHookResult;
     const completedResponseWrite = jest.fn();
+    const exposePendingApproval = jest.fn().mockResolvedValue(undefined);
     const client = {
       options: {},
       jobCreatedAt: 1000,
       pendingApproval: { actionId: 'action-pause-barrier' },
+      exposePendingApproval,
       skipSaveUserMessage: false,
       skipSaveConvo: false,
       getSaveOptions: jest.fn(() => ({ endpoint: 'agents' })),
@@ -2441,7 +3127,261 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockSaveMessage.mock.invocationCallOrder[0]).toBeLessThan(
       mockGenerationJobManager.approvals.finishPausePersistence.mock.invocationCallOrder[0],
     );
+    expect(exposePendingApproval.mock.invocationCallOrder[0]).toBeLessThan(
+      mockGenerationJobManager.approvals.finishPausePersistence.mock.invocationCallOrder[0],
+    );
     expect(mockGenerationJobManager.claimTerminalJob).not.toHaveBeenCalled();
+  });
+
+  describe('failed-turn persistence', () => {
+    const conversationId = 'conversation-123';
+
+    const createFailedRequest = (bodyOverrides = {}) => ({
+      user: { id: 'user-123' },
+      body: {
+        text: 'Hello with a removed model.',
+        messageId: 'user-message',
+        parentMessageId: 'prior-response',
+        conversationId,
+        endpointOption: {
+          endpoint: 'azureOpenAI',
+          modelOptions: { model: 'gpt-4o' },
+        },
+        ...bodyOverrides,
+      },
+      config: {},
+    });
+
+    async function flushBackgroundGeneration() {
+      for (let i = 0; i < 10; i++) {
+        await nextTick();
+      }
+    }
+
+    it('persists an initialization failure before terminal error publication', async () => {
+      const events = [];
+      mockSaveConvo.mockImplementation(async () => {
+        events.push('turn-persisted');
+        return {};
+      });
+      mockGenerationJobManager.completeJob.mockImplementation(
+        async (_streamId, _error, _createdAt, options) => {
+          await options.beforeErrorPublication();
+          events.push('error-published');
+          return true;
+        },
+      );
+      const initializeClient = jest
+        .fn()
+        .mockRejectedValue(new Error('The model "gpt-4o" is not available.'));
+
+      await AgentController(
+        createFailedRequest(),
+        createResumableResponse(),
+        jest.fn(),
+        initializeClient,
+        null,
+      );
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        expect.objectContaining({
+          messageId: 'user-message',
+          parentMessageId: 'prior-response',
+          conversationId,
+          text: 'Hello with a removed model.',
+          isCreatedByUser: true,
+          error: false,
+        }),
+        expect.any(Object),
+      );
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        expect.objectContaining({
+          messageId: 'user-message_',
+          parentMessageId: 'user-message',
+          conversationId,
+          endpoint: 'azureOpenAI',
+          model: 'gpt-4o',
+          text: 'The model "gpt-4o" is not available.',
+          error: true,
+          isCreatedByUser: false,
+        }),
+        expect.any(Object),
+      );
+      expect(events).toEqual(['turn-persisted', 'error-published']);
+      expect(mockSaveConvo).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        { conversationId },
+        expect.objectContaining({ noUpsert: true }),
+      );
+    });
+
+    it('allows a follow-up to chain from the persisted failed response', async () => {
+      const initializeClient = jest.fn().mockRejectedValue(new Error('model unavailable'));
+      await AgentController(
+        createFailedRequest(),
+        createResumableResponse(),
+        jest.fn(),
+        initializeClient,
+        null,
+      );
+
+      expect(mockSaveMessage.mock.calls.map(([, message]) => message.messageId)).toContain(
+        'user-message_',
+      );
+      mockGetMessages.mockResolvedValue([{ _id: 'persisted-error-turn' }]);
+      const followUpRes = createResumableResponse();
+
+      await AgentController(
+        createFailedRequest({
+          text: 'Retry with a valid model.',
+          messageId: 'follow-up-user',
+          parentMessageId: 'user-message_',
+        }),
+        followUpRes,
+        jest.fn(),
+        initializeClient,
+        null,
+      );
+
+      expect(followUpRes.status).not.toHaveBeenCalledWith(409);
+      expect(mockCheckAndIncrementPendingRequest).toHaveBeenCalledTimes(2);
+    });
+
+    it('persists failures raised before generation saves any message', async () => {
+      const client = {
+        options: {},
+        sendMessage: jest.fn().mockRejectedValue(new Error('provider exploded')),
+      };
+
+      await AgentController(
+        createFailedRequest(),
+        createResumableResponse(),
+        jest.fn(),
+        jest.fn().mockResolvedValue({ client }),
+        null,
+      );
+      await flushBackgroundGeneration();
+
+      expect(mockResolveAgentTurnExecutionPlan).toHaveBeenCalledTimes(1);
+      expect(mockResolveAgentTurnExecutionPlan).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversationId,
+          isEvent: false,
+          event: undefined,
+        }),
+      );
+      expect(mockExecuteAgentEventActor).not.toHaveBeenCalled();
+      expect(mockCreateAgentEventActionRecorder).not.toHaveBeenCalled();
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        expect.objectContaining({
+          messageId: 'user-message_',
+          text: 'provider exploded',
+          error: true,
+        }),
+        expect.any(Object),
+      );
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        conversationId,
+        'provider exploded',
+        1000,
+        expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
+      );
+    });
+
+    it('uses the live user identity after generation starts', async () => {
+      const serverUserMessage = {
+        messageId: 'server-user',
+        parentMessageId: 'prior-response',
+        conversationId,
+        sender: 'User',
+        text: 'Hello with a removed model.',
+        isCreatedByUser: true,
+      };
+      const client = {
+        options: {},
+        sendMessage: jest.fn(async (_text, options) => {
+          options.onStart(serverUserMessage, 'server-response-uuid');
+          throw new Error('failed after onStart');
+        }),
+      };
+
+      await AgentController(
+        createFailedRequest(),
+        createResumableResponse(),
+        jest.fn(),
+        jest.fn().mockResolvedValue({ client }),
+        null,
+      );
+      await flushBackgroundGeneration();
+
+      const savedIds = mockSaveMessage.mock.calls.map(([, message]) => message.messageId);
+      expect(savedIds).toEqual(expect.arrayContaining(['server-user', 'server-user_']));
+      expect(savedIds).not.toContain('user-message_');
+    });
+
+    it('does not overwrite an existing response row', async () => {
+      mockGetMessages.mockResolvedValue([{ _id: 'already-saved' }]);
+
+      await AgentController(
+        createFailedRequest(),
+        createResumableResponse(),
+        jest.fn(),
+        jest.fn().mockRejectedValue(new Error('late failure')),
+        null,
+      );
+
+      expect(mockSaveMessage).not.toHaveBeenCalled();
+      expect(mockSaveConvo).not.toHaveBeenCalled();
+    });
+
+    it('creates the conversation row for a failed first turn', async () => {
+      const res = createResumableResponse();
+      mockGenerationJobManager.claimGeneration.mockImplementation(
+        async (_userId, _clientRequestId, streamId, claimedConversationId) =>
+          wonGenerationClaim({ streamId, conversationId: claimedConversationId }),
+      );
+      const req = createFailedRequest({
+        conversationId: undefined,
+        clientRequestId: 'failed-new-conversation',
+        parentMessageId: '00000000-0000-0000-0000-000000000000',
+        endpointOption: {
+          endpoint: 'azureOpenAI',
+          modelOptions: { model: 'gpt-4o' },
+          chatProjectId: '507f1f77bcf86cd799439011',
+        },
+      });
+
+      await AgentController(
+        req,
+        res,
+        jest.fn(),
+        jest.fn().mockRejectedValue(new Error('model unavailable')),
+        null,
+      );
+
+      const mintedConversationId = res.json.mock.calls[0][0].conversationId;
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({
+          messageId: 'user-message_',
+          conversationId: mintedConversationId,
+        }),
+        expect.any(Object),
+      );
+      expect(mockSaveConvo).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        expect.objectContaining({
+          conversationId: mintedConversationId,
+          endpoint: 'azureOpenAI',
+          model: 'gpt-4o',
+          chatProjectId: '507f1f77bcf86cd799439011',
+        }),
+        expect.any(Object),
+      );
+    });
   });
 
   it('finalizes the failed job before releasing the idempotency claim', async () => {
@@ -2466,6 +3406,7 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       expect.any(String),
       1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
     );
     expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith(
       'user-123',
@@ -2532,6 +3473,7 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       'init boom after res.json',
       1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
     );
     expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith(
       'user-123',
@@ -2647,6 +3589,7 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       generationError.message,
       1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
     );
     expect(mockGenerationJobManager.completeJob.mock.invocationCallOrder[0]).toBeLessThan(
       mockDecrementPendingRequest.mock.invocationCallOrder[0],
@@ -3031,6 +3974,1031 @@ describe('ResumableAgentController resume metadata', () => {
     );
   });
 
+  it('retains terminal metadata for the first event in an empty bound actor thread', async () => {
+    const expiredAt = new Date(Date.now() + 60_000);
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({
+        streamId: 'child-conversation',
+        conversationId: 'child-conversation',
+      }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    mockIsSubagentOwnerAdmissible.mockResolvedValue(false);
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Continue from event.',
+        messageId: 'user-msg',
+        parentMessageId: '00000000-0000-0000-0000-000000000000',
+        clientRequestId: 'req-event',
+        agentEventDelivery: {
+          deliveryKey: 'req-event',
+          expectedAction: {
+            toolName: 'submit_move',
+            argumentSubset: { gameId: 'game-1', expectedPly: 7 },
+          },
+        },
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+      _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { isTemporary: true, expiredAt },
+    };
+    const res = { json: jest.fn(), status: jest.fn(() => res), set: jest.fn() };
+
+    await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'EVENT_ACTOR_NOT_READY' }),
+    );
+    expect(mockGenerationJobManager.createJob).toHaveBeenCalledTimes(1);
+    expect(mockAcquireEventChildGenerationLease).toHaveBeenCalledWith(
+      expect.objectContaining({ taskId: 'req-event', retentionExpiresAt: expiredAt }),
+    );
+    const eventJobOptions = mockGenerationJobManager.createJob.mock.calls[0][3];
+    expect(eventJobOptions.initialMetadata).toEqual(
+      expect.objectContaining({
+        responseMessageId: 'req-event:assistant',
+        userMessage: expect.objectContaining({ messageId: 'req-event:user' }),
+        agentEventDeliveryKey: 'req-event',
+        agentEventBindingId: 'binding-1',
+        agentEventExpectedAction: {
+          toolName: 'submit_move',
+          argumentSubset: { gameId: 'game-1', expectedPly: 7 },
+        },
+      }),
+    );
+  });
+
+  it('routes an enabled authenticated event through the checkpoint-fork executor', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+    });
+    const client = {
+      options: {},
+      sendMessage: jest.fn(async () => {
+        throw new Error('stop after event actor invocation started');
+      }),
+    };
+    mockExecuteAgentEventActor.mockImplementationOnce(async (input) => {
+      await input.invoke({
+        checkpointNamespace: 'event-actor/fork',
+        checkpointId: 'checkpoint-base',
+        invocationId: 'req-event-fork',
+        continuation: 'warm',
+        signal: input.signal,
+      });
+    });
+    const event = {
+      id: 'game-1:ply-8',
+      type: 'chess.\u202Eturn',
+      occurredAt: Date.now(),
+      source: { id: 'speed-chess', type: 'm\u2066cp' },
+      payload: { gameId: 'game-1', expectedPly: 8 },
+    };
+    const req = {
+      user: { id: 'user-123', tenantId: '' },
+      body: {
+        text: 'Play the next move.',
+        clientRequestId: 'req-event-fork',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-fork',
+          target: { bindingId: 'binding-1' },
+          event,
+          expectedAction: { toolName: 'submit_\u200Fmove', argumentSubset: { expectedPly: 8 } },
+        },
+      },
+      config: {
+        endpoints: { agents: {} },
+      },
+      _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: undefined,
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    await nextTick();
+
+    expect(mockResolveAgentTurnExecutionPlan).toHaveBeenCalledTimes(1);
+    expect(mockResolveAgentTurnExecutionPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'child-conversation',
+        isNewConversation: false,
+        canPause: false,
+        expectedActionMayDetach: false,
+      }),
+    );
+    expect(mockExecuteAgentEventActor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'child-conversation',
+        invocationId: 'req-event-fork',
+        event,
+        expectedAction: { toolName: 'submit_\u200Fmove', argumentSubset: { expectedPly: 8 } },
+      }),
+      {
+        getSnapshot: expect.any(Function),
+        commitState: expect.any(Function),
+        recordReconciliation: expect.any(Function),
+        resolveReconciliation: expect.any(Function),
+        clearReconciliation: expect.any(Function),
+        admitAction: expect.any(Function),
+        releaseAction: expect.any(Function),
+        hasActionAdmission: expect.any(Function),
+        getReceipt: expect.any(Function),
+      },
+    );
+    expect(mockExecuteAgentEventActor.mock.calls[0][0]).not.toHaveProperty('tenantId');
+    expect(req._agentEventTriggerProjection).toEqual({
+      version: 1,
+      eventType: 'chess. turn',
+      sourceType: 'm cp',
+      occurredAt: new Date(event.occurredAt),
+      expectedActionToolName: 'submit_ move',
+    });
+    expect(client).toMatchObject({
+      checkpointNamespace: 'event-actor/fork',
+      eventActorCheckpointId: 'checkpoint-base',
+      eventActorInvocationId: 'req-event-fork',
+      eventActorContinuation: 'warm',
+    });
+  });
+
+  it('prefers the execution-time action receipt over lagging run steps', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+    });
+    mockFindAgentEventAppliedAction.mockReturnValue(undefined);
+    let observedRead;
+    mockExecuteAgentEventActor.mockImplementationOnce(async (input) => {
+      await input.invoke({
+        checkpointNamespace: 'event-actor/fork',
+        checkpointId: 'checkpoint-base',
+        invocationId: 'req-event-receipt',
+        continuation: 'warm',
+        signal: input.signal,
+      });
+      observedRead = input.readAppliedAction();
+      throw new Error('stop after evidence read');
+    });
+    const req = {
+      user: { id: 'user-123', tenantId: '' },
+      body: {
+        text: 'Play the next move.',
+        clientRequestId: 'req-event-receipt',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-receipt',
+          target: { bindingId: 'binding-1' },
+          event: {
+            id: 'game-1:ply-9',
+            type: 'chess.turn',
+            occurredAt: Date.now(),
+            source: { id: 'speed-chess', type: 'mcp' },
+          },
+          expectedAction: { toolName: 'submit_move', argumentSubset: { expectedPly: 9 } },
+        },
+      },
+      config: {
+        endpoints: { agents: {} },
+      },
+      _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: undefined,
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+    /** Reproduces the observed race: the tool executed (graph context fires
+     * the observer during sendMessage) but the run-step collection is still
+     * empty when the executor reads evidence right after resolution. */
+    const client = {
+      options: {},
+      sendMessage: jest.fn(async () => {
+        req._agentEventActionObserver({
+          input: { expectedPly: 9 },
+          output: { name: 'submit_move', tool_call_id: 'call-9', content: '{"ok":true}' },
+        });
+        return {};
+      }),
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    await nextTick();
+
+    expect(mockExecuteAgentEventActor).toHaveBeenCalledTimes(1);
+    expect(mockCreateAgentEventActionRecorder).toHaveBeenCalledWith({
+      toolName: 'submit_move',
+      argumentSubset: { expectedPly: 9 },
+    });
+    expect(typeof req._agentEventActionObserver).toBe('function');
+    expect(observedRead).toEqual({ toolName: 'submit_move', toolCallId: 'call-9' });
+    expect(mockFindAgentEventAppliedAction).not.toHaveBeenCalled();
+  });
+
+  it('records reconciliation when persistence fails after an event action commits', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    const checkpoint = {
+      threadId: 'child-conversation',
+      checkpointId: 'checkpoint-applied',
+      checkpointNs: 'event-actor/applied',
+    };
+    mockExecuteAgentEventActor.mockResolvedValueOnce({
+      value: {
+        messageId: 'req-event-persistence:assistant',
+        databasePromise: Promise.resolve().then(() => {
+          throw new Error('response persistence unavailable');
+        }),
+      },
+      execution: {
+        status: 'applied',
+        continuation: 'warm',
+        head: { actorThreadId: 'child-conversation', generation: 2, checkpoint },
+        result: { action: { toolName: 'submit_move', toolCallId: 'call-move' } },
+      },
+    });
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Play the next move.',
+        clientRequestId: 'req-event-persistence',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-persistence',
+          target: { bindingId: 'binding-1' },
+          event: {
+            id: 'event-persistence',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+          expectedAction: { toolName: 'submit_move' },
+        },
+      },
+      config: {
+        endpoints: { agents: {} },
+      },
+      _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client: { options: {} } }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockRecordAgentEventActorReconciliation.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+
+    expect(mockExecuteAgentEventActor).toHaveBeenCalledTimes(1);
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      '[event-actor] Bound child event completed',
+      expect.any(Object),
+    );
+    expect(mockRecordAgentEventActorReconciliation).toHaveBeenCalledWith({
+      user: 'user-123',
+      tenantId: 'tenant-1',
+      conversationId: 'child-conversation',
+      reconciliation: expect.objectContaining({
+        invocationId: 'req-event-persistence',
+        status: 'persistence_failed',
+        checkpoint,
+        action: { toolName: 'submit_move', toolCallId: 'call-move' },
+      }),
+    });
+  });
+
+  it('records the applied actor history barrier only after both deterministic messages persist', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    const checkpoint = {
+      threadId: 'child-conversation',
+      checkpointId: 'checkpoint-applied',
+      checkpointNs: 'event-actor/applied',
+    };
+    const userMessage = {
+      messageId: 'req-event-success:user',
+      parentMessageId: 'parent-message',
+      conversationId: 'child-conversation',
+      text: 'Play the next move.',
+    };
+    const client = {
+      options: {},
+      skipSaveUserMessage: false,
+      sendMessage: jest.fn(async (_text, options) => {
+        options.onStart(userMessage, 'req-event-success:assistant');
+        return {
+          messageId: 'req-event-success:assistant',
+          text: 'Move submitted.',
+          databasePromise: Promise.resolve({
+            conversation: { conversationId: 'child-conversation' },
+          }),
+        };
+      }),
+    };
+    mockExecuteAgentEventActor.mockImplementationOnce(async (input) => ({
+      value: await input.invoke({
+        checkpointNamespace: checkpoint.checkpointNs,
+        checkpointId: checkpoint.checkpointId,
+        invocationId: 'req-event-success',
+        continuation: 'warm',
+        signal: input.signal,
+      }),
+      execution: {
+        status: 'applied',
+        continuation: 'warm',
+        head: { actorThreadId: 'child-conversation', generation: 2, checkpoint },
+        result: { action: { toolName: 'submit_move', toolCallId: 'call-move' } },
+      },
+    }));
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: userMessage.text,
+        clientRequestId: 'req-event-success',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-success',
+          target: { bindingId: 'binding-1' },
+          event: {
+            id: 'event-success',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+          expectedAction: { toolName: 'submit_move' },
+        },
+      },
+      config: {
+        endpoints: { agents: {} },
+      },
+      _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockRecordAgentEventActorReconciliation.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+
+    expect(mockSaveMessage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ messageId: 'req-event-success:user' }),
+      expect.any(Object),
+    );
+    expect(mockSaveMessage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ messageId: 'req-event-success:assistant' }),
+      expect.any(Object),
+    );
+    expect(mockRecordAgentEventActorReconciliation).toHaveBeenCalledWith({
+      user: 'user-123',
+      tenantId: 'tenant-1',
+      conversationId: 'child-conversation',
+      reconciliation: {
+        invocationId: 'req-event-success',
+        status: 'history_persisted',
+        checkpoint,
+        action: { toolName: 'submit_move', toolCallId: 'call-move' },
+        actionAdmitted: true,
+        observedAt: expect.any(Date),
+      },
+    });
+    const lastMessageWrite = Math.max(...mockSaveMessage.mock.invocationCallOrder);
+    expect(lastMessageWrite).toBeLessThan(
+      mockRecordAgentEventActorReconciliation.mock.invocationCallOrder[0],
+    );
+  });
+
+  it.each([
+    [
+      'tool approval',
+      { toolDefinitions: [] },
+      {
+        toolApproval: { enabled: true },
+      },
+      undefined,
+      undefined,
+    ],
+    [
+      'primary ask_user_question',
+      { toolDefinitions: [{ name: 'ask_user_question' }] },
+      {},
+      undefined,
+      undefined,
+    ],
+    [
+      'added-agent ask_user_question',
+      { toolDefinitions: [] },
+      {},
+      new Map([['added-agent', { toolDefinitions: [{ name: 'ask_user_question' }] }]]),
+      undefined,
+    ],
+    [
+      'memory-checkpointer',
+      { toolDefinitions: [] },
+      {
+        checkpointer: { type: 'memory' },
+      },
+      undefined,
+      undefined,
+    ],
+    [
+      'background-capable expected action',
+      { toolDefinitions: [], backgroundToolNames: ['submit_move_mcp_chess'] },
+      {},
+      undefined,
+      undefined,
+    ],
+    [
+      'pre-cutover pause-capable fleet',
+      { toolDefinitions: [] },
+      { toolApproval: { enabled: true } },
+      undefined,
+      undefined,
+      1,
+    ],
+  ])(
+    'routes %s event actors through the compatible continuation path',
+    async (_label, agent, config, agentConfigs, clientOptions, generationProtocolVersion = 2) => {
+      mockGenerationJobManager.claimGeneration.mockResolvedValue(
+        wonGenerationClaim({
+          streamId: 'child-conversation',
+          conversationId: 'child-conversation',
+          generationProtocolVersion,
+        }),
+      );
+      mockGenerationJobManager.createJob.mockResolvedValueOnce({
+        createdAt: 1000,
+        metadata: {
+          checkpointNamespace: '1000',
+          providerExecutionId: 'provider-segment-1',
+          providerDrained: true,
+          generationProtocolVersion,
+        },
+        readyPromise: Promise.resolve(),
+        abortController: new AbortController(),
+        emitter: { on: jest.fn() },
+      });
+      mockGetConvo.mockResolvedValue({
+        conversationId: 'parent-conversation',
+        agent_id: 'parent-agent',
+        tenantId: 'tenant-1',
+      });
+      const client = {
+        options: { agent, ...(clientOptions ?? {}) },
+        agentConfigs,
+        sendMessage: jest.fn(async () => {
+          throw new Error('stop after legacy event invocation started');
+        }),
+      };
+      const shouldCheckpoint =
+        _label !== 'memory-checkpointer' &&
+        _label !== 'background-capable expected action' &&
+        _label !== 'pre-cutover pause-capable fleet';
+      if (shouldCheckpoint) {
+        mockExecuteAgentEventActor.mockImplementationOnce(async (input) => {
+          await input.invoke({
+            checkpointNamespace: 'event-actor/pause-capable',
+            checkpointId: 'checkpoint-pause-capable',
+            invocationId: 'req-event-hitl',
+            continuation: 'warm',
+            signal: input.signal,
+          });
+        });
+      }
+      const req = {
+        user: { id: 'user-123', tenantId: 'tenant-1' },
+        body: {
+          text: 'Continue with a pause-capable actor.',
+          clientRequestId: 'req-event-hitl',
+          conversationId: 'child-conversation',
+          generationProtocolVersion,
+          endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+          agentEventDelivery: {
+            deliveryKey: 'req-event-hitl',
+            target: { bindingId: 'binding-1' },
+            expectedAction: { toolName: 'submit_move' },
+            event: {
+              id: 'event-hitl',
+              type: 'test.event',
+              occurredAt: Date.now(),
+              source: { id: 'test', type: 'api' },
+              payload: {},
+            },
+          },
+        },
+        config: { endpoints: { agents: config } },
+        _isAgentTrigger: true,
+        _agentEventBindingId: 'binding-1',
+        _agentEventBindingParentConversationId: 'parent-conversation',
+        _agentEventBindingParentAgentId: 'parent-agent',
+        _agentEventBindingTenantId: 'tenant-1',
+        _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+      };
+
+      await AgentController(
+        req,
+        createResumableResponse(),
+        jest.fn(),
+        jest.fn().mockResolvedValue({ client }),
+        null,
+      );
+      await nextTick();
+
+      if (shouldCheckpoint) {
+        expect(mockExecuteAgentEventActor).toHaveBeenCalled();
+        expect(mockGetMessages).not.toHaveBeenCalled();
+        expect(mockBeginAgentEventActorLegacyTurn).not.toHaveBeenCalled();
+        expect(mockGenerationJobManager.updateMetadata).not.toHaveBeenCalledWith(
+          'child-conversation',
+          expect.objectContaining({ agentEventLegacyTurnToken: expect.any(String) }),
+          1000,
+        );
+        expect(client.sendMessage).toHaveBeenCalledTimes(1);
+        return;
+      }
+      expect(mockExecuteAgentEventActor).not.toHaveBeenCalled();
+      expect(mockBeginAgentEventActorLegacyTurn).toHaveBeenCalledWith({
+        user: 'user-123',
+        tenantId: 'tenant-1',
+        conversationId: 'child-conversation',
+        token: expect.any(String),
+      });
+      expect(client.sendMessage).toHaveBeenCalledTimes(1);
+      /** The fence must open before execution and close only after this
+       * turn's history is durable, under the same token. */
+      const fenceToken = mockBeginAgentEventActorLegacyTurn.mock.calls[0][0].token;
+      expect(mockBeginAgentEventActorLegacyTurn.mock.invocationCallOrder[0]).toBeLessThan(
+        client.sendMessage.mock.invocationCallOrder[0],
+      );
+      expect(mockGenerationJobManager.updateMetadata).toHaveBeenCalledWith(
+        'child-conversation',
+        { agentEventLegacyTurnToken: fenceToken },
+        1000,
+      );
+      expect(mockGenerationJobManager.updateMetadata.mock.invocationCallOrder[0]).toBeLessThan(
+        client.sendMessage.mock.invocationCallOrder[0],
+      );
+      expect(mockCompleteAgentEventActorLegacyTurn).toHaveBeenCalledWith({
+        user: 'user-123',
+        tenantId: 'tenant-1',
+        conversationId: 'child-conversation',
+        token: fenceToken,
+      });
+      expect(mockCompleteAgentEventActorLegacyTurn.mock.invocationCallOrder[0]).toBeGreaterThan(
+        client.sendMessage.mock.invocationCallOrder[0],
+      );
+    },
+  );
+
+  it('retains local fence ownership when Redis metadata persistence fails', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    mockGenerationJobManager.updateMetadata.mockRejectedValueOnce(
+      new Error('redis metadata unavailable'),
+    );
+    const client = {
+      options: {
+        agent: {
+          toolDefinitions: [],
+          backgroundToolNames: ['submit_move'],
+        },
+      },
+      sendMessage: jest.fn(),
+    };
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Persist ownership before Redis metadata.',
+        clientRequestId: 'req-event-metadata-failure',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-metadata-failure',
+          target: { bindingId: 'binding-1' },
+          expectedAction: { toolName: 'submit_move' },
+          event: {
+            id: 'event-metadata-failure',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+        },
+      },
+      config: {
+        endpoints: { agents: {} },
+      },
+      _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockCompleteAgentEventActorLegacyTurn.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+
+    const fenceToken = mockBeginAgentEventActorLegacyTurn.mock.calls[0][0].token;
+    expect(client.sendMessage).not.toHaveBeenCalled();
+    expect(mockCompleteAgentEventActorLegacyTurn).toHaveBeenCalledWith({
+      user: 'user-123',
+      tenantId: 'tenant-1',
+      conversationId: 'child-conversation',
+      token: fenceToken,
+    });
+  });
+
+  it('does not execute a legacy event turn when its durable fence is not acquired', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    mockBeginAgentEventActorLegacyTurn.mockResolvedValueOnce(false);
+    const client = {
+      options: {
+        agent: {
+          toolDefinitions: [],
+          backgroundToolNames: ['submit_move'],
+        },
+      },
+      sendMessage: jest.fn(async () => ({ messageId: 'must-not-run' })),
+    };
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Do not run without the fence.',
+        clientRequestId: 'req-event-fence-lost',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-fence-lost',
+          target: { bindingId: 'binding-1' },
+          expectedAction: { toolName: 'submit_move' },
+          event: {
+            id: 'event-fence-lost',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+        },
+      },
+      config: {
+        endpoints: { agents: {} },
+      },
+      _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockBeginAgentEventActorLegacyTurn.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+
+    expect(mockBeginAgentEventActorLegacyTurn).toHaveBeenCalledTimes(1);
+    expect(client.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('keeps the legacy event fence open when failed-turn persistence cannot complete', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    mockGenerationJobManager.completeJob.mockRejectedValueOnce(new Error('job store unavailable'));
+    const client = {
+      options: {
+        agent: {
+          toolDefinitions: [],
+          backgroundToolNames: ['submit_move'],
+        },
+      },
+      sendMessage: jest.fn(async () => {
+        throw new Error('provider failed');
+      }),
+    };
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Persist the failed turn before releasing the fence.',
+        clientRequestId: 'req-event-error-persistence',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-error-persistence',
+          target: { bindingId: 'binding-1' },
+          expectedAction: { toolName: 'submit_move' },
+          event: {
+            id: 'event-error-persistence',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+        },
+      },
+      config: {
+        endpoints: { agents: {} },
+      },
+      _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockGenerationJobManager.completeJob.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+    await nextTick();
+
+    expect(mockBeginAgentEventActorLegacyTurn).toHaveBeenCalledTimes(1);
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledTimes(1);
+    expect(mockCompleteAgentEventActorLegacyTurn).not.toHaveBeenCalled();
+  });
+
+  it('does not replay a stale ambiguous legacy fence based only on age', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    mockBeginAgentEventActorLegacyTurn.mockResolvedValueOnce(false);
+    mockGetAgentEventActorSnapshot.mockResolvedValueOnce({
+      state: null,
+      reconciliations: [],
+      epoch: 0,
+      legacyTurn: {
+        token: 'crashed-legacy-turn',
+        startedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      },
+    });
+    const client = {
+      options: {
+        agent: {
+          toolDefinitions: [],
+          backgroundToolNames: ['submit_move'],
+        },
+      },
+      sendMessage: jest.fn(async () => {
+        throw new Error('stop after recovered execution starts');
+      }),
+    };
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Recover the abandoned legacy fence.',
+        clientRequestId: 'req-event-stale-legacy',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        agentEventDelivery: {
+          deliveryKey: 'req-event-stale-legacy',
+          target: { bindingId: 'binding-1' },
+          expectedAction: { toolName: 'submit_move' },
+          event: {
+            id: 'event-stale-legacy',
+            type: 'test.event',
+            occurredAt: Date.now(),
+            source: { id: 'test', type: 'api' },
+            payload: {},
+          },
+        },
+      },
+      config: {
+        endpoints: { agents: {} },
+      },
+      _isAgentTrigger: true,
+      _agentEventBindingId: 'binding-1',
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { expiredAt: new Date(Date.now() + 60_000) },
+    };
+
+    await AgentController(
+      req,
+      createResumableResponse(),
+      jest.fn(),
+      jest.fn().mockResolvedValue({ client }),
+      null,
+    );
+    for (
+      let attempt = 0;
+      attempt < 20 && mockBeginAgentEventActorLegacyTurn.mock.calls.length === 0;
+      attempt++
+    ) {
+      await nextTick();
+    }
+
+    expect(mockBeginAgentEventActorLegacyTurn).toHaveBeenCalledTimes(1);
+    expect(client.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('uses the guard-normalized tenant for a legacy untenanted event actor', async () => {
+    const expiredAt = new Date(Date.now() + 60_000);
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({
+        streamId: 'child-conversation',
+        conversationId: 'child-conversation',
+      }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+    });
+    const req = {
+      user: { id: 'user-123', tenantId: '' },
+      body: {
+        text: 'Continue from an old untenanted binding.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-event-legacy',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: undefined,
+      _agentEventBindingRetention: { isTemporary: true, expiredAt },
+    };
+    const res = { json: jest.fn(), status: jest.fn(() => res), set: jest.fn() };
+
+    await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+    expect(mockAcquireEventChildGenerationLease).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: undefined, retentionExpiresAt: expiredAt }),
+    );
+  });
+
+  it('does not start an event actor whose inherited binding expired after the guard', async () => {
+    const expiredAt = new Date(Date.now() - 1);
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({
+        streamId: 'child-conversation',
+        conversationId: 'child-conversation',
+      }),
+    );
+    mockAcquireEventChildGenerationLease.mockResolvedValue(null);
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'This event arrived too late.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-event-expired',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { isTemporary: true, expiredAt },
+    };
+    const res = { json: jest.fn(), status: jest.fn(() => res), set: jest.fn() };
+
+    await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'EVENT_BINDING_PARENT_ENDED' }),
+    );
+    expect(mockIsSubagentOwnerAdmissible).not.toHaveBeenCalled();
+  });
+
   it('releases the idempotency claim on a 429 only when it won the claim', async () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue(wonGenerationClaim());
     mockCheckAndIncrementPendingRequest.mockResolvedValue({
@@ -3103,7 +5071,7 @@ describe('ResumableAgentController resume metadata', () => {
       getHaltReason: () => 'preempt_incomplete',
     };
 
-    const runFirstTurn = async ({ run } = {}) => {
+    const runFirstTurn = async ({ run, addTitle: suppliedAddTitle } = {}) => {
       let signalFinished;
       const finished = new Promise((resolve) => {
         signalFinished = resolve;
@@ -3111,9 +5079,11 @@ describe('ResumableAgentController resume metadata', () => {
       mockGenerationJobManager.finishTerminalJob.mockImplementation(async () => signalFinished());
 
       let titleSignal;
-      const addTitle = jest.fn(async (_req, options) => {
-        titleSignal = options?.signal;
-      });
+      const addTitle =
+        suppliedAddTitle ??
+        jest.fn(async (_req, options) => {
+          titleSignal = options?.signal;
+        });
 
       const client = {
         options: {},
@@ -3182,6 +5152,30 @@ describe('ResumableAgentController resume metadata', () => {
       expect(addTitle).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ response: expect.anything() }),
+      );
+    });
+
+    it('does not acknowledge provider drain until deferred title persistence settles', async () => {
+      resolveTitleTiming.mockReturnValueOnce('final');
+      let resolveTitle;
+      const titlePending = new Promise((resolve) => {
+        resolveTitle = resolve;
+      });
+      const addTitle = jest.fn(() => titlePending);
+
+      await runFirstTurn({ addTitle });
+
+      expect(addTitle).toHaveBeenCalledTimes(1);
+      expect(mockGenerationJobManager.markProviderExecutionDrained).not.toHaveBeenCalled();
+
+      resolveTitle();
+      await nextTick();
+      await nextTick();
+
+      expect(mockGenerationJobManager.markProviderExecutionDrained).toHaveBeenCalledWith(
+        expect.any(String),
+        1000,
+        'provider-segment-1',
       );
     });
 

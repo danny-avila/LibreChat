@@ -6,6 +6,7 @@ const {
   countTokens,
   GenerationJobManager,
   recordCollectedUsage,
+  getTransactionsConfig,
   sanitizeMessageForTransmit,
   buildAbortedResponseMetadata,
 } = require('@librechat/api');
@@ -59,6 +60,7 @@ const isAbortError = (error) => {
  * @param {Array<Object>} params.collectedUsage - Usage metadata from all models
  * @param {string} [params.fallbackModel] - Fallback model name if not in usage
  * @param {string} [params.messageId] - The response message ID for transaction correlation
+ * @param {AppConfig['transactions']} [params.transactions] - Resolved transactions config
  */
 async function spendCollectedUsage({
   userId,
@@ -66,6 +68,7 @@ async function spendCollectedUsage({
   collectedUsage,
   fallbackModel,
   messageId,
+  transactions,
 }) {
   if (!collectedUsage || collectedUsage.length === 0) {
     return;
@@ -85,6 +88,7 @@ async function spendCollectedUsage({
       context: 'abort',
       messageId,
       model: fallbackModel,
+      transactions,
     },
   );
 
@@ -149,6 +153,8 @@ async function abortMessage(req, res) {
     responseMessage.metadata = abortMetadata;
   }
 
+  const transactions = getTransactionsConfig(req.config);
+
   // Spend tokens for ALL models from collectedUsage (handles parallel agents/addedConvo)
   if (collectedUsage && collectedUsage.length > 0) {
     await spendCollectedUsage({
@@ -157,11 +163,12 @@ async function abortMessage(req, res) {
       collectedUsage,
       fallbackModel: jobData?.model,
       messageId: jobData?.responseMessageId,
+      transactions,
     });
   } else {
     // Fallback: no collected usage, use text-based token counting for primary model only
     await db.spendTokens(
-      { ...responseMessage, context: 'incomplete', user: userId },
+      { ...responseMessage, context: 'incomplete', user: userId, transactions },
       { promptTokens, completionTokens },
     );
   }

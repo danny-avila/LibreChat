@@ -31,6 +31,7 @@ jest.mock('~/hooks', () => ({
     },
     ref: { current: null },
   }),
+  useLazyCollapseBody: jest.requireActual('~/hooks/Messages/useLazyCollapseBody').default,
 }));
 
 jest.mock('~/hooks/MCP', () => {
@@ -291,24 +292,19 @@ describe('ToolCall', () => {
   });
 
   describe('tool call info visibility', () => {
-    it('should toggle tool call info expand/collapse when clicking header', () => {
+    it('should mount tool call info only after expanding via the header', () => {
       renderWithRecoil(<ToolCall {...mockProps} />);
 
-      // ToolCallInfo is always in the DOM (CSS expand/collapse), but initially collapsed
-      const toolCallInfo = screen.getByTestId('tool-call-info');
-      expect(toolCallInfo).toBeInTheDocument();
+      // Collapsed info stays unmounted until the first expansion
+      expect(screen.queryByTestId('tool-call-info')).not.toBeInTheDocument();
 
-      // The expand wrapper starts collapsed (showInfo=false, autoExpand=false)
-      const expandWrapper = toolCallInfo.closest('[style]')?.parentElement;
-      expect(expandWrapper).toBeDefined();
-
-      // Click to expand
       fireEvent.click(screen.getByTestId('progress-text'));
       expect(screen.getByTestId('tool-call-info')).toBeInTheDocument();
     });
 
     it('should pass input and output props to ToolCallInfo', () => {
       renderWithRecoil(<ToolCall {...mockProps} />);
+      fireEvent.click(screen.getByTestId('progress-text'));
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const props = JSON.parse(toolCallInfo.textContent!);
@@ -375,6 +371,7 @@ describe('ToolCall', () => {
   describe('edge cases', () => {
     it('should handle undefined args', () => {
       renderWithRecoil(<ToolCall {...mockProps} args={undefined as any} />);
+      fireEvent.click(screen.getByTestId('progress-text'));
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const props = JSON.parse(toolCallInfo.textContent!);
@@ -383,6 +380,7 @@ describe('ToolCall', () => {
 
     it('should handle null output', () => {
       renderWithRecoil(<ToolCall {...mockProps} output={null} />);
+      fireEvent.click(screen.getByTestId('progress-text'));
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const props = JSON.parse(toolCallInfo.textContent!);
@@ -391,9 +389,9 @@ describe('ToolCall', () => {
 
     it('should handle simple function name without domain', () => {
       renderWithRecoil(<ToolCall {...mockProps} name="simpleName" />);
+      fireEvent.click(screen.getByTestId('progress-text'));
 
-      const toolCallInfo = screen.getByTestId('tool-call-info');
-      expect(toolCallInfo).toBeInTheDocument();
+      expect(screen.getByTestId('tool-call-info')).toBeInTheDocument();
     });
 
     it('should handle complex nested attachments', () => {

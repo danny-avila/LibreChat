@@ -18,6 +18,7 @@ export type SectionId =
   | 'appearance'
   | 'layout'
   | 'accessibility'
+  | 'admin'
   | 'sending'
   | 'commands'
   | 'messages'
@@ -26,6 +27,7 @@ export type SectionId =
   | 'stt'
   | 'tts'
   | 'memory'
+  | 'codeExecution'
   | 'data'
   | 'apiKeys'
   | 'langfuse'
@@ -39,6 +41,7 @@ export interface SettingsContextValue {
   balanceEnabled: boolean;
   hasAnyPersonalizationFeature: boolean;
   hasMemoryOptOut: boolean;
+  hasStatefulCodeSessions: boolean;
   hasRemoteAgents: boolean;
   hasUserProvidedEndpoints: boolean;
   hasMultiConvo: boolean;
@@ -49,6 +52,7 @@ export interface SettingsContextValue {
   aboutEnabled: boolean;
   engineTTS: string;
   langfuseConnectionAccess: boolean;
+  adminPanelURL: string;
 }
 
 export interface SettingEntry {
@@ -96,6 +100,7 @@ export const TABS: TabMeta[] = [
       { id: 'appearance', labelKey: 'com_ui_settings_section_appearance' },
       { id: 'layout', labelKey: 'com_ui_settings_section_layout' },
       { id: 'accessibility', labelKey: 'com_ui_settings_section_accessibility' },
+      { id: 'admin', labelKey: 'com_ui_settings_section_admin' },
     ],
   },
   {
@@ -138,6 +143,7 @@ export const TABS: TabMeta[] = [
     icon: createElement(DataIcon),
     sections: [
       { id: 'memory', labelKey: 'com_ui_settings_section_memory' },
+      { id: 'codeExecution', labelKey: 'com_ui_settings_section_code_execution' },
       { id: 'data', labelKey: 'com_ui_settings_section_data' },
       { id: 'apiKeys', labelKey: 'com_ui_settings_section_api_keys' },
       { id: 'danger', labelKey: 'com_ui_settings_section_danger_zone', danger: true },

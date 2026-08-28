@@ -5,6 +5,7 @@ const express = require('express');
 const {
   createSkillsHandlers,
   createImportHandler,
+  blockFilteredSkillFile,
   generateCheckAccess,
   getStorageMetadata,
   resolveRequestTenantId,
@@ -210,6 +211,15 @@ async function uploadFileHandler(req, res) {
       relativePath.split('/').some((s) => s === '' || s === '.' || s === '..')
     ) {
       return res.status(400).json({ error: 'Invalid file path' });
+    }
+    if (
+      blockFilteredSkillFile(req.config?.filters, res, {
+        buffer: file.buffer,
+        originalName: file.originalname,
+        relativePath,
+      })
+    ) {
+      return res;
     }
 
     const tenantId = resolveRequestTenantId(req);

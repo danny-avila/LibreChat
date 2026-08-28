@@ -1,13 +1,25 @@
 import { logger } from '@librechat/data-schemas';
-import { getCodeBaseURL } from '@librechat/agents';
 import { CacheKeys } from 'librechat-data-provider';
+import type { StatefulCodeEnvironment } from 'librechat-data-provider';
 import type { Keyv } from 'keyv';
 import type { ServerRequest } from '~/types';
+import {
+  codeExecutionHeaders,
+  resolveCodeExecutionContext,
+  type CodeExecutionContext,
+} from './execution';
 import { getCodeApiAuthHeaders } from '~/auth/codeapi';
 import { standardCache } from '~/cache/cacheFactory';
-import { anyAgentHasStatefulSessions } from './run';
 
-type PrewarmAgents = Parameters<typeof anyAgentHasStatefulSessions>[0];
+type PrewarmAgent = {
+  id: string;
+  statefulCodeSessions?: boolean;
+  statefulCodeEnvironment?: StatefulCodeEnvironment;
+  subagentAgentConfigs?: PrewarmAgent[];
+  lazySubagentConfigs?: PrewarmAgent[];
+};
+
+type PrewarmAgents = Array<PrewarmAgent | null | undefined>;
 
 const PREWARM_INFLIGHT_COOLDOWN_MS = 120_000;
 const PREWARM_REQUEST_TIMEOUT_MS = 120_000;
@@ -29,9 +41,10 @@ function prewarmDisabled(): boolean {
 }
 
 /**
- * Per-conversation sandbox state, shared across replicas when Redis is
- * configured and falling back to a process-local store otherwise. Two keys
- * per conversation (= runtime_session_hint):
+ * Sandbox state, shared across replicas when Redis is configured and falling
+ * back to a process-local store otherwise. Runtime-session keys include a
+ * one-way fingerprint of the authenticated user so they cannot collide across
+ * users; the conversation key below controls only that conversation's UI signal.
  * - `inflight:<id>` — a prewarm was fired and no completion has landed yet;
  *   the TTL doubles as the retry backoff when a prewarm fails or hangs.
  * - `ready:<id>` — the sandbox completed a request (prewarm or real exec)
@@ -90,16 +103,24 @@ export async function shouldSignalSandboxStart(conversationId?: string | null): 
   return inflight != null && ready == null;
 }
 
-async function sendPrewarmRequest(req: ServerRequest, conversationId: string): Promise<void> {
+async function sendPrewarmRequest(
+  req: ServerRequest,
+  context: CodeExecutionContext,
+): Promise<void> {
   const authHeaders = await getCodeApiAuthHeaders(req);
-  const response = await fetch(`${getCodeBaseURL()}/exec`, {
+  const response = await fetch(`${context.baseUrl}/exec`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'User-Agent': 'LibreChat/1.0',
       ...authHeaders,
+      ...codeExecutionHeaders(context),
     },
-    body: JSON.stringify({ lang: 'bash', code: 'true', runtime_session_hint: conversationId }),
+    body: JSON.stringify({
+      lang: 'bash',
+      code: 'true',
+      runtime_session_hint: context.runtimeSessionHint,
+    }),
     signal: AbortSignal.timeout(PREWARM_REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) {
@@ -112,12 +133,71 @@ async function sendPrewarmRequest(req: ServerRequest, conversationId: string): P
    * Draining also releases the socket instead of leaving the body for
    * undici to reap. */
   await response.arrayBuffer();
-  await markSandboxReady(conversationId);
-  logger.debug(`[prewarmCodeSandbox] Sandbox warm for conversation ${conversationId}`);
+  await markSandboxReady(context.runtimeSessionHint ?? '');
+  logger.debug(`[prewarmCodeSandbox] Sandbox warm for ${context.runtimeSessionHint}`);
+}
+
+function collectPrewarmContexts(
+  agents: PrewarmAgents,
+  conversationId: string,
+  userId: string,
+): CodeExecutionContext[] {
+  const visited = new Set<string>();
+  const contexts = new Map<string, CodeExecutionContext>();
+  const pending: PrewarmAgents = [...agents];
+
+  for (let index = 0; index < pending.length; index++) {
+    const agent = pending[index];
+    if (!agent || visited.has(agent.id)) {
+      continue;
+    }
+    visited.add(agent.id);
+    if (agent.statefulCodeSessions === true) {
+      const context = resolveCodeExecutionContext({
+        statefulSessions: true,
+        environment: agent.statefulCodeEnvironment,
+        userId,
+        agentId: agent.id,
+        conversationId,
+      });
+      contexts.set(`${context.baseUrl}:${context.runtimeSessionHint}`, context);
+    }
+    pending.push(...(agent.subagentAgentConfigs ?? []), ...(agent.lazySubagentConfigs ?? []));
+  }
+  return [...contexts.values()];
+}
+
+async function maybePrewarmContext(
+  req: ServerRequest,
+  context: CodeExecutionContext,
+  conversationId: string,
+): Promise<boolean> {
+  const runtimeSessionHint = context.runtimeSessionHint;
+  if (!runtimeSessionHint) {
+    return true;
+  }
+  const cache = sandboxCache();
+  const [ready, inflight] = await Promise.all([
+    cache.get(readyKey(runtimeSessionHint)),
+    cache.get(inflightKey(runtimeSessionHint)),
+  ]);
+  if (ready != null) {
+    return true;
+  }
+  if (inflight != null) {
+    await cache.set(inflightKey(conversationId), true, PREWARM_INFLIGHT_COOLDOWN_MS);
+    return false;
+  }
+  await Promise.all([
+    cache.set(inflightKey(runtimeSessionHint), true, PREWARM_INFLIGHT_COOLDOWN_MS),
+    cache.set(inflightKey(conversationId), true, PREWARM_INFLIGHT_COOLDOWN_MS),
+  ]);
+  await sendPrewarmRequest(req, context);
+  return true;
 }
 
 /**
- * Fire-and-forget boot of the per-conversation stateful code sandbox so it
+ * Fire-and-forget boot of each selected stateful code environment so it
  * comes up in parallel with model generation instead of on the first
  * execute_code/bash call (~4s cold, worse on heavy first imports). No-op
  * unless a reachable agent resolved `statefulCodeSessions` and neither a
@@ -134,23 +214,24 @@ export function maybePrewarmCodeSandbox(params: {
   agents: PrewarmAgents;
 }): void {
   const { req, conversationId, agents } = params;
-  if (prewarmDisabled() || !conversationId || !anyAgentHasStatefulSessions(agents)) {
+  if (prewarmDisabled() || !conversationId) {
     return;
   }
   void (async () => {
-    const cache = sandboxCache();
-    const [ready, inflight] = await Promise.all([
-      cache.get(readyKey(conversationId)),
-      cache.get(inflightKey(conversationId)),
-    ]);
-    if (ready != null || inflight != null) {
-      return;
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new Error('Stateful code prewarm requires an authenticated user ID.');
     }
-    await cache.set(inflightKey(conversationId), true, PREWARM_INFLIGHT_COOLDOWN_MS);
-    await sendPrewarmRequest(req, conversationId);
+    const contexts = collectPrewarmContexts(agents, conversationId, userId);
+    const ready = await Promise.all(
+      contexts.map((context) => maybePrewarmContext(req, context, conversationId)),
+    );
+    if (ready.length > 0 && ready.every(Boolean)) {
+      await markSandboxReady(conversationId);
+    }
   })().catch((error) => {
     logger.debug(
-      `[prewarmCodeSandbox] Prewarm failed for conversation ${conversationId}: ${
+      `[prewarmCodeSandbox] Prewarm failed: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );

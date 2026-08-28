@@ -1,4 +1,5 @@
 import {
+  Button,
   Switch,
   HoverCard,
   CircleHelpIcon,
@@ -9,9 +10,6 @@ import {
 import type { ReactNode } from 'react';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
-
-export const sectionLabelClass =
-  'text-[11px] font-medium uppercase tracking-wide text-text-secondary';
 
 /** Prominent heading for a top-level settings group (Essentials, Orchestration). */
 export const groupHeadingClass = 'text-sm font-semibold text-text-primary';
@@ -43,13 +41,13 @@ export function InfoTrigger() {
   const localize = useLocalize();
   return (
     <HoverCardTrigger asChild>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         aria-label={localize('com_ui_more_info')}
-        className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-text-tertiary transition-colors hover:text-text-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+        className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded p-0 text-text-tertiary transition-colors hover:bg-transparent hover:text-text-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
       >
         <CircleHelpIcon className="h-3.5 w-3.5" aria-hidden={true} />
-      </button>
+      </Button>
     </HoverCardTrigger>
   );
 }

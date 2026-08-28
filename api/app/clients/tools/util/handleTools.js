@@ -18,9 +18,12 @@ const {
   DELETE_MEMORY_TOOL_NAME,
   createAskUserQuestionTool,
   ASK_USER_QUESTION_TOOL_NAME,
+  resolveWebSearchSSRFAgents,
   buildWebSearchDynamicContext,
+  resolveCodeExecutionContext,
 } = require('@librechat/api');
 const {
+  AuthType,
   Tools,
   Constants,
   Permissions,
@@ -140,7 +143,20 @@ const validateTools = async (user, tools = []) => {
 const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => {
   return async function () {
     const authValues = await loadAuthValues({ userId, authFields });
-    return new ToolConstructor({ ...options, ...authValues, userId });
+    const userProvidedAuthFields = new Set(
+      authFields
+        .flatMap((authField) => authField.split('||'))
+        .filter((authField) => {
+          const value = process.env[authField];
+          return !value || value.trim() === '' || value === AuthType.USER_PROVIDED;
+        }),
+    );
+    return new ToolConstructor({
+      ...options,
+      ...authValues,
+      userId,
+      userProvidedAuthFields,
+    });
   };
 };
 
@@ -330,9 +346,23 @@ const loadTools = async ({
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
       requestedTools[tool] = async () => {
+        const statefulSessions =
+          agent?.stateful_code_sessions === true &&
+          (await checkCapability(options.req, AgentCapabilities.stateful_code_sessions));
+        const codeExecutionContext =
+          options.codeExecutionContext ??
+          resolveCodeExecutionContext({
+            statefulSessions,
+            environment: agent?.stateful_code_environment,
+            userId: user,
+            agentId: agent?.id,
+            conversationId: options.req?.body?.conversationId,
+          });
         const { files, toolContext } = await primeCodeFiles({
           ...options,
           agentId: agent?.id,
+          codeApiBaseUrl: codeExecutionContext.baseUrl,
+          executionProfile: codeExecutionContext.executionProfile,
         });
         if (toolContext) {
           dynamicToolContextMap[tool] = toolContext;
@@ -340,18 +370,11 @@ const loadTools = async ({
         if (files?.length) {
           primedCodeFiles = files;
         }
-        /* Hedge the execute_code description toward persistence only when the
-         * admin `stateful_code_sessions` capability is on AND the agent opted
-         * in via the builder (off by default); the matching wire hint is set
-         * in the run config. Older @librechat/agents ignore the param. */
-        const statefulSessions =
-          agent?.stateful_code_sessions === true &&
-          (await checkCapability(options.req, AgentCapabilities.stateful_code_sessions));
         return createCodeExecutionTool({
           user_id: user,
           files,
           authHeaders: () => getCodeApiAuthHeaders(options.req),
-          statefulSessions,
+          ...codeExecutionContext,
         });
       };
       continue;
@@ -395,7 +418,15 @@ const loadTools = async ({
         loadAuthValues,
         webSearchConfig: webSearch,
       });
+      if (!result.authenticated) {
+        logger.warn('[handleTools] Skipping web search because authentication is incomplete.');
+        continue;
+      }
       const { onSearchResults, onGetHighlights } = options?.[Tools.web_search] ?? {};
+      const { httpAgent, httpsAgent } = resolveWebSearchSSRFAgents(
+        result.authResult,
+        webSearch?.allowedAddresses,
+      );
       requestedTools[tool] = async () => {
         toolContextMap[tool] = buildWebSearchContext();
         dynamicToolContextMap[tool] = buildWebSearchDynamicContext(
@@ -403,6 +434,8 @@ const loadTools = async ({
         );
         return createSearchTool({
           ...result.authResult,
+          httpAgent,
+          httpsAgent,
           onSearchResults,
           onGetHighlights,
           logger,
@@ -577,7 +610,7 @@ const loadTools = async ({
           user: safeUser,
           userMCPAuthMap,
           configServers,
-          requestBody: options.req?.body,
+          requestBody: options.requestBody ?? options.req?.body,
           requestScopedConnections,
           res: options.res,
           streamId: options.req?._resumableStreamId || null,

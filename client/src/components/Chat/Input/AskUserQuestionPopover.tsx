@@ -2,6 +2,7 @@ import { memo, useEffect, useRef } from 'react';
 import { useWatch } from 'react-hook-form';
 import { Button } from '@librechat/client';
 import { Check, ChevronDown, CornerDownLeft, TriangleAlert, X } from 'lucide-react';
+import AskUserQuestions from '~/components/Chat/Messages/Content/AskUserQuestions';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import { useChatFormContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -33,7 +34,54 @@ function AskUserQuestionPopoverContent({
     return null;
   }
 
+  if (ask.liveAsk.questions != null && ask.liveAsk.questions.length > 0) {
+    return <AskUserQuestionsPopoverPanel ask={ask} />;
+  }
+
   return <AskUserQuestionPopoverPanel ask={ask} textAreaRef={textAreaRef} />;
+}
+
+function AskUserQuestionsPopoverPanel({ ask }: { ask: ReturnType<typeof useAskAnswerMode> }) {
+  const localize = useLocalize();
+  const { liveAsk, collapse, dismiss } = ask;
+  const questions = liveAsk?.questions;
+  if (liveAsk == null || questions == null || questions.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="absolute bottom-28 z-10 w-full">
+      <div className="popover border-token-border-light flex max-h-[70vh] flex-col rounded-2xl border bg-surface-primary-alt shadow-lg">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border-light px-3 py-2">
+          <p className="text-sm font-medium text-text-primary">
+            {localize(
+              questions.length === 1 ? 'com_ui_asking_questions_one' : 'com_ui_asking_questions',
+              { 0: questions.length },
+            )}
+          </p>
+          <div className="flex items-center">
+            <button
+              type="button"
+              aria-label={localize('com_ui_collapse')}
+              className="rounded p-1 text-text-secondary hover:bg-surface-hover"
+              onClick={collapse}
+            >
+              <ChevronDown className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label={localize('com_ui_close')}
+              className="rounded p-1 text-text-secondary hover:bg-surface-hover"
+              onClick={dismiss}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+        <AskUserQuestions actionId={liveAsk.actionId} questions={questions} />
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -108,7 +156,7 @@ function AskUserQuestionPopoverPanel({
           scroll region: the panel is absolutely positioned, so anything that
           overflows it is unreachable by page scroll. */}
       <div
-        className="popover border-token-border-light flex max-h-[60vh] flex-col rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-700"
+        className="popover border-token-border-light flex max-h-[60vh] flex-col rounded-2xl border bg-surface-primary-alt p-2 shadow-lg"
         onKeyDown={handlePopoverKeyDown}
       >
         <div className="flex shrink-0 items-start justify-between gap-2 p-2">
@@ -117,7 +165,7 @@ function AskUserQuestionPopoverPanel({
               {liveAsk.question.question}
             </p>
             {liveAsk.question.description != null && liveAsk.question.description.length > 0 && (
-              <p className="mt-0.5 text-xs text-text-secondary [overflow-wrap:anywhere]">
+              <p className="mt-1 text-sm text-text-secondary [overflow-wrap:anywhere]">
                 {liveAsk.question.description}
               </p>
             )}
@@ -145,19 +193,23 @@ function AskUserQuestionPopoverPanel({
           {options.map((option, index) => {
             const isChecked = multiSelect && checked.includes(index);
             return (
-              <button
+              <Button
                 key={option.value}
                 ref={(el) => {
                   optionRefs.current[index] = el;
                 }}
                 type="button"
+                size="sm"
+                variant="choice"
                 role={multiSelect ? 'checkbox' : undefined}
                 aria-checked={multiSelect ? isChecked : undefined}
                 disabled={locked}
+                /** Layout and the keyboard highlight are the only things the
+                 *  popover owns here — these rows are the same answer controls
+                 *  as the cards', so their appearance stays in the variant. */
                 className={cn(
-                  'flex w-full items-center gap-3 rounded-lg p-2 text-left text-sm text-text-primary',
-                  selected === index ? 'bg-surface-active' : 'hover:bg-surface-hover',
-                  locked ? 'cursor-not-allowed opacity-60' : '',
+                  'mt-1 h-auto min-h-9 w-full justify-start gap-3 whitespace-normal p-2 text-left',
+                  selected === index && 'bg-surface-active hover:bg-surface-active',
                 )}
                 onClick={() => (multiSelect ? toggleChecked(index) : submitOption(index))}
               >
@@ -165,14 +217,14 @@ function AskUserQuestionPopoverPanel({
                   className={cn(
                     'flex h-5 w-5 shrink-0 items-center justify-center rounded text-xs',
                     isChecked
-                      ? 'bg-surface-submit text-white'
-                      : 'bg-surface-tertiary text-text-secondary',
+                      ? 'bg-surface-submit text-text-on-status'
+                      : 'border border-border-xheavy text-text-secondary',
                   )}
                 >
                   {isChecked ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : index + 1}
                 </span>
                 <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{option.label}</span>
-              </button>
+              </Button>
             );
           })}
         </div>

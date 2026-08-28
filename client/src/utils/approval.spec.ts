@@ -8,6 +8,7 @@ import {
   findPendingActionMessageIndex,
   removeAskUserQuestionPart,
   parseAskUserQuestionArgs,
+  parseAskUserQuestionsArgs,
   resolveAskUserQuestionPart,
   getSubmittedAskAnswer,
   findLiveAskUserQuestion,
@@ -295,6 +296,50 @@ describe('parseAskUserQuestionArgs', () => {
   });
 });
 
+describe('parseAskUserQuestionsArgs', () => {
+  it('parses a complete batch and preserves headers and options', () => {
+    const parsed = parseAskUserQuestionsArgs({
+      questions: [
+        {
+          id: 'environment',
+          header: 'Environment',
+          question: 'Which environment?',
+          options: [{ label: 'Staging', value: 'staging' }],
+        },
+        { id: 'window', question: 'Which window?' },
+      ],
+    });
+    expect(parsed?.questions).toHaveLength(2);
+    expect(parsed?.questions[0]).toMatchObject({ id: 'environment', header: 'Environment' });
+  });
+
+  it('rejects malformed and duplicate-id batches', () => {
+    expect(parseAskUserQuestionsArgs({ questions: [] })).toBeNull();
+    expect(
+      parseAskUserQuestionsArgs({
+        questions: [
+          { id: 'same', question: 'First?' },
+          { id: 'same', question: 'Second?' },
+        ],
+      }),
+    ).toBeNull();
+  });
+
+  it('trims valid headers and omits whitespace-only or oversized headers', () => {
+    const parsed = parseAskUserQuestionsArgs({
+      questions: [
+        { id: 'trimmed', header: '  Context  ', question: 'First?' },
+        { id: 'blank', header: '   ', question: 'Second?' },
+        { id: 'large', header: 'x'.repeat(81), question: 'Third?' },
+      ],
+    });
+
+    expect(parsed?.questions[0].header).toBe('Context');
+    expect(parsed?.questions[1].header).toBeUndefined();
+    expect(parsed?.questions[2].header).toBeUndefined();
+  });
+});
+
 describe('removeAskUserQuestionPart', () => {
   it('strips the synthetic part for the matching actionId and keeps everything else', () => {
     const withCard = applyPendingAction(msg({ content: [textPart('hello')] }), askAction());
@@ -399,6 +444,43 @@ describe('resolveAskUserQuestionPart', () => {
     // Without the id, the newest-unanswered fallback would stamp tc_b.
     expect(content[0]?.tool_call?.output).toBe('us-east');
     expect(content[1]?.tool_call?.output).toBeUndefined();
+  });
+
+  it('stamps one batched tool call with structured args and answers', () => {
+    const base = msg({
+      content: [
+        {
+          type: 'tool_call',
+          tool_call: { id: 'tc-batch', name: 'ask_user_question', args: '', type: 'tool_call' },
+        } as unknown as TMessageContentParts,
+      ],
+    });
+    const questions = [
+      { id: 'environment', question: 'Which environment?' },
+      { id: 'window', question: 'Which window?' },
+    ];
+    const withCard = applyPendingAction(
+      base,
+      askAction({
+        actionId: 'a-batch',
+        payload: {
+          type: 'ask_user_question',
+          question: questions[0],
+          questions,
+          tool_call_id: 'tc-batch',
+        },
+      }),
+    );
+    const resolved = resolveAskUserQuestionPart(withCard, 'a-batch', {
+      environment: 'staging',
+      window: '7d',
+    });
+    const toolCall = (resolved.content as Array<{ tool_call?: Record<string, unknown> }>)[0]
+      ?.tool_call as Record<string, unknown>;
+    expect(JSON.parse(toolCall.args as string)).toEqual({ questions });
+    expect(JSON.parse(toolCall.output as string)).toEqual({
+      answers: { environment: 'staging', window: '7d' },
+    });
   });
 });
 

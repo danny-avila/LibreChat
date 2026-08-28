@@ -1,13 +1,14 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import keyBy from 'lodash/keyBy';
-import { ControlCombobox } from '@librechat/client';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
+import { Alert, Button, ControlCombobox } from '@librechat/client';
 import { useFormContext, useWatch, Controller } from 'react-hook-form';
 import {
   alternateName,
   getSettingsKeys,
   getEndpointField,
   LocalStorageKeys,
+  resolveModelCatalogKey,
   SettingDefinition,
   agentParamSettings,
   applyModelAwareDefaults,
@@ -21,11 +22,26 @@ import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 import { cn } from '~/utils';
 
+function getModelPlaceholderKey(modelsPending: boolean, provider: string) {
+  if (modelsPending) {
+    return 'com_ui_loading';
+  }
+  if (provider) {
+    return 'com_ui_select_model';
+  }
+  return 'com_ui_select_provider_first';
+}
+
 export default function ModelPanel({
   providers,
+  modelsError,
   setActivePanel,
   models: modelsData,
-}: Pick<AgentModelPanelProps, 'models' | 'providers' | 'setActivePanel'>) {
+  modelsReady,
+}: Pick<
+  AgentModelPanelProps,
+  'models' | 'modelsError' | 'modelsReady' | 'providers' | 'setActivePanel'
+>) {
   const localize = useLocalize();
   const { announcePolite } = useLiveAnnouncer();
 
@@ -43,26 +59,11 @@ export default function ModelPanel({
     return value ?? '';
   }, [providerOption]);
   const models = useMemo(
-    () => (provider ? (modelsData[provider] ?? []) : []),
+    () => (provider ? (modelsData[resolveModelCatalogKey(provider, modelsData)] ?? []) : []),
     [modelsData, provider],
   );
-
-  useEffect(() => {
-    const _model = model ?? '';
-    if (provider && _model) {
-      const modelExists = models.includes(_model);
-      if (!modelExists) {
-        const newModels = modelsData[provider] ?? [];
-        setValue('model', newModels[0] ?? '');
-      }
-      localStorage.setItem(LocalStorageKeys.LAST_AGENT_MODEL, _model);
-      localStorage.setItem(LocalStorageKeys.LAST_AGENT_PROVIDER, provider);
-    }
-
-    if (provider && !_model) {
-      setValue('model', models[0] ?? '');
-    }
-  }, [provider, models, modelsData, setValue, model]);
+  const modelsPending = !modelsReady && !modelsError;
+  const selectionDisabled = !modelsReady || modelsError;
 
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();
 
@@ -105,14 +106,15 @@ export default function ModelPanel({
   return (
     <div className="mb-1 flex w-full flex-col gap-3 text-sm">
       <header className="grid grid-cols-[auto_1fr_auto] items-center gap-2 pt-1">
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="icon"
           onClick={() => setActivePanel(Panel.builder)}
           aria-label={localize('com_ui_back_to_builder')}
-          className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+          className="h-10 w-10 flex-shrink-0 rounded-xl text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
         >
           <ChevronLeft className="h-5 w-5" strokeWidth={1.75} aria-hidden="true" />
-        </button>
+        </Button>
         <h2 className="text-center text-base font-semibold text-text-primary">
           {localize('com_ui_model_parameters')}
         </h2>
@@ -120,10 +122,13 @@ export default function ModelPanel({
       </header>
       <div>
         {/* Endpoint aka Provider for Agents */}
-        <div className="mb-3">
+        <div className="mb-3" aria-busy={modelsPending}>
           <label
             id="provider-label"
-            className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary"
+            className={cn(
+              'mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary',
+              modelsPending && 'opacity-60',
+            )}
             htmlFor="provider"
           >
             {localize('com_ui_provider')} <span className="text-red-500">*</span>
@@ -145,17 +150,33 @@ export default function ModelPanel({
               return (
                 <>
                   <ControlCombobox
+                    selectId="provider"
                     selectedValue={value}
                     displayValue={alternateName[display] ?? display}
                     selectPlaceholder={localize('com_ui_select_provider')}
                     searchPlaceholder={localize('com_ui_select_search_provider')}
-                    setValue={field.onChange}
+                    setValue={(value) => {
+                      if (value === provider) {
+                        return;
+                      }
+                      const nextModel =
+                        modelsData[resolveModelCatalogKey(value, modelsData)]?.[0] ?? '';
+                      field.onChange(value);
+                      setValue('model', nextModel);
+                      localStorage.setItem(LocalStorageKeys.LAST_AGENT_PROVIDER, value);
+                      if (nextModel) {
+                        localStorage.setItem(LocalStorageKeys.LAST_AGENT_MODEL, nextModel);
+                      } else {
+                        localStorage.removeItem(LocalStorageKeys.LAST_AGENT_MODEL);
+                      }
+                    }}
                     items={providers.map((provider) => ({
                       label: typeof provider === 'string' ? provider : provider.label,
                       value: typeof provider === 'string' ? provider : provider.value,
                     }))}
                     className={cn(error ? 'border-2 border-red-500' : '')}
                     ariaLabel={localize('com_ui_provider')}
+                    disabled={selectionDisabled}
                     isCollapsed={false}
                     showCarat={true}
                   />
@@ -170,12 +191,12 @@ export default function ModelPanel({
           />
         </div>
         {/* Model */}
-        <div className="mb-3">
+        <div className="mb-3" aria-busy={modelsPending}>
           <label
             id="model-label"
             className={cn(
               'mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary',
-              !provider && 'opacity-60',
+              (!provider || modelsPending) && 'opacity-60',
             )}
             htmlFor="model"
           >
@@ -189,19 +210,24 @@ export default function ModelPanel({
               return (
                 <>
                   <ControlCombobox
+                    selectId="model"
                     selectedValue={field.value || ''}
-                    selectPlaceholder={
-                      provider
-                        ? localize('com_ui_select_model')
-                        : localize('com_ui_select_provider_first')
-                    }
+                    selectPlaceholder={localize(getModelPlaceholderKey(modelsPending, provider))}
                     searchPlaceholder={localize('com_ui_select_model')}
-                    setValue={field.onChange}
+                    setValue={(value) => {
+                      field.onChange(value);
+                      localStorage.setItem(LocalStorageKeys.LAST_AGENT_PROVIDER, provider);
+                      if (value) {
+                        localStorage.setItem(LocalStorageKeys.LAST_AGENT_MODEL, value);
+                      } else {
+                        localStorage.removeItem(LocalStorageKeys.LAST_AGENT_MODEL);
+                      }
+                    }}
                     items={models.map((model) => ({
                       label: model,
                       value: model,
                     }))}
-                    disabled={!provider}
+                    disabled={!provider || selectionDisabled}
                     className={cn('disabled:opacity-50', error ? 'border-2 border-red-500' : '')}
                     ariaLabel={localize('com_ui_model')}
                     isCollapsed={false}
@@ -216,6 +242,11 @@ export default function ModelPanel({
               );
             }}
           />
+          {modelsError && (
+            <Alert variant="error" className="mt-1">
+              {localize('com_error_models_not_loaded')}
+            </Alert>
+          )}
         </div>
       </div>
       {/* Model Parameters */}
@@ -250,14 +281,14 @@ export default function ModelPanel({
         </div>
       )}
       {/* Reset Parameters Button */}
-      <button
-        type="button"
+      <Button
+        variant="outline"
         onClick={handleResetParameters}
-        className="mt-2 inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl border border-border-light bg-transparent px-4 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+        className="mt-2 h-9 w-full rounded-xl px-4 font-medium text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
       >
         <RotateCcw className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
         {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
-      </button>
+      </Button>
     </div>
   );
 }

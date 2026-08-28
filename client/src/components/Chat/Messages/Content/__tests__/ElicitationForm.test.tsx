@@ -41,7 +41,9 @@ jest.mock('~/Providers', () => ({
 }));
 
 jest.mock('librechat-data-provider', () => ({
-  ContentTypes: { ELICITATION: 'elicitation' },
+  /** Keep the real module: transitive imports (provider icon registry) need its
+   *  other exports, and a bare object mock leaves them undefined at import time. */
+  ...jest.requireActual('librechat-data-provider'),
   dataService: {
     respondToElicitation: jest.fn().mockResolvedValue({ ok: true }),
   },

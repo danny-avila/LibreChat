@@ -119,7 +119,7 @@ const categorizeFileForToolResources = ({
   requestFileSet: Set<string>;
   processedResourceFiles: Set<string>;
 }): void => {
-  if (file.metadata?.codeEnvRef) {
+  if (file.metadata?.codeEnvRef || file.metadata?.codeEnvRefs) {
     addFileToResource({
       file,
       resourceType: EToolResources.execute_code,

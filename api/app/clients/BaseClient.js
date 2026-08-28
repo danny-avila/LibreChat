@@ -11,10 +11,13 @@ const {
   getReferencedQuotes,
   encodeAndFormatAudios,
   encodeAndFormatVideos,
+  getTransactionsConfig,
   encodeAndFormatDocuments,
-  getLangfuseTraceDestinationIds,
-  isLangfuseTraceSampled,
-  traceIdForMessage,
+  getLangfuseTraceMessageFields,
+  isContentFilterError,
+  assertModelBoundProviderContent,
+  collectModelBoundHistoricalFileIdState,
+  projectModelBoundSourceFiles,
 } = require('@librechat/api');
 const {
   Constants,
@@ -29,44 +32,66 @@ const {
   isEphemeralAgentId,
   supportsBalanceCheck,
   isBedrockDocumentType,
+  HITL_MESSAGE_FILTER_FIELDS,
   getEndpointFileConfig,
+  stripReasoningLabelMetadata,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
 const TextStream = require('./TextStream');
 const db = require('~/models');
 
-const collectHistoricalFileRefs = (message) => {
-  const refs = [];
-  if (Array.isArray(message.files)) {
-    refs.push(...message.files);
-  }
-  if (Array.isArray(message.attachments)) {
-    refs.push(...message.attachments);
-  }
-  /** Steer parts carry their own attachment refs inside assistant content;
-   *  collecting them here folds the steer replay stamp's lookup into this
-   *  single per-turn query (see `stampSteerPartMedia`). */
-  if (Array.isArray(message.content)) {
-    for (const part of message.content) {
-      if (part?.type === ContentTypes.STEER && Array.isArray(part.files)) {
-        refs.push(...part.files);
-      }
-    }
-  }
-  return refs;
-};
+const omitUnreplayedHistoricalFiles = (messages) =>
+  messages.map(({ files: _files, attachments: _attachments, ...message }) => ({
+    ...message,
+    ...(Array.isArray(message.content)
+      ? {
+          content: message.content.map((part) => {
+            if (part == null || typeof part !== 'object') {
+              return part;
+            }
+            const {
+              file: _partFile,
+              files: _partFiles,
+              image_file: _imageFile,
+              file_id: _fileId,
+              ...rest
+            } = part;
+            return rest;
+          }),
+        }
+      : {}),
+  }));
 
-const collectHistoricalFileIds = (messages) => {
-  const fileIds = new Set();
-  for (const message of messages) {
-    for (const ref of collectHistoricalFileRefs(message)) {
-      if (ref?.file_id) {
-        fileIds.add(ref.file_id);
-      }
+const mergeUserSubmittedPaths = (...pathLists) => [
+  ...new Set(
+    pathLists
+      .flat()
+      .filter((path) => typeof path === 'string' && path.startsWith('/') && path.length <= 2048),
+  ),
+];
+const hitlMessageFilterFields = new Set(HITL_MESSAGE_FILTER_FIELDS);
+const mergeUserSubmittedMessageFieldPaths = (...entryLists) => {
+  const entries = [];
+  const seen = new Set();
+  for (const entry of entryLists.flat()) {
+    if (
+      entry == null ||
+      typeof entry.path !== 'string' ||
+      !entry.path.startsWith('/') ||
+      entry.path.length > 2048 ||
+      !hitlMessageFilterFields.has(entry.field)
+    ) {
+      continue;
     }
+    const key = `${entry.field}:${entry.path}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    entries.push(entry);
   }
-  return Array.from(fileIds);
+  return entries;
 };
 
 const buildOwnerFileFilter = (fileIds, user) => {
@@ -82,6 +107,14 @@ const buildOwnerFileFilter = (fileIds, user) => {
     filter.tenantId = user.tenantId;
   }
   return filter;
+};
+
+const getOwnerHistoricalFiles = async (fileIds, user) => {
+  const fileFilter = buildOwnerFileFilter(fileIds, user);
+  if (!fileFilter) {
+    return [];
+  }
+  return (await db.getFiles(fileFilter, {}, {})) ?? [];
 };
 
 const TOOL_ATTACHMENT_KEYS = [
@@ -208,6 +241,71 @@ class BaseClient {
     throw new Error("Method 'setOptions' must be implemented.");
   }
 
+  getModelBoundStoredMessages(messages) {
+    return this.options.resendFiles === false ? omitUnreplayedHistoricalFiles(messages) : messages;
+  }
+
+  /** @param {TMessage[]} messages */
+  setModelBoundStoredMessages(messages) {
+    this.modelBoundStoredMessages = [...(messages ?? [])];
+  }
+
+  getModelBoundFileProjection() {
+    return projectModelBoundSourceFiles({
+      messageFilesBySourceMessageId: this.message_file_map,
+      sourceMessages: this.modelBoundStoredMessages,
+      steerFileIdsBySourceMessageId: this.modelBoundSteerFileIdsBySourceMessageId,
+      replayHistoricalFiles: this.options.resendFiles !== false,
+      historicalFiles: this.authorizedHistoricalFiles,
+      processedCurrentFiles: Array.isArray(this.options.attachments)
+        ? this.options.attachments
+        : [],
+      canonicalCurrentFiles: Array.isArray(this.modelBoundCurrentFiles)
+        ? this.modelBoundCurrentFiles
+        : [],
+      initiallyOverflowed: this.modelBoundHistoricalFileIdsOverflowed === true,
+    });
+  }
+
+  /** Optional pre-build guard for policies that cover restored history
+   * independently of the final provider selection. */
+  assertStoredModelBoundContent() {}
+
+  /** Agent runs can defer the parent write until their first exact model
+   * boundary is admitted. Generic clients preserve the historical eager
+   * persistence behavior. */
+  shouldDeferUserMessagePersistence() {
+    return false;
+  }
+
+  /** Returns the request-scoped deferred parent-write controller, when any. */
+  getModelBoundUserMessagePersistence() {
+    return this.modelBoundUserMessagePersistence;
+  }
+
+  /**
+   * Generic clients return their selected model payload from `buildMessages`.
+   * AgentClient overrides this because its SDK performs pruning later and
+   * enforces the same projection at the actual chat-model callback instead.
+   *
+   * @param {string | Array<Record<string, unknown>>} payload
+   */
+  assertBuiltModelBoundContent(payload) {
+    const messages = Array.isArray(payload)
+      ? payload
+      : [{ role: 'user', content: payload, isCreatedByUser: true, isUserSubmitted: true }];
+    const fileProjection = this.getModelBoundFileProjection();
+    assertModelBoundProviderContent({
+      filters: this.options.req?.config?.filters,
+      legacyPii: this.options.req?.config?.messageFilter?.pii,
+      providerMessages: messages,
+      storedMessages: this.modelBoundStoredMessages,
+      fileIdsBySourceMessageId: fileProjection.fileIdsBySourceMessageId,
+      resolvedFiles: fileProjection.resolvedFiles,
+      sourceFileProjectionOverflowed: fileProjection.overflowed,
+    });
+  }
+
   async getCompletion() {
     throw new Error("Method 'getCompletion' must be implemented.");
   }
@@ -262,11 +360,19 @@ class BaseClient {
    * @param {string} [messageId]
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ model, balance, promptTokens, completionTokens, messageId }) {
+  async recordTokenUsage({
+    model,
+    balance,
+    messageId,
+    transactions,
+    promptTokens,
+    completionTokens,
+  }) {
     logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
       model,
       balance,
       messageId,
+      transactions,
       promptTokens,
       completionTokens,
     });
@@ -339,16 +445,22 @@ class BaseClient {
     const conversationId = requestConvoId ?? crypto.randomUUID();
     const parentMessageId = opts.parentMessageId ?? Constants.NO_PARENT;
     const userMessageId =
-      overrideUserMessageId ?? opts.overrideParentMessageId ?? crypto.randomUUID();
-    let responseMessageId = opts.responseMessageId ?? crypto.randomUUID();
+      opts.preallocatedUserMessageId ??
+      overrideUserMessageId ??
+      opts.overrideParentMessageId ??
+      crypto.randomUUID();
+    let responseMessageId =
+      opts.responseMessageId ?? opts.preallocatedResponseMessageId ?? crypto.randomUUID();
     let head = isEdited ? responseMessageId : parentMessageId;
     this.currentMessages = (await this.loadHistory(conversationId, head)) ?? [];
     this.conversationId = conversationId;
 
     if (isEdited && !isContinued) {
-      responseMessageId = crypto.randomUUID();
+      responseMessageId = opts.preallocatedResponseMessageId ?? crypto.randomUUID();
       head = responseMessageId;
       this.currentMessages[this.currentMessages.length - 1].messageId = head;
+    } else if (opts.preallocatedResponseMessageId != null) {
+      responseMessageId = opts.preallocatedResponseMessageId;
     }
 
     if (opts.isRegenerate && responseMessageId.endsWith('_')) {
@@ -378,6 +490,9 @@ class BaseClient {
       sender: 'User',
       text,
       isCreatedByUser: true,
+      ...(this.options?.req?._agentEventTriggerProjection != null && {
+        subagentTriggerProjection: this.options.req._agentEventTriggerProjection,
+      }),
     };
   }
 
@@ -551,6 +666,9 @@ class BaseClient {
     const appConfig = this.options.req?.config;
     /** @type {Promise<TMessage>} */
     let userMessagePromise;
+    /** @type {{ promise: Promise<unknown>, isPending: () => boolean, start: () => Promise<unknown>, cancel: () => Promise<unknown> } | undefined} */
+    let userMessagePersistence;
+    this.modelBoundUserMessagePersistence = undefined;
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
       await this.handleStartMethods(message, opts);
 
@@ -582,13 +700,29 @@ class BaseClient {
       } else if (editedContent != null) {
         // Handle editedContent for content parts
         if (editedContent && latestMessage.content && Array.isArray(latestMessage.content)) {
-          const { index, text, type } = editedContent;
+          const { index, type } = editedContent;
+          const text = editedContent[type];
           if (index >= 0 && index < latestMessage.content.length) {
             const contentPart = latestMessage.content[index];
+            let didApplyEdit = false;
             if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
               contentPart[ContentTypes.THINK] = text;
+              didApplyEdit = true;
+              delete contentPart.reasoning_label;
+              delete contentPart.reasoning_label_step_id;
+              delete contentPart.reasoning_label_attempts;
+              delete contentPart.reasoning_label_submitted_chars;
+              delete contentPart.reasoning_label_revision;
+              delete contentPart.reasoning_label_status;
             } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
               contentPart[ContentTypes.TEXT] = text;
+              didApplyEdit = true;
+            }
+            if (didApplyEdit) {
+              latestMessage.userSubmittedPaths = mergeUserSubmittedPaths(
+                latestMessage.userSubmittedPaths,
+                [`/content/${index}/${type}`],
+              );
             }
           }
         }
@@ -604,16 +738,36 @@ class BaseClient {
      */
     const parentMessageId = isEdited ? head : userMessage.messageId;
     this.parentMessageId = parentMessageId;
+    const modelBoundStoredMessages = this.getModelBoundStoredMessages(this.currentMessages);
+    this.setModelBoundStoredMessages(modelBoundStoredMessages);
+    this.assertStoredModelBoundContent();
+    this.modelBoundCurrentFiles = Array.isArray(this.options.attachments)
+      ? [...this.options.attachments]
+      : [];
+    if (this.options.resendFiles !== false && this.authorizedHistoricalFiles == null) {
+      const historicalFileState = collectModelBoundHistoricalFileIdState(modelBoundStoredMessages);
+      this.modelBoundHistoricalFileIdsOverflowed ||= historicalFileState.overflowed;
+      const files = await getOwnerHistoricalFiles(
+        historicalFileState.fileIds,
+        this.options.req?.user,
+      );
+      this.authorizedHistoricalFiles = new Map(
+        files
+          .filter((file) => typeof file?.file_id === 'string' && file.file_id.length > 0)
+          .map((file) => [file.file_id, file]),
+      );
+    }
     let {
       prompt: payload,
       tokenCountMap,
       promptTokens,
     } = await this.buildMessages(
-      this.currentMessages,
+      modelBoundStoredMessages,
       parentMessageId,
       this.getBuildMessagesOptions(opts),
       opts,
     );
+    this.assertBuiltModelBoundContent(payload);
     this.options.startupTelemetry?.mark('messages_built');
 
     if (tokenCountMap && tokenCountMap[userMessage.messageId]) {
@@ -667,13 +821,74 @@ class BaseClient {
           userMessage.alwaysAppliedSkills = names;
         }
       }
-      userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user).catch(
-        (err) => {
+      const startUserMessagePersistence = () => {
+        this.savedMessageIds.add(userMessage.messageId);
+        return this.saveMessageToDatabase(userMessage, saveOptions, user).catch((err) => {
           logger.error('[BaseClient] Failed to save user message:', err);
           return {};
-        },
-      );
-      this.savedMessageIds.add(userMessage.messageId);
+        });
+      };
+      if (this.shouldDeferUserMessagePersistence()) {
+        let state = 'pending';
+        let startPersistence = startUserMessagePersistence;
+        let resolvePersistence;
+        let removeAbortListener = () => {};
+        const persistencePromise = new Promise((resolve) => {
+          resolvePersistence = resolve;
+        });
+        const start = () => {
+          if (state !== 'pending') {
+            return persistencePromise;
+          }
+          state = 'started';
+          removeAbortListener();
+          const startDeferredPersistence = startPersistence;
+          startPersistence = undefined;
+          try {
+            Promise.resolve(startDeferredPersistence?.()).then(resolvePersistence, () =>
+              resolvePersistence({}),
+            );
+          } catch (error) {
+            logger.error('[BaseClient] Failed to start deferred user-message persistence:', error);
+            resolvePersistence({});
+          }
+          return persistencePromise;
+        };
+        const cancel = () => {
+          if (state !== 'pending') {
+            return persistencePromise;
+          }
+          state = 'cancelled';
+          removeAbortListener();
+          startPersistence = undefined;
+          /** Resolve with a non-persisted sentinel. The subagent task store
+           * validates the result and fails child creation closed, while the
+           * request's policy error remains the only surfaced rejection. */
+          resolvePersistence({});
+          return persistencePromise;
+        };
+        userMessagePersistence = Object.freeze({
+          promise: persistencePromise,
+          isPending: () => state === 'pending',
+          start,
+          cancel,
+        });
+        const requestAbortSignal = this.abortController?.signal;
+        if (requestAbortSignal?.aborted) {
+          /** Preserve the historical durability contract for Stop: abort
+           * persistence may publish the partial assistant response before the
+           * provider unwinds, so its parent write must already be underway. */
+          start();
+        } else if (requestAbortSignal != null) {
+          const startOnAbort = () => start();
+          requestAbortSignal.addEventListener('abort', startOnAbort, { once: true });
+          removeAbortListener = () => requestAbortSignal.removeEventListener('abort', startOnAbort);
+        }
+        this.modelBoundUserMessagePersistence = userMessagePersistence;
+        userMessagePromise = persistencePromise;
+      } else {
+        userMessagePromise = startUserMessagePersistence();
+      }
       if (typeof opts?.getReqData === 'function') {
         opts.getReqData({
           userMessagePromise,
@@ -682,43 +897,61 @@ class BaseClient {
     }
 
     const balanceConfig = getBalanceConfig(appConfig);
-    if (
-      balanceConfig?.enabled &&
-      supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
-    ) {
-      await checkBalance(
-        {
-          req: this.options.req,
-          res: this.options.res,
-          txData: {
-            user: this.user,
-            tokenType: 'prompt',
-            amount: promptTokens,
-            endpoint: this.options.endpoint,
-            model: this.modelOptions?.model ?? this.model,
-            endpointTokenConfig: this.options.endpointTokenConfig,
+    const transactionsConfig = getTransactionsConfig(appConfig);
+    let completionResult;
+    try {
+      if (
+        balanceConfig?.enabled &&
+        supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
+      ) {
+        await checkBalance(
+          {
+            req: this.options.req,
+            res: this.options.res,
+            txData: {
+              user: this.user,
+              tokenType: 'prompt',
+              amount: promptTokens,
+              endpoint: this.options.endpoint,
+              model: this.modelOptions?.model ?? this.model,
+              endpointTokenConfig: this.options.endpointTokenConfig,
+            },
           },
-        },
-        {
-          logViolation,
-          getMultiplier: db.getMultiplier,
-          findBalanceByUser: db.findBalanceByUser,
-          createAutoRefillTransaction: db.createAutoRefillTransaction,
-          balanceConfig,
-          upsertBalanceFields: db.upsertBalanceFields,
-        },
-      );
-    }
+          {
+            logViolation,
+            getMultiplier: db.getMultiplier,
+            findBalanceByUser: db.findBalanceByUser,
+            createAutoRefillTransaction: db.createAutoRefillTransaction,
+            balanceConfig,
+            upsertBalanceFields: db.upsertBalanceFields,
+          },
+        );
+      }
 
-    const { completion, metadata } = await this.sendCompletion(payload, opts);
+      completionResult = await this.sendCompletion(payload, opts);
+    } catch (error) {
+      if (userMessagePersistence?.isPending()) {
+        if (isContentFilterError(error)) {
+          userMessagePersistence.cancel();
+        } else {
+          userMessagePersistence.start();
+        }
+      }
+      throw error;
+    }
+    /** A safe no-model completion (or a runtime that cannot expose the
+     * admission callback) must not leave the parent-write gate pending. */
+    userMessagePersistence?.start();
+    const { completion, metadata } = completionResult;
     if (this.abortController) {
       this.abortController.requestCompleted = true;
     }
 
-    const isAgentResponse = isAgentsEndpoint(this.options.endpoint);
-    const langfuseTraceId = isAgentResponse ? traceIdForMessage(responseMessageId) : undefined;
-    const langfuseSampled =
-      langfuseTraceId != null ? isLangfuseTraceSampled(langfuseTraceId) : undefined;
+    const isAgentResponse =
+      this.clientName === EModelEndpoint.agents || isAgentsEndpoint(this.options.endpoint);
+    const langfuseTraceFields = isAgentResponse
+      ? await getLangfuseTraceMessageFields(appConfig, responseMessageId)
+      : undefined;
 
     /** @type {TMessage} */
     const responseMessage = {
@@ -726,14 +959,7 @@ class BaseClient {
       conversationId,
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
-      ...(isAgentResponse && {
-        langfuseSampled,
-        langfuseDestinationIds: await getLangfuseTraceDestinationIds(
-          appConfig,
-          langfuseTraceId,
-          langfuseSampled,
-        ),
-      }),
+      ...(langfuseTraceFields ?? {}),
       isEdited,
       model: this.getResponseModel(),
       sender: this.sender,
@@ -743,6 +969,8 @@ class BaseClient {
       ...(this.metadata ?? {}),
       metadata: Object.keys(metadata ?? {}).length > 0 ? metadata : undefined,
     };
+    let editedSourceMessage;
+    let editedSourceContentLength = 0;
 
     if (typeof completion === 'string') {
       responseMessage.text = completion;
@@ -760,6 +988,8 @@ class BaseClient {
         if (!latestMessage?.content) {
           responseMessage.content = completion;
         } else {
+          editedSourceMessage = latestMessage;
+          editedSourceContentLength = latestMessage.content.length;
           const existingContent = [...latestMessage.content];
           const { type: editedType } = opts.editedContent;
           responseMessage.content = this.mergeEditedContent(
@@ -771,6 +1001,53 @@ class BaseClient {
       }
     } else if (Array.isArray(completion)) {
       responseMessage.text = completion.join('');
+    }
+
+    if (Array.isArray(responseMessage.content)) {
+      const userSubmittedPaths = [];
+      const userSubmittedMessageFieldPaths = [];
+      for (let index = 0; index < responseMessage.content.length; index++) {
+        if (responseMessage.content[index]?.type === ContentTypes.STEER) {
+          userSubmittedPaths.push(`/content/${index}`);
+        }
+      }
+      if (editedSourceMessage != null) {
+        userSubmittedPaths.push(
+          ...(editedSourceMessage.userSubmittedPaths ?? []).filter((path) => {
+            const match = /^\/content\/(\d+)(?:\/|$)/.exec(path);
+            return match != null && Number(match[1]) < editedSourceContentLength;
+          }),
+        );
+        userSubmittedMessageFieldPaths.push(
+          ...(editedSourceMessage.userSubmittedMessageFieldPaths ?? []).filter((entry) => {
+            const match = /^\/content\/(\d+)(?:\/|$)/.exec(entry?.path);
+            return match != null && Number(match[1]) < editedSourceContentLength;
+          }),
+        );
+        if (editedSourceMessage.isUserSubmitted === true) {
+          for (let index = 0; index < editedSourceContentLength; index++) {
+            userSubmittedPaths.push(`/content/${index}`);
+          }
+        }
+        const editedIndex = opts.editedContent?.index;
+        const editedType = opts.editedContent?.type;
+        if (
+          Number.isInteger(editedIndex) &&
+          editedIndex >= 0 &&
+          editedIndex < editedSourceContentLength &&
+          (editedType === ContentTypes.TEXT || editedType === ContentTypes.THINK)
+        ) {
+          userSubmittedPaths.push(`/content/${editedIndex}/${editedType}`);
+        }
+      }
+      if (userSubmittedPaths.length > 0) {
+        responseMessage.userSubmittedPaths = mergeUserSubmittedPaths(userSubmittedPaths);
+      }
+      if (userSubmittedMessageFieldPaths.length > 0) {
+        responseMessage.userSubmittedMessageFieldPaths = mergeUserSubmittedMessageFieldPaths(
+          userSubmittedMessageFieldPaths,
+        );
+      }
     }
 
     if (tokenCountMap && this.recordTokenUsage && this.getTokenCountForResponse) {
@@ -794,6 +1071,7 @@ class BaseClient {
           promptTokens,
           completionTokens,
           balance: balanceConfig,
+          transactions: transactionsConfig,
           /** Note: When using agents, responseMessage.model is the agent ID, not the model */
           model: this.model,
           messageId: this.responseMessageId,
@@ -873,6 +1151,11 @@ class BaseClient {
 
   async loadHistory(conversationId, parentMessageId = null) {
     logger.debug('[BaseClient] Loading history:', { conversationId, parentMessageId });
+
+    /** No message has the root sentinel as its id, so the chain walk from it is empty. */
+    if (parentMessageId === Constants.NO_PARENT) {
+      return [];
+    }
 
     const messages = (await db.getMessages({ conversationId, user: this.user })) ?? [];
 
@@ -955,7 +1238,9 @@ class BaseClient {
     const hasAddedConvo = options?.req?.body?.addedConvo != null;
     const reqCtx = {
       userId: options?.req?.user?.id,
-      isTemporary: options?.req?.body?.isTemporary,
+      isTemporary:
+        options?.req?._agentEventBindingRetention?.isTemporary ?? options?.req?.body?.isTemporary,
+      expiredAt: options?.req?._agentEventBindingRetention?.expiredAt,
       interfaceConfig: options?.req?.config?.interfaceConfig,
     };
     const savedMessage = await db.saveMessage(
@@ -1031,7 +1316,9 @@ class BaseClient {
     const conversation = await db.saveConvo(reqCtx, fieldsToKeep, {
       context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
       unsetFields,
+      noUpsert: req?._agentEventBindingParentConversationId != null,
       createdAtOnInsert: shouldSetCreatedAtOnInsert ? validCreatedAtOnInsert : undefined,
+      ...(savedMessage?._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
     });
 
     return { message: savedMessage, conversation };
@@ -1111,15 +1398,19 @@ class BaseClient {
     const orderedMessages = [];
     let currentMessageId = parentMessageId;
     const visitedMessageIds = new Set();
+    const messagesById = new Map();
+    for (const msg of messages) {
+      const messageId = msg.messageId ?? msg.id;
+      if (!messagesById.has(messageId)) {
+        messagesById.set(messageId, msg);
+      }
+    }
 
     while (currentMessageId) {
       if (visitedMessageIds.has(currentMessageId)) {
         break;
       }
-      const message = messages.find((msg) => {
-        const messageId = msg.messageId ?? msg.id;
-        return messageId === currentMessageId;
-      });
+      const message = messagesById.get(currentMessageId);
 
       visitedMessageIds.add(currentMessageId);
 
@@ -1265,36 +1556,78 @@ class BaseClient {
       return existingContent.concat(newCompletion);
     }
 
-    if (editedType !== ContentTypes.TEXT && editedType !== ContentTypes.THINK) {
-      return existingContent.concat(newCompletion);
-    }
-
     const lastIndex = existingContent.length - 1;
     const lastExisting = existingContent[lastIndex];
     const firstNew = newCompletion[0];
+    /** Phased and legacy/unphased text are distinct semantic streams. Merging
+     *  either direction would stamp retained text with the wrong phase. */
+    const textPhaseCompatible =
+      editedType !== ContentTypes.TEXT ||
+      (lastExisting?.phase ?? null) === (firstNew?.phase ?? null);
+    const mergesFirstPart =
+      (editedType === ContentTypes.TEXT || editedType === ContentTypes.THINK) &&
+      lastExisting?.type === firstNew?.type &&
+      firstNew?.type === editedType &&
+      textPhaseCompatible;
+    /** Phase bounds are completion-local while the run streams. Persist them
+     *  in the same absolute index space as the edited response assembled
+     *  here. When the first new text/think part merges into the retained tail,
+     *  every completion index shifts by prefixLength - 1; otherwise it shifts
+     *  by the full retained prefix. */
+    const phaseIndexOffset = mergesFirstPart ? lastIndex : existingContent.length;
+    const adjustedCompletion = newCompletion.map((part) => {
+      if (
+        part?.type !== ContentTypes.ACTIVITY_LABEL ||
+        part.activity_label_type !== 'phase' ||
+        typeof part.activity_start_index !== 'number'
+      ) {
+        return part;
+      }
+      return {
+        ...part,
+        activity_start_index: part.activity_start_index + phaseIndexOffset,
+        ...(typeof part.activity_end_index === 'number' && {
+          activity_end_index: part.activity_end_index + phaseIndexOffset,
+        }),
+      };
+    });
 
-    if (lastExisting?.type !== firstNew?.type || firstNew?.type !== editedType) {
-      return existingContent.concat(newCompletion);
+    if (editedType !== ContentTypes.TEXT && editedType !== ContentTypes.THINK) {
+      return existingContent.concat(adjustedCompletion);
+    }
+
+    if (!mergesFirstPart) {
+      return existingContent.concat(adjustedCompletion);
     }
 
     const mergedContent = [...existingContent];
     if (editedType === ContentTypes.TEXT) {
       mergedContent[lastIndex] = {
         ...mergedContent[lastIndex],
+        ...(firstNew.phase != null && { phase: firstNew.phase }),
         [ContentTypes.TEXT]:
-          (mergedContent[lastIndex][ContentTypes.TEXT] || '') + (firstNew[ContentTypes.TEXT] || ''),
+          (mergedContent[lastIndex][ContentTypes.TEXT] || '') +
+          (adjustedCompletion[0][ContentTypes.TEXT] || ''),
       };
     } else {
       mergedContent[lastIndex] = {
-        ...mergedContent[lastIndex],
+        ...stripReasoningLabelMetadata(mergedContent[lastIndex]),
+        ...(adjustedCompletion[0].reasoning_label_step_id != null && {
+          reasoning_label: adjustedCompletion[0].reasoning_label,
+          reasoning_label_step_id: adjustedCompletion[0].reasoning_label_step_id,
+          reasoning_label_attempts: adjustedCompletion[0].reasoning_label_attempts,
+          reasoning_label_submitted_chars: adjustedCompletion[0].reasoning_label_submitted_chars,
+          reasoning_label_revision: adjustedCompletion[0].reasoning_label_revision,
+          reasoning_label_status: adjustedCompletion[0].reasoning_label_status,
+        }),
         [ContentTypes.THINK]:
           (mergedContent[lastIndex][ContentTypes.THINK] || '') +
-          (firstNew[ContentTypes.THINK] || ''),
+          (adjustedCompletion[0][ContentTypes.THINK] || ''),
       };
     }
 
     // Add remaining completion items
-    return mergedContent.concat(newCompletion.slice(1));
+    return mergedContent.concat(adjustedCompletion.slice(1));
   }
 
   async sendPayload(payload, opts = {}) {
@@ -1406,6 +1739,7 @@ class BaseClient {
       if (
         file.embedded === true ||
         file.metadata?.codeEnvRef != null ||
+        file.metadata?.codeEnvRefs != null ||
         file.metadata?.fileIdentifier != null
       ) {
         allFiles.push(file);
@@ -1489,15 +1823,16 @@ class BaseClient {
       }
     }
 
-    const historicalFileIds = collectHistoricalFileIds(_messages);
-    const fileFilter = buildOwnerFileFilter(historicalFileIds, this.options.req?.user);
+    const historicalFileState = collectModelBoundHistoricalFileIdState(_messages);
+    this.modelBoundHistoricalFileIdsOverflowed ||= historicalFileState.overflowed;
     const authorizedFilesById = new Map();
-    if (fileFilter) {
-      const files = (await db.getFiles(fileFilter, {}, {})) ?? [];
-      for (const file of files) {
-        if (file?.file_id) {
-          authorizedFilesById.set(file.file_id, file);
-        }
+    const files = await getOwnerHistoricalFiles(
+      historicalFileState.fileIds,
+      this.options.req?.user,
+    );
+    for (const file of files) {
+      if (file?.file_id) {
+        authorizedFilesById.set(file.file_id, file);
       }
     }
     /** Owner-scoped docs for THIS turn, including steer-part refs — the steer

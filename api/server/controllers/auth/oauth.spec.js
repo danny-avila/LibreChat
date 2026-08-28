@@ -5,6 +5,7 @@ const mockGenerateAdminExchangeCode = jest.fn();
 const mockSyncUserEntraGroupMemberships = jest.fn();
 const mockSetAuthTokens = jest.fn();
 const mockSetOpenIDAuthTokens = jest.fn();
+const mockStoreOpenIDSession = jest.fn();
 const mockGetLogStores = jest.fn();
 const mockCheckBan = jest.fn();
 const mockGenerateToken = jest.fn();
@@ -33,6 +34,7 @@ jest.mock('~/server/services/PermissionService', () => ({
 jest.mock('~/server/services/AuthService', () => ({
   setAuthTokens: (...args) => mockSetAuthTokens(...args),
   setOpenIDAuthTokens: (...args) => mockSetOpenIDAuthTokens(...args),
+  storeOpenIDSession: (...args) => mockStoreOpenIDSession(...args),
 }));
 
 jest.mock(
@@ -92,6 +94,7 @@ describe('createOAuthHandler', () => {
     mockCheckBan.mockResolvedValue(undefined);
     mockGenerateToken.mockResolvedValue('jwt-token');
     mockGenerateAdminExchangeCode.mockResolvedValue('exchange-code');
+    mockStoreOpenIDSession.mockResolvedValue(true);
   });
 
   afterAll(() => {
@@ -147,5 +150,92 @@ describe('createOAuthHandler', () => {
     expect(mockSetOpenIDAuthTokens).not.toHaveBeenCalled();
     expect(mockSetAuthTokens).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('stores the OpenID refresh token before setting cookies for the standard app', async () => {
+    process.env.OPENID_REUSE_TOKENS = 'true';
+    mockIsAdminPanelRedirect.mockReturnValue(false);
+    const handler = createOAuthHandler('http://localhost:3080');
+    const req = buildReq();
+    const res = buildRes();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(mockStoreOpenIDSession).toHaveBeenCalledWith(
+      'user-123',
+      'openid-refresh-token',
+      undefined,
+    );
+    expect(mockSetOpenIDAuthTokens).toHaveBeenCalledWith(req.user.tokenset, req, res, {
+      userId: 'user-123',
+      tenantId: undefined,
+    });
+    expect(res.redirect).toHaveBeenCalledWith('http://localhost:3080');
+  });
+
+  it('forwards the refresh token from req.authInfo for non-openid admin providers', async () => {
+    const handler = createOAuthHandler('http://admin.example.com/auth/google/callback');
+    const req = buildReq({
+      user: { _id: 'user-9', email: 'g@example.com', provider: 'google' },
+      authInfo: { refreshToken: 'google-refresh-token' },
+    });
+    const res = buildRes();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(mockGenerateAdminExchangeCode).toHaveBeenCalledWith(
+      {},
+      req.user,
+      'jwt-token',
+      'google-refresh-token',
+      'http://admin.example.com',
+      'pkce-challenge',
+      expect.any(Number),
+    );
+  });
+
+  it('omits the refresh token when a non-openid admin login has no authInfo', async () => {
+    const handler = createOAuthHandler('http://admin.example.com/auth/google/callback');
+    const req = buildReq({
+      user: { _id: 'user-9', email: 'g@example.com', provider: 'google' },
+    });
+    const res = buildRes();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(mockGenerateAdminExchangeCode).toHaveBeenCalledWith(
+      {},
+      req.user,
+      'jwt-token',
+      undefined,
+      'http://admin.example.com',
+      'pkce-challenge',
+      expect.any(Number),
+    );
+  });
+
+  it('does not forward refresh tokens for admin providers other than google or openid', async () => {
+    const handler = createOAuthHandler('http://admin.example.com/auth/discord/callback');
+    const req = buildReq({
+      user: { _id: 'user-9', email: 'd@example.com', provider: 'discord' },
+      authInfo: { refreshToken: 'discord-refresh-token' },
+    });
+    const res = buildRes();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(mockGenerateAdminExchangeCode).toHaveBeenCalledWith(
+      {},
+      req.user,
+      'jwt-token',
+      undefined,
+      'http://admin.example.com',
+      'pkce-challenge',
+      expect.any(Number),
+    );
   });
 });

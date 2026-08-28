@@ -12,6 +12,7 @@
 const { FakeChatModel } = require('@librechat/agents');
 const { ChatGenerationChunk } = require('@langchain/core/outputs');
 const { AIMessageChunk } = require('@langchain/core/messages');
+const { tryBindReplay } = require('./model-replay');
 
 const MOCK_REPLY = process.env.MOCK_LLM_REPLY || 'E2E mock reply: pong';
 const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
@@ -25,6 +26,7 @@ const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
 const ASSERT_AGENT_CONTEXT_MARKER = 'E2E_ASSERT_AGENT_CONTEXT:';
 const ASSERT_QUOTE_MARKER = 'E2E_ASSERT_QUOTE:';
 const REPLY_MARKER = 'E2E_REPLY:';
+const THINK_REPLY_MARKER = 'E2E_THINK_REPLY:';
 const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
 const ORDERED_REPLY_MARKER = 'E2E_ORDERED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
@@ -34,9 +36,16 @@ const STEER_TOOL_REPLY_MARKER = 'E2E_STEER_TOOL_REPLY:';
 const STEER_SPLIT_REPLY_MARKER = 'E2E_STEER_SPLIT_REPLY:';
 const STEER_LATE_REPLY_MARKER = 'E2E_STEER_LATE_REPLY:';
 const ACTIVITY_REPLY_MARKER = 'E2E_ACTIVITY_REPLY:';
+const ACTIVITY_PHASE_REPLY_MARKER = 'E2E_ACTIVITY_PHASE_REPLY:';
+const ASK_USER_QUESTION_MARKER = 'E2E_ASK_USER_QUESTION:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
+/** Two prose paragraphs, so a spec can select the message's *closing* block. */
+const PARAGRAPHS_REPLY_MARKER = 'E2E_PARAGRAPHS_REPLY';
+const MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_MERMAID_ARTIFACT_REPLY';
+const LARGE_MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_LARGE_MERMAID_ARTIFACT_REPLY';
+const HTML_ARTIFACT_REPLY_MARKER = 'E2E_HTML_ARTIFACT_REPLY';
 const BACKGROUND_DISPATCH_MARKER = 'E2E_BACKGROUND_DISPATCH:';
 const BACKGROUND_COLLECT_MARKER = 'E2E_BACKGROUND_COLLECT:';
 const TOOL_APPROVAL_MARKER = 'E2E_TOOL_APPROVAL:';
@@ -45,6 +54,13 @@ const TOOL_APPROVAL_RESTRICTED_MARKER = 'E2E_TOOL_APPROVAL_RESTRICTED:';
 const TOOL_APPROVAL_REWRITE_MARKER = 'E2E_TOOL_APPROVAL_REWRITE:';
 const DEFERRED_HITL_MARKER = 'E2E_DEFERRED_HITL:';
 const HANDOFF_MARKER = 'E2E_HANDOFF:';
+const SUBAGENT_RESULT_MARKER = 'E2E_SUBAGENT_RESULT:';
+const SUBAGENT_CHILD_MARKER = 'E2E_SUBAGENT_CHILD:';
+const SUBAGENT_ACTIVITY_MARKER = 'E2E_SUBAGENT_ACTIVITY:';
+const SUBAGENT_ACTIVITY_CHILD_MARKER = 'E2E_SUBAGENT_ACTIVITY_CHILD:';
+const SUBAGENT_MODEL_OVERRIDE_ERROR =
+  '[e2e] Streamed subagent result coverage requires an @librechat/agents release with ' +
+  'StandardGraph.setSubagentModelOverride';
 const HANDOFF_TOOL_PREFIX = 'lc_transfer_to_';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
@@ -59,7 +75,9 @@ const STEER_SPLIT_FINAL_TEXT = 'E2E steer split reply done';
 const STEER_LATE_FINAL_TEXT = 'E2E steer late reply done';
 const SLOW_REPLY_CONTINUATION_TEXT = 'E2E slow reply continued';
 const ACTIVITY_FINAL_TEXT = 'E2E activity reply done';
+const ACTIVITY_PHASE_FINAL_TEXT = 'E2E activity phase reply done';
 const STEER_TOOL_NAME_PREFIX = 'remember_fact';
+const ASK_USER_QUESTION_TOOL_NAME = 'ask_user_question';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
 const ORDERED_CHUNK_DELAY_MS = 2;
 const ORDERED_REPLY_PIECES = 64;
@@ -371,6 +389,37 @@ function quoteAssertionResponses({ messages, text }) {
 }
 
 function replyResponses(text) {
+  if (text.includes(LARGE_MERMAID_ARTIFACT_REPLY_MARKER)) {
+    const diagram = ['```mermaid', 'flowchart TB'];
+    for (let index = 0; index < 180; index++) {
+      diagram.push(`N${index}["Processing stage ${index} with representative content"]`);
+      if (index > 0) {
+        diagram.push(`N${index - 1} --> N${index}`);
+      }
+    }
+    diagram.push('```');
+
+    return { responses: [diagram.join('\n')], sleep: 0 };
+  }
+
+  if (text.includes(MERMAID_ARTIFACT_REPLY_MARKER)) {
+    return {
+      responses: [['```mermaid', 'flowchart LR', 'A[Start] --> B[Finish]', '```'].join('\n')],
+    };
+  }
+
+  if (text.includes(HTML_ARTIFACT_REPLY_MARKER)) {
+    return {
+      responses: [
+        [
+          ':::artifact{identifier="e2e-html" type="text/html" title="E2E HTML Artifact"}',
+          '<h1>HTML sandbox fixture</h1>',
+          ':::',
+        ].join('\n'),
+      ],
+    };
+  }
+
   if (text.includes(MARKDOWN_REPLY_MARKER)) {
     return {
       responses: [
@@ -389,6 +438,45 @@ function replyResponses(text) {
     };
   }
 
+  if (text.includes(PARAGRAPHS_REPLY_MARKER)) {
+    /** The quoted cell sits in the first column, so scrolling the table to its
+     *  right edge carries it out of view. */
+    const wideColumns = [{ header: 'E2E first column header', cell: 'E2E table cell text' }];
+    for (let index = 1; index < 8; index++) {
+      wideColumns.push({
+        header: `E2E column ${index} with a deliberately wide header`,
+        cell: `E2E filler cell ${index} padding the row out`,
+      });
+    }
+    const filler = [];
+    for (let index = 0; index < 4; index++) {
+      filler.push(
+        `E2E filler paragraph ${index} keeps this reply tall enough to overflow a phone viewport so scrolling is exercised for real.`,
+        '',
+      );
+    }
+    return {
+      responses: [
+        [
+          'E2E opening paragraph of the reply, ahead of the closing one.',
+          '',
+          /** Renders inside `.markdown-table-wrapper`, a nested scroll container:
+           *  its `overflow-x: auto` also makes the computed `overflow-y` auto, so
+           *  a selection here is clipped by the table AND by the message list.
+           *  Wide enough to actually overflow sideways, which is what lets a
+           *  spec scroll the selected cell out of view without moving the
+           *  message at all. */
+          `| ${wideColumns.map((column) => column.header).join(' | ')} |`,
+          `| ${wideColumns.map(() => '---').join(' | ')} |`,
+          `| ${wideColumns.map((column) => column.cell).join(' | ')} |`,
+          '',
+          ...filler,
+          'E2E closing paragraph, the last block this message renders.',
+        ].join('\n'),
+      ],
+    };
+  }
+
   const errorName = getMarkerValue(text, FORCED_ERROR_MARKER);
   if (errorName) {
     return {
@@ -401,6 +489,15 @@ function replyResponses(text) {
   if (replyName) {
     return {
       responses: [`E2E reply ${replyName}`],
+    };
+  }
+
+  const thinkName = getMarkerValue(text, THINK_REPLY_MARKER);
+  if (thinkName) {
+    /** The `<think>` tags are parsed downstream by the agents stream pipeline, so this
+     *  yields a reasoning part followed by a text part: two separately editable parts. */
+    return {
+      responses: [`<think>E2E reasoning ${thinkName}</think>\n\nE2E reply ${thinkName}`],
     };
   }
 
@@ -482,7 +579,7 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
     this.streamSleep = sleep ?? CHUNK_DELAY_MS;
   }
 
-  async *streamScriptedResponseChunks({ response, toolCalls, runManager }) {
+  async *streamScriptedResponseChunks({ response, toolCalls, textDeltaBlocks, runManager }) {
     if (this.emitCustomEvent) {
       await runManager?.handleCustomEvent('some_test_event', {
         someval: true,
@@ -492,7 +589,14 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
     const chunks = response ? response.split(/(?<=\s+)|(?=\s+)/) : [];
     for await (const chunk of chunks) {
       await new Promise((resolve) => setTimeout(resolve, this.streamSleep));
-      const responseChunk = this._createResponseChunk(chunk);
+      const responseChunk = textDeltaBlocks
+        ? new ChatGenerationChunk({
+            text: chunk,
+            message: new AIMessageChunk({
+              content: [{ type: 'text_delta', index: 0, text: chunk }],
+            }),
+          })
+        : this._createResponseChunk(chunk);
       yield responseChunk;
       void runManager?.handleLLMNewToken(chunk);
     }
@@ -544,6 +648,7 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
       chunkStream = this.streamScriptedResponseChunks({
         response: scriptedResponse.response ?? '',
         toolCalls: scriptedResponse.toolCalls,
+        textDeltaBlocks: scriptedResponse.textDeltaBlocks === true,
         runManager,
       });
     } else if (dynamicResponse) {
@@ -582,11 +687,35 @@ function overrideModel({
   sleep,
   toolCalls,
   thrownError,
+  overrideSubagentModel,
+  disableHumanInTheLoop,
   resolveInvocation,
   resolveOnStream,
+  modelCallbacks,
 }) {
+  /** The shared mock profile enables approval HITL for its dedicated specs.
+   * Detached subagents reject that run-level mode before executing, so the
+   * credential-free activity scenario explicitly models a deployment with
+   * approval HITL disabled without weakening the shared profile. */
+  if (disableHumanInTheLoop) {
+    graph.humanInTheLoop = undefined;
+    for (const executor of graph._subagentExecutors ?? []) {
+      executor.humanInTheLoop = undefined;
+    }
+  }
+  if (overrideSubagentModel && typeof graph.setSubagentModelOverride !== 'function') {
+    overrideModel({
+      graph,
+      responses: [''],
+      sleep,
+      thrownError: SUBAGENT_MODEL_OVERRIDE_ERROR,
+      modelCallbacks,
+    });
+    return;
+  }
+
   if (!thrownError) {
-    graph.overrideModel = new UsageEmittingFakeChatModel({
+    const model = new UsageEmittingFakeChatModel({
       responses,
       sleep: sleep ?? CHUNK_DELAY_MS,
       emitCustomEvent: true,
@@ -594,6 +723,11 @@ function overrideModel({
       resolveInvocation,
       resolveOnStream,
     });
+    model.callbacks = modelCallbacks;
+    graph.overrideModel = model;
+    if (overrideSubagentModel) {
+      graph.setSubagentModelOverride(model);
+    }
     return;
   }
 
@@ -607,12 +741,14 @@ function overrideModel({
     }
   }
 
-  graph.overrideModel = new ThrowingFakeChatModel({
+  const model = new ThrowingFakeChatModel({
     responses,
     sleep: sleep ?? CHUNK_DELAY_MS,
     emitCustomEvent: true,
     toolCalls,
   });
+  model.callbacks = modelCallbacks;
+  graph.overrideModel = model;
 }
 
 function parseSkillAssertion(text, agentId) {
@@ -1085,6 +1221,98 @@ function activityReplyResponses(label, toolNames) {
   };
 }
 
+/**
+ * Three-turn run with two sequential tool batches for the parent activity-phase
+ * e2e. Each tool invocation produces its own `PostToolBatch`; the final model
+ * turn then closes a phase containing both logical activities. Keeping the
+ * batches sequential is essential because two parallel calls are one activity.
+ */
+function activityPhaseReplyResponses(label, toolNames) {
+  const toolName = Array.from(toolNames).find((name) => name.startsWith(STEER_TOOL_NAME_PREFIX));
+  if (!toolName) {
+    return {
+      responses: [
+        `E2E activity phase reply unavailable: no ${STEER_TOOL_NAME_PREFIX} tool advertised.`,
+      ],
+    };
+  }
+  let invocation = 0;
+  return {
+    responses: [''],
+    resolveInvocation: async () => {
+      invocation += 1;
+      if (invocation === 1) {
+        return {
+          response: '',
+          toolCalls: [
+            {
+              id: `call_e2e_activity_phase_alpha_${label}`,
+              name: toolName,
+              args: { fact: `activity phase alpha ${label}` },
+              type: 'tool_call',
+            },
+          ],
+        };
+      }
+      if (invocation === 2) {
+        return {
+          response: '',
+          toolCalls: [
+            {
+              id: `call_e2e_activity_phase_beta_${label}`,
+              name: toolName,
+              args: { fact: `activity phase beta ${label}` },
+              type: 'tool_call',
+            },
+          ],
+        };
+      }
+      return { response: `${ACTIVITY_PHASE_FINAL_TEXT} ${label}` };
+    },
+  };
+}
+
+/**
+ * Pause a real agent run at the ask_user_question tool. The resume controller
+ * rebuilds the graph with an empty input-message list, so the test hook selects
+ * its ordinary mock reply for the resumed model turn. This deliberately tests
+ * the production checkpoint/resume seam rather than simulating a pause in the
+ * browser fixture.
+ */
+function askUserQuestionResponses(label, toolNames) {
+  if (!toolNames.has(ASK_USER_QUESTION_TOOL_NAME)) {
+    return {
+      responses: [
+        `E2E ask user question unavailable: ${ASK_USER_QUESTION_TOOL_NAME} was not advertised.`,
+      ],
+    };
+  }
+  return {
+    responses: [''],
+    toolCalls: [
+      {
+        id: `call_e2e_ask_user_question_${label}`,
+        name: ASK_USER_QUESTION_TOOL_NAME,
+        args: {
+          questions: [
+            {
+              id: 'environment',
+              question: `Which environment should Bombadil use for ${label}?`,
+              description:
+                'This deterministic pause exercises the HITL answer and resume lifecycle.',
+              options: [
+                { label: 'Staging', value: 'staging' },
+                { label: 'Production', value: 'production' },
+              ],
+            },
+          ],
+        },
+        type: 'tool_call',
+      },
+    ],
+  };
+}
+
 function findLastToolMessageText(messages, requiredToken) {
   for (let index = (messages ?? []).length - 1; index >= 0; index--) {
     const message = messages[index];
@@ -1097,6 +1325,130 @@ function findLastToolMessageText(messages, requiredToken) {
     }
   }
   return '';
+}
+
+function parseSubagentResultMarker(text) {
+  const value = getMarkerValue(text, SUBAGENT_RESULT_MARKER);
+  const separator = value.indexOf(':');
+  if (separator <= 0 || separator === value.length - 1) {
+    return null;
+  }
+  return {
+    childId: value.slice(0, separator),
+    label: value.slice(separator + 1),
+  };
+}
+
+function subagentResultResponses(text) {
+  const marker = parseSubagentResultMarker(text);
+  if (!marker) {
+    return null;
+  }
+
+  const childPrompt = `${SUBAGENT_CHILD_MARKER}${marker.label}`;
+  const expectedResult = `E2E subagent streamed result ${marker.label}`;
+  return {
+    responses: [''],
+    overrideSubagentModel: true,
+    resolveInvocation: (messages) => {
+      const toolResult = findLastToolMessageText(messages, expectedResult);
+      if (toolResult) {
+        return { response: toolResult };
+      }
+
+      if (getLatestUserText(messages).includes(childPrompt)) {
+        return { response: expectedResult, textDeltaBlocks: true };
+      }
+
+      return {
+        response: '',
+        toolCalls: [
+          {
+            id: `call_e2e_subagent_${marker.label}`,
+            name: 'subagent',
+            args: {
+              description: childPrompt,
+              subagent_type: marker.childId,
+            },
+            type: 'tool_call',
+          },
+        ],
+      };
+    },
+  };
+}
+
+function parseSubagentActivityMarker(text) {
+  const value = getMarkerValue(text, SUBAGENT_ACTIVITY_MARKER);
+  const separator = value.indexOf(':');
+  if (separator <= 0 || separator === value.length - 1) {
+    return null;
+  }
+
+  const childIds = value.slice(0, separator).split(',').filter(Boolean);
+  if (childIds.length !== 2) {
+    return null;
+  }
+
+  return {
+    childIds,
+    label: value.slice(separator + 1),
+  };
+}
+
+function subagentActivityResponses(text) {
+  const marker = parseSubagentActivityMarker(text);
+  if (!marker) {
+    return null;
+  }
+
+  return {
+    responses: [''],
+    sleep: 50,
+    overrideSubagentModel: true,
+    disableHumanInTheLoop: true,
+    resolveInvocation: (messages) => {
+      const latestUserText = getLatestUserText(messages);
+      for (const [index] of marker.childIds.entries()) {
+        const childPrompt = `${SUBAGENT_ACTIVITY_CHILD_MARKER}${marker.label}:${index + 1}`;
+        if (!latestUserText.includes(childPrompt)) {
+          continue;
+        }
+
+        const progress = Array.from(
+          { length: 100 },
+          (_, phase) => `child-${index + 1}-phase-${phase + 1}`,
+        ).join(' ');
+        return {
+          response: `E2E detached child ${index + 1} activity ${marker.label} ${progress} E2E detached child ${index + 1} complete ${marker.label}`,
+        };
+      }
+
+      const backgroundTaskResults = (messages ?? []).filter(
+        (message) =>
+          messageType(message) === 'tool' &&
+          typeof message?.tool_call_id === 'string' &&
+          message.tool_call_id.startsWith('call_e2e_subagent_activity_'),
+      );
+      if (backgroundTaskResults.length >= marker.childIds.length) {
+        return { response: `E2E detached subagents dispatched ${marker.label}` };
+      }
+
+      return {
+        response: '',
+        toolCalls: marker.childIds.map((childId, index) => ({
+          id: `call_e2e_subagent_activity_${marker.label}_${index + 1}`,
+          name: 'subagent',
+          args: {
+            description: `${SUBAGENT_ACTIVITY_CHILD_MARKER}${marker.label}:${index + 1}`,
+            subagent_type: childId,
+            run_in_background: true,
+          },
+          type: 'tool_call',
+        })),
+      };
+    },
+  };
 }
 
 function approvalToolResponses(label, toolNames, review) {
@@ -1340,6 +1692,25 @@ function parseHandoffScript(text) {
         error: `script.routes[${index}].targetTools must be an array of non-empty strings`,
       };
     }
+    if (route.targetToolCall != null) {
+      const targetToolCall = route.targetToolCall;
+      if (
+        typeof targetToolCall !== 'object' ||
+        Array.isArray(targetToolCall) ||
+        typeof targetToolCall.id !== 'string' ||
+        targetToolCall.id === '' ||
+        typeof targetToolCall.name !== 'string' ||
+        targetToolCall.name === '' ||
+        typeof targetToolCall.args !== 'object' ||
+        targetToolCall.args == null ||
+        Array.isArray(targetToolCall.args) ||
+        typeof targetToolCall.outputIncludes !== 'string'
+      ) {
+        return {
+          error: `script.routes[${index}].targetToolCall must contain an id, name, args object, and outputIncludes`,
+        };
+      }
+    }
 
     const args = route.args ?? {};
     let inferredReceipt = null;
@@ -1358,6 +1729,7 @@ function parseHandoffScript(text) {
       receipt: route.receipt ?? inferredReceipt,
       targetInstructions: route.targetInstructions,
       targetTools: route.targetTools ?? [],
+      targetToolCall: route.targetToolCall,
     });
   }
 
@@ -1545,8 +1917,13 @@ function deferredHitlInvocationResponse({ graph, messages, options, runManager }
           id: askCallId,
           name: ASK_USER_QUESTION_NAME,
           args: {
-            question: `Continue deferred schema check ${label}?`,
-            options: [{ label: `Continue ${label}`, value: `continue-${label}` }],
+            questions: [
+              {
+                id: 'confirmation',
+                question: `Continue deferred schema check ${label}?`,
+                options: [{ label: `Continue ${label}`, value: `continue-${label}` }],
+              },
+            ],
           },
           type: 'tool_call',
         },
@@ -1784,6 +2161,36 @@ function buildHandoffResponses(graph, parsed) {
               receptionFailures.join('; '),
           };
         }
+
+        const targetToolCall = incomingRoute.targetToolCall;
+        if (targetToolCall) {
+          const toolResult = findToolMessage(messages, targetToolCall.id);
+          if (!toolResult) {
+            return {
+              response: '',
+              toolCalls: [
+                {
+                  id: targetToolCall.id,
+                  name: targetToolCall.name,
+                  args: targetToolCall.args,
+                  type: 'tool_call',
+                },
+              ],
+            };
+          }
+
+          const output = getContentText(toolResult.content);
+          if (!output.includes(targetToolCall.outputIncludes)) {
+            return {
+              response:
+                `E2E handoff target tool failed ${script.label}: agent=${agentId}; ` +
+                `expected=${targetToolCall.outputIncludes}; received=${output || '(empty)'}`,
+            };
+          }
+          return {
+            response: `E2E handoff tool complete ${script.label}: agent=${agentId}`,
+          };
+        }
       }
 
       const outgoingRoutes = script.routes.filter((route) => route.from === agentId);
@@ -1809,6 +2216,16 @@ function buildHandoffResponses(graph, parsed) {
 }
 
 function resolveResponses({ graph, messages, text, toolNames }) {
+  const subagentActivity = subagentActivityResponses(text);
+  if (subagentActivity) {
+    return subagentActivity;
+  }
+
+  const subagentResult = subagentResultResponses(text);
+  if (subagentResult) {
+    return subagentResult;
+  }
+
   const batchApprovalLabel = getMarkerValue(text, TOOL_APPROVAL_BATCH_MARKER);
   if (batchApprovalLabel) {
     return batchApprovalToolResponses(batchApprovalLabel, toolNames);
@@ -1852,6 +2269,16 @@ function resolveResponses({ graph, messages, text, toolNames }) {
   const activityLabel = getMarkerValue(text, ACTIVITY_REPLY_MARKER);
   if (activityLabel) {
     return activityReplyResponses(activityLabel, toolNames);
+  }
+
+  const activityPhaseLabel = getMarkerValue(text, ACTIVITY_PHASE_REPLY_MARKER);
+  if (activityPhaseLabel) {
+    return activityPhaseReplyResponses(activityPhaseLabel, toolNames);
+  }
+
+  const askUserQuestionLabel = getMarkerValue(text, ASK_USER_QUESTION_MARKER);
+  if (askUserQuestionLabel) {
+    return askUserQuestionResponses(askUserQuestionLabel, toolNames);
   }
 
   if (text.includes(ASSERT_AGENT_CONTEXT_MARKER)) {
@@ -1967,23 +2394,48 @@ module.exports = function fakeModelHook(run, context) {
   }
 
   const text = getLatestUserText(context?.messages);
+  /** Recorded-session replay outranks marker routing: a conversation whose
+   * prompt matches a fixture's next recorded invocation streams that recording
+   * through the real pipeline instead of a scripted mock response. */
+  if (
+    tryBindReplay({
+      graph,
+      text,
+      agents: context?.agents,
+      messages: context?.messages,
+      conversationId: context?.conversationId,
+      modelCallbacks: context?.modelCallbacks,
+    })
+  ) {
+    return;
+  }
   const toolNames = collectToolNames(context?.agents);
   const handoffScript = parseHandoffScript(text);
-  const { responses, sleep, toolCalls, thrownError, resolveInvocation, resolveOnStream } =
-    handoffScript
-      ? buildHandoffResponses(graph, handoffScript)
-      : resolveResponses({
-          graph,
-          messages: context?.messages,
-          text,
-          toolNames,
-        });
+  const {
+    responses,
+    sleep,
+    toolCalls,
+    thrownError,
+    overrideSubagentModel,
+    disableHumanInTheLoop,
+    resolveInvocation,
+    resolveOnStream,
+  } = handoffScript
+    ? buildHandoffResponses(graph, handoffScript)
+    : resolveResponses({
+        graph,
+        messages: context?.messages,
+        text,
+        toolNames,
+      });
   overrideModel({
     graph,
     responses,
     sleep,
     toolCalls,
     thrownError,
+    overrideSubagentModel,
+    disableHumanInTheLoop,
     resolveInvocation: async (streamMessages, streamOptions, runManager) =>
       deferredHitlInvocationResponse({
         graph,
@@ -1997,5 +2449,6 @@ module.exports = function fakeModelHook(run, context) {
       approvalOutcomeResponses(streamMessages) ??
       resolveOnStream?.(streamMessages, streamOptions, runManager) ??
       null,
+    modelCallbacks: context?.modelCallbacks,
   });
 };

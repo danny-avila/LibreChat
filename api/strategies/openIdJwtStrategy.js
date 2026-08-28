@@ -1,6 +1,6 @@
 const cookies = require('cookie');
 const jwksRsa = require('jwks-rsa');
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId, runAsSystem } = require('@librechat/data-schemas');
 const { CacheKeys, SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const {
@@ -12,23 +12,45 @@ const {
   buildAuthUserDocCacheKey,
   getAuthUserDocCacheMode,
   getCachedAuthUserDoc,
+  getValidOpenIdReuseUserId,
   invalidateCachedAuthUserDoc,
   setCachedAuthUserDoc,
   getHttpsProxyAgent,
+  isAccessTokenJwt,
   math,
 } = require('@librechat/api');
-const { updateUser, findUser } = require('~/models');
+const { updateUser, findUser, isAgentTriggerPrincipalActive } = require('~/models');
 const getLogStores = require('~/cache/getLogStores');
 
-const getOpenIdJwtAudience = () => {
-  const parsedAudience = (process.env.OPENID_AUDIENCE ?? '')
+function decodeJwtExpiry(token) {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    return typeof payload.exp === 'number' ? payload.exp : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const parseOpenIdAudiences = () =>
+  (process.env.OPENID_AUDIENCE ?? '')
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
-  const audiences = [process.env.OPENID_CLIENT_ID, ...parsedAudience].filter(Boolean);
+
+const getOpenIdJwtAudience = () => {
+  const audiences = [process.env.OPENID_CLIENT_ID, ...parseOpenIdAudiences()].filter(Boolean);
   const uniqueAudiences = [...new Set(audiences)];
 
   return uniqueAudiences.length > 1 ? uniqueAudiences : uniqueAudiences[0];
+};
+
+/** The configured audiences a reused bearer is weighed against when deciding whether it is an access token */
+const getOpenIdAudienceConfig = () => {
+  const clientId = process.env.OPENID_CLIENT_ID;
+  return {
+    clientId,
+    resources: new Set(parseOpenIdAudiences().filter((audience) => audience !== clientId)),
+  };
 };
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -54,6 +76,28 @@ const isOpenIdIssuerAllowed = (payload, openIdConfig) => {
 };
 
 const getAuthUserDocCacheStore = () => getLogStores(CacheKeys.AUTH_USER_DOC);
+
+const getUserId = (user) => user?.id?.toString?.() ?? user?._id?.toString?.();
+
+const getAuthUserCacheScope = (tenantId, userId) => {
+  if (tenantId) {
+    return { tenantId };
+  }
+  if (userId) {
+    return { userId };
+  }
+  return {};
+};
+
+const isUserInAuthCacheScope = (user, { tenantId, userId }) => {
+  if (tenantId) {
+    return (user?.tenantId || undefined) === tenantId;
+  }
+  if (userId) {
+    return getUserId(user) === userId;
+  }
+  return !user?.tenantId;
+};
 
 /**
  * @function openIdJwtLogin
@@ -86,6 +130,8 @@ const openIdJwtLogin = (openIdConfig) => {
     jwksRsaOptions.requestAgent = requestAgent;
   }
 
+  const audienceConfig = getOpenIdAudienceConfig();
+
   return new JwtStrategy(
     {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -108,10 +154,16 @@ const openIdJwtLogin = (openIdConfig) => {
         const authHeader = req.headers.authorization;
         const rawToken = authHeader?.replace('Bearer ', '');
         const openidIssuer = getOpenIdIssuer(payload, openIdConfig);
+        const tenantId = getTenantId();
+        const cookieHeader = req.headers.cookie;
+        const parsedCookies = cookieHeader ? cookies.parse(cookieHeader) : {};
+        const openIdReuseUserId = getValidOpenIdReuseUserId(parsedCookies.openid_user_id);
+        const authUserCacheScope = getAuthUserCacheScope(tenantId, openIdReuseUserId);
         const authUserCacheKey = buildAuthUserDocCacheKey({
           strategy: 'openid-jwt',
           subject: payload?.sub,
           issuer: openidIssuer,
+          ...authUserCacheScope,
         });
         const authUserCacheMode = getAuthUserDocCacheMode();
         const authUserCacheStore =
@@ -121,7 +173,10 @@ const openIdJwtLogin = (openIdConfig) => {
             ? await getCachedAuthUserDoc(authUserCacheStore, authUserCacheKey)
             : undefined;
 
-        const servedCachedUser = authUserCacheMode === 'on' && cachedUser;
+        const servedCachedUser =
+          authUserCacheMode === 'on' &&
+          cachedUser &&
+          isUserInAuthCacheScope(cachedUser, authUserCacheScope);
         const lookupResult = servedCachedUser
           ? { user: cachedUser, error: null, migration: false }
           : await findOpenIDUser({
@@ -141,6 +196,13 @@ const openIdJwtLogin = (openIdConfig) => {
 
         if (user) {
           user.id = user._id.toString();
+          if (!(await runAsSystem(() => isAgentTriggerPrincipalActive(user.id)))) {
+            done(null, false, {
+              message: 'Account deletion is in progress',
+              code: 'ACCOUNT_DELETION_IN_PROGRESS',
+            });
+            return;
+          }
           /** Absent on the full doc means local user; null skips getUserPrincipals' fallback lookup */
           user.idOnTheSource ??= null;
 
@@ -167,7 +229,7 @@ const openIdJwtLogin = (openIdConfig) => {
                 userId: user.id,
                 cacheKey: authUserCacheKey,
               });
-            } else if (!servedCachedUser) {
+            } else if (!servedCachedUser && isUserInAuthCacheScope(user, authUserCacheScope)) {
               await setCachedAuthUserDoc(authUserCacheStore, authUserCacheKey, user);
             }
           }
@@ -180,18 +242,38 @@ const openIdJwtLogin = (openIdConfig) => {
 
           /** Fallback to cookies for backward compatibility */
           if (!accessToken || !refreshToken || !idToken) {
-            const cookieHeader = req.headers.cookie;
-            const parsedCookies = cookieHeader ? cookies.parse(cookieHeader) : {};
             accessToken = accessToken || parsedCookies.openid_access_token;
             idToken = idToken || parsedCookies.openid_id_token;
             refreshToken = refreshToken || parsedCookies.refreshToken;
           }
 
+          /**
+           * The raw bearer only stands in for a missing stored access token when it is
+           * identifiable as one. It cleared this strategy's audience check, but an ID token
+           * clears the same check, and an ID token used as the OBO assertion is rejected by the
+           * IdP (Entra answers `AADSTS240002`). An unrecognised token is left unset so
+           * `isOpenIDTokenValid` fails closed with an actionable error instead.
+           */
+          let reusableRawToken;
+          if (!accessToken) {
+            reusableRawToken = isAccessTokenJwt(rawToken, payload, audienceConfig)
+              ? rawToken
+              : undefined;
+            if (!reusableRawToken) {
+              /** Per-request on the reuse path, so the actionable warning is left to the consumer that actually needs the credential */
+              logger.debug(
+                '[openIdJwtLogin] No stored OpenID access token, and the request bearer is not identifiable as one; leaving it unset',
+              );
+            }
+          }
+
+          const resolvedAccessToken = accessToken || reusableRawToken;
           user.federatedTokens = {
-            access_token: accessToken || rawToken,
+            access_token: resolvedAccessToken,
             id_token: idToken,
             refresh_token: refreshToken,
-            expires_at: payload.exp,
+            expires_at:
+              resolvedAccessToken === rawToken ? payload.exp : decodeJwtExpiry(resolvedAccessToken),
           };
 
           done(null, user);

@@ -8,7 +8,7 @@ import {
   uniqueAgentName,
   waitForPersistedAgent,
 } from './agents.helpers';
-import { MOCK_ENDPOINTS, mockReply, sendMessage } from './helpers';
+import { MOCK_ENDPOINTS, mockReply, sendMessageAndWaitForCompletion } from './helpers';
 
 const DESCRIPTION = 'Use this agent to verify LibreChat agent creation in mock end-to-end tests.';
 const INSTRUCTIONS =
@@ -20,7 +20,6 @@ const MODEL_PARAMETERS = {
   topP: 0.8,
   topK: 12,
   resendFiles: false,
-  promptCache: true,
   thinking: true,
   thinkingBudget: 2000,
   web_search: true,
@@ -70,7 +69,9 @@ async function fillAnthropicStyleModelParameters(page: Page) {
   await form.locator('#fileTokenLimit-dynamic-input').fill(`${MODEL_PARAMETERS.fileTokenLimit}`);
 
   await setSwitch(form, 'Resend Files', MODEL_PARAMETERS.resendFiles);
-  await setSwitch(form, 'Use Prompt Caching', MODEL_PARAMETERS.promptCache);
+  await expect(form.getByRole('switch', { name: 'Use Prompt Caching', exact: true })).toHaveCount(
+    0,
+  );
   await setSwitch(form, 'Thinking', MODEL_PARAMETERS.thinking);
   await setSwitch(form, 'Web Search', MODEL_PARAMETERS.web_search);
 
@@ -107,9 +108,9 @@ async function expectAnthropicStyleModelParameters(page: Page) {
     'aria-checked',
     String(MODEL_PARAMETERS.resendFiles),
   );
-  await expect(
-    form.getByRole('switch', { name: 'Use Prompt Caching', exact: true }),
-  ).toHaveAttribute('aria-checked', String(MODEL_PARAMETERS.promptCache));
+  await expect(form.getByRole('switch', { name: 'Use Prompt Caching', exact: true })).toHaveCount(
+    0,
+  );
   await expect(form.getByRole('switch', { name: 'Thinking', exact: true })).toHaveAttribute(
     'aria-checked',
     String(MODEL_PARAMETERS.thinking),
@@ -187,7 +188,7 @@ test.describe('agent builder', () => {
 
       await form.getByRole('button', { name: 'Select Agent' }).click();
 
-      const response = await sendMessage(page, `hello from ${agentName}`);
+      const response = await sendMessageAndWaitForCompletion(page, `hello from ${agentName}`);
       expect(response.ok()).toBeTruthy();
       await expect(mockReply(page)).toBeVisible({ timeout: 30000 });
     } finally {

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, memo, useCallback } from 'react';
 import { AutoSizer, List } from 'react-virtualized';
-import { Spinner, useCombobox } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
+import { Input, Spinner, useCombobox } from '@librechat/client';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
 import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
@@ -9,6 +9,7 @@ import { removeCharIfLast, detectVariables } from '~/utils';
 import { useRecordPromptUsage } from '~/data-provider';
 import { VariableDialog } from '~/components/Prompts';
 import { usePromptGroupsContext } from '~/Providers';
+import { activateCatalog } from '~/hooks';
 import MentionItem from './MentionItem';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -64,8 +65,9 @@ function PromptsCommand({
   const localize = useLocalize();
   const { mutate: recordUsage } = useRecordPromptUsage();
   const promptGroupsContext = usePromptGroupsContext();
-  const { allPromptGroups, hasAccess } = promptGroupsContext ?? {};
+  const { allPromptGroups, hasAccess, requestAllPromptGroups } = promptGroupsContext ?? {};
   const { data, isLoading } = allPromptGroups ?? {};
+  const showPromptsPopover = useRecoilValue(store.showPromptsPopoverFamily(index));
 
   const [activeIndex, setActiveIndex] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -140,9 +142,18 @@ function PromptsCommand({
       setActiveIndex(0);
       setSearchValue('');
     } else {
+      /** Opening the picker before background warmup starts the fetch now */
+      activateCatalog('prompts');
       setVariableGroup(null);
     }
   }, [open, setSearchValue]);
+
+  /** The full prompt list is fetched on first popover open, not at app startup */
+  useEffect(() => {
+    if (showPromptsPopover) {
+      requestAllPromptGroups?.();
+    }
+  }, [showPromptsPopover, requestAllPromptGroups]);
 
   useEffect(() => {
     setActiveIndex((prev) => Math.min(prev, Math.max(matches.length - 1, 0)));
@@ -206,10 +217,10 @@ function PromptsCommand({
     >
       <div className="absolute bottom-28 z-10 w-full space-y-2">
         <div className="popover border-token-border-light rounded-2xl border bg-surface-tertiary-alt p-2 shadow-lg">
-          <input
+          <Input
             ref={initInputRef}
             placeholder={localize('com_ui_command_usage_placeholder')}
-            className="mb-1 w-full border-0 bg-surface-tertiary-alt p-2 text-sm focus:outline-none dark:text-gray-200"
+            className="mb-1 h-auto w-full rounded-none border-0 bg-surface-tertiary-alt p-2 text-sm text-text-primary focus:outline-none"
             autoComplete="off"
             value={searchValue}
             onKeyDown={(e) => {

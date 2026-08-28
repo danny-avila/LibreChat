@@ -3,6 +3,22 @@ import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody, RunLLMConfig } from '~/types';
 import { resolveHeaders } from './env';
 
+/**
+ * The media type of a `Content-Type` header — the lowercased `type/subtype` pair with any
+ * parameters stripped, or `''` when the header is absent or empty.
+ *
+ * Substring-matching the raw header is wrong in both directions. A `text/plain;
+ * boundary=text/event-stream` value contains the SSE type without being one, and a
+ * `TEXT/EVENT-STREAM` value is one without containing it in the expected case. Callers
+ * classifying a response by its type must compare against this, not the raw header.
+ */
+export function mediaTypeEssence(header: string | null | undefined): string {
+  if (!header) {
+    return '';
+  }
+  return (header.split(';', 1)[0] ?? '').trim().toLowerCase();
+}
+
 /** Comma-unions two header values (deduped, trimmed), e.g. `anthropic-beta`. */
 function unionCsv(a: string, b: string): string {
   const values = [a, b]

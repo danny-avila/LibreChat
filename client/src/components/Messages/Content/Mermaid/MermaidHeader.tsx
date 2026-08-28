@@ -1,10 +1,11 @@
 import React, { memo, useState, useCallback, useRef, useEffect } from 'react';
 import copy from 'copy-to-clipboard';
 import { TooltipAnchor } from '@librechat/client';
-
-import { Expand, ChevronUp, ChevronDown } from 'lucide-react';
+import { Code2, Expand, Eye } from 'lucide-react';
+import type { MermaidDimensions } from '~/utils/diagram/export';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useLocalize } from '~/hooks';
+import MermaidExport from './Export';
 import cn from '~/utils/cn';
 
 interface MermaidHeaderProps {
@@ -14,6 +15,10 @@ interface MermaidHeaderProps {
   showCode: boolean;
   showExpandButton?: boolean;
   expandButtonRef?: React.RefObject<HTMLButtonElement>;
+  expandLabel?: string;
+  exportSvg?: string | null;
+  exportDimensions?: MermaidDimensions | null;
+  exportFilename?: string;
   onExpand?: () => void;
   onToggleCode: () => void;
 }
@@ -29,10 +34,15 @@ const MermaidHeader: React.FC<MermaidHeaderProps> = memo(
     showCode,
     showExpandButton = false,
     expandButtonRef,
+    expandLabel,
+    exportSvg,
+    exportDimensions,
+    exportFilename,
     onExpand,
     onToggleCode,
   }) => {
     const localize = useLocalize();
+    const toggleLabel = showCode ? localize('com_ui_preview') : localize('com_ui_show_code');
     const [isCopied, setIsCopied] = useState(false);
     const copyButtonRef = useRef<HTMLButtonElement>(null);
     const showCodeButtonRef = useRef<HTMLButtonElement>(null);
@@ -64,31 +74,43 @@ const MermaidHeader: React.FC<MermaidHeaderProps> = memo(
         <div className={cn('flex items-center gap-1', actionsClassName)}>
           {showExpandButton && onExpand && (
             <TooltipAnchor
-              description={localize('com_ui_expand')}
+              description={expandLabel ?? localize('com_ui_expand')}
               render={
                 <button
                   ref={expandButtonRef}
                   type="button"
-                  aria-label={localize('com_ui_expand')}
+                  aria-label={expandLabel ?? localize('com_ui_expand')}
                   className={iconBtnClass}
                   onClick={onExpand}
                 >
-                  <Expand className="h-4 w-4" />
+                  <Expand className="h-4 w-4" aria-hidden="true" />
                 </button>
               }
             />
           )}
+          {exportSvg != null && exportFilename != null && (
+            <MermaidExport
+              svg={exportSvg}
+              dimensions={exportDimensions}
+              filename={exportFilename}
+            />
+          )}
           <TooltipAnchor
-            description={showCode ? localize('com_ui_hide_code') : localize('com_ui_show_code')}
+            description={toggleLabel}
             render={
               <button
                 ref={showCodeButtonRef}
                 type="button"
-                aria-label={showCode ? localize('com_ui_hide_code') : localize('com_ui_show_code')}
+                aria-label={toggleLabel}
+                aria-pressed={showCode}
                 className={iconBtnClass}
                 onClick={handleToggleCode}
               >
-                {showCode ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                {showCode ? (
+                  <Eye className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Code2 className="h-4 w-4" aria-hidden="true" />
+                )}
               </button>
             }
           />

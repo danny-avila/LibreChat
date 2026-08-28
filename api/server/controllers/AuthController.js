@@ -8,10 +8,12 @@ const {
   findOpenIDUser,
   getOpenIdIssuer,
   buildOpenIDRefreshParams,
+  OPENID_EXPIRY_BUFFER_SECONDS,
 } = require('@librechat/api');
 const {
   requestPasswordReset,
   setOpenIDAuthTokens,
+  storeOpenIDSession,
   setCloudFrontAuthCookies,
   resetPassword,
   setAuthTokens,
@@ -28,7 +30,6 @@ const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 
 const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
-const OPENID_REUSE_EXPIRY_BUFFER_SECONDS = 30;
 /**
  * Max age (ms) LibreChat reuses a cached OpenID session token before forcing an IdP refresh.
  * Env-overridable (accepts an arithmetic expression, e.g. `60 * 60 * 24 * 1000`, like
@@ -110,7 +111,7 @@ const getReusableOpenIDSessionToken = (openidTokens) => {
     if (
       decoded &&
       typeof decoded === 'object' &&
-      decoded.exp > now + OPENID_REUSE_EXPIRY_BUFFER_SECONDS
+      decoded.exp > now + OPENID_EXPIRY_BUFFER_SECONDS
     ) {
       return candidate;
     }
@@ -242,6 +243,13 @@ const refreshController = async (req, res) => {
         );
       }
 
+      const activeRefreshToken = tokenset.refresh_token || refreshToken;
+      await storeOpenIDSession(
+        user._id.toString(),
+        activeRefreshToken,
+        user.tenantId,
+        refreshToken,
+      );
       const token = setOpenIDAuthTokens(tokenset, req, res, {
         userId: user._id.toString(),
         existingRefreshToken: refreshToken,

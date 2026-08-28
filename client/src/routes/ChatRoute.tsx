@@ -3,14 +3,16 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { Spinner, useToastContext } from '@librechat/client';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import type { TPreset } from 'librechat-data-provider';
+import { Constants, EModelEndpoint, PermissionBits } from 'librechat-data-provider';
+import type { TPreset, TAgentsMap } from 'librechat-data-provider';
 import {
+  defaultSpecAwaitsAgents,
   mergeQuerySettingsWithSpec,
   processValidSettings,
   getDefaultModelSpec,
   getModelSpecPreset,
+  hasModelSelection,
   isNotFoundError,
   isTemporaryConversation,
   logger,
@@ -20,6 +22,7 @@ import {
   useGetConvoIdQuery,
   useGetStartupConfig,
   useGetEndpointsQuery,
+  useListAgentsQuery,
   useProjectQuery,
 } from '~/data-provider';
 import {
@@ -29,7 +32,7 @@ import {
   useNewConvo,
   useLocalize,
 } from '~/hooks';
-import { ToolCallsMapProvider } from '~/Providers';
+import { ToolCallsMapProvider, useAgentsMapContext } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import { NotificationSeverity } from '~/common';
 import useAuthRedirect from './useAuthRedirect';
@@ -124,6 +127,16 @@ export default function ChatRoute() {
   });
   const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated });
   const assistantListMap = useAssistantListMap();
+  /** The map comes from Root's shared context (one mapping pass app-wide); the
+   * select-less observer only tracks settle state. Only a loaded list may
+   * invalidate a stored agent pick: on a transient catalog failure (retries are
+   * disabled) the map stays unknown, the pick stays trusted, and the gate below
+   * releases so the landing never hangs on the error. */
+  const agentsMap: TAgentsMap | undefined = useAgentsMapContext();
+  const agentsQuery = useListAgentsQuery(
+    { requiredPermission: PermissionBits.VIEW },
+    { enabled: isAuthenticated },
+  );
 
   const isTemporaryChat = isTemporaryConversation(conversation);
 
@@ -165,15 +178,35 @@ export default function ChatRoute() {
       return;
     }
 
-    const getNewConvoPreset = () => {
-      const queryParams: Record<string, string> = {};
-      searchParams.forEach((value, key) => {
-        if (key !== 'prompt' && key !== 'q' && key !== 'submit' && key !== 'projectId') {
-          queryParams[key] = value;
-        }
-      });
-      const querySettings = processValidSettings(queryParams);
+    const queryParams: Record<string, string> = {};
+    searchParams.forEach((value, key) => {
+      if (key !== 'prompt' && key !== 'q' && key !== 'submit' && key !== 'projectId') {
+        queryParams[key] = value;
+      }
+    });
+    const querySettings = processValidSettings(queryParams);
 
+    const notFoundConvo =
+      Boolean(conversationId) &&
+      !isNewConvo &&
+      initialConvoQuery.isError &&
+      isNotFoundError(initialConvoQuery.error);
+
+    /** A stored agent pick can only be validated against the loaded agent list
+     * (it may name an agent since deleted, or one from another org sharing this
+     * browser storage). Defer the first conversation until the list settles.
+     * A URL naming its own selection skips the wait only on the new-chat branch,
+     * where it takes precedence over the stored pick; the 404 fallback never
+     * applies query settings, so it always waits. */
+    const awaitsAgentList =
+      agentsMap == null &&
+      !agentsQuery.isError &&
+      defaultSpecAwaitsAgents(startupConfig, endpointsQuery.data);
+    if (awaitsAgentList && (notFoundConvo || (isNewConvo && !hasModelSelection(querySettings)))) {
+      return;
+    }
+
+    const getNewConvoPreset = () => {
       /** A spec named in the URL is an explicit selection: it must resolve to its own
        * full preset, or stale last-selection state (endpoint/agent) fills the gaps.
        * Names absent from the client config (e.g. `showInMenu: false`) stay in the
@@ -182,7 +215,9 @@ export default function ChatRoute() {
         ? startupConfig?.modelSpecs?.list?.find((spec) => spec.name === querySettings.spec)
         : undefined;
 
-      const result = urlSpec ? undefined : getDefaultModelSpec(startupConfig, endpointsQuery.data);
+      const result = urlSpec
+        ? undefined
+        : getDefaultModelSpec(startupConfig, endpointsQuery.data, agentsMap);
       const spec = urlSpec ?? result?.default ?? result?.last ?? result?.softDefault;
       const specPreset = spec ? getModelSpecPreset(spec) : undefined;
 
@@ -220,7 +255,7 @@ export default function ChatRoute() {
       initialConvoQuery.isError &&
       isNotFoundError(initialConvoQuery.error)
     ) {
-      const result = getDefaultModelSpec(startupConfig, endpointsQuery.data);
+      const result = getDefaultModelSpec(startupConfig, endpointsQuery.data, agentsMap);
       const spec = result?.default ?? result?.last ?? result?.softDefault;
       showToast({
         message: localize('com_ui_conversation_not_found'),
@@ -267,6 +302,8 @@ export default function ChatRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     roles,
+    agentsMap,
+    agentsQuery.isError,
     startupConfig,
     initialConvoQuery.data,
     initialConvoQuery.isError,

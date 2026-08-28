@@ -114,7 +114,15 @@ function MemoryConfig({ value, onChange }: MemoryConfigProps) {
 
 function WebSearchConfig() {
   const { data } = useVerifyAgentToolAuth({ toolId: Tools.web_search }, { retry: 1 });
-  return <SearchAction authTypes={data?.authTypes} isToolAuthenticated={data?.authenticated} />;
+  return (
+    <SearchAction
+      authTypes={data?.authTypes}
+      isToolAuthenticated={data?.authenticated}
+      searchProvider={data?.searchProvider}
+      scraperProvider={data?.scraperProvider}
+      rerankerType={data?.rerankerType}
+    />
+  );
 }
 
 export default function BuiltinSection({

@@ -2,8 +2,8 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { AUTH_USER_DOC_BY_ID_PREFIX, CacheKeys } from 'librechat-data-provider';
 import type * as t from '~/types';
+import { createUserMethods, USER_DELETION_FENCE_STALE_MS } from './user';
 import balanceSchema from '~/schema/balance';
-import { createUserMethods } from './user';
 import userSchema from '~/schema/user';
 
 /** Mocking crypto for generateToken */
@@ -103,6 +103,27 @@ describe('User schema indexes', () => {
         openidIssuer: 'https://issuer-a.example.com',
       }),
     ).rejects.toThrow(/duplicate key/);
+  });
+});
+
+describe('User personalization', () => {
+  test('defaults new users to the shared user workspace', async () => {
+    const user = await User.create({
+      email: 'stateful-default@example.com',
+      provider: 'local',
+    });
+
+    expect(user.personalization?.statefulCodeEnvironment).toBe('user');
+  });
+
+  test('rejects unsupported stateful workspace defaults', async () => {
+    await expect(
+      User.create({
+        email: 'invalid-stateful-default@example.com',
+        provider: 'local',
+        personalization: { statefulCodeEnvironment: 'agent' },
+      }),
+    ).rejects.toThrow();
   });
 });
 
@@ -404,6 +425,140 @@ describe('User Methods - Database Tests', () => {
     });
   });
 
+  describe('claimSamlIdentity', () => {
+    test('should atomically bind an unbound SAML user', async () => {
+      const user = await User.create({
+        name: 'Legacy SAML User',
+        email: 'legacy-saml@example.com',
+        provider: 'saml',
+      });
+
+      const updated = await methods.claimSamlIdentity(user._id?.toString() ?? '', 'saml-123', {
+        name: 'Current SAML User',
+      });
+
+      expect(updated).toMatchObject({
+        name: 'Current SAML User',
+        samlId: 'saml-123',
+      });
+    });
+
+    test('should preserve an existing different SAML binding', async () => {
+      const user = await User.create({
+        email: 'bound-saml@example.com',
+        provider: 'saml',
+        samlId: 'original-saml-id',
+      });
+
+      const updated = await methods.claimSamlIdentity(user._id?.toString() ?? '', 'new-saml-id', {
+        name: 'Untrusted Name',
+      });
+      const stored = await User.findById(user._id).lean<t.IUser>();
+
+      expect(updated).toBeNull();
+      expect(stored).toMatchObject({ samlId: 'original-saml-id' });
+      expect(stored?.name).not.toBe('Untrusted Name');
+    });
+
+    test('should update a user when the SAML binding already matches', async () => {
+      const user = await User.create({
+        email: 'matching-saml@example.com',
+        provider: 'saml',
+        samlId: 'saml-123',
+      });
+
+      const updated = await methods.claimSamlIdentity(user._id?.toString() ?? '', 'saml-123', {
+        name: 'Updated Name',
+      });
+
+      expect(updated).toMatchObject({
+        name: 'Updated Name',
+        samlId: 'saml-123',
+      });
+    });
+
+    test('should not convert a user registered with a different provider', async () => {
+      const user = await User.create({
+        email: 'local-user@example.com',
+        provider: 'local',
+      });
+
+      const updated = await methods.claimSamlIdentity(user._id?.toString() ?? '', 'saml-123', {});
+      const stored = await User.findById(user._id).lean<t.IUser>();
+
+      expect(updated).toBeNull();
+      expect(stored).toMatchObject({ provider: 'local' });
+      expect(stored?.samlId).toBeUndefined();
+    });
+
+    test('should allow only one concurrent first-time SAML binding', async () => {
+      const user = await User.create({
+        email: 'concurrent-saml@example.com',
+        provider: 'saml',
+      });
+      const userId = user._id?.toString() ?? '';
+
+      const results = await Promise.all([
+        methods.claimSamlIdentity(userId, 'saml-a', { name: 'Identity A' }),
+        methods.claimSamlIdentity(userId, 'saml-b', { name: 'Identity B' }),
+      ]);
+      const stored = await User.findById(user._id).lean<t.IUser>();
+
+      expect(results.filter(Boolean)).toHaveLength(1);
+      expect(['saml-a', 'saml-b']).toContain(stored?.samlId);
+      expect(results.find(Boolean)?.samlId).toBe(stored?.samlId);
+    });
+
+    test('should invalidate cached auth documents after a successful claim', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({
+        email: 'cached-saml@example.com',
+        provider: 'saml',
+      });
+      const userId = user._id?.toString() ?? '';
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`;
+      const cache = {
+        get: jest.fn().mockResolvedValue(['auth-cache-key']),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const methodsWithCache = createUserMethods(mongoose, {
+        getCache: jest.fn().mockReturnValue(cache),
+      });
+
+      await methodsWithCache.claimSamlIdentity(userId, 'saml-123', {});
+
+      expect(cache.get).toHaveBeenCalledWith(indexKey);
+      expect(cache.delete).toHaveBeenCalledWith('auth-cache-key');
+      expect(cache.delete).toHaveBeenCalledWith(indexKey);
+    });
+
+    test('should not invalidate cached auth documents after a rejected claim', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({
+        email: 'cached-bound-saml@example.com',
+        provider: 'saml',
+        samlId: 'original-saml-id',
+      });
+      const cache = {
+        get: jest.fn(),
+        delete: jest.fn(),
+      };
+      const getCache = jest.fn().mockReturnValue(cache);
+      const methodsWithCache = createUserMethods(mongoose, { getCache });
+
+      const updated = await methodsWithCache.claimSamlIdentity(
+        user._id?.toString() ?? '',
+        'different-saml-id',
+        {},
+      );
+
+      expect(updated).toBeNull();
+      expect(getCache).not.toHaveBeenCalled();
+      expect(cache.get).not.toHaveBeenCalled();
+      expect(cache.delete).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getUserById', () => {
     test('should get user by ID', async () => {
       const user = await User.create({
@@ -604,6 +759,238 @@ describe('User Methods - Database Tests', () => {
 
       expect(result.deletedCount).toBe(0);
       expect(result.message).toBe('No user found with that ID.');
+    });
+  });
+
+  describe('agent trigger account-deletion fence', () => {
+    test('blocks trigger admission until the owning deletion attempt releases it', async () => {
+      const user = await User.create({
+        name: 'Trigger Fence',
+        email: 'trigger-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+      const startedAt = new Date('2026-08-17T12:00:00.000Z');
+
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(true);
+      await expect(methods.beginAgentTriggerUserDeletion(userId, startedAt)).resolves.toBe(
+        'acquired',
+      );
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(false);
+      await expect(
+        methods.beginAgentTriggerUserDeletion(userId, new Date(startedAt.getTime() + 1)),
+      ).resolves.toBe('in_progress');
+      await expect(
+        methods.cancelAgentTriggerUserDeletion(userId, new Date(startedAt.getTime() + 1)),
+      ).resolves.toBe(false);
+      await expect(methods.cancelAgentTriggerUserDeletion(userId, startedAt)).resolves.toBe(true);
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(true);
+    });
+
+    test('reports a missing principal without creating a deletion fence', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      await expect(methods.beginAgentTriggerUserDeletion(userId, new Date())).resolves.toBe(
+        'missing',
+      );
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(false);
+    });
+
+    test('requires explicit stale-fence recovery and preserves successor ownership', async () => {
+      const user = await User.create({
+        name: 'Stale Trigger Fence',
+        email: 'stale-trigger-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+      const abandonedAt = new Date('2026-08-17T12:00:00.000Z');
+      const takeoverAt = new Date(abandonedAt.getTime() + USER_DELETION_FENCE_STALE_MS + 1);
+
+      await expect(methods.beginAgentTriggerUserDeletion(userId, abandonedAt)).resolves.toBe(
+        'acquired',
+      );
+      await expect(methods.beginAgentTriggerUserDeletion(userId, takeoverAt)).resolves.toBe(
+        'in_progress',
+      );
+      await expect(
+        methods.recoverStaleAgentTriggerUserDeletion(
+          userId,
+          new Date(abandonedAt.getTime() + USER_DELETION_FENCE_STALE_MS - 1),
+        ),
+      ).resolves.toBe('in_progress');
+      await expect(methods.recoverStaleAgentTriggerUserDeletion(userId, takeoverAt)).resolves.toBe(
+        'acquired',
+      );
+      await expect(methods.cancelAgentTriggerUserDeletion(userId, abandonedAt)).resolves.toBe(
+        false,
+      );
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(false);
+      await expect(methods.cancelAgentTriggerUserDeletion(userId, takeoverAt)).resolves.toBe(true);
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(true);
+    });
+
+    test('rejects invalid deletion-fence timestamps', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      await expect(
+        methods.beginAgentTriggerUserDeletion(userId, new Date(Number.NaN)),
+      ).rejects.toThrow('startedAt must be a valid Date');
+      await expect(
+        methods.recoverStaleAgentTriggerUserDeletion(userId, new Date(Number.NaN)),
+      ).rejects.toThrow('recoveredAt must be a valid Date');
+    });
+  });
+
+  describe('subagent admission fence', () => {
+    test('closes admission until the deletion that took the fence releases it', async () => {
+      const user = await User.create({
+        name: 'Subagent Fence',
+        email: 'subagent-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+      const fencedUntil = new Date(Date.now() + 60_000);
+
+      await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(true);
+      await methods.fenceSubagentAdmission(userId, 'deletion-a', fencedUntil);
+      await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(false);
+
+      /** Each overlapping deletion holds its own fence, so admission reopens only
+       * once the last one finishes — in either completion order. */
+      await methods.fenceSubagentAdmission(userId, 'deletion-b', fencedUntil);
+      await methods.releaseSubagentAdmission(userId, 'deletion-a');
+      await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(false);
+
+      await methods.releaseSubagentAdmission(userId, 'deletion-b');
+      await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(true);
+    });
+
+    test('keeps admission closed when the later deletion finishes first', async () => {
+      const user = await User.create({
+        name: 'Reverse Fence',
+        email: 'reverse-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+      const fencedUntil = new Date(Date.now() + 60_000);
+
+      await methods.fenceSubagentAdmission(userId, 'deletion-a', fencedUntil);
+      await methods.fenceSubagentAdmission(userId, 'deletion-b', fencedUntil);
+
+      /** The deletion that started second finishes first; the first is still running. */
+      await methods.releaseSubagentAdmission(userId, 'deletion-b');
+      await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(false);
+
+      await methods.releaseSubagentAdmission(userId, 'deletion-a');
+      await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(true);
+    });
+
+    test('prunes an expired fence when the next deletion takes one', async () => {
+      const user = await User.create({
+        name: 'Pruned Fence',
+        email: 'pruned-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+
+      await methods.fenceSubagentAdmission(userId, 'abandoned', new Date(Date.now() - 1));
+      await methods.fenceSubagentAdmission(userId, 'deletion-a', new Date(Date.now() + 60_000));
+
+      const stored = await User.findById(userId).select('+subagentAdmissionFences').lean();
+      expect(stored?.subagentAdmissionFences).toHaveLength(1);
+      expect(stored?.subagentAdmissionFences?.[0]?.token).toBe('deletion-a');
+    });
+
+    test('reopens admission once an abandoned fence expires', async () => {
+      const user = await User.create({
+        name: 'Expired Fence',
+        email: 'expired-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+
+      await methods.fenceSubagentAdmission(userId, 'deletion-a', new Date(Date.now() - 1));
+      await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(true);
+    });
+
+    test('refuses an excess deletion instead of discarding an active fence', async () => {
+      const user = await User.create({
+        name: 'Saturated Fence',
+        email: 'saturated-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+      const fencedUntil = new Date(Date.now() + 60_000);
+
+      for (let index = 0; index < 32; index += 1) {
+        await methods.fenceSubagentAdmission(userId, `deletion-${index}`, fencedUntil);
+      }
+      await expect(
+        methods.fenceSubagentAdmission(userId, 'deletion-overflow', fencedUntil),
+      ).rejects.toThrow('Too many concurrent bulk deletions');
+
+      /** The first deletion still owns its fence, so admission stays closed for it. */
+      const stored = await User.findById(userId).select('+subagentAdmissionFences').lean();
+      expect(stored?.subagentAdmissionFences).toHaveLength(32);
+      expect(stored?.subagentAdmissionFences?.[0]?.token).toBe('deletion-0');
+      await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(false);
+    });
+
+    test('invalidates the cached auth document when a refused fence still pruned', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({
+        name: 'Refused Fence',
+        email: 'refused-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id?.toString() ?? '';
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`;
+      const fencedUntil = new Date(Date.now() + 60_000);
+      /** A saturated owner that has since abandoned one fence: the next attempt prunes
+       * the expired entry and is then refused by the cap, so the two writes disagree. */
+      await User.updateOne(
+        { _id: userId },
+        {
+          $set: {
+            subagentAdmissionFences: [
+              ...Array.from({ length: 32 }, (_unused, index) => ({
+                token: `deletion-${index}`,
+                expiresAt: fencedUntil,
+              })),
+              { token: 'abandoned', expiresAt: new Date(Date.now() - 1) },
+            ],
+          },
+        },
+      );
+
+      const cache = {
+        get: jest.fn().mockResolvedValue(['auth-cache-key-a']),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const methodsWithCache = createUserMethods(mongoose, {
+        getCache: jest.fn().mockReturnValue(cache),
+      });
+
+      await expect(
+        methodsWithCache.fenceSubagentAdmission(userId, 'deletion-overflow', fencedUntil),
+      ).rejects.toThrow('Too many concurrent bulk deletions');
+      const stored = await User.findById(userId).select('+subagentAdmissionFences').lean();
+      expect(stored?.subagentAdmissionFences).toHaveLength(32);
+      /** The prune committed, so leaving the cached document in place would serve the
+       * pruned fence until its own TTL expired. */
+      expect(cache.delete).toHaveBeenCalledWith('auth-cache-key-a');
+      expect(cache.delete).toHaveBeenCalledWith(indexKey);
+    });
+
+    test('refuses an unbounded or invalid fence', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      await expect(
+        methods.fenceSubagentAdmission(userId, 'deletion-a', new Date(Number.NaN)),
+      ).rejects.toThrow('fencedUntil must be a valid Date');
+      await expect(
+        methods.fenceSubagentAdmission(userId, '', new Date(Date.now() + 60_000)),
+      ).rejects.toThrow('bounded owner token');
     });
   });
 
@@ -823,6 +1210,57 @@ describe('User Methods - Database Tests', () => {
       await methodsWithCache.toggleUserMemories(user._id?.toString() ?? '', false);
 
       expect(getCache).toHaveBeenCalledWith(CacheKeys.AUTH_USER_DOC);
+      expect(cache.get).toHaveBeenCalledWith(indexKey);
+      expect(cache.delete).toHaveBeenCalledWith('auth-cache-key-a');
+      expect(cache.delete).toHaveBeenCalledWith(indexKey);
+    });
+  });
+
+  describe('updateUserStatefulCodeEnvironment', () => {
+    test('updates the workspace default without changing memory preferences', async () => {
+      const user = await User.create({
+        email: 'stateful-preference@example.com',
+        provider: 'local',
+        personalization: { memories: false, statefulCodeEnvironment: 'user' },
+      });
+
+      const updated = await methods.updateUserStatefulCodeEnvironment(
+        user._id?.toString() ?? '',
+        'agent-user',
+      );
+
+      expect(updated?.personalization).toMatchObject({
+        memories: false,
+        statefulCodeEnvironment: 'agent-user',
+      });
+    });
+
+    test('returns null for a missing user', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      await expect(
+        methods.updateUserStatefulCodeEnvironment(userId, 'conversation'),
+      ).resolves.toBeNull();
+    });
+
+    test('invalidates cached auth user documents', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({
+        email: 'cached-stateful-preference@example.com',
+        provider: 'openid',
+      });
+      const userId = user._id?.toString() ?? '';
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`;
+      const cache = {
+        get: jest.fn().mockResolvedValue(['auth-cache-key-a']),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const methodsWithCache = createUserMethods(mongoose, {
+        getCache: jest.fn().mockReturnValue(cache),
+      });
+
+      await methodsWithCache.updateUserStatefulCodeEnvironment(userId, 'conversation');
+
       expect(cache.get).toHaveBeenCalledWith(indexKey);
       expect(cache.delete).toHaveBeenCalledWith('auth-cache-key-a');
       expect(cache.delete).toHaveBeenCalledWith(indexKey);

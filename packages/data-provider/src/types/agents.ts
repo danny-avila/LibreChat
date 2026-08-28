@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 import type { TTokenUsageEvent, TContextUsageEvent, TPendingSteer } from './runs';
-import type { FunctionToolCall, SummaryContentPart } from './assistants';
 import type { TAttachment, TPlugin } from 'src/schemas';
+import type { SummaryContentPart } from './assistants';
 import { StepTypes, ContentTypes, ToolCallTypes } from './runs';
 
 export namespace Agents {
@@ -68,8 +68,9 @@ export namespace Agents {
    * A call to a tool.
    */
   export type ToolCall = {
-    /** Type ("tool_call") according to Assistants Tool Call Structure */
-    type: ToolCallTypes.TOOL_CALL;
+    /** Type ("tool_call") according to Assistants Tool Call Structure; optional literal
+     *  form included to mirror langchain's ToolCall, whose `type` is optional. */
+    type?: ToolCallTypes.TOOL_CALL | 'tool_call';
     /** The name of the tool to be called */
     name: string;
 
@@ -265,7 +266,38 @@ export namespace Agents {
     groupId?: number; // #new
     stepDetails: StepDetails;
     summary?: SummaryContentPart;
-    usage: null | object;
+    /** Optional to mirror the agents SDK, which omits usage until a step reports it. */
+    usage?: null | object;
+    /** Epoch ms the step was opened. Emitted by `@librechat/agents` >= 3.4.6. */
+    created_at?: number;
+    status?: RunStepStatus;
+  };
+
+  /** Lifecycle status of a run step. `in_progress` until a terminal close. */
+  export type RunStepStatus = 'in_progress' | 'completed' | 'cancelled' | 'failed';
+
+  /** Terminal status a run step can close with. */
+  export type RunStepClosedStatus = Exclude<RunStepStatus, 'in_progress'>;
+
+  /**
+   * Payload of {@link StepEvents.ON_RUN_STEP_CLOSED}. Emitted once per step
+   * when it reaches a terminal state, including steps swept at end-of-run
+   * because the caller aborted — which is the only signal that distinguishes
+   * a stopped step from one still in flight.
+   */
+  export type RunStepClosedEvent = {
+    id: string;
+    index: number;
+    type: StepTypes;
+    status: RunStepClosedStatus;
+    /** Epoch ms the step was opened, when the emitter knows it. */
+    created_at?: number;
+    /** Epoch ms the step reached its terminal state. */
+    closed_at: number;
+    runId?: string;
+    agentId?: string;
+    groupId?: number;
+    stepIndex?: number;
   };
 
   /** Content part for aggregated message content */
@@ -295,6 +327,8 @@ export namespace Agents {
     aggregatedContent?: MessageContentComplex[];
     userMessage?: UserMessageMeta;
     responseMessageId?: string;
+    /** True when the live generation replaces an existing assistant branch. */
+    isRegenerate?: boolean;
     conversationId?: string;
     sender?: string;
     iconURL?: string;
@@ -347,11 +381,14 @@ export namespace Agents {
     type: StepTypes.MESSAGE_CREATION;
     message_creation: {
       message_id: string;
+      /** Provider content kind and Open Responses semantic text channel. */
+      content_type?: 'text' | 'think';
+      phase?: 'commentary' | 'final_answer';
     };
   };
   export type ToolCallsDetails = {
     type: StepTypes.TOOL_CALLS;
-    tool_calls: AgentToolCall[];
+    tool_calls?: AgentToolCall[];
   };
   export type ToolCallDelta = {
     type: StepTypes.TOOL_CALLS | string;
@@ -365,7 +402,22 @@ export namespace Agents {
       description?: string;
     };
   };
-  export type AgentToolCall = FunctionToolCall | ToolCall;
+  /**
+   * Mirrors the agents SDK's function tool-call variant: `arguments` may arrive as a
+   * parsed object, and `output` is attached by LibreChat aggregation only once available
+   * (the legacy assistants `FunctionToolCall` requires both as string/present).
+   */
+  export type AgentFunctionToolCall = {
+    id: string;
+    type: 'function';
+    function: {
+      name: string;
+      arguments: string | object;
+      output?: string | null;
+    };
+  };
+
+  export type AgentToolCall = AgentFunctionToolCall | ToolCall;
 
   /**
    * Human-in-the-loop interrupt categories. The discriminator on
@@ -439,10 +491,25 @@ export namespace Agents {
     multiSelect?: boolean;
   }
 
+  /** One independently answerable question in a batched clarification. */
+  export interface AskUserQuestionBatchItem extends AskUserQuestionRequest {
+    /** Batch-unique identifier used to map the submitted answer. */
+    id: string;
+    /** Optional short heading rendered above the question. */
+    header?: string;
+  }
+
+  /** Input shape for one tool call that asks several related questions. */
+  export interface AskUserQuestionsRequest {
+    questions: AskUserQuestionBatchItem[];
+  }
+
   /** Interrupt payload for an ask-user-question pause. */
   export interface AskUserQuestionInterruptPayload {
     type: 'ask_user_question';
     question: AskUserQuestionRequest;
+    /** Present for a batched clarification; `question` remains the first-item fallback. */
+    questions?: AskUserQuestionBatchItem[];
     /**
      * The ask tool call that raised this interrupt (mirrors the SDK field,
      * present from `@librechat/agents` > 3.3.8). Lets the question/answer
@@ -535,6 +602,11 @@ export namespace Agents {
   /** Wire format for an ask-user-question response. */
   export interface AskUserQuestionResolution {
     answer: string;
+  }
+
+  /** Wire format for a batched ask-user-question response. */
+  export interface AskUserQuestionsResolution {
+    answers: Record<string, string>;
   }
 
   export interface ExtendedMessageContent {
@@ -741,8 +813,20 @@ export type GraphEdge = {
    *
    * For handoff edges: Description for the input parameter that the handoff tool accepts,
    * allowing the supervisor to pass specific instructions/context to the transferred agent.
+   *
+   * The callback receives a minimal structural view of the run's messages (data-provider
+   * cannot depend on langchain's BaseMessage): every langchain message satisfies
+   * `{ content: unknown }`, and callbacks typed against richer structural message shapes
+   * remain assignable. The promise branch mirrors the agents SDK signature exactly —
+   * widening it (e.g. to `Promise<string | undefined>`) would break assignability of
+   * stored edges into the SDK's `GraphEdge`.
    */
-  prompt?: string | ((messages: BaseMessage[], runStartIndex: number) => string | undefined);
+  prompt?:
+    | string
+    | ((
+        messages: { content: unknown }[],
+        runStartIndex: number,
+      ) => string | Promise<string> | undefined);
   /**
    * When true, excludes messages from startIndex when adding prompt.
    * Automatically set to true when {results} variable is used in prompt.

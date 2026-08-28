@@ -5,6 +5,7 @@ const {
   tenantStorage,
   getTenantId,
   logger,
+  runAfterTransaction,
 } = require('@librechat/data-schemas');
 const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
 const {
@@ -114,7 +115,7 @@ const grantPermission = async ({
         `Role ${accessRoleId} is for ${role.resourceType} resources, not ${resourceType}`,
       );
     }
-    return await db.grantPermission(
+    const result = await db.grantPermission(
       principalType,
       principalId,
       resourceType,
@@ -124,6 +125,12 @@ const grantPermission = async ({
       session,
       role._id,
     );
+    if (resourceType === ResourceType.PROMPTGROUP) {
+      /** A caller-owned session may not have committed yet; invalidating early
+       * would let a concurrent read re-cache pre-commit IDs under the new generation. */
+      await runAfterTransaction(session, () => db.invalidatePromptGroupAccessContext());
+    }
+    return result;
   } catch (error) {
     logger.error(`[PermissionService.grantPermission] Error: ${error.message}`);
     throw error;
@@ -238,11 +245,19 @@ const getResourcePermissionsMap = async ({ userId, role, resourceType, resourceI
  * @param {Object} params - Parameters for finding accessible resources
  * @param {string|mongoose.Types.ObjectId} params.userId - The ID of the user
  * @param {string} [params.role] - Optional user role (if not provided, will query from DB)
+ * @param {string|null} [params.idOnTheSource] - Optional external member id. `null` means "known to
+ * be absent" (local user); only `undefined` makes `getUserPrincipals` read the user document.
  * @param {string} params.resourceType - Type of resource (e.g., 'agent')
  * @param {number} params.requiredPermissions - The minimum permission bits required (e.g., 1 for VIEW, 3 for VIEW+EDIT)
  * @returns {Promise<Array>} Array of resource IDs
  */
-const findAccessibleResources = async ({ userId, role, resourceType, requiredPermissions }) => {
+const findAccessibleResources = async ({
+  userId,
+  role,
+  idOnTheSource,
+  resourceType,
+  requiredPermissions,
+}) => {
   try {
     if (typeof requiredPermissions !== 'number' || requiredPermissions < 1) {
       throw new Error('requiredPermissions must be a positive number');
@@ -251,7 +266,7 @@ const findAccessibleResources = async ({ userId, role, resourceType, requiredPer
     validateResourceType(resourceType);
 
     // Get all principals for the user (user + groups + public)
-    const principalsList = await db.getUserPrincipals({ userId, role });
+    const principalsList = await db.getUserPrincipals({ userId, role, idOnTheSource });
 
     if (principalsList.length === 0) {
       return [];
@@ -920,6 +935,11 @@ const bulkUpdateResourcePermissions = async ({
       await localSession.commitTransaction();
     }
 
+    if (resourceType === ResourceType.PROMPTGROUP) {
+      /** The caller's session may still be uncommitted; defer until it commits */
+      await runAfterTransaction(localSession, () => db.invalidatePromptGroupAccessContext());
+    }
+
     return results;
   } catch (error) {
     if (shouldEndSession && supportsTransactions) {
@@ -961,6 +981,10 @@ const removeAllPermissions = async ({ resourceType, resourceId }) => {
       resourceType,
       resourceId,
     });
+
+    if (resourceType === ResourceType.PROMPTGROUP) {
+      await db.invalidatePromptGroupAccessContext();
+    }
 
     return result;
   } catch (error) {

@@ -3,6 +3,8 @@ import type { EndpointDbMethods, ServerRequest } from '~/types';
 import {
   mapCollectedMetadataToUsage,
   resolveActivityConfig,
+  resolveActivityPhaseConfig,
+  resolveReasoningLabelConfig,
   resolveActivityLabelModel,
 } from '../host';
 
@@ -16,7 +18,6 @@ jest.mock('~/endpoints/config/providers', () => ({
   })),
 }));
 jest.mock('~/utils/headers', () => ({ resolveConfigHeaders: jest.fn() }));
-jest.mock('~/utils/env', () => ({ createSafeUser: jest.fn(() => undefined) }));
 
 const appConfig = (endpoints: Record<string, unknown>): AppConfig =>
   ({ endpoints }) as unknown as AppConfig;
@@ -120,6 +121,103 @@ describe('resolveActivityConfig', () => {
       'agents',
     );
     expect(config.model).toBe('shared-model');
+  });
+});
+
+describe('resolveActivityPhaseConfig', () => {
+  it('is independently opt-in and inherits activity model/endpoint tuning', () => {
+    const config = resolveActivityPhaseConfig(
+      appConfig({
+        openAI: {
+          activityLabel: true,
+          activityModel: 'batch-model',
+          activityEndpoint: 'anthropic',
+        },
+      }),
+      'openAI',
+    );
+    expect(config).toMatchObject({
+      enabled: false,
+      model: 'batch-model',
+      endpoint: 'anthropic',
+    });
+  });
+
+  it('prefers dedicated phase settings and reuses activityCharLimit', () => {
+    const config = resolveActivityPhaseConfig(
+      appConfig({
+        openAI: {
+          activityPhaseLabel: true,
+          activityPhaseModel: 'phase-model',
+          activityModel: 'batch-model',
+          activityPhaseEndpoint: 'google',
+          activityEndpoint: 'anthropic',
+          activityPhasePrompt: 'phase prompt',
+          activityPhaseMaxPerRun: 3,
+          activityCharLimit: 240,
+        },
+      }),
+      'openAI',
+    );
+    expect(config).toEqual({
+      enabled: true,
+      model: 'phase-model',
+      endpoint: 'google',
+      prompt: 'phase prompt',
+      maxPerRun: 3,
+      charLimit: 240,
+    });
+  });
+});
+
+describe('resolveReasoningLabelConfig', () => {
+  it('is independently opt-in and inherits activity model and endpoint settings', () => {
+    const config = resolveReasoningLabelConfig(
+      appConfig({
+        openAI: {
+          activityModel: 'activity-model',
+          activityEndpoint: 'anthropic',
+        },
+      }),
+      'openAI',
+    );
+    expect(config).toMatchObject({
+      enabled: false,
+      model: 'activity-model',
+      endpoint: 'anthropic',
+    });
+  });
+
+  it('resolves dedicated tuning field-by-field through the public endpoint', () => {
+    const config = resolveReasoningLabelConfig(
+      appConfig({
+        all: { reasoningLabelUpdateIntervalMs: 2_000 },
+        agents: {
+          reasoningLabel: true,
+          reasoningLabelModel: 'reasoning-model',
+          reasoningLabelPrompt: 'reasoning prompt',
+          reasoningLabelMinChars: 600,
+        },
+        openAI: {
+          reasoningLabelEndpoint: 'google',
+          reasoningLabelUpdateChars: 450,
+          reasoningLabelMaxPerRun: 6,
+        },
+      }),
+      'openAI',
+      undefined,
+      'agents',
+    );
+    expect(config).toEqual({
+      enabled: true,
+      model: 'reasoning-model',
+      endpoint: 'google',
+      prompt: 'reasoning prompt',
+      minChars: 600,
+      updateChars: 450,
+      updateIntervalMs: 2_000,
+      maxPerRun: 6,
+    });
   });
 });
 

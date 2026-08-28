@@ -2,6 +2,15 @@ import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
 import {
+  filtersConfigSchema,
+  MAX_PII_CUSTOM_REGEX_CHARACTERS,
+  MAX_PII_CUSTOM_REGEX_INSTRUCTIONS,
+  MAX_PII_PATTERN_ID_LENGTH,
+  MAX_PII_PATTERN_LABEL_LENGTH,
+  MAX_PII_PATTERNS_PER_SOURCE,
+  MAX_PII_PATTERN_LENGTH,
+} from './filters';
+import {
   EModelEndpoint,
   eModelEndpointSchema,
   isAgentsEndpoint,
@@ -9,17 +18,28 @@ import {
   eReasoningResponseKeySchema,
 } from './schemas';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
+import { MAX_SUBAGENTS, MAX_SUBAGENTS_CEILING } from './limits';
+import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { isActionTool } from './types/assistants';
 import { REFILL_INTERVAL_UNITS } from './balance';
 import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
-export { MAX_SUBAGENTS } from './limits';
+export {
+  MAX_SUBAGENTS,
+  MAX_SUBAGENTS_CEILING,
+  getMaxSubagents,
+  setMaxSubagents,
+  MAX_GRAPH_SUBAGENT_MEMBERS,
+  MAX_CHAT_PROJECT_NAME_LENGTH,
+  MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
+} from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
-export const BASE_ONLY_CONFIG_SECTIONS = [] as const;
+export const BASE_ONLY_CONFIG_SECTIONS = ['filters'] as const;
 /** Sections that may be stored in the tenant's base config document but must
  * not be overridden or tombstoned by role, group, or user config documents. */
 export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
@@ -49,6 +69,12 @@ export const defaultRetrievalModels = [
 
 export const excludedKeys = new Set([
   'conversationId',
+  'agentEventBinding',
+  'agentEventActor',
+  'agentEventActorReconciliations',
+  'agentEventActorEpoch',
+  'agentEventActorLegacyTurn',
+  'subagentThread',
   'title',
   'iconURL',
   'greeting',
@@ -60,6 +86,8 @@ export const excludedKeys = new Set([
   'isTemporary',
   'messages',
   'isArchived',
+  'pinned',
+  'archivedAt',
   'tags',
   'user',
   '__v',
@@ -113,6 +141,38 @@ function isPrivateIPv4Literal(value: string): boolean {
   return false;
 }
 
+/**
+ * Mirrors `hasPrivateEmbeddedIPv4` in `@librechat/api`'s ip helpers: 6to4, NAT64, and Teredo
+ * carry an IPv4 address inside the IPv6 one, and the runtime guard blocks those when the
+ * embedded address is private. Kept in sync so an operator can exempt what the runtime blocks.
+ */
+function hasPrivateEmbeddedIPv4Literal(value: string): boolean {
+  const is6to4 = value.startsWith('2002:');
+  const isNat64 = value.startsWith('64:ff9b::');
+  const isTeredo = value.startsWith('2001::');
+  if (!is6to4 && !isNat64 && !isTeredo) {
+    return false;
+  }
+
+  const segments = value.split(':').filter((segment) => segment !== '');
+  const pair = is6to4 ? segments.slice(1, 3) : segments.slice(-2);
+  if (pair.length !== 2) {
+    return false;
+  }
+
+  const hi = parseInt(pair[0], 16);
+  const lo = parseInt(pair[1], 16);
+  if (isNaN(hi) || isNaN(lo)) {
+    return false;
+  }
+
+  /** RFC 4380: Teredo stores the external IPv4 as a bitwise complement. */
+  const high = isTeredo ? ~hi : hi;
+  const low = isTeredo ? ~lo : lo;
+  const octets = [(high >> 8) & 0xff, high & 0xff, (low >> 8) & 0xff, low & 0xff];
+  return isPrivateIPv4Literal(octets.join('.'));
+}
+
 function isPrivateIPv6Literal(value: string): boolean {
   if (!value.includes(':')) return false;
   if (value === '::1' || value === '::') return true;
@@ -126,7 +186,7 @@ function isPrivateIPv6Literal(value: string): boolean {
   // 4-in-6: ::ffff:A.B.C.D
   const mappedMatch = value.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
   if (mappedMatch) return isPrivateIPv4Literal(mappedMatch[1]);
-  return false;
+  return hasPrivateEmbeddedIPv4Literal(value);
 }
 
 /**
@@ -591,7 +651,14 @@ export const defaultAssistantsVersion = {
 };
 
 export const baseEndpointSchema = z.object({
-  streamRate: z.number().optional(),
+  /**
+   * Milliseconds between visible streamed chunks. Agents SDK-backed
+   * providers (openAI, custom, anthropic, google, bedrock, agents) smooth
+   * adaptively at 25ms by default; set to override the cadence, 0 to
+   * disable smoothing. Legacy Assistants and Ollama paths instead sleep
+   * this long per provider chunk (default 1ms), with no adaptive smoothing.
+   */
+  streamRate: z.number().min(0).optional(),
   baseURL: z.string().optional(),
   /**
    * Custom request headers forwarded to the provider on every request. Values
@@ -638,6 +705,32 @@ export const baseEndpointSchema = z.object({
   activityMaxPerRun: z.number().int().positive().optional(),
   /** Per-entry truncation of tool input/output in the label prompt. Default 600. */
   activityCharLimit: z.number().int().positive().optional(),
+  /** Generates one parent summary for each run phase containing 2+ activities. */
+  activityPhaseLabel: z.boolean().optional(),
+  /** Model used for phase summaries. Defaults to activityModel, titleModel, then the run model. */
+  activityPhaseModel: z.string().optional(),
+  /** Endpoint whose credentials the phase summary model uses. Defaults to activityEndpoint. */
+  activityPhaseEndpoint: z.string().optional(),
+  /** Overrides the dedicated phase-summary system prompt. */
+  activityPhasePrompt: z.string().optional(),
+  /** Cost cap: maximum phase summaries generated per run. Default 5. */
+  activityPhaseMaxPerRun: z.number().int().positive().optional(),
+  /** Generates a live orientation label for sufficiently long top-level response reasoning. */
+  reasoningLabel: z.boolean().optional(),
+  /** Model used for reasoning labels. Defaults to activityModel, titleModel, then run model. */
+  reasoningLabelModel: z.string().optional(),
+  /** Endpoint receiving the bounded visible-reasoning snapshot. Defaults to activityEndpoint. */
+  reasoningLabelEndpoint: z.string().optional(),
+  /** Overrides the dedicated reasoning-label system prompt. */
+  reasoningLabelPrompt: z.string().optional(),
+  /** Characters required before the first reasoning label. Default 500. */
+  reasoningLabelMinChars: z.number().int().positive().optional(),
+  /** New characters required between streaming revisions. Default 400. */
+  reasoningLabelUpdateChars: z.number().int().positive().optional(),
+  /** Minimum milliseconds between streaming revisions. Default 3000. */
+  reasoningLabelUpdateIntervalMs: z.number().int().nonnegative().optional(),
+  /** Cost cap: maximum reasoning-label provider calls attempted per run. Default 8. */
+  reasoningLabelMaxPerRun: z.number().int().positive().optional(),
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars: z.number().positive().optional(),
 });
@@ -810,7 +903,7 @@ export type ToolApprovalMode = z.infer<typeof toolApprovalModeSchema>;
  *
  * Shape mirrors `@librechat/agents`'s `ToolPolicyConfig` so the host can map it
  * directly into `createToolPolicyHook(config)`. The SDK does the evaluation
- * (`deny → bypass → allow → ask → dontAsk → fallthrough(ask)`); this config
+ * (`deny → ask → allow → bypass → dontAsk → fallthrough(ask)`); this config
  * just describes the surface.
  *
  * Conventions:
@@ -916,14 +1009,46 @@ export const agentsEndpointSchema = baseEndpointSchema
       recursionLimit: z.number().optional(),
       disableBuilder: z.boolean().optional().default(false),
       maxRecursionLimit: z.number().optional(),
+      /** Max cumulative bytes a single streamed tool call's arguments may reach before the run
+       * aborts. Defaults to 64 KiB in the agents SDK; `0` disables the guard. */
+      maxToolCallArgBytes: z.number().optional(),
+      /** Max streamed chunk events per model generation before the run aborts. Off by default. */
+      maxDeltaEventsPerTurn: z.number().optional(),
+      /** Per-tool overrides of `maxToolCallArgBytes`, keyed by model-facing tool name; `0`
+       * disables the guard for that tool only. Merged over LibreChat's shipped default of
+       * `{ create_file: 131072 }`. */
+      maxToolCallArgBytesByTool: z.record(z.number()).optional(),
       maxCitations: z.number().min(1).max(50).optional().default(30),
       maxCitationsPerFile: z.number().min(1).max(10).optional().default(7),
       minRelevanceScore: z.number().min(0.0).max(1.0).optional().default(0.45),
+      /** Maximum explicit subagents per agent (`agent_ids` and `graphs`); raised from
+       * the shipped default of 10 for orchestration-heavy deployments, bounded by
+       * `MAX_SUBAGENTS_CEILING`. */
+      maxSubagents: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_SUBAGENTS_CEILING)
+        .optional()
+        .default(MAX_SUBAGENTS),
       allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
       capabilities: z
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      /** Controls which workspace-sharing scopes users may select for stateful code sessions.
+       *  Omit this block to preserve the legacy behavior of allowing every scope. */
+      statefulCodeSessions: z
+        .object({
+          allowedEnvironments: z.array(z.enum(STATEFUL_CODE_ENVIRONMENTS)).min(1),
+        })
+        .optional(),
+      /** Optional trusted origin for in-process agent event delivery. */
+      eventDriven: z
+        .object({
+          selfUrl: z.string().url().optional(),
+        })
+        .optional(),
       skills: z
         .object({
           maxCatalogSkills: z.number().int().min(1).max(100).optional(),
@@ -932,8 +1057,8 @@ export const agentsEndpointSchema = baseEndpointSchema
       remoteApi: remoteApiSchema.optional(),
       /** Human-in-the-loop tool approval policy. Off by default. */
       toolApproval: toolApprovalPolicySchema,
-      /** Durable checkpointer backing HITL resume. Defaults to the app's MongoDB
-       *  when `toolApproval.enabled` is set; ignored otherwise. */
+      /** Durable checkpointer backing tool-approval and Ask User resume.
+       *  Defaults to the app's MongoDB when either flow needs it. */
       checkpointer: checkpointerSchema,
     }),
   )
@@ -943,6 +1068,7 @@ export const agentsEndpointSchema = baseEndpointSchema
     maxCitations: 30,
     maxCitationsPerFile: 7,
     minRelevanceScore: 0.45,
+    maxSubagents: MAX_SUBAGENTS,
   });
 
 export type TAgentsEndpoint = z.infer<typeof agentsEndpointSchema>;
@@ -960,6 +1086,14 @@ export const paramDefinitionSchema = z.object({
       min: z.number(),
       max: z.number(),
       step: z.number().optional(),
+      positiveMin: z.number().optional(),
+    })
+    /** A floor above the ceiling admits nothing but the sentinel, while the
+     *  clamp maps every non-negative input onto a maximum the generated schema
+     *  then rejects. */
+    .refine((value) => value.positiveMin == null || value.positiveMin <= value.max, {
+      message: 'range.positiveMin cannot exceed range.max',
+      path: ['positiveMin'],
     })
     .optional(),
   enumMappings: z.record(z.union([z.number(), z.boolean(), z.string()])).optional(),
@@ -1074,6 +1208,19 @@ export const azureEndpointSchema = z
         activityPrompt: true,
         activityMaxPerRun: true,
         activityCharLimit: true,
+        activityPhaseLabel: true,
+        activityPhaseModel: true,
+        activityPhaseEndpoint: true,
+        activityPhasePrompt: true,
+        activityPhaseMaxPerRun: true,
+        reasoningLabel: true,
+        reasoningLabelModel: true,
+        reasoningLabelEndpoint: true,
+        reasoningLabelPrompt: true,
+        reasoningLabelMinChars: true,
+        reasoningLabelUpdateChars: true,
+        reasoningLabelUpdateIntervalMs: true,
+        reasoningLabelMaxPerRun: true,
       })
       .partial(),
   );
@@ -1191,6 +1338,7 @@ const ttsLocalaiSchema = z.object({
 });
 
 const ttsSchema = z.object({
+  allowedAddresses: allowedAddressesSchema,
   openai: ttsOpenaiSchema.optional(),
   azureOpenAI: ttsAzureOpenAISchema.optional(),
   elevenlabs: ttsElevenLabsSchema.optional(),
@@ -1213,6 +1361,7 @@ const sttAzureOpenAISchema = z.object({
 });
 
 const sttSchema = z.object({
+  allowedAddresses: allowedAddressesSchema,
   openai: sttOpenaiSchema.optional(),
   azureOpenAI: sttAzureOpenAISchema.optional(),
 });
@@ -1226,8 +1375,8 @@ const speechTab = z
       .optional()
       .or(
         z.object({
-          /** Keep in sync with STTProviders enum (defined below — cannot reference due to eval order) */
-          engineSTT: z.enum(['openai', 'azureOpenAI']).optional(),
+          /** Provider names remain valid for backward compatibility and are normalized for clients. */
+          engineSTT: z.enum(['browser', 'external', 'openai', 'azureOpenAI']).optional(),
           languageSTT: z.string().optional(),
           autoTranscribeAudio: z.boolean().optional(),
           decibelValue: z.number().optional(),
@@ -1240,8 +1389,10 @@ const speechTab = z
       .optional()
       .or(
         z.object({
-          /** Keep in sync with TTSProviders enum (defined below — cannot reference due to eval order) */
-          engineTTS: z.enum(['openai', 'azureOpenAI', 'elevenlabs', 'localai']).optional(),
+          /** Provider names remain valid for backward compatibility and are normalized for clients. */
+          engineTTS: z
+            .enum(['browser', 'external', 'openai', 'azureOpenAI', 'elevenlabs', 'localai'])
+            .optional(),
           voice: z.string().optional(),
           languageTTS: z.string().optional(),
           automaticPlayback: z.boolean().optional(),
@@ -1261,6 +1412,12 @@ export enum RateLimitPrefix {
 }
 
 export const rateLimitSchema = z.object({
+  agentEvents: z
+    .object({
+      userMax: z.number().int().positive().optional(),
+      userWindowInMinutes: z.number().positive().optional(),
+    })
+    .optional(),
   fileUploads: z
     .object({
       ipMax: z.number().optional(),
@@ -1387,6 +1544,7 @@ export const interfaceSchema = z
     webSearch: z.boolean().optional(),
     contextUsage: z.boolean().optional(),
     contextCost: z.boolean().optional(),
+    feedback: z.boolean().optional(),
     currency: z
       .object({
         code: z.string(),
@@ -1441,6 +1599,28 @@ export const interfaceSchema = z
         }),
       ])
       .optional(),
+    schedules: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          create: z.boolean().optional(),
+          maxPerUser: z.number().int().min(0).optional(),
+          minIntervalMinutes: z.number().int().min(1).optional(),
+          autoDisableAfterFailures: z.number().int().min(1).optional(),
+          fireConcurrency: z.number().int().min(1).optional(),
+          /** Refuse schedules that are not filed under a chat project. Enforced on
+           *  create/update AND at every fire, so raising it later stops schedules
+           *  that predate the policy instead of grandfathering them. */
+          requireProject: z.boolean().optional(),
+          /** Pins every scheduled run to ONE chat project, ignoring any client
+           *  choice. Implies `requireProject`. The project must belong to the
+           *  schedule's owner, so a deployment-wide value only makes sense with a
+           *  per-user/per-role config override. */
+          projectId: z.string().trim().min(1).optional(),
+        }),
+      ])
+      .optional(),
   })
   .default({
     modelSelect: true,
@@ -1467,6 +1647,7 @@ export const interfaceSchema = z
     webSearch: true,
     contextUsage: true,
     contextCost: false,
+    feedback: true,
     peoplePicker: {
       users: true,
       groups: true,
@@ -1503,6 +1684,11 @@ export const interfaceSchema = z
       public: true,
       snapshotFiles: true,
     },
+    // `schedules` is deliberately ABSENT from this default. It is experimental and
+    // default-off in v1, and zod applies this whole object when `interface` is omitted
+    // from librechat.yaml — including it would silently enable the feature (and permit
+    // billable scheduled runs) on every deployment that never opted in. The PERMISSION
+    // defaults live in updateInterfacePermissions, which is a separate concern.
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
@@ -1548,6 +1734,7 @@ export type TStartupConfig = {
   socialLogins?: string[];
   langfuseFanoutEnabled?: boolean;
   langfuseConnectionAccess?: boolean;
+  insightsEnabled?: boolean;
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
@@ -1579,6 +1766,8 @@ export type TStartupConfig = {
   emailEnabled: boolean;
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
+  /** Admin panel link, only present for users with admin access */
+  adminPanelURL?: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
   modelDescriptions?: Record<string, Record<string, string>>;
@@ -1670,12 +1859,14 @@ export enum SearchProviders {
   SERPER = 'serper',
   SEARXNG = 'searxng',
   TAVILY = 'tavily',
+  KEENABLE = 'keenable',
 }
 
 export enum ScraperProviders {
   FIRECRAWL = 'firecrawl',
   SERPER = 'serper',
   TAVILY = 'tavily',
+  KEENABLE = 'keenable',
 }
 
 export enum RerankerTypes {
@@ -1690,7 +1881,24 @@ export enum SafeSearchTypes {
   STRICT = 2,
 }
 
+/**
+ * Normalizes a SearXNG engine list into the comma-separated form the API expects.
+ * Accepts the YAML list or comma-separated string an operator may write, and is
+ * applied both at the schema boundary and when loading the runtime config, since
+ * `loadCustomConfig` returns the raw YAML object rather than the parsed result.
+ */
+export function normalizeSearxngEngines(engines?: string | string[]): string | undefined {
+  if (engines == null) {
+    return undefined;
+  }
+  const normalized = (Array.isArray(engines) ? engines : engines.split(','))
+    .map((engine) => engine.trim())
+    .filter(Boolean);
+  return normalized.length ? normalized.join(',') : undefined;
+}
+
 export const webSearchSchema = z.object({
+  allowedAddresses: allowedAddressesSchema,
   serperApiKey: z.string().optional().default('${SERPER_API_KEY}'),
   serperApiKeyPreview: apiKeyPreviewSchema,
   searxngInstanceUrl: z.string().optional().default('${SEARXNG_INSTANCE_URL}'),
@@ -1704,6 +1912,8 @@ export const webSearchSchema = z.object({
   tavilyApiKeyPreview: apiKeyPreviewSchema,
   tavilySearchUrl: z.string().optional().default('${TAVILY_SEARCH_URL}'),
   tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
+  keenableApiKey: z.string().optional().default('${KEENABLE_API_KEY}'),
+  keenableApiUrl: z.string().optional().default('${KEENABLE_API_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiKeyPreview: apiKeyPreviewSchema,
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
@@ -1747,6 +1957,17 @@ export const webSearchSchema = z.object({
         .optional(),
     })
     .optional(),
+  searxngSearchOptions: z
+    .object({
+      engines: z
+        .union([z.string(), z.array(z.string())])
+        .transform(normalizeSearxngEngines)
+        .optional(),
+      language: z.string().optional(),
+      timeRange: z.enum(['day', 'month', 'year']).optional(),
+      timeout: z.number().int().positive().max(120000).optional(),
+    })
+    .optional(),
   tavilySearchOptions: z
     .object({
       searchDepth: z.enum(['basic', 'advanced', 'fast', 'ultra-fast']).optional(),
@@ -1774,11 +1995,26 @@ export const webSearchSchema = z.object({
       timeout: z.number().int().nonnegative().max(120000).optional(),
     })
     .optional(),
+  keenableSearchOptions: z
+    .object({
+      maxResults: z.number().int().min(1).max(20).optional(),
+      site: z.string().optional(),
+      attributionTitle: z.string().optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
+    })
+    .optional(),
+  keenableScraperOptions: z
+    .object({
+      attributionTitle: z.string().optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
+    })
+    .optional(),
 });
 
 export type TWebSearchConfig = DeepPartial<z.infer<typeof webSearchSchema>>;
 
 export const ocrSchema = z.object({
+  allowedAddresses: allowedAddressesSchema,
   mistralModel: z.string().optional(),
   apiKey: z.string().optional().default('${OCR_API_KEY}'),
   apiKeyPreview: apiKeyPreviewSchema,
@@ -1874,29 +2110,93 @@ export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
 
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
+/**
+ * Validates a messageFilter PII regex at config load. Defaults to native RegExp so browser
+ * builds add no extra engine; the server injects a check backed by the linear-time runtime
+ * engine (RE2) via setMessageFilterRegexValidator, so a pattern the runtime cannot compile
+ * (backreferences, lookaround, control escapes, and so on) is rejected at load rather than
+ * silently dropped at request time.
+ */
+interface MessageFilterRegexValidation {
+  readonly supported: boolean;
+  readonly programSize?: number;
+}
+
+type MessageFilterRegexValidationResult = boolean | MessageFilterRegexValidation;
+
+let messageFilterRegexValidator: (pattern: string) => MessageFilterRegexValidationResult = (
+  value,
+) => {
+  try {
+    new RegExp(value, 'g');
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const setMessageFilterRegexValidator = (
+  validate: (pattern: string) => MessageFilterRegexValidationResult,
+): void => {
+  messageFilterRegexValidator = validate;
+};
+
 const messageFilterPiiCustomPatternSchema = z.object({
-  id: z.string().min(1),
-  label: z.string().min(1),
-  regex: z
-    .string()
-    .min(1)
-    .refine(
-      (value) => {
-        try {
-          new RegExp(value, 'g');
-          return true;
-        } catch {
-          return false;
-        }
-      },
-      { message: 'Invalid regex' },
-    ),
+  id: z.string().min(1).max(MAX_PII_PATTERN_ID_LENGTH),
+  label: z.string().min(1).max(MAX_PII_PATTERN_LABEL_LENGTH),
+  regex: z.string().min(1).max(MAX_PII_PATTERN_LENGTH),
 });
 
-export const messageFilterPiiSchema = z.object({
-  starterPatterns: z.array(z.string()).optional(),
-  customPatterns: z.array(messageFilterPiiCustomPatternSchema).optional(),
-});
+export const messageFilterPiiSchema = z
+  .object({
+    starterPatterns: z
+      .array(z.string().max(MAX_PII_PATTERN_ID_LENGTH))
+      .max(MAX_PII_PATTERNS_PER_SOURCE)
+      .optional(),
+    customPatterns: z
+      .array(messageFilterPiiCustomPatternSchema)
+      .max(MAX_PII_PATTERNS_PER_SOURCE)
+      .optional(),
+  })
+  .superRefine((pii, context) => {
+    let regexCharacters = 0;
+    let regexInstructions = 0;
+    for (let index = 0; index < (pii.customPatterns?.length ?? 0); index++) {
+      const pattern = pii.customPatterns?.[index];
+      if (pattern == null) {
+        continue;
+      }
+      regexCharacters += pattern.regex.length;
+      const result = messageFilterRegexValidator(pattern.regex);
+      const supported = typeof result === 'boolean' ? result : result.supported;
+      if (!supported) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['customPatterns', index, 'regex'],
+          message:
+            'Unsupported regex: not compatible with the RE2 engine (no backreferences, lookaround, or control escapes)',
+        });
+        continue;
+      }
+      if (typeof result !== 'boolean' && result.programSize != null) {
+        regexInstructions += result.programSize;
+      }
+    }
+    if (regexCharacters > MAX_PII_CUSTOM_REGEX_CHARACTERS) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customPatterns'],
+        message: `Custom PII regexes may contain at most ${MAX_PII_CUSTOM_REGEX_CHARACTERS} characters in total`,
+      });
+    }
+    if (regexInstructions > MAX_PII_CUSTOM_REGEX_INSTRUCTIONS) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customPatterns'],
+        message: `Custom PII regexes may compile to at most ${MAX_PII_CUSTOM_REGEX_INSTRUCTIONS} instructions in total`,
+      });
+    }
+  });
 
 export type MessageFilterPiiConfig = z.infer<typeof messageFilterPiiSchema>;
 
@@ -1917,6 +2217,27 @@ export const langfuseConfigSchema = z.object({
   secretKeyPreview: z.string().optional(),
   /** Routing key for one of the deployment-configured tenant Langfuse destinations. */
   destination: z.string().optional(),
+  /**
+   * Custom request headers sent on every outbound Langfuse request — trace and
+   * media export, feedback scores, and credential verification — for
+   * self-hosted instances behind an authenticating proxy or gateway. Values
+   * support `${ENV_VAR}` interpolation.
+   *
+   * Deployment-level only. Trace export batches spans from every user through
+   * one exporter, so unlike endpoint headers these cannot carry per-user
+   * placeholders. Headers referencing an unset variable, naming an
+   * infrastructure secret, or carrying an invalid HTTP field name are dropped
+   * with a warning rather than sent.
+   *
+   * Sent only when the deployment configures exactly one Langfuse origin, and
+   * only to that origin. The map cannot say which endpoint it authenticates
+   * to, so with several configured origins any choice of recipient would risk
+   * disclosing a gateway credential to the others; a warning is logged instead.
+   * Multi-destination deployments need per-destination headers, which this
+   * schema does not yet express — and note the fanout collector forwards only
+   * `Authorization` upstream regardless.
+   */
+  headers: z.record(z.string()).optional(),
 });
 
 export type LangfuseConfig = z.infer<typeof langfuseConfigSchema>;
@@ -1970,6 +2291,7 @@ export const configSchema = z.object({
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
+  filters: filtersConfigSchema.optional(),
   messageFilter: messageFilterSchema.optional(),
   endpoints: z
     .object({
@@ -2020,6 +2342,19 @@ export type DeepPartial<T> = T extends (infer U)[]
 
 export const getConfigDefaults = () => getSchemaDefaults(configSchema);
 export type TCustomConfig = DeepPartial<z.infer<typeof configSchema>>;
+
+/**
+ * Shape of the `webSearch` block as written in `librechat.yaml`, where
+ * `searxngSearchOptions.engines` may still be the YAML list or untrimmed string an
+ * operator wrote. `loadCustomConfig` returns the raw YAML object rather than the
+ * parsed result, so the runtime loader receives this shape, not the parsed one.
+ */
+export type TWebSearchConfigInput = Omit<
+  NonNullable<TCustomConfig['webSearch']>,
+  'searxngSearchOptions'
+> & {
+  searxngSearchOptions?: z.input<typeof webSearchSchema>['searxngSearchOptions'];
+};
 export type TCustomEndpoints = z.infer<typeof customEndpointsSchema>;
 
 export type TProviderSchema =
@@ -2187,6 +2522,8 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
+    // Gemini 3.7 Models
+    'gemini-3.7-flash',
     // Gemini 3.6 Models
     'gemini-3.6-flash',
     // Gemini 3.5 Models
@@ -2383,6 +2720,10 @@ export enum CacheKeys {
    * Key for cached group memberships used to resolve ACL user principals.
    */
   USER_PRINCIPALS = 'USER_PRINCIPALS',
+  /**
+   * Key for cached prompt group access ID sets (accessible, public, owned).
+   */
+  PROMPT_GROUPS_ACCESS = 'PROMPT_GROUPS_ACCESS',
   /**
    * Key for per-conversation stateful code sandbox prewarm/warm state.
    */
@@ -2603,6 +2944,14 @@ export enum ErrorTypes {
    */
   GOOGLE_VIDEO_UNPROCESSABLE = 'google_video_unprocessable',
   /**
+   * Required CodeAPI resources could not be restored before model invocation.
+   */
+  RESOURCE_RECOVERY_REQUIRED = 'resource_recovery_required',
+  /**
+   * Agent selected a stateful Code API workspace scope disabled by the deployment.
+   */
+  STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED = 'stateful_code_environment_not_allowed',
+  /**
    * Invalid Agent Provider (excluded by Admin)
    */
   INVALID_AGENT_PROVIDER = 'invalid_agent_provider',
@@ -2772,7 +3121,7 @@ export enum Constants {
    */
   VERSION = '__LIBRECHAT_VERSION__',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.13',
+  CONFIG_VERSION = '1.3.14',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
@@ -2935,6 +3284,120 @@ export function normalizeMCPToolKey(toolKey: string, rawServerNames: readonly st
     return toolKey;
   }
   return `${toolKey.slice(0, toolKey.length - matched.length)}${normalized}`;
+}
+
+/**
+ * Strips a redundant leading server-name prefix from a raw upstream tool name
+ * before it is embedded into a model-facing key, so the key doesn't carry the
+ * server twice (`acme_trace_..._mcp_acme`) and push long tool names
+ * past provider function-name limits (64 chars). The match is case-insensitive
+ * because display-cased server names ("Acme") conventionally prefix their
+ * tools in lowercase. Ingestion that strips must record the original name
+ * (`serverToolName` on the cached definition) — tool calls send THAT name back
+ * to the server, never the stripped one. Catalog producers must not call this
+ * directly: only {@link stripServerNamePrefixes} sees the whole sibling set and
+ * can keep colliding results apart.
+ */
+export function stripServerNamePrefix(toolName: string, normalizedServerName: string): string {
+  const prefixLength = normalizedServerName.length + 1;
+  if (toolName.length <= prefixLength) {
+    return toolName;
+  }
+  const prefix = toolName.slice(0, prefixLength).toLowerCase();
+  if (prefix !== `${normalizedServerName.toLowerCase()}_`) {
+    return toolName;
+  }
+  const stripped = toolName.slice(prefixLength);
+  if (isReservedMCPToolName(stripped)) {
+    return toolName;
+  }
+  /** `isActionTool` classifies keys by the RELATIVE position of `_action_`
+   *  and `_mcp_`; stripping moves the first `_mcp_` earlier, so a server
+   *  whose normalized name contains `_action_` could see a real MCP tool
+   *  reclassified as an OpenAPI action (bypassing MCP authorization). Never
+   *  produce a key whose classification differs from the raw key's. */
+  const keySuffix = `${Constants.mcp_delimiter}${normalizedServerName}`;
+  if (isActionTool(`${stripped}${keySuffix}`) !== isActionTool(`${toolName}${keySuffix}`)) {
+    return toolName;
+  }
+  return stripped;
+}
+
+/**
+ * Synthetic markers consumed by prefix (`isMCPAllPlaceholder`, the server-pin
+ * skip, the client's OAuth stream classification), so each reserves BOTH its
+ * exact name and its `${marker}${mcp_delimiter}` namespace: a stripped
+ * remainder inside any of them would turn a real upstream tool into the
+ * server-wide wildcard, the UI pin placeholder, or a synthetic OAuth call.
+ */
+const RESERVED_MCP_TOOL_MARKERS: readonly string[] = [
+  `${Constants.mcp_all}`,
+  `${Constants.mcp_server}`,
+  'oauth',
+];
+
+function isReservedMCPToolName(toolName: string): boolean {
+  /** `mcp_` opens the server-scoped pluginKey namespace (`mcp_${serverName}`),
+   *  and `lc_transfer_to_` opens the agent-handoff namespace (the client
+   *  renders such calls as handoffs; the background and intent passes exclude
+   *  them) — pre-strip tool keys could never enter either, since they always
+   *  began with the server name itself. */
+  if (
+    toolName.startsWith(`${Constants.mcp_prefix}`) ||
+    toolName.startsWith(`${Constants.LC_TRANSFER_TO_}`)
+  ) {
+    return true;
+  }
+  return RESERVED_MCP_TOOL_MARKERS.some(
+    (marker) => toolName === marker || toolName.startsWith(`${marker}${Constants.mcp_delimiter}`),
+  );
+}
+
+/**
+ * Maps every raw tool name in a server's catalog to its model-facing name,
+ * stripping redundant server-name prefixes collision-free: when two names
+ * yield the same result — a bare `foo` next to `<server>_foo`, or the
+ * case-variant pair `<server>_Foo` / `<Server>_Foo` under the case-insensitive
+ * prefix match — every collider keeps its raw name, so two distinct upstream
+ * tools can never collapse onto one key. Unprefixed names count against the
+ * result set through their identity mapping, which is what makes the bare-name
+ * case fall out of the same counter.
+ */
+export function stripServerNamePrefixes(
+  toolNames: readonly string[],
+  normalizedServerName: string,
+): Map<string, string> {
+  const rawNames = new Set(toolNames);
+  const finalNames = new Map<string, string>(
+    toolNames.map((name) => {
+      const stripped = stripServerNamePrefix(name, normalizedServerName);
+      /** Every sibling's RAW name is reserved even when that sibling itself
+       *  strips away: keys persisted BEFORE stripping embed raw names, so a
+       *  stripped result landing on another sibling's raw name would route
+       *  that sibling's legacy references to the wrong upstream tool. */
+      return [name, stripped !== name && rawNames.has(stripped) ? name : stripped];
+    }),
+  );
+  /** Reverting a collider to its raw name can itself collide with ANOTHER
+   *  sibling's stripped result (`foo` / `acme_foo` / `acme_acme_foo`), so the
+   *  guard iterates to a fixpoint. Each pass converts at least one stripped
+   *  result back to its unique raw name, so it terminates within the catalog
+   *  size. */
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const counts = new Map<string, number>();
+    finalNames.forEach((result) => {
+      counts.set(result, (counts.get(result) ?? 0) + 1);
+    });
+    finalNames.forEach((result, raw) => {
+      if (result !== raw && (counts.get(result) ?? 0) > 1) {
+        finalNames.set(raw, raw);
+        changed = true;
+      }
+    });
+  }
+  return finalNames;
 }
 
 export function splitMCPToolKey(
