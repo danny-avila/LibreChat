@@ -2605,6 +2605,10 @@ class GenerationJobManagerClass {
         agent_id: jobData.agent_id,
         // Surface whether the turn was temporary so a resume keeps it non-persisted.
         isTemporary: jobData.isTemporary,
+        agentEventDeliveryKey: jobData.agentEventDeliveryKey,
+        agentEventBindingId: jobData.agentEventBindingId,
+        agentEventExpectedAction: jobData.agentEventExpectedAction,
+        agentEventSuspension: jobData.agentEventSuspension,
         scheduleId: jobData.scheduleId,
         scheduledFor: jobData.scheduledFor,
         scheduleConfigRevision: jobData.scheduleConfigRevision,

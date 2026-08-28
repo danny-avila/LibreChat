@@ -10,7 +10,7 @@ import {
 } from '../checkpointer';
 import { createAgentEventActionRecorder, findAgentEventAppliedAction } from './outcome';
 import { createAgentContextFingerprint } from '../compatibility';
-import { executeAgentEventActor } from './actor';
+import { cancelAgentEventActor, executeAgentEventActor, resumeAgentEventActor } from './actor';
 
 jest.mock('../checkpointer', () => ({
   ...jest.requireActual('../checkpointer'),
@@ -27,12 +27,14 @@ const mockedGetCheckpointer = jest.mocked(getAgentCheckpointer);
 
 describe('event actor host adapter', () => {
   const conversationId = 'actor-thread';
+  const originalCredsKey = process.env.CREDS_KEY;
   let state: IAgentEventActorState | null;
   let epoch = 0;
   let legacyTurn: { token: string; startedAt: Date } | null = null;
   let nextCheckpoint = 1;
 
   beforeEach(() => {
+    process.env.CREDS_KEY = 'event-actor-test-credentials-key';
     state = null;
     epoch = 0;
     legacyTurn = null;
@@ -50,6 +52,14 @@ describe('event actor host adapter', () => {
     }));
     mockedDelete.mockReset();
     mockedDelete.mockResolvedValue();
+  });
+
+  afterAll(() => {
+    if (originalCredsKey == null) {
+      delete process.env.CREDS_KEY;
+    } else {
+      process.env.CREDS_KEY = originalCredsKey;
+    }
   });
 
   const deps = () => ({
@@ -105,6 +115,337 @@ describe('event actor host adapter', () => {
     admitAction: jest.fn(async () => true),
     releaseAction: jest.fn(async () => true),
     hasActionAdmission: jest.fn(async () => false),
+  });
+
+  it('publishes a signed durable suspension instead of discarding a paused fork', async () => {
+    const dependencies = {
+      ...deps(),
+      storeSuspension: jest.fn(async () => ({ status: 'stored' as const })),
+    };
+
+    const result = await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-paused',
+        event: { id: 'event-paused', type: 'turn' },
+        signal: new AbortController().signal,
+        invoke: async () => 'paused-response',
+        readAppliedAction: () => undefined,
+        readSuspension: () => ({
+          actionId: 'action-paused',
+          jobCreatedAt: 123,
+          interrupt: {
+            id: 'interrupt-paused',
+            payload: { type: 'ask_user_question', question: 'Continue?' },
+          },
+        }),
+      },
+      dependencies,
+    );
+
+    expect(result.value).toBe('paused-response');
+    expect(result.execution).toMatchObject({
+      status: 'suspended',
+      suspension: {
+        version: 1,
+        attempt: 0,
+        invocation: { invocationId: 'event-paused' },
+        checkpoint: { checkpointId: 'checkpoint-1' },
+        interrupt: {
+          id: 'interrupt-paused',
+          payload: { type: 'ask_user_question', question: 'Continue?' },
+        },
+      },
+    });
+    expect(dependencies.storeSuspension).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionId: 'action-paused',
+        jobCreatedAt: 123,
+        suspension: expect.objectContaining({ suspensionId: expect.any(String) }),
+      }),
+    );
+    expect(dependencies.storeSuspension).toHaveBeenCalledTimes(1);
+    expect(dependencies.commitState).not.toHaveBeenCalled();
+    expect(mockedDelete).not.toHaveBeenCalled();
+  });
+
+  it('validates and cancels the exact signed suspension before deleting its fork', async () => {
+    const dependencies = {
+      ...deps(),
+      storeSuspension: jest.fn(async () => ({ status: 'stored' as const })),
+      cancelSuspension: jest.fn(async () => ({ status: 'cancelled' as const })),
+    };
+    const paused = await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-cancelled',
+        event: { id: 'event-cancelled' },
+        signal: new AbortController().signal,
+        invoke: async () => 'paused-response',
+        readAppliedAction: () => undefined,
+        readSuspension: () => ({
+          actionId: 'action-cancelled',
+          jobCreatedAt: 456,
+          interrupt: { id: 'interrupt-cancelled', payload: { type: 'tool_approval' } },
+        }),
+      },
+      dependencies,
+    );
+    if (paused.execution.status !== 'suspended') {
+      throw new Error('test setup did not suspend');
+    }
+
+    await expect(
+      cancelAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          suspension: JSON.parse(JSON.stringify(paused.execution.suspension)),
+          cancelAttemptId: 'cancel-attempt-1',
+          reason: 'cancelled',
+        },
+        dependencies,
+      ),
+    ).resolves.toEqual({ status: 'cancelled' });
+    expect(dependencies.cancelSuspension).toHaveBeenCalledWith(
+      expect.objectContaining({
+        suspensionId: paused.execution.suspension.suspensionId,
+        invocationId: 'event-cancelled',
+      }),
+    );
+    expect(mockedDelete).toHaveBeenCalledWith(
+      conversationId,
+      undefined,
+      undefined,
+      expect.objectContaining({
+        throwOnError: true,
+        checkpointNamespace: paused.execution.suspension.checkpoint.checkpointNs,
+      }),
+    );
+  });
+
+  it('resumes signed evidence on a new executor and consumes its claim with the head CAS', async () => {
+    let storedSuspension;
+    let action;
+    const dependencies = {
+      ...deps(),
+      storeSuspension: jest.fn(async (input) => {
+        storedSuspension = {
+          suspension: input.suspension,
+          actionId: input.actionId,
+          jobCreatedAt: input.jobCreatedAt,
+          status: 'pending',
+          observedAt: new Date(),
+        };
+        return { status: 'stored' as const };
+      }),
+      claimSuspension: jest.fn(async ({ resumeAttemptId }) => {
+        storedSuspension = { ...storedSuspension, status: 'claimed', resumeAttemptId };
+        return { status: 'claimed' as const };
+      }),
+      settleSuspension: jest.fn(async () => ({ status: 'settled' as const })),
+    };
+    dependencies.getSnapshot.mockImplementation(async () => ({
+      state,
+      reconciliations: [],
+      legacyTurn: null,
+      suspension: storedSuspension ?? null,
+      epoch,
+    }));
+
+    const paused = await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-cross-executor',
+        event: { id: 'event-cross-executor' },
+        signal: new AbortController().signal,
+        invoke: async () => 'paused-response',
+        readAppliedAction: () => action,
+        readSuspension: () => ({
+          actionId: 'action-cross-executor',
+          jobCreatedAt: 321,
+          interrupt: {
+            id: 'interrupt-cross-executor',
+            payload: { type: 'tool_approval', actionId: 'action-cross-executor' },
+          },
+        }),
+      },
+      dependencies,
+    );
+    const evidence = JSON.parse(JSON.stringify(paused.execution.suspension));
+    dependencies.getSnapshot.mockClear();
+    dependencies.claimSuspension.mockClear();
+    dependencies.commitState.mockClear();
+
+    const resumed = await resumeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        bindingId: 'binding-1',
+        suspension: evidence,
+        resumeAttemptId: 'resume-cross-executor',
+        resumeValue: { approved: true },
+        signal: new AbortController().signal,
+        resume: async () => {
+          action = { toolName: 'submit_move', toolCallId: 'call-resumed' };
+          return 'resumed-response';
+        },
+        readAppliedAction: () => action,
+      },
+      dependencies,
+    );
+
+    expect(resumed).toMatchObject({
+      value: 'resumed-response',
+      execution: {
+        status: 'applied',
+        result: { action: { toolName: 'submit_move', toolCallId: 'call-resumed' } },
+      },
+    });
+    expect(dependencies.claimSuspension).toHaveBeenCalledWith(
+      expect.objectContaining({
+        suspensionId: evidence.suspensionId,
+        resumeAttemptId: 'resume-cross-executor',
+        actionId: 'action-cross-executor',
+      }),
+    );
+    expect(dependencies.getSnapshot).toHaveBeenCalledTimes(1);
+    expect(dependencies.claimSuspension).toHaveBeenCalledTimes(1);
+    expect(dependencies.commitState).toHaveBeenCalledTimes(1);
+    expect(dependencies.commitState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settlementAuthority: expect.objectContaining({
+          suspensionId: evidence.suspensionId,
+          resumeAttemptId: 'resume-cross-executor',
+        }),
+      }),
+    );
+  });
+
+  it('atomically replaces a claimed suspension on re-pause and settles a later no-action reply', async () => {
+    let storedSuspension;
+    let pendingPause;
+    const dependencies = {
+      ...deps(),
+      storeSuspension: jest.fn(async (input) => {
+        storedSuspension = {
+          suspension: input.suspension,
+          actionId: input.actionId,
+          jobCreatedAt: input.jobCreatedAt,
+          status: 'pending',
+          observedAt: new Date(),
+        };
+        return { status: 'stored' as const };
+      }),
+      claimSuspension: jest.fn(async ({ resumeAttemptId }) => {
+        storedSuspension = { ...storedSuspension, status: 'claimed', resumeAttemptId };
+        return { status: 'claimed' as const };
+      }),
+      settleSuspension: jest.fn(async () => ({ status: 'settled' as const })),
+    };
+    dependencies.getSnapshot.mockImplementation(async () => ({
+      state,
+      reconciliations: [],
+      legacyTurn: null,
+      suspension: storedSuspension ?? null,
+      epoch,
+    }));
+
+    const initial = await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-repause',
+        event: { id: 'event-repause' },
+        signal: new AbortController().signal,
+        invoke: async () => 'initial-pause',
+        readAppliedAction: () => undefined,
+        readSuspension: () => ({
+          actionId: 'action-first',
+          jobCreatedAt: 789,
+          interrupt: { id: 'interrupt-first', payload: { type: 'tool_approval' } },
+        }),
+      },
+      dependencies,
+    );
+    if (initial.execution.status !== 'suspended') {
+      throw new Error('test setup did not suspend');
+    }
+    pendingPause = {
+      actionId: 'action-second',
+      jobCreatedAt: 789,
+      interrupt: { id: 'interrupt-second', payload: { type: 'ask_user_question' } },
+    };
+    const repaused = await resumeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        suspension: initial.execution.suspension,
+        resumeAttemptId: 'resume-first',
+        resumeValue: { approved: true },
+        signal: new AbortController().signal,
+        resume: async () => 'second-pause',
+        readAppliedAction: () => undefined,
+        readSuspension: () => pendingPause,
+      },
+      dependencies,
+    );
+    expect(repaused.execution).toMatchObject({
+      status: 'suspended',
+      suspension: { attempt: 1, interrupt: { id: 'interrupt-second' } },
+    });
+    expect(dependencies.storeSuspension).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        actionId: 'action-second',
+        previous: {
+          suspensionId: initial.execution.suspension.suspensionId,
+          attempt: 0,
+          resumeAttemptId: 'resume-first',
+        },
+      }),
+    );
+    if (repaused.execution.status !== 'suspended') {
+      throw new Error('test setup did not re-pause');
+    }
+    pendingPause = undefined;
+    const rejected = await resumeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        suspension: repaused.execution.suspension,
+        resumeAttemptId: 'resume-second',
+        resumeValue: { rejected: true },
+        signal: new AbortController().signal,
+        resume: async () => 'rejected-response',
+        readAppliedAction: () => undefined,
+        readSuspension: () => pendingPause,
+      },
+      dependencies,
+    );
+    expect(rejected).toMatchObject({
+      value: 'rejected-response',
+      execution: { status: 'completed_no_action' },
+    });
+    expect(dependencies.settleSuspension).toHaveBeenCalledWith(
+      expect.objectContaining({
+        suspensionId: repaused.execution.suspension.suspensionId,
+        attempt: 1,
+        resumeAttemptId: 'resume-second',
+      }),
+    );
+    expect(mockedDelete).toHaveBeenCalledWith(
+      conversationId,
+      undefined,
+      undefined,
+      expect.objectContaining({
+        throwOnError: true,
+        checkpointNamespace: repaused.execution.suspension.checkpoint.checkpointNs,
+      }),
+    );
+    expect(dependencies.commitState).not.toHaveBeenCalled();
   });
 
   it('cold-starts once, then forks and warm-continues only the next event', async () => {

@@ -7,3 +7,12 @@ export interface AgentTriggerExpectedAction {
   toolName: string;
   argumentSubset?: Record<string, JsonValue>;
 }
+
+/** Minimal job-store projection of the canonical Conversation suspension.
+ * The signed suspension stays private in Mongo; this marker only routes a
+ * paused job through the durable resume protocol during rolling deploys. */
+export interface AgentEventSuspensionProjection {
+  version: 1;
+  suspensionId: string;
+  attempt: number;
+}

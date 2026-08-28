@@ -754,6 +754,80 @@ describe('AgentClient - interrupt discovery persistence', () => {
     await GenerationJobManager.destroy();
   });
 
+  it('stages an event-actor interrupt until its signed suspension is durable', async () => {
+    const streamId = 'conversation-event-actor-staged-pause';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-event-actor-pause';
+    client.jobCreatedAt = job.createdAt;
+    client.eventActorInvocationId = 'event-pause';
+
+    await client.handleRunInterrupt(
+      {
+        getInterrupt: () => ({
+          interruptId: 'interrupt-event-actor',
+          threadId: streamId,
+          payload: {
+            type: 'ask_user_question',
+            question: { question: 'Proceed?' },
+          },
+        }),
+        getDiscoveredTools: () => ['save_issue_mcp_linear'],
+      },
+      streamId,
+    );
+
+    await expect(GenerationJobManager.getJobStatus(streamId)).resolves.toBe('running');
+    expect(client.pendingApproval).toBeUndefined();
+    expect(client.readEventActorSuspension()).toMatchObject({
+      actionId: expect.any(String),
+      jobCreatedAt: job.createdAt,
+      interrupt: {
+        id: 'interrupt-event-actor',
+        payload: {
+          type: 'ask_user_question',
+          actionId: expect.any(String),
+        },
+      },
+    });
+
+    await expect(
+      client.publishStagedApproval({ version: 1, suspensionId: 'signed-suspension', attempt: 0 }),
+    ).resolves.toBe(true);
+    await expect(GenerationJobManager.getJobStatus(streamId)).resolves.toBe('requires_action');
+    await expect(GenerationJobManager.getJob(streamId)).resolves.toMatchObject({
+      metadata: {
+        agentEventSuspension: {
+          version: 1,
+          suspensionId: 'signed-suspension',
+          attempt: 0,
+        },
+      },
+    });
+    expect(client.pendingApproval).toMatchObject({ actionId: expect.any(String) });
+    expect(client.pendingRequestReleased).toBeFalsy();
+
+    await client.exposePendingApproval();
+    expect(client.pendingRequestReleased).toBe(true);
+  });
+
   it('makes the run discovery snapshot durable when the run pauses', async () => {
     const streamId = 'conversation-discovered-pause';
     const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);

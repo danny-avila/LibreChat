@@ -4742,6 +4742,9 @@ export class RedisJobStore implements IJobStoreV2 {
       agentEventExpectedAction: data.agentEventExpectedAction
         ? JSON.parse(data.agentEventExpectedAction)
         : undefined,
+      agentEventSuspension: data.agentEventSuspension
+        ? JSON.parse(data.agentEventSuspension)
+        : undefined,
       agentEventLegacyTurnToken: data.agentEventLegacyTurnToken || undefined,
       scheduleId: data.scheduleId || undefined,
       scheduledFor: data.scheduledFor || undefined,

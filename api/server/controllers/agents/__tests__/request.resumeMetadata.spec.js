@@ -85,7 +85,6 @@ const mockResolveAgentTurnExecutionPlan = jest.fn((input) => {
     input.event?.binding != null &&
     input.event?.expectedAction != null &&
     input.checkpointerType !== 'memory' &&
-    !input.canPause &&
     !input.expectedActionMayDetach;
   let strategy = 'history';
   if (input.isNewConversation) {
@@ -4483,7 +4482,7 @@ describe('ResumableAgentController resume metadata', () => {
       undefined,
     ],
   ])(
-    'keeps %s event actors on the existing resumable path',
+    'routes %s event actors through the compatible continuation path',
     async (_label, agent, config, agentConfigs, clientOptions) => {
       mockGenerationJobManager.claimGeneration.mockResolvedValue(
         wonGenerationClaim({
@@ -4503,6 +4502,19 @@ describe('ResumableAgentController resume metadata', () => {
           throw new Error('stop after legacy event invocation started');
         }),
       };
+      const shouldCheckpoint =
+        _label !== 'memory-checkpointer' && _label !== 'background-capable expected action';
+      if (shouldCheckpoint) {
+        mockExecuteAgentEventActor.mockImplementationOnce(async (input) => {
+          await input.invoke({
+            checkpointNamespace: 'event-actor/pause-capable',
+            checkpointId: 'checkpoint-pause-capable',
+            invocationId: 'req-event-hitl',
+            continuation: 'warm',
+            signal: input.signal,
+          });
+        });
+      }
       const req = {
         user: { id: 'user-123', tenantId: 'tenant-1' },
         body: {
@@ -4541,6 +4553,18 @@ describe('ResumableAgentController resume metadata', () => {
       );
       await nextTick();
 
+      if (shouldCheckpoint) {
+        expect(mockExecuteAgentEventActor).toHaveBeenCalled();
+        expect(mockGetMessages).not.toHaveBeenCalled();
+        expect(mockBeginAgentEventActorLegacyTurn).not.toHaveBeenCalled();
+        expect(mockGenerationJobManager.updateMetadata).not.toHaveBeenCalledWith(
+          'child-conversation',
+          expect.objectContaining({ agentEventLegacyTurnToken: expect.any(String) }),
+          1000,
+        );
+        expect(client.sendMessage).toHaveBeenCalledTimes(1);
+        return;
+      }
       expect(mockExecuteAgentEventActor).not.toHaveBeenCalled();
       expect(mockBeginAgentEventActorLegacyTurn).toHaveBeenCalledWith({
         user: 'user-123',

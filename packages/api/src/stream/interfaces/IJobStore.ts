@@ -282,6 +282,8 @@ export interface SerializableJobData {
   /** Trusted actor binding copied from the authenticated delivery envelope. */
   agentEventBindingId?: string;
   agentEventExpectedAction?: import('~/agents/triggers/types').AgentTriggerExpectedAction;
+  /** Versioned pointer to the canonical signed Conversation suspension. */
+  agentEventSuspension?: import('~/agents/triggers/types').AgentEventSuspensionProjection;
   /** Exact durable legacy-turn fence carried across a HITL pause/resume. */
   agentEventLegacyTurnToken?: string;
 
@@ -404,6 +406,7 @@ export type JobMetadataPatch = Partial<
     | 'agentEventDeliveryKey'
     | 'agentEventBindingId'
     | 'agentEventExpectedAction'
+    | 'agentEventSuspension'
     | 'agentEventLegacyTurnToken'
     | 'scheduleId'
     | 'scheduledFor'

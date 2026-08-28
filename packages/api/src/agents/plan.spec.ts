@@ -51,11 +51,20 @@ describe('resolveAgentTurnExecutionPlan', () => {
     });
   });
 
+  it('keeps a pause-capable bound event on checkpoint continuation', () => {
+    expect(
+      resolveAgentTurnExecutionPlan({
+        ...baseInput(),
+        event: boundEvent(),
+        canPause: true,
+      }).strategy,
+    ).toBe('checkpoint');
+  });
+
   it.each([
     ['no binding', { event: { ...boundEvent(), binding: undefined } }],
     ['no expected action', { event: { ...boundEvent(), expectedAction: undefined } }],
     ['memory checkpointer', { event: boundEvent(), checkpointerType: 'memory' }],
-    ['pause-capable run', { event: boundEvent(), canPause: true }],
     ['detachable action', { event: boundEvent(), expectedActionMayDetach: true }],
   ] as const)('falls back to history for %s', (_label, overrides) => {
     expect(resolveAgentTurnExecutionPlan({ ...baseInput(), ...overrides }).strategy).toBe(

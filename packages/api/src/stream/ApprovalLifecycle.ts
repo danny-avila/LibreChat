@@ -34,6 +34,8 @@ export interface ApprovalPauseOptions {
   expectedCreatedAt?: number;
   /** Hold Stop/resume until the paused assistant row is durably unfinished. */
   persistencePending?: boolean;
+  /** Versioned pointer to the canonical signed Conversation suspension. */
+  agentEventSuspension?: import('~/agents/triggers/types').AgentEventSuspensionProjection;
 }
 
 export const PENDING_ACTION_EXPIRED_CODE = 'HITL_ACTION_EXPIRED';
@@ -142,6 +144,9 @@ export class ApprovalLifecycle {
             ? { discoveredTools: [...discoveredTools] }
             : {}),
           ...(activityPhaseSnapshot != null ? { activityPhaseSnapshot } : {}),
+          ...(options.agentEventSuspension != null
+            ? { agentEventSuspension: options.agentEventSuspension }
+            : {}),
         },
         expectCreatedAt: expectedCreatedAt,
         notAfterMs: pendingAction.expiresAt,

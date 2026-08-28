@@ -70,7 +70,6 @@ export function resolveAgentTurnExecutionPlan(
     binding != null &&
     expectedAction != null &&
     input.checkpointerType !== 'memory' &&
-    !input.canPause &&
     !input.expectedActionMayDetach;
   let strategy: AgentTurnContinuationStrategy = 'history';
   if (input.isNewConversation) {

@@ -1,7 +1,10 @@
 import type { Agents, UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { EventEmitter } from 'events';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
-import type { AgentTriggerExpectedAction } from '../agents/triggers/types';
+import type {
+  AgentEventSuspensionProjection,
+  AgentTriggerExpectedAction,
+} from '../agents/triggers/types';
 import type { ResolvedAskUserQuestion } from '../agents/hitl/resume';
 import type { MCPRuntimeRequestBody } from '../mcp/types';
 import type { ServerSentEvent } from './events';
@@ -48,6 +51,8 @@ export interface GenerationJobMetadata {
   agentEventBindingId?: string;
   /** Optional action evidence contract declared by the authenticated event source. */
   agentEventExpectedAction?: AgentTriggerExpectedAction;
+  /** Versioned pointer to the canonical signed suspension stored on the Conversation. */
+  agentEventSuspension?: AgentEventSuspensionProjection;
   /** Exact durable legacy-turn fence carried across a HITL pause/resume. */
   agentEventLegacyTurnToken?: string;
   /** Trusted scheduled-occurrence identity. These fields are accepted only from a

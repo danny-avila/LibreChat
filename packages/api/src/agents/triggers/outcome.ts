@@ -5,6 +5,7 @@ import type {
 } from '@librechat/data-schemas';
 import type { Agents } from 'librechat-data-provider';
 import type { AgentTriggerExpectedAction } from './envelope';
+import { cancelAgentEventActor } from './actor';
 import type { SerializableJobData } from '~/stream';
 
 interface SettleAgentTriggerHandlingOutcomeInput {
@@ -340,6 +341,7 @@ export function createAgentEventTerminalHandler(methods: {
   getAgentEventActorReceipt: AgentTriggerDeliveryMethods['getAgentEventActorReceipt'];
   backfillAgentEventActorReceipt: AgentTriggerDeliveryMethods['backfillAgentEventActorReceipt'];
   completeAgentEventActorLegacyTurn: ConversationMethods['completeAgentEventActorLegacyTurn'];
+  cancelAgentEventActorSuspension: ConversationMethods['cancelAgentEventActorSuspension'];
   getMessage: MessageMethods['getMessage'];
 }): (
   streamId: string,
@@ -362,11 +364,115 @@ export function createAgentEventTerminalHandler(methods: {
     let committedAction: AgentEventAppliedAction | undefined;
     let compensated = false;
     let actorReceiptSettled = false;
-    const snapshot = await methods.getAgentEventActorSnapshot({
+    const owner = {
       user: job.userId,
       conversationId,
       ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
-    });
+    };
+    let snapshot = await methods.getAgentEventActorSnapshot(owner);
+    const unprojectedSuspension = snapshot?.suspension;
+    if (
+      job.agentEventSuspension == null &&
+      job.status === 'aborted' &&
+      unprojectedSuspension?.status === 'pending' &&
+      unprojectedSuspension.jobCreatedAt === job.createdAt &&
+      unprojectedSuspension.suspension.invocation.invocationId === job.agentEventDeliveryKey
+    ) {
+      /** Recovery for a crash after the canonical suspension write but before
+       * its version marker reached the job store. A terminal exact generation
+       * proves the unpublished pause can no longer be exposed. */
+      const cancellation = await cancelAgentEventActor(
+        {
+          ...owner,
+          suspension: unprojectedSuspension.suspension,
+          cancelAttemptId: `terminal:${job.createdAt}`,
+          reason:
+            job.error === 'Approval expired before a decision was made' ? 'expired' : 'cancelled',
+        },
+        { cancelSuspension: methods.cancelAgentEventActorSuspension },
+      );
+      if (cancellation.status !== 'cancelled') {
+        throw new Error(
+          `Agent event actor ${job.agentEventDeliveryKey} unpublished suspension cancellation is indeterminate`,
+        );
+      }
+      snapshot = await methods.getAgentEventActorSnapshot(owner);
+    }
+    /** A retention/deletion winner may remove the private child before its
+     * already-aborted job hook replays. With no canonical owner or checkpoint
+     * left, cancellation is already physically complete; only the public
+     * delivery outcome remains. A successful generation still requires its
+     * actor proof and therefore fails closed here. */
+    if (job.agentEventSuspension != null && snapshot == null && job.status !== 'aborted') {
+      throw new Error(
+        `Agent event actor ${job.agentEventDeliveryKey} terminal suspension owner is unavailable`,
+      );
+    }
+    if (job.agentEventSuspension != null && snapshot != null) {
+      const current = snapshot?.suspension;
+      const currentMatches =
+        job.agentEventSuspension.version === 1 &&
+        current != null &&
+        current.suspension.suspensionId === job.agentEventSuspension.suspensionId &&
+        current.suspension.attempt === job.agentEventSuspension.attempt;
+      if (!currentMatches || current == null) {
+        throw new Error(
+          `Agent event actor ${job.agentEventDeliveryKey} terminal suspension is stale`,
+        );
+      }
+      if (current.status === 'pending') {
+        if (job.status !== 'aborted') {
+          throw new Error(
+            `Agent event actor ${job.agentEventDeliveryKey} terminated while its suspension remained pending`,
+          );
+        }
+        const cancellation = await cancelAgentEventActor(
+          {
+            ...owner,
+            suspension: current.suspension,
+            cancelAttemptId: `terminal:${job.createdAt}`,
+            reason:
+              job.error === 'Approval expired before a decision was made' ? 'expired' : 'cancelled',
+          },
+          { cancelSuspension: methods.cancelAgentEventActorSuspension },
+        );
+        if (cancellation.status !== 'cancelled') {
+          throw new Error(
+            `Agent event actor ${job.agentEventDeliveryKey} suspension cancellation is indeterminate`,
+          );
+        }
+        snapshot = await methods.getAgentEventActorSnapshot(owner);
+      } else if (current.status === 'claimed') {
+        if (
+          job.status !== 'aborted' ||
+          job.error !== 'Approval expired before a decision was made' ||
+          current.resumeAttemptId == null
+        ) {
+          throw new Error(
+            `Agent event actor ${job.agentEventDeliveryKey} terminal suspension claim is still in flight`,
+          );
+        }
+        /** Expiry can only win while the job projection is still
+         * `requires_action`; therefore this exact Conversation claim never
+         * entered provider execution and may be compensated safely. */
+        const cancellation = await cancelAgentEventActor(
+          {
+            ...owner,
+            suspension: current.suspension,
+            cancelAttemptId: `terminal:${job.createdAt}`,
+            reason: 'expired',
+            claimedResumeAttemptId: current.resumeAttemptId,
+          },
+          { cancelSuspension: methods.cancelAgentEventActorSuspension },
+        );
+        if (cancellation.status !== 'cancelled') {
+          throw new Error(
+            `Agent event actor ${job.agentEventDeliveryKey} orphaned suspension claim is indeterminate`,
+          );
+        }
+        snapshot = await methods.getAgentEventActorSnapshot(owner);
+      }
+    }
     const lifecycle = snapshot?.reconciliations.find(
       (item) => item.invocationId === job.agentEventDeliveryKey,
     );

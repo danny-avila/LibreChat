@@ -51,6 +51,7 @@ const {
   getConvo,
   getAgentEventActorSnapshot,
   commitAgentEventActorState,
+  storeAgentEventActorSuspension,
   beginAgentEventActorLegacyTurn,
   completeAgentEventActorLegacyTurn,
   recordAgentEventActorReconciliation,
@@ -2087,10 +2088,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                     client?.run?.getRunSteps?.() ?? [],
                     client?.contentParts ?? [],
                   ),
+                readSuspension: () => client.readEventActorSuspension(),
               },
               {
                 getSnapshot: getAgentEventActorSnapshot,
                 commitState: commitAgentEventActorState,
+                storeSuspension: storeAgentEventActorSuspension,
                 recordReconciliation: recordAgentEventActorReconciliation,
                 resolveReconciliation: resolveAgentEventActorReconciliation,
                 admitAction: admitAgentEventActorAction,
@@ -2099,7 +2102,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 getReceipt: getAgentEventActorReceipt,
                 clearReconciliation: clearAgentEventActorReconciliation,
               },
-            ).then(({ value, execution }) => {
+            ).then(async ({ value, execution }) => {
               if (execution.status === 'applied') {
                 appliedEventActor = {
                   invocationId: eventTaskId,
@@ -2107,6 +2110,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   checkpoint: execution.head.checkpoint,
                   action: execution.result.action,
                 };
+              } else if (execution.status === 'suspended') {
+                if (!(await client.publishStagedApproval(execution.suspension))) {
+                  throw new Error('Event actor suspension could not be projected to its job');
+                }
               }
               logger.info('[event-actor] Bound child event completed', {
                 conversationId,
@@ -2323,6 +2330,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 `[ResumableAgentController] Pause persistence barrier changed before release: ${streamId}`,
               );
             }
+            await client.exposePendingApproval?.();
             // The pause projection is what moves the run row off `started` and frees its
             // GLOBAL capacity slot. recordScheduleOutcome already retried it; a `false`
             // here means every attempt failed, leaving the row `started` while the job
