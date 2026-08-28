@@ -14,6 +14,15 @@ const mockSetAnswerDrafts = jest.fn((update: unknown) => {
       ? (update as (current: Record<string, string>) => Record<string, string>)(mockAnswerDrafts)
       : (update as Record<string, string>);
 });
+let mockReleasedComposerText: Record<string, string> = {};
+const mockSetReleasedComposerText = jest.fn((update: unknown) => {
+  mockReleasedComposerText =
+    typeof update === 'function'
+      ? (update as (current: Record<string, string>) => Record<string, string>)(
+          mockReleasedComposerText,
+        )
+      : (update as Record<string, string>);
+});
 const mockSetDraft = jest.fn();
 let mockSaveDrafts = false;
 let mockCollapsedIds: string[] = [];
@@ -50,6 +59,9 @@ jest.mock('recoil', () => ({
     if (state.key === 'askAnswerModeText') {
       return [mockAnswerDrafts, mockSetAnswerDrafts];
     }
+    if (state.key === 'askAnswerModeReleasedComposerText') {
+      return [mockReleasedComposerText, mockSetReleasedComposerText];
+    }
     return [[], jest.fn()];
   },
   useRecoilValue: () => mockSaveDrafts,
@@ -82,6 +94,7 @@ describe('useAskAnswerMode', () => {
     mockSaveDrafts = false;
     mockCollapsedIds = [];
     mockAnswerDrafts = {};
+    mockReleasedComposerText = {};
     mockGetComposerText.mockReturnValue('answer from A');
   });
 
@@ -228,6 +241,29 @@ describe('useAskAnswerMode', () => {
     /** A single shared slot dropped A's unsent answer the moment B claimed
      *  it, and the action-scoped reader then showed A an empty box. */
     expect(mockAnswerDrafts).toEqual({ a1: 'answer from A', a2: 'answer from B' });
+  });
+
+  it('hands the released composer text back when the answer is submitted', () => {
+    /** Stashed by a prior expand: the question was collapsed, an ordinary
+     *  message was typed in the released composer, then the question was moved
+     *  back. Submitting from there never goes through `collapse`, so the
+     *  message has to be restored here or it dies with the question. */
+    mockReleasedComposerText = { a1: 'an ordinary unsent message' };
+    mockUseGetMessages.mockReturnValue({ data: liveAsk });
+    mockSubmitAskAnswer.mockImplementation(
+      (_actionId: string, _answer: string, options?: { onSuccess?: () => void }) => {
+        options?.onSuccess?.();
+      },
+    );
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+
+    act(() => {
+      result.current.submitText('answer from A');
+    });
+
+    expect(mockSetComposerText).toHaveBeenLastCalledWith('text', 'an ordinary unsent message');
+    expect(mockResetComposer).not.toHaveBeenCalled();
+    expect(mockReleasedComposerText).toEqual({});
   });
 
   it('does not let a delayed answer success clear the composer or selection after navigation', () => {

@@ -121,6 +121,10 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     actionId: liveAsk?.actionId,
     formContext,
   };
+  /** Read by the resume success callback, which settles long after the render
+   *  that armed it, so it must not close over a stale stash. */
+  const releasedComposerTextRef = useRef(releasedComposerText);
+  releasedComposerTextRef.current = releasedComposerText;
   const mountedRef = useRef(true);
   useEffect(() => {
     // Strict Mode runs setup, cleanup, then setup again in development; each
@@ -364,12 +368,30 @@ export default function useAskAnswerMode(conversationId?: string | null) {
             delete next[submittedActionId];
             return next;
           });
+          /** A successful answer never goes through `collapse`, so the released
+           *  text has to be handed back here too or the user's ordinary
+           *  message dies with the question. Restored in place of the reset
+           *  when one is stashed; the entry is dropped either way so the map
+           *  stays bounded. */
+          const released = releasedComposerTextRef.current[submittedActionId];
           if (
             (consumedComposerText || (wasActive && saveDrafts)) &&
             currentScope.formContext?.getValues('text') === submittedComposerText
           ) {
-            currentScope.formContext.reset();
+            if (released) {
+              currentScope.formContext.setValue('text', released);
+            } else {
+              currentScope.formContext.reset();
+            }
           }
+          setReleasedComposerText((current) => {
+            if (current[submittedActionId] == null) {
+              return current;
+            }
+            const next = { ...current };
+            delete next[submittedActionId];
+            return next;
+          });
         },
       });
       return true;
@@ -380,6 +402,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       active,
       saveDrafts,
       conversationId,
+      setReleasedComposerText,
       formContext,
       submitAskAnswer,
       setSelected,
