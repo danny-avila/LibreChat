@@ -714,6 +714,10 @@ export type SummaryContentPart = {
   content?: Array<{ type: ContentTypes.TEXT; text: string }>;
   tokenCount?: number;
   summarizing?: boolean;
+  /** A summarize round that ended in error. Partial deltas already streamed
+   *  into this slot are kept, so the renderer needs this to avoid presenting
+   *  truncated text under the "Conversation summarized" label. */
+  failed?: boolean;
   summaryVersion?: number;
   model?: string;
   provider?: string;

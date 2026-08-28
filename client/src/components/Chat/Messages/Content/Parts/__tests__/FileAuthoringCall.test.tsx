@@ -158,8 +158,8 @@ describe('FileAuthoringCall', () => {
       />,
     );
 
-    expect(screen.getByText('old line').closest('div')).toHaveClass('bg-red-500/10');
-    expect(screen.getByText('new line').closest('div')).toHaveClass('bg-green-500/10');
+    expect(screen.getByText('old line').closest('div')).toHaveClass('bg-status-error-subtle');
+    expect(screen.getByText('new line').closest('div')).toHaveClass('bg-status-success-subtle');
     expect(screen.queryByText(/--- old_text/)).not.toBeInTheDocument();
   });
 
@@ -178,8 +178,8 @@ describe('FileAuthoringCall', () => {
       />,
     );
 
-    expect(screen.getByText('missing text').closest('div')).toHaveClass('bg-red-500/10');
-    expect(screen.getByText('replacement').closest('div')).toHaveClass('bg-green-500/10');
+    expect(screen.getByText('missing text').closest('div')).toHaveClass('bg-status-error-subtle');
+    expect(screen.getByText('replacement').closest('div')).toHaveClass('bg-status-success-subtle');
     expect(screen.getByText(/matched 0 locations/)).toBeInTheDocument();
   });
 
@@ -202,10 +202,10 @@ describe('FileAuthoringCall', () => {
     expect(screen.getByTestId('code-window-header')).toHaveAttribute('data-language', 'SKILL.md');
     expect(screen.queryByText(/--- old_text/)).not.toBeInTheDocument();
     expect(screen.getByText('description: Old behavior').closest('div')).toHaveClass(
-      'bg-red-500/10',
+      'bg-status-error-subtle',
     );
     expect(screen.getByText('description: New behavior').closest('div')).toHaveClass(
-      'bg-green-500/10',
+      'bg-status-success-subtle',
     );
   });
 
@@ -239,9 +239,11 @@ describe('FileAuthoringCall', () => {
     );
 
     expect(screen.getByText('description: Old behavior').closest('div')).toHaveClass(
-      'bg-red-500/10',
+      'bg-status-error-subtle',
     );
-    expect(screen.getByText('description: New beh').closest('div')).toHaveClass('bg-green-500/10');
+    expect(screen.getByText('description: New beh').closest('div')).toHaveClass(
+      'bg-status-success-subtle',
+    );
   });
 
   it('streams batched edit_file previews from a partial edits array', () => {
@@ -260,10 +262,10 @@ describe('FileAuthoringCall', () => {
     );
 
     const diff = screen.getByTestId('diff-view');
-    expect(screen.getByText('first old').closest('div')).toHaveClass('bg-red-500/10');
-    expect(screen.getByText('first new').closest('div')).toHaveClass('bg-green-500/10');
-    expect(screen.getByText('second old').closest('div')).toHaveClass('bg-red-500/10');
-    expect(screen.getByText('second n').closest('div')).toHaveClass('bg-green-500/10');
+    expect(screen.getByText('first old').closest('div')).toHaveClass('bg-status-error-subtle');
+    expect(screen.getByText('first new').closest('div')).toHaveClass('bg-status-success-subtle');
+    expect(screen.getByText('second old').closest('div')).toHaveClass('bg-status-error-subtle');
+    expect(screen.getByText('second n').closest('div')).toHaveClass('bg-status-success-subtle');
     expect(diff).toBeInTheDocument();
   });
 
@@ -284,8 +286,8 @@ describe('FileAuthoringCall', () => {
       />,
     );
 
-    expect(screen.getByText('first old').closest('div')).toHaveClass('bg-red-500/10');
-    expect(screen.getByText('second new').closest('div')).toHaveClass('bg-green-500/10');
+    expect(screen.getByText('first old').closest('div')).toHaveClass('bg-status-error-subtle');
+    expect(screen.getByText('second new').closest('div')).toHaveClass('bg-status-success-subtle');
   });
 });
 
