@@ -816,6 +816,33 @@ describe('initializeClient — subagent loading', () => {
     );
   });
 
+  it('retains only root-attributed model-invoked Skills for durable replay', async () => {
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig({}));
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    const rootSkill = {
+      id: 'root-skill',
+      name: 'root-skill',
+      version: 1,
+      contentDigest: 'root-digest',
+    };
+    const childSkill = {
+      id: 'child-skill',
+      name: 'child-skill',
+      version: 1,
+      contentDigest: 'child-digest',
+    };
+
+    capturedToolExecuteOptions.onSkillResolved(childSkill, { agentId: SUBAGENT_ID });
+    capturedToolExecuteOptions.onSkillResolved(rootSkill, { agentId: PRIMARY_ID });
+
+    expect([...agentClientArgs.invokedSkillIdentities.values()]).toEqual([rootSkill]);
+  });
+
   it('keeps an existing detached task controllable after subagent config is disabled', async () => {
     mockInitializeAgent.mockResolvedValue(
       makePrimaryConfig({
@@ -1107,6 +1134,23 @@ describe('initializeClient — subagent loading', () => {
       });
 
       expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+      expect(listAlwaysApplySkillsSpy).not.toHaveBeenCalled();
+      for (const descriptor of agentClientArgs.agent.lazySubagentConfigs) {
+        expect(descriptor.alwaysApplySkillPrimes).toEqual([]);
+      }
+
+      const eventReq = makeSubagentReq();
+      eventReq.config.endpoints.agents.capabilities.push('skills');
+      eventReq._isAgentTrigger = true;
+      eventReq._agentEventBindingParentConversationId = 'parent-conversation';
+      await initializeClient({
+        req: eventReq,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      });
+
+      expect(mockInitializeAgent).toHaveBeenCalledTimes(2);
       expect(listAlwaysApplySkillsSpy).toHaveBeenCalledTimes(1);
       expect(agentClientArgs.agent.lazySubagentConfigs).toHaveLength(2);
       for (const descriptor of agentClientArgs.agent.lazySubagentConfigs) {

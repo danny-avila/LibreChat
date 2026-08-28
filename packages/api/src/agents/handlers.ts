@@ -201,12 +201,15 @@ export interface ToolExecuteOptions {
     disableModelInvocation?: boolean;
   } | null>;
   /** Captures a successfully resolved model-invoked Skill for durable continuation context. */
-  onSkillResolved?: (skill: {
-    id: string;
-    name: string;
-    version: number;
-    contentDigest: string;
-  }) => void;
+  onSkillResolved?: (
+    skill: {
+      id: string;
+      name: string;
+      version: number;
+      contentDigest: string;
+    },
+    context: { agentId?: string },
+  ) => void;
   /**
    * Loads a skill by name when the current user is the author. This is a
    * narrow recovery path for freshly-authored skills whose runtime catalog
@@ -3893,6 +3896,7 @@ async function handleSkillToolCall(
   tc: ToolCallRequest,
   mergedConfigurable: Record<string, unknown>,
   options: ToolExecuteOptions,
+  agentId?: string,
   req?: ServerRequest,
 ): Promise<ToolExecuteResult> {
   const {
@@ -4065,12 +4069,15 @@ async function handleSkillToolCall(
     }
   }
 
-  options.onSkillResolved?.({
-    id: skill._id.toString(),
-    name: skill.name,
-    version: skill.version,
-    contentDigest: createSkillContentDigest(skill.body),
-  });
+  options.onSkillResolved?.(
+    {
+      id: skill._id.toString(),
+      name: skill.name,
+      version: skill.version,
+      contentDigest: createSkillContentDigest(skill.body),
+    },
+    { agentId },
+  );
 
   return {
     toolCallId: tc.id,
@@ -4861,6 +4868,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           tc,
                           mergedConfigurable,
                           options,
+                          agentId,
                           req,
                         );
                       } else if (tc.name === Constants.READ_FILE) {

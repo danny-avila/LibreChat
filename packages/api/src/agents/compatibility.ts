@@ -109,8 +109,34 @@ export function createSkillContentDigest(body: string): string {
   return createHash('sha256').update(body).digest('base64url');
 }
 
-const SECRET_KEY_PATTERN =
+const CREDENTIAL_KEY_PATTERN =
   /^(?:authorization|password|secret)$|(?:^|[-_])(?:api[-_]?key|access[-_]?token|refresh[-_]?token|client[-_]?secret)$/i;
+
+const REDACTED_CREDENTIAL = '[credential]';
+
+function redactModelParameterCredentials(value: object | undefined): object | undefined {
+  if (value == null) {
+    return undefined;
+  }
+  const redacted: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (CREDENTIAL_KEY_PATTERN.test(key)) {
+      redacted[key] = REDACTED_CREDENTIAL;
+      continue;
+    }
+    if (key.toLowerCase() === 'headers' && item != null && typeof item === 'object') {
+      redacted[key] = Object.fromEntries(
+        Object.entries(item).map(([header, headerValue]) => [
+          header,
+          CREDENTIAL_KEY_PATTERN.test(header) ? REDACTED_CREDENTIAL : headerValue,
+        ]),
+      );
+      continue;
+    }
+    redacted[key] = item;
+  }
+  return redacted;
+}
 
 function canonicalize(value: unknown, seen: WeakSet<object>): unknown {
   if (value == null || typeof value === 'string' || typeof value === 'boolean') {
@@ -132,9 +158,6 @@ function canonicalize(value: unknown, seen: WeakSet<object>): unknown {
   const record = value as Record<string, unknown>;
   const normalized: Record<string, unknown> = {};
   for (const key of Object.keys(record).sort()) {
-    if (SECRET_KEY_PATTERN.test(key)) {
-      continue;
-    }
     const item = canonicalize(record[key], seen);
     if (item !== undefined) {
       normalized[key] = item;
@@ -178,6 +201,7 @@ export function createAgentContextFingerprint(
     approvalPolicy: input.approvalPolicy,
     agents: input.agents.map((agent) => ({
       ...agent,
+      modelParameters: redactModelParameterCredentials(agent.modelParameters),
       skills: sortSkillIdentities(agent.skills),
     })),
     memory:

@@ -394,7 +394,11 @@ const initializeClient = async ({
     }),
     emitAttachment: createAttachmentEmitter({ res, streamId, jobCreatedAt }),
     emitPtcProgress: createPtcProgressEmitter({ res, streamId, jobCreatedAt }),
-    onSkillResolved: (skill) => invokedSkillIdentities.set(skill.id, skill),
+    onSkillResolved: (skill, { agentId }) => {
+      if (agentId === primaryConfig.id) {
+        invokedSkillIdentities.set(skill.id, skill);
+      }
+    },
     ...getSkillToolDeps(),
   };
 
@@ -729,6 +733,8 @@ const initializeClient = async ({
   const skippedAgentIds = new Set(discoveredSkippedIds ?? []);
 
   const lazyMetadataByAgentId = new Map();
+  const eventActorContextRequested =
+    req._isAgentTrigger === true && req._agentEventBindingParentConversationId != null;
   /** Request-scoped cache: lazy descriptors sharing the same Skill ACL scope
    * reuse one metadata-only always-apply lookup without initializing tools,
    * files, model clients, or MCP connections. */
@@ -844,6 +850,9 @@ const initializeClient = async ({
     );
 
   const resolveLazyAlwaysApplySkillPrimes = (agent) => {
+    if (!eventActorContextRequested) {
+      return Promise.resolve([]);
+    }
     const scopedSkillIds = resolveAgentScopedSkillIds({
       agent,
       accessibleSkillIds,

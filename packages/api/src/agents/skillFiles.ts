@@ -917,11 +917,30 @@ export async function primeInvokedSkillsForProfiles(
 
   let initialSessions: ToolSessionMap | undefined;
   const skills = new Map<string, string>();
-  let skillManifest: PrimeInvokedSkillsResult['skillManifest'];
+  const skillManifestByName = new Map<
+    string,
+    NonNullable<PrimeInvokedSkillsResult['skillManifest']>[number]
+  >();
   for (const { profile, result } of profileResults) {
-    skillManifest ??= result.skillManifest;
+    const resultManifestByName = new Map(
+      (result.skillManifest ?? []).map((skill) => [skill.name, skill]),
+    );
     for (const [name, body] of result.skills ?? []) {
+      const identity = resultManifestByName.get(name);
+      if (identity == null) {
+        throw new Error(`Skill "${name}" resolved without a semantic identity`);
+      }
+      const existingIdentity = skillManifestByName.get(name);
+      const existingBody = skills.get(name);
+      if (
+        (existingIdentity != null &&
+          JSON.stringify(existingIdentity) !== JSON.stringify(identity)) ||
+        (existingBody != null && existingBody !== body)
+      ) {
+        throw new Error(`Skill "${name}" changed while execution profiles were initialized`);
+      }
       skills.set(name, body);
+      skillManifestByName.set(name, identity);
     }
     const skillFiles = result.initialSessions?.get(Constants.EXECUTE_CODE)?.files;
     if (!skillFiles?.length) {
@@ -939,6 +958,9 @@ export async function primeInvokedSkillsForProfiles(
   return {
     initialSessions,
     skills: skills.size > 0 ? skills : undefined,
-    skillManifest,
+    skillManifest:
+      skillManifestByName.size > 0
+        ? [...skillManifestByName.values()].sort((left, right) => left.id.localeCompare(right.id))
+        : undefined,
   };
 }

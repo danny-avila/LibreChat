@@ -93,6 +93,27 @@ describe('agent context compatibility', () => {
     expect(createAgentContextFingerprint(left)).toEqual(createAgentContextFingerprint(right));
   });
 
+  it('preserves credential-named JSON Schema fields in semantic tool definitions', () => {
+    const left = context();
+    const right = context();
+    left.agents[0].toolDefinitions = [
+      {
+        name: 'login',
+        schema: { type: 'object', properties: { password: { type: 'string' } } },
+      },
+    ];
+    right.agents[0].toolDefinitions = [
+      {
+        name: 'login',
+        schema: { type: 'object', properties: { password: { type: 'number' } } },
+      },
+    ];
+
+    expect(createAgentContextFingerprint(left).digest).not.toBe(
+      createAgentContextFingerprint(right).digest,
+    );
+  });
+
   it('fails compatibility closed for a missing or unknown stored version', () => {
     const current = createAgentContextFingerprint(context());
 

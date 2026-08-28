@@ -56,10 +56,12 @@ function invokeHandler(
     directOnlyToolNames: string[];
     codeExecutionOnlyToolNames: string[];
   },
+  agentId?: string,
 ): Promise<ToolExecuteResult[]> {
   return new Promise((resolve, reject) => {
     const request = {
       toolCalls,
+      agentId,
       callerCapabilityProjection,
       resolve,
       reject,
@@ -1516,17 +1518,29 @@ describe('createToolExecuteHandler', () => {
       }));
       const handler = createSkillHandler(getSkillByName, undefined, onSkillResolved);
 
-      const [result] = await invokeHandler(handler, [
-        { id: 'call_skill_identity', name: Constants.SKILL_TOOL, args: { skillName: 'analysis' } },
-      ]);
+      const [result] = await invokeHandler(
+        handler,
+        [
+          {
+            id: 'call_skill_identity',
+            name: Constants.SKILL_TOOL,
+            args: { skillName: 'analysis' },
+          },
+        ],
+        undefined,
+        'agent-child',
+      );
 
       expect(result.status).toBe('success');
-      expect(onSkillResolved).toHaveBeenCalledWith({
-        id: 'skill-id',
-        name: 'analysis',
-        version: 4,
-        contentDigest: expect.any(String),
-      });
+      expect(onSkillResolved).toHaveBeenCalledWith(
+        {
+          id: 'skill-id',
+          name: 'analysis',
+          version: 4,
+          contentDigest: expect.any(String),
+        },
+        { agentId: 'agent-child' },
+      );
     });
 
     it('blocks stored skill instructions before injecting them into model context', async () => {

@@ -631,6 +631,60 @@ describe('primeInvokedSkillsForProfiles', () => {
         .sort(),
     ).toEqual(['default', 'stateful']);
   });
+
+  it('keeps a successful profile Skill body and identity after another profile lookup fails', async () => {
+    const {
+      codeEnvAvailable: _codeEnvAvailable,
+      codeExecutionContext: _codeExecutionContext,
+      ...baseDeps
+    } = makeDeps({
+      getSkillByName: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('transient lookup failure'))
+        .mockResolvedValueOnce({
+          _id: SKILL_ID,
+          name: 'brand-guidelines',
+          body: 'skill body',
+          version: SKILL_VERSION,
+          fileCount: 0,
+        }),
+    });
+    const deps: PrimeInvokedSkillsForProfilesDeps = {
+      ...baseDeps,
+      executionProfiles: [
+        {
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com/v1',
+            codeSessionKey: 'execute_code',
+            executionProfile: 'default',
+            statefulSessions: false,
+          },
+          codeSessionKeys: ['execute_code'],
+        },
+        {
+          codeExecutionContext: {
+            baseUrl: 'https://stateful.example.com/v1',
+            codeSessionKey: 'execute_code:stateful:v2:user:abc',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+          },
+          codeSessionKeys: ['execute_code:stateful:v2:user:abc'],
+        },
+      ],
+    };
+
+    const result = await primeInvokedSkillsForProfiles(deps);
+
+    expect(result.skills).toEqual(new Map([['brand-guidelines', 'skill body']]));
+    expect(result.skillManifest).toEqual([
+      {
+        id: SKILL_ID.toString(),
+        name: 'brand-guidelines',
+        version: SKILL_VERSION,
+        contentDigest: expect.any(String),
+      },
+    ]);
+  });
 });
 
 /* The tool-invoked skill loader (`handle_skill` -> `primeSkillFiles`)
