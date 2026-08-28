@@ -93,6 +93,15 @@ export interface TextEditPreview {
 }
 
 /**
+ * Rows one side of an edit contributes. An empty side means "nothing here",
+ * not one blank line, and a trailing newline terminates the last line rather
+ * than starting an empty one: plain `split('\n')` would render a blank row and
+ * count it as a change, so a pure deletion (`new_text: ""`) claimed one
+ * addition.
+ */
+const previewRows = (text: string): string[] => (text ? text.replace(/\n$/, '').split('\n') : []);
+
+/**
  * Builds the diff for an `edit_file` args preview straight from the structured
  * edits, instead of formatting them into diff text for `parseUnifiedDiff` to
  * read back.
@@ -116,11 +125,11 @@ export function buildEditPreviewDiff(edits: TextEditPreview[]): ParsedDiff {
     if (index > 0) {
       lines.push({ type: 'hunk', text: '' });
     }
-    for (const text of edit.oldText.split('\n')) {
+    for (const text of previewRows(edit.oldText)) {
       deletions += 1;
       lines.push({ type: 'del', text });
     }
-    for (const text of edit.newText.split('\n')) {
+    for (const text of previewRows(edit.newText)) {
       additions += 1;
       lines.push({ type: 'add', text });
     }

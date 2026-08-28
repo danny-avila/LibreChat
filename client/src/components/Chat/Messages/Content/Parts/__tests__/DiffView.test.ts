@@ -69,6 +69,24 @@ describe('parseUnifiedDiff', () => {
     expect(parsed.lines.map((line) => line.text)).toEqual(['a', 'b', 'c']);
   });
 
+  it('does not count an empty replacement as an added line', () => {
+    /** A pure deletion (`new_text: ""`) must not render a blank green row or
+     *  report an addition; `''.split('\n')` yields one element. */
+    const parsed = buildEditPreviewDiff([{ oldText: 'gone', newText: '' }]);
+
+    expect(parsed.deletions).toBe(1);
+    expect(parsed.additions).toBe(0);
+    expect(parsed.lines).toEqual([{ type: 'del', text: 'gone' }]);
+  });
+
+  it('treats a trailing newline as a terminator, not an empty final line', () => {
+    const parsed = buildEditPreviewDiff([{ oldText: 'a\n', newText: 'b\n' }]);
+
+    expect(parsed.deletions).toBe(1);
+    expect(parsed.additions).toBe(1);
+    expect(parsed.lines.map((line) => line.text)).toEqual(['a', 'b']);
+  });
+
   it('keeps changed lines that look like the old synthetic header names', () => {
     /** Deleting a real `-- old_text` comment (SQL, Lua) and adding
      *  `++ new_text` prefixes to exactly the text the removed separators used.
