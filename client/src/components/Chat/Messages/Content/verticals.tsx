@@ -119,7 +119,10 @@ function ImageStrip({ images, label }: { images: ImageResult[]; label: string })
             ? `${image.thumbnailWidth} / ${image.thumbnailHeight}`
             : '1 / 1';
         return (
-          <li key={image.thumbnailUrl || image.imageUrl || i} className="shrink-0">
+          /** Syndicated images reuse one thumbnail across results that link to
+           *  different pages, and grouped searches merge attachments, so the
+           *  source alone collides. The target plus the index is unique. */
+          <li key={`${imageSource(image) ?? ''}|${href ?? ''}|${i}`} className="shrink-0">
             <a
               href={href}
               target="_blank"

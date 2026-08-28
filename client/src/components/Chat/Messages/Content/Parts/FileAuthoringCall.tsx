@@ -134,13 +134,18 @@ export default function FileAuthoringCall({
     }
     return !isCreate && editArgs.length > 0 ? buildEditPreviewDiff(editArgs) : null;
   }, [outputIsDiff, output, isCreate, editArgs]);
-  /** Plain text for the non-diff pane, and the copy payload either way. */
+  /** Plain text for the non-diff pane, and the copy payload either way. A diff
+   *  in the output supersedes everything, including a create's authored
+   *  content: `create_file` overwriting an existing file returns a summary plus
+   *  a unified diff, and preferring the authored content there rendered that
+   *  diff twice, once through `DiffView` and again verbatim as the raw output
+   *  section. */
   const preview = useMemo(() => {
-    if (isCreate) {
-      return authoredContent || output;
-    }
     if (outputIsDiff) {
       return output;
+    }
+    if (isCreate) {
+      return authoredContent || output;
     }
     return parsedDiff ? diffPreviewText(parsedDiff) : output;
   }, [isCreate, authoredContent, outputIsDiff, output, parsedDiff]);
