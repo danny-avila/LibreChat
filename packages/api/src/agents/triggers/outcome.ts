@@ -741,10 +741,11 @@ export function createAgentEventTerminalHandler(
     const closedDetachedPredecessor =
       job.agentEventSuspension == null &&
       completionDeliveryKey != null &&
-      (detachedSuspensionAction?.status === 'failed' ||
-        detachedSuspensionAction?.status === 'cancelled') &&
       closed?.status === 'closed' &&
-      closed.outcome === 'cancelled' &&
+      (closed.outcome === 'settled' ||
+        (closed.outcome === 'cancelled' &&
+          (detachedSuspensionAction?.status === 'failed' ||
+            detachedSuspensionAction?.status === 'cancelled'))) &&
       closed.resumeAttemptId === completionDeliveryKey &&
       closed.suspension.invocation.invocationId === job.agentEventDeliveryKey;
     if (

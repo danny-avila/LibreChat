@@ -2231,7 +2231,7 @@ describe('agent trigger delivery methods', () => {
       }),
     ).resolves.toEqual({ status: 'applied' });
 
-    const retry = await methods.reserveAgentEventActorDetachedAction({
+    const retryInput = {
       deliveryKey: queued.delivery.deliveryKey,
       user: queued.delivery.user,
       bindingId,
@@ -2244,7 +2244,8 @@ describe('agent trigger delivery methods', () => {
       toolCallId: 'call-detached-leased-retry-2',
       reservedAt: new Date(generationCreatedAt + 3_000),
       recoveryAfter: new Date(generationCreatedAt + 63_000),
-    });
+    };
+    const retry = await methods.reserveAgentEventActorDetachedAction(retryInput);
 
     expect(retry).toMatchObject({
       status: 'reserved',
@@ -2252,6 +2253,35 @@ describe('agent trigger delivery methods', () => {
         launchAttempt: 1,
         toolCallId: 'call-detached-leased-retry-2',
         status: 'reserved',
+      },
+    });
+    await expect(
+      methods.settleAgentEventActorDetachedAction({
+        deliveryKey: queued.delivery.deliveryKey,
+        user: queued.delivery.user,
+        bindingId,
+        conversationId,
+        generationCreatedAt,
+        taskId: retry.action.taskId,
+        idempotencyKey: retry.action.idempotencyKey,
+        status: 'failed',
+        error: 'retry adapter failure',
+        observedAt: new Date(generationCreatedAt + 4_000),
+      }),
+    ).resolves.toEqual({ status: 'applied' });
+    await expect(
+      methods.reserveAgentEventActorDetachedAction({
+        ...retryInput,
+        reservedAt: new Date(generationCreatedAt + 5_000),
+        recoveryAfter: new Date(generationCreatedAt + 65_000),
+      }),
+    ).resolves.toMatchObject({
+      status: 'replay',
+      action: {
+        taskId: retry.action.taskId,
+        idempotencyKey: retry.action.idempotencyKey,
+        launchAttempt: 1,
+        status: 'failed',
       },
     });
     const stored = await Delivery.findOne({ deliveryKey: queued.delivery.deliveryKey })
@@ -3308,6 +3338,7 @@ describe('agent trigger delivery methods', () => {
     const user = new mongoose.Types.ObjectId();
     const leased = await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
     const detached = await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    const admitted = await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
     await methods.claimNextAgentTriggerDelivery({
       workerId: 'worker-1',
       claimToken: 'claim-1',
@@ -3326,6 +3357,7 @@ describe('agent trigger delivery methods', () => {
             expectedToolName: 'submit_move',
             toolName: 'submit_move_mcp_chess',
             toolCallId: 'call-delete-drain',
+            turnId: 'response-delete-drain:0',
             taskId: `event_actor_${'d'.repeat(64)}`,
             idempotencyKey: 'd'.repeat(64),
             launchAttempt: 0,
@@ -3338,15 +3370,25 @@ describe('agent trigger delivery methods', () => {
         },
       },
     );
+    await Delivery.updateOne(
+      { _id: admitted.delivery.id },
+      {
+        $set: {
+          status: 'succeeded',
+          actorActionAdmittedAt: START,
+          actorActionAdmissionId: 'admission-delete-drain',
+        },
+      },
+    );
 
     expect(leased.delivery.id).not.toBe(detached.delivery.id);
-    expect(await methods.countActiveAgentTriggerDeliveriesByUser(user, START)).toBe(2);
+    expect(await methods.countActiveAgentTriggerDeliveriesByUser(user, START)).toBe(3);
     expect(
       await methods.countActiveAgentTriggerDeliveriesByUser(
         user,
         new Date(START.getTime() + 60_001),
       ),
-    ).toBe(1);
+    ).toBe(2);
     await Delivery.updateOne(
       { _id: detached.delivery.id },
       { $set: { 'actorDetachedAction.status': 'launch_indeterminate' } },
@@ -3356,10 +3398,20 @@ describe('agent trigger delivery methods', () => {
         user,
         new Date(START.getTime() + 60_001),
       ),
-    ).toBe(1);
+    ).toBe(2);
     await Delivery.updateOne(
       { _id: detached.delivery.id },
       { $set: { 'actorDetachedAction.status': 'succeeded' } },
+    );
+    expect(
+      await methods.countActiveAgentTriggerDeliveriesByUser(
+        user,
+        new Date(START.getTime() + 60_001),
+      ),
+    ).toBe(1);
+    await Delivery.updateOne(
+      { _id: admitted.delivery.id },
+      { $unset: { actorActionAdmittedAt: 1, actorActionAdmissionId: 1 } },
     );
     expect(
       await methods.countActiveAgentTriggerDeliveriesByUser(

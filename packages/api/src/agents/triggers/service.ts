@@ -49,6 +49,7 @@ export interface AgentTriggerServiceDeps {
   userDrainPollMs?: number;
   purgeRecoveryIntervalMs?: number;
   purgeRecoveryLimit?: number;
+  supportsDetachedActionCompletion?: () => boolean;
 }
 
 export interface AgentTriggerDeliveryReceipt {
@@ -156,12 +157,17 @@ export interface AgentTriggerService {
   purgeUser: (userId: string) => Promise<void>;
 }
 
-function createDeliveryStore(methods: AgentTriggerDeliveryPersistence): AgentTriggerDeliveryStore {
+function createDeliveryStore(
+  methods: AgentTriggerDeliveryPersistence,
+  supportsDetachedActionCompletion: () => boolean,
+): AgentTriggerDeliveryStore {
   return {
     claimNext: (input) =>
       methods.claimNextAgentTriggerDelivery({
         ...input,
-        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+        workerCapabilities: supportsDetachedActionCompletion()
+          ? [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1]
+          : [],
       }),
     findEarlierUnsettled: methods.findEarlierAgentTriggerDelivery,
     getBatch: methods.getAgentTriggerDeliveryBatch,
@@ -213,6 +219,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   const purgeRecoveryIntervalMs =
     deps.purgeRecoveryIntervalMs ?? DEFAULT_PURGE_RECOVERY_INTERVAL_MS;
   const purgeRecoveryLimit = deps.purgeRecoveryLimit ?? DEFAULT_PURGE_RECOVERY_LIMIT;
+  const supportsDetachedActionCompletion = deps.supportsDetachedActionCompletion ?? (() => false);
   if (!Number.isSafeInteger(userDrainTimeoutMs) || userDrainTimeoutMs <= 0) {
     throw new TypeError('userDrainTimeoutMs must be a positive integer');
   }
@@ -234,8 +241,11 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   let stopping = false;
   const isPrincipalActive = deps.isPrincipalActive;
   const host: AgentTriggerExecutionHost = createAgentTriggerExecutionHost({
-    getBaseUrl: () => {
-      const origin = process.env.AGENT_TRIGGERS_SELF_URL ?? boundOrigin;
+    getBaseUrl: (options) => {
+      const origin =
+        options?.localOnly === true
+          ? boundOrigin
+          : (process.env.AGENT_TRIGGERS_SELF_URL ?? boundOrigin);
       if (origin == null) {
         throw new Error('Agent trigger service has not been initialized with a listener address');
       }
@@ -412,7 +422,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         }
         deliveryEngine = createAgentTriggerDeliveryEngine(
           {
-            store: createDeliveryStore(methods),
+            store: createDeliveryStore(methods, supportsDetachedActionCompletion),
             dispatch: dispatchForActivePrincipal,
           },
           deps.deliveryOptions,

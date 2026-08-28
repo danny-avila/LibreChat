@@ -124,7 +124,7 @@ export type AgentTriggerExecutionResult =
 
 export interface AgentTriggerExecutionHostDeps {
   /** Trusted root URL for this LibreChat server. */
-  getBaseUrl: () => string;
+  getBaseUrl: (options?: { localOnly?: boolean }) => string;
   /** Mint a short-lived token for the envelope's already-authenticated principal. */
   mintToken: (principal: AgentRunPrincipal, envelope: AgentTriggerEnvelope) => MaybePromise<string>;
   /** Optional user-timezone resolver for dynamic date variables in a new run. */
@@ -586,7 +586,12 @@ async function startRun(
         scope,
         context.signal,
       ),
-      setupValue(() => deps.getBaseUrl(), mode, scope, context.signal),
+      setupValue(
+        () => deps.getBaseUrl(detachedCompletion == null ? undefined : { localOnly: true }),
+        mode,
+        scope,
+        context.signal,
+      ),
     ]).catch((error: unknown) => {
       scope.abort();
       throw error;

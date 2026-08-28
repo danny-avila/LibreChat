@@ -92,6 +92,7 @@ const actorDetachedActionSchema = new Schema(
     expectedToolName: { type: String, required: true, maxlength: 256 },
     toolName: { type: String, required: true, maxlength: 256 },
     toolCallId: { type: String, required: true, maxlength: 256 },
+    turnId: { type: String, required: true, maxlength: 512 },
     taskId: { type: String, required: true, maxlength: 128 },
     idempotencyKey: { type: String, required: true, minlength: 64, maxlength: 64 },
     launchAttempt: { type: Number, min: 0, max: 15, required: true },
@@ -199,6 +200,7 @@ triggerDeliverySchema.index(
 );
 triggerDeliverySchema.index({ status: 1, updatedAt: -1 });
 triggerDeliverySchema.index({ 'actorReceipt.resolution': 1 }, { sparse: true });
+triggerDeliverySchema.index({ user: 1, actorActionAdmittedAt: 1 }, { sparse: true });
 triggerDeliverySchema.index({ stagingRecoveryAt: 1 }, { sparse: true });
 triggerDeliverySchema.index({ laneCleanupPendingAt: 1 }, { sparse: true });
 // Only successful rows receive expiresAt. Dead letters remain available until

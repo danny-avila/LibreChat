@@ -666,9 +666,11 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
         status: 'started',
       }),
     );
+    const getBaseUrl = jest.fn(() => 'http://127.0.0.1:3080');
 
-    await createAgentTriggerExecutionHost(deps(fetcher)).dispatch(envelope);
+    await createAgentTriggerExecutionHost(deps(fetcher, { getBaseUrl })).dispatch(envelope);
 
+    expect(getBaseUrl).toHaveBeenCalledWith({ localOnly: true });
     const body = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
     expect(body.clientRequestId).toBe(getAgentTriggerIdempotencyKey(envelope));
     expect(body.agentEventDelivery).toMatchObject({

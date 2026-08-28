@@ -134,8 +134,9 @@ replica first, verify that no old API or worker replica remains, and only then e
 across the Redis-backed fleet. This ordering ensures Redis recovery, HTTP completion consumers,
 account-deletion drains, lane maintenance, and operational requeue/dead-letter paths all understand
 capability-fenced completion work before any is created. For rollback, disable the producer, drain
-all detached completion work, and only then start an older version. A shared
-`AGENT_TRIGGERS_SELF_URL` is safe only after this consumer-first activation sequence is complete.
+all detached completion work, and only then start an older version. Internal detached completions
+always target the current replica's bound listener; `AGENT_TRIGGERS_SELF_URL` remains available for
+ordinary trigger dispatch but cannot route capability-owned completion work to another replica.
 
 ```http
 POST /api/agents/v1/events/bindings

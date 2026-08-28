@@ -1939,6 +1939,7 @@ export function createAgentTriggerDeliveryMethods(
         expectedToolName: input.expectedToolName,
         toolName: input.toolName,
         toolCallId: input.toolCallId,
+        turnId: input.turnId,
         /** Public task handles must not disclose the adapter idempotency secret. */
         taskId: `event_actor_${createHash('sha256')
           .update('librechat:event-actor:task:v1\0')
@@ -2001,6 +2002,19 @@ export function createAgentTriggerDeliveryMethods(
       .lean<Pick<IAgentTriggerDelivery, 'actorDetachedAction'>>();
     if (existing?.actorDetachedAction == null) {
       throw new Error('Detached event actor action reservation owner is unavailable');
+    }
+    const sameTurn = existing.actorDetachedAction.turnId === input.turnId;
+    const sameLogicalAction =
+      sameTurn &&
+      existing.actorDetachedAction.invocationId === input.invocationId &&
+      existing.actorDetachedAction.expectedToolName === input.expectedToolName &&
+      existing.actorDetachedAction.toolName === input.toolName &&
+      existing.actorDetachedAction.toolCallId === input.toolCallId;
+    if (sameLogicalAction) {
+      return { status: 'replay', action: existing.actorDetachedAction };
+    }
+    if (sameTurn) {
+      return { status: 'conflict', action: existing.actorDetachedAction };
     }
     if (existing.actorDetachedAction.idempotencyKey === action.idempotencyKey) {
       return { status: 'replay', action: existing.actorDetachedAction };
@@ -2653,6 +2667,7 @@ export function createAgentTriggerDeliveryMethods(
     return Delivery().countDocuments({
       user,
       $or: [
+        { actorActionAdmittedAt: { $exists: true } },
         {
           status: { $in: ['leased', 'capability_leased'] },
           leaseUntil: { $gt: now },

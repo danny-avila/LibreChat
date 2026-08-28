@@ -958,6 +958,74 @@ describe('agent event terminal outcomes', () => {
     });
   });
 
+  it('releases admission after an exact completion predecessor settled normally', async () => {
+    const predecessor = suspensionEvidence('suspension-settled-predecessor', 1);
+    const completionDeliveryKey = 'trigger_completion_settled_successor';
+    const releaseAgentEventActorAction = jest.fn().mockResolvedValue(true);
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      releaseAgentEventActorAction,
+      getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
+        state: null,
+        epoch: 1,
+        legacyTurn: null,
+        reconciliations: [],
+        suspension: {
+          kind: 'internal_completion',
+          suspension: predecessor,
+          actionId: 'task-settled-predecessor',
+          jobCreatedAt: 1_787_000_000_000,
+          handlingGenerationCreatedAt: 1_787_000_000_000,
+          status: 'closed',
+          outcome: 'settled',
+          resumeAttemptId: completionDeliveryKey,
+          observedAt: new Date(),
+        },
+      }),
+      getAgentEventActorDetachedAction: jest.fn().mockResolvedValue({
+        version: 1,
+        invocationId: 'trigger_1',
+        expectedToolName: 'submit_move',
+        toolName: 'submit_move_mcp_chess',
+        toolCallId: 'call-settled-successor',
+        turnId: 'response-settled-successor:0',
+        taskId: 'task-settled-successor',
+        idempotencyKey: '8'.repeat(64),
+        launchAttempt: 1,
+        status: 'succeeded',
+        reservedAt: new Date(),
+        observedAt: new Date(),
+        recoveryAfter: new Date(),
+        settledAt: new Date(),
+        result: 'accepted',
+      }),
+    });
+
+    await handler(
+      'conversation-1',
+      job({
+        createdAt: 1_787_000_010_000,
+        agentEventDeliveryKey: completionDeliveryKey,
+        agentEventInvocationKey: 'trigger_1',
+        agentEventBindingId: 'binding-1',
+        agentEventSuspension: undefined,
+      }),
+      [],
+    );
+
+    expect(releaseAgentEventActorAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'trigger_1',
+        bindingId: 'binding-1',
+        admissionId: expect.any(String),
+      }),
+    );
+    expect(
+      settleAgentTriggerHandlingOutcome.mock.calls.map(([input]) => input.deliveryKey),
+    ).toEqual(['trigger_1', completionDeliveryKey]);
+  });
+
   it('records reconciliation when a detached action succeeds after generation abort', async () => {
     const suspension = suspensionEvidence('suspension-aborted-success');
     const recordAgentEventActorReconciliation = jest.fn().mockResolvedValue(true);

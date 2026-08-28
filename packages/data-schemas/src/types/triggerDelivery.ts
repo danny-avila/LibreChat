@@ -48,6 +48,8 @@ export interface AgentEventActorDetachedAction {
   expectedToolName: string;
   toolName: string;
   toolCallId: string;
+  /** Stable graph-turn identity, independent of retry allocation. */
+  turnId: string;
   taskId: string;
   idempotencyKey: string;
   launchAttempt: number;

@@ -161,6 +161,7 @@ describe('durable agent trigger service', () => {
       methods,
       mintToken: () => 'token',
       fetch: async () => new Response('{}', { status: 500 }),
+      supportsDetachedActionCompletion: () => true,
       deliveryOptions: { concurrency: 1, tickMs: 60_000 },
     });
 
@@ -193,6 +194,22 @@ describe('durable agent trigger service', () => {
       replayed: false,
       availableAt: START,
     });
+    await service.stop();
+  });
+
+  it('does not advertise detached completion capability without durable generation storage', async () => {
+    const methods = deliveryMethods();
+    const service = createAgentTriggerService({
+      methods,
+      supportsDetachedActionCompletion: () => false,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+
+    await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
+
+    expect(methods.claimNextAgentTriggerDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ workerCapabilities: [] }),
+    );
     await service.stop();
   });
 
