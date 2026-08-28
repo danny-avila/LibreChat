@@ -7,7 +7,9 @@
  * Prettier, import order) run against the changed JS/TS files under `api/`,
  * `client/` and `packages/`. Tree-wide gates (config migration tests, unused
  * i18n keys, unused npm packages) run only when the diff touches the paths
- * that gate them in CI.
+ * that gate them in CI. Circular-dependency detection and the TypeScript
+ * project checks come from the Backend Unit Tests workflow rather than the
+ * Static Checks job, but they gate on a commit's paths the same way.
  *
  * Like the CI job, every selected check runs even after one fails, and the
  * failures are summarized at the end.
@@ -22,7 +24,7 @@
  *
  *   Staged diff (what the pre-commit hook runs):
  *     npm run static-checks
- *   Add the slow gates (config tests, i18n, depcheck):
+ *   Add the slow gates (TypeScript, config tests, i18n, depcheck):
  *     npm run static-checks:full
  *   Against a base ref, the way CI sees a pull request:
  *     node scripts/static-checks.mts --against origin/dev
@@ -31,9 +33,9 @@
  *   Explicit files:
  *     node scripts/static-checks.mts packages/api/src/index.ts
  *
- * Flags: --full, --fast, --only <ids>, --skip <ids>, --verbose, --list.
- * Check ids: eslint, prettier, imports, eslint-config, json, config-tests,
- * i18n, depcheck.
+ * Flags: --staged, --full, --fast, --only <ids>, --skip <ids>, --verbose,
+ * --list. Check ids: eslint, prettier, imports, eslint-config, json,
+ * circular-deps, typecheck, config-tests, i18n, depcheck.
  */
 
 import { fileURLToPath } from 'node:url';
@@ -74,6 +76,16 @@ const FILTERS = {
     '.github/workflows/static-checks.yml',
     '!**.md',
   ],
+  // Mirrors the Backend Unit Tests workflow, which owns both of these jobs.
+  circular_deps: [
+    'api/**',
+    'packages/**',
+    'package.json',
+    'package-lock.json',
+    'config/circular-deps.mjs',
+    '!**.md',
+  ],
+  typecheck: ['client/**', 'packages/**', '!**.md'],
   unused_packages: [
     'api/**',
     'client/**',
@@ -368,6 +380,19 @@ function diffPaths(args: string[]): { files: string[]; existing: string[] } {
 }
 
 function resolveTarget(): Target {
+  // Precedence would silently drop the losers: `--against origin/dev pkg.json`
+  // checked only the file, and paired with --commit the base ref was never even
+  // resolved, so a caller could believe a range had been checked.
+  const selectors = [
+    FILE_ARGS.length > 0 && 'file arguments',
+    OPTIONS.commit && '--commit',
+    OPTIONS.against && '--against',
+    argv.includes('--staged') && '--staged',
+  ].filter((selector): selector is string => typeof selector === 'string');
+  if (selectors.length > 1) {
+    fail(`${selectors.join(' and ')} cannot be combined — name the target once`);
+  }
+
   if (FILE_ARGS.length > 0) {
     const files = FILE_ARGS.map((file) => relative(ROOT, resolve(file)).split('\\').join('/'));
     return { label: 'files from the command line', files, existing: files };
@@ -389,6 +414,17 @@ function resolveTarget(): Target {
         `--commit ${OPTIONS.commit} (${requested.slice(0, 10)}) is not the checked-out commit ` +
           `(${head.slice(0, 10)}). These checks read the working tree, so check that commit out ` +
           `first, or use --against <ref> to scope by a range.`,
+      );
+    }
+    // Contents still come from the working tree, so uncommitted edits would
+    // be scored against the named commit — an invalid uncommitted package.json
+    // failing a valid HEAD, or an uncommitted fix masking a defect in it.
+    const dirty = captureStdout(GIT, ['status', '--porcelain', '--untracked-files=no']).trim();
+    if (dirty) {
+      fail(
+        'these checks read the working tree, so --commit needs it to match the commit; ' +
+          `${dirty.split('\n').length} tracked file(s) differ. Commit or restore them, or drop ` +
+          '--commit to check the staged diff.',
       );
     }
     // -m is load-bearing: without it a merge commit yields no paths at all.
@@ -559,13 +595,28 @@ async function validatePackageJson(): Promise<CheckOutcome> {
  */
 const CONFIG_TEST_BUILDS = ['build:data-provider', 'build:data-schemas', 'build:api'];
 
-function runConfigTests(): CheckOutcome {
-  for (const script of CONFIG_TEST_BUILDS) {
+/** Dependency order; callers pass a subset and it is built in this sequence. */
+const BUILD_ORDER = [
+  'build:data-provider',
+  'build:data-schemas',
+  'build:api',
+  'build:client-package',
+];
+
+/** Returns the failing build's outcome, or null when every build succeeded. */
+function buildWorkspaces(scripts: string[]): CheckOutcome | null {
+  for (const script of BUILD_ORDER.filter((entry) => scripts.includes(entry))) {
     const build = runCommand(NPM, ['run', script]);
     if (build.status !== 0) {
       return { ok: false, output: `npm run ${script} failed:\n${build.output}` };
     }
   }
+  return null;
+}
+
+function runConfigTests(): CheckOutcome {
+  const buildFailure = buildWorkspaces(CONFIG_TEST_BUILDS);
+  if (buildFailure) return buildFailure;
 
   mkdirSync(resolve(ROOT, 'api/data'), { recursive: true });
   const authFile = resolve(ROOT, 'api/data/auth.json');
@@ -645,6 +696,83 @@ async function findUnusedI18nKeys(): Promise<CheckOutcome> {
     ok: false,
     output: `Found ${unused.length} unused i18n key(s):\n${unused.map((key) => `  ${key}`).join('\n')}`,
     hints: [`Remove them from ${I18N_FILE} or reference them in the source.`],
+  };
+}
+
+// --------------------------------------------------------------- circular dependencies
+
+function findCircularDependencies(): CheckOutcome {
+  const script = resolve(ROOT, 'config/circular-deps.mjs');
+  if (!existsSync(script)) {
+    return { ok: false, output: 'config/circular-deps.mjs is missing' };
+  }
+  const result = runCommand({ command: process.execPath, args: [script] }, []);
+  return { ok: result.status === 0, output: result.output };
+}
+
+// --------------------------------------------------------------- TypeScript
+
+/**
+ * One entry per `tsc --noEmit` the review workflows run. `paths` includes each
+ * project's upstream packages, so an edit to data-provider still typechecks the
+ * projects that consume it; `requires` lists the builds its imports resolve
+ * through, mirroring those jobs' dependency on the build artifacts.
+ */
+const TYPECHECK_PROJECTS = [
+  {
+    project: 'packages/data-provider/tsconfig.json',
+    paths: ['packages/data-provider/**', '!**.md'],
+    requires: [],
+  },
+  {
+    project: 'packages/data-schemas/tsconfig.json',
+    paths: ['packages/data-provider/**', 'packages/data-schemas/**', '!**.md'],
+    requires: ['build:data-provider'],
+  },
+  {
+    project: 'packages/api/tsconfig.json',
+    paths: ['packages/data-provider/**', 'packages/data-schemas/**', 'packages/api/**', '!**.md'],
+    requires: ['build:data-provider', 'build:data-schemas'],
+  },
+  {
+    project: 'packages/client/tsconfig.json',
+    paths: ['packages/data-provider/**', 'packages/client/**', '!**.md'],
+    requires: ['build:data-provider'],
+  },
+  {
+    project: 'client/tsconfig.json',
+    paths: ['client/**', 'packages/data-provider/**', 'packages/client/**', '!**.md'],
+    requires: ['build:data-provider', 'build:client-package'],
+  },
+];
+
+function runTypecheck(context: CheckContext): CheckOutcome {
+  const selected = TYPECHECK_PROJECTS.filter((entry) => groupIsActive(context.files, entry.paths));
+  if (selected.length === 0) {
+    return { ok: true, skipped: 'no changed TypeScript project' };
+  }
+
+  const tsc = resolveBin('typescript', 'tsc');
+  if (!tsc) return missingBin('typescript');
+
+  const buildFailure = buildWorkspaces([...new Set(selected.flatMap((entry) => entry.requires))]);
+  if (buildFailure) return buildFailure;
+
+  const failures: string[] = [];
+  for (const entry of selected) {
+    const result = runCommand(tsc, ['--noEmit', '-p', entry.project]);
+    if (result.status !== 0) {
+      failures.push(`${entry.project}:\n${result.output.trim()}`);
+    }
+  }
+
+  return {
+    ok: failures.length === 0,
+    output: failures.join('\n\n'),
+    hints: [
+      'Missing properties on a workspace type usually mean a stale build: run npm run build:packages.',
+      'In a git worktree, librechat-data-provider resolves to the main checkout, whose dist may predate your branch.',
+    ],
   };
 }
 
@@ -852,6 +980,20 @@ const CHECKS: Check[] = [
     run: validatePackageJson,
   },
   {
+    id: 'circular-deps',
+    title: 'Circular dependencies',
+    tier: 'fast',
+    group: 'circular_deps',
+    run: findCircularDependencies,
+  },
+  {
+    id: 'typecheck',
+    title: 'TypeScript',
+    tier: 'slow',
+    group: 'typecheck',
+    run: runTypecheck,
+  },
+  {
     id: 'config-tests',
     title: 'Config migration tests',
     tier: 'slow',
@@ -935,9 +1077,11 @@ async function main(): Promise<void> {
   }
 
   const failures: string[] = [];
+  let skipped = 0;
 
   for (const check of selected) {
     if (OPTIONS.skip.includes(check.id)) {
+      skipped++;
       report('–', check.title, 'skipped (--skip)');
       continue;
     }
@@ -946,6 +1090,7 @@ async function main(): Promise<void> {
       continue;
     }
     if (check.tier === 'slow' && !OPTIONS.full && !OPTIONS.only.includes(check.id)) {
+      skipped++;
       report('–', check.title, 'skipped (run with --full)');
       continue;
     }
@@ -962,6 +1107,7 @@ async function main(): Promise<void> {
     const elapsed = `${((Date.now() - started) / 1000).toFixed(1)}s`;
 
     if (outcome.skipped) {
+      skipped++;
       report('–', check.title, `skipped: ${outcome.skipped}`);
       continue;
     }
@@ -977,8 +1123,9 @@ async function main(): Promise<void> {
     for (const hint of outcome.hints ?? []) printBlock(hint);
   }
 
+  const tail = skipped > 0 ? ` (${skipped} skipped)` : '';
   if (failures.length === 0) {
-    console.log('\nAll affected static checks passed.');
+    console.log(`\nAll affected static checks passed${tail}.`);
     return;
   }
 

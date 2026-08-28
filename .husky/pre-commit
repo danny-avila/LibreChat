@@ -5,6 +5,6 @@
 npx lint-staged --config ./.husky/lint-staged.config.js || exit 1
 
 # The rest of the Static Checks CI job, gated on the paths this commit touches.
-# Add STATIC_CHECKS_FULL=1 for the slow gates (config migration tests, unused
-# i18n keys, unused npm packages).
+# Add STATIC_CHECKS_FULL=1 for the slow gates (TypeScript, config migration
+# tests, unused i18n keys, unused npm packages).
 node scripts/static-checks.mts --skip eslint,prettier,imports
