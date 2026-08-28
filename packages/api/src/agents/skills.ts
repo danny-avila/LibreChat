@@ -6,6 +6,7 @@ import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents'
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Agent } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
+import { createSkillContentDigest } from './compatibility';
 import { registerCodeExecutionTools } from './tools';
 import { logAxiosError } from '~/utils';
 
@@ -780,6 +781,27 @@ export function buildSkillPrimeMessage(skill: { name: string; body: string }): I
     source: SKILL_MESSAGE_SOURCE,
     skillName: skill.name,
   };
+}
+
+/** Builds the exact live Skill overlay placed at the tail of an event actor checkpoint fork. */
+export function buildAgentEventActorSkillMessages(
+  skills: ReadonlyMap<string, string>,
+): HumanMessage[] {
+  return [...skills.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(
+      ([name, body]) =>
+        new HumanMessage({
+          id: `event-actor-skill:${createSkillContentDigest(`${name}\0${body}`)}`,
+          content: body,
+          additional_kwargs: {
+            isMeta: true,
+            source: SKILL_MESSAGE_SOURCE,
+            trigger: SKILL_TRIGGER_MODEL,
+            skillName: name,
+          },
+        }),
+    );
 }
 
 export interface ResolveManualSkillsParams {

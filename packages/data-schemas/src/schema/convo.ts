@@ -1,5 +1,11 @@
 import { Schema } from 'mongoose';
-import { MAX_AGENT_EVENT_ACTOR_SKILLS } from '~/types/convo';
+import {
+  MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS,
+  MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
+  MAX_AGENT_EVENT_ACTOR_SKILLS,
+  MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
+  MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH,
+} from '~/types/convo';
 import { conversationPreset } from './defaults';
 import { IConversation } from '~/types';
 
@@ -105,6 +111,38 @@ const convoSchema: Schema<IConversation> = new Schema(
             validator: (skills: unknown[]) => skills.length <= MAX_AGENT_EVENT_ACTOR_SKILLS,
             message: `Event actor Skill manifest exceeds ${MAX_AGENT_EVENT_ACTOR_SKILLS}`,
           },
+        },
+        discoveredToolNames: {
+          type: [{ type: String, maxlength: MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH }],
+          default: undefined,
+          validate: {
+            validator: (names: unknown[]) => names.length <= MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS,
+            message: `Event actor discovered-tool state exceeds ${MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS}`,
+          },
+        },
+        summary: {
+          type: {
+            text: {
+              type: String,
+              required: true,
+              maxlength: MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
+            },
+            tokenCount: { type: Number, min: 0, required: true },
+          },
+          _id: false,
+          default: undefined,
+        },
+        contextMeta: {
+          type: {
+            calibrationRatio: { type: Number, min: 0.5, max: 5, required: true },
+            encoding: {
+              type: String,
+              maxlength: MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
+              default: undefined,
+            },
+          },
+          _id: false,
+          default: undefined,
         },
         previousCheckpoint: {
           type: {

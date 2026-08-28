@@ -1,4 +1,8 @@
 import { createHash } from 'node:crypto';
+import {
+  MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS,
+  MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH,
+} from '@librechat/data-schemas';
 
 export const AGENT_CONTEXT_FINGERPRINT_VERSION = 1;
 export const AGENT_GRAPH_SCHEMA_VERSION = 1;
@@ -32,6 +36,7 @@ export interface AgentContextDefinition {
   additionalInstructions?: string;
   modelParameters?: object;
   toolDefinitions?: readonly object[];
+  toolRegistryDefinitions?: readonly object[];
   toolOptions?: object;
   execution?: object;
   skills?: readonly AgentContextSkillIdentity[];
@@ -42,6 +47,7 @@ export interface AgentTurnSemanticContext {
   approvalPolicy?: object;
   memory?: readonly AgentContextMemorySnapshot[];
   checkpointerType?: string;
+  discoveredToolNames?: readonly string[];
   checkpointFormatVersion?: number;
   graphSchemaVersion?: number;
 }
@@ -55,6 +61,7 @@ export interface InitializedAgentContextSource {
   additional_instructions?: string;
   model_parameters?: object;
   toolDefinitions?: readonly object[];
+  toolRegistryDefinitions?: readonly object[];
   tool_options?: object;
   execution?: object;
   manualSkillPrimes?: readonly {
@@ -72,6 +79,31 @@ export interface InitializedAgentContextSource {
 }
 
 export const MAX_AGENT_CONTEXT_SKILLS = 64;
+
+export function normalizeAgentEventActorDiscoveredTools(
+  names: readonly string[] | undefined,
+): string[] {
+  if (names == null) {
+    return [];
+  }
+  const normalized = new Set<string>();
+  for (const name of names) {
+    if (
+      typeof name !== 'string' ||
+      name.length === 0 ||
+      name.length > MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH
+    ) {
+      throw new RangeError('Event actor discovered-tool state is invalid');
+    }
+    normalized.add(name);
+  }
+  if (normalized.size > MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS) {
+    throw new RangeError(
+      `Event actor discovered-tool state exceeds ${MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS}`,
+    );
+  }
+  return [...normalized].sort((left, right) => left.localeCompare(right));
+}
 
 export function createSkillContentDigest(body: string): string {
   return createHash('sha256').update(body).digest('base64url');
@@ -142,6 +174,7 @@ export function createAgentContextFingerprint(
     graphSchemaVersion: input.graphSchemaVersion ?? AGENT_GRAPH_SCHEMA_VERSION,
     checkpointFormatVersion: input.checkpointFormatVersion ?? AGENT_CHECKPOINT_FORMAT_VERSION,
     checkpointerType: input.checkpointerType,
+    discoveredToolNames: normalizeAgentEventActorDiscoveredTools(input.discoveredToolNames),
     approvalPolicy: input.approvalPolicy,
     agents: input.agents.map((agent) => ({
       ...agent,
@@ -193,11 +226,13 @@ export function createInitializedAgentContextFingerprint(input: {
   approvalPolicy?: object;
   memory?: readonly AgentContextMemorySnapshot[];
   checkpointerType?: string;
+  discoveredToolNames?: readonly string[];
 }): AgentContextFingerprint {
   return createAgentContextFingerprint({
     checkpointerType: input.checkpointerType,
     approvalPolicy: input.approvalPolicy,
     memory: input.memory,
+    discoveredToolNames: input.discoveredToolNames,
     agents: input.agents.map((agent, index) => ({
       id: agent.id,
       version: agent.version,
@@ -207,6 +242,7 @@ export function createInitializedAgentContextFingerprint(input: {
       additionalInstructions: agent.additional_instructions,
       modelParameters: agent.model_parameters,
       toolDefinitions: agent.toolDefinitions,
+      toolRegistryDefinitions: agent.toolRegistryDefinitions,
       toolOptions: agent.tool_options,
       execution: agent.execution,
       skills:

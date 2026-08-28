@@ -2,6 +2,7 @@ import {
   agentContextFingerprintsMatch,
   createAgentContextFingerprint,
   createInitializedAgentContextFingerprint,
+  normalizeAgentEventActorDiscoveredTools,
   type AgentTurnSemanticContext,
 } from './compatibility';
 
@@ -142,5 +143,42 @@ describe('agent context compatibility', () => {
     expect(fingerprint('First instructions').digest).not.toBe(
       fingerprint('Updated instructions').digest,
     );
+  });
+
+  it('normalizes bounded tool discoveries and fingerprints the active set', () => {
+    expect(normalizeAgentEventActorDiscoveredTools(['zeta', 'alpha', 'zeta'])).toEqual([
+      'alpha',
+      'zeta',
+    ]);
+    const left = context();
+    const reordered = context();
+    const changed = context();
+    left.discoveredToolNames = ['zeta', 'alpha'];
+    reordered.discoveredToolNames = ['alpha', 'zeta', 'alpha'];
+    changed.discoveredToolNames = ['alpha', 'gamma'];
+
+    expect(createAgentContextFingerprint(left)).toEqual(createAgentContextFingerprint(reordered));
+    expect(createAgentContextFingerprint(left).digest).not.toBe(
+      createAgentContextFingerprint(changed).digest,
+    );
+    expect(() =>
+      normalizeAgentEventActorDiscoveredTools(
+        Array.from({ length: 129 }, (_, index) => `tool-${index}`),
+      ),
+    ).toThrow('exceeds 128');
+  });
+
+  it('invalidates a deferred tool when its registry definition changes', () => {
+    const fingerprint = (description: string) =>
+      createInitializedAgentContextFingerprint({
+        agents: [
+          {
+            id: 'agent-1',
+            toolRegistryDefinitions: [{ name: 'deferred_tool', description, defer_loading: true }],
+          },
+        ],
+      });
+
+    expect(fingerprint('First schema').digest).not.toBe(fingerprint('Updated schema').digest);
   });
 });

@@ -14,6 +14,7 @@ import type {
   IAgentEventActorSkillIdentity,
 } from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
+import type { AgentEventCheckpointMessageOverlay } from '../checkpointer';
 import type { AgentContextFingerprint } from '../compatibility';
 import type { AgentTriggerExpectedAction } from './envelope';
 import type { AgentEventAppliedAction } from './outcome';
@@ -62,6 +63,10 @@ export interface ExecuteAgentEventActorInput<T> {
 export interface AgentEventActorContext {
   fingerprint: AgentContextFingerprint;
   skillManifest: IAgentEventActorSkillIdentity[];
+  discoveredToolNames?: string[];
+  summary?: IAgentEventActorState['summary'];
+  contextMeta?: IAgentEventActorState['contextMeta'];
+  checkpointMessageOverlay?: AgentEventCheckpointMessageOverlay;
 }
 
 export interface ExecuteAgentEventActorResult<T> {
@@ -262,7 +267,7 @@ export async function executeAgentEventActor<T>(
       if (validatesContext) {
         preparedContext = input.resolveContext
           ? await input.resolveContext(state)
-          : { fingerprint: input.contextFingerprint!, skillManifest: [] };
+          : { fingerprint: input.contextFingerprint!, skillManifest: [], discoveredToolNames: [] };
         if (
           preparedContext == null ||
           !agentContextFingerprintsMatch(state.contextFingerprint, preparedContext.fingerprint)
@@ -275,6 +280,7 @@ export async function executeAgentEventActor<T>(
         request.checkpointNs,
         request.invocationId,
         input.checkpointer,
+        preparedContext?.checkpointMessageOverlay,
       );
       if (fork == null) {
         return { status: 'checkpoint_unavailable', head };
@@ -507,6 +513,13 @@ export async function executeAgentEventActor<T>(
               ...(observedState.skillManifest == null
                 ? {}
                 : { skillManifest: observedState.skillManifest }),
+              ...(observedState.discoveredToolNames == null
+                ? {}
+                : { discoveredToolNames: observedState.discoveredToolNames }),
+              ...(observedState.summary == null ? {} : { summary: observedState.summary }),
+              ...(observedState.contextMeta == null
+                ? {}
+                : { contextMeta: observedState.contextMeta }),
             };
       const committed = await deps.commitState({
         user: input.user,
@@ -529,6 +542,11 @@ export async function executeAgentEventActor<T>(
           : {
               contextFingerprint: resultContext.fingerprint,
               skillManifest: resultContext.skillManifest,
+              discoveredToolNames: resultContext.discoveredToolNames ?? [],
+              ...(resultContext.summary == null ? {} : { summary: resultContext.summary }),
+              ...(resultContext.contextMeta == null
+                ? {}
+                : { contextMeta: resultContext.contextMeta }),
             }),
       });
       if (committed.status === 'stale') {

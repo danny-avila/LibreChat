@@ -1,5 +1,9 @@
 require('events').EventEmitter.defaultMaxListeners = 100;
-const { logger } = require('@librechat/data-schemas');
+const {
+  logger,
+  MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
+  MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
+} = require('@librechat/data-schemas');
 const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
 const {
   createRun,
@@ -98,6 +102,7 @@ const {
   applyAttachmentOnlyText,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
+  buildAgentEventActorSkillMessages,
   collectFreshSkillPrimeNames,
   isSkillPrimeMessage,
   collectFileIds,
@@ -123,6 +128,7 @@ const {
   getSafeErrorMetadata,
   createInitializedAgentContextFingerprint,
   createSkillContentDigest,
+  normalizeAgentEventActorDiscoveredTools,
   MAX_AGENT_CONTEXT_SKILLS,
 } = require('@librechat/api');
 const {
@@ -164,6 +170,65 @@ const db = require('~/models');
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
+
+function normalizeEventActorSummary(summary) {
+  if (summary == null) {
+    return undefined;
+  }
+  if (
+    typeof summary.text !== 'string' ||
+    summary.text.length === 0 ||
+    summary.text.length > MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH ||
+    !Number.isFinite(summary.tokenCount) ||
+    summary.tokenCount < 0
+  ) {
+    throw new RangeError('Event actor summary state is invalid');
+  }
+  return { text: summary.text, tokenCount: summary.tokenCount };
+}
+
+function normalizeEventActorContextMeta(contextMeta) {
+  if (contextMeta == null) {
+    return undefined;
+  }
+  const { calibrationRatio, encoding } = contextMeta;
+  if (
+    !Number.isFinite(calibrationRatio) ||
+    calibrationRatio < 0.5 ||
+    calibrationRatio > 5 ||
+    (encoding != null &&
+      (typeof encoding !== 'string' ||
+        encoding.length === 0 ||
+        encoding.length > MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH))
+  ) {
+    throw new RangeError('Event actor context calibration is invalid');
+  }
+  return { calibrationRatio, ...(encoding == null ? {} : { encoding }) };
+}
+
+function getLatestEventActorSummary(contentParts) {
+  if (!Array.isArray(contentParts)) {
+    return undefined;
+  }
+  for (let index = contentParts.length - 1; index >= 0; index -= 1) {
+    const part = contentParts[index];
+    if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
+      continue;
+    }
+    const text = part.content
+      .map((block) => (typeof block?.text === 'string' ? block.text : ''))
+      .join('')
+      .trim();
+    if (text.length === 0) {
+      continue;
+    }
+    return normalizeEventActorSummary({
+      text,
+      tokenCount: Number.isFinite(part.tokenCount) && part.tokenCount >= 0 ? part.tokenCount : 0,
+    });
+  }
+  return undefined;
+}
 
 function getUserFacingRequestError(baseMessage, error, appConfig) {
   const protectionEnabled = hasModelBoundContentProtection(
@@ -220,6 +285,8 @@ class AgentClient extends BaseClient {
     this.eventActorInvocationId = undefined;
     this.eventActorContinuation = undefined;
     this.eventActorSkillPrimeResult = undefined;
+    this.eventActorDiscoveredToolNames = undefined;
+    this.eventActorSummary = undefined;
 
     /** @type {AgentRun} */
     this.run;
@@ -312,6 +379,13 @@ class AgentClient extends BaseClient {
         additional_instructions: agent.additional_instructions,
         model_parameters: JSON.parse(JSON.stringify(agent.model_parameters ?? {})),
         toolDefinitions: JSON.parse(JSON.stringify(agent.toolDefinitions ?? [])),
+        toolRegistryDefinitions: JSON.parse(
+          JSON.stringify(
+            [...(agent.toolRegistry?.values() ?? [])].sort((left, right) =>
+              left.name.localeCompare(right.name),
+            ),
+          ),
+        ),
         tool_options: JSON.parse(JSON.stringify(agent.tool_options ?? {})),
         execution: JSON.parse(
           JSON.stringify({
@@ -1596,23 +1670,7 @@ class AgentClient extends BaseClient {
   }
 
   getEventActorAgents() {
-    const agents = [];
-    const visited = new Set();
-    const pending = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
-    for (let index = 0; index < pending.length; index++) {
-      const agent = pending[index];
-      if (!agent || visited.has(agent)) {
-        continue;
-      }
-      visited.add(agent);
-      agents.push(agent);
-      pending.push(...(agent.subagentAgentConfigs?.values?.() ?? []));
-      pending.push(...(agent.lazySubagentConfigs?.values?.() ?? []));
-      for (const graph of agent.subagentGraphConfigs ?? []) {
-        pending.push(...(graph.memberConfigs ?? []));
-      }
-    }
-    return agents;
+    return collectReachableAgents([this.options.agent, ...(this.agentConfigs?.values() ?? [])]);
   }
 
   /**
@@ -1630,6 +1688,16 @@ class AgentClient extends BaseClient {
     }
     const storedManifest = Array.isArray(state.skillManifest) ? state.skillManifest : [];
     if (storedManifest.length > MAX_AGENT_CONTEXT_SKILLS) {
+      return undefined;
+    }
+    let discoveredToolNames;
+    let summary;
+    let contextMeta;
+    try {
+      discoveredToolNames = normalizeAgentEventActorDiscoveredTools(state.discoveredToolNames);
+      summary = normalizeEventActorSummary(state.summary);
+      contextMeta = normalizeEventActorContextMeta(state.contextMeta);
+    } catch {
       return undefined;
     }
 
@@ -1653,14 +1721,34 @@ class AgentClient extends BaseClient {
       }
     }
     this.eventActorSkillPrimeResult = skillPrimeResult;
-    const context = await this.getEventActorContext(storedManifest);
-    return context;
+    this.eventActorDiscoveredToolNames = discoveredToolNames;
+    this.eventActorSummary = summary;
+    this.contextMeta = contextMeta;
+    const context = await this.getEventActorContext(storedManifest, discoveredToolNames);
+    const skillBodies = new Map(skillPrimeResult?.skills ?? []);
+    for (const agent of this.eventActorAgentContextSources ?? []) {
+      for (const skill of [
+        ...(agent.manualSkillPrimes ?? []),
+        ...(agent.alwaysApplySkillPrimes ?? []),
+      ]) {
+        if (typeof skill.name === 'string' && typeof skill.body === 'string') {
+          skillBodies.set(skill.name, skill.body);
+        }
+      }
+    }
+    return {
+      ...context,
+      checkpointMessageOverlay: {
+        source: 'skill',
+        messages: buildAgentEventActorSkillMessages(skillBodies),
+      },
+    };
   }
 
   /**
    * @param {Array<{id: string, name: string, version: number}>} [baseManifest]
    */
-  async getEventActorContext(baseManifest = []) {
+  async getEventActorContext(baseManifest = [], baseDiscoveredToolNames) {
     const manifest = new Map(baseManifest.map((skill) => [skill.id, skill]));
     for (const agent of this.eventActorAgentContextSources ?? []) {
       for (const skill of agent.manualSkillPrimes ?? []) {
@@ -1694,15 +1782,26 @@ class AgentClient extends BaseClient {
     const agents = this.getEventActorAgents();
     const memory = await this.getEventActorMemorySnapshots(agents);
     const agentsConfig = this.options.req.config?.endpoints?.[EModelEndpoint.agents];
+    const discoveredToolNames = normalizeAgentEventActorDiscoveredTools([
+      ...(baseDiscoveredToolNames ??
+        (this.eventActorContinuation === 'warm' ? (this.eventActorDiscoveredToolNames ?? []) : [])),
+      ...(this.run == null ? [] : getRunDiscoveredTools(this.run)),
+    ]);
+    const summary = getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
+    this.eventActorSummary = summary;
     return {
       fingerprint: createInitializedAgentContextFingerprint({
         agents: this.eventActorAgentContextSources ?? agents,
         invokedSkills: skillManifest,
         approvalPolicy: agentsConfig?.toolApproval,
         memory,
+        discoveredToolNames,
         checkpointerType: agentsConfig?.checkpointer?.type,
       }),
       skillManifest,
+      discoveredToolNames,
+      ...(summary == null ? {} : { summary }),
+      ...(this.contextMeta == null ? {} : { contextMeta: this.contextMeta }),
     };
   }
 
@@ -1717,6 +1816,12 @@ class AgentClient extends BaseClient {
   }
 
   async buildMessages(messages, parentMessageId, _buildOptions, opts) {
+    if (this.eventActorContinuation === 'cold') {
+      /** Compatibility was rejected after warm state preparation. Rebuild all
+       * non-checkpointed state from durable history, never from that stale head. */
+      this.eventActorSummary = undefined;
+      this.contextMeta = undefined;
+    }
     /** Always pass mapMethod; getMessagesForConversation applies it only to messages with addedConvo flag */
     const orderedMessages = this.constructor.getMessagesForConversation({
       messages,
@@ -3628,6 +3733,10 @@ class AgentClient extends BaseClient {
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
 
       /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
+      if (this.eventActorContinuation === 'cold') {
+        this.eventActorSkillPrimeResult = undefined;
+        this.eventActorDiscoveredToolNames = undefined;
+      }
       let skillPrimeResult = this.eventActorSkillPrimeResult;
       if (skillPrimeResult == null) {
         skillPrimeResult = this.options.primeInvokedSkills
@@ -3691,6 +3800,11 @@ class AgentClient extends BaseClient {
         skillPrimeResult?.skills,
         formatOptions,
       );
+      if (this.eventActorContinuation !== 'warm') {
+        this.eventActorSummary = initialSummary;
+      }
+      const continuationSummary =
+        this.eventActorContinuation === 'warm' ? this.eventActorSummary : initialSummary;
       if (boundaryTokenAdjustment) {
         logger.debug(
           `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
@@ -3916,6 +4030,8 @@ class AgentClient extends BaseClient {
           // carries no messages, so history cannot identify the conversation.
           conversationId: this.conversationId,
           messages,
+          discoveredToolNames:
+            this.eventActorContinuation === 'warm' ? this.eventActorDiscoveredToolNames : undefined,
           modelCallbacks: [modelBoundCallback],
           // This controller implements the full HITL pause/resume lifecycle (handleRunInterrupt
           // persists the pending action; the /resume route rebuilds + continues the run), so it
@@ -3936,11 +4052,11 @@ class AgentClient extends BaseClient {
           // plus the one new event), so those indices address different
           // messages and the pruner would never recount them. Hand it an empty
           // map so every count is derived from the messages actually in state.
-          // `initialSummary` deliberately stays: it rides the system tail, and
-          // the pre-boundary turns it summarizes were excluded from the very
-          // history the committed checkpoint was built from.
+          // The active summary lives in AgentContext rather than checkpointed
+          // graph messages, so warm turns restore the actor-head copy while
+          // rebuilt turns use the summary reconstructed from durable history.
           indexTokenCountMap: this.eventActorContinuation === 'warm' ? {} : indexTokenCountMap,
-          initialSummary,
+          initialSummary: continuationSummary,
           initialSessions,
           calibrationRatio,
           runId: this.responseMessageId,
@@ -4085,6 +4201,10 @@ class AgentClient extends BaseClient {
         this.contentParts.unshift(...manualParts);
       }
 
+      /** Summaries are run state, even when sequential-output reshaping hides
+       * their display block from the persisted response content. */
+      this.eventActorSummary =
+        getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       this.applyHideSequentialOutputsFilter();
       this.rebaseActivityPhaseBounds(contentBeforeReshape);
     } catch (err) {
@@ -4135,6 +4255,10 @@ class AgentClient extends BaseClient {
         });
       }
     } finally {
+      /** An aborted/erroring run can still have completed compaction before
+       * the failure; retain that model-visible state for actor reconciliation. */
+      this.eventActorSummary =
+        getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       /** Capture calibration state from the run for persistence on the response message.
        *  Runs in finally so values are captured even on abort. */
       const ratio = this.run?.getCalibrationRatio() ?? 0;
@@ -4523,6 +4647,8 @@ class AgentClient extends BaseClient {
       // before resume finalize/re-pause persistence reads `this.contentParts`, so a
       // resumed sequential chain doesn't persist/emit outputs hide_sequential_outputs
       // is meant to hide.
+      this.eventActorSummary =
+        getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       const contentBeforeReshape = [...this.contentParts];
       this.applyHideSequentialOutputsFilter();
       this.rebaseActivityPhaseBounds(contentBeforeReshape);
@@ -4561,6 +4687,8 @@ class AgentClient extends BaseClient {
         });
       }
     } finally {
+      this.eventActorSummary =
+        getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       const ratio = this.run?.getCalibrationRatio() ?? 0;
       if (ratio > 0 && ratio !== 1) {
         this.contextMeta = {

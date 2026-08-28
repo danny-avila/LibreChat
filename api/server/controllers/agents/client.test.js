@@ -113,19 +113,60 @@ describe('AgentClient - event actor history adapter', () => {
 
   it('resolves and caches the exact durable Skill manifest before warming', async () => {
     const skillManifest = [{ id: 'skill-1', name: 'analysis', version: 3 }];
-    const primeInvokedSkills = jest.fn().mockResolvedValue({ skillManifest });
+    const skillPrimeResult = {
+      skillManifest,
+      skills: new Map([['analysis', 'Analyze carefully.']]),
+    };
+    const primeInvokedSkills = jest.fn().mockResolvedValue(skillPrimeResult);
     const client = Object.create(AgentClient.prototype);
     client.options = {
       req: { config: {} },
       primeInvokedSkills,
     };
-    client.getEventActorContext = jest.fn().mockResolvedValue({ fingerprint, skillManifest });
+    client.getEventActorContext = jest.fn().mockResolvedValue({
+      fingerprint,
+      skillManifest,
+      discoveredToolNames: ['deferred_tool'],
+      summary: { text: 'Earlier compacted context.', tokenCount: 12 },
+      contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+    });
 
     await expect(
-      client.prepareEventActorContext({ contextFingerprint: fingerprint, skillManifest }),
-    ).resolves.toEqual({ fingerprint, skillManifest });
+      client.prepareEventActorContext({
+        contextFingerprint: fingerprint,
+        skillManifest,
+        discoveredToolNames: ['deferred_tool'],
+        summary: { text: 'Earlier compacted context.', tokenCount: 12 },
+        contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+      }),
+    ).resolves.toMatchObject({
+      fingerprint,
+      skillManifest,
+      discoveredToolNames: ['deferred_tool'],
+      summary: { text: 'Earlier compacted context.', tokenCount: 12 },
+      contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+      checkpointMessageOverlay: {
+        source: 'skill',
+        messages: [
+          expect.objectContaining({
+            content: 'Analyze carefully.',
+            additional_kwargs: expect.objectContaining({
+              source: 'skill',
+              skillName: 'analysis',
+            }),
+          }),
+        ],
+      },
+    });
     expect(primeInvokedSkills).toHaveBeenCalledWith([], ['analysis']);
-    expect(client.eventActorSkillPrimeResult).toEqual({ skillManifest });
+    expect(client.getEventActorContext).toHaveBeenCalledWith(skillManifest, ['deferred_tool']);
+    expect(client.eventActorSkillPrimeResult).toEqual(skillPrimeResult);
+    expect(client.eventActorDiscoveredToolNames).toEqual(['deferred_tool']);
+    expect(client.eventActorSummary).toEqual({
+      text: 'Earlier compacted context.',
+      tokenCount: 12,
+    });
+    expect(client.contextMeta).toEqual({ calibrationRatio: 1.25, encoding: 'o200k_base' });
   });
 
   it('falls back when a durable Skill resolves to a different revision', async () => {
@@ -173,9 +214,35 @@ describe('AgentClient - event actor history adapter', () => {
     });
   });
 
+  it('captures the latest run summary and pruning calibration in continuation state', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: { endpoints: { agents: {} } } } };
+    client.eventActorAgentContextSources = [];
+    client.contentParts = [
+      {
+        type: ContentTypes.SUMMARY,
+        content: [{ type: ContentTypes.TEXT, text: 'Fresh compacted context.' }],
+        tokenCount: 18,
+      },
+    ];
+    client.contextMeta = { calibrationRatio: 1.3, encoding: 'o200k_base' };
+    client.getEventActorAgents = jest.fn(() => []);
+    client.getEventActorMemorySnapshots = jest.fn().mockResolvedValue([]);
+
+    await expect(client.getEventActorContext()).resolves.toMatchObject({
+      summary: { text: 'Fresh compacted context.', tokenCount: 18 },
+      contextMeta: { calibrationRatio: 1.3, encoding: 'o200k_base' },
+    });
+  });
+
   it('fingerprints agents reachable only through nested subagent graphs', () => {
     const graphMember = { id: 'graph-member' };
-    const lazy = { id: 'lazy', configId: 'lazy-config-v2' };
+    const graphMetadata = { id: 'graph-metadata', configId: 'graph-metadata-v2' };
+    const lazy = {
+      id: 'lazy',
+      configId: 'lazy-config-v2',
+      subagentGraphMemberMetadata: [graphMetadata],
+    };
     const nested = {
       id: 'nested',
       lazySubagentConfigs: [lazy],
@@ -191,6 +258,7 @@ describe('AgentClient - event actor history adapter', () => {
       'nested',
       'lazy',
       'graph-member',
+      'graph-metadata',
     ]);
   });
 
@@ -1584,16 +1652,26 @@ describe('AgentClient - startup telemetry', () => {
     mockFormatAgentMessages.mockReturnValueOnce({
       messages: [history, currentEvent],
       indexTokenCountMap: { 0: 11, 1: 22 },
-      summary: { text: 'summary of earlier turns', tokenCount: 40 },
+      summary: undefined,
       boundaryTokenAdjustment: undefined,
     });
-    const processStream = jest.fn().mockResolvedValue();
+    let client;
+    const processStream = jest.fn(async () => {
+      client.contentParts.push(
+        {
+          type: ContentTypes.SUMMARY,
+          content: [{ type: ContentTypes.TEXT, text: 'Fresh compacted context.' }],
+          tokenCount: 18,
+        },
+        { type: ContentTypes.TEXT, text: 'Done.' },
+      );
+    });
     mockCreateRun.mockResolvedValue({
       Graph: null,
       processStream,
       getCalibrationRatio: jest.fn(() => 0),
     });
-    const client = new AgentClient({
+    client = new AgentClient({
       req: {
         user: { id: 'user-123' },
         body: {},
@@ -1606,7 +1684,7 @@ describe('AgentClient - startup telemetry', () => {
         endpoint: EModelEndpoint.openAI,
         provider: EModelEndpoint.openAI,
         model_parameters: { model: 'gpt-4' },
-        hide_sequential_outputs: false,
+        hide_sequential_outputs: true,
       },
       endpointTokenConfig: {},
       eventHandlers: {},
@@ -1621,6 +1699,9 @@ describe('AgentClient - startup telemetry', () => {
     client.eventActorCheckpointId = 'checkpoint-base';
     client.eventActorInvocationId = 'event-2';
     client.eventActorContinuation = 'warm';
+    client.eventActorDiscoveredToolNames = ['deferred_tool'];
+    client.eventActorSummary = { text: 'summary of earlier turns', tokenCount: 40 };
+    client.contextMeta = { calibrationRatio: 1.25, encoding: client.getEncoding() };
     client.recordCollectedUsage = jest.fn().mockResolvedValue();
 
     await client.chatCompletion({ payload: [] });
@@ -1628,6 +1709,7 @@ describe('AgentClient - startup telemetry', () => {
     expect(mockCreateRun).toHaveBeenCalledWith(
       expect.objectContaining({
         messages: [history, currentEvent],
+        discoveredToolNames: ['deferred_tool'],
         eventActorCheckpointing: true,
         /** The DB-derived token map is positional over full history, which a
          * checkpoint-restored graph state no longer matches. It must be blank
@@ -1636,6 +1718,7 @@ describe('AgentClient - startup telemetry', () => {
          * excluded from the history the committed checkpoint was built from. */
         indexTokenCountMap: {},
         initialSummary: { text: 'summary of earlier turns', tokenCount: 40 },
+        calibrationRatio: 1.25,
       }),
     );
     expect(processStream).toHaveBeenCalledWith(
@@ -1653,6 +1736,13 @@ describe('AgentClient - startup telemetry', () => {
       expect.anything(),
     );
     expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+    expect(client.eventActorSummary).toEqual({
+      text: 'Fresh compacted context.',
+      tokenCount: 18,
+    });
+    expect(client.contentParts).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: ContentTypes.SUMMARY })]),
+    );
   });
 
   it('does not expose or process a fresh graph when strict checkpoint pruning fails', async () => {

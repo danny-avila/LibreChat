@@ -60,7 +60,16 @@ describe('event actor host adapter', () => {
       epoch,
     })),
     commitState: jest.fn(
-      async ({ expected, expectedEpoch, checkpoint, contextFingerprint, skillManifest }) => {
+      async ({
+        expected,
+        expectedEpoch,
+        checkpoint,
+        contextFingerprint,
+        skillManifest,
+        discoveredToolNames,
+        summary,
+        contextMeta,
+      }) => {
         if (
           expectedEpoch !== epoch ||
           (state == null && expected != null) ||
@@ -68,6 +77,11 @@ describe('event actor host adapter', () => {
             (expected == null ||
               expected.generation !== state.generation ||
               expected.checkpoint.checkpointId !== state.checkpoint.checkpointId ||
+              JSON.stringify(expected.skillManifest) !== JSON.stringify(state.skillManifest) ||
+              JSON.stringify(expected.discoveredToolNames) !==
+                JSON.stringify(state.discoveredToolNames) ||
+              JSON.stringify(expected.summary) !== JSON.stringify(state.summary) ||
+              JSON.stringify(expected.contextMeta) !== JSON.stringify(state.contextMeta) ||
               (expected.requiresColdStart === true) !== (state.requiresColdStart === true)))
         ) {
           return { status: 'stale' as const, ...(state == null ? {} : { state }) };
@@ -78,6 +92,9 @@ describe('event actor host adapter', () => {
           checkpoint,
           ...(contextFingerprint == null ? {} : { contextFingerprint }),
           ...(skillManifest == null ? {} : { skillManifest }),
+          ...(discoveredToolNames == null ? {} : { discoveredToolNames }),
+          ...(summary == null ? {} : { summary }),
+          ...(contextMeta == null ? {} : { contextMeta }),
           ...(previous == null ? {} : { previousCheckpoint: previous }),
         };
         return { status: 'committed' as const, state };
@@ -127,6 +144,7 @@ describe('event actor host adapter', () => {
       expect.objectContaining({ checkpointId: 'checkpoint-1' }),
       expect.stringMatching(/^event-actor\//),
       'event-2',
+      undefined,
       undefined,
     );
     expect(state).toMatchObject({ generation: 2, checkpoint: { checkpointId: 'checkpoint-2' } });
@@ -180,8 +198,12 @@ describe('event actor host adapter', () => {
       },
       contextFingerprint: current,
       skillManifest: [storedSkill],
+      discoveredToolNames: ['deferred_lookup'],
+      summary: { text: 'Earlier compacted context.', tokenCount: 12 },
+      contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
     };
     let continuation: 'warm' | 'cold' | undefined;
+    const checkpointMessageOverlay = { source: 'skill', messages: [] };
 
     await executeAgentEventActor(
       {
@@ -193,10 +215,17 @@ describe('event actor host adapter', () => {
         resolveContext: async (observed) => ({
           fingerprint: current,
           skillManifest: observed.skillManifest ?? [],
+          discoveredToolNames: observed.discoveredToolNames ?? [],
+          summary: observed.summary,
+          contextMeta: observed.contextMeta,
+          checkpointMessageOverlay,
         }),
         readResultContext: async () => ({
           fingerprint: current,
           skillManifest: [storedSkill, invokedSkill],
+          discoveredToolNames: ['deferred_lookup', 'deferred_write'],
+          summary: { text: 'Updated compacted context.', tokenCount: 15 },
+          contextMeta: { calibrationRatio: 1.3, encoding: 'o200k_base' },
         }),
         invoke: async (context) => {
           continuation = context.continuation;
@@ -209,6 +238,16 @@ describe('event actor host adapter', () => {
 
     expect(continuation).toBe('warm');
     expect(state?.skillManifest).toEqual([storedSkill, invokedSkill]);
+    expect(state?.discoveredToolNames).toEqual(['deferred_lookup', 'deferred_write']);
+    expect(state?.summary).toEqual({ text: 'Updated compacted context.', tokenCount: 15 });
+    expect(state?.contextMeta).toEqual({ calibrationRatio: 1.3, encoding: 'o200k_base' });
+    expect(mockedFork).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      'event-skill-context',
+      undefined,
+      checkpointMessageOverlay,
+    );
   });
 
   it('commits from the execution-time receipt when run steps lag sendMessage', async () => {

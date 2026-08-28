@@ -2,6 +2,10 @@ import type { TSubagentThreadLineage } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
 
 export const MAX_AGENT_EVENT_ACTOR_SKILLS = 64;
+export const MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS = 128;
+export const MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH = 512;
+export const MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH = 1_000_000;
+export const MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH = 128;
 
 export interface ISubagentThreadLease {
   token: string;
@@ -35,6 +39,16 @@ export interface IAgentEventActorSkillIdentity {
   contentDigest?: string;
 }
 
+export interface IAgentEventActorSummary {
+  text: string;
+  tokenCount: number;
+}
+
+export interface IAgentEventActorContextMeta {
+  calibrationRatio: number;
+  encoding?: string;
+}
+
 /** Private committed checkpoint state for one event-bound child actor. */
 export interface IAgentEventActorState {
   generation: number;
@@ -42,6 +56,12 @@ export interface IAgentEventActorState {
   contextFingerprint?: IAgentEventActorContextFingerprint;
   /** Bounded semantic Skill set needed to validate a warm continuation without history. */
   skillManifest?: IAgentEventActorSkillIdentity[];
+  /** Bounded run-evolved tool-search state needed to rebuild the next model binding. */
+  discoveredToolNames?: string[];
+  /** Active compaction summary, which the SDK keeps outside checkpointed graph messages. */
+  summary?: IAgentEventActorSummary;
+  /** Pruner calibration carried by ordinary turns on the parent response message. */
+  contextMeta?: IAgentEventActorContextMeta;
   previousCheckpoint?: IAgentEventActorCheckpoint;
   /** Forces the next qualifying event to rebuild from durable message history. */
   requiresColdStart?: boolean;
