@@ -2,12 +2,6 @@ import { cn } from '~/utils';
 
 const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
 
-/** The separator pair `formatEditPreview` writes ahead of each batched edit,
- *  numbered once a batch holds more than one. Only ever skipped as an adjacent
- *  pair sitting immediately before a hunk header; see `parseUnifiedDiff`. */
-const OLD_TEXT_MARKER = /^--- old_text(?: \d+)?$/;
-const NEW_TEXT_MARKER = /^\+\+\+ new_text(?: \d+)?$/;
-
 export interface DiffLine {
   type: 'add' | 'del' | 'context' | 'hunk';
   text: string;
@@ -23,11 +17,18 @@ export interface ParsedDiff {
 }
 
 /**
- * Parses unified-diff text into typed lines with old/new line numbers when the
- * hunk headers carry them. Also understands the argless `@@` separators and
- * `--- old_text` / `+++ new_text` markers the streaming args preview emits.
- * file headers and `\ No newline` markers are dropped (the window header
- * already names the file).
+ * Parses REAL unified-diff text (a tool's own output) into typed lines with
+ * old/new line numbers when the hunk headers carry them. File headers and
+ * `\ No newline` markers are dropped, since the window header already names
+ * the file.
+ *
+ * Deliberately knows nothing about the args preview. That preview is built
+ * from structured edits by `buildEditPreviewDiff`, so it never round-trips
+ * through diff text: there are no synthetic separators to recognize, and
+ * therefore no byte sequence a real changed line could be mistaken for. An
+ * earlier version emitted `--- old_text` / `+++ new_text` separators and tried
+ * to spot them here, which could not be made safe, because replacing a source
+ * line `-- old_text` with `++ new_text` produces exactly those strings.
  */
 export function parseUnifiedDiff(diff: string): ParsedDiff {
   const lines: DiffLine[] = [];
@@ -38,25 +39,7 @@ export function parseUnifiedDiff(diff: string): ParsedDiff {
   let newLine: number | undefined;
   let inHunk = false;
 
-  const rawLines = diff.replace(/\n$/, '').split('\n');
-  for (let index = 0; index < rawLines.length; index += 1) {
-    const raw = rawLines[index];
-    /** `formatEditPreview` writes an `--- old_text N` / `+++ new_text N` pair
-     *  ahead of EACH batched edit's `@@`, and `inHunk` never resets, so a
-     *  `!inHunk` gate recognized only the first pair and counted every later
-     *  one as a deletion plus an addition. Matching the marker names alone is
-     *  not enough either: deleting a real `-- old_text` comment line (SQL,
-     *  Lua) is prefixed to exactly `--- old_text`. So require separator
-     *  POSITION: the pair adjacent and immediately followed by a hunk header,
-     *  which no run of genuine content satisfies. */
-    if (
-      OLD_TEXT_MARKER.test(raw) &&
-      NEW_TEXT_MARKER.test(rawLines[index + 1] ?? '') &&
-      (rawLines[index + 2] ?? '').startsWith('@@')
-    ) {
-      index += 1;
-      continue;
-    }
+  for (const raw of diff.replace(/\n$/, '').split('\n')) {
     if (!inHunk && (raw.startsWith('--- ') || raw.startsWith('+++ '))) {
       continue;
     }
@@ -102,6 +85,56 @@ export function parseUnifiedDiff(diff: string): ParsedDiff {
   }
 
   return { lines, additions, deletions, hasLineNumbers };
+}
+
+export interface TextEditPreview {
+  oldText: string;
+  newText: string;
+}
+
+/**
+ * Builds the diff for an `edit_file` args preview straight from the structured
+ * edits, instead of formatting them into diff text for `parseUnifiedDiff` to
+ * read back.
+ *
+ * That round trip is what made batched previews ambiguous: the separators it
+ * needed between edits were byte-identical to a real changed line, since
+ * deleting a source line `-- old_text` prefixes to exactly `--- old_text`. No
+ * parser can tell those apart from position or bytes alone. Built here, each
+ * edit boundary is structural and no separator is ever emitted.
+ *
+ * A boundary between edits becomes an empty `hunk` line, which `DiffView`
+ * renders as its divider rule. There are no line numbers: args previews carry
+ * the replacement text, never its position in the file.
+ */
+export function buildEditPreviewDiff(edits: TextEditPreview[]): ParsedDiff {
+  const lines: DiffLine[] = [];
+  let additions = 0;
+  let deletions = 0;
+
+  edits.forEach((edit, index) => {
+    if (index > 0) {
+      lines.push({ type: 'hunk', text: '' });
+    }
+    for (const text of edit.oldText.split('\n')) {
+      deletions += 1;
+      lines.push({ type: 'del', text });
+    }
+    for (const text of edit.newText.split('\n')) {
+      additions += 1;
+      lines.push({ type: 'add', text });
+    }
+  });
+
+  return { lines, additions, deletions, hasLineNumbers: false };
+}
+
+/** One-way serialization for the copy button. Never parsed back, so it is free
+ *  to be lossy about hunk boundaries. */
+export function diffPreviewText(parsed: ParsedDiff): string {
+  return parsed.lines
+    .map((line) => (line.type === 'hunk' ? '' : `${LINE_MARKERS[line.type]}${line.text}`))
+    .join('\n');
 }
 
 const LINE_MARKERS: Record<DiffLine['type'], string> = {

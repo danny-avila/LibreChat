@@ -1,4 +1,4 @@
-import { parseUnifiedDiff } from '../DiffView';
+import { parseUnifiedDiff, buildEditPreviewDiff } from '../DiffView';
 
 describe('parseUnifiedDiff', () => {
   it('drops file headers but keeps changed lines that begin with header markers', () => {
@@ -40,36 +40,40 @@ describe('parseUnifiedDiff', () => {
     expect(parsed.deletions).toBe(1);
   });
 
-  it('skips the separator pair before every batched edit', () => {
-    const parsed = parseUnifiedDiff(
-      [
-        '--- old_text 1',
-        '+++ new_text 1',
-        '@@',
-        '-first old',
-        '+first new',
-        '',
-        '--- old_text 2',
-        '+++ new_text 2',
-        '@@',
-        '-second old',
-        '+second new',
-      ].join('\n'),
-    );
+  it('counts a batched edit preview from its structured edits', () => {
+    /** Built directly rather than formatted into diff text and parsed back:
+     *  the separators that round trip needed were byte-identical to a real
+     *  changed line, so no parser could tell them apart. */
+    const parsed = buildEditPreviewDiff([
+      { oldText: 'first old', newText: 'first new' },
+      { oldText: 'second old', newText: 'second new' },
+    ]);
 
-    /** The second edit's synthetic pair used to be counted as a real deletion
-     *  and addition, inflating both statistics and rendering marker rows. */
     expect(parsed.deletions).toBe(2);
     expect(parsed.additions).toBe(2);
-    expect(parsed.lines.some((line) => line.text.includes('old_text'))).toBe(false);
-    expect(parsed.lines.some((line) => line.text.includes('new_text'))).toBe(false);
+    expect(parsed.hasLineNumbers).toBe(false);
+    expect(parsed.lines).toEqual([
+      { type: 'del', text: 'first old' },
+      { type: 'add', text: 'first new' },
+      { type: 'hunk', text: '' },
+      { type: 'del', text: 'second old' },
+      { type: 'add', text: 'second new' },
+    ]);
   });
 
-  it('keeps changed lines that collide with the synthetic header names', () => {
+  it('keeps multi-line replacement text as separate rows', () => {
+    const parsed = buildEditPreviewDiff([{ oldText: 'a\nb', newText: 'c' }]);
+
+    expect(parsed.deletions).toBe(2);
+    expect(parsed.additions).toBe(1);
+    expect(parsed.lines.map((line) => line.text)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('keeps changed lines that look like the old synthetic header names', () => {
     /** Deleting a real `-- old_text` comment (SQL, Lua) and adding
-     *  `++ new_text` prefixes to exactly the synthetic marker text. Only the
-     *  separator POSITION, an adjacent pair before a hunk header, separates
-     *  the two, so this pair inside a hunk must survive as content. */
+     *  `++ new_text` prefixes to exactly the text the removed separators used.
+     *  Nothing emits those separators any more, so these are unambiguously
+     *  content and must survive. */
     const parsed = parseUnifiedDiff(['@@ -1,2 +1,2 @@', '--- old_text', '+++ new_text'].join('\n'));
 
     expect(parsed.deletions).toBe(1);

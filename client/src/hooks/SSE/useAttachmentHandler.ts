@@ -10,9 +10,12 @@ import type { QueryClient } from '@tanstack/react-query';
 import { handleMemoryArtifact } from '~/utils/memory';
 import store from '~/store';
 
-/** Identity of a re-emitted web-search snapshot: its tool call plus the turn
- *  inside that call. Scoped to `web_search` because that is the flow whose
- *  server helper rebuilds and rewrites the whole payload on each highlight. */
+/** Identity of a re-emitted web-search snapshot: its tool call, the turn
+ *  inside that call, and the agent that ran it. Scoped to `web_search` because
+ *  that is the flow whose server helper rebuilds and rewrites the whole
+ *  payload on each highlight. The agent qualifies the key for the same reason
+ *  the rendering path filters by it: handoff agents repeat provider tool-call
+ *  ids (`call_0`), so without it one agent's results would replace another's. */
 const searchSnapshotKeyOf = (attachment: TAttachment): string | undefined => {
   if (attachment.type !== Tools.web_search) {
     return undefined;
@@ -21,8 +24,9 @@ const searchSnapshotKeyOf = (attachment: TAttachment): string | undefined => {
   if (!toolCallId) {
     return undefined;
   }
+  const agentId = (attachment as { agentId?: string }).agentId ?? '';
   const turn = attachment[Tools.web_search]?.turn;
-  return `${Tools.web_search}:${toolCallId}:${turn ?? 0}`;
+  return `${Tools.web_search}:${agentId}:${toolCallId}:${turn ?? 0}`;
 };
 
 export default function useAttachmentHandler(queryClient?: QueryClient) {
