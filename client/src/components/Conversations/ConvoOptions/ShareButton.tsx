@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { QRCodeSVG } from 'qrcode.react';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, dataService } from 'librechat-data-provider';
 import { useGetSharedLinkQuery } from 'librechat-data-provider/react-query';
 import {
   ESide,
@@ -22,6 +24,12 @@ import { buildShareLinkUrl } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
+type ShareTargetErrorCode = 'TARGET_MESSAGE_NOT_FOUND' | 'NO_MESSAGES';
+
+const createShareTargetError = (
+  code: ShareTargetErrorCode,
+): Error & { code: ShareTargetErrorCode } => Object.assign(new Error(code), { code });
+
 export default function ShareButton({
   conversationId,
   open,
@@ -38,6 +46,7 @@ export default function ShareButton({
   const localize = useLocalize();
   const { data: startupConfig } = useGetStartupConfig();
   const canSnapshotFiles = startupConfig?.sharedLinksSnapshotFilesEnabled === true;
+  const queryClient = useQueryClient();
   const [showQR, setShowQR] = useState(true);
   const [sharedLink, setSharedLink] = useState('');
   const [snapshotFiles, setSnapshotFiles] = useState(true);
@@ -47,7 +56,27 @@ export default function ShareButton({
   /** `useLatestMessageId` resolves the active pane's branch tail, so it only describes
    * this dialog's conversation when the two match. Sharing another conversation from
    * the list sends no target, which shares it in full instead of a foreign message. */
-  const latestMessageId = activeConversationId === conversationId ? activeLatestMessageId : null;
+  const isActiveConversation = activeConversationId === conversationId;
+  const latestMessageId = isActiveConversation ? activeLatestMessageId : null;
+  const resolveTargetMessageId = useCallback(async (): Promise<string> => {
+    if (!latestMessageId) {
+      throw createShareTargetError('NO_MESSAGES');
+    }
+
+    const persistedMessages = await queryClient.fetchQuery(
+      [QueryKeys.shareTargetMessages, conversationId],
+      () => dataService.getMessagesByConvoId(conversationId),
+      { staleTime: 0 },
+    );
+    if (persistedMessages.length === 0) {
+      throw createShareTargetError('NO_MESSAGES');
+    }
+    if (!persistedMessages.some((message) => message.messageId === latestMessageId)) {
+      throw createShareTargetError('TARGET_MESSAGE_NOT_FOUND');
+    }
+
+    return latestMessageId;
+  }, [conversationId, latestMessageId, queryClient]);
   const { data: share, isLoading } = useGetSharedLinkQuery(conversationId);
   const shareId = share?.shareId ?? '';
 
@@ -74,6 +103,7 @@ export default function ShareButton({
         share={share}
         conversationId={conversationId}
         targetMessageId={latestMessageId ?? undefined}
+        resolveTargetMessageId={isActiveConversation ? resolveTargetMessageId : undefined}
         showQR={showQR}
         setShowQR={setShowQR}
         sharedLink={sharedLink}

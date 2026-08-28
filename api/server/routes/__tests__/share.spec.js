@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const mockGetSharedLinkExpiration = jest.fn();
 const mockGrantCreationPermissions = jest.fn();
 const mockUpdateSharedLinkPermissionsExpiration = jest.fn();
+const mockRecordShareLinkRejection = jest.fn();
 const mockSharedLinksAccess = jest.fn((_req, _res, next) => next());
 const mockSharedLinkConfigMiddleware = jest.fn((_req, _res, next) => next());
 let mockShareTenantId;
@@ -103,6 +104,8 @@ jest.mock('@librechat/api', () => ({
       (...args) =>
         mockGetSharedLangfuseSessionUrl(...args),
   ),
+  recordShareLinkRejection: (...args) => mockRecordShareLinkRejection(...args),
+  traceIdForMessage: (messageId) => `trace-${messageId}`,
   isContentFilterError: jest.fn(
     (error) =>
       error?.code === 'content_filter_block' || error?.code === 'content_filter_uninspectable',
@@ -113,7 +116,10 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), warn: jest.fn() },
   createTempChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
   runAsSystem: jest.fn((fn) => fn()),
-  tenantStorage: { run: jest.fn((_ctx, fn) => fn()) },
+  tenantStorage: {
+    getStore: jest.fn(() => ({ requestId: 'request-123' })),
+    run: jest.fn((_ctx, fn) => fn()),
+  },
   SYSTEM_TENANT_ID: '__SYSTEM__',
   SystemCapabilities: { ACCESS_ADMIN: 'access:admin' },
 }));
@@ -832,7 +838,31 @@ describe('share routes', () => {
     const response = await request(buildApp()).post('/api/share/convo-123').send({});
 
     expect(response.status).toBe(409);
-    expect(response.body).toEqual({ message: 'Share already exists' });
+    expect(response.body).toEqual({ message: 'Share already exists', code: 'SHARE_EXISTS' });
+  });
+
+  it.each([
+    ['TARGET_MESSAGE_NOT_FOUND', 'Target message not found', 'trace-msg-123'],
+    ['NO_MESSAGES', 'No messages to share', 'trace-msg-123'],
+  ])('returns and records the %s create rejection', async (code, message, traceId) => {
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    createSharedLink.mockRejectedValue(Object.assign(new Error(message), { code }));
+
+    const response = await request(buildApp())
+      .post('/api/share/convo-123')
+      .send({ targetMessageId: 'msg-123' });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ message, code });
+    expect(mockRecordShareLinkRejection).toHaveBeenCalledWith('create', code);
+    expect(logger.warn).toHaveBeenCalledWith('[share] Shared link publication rejected', {
+      event: 'share_link_rejected',
+      operation: 'create',
+      code,
+      request_id: 'request-123',
+      trace_id: traceId,
+    });
+    expect(logger.error).not.toHaveBeenCalledWith('Error creating shared link:', expect.anything());
   });
 
   it('returns a raw-free 400 when the exact create snapshot fails policy preflight', async () => {
@@ -1332,7 +1362,35 @@ describe('share routes', () => {
     const response = await request(buildApp()).patch('/api/share/share-123').send({});
 
     expect(response.status).toBe(404);
-    expect(response.body).toEqual({ message: 'Share not found' });
+    expect(response.body).toEqual({ message: 'Share not found', code: 'SHARE_NOT_FOUND' });
+  });
+
+  it('returns and records a missing-tail update rejection', async () => {
+    mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    updateSharedLink.mockRejectedValue(
+      Object.assign(new Error('Target message not found'), {
+        code: 'TARGET_MESSAGE_NOT_FOUND',
+      }),
+    );
+
+    const response = await request(buildApp())
+      .patch('/api/share/share-123')
+      .send({ targetMessageId: 'msg-123' });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      message: 'Target message not found',
+      code: 'TARGET_MESSAGE_NOT_FOUND',
+    });
+    expect(mockRecordShareLinkRejection).toHaveBeenCalledWith('update', 'TARGET_MESSAGE_NOT_FOUND');
+    expect(logger.warn).toHaveBeenCalledWith('[share] Shared link publication rejected', {
+      event: 'share_link_rejected',
+      operation: 'update',
+      code: 'TARGET_MESSAGE_NOT_FOUND',
+      request_id: 'request-123',
+      trace_id: 'trace-msg-123',
+    });
   });
 
   it('allows deleting existing shares without CREATE permission gate', async () => {
@@ -1466,7 +1524,10 @@ describe('share fork route', () => {
       .send({ targetMessageIndex: 3, shareRevision: '2026-01-01T00:00:00.000Z' });
 
     expect(response.status).toBe(409);
-    expect(response.body).toEqual({ message: 'Shared link was updated' });
+    expect(response.body).toEqual({
+      message: 'Shared link was updated',
+      code: 'SHARE_REVISION_MISMATCH',
+    });
   });
 });
 
