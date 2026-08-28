@@ -212,6 +212,14 @@ export default function useAskAnswerMode(conversationId?: string | null) {
          *  drafts are disabled, perform that handoff directly. */
         if (!batchMode && !saveDrafts) {
           formContext?.setValue('text', answerText);
+        } else if (!batchMode && answerText) {
+          /** Drafts were re-enabled after this answer was captured with saving
+           *  off, so no ask draft exists for autosave to restore: the composer
+           *  would open empty and the next collapse would read that empty
+           *  value back over the in-memory answer. Seed it so the handoff has
+           *  something to read. The in-memory value is authoritative because
+           *  `setAnswerText` writes both while saving is on. */
+          setDraft({ id: getAskAnswerDraftId(liveAsk.actionId), value: answerText });
         }
         setCollapsedIds((prev) => prev.filter((id) => id !== liveAsk.actionId));
       });

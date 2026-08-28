@@ -281,13 +281,15 @@ export default function WebSearch({
           {completedText}
         </span>
         <div className="relative flex h-5 items-center gap-1.5">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             className={cn(
-              'tool-status-text group/disclosure flex h-5 min-w-0 items-center gap-2 rounded-full',
-              hasSourceData
-                ? 'text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy'
-                : 'pointer-events-none text-text-secondary',
+              'tool-status-text group/disclosure h-5 min-w-0 justify-start gap-2 rounded-full p-0 font-normal text-text-secondary hover:bg-transparent',
+              /** This row is a status line, not a padded control: the shared
+               *  recipe's color transition would turn its hover into a fade,
+               *  and the chevron reveal beside it is deliberately instant. */
+              'transition-none',
+              !hasSourceData && 'pointer-events-none disabled:opacity-100',
             )}
             disabled={!hasSourceData}
             onClick={hasSourceData ? handleToggleSources : undefined}
@@ -310,7 +312,7 @@ export default function WebSearch({
                 aria-hidden="true"
               />
             )}
-          </button>
+          </Button>
           {hasDetails && (
             <HoverCard openDelay={50} open={showDetails} onOpenChange={setShowDetails}>
               {/* Composed through `asChild` so the shared Button owns the
