@@ -1,4 +1,11 @@
 import { Schema } from 'mongoose';
+import {
+  MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS,
+  MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
+  MAX_AGENT_EVENT_ACTOR_SKILLS,
+  MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
+  MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH,
+} from '~/types/convo';
 import { conversationPreset } from './defaults';
 import { IConversation } from '~/types';
 
@@ -79,6 +86,63 @@ const convoSchema: Schema<IConversation> = new Schema(
           },
           _id: false,
           required: true,
+        },
+        contextFingerprint: {
+          type: {
+            algorithm: { type: String, enum: ['sha256'], required: true },
+            version: { type: Number, min: 1, required: true },
+            digest: { type: String, required: true },
+          },
+          _id: false,
+          default: undefined,
+        },
+        skillManifest: {
+          type: [
+            {
+              id: { type: String, required: true },
+              name: { type: String, required: true },
+              version: { type: Number, min: 1, required: true },
+              contentDigest: { type: String, default: undefined },
+              _id: false,
+            },
+          ],
+          default: undefined,
+          validate: {
+            validator: (skills: unknown[]) => skills.length <= MAX_AGENT_EVENT_ACTOR_SKILLS,
+            message: `Event actor Skill manifest exceeds ${MAX_AGENT_EVENT_ACTOR_SKILLS}`,
+          },
+        },
+        discoveredToolNames: {
+          type: [{ type: String, maxlength: MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH }],
+          default: undefined,
+          validate: {
+            validator: (names: unknown[]) => names.length <= MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS,
+            message: `Event actor discovered-tool state exceeds ${MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS}`,
+          },
+        },
+        summary: {
+          type: {
+            text: {
+              type: String,
+              required: true,
+              maxlength: MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
+            },
+            tokenCount: { type: Number, min: 0, required: true },
+          },
+          _id: false,
+          default: undefined,
+        },
+        contextMeta: {
+          type: {
+            calibrationRatio: { type: Number, min: 0.5, max: 5, required: true },
+            encoding: {
+              type: String,
+              maxlength: MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
+              default: undefined,
+            },
+          },
+          _id: false,
+          default: undefined,
         },
         previousCheckpoint: {
           type: {

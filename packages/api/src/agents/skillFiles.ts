@@ -24,6 +24,7 @@ import { seedCodeFilesIntoSessions, type CodeExecutionProfileRoute } from './cod
 import { ContentFilterError, isContentFilterError } from '~/middleware/contentFilter';
 import { createConcurrencyLimiter, getSafeErrorMetadata } from '~/utils';
 import { assertSkillFileContentAllowed } from '~/skills/protection';
+import { createSkillContentDigest } from './compatibility';
 import { extractInvokedSkillsFromPayload } from './run';
 import { SKILL_FILE_PREFIX } from './skills';
 
@@ -604,7 +605,9 @@ async function executePrimeSkillFiles(
 export interface PrimeInvokedSkillsDeps {
   req: ServerRequest;
   /** Raw message payload (before formatAgentMessages). Used to extract invoked skill names. */
-  payload: Array<Partial<{ role: string; content: unknown }>>;
+  payload?: Array<Partial<{ role: string; content: unknown }>>;
+  /** Explicit durable names used by a validated event-actor preflight. */
+  skillNames?: readonly string[];
   accessibleSkillIds: Types.ObjectId[];
   /** `execute_code` capability flag for the run. When false, the batch-upload
    *  path is skipped entirely — skill bodies still reconstruct for history
@@ -635,6 +638,13 @@ export interface PrimeInvokedSkillsResult {
   /** Pre-resolved skill bodies keyed by skill name. Passed to formatAgentMessages
    *  so it can reconstruct HumanMessages at the right position in the message sequence. */
   skills?: Map<string, string>;
+  /** Exact records resolved under the current request's ACL. */
+  skillManifest?: Array<{
+    id: string;
+    name: string;
+    version: number;
+    contentDigest: string;
+  }>;
 }
 
 export interface PrimeInvokedSkillsForProfilesDeps
@@ -653,11 +663,14 @@ export interface PrimeInvokedSkillsForProfilesDeps
 export async function primeInvokedSkills(
   deps: PrimeInvokedSkillsDeps,
 ): Promise<PrimeInvokedSkillsResult> {
-  if (!deps.payload?.length || !deps.accessibleSkillIds?.length) {
+  if ((!deps.payload?.length && !deps.skillNames?.length) || !deps.accessibleSkillIds?.length) {
     return {};
   }
 
-  const invokedSkills = extractInvokedSkillsFromPayload(deps.payload);
+  const invokedSkills = new Set(deps.skillNames ?? []);
+  for (const name of extractInvokedSkillsFromPayload(deps.payload ?? [])) {
+    invokedSkills.add(name);
+  }
   if (invokedSkills.size === 0) {
     return {};
   }
@@ -689,6 +702,12 @@ export async function primeInvokedSkills(
       logger.warn('[primeInvokedSkills] Skill resolution failed:', getSafeErrorMetadata(r.reason));
     }
   }
+  const skillManifest = resolvedSkills.map((skill) => ({
+    id: skill._id.toString(),
+    name: skill.name,
+    version: skill.version,
+    contentDigest: createSkillContentDigest(skill.body),
+  }));
 
   // Phase 2: Single batch upload for ALL skills' files (shared session)
   let sessions: ToolSessionMap | undefined;
@@ -784,7 +803,11 @@ export async function primeInvokedSkills(
               files: cachedFiles,
               lastUpdated: Date.now(),
             } satisfies CodeSessionContext);
-            return { initialSessions: sessions, skills: skills.size > 0 ? skills : undefined };
+            return {
+              initialSessions: sessions,
+              skills: skills.size > 0 ? skills : undefined,
+              skillManifest,
+            };
           }
         }
       }
@@ -867,6 +890,7 @@ export async function primeInvokedSkills(
   return {
     initialSessions: sessions,
     skills: skills.size > 0 ? skills : undefined,
+    skillManifest,
   };
 }
 
@@ -893,9 +917,30 @@ export async function primeInvokedSkillsForProfiles(
 
   let initialSessions: ToolSessionMap | undefined;
   const skills = new Map<string, string>();
+  const skillManifestByName = new Map<
+    string,
+    NonNullable<PrimeInvokedSkillsResult['skillManifest']>[number]
+  >();
   for (const { profile, result } of profileResults) {
+    const resultManifestByName = new Map(
+      (result.skillManifest ?? []).map((skill) => [skill.name, skill]),
+    );
     for (const [name, body] of result.skills ?? []) {
+      const identity = resultManifestByName.get(name);
+      if (identity == null) {
+        throw new Error(`Skill "${name}" resolved without a semantic identity`);
+      }
+      const existingIdentity = skillManifestByName.get(name);
+      const existingBody = skills.get(name);
+      if (
+        (existingIdentity != null &&
+          JSON.stringify(existingIdentity) !== JSON.stringify(identity)) ||
+        (existingBody != null && existingBody !== body)
+      ) {
+        throw new Error(`Skill "${name}" changed while execution profiles were initialized`);
+      }
       skills.set(name, body);
+      skillManifestByName.set(name, identity);
     }
     const skillFiles = result.initialSessions?.get(Constants.EXECUTE_CODE)?.files;
     if (!skillFiles?.length) {
@@ -913,5 +958,9 @@ export async function primeInvokedSkillsForProfiles(
   return {
     initialSessions,
     skills: skills.size > 0 ? skills : undefined,
+    skillManifest:
+      skillManifestByName.size > 0
+        ? [...skillManifestByName.values()].sort((left, right) => left.id.localeCompare(right.id))
+        : undefined,
   };
 }

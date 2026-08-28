@@ -6,8 +6,6 @@ const baseInput = (): ResolveAgentTurnExecutionPlanInput => ({
   parentMessageId: 'message-1',
   isNewConversation: false,
   canPause: false,
-  hasSkillPrimes: false,
-  hasMemoryContext: false,
   expectedActionMayDetach: false,
 });
 
@@ -58,8 +56,6 @@ describe('resolveAgentTurnExecutionPlan', () => {
     ['no expected action', { event: { ...boundEvent(), expectedAction: undefined } }],
     ['memory checkpointer', { event: boundEvent(), checkpointerType: 'memory' }],
     ['pause-capable run', { event: boundEvent(), canPause: true }],
-    ['Skill primes', { event: boundEvent(), hasSkillPrimes: true }],
-    ['memory context', { event: boundEvent(), hasMemoryContext: true }],
     ['detachable action', { event: boundEvent(), expectedActionMayDetach: true }],
   ] as const)('falls back to history for %s', (_label, overrides) => {
     expect(resolveAgentTurnExecutionPlan({ ...baseInput(), ...overrides }).strategy).toBe(

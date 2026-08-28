@@ -86,8 +86,6 @@ const mockResolveAgentTurnExecutionPlan = jest.fn((input) => {
     input.event?.expectedAction != null &&
     input.checkpointerType !== 'memory' &&
     !input.canPause &&
-    !input.hasSkillPrimes &&
-    !input.hasMemoryContext &&
     !input.expectedActionMayDetach;
   let strategy = 'history';
   if (input.isNewConversation) {
@@ -4478,27 +4476,6 @@ describe('ResumableAgentController resume metadata', () => {
       undefined,
     ],
     [
-      'always-apply skill prime',
-      { toolDefinitions: [], alwaysApplySkillPrimes: [{ name: 'playbook', body: '# playbook' }] },
-      {},
-      undefined,
-      undefined,
-    ],
-    [
-      'manual skill prime',
-      { toolDefinitions: [], manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }] },
-      {},
-      undefined,
-      undefined,
-    ],
-    [
-      'skills-capable (history-derived re-priming)',
-      { toolDefinitions: [] },
-      {},
-      undefined,
-      { primeInvokedSkills: async () => undefined },
-    ],
-    [
       'background-capable expected action',
       { toolDefinitions: [], backgroundToolNames: ['submit_move_mcp_chess'] },
       {},
@@ -4614,7 +4591,7 @@ describe('ResumableAgentController resume metadata', () => {
       options: {
         agent: {
           toolDefinitions: [],
-          manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }],
+          backgroundToolNames: ['submit_move'],
         },
       },
       sendMessage: jest.fn(),
@@ -4689,7 +4666,7 @@ describe('ResumableAgentController resume metadata', () => {
       options: {
         agent: {
           toolDefinitions: [],
-          manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }],
+          backgroundToolNames: ['submit_move'],
         },
       },
       sendMessage: jest.fn(async () => ({ messageId: 'must-not-run' })),
@@ -4758,7 +4735,7 @@ describe('ResumableAgentController resume metadata', () => {
       options: {
         agent: {
           toolDefinitions: [],
-          manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }],
+          backgroundToolNames: ['submit_move'],
         },
       },
       sendMessage: jest.fn(async () => {
@@ -4840,7 +4817,7 @@ describe('ResumableAgentController resume metadata', () => {
       options: {
         agent: {
           toolDefinitions: [],
-          manualSkillPrimes: [{ name: 'playbook', body: '# playbook' }],
+          backgroundToolNames: ['submit_move'],
         },
       },
       sendMessage: jest.fn(async () => {

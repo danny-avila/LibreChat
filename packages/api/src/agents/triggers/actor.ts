@@ -11,8 +11,11 @@ import type {
   AgentTriggerDeliveryMethods,
   ConversationMethods,
   IAgentEventActorState,
+  IAgentEventActorSkillIdentity,
 } from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
+import type { AgentEventCheckpointMessageOverlay } from '../checkpointer';
+import type { AgentContextFingerprint } from '../compatibility';
 import type { AgentTriggerExpectedAction } from './envelope';
 import type { AgentEventAppliedAction } from './outcome';
 import {
@@ -22,6 +25,7 @@ import {
   getAgentCheckpointer,
   getApprovalTtlMs,
 } from '../checkpointer';
+import { agentContextFingerprintsMatch } from '../compatibility';
 
 interface EventActorResult extends Record<string, EventActorEvent> {
   action: AgentEventAppliedAction;
@@ -47,10 +51,22 @@ export interface ExecuteAgentEventActorInput<T> {
   expectedAction?: AgentTriggerExpectedAction;
   signal: AbortSignal;
   checkpointer?: TCheckpointerConfig;
+  contextFingerprint?: AgentContextFingerprint;
+  resolveContext?(state: IAgentEventActorState): Promise<AgentEventActorContext | undefined>;
+  readResultContext?(): Promise<AgentEventActorContext | undefined>;
   /** Deprecated compatibility input. Elapsed time never proves replay safety. */
   legacyTurnStaleMs?: number;
   invoke(context: AgentEventActorInvocationContext): Promise<T>;
   readAppliedAction(): AgentEventAppliedAction | undefined;
+}
+
+export interface AgentEventActorContext {
+  fingerprint: AgentContextFingerprint;
+  skillManifest: IAgentEventActorSkillIdentity[];
+  discoveredToolNames?: string[];
+  summary?: IAgentEventActorState['summary'];
+  contextMeta?: IAgentEventActorState['contextMeta'];
+  checkpointMessageOverlay?: AgentEventCheckpointMessageOverlay;
 }
 
 export interface ExecuteAgentEventActorResult<T> {
@@ -121,6 +137,8 @@ export async function executeAgentEventActor<T>(
   let ownedActionAdmissionId: string | undefined;
   let observedState: IAgentEventActorState | null | undefined;
   let observedEpoch: number | undefined;
+  let preparedContext: AgentEventActorContext | undefined;
+  let resultContext: AgentEventActorContext | undefined;
   const adapter: EventActorHostAdapter<EventActorEvent, EventActorResult> = {
     async prepare(request, context) {
       if (context.signal.aborted) {
@@ -245,11 +263,24 @@ export async function executeAgentEventActor<T>(
       if (state == null || state.requiresColdStart === true) {
         return { status: 'checkpoint_unavailable', head };
       }
+      const validatesContext = input.resolveContext != null || input.contextFingerprint != null;
+      if (validatesContext) {
+        preparedContext = input.resolveContext
+          ? await input.resolveContext(state)
+          : { fingerprint: input.contextFingerprint!, skillManifest: [], discoveredToolNames: [] };
+        if (
+          preparedContext == null ||
+          !agentContextFingerprintsMatch(state.contextFingerprint, preparedContext.fingerprint)
+        ) {
+          return { status: 'checkpoint_unavailable', head };
+        }
+      }
       const fork = await forkAgentEventCheckpoint(
         state.checkpoint,
         request.checkpointNs,
         request.invocationId,
         input.checkpointer,
+        preparedContext?.checkpointMessageOverlay,
       );
       if (fork == null) {
         return { status: 'checkpoint_unavailable', head };
@@ -397,6 +428,18 @@ export async function executeAgentEventActor<T>(
         }
         return { status: 'completed_no_action' };
       }
+      try {
+        resultContext = input.readResultContext ? await input.readResultContext() : preparedContext;
+      } catch (error) {
+        return {
+          status: 'applied',
+          result: {
+            action,
+            checkpointCaptureError: `Applied turn context could not be captured: ${asError(error).message}`,
+          },
+          checkpoint: invocation.fork,
+        };
+      }
       let checkpoint: Awaited<ReturnType<typeof captureAgentEventCheckpoint>>;
       try {
         checkpoint = await captureAgentEventCheckpoint(
@@ -464,6 +507,19 @@ export async function executeAgentEventActor<T>(
                 checkpointNs: expectedHeadCheckpoint!.checkpointNs,
               },
               ...(observedState.requiresColdStart === true ? { requiresColdStart: true } : {}),
+              ...(observedState.contextFingerprint == null
+                ? {}
+                : { contextFingerprint: observedState.contextFingerprint }),
+              ...(observedState.skillManifest == null
+                ? {}
+                : { skillManifest: observedState.skillManifest }),
+              ...(observedState.discoveredToolNames == null
+                ? {}
+                : { discoveredToolNames: observedState.discoveredToolNames }),
+              ...(observedState.summary == null ? {} : { summary: observedState.summary }),
+              ...(observedState.contextMeta == null
+                ? {}
+                : { contextMeta: observedState.contextMeta }),
             };
       const committed = await deps.commitState({
         user: input.user,
@@ -481,6 +537,17 @@ export async function executeAgentEventActor<T>(
           checkpointId: appliedCheckpointId,
           checkpointNs: request.checkpoint.checkpointNs,
         },
+        ...(resultContext == null
+          ? {}
+          : {
+              contextFingerprint: resultContext.fingerprint,
+              skillManifest: resultContext.skillManifest,
+              discoveredToolNames: resultContext.discoveredToolNames ?? [],
+              ...(resultContext.summary == null ? {} : { summary: resultContext.summary }),
+              ...(resultContext.contextMeta == null
+                ? {}
+                : { contextMeta: resultContext.contextMeta }),
+            }),
       });
       if (committed.status === 'stale') {
         /** A host-private cold marker can invalidate the CAS without advancing

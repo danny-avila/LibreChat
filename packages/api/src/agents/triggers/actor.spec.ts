@@ -9,6 +9,7 @@ import {
   getAgentCheckpointer,
 } from '../checkpointer';
 import { createAgentEventActionRecorder, findAgentEventAppliedAction } from './outcome';
+import { createAgentContextFingerprint } from '../compatibility';
 import { executeAgentEventActor } from './actor';
 
 jest.mock('../checkpointer', () => ({
@@ -58,26 +59,47 @@ describe('event actor host adapter', () => {
       legacyTurn,
       epoch,
     })),
-    commitState: jest.fn(async ({ expected, expectedEpoch, checkpoint }) => {
-      if (
-        expectedEpoch !== epoch ||
-        (state == null && expected != null) ||
-        (state != null &&
-          (expected == null ||
-            expected.generation !== state.generation ||
-            expected.checkpoint.checkpointId !== state.checkpoint.checkpointId ||
-            (expected.requiresColdStart === true) !== (state.requiresColdStart === true)))
-      ) {
-        return { status: 'stale' as const, ...(state == null ? {} : { state }) };
-      }
-      const previous = state?.checkpoint;
-      state = {
-        generation: (state?.generation ?? 0) + 1,
+    commitState: jest.fn(
+      async ({
+        expected,
+        expectedEpoch,
         checkpoint,
-        ...(previous == null ? {} : { previousCheckpoint: previous }),
-      };
-      return { status: 'committed' as const, state };
-    }),
+        contextFingerprint,
+        skillManifest,
+        discoveredToolNames,
+        summary,
+        contextMeta,
+      }) => {
+        if (
+          expectedEpoch !== epoch ||
+          (state == null && expected != null) ||
+          (state != null &&
+            (expected == null ||
+              expected.generation !== state.generation ||
+              expected.checkpoint.checkpointId !== state.checkpoint.checkpointId ||
+              JSON.stringify(expected.skillManifest) !== JSON.stringify(state.skillManifest) ||
+              JSON.stringify(expected.discoveredToolNames) !==
+                JSON.stringify(state.discoveredToolNames) ||
+              JSON.stringify(expected.summary) !== JSON.stringify(state.summary) ||
+              JSON.stringify(expected.contextMeta) !== JSON.stringify(state.contextMeta) ||
+              (expected.requiresColdStart === true) !== (state.requiresColdStart === true)))
+        ) {
+          return { status: 'stale' as const, ...(state == null ? {} : { state }) };
+        }
+        const previous = state?.checkpoint;
+        state = {
+          generation: (state?.generation ?? 0) + 1,
+          checkpoint,
+          ...(contextFingerprint == null ? {} : { contextFingerprint }),
+          ...(skillManifest == null ? {} : { skillManifest }),
+          ...(discoveredToolNames == null ? {} : { discoveredToolNames }),
+          ...(summary == null ? {} : { summary }),
+          ...(contextMeta == null ? {} : { contextMeta }),
+          ...(previous == null ? {} : { previousCheckpoint: previous }),
+        };
+        return { status: 'committed' as const, state };
+      },
+    ),
     recordReconciliation: jest.fn(async () => true),
     resolveReconciliation: jest.fn(async () => true),
     admitAction: jest.fn(async () => true),
@@ -123,8 +145,109 @@ describe('event actor host adapter', () => {
       expect.stringMatching(/^event-actor\//),
       'event-2',
       undefined,
+      undefined,
     );
     expect(state).toMatchObject({ generation: 2, checkpoint: { checkpointId: 'checkpoint-2' } });
+  });
+
+  it('rebuilds on a missing or changed context fingerprint and stamps the new head', async () => {
+    const current = createAgentContextFingerprint({ agents: [{ id: 'agent-1', version: 2 }] });
+    state = {
+      generation: 1,
+      checkpoint: {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-old-context',
+        checkpointNs: 'event-actor/old-context',
+      },
+    };
+    const dependencies = deps();
+    let continuation: 'warm' | 'cold' | undefined;
+
+    await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-new-context',
+        event: { id: 'event-new-context', type: 'turn' },
+        signal: new AbortController().signal,
+        contextFingerprint: current,
+        invoke: async (context) => {
+          continuation = context.continuation;
+          return 'response';
+        },
+        readAppliedAction: () => ({ toolName: 'submit_move' }),
+      },
+      dependencies,
+    );
+
+    expect(continuation).toBe('cold');
+    expect(mockedFork).not.toHaveBeenCalled();
+    expect(state?.contextFingerprint).toEqual(current);
+  });
+
+  it('validates the stored Skill manifest before warm continuation and commits additions', async () => {
+    const current = createAgentContextFingerprint({ agents: [{ id: 'agent-1', version: 2 }] });
+    const storedSkill = { id: 'skill-1', name: 'analysis', version: 3 };
+    const invokedSkill = { id: 'skill-2', name: 'reporting', version: 1 };
+    state = {
+      generation: 1,
+      checkpoint: {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-compatible',
+        checkpointNs: 'event-actor/compatible',
+      },
+      contextFingerprint: current,
+      skillManifest: [storedSkill],
+      discoveredToolNames: ['deferred_lookup'],
+      summary: { text: 'Earlier compacted context.', tokenCount: 12 },
+      contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+    };
+    let continuation: 'warm' | 'cold' | undefined;
+    const checkpointMessageOverlay = { source: 'skill', messages: [] };
+
+    await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-skill-context',
+        event: { id: 'event-skill-context', type: 'turn' },
+        signal: new AbortController().signal,
+        resolveContext: async (observed) => ({
+          fingerprint: current,
+          skillManifest: observed.skillManifest ?? [],
+          discoveredToolNames: observed.discoveredToolNames ?? [],
+          summary: observed.summary,
+          contextMeta: observed.contextMeta,
+          checkpointMessageOverlay,
+        }),
+        readResultContext: async () => ({
+          fingerprint: current,
+          skillManifest: [storedSkill, invokedSkill],
+          discoveredToolNames: ['deferred_lookup', 'deferred_write'],
+          summary: { text: 'Updated compacted context.', tokenCount: 15 },
+          contextMeta: { calibrationRatio: 1.3, encoding: 'o200k_base' },
+        }),
+        invoke: async (context) => {
+          continuation = context.continuation;
+          return 'response';
+        },
+        readAppliedAction: () => ({ toolName: 'submit_move' }),
+      },
+      deps(),
+    );
+
+    expect(continuation).toBe('warm');
+    expect(state?.skillManifest).toEqual([storedSkill, invokedSkill]);
+    expect(state?.discoveredToolNames).toEqual(['deferred_lookup', 'deferred_write']);
+    expect(state?.summary).toEqual({ text: 'Updated compacted context.', tokenCount: 15 });
+    expect(state?.contextMeta).toEqual({ calibrationRatio: 1.3, encoding: 'o200k_base' });
+    expect(mockedFork).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      'event-skill-context',
+      undefined,
+      checkpointMessageOverlay,
+    );
   });
 
   it('commits from the execution-time receipt when run steps lag sendMessage', async () => {
@@ -458,6 +581,41 @@ describe('event actor host adapter', () => {
         reconciliation: expect.objectContaining({ status: 'commit_indeterminate' }),
       }),
     );
+    expect(mockedDelete).not.toHaveBeenCalled();
+  });
+
+  it('retains applied-action evidence when result context capture fails', async () => {
+    const dependencies = deps();
+    let toolExecutions = 0;
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId: 'event-context-indeterminate',
+          event: { id: 'event-context-indeterminate' },
+          signal: new AbortController().signal,
+          invoke: async () => {
+            toolExecutions += 1;
+            return 'response';
+          },
+          readAppliedAction: () => ({ toolName: 'submit_move' }),
+          readResultContext: async () => {
+            throw new Error('memory partition unavailable');
+          },
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('requires commit_indeterminate reconciliation');
+
+    expect(toolExecutions).toBe(1);
+    expect(dependencies.commitState).not.toHaveBeenCalled();
+    expect(dependencies.recordReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reconciliation: expect.objectContaining({ status: 'commit_indeterminate' }),
+      }),
+    );
+    expect(mockedCapture).not.toHaveBeenCalled();
     expect(mockedDelete).not.toHaveBeenCalled();
   });
 

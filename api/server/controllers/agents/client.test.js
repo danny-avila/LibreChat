@@ -56,6 +56,13 @@ jest.mock('@librechat/api', () => ({
   countFormattedMessageTokens: jest.fn(() => 42),
   countTokens: jest.fn((text) => Math.ceil(String(text ?? '').length / 4)),
   createCachedTokenCounter: jest.fn(async () => jest.fn(() => 0)),
+  createInitializedAgentContextFingerprint: jest.fn(() => ({
+    algorithm: 'sha256',
+    version: 1,
+    digest: 'context',
+  })),
+  createSkillContentDigest: jest.fn((body) => `digest:${body}`),
+  MAX_AGENT_CONTEXT_SKILLS: 64,
   createDetachedSubagentUsageRecorder: (...args) =>
     mockCreateDetachedSubagentUsageRecorder(...args),
   captureAgentCheckpointGeneration: (...args) => mockCaptureAgentCheckpointGeneration(...args),
@@ -76,6 +83,271 @@ jest.mock('@librechat/api', () => ({
   getAgentCheckpointer: mockGetAgentCheckpointer,
   hasDurableAgentInterruptCheckpoint: (...args) => mockHasDurableAgentInterruptCheckpoint(...args),
 }));
+
+describe('AgentClient - event actor history adapter', () => {
+  const fingerprint = { algorithm: 'sha256', version: 1, digest: 'context' };
+
+  it('loads no durable history after compatibility selected a warm continuation', async () => {
+    const loadHistory = jest.spyOn(BaseClient.prototype, 'loadHistory');
+    const client = Object.create(AgentClient.prototype);
+    client.eventActorContinuation = 'warm';
+
+    await expect(client.loadHistory('conversation-1', 'message-1')).resolves.toEqual([]);
+    expect(loadHistory).not.toHaveBeenCalled();
+    loadHistory.mockRestore();
+  });
+
+  it('delegates rebuilt continuation to the existing durable history loader', async () => {
+    const loadHistory = jest
+      .spyOn(BaseClient.prototype, 'loadHistory')
+      .mockResolvedValue([{ messageId: 'message-1' }]);
+    const client = Object.create(AgentClient.prototype);
+    client.eventActorContinuation = 'cold';
+
+    await expect(client.loadHistory('conversation-1', 'message-1')).resolves.toEqual([
+      { messageId: 'message-1' },
+    ]);
+    expect(loadHistory).toHaveBeenCalledWith('conversation-1', 'message-1');
+    loadHistory.mockRestore();
+  });
+
+  it('resolves and caches the exact durable Skill manifest before warming', async () => {
+    const skillManifest = [{ id: 'skill-1', name: 'analysis', version: 3 }];
+    const skillPrimeResult = {
+      skillManifest,
+      skills: new Map([['analysis', 'Analyze carefully.']]),
+    };
+    const primeInvokedSkills = jest.fn().mockResolvedValue(skillPrimeResult);
+    const client = Object.create(AgentClient.prototype);
+    client.options = {
+      req: { config: {} },
+      primeInvokedSkills,
+    };
+    client.getEventActorContext = jest.fn().mockResolvedValue({
+      fingerprint,
+      skillManifest,
+      discoveredToolNames: ['deferred_tool'],
+      summary: { text: 'Earlier compacted context.', tokenCount: 12 },
+      contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+    });
+
+    await expect(
+      client.prepareEventActorContext({
+        contextFingerprint: fingerprint,
+        skillManifest,
+        discoveredToolNames: ['deferred_tool'],
+        summary: { text: 'Earlier compacted context.', tokenCount: 12 },
+        contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+      }),
+    ).resolves.toMatchObject({
+      fingerprint,
+      skillManifest,
+      discoveredToolNames: ['deferred_tool'],
+      summary: { text: 'Earlier compacted context.', tokenCount: 12 },
+      contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+      checkpointMessageOverlay: {
+        source: 'skill',
+        messages: [
+          expect.objectContaining({
+            content: 'Analyze carefully.',
+            additional_kwargs: expect.objectContaining({
+              source: 'skill',
+              skillName: 'analysis',
+            }),
+          }),
+        ],
+      },
+    });
+    expect(primeInvokedSkills).toHaveBeenCalledWith([], ['analysis']);
+    expect(client.getEventActorContext).toHaveBeenCalledWith(skillManifest, ['deferred_tool']);
+    expect(client.eventActorSkillPrimeResult).toEqual(skillPrimeResult);
+    expect(client.eventActorDiscoveredToolNames).toEqual(['deferred_tool']);
+    expect(client.eventActorSummary).toEqual({
+      text: 'Earlier compacted context.',
+      tokenCount: 12,
+    });
+    expect(client.contextMeta).toEqual({ calibrationRatio: 1.25, encoding: 'o200k_base' });
+  });
+
+  it('falls back when a durable Skill resolves to a different revision', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = {
+      req: { config: {} },
+      primeInvokedSkills: jest.fn().mockResolvedValue({
+        skillManifest: [{ id: 'skill-1', name: 'analysis', version: 4 }],
+      }),
+    };
+    client.getEventActorContext = jest.fn();
+
+    await expect(
+      client.prepareEventActorContext({
+        contextFingerprint: fingerprint,
+        skillManifest: [{ id: 'skill-1', name: 'analysis', version: 3 }],
+      }),
+    ).resolves.toBeUndefined();
+    expect(client.getEventActorContext).not.toHaveBeenCalled();
+  });
+
+  it('carries a freshly manual-primed Skill into the durable manifest', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: { endpoints: { agents: {} } } } };
+    client.eventActorAgentContextSources = [
+      {
+        id: 'agent-1',
+        manualSkillPrimes: [
+          { _id: 'skill-1', name: 'analysis', version: 3, body: 'Analyze carefully.' },
+        ],
+      },
+    ];
+    client.getEventActorAgents = jest.fn(() => []);
+    client.getEventActorMemorySnapshots = jest.fn().mockResolvedValue([]);
+
+    await expect(client.getEventActorContext()).resolves.toMatchObject({
+      skillManifest: [
+        {
+          id: 'skill-1',
+          name: 'analysis',
+          version: 3,
+          contentDigest: 'digest:Analyze carefully.',
+        },
+      ],
+    });
+  });
+
+  it('replays only root Skill primes into the global checkpoint overlay', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: {} } };
+    client.eventActorAgentContextSources = [
+      {
+        id: 'root-agent',
+        alwaysApplySkillPrimes: [
+          { _id: 'root-skill', name: 'root-skill', version: 1, body: 'Root instructions.' },
+        ],
+      },
+      {
+        id: 'child-agent',
+        alwaysApplySkillPrimes: [
+          { _id: 'child-skill', name: 'child-skill', version: 1, body: 'Child instructions.' },
+        ],
+      },
+    ];
+    client.getEventActorContext = jest.fn().mockResolvedValue({ fingerprint });
+
+    const context = await client.prepareEventActorContext({ contextFingerprint: fingerprint });
+
+    expect(context.checkpointMessageOverlay.messages).toEqual([
+      expect.objectContaining({
+        content: 'Root instructions.',
+        additional_kwargs: expect.objectContaining({ skillName: 'root-skill' }),
+      }),
+    ]);
+    expect(context.checkpointMessageOverlay.messages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          additional_kwargs: expect.objectContaining({ skillName: 'child-skill' }),
+        }),
+      ]),
+    );
+  });
+
+  it('keeps child manual Skills out of the root durable manifest', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: { endpoints: { agents: {} } } } };
+    client.eventActorAgentContextSources = [
+      { id: 'root-agent', manualSkillPrimes: [] },
+      {
+        id: 'child-agent',
+        manualSkillPrimes: [
+          { _id: 'child-skill', name: 'child-skill', version: 1, body: 'Child instructions.' },
+        ],
+      },
+    ];
+    client.getEventActorAgents = jest.fn(() => []);
+    client.getEventActorMemorySnapshots = jest.fn().mockResolvedValue([]);
+
+    await expect(client.getEventActorContext()).resolves.toMatchObject({ skillManifest: [] });
+  });
+
+  it('captures the latest run summary and pruning calibration in continuation state', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: { endpoints: { agents: {} } } } };
+    client.eventActorAgentContextSources = [];
+    client.contentParts = [
+      {
+        type: ContentTypes.SUMMARY,
+        content: [{ type: ContentTypes.TEXT, text: 'Fresh compacted context.' }],
+        tokenCount: 18,
+      },
+    ];
+    client.contextMeta = { calibrationRatio: 1.3, encoding: 'o200k_base' };
+    client.getEventActorAgents = jest.fn(() => []);
+    client.getEventActorMemorySnapshots = jest.fn().mockResolvedValue([]);
+
+    await expect(client.getEventActorContext()).resolves.toMatchObject({
+      summary: { text: 'Fresh compacted context.', tokenCount: 18 },
+      contextMeta: { calibrationRatio: 1.3, encoding: 'o200k_base' },
+    });
+  });
+
+  it('fingerprints agents reachable only through nested subagent graphs', () => {
+    const graphMember = { id: 'graph-member' };
+    const graphMetadata = { id: 'graph-metadata', configId: 'graph-metadata-v2' };
+    const lazy = {
+      id: 'lazy',
+      configId: 'lazy-config-v2',
+      subagentGraphMemberMetadata: [graphMetadata],
+    };
+    const nested = {
+      id: 'nested',
+      lazySubagentConfigs: [lazy],
+      subagentGraphConfigs: [{ memberConfigs: [graphMember] }],
+    };
+    const client = Object.create(AgentClient.prototype);
+    client.options = { agent: { id: 'primary', subagentAgentConfigs: [nested] } };
+    client.agentConfigs = new Map([['parallel', { id: 'parallel' }]]);
+
+    expect(client.getEventActorAgents().map((agent) => agent.id)).toEqual([
+      'primary',
+      'parallel',
+      'nested',
+      'lazy',
+      'graph-member',
+      'graph-metadata',
+    ]);
+  });
+
+  it('snapshots only memory partitions that can reach model context', async () => {
+    const getFormattedMemories = require('~/models').getFormattedMemories;
+    getFormattedMemories.mockClear();
+    getFormattedMemories.mockResolvedValue({ withKeys: 'private memory' });
+    const primary = { id: 'primary' };
+    const inertChild = {
+      id: 'inert-child',
+      memory_scope: 'agent',
+      memoryToolsRegistered: false,
+    };
+    const memoryChild = {
+      id: 'memory-child',
+      memory_scope: 'agent',
+      memoryToolsRegistered: true,
+    };
+    const client = Object.create(AgentClient.prototype);
+    client.options = { agent: primary, req: { user: { id: 'user-1' } } };
+    client.getSharedMemoryContext = jest.fn().mockResolvedValue({ withoutKeys: 'shared memory' });
+
+    await expect(
+      client.getEventActorMemorySnapshots([primary, inertChild, memoryChild]),
+    ).resolves.toEqual([
+      { scope: 'memory-child', withKeys: 'private memory' },
+      { scope: 'shared', withoutKeys: 'shared memory' },
+    ]);
+    expect(getFormattedMemories).toHaveBeenCalledTimes(1);
+    expect(getFormattedMemories).toHaveBeenCalledWith({
+      userId: 'user-1',
+      agentId: 'memory-child',
+    });
+  });
+});
 
 describe('AgentClient - final model-bound content protection', () => {
   const filters = {
@@ -1434,16 +1706,26 @@ describe('AgentClient - startup telemetry', () => {
     mockFormatAgentMessages.mockReturnValueOnce({
       messages: [history, currentEvent],
       indexTokenCountMap: { 0: 11, 1: 22 },
-      summary: { text: 'summary of earlier turns', tokenCount: 40 },
+      summary: undefined,
       boundaryTokenAdjustment: undefined,
     });
-    const processStream = jest.fn().mockResolvedValue();
+    let client;
+    const processStream = jest.fn(async () => {
+      client.contentParts.push(
+        {
+          type: ContentTypes.SUMMARY,
+          content: [{ type: ContentTypes.TEXT, text: 'Fresh compacted context.' }],
+          tokenCount: 18,
+        },
+        { type: ContentTypes.TEXT, text: 'Done.' },
+      );
+    });
     mockCreateRun.mockResolvedValue({
       Graph: null,
       processStream,
       getCalibrationRatio: jest.fn(() => 0),
     });
-    const client = new AgentClient({
+    client = new AgentClient({
       req: {
         user: { id: 'user-123' },
         body: {},
@@ -1456,7 +1738,7 @@ describe('AgentClient - startup telemetry', () => {
         endpoint: EModelEndpoint.openAI,
         provider: EModelEndpoint.openAI,
         model_parameters: { model: 'gpt-4' },
-        hide_sequential_outputs: false,
+        hide_sequential_outputs: true,
       },
       endpointTokenConfig: {},
       eventHandlers: {},
@@ -1471,6 +1753,9 @@ describe('AgentClient - startup telemetry', () => {
     client.eventActorCheckpointId = 'checkpoint-base';
     client.eventActorInvocationId = 'event-2';
     client.eventActorContinuation = 'warm';
+    client.eventActorDiscoveredToolNames = ['deferred_tool'];
+    client.eventActorSummary = { text: 'summary of earlier turns', tokenCount: 40 };
+    client.contextMeta = { calibrationRatio: 1.25, encoding: client.getEncoding() };
     client.recordCollectedUsage = jest.fn().mockResolvedValue();
 
     await client.chatCompletion({ payload: [] });
@@ -1478,6 +1763,7 @@ describe('AgentClient - startup telemetry', () => {
     expect(mockCreateRun).toHaveBeenCalledWith(
       expect.objectContaining({
         messages: [history, currentEvent],
+        discoveredToolNames: ['deferred_tool'],
         eventActorCheckpointing: true,
         /** The DB-derived token map is positional over full history, which a
          * checkpoint-restored graph state no longer matches. It must be blank
@@ -1486,6 +1772,7 @@ describe('AgentClient - startup telemetry', () => {
          * excluded from the history the committed checkpoint was built from. */
         indexTokenCountMap: {},
         initialSummary: { text: 'summary of earlier turns', tokenCount: 40 },
+        calibrationRatio: 1.25,
       }),
     );
     expect(processStream).toHaveBeenCalledWith(
@@ -1503,6 +1790,13 @@ describe('AgentClient - startup telemetry', () => {
       expect.anything(),
     );
     expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+    expect(client.eventActorSummary).toEqual({
+      text: 'Fresh compacted context.',
+      tokenCount: 18,
+    });
+    expect(client.contentParts).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: ContentTypes.SUMMARY })]),
+    );
   });
 
   it('does not expose or process a fresh graph when strict checkpoint pruning fails', async () => {

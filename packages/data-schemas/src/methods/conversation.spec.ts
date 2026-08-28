@@ -4234,6 +4234,146 @@ describe('Conversation Operations', () => {
       );
     });
 
+    it('persists complete warm-continuation state with the actor head', async () => {
+      const conversationId = uuidv4();
+      const fingerprint = {
+        algorithm: 'sha256' as const,
+        version: 1,
+        digest: 'context-one',
+      };
+      const actorCheckpoint = {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-context',
+        checkpointNs: 'event-actor/context',
+      };
+      const skillManifest = [{ id: 'skill-1', name: 'analysis', version: 3 }];
+      const discoveredToolNames = ['deferred_lookup', 'deferred_write'];
+      const summary = { text: 'Earlier compacted context.', tokenCount: 12 };
+      const contextMeta = { calibrationRatio: 1.25, encoding: 'o200k_base' };
+      await Conversation.create({
+        conversationId,
+        user: 'actor-context-user',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: {
+          bindingId: `evtbind_${'f'.repeat(48)}`,
+          sourceKeyId: 'key-a',
+          actorId: 'player-a',
+        },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      await methods.recordAgentEventActorReconciliation({
+        user: 'actor-context-user',
+        conversationId,
+        reconciliation: {
+          invocationId: 'context-one',
+          status: 'invocation_pending',
+          checkpoint: actorCheckpoint,
+          action: { toolName: 'submit_move' },
+          observedAt: new Date(),
+        },
+      });
+
+      const committed = await methods.commitAgentEventActorState({
+        user: 'actor-context-user',
+        conversationId,
+        invocationId: 'context-one',
+        expectedEpoch: 0,
+        action: { toolName: 'submit_move' },
+        checkpoint: actorCheckpoint,
+        contextFingerprint: fingerprint,
+        skillManifest,
+        discoveredToolNames,
+        summary,
+        contextMeta,
+      });
+
+      expect(committed).toMatchObject({
+        status: 'committed',
+        state: {
+          generation: 1,
+          checkpoint: actorCheckpoint,
+          contextFingerprint: fingerprint,
+          skillManifest,
+          discoveredToolNames,
+          summary,
+          contextMeta,
+        },
+      });
+      await expect(
+        methods.getAgentEventActorSnapshot({ user: 'actor-context-user', conversationId }),
+      ).resolves.toMatchObject({
+        state: {
+          contextFingerprint: fingerprint,
+          skillManifest,
+          discoveredToolNames,
+          summary,
+          contextMeta,
+        },
+      });
+
+      await expect(
+        methods.commitAgentEventActorState({
+          user: 'actor-context-user',
+          conversationId,
+          invocationId: 'too-many-skills',
+          expectedEpoch: 0,
+          action: { toolName: 'submit_move' },
+          checkpoint: actorCheckpoint,
+          skillManifest: Array.from({ length: 65 }, (_, index) => ({
+            id: `skill-${index}`,
+            name: `skill-${index}`,
+            version: 1,
+          })),
+        }),
+      ).rejects.toThrow('Event actor Skill manifest exceeds 64');
+
+      await expect(
+        methods.commitAgentEventActorState({
+          user: 'actor-context-user',
+          conversationId,
+          invocationId: 'too-many-tools',
+          expectedEpoch: 0,
+          action: { toolName: 'submit_move' },
+          checkpoint: actorCheckpoint,
+          discoveredToolNames: Array.from({ length: 129 }, (_, index) => `tool-${index}`),
+        }),
+      ).rejects.toThrow('Event actor discovered-tool state is invalid');
+
+      await expect(
+        methods.commitAgentEventActorState({
+          user: 'actor-context-user',
+          conversationId,
+          invocationId: 'invalid-summary',
+          expectedEpoch: 0,
+          action: { toolName: 'submit_move' },
+          checkpoint: actorCheckpoint,
+          summary: { text: '', tokenCount: 1 },
+        }),
+      ).rejects.toThrow('Event actor summary state is invalid');
+
+      await expect(
+        methods.commitAgentEventActorState({
+          user: 'actor-context-user',
+          conversationId,
+          invocationId: 'invalid-calibration',
+          expectedEpoch: 0,
+          action: { toolName: 'submit_move' },
+          checkpoint: actorCheckpoint,
+          contextMeta: { calibrationRatio: 9, encoding: 'o200k_base' },
+        }),
+      ).rejects.toThrow('Event actor context calibration is invalid');
+    });
+
     it('retains exact legacy settled receipts until delivery-ledger migration', async () => {
       const conversationId = uuidv4();
       await Conversation.create({

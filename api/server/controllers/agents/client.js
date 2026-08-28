@@ -1,5 +1,9 @@
 require('events').EventEmitter.defaultMaxListeners = 100;
-const { logger } = require('@librechat/data-schemas');
+const {
+  logger,
+  MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
+  MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
+} = require('@librechat/data-schemas');
 const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
 const {
   createRun,
@@ -98,6 +102,7 @@ const {
   applyAttachmentOnlyText,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
+  buildAgentEventActorSkillMessages,
   collectFreshSkillPrimeNames,
   isSkillPrimeMessage,
   collectFileIds,
@@ -121,6 +126,10 @@ const {
   collectReachableAgents,
   getDynamicToolContexts,
   getSafeErrorMetadata,
+  createInitializedAgentContextFingerprint,
+  createSkillContentDigest,
+  normalizeAgentEventActorDiscoveredTools,
+  MAX_AGENT_CONTEXT_SKILLS,
 } = require('@librechat/api');
 const {
   Run,
@@ -161,6 +170,65 @@ const db = require('~/models');
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
+
+function normalizeEventActorSummary(summary) {
+  if (summary == null) {
+    return undefined;
+  }
+  if (
+    typeof summary.text !== 'string' ||
+    summary.text.length === 0 ||
+    summary.text.length > MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH ||
+    !Number.isFinite(summary.tokenCount) ||
+    summary.tokenCount < 0
+  ) {
+    throw new RangeError('Event actor summary state is invalid');
+  }
+  return { text: summary.text, tokenCount: summary.tokenCount };
+}
+
+function normalizeEventActorContextMeta(contextMeta) {
+  if (contextMeta == null) {
+    return undefined;
+  }
+  const { calibrationRatio, encoding } = contextMeta;
+  if (
+    !Number.isFinite(calibrationRatio) ||
+    calibrationRatio < 0.5 ||
+    calibrationRatio > 5 ||
+    (encoding != null &&
+      (typeof encoding !== 'string' ||
+        encoding.length === 0 ||
+        encoding.length > MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH))
+  ) {
+    throw new RangeError('Event actor context calibration is invalid');
+  }
+  return { calibrationRatio, ...(encoding == null ? {} : { encoding }) };
+}
+
+function getLatestEventActorSummary(contentParts) {
+  if (!Array.isArray(contentParts)) {
+    return undefined;
+  }
+  for (let index = contentParts.length - 1; index >= 0; index -= 1) {
+    const part = contentParts[index];
+    if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
+      continue;
+    }
+    const text = part.content
+      .map((block) => (typeof block?.text === 'string' ? block.text : ''))
+      .join('')
+      .trim();
+    if (text.length === 0) {
+      continue;
+    }
+    return normalizeEventActorSummary({
+      text,
+      tokenCount: Number.isFinite(part.tokenCount) && part.tokenCount >= 0 ? part.tokenCount : 0,
+    });
+  }
+  return undefined;
+}
 
 function getUserFacingRequestError(baseMessage, error, appConfig) {
   const protectionEnabled = hasModelBoundContentProtection(
@@ -216,6 +284,9 @@ class AgentClient extends BaseClient {
     this.eventActorCheckpointId = undefined;
     this.eventActorInvocationId = undefined;
     this.eventActorContinuation = undefined;
+    this.eventActorSkillPrimeResult = undefined;
+    this.eventActorDiscoveredToolNames = undefined;
+    this.eventActorSummary = undefined;
 
     /** @type {AgentRun} */
     this.run;
@@ -293,6 +364,53 @@ class AgentClient extends BaseClient {
       usageEmitSink?.filter((event) => event?.usage_type === 'subagent').length ?? 0;
     /** @type {AgentClientOptions} */
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
+    if (
+      this.options.req?._isAgentTrigger === true &&
+      this.options.req?._agentEventBindingParentConversationId != null
+    ) {
+      /** Preserve initialization-time semantic inputs before buildMessages
+       * decorates live agent instructions with request memory/MCP context. */
+      this.eventActorAgentContextSources = this.getEventActorAgents().map((agent) => ({
+        id: agent.id,
+        version: agent.version,
+        provider: agent.provider,
+        model: agent.model ?? agent.model_parameters?.model,
+        instructions: agent.instructions,
+        additional_instructions: agent.additional_instructions,
+        model_parameters: JSON.parse(JSON.stringify(agent.model_parameters ?? {})),
+        toolDefinitions: JSON.parse(JSON.stringify(agent.toolDefinitions ?? [])),
+        toolRegistryDefinitions: JSON.parse(
+          JSON.stringify(
+            [...(agent.toolRegistry?.values() ?? [])].sort((left, right) =>
+              left.name.localeCompare(right.name),
+            ),
+          ),
+        ),
+        tool_options: JSON.parse(JSON.stringify(agent.tool_options ?? {})),
+        execution: JSON.parse(
+          JSON.stringify({
+            endpoint: agent.endpoint,
+            configId: agent.configId,
+            tool_kwargs: agent.tool_kwargs,
+            edges: agent.edges,
+            end_after_tools: agent.end_after_tools,
+            hide_sequential_outputs: agent.hide_sequential_outputs,
+            stateful_code_sessions: agent.stateful_code_sessions,
+            stateful_code_environment: agent.stateful_code_environment,
+            artifacts: agent.artifacts,
+            recursion_limit: agent.recursion_limit,
+            subagents: agent.subagents,
+            memory_scope: agent.memory_scope,
+            skills_enabled: agent.skills_enabled,
+            skills: agent.skills,
+            backgroundToolNames: agent.backgroundToolNames,
+            intentToolNames: agent.intentToolNames,
+          }),
+        ),
+        manualSkillPrimes: agent.manualSkillPrimes,
+        alwaysApplySkillPrimes: agent.alwaysApplySkillPrimes,
+      }));
+    }
     /** @type {string} */
     this.model = this.options.agent.model_parameters.model;
     /** The key for the usage object's input tokens
@@ -1551,7 +1669,152 @@ class AgentClient extends BaseClient {
     return files;
   }
 
+  getEventActorAgents() {
+    return collectReachableAgents([this.options.agent, ...(this.agentConfigs?.values() ?? [])]);
+  }
+
+  /**
+   * Resolves the committed Skill manifest and request-cached memory before the
+   * actor chooses warm versus rebuilt continuation. No message history is read.
+   *
+   * @param {import('@librechat/data-schemas').IAgentEventActorState | null} state
+   */
+  async prepareEventActorContext(state) {
+    if (state?.contextFingerprint == null) {
+      return undefined;
+    }
+    if (isMemoryAgentEnabled(this.options.req.config?.memory)) {
+      return undefined;
+    }
+    const storedManifest = Array.isArray(state.skillManifest) ? state.skillManifest : [];
+    if (storedManifest.length > MAX_AGENT_CONTEXT_SKILLS) {
+      return undefined;
+    }
+    let discoveredToolNames;
+    let summary;
+    let contextMeta;
+    try {
+      discoveredToolNames = normalizeAgentEventActorDiscoveredTools(state.discoveredToolNames);
+      summary = normalizeEventActorSummary(state.summary);
+      contextMeta = normalizeEventActorContextMeta(state.contextMeta);
+    } catch {
+      return undefined;
+    }
+
+    let skillPrimeResult = {};
+    if (storedManifest.length > 0) {
+      if (typeof this.options.primeInvokedSkills !== 'function') {
+        return undefined;
+      }
+      skillPrimeResult = await this.options.primeInvokedSkills(
+        [],
+        storedManifest.map((skill) => skill.name),
+      );
+      const resolvedManifest = [...(skillPrimeResult?.skillManifest ?? [])].sort((left, right) =>
+        left.id.localeCompare(right.id),
+      );
+      const expectedManifest = [...storedManifest].sort((left, right) =>
+        left.id.localeCompare(right.id),
+      );
+      if (JSON.stringify(resolvedManifest) !== JSON.stringify(expectedManifest)) {
+        return undefined;
+      }
+    }
+    this.eventActorSkillPrimeResult = skillPrimeResult;
+    this.eventActorDiscoveredToolNames = discoveredToolNames;
+    this.eventActorSummary = summary;
+    this.contextMeta = contextMeta;
+    const context = await this.getEventActorContext(storedManifest, discoveredToolNames);
+    const skillBodies = new Map(skillPrimeResult?.skills ?? []);
+    const rootAgentContext = this.eventActorAgentContextSources?.[0];
+    for (const skill of [
+      ...(rootAgentContext?.manualSkillPrimes ?? []),
+      ...(rootAgentContext?.alwaysApplySkillPrimes ?? []),
+    ]) {
+      if (typeof skill.name === 'string' && typeof skill.body === 'string') {
+        skillBodies.set(skill.name, skill.body);
+      }
+    }
+    return {
+      ...context,
+      checkpointMessageOverlay: {
+        source: 'skill',
+        messages: buildAgentEventActorSkillMessages(skillBodies),
+      },
+    };
+  }
+
+  /**
+   * @param {Array<{id: string, name: string, version: number}>} [baseManifest]
+   */
+  async getEventActorContext(baseManifest = [], baseDiscoveredToolNames) {
+    const manifest = new Map(baseManifest.map((skill) => [skill.id, skill]));
+    for (const skill of this.eventActorAgentContextSources?.[0]?.manualSkillPrimes ?? []) {
+      if (!Number.isInteger(skill.version) || skill.version < 1 || typeof skill.body !== 'string') {
+        throw new Error('Manual Skill is missing semantic identity');
+      }
+      manifest.set(skill._id.toString(), {
+        id: skill._id.toString(),
+        name: skill.name,
+        version: skill.version,
+        contentDigest: createSkillContentDigest(skill.body),
+      });
+    }
+    for (const skill of this.eventActorSkillPrimeResult?.skillManifest ?? []) {
+      manifest.set(skill.id, skill);
+    }
+    for (const skill of this.options.invokedSkillIdentities?.values?.() ?? []) {
+      manifest.set(skill.id, skill);
+    }
+    if (manifest.size > MAX_AGENT_CONTEXT_SKILLS) {
+      throw new RangeError(`Event actor exceeds ${MAX_AGENT_CONTEXT_SKILLS} durable Skills`);
+    }
+    const skillManifest = [...manifest.values()].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    );
+    const agents = this.getEventActorAgents();
+    const memory = await this.getEventActorMemorySnapshots(agents);
+    const agentsConfig = this.options.req.config?.endpoints?.[EModelEndpoint.agents];
+    const discoveredToolNames = normalizeAgentEventActorDiscoveredTools([
+      ...(baseDiscoveredToolNames ??
+        (this.eventActorContinuation === 'warm' ? (this.eventActorDiscoveredToolNames ?? []) : [])),
+      ...(this.run == null ? [] : getRunDiscoveredTools(this.run)),
+    ]);
+    const summary = getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
+    this.eventActorSummary = summary;
+    return {
+      fingerprint: createInitializedAgentContextFingerprint({
+        agents: this.eventActorAgentContextSources ?? agents,
+        invokedSkills: skillManifest,
+        approvalPolicy: agentsConfig?.toolApproval,
+        memory,
+        discoveredToolNames,
+        checkpointerType: agentsConfig?.checkpointer?.type,
+      }),
+      skillManifest,
+      discoveredToolNames,
+      ...(summary == null ? {} : { summary }),
+      ...(this.contextMeta == null ? {} : { contextMeta: this.contextMeta }),
+    };
+  }
+
+  async loadHistory(conversationId, parentMessageId = null) {
+    if (this.eventActorContinuation === 'warm') {
+      logger.debug('[AgentClient] Skipping durable history for compatible event actor', {
+        conversationId,
+      });
+      return [];
+    }
+    return super.loadHistory(conversationId, parentMessageId);
+  }
+
   async buildMessages(messages, parentMessageId, _buildOptions, opts) {
+    if (this.eventActorContinuation === 'cold') {
+      /** Compatibility was rejected after warm state preparation. Rebuild all
+       * non-checkpointed state from durable history, never from that stale head. */
+      this.eventActorSummary = undefined;
+      this.contextMeta = undefined;
+    }
     /** Always pass mapMethod; getMessagesForConversation applies it only to messages with addedConvo flag */
     const orderedMessages = this.constructor.getMessagesForConversation({
       messages,
@@ -1616,7 +1879,7 @@ class AgentClient extends BaseClient {
      * original promise later still propagates either error.
      */
     const earlySharedContextPromise = Promise.all([
-      this.useMemory(),
+      this.getSharedMemoryContext(),
       resolveConfigServers(this.options.req),
     ]);
     void earlySharedContextPromise.catch(() => {});
@@ -2484,6 +2747,55 @@ class AgentClient extends BaseClient {
       );
     }
     return { withKeys, withoutKeys };
+  }
+
+  /** Reuses the exact memory authorization/load promise for planning and prompt construction. */
+  getSharedMemoryContext() {
+    this.memoryContextPromise ??= this.useMemory();
+    return this.memoryContextPromise;
+  }
+
+  /**
+   * Returns the model-bound memory snapshots needed for event-actor compatibility.
+   * The request-scoped memory cache makes this the same read used by buildMessages.
+   *
+   * @param {Array<import('@librechat/api').InitializedAgent>} agents
+   * @returns {Promise<Array<{scope: string, withKeys?: string, withoutKeys?: string}>>}
+   */
+  async getEventActorMemorySnapshots(agents) {
+    const primary = await this.getSharedMemoryContext();
+    if (!primary) {
+      return [];
+    }
+    const userId = this.options.req.user.id + '';
+    const primaryScope = getMemoryAgentId(this.options.agent);
+    const scopes = new Map([[primaryScope ?? '', primary]]);
+    await Promise.all(
+      agents.map(async (agent) => {
+        if (agent !== this.options.agent && !agentHasInlineMemoryTools(agent)) {
+          return;
+        }
+        const agentId = getMemoryAgentId(agent);
+        const scope = agentId ?? '';
+        if (scopes.has(scope)) {
+          return;
+        }
+        const snapshot = await getRequestMemories({
+          req: this.options.req,
+          userId,
+          agentId,
+          getFormattedMemories: db.getFormattedMemories,
+        });
+        scopes.set(scope, snapshot);
+      }),
+    );
+    return [...scopes]
+      .map(([scope, snapshot]) => ({
+        scope: scope || 'shared',
+        ...(snapshot.withKeys ? { withKeys: snapshot.withKeys } : {}),
+        ...(snapshot.withoutKeys ? { withoutKeys: snapshot.withoutKeys } : {}),
+      }))
+      .sort((left, right) => left.scope.localeCompare(right.scope));
   }
 
   /**
@@ -3414,9 +3726,17 @@ class AgentClient extends BaseClient {
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
 
       /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
-      const skillPrimeResult = this.options.primeInvokedSkills
-        ? await this.options.primeInvokedSkills(payload)
-        : undefined;
+      if (this.eventActorContinuation === 'cold') {
+        this.eventActorSkillPrimeResult = undefined;
+        this.eventActorDiscoveredToolNames = undefined;
+      }
+      let skillPrimeResult = this.eventActorSkillPrimeResult;
+      if (skillPrimeResult == null) {
+        skillPrimeResult = this.options.primeInvokedSkills
+          ? await this.options.primeInvokedSkills(payload)
+          : undefined;
+      }
+      this.eventActorSkillPrimeResult = skillPrimeResult;
 
       /** Seed each reachable agent's trusted code-session partition. */
       const initialSessions = buildInitialToolSessions({
@@ -3473,6 +3793,11 @@ class AgentClient extends BaseClient {
         skillPrimeResult?.skills,
         formatOptions,
       );
+      if (this.eventActorContinuation !== 'warm') {
+        this.eventActorSummary = initialSummary;
+      }
+      const continuationSummary =
+        this.eventActorContinuation === 'warm' ? this.eventActorSummary : initialSummary;
       if (boundaryTokenAdjustment) {
         logger.debug(
           `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
@@ -3698,6 +4023,8 @@ class AgentClient extends BaseClient {
           // carries no messages, so history cannot identify the conversation.
           conversationId: this.conversationId,
           messages,
+          discoveredToolNames:
+            this.eventActorContinuation === 'warm' ? this.eventActorDiscoveredToolNames : undefined,
           modelCallbacks: [modelBoundCallback],
           // This controller implements the full HITL pause/resume lifecycle (handleRunInterrupt
           // persists the pending action; the /resume route rebuilds + continues the run), so it
@@ -3718,11 +4045,11 @@ class AgentClient extends BaseClient {
           // plus the one new event), so those indices address different
           // messages and the pruner would never recount them. Hand it an empty
           // map so every count is derived from the messages actually in state.
-          // `initialSummary` deliberately stays: it rides the system tail, and
-          // the pre-boundary turns it summarizes were excluded from the very
-          // history the committed checkpoint was built from.
+          // The active summary lives in AgentContext rather than checkpointed
+          // graph messages, so warm turns restore the actor-head copy while
+          // rebuilt turns use the summary reconstructed from durable history.
           indexTokenCountMap: this.eventActorContinuation === 'warm' ? {} : indexTokenCountMap,
-          initialSummary,
+          initialSummary: continuationSummary,
           initialSessions,
           calibrationRatio,
           runId: this.responseMessageId,
@@ -3867,6 +4194,10 @@ class AgentClient extends BaseClient {
         this.contentParts.unshift(...manualParts);
       }
 
+      /** Summaries are run state, even when sequential-output reshaping hides
+       * their display block from the persisted response content. */
+      this.eventActorSummary =
+        getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       this.applyHideSequentialOutputsFilter();
       this.rebaseActivityPhaseBounds(contentBeforeReshape);
     } catch (err) {
@@ -3917,6 +4248,10 @@ class AgentClient extends BaseClient {
         });
       }
     } finally {
+      /** An aborted/erroring run can still have completed compaction before
+       * the failure; retain that model-visible state for actor reconciliation. */
+      this.eventActorSummary =
+        getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       /** Capture calibration state from the run for persistence on the response message.
        *  Runs in finally so values are captured even on abort. */
       const ratio = this.run?.getCalibrationRatio() ?? 0;
@@ -4305,6 +4640,8 @@ class AgentClient extends BaseClient {
       // before resume finalize/re-pause persistence reads `this.contentParts`, so a
       // resumed sequential chain doesn't persist/emit outputs hide_sequential_outputs
       // is meant to hide.
+      this.eventActorSummary =
+        getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       const contentBeforeReshape = [...this.contentParts];
       this.applyHideSequentialOutputsFilter();
       this.rebaseActivityPhaseBounds(contentBeforeReshape);
@@ -4343,6 +4680,8 @@ class AgentClient extends BaseClient {
         });
       }
     } finally {
+      this.eventActorSummary =
+        getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       const ratio = this.run?.getCalibrationRatio() ?? 0;
       if (ratio > 0 && ratio !== 1) {
         this.contextMeta = {

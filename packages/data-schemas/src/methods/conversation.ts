@@ -17,6 +17,13 @@ import type {
 } from '~/types';
 import type { MessageMethods } from './message';
 import {
+  MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS,
+  MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
+  MAX_AGENT_EVENT_ACTOR_SKILLS,
+  MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
+  MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH,
+} from '~/types/convo';
+import {
   activeExpirationFilter,
   buildRetentionVisibilityFilter,
   createFallbackRetentionDate,
@@ -245,6 +252,11 @@ export interface ConversationMethods {
     expected?: IAgentEventActorState;
     expectedEpoch: number;
     checkpoint: IAgentEventActorCheckpoint;
+    contextFingerprint?: IAgentEventActorState['contextFingerprint'];
+    skillManifest?: IAgentEventActorState['skillManifest'];
+    discoveredToolNames?: IAgentEventActorState['discoveredToolNames'];
+    summary?: IAgentEventActorState['summary'];
+    contextMeta?: IAgentEventActorState['contextMeta'];
   }): Promise<AgentEventActorCommitResult>;
   beginAgentEventActorLegacyTurn(input: {
     user: string;
@@ -533,9 +545,45 @@ export function createConversationMethods(
     expected?: IAgentEventActorState;
     expectedEpoch: number;
     checkpoint: IAgentEventActorCheckpoint;
+    contextFingerprint?: IAgentEventActorState['contextFingerprint'];
+    skillManifest?: IAgentEventActorState['skillManifest'];
+    discoveredToolNames?: IAgentEventActorState['discoveredToolNames'];
+    summary?: IAgentEventActorState['summary'];
+    contextMeta?: IAgentEventActorState['contextMeta'];
   }): Promise<AgentEventActorCommitResult> {
     if (input.checkpoint.threadId !== input.conversationId) {
       throw new Error('Event actor checkpoint changed its logical thread');
+    }
+    if ((input.skillManifest?.length ?? 0) > MAX_AGENT_EVENT_ACTOR_SKILLS) {
+      throw new RangeError(`Event actor Skill manifest exceeds ${MAX_AGENT_EVENT_ACTOR_SKILLS}`);
+    }
+    if (
+      (input.discoveredToolNames?.length ?? 0) > MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS ||
+      input.discoveredToolNames?.some(
+        (name) => name.length === 0 || name.length > MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH,
+      )
+    ) {
+      throw new RangeError('Event actor discovered-tool state is invalid');
+    }
+    if (
+      input.summary != null &&
+      (input.summary.text.length === 0 ||
+        input.summary.text.length > MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH ||
+        !Number.isFinite(input.summary.tokenCount) ||
+        input.summary.tokenCount < 0)
+    ) {
+      throw new RangeError('Event actor summary state is invalid');
+    }
+    if (
+      input.contextMeta != null &&
+      (!Number.isFinite(input.contextMeta.calibrationRatio) ||
+        input.contextMeta.calibrationRatio < 0.5 ||
+        input.contextMeta.calibrationRatio > 5 ||
+        (input.contextMeta.encoding != null &&
+          (input.contextMeta.encoding.length === 0 ||
+            input.contextMeta.encoding.length > MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH)))
+    ) {
+      throw new RangeError('Event actor context calibration is invalid');
     }
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
     /** A legacy turn against a headless or already cold-marked actor leaves
@@ -555,6 +603,28 @@ export function createConversationMethods(
             'agentEventActor.checkpoint.threadId': input.expected.checkpoint.threadId,
             'agentEventActor.checkpoint.checkpointId': input.expected.checkpoint.checkpointId,
             'agentEventActor.checkpoint.checkpointNs': input.expected.checkpoint.checkpointNs,
+            ...(input.expected.contextFingerprint == null
+              ? { 'agentEventActor.contextFingerprint': { $exists: false } }
+              : {
+                  'agentEventActor.contextFingerprint.algorithm':
+                    input.expected.contextFingerprint.algorithm,
+                  'agentEventActor.contextFingerprint.version':
+                    input.expected.contextFingerprint.version,
+                  'agentEventActor.contextFingerprint.digest':
+                    input.expected.contextFingerprint.digest,
+                }),
+            ...(input.expected.skillManifest == null
+              ? { 'agentEventActor.skillManifest': { $exists: false } }
+              : { 'agentEventActor.skillManifest': input.expected.skillManifest }),
+            ...(input.expected.discoveredToolNames == null
+              ? { 'agentEventActor.discoveredToolNames': { $exists: false } }
+              : { 'agentEventActor.discoveredToolNames': input.expected.discoveredToolNames }),
+            ...(input.expected.summary == null
+              ? { 'agentEventActor.summary': { $exists: false } }
+              : { 'agentEventActor.summary': input.expected.summary }),
+            ...(input.expected.contextMeta == null
+              ? { 'agentEventActor.contextMeta': { $exists: false } }
+              : { 'agentEventActor.contextMeta': input.expected.contextMeta }),
             'agentEventActor.requiresColdStart':
               input.expected.requiresColdStart === true ? true : { $ne: true },
           }),
@@ -562,6 +632,13 @@ export function createConversationMethods(
     const nextState: IAgentEventActorState = {
       generation: (input.expected?.generation ?? 0) + 1,
       checkpoint: input.checkpoint,
+      ...(input.contextFingerprint == null ? {} : { contextFingerprint: input.contextFingerprint }),
+      ...(input.skillManifest == null ? {} : { skillManifest: input.skillManifest }),
+      ...(input.discoveredToolNames == null
+        ? {}
+        : { discoveredToolNames: input.discoveredToolNames }),
+      ...(input.summary == null ? {} : { summary: input.summary }),
+      ...(input.contextMeta == null ? {} : { contextMeta: input.contextMeta }),
       ...(input.expected == null ? {} : { previousCheckpoint: input.expected.checkpoint }),
     };
     const previous = await Conversation.findOneAndUpdate(

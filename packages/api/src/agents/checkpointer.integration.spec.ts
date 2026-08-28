@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { logger } from '@librechat/data-schemas';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { HumanMessage } from '@librechat/agents/langchain/messages';
 import { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb';
 import { emptyCheckpoint, ERROR, INTERRUPT } from '@langchain/langgraph-checkpoint';
 import {
@@ -214,6 +215,70 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
         .db!.collection('agent_checkpoints')
         .countDocuments({ thread_id: threadId }),
     ).toBe(2);
+  });
+
+  it('replaces checkpoint-carried Skill context while preserving the committed base', async () => {
+    const saver = await getAgentCheckpointer(MONGO_CFG);
+    const threadId = `actor-${new mongoose.Types.ObjectId().toString()}`;
+    const checkpoint = emptyCheckpoint();
+    checkpoint.channel_values.messages = [
+      new HumanMessage({ content: 'ordinary history' }),
+      new HumanMessage({
+        content: 'old skill body',
+        additional_kwargs: { isMeta: true, source: 'skill', skillName: 'analysis' },
+      }),
+    ];
+    checkpoint.channel_versions.messages = 1;
+    const sourceConfig = {
+      configurable: {
+        thread_id: threadId,
+        checkpoint_ns: '',
+        [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: 'event-actor/base',
+        [LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY]: 'event-1',
+      },
+    };
+    await saver!.put(sourceConfig, checkpoint, {
+      source: 'input',
+      step: -1,
+      parents: {},
+    });
+
+    await forkAgentEventCheckpoint(
+      { threadId, checkpointId: checkpoint.id, checkpointNs: 'event-actor/base' },
+      'event-actor/fork',
+      'event-2',
+      MONGO_CFG,
+      {
+        source: 'skill',
+        messages: [
+          new HumanMessage({
+            content: 'current skill body',
+            additional_kwargs: { isMeta: true, source: 'skill', skillName: 'analysis' },
+          }),
+        ],
+      },
+    );
+
+    const source = await saver!.getTuple(sourceConfig);
+    const fork = await saver!.getTuple({
+      configurable: {
+        thread_id: threadId,
+        checkpoint_ns: '',
+        checkpoint_id: checkpoint.id,
+        [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: 'event-actor/fork',
+        [LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY]: 'event-2',
+      },
+    });
+    expect(
+      (source?.checkpoint.channel_values.messages as HumanMessage[]).map(
+        (message) => message.content,
+      ),
+    ).toEqual(['ordinary history', 'old skill body']);
+    expect(
+      (fork?.checkpoint.channel_values.messages as HumanMessage[]).map(
+        (message) => message.content,
+      ),
+    ).toEqual(['ordinary history', 'current skill body']);
   });
 
   it('warm-continues from a copied actor head without mutating the committed base', async () => {
