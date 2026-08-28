@@ -10,7 +10,7 @@ type DisclosureChevronVariantOptions = ({ expanded?: boolean } & ClassProp) | un
  *
  * Owned here rather than in the feature so a change to the reveal, the focus
  * behaviour, the motion, or the theme role reaches every disclosure surface at
- * once. Callers keep only geometry — the icon size and any optical offset —
+ * once. Callers keep only geometry (the icon size and any optical offset),
  * which legitimately differs per row.
  */
 export const disclosureChevronVariants: (props?: DisclosureChevronVariantOptions) => string = cva(

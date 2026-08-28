@@ -64,4 +64,20 @@ describe('parseUnifiedDiff', () => {
     expect(parsed.lines.some((line) => line.text.includes('old_text'))).toBe(false);
     expect(parsed.lines.some((line) => line.text.includes('new_text'))).toBe(false);
   });
+
+  it('keeps changed lines that collide with the synthetic header names', () => {
+    /** Deleting a real `-- old_text` comment (SQL, Lua) and adding
+     *  `++ new_text` prefixes to exactly the synthetic marker text. Only the
+     *  separator POSITION, an adjacent pair before a hunk header, separates
+     *  the two, so this pair inside a hunk must survive as content. */
+    const parsed = parseUnifiedDiff(['@@ -1,2 +1,2 @@', '--- old_text', '+++ new_text'].join('\n'));
+
+    expect(parsed.deletions).toBe(1);
+    expect(parsed.additions).toBe(1);
+    expect(parsed.lines).toEqual([
+      { type: 'hunk', text: '@@ -1,2 +1,2 @@' },
+      { type: 'del', text: '-- old_text', oldLine: 1 },
+      { type: 'add', text: '++ new_text', newLine: 1 },
+    ]);
+  });
 });
