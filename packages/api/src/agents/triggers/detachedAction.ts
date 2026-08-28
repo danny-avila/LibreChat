@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 } from '@librechat/data-schemas';
+import {
+  logger,
+  AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+} from '@librechat/data-schemas';
 import type {
   AgentEventActorDetachedAction,
   AgentTriggerDeliveryMethods,
@@ -17,6 +20,8 @@ import { matchesExpectedAction } from './expectedAction';
 import { createAgentTriggerEnvelope } from './envelope';
 
 const MAX_TERMINAL_RESULT_LENGTH = 32_768;
+const TERMINAL_PERSIST_RETRY_INITIAL_MS = 100;
+const TERMINAL_PERSIST_RETRY_MAX_MS = 30_000;
 const RESERVATION_RECOVERY_MS = 60_000;
 const RUNNING_RECOVERY_MS = 30 * 60_000;
 export const EVENT_ACTOR_DETACHED_COMPLETION_TYPE = 'librechat.event_actor.detached_completion';
@@ -73,6 +78,7 @@ interface DetachedActionOwner {
   bindingId: string;
   conversationId: string;
   generationCreatedAt: number;
+  turnCreatedAt: number;
   invocationId: string;
   expectedAction: AgentTriggerExpectedAction;
 }
@@ -82,7 +88,15 @@ interface DetachedActionDependencies {
   markAgentEventActorDetachedActionRunning: AgentTriggerDeliveryMethods['markAgentEventActorDetachedActionRunning'];
   settleAgentEventActorDetachedAction: AgentTriggerDeliveryMethods['settleAgentEventActorDetachedAction'];
   onTerminal(input: { taskId: string; idempotencyKey: string }): Promise<void>;
+  waitForTerminalPersistenceRetry?(delayMs: number): Promise<void>;
   now?(): Date;
+}
+
+function waitForTerminalPersistenceRetry(delayMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, delayMs);
+    timer.unref();
+  });
 }
 
 export interface AgentEventActorInternalSuspension {
@@ -241,6 +255,7 @@ export function createAgentEventActorDetachedActionLifecycle(
       const reservedAt = now();
       const reservation = await deps.reserveAgentEventActorDetachedAction({
         ...scope,
+        turnId: input.turnId,
         invocationId: owner.invocationId,
         expectedToolName: owner.expectedAction.toolName,
         toolName: input.toolName,
@@ -327,17 +342,31 @@ export function createAgentEventActorDetachedActionLifecycle(
       if (!matchesCurrent(input)) {
         return false;
       }
-      const settled = await deps.settleAgentEventActorDetachedAction({
-        ...scope,
-        taskId: input.taskId,
-        idempotencyKey: input.idempotencyKey,
-        status: input.status,
-        ...(input.status === 'succeeded'
-          ? { result: serializeTerminalResult(input.result) }
-          : { error: String(input.error ?? 'Detached action failed').slice(0, 2_048) }),
-        observedAt: now(),
-      });
-      return settled.status !== 'conflict';
+      const waitForRetry = deps.waitForTerminalPersistenceRetry ?? waitForTerminalPersistenceRetry;
+      let retryDelayMs = TERMINAL_PERSIST_RETRY_INITIAL_MS;
+      for (;;) {
+        try {
+          const settled = await deps.settleAgentEventActorDetachedAction({
+            ...scope,
+            taskId: input.taskId,
+            idempotencyKey: input.idempotencyKey,
+            status: input.status,
+            ...(input.status === 'succeeded'
+              ? { result: serializeTerminalResult(input.result) }
+              : { error: String(input.error ?? 'Detached action failed').slice(0, 2_048) }),
+            observedAt: now(),
+          });
+          return settled.status !== 'conflict';
+        } catch (error) {
+          logger.warn('[event-actor] Retrying detached terminal evidence persistence', {
+            taskId: input.taskId,
+            retryDelayMs,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          await waitForRetry(retryDelayMs);
+          retryDelayMs = Math.min(retryDelayMs * 2, TERMINAL_PERSIST_RETRY_MAX_MS);
+        }
+      }
     },
     async wake(input) {
       if (matchesCurrent(input)) {
@@ -351,7 +380,7 @@ export function createAgentEventActorDetachedActionLifecycle(
       return {
         kind: 'internal_completion',
         actionId: current.taskId,
-        jobCreatedAt: owner.generationCreatedAt,
+        jobCreatedAt: owner.turnCreatedAt,
         interrupt: {
           id: current.taskId,
           payload: {

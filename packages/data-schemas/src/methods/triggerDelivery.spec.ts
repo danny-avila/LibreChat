@@ -248,6 +248,15 @@ describe('agent trigger delivery methods', () => {
       status: 'capability_pending',
       requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
     });
+    const legacyReclaimerRetainsLane = async (): Promise<boolean> =>
+      (await Delivery.exists({
+        orderingKey: queued.delivery.orderingKey,
+        status: { $in: ['staging', 'batched', 'pending', 'leased', 'dead'] },
+      })) != null;
+    await expect(
+      Delivery.findOne({ capabilityLaneGuardFor: queued.delivery.id }).lean(),
+    ).resolves.toMatchObject({ status: 'dead', batchRootId: expect.any(mongoose.Types.ObjectId) });
+    await expect(legacyReclaimerRetainsLane()).resolves.toBe(true);
     const claimInput = {
       workerId: 'capable-worker',
       claimToken: 'capable-claim',
@@ -267,6 +276,7 @@ describe('agent trigger delivery methods', () => {
       workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
     });
     expect(capable).toMatchObject({ status: 'capability_leased' });
+    await expect(legacyReclaimerRetainsLane()).resolves.toBe(true);
 
     await Delivery.updateOne(
       { _id: capable!.id },
@@ -310,11 +320,13 @@ describe('agent trigger delivery methods', () => {
     await expect(Delivery.findById(recovered!.id).lean()).resolves.toMatchObject({
       status: 'capability_dead',
     });
+    await expect(legacyReclaimerRetainsLane()).resolves.toBe(true);
 
     const [deadLetter] = await methods.getAgentTriggerDeadLetters();
     expect(deadLetter).toMatchObject({ id: recovered!.id, status: 'capability_dead' });
     const requeued = await methods.requeueAgentTriggerDelivery(recovered!.id, recoveryNow);
     expect(requeued).toMatchObject({ status: 'capability_pending' });
+    await expect(legacyReclaimerRetainsLane()).resolves.toBe(true);
     await expect(
       methods.claimNextAgentTriggerDelivery({
         workerId: 'old-worker',
@@ -322,6 +334,32 @@ describe('agent trigger delivery methods', () => {
         now: recoveryNow,
         leaseUntil: new Date(recoveryNow.getTime() + 60_000),
       }),
+    ).resolves.toBeNull();
+    const finalClaim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'capable-worker-3',
+      claimToken: 'capable-final',
+      now: recoveryNow,
+      leaseUntil: new Date(recoveryNow.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    const finalAttempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: finalClaim!.id,
+      workerId: 'capable-worker-3',
+      claimToken: 'capable-final',
+      now: recoveryNow,
+    });
+    await expect(
+      methods.completeAgentTriggerDelivery({
+        id: finalClaim!.id,
+        workerId: 'capable-worker-3',
+        claimToken: 'capable-final',
+        attempt: finalAttempt!,
+        result: { status: 'complete' },
+        settledAt: recoveryNow,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      Delivery.exists({ capabilityLaneGuardFor: queued.delivery.id }),
     ).resolves.toBeNull();
   });
 
@@ -1964,6 +2002,7 @@ describe('agent trigger delivery methods', () => {
       bindingId,
       conversationId,
       generationCreatedAt,
+      turnId: 'response-detached-leased:0',
       invocationId: queued.delivery.deliveryKey,
       expectedToolName: 'submit_move',
       toolName: 'submit_move_mcp_chess',
@@ -1986,30 +2025,50 @@ describe('agent trigger delivery methods', () => {
     await expect(methods.markAgentEventActorDetachedActionRunning(update)).resolves.toEqual({
       status: 'applied',
     });
+    const retryAt = new Date(generationCreatedAt + 3_000);
+    await expect(
+      methods.retryAgentTriggerDelivery({
+        id: claimed!.id,
+        workerId: 'worker-detached-leased',
+        claimToken: 'claim-detached-leased',
+        attempt: attempt!,
+        error: transientFailure({ attemptedAt: retryAt }),
+        availableAt: retryAt,
+      }),
+    ).resolves.toBe(true);
+    await expect(methods.markAgentEventActorDetachedActionRunning(update)).resolves.toEqual({
+      status: 'already_applied',
+    });
+    const retryClaim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-detached-retry',
+      claimToken: 'claim-detached-retry',
+      now: retryAt,
+      leaseUntil: new Date(retryAt.getTime() + 60_000),
+    });
+    const retryAttempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: retryClaim!.id,
+      workerId: 'worker-detached-retry',
+      claimToken: 'claim-detached-retry',
+      now: retryAt,
+    });
+    await expect(
+      methods.deadLetterAgentTriggerDelivery({
+        id: retryClaim!.id,
+        workerId: 'worker-detached-retry',
+        claimToken: 'claim-detached-retry',
+        attempt: retryAttempt!,
+        error: transientFailure({ attemptedAt: retryAt }),
+        settledAt: retryAt,
+      }),
+    ).resolves.toBe(true);
     await expect(
       methods.settleAgentEventActorDetachedAction({
         ...update,
         status: 'succeeded',
         result: 'accepted',
+        observedAt: new Date(generationCreatedAt + 4_000),
       }),
     ).resolves.toEqual({ status: 'applied' });
-
-    await methods.completeAgentTriggerDelivery({
-      id: claimed!.id,
-      workerId: 'worker-detached-leased',
-      claimToken: 'claim-detached-leased',
-      attempt: attempt!,
-      result: { status: 'started' },
-      settledAt: new Date(generationCreatedAt),
-      awaitTerminalHandling: true,
-      handling: {
-        status: 'started',
-        conversationId,
-        streamId: conversationId,
-        generationCreatedAt,
-        startedAt: new Date(generationCreatedAt),
-      },
-    });
     await expect(
       methods.getAgentEventActorDetachedAction({
         deliveryKey: queued.delivery.deliveryKey,
@@ -2079,6 +2138,7 @@ describe('agent trigger delivery methods', () => {
       bindingId,
       conversationId,
       generationCreatedAt,
+      turnId: 'response-detached-1:0',
       invocationId: queued.delivery.deliveryKey,
       expectedToolName: 'submit_move',
       toolName: 'submit_move_mcp_chess',
@@ -2161,7 +2221,7 @@ describe('agent trigger delivery methods', () => {
     });
     const retryReservation = await methods.reserveAgentEventActorDetachedAction({
       ...reservation,
-      toolCallId: 'call-detached-2',
+      turnId: 'response-detached-1:1',
       reservedAt: new Date(generationCreatedAt + 3_000),
       recoveryAfter: new Date(generationCreatedAt + 63_000),
     });
@@ -2169,7 +2229,7 @@ describe('agent trigger delivery methods', () => {
       status: 'reserved',
       action: {
         launchAttempt: 1,
-        toolCallId: 'call-detached-2',
+        toolCallId: reservation.toolCallId,
         status: 'reserved',
       },
     });

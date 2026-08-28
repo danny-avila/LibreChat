@@ -152,6 +152,7 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
       default: undefined,
     },
     batchRootId: { type: Schema.Types.ObjectId, ref: 'AgentTriggerDelivery' },
+    capabilityLaneGuardFor: { type: Schema.Types.ObjectId, ref: 'AgentTriggerDelivery' },
     batchRootRequeueCount: { type: Number, min: 0 },
     batchMembersSettledAt: { type: Date },
     awaitTerminalHandling: { type: Boolean },

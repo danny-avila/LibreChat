@@ -106,7 +106,12 @@ export interface ToolEndCallbackData {
 }
 
 export interface EventActorDetachedActionLifecycle {
-  reserve(input: { toolName: string; toolCallId: string; arguments: unknown }): Promise<
+  reserve(input: {
+    toolName: string;
+    toolCallId: string;
+    turnId: string;
+    arguments: unknown;
+  }): Promise<
     | { status: 'ignored' }
     | { status: 'conflict'; error?: string }
     | {
@@ -4460,6 +4465,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 detachedReservation = await eventActorDetachedAction?.reserve({
                   toolName: tc.name,
                   toolCallId: tc.id,
+                  turnId: registration.runId,
                   arguments: normalizedArgs,
                 });
               } catch (error) {
@@ -4653,19 +4659,11 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   ) {
                     return true;
                   }
-                  try {
-                    return await eventActorDetachedAction.settle({
-                      taskId: detachedReservation.taskId,
-                      idempotencyKey: detachedReservation.idempotencyKey,
-                      ...input,
-                    });
-                  } catch (settlementError) {
-                    logger.error(
-                      `[event-actor] Failed to persist detached terminal evidence for ${detachedReservation.taskId}`,
-                      settlementError,
-                    );
-                    return false;
-                  }
+                  return eventActorDetachedAction.settle({
+                    taskId: detachedReservation.taskId,
+                    idempotencyKey: detachedReservation.idempotencyKey,
+                    ...input,
+                  });
                 };
                 const wakeDetachedActor = async (): Promise<void> => {
                   if (

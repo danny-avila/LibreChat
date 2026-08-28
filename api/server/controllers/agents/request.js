@@ -2087,6 +2087,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   conversationId,
                   generationCreatedAt:
                     internalDetachedCompletion?.generationCreatedAt ?? jobCreatedAt,
+                  turnCreatedAt: jobCreatedAt,
                   invocationId: actorInvocationId,
                   expectedAction: turnExecutionPlan.expectedAction,
                 },

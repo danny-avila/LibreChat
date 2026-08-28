@@ -134,6 +134,7 @@ export interface AgentEventActorDetachedTransitionResult {
 
 export interface ReserveAgentEventActorDetachedActionInput extends GetAgentEventActorReceiptInput {
   generationCreatedAt: number;
+  turnId: string;
   invocationId: string;
   expectedToolName: string;
   toolName: string;
@@ -731,10 +732,57 @@ export function createAgentTriggerDeliveryMethods(
     if (input.requiredWorkerCapability != null && input.coalesceKey != null) {
       throw new TypeError('Capability-fenced agent trigger deliveries cannot be batched');
     }
+    const capabilityDeliveryId =
+      input.requiredWorkerCapability == null ? undefined : new mongoose.Types.ObjectId();
+    const capabilityGuardKey =
+      capabilityDeliveryId == null
+        ? undefined
+        : `capability_guard_${createHash('sha256').update(input.deliveryKey).digest('hex')}`;
+    const ensureCapabilityLaneGuard = async (rootId: Types.ObjectId): Promise<void> => {
+      if (capabilityGuardKey == null) {
+        return;
+      }
+      try {
+        await Delivery().updateOne(
+          { deliveryKey: capabilityGuardKey },
+          {
+            $setOnInsert: {
+              deliveryKey: capabilityGuardKey,
+              fingerprint: capabilityGuardKey,
+              orderingKey: input.orderingKey,
+              laneSequence: 0,
+              envelope: { version: 1, type: 'librechat.agent_trigger.capability_lane_guard' },
+              user: input.user,
+              ...(input.tenantId != null && { tenantId: input.tenantId }),
+              status: 'dead',
+              attempts: 0,
+              availableAt: input.availableAt,
+              settledAt: input.availableAt,
+              requeueCount: 0,
+              batchRootId: rootId,
+              capabilityLaneGuardFor: rootId,
+            },
+          },
+          { upsert: true, setDefaultsOnInsert: true },
+        );
+      } catch (error) {
+        if ((error as DuplicateKeyError)?.code !== DUPLICATE_KEY) {
+          throw error;
+        }
+      }
+      await Delivery().updateOne(
+        { deliveryKey: capabilityGuardKey },
+        { $set: { batchRootId: rootId, capabilityLaneGuardFor: rootId } },
+      );
+    };
+    if (capabilityDeliveryId != null) {
+      await ensureCapabilityLaneGuard(capabilityDeliveryId);
+    }
     let staged: IAgentTriggerDelivery;
     let replayed = false;
     try {
       const created = await Delivery().create({
+        ...(capabilityDeliveryId != null && { _id: capabilityDeliveryId }),
         ...input,
         ...(input.coalesceKey == null
           ? {}
@@ -760,10 +808,23 @@ export function createAgentTriggerDeliveryMethods(
       if (existing == null) {
         throw error;
       }
+      if (existing._id != null) {
+        await ensureCapabilityLaneGuard(existing._id);
+      }
       if (existing.fingerprint !== input.fingerprint) {
         throw new AgentTriggerDeliveryConflictError(input.deliveryKey);
       }
       if (!isStagingStatus(existing.status)) {
+        if (
+          capabilityGuardKey != null &&
+          existing.status === 'succeeded' &&
+          !(existing.awaitTerminalHandling === true && existing.handling?.status === 'started')
+        ) {
+          await Delivery().deleteOne({
+            deliveryKey: capabilityGuardKey,
+            capabilityLaneGuardFor: existing._id,
+          });
+        }
         return { delivery: toRecord(existing), replayed: true };
       }
       staged = existing;
@@ -905,6 +966,7 @@ export function createAgentTriggerDeliveryMethods(
     }
     const stillRetained = await Delivery().exists({
       orderingKey,
+      capabilityLaneGuardFor: { $exists: false },
       $or: [
         {
           status: {
@@ -936,6 +998,7 @@ export function createAgentTriggerDeliveryMethods(
       );
       return false;
     }
+    await Delivery().deleteMany({ orderingKey, capabilityLaneGuardFor: { $exists: true } });
     const deleted = await LaneSequence().deleteOne({
       _id: orderingKey,
       ...(lane.tailDeliveryId == null
@@ -1866,6 +1929,7 @@ export function createAgentTriggerDeliveryMethods(
       input.bindingId,
       input.conversationId,
       String(input.generationCreatedAt),
+      input.turnId,
       input.invocationId,
       input.expectedToolName,
       input.toolName,
@@ -1876,6 +1940,7 @@ export function createAgentTriggerDeliveryMethods(
       requiredIdentity.some((value) => value.length === 0) ||
       !Number.isSafeInteger(input.generationCreatedAt) ||
       input.generationCreatedAt < 0 ||
+      input.turnId.length > 512 ||
       Number.isNaN(input.reservedAt.getTime()) ||
       Number.isNaN(input.recoveryAfter.getTime()) ||
       input.recoveryAfter <= input.reservedAt
@@ -2035,18 +2100,6 @@ export function createAgentTriggerDeliveryMethods(
       user: input.user,
       ...(input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId }),
       'envelope.target.bindingId': input.bindingId,
-      $or: [
-        {
-          status: { $in: ['leased', 'capability_leased'] },
-          handling: { $exists: false },
-        },
-        {
-          status: { $in: ['succeeded', 'dead'] },
-          'handling.status': 'started',
-          'handling.conversationId': input.conversationId,
-          'handling.generationCreatedAt': input.generationCreatedAt,
-        },
-      ],
       actorReceipt: { $exists: false },
       actorActionAdmittedAt: { $exists: true },
       'actorDetachedAction.taskId': input.taskId,
@@ -2181,8 +2234,6 @@ export function createAgentTriggerDeliveryMethods(
           ? { tenantId: { $exists: false } }
           : { tenantId: input.tenantId }),
         'envelope.target.bindingId': input.bindingId,
-        'handling.conversationId': input.conversationId,
-        'handling.generationCreatedAt': input.generationCreatedAt,
         actorDetachedAction: { $exists: true },
       })
       .select('+actorDetachedAction')

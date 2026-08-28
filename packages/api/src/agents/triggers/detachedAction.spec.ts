@@ -23,7 +23,11 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
     };
     const reserve = jest.fn(async () => ({ status: 'reserved' as const, action }));
     const markRunning = jest.fn(async () => ({ status: 'applied' as const }));
-    const settle = jest.fn(async () => ({ status: 'applied' as const }));
+    const settle = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('mongo unavailable'))
+      .mockResolvedValue({ status: 'applied' as const });
+    const waitForTerminalPersistenceRetry = jest.fn(async () => undefined);
     const wake = jest.fn(async () => undefined);
     const lifecycle = createAgentEventActorDetachedActionLifecycle(
       {
@@ -32,6 +36,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         bindingId: 'binding-1',
         conversationId: 'conversation-1',
         generationCreatedAt: 123,
+        turnCreatedAt: 456,
         invocationId: 'delivery-1',
         expectedAction: {
           toolName: 'submit_move',
@@ -43,6 +48,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         markAgentEventActorDetachedActionRunning: markRunning,
         settleAgentEventActorDetachedAction: settle,
         onTerminal: wake,
+        waitForTerminalPersistenceRetry,
         now: () => new Date('2026-08-28T12:00:00.000Z'),
       },
     );
@@ -51,6 +57,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       lifecycle.reserve({
         toolName: 'unrelated_tool',
         toolCallId: 'call-0',
+        turnId: 'response-1:0',
         arguments: { gameId: 'game-1' },
       }),
     ).resolves.toEqual({ status: 'ignored' });
@@ -58,6 +65,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       lifecycle.reserve({
         toolName: 'submit_move_mcp_chess',
         toolCallId: 'call-1',
+        turnId: 'response-1:0',
         arguments: { gameId: 'game-1', move: 'e4' },
       }),
     ).resolves.toEqual({
@@ -74,7 +82,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
     expect(lifecycle.readSuspension()).toEqual({
       kind: 'internal_completion',
       actionId: action.taskId,
-      jobCreatedAt: 123,
+      jobCreatedAt: 456,
       interrupt: {
         id: action.taskId,
         payload: {
@@ -96,6 +104,9 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
     expect(settle).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'succeeded', result: '{"content":"move accepted"}' }),
     );
+    expect(settle).toHaveBeenCalledTimes(2);
+    expect(waitForTerminalPersistenceRetry).toHaveBeenCalledWith(100);
+    expect(reserve).toHaveBeenCalledWith(expect.objectContaining({ turnId: 'response-1:0' }));
     expect(wake).toHaveBeenCalledWith({
       taskId: action.taskId,
       idempotencyKey: action.idempotencyKey,
@@ -125,6 +136,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         bindingId: 'binding-1',
         conversationId: 'conversation-1',
         generationCreatedAt: 123,
+        turnCreatedAt: 123,
         invocationId: 'delivery-1',
         expectedAction: { toolName: 'submit_move' },
       },
@@ -143,6 +155,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       lifecycle.reserve({
         toolName: action.toolName,
         toolCallId: action.toolCallId,
+        turnId: 'response-1:0',
         arguments: {},
       }),
     ).resolves.toEqual({
@@ -183,6 +196,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         bindingId: 'binding-1',
         conversationId: 'conversation-1',
         generationCreatedAt: 123,
+        turnCreatedAt: 123,
         invocationId: 'delivery-1',
         expectedAction: { toolName: 'submit_move' },
       },
@@ -196,6 +210,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
     const input = {
       toolName: action.toolName,
       toolCallId: action.toolCallId,
+      turnId: 'response-1:0',
       arguments: {},
     };
 
@@ -245,6 +260,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       bindingId: 'binding-1',
       conversationId: 'conversation-1',
       generationCreatedAt: 123,
+      turnCreatedAt: 123,
       invocationId: 'delivery-1',
       expectedAction: { toolName: 'submit_move' },
     };
@@ -252,6 +268,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
     const reservation = await first.reserve({
       toolName: baseAction.toolName,
       toolCallId: baseAction.toolCallId,
+      turnId: 'response-1:0',
       arguments: {},
     });
     expect(reservation.status).toBe('reserved');
@@ -262,6 +279,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       recovered.reserve({
         toolName: baseAction.toolName,
         toolCallId: baseAction.toolCallId,
+        turnId: 'response-1:0',
         arguments: {},
       }),
     ).resolves.toEqual(

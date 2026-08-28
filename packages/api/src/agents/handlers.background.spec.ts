@@ -149,6 +149,9 @@ describe('createToolExecuteHandler — background tool calls', () => {
     await flushMicrotasks();
     await flushMicrotasks();
     expect(events).toEqual(['reserve', 'invoke', 'running', 'terminal', 'wake']);
+    expect(eventActorDetachedAction.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({ turnId: 'event-response:' }),
+    );
 
     const replay = await runBatch(handler, request);
 

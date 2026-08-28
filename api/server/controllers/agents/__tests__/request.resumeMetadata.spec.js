@@ -4247,6 +4247,17 @@ describe('ResumableAgentController resume metadata', () => {
   });
 
   it('resumes the original actor suspension from exact detached terminal evidence', async () => {
+    mockGenerationJobManager.createJob.mockResolvedValue({
+      createdAt: 2000,
+      metadata: {
+        checkpointNamespace: '2000',
+        providerExecutionId: 'provider-segment-2',
+        providerDrained: true,
+      },
+      readyPromise: Promise.resolve(),
+      abortController: new AbortController(),
+      emitter: { on: jest.fn() },
+    });
     mockGenerationJobManager.claimGeneration.mockResolvedValue(
       wonGenerationClaim({ streamId: 'child-conversation', conversationId: 'child-conversation' }),
     );
@@ -4311,6 +4322,7 @@ describe('ResumableAgentController resume metadata', () => {
             version: 1,
             invocationId: 'original-delivery-1',
             generationCreatedAt: 1000,
+            wakeGenerationCreatedAt: 2000,
             taskId: 'task-detached-1',
             idempotencyKey: 'a'.repeat(64),
           },
@@ -4357,6 +4369,13 @@ describe('ResumableAgentController resume metadata', () => {
         deliveryKey: 'original-delivery-1',
         generationCreatedAt: 1000,
       }),
+    );
+    expect(mockCreateAgentEventActorDetachedActionLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generationCreatedAt: 1000,
+        turnCreatedAt: 2000,
+      }),
+      expect.any(Object),
     );
     expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
       'child-conversation',
