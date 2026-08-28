@@ -4397,6 +4397,7 @@ describe('ResumableAgentController resume metadata', () => {
           agentEventDeliveryKey: 'detached-resume-generation-1',
           agentEventInvocationKey: 'original-delivery-1',
           agentEventInvocationGenerationCreatedAt: 1000,
+          agentEventDetachedActionProducerRequired: true,
         }),
       }),
     );

@@ -4742,6 +4742,10 @@ export class RedisJobStore implements IJobStoreV2 {
       agentEventInvocationGenerationCreatedAt: data.agentEventInvocationGenerationCreatedAt
         ? parseInt(data.agentEventInvocationGenerationCreatedAt, 10)
         : undefined,
+      agentEventDetachedActionProducerRequired:
+        data.agentEventDetachedActionProducerRequired != null
+          ? data.agentEventDetachedActionProducerRequired === '1'
+          : undefined,
       agentEventDetachedTerminalEvidence: data.agentEventDetachedTerminalEvidence
         ? JSON.parse(data.agentEventDetachedTerminalEvidence)
         : undefined,

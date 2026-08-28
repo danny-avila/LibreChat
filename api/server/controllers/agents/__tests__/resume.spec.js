@@ -540,9 +540,6 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         { tool_call_id: 'tc1', allowed_decisions: ['respond'] },
       ];
       mockGenerationJobManager.getJob.mockResolvedValue(pausedJob);
-      mockGetAgentTriggerDelivery.mockResolvedValue({
-        handling: { generationCreatedAt: 500 },
-      });
       const detachedSuspension = {
         kind: 'internal_completion',
         actionId: 'detached-action-next',
@@ -572,6 +569,8 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         reconciliations: [],
         suspension: {
           suspension,
+          kind: 'internal_completion',
+          handlingGenerationCreatedAt: 500,
           actionId: ACTION_ID,
           jobCreatedAt: 1000,
           status: 'pending',
@@ -653,7 +652,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         mockGenerationJobManager.approvals.resolve.mock.invocationCallOrder[0],
       );
       expect(mockGenerationJobManager.getJob).toHaveBeenCalledTimes(2);
-      expect(mockGetAgentTriggerDelivery).toHaveBeenCalledWith('trigger_event_delivery');
+      expect(mockGetAgentTriggerDelivery).not.toHaveBeenCalled();
       expect(mockCreateAgentEventActorDetachedActionLifecycle).toHaveBeenCalledWith(
         expect.objectContaining({
           invocationId: 'trigger_event_delivery',
@@ -677,6 +676,70 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(lifecycleDependencies.producerEnabled()).toBe(false);
       expect(resumedClient.resumeCompletion).toHaveBeenCalledTimes(1);
       expect(mockRecordAgentEventActorReconciliation).not.toHaveBeenCalled();
+    });
+
+    it('refuses a producer-required suspension before claiming it on an incapable replica', async () => {
+      configureEventActorResume();
+      requestStateOverrides._agentEventBindingId = 'binding-1';
+      const expectedAction = { toolName: 'submit_move' };
+      const suspension = {
+        version: 1,
+        suspensionId: 'suspension-producer-required',
+        attempt: 0,
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+        invocation: { invocationId: 'trigger_event_delivery' },
+        interrupt: {
+          id: 'interrupt-producer-required',
+          payload: {
+            type: 'tool_approval',
+            _librechatEventActor: { expectedAction },
+          },
+        },
+        suspensionDigest: 'signed-digest',
+      };
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: {
+            idempotencyClientRequestId: 'trigger_event_delivery',
+            agentEventDeliveryKey: 'trigger_event_delivery',
+            agentEventDetachedActionProducerRequired: true,
+            agentEventExpectedAction: expectedAction,
+            agentEventSuspension: {
+              version: 1,
+              suspensionId: suspension.suspensionId,
+              attempt: suspension.attempt,
+            },
+          },
+        }),
+      );
+      mockGetAgentEventActorSnapshot.mockResolvedValue({
+        state: null,
+        epoch: 1,
+        legacyTurn: null,
+        reconciliations: [],
+        suspension: {
+          suspension,
+          kind: 'human_decision',
+          handlingGenerationCreatedAt: 1000,
+          actionId: ACTION_ID,
+          jobCreatedAt: 1000,
+          status: 'pending',
+        },
+      });
+      mockIsAgentEventActorDetachedActionProducerEnabled.mockReturnValue(false);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(503);
+      expect(res.body).toMatchObject({
+        code: 'EVENT_ACTOR_RESUME_CAPABILITY_UNAVAILABLE',
+      });
+      expect(res.headers['retry-after']).toBe('1');
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockResumeAgentEventActor).not.toHaveBeenCalled();
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+      expect(mockReleaseEventChildLease).toHaveBeenCalledTimes(1);
     });
 
     it('does not record provider execution when client reconstruction fails before continuation', async () => {

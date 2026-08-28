@@ -52,6 +52,8 @@ export interface GenerationJobMetadata {
   agentEventInvocationKey?: string;
   /** Original actor invocation generation retained across completion HITL resumes. */
   agentEventInvocationGenerationCreatedAt?: number;
+  /** This generation must resume on a durable detached-action producer. */
+  agentEventDetachedActionProducerRequired?: boolean;
   /** Durable retry payload captured before detached terminal evidence reaches Mongo. */
   agentEventDetachedTerminalEvidence?: AgentEventDetachedTerminalEvidence;
   /** Trusted actor binding copied from the authenticated delivery envelope. */

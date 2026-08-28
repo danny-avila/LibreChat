@@ -1398,6 +1398,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           agentEventBindingId: boundEventBindingId,
           ...(agentEventDelivery.expectedAction != null && {
             agentEventExpectedAction: agentEventDelivery.expectedAction,
+            ...(GenerationJobManager.isRedis &&
+              isAgentEventActorDetachedActionProducerEnabled() && {
+                agentEventDetachedActionProducerRequired: true,
+              }),
           }),
         }),
         ...(isRegenerate && { isRegenerate: true }),

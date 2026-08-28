@@ -2628,6 +2628,7 @@ class GenerationJobManagerClass {
         agentEventDeliveryKey: jobData.agentEventDeliveryKey,
         agentEventInvocationKey: jobData.agentEventInvocationKey,
         agentEventInvocationGenerationCreatedAt: jobData.agentEventInvocationGenerationCreatedAt,
+        agentEventDetachedActionProducerRequired: jobData.agentEventDetachedActionProducerRequired,
         agentEventDetachedTerminalEvidence: jobData.agentEventDetachedTerminalEvidence,
         agentEventBindingId: jobData.agentEventBindingId,
         agentEventExpectedAction: jobData.agentEventExpectedAction,

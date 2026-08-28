@@ -342,6 +342,7 @@ describe('RedisJobStore', () => {
       agentEventDeliveryKey: 'completion-delivery-1',
       agentEventInvocationKey: 'original-delivery-1',
       agentEventInvocationGenerationCreatedAt: 987654,
+      agentEventDetachedActionProducerRequired: true,
       scheduleId: 'schedule-1',
       scheduledFor: '2026-08-17T12:00:00.000Z',
       scheduleConfigRevision: 4,
@@ -403,6 +404,7 @@ describe('RedisJobStore', () => {
       agentEventDeliveryKey: 'completion-delivery-1',
       agentEventInvocationKey: 'original-delivery-1',
       agentEventInvocationGenerationCreatedAt: 987654,
+      agentEventDetachedActionProducerRequired: true,
       mcpRequestBody: {
         messageId: 'response-1',
         conversationId: 'overridden-conversation',

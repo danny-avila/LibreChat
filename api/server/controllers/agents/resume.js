@@ -1202,6 +1202,8 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   let releaseEventChildLease;
   let eventLeaseTransferredToRun = false;
   let durableEventActorSuspension;
+  let durableEventActorHandlingGenerationCreatedAt;
+  let durableEventActorRequiresDetachedProducer = false;
   let eventActorResumePromise;
   let eventActorStartGate;
   let eventActorContinuationStarted = false;
@@ -1336,6 +1338,12 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           suspensionRecord.suspension.attempt === suspensionProjection.attempt
         ) {
           durableEventActorSuspension = suspensionRecord.suspension;
+          durableEventActorHandlingGenerationCreatedAt =
+            suspensionRecord.handlingGenerationCreatedAt;
+          durableEventActorRequiresDetachedProducer =
+            job.metadata.agentEventDetachedActionProducerRequired === true ||
+            job.metadata.agentEventInvocationKey != null ||
+            suspensionRecord.kind === 'internal_completion';
           const signedExpectedAction = getSuspendedEventActorExpectedAction(
             durableEventActorSuspension,
           );
@@ -1372,6 +1380,26 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
             generationProtocolVersion,
           );
         }
+      }
+      if (
+        durableEventActorSuspension != null &&
+        durableEventActorRequiresDetachedProducer &&
+        (!GenerationJobManager.isRedis || !isAgentEventActorDetachedActionProducerEnabled())
+      ) {
+        const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
+        await rollbackUnconsumedScheduleClaim(currentJob);
+        await releaseScheduleFence();
+        await decrementPendingRequest(userId);
+        res.set('Retry-After', '1');
+        return sendGenerationJson(
+          res,
+          503,
+          {
+            code: 'EVENT_ACTOR_RESUME_CAPABILITY_UNAVAILABLE',
+            error: 'A durable Event Actor resume worker is temporarily unavailable',
+          },
+          generationProtocolVersion,
+        );
       }
     }
 
@@ -1411,6 +1439,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           job.metadata.agentEventInvocationKey ?? job.metadata.agentEventDeliveryKey;
         let actorInvocationGenerationCreatedAt =
           job.metadata.agentEventInvocationGenerationCreatedAt ??
+          durableEventActorHandlingGenerationCreatedAt ??
           (job.metadata.agentEventInvocationKey == null ? job.createdAt : undefined);
         if (
           actorInvocationGenerationCreatedAt == null &&

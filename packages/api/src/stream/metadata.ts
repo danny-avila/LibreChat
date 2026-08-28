@@ -46,6 +46,10 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
     patch.agentEventInvocationGenerationCreatedAt =
       metadata.agentEventInvocationGenerationCreatedAt;
   }
+  if (metadata.agentEventDetachedActionProducerRequired !== undefined) {
+    patch.agentEventDetachedActionProducerRequired =
+      metadata.agentEventDetachedActionProducerRequired;
+  }
   if (metadata.agentEventDetachedTerminalEvidence) {
     patch.agentEventDetachedTerminalEvidence = metadata.agentEventDetachedTerminalEvidence;
   }
