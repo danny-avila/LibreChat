@@ -13,6 +13,7 @@ import type { AgentEventAppliedAction } from './types';
 import type { SerializableJobData } from '~/stream';
 import { matchesExpectedAction, parseAgentExpectedActionArguments } from './expectedAction';
 import { cancelAgentEventActor, createAgentEventActorActionAdmissionId } from './actor';
+import { parseAgentEventDetachedTerminalEvidence } from './detachedAction';
 
 export type { AgentEventAppliedAction } from './types';
 export { matchesExpectedAction } from './expectedAction';
@@ -306,6 +307,7 @@ export function createAgentEventTerminalHandler(
     getAgentEventActorActionAdmission: AgentTriggerDeliveryMethods['getAgentEventActorActionAdmission'];
     hasAgentEventActorActionAdmission: AgentTriggerDeliveryMethods['hasAgentEventActorActionAdmission'];
     getAgentEventActorDetachedAction: AgentTriggerDeliveryMethods['getAgentEventActorDetachedAction'];
+    settleAgentEventActorDetachedAction: AgentTriggerDeliveryMethods['settleAgentEventActorDetachedAction'];
     markAgentEventActorDetachedActionLaunchIndeterminate: AgentTriggerDeliveryMethods['markAgentEventActorDetachedActionLaunchIndeterminate'];
     getMessage: MessageMethods['getMessage'];
   },
@@ -388,6 +390,36 @@ export function createAgentEventTerminalHandler(
         conversationId,
         generationCreatedAt: handlingGenerationCreatedAt,
       };
+      const retainedTerminalEvidence = parseAgentEventDetachedTerminalEvidence(
+        job.agentEventDetachedTerminalEvidence,
+      );
+      if (job.agentEventDetachedTerminalEvidence != null && retainedTerminalEvidence == null) {
+        throw new Error('Detached Event Actor terminal retry evidence is invalid');
+      }
+      if (retainedTerminalEvidence != null) {
+        if (
+          retainedTerminalEvidence.deliveryKey !== job.agentEventDeliveryKey ||
+          retainedTerminalEvidence.generationCreatedAt !== handlingGenerationCreatedAt
+        ) {
+          throw new Error('Detached Event Actor terminal retry evidence is stale');
+        }
+        const replayed = await methods.settleAgentEventActorDetachedAction({
+          ...detachedActionOwner,
+          taskId: retainedTerminalEvidence.taskId,
+          idempotencyKey: retainedTerminalEvidence.idempotencyKey,
+          status: retainedTerminalEvidence.status,
+          ...(retainedTerminalEvidence.result == null
+            ? {}
+            : { result: retainedTerminalEvidence.result }),
+          ...(retainedTerminalEvidence.error == null
+            ? {}
+            : { error: retainedTerminalEvidence.error }),
+          observedAt: new Date(retainedTerminalEvidence.observedAt),
+        });
+        if (replayed.status === 'conflict') {
+          throw new Error('Detached Event Actor terminal retry evidence conflicts with action');
+        }
+      }
       detachedSuspensionAction =
         await methods.getAgentEventActorDetachedAction(detachedActionOwner);
       const recoveryObservedAt = new Date();

@@ -103,9 +103,6 @@ export interface IAgentTriggerDelivery {
   batchBytes?: number;
   batchMemberIds?: Types.ObjectId[];
   batchRootId?: Types.ObjectId;
-  /** Legacy-visible inert row that prevents pre-capability lane reclaimers
-   * from deleting ordering state around capability-fenced work. */
-  capabilityLaneGuardFor?: Types.ObjectId;
   batchRootRequeueCount?: number;
   batchMembersSettledAt?: Date;
   /** Keeps this binding lane serialized until its admitted child turn reaches

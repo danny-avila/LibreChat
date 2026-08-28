@@ -37,6 +37,7 @@ const createAgentEventTerminalHandler = (
       getAgentEventActorActionAdmission: jest.fn().mockResolvedValue(null),
       hasAgentEventActorActionAdmission: jest.fn().mockResolvedValue(false),
       getAgentEventActorDetachedAction: jest.fn().mockResolvedValue(null),
+      settleAgentEventActorDetachedAction: jest.fn().mockResolvedValue({ status: 'applied' }),
       markAgentEventActorDetachedActionLaunchIndeterminate: jest
         .fn()
         .mockResolvedValue({ status: 'applied' }),
@@ -164,9 +165,13 @@ describe('agent event terminal outcomes', () => {
       observedAt: new Date(),
       result: 'move accepted',
     };
+    const settleAgentEventActorDetachedAction = jest
+      .fn()
+      .mockResolvedValue({ status: 'already_achieved' });
     const handler = createAgentEventTerminalHandler(
       {
         settleAgentTriggerHandlingOutcome,
+        settleAgentEventActorDetachedAction,
         getAgentEventActorSnapshot: jest.fn().mockResolvedValue({
           state: null,
           epoch: 1,
@@ -190,6 +195,16 @@ describe('agent event terminal outcomes', () => {
       'conversation-1',
       job({
         agentEventBindingId: 'binding-1',
+        agentEventDetachedTerminalEvidence: {
+          version: 1,
+          deliveryKey: 'trigger_1',
+          generationCreatedAt: 1_787_000_000_000,
+          taskId: detachedAction.taskId,
+          idempotencyKey: detachedAction.idempotencyKey,
+          status: 'succeeded',
+          result: 'move accepted',
+          observedAt: 1_787_000_000_500,
+        },
         agentEventSuspension: {
           version: 1,
           suspensionId: suspension.suspensionId,
@@ -201,6 +216,16 @@ describe('agent event terminal outcomes', () => {
 
     expect(resumeDetachedAction).toHaveBeenCalledWith(
       expect.objectContaining({ streamId: 'conversation-1', suspension, action: detachedAction }),
+    );
+    expect(settleAgentEventActorDetachedAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'trigger_1',
+        generationCreatedAt: 1_787_000_000_000,
+        taskId: detachedAction.taskId,
+        status: 'succeeded',
+        result: 'move accepted',
+        observedAt: new Date(1_787_000_000_500),
+      }),
     );
     expect(settleAgentTriggerHandlingOutcome).not.toHaveBeenCalled();
   });

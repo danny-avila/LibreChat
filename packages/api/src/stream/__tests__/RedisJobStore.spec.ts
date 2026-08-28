@@ -495,6 +495,35 @@ describe('RedisJobStore', () => {
     });
   });
 
+  test('restores detached terminal outbox evidence from Redis', async () => {
+    const evidence = {
+      version: 1 as const,
+      deliveryKey: 'trigger-1',
+      generationCreatedAt: 100,
+      taskId: 'task-1',
+      idempotencyKey: 'a'.repeat(64),
+      status: 'succeeded' as const,
+      result: 'accepted',
+      observedAt: 150,
+    };
+    const redis = {
+      isCluster: true,
+      hgetall: jest.fn().mockResolvedValue({
+        streamId: 'stream-detached-terminal',
+        userId: 'user-1',
+        status: 'complete',
+        createdAt: '100',
+        syncSent: '0',
+        agentEventDetachedTerminalEvidence: JSON.stringify(evidence),
+      }),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(store.getJob('stream-detached-terminal')).resolves.toMatchObject({
+      agentEventDetachedTerminalEvidence: evidence,
+    });
+  });
+
   test('atomically resets predecessor state when creating a replacement', async () => {
     const evalJobCreation = jest
       .fn()

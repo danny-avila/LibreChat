@@ -51,6 +51,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       .mockRejectedValueOnce(new Error('mongo unavailable'))
       .mockResolvedValue({ status: 'applied' as const });
     const waitForTerminalPersistenceRetry = jest.fn(async () => undefined);
+    const persistTerminalEvidence = jest.fn(async () => undefined);
     const wake = jest.fn(async () => undefined);
     const lifecycle = createAgentEventActorDetachedActionLifecycle(
       {
@@ -70,6 +71,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         reserveAgentEventActorDetachedAction: reserve,
         markAgentEventActorDetachedActionRunning: markRunning,
         settleAgentEventActorDetachedAction: settle,
+        persistTerminalEvidence,
         onTerminal: wake,
         waitForTerminalPersistenceRetry,
         producerEnabled: () => true,
@@ -129,6 +131,17 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       expect.objectContaining({ status: 'succeeded', result: '{"content":"move accepted"}' }),
     );
     expect(settle).toHaveBeenCalledTimes(2);
+    expect(persistTerminalEvidence).toHaveBeenCalledTimes(1);
+    expect(persistTerminalEvidence).toHaveBeenCalledWith({
+      version: 1,
+      deliveryKey: 'delivery-1',
+      generationCreatedAt: 123,
+      taskId: action.taskId,
+      idempotencyKey: action.idempotencyKey,
+      status: 'succeeded',
+      result: '{"content":"move accepted"}',
+      observedAt: new Date('2026-08-28T12:00:00.000Z').getTime(),
+    });
     expect(waitForTerminalPersistenceRetry).toHaveBeenCalledWith(100);
     expect(reserve).toHaveBeenCalledWith(expect.objectContaining({ turnId: 'response-1:0' }));
     expect(wake).toHaveBeenCalledWith({
@@ -153,6 +166,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         reserveAgentEventActorDetachedAction: reserve,
         markAgentEventActorDetachedActionRunning: jest.fn(),
         settleAgentEventActorDetachedAction: jest.fn(),
+        persistTerminalEvidence: jest.fn(),
         onTerminal: jest.fn(),
         producerEnabled: () => false,
       },
@@ -207,6 +221,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         })),
         markAgentEventActorDetachedActionRunning: jest.fn(),
         settleAgentEventActorDetachedAction: jest.fn(),
+        persistTerminalEvidence: jest.fn(),
         onTerminal: jest.fn(),
         producerEnabled: () => true,
       },
@@ -227,6 +242,77 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       error: action.error,
     });
     expect(lifecycle.readSuspension()).toBeUndefined();
+  });
+
+  it('stages terminal evidence durably before retrying the authoritative write', async () => {
+    const action = {
+      version: 1 as const,
+      invocationId: 'delivery-1',
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-outbox',
+      taskId: `event_actor_${'e'.repeat(64)}`,
+      idempotencyKey: 'e'.repeat(64),
+      launchAttempt: 0,
+      status: 'reserved' as const,
+      reservedAt: new Date(),
+      observedAt: new Date(),
+      recoveryAfter: new Date(),
+    };
+    const persistTerminalEvidence = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('job store unavailable'))
+      .mockResolvedValue(undefined);
+    const settle = jest.fn().mockResolvedValue({ status: 'applied' });
+    const waitForTerminalPersistenceRetry = jest.fn(async () => undefined);
+    const lifecycle = createAgentEventActorDetachedActionLifecycle(
+      {
+        user: 'user-1',
+        bindingId: 'binding-1',
+        conversationId: 'conversation-1',
+        generationCreatedAt: 123,
+        turnCreatedAt: 123,
+        invocationId: 'delivery-1',
+        expectedAction: { toolName: 'submit_move' },
+      },
+      {
+        reserveAgentEventActorDetachedAction: jest.fn(async () => ({
+          status: 'reserved' as const,
+          action,
+        })),
+        markAgentEventActorDetachedActionRunning: jest.fn(async () => ({
+          status: 'applied' as const,
+        })),
+        settleAgentEventActorDetachedAction: settle,
+        persistTerminalEvidence,
+        onTerminal: jest.fn(),
+        waitForTerminalPersistenceRetry,
+        producerEnabled: () => true,
+      },
+    );
+    const reservation = await lifecycle.reserve({
+      toolName: action.toolName,
+      toolCallId: action.toolCallId,
+      turnId: 'response-1:0',
+      arguments: {},
+    });
+    expect(reservation.status).toBe('reserved');
+
+    await expect(
+      lifecycle.settle({
+        taskId: action.taskId,
+        idempotencyKey: action.idempotencyKey,
+        status: 'failed',
+        error: 'launch failed',
+      }),
+    ).resolves.toBe(true);
+
+    expect(persistTerminalEvidence).toHaveBeenCalledTimes(2);
+    expect(settle).toHaveBeenCalledTimes(1);
+    expect(persistTerminalEvidence.mock.invocationCallOrder[1]).toBeLessThan(
+      settle.mock.invocationCallOrder[0],
+    );
+    expect(waitForTerminalPersistenceRetry).toHaveBeenCalledWith(100);
   });
 
   it('preserves a same-executor replay of its running reservation', async () => {
@@ -265,6 +351,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
         reserveAgentEventActorDetachedAction: reserve,
         markAgentEventActorDetachedActionRunning: jest.fn(),
         settleAgentEventActorDetachedAction: jest.fn(),
+        persistTerminalEvidence: jest.fn(),
         onTerminal: jest.fn(),
         producerEnabled: () => true,
       },
@@ -314,6 +401,7 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
       reserveAgentEventActorDetachedAction: reserve,
       markAgentEventActorDetachedActionRunning: jest.fn(),
       settleAgentEventActorDetachedAction: jest.fn(),
+      persistTerminalEvidence: jest.fn(),
       onTerminal: jest.fn(),
       producerEnabled: () => true,
       now: () => new Date('2026-08-28T12:00:00.000Z'),

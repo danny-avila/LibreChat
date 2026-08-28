@@ -22,6 +22,7 @@ const mockGenerationJobManager = {
   failPausePersistence: jest.fn(),
   getResumeState: jest.fn(),
   updateMetadata: jest.fn(),
+  persistAgentEventDetachedTerminalEvidence: jest.fn(),
   claimGeneration: jest.fn(),
   resumeClaimedGeneration: jest.fn(),
   takeoverGeneration: jest.fn(),
@@ -391,6 +392,7 @@ describe('ResumableAgentController resume metadata', () => {
     mockGenerationJobManager.getResumeState.mockResolvedValue(null);
     mockGenerationJobManager.getJob.mockResolvedValue(undefined);
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
+    mockGenerationJobManager.persistAgentEventDetachedTerminalEvidence.mockResolvedValue(true);
     mockGenerationJobManager.emitChunk.mockResolvedValue(undefined);
     mockGenerationJobManager.emitDone.mockResolvedValue(undefined);
     mockGenerationJobManager.emitError.mockResolvedValue(undefined);

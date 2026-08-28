@@ -22,6 +22,37 @@ describe('GenerationJobManager terminal host actions', () => {
     await manager.destroy();
   });
 
+  it('verifies detached terminal outbox persistence against the exact generation', async () => {
+    const streamId = 'conversation-detached-outbox';
+    const job = await manager.createJob(streamId, 'user-1', streamId);
+    const evidence = {
+      version: 1 as const,
+      deliveryKey: 'trigger-outbox',
+      generationCreatedAt: job.createdAt,
+      taskId: 'task-outbox',
+      idempotencyKey: 'a'.repeat(64),
+      status: 'succeeded' as const,
+      result: 'accepted',
+      observedAt: job.createdAt + 1,
+    };
+
+    await expect(
+      manager.persistAgentEventDetachedTerminalEvidence(streamId, job.createdAt, evidence),
+    ).resolves.toBe(true);
+    await expect(store.getJob(streamId)).resolves.toMatchObject({
+      agentEventDetachedTerminalEvidence: evidence,
+    });
+
+    const replacement = await store.createJob(streamId, 'user-1', streamId);
+    expect(replacement.createdAt).not.toBe(job.createdAt);
+    await expect(
+      manager.persistAgentEventDetachedTerminalEvidence(streamId, job.createdAt, evidence),
+    ).resolves.toBe(false);
+    await expect(store.getJob(streamId)).resolves.not.toHaveProperty(
+      'agentEventDetachedTerminalEvidence',
+    );
+  });
+
   it('runs and acknowledges a generation-fenced host action before terminal cleanup', async () => {
     const handler = jest.fn().mockResolvedValue(undefined);
     manager.setTerminalHostActionHandler(handler);

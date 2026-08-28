@@ -238,7 +238,7 @@ describe('agent trigger delivery methods', () => {
     expect(claims.filter((claim) => claim != null)).toHaveLength(1);
   });
 
-  it('keeps capability-fenced work invisible to old workers through lease recovery', async () => {
+  it('keeps capability-fenced work limited to capable workers through lease recovery', async () => {
     const queued = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({
         requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
@@ -248,15 +248,6 @@ describe('agent trigger delivery methods', () => {
       status: 'capability_pending',
       requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
     });
-    const legacyReclaimerRetainsLane = async (): Promise<boolean> =>
-      (await Delivery.exists({
-        orderingKey: queued.delivery.orderingKey,
-        status: { $in: ['staging', 'batched', 'pending', 'leased', 'dead'] },
-      })) != null;
-    await expect(
-      Delivery.findOne({ capabilityLaneGuardFor: queued.delivery.id }).lean(),
-    ).resolves.toMatchObject({ status: 'dead', batchRootId: expect.any(mongoose.Types.ObjectId) });
-    await expect(legacyReclaimerRetainsLane()).resolves.toBe(true);
     const claimInput = {
       workerId: 'capable-worker',
       claimToken: 'capable-claim',
@@ -276,7 +267,6 @@ describe('agent trigger delivery methods', () => {
       workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
     });
     expect(capable).toMatchObject({ status: 'capability_leased' });
-    await expect(legacyReclaimerRetainsLane()).resolves.toBe(true);
 
     await Delivery.updateOne(
       { _id: capable!.id },
@@ -320,13 +310,11 @@ describe('agent trigger delivery methods', () => {
     await expect(Delivery.findById(recovered!.id).lean()).resolves.toMatchObject({
       status: 'capability_dead',
     });
-    await expect(legacyReclaimerRetainsLane()).resolves.toBe(true);
 
     const [deadLetter] = await methods.getAgentTriggerDeadLetters();
     expect(deadLetter).toMatchObject({ id: recovered!.id, status: 'capability_dead' });
     const requeued = await methods.requeueAgentTriggerDelivery(recovered!.id, recoveryNow);
     expect(requeued).toMatchObject({ status: 'capability_pending' });
-    await expect(legacyReclaimerRetainsLane()).resolves.toBe(true);
     await expect(
       methods.claimNextAgentTriggerDelivery({
         workerId: 'old-worker',
@@ -358,23 +346,18 @@ describe('agent trigger delivery methods', () => {
         settledAt: recoveryNow,
       }),
     ).resolves.toBe(true);
-    await expect(
-      Delivery.exists({ capabilityLaneGuardFor: queued.delivery.id }),
-    ).resolves.toBeNull();
   });
 
   it('claims the oldest eligible delivery without capability traffic priority', async () => {
     const ordinary = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({
         deliveryKey: 'ordinary-older',
-        eventId: 'ordinary-older',
         availableAt: new Date(START.getTime() - 2_000),
       }),
     );
     await methods.enqueueAgentTriggerDelivery(
       enqueueInput({
         deliveryKey: 'capability-newer',
-        eventId: 'capability-newer',
         availableAt: new Date(START.getTime() - 1_000),
         requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
       }),

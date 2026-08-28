@@ -15,6 +15,7 @@ import type {
   AgentTriggerExpectedAction,
 } from './envelope';
 import type { EventActorDetachedActionLifecycle } from '../handlers';
+import type { AgentEventDetachedTerminalEvidence } from './types';
 import type { SerializableJobData } from '~/stream';
 import { matchesExpectedAction } from './expectedAction';
 import { createAgentTriggerEnvelope } from './envelope';
@@ -30,6 +31,51 @@ export const EVENT_ACTOR_DETACHED_COMPLETION_SOURCE = 'librechat-event-actor';
 
 export function isAgentEventActorDetachedActionProducerEnabled(): boolean {
   return process.env[DETACHED_ACTION_PRODUCER_ENV]?.trim().toLowerCase() === 'true';
+}
+
+export function parseAgentEventDetachedTerminalEvidence(
+  value: unknown,
+): AgentEventDetachedTerminalEvidence | undefined {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const input = value as Record<string, unknown>;
+  const status = input.status;
+  if (
+    input.version !== 1 ||
+    typeof input.deliveryKey !== 'string' ||
+    input.deliveryKey.length === 0 ||
+    input.deliveryKey.length > 128 ||
+    !Number.isSafeInteger(input.generationCreatedAt) ||
+    (input.generationCreatedAt as number) < 0 ||
+    typeof input.taskId !== 'string' ||
+    input.taskId.length === 0 ||
+    input.taskId.length > 128 ||
+    typeof input.idempotencyKey !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(input.idempotencyKey) ||
+    (status !== 'succeeded' && status !== 'failed' && status !== 'cancelled') ||
+    !Number.isSafeInteger(input.observedAt) ||
+    (input.observedAt as number) < 0 ||
+    (input.result != null &&
+      (typeof input.result !== 'string' || input.result.length > MAX_TERMINAL_RESULT_LENGTH)) ||
+    (input.error != null && (typeof input.error !== 'string' || input.error.length > 2_048)) ||
+    (status === 'succeeded'
+      ? typeof input.result !== 'string' || input.error != null
+      : typeof input.error !== 'string' || input.result != null)
+  ) {
+    return undefined;
+  }
+  return {
+    version: 1,
+    deliveryKey: input.deliveryKey,
+    generationCreatedAt: input.generationCreatedAt as number,
+    taskId: input.taskId,
+    idempotencyKey: input.idempotencyKey,
+    status,
+    ...(input.result == null ? {} : { result: input.result as string }),
+    ...(input.error == null ? {} : { error: input.error as string }),
+    observedAt: input.observedAt as number,
+  };
 }
 
 export interface AgentEventActorDetachedCompletionProjection {
@@ -92,6 +138,7 @@ interface DetachedActionDependencies {
   reserveAgentEventActorDetachedAction: AgentTriggerDeliveryMethods['reserveAgentEventActorDetachedAction'];
   markAgentEventActorDetachedActionRunning: AgentTriggerDeliveryMethods['markAgentEventActorDetachedActionRunning'];
   settleAgentEventActorDetachedAction: AgentTriggerDeliveryMethods['settleAgentEventActorDetachedAction'];
+  persistTerminalEvidence(input: AgentEventDetachedTerminalEvidence): Promise<void>;
   onTerminal(input: { taskId: string; idempotencyKey: string }): Promise<void>;
   waitForTerminalPersistenceRetry?(delayMs: number): Promise<void>;
   producerEnabled?(): boolean;
@@ -358,19 +405,36 @@ export function createAgentEventActorDetachedActionLifecycle(
       if (!matchesCurrent(input)) {
         return false;
       }
+      const observedAt = now();
+      const evidence: AgentEventDetachedTerminalEvidence = {
+        version: 1,
+        deliveryKey: owner.invocationId,
+        generationCreatedAt: owner.generationCreatedAt,
+        taskId: input.taskId,
+        idempotencyKey: input.idempotencyKey,
+        status: input.status,
+        ...(input.status === 'succeeded'
+          ? { result: serializeTerminalResult(input.result) }
+          : { error: String(input.error ?? 'Detached action failed').slice(0, 2_048) }),
+        observedAt: observedAt.getTime(),
+      };
       const waitForRetry = deps.waitForTerminalPersistenceRetry ?? waitForTerminalPersistenceRetry;
       let retryDelayMs = TERMINAL_PERSIST_RETRY_INITIAL_MS;
+      let staged = false;
       for (;;) {
         try {
+          if (!staged) {
+            await deps.persistTerminalEvidence(evidence);
+            staged = true;
+          }
           const settled = await deps.settleAgentEventActorDetachedAction({
             ...scope,
-            taskId: input.taskId,
-            idempotencyKey: input.idempotencyKey,
-            status: input.status,
-            ...(input.status === 'succeeded'
-              ? { result: serializeTerminalResult(input.result) }
-              : { error: String(input.error ?? 'Detached action failed').slice(0, 2_048) }),
-            observedAt: now(),
+            taskId: evidence.taskId,
+            idempotencyKey: evidence.idempotencyKey,
+            status: evidence.status,
+            ...(evidence.result == null ? {} : { result: evidence.result }),
+            ...(evidence.error == null ? {} : { error: evidence.error }),
+            observedAt,
           });
           return settled.status !== 'conflict';
         } catch (error) {

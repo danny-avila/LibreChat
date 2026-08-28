@@ -2627,6 +2627,7 @@ class GenerationJobManagerClass {
         isTemporary: jobData.isTemporary,
         agentEventDeliveryKey: jobData.agentEventDeliveryKey,
         agentEventInvocationKey: jobData.agentEventInvocationKey,
+        agentEventDetachedTerminalEvidence: jobData.agentEventDetachedTerminalEvidence,
         agentEventBindingId: jobData.agentEventBindingId,
         agentEventExpectedAction: jobData.agentEventExpectedAction,
         agentEventSuspension: jobData.agentEventSuspension,
@@ -6718,6 +6719,34 @@ class GenerationJobManagerClass {
       }),
     };
     await this.jobStore.updateJob(streamId, updates, generationId);
+  }
+
+  /** Stages exact detached terminal evidence in the generation-owned job outbox
+   * and verifies the epoch-fenced write before the external result leaves memory. */
+  async persistAgentEventDetachedTerminalEvidence(
+    streamId: string,
+    expectedCreatedAt: number,
+    evidence: NonNullable<t.GenerationJobMetadata['agentEventDetachedTerminalEvidence']>,
+  ): Promise<boolean> {
+    await this.jobStore.updateJob(
+      streamId,
+      { agentEventDetachedTerminalEvidence: evidence },
+      expectedCreatedAt,
+    );
+    const persisted = await this.jobStore.getJob(streamId);
+    const actual = persisted?.agentEventDetachedTerminalEvidence;
+    return (
+      persisted?.createdAt === expectedCreatedAt &&
+      actual?.version === evidence.version &&
+      actual.deliveryKey === evidence.deliveryKey &&
+      actual.generationCreatedAt === evidence.generationCreatedAt &&
+      actual.taskId === evidence.taskId &&
+      actual.idempotencyKey === evidence.idempotencyKey &&
+      actual.status === evidence.status &&
+      actual.result === evidence.result &&
+      actual.error === evidence.error &&
+      actual.observedAt === evidence.observedAt
+    );
   }
 
   /** Records that one exact provider segment has completed every trailing write.

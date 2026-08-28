@@ -2095,6 +2095,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   reserveAgentEventActorDetachedAction,
                   markAgentEventActorDetachedActionRunning,
                   settleAgentEventActorDetachedAction,
+                  persistTerminalEvidence: async (evidence) => {
+                    const persisted =
+                      await GenerationJobManager.persistAgentEventDetachedTerminalEvidence(
+                        streamId,
+                        jobCreatedAt,
+                        evidence,
+                      );
+                    if (!persisted) {
+                      throw new Error(
+                        'Detached Event Actor terminal retry evidence could not be staged',
+                      );
+                    }
+                  },
                   /** Retry immediately when the generation already reached its
                    * terminal host-action fence. The same durable marker is
                    * recovered across replicas and restarts by the existing
