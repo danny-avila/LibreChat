@@ -1044,6 +1044,86 @@ describe('initializeClient — subagent loading', () => {
     expect(agentClientArgs.agentConfigs.has(SUBAGENT_ID)).toBe(false);
   });
 
+  it('includes current always-apply Skill revisions in lazy descriptor metadata', async () => {
+    const secondSubagentId = 'agent_subagent_skill_2';
+    const { skill } = await createSkill({
+      name: 'lazy-specialist',
+      description: 'Prime a lazy specialist.',
+      body: '# Lazy specialist v1\n',
+      alwaysApply: true,
+      author: testUser._id,
+      authorName: testUser.name,
+    });
+    await AclEntry.create({
+      principalType: PrincipalType.USER,
+      principalId: testUser._id,
+      principalModel: PrincipalModel.USER,
+      resourceType: ResourceType.SKILL,
+      resourceId: skill._id,
+      permBits: PermissionBits.VIEW,
+      grantedBy: testUser._id,
+    });
+    const subAgent = await createAgent({
+      id: SUBAGENT_ID,
+      name: 'Skill Subagent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: testUser._id,
+      tools: [],
+      skills_enabled: true,
+      skills: [skill._id.toString()],
+    });
+    await grantView(subAgent);
+    const secondSubAgent = await createAgent({
+      id: secondSubagentId,
+      name: 'Second Skill Subagent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: testUser._id,
+      tools: [],
+      skills_enabled: true,
+      skills: [skill._id.toString()],
+    });
+    await grantView(secondSubAgent);
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: {
+          enabled: true,
+          allowSelf: true,
+          agent_ids: [SUBAGENT_ID, secondSubagentId],
+        },
+      }),
+    );
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('skills');
+    const listAlwaysApplySkillsSpy = jest.spyOn(getSkillDbMethods(), 'listAlwaysApplySkills');
+
+    try {
+      await initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      });
+
+      expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+      expect(listAlwaysApplySkillsSpy).toHaveBeenCalledTimes(1);
+      expect(agentClientArgs.agent.lazySubagentConfigs).toHaveLength(2);
+      for (const descriptor of agentClientArgs.agent.lazySubagentConfigs) {
+        expect(descriptor.alwaysApplySkillPrimes).toEqual([
+          expect.objectContaining({
+            _id: skill._id,
+            name: 'lazy-specialist',
+            version: 1,
+            body: '# Lazy specialist v1\n',
+          }),
+        ]);
+      }
+    } finally {
+      listAlwaysApplySkillsSpy.mockRestore();
+    }
+  });
+
   it('rejects a disallowed lazy subagent scope before exposing it for prewarm', async () => {
     const subAgent = await createAgent({
       id: SUBAGENT_ID,

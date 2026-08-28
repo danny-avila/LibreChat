@@ -1726,14 +1726,13 @@ class AgentClient extends BaseClient {
     this.contextMeta = contextMeta;
     const context = await this.getEventActorContext(storedManifest, discoveredToolNames);
     const skillBodies = new Map(skillPrimeResult?.skills ?? []);
-    for (const agent of this.eventActorAgentContextSources ?? []) {
-      for (const skill of [
-        ...(agent.manualSkillPrimes ?? []),
-        ...(agent.alwaysApplySkillPrimes ?? []),
-      ]) {
-        if (typeof skill.name === 'string' && typeof skill.body === 'string') {
-          skillBodies.set(skill.name, skill.body);
-        }
+    const rootAgentContext = this.eventActorAgentContextSources?.[0];
+    for (const skill of [
+      ...(rootAgentContext?.manualSkillPrimes ?? []),
+      ...(rootAgentContext?.alwaysApplySkillPrimes ?? []),
+    ]) {
+      if (typeof skill.name === 'string' && typeof skill.body === 'string') {
+        skillBodies.set(skill.name, skill.body);
       }
     }
     return {
@@ -1750,22 +1749,16 @@ class AgentClient extends BaseClient {
    */
   async getEventActorContext(baseManifest = [], baseDiscoveredToolNames) {
     const manifest = new Map(baseManifest.map((skill) => [skill.id, skill]));
-    for (const agent of this.eventActorAgentContextSources ?? []) {
-      for (const skill of agent.manualSkillPrimes ?? []) {
-        if (
-          !Number.isInteger(skill.version) ||
-          skill.version < 1 ||
-          typeof skill.body !== 'string'
-        ) {
-          throw new Error('Manual Skill is missing semantic identity');
-        }
-        manifest.set(skill._id.toString(), {
-          id: skill._id.toString(),
-          name: skill.name,
-          version: skill.version,
-          contentDigest: createSkillContentDigest(skill.body),
-        });
+    for (const skill of this.eventActorAgentContextSources?.[0]?.manualSkillPrimes ?? []) {
+      if (!Number.isInteger(skill.version) || skill.version < 1 || typeof skill.body !== 'string') {
+        throw new Error('Manual Skill is missing semantic identity');
       }
+      manifest.set(skill._id.toString(), {
+        id: skill._id.toString(),
+        name: skill.name,
+        version: skill.version,
+        contentDigest: createSkillContentDigest(skill.body),
+      });
     }
     for (const skill of this.eventActorSkillPrimeResult?.skillManifest ?? []) {
       manifest.set(skill.id, skill);

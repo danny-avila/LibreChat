@@ -214,6 +214,60 @@ describe('AgentClient - event actor history adapter', () => {
     });
   });
 
+  it('replays only root Skill primes into the global checkpoint overlay', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: {} } };
+    client.eventActorAgentContextSources = [
+      {
+        id: 'root-agent',
+        alwaysApplySkillPrimes: [
+          { _id: 'root-skill', name: 'root-skill', version: 1, body: 'Root instructions.' },
+        ],
+      },
+      {
+        id: 'child-agent',
+        alwaysApplySkillPrimes: [
+          { _id: 'child-skill', name: 'child-skill', version: 1, body: 'Child instructions.' },
+        ],
+      },
+    ];
+    client.getEventActorContext = jest.fn().mockResolvedValue({ fingerprint });
+
+    const context = await client.prepareEventActorContext({ contextFingerprint: fingerprint });
+
+    expect(context.checkpointMessageOverlay.messages).toEqual([
+      expect.objectContaining({
+        content: 'Root instructions.',
+        additional_kwargs: expect.objectContaining({ skillName: 'root-skill' }),
+      }),
+    ]);
+    expect(context.checkpointMessageOverlay.messages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          additional_kwargs: expect.objectContaining({ skillName: 'child-skill' }),
+        }),
+      ]),
+    );
+  });
+
+  it('keeps child manual Skills out of the root durable manifest', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: { endpoints: { agents: {} } } } };
+    client.eventActorAgentContextSources = [
+      { id: 'root-agent', manualSkillPrimes: [] },
+      {
+        id: 'child-agent',
+        manualSkillPrimes: [
+          { _id: 'child-skill', name: 'child-skill', version: 1, body: 'Child instructions.' },
+        ],
+      },
+    ];
+    client.getEventActorAgents = jest.fn(() => []);
+    client.getEventActorMemorySnapshots = jest.fn().mockResolvedValue([]);
+
+    await expect(client.getEventActorContext()).resolves.toMatchObject({ skillManifest: [] });
+  });
+
   it('captures the latest run summary and pruning calibration in continuation state', async () => {
     const client = Object.create(AgentClient.prototype);
     client.options = { req: { config: { endpoints: { agents: {} } } } };

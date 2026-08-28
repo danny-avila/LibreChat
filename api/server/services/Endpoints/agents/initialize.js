@@ -14,6 +14,7 @@ const {
   discoverConnectedAgents,
   resolveAgentTokenConfig,
   resolveAgentScopedSkillIds,
+  resolveAlwaysApplySkills,
   resolveModelSpecSkillIds,
   getAgentStartupTelemetry,
   isContentFilterError,
@@ -728,6 +729,10 @@ const initializeClient = async ({
   const skippedAgentIds = new Set(discoveredSkippedIds ?? []);
 
   const lazyMetadataByAgentId = new Map();
+  /** Request-scoped cache: lazy descriptors sharing the same Skill ACL scope
+   * reuse one metadata-only always-apply lookup without initializing tools,
+   * files, model clients, or MCP connections. */
+  const lazyAlwaysApplySkillsByScope = new Map();
   const subagentGraphIds = new Set();
   const expandedSubagentDescriptorState = { configCount: 0, rootAgentIds: [] };
 
@@ -838,7 +843,35 @@ const initializeClient = async ({
       ),
     );
 
-  const toLazySubagentMetadata = (agent) => {
+  const resolveLazyAlwaysApplySkillPrimes = (agent) => {
+    const scopedSkillIds = resolveAgentScopedSkillIds({
+      agent,
+      accessibleSkillIds,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    });
+    if (scopedSkillIds.length === 0 || typeof skillDbMethods.listAlwaysApplySkills !== 'function') {
+      return Promise.resolve([]);
+    }
+    const scopeKey = scopedSkillIds
+      .map((skillId) => skillId.toString())
+      .sort()
+      .join(':');
+    let resolution = lazyAlwaysApplySkillsByScope.get(scopeKey);
+    if (resolution == null) {
+      resolution = resolveAlwaysApplySkills({
+        listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
+        accessibleSkillIds: scopedSkillIds,
+        userId,
+        skillStates,
+        defaultActiveOnShare,
+      });
+      lazyAlwaysApplySkillsByScope.set(scopeKey, resolution);
+    }
+    return resolution;
+  };
+
+  const toLazySubagentMetadata = async (agent) => {
     const statefulCodeSessions =
       statefulSessionsAvailable === true &&
       codeEnvAvailable === true &&
@@ -869,6 +902,7 @@ const initializeClient = async ({
       statefulCodeSessions,
       statefulCodeEnvironment,
       includeReasoningHistory: getIncludeReasoningHistory(agent),
+      alwaysApplySkillPrimes: await resolveLazyAlwaysApplySkillPrimes(agent),
     };
   };
 
@@ -882,7 +916,7 @@ const initializeClient = async ({
         skippedAgentIds.add(agentId);
         return null;
       }
-      const metadata = toLazySubagentMetadata(agent);
+      const metadata = await toLazySubagentMetadata(agent);
       lazyMetadataByAgentId.set(agentId, metadata);
       return metadata;
     } catch (error) {
@@ -1100,6 +1134,7 @@ const initializeClient = async ({
         statefulCodeSessions: metadata.statefulCodeSessions,
         statefulCodeEnvironment: metadata.statefulCodeEnvironment,
         includeReasoningHistory: metadata.includeReasoningHistory,
+        alwaysApplySkillPrimes: metadata.alwaysApplySkillPrimes,
         lazySubagentConfigs: lazyChildren,
         subagentAgentConfigs: eagerChildren,
         subagentGraphMemberMetadata,
