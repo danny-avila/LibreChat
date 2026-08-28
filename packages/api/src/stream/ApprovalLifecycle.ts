@@ -397,7 +397,12 @@ export class ApprovalLifecycle {
        * segment. If that segment re-pauses, its canonical successor is stored
        * before a new marker is published; clearing here makes a terminal job
        * in that gap unambiguously recoverable as an unpublished re-pause. */
-      clear: ['pendingAction', 'pendingActionId', 'agentEventSuspension'],
+      clear: [
+        'pendingAction',
+        'pendingActionId',
+        'agentEventSuspension',
+        'providerExecutionStartedId',
+      ],
       // Refresh the liveness basis so a long-paused run isn't reaped as stale
       // immediately after resuming (cleanup keys off lastActiveAt).
       /** Ownership can move across replicas on resume. Owner-specific fields

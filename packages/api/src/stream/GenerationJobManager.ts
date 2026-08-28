@@ -2627,6 +2627,7 @@ class GenerationJobManagerClass {
         // legacy resume's execution rewrite invalidates a stale assertion.
         steerQuotesExecutionId: jobData.steerQuotesExecutionId,
         providerExecutionId: jobData.providerExecutionId,
+        providerExecutionStartedId: jobData.providerExecutionStartedId,
         providerDrained: jobData.providerDrained,
         steersClosed: jobData.steersClosed,
         idempotencyClientRequestId: jobData.idempotencyClientRequestId,

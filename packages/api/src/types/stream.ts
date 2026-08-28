@@ -85,6 +85,8 @@ export interface GenerationJobMetadata {
   steerQuotesExecutionId?: string;
   /** Exact provider segment whose completion gates destructive user cleanup. */
   providerExecutionId?: string;
+  /** Exact provider owner that crossed its start fence. */
+  providerExecutionStartedId?: string;
   /** False only while that exact provider segment can still mutate user data. */
   providerDrained?: boolean;
   /** Terminal close has atomically stopped new steer acceptance, even if the

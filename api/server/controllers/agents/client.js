@@ -3436,27 +3436,52 @@ class AgentClient extends BaseClient {
     if (this.pendingApproval?.actionId === staged.pendingAction.actionId) {
       return true;
     }
-    const paused = await GenerationJobManager.approvals.pause(
-      staged.streamId,
-      staged.pendingAction,
-      {
-        expectedCreatedAt: this.jobCreatedAt,
-        ...(staged.discoveredTools.length > 0 ? { discoveredTools: staged.discoveredTools } : {}),
-        ...(staged.activityPhaseSnapshot == null
-          ? {}
-          : { activityPhaseSnapshot: staged.activityPhaseSnapshot }),
-        persistencePending: true,
-        ...(eventActorSuspension == null
-          ? {}
-          : {
-              agentEventSuspension: {
-                version: eventActorSuspension.version,
-                suspensionId: eventActorSuspension.suspensionId,
-                attempt: eventActorSuspension.attempt,
-              },
-            }),
-      },
-    );
+    const pauseProjection = {
+      expectedCreatedAt: this.jobCreatedAt,
+      ...(staged.discoveredTools.length > 0 ? { discoveredTools: staged.discoveredTools } : {}),
+      ...(staged.activityPhaseSnapshot == null
+        ? {}
+        : { activityPhaseSnapshot: staged.activityPhaseSnapshot }),
+      persistencePending: true,
+      ...(eventActorSuspension == null
+        ? {}
+        : {
+            agentEventSuspension: {
+              version: eventActorSuspension.version,
+              suspensionId: eventActorSuspension.suspensionId,
+              attempt: eventActorSuspension.attempt,
+            },
+          }),
+    };
+    let paused;
+    try {
+      paused = await GenerationJobManager.approvals.pause(
+        staged.streamId,
+        staged.pendingAction,
+        pauseProjection,
+      );
+    } catch (error) {
+      /** Redis may commit running -> requires_action and lose only its reply.
+       * The Conversation suspension is already canonical at this point, so
+       * confirm this exact generation/action/projection before declaring the
+       * publication failed and driving terminal compensation. */
+      const currentJob = await GenerationJobManager.getJob(staged.streamId).catch(() => null);
+      const projected = currentJob?.metadata?.agentEventSuspension;
+      const expectedProjection = pauseProjection.agentEventSuspension;
+      if (
+        currentJob?.createdAt === this.jobCreatedAt &&
+        currentJob.status === 'requires_action' &&
+        currentJob.metadata?.pendingAction?.actionId === staged.pendingAction.actionId &&
+        expectedProjection != null &&
+        projected?.version === expectedProjection.version &&
+        projected.suspensionId === expectedProjection.suspensionId &&
+        projected.attempt === expectedProjection.attempt
+      ) {
+        paused = true;
+      } else {
+        throw error;
+      }
+    }
     if (!paused) {
       logger.debug(
         `[AgentClient] Interrupt fired but job ${staged.streamId} was not running; not pausing`,

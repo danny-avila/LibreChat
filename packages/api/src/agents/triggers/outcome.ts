@@ -345,6 +345,7 @@ export function createAgentEventTerminalHandler(methods: {
   completeAgentEventActorLegacyTurn: ConversationMethods['completeAgentEventActorLegacyTurn'];
   cancelAgentEventActorSuspension: ConversationMethods['cancelAgentEventActorSuspension'];
   releaseAgentEventActorAction: AgentTriggerDeliveryMethods['releaseAgentEventActorAction'];
+  getAgentEventActorActionAdmission: AgentTriggerDeliveryMethods['getAgentEventActorActionAdmission'];
   hasAgentEventActorActionAdmission: AgentTriggerDeliveryMethods['hasAgentEventActorActionAdmission'];
   getMessage: MessageMethods['getMessage'];
 }): (
@@ -452,14 +453,14 @@ export function createAgentEventTerminalHandler(methods: {
         }
         snapshot = await methods.getAgentEventActorSnapshot(owner);
       } else if (current.status === 'claimed') {
-        /** The resume attempt id is also the provider execution id written by
-         * the job CAS. A terminal job carrying a different owner proves Stop
-         * won after the Conversation claim but before provider execution could
-         * begin. Equality means execution may have started and must fail closed. */
+        /** The provider-start CAS retains its exact execution identity after
+         * drain. A missing/different identity proves this claimed resume never
+         * crossed provider start (including schedule invalidation after claim
+         * projection); equality means execution began and must fail closed. */
         const projectionNeverStarted =
           isIrrecoverablyTerminal &&
           current.resumeAttemptId != null &&
-          current.resumeAttemptId !== job.providerExecutionId;
+          current.resumeAttemptId !== job.providerExecutionStartedId;
         if (!projectionNeverStarted) {
           throw new Error(
             `Agent event actor ${job.agentEventDeliveryKey} terminal suspension claim is still in flight`,
@@ -498,11 +499,33 @@ export function createAgentEventTerminalHandler(methods: {
       (closed.outcome === 'settled'
         ? closed.resumeAttemptId != null && closed.resumeAttemptId === job.providerExecutionId
         : isIrrecoverablyTerminal &&
-          (closed.resumeAttemptId == null || closed.resumeAttemptId !== job.providerExecutionId))
+          (closed.resumeAttemptId == null ||
+            closed.resumeAttemptId !== job.providerExecutionStartedId))
     ) {
       retiredWithoutAction = closed;
     }
-    if (retiredWithoutAction != null) {
+    let retiredAdmissionId =
+      retiredWithoutAction == null
+        ? null
+        : createAgentEventActorActionAdmissionId(
+            retiredWithoutAction.suspension.invocation.invocationId,
+            retiredWithoutAction.suspension.invocation.fork,
+          );
+    if (
+      retiredAdmissionId == null &&
+      snapshot == null &&
+      isIrrecoverablyTerminal &&
+      job.agentEventBindingId != null
+    ) {
+      retiredAdmissionId = await methods.getAgentEventActorActionAdmission({
+        deliveryKey: job.agentEventDeliveryKey,
+        user: job.userId,
+        ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
+        bindingId: job.agentEventBindingId,
+        conversationId,
+      });
+    }
+    if (retiredAdmissionId != null) {
       if (job.agentEventBindingId == null) {
         throw new Error(
           `Agent event actor ${job.agentEventDeliveryKey} retired without binding identity`,
@@ -514,10 +537,7 @@ export function createAgentEventTerminalHandler(methods: {
         ...(job.tenantId == null ? {} : { tenantId: job.tenantId }),
         bindingId: job.agentEventBindingId,
         conversationId,
-        admissionId: createAgentEventActorActionAdmissionId(
-          retiredWithoutAction.suspension.invocation.invocationId,
-          retiredWithoutAction.suspension.invocation.fork,
-        ),
+        admissionId: retiredAdmissionId,
       };
       const released = await methods.releaseAgentEventActorAction(admission);
       if (!released && (await methods.hasAgentEventActorActionAdmission(admission))) {

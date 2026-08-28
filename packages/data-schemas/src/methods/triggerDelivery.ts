@@ -175,6 +175,9 @@ export interface AgentTriggerDeliveryMethods {
   ) => Promise<boolean>;
   admitAgentEventActorAction: (input: AdmitAgentEventActorActionInput) => Promise<boolean>;
   releaseAgentEventActorAction: (input: AgentEventActorActionAdmissionInput) => Promise<boolean>;
+  getAgentEventActorActionAdmission: (
+    input: GetAgentEventActorReceiptInput,
+  ) => Promise<string | null>;
   hasAgentEventActorActionAdmission: (
     input: AgentEventActorActionAdmissionInput,
   ) => Promise<boolean>;
@@ -1658,6 +1661,34 @@ export function createAgentTriggerDeliveryMethods(
     );
   }
 
+  /** Reads the delivery-owned action fence when the private child Conversation
+   * has already been removed. The terminal owner can then release the exact
+   * admission id without guessing from missing actor state. */
+  async function getAgentEventActorActionAdmission(
+    input: GetAgentEventActorReceiptInput,
+  ): Promise<string | null> {
+    const tenantScope =
+      input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId };
+    const delivery = await Delivery()
+      .findOne({
+        deliveryKey: input.deliveryKey,
+        user: input.user,
+        ...tenantScope,
+        'envelope.target.bindingId': input.bindingId,
+        $or: [
+          { handling: { $exists: false } },
+          { 'handling.conversationId': input.conversationId },
+        ],
+        actorReceipt: { $exists: false },
+        actorActionAdmittedAt: { $exists: true },
+      })
+      .select('+actorActionAdmissionId')
+      .lean<Pick<IAgentTriggerDelivery, 'actorActionAdmissionId'>>();
+    return typeof delivery?.actorActionAdmissionId === 'string'
+      ? delivery.actorActionAdmissionId
+      : null;
+  }
+
   async function getAgentEventActorReceipt(
     input: GetAgentEventActorReceiptInput,
   ): Promise<AgentEventActorReceipt | null> {
@@ -2198,6 +2229,7 @@ export function createAgentTriggerDeliveryMethods(
     settleAgentTriggerHandlingOutcome,
     admitAgentEventActorAction,
     releaseAgentEventActorAction,
+    getAgentEventActorActionAdmission,
     hasAgentEventActorActionAdmission,
     settleAgentEventActorReceipt,
     getAgentEventActorReceipt,

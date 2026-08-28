@@ -31,6 +31,7 @@ const createAgentEventTerminalHandler = (
     completeAgentEventActorLegacyTurn: jest.fn().mockResolvedValue(true),
     cancelAgentEventActorSuspension: jest.fn().mockResolvedValue({ status: 'cancelled' }),
     releaseAgentEventActorAction: jest.fn().mockResolvedValue(true),
+    getAgentEventActorActionAdmission: jest.fn().mockResolvedValue(null),
     hasAgentEventActorActionAdmission: jest.fn().mockResolvedValue(false),
     ...methods,
   });
@@ -368,7 +369,7 @@ describe('agent event terminal outcomes', () => {
     );
   });
 
-  it('compensates a claimed resume when abort wins before its provider projection', async () => {
+  it('compensates a claimed resume when termination wins before provider start', async () => {
     const suspension = suspensionEvidence('suspension-pre-projection');
     const handler = createAgentEventTerminalHandler({
       settleAgentTriggerHandlingOutcome: jest.fn().mockResolvedValue(true),
@@ -466,7 +467,7 @@ describe('agent event terminal outcomes', () => {
     );
   });
 
-  it('does not compensate a claimed resume after its provider projection succeeded', async () => {
+  it('does not compensate a claimed resume after its provider start succeeded', async () => {
     const suspension = suspensionEvidence('suspension-projected');
     const handler = createAgentEventTerminalHandler({
       settleAgentTriggerHandlingOutcome: jest.fn().mockResolvedValue(true),
@@ -492,6 +493,7 @@ describe('agent event terminal outcomes', () => {
         job({
           status: 'aborted',
           providerExecutionId: 'provider-new',
+          providerExecutionStartedId: 'provider-new',
           agentEventSuspension: {
             version: 1,
             suspensionId: suspension.suspensionId,
@@ -502,6 +504,44 @@ describe('agent event terminal outcomes', () => {
       ),
     ).rejects.toThrow('claim is still in flight');
     expect(mockedCancelAgentEventActor).not.toHaveBeenCalled();
+  });
+
+  it('releases the delivery-owned admission after the child Conversation disappears', async () => {
+    const releaseAgentEventActorAction = jest.fn().mockResolvedValue(true);
+    const getAgentEventActorActionAdmission = jest
+      .fn()
+      .mockResolvedValue('admission-deleted-child');
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({
+      settleAgentTriggerHandlingOutcome,
+      releaseAgentEventActorAction,
+      getAgentEventActorActionAdmission,
+      getAgentEventActorSnapshot: jest.fn().mockResolvedValue(null),
+    });
+
+    await handler(
+      'conversation-1',
+      job({
+        status: 'aborted',
+        agentEventBindingId: 'binding-1',
+        providerExecutionId: 'provider-resume',
+      }),
+      [],
+    );
+
+    expect(getAgentEventActorActionAdmission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'trigger_1',
+        bindingId: 'binding-1',
+        conversationId: 'conversation-1',
+      }),
+    );
+    expect(releaseAgentEventActorAction).toHaveBeenCalledWith(
+      expect.objectContaining({ admissionId: 'admission-deleted-child' }),
+    );
+    expect(releaseAgentEventActorAction.mock.invocationCallOrder[0]).toBeLessThan(
+      settleAgentTriggerHandlingOutcome.mock.invocationCallOrder[0],
+    );
   });
 
   it('releases the exact action admission after a resumed no-action settlement', async () => {

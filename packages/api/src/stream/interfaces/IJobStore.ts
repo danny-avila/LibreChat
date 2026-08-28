@@ -199,6 +199,10 @@ export interface SerializableJobData {
   /** Opaque identity of the currently executing provider segment. A HITL resume
    * replaces it so an earlier paused segment cannot acknowledge the new run. */
   providerExecutionId?: string;
+  /** Durable evidence that the current provider owner crossed its start CAS.
+   * Unlike `providerDrained`, this identity survives terminal drain so host
+   * compensation can distinguish a projected-but-never-started resume. */
+  providerExecutionStartedId?: string;
   /** False while the identified provider segment can still mutate user data;
    * true before provider startup and after the owner has fully unwound. */
   providerDrained?: boolean;

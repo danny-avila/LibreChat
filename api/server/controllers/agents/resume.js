@@ -1451,6 +1451,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
                 expectedAction,
                 client?.run?.getRunSteps?.() ?? [],
                 client?.contentParts ?? [],
+                { userSubmittedMessageFieldPaths },
               ),
             readSuspension: () => client?.readEventActorSuspension(),
             readResultContext: () => client?.getEventActorContext(),

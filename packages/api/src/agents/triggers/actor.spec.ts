@@ -173,6 +173,38 @@ describe('event actor host adapter', () => {
     expect(mockedDelete).not.toHaveBeenCalled();
   });
 
+  it('preserves a pause reached after the expected action in the same fresh segment', async () => {
+    const dependencies = {
+      ...deps(),
+      storeSuspension: jest.fn(async () => ({ status: 'stored' as const })),
+    };
+
+    const result = await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-action-then-pause',
+        event: { id: 'event-action-then-pause' },
+        signal: new AbortController().signal,
+        invoke: async () => 'paused-after-action',
+        readAppliedAction: () => ({ toolName: 'submit_move', toolCallId: 'call-before-pause' }),
+        readSuspension: () => ({
+          actionId: 'action-after-tool',
+          jobCreatedAt: 456,
+          interrupt: { id: 'interrupt-after-tool', payload: { type: 'tool_approval' } },
+        }),
+      },
+      dependencies,
+    );
+
+    expect(result.execution).toMatchObject({
+      status: 'suspended',
+      suspension: { interrupt: { id: 'interrupt-after-tool' } },
+    });
+    expect(dependencies.storeSuspension).toHaveBeenCalledTimes(1);
+    expect(dependencies.commitState).not.toHaveBeenCalled();
+  });
+
   it('validates and cancels the exact signed suspension before deleting its fork', async () => {
     const dependencies = {
       ...deps(),
@@ -334,7 +366,7 @@ describe('event actor host adapter', () => {
     );
   });
 
-  it('atomically replaces a claimed suspension on re-pause and settles a later no-action reply', async () => {
+  it('atomically re-pauses after an action and settles a later no-action reply', async () => {
     let storedSuspension: IAgentEventActorSuspension | undefined;
     let pendingPause:
       | { actionId: string; jobCreatedAt: number; interrupt: EventActorInterrupt }
@@ -402,7 +434,7 @@ describe('event actor host adapter', () => {
         resumeValue: { approved: true },
         signal: new AbortController().signal,
         resume: async () => 'second-pause',
-        readAppliedAction: () => undefined,
+        readAppliedAction: () => ({ toolName: 'submit_move', toolCallId: 'call-before-repause' }),
         readSuspension: () => pendingPause,
       },
       dependencies,

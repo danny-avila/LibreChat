@@ -530,31 +530,36 @@ export async function executeAgentEventActor<T>(
       } catch (error) {
         invocationError = error;
       }
+      /** A graph can execute the expected action and then pause again in the
+       * same segment. The pause is nonterminal authority: committing its
+       * checkpoint as an applied terminal head would strand the staged HITL
+       * action. Preserve the suspension first; the expected-action evidence
+       * remains in the checkpoint and is classified after the pause resumes. */
+      pendingSuspension = input.readSuspension?.();
+      if (pendingSuspension != null) {
+        const checkpoint = await captureAgentEventCheckpoint(
+          input.conversationId,
+          invocation.fork.checkpointNs,
+          invocation.invocationId,
+          input.checkpointer,
+        );
+        if (checkpoint?.checkpointId == null) {
+          throw new Error('Paused event actor has no observable interrupt checkpoint');
+        }
+        return {
+          status: 'suspended',
+          checkpoint: { ...checkpoint, invocationId: invocation.invocationId },
+          interrupt: bindInterruptToExpectedAction(
+            pendingSuspension.interrupt,
+            input.expectedAction,
+          ),
+        };
+      }
       const observedAction = input.readAppliedAction();
       const action = observedAction == null ? undefined : toEventActorAppliedAction(observedAction);
       if (action == null) {
         if (invocationError != null) {
           throw invocationError;
-        }
-        pendingSuspension = input.readSuspension?.();
-        if (pendingSuspension != null) {
-          const checkpoint = await captureAgentEventCheckpoint(
-            input.conversationId,
-            invocation.fork.checkpointNs,
-            invocation.invocationId,
-            input.checkpointer,
-          );
-          if (checkpoint?.checkpointId == null) {
-            throw new Error('Paused event actor has no observable interrupt checkpoint');
-          }
-          return {
-            status: 'suspended',
-            checkpoint: { ...checkpoint, invocationId: invocation.invocationId },
-            interrupt: bindInterruptToExpectedAction(
-              pendingSuspension.interrupt,
-              input.expectedAction,
-            ),
-          };
         }
         return { status: 'completed_no_action' };
       }
@@ -966,35 +971,39 @@ export async function resumeAgentEventActor<T>(
       } catch (error) {
         invocationError = error;
       }
+      /** A resumed segment may both satisfy the delivery and reach its next
+       * human boundary. Publish the successor suspension before considering
+       * the segment terminal; otherwise the successor checkpoint is committed
+       * without any resumable host action. */
+      pendingSuspension = input.readSuspension?.();
+      if (pendingSuspension != null) {
+        const checkpoint = await captureAgentEventCheckpoint(
+          input.conversationId,
+          request.suspension.checkpoint.checkpointNs,
+          request.suspension.invocation.invocationId,
+          input.checkpointer,
+        );
+        if (checkpoint?.checkpointId == null) {
+          throw new Error('Re-paused event actor has no observable interrupt checkpoint');
+        }
+        return {
+          status: 'claimed',
+          result: {
+            status: 'suspended',
+            checkpoint: {
+              ...checkpoint,
+              invocationId: request.suspension.invocation.invocationId,
+            },
+            interrupt: bindInterruptToExpectedAction(
+              pendingSuspension.interrupt,
+              input.expectedAction,
+            ),
+          },
+        };
+      }
       const observedAction = input.readAppliedAction();
       const action = observedAction == null ? undefined : toEventActorAppliedAction(observedAction);
       if (action == null) {
-        pendingSuspension = input.readSuspension?.();
-        if (pendingSuspension != null) {
-          const checkpoint = await captureAgentEventCheckpoint(
-            input.conversationId,
-            request.suspension.checkpoint.checkpointNs,
-            request.suspension.invocation.invocationId,
-            input.checkpointer,
-          );
-          if (checkpoint?.checkpointId == null) {
-            throw new Error('Re-paused event actor has no observable interrupt checkpoint');
-          }
-          return {
-            status: 'claimed',
-            result: {
-              status: 'suspended',
-              checkpoint: {
-                ...checkpoint,
-                invocationId: request.suspension.invocation.invocationId,
-              },
-              interrupt: bindInterruptToExpectedAction(
-                pendingSuspension.interrupt,
-                input.expectedAction,
-              ),
-            },
-          };
-        }
         if (invocationError != null) {
           return { status: 'claimed_failed', error: asError(invocationError) };
         }

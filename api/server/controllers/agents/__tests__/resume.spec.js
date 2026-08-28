@@ -509,6 +509,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           },
         },
       });
+      pausedJob.metadata.pendingAction.payload.review_configs = [
+        { tool_call_id: 'tc1', allowed_decisions: ['respond'] },
+      ];
       mockGenerationJobManager.getJob.mockResolvedValue(pausedJob);
       let projectedProviderExecutionId;
       mockGenerationJobManager.approvals.resolve.mockImplementation(
@@ -537,7 +540,28 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           status: 'pending',
         },
       });
-      const resumedClient = makeClient();
+      const resumedClient = makeClient({
+        contentParts: [makeToolCallContent({ output: 'human supplied output' })],
+        run: {
+          getRunSteps: () => [
+            {
+              type: 'tool_calls',
+              status: 'completed',
+              stepDetails: {
+                type: 'tool_calls',
+                tool_calls: [
+                  {
+                    id: 'tc1',
+                    name: 'lookup',
+                    args: {},
+                    output: 'human supplied output',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      });
       mockInitializeClient.mockResolvedValue({ client: resumedClient, userMCPAuthMap: {} });
       mockResumeAgentEventActor.mockImplementation(async (input, dependencies) => {
         await dependencies.claimSuspension({
@@ -559,17 +583,20 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           continuation: 'warm',
           signal: input.signal,
         });
+        expect(input.readAppliedAction()).toBeUndefined();
         return {
           value,
-          execution: {
-            status: 'applied',
-            head: { actorThreadId: CONVO_ID, generation: 2, checkpoint: suspension.checkpoint },
-            result: { action: expectedAction, checkpointCaptureError: null },
-          },
+          execution: { status: 'completed_no_action' },
         };
       });
 
-      const res = await post(approveBody());
+      const res = await post(
+        approveBody({
+          decisions: [
+            { tool_call_id: 'tc1', decision: 'respond', responseText: 'human supplied output' },
+          ],
+        }),
+      );
       expect(res.status).toBe(200);
       await settled;
       await flush();
@@ -584,15 +611,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       );
       expect(mockGenerationJobManager.getJob).toHaveBeenCalledTimes(2);
       expect(resumedClient.resumeCompletion).toHaveBeenCalledTimes(1);
-      expect(mockRecordAgentEventActorReconciliation).toHaveBeenCalledWith(
-        expect.objectContaining({
-          reconciliation: expect.objectContaining({
-            invocationId: 'trigger_event_delivery',
-            status: 'history_persisted',
-            action: expectedAction,
-          }),
-        }),
-      );
+      expect(mockRecordAgentEventActorReconciliation).not.toHaveBeenCalled();
     });
 
     it('fails closed when a versioned job marker no longer matches canonical suspension', async () => {
