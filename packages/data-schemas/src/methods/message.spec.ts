@@ -262,6 +262,48 @@ describe('Message Operations', () => {
       expect(result?.userSubmittedPaths).toHaveLength(2);
     });
 
+    it('uses classic update operators when saving provenance', async () => {
+      const findOneAndUpdate = jest.spyOn(Message.collection, 'findOneAndUpdate');
+
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        userSubmittedPaths: ['/text'],
+      });
+
+      expect(findOneAndUpdate).toHaveBeenCalledTimes(1);
+      const update = findOneAndUpdate.mock.calls[0][1];
+      expect(Array.isArray(update)).toBe(false);
+      expect(update).toEqual(expect.objectContaining({ $set: expect.any(Object) }));
+    });
+
+    it('merges provenance from concurrent first saves', async () => {
+      await Message.syncIndexes();
+
+      await Promise.all([
+        saveMessage(mockCtx, {
+          ...mockMessageData,
+          isCreatedByUser: false,
+          text: 'First writer',
+          userSubmittedPaths: ['/text'],
+        }),
+        saveMessage(mockCtx, {
+          ...mockMessageData,
+          isCreatedByUser: false,
+          content: [{ type: 'text', text: 'Second writer' }],
+          userSubmittedPaths: ['/content/0/text'],
+        }),
+      ]);
+
+      const savedMessages = await Message.find({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(savedMessages).toHaveLength(1);
+      const [savedMessage] = savedMessages;
+      expect(savedMessage?.userSubmittedPaths).toEqual(
+        expect.arrayContaining(['/text', '/content/0/text']),
+      );
+      expect(savedMessage?.userSubmittedPaths).toHaveLength(2);
+    });
+
     it('persists dollar-prefixed message values literally while merging provenance', async () => {
       const created = await saveMessage(mockCtx, {
         ...mockMessageData,
@@ -487,6 +529,46 @@ describe('Message Operations', () => {
         expect.arrayContaining(['/text', '/content/0/text']),
       );
       expect(updatedMessage?.userSubmittedPaths).toHaveLength(2);
+    });
+
+    it('retries a stale provenance snapshot without dropping either writer', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [{ type: 'text', text: 'Model content' }],
+      });
+
+      const originalFindOneAndUpdate = Message.collection.findOneAndUpdate.bind(Message.collection);
+      let injectedConcurrentWrite = false;
+      const findOneAndUpdate = jest
+        .spyOn(Message.collection, 'findOneAndUpdate')
+        .mockImplementation(async (...args) => {
+          if (!injectedConcurrentWrite) {
+            injectedConcurrentWrite = true;
+            await Message.collection.updateOne(
+              { messageId: 'msg123', user: 'user123' },
+              { $set: { userSubmittedPaths: ['/content/0/text'] } },
+            );
+          }
+          return originalFindOneAndUpdate(...args);
+        });
+
+      await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        text: 'Human-edited text',
+        userSubmittedPaths: ['/text'],
+      });
+
+      const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(findOneAndUpdate).toHaveBeenCalledTimes(2);
+      expect(updatedMessage?.userSubmittedPaths).toEqual(
+        expect.arrayContaining(['/content/0/text', '/text']),
+      );
+      expect(updatedMessage?.userSubmittedPaths).toHaveLength(2);
+      for (const [, update] of findOneAndUpdate.mock.calls) {
+        expect(Array.isArray(update)).toBe(false);
+        expect(update).toEqual(expect.objectContaining({ $set: expect.any(Object) }));
+      }
     });
 
     it('atomically caps repeated provenance unions and promotes overflow to whole-message provenance', async () => {
@@ -2558,6 +2640,33 @@ describe('Message Operations', () => {
   });
 
   describe('tenantId stripping', () => {
+    it('merges provenance within the active tenant context', async () => {
+      const messageId = uuidv4();
+      const conversationId = uuidv4();
+
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+        await saveMessage(
+          { userId: 'user123' },
+          { messageId, conversationId, text: 'Original', userSubmittedPaths: ['/text'] },
+        );
+        await saveMessage(
+          { userId: 'user123' },
+          {
+            messageId,
+            conversationId,
+            text: 'Updated',
+            userSubmittedPaths: ['/content/0/text'],
+          },
+        );
+      });
+
+      const doc = await runAsSystem(async () => Message.findOne({ messageId }).lean());
+      expect(doc?.tenantId).toBe('tenant-a');
+      expect(doc?.text).toBe('Updated');
+      expect(doc?.userSubmittedPaths).toEqual(expect.arrayContaining(['/text', '/content/0/text']));
+      expect(doc?.userSubmittedPaths).toHaveLength(2);
+    });
+
     it('saveMessage should not write caller-supplied tenantId to the document', async () => {
       const messageId = uuidv4();
       const conversationId = uuidv4();
