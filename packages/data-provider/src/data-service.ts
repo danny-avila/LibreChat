@@ -1002,6 +1002,10 @@ export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage
   return request.get(endpoints.messages({ conversationId }));
 }
 
+export function getMessageById(conversationId: string, messageId: string): Promise<s.TMessage[]> {
+  return request.get(endpoints.messages({ conversationId, messageId }));
+}
+
 export function getParentSubagents(parentConversationId: string): Promise<t.ParentSubagentIndex> {
   return request.get(endpoints.parentSubagents(parentConversationId));
 }

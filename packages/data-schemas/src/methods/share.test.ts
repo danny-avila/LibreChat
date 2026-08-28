@@ -10,6 +10,7 @@ import {
   type ShareMethods,
   type SharedLinkContentSnapshot,
 } from './share';
+import logger from '~/config/winston';
 
 describe('Share Methods', () => {
   let mongoServer: MongoMemoryServer;
@@ -1519,6 +1520,30 @@ describe('Share Methods', () => {
         message: 'Target message not found',
       });
       expect(await SharedLink.findOne({ shareId })).not.toBeNull();
+    });
+
+    test('does not error-log expected refresh target rejections', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+      await SharedLink.create({ shareId, conversationId, user: userId, messages: [] });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Current message',
+        isCreatedByUser: true,
+      });
+
+      try {
+        await expect(
+          shareMethods.updateSharedLink(userId, shareId, 'missing-message'),
+        ).rejects.toMatchObject({ code: 'TARGET_MESSAGE_NOT_FOUND' });
+        expect(errorSpy).not.toHaveBeenCalled();
+      } finally {
+        errorSpy.mockRestore();
+      }
     });
 
     test('should only update with messages from the same user', async () => {

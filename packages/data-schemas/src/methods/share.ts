@@ -22,6 +22,8 @@ class ShareServiceError extends Error {
   }
 }
 
+const EXPECTED_SHARE_REJECTION_CODES = new Set(['TARGET_MESSAGE_NOT_FOUND', 'NO_MESSAGES']);
+
 type ShareOrder = Pick<t.ISharedLink, '_id' | 'createdAt'>;
 
 const isEarlierShare = (candidate: ShareOrder, subject: ShareOrder): boolean => {
@@ -1368,11 +1370,13 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       if (preflightFailed) {
         throw error;
       }
-      logger.error('[updateSharedLink] Error updating shared link', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        user,
-        shareId,
-      });
+      if (!(error instanceof ShareServiceError && EXPECTED_SHARE_REJECTION_CODES.has(error.code))) {
+        logger.error('[updateSharedLink] Error updating shared link', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          user,
+          shareId,
+        });
+      }
       throw new ShareServiceError(
         error instanceof ShareServiceError ? error.message : 'Error updating shared link',
         error instanceof ShareServiceError ? error.code : 'SHARE_UPDATE_ERROR',

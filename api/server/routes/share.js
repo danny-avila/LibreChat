@@ -21,6 +21,8 @@ const {
   MAX_SHARED_LINK_SEARCH_LENGTH,
   createSharedLinkConfigMiddleware,
   createSharedLangfuseSessionResolver,
+  recordShareLinkRejection,
+  traceIdForMessage,
 } = require('@librechat/api');
 const {
   logger,
@@ -71,10 +73,30 @@ const SHARE_SERVICE_ERROR_STATUS = {
   SHARE_REVISION_MISMATCH: 409,
 };
 
-const sendShareServiceError = (res, error, fallbackMessage) => {
+const OBSERVABLE_SHARE_REJECTIONS = new Set(['TARGET_MESSAGE_NOT_FOUND', 'NO_MESSAGES']);
+
+const sendShareServiceError = (req, res, error, fallbackMessage, operation) => {
   const status = SHARE_SERVICE_ERROR_STATUS[error?.code] ?? 500;
   const message = status === 500 ? fallbackMessage : error.message;
-  return res.status(status).json({ message });
+  const code = status === 500 ? undefined : error.code;
+
+  if (OBSERVABLE_SHARE_REJECTIONS.has(code)) {
+    const targetMessageId = req.body?.targetMessageId;
+    const requestId = tenantStorage.getStore()?.requestId ?? req.requestId;
+    const traceId =
+      typeof targetMessageId === 'string' ? traceIdForMessage(targetMessageId) : undefined;
+
+    recordShareLinkRejection(operation, code);
+    logger.warn('[share] Shared link publication rejected', {
+      event: 'share_link_rejected',
+      operation,
+      code,
+      ...(requestId && { request_id: requestId }),
+      ...(traceId && { trace_id: traceId }),
+    });
+  }
+
+  return res.status(status).json({ message, ...(code && { code }) });
 };
 
 const checkSharedLinksAccess = generateCheckAccess({
@@ -417,7 +439,7 @@ if (allowSharedLinks) {
         if (error?.code !== 'SHARE_REVISION_MISMATCH') {
           logger.error('Error forking shared conversation:', error);
         }
-        return sendShareServiceError(res, error, 'Error forking shared conversation');
+        return sendShareServiceError(req, res, error, 'Error forking shared conversation', 'fork');
       }
     },
   );
@@ -649,8 +671,10 @@ router.post(
       if (isContentFilterError(error)) {
         return res.status(error.statusCode).json(error.body);
       }
-      logger.error('Error creating shared link:', error);
-      return sendShareServiceError(res, error, 'Error creating shared link');
+      if (!OBSERVABLE_SHARE_REJECTIONS.has(error?.code)) {
+        logger.error('Error creating shared link:', error);
+      }
+      return sendShareServiceError(req, res, error, 'Error creating shared link', 'create');
     }
   },
 );
@@ -720,8 +744,10 @@ router.patch(
       if (isContentFilterError(error)) {
         return res.status(error.statusCode).json(error.body);
       }
-      logger.error('Error updating shared link:', error);
-      return sendShareServiceError(res, error, 'Error updating shared link');
+      if (!OBSERVABLE_SHARE_REJECTIONS.has(error?.code)) {
+        logger.error('Error updating shared link:', error);
+      }
+      return sendShareServiceError(req, res, error, 'Error updating shared link', 'update');
     }
   },
 );

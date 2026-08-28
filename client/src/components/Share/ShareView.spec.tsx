@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { ShareHeader } from './ShareView';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { ShareHeader, SharedLinkUnavailable } from './ShareView';
 
 const defaultProps = {
   title: 'Shared conversation',
@@ -33,5 +33,37 @@ describe('ShareHeader', () => {
     expect(
       screen.queryByRole('link', { name: 'View session in Langfuse' }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('SharedLinkUnavailable', () => {
+  it('lets the viewer retry a broken shared-link load', () => {
+    const onRetry = jest.fn();
+
+    render(
+      <SharedLinkUnavailable
+        message="Shared link not found"
+        retryLabel="Retry"
+        isRetrying={false}
+        onRetry={onRetry}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables retry while the shared link is refetching', () => {
+    render(
+      <SharedLinkUnavailable
+        message="Shared link not found"
+        retryLabel="Retry"
+        isRetrying={true}
+        onRetry={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled();
   });
 });

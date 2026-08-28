@@ -168,6 +168,8 @@ export type RumProxyResult =
   | 'collector_5xx'
   | 'collector_error'
   | 'collector_timeout';
+export type ShareLinkOperation = 'create' | 'update';
+export type ShareLinkRejectionCode = 'TARGET_MESSAGE_NOT_FOUND' | 'NO_MESSAGES';
 export type RedisClient = 'ioredis' | 'keyv';
 export type RedisOperationStatus = 'success' | 'error';
 
@@ -235,6 +237,14 @@ let rumProxyMetrics: RumProxyMetrics = {
   recordRequest: () => undefined,
 };
 
+type ShareLinkMetrics = {
+  recordRejection: (operation: ShareLinkOperation, code: ShareLinkRejectionCode) => void;
+};
+
+let shareLinkMetrics: ShareLinkMetrics = {
+  recordRejection: () => undefined,
+};
+
 type RedisOperationMetrics = {
   recordOperation: (
     client: RedisClient,
@@ -269,6 +279,9 @@ const resetMetricRecorders = (): void => {
   };
   rumProxyMetrics = {
     recordRequest: () => undefined,
+  };
+  shareLinkMetrics = {
+    recordRejection: () => undefined,
   };
   redisOperationMetrics = {
     recordOperation: () => undefined,
@@ -326,6 +339,13 @@ export function recordAgentStartupResult(result: AgentStartupResult): void {
 
 export function recordRumProxyRequest(endpoint: RumProxyEndpoint, result: RumProxyResult): void {
   rumProxyMetrics.recordRequest(endpoint, result);
+}
+
+export function recordShareLinkRejection(
+  operation: ShareLinkOperation,
+  code: ShareLinkRejectionCode,
+): void {
+  shareLinkMetrics.recordRejection(operation, code);
 }
 
 export function recordRedisOperation(
@@ -643,6 +663,13 @@ export function createMetrics(options: MetricsOptions = {}): PrometheusMetrics {
     registers: [registry],
   });
 
+  const shareLinkRejections = new Counter({
+    name: 'share_link_rejections_total',
+    help: 'Shared link publication rejections by operation and bounded domain code',
+    labelNames: ['operation', 'code'] as const,
+    registers: [registry],
+  });
+
   const redisOperations = new Counter({
     name: 'redis_operations_total',
     help: 'Logical Redis operations by client, use case, operation, and status',
@@ -748,6 +775,10 @@ export function createMetrics(options: MetricsOptions = {}): PrometheusMetrics {
 
   rumProxyMetrics = {
     recordRequest: (endpoint, result) => rumProxyRequests.inc({ endpoint, result }),
+  };
+
+  shareLinkMetrics = {
+    recordRejection: (operation, code) => shareLinkRejections.inc({ operation, code }),
   };
 
   redisOperationMetrics = {

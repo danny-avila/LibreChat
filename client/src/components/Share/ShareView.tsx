@@ -4,7 +4,7 @@ import { buildTree } from 'librechat-data-provider';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { useGetSharedMessages } from 'librechat-data-provider/react-query';
-import { CalendarDays, ExternalLink, Settings, MessageSquarePlus } from 'lucide-react';
+import { CalendarDays, ExternalLink, RefreshCw, Settings, MessageSquarePlus } from 'lucide-react';
 import {
   Spinner,
   Button,
@@ -43,7 +43,7 @@ function SharedView() {
   const { theme, setTheme } = useContext(ThemeContext);
   const { shareId } = useParams();
   const { data: config } = useGetSharedStartupConfig(shareId, { enabled: isAuthReady });
-  const { data, isLoading, refetch } = useGetSharedMessages(shareId ?? '', {
+  const { data, isLoading, isFetching, refetch } = useGetSharedMessages(shareId ?? '', {
     enabled: isAuthReady,
   });
   const dataTree = data && buildTree({ messages: data.messages });
@@ -203,9 +203,12 @@ function SharedView() {
     );
   } else {
     content = (
-      <div className="flex h-screen items-center justify-center">
-        {localize('com_ui_shared_link_not_found')}
-      </div>
+      <SharedLinkUnavailable
+        message={localize('com_ui_shared_link_not_found')}
+        retryLabel={localize('com_ui_retry')}
+        isRetrying={isFetching}
+        onRetry={() => void refetch()}
+      />
     );
   }
 
@@ -247,6 +250,32 @@ function SharedView() {
       </div>
       <SharedSubagentActivityDialog shareId={shareId} />
     </ShareContext.Provider>
+  );
+}
+
+export function SharedLinkUnavailable({
+  message,
+  retryLabel,
+  isRetrying,
+  onRetry,
+}: {
+  message: string;
+  retryLabel: string;
+  isRetrying: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex h-screen flex-col items-center justify-center gap-4 px-4 text-center">
+      <p>{message}</p>
+      <Button type="button" variant="outline" onClick={onRetry} disabled={isRetrying}>
+        {isRetrying ? (
+          <Spinner className="size-4" />
+        ) : (
+          <RefreshCw className="size-4" aria-hidden="true" />
+        )}
+        {retryLabel}
+      </Button>
+    </div>
   );
 }
 
