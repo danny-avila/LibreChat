@@ -4,6 +4,12 @@ import type { ComposerItem } from '~/hooks/Input/useComposerItems';
 import type { ExtendedFile } from '~/common';
 import Tray from '../Tray';
 
+const mockFileRow = jest.fn();
+const mockIsPastedTextFile = jest.fn(() => false);
+const mockIsPasteActionPending = jest.fn(() => false);
+const mockEditPastedText = jest.fn();
+const mockMovePastedTextInline = jest.fn();
+
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useFileHandlingNoChatContext: () => ({ abortUpload: jest.fn() }),
@@ -13,8 +19,10 @@ jest.mock('~/hooks', () => ({
    job is to hand it the staged map, which is what is asserted here. */
 jest.mock('../../Files/FileRow', () => ({
   __esModule: true,
-  default: ({ files }: { files: Map<string, unknown> }) =>
-    files.size > 0 ? <div data-testid="file-row">{files.size}</div> : null,
+  default: (props: { files: Map<string, unknown> } & Record<string, unknown>) => {
+    mockFileRow(props);
+    return props.files.size > 0 ? <div data-testid="file-row">{props.files.size}</div> : null;
+  },
 }));
 
 const item = (overrides: Partial<ComposerItem> = {}): ComposerItem => ({
@@ -35,6 +43,11 @@ function renderTray(items: ComposerItem[], files: Map<string, ExtendedFile> = ne
       setFiles={jest.fn()}
       setFilesLoading={jest.fn()}
       isRTL={false}
+      index={0}
+      isPastedTextFile={mockIsPastedTextFile}
+      isPasteActionPending={mockIsPasteActionPending}
+      onEditPastedText={mockEditPastedText}
+      onMovePastedTextInline={mockMovePastedTextInline}
     />,
   );
 }
@@ -84,5 +97,19 @@ describe('Tray', () => {
     renderTray([], new Map([['f1', {} as ExtendedFile]]));
     expect(screen.getByTestId('composer-tray')).toBeInTheDocument();
     expect(screen.getByTestId('file-row')).toBeInTheDocument();
+  });
+
+  it('forwards pasted-text actions to the staged file row', () => {
+    renderTray([], new Map([['f1', {} as ExtendedFile]]));
+
+    expect(mockFileRow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        index: 0,
+        isPastedTextFile: mockIsPastedTextFile,
+        isPasteActionPending: mockIsPasteActionPending,
+        onEditPastedText: mockEditPastedText,
+        onMovePastedTextInline: mockMovePastedTextInline,
+      }),
+    );
   });
 });

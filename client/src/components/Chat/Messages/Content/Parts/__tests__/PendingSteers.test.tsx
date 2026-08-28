@@ -102,6 +102,13 @@ describe('PendingSteers', () => {
     expect(screen.getByText('com_ui_send_as_new')).toBeInTheDocument();
   });
 
+  it('shows the quote count carried by a failed steer', () => {
+    renderPending([pending({ status: 'failed', quotes: ['first', 'second'] })]);
+
+    expect(screen.getByText('2')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByText('com_ui_queued_quote_count')).toHaveClass('sr-only');
+  });
+
   it('locks recovery actions while a protocol-v1 delivery is uncertain', () => {
     renderPending([
       pending({

@@ -39,6 +39,7 @@ function setup(
     setNewConvoQueue?: (value: QueuedMessage[]) => void;
     setSettledReceipts?: (value: SettledQueuedTurnReceipt[]) => void;
     setInterruptFlag?: (value: DrainAfterAbort | false) => void;
+    queueRef?: { current: QueuedMessage[] };
     queue?: QueuedMessage[];
     newConvoQueue?: QueuedMessage[];
     settledReceipts?: SettledQueuedTurnReceipt[];
