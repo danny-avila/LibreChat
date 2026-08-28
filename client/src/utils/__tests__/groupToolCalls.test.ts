@@ -270,6 +270,38 @@ describe('groupSequentialToolCalls reasoning transparency', () => {
     expect(result.map((g) => g.type)).toEqual(['tool-group', 'single', 'tool-group']);
   });
 
+  /** An unlabeled group auto-collapses once complete, so commentary folded
+   *  into it would hide the assistant's prose behind a generic action
+   *  header. Reasoning still folds in; only commentary splits the run. */
+  it('keeps unlabeled commentary out of the collapsing tool group', () => {
+    const result = groupSequentialToolCalls(
+      withIndex([
+        toolCall('a'),
+        toolCall('b'),
+        text('here is what I found so far', 'commentary'),
+        toolCall('c'),
+        toolCall('d'),
+        label(''),
+      ]),
+    );
+    expect(result.map((g) => g.type)).toEqual(['tool-group', 'single', 'tool-group']);
+  });
+
+  it('still folds reasoning into a run that commentary split', () => {
+    const result = groupSequentialToolCalls(
+      withIndex([
+        think('deciding'),
+        toolCall('a'),
+        text('a note mid-run', 'commentary'),
+        think('reconsidering'),
+        toolCall('b'),
+        label(''),
+      ]),
+    );
+
+    expect(result.map((g) => g.type)).toEqual(['tool-group', 'single', 'tool-group']);
+  });
+
   it('does not group transfer/handoff tool calls', () => {
     const result = groupSequentialToolCalls(withIndex([transferPart(), transferPart()]));
     expect(result.map((g) => g.type)).toEqual(['single', 'single']);
