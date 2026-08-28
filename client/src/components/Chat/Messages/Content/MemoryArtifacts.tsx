@@ -1,7 +1,7 @@
 import { useId, useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
-import { disclosureChevronVariants } from '@librechat/client';
+import { Button, disclosureChevronVariants } from '@librechat/client';
 import type { MemoryArtifact, TAttachment } from 'librechat-data-provider';
 import { toolPanelSpacingClassName } from './disclosure';
 import { useExpandCollapse, useLocalize } from '~/hooks';
@@ -61,12 +61,12 @@ export default function MemoryArtifacts({ attachments }: { attachments?: TAttach
   return (
     <>
       <div className="relative my-1 flex h-5 shrink-0 items-center gap-2.5">
-        <button
+        <Button
+          variant="ghost"
           className={cn(
-            'group/disclosure inline-flex w-full items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
+            'group/disclosure h-auto w-full justify-start gap-2 rounded-none p-0 font-normal hover:bg-transparent',
             hasErrors ? 'text-status-error' : 'text-text-secondary',
           )}
-          type="button"
           onClick={() => setShowInfo((prev) => !prev)}
           aria-expanded={showInfo}
           aria-controls={contentId}
@@ -104,7 +104,7 @@ export default function MemoryArtifacts({ attachments }: { attachments?: TAttach
             )}
             aria-hidden="true"
           />
-        </button>
+        </Button>
       </div>
       <div
         id={contentId}
