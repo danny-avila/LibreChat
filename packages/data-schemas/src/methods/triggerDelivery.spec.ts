@@ -303,7 +303,7 @@ describe('agent trigger delivery methods', () => {
         workerId: 'capable-worker-2',
         claimToken: 'capable-recovery',
         attempt: 1,
-        error: transientFailure(recoveryNow),
+        error: transientFailure({ attemptedAt: recoveryNow }),
         settledAt: recoveryNow,
       }),
     ).resolves.toBe(true);
