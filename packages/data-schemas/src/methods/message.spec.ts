@@ -54,6 +54,17 @@ let releaseSubagentTaskResultClaim: ReturnType<
   typeof createMessageMethods
 >['releaseSubagentTaskResultClaim'];
 
+function rejectUpdateArrays(beforeUpdate?: () => Promise<void>) {
+  const originalFindOneAndUpdate = Message.collection.findOneAndUpdate.bind(Message.collection);
+  return jest.spyOn(Message.collection, 'findOneAndUpdate').mockImplementation(async (...args) => {
+    if (Array.isArray(args[1])) {
+      throw new Error('Compatibility guard rejected an update array');
+    }
+    await beforeUpdate?.();
+    return originalFindOneAndUpdate(...args);
+  });
+}
+
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
@@ -262,8 +273,8 @@ describe('Message Operations', () => {
       expect(result?.userSubmittedPaths).toHaveLength(2);
     });
 
-    it('uses classic update operators when saving provenance', async () => {
-      const findOneAndUpdate = jest.spyOn(Message.collection, 'findOneAndUpdate');
+    it('saves provenance when update arrays are rejected at the collection boundary', async () => {
+      const findOneAndUpdate = rejectUpdateArrays();
 
       await saveMessage(mockCtx, {
         ...mockMessageData,
@@ -273,7 +284,6 @@ describe('Message Operations', () => {
 
       expect(findOneAndUpdate).toHaveBeenCalledTimes(1);
       const update = findOneAndUpdate.mock.calls[0][1];
-      expect(Array.isArray(update)).toBe(false);
       expect(update).toEqual(expect.objectContaining({ $set: expect.any(Object) }));
     });
 
@@ -538,20 +548,17 @@ describe('Message Operations', () => {
         content: [{ type: 'text', text: 'Model content' }],
       });
 
-      const originalFindOneAndUpdate = Message.collection.findOneAndUpdate.bind(Message.collection);
       let injectedConcurrentWrite = false;
-      const findOneAndUpdate = jest
-        .spyOn(Message.collection, 'findOneAndUpdate')
-        .mockImplementation(async (...args) => {
-          if (!injectedConcurrentWrite) {
-            injectedConcurrentWrite = true;
-            await Message.collection.updateOne(
-              { messageId: 'msg123', user: 'user123' },
-              { $set: { userSubmittedPaths: ['/content/0/text'] } },
-            );
-          }
-          return originalFindOneAndUpdate(...args);
-        });
+      const findOneAndUpdate = rejectUpdateArrays(async () => {
+        if (injectedConcurrentWrite) {
+          return;
+        }
+        injectedConcurrentWrite = true;
+        await Message.collection.updateOne(
+          { messageId: 'msg123', user: 'user123' },
+          { $set: { userSubmittedPaths: ['/content/0/text'] } },
+        );
+      });
 
       await updateMessage(mockCtx.userId, {
         messageId: 'msg123',
@@ -566,7 +573,6 @@ describe('Message Operations', () => {
       );
       expect(updatedMessage?.userSubmittedPaths).toHaveLength(2);
       for (const [, update] of findOneAndUpdate.mock.calls) {
-        expect(Array.isArray(update)).toBe(false);
         expect(update).toEqual(expect.objectContaining({ $set: expect.any(Object) }));
       }
     });
