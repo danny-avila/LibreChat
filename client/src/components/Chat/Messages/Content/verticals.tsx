@@ -176,7 +176,11 @@ function PlaceList({ places, label }: { places: PlaceResult[]; label: string }) 
     >
       {places.slice(0, MAX_PLACES).map((place, i) => (
         <li
-          key={place.identifier || place.name || i}
+          /** Several branches of one chain share a name and often carry no
+           *  identifier, so name alone collides across rows whose address,
+           *  rating and map target all differ. Verticals never stream, so the
+           *  index is a stable tiebreaker for a snapshot-rendered list. */
+          key={place.identifier || `${place.name ?? ''}|${place.address ?? ''}|${i}`}
           className={cn(i > 0 && 'border-t border-border-light')}
         >
           <a

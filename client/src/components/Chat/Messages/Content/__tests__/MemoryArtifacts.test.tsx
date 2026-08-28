@@ -128,6 +128,28 @@ describe('MemoryArtifacts', () => {
       expect(button).toHaveClass('text-status-error');
       expect(screen.getByText('Memory Error')).toBeInTheDocument();
     });
+
+    test('ignores attachments already rendered as an inline memory tool card', () => {
+      /** A `set_memory`/`delete_memory` call routes to `MemoryCall`, which
+       *  shows the same key, value and outcome. Counting its attachment here
+       *  too rendered one mutation twice. `toolCallId` is the discriminator. */
+      const linked = {
+        ...createMemoryAttachment('update', 'memory1'),
+        toolCallId: 'call_abc123',
+      } as TAttachment;
+
+      const { container } = render(<MemoryArtifacts attachments={[linked]} />);
+
+      expect(container).toBeEmptyDOMElement();
+    });
+
+    test('still renders a memory attachment carrying no tool call id', () => {
+      render(<MemoryArtifacts attachments={[createMemoryAttachment('update', 'memory1')]} />);
+
+      fireEvent.click(screen.getByRole('button'));
+
+      expect(screen.getByTestId('memory-artifact-update')).toBeInTheDocument();
+    });
   });
 
   describe('Collapse/Expand Functionality', () => {

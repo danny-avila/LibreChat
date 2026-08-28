@@ -1,4 +1,5 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
 import { ChevronDown, MessageCircleQuestion, Users } from 'lucide-react';
@@ -25,6 +26,7 @@ import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { AttachmentGroup, ReasoningCompact } from './Parts';
 import { isMemoryFailureOutput } from './Parts/MemoryCall';
 import { isError, StackedToolIcons } from './ToolOutput';
+import { showThinkingAtom } from '~/store/showThinking';
 import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
 import SearchVerticals from './verticals';
@@ -198,6 +200,7 @@ export default function ToolCallGroup({
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
   const mcpServerNames = useMCPServerNames();
+  const showThinking = useAtomValue(showThinkingAtom);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
   const retainedForPendingApprovalRef = useRef(false);
@@ -327,7 +330,15 @@ export default function ToolCallGroup({
   /** Every group has >= 1 tool; collapse a completed one by default just like
    *  a multi-tool group, so a lone tool-with-thinking group (a skill, say)
    *  stays visually consistent with the larger groups around it. */
-  const autoCollapse = !autoExpand && allCompleted && (count >= 1 || activityLabelText.length > 0);
+  /** A folded-in THINK part only renders inside this body, so auto-collapsing
+   *  a completed reasoning-bearing group leaves "Open Thinking Dropdowns by
+   *  Default" with no visible effect until the user opens the action group by
+   *  hand (on reload the body is not even mounted). */
+  const autoCollapse =
+    !autoExpand &&
+    !(showThinking && hasReasoning) &&
+    allCompleted &&
+    (count >= 1 || activityLabelText.length > 0);
   const initialState = initialExpansionState?.userOverride === true ? initialExpansionState : null;
   const [isExpanded, setIsExpanded] = useState(
     initialState?.isExpanded ?? (autoExpand || !autoCollapse),

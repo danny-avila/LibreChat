@@ -674,6 +674,23 @@ function getDefaultHandlers({
     handlers[GraphEvents.ON_SUMMARIZE_COMPLETE] = {
       handle: async (_event, data) => {
         aggregateContent({ event: GraphEvents.ON_SUMMARIZE_COMPLETE, data });
+        /**
+         * Stamped onto the aggregated part for the same reason as
+         * `runStepStatus` above: an errored round keeps whatever deltas it
+         * already streamed, and the SDK's aggregator ignores a complete event
+         * that carries no `summary`, so nothing records the failure. Without
+         * this the flag exists only on the live client message and a reload
+         * re-renders the truncated text under "Conversation summarized".
+         * Resolved through `stepMap` only, so a missing step degrades to the
+         * old behavior rather than marking an unrelated part.
+         */
+        if (data?.error && contentParts) {
+          const index = stepMap?.get(data?.id)?.index;
+          const part = typeof index === 'number' ? contentParts[index] : undefined;
+          if (part?.type === ContentTypes.SUMMARY) {
+            part.failed = true;
+          }
+        }
         await emitForJob({
           event: GraphEvents.ON_SUMMARIZE_COMPLETE,
           data,
