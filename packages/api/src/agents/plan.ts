@@ -34,6 +34,9 @@ export interface ResolveAgentTurnExecutionPlanInput {
     expectedAction?: AgentTriggerExpectedAction;
   };
   canPause: boolean;
+  /** Immutable request capability used only during mixed-version drain. This
+   * is negotiated automatically and is never an operator-selected runtime. */
+  durableEventActorSuspensions: boolean;
   checkpointerType?: TCheckpointerType;
 }
 
@@ -66,7 +69,10 @@ export function resolveAgentTurnExecutionPlan(
   const binding = input.event?.binding;
   const expectedAction = input.event?.expectedAction;
   const canAttemptCheckpoint =
-    binding != null && expectedAction != null && input.checkpointerType !== 'memory';
+    binding != null &&
+    expectedAction != null &&
+    input.checkpointerType !== 'memory' &&
+    (!input.canPause || input.durableEventActorSuspensions);
   let strategy: AgentTurnContinuationStrategy = 'history';
   if (input.isNewConversation) {
     strategy = 'fresh';

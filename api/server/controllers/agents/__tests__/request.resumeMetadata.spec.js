@@ -132,7 +132,8 @@ const mockResolveAgentTurnExecutionPlan = jest.fn((input) => {
   const checkpointCompatible =
     input.event?.binding != null &&
     input.event?.expectedAction != null &&
-    input.checkpointerType !== 'memory';
+    input.checkpointerType !== 'memory' &&
+    (!input.canPause || input.durableEventActorSuspensions);
   let strategy = 'history';
   if (input.isNewConversation) {
     strategy = 'fresh';
@@ -4704,7 +4705,7 @@ describe('ResumableAgentController resume metadata', () => {
       undefined,
     ],
     [
-      'legacy-protocol pause-capable request',
+      'pre-capability pause consumer fleet',
       { toolDefinitions: [] },
       { toolApproval: { enabled: true } },
       undefined,
@@ -4745,7 +4746,8 @@ describe('ResumableAgentController resume metadata', () => {
           throw new Error('stop after legacy event invocation started');
         }),
       };
-      const shouldCheckpoint = _label !== 'memory-checkpointer';
+      const shouldCheckpoint =
+        _label !== 'memory-checkpointer' && _label !== 'pre-capability pause consumer fleet';
       if (shouldCheckpoint) {
         mockExecuteAgentEventActor.mockImplementationOnce(async (input) => {
           await input.invoke({

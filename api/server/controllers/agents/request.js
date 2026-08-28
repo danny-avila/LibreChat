@@ -1746,6 +1746,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             }
           : undefined,
       canPause: eventActorMayPause,
+      /** Old trusted producers can coexist during a direct rolling upgrade.
+       * Their immutable v1 request keeps pause-capable turns on the history
+       * adapter until every consumer understands durable suspensions. */
+      durableEventActorSuspensions: generationProtocolVersion >= GENERATION_PROTOCOL_V2,
       checkpointerType: agentsConfig?.checkpointer?.type,
     });
 
