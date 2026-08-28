@@ -1144,6 +1144,36 @@ describe('BackgroundTaskRegistryClass', () => {
     expect('atCapacity' in created).toBe(false);
   });
 
+  it('retains an in-flight capacity permit until durable reservation completes', () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_787_000_000_000);
+    const registry = new BackgroundTaskRegistryClass();
+    const admission = registry.reserveCapacity({
+      userId: 'u1',
+      conversationId: 'c-slow-reservation',
+      toolCallId: 'call_slow',
+      runId: 'run-1',
+    });
+    if (!('permit' in admission)) {
+      throw new Error('expected capacity permit');
+    }
+
+    /** Cross both the former one-minute permit timeout and idle-bucket TTL.
+     * A slow durable reservation still owns this slot until its caller
+     * consumes or releases it. */
+    now.mockReturnValue(1_787_000_000_000 + 7 * 60 * 60 * 1000);
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c-slow-reservation',
+      toolCallId: 'call_slow',
+      toolName: 'search_mcp_docs',
+      runId: 'run-1',
+      capacityPermit: admission.permit,
+    });
+
+    expect('atCapacity' in created).toBe(false);
+    now.mockRestore();
+  });
+
   it('evicts oldest settled tasks instead of blocking when the total cap is full', () => {
     const registry = new BackgroundTaskRegistryClass();
     for (let i = 0; i < 200; i++) {

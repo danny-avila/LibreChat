@@ -7,6 +7,7 @@ import type {
   IAgentTriggerLaneSequenceDocument,
   IAgentTriggerUserPurgeDocument,
 } from '~/types/triggerDelivery';
+import { AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 } from '~/types/triggerDelivery';
 import type { IUser } from '~/types/user';
 import {
   AgentTriggerDeliveryConflictError,
@@ -235,6 +236,60 @@ describe('agent trigger delivery methods', () => {
     );
 
     expect(claims.filter((claim) => claim != null)).toHaveLength(1);
+  });
+
+  it('keeps capability-fenced work invisible to old workers through lease recovery', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+    );
+    expect(queued.delivery).toMatchObject({
+      status: 'capability_pending',
+      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+    });
+    const claimInput = {
+      workerId: 'capable-worker',
+      claimToken: 'capable-claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    };
+
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        ...claimInput,
+        workerId: 'old-worker',
+        claimToken: 'old-claim',
+      }),
+    ).resolves.toBeNull();
+    const capable = await methods.claimNextAgentTriggerDelivery({
+      ...claimInput,
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    expect(capable).toMatchObject({ status: 'capability_leased' });
+
+    await Delivery.updateOne(
+      { _id: capable!.id },
+      { $set: { leaseUntil: new Date(START.getTime() - 60_000) } },
+    );
+    const recoveryNow = new Date(START.getTime() + 60_000);
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'old-worker',
+        claimToken: 'old-recovery',
+        now: recoveryNow,
+        leaseUntil: new Date(recoveryNow.getTime() + 60_000),
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'capable-worker-2',
+        claimToken: 'capable-recovery',
+        now: recoveryNow,
+        leaseUntil: new Date(recoveryNow.getTime() + 60_000),
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+      }),
+    ).resolves.toMatchObject({ status: 'capability_leased' });
   });
 
   it('allocates a replica-stable monotonic sequence within an ordering lane', async () => {
@@ -1831,6 +1886,106 @@ describe('agent trigger delivery methods', () => {
         conversationId: 'conversation-1',
       }),
     ).resolves.toBeNull();
+  });
+
+  it('persists detached evidence before the started transport response settles', async () => {
+    const bindingId = 'binding-detached-leased';
+    const conversationId = 'conversation-detached-leased';
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        awaitTerminalHandling: true,
+        tenantId: undefined,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const claimed = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-detached-leased',
+      claimToken: 'claim-detached-leased',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claimed!.id,
+      workerId: 'worker-detached-leased',
+      claimToken: 'claim-detached-leased',
+      now: START,
+    });
+    const generationCreatedAt = START.getTime() + 1_000;
+    await expect(
+      methods.admitAgentEventActorAction({
+        deliveryKey: queued.delivery.deliveryKey,
+        user: queued.delivery.user,
+        bindingId,
+        conversationId,
+        admittedAt: new Date(generationCreatedAt),
+        admissionId: 'admission-detached-leased',
+      }),
+    ).resolves.toBe(true);
+    const reservation = await methods.reserveAgentEventActorDetachedAction({
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      bindingId,
+      conversationId,
+      generationCreatedAt,
+      invocationId: queued.delivery.deliveryKey,
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-detached-leased',
+      reservedAt: new Date(generationCreatedAt + 1_000),
+      recoveryAfter: new Date(generationCreatedAt + 61_000),
+    });
+    expect(reservation.status).toBe('reserved');
+    const update = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      bindingId,
+      conversationId,
+      generationCreatedAt,
+      taskId: reservation.action.taskId,
+      idempotencyKey: reservation.action.idempotencyKey,
+      observedAt: new Date(generationCreatedAt + 2_000),
+      recoveryAfter: new Date(generationCreatedAt + 1_802_000),
+    };
+    await expect(methods.markAgentEventActorDetachedActionRunning(update)).resolves.toEqual({
+      status: 'applied',
+    });
+    await expect(
+      methods.settleAgentEventActorDetachedAction({
+        ...update,
+        status: 'succeeded',
+        result: 'accepted',
+      }),
+    ).resolves.toEqual({ status: 'applied' });
+
+    await methods.completeAgentTriggerDelivery({
+      id: claimed!.id,
+      workerId: 'worker-detached-leased',
+      claimToken: 'claim-detached-leased',
+      attempt: attempt!,
+      result: { status: 'started' },
+      settledAt: new Date(generationCreatedAt),
+      awaitTerminalHandling: true,
+      handling: {
+        status: 'started',
+        conversationId,
+        streamId: conversationId,
+        generationCreatedAt,
+        startedAt: new Date(generationCreatedAt),
+      },
+    });
+    await expect(
+      methods.getAgentEventActorDetachedAction({
+        deliveryKey: queued.delivery.deliveryKey,
+        user: queued.delivery.user,
+        bindingId,
+        conversationId,
+        generationCreatedAt,
+      }),
+    ).resolves.toEqual(expect.objectContaining({ status: 'succeeded', result: 'accepted' }));
   });
 
   it('gives one replica the detached expected-action launch reservation', async () => {

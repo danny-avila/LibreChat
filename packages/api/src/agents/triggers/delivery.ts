@@ -21,6 +21,9 @@ export interface AgentTriggerEnqueueOptions {
   /** Opt-in only for observational bound-child continuations. Actionable,
    *  fenced, approval, HITL, and control deliveries must remain individual. */
   coalesce?: AgentTriggerCoalesceOptions;
+  /** Server-owned capability fence. Deliveries carrying this marker remain
+   * invisible to older workers during a rolling deployment. */
+  requiredWorkerCapability?: string;
 }
 
 export interface PreparedAgentTriggerDelivery {
@@ -38,6 +41,7 @@ export interface PreparedAgentTriggerDelivery {
   /** Persisted rollout marker: keep this bound actor lane queued until the
    *  admitted child turn records an authoritative terminal outcome. */
   awaitTerminalHandling?: boolean;
+  requiredWorkerCapability?: string;
 }
 
 export class AgentTriggerDeliveryError extends TypeError {
@@ -188,6 +192,9 @@ export function prepareAgentTriggerDelivery(
     ...(envelope.principal.tenantId != null && { tenantId: envelope.principal.tenantId }),
     availableAt: coalesceUntil ?? requestedAvailableAt,
     envelopeBytes: bytes,
+    ...(options.requiredWorkerCapability == null
+      ? {}
+      : { requiredWorkerCapability: options.requiredWorkerCapability }),
     ...(coalesceKey != null &&
       coalesceUntil != null && {
         coalesceKey,

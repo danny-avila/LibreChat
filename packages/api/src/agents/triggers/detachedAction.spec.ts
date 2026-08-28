@@ -155,6 +155,62 @@ describe('createAgentEventActorDetachedActionLifecycle', () => {
     expect(lifecycle.readSuspension()).toBeUndefined();
   });
 
+  it('preserves a same-executor replay of its running reservation', async () => {
+    const action = {
+      version: 1 as const,
+      invocationId: 'delivery-1',
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-replay',
+      taskId: `event_actor_${'d'.repeat(64)}`,
+      idempotencyKey: 'd'.repeat(64),
+      launchAttempt: 0,
+      status: 'reserved' as const,
+      reservedAt: new Date(),
+      observedAt: new Date(),
+      recoveryAfter: new Date(),
+    };
+    const reserve = jest
+      .fn()
+      .mockResolvedValueOnce({ status: 'reserved' as const, action })
+      .mockResolvedValueOnce({
+        status: 'replay' as const,
+        action: { ...action, status: 'running' as const },
+      });
+    const lifecycle = createAgentEventActorDetachedActionLifecycle(
+      {
+        user: 'user-1',
+        bindingId: 'binding-1',
+        conversationId: 'conversation-1',
+        generationCreatedAt: 123,
+        invocationId: 'delivery-1',
+        expectedAction: { toolName: 'submit_move' },
+      },
+      {
+        reserveAgentEventActorDetachedAction: reserve,
+        markAgentEventActorDetachedActionRunning: jest.fn(),
+        settleAgentEventActorDetachedAction: jest.fn(),
+        onTerminal: jest.fn(),
+      },
+    );
+    const input = {
+      toolName: action.toolName,
+      toolCallId: action.toolCallId,
+      arguments: {},
+    };
+
+    await expect(lifecycle.reserve(input)).resolves.toEqual({
+      status: 'reserved',
+      taskId: action.taskId,
+      idempotencyKey: action.idempotencyKey,
+    });
+    await expect(lifecycle.reserve(input)).resolves.toEqual({
+      status: 'replay',
+      taskId: action.taskId,
+      idempotencyKey: action.idempotencyKey,
+    });
+  });
+
   it('refuses an indeterminate replay', async () => {
     const baseAction = {
       version: 1 as const,
@@ -300,6 +356,9 @@ describe('createAgentEventDetachedResumeHandler', () => {
     await resume(input);
 
     expect(enqueueAgentTrigger).toHaveBeenCalledTimes(2);
+    expect(enqueueAgentTrigger).toHaveBeenNthCalledWith(1, expect.any(Object), {
+      requiredWorkerCapability: 'event_actor_detached_action_v1',
+    });
     const [first] = enqueueAgentTrigger.mock.calls[0];
     const [second] = enqueueAgentTrigger.mock.calls[1];
     expect(first.deliveryId).toBe('detached_completion:task-1');

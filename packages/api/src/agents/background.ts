@@ -634,10 +634,10 @@ interface TaskBucket {
   tasks: Map<string, BackgroundTask>;
   /** toolCallId -> taskId, for dispatch idempotency across graph re-execution. */
   byToolCall: Map<string, string>;
-  /** Short-lived local permits acquired before a caller persists external
+  /** Caller-owned local permits acquired before a caller persists external
    * launch authority. They prevent capacity rejection from creating a durable
    * action that was definitely never launched. */
-  capacityPermits: Map<string, { dedupeKey: string; createdAt: number }>;
+  capacityPermits: Map<string, { dedupeKey: string }>;
   lastAccess: number;
 }
 
@@ -653,7 +653,6 @@ const IDLE_BUCKET_TTL_MS = 6 * 60 * 60 * 1000;
  *  so a detached call that never settles (hung network / lost MCP connection)
  *  can't hold a running slot and exhaust the per-conversation cap forever. */
 const RUNNING_TASK_TTL_MS = 30 * 60 * 1000;
-const CAPACITY_PERMIT_TTL_MS = 60 * 1000;
 const MAX_RUNNING_PER_BUCKET = 10;
 const MAX_TASKS_PER_BUCKET = 200;
 const MAX_RESULT_CHARS = 100_000;
@@ -739,11 +738,6 @@ export class BackgroundTaskRegistryClass {
         bucket.byToolCall.delete(dedupeKey);
       }
     }
-    for (const [permitId, permit] of bucket.capacityPermits) {
-      if (now - permit.createdAt > CAPACITY_PERMIT_TTL_MS) {
-        bucket.capacityPermits.delete(permitId);
-      }
-    }
   }
 
   /**
@@ -758,7 +752,7 @@ export class BackgroundTaskRegistryClass {
     }
     this.lastGlobalSweepAt = now;
     for (const [bucketKey, bucket] of this.buckets) {
-      if (now - bucket.lastAccess > IDLE_BUCKET_TTL_MS) {
+      if (now - bucket.lastAccess > IDLE_BUCKET_TTL_MS && bucket.capacityPermits.size === 0) {
         this.buckets.delete(bucketKey);
         continue;
       }
@@ -827,7 +821,11 @@ export class BackgroundTaskRegistryClass {
       userId: params.userId,
       conversationId: params.conversationId,
     };
-    bucket.capacityPermits.set(permit.id, { dedupeKey, createdAt: now });
+    /** The permit is owned by the in-flight caller until it is consumed or
+     * explicitly released. Expiring it by wall clock could strand a durable
+     * reservation when MongoDB is slow; process death already clears local
+     * permits without pretending the external launch happened. */
+    bucket.capacityPermits.set(permit.id, { dedupeKey });
     return { permit };
   }
 

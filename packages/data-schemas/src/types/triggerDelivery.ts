@@ -3,11 +3,15 @@ import type { IAgentEventActorReconciliation } from './convo';
 
 export type AgentTriggerDeliveryStatus =
   | 'staging'
+  | 'capability_staging'
   | 'batched'
   | 'pending'
+  | 'capability_pending'
   | 'leased'
+  | 'capability_leased'
   | 'succeeded'
   | 'dead';
+export const AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 = 'event_actor_detached_action_v1';
 export type AgentTriggerDeliveryOutcome = 'succeeded' | 'retry' | 'dead';
 
 export interface AgentTriggerHandlingState {
@@ -86,6 +90,8 @@ export interface IAgentTriggerDelivery {
   user: Types.ObjectId;
   tenantId?: string;
   status: AgentTriggerDeliveryStatus;
+  /** Keeps a delivery invisible to pre-capability workers during rolling deploys. */
+  requiredWorkerCapability?: string;
   attempts: number;
   availableAt: Date;
   envelopeBytes?: number;
@@ -189,7 +195,7 @@ export interface AgentTriggerDeliveryClaim extends AgentTriggerDeliveryRecord {
   claimToken: string;
   leaseBy: string;
   leaseUntil: Date;
-  status: 'leased';
+  status: 'leased' | 'capability_leased';
 }
 
 export interface AgentTriggerOrderingBlock {

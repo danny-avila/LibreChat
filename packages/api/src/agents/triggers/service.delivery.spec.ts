@@ -1,4 +1,8 @@
-import { getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+  getTenantId,
+  SYSTEM_TENANT_ID,
+} from '@librechat/data-schemas';
 import type { AgentTriggerDeliveryPersistence, AgentTriggerStoredRecord } from './service';
 import { AgentTriggerServiceUnavailableError, createAgentTriggerService } from './service';
 import { __resetShutdownStateForTests } from '../../app/shutdown';
@@ -168,6 +172,11 @@ describe('durable agent trigger service', () => {
 
     expect(methods.ensureAgentTriggerDeliveryIndexes).toHaveBeenCalledTimes(1);
     expect(methods.claimNextAgentTriggerDelivery).toHaveBeenCalled();
+    expect(methods.claimNextAgentTriggerDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+      }),
+    );
     expect(methods.enqueueAgentTriggerDelivery).toHaveBeenCalledWith(
       expect.objectContaining({
         deliveryKey: expect.stringMatching(/^trigger_/),

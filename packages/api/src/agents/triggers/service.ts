@@ -1,4 +1,8 @@
-import { logger, runAsSystem } from '@librechat/data-schemas';
+import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+  logger,
+  runAsSystem,
+} from '@librechat/data-schemas';
 import type { AgentTriggerDeliveryStatusRecord } from '@librechat/data-schemas';
 import type {
   AgentTriggerDeliveryFailure,
@@ -86,7 +90,11 @@ export interface AgentTriggerDeliveryPersistence {
   enqueueAgentTriggerDelivery: (
     input: PreparedAgentTriggerDelivery,
   ) => Promise<{ delivery: AgentTriggerStoredRecord; replayed: boolean }>;
-  claimNextAgentTriggerDelivery: AgentTriggerDeliveryStore['claimNext'];
+  claimNextAgentTriggerDelivery: (
+    input: Parameters<AgentTriggerDeliveryStore['claimNext']>[0] & {
+      workerCapabilities?: string[];
+    },
+  ) => ReturnType<AgentTriggerDeliveryStore['claimNext']>;
   findEarlierAgentTriggerDelivery: AgentTriggerDeliveryStore['findEarlierUnsettled'];
   getAgentTriggerDeliveryBatch: AgentTriggerDeliveryStore['getBatch'];
   releaseAgentTriggerDelivery: AgentTriggerDeliveryStore['release'];
@@ -150,7 +158,11 @@ export interface AgentTriggerService {
 
 function createDeliveryStore(methods: AgentTriggerDeliveryPersistence): AgentTriggerDeliveryStore {
   return {
-    claimNext: methods.claimNextAgentTriggerDelivery,
+    claimNext: (input) =>
+      methods.claimNextAgentTriggerDelivery({
+        ...input,
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+      }),
     findEarlierUnsettled: methods.findEarlierAgentTriggerDelivery,
     getBatch: methods.getAgentTriggerDeliveryBatch,
     release: methods.releaseAgentTriggerDelivery,
@@ -165,7 +177,13 @@ function createDeliveryStore(methods: AgentTriggerDeliveryPersistence): AgentTri
 function publicReceiptStatus(
   status: AgentTriggerStoredRecord['status'],
 ): AgentTriggerDeliveryReceipt['status'] {
-  return status === 'batched' ? 'pending' : status;
+  if (status === 'batched' || status === 'capability_pending') {
+    return 'pending';
+  }
+  if (status === 'capability_staging') {
+    return 'staging';
+  }
+  return status === 'capability_leased' ? 'leased' : status;
 }
 
 function requireDeliveryOrigin(boundOrigin: string | undefined): void {

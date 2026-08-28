@@ -16,6 +16,7 @@ import type {
   IAgentTriggerUserPurge,
   IAgentTriggerUserPurgeDocument,
 } from '~/types/triggerDelivery';
+import { AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 } from '~/types/triggerDelivery';
 import { createIndexesWithRetry } from '~/utils/retry';
 import logger from '~/config/winston';
 
@@ -30,6 +31,10 @@ const MAX_PURGE_RECOVERY_LIMIT = 200;
 const HISTORY_LIMIT = 64;
 const MAX_BATCH_SIZE = 8;
 const MAX_BATCH_BYTES = 512 * 1024;
+
+function isStagingStatus(status: IAgentTriggerDelivery['status']): boolean {
+  return status === 'staging' || status === 'capability_staging';
+}
 
 type DuplicateKeyError = { code?: number };
 
@@ -77,6 +82,7 @@ export interface EnqueueAgentTriggerDeliveryInput {
   coalesceFrom?: Date;
   coalesceUntil?: Date;
   awaitTerminalHandling?: boolean;
+  requiredWorkerCapability?: string;
 }
 
 export interface AgentTriggerDeliveryFence {
@@ -182,6 +188,7 @@ export interface AgentTriggerDeliveryMethods {
     claimToken: string;
     now: Date;
     leaseUntil: Date;
+    workerCapabilities?: string[];
   }) => Promise<AgentTriggerDeliveryClaim | null>;
   findEarlierAgentTriggerDelivery: (
     delivery: Pick<AgentTriggerDeliveryRecord, 'orderingKey' | 'laneSequence'>,
@@ -315,6 +322,9 @@ function toRecord(delivery: IAgentTriggerDelivery): AgentTriggerDeliveryRecord {
     availableAt: delivery.availableAt,
     createdAt: delivery.createdAt,
     ...(delivery.tenantId != null && { tenantId: delivery.tenantId }),
+    ...(delivery.requiredWorkerCapability != null && {
+      requiredWorkerCapability: delivery.requiredWorkerCapability,
+    }),
     ...(delivery.leaseBy != null && { leaseBy: delivery.leaseBy }),
     ...(delivery.leaseUntil != null && { leaseUntil: delivery.leaseUntil }),
     ...(delivery.claimToken != null && { claimToken: delivery.claimToken }),
@@ -350,7 +360,7 @@ function requireClaim(delivery: IAgentTriggerDelivery | null): AgentTriggerDeliv
   }
   const record = toRecord(delivery);
   if (
-    record.status !== 'leased' ||
+    !['leased', 'capability_leased'].includes(record.status) ||
     record.claimToken == null ||
     record.leaseBy == null ||
     record.leaseUntil == null
@@ -487,11 +497,21 @@ export function createAgentTriggerDeliveryMethods(
         batchRoot.awaitTerminalHandling = true;
       }
     }
+    let publishedStatus: IAgentTriggerDelivery['status'] = 'pending';
+    if (batchRoot != null) {
+      publishedStatus = 'batched';
+    } else if (staged?.requiredWorkerCapability != null) {
+      publishedStatus = 'capability_pending';
+    }
     const published = await Delivery().updateOne(
-      { _id: publisherDeliveryId, orderingKey: lane._id, status: 'staging' },
+      {
+        _id: publisherDeliveryId,
+        orderingKey: lane._id,
+        status: staged?.status ?? 'staging',
+      },
       {
         $set: {
-          status: batchRoot == null ? 'pending' : 'batched',
+          status: publishedStatus,
           laneSequence: lane.value,
           ...(batchRoot?._id != null && {
             batchRootId: batchRoot._id,
@@ -513,7 +533,7 @@ export function createAgentTriggerDeliveryMethods(
         batchRoot?._id != null &&
         current != null &&
         current.orderingKey === lane._id &&
-        current.status !== 'staging' &&
+        !isStagingStatus(current.status) &&
         current.laneSequence !== lane.value
       ) {
         await Delivery().updateOne(
@@ -536,9 +556,9 @@ export function createAgentTriggerDeliveryMethods(
       publicationCommitted =
         current != null &&
         current.orderingKey === lane._id &&
-        current.status !== 'staging' &&
+        !isStagingStatus(current.status) &&
         current.laneSequence === lane.value;
-      if (current?.orderingKey === lane._id && current.status === 'staging') {
+      if (current?.orderingKey === lane._id && isStagingStatus(current.status)) {
         throw new Error('Failed to publish the reserved agent trigger delivery');
       }
     }
@@ -627,7 +647,7 @@ export function createAgentTriggerDeliveryMethods(
       if (current == null) {
         throw new Error('Staged agent trigger delivery disappeared before publication');
       }
-      if (current.status !== 'staging') {
+      if (!isStagingStatus(current.status)) {
         return current;
       }
       if ((await UserPurge().exists({ _id: current.user })) != null) {
@@ -648,7 +668,7 @@ export function createAgentTriggerDeliveryMethods(
       // the oldest visible row first lets any replica repair a writer that
       // stopped in that gap without allowing a later enqueue to overtake it.
       const next = await Delivery()
-        .findOne({ orderingKey, status: 'staging' })
+        .findOne({ orderingKey, status: { $in: ['staging', 'capability_staging'] } })
         // updatedAt is the current staging admission time: initial enqueue
         // sets it on insert, while explicit requeue refreshes it so an old
         // dead letter is admitted behind staging work that already exists.
@@ -702,6 +722,15 @@ export function createAgentTriggerDeliveryMethods(
   async function enqueueAgentTriggerDelivery(
     input: EnqueueAgentTriggerDeliveryInput,
   ): Promise<{ delivery: AgentTriggerDeliveryRecord; replayed: boolean }> {
+    if (
+      input.requiredWorkerCapability != null &&
+      input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1
+    ) {
+      throw new TypeError('Agent trigger delivery requires an unsupported worker capability');
+    }
+    if (input.requiredWorkerCapability != null && input.coalesceKey != null) {
+      throw new TypeError('Capability-fenced agent trigger deliveries cannot be batched');
+    }
     let staged: IAgentTriggerDelivery;
     let replayed = false;
     try {
@@ -715,7 +744,7 @@ export function createAgentTriggerDeliveryMethods(
               batchMemberIds: [],
             }),
         laneSequence: 0,
-        status: 'staging',
+        status: input.requiredWorkerCapability == null ? 'staging' : 'capability_staging',
         attempts: 0,
         requeueCount: 0,
         stagingRecoveryAt: new Date(),
@@ -734,7 +763,7 @@ export function createAgentTriggerDeliveryMethods(
       if (existing.fingerprint !== input.fingerprint) {
         throw new AgentTriggerDeliveryConflictError(input.deliveryKey);
       }
-      if (existing.status !== 'staging') {
+      if (!isStagingStatus(existing.status)) {
         return { delivery: toRecord(existing), replayed: true };
       }
       staged = existing;
@@ -791,7 +820,10 @@ export function createAgentTriggerDeliveryMethods(
     /** Pre-cursor replicas can leave staging rows outside the sparse recovery
      * index. Backfill them in bounded batches before using the indexed scan. */
     const legacyStaged = await Delivery()
-      .find({ status: 'staging', stagingRecoveryAt: { $exists: false } })
+      .find({
+        status: { $in: ['staging', 'capability_staging'] },
+        stagingRecoveryAt: { $exists: false },
+      })
       .sort({ updatedAt: 1, _id: 1 })
       .limit(remaining)
       .lean<IAgentTriggerDelivery[]>();
@@ -799,7 +831,11 @@ export function createAgentTriggerDeliveryMethods(
     for (const delivery of legacyStaged) {
       if (delivery._id != null) {
         await Delivery().updateOne(
-          { _id: delivery._id, status: 'staging', stagingRecoveryAt: { $exists: false } },
+          {
+            _id: delivery._id,
+            status: { $in: ['staging', 'capability_staging'] },
+            stagingRecoveryAt: { $exists: false },
+          },
           { $set: { stagingRecoveryAt: legacyCursor } },
           { timestamps: false },
         );
@@ -813,7 +849,7 @@ export function createAgentTriggerDeliveryMethods(
       remaining > 0
         ? await Delivery()
             .find({
-              status: 'staging',
+              status: { $in: ['staging', 'capability_staging'] },
               stagingRecoveryAt: { $exists: true },
               ...(legacyIds.length > 0 && { _id: { $nin: legacyIds } }),
             })
@@ -833,7 +869,7 @@ export function createAgentTriggerDeliveryMethods(
       await Delivery().updateOne(
         {
           _id: delivery._id,
-          status: 'staging',
+          status: { $in: ['staging', 'capability_staging'] },
           stagingRecoveryAt: delivery.stagingRecoveryAt,
         },
         { $set: { stagingRecoveryAt: stagingRecoveryCursor } },
@@ -843,7 +879,7 @@ export function createAgentTriggerDeliveryMethods(
     for (const delivery of staged) {
       try {
         const published = await publishStagedDelivery(delivery);
-        if (published.status !== 'staging') {
+        if (!isStagingStatus(published.status)) {
           recovered += 1;
         } else {
           await rotateStagingRecovery(delivery);
@@ -870,7 +906,20 @@ export function createAgentTriggerDeliveryMethods(
     const stillRetained = await Delivery().exists({
       orderingKey,
       $or: [
-        { status: { $in: ['staging', 'batched', 'pending', 'leased', 'dead'] } },
+        {
+          status: {
+            $in: [
+              'staging',
+              'capability_staging',
+              'batched',
+              'pending',
+              'capability_pending',
+              'leased',
+              'capability_leased',
+              'dead',
+            ],
+          },
+        },
         {
           status: 'succeeded',
           batchRootId: { $exists: false },
@@ -963,8 +1012,39 @@ export function createAgentTriggerDeliveryMethods(
     claimToken: string;
     now: Date;
     leaseUntil: Date;
+    workerCapabilities?: string[];
   }): Promise<AgentTriggerDeliveryClaim | null> {
     const expiredBefore = new Date(input.now.getTime() - LEASE_SKEW_MARGIN_MS);
+    const workerCapabilities = [...new Set(input.workerCapabilities ?? [])];
+    if (workerCapabilities.some((value) => value.length === 0 || value.length > 128)) {
+      throw new TypeError('Agent trigger worker capability is invalid');
+    }
+    if (workerCapabilities.length > 0) {
+      const capabilityClaim = await Delivery()
+        .findOneAndUpdate(
+          {
+            requiredWorkerCapability: { $in: workerCapabilities },
+            $or: [
+              { status: 'capability_pending', availableAt: { $lte: input.now } },
+              { status: 'capability_leased', leaseUntil: { $lte: expiredBefore } },
+            ],
+          },
+          {
+            $set: {
+              status: 'capability_leased',
+              leaseBy: input.workerId,
+              leaseUntil: input.leaseUntil,
+              claimToken: input.claimToken,
+            },
+            $unset: { settledAt: 1, expiresAt: 1 },
+          },
+          { new: true, sort: { availableAt: 1, createdAt: 1, _id: 1 } },
+        )
+        .lean<IAgentTriggerDelivery>();
+      if (capabilityClaim != null) {
+        return requireClaim(capabilityClaim);
+      }
+    }
     const claimed = await Delivery()
       .findOneAndUpdate(
         {
@@ -996,7 +1076,11 @@ export function createAgentTriggerDeliveryMethods(
         orderingKey: delivery.orderingKey,
         laneSequence: { $lt: delivery.laneSequence },
         $or: [
-          { status: { $in: ['pending', 'leased'] } },
+          {
+            status: {
+              $in: ['pending', 'capability_pending', 'leased', 'capability_leased'],
+            },
+          },
           {
             status: 'succeeded',
             batchRootId: { $exists: false },
@@ -1260,14 +1344,27 @@ export function createAgentTriggerDeliveryMethods(
 
   const fence = (input: AgentTriggerDeliveryFence) => ({
     _id: input.id,
-    status: 'leased',
+    status: { $in: ['leased', 'capability_leased'] },
     leaseBy: input.workerId,
     claimToken: input.claimToken,
+  });
+
+  const capabilityFence = (input: AgentTriggerDeliveryFence) => ({
+    ...fence(input),
+    status: 'capability_leased',
+    requiredWorkerCapability: { $exists: true },
   });
 
   async function releaseAgentTriggerDelivery(
     input: AgentTriggerDeliveryFence & { availableAt: Date },
   ): Promise<boolean> {
+    const capabilityResult = await Delivery().updateOne(capabilityFence(input), {
+      $set: { status: 'capability_pending', availableAt: input.availableAt },
+      $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1 },
+    });
+    if (capabilityResult.modifiedCount === 1) {
+      return true;
+    }
     const result = await Delivery().updateOne(fence(input), {
       $set: { status: 'pending', availableAt: input.availableAt },
       $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1 },
@@ -1296,13 +1393,24 @@ export function createAgentTriggerDeliveryMethods(
     if (!Number.isSafeInteger(input.attempt) || input.attempt <= 0) {
       throw new TypeError('attempt must be a positive integer');
     }
+    const update = {
+      $inc: { attempts: -1 },
+      $set: { availableAt: input.availableAt },
+      $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1 },
+    };
+    const capabilityResult = await Delivery().updateOne(
+      { ...capabilityFence(input), attempts: input.attempt },
+      {
+        ...update,
+        $set: { ...update.$set, status: 'capability_pending' },
+      },
+    );
+    if (capabilityResult.modifiedCount === 1) {
+      return true;
+    }
     const result = await Delivery().updateOne(
       { ...fence(input), attempts: input.attempt },
-      {
-        $inc: { attempts: -1 },
-        $set: { status: 'pending', availableAt: input.availableAt },
-        $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1 },
-      },
+      { ...update, $set: { ...update.$set, status: 'pending' } },
     );
     return result.modifiedCount === 1;
   }
@@ -1805,11 +1913,19 @@ export function createAgentTriggerDeliveryMethods(
           deliveryKey: input.deliveryKey,
           user: input.user,
           ...tenantScope,
-          status: { $in: ['succeeded', 'dead'] },
           'envelope.target.bindingId': input.bindingId,
-          'handling.status': 'started',
-          'handling.conversationId': input.conversationId,
-          'handling.generationCreatedAt': input.generationCreatedAt,
+          $or: [
+            {
+              status: { $in: ['leased', 'capability_leased'] },
+              handling: { $exists: false },
+            },
+            {
+              status: { $in: ['succeeded', 'dead'] },
+              'handling.status': 'started',
+              'handling.conversationId': input.conversationId,
+              'handling.generationCreatedAt': input.generationCreatedAt,
+            },
+          ],
           actorReceipt: { $exists: false },
           actorActionAdmittedAt: { $exists: true },
           actorDetachedAction: { $exists: false },
@@ -1828,8 +1944,18 @@ export function createAgentTriggerDeliveryMethods(
         user: input.user,
         ...tenantScope,
         'envelope.target.bindingId': input.bindingId,
-        'handling.conversationId': input.conversationId,
-        'handling.generationCreatedAt': input.generationCreatedAt,
+        $or: [
+          {
+            status: { $in: ['leased', 'capability_leased'] },
+            handling: { $exists: false },
+          },
+          {
+            status: { $in: ['succeeded', 'dead'] },
+            'handling.status': 'started',
+            'handling.conversationId': input.conversationId,
+            'handling.generationCreatedAt': input.generationCreatedAt,
+          },
+        ],
       })
       .select('+actorDetachedAction')
       .lean<Pick<IAgentTriggerDelivery, 'actorDetachedAction'>>();
@@ -1907,11 +2033,19 @@ export function createAgentTriggerDeliveryMethods(
       deliveryKey: input.deliveryKey,
       user: input.user,
       ...(input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId }),
-      status: { $in: ['succeeded', 'dead'] },
       'envelope.target.bindingId': input.bindingId,
-      'handling.status': 'started',
-      'handling.conversationId': input.conversationId,
-      'handling.generationCreatedAt': input.generationCreatedAt,
+      $or: [
+        {
+          status: { $in: ['leased', 'capability_leased'] },
+          handling: { $exists: false },
+        },
+        {
+          status: { $in: ['succeeded', 'dead'] },
+          'handling.status': 'started',
+          'handling.conversationId': input.conversationId,
+          'handling.generationCreatedAt': input.generationCreatedAt,
+        },
+      ],
       actorReceipt: { $exists: false },
       actorActionAdmittedAt: { $exists: true },
       'actorDetachedAction.taskId': input.taskId,
@@ -2219,7 +2353,7 @@ export function createAgentTriggerDeliveryMethods(
       ]),
       Delivery().countDocuments({ actorReceipt: { $exists: true }, expiresAt: { $lte: now } }),
       Delivery().countDocuments({
-        status: 'pending',
+        status: { $in: ['pending', 'capability_pending'] },
         attempts: { $gt: 0 },
         'envelope.target.bindingId': { $exists: true },
         'handling.status': 'started',
@@ -2253,8 +2387,8 @@ export function createAgentTriggerDeliveryMethods(
     },
   ): Promise<boolean> {
     const error = normalizeFailure(input.error);
-    const result = await Delivery().updateOne(fence(input), {
-      $set: { status: 'pending', availableAt: input.availableAt, lastError: error },
+    const retryUpdate = (status: 'pending' | 'capability_pending') => ({
+      $set: { status, availableAt: input.availableAt, lastError: error },
       $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, settledAt: 1, expiresAt: 1 },
       $push: {
         history: {
@@ -2271,6 +2405,14 @@ export function createAgentTriggerDeliveryMethods(
         },
       },
     });
+    const capabilityResult = await Delivery().updateOne(
+      capabilityFence(input),
+      retryUpdate('capability_pending'),
+    );
+    if (capabilityResult.modifiedCount === 1) {
+      return true;
+    }
+    const result = await Delivery().updateOne(fence(input), retryUpdate('pending'));
     return result.modifiedCount === 1;
   }
 
@@ -2446,7 +2588,7 @@ export function createAgentTriggerDeliveryMethods(
         },
         {
           $set: {
-            status: 'staging',
+            status: candidate.requiredWorkerCapability == null ? 'staging' : 'capability_staging',
             laneSequence: 0,
             attempts: 0,
             availableAt,
@@ -2482,7 +2624,11 @@ export function createAgentTriggerDeliveryMethods(
     user: string | Types.ObjectId,
     now: Date,
   ): Promise<number> {
-    return Delivery().countDocuments({ user, status: 'leased', leaseUntil: { $gt: now } });
+    return Delivery().countDocuments({
+      user,
+      status: { $in: ['leased', 'capability_leased'] },
+      leaseUntil: { $gt: now },
+    });
   }
 
   function requireValidFence(fenceStartedAt: Date): void {

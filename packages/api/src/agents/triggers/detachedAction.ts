@@ -4,6 +4,7 @@ import type {
   AgentTriggerDeliveryMethods,
   IAgentEventActorSuspensionEvidence,
 } from '@librechat/data-schemas';
+import { AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 } from '@librechat/data-schemas';
 import type { EventActorInterrupt } from '@librechat/agents';
 import type {
   AgentContinueTriggerEnvelope,
@@ -105,7 +106,10 @@ export interface AgentEventActorDetachedResumeInput {
 
 interface DetachedResumeDependencies {
   getAgentTriggerDelivery: AgentTriggerDeliveryMethods['getAgentTriggerDelivery'];
-  enqueueAgentTrigger(envelope: AgentTriggerEnvelope): Promise<unknown>;
+  enqueueAgentTrigger(
+    envelope: AgentTriggerEnvelope,
+    options?: { requiredWorkerCapability?: string },
+  ): Promise<unknown>;
   requestId?(): string;
   now?(): number;
 }
@@ -178,7 +182,9 @@ export function createAgentEventDetachedResumeHandler(deps: DetachedResumeDepend
       input: renderDetachedCompletion(action),
       expectedAction: envelope.expectedAction,
     });
-    await deps.enqueueAgentTrigger(continuation);
+    await deps.enqueueAgentTrigger(continuation, {
+      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+    });
   };
 }
 
@@ -269,6 +275,18 @@ export function createAgentEventActorDetachedActionLifecycle(
         };
       }
       if (reservation.status === 'replay') {
+        if (
+          matchesCurrent({
+            taskId: reservation.action.taskId,
+            idempotencyKey: reservation.action.idempotencyKey,
+          })
+        ) {
+          return {
+            status: 'replay',
+            taskId: reservation.action.taskId,
+            idempotencyKey: reservation.action.idempotencyKey,
+          };
+        }
         return {
           status: 'conflict',
           error:

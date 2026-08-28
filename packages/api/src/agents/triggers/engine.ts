@@ -61,9 +61,12 @@ export class AgentTriggerDeliveryDeferredError extends Error {
 
 export type AgentTriggerDeliveryStatus =
   | 'staging'
+  | 'capability_staging'
   | 'batched'
   | 'pending'
+  | 'capability_pending'
   | 'leased'
+  | 'capability_leased'
   | 'succeeded'
   | 'dead';
 
