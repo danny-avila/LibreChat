@@ -10,8 +10,8 @@ import type {
   RefreshKeyInput,
 } from './types';
 import { createOpenIDRefreshIdentityTuple, serializeAuthIdentityTuple } from '~/utils/identity';
+import { createOpenIDRefreshOwnershipError, toOpenIDLogArgument } from './errors';
 import { OPENID_EXPIRY_BUFFER_SECONDS } from '~/oauth/expiry';
-import { createOpenIDRefreshOwnershipError } from './errors';
 
 const DEFAULT_FLIGHT_TTL_MS = 2 * 60 * 1000;
 const DEFAULT_LOCK_TTL_MS = 30 * 1000;
@@ -277,6 +277,16 @@ export function createOpenIDRefreshFlightService({
       }
       return flight;
     };
+    const drainPendingRenewal = async () => {
+      try {
+        await renewalPromise;
+      } catch (error) {
+        logger.warn('[OpenIDRefreshFlight] Trailing refresh flight lease renewal failed', {
+          key,
+          error: toOpenIDLogArgument(error),
+        });
+      }
+    };
     const heartbeat = setInterval(() => {
       renewLease().catch((error) =>
         logger.warn('[OpenIDRefreshFlight] Refresh flight lease renewal failed', {
@@ -297,7 +307,13 @@ export function createOpenIDRefreshFlightService({
       return result;
     } finally {
       clearInterval(heartbeat);
-      if (renewalPromise) await renewalPromise;
+      /**
+       * Drain a renewal still in flight so it cannot outlive the lease, but never let its
+       * outcome become the caller's. Proven ownership loss is already recorded on
+       * `ownershipLost` and checked above; all this await can add is a transient coordination
+       * error, which would replace a published, settled result with a failure.
+       */
+      await drainPendingRenewal();
     }
   }
 

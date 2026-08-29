@@ -242,6 +242,44 @@ describe('OpenIDRefreshFlight', () => {
     }
   });
 
+  it('does not let a trailing renewal failure replace a completed result', async () => {
+    jest.useFakeTimers();
+    let rejectRenewal;
+    db.renewOpenIDRefreshFlight.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectRenewal = reject;
+      }),
+    );
+    let finishOperation;
+    const operation = jest.fn(
+      ({ markLeaseSettled }) =>
+        new Promise((resolve) => {
+          finishOperation = (value) => {
+            markLeaseSettled();
+            resolve(value);
+          };
+        }),
+    );
+
+    try {
+      const resultPromise = withOpenIDRefreshFlightLease({
+        key: 'flight-key',
+        ownerId: 'owner-1',
+        heartbeatInterval: 1000,
+        operation,
+      });
+
+      /** Heartbeat issues a renewal that is still in flight when the operation finishes. */
+      await jest.advanceTimersByTimeAsync(1000);
+      finishOperation('tokens');
+      rejectRenewal(new Error('connection timed out'));
+
+      await expect(resultPromise).resolves.toBe('tokens');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('encrypts completed token results before storing them', async () => {
     const tokens = {
       access_token: 'access',

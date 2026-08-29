@@ -1161,6 +1161,51 @@ describe('refreshController – OpenID path', () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  /** A recovery grant that omits `id_token` leaves the rebuilt token set with no identity
+   *  material of its own; the refresh carries the stripped token in a non-enumerable marker so
+   *  claims still resolve without that expired token re-entering the auth response. */
+  it('resolves identity from the marker when the refresh stripped an expired id_token', async () => {
+    setOpenIDReuseCookies();
+    req.session = {};
+    getUserById.mockResolvedValue({
+      _id: 'user-db-id',
+      email: baseClaims.email,
+      openidId: baseClaims.sub,
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    });
+    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    let refreshCall = 0;
+    refreshOpenIDSession.mockImplementation(async () => {
+      refreshCall += 1;
+      if (refreshCall === 1) {
+        throw new Error('invalid_grant');
+      }
+      const stripped = {
+        access_token: 'new-access',
+        refresh_token: 'bridged-refresh',
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+      };
+      Object.defineProperty(stripped, '__identityIdToken', {
+        value: jwt.sign(baseClaims, 'idp-secret'),
+        enumerable: false,
+        configurable: true,
+      });
+      return stripped;
+    });
+
+    await refreshController(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(
+      expect.objectContaining({ refresh_token: 'bridged-refresh' }),
+      req,
+      res,
+      expect.any(Object),
+    );
+    expect(setOpenIDAuthTokens.mock.calls.at(-1)[0].id_token).toBeUndefined();
+  });
+
   it('recovers stale refresh-token cookies and keeps a short grace bridge', async () => {
     setOpenIDReuseCookies();
     req.session = {};

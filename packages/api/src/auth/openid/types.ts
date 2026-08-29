@@ -23,6 +23,11 @@ export interface OpenIDTokenSet extends OIDCTokens {
   access_token?: string;
   expires_in?: number | string;
   claims?: () => OpenIDClaims;
+  /**
+   * Set non-enumerably when an inline refresh strips an expired carried-forward `id_token` from
+   * the result. It is identity material only — never an authentication response token.
+   */
+  __identityIdToken?: string;
 }
 
 export interface SharedOpenIDRefreshResult {

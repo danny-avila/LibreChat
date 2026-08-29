@@ -195,7 +195,12 @@ export function createOpenIDRefreshRecoveryService(
     if (typeof tokenset?.claims === 'function') {
       return tokenset.claims();
     }
-    const decoded = tokenset?.id_token ? jwt.decode(tokenset.id_token) : null;
+    /**
+     * A refresh that strips an expired carried-forward `id_token` leaves it here instead, so
+     * identity still resolves without that token re-entering the authentication response.
+     */
+    const identityToken = tokenset?.id_token ?? tokenset?.__identityIdToken;
+    const decoded = identityToken ? jwt.decode(identityToken) : null;
     if (!decoded || typeof decoded !== 'object') {
       throw new Error('OpenID refresh returned no usable identity claims');
     }

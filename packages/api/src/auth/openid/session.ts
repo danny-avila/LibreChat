@@ -116,6 +116,7 @@ interface OpenIDSessionRefreshDeps {
 interface MarkedOIDCTokens extends OIDCTokens {
   __browserRefreshToken?: string;
   __predecessorRefreshToken?: string;
+  __identityIdToken?: string;
 }
 
 interface RefreshSessionOptions {
@@ -238,6 +239,7 @@ export function createOpenIDSessionRefreshService(
   const UPSTREAM_TOKEN_EXPIRY_BUFFER_SECONDS = 30;
   const INTERNAL_BROWSER_REFRESH_TOKEN_FIELD = '__browserRefreshToken';
   const INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD = '__predecessorRefreshToken';
+  const INTERNAL_IDENTITY_ID_TOKEN_FIELD = '__identityIdToken';
   const IDENTITY_PART_SEPARATOR = '\x1f';
 
   /**
@@ -589,6 +591,19 @@ export function createOpenIDSessionRefreshService(
     return typeof browserRefreshToken === 'string' && browserRefreshToken
       ? browserRefreshToken
       : null;
+  }
+
+  function attachIdentityIdTokenMarker<T extends MarkedOIDCTokens | null>(
+    tokens: T,
+    idToken?: string,
+  ): T {
+    if (!tokens || !idToken) return tokens;
+    Object.defineProperty(tokens, INTERNAL_IDENTITY_ID_TOKEN_FIELD, {
+      value: idToken,
+      enumerable: false,
+      configurable: true,
+    });
+    return tokens;
   }
 
   function attachPredecessorRefreshTokenMarker<T extends MarkedOIDCTokens | null>(
@@ -945,6 +960,13 @@ export function createOpenIDSessionRefreshService(
         fallbackIdTokenExp <= Math.floor(Date.now() / 1000) + UPSTREAM_TOKEN_EXPIRY_BUFFER_SECONDS)
     ) {
       delete resolvedTokens.id_token;
+      /**
+       * The stripped token is still the only identity material this rotation left behind, and a
+       * rebuilt token set carries no provider `claims()`, so `getTokenClaims` would have nothing
+       * left to read. Keep it reachable for identity resolution without letting it back into the
+       * authentication response.
+       */
+      attachIdentityIdTokenMarker(resolvedTokens, sessionTokens.idToken);
     }
 
     if (deferPublication) {
