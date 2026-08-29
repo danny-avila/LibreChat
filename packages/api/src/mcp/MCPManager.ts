@@ -776,6 +776,7 @@ Please follow these instructions when using tools from the respective MCP server
     serverConfig: providedConfig,
     toolName,
     provider,
+    providerIsOpenAICompatible,
     toolArguments,
     options,
     tokenMethods,
@@ -795,6 +796,12 @@ Please follow these instructions when using tools from the respective MCP server
     serverConfig?: t.ParsedServerConfig;
     toolName: string;
     provider: t.Provider;
+    /**
+     * Whether `provider` speaks the OpenAI message format. Custom endpoints are
+     * OpenAI-compatible by definition but arrive under their own name, which
+     * `formatToolContent` cannot infer on its own.
+     */
+    providerIsOpenAICompatible?: boolean;
     toolArguments?: Record<string, unknown>;
     options?: RequestOptions;
     requestBody?: RequestBody;
@@ -1133,7 +1140,9 @@ Please follow these instructions when using tools from the respective MCP server
           await this.updateUserLastActivity(userId);
         }
         this.checkIdleConnections();
-        return formatToolContent(result as t.MCPToolCallResponse, provider);
+        return formatToolContent(result as t.MCPToolCallResponse, provider, {
+          openAICompatible: providerIsOpenAICompatible,
+        });
       } catch (error) {
         if (error instanceof OAuthRecoveryTakeoverRequired) {
           recoveryTakeoverConsumed = true;
