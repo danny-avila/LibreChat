@@ -12,6 +12,7 @@ import type {
   RefreshFlightAcquireResult,
   RefreshFlightRecord,
   RefreshTokenBridgeDeleteInput,
+  RefreshTokenBridgeIdentity,
   RefreshTokenBridgeInput,
   SharedOpenIDRefreshResult,
   TokenPreference,
@@ -645,7 +646,7 @@ export function createOpenIDRefreshRecoveryService(
           effectiveExistingRefreshToken,
         );
       } catch (error) {
-        if (rotated) {
+        if (rotated && effectiveExistingRefreshToken) {
           try {
             await storeRefreshTokenBridge({
               oldRefreshToken: effectiveExistingRefreshToken,
@@ -665,7 +666,7 @@ export function createOpenIDRefreshRecoveryService(
         throw error;
       }
 
-      if (rotated) {
+      if (rotated && effectiveExistingRefreshToken) {
         try {
           bridgeVersion = await storeRefreshTokenBridge({
             oldRefreshToken: effectiveExistingRefreshToken,
