@@ -1083,7 +1083,12 @@ const useMessageUserLimiter = isEnabled(LIMIT_MESSAGE_USER);
 chatRouter.use(configMiddleware);
 if (useMessageIpLimiter || useMessageUserLimiter) {
   chatRouter.use(detectGenerationRetry);
-  chatRouter.use(generationRetryLimiter);
+  chatRouter.use(
+    unless(
+      (req) => exemptAgentTriggerFromIpLimiter(req) || exemptScheduleFromUserLimiter(req),
+      generationRetryLimiter,
+    ),
+  );
 }
 
 if (useMessageIpLimiter) {

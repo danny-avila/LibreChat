@@ -5,6 +5,8 @@ const mockHasGenerationClaim = jest.fn();
 const mockIpLimiter = jest.fn((_req, res) => res.status(429).json({ limited: 'ip' }));
 const mockUserLimiter = jest.fn((_req, res) => res.status(429).json({ limited: 'user' }));
 const mockRetryLimiter = jest.fn((_req, _res, next) => next());
+const mockExemptAgentTrigger = jest.fn(() => false);
+const mockExemptSchedule = jest.fn(() => false);
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -28,8 +30,8 @@ jest.mock('@librechat/api', () => ({
   generationRetryLimiter: (...args) => mockRetryLimiter(...args),
   isAgentTriggerRequest: jest.fn(() => false),
   captureScheduleFireContext: jest.fn(),
-  exemptAgentTriggerFromIpLimiter: jest.fn(() => false),
-  exemptFromUserLimiter: jest.fn(() => false),
+  exemptAgentTriggerFromIpLimiter: (...args) => mockExemptAgentTrigger(...args),
+  exemptFromUserLimiter: (...args) => mockExemptSchedule(...args),
   createMessageFilterPii: jest.fn(() => (_req, _res, next) => next()),
 }));
 
@@ -74,6 +76,8 @@ app.use('/agents', agentsRouter);
 describe('start-generation idempotency before message limiters', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockExemptAgentTrigger.mockReturnValue(false);
+    mockExemptSchedule.mockReturnValue(false);
   });
 
   it('lets a confirmed retry reach the controller without consuming either limiter', async () => {
@@ -109,6 +113,21 @@ describe('start-generation idempotency before message limiters', () => {
 
     expect(response.status).toBe(429);
     expect(response.body.error.code).toBe('generation_retry_rate_limited');
+    expect(mockIpLimiter).not.toHaveBeenCalled();
+    expect(mockUserLimiter).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['an agent-trigger delivery', mockExemptAgentTrigger],
+    ['a scheduled delivery', mockExemptSchedule],
+  ])('keeps %s outside the human retry bucket', async (_label, exemption) => {
+    mockHasGenerationClaim.mockResolvedValue(true);
+    exemption.mockReturnValue(true);
+
+    const response = await request(app).post('/agents/chat').send({ clientRequestId: 'request-4' });
+
+    expect(response.status).toBe(201);
+    expect(mockRetryLimiter).not.toHaveBeenCalled();
     expect(mockIpLimiter).not.toHaveBeenCalled();
     expect(mockUserLimiter).not.toHaveBeenCalled();
   });
