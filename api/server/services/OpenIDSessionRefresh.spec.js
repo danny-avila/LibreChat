@@ -195,6 +195,7 @@ const buildReq = (sessionTokens, sessionId = 'session-A', { bindIdentity = true 
 const buildRes = ({ headersSent = false } = {}) => ({
   headersSent,
   cookie: jest.fn(),
+  clearCookie: jest.fn(),
 });
 
 const makeOpenIdUser = (overrides = {}) => ({
@@ -736,6 +737,8 @@ describe('OpenIDSessionRefresh', () => {
         tenantId: 'tenant-1',
         version: 'bridge-version-1',
       });
+      expect(deleteSession).not.toHaveBeenCalled();
+      expect(res.clearCookie).not.toHaveBeenCalled();
       expect(req.session.openidTokens.refreshToken).toBe('rt-old');
       expect(req.session.save).not.toHaveBeenCalled();
     });
@@ -1478,6 +1481,7 @@ describe('OpenIDSessionRefresh', () => {
       const leaderReq = buildReq(makeExpiredSession(), 'session-cookie-joined');
       const joinerReq = buildReq(makeExpiredSession(), 'session-cookie-joined');
       const leaderRes = buildRes({ headersSent: false });
+      const joinerRes = buildRes({ headersSent: false });
       const user = makeOpenIdUser();
 
       let resolveGrant;
@@ -1487,7 +1491,7 @@ describe('OpenIDSessionRefresh', () => {
       openIdClient.refreshTokenGrant.mockReturnValueOnce(grantPromise);
 
       const leaderPromise = refreshOpenIDSession(leaderReq, leaderRes, user, 'access_token');
-      const joinerPromise = refreshOpenIDSession(joinerReq, undefined, user, 'access_token');
+      const joinerPromise = refreshOpenIDSession(joinerReq, joinerRes, user, 'access_token');
       await Promise.resolve();
 
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
@@ -1505,6 +1509,7 @@ describe('OpenIDSessionRefresh', () => {
       expect(leaderTokens.refresh_token).toBe('rt-rotated');
       expect(joinerTokens.refresh_token).toBe('rt-rotated');
       expect(setRefreshTokenCookie).toHaveBeenCalledWith(leaderRes, 'rt-rotated', expect.any(Date));
+      expect(setRefreshTokenCookie).toHaveBeenCalledWith(joinerRes, 'rt-rotated', expect.any(Date));
       expect(leaderReq.session.openidTokens.browserRefreshToken).toBe('rt-rotated');
       expect(joinerReq.session.openidTokens.refreshToken).toBe('rt-rotated');
       expect(joinerReq.session.openidTokens.browserRefreshToken).toBe('rt-rotated');
@@ -1698,6 +1703,124 @@ describe('OpenIDSessionRefresh', () => {
       expect(req.session.save).not.toHaveBeenCalled();
       expect(completeOpenIDRefreshFlight).not.toHaveBeenCalled();
       expect(failOpenIDRefreshFlight).toHaveBeenCalled();
+    });
+
+    it('rolls back session and cookie publication when logout revokes the pending flight', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const req = buildReq({
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-predecessor',
+        browserRefreshToken: 'rt-predecessor',
+      });
+      const res = buildRes({ headersSent: false });
+      req.session.destroy = jest.fn((callback) => {
+        delete req.session.openidTokens;
+        callback();
+      });
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        id_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        refresh_token: 'rt-successor',
+        expires_in: 3600,
+      });
+      completeOpenIDRefreshFlight.mockResolvedValueOnce(null);
+
+      await expect(
+        refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('ownership was lost');
+
+      expect(storeOpenIdSession).toHaveBeenCalled();
+      expect(setRefreshTokenCookie).toHaveBeenCalledWith(res, 'rt-successor', expect.any(Date));
+      expect(deleteSession).toHaveBeenCalledWith({ refreshToken: 'rt-successor' });
+      expect(req.session.destroy).toHaveBeenCalled();
+      expect(deleteRefreshTokenBridges).toHaveBeenCalledWith({
+        refreshTokens: ['rt-predecessor'],
+        userId: 'local-id-1',
+        tenantId: 'tenant-1',
+        version: 'bridge-version-1',
+      });
+      expect(req.session.openidTokens).toBeUndefined();
+      expect(res.clearCookie).toHaveBeenCalledWith('refreshToken');
+      expect(res.clearCookie).toHaveBeenCalledWith('openid_user_id');
+      expect(res.clearCookie).toHaveBeenCalledWith('token_provider');
+    });
+
+    it('compare-deletes the final long-lived bridge when publication is revoked', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const req = buildReq({
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-predecessor',
+        browserRefreshToken: 'rt-predecessor',
+      });
+      req.session.destroy = jest.fn((callback) => {
+        delete req.session.openidTokens;
+        callback();
+      });
+      storeRefreshTokenBridge
+        .mockResolvedValueOnce('grace-bridge-version')
+        .mockResolvedValueOnce('final-bridge-version');
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        id_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        refresh_token: 'rt-successor',
+        expires_in: 3600,
+      });
+      completeOpenIDRefreshFlight.mockResolvedValueOnce(null);
+
+      await expect(
+        refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('ownership was lost');
+
+      expect(storeRefreshTokenBridge).toHaveBeenCalledTimes(2);
+      expect(deleteRefreshTokenBridges).toHaveBeenCalledWith({
+        refreshTokens: ['rt-predecessor'],
+        userId: 'local-id-1',
+        tenantId: 'tenant-1',
+        version: 'final-bridge-version',
+      });
+    });
+
+    it('does not destroy a newer Express session when another owner advanced it', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const advancedAccessToken = makeJwt(Math.floor(Date.now() / 1000) + 7200);
+      const req = buildReq({
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-predecessor',
+        browserRefreshToken: 'rt-predecessor',
+      });
+      const res = buildRes({ headersSent: false });
+      req.session.destroy = jest.fn((callback) => callback());
+      req.session.reload = jest.fn();
+      req.session.reload
+        .mockImplementationOnce((callback) => callback())
+        .mockImplementationOnce((callback) => {
+          req.session.openidTokens = {
+            ...req.session.openidTokens,
+            accessToken: advancedAccessToken,
+            refreshToken: 'rt-new-owner',
+          };
+          callback();
+        });
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        id_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        refresh_token: 'rt-stale-owner',
+        expires_in: 3600,
+      });
+      completeOpenIDRefreshFlight.mockResolvedValueOnce(null);
+
+      await expect(
+        refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('ownership was lost');
+
+      expect(req.session.destroy).not.toHaveBeenCalled();
+      expect(req.session.openidTokens.accessToken).toBe(advancedAccessToken);
+      expect(req.session.openidTokens.refreshToken).toBe('rt-new-owner');
+      expect(deleteSession).toHaveBeenCalledWith({ refreshToken: 'rt-stale-owner' });
+      expect(res.clearCookie).toHaveBeenCalledWith('refreshToken');
     });
 
     it('fails closed when Mongo flight acquisition is unavailable', async () => {
@@ -1911,6 +2034,9 @@ describe('OpenIDSessionRefresh', () => {
 
       expect(req.session.reload).toHaveBeenCalled();
       expect(req.session.openidTokens.refreshToken).toBe('rt-advanced');
+      expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
+      expect(storeOpenIdSession).not.toHaveBeenCalled();
+      expect(setRefreshTokenCookie).not.toHaveBeenCalled();
       expect(req.session.save).not.toHaveBeenCalled();
     });
 

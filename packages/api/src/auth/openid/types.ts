@@ -58,6 +58,7 @@ export interface OpenIDSession {
   openidTokens?: SessionOpenIDTokens;
   save?: (callback: AsyncVoidCallback) => void;
   reload?: (callback: AsyncVoidCallback) => void;
+  destroy?: (callback: AsyncVoidCallback) => void;
 }
 
 export interface OpenIDRequest {
