@@ -885,6 +885,11 @@ export interface IJobStore {
   ): Promise<IdempotencyClaimResult>;
   releaseIdempotencyKey(key: string): Promise<void>;
 
+  /** Read-only existence probe used to identify a confirmed retry before
+   * request-rate admission. Optional stores keep the conservative behavior
+   * where every request remains subject to the limiter. */
+  hasIdempotencyKey?(key: string): Promise<boolean>;
+
   deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean>;
   hasJob(streamId: string): Promise<boolean>;
   getRunningJobs(): Promise<SerializableJobData[]>;

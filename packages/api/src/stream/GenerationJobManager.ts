@@ -2923,6 +2923,21 @@ class GenerationJobManagerClass {
     return { claimed: false, existing: primary, source: 'primary' };
   }
 
+  /** Checks the mixed-version admission key without creating or repairing a
+   * claim. This is deliberately weaker than `claimGeneration`: callers may
+   * use it only to exempt a confirmed retry from request rate limiting; the
+   * controller must still perform the authoritative claim transition. */
+  async hasGenerationClaim(userId: string, clientRequestId: string): Promise<boolean> {
+    if (!CLIENT_REQUEST_ID_PATTERN.test(clientRequestId)) {
+      return false;
+    }
+    return (
+      (await this.jobStore.hasIdempotencyKey?.(
+        this.legacyGenerationClaimKey(userId, clientRequestId),
+      )) === true
+    );
+  }
+
   private generationClaimKey(userId: string, clientRequestId: string, streamId: string): string {
     return `{${streamId}}:${userId}:${clientRequestId}`;
   }

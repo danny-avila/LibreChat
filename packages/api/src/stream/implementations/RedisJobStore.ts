@@ -2713,6 +2713,10 @@ export class RedisJobStore implements IJobStoreV2 {
     }
   }
 
+  async hasIdempotencyKey(key: string): Promise<boolean> {
+    return (await this.redis.exists(KEYS.idempotency(key))) === 1;
+  }
+
   async takeoverIdempotencyKey(
     key: string,
     expected: IdempotencyClaimValue,
