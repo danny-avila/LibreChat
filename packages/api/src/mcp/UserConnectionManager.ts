@@ -246,38 +246,56 @@ export abstract class UserConnectionManager {
   }
 
   /**
-   * Gets or creates a connection for a specific user, coalescing concurrent attempts.
-   *
    * A teardown fences every creation in flight for the same user and server, since one of them
    * may install the connection it is removing, or hand back the one it just disposed. What the
-   * fenced caller deserves depends on why the teardown ran. After a `lifecycle` teardown it is
-   * next in line rather than stale — nothing it resolved changed — so its attempt is discarded
-   * and re-established. After a `mutation` teardown the config and credentials it resolved may
-   * be the ones that were just replaced, and only the caller can resolve them again, so the
-   * fence stays fatal. A caller that has since aborted gets neither: there is nobody left to
-   * hand the connection to.
+   * fenced attempt deserves depends on why the teardown ran. After a `lifecycle` teardown it is
+   * next in line rather than stale — nothing its caller resolved changed — so the attempt is
+   * discarded and re-established. After a `mutation` teardown the config and credentials that
+   * caller resolved may be the ones that were just replaced, and only the caller can resolve
+   * them again, so the fence stays fatal. A caller that has since aborted gets neither: there
+   * is nobody left to hand the connection to.
+   *
+   * Re-establishment happens inside the queue slot the attempt already holds, so a replacement
+   * queued behind another one keeps its position instead of moving to the tail and overwriting
+   * a newer connection later.
    */
-  public async getUserConnection(opts: t.UserMCPConnectionOptions): Promise<MCPConnection> {
+  private async createUserConnectionWithLifecycleRestarts(
+    options: t.UserMCPConnectionOptions,
+    userId: string,
+    clearCooldown: boolean,
+    creationGuard: ConnectionCreationGuard,
+  ): Promise<MCPConnection> {
     for (let attempt = 0; ; attempt++) {
+      /** A lifecycle fence raised while this attempt waited its turn has nothing left to fence;
+       *  a mutation fence is kept, so the attempt below fails on it immediately. */
+      if (creationGuard.cancelledBy === 'lifecycle') {
+        creationGuard.cancelledBy = null;
+      }
       try {
-        return await this.establishUserConnection(opts);
+        return await this.createUserConnectionInternal(
+          options,
+          userId,
+          clearCooldown,
+          creationGuard,
+        );
       } catch (error) {
         if (
           !(error instanceof ConnectionCreationCancelledError) ||
           error.reason !== 'lifecycle' ||
           attempt >= MAX_TEARDOWN_RESTARTS ||
-          opts.signal?.aborted === true
+          options.signal?.aborted === true
         ) {
           throw error;
         }
         logger.info(
-          `[MCP][User: ${opts.user?.id}][${opts.serverName}] Connection creation raced a teardown; re-establishing`,
+          `[MCP][User: ${userId}][${options.serverName}] Connection creation raced a teardown; re-establishing`,
         );
       }
     }
   }
 
-  private async establishUserConnection(opts: t.UserMCPConnectionOptions): Promise<MCPConnection> {
+  /** Gets or creates a connection for a specific user, coalescing concurrent attempts */
+  public async getUserConnection(opts: t.UserMCPConnectionOptions): Promise<MCPConnection> {
     const { serverName, forceNew, user } = opts;
     const userId = user?.id;
     if (!userId) {
@@ -404,7 +422,7 @@ export abstract class UserConnectionManager {
     const creationGuard: ConnectionCreationGuard = { cancelledBy: null };
     this.registerConnectionCreation(lockKey, creationGuard);
     const createConnection = () =>
-      this.createUserConnectionInternal(
+      this.createUserConnectionWithLifecycleRestarts(
         {
           ...opts,
           forceNew: forceNewConnection,
@@ -1028,16 +1046,26 @@ export abstract class UserConnectionManager {
     }
     const userMap = this.userConnections.get(userId);
     const connection = userMap?.get(serverName);
+    const logPrefix = `[MCP][User: ${userId}]`;
+    if (connection) {
+      logger.info(`${logPrefix} Disconnecting server connection`);
+      connection.removeAllListeners?.('toolsChanged');
+      this.removeUserConnection(userId, serverName);
+    }
+    /**
+     * Started in the same synchronous stretch as the fence: `cancelMCPToolsChanged` drops the
+     * pending publication before it awaits, so a creation re-established while this teardown
+     * is still disposing cannot have its own publication and retry timer cancelled by it.
+     */
+    const publicationCancelled = cancelMCPToolsChanged({ userId, serverName });
+    /** Observed here so a rejection cannot surface as unhandled while disposal is awaited. */
+    publicationCancelled.catch(() => undefined);
     try {
       if (connection) {
-        const logPrefix = `[MCP][User: ${userId}]`;
-        logger.info(`${logPrefix} Disconnecting server connection`);
-        connection.removeAllListeners?.('toolsChanged');
-        this.removeUserConnection(userId, serverName);
         await this.disposeEvictedConnection(connection, logPrefix);
       }
     } finally {
-      await cancelMCPToolsChanged({ userId, serverName });
+      await publicationCancelled;
     }
   }
 

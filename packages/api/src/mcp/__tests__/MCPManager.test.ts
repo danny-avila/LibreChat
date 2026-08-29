@@ -3517,6 +3517,36 @@ describe('MCPManager', () => {
       expect(manager.getUserConnections(userId)?.has(serverName) ?? false).toBe(false);
     });
 
+    it('cancels pending tool publications before it starts disposing', async () => {
+      const connection = newUserConnection();
+      const cancelSpy = jest.spyOn(toolsChanged, 'cancelMCPToolsChanged');
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'user',
+        dbId: 'server-1',
+      });
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(connection);
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({ serverName, user: mockUser });
+        cancelSpy.mockClear();
+
+        await manager.disconnectUserConnection(userId, serverName);
+
+        /** A creation re-established while disposal is still awaited publishes its own catalog;
+         *  a cancellation issued after that point would drop the replacement's pending change. */
+        expect(cancelSpy).toHaveBeenCalledWith({ userId, serverName });
+        expect(cancelSpy.mock.invocationCallOrder[0]).toBeLessThan(
+          (connection.dispose as jest.Mock).mock.invocationCallOrder[0],
+        );
+      } finally {
+        cancelSpy.mockRestore();
+      }
+    });
+
     it('fails a creation that a lifecycle teardown keeps cancelling on every attempt', async () => {
       mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
