@@ -33,6 +33,7 @@ module.exports = api.createOpenIDSessionRefreshService({
   getOpenIdConfig,
   OPENID_REFRESH_BRIDGE_GRACE_MS: bridge.OPENID_REFRESH_BRIDGE_GRACE_MS,
   storeRefreshTokenBridge: bridge.storeRefreshTokenBridge,
+  deleteRefreshTokenBridges: bridge.deleteRefreshTokenBridges,
   acquireOpenIDRefreshFlight: flight.acquireOpenIDRefreshFlight,
   completeOpenIDRefreshFlight: flight.completeOpenIDRefreshFlight,
   createOpenIDRefreshFlightKey: flight.createOpenIDRefreshFlightKey,

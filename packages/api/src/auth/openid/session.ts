@@ -28,6 +28,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     getOpenIdConfig,
     OPENID_REFRESH_BRIDGE_GRACE_MS,
     storeRefreshTokenBridge,
+    deleteRefreshTokenBridges,
     acquireOpenIDRefreshFlight,
     completeOpenIDRefreshFlight,
     createOpenIDRefreshFlightKey,
@@ -501,6 +502,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
             oldRefreshToken,
             newRefreshToken,
             bridgeIdentity: { userId, tenantId, openidIssuer },
+            assertLeaseOwned,
           });
           throw error;
         }
@@ -519,16 +521,14 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     }
 
     if (oldRefreshToken && userId) {
-      await storeRefreshTokenBridge({
+      await storeRefreshTokenBridgeWithLease({
         oldRefreshToken,
         newRefreshToken,
         userId,
         tenantId,
         openidIssuer,
+        assertLeaseOwned,
       });
-      if (assertLeaseOwned) {
-        await assertLeaseOwned();
-      }
       logger.debug('[OpenIDSessionRefresh] Stored refresh-token recovery bridge', {
         userId,
         responseAvailable: !!res,
@@ -549,23 +549,52 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     }
   }
 
+  async function storeRefreshTokenBridgeWithLease({ assertLeaseOwned, ...bridge }: any) {
+    if (assertLeaseOwned) {
+      await assertLeaseOwned();
+    }
+    await storeRefreshTokenBridge(bridge);
+    if (!assertLeaseOwned) {
+      return;
+    }
+    try {
+      await assertLeaseOwned();
+    } catch (error) {
+      try {
+        await deleteRefreshTokenBridges({
+          refreshTokens: [bridge.oldRefreshToken],
+          userId: bridge.userId,
+          tenantId: bridge.tenantId,
+        });
+      } catch (cleanupError) {
+        logger.error(
+          '[OpenIDSessionRefresh] Failed to remove bridge after refresh ownership loss',
+          cleanupError,
+        );
+      }
+      throw error;
+    }
+  }
+
   async function storeSessionSaveFailureBridge({
     oldRefreshToken,
     newRefreshToken,
     bridgeIdentity,
+    assertLeaseOwned,
   }: any) {
     if (!oldRefreshToken || !newRefreshToken || !bridgeIdentity?.userId) {
       return;
     }
 
     try {
-      await storeRefreshTokenBridge({
+      await storeRefreshTokenBridgeWithLease({
         oldRefreshToken,
         newRefreshToken,
         userId: bridgeIdentity.userId,
         tenantId: bridgeIdentity.tenantId,
         openidIssuer: bridgeIdentity.openidIssuer,
         ttl: OPENID_REFRESH_BRIDGE_GRACE_MS,
+        assertLeaseOwned,
       });
       logger.warn(
         '[OpenIDSessionRefresh] Stored short refresh-token bridge after session save failure',
@@ -710,6 +739,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
           oldRefreshToken: browserRefreshToken,
           newRefreshToken: nextRefreshToken,
           bridgeIdentity,
+          assertLeaseOwned,
         });
       }
       throw error;

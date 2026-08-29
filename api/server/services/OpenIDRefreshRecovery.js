@@ -22,6 +22,7 @@ module.exports = api.createOpenIDRefreshRecoveryService({
   setOpenIDAuthTokens,
   createRefreshTokenBridgeFlightKey: bridge.createRefreshTokenBridgeFlightKey,
   storeRefreshTokenBridge: bridge.storeRefreshTokenBridge,
+  deleteRefreshTokenBridges: bridge.deleteRefreshTokenBridges,
   acquireOpenIDRefreshFlight: flight.acquireOpenIDRefreshFlight,
   completeOpenIDRefreshFlight: flight.completeOpenIDRefreshFlight,
   failOpenIDRefreshFlight: flight.failOpenIDRefreshFlight,

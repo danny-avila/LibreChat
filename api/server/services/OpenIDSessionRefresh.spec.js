@@ -122,6 +122,7 @@ jest.mock('~/models', () => ({
 jest.mock('./RefreshTokenBridge', () => ({
   OPENID_REFRESH_BRIDGE_GRACE_MS: 60 * 1000,
   storeRefreshTokenBridge: jest.fn(),
+  deleteRefreshTokenBridges: jest.fn(),
 }));
 jest.mock('./OpenIDRefreshFlight', () => ({
   acquireOpenIDRefreshFlight: jest.fn(),
@@ -149,7 +150,7 @@ const {
 } = require('@librechat/api');
 const { upsertSession, deleteSession } = require('~/models');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
-const { storeRefreshTokenBridge } = require('./RefreshTokenBridge');
+const { deleteRefreshTokenBridges, storeRefreshTokenBridge } = require('./RefreshTokenBridge');
 const {
   acquireOpenIDRefreshFlight,
   completeOpenIDRefreshFlight,
@@ -661,6 +662,46 @@ describe('OpenIDSessionRefresh', () => {
 
       expect(storeRefreshTokenBridge).toHaveBeenCalled();
       expect(storeOpenIdSession).not.toHaveBeenCalled();
+    });
+
+    it('removes a bridge published concurrently with logout revocation', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-rotated',
+        expires_in: 3600,
+      });
+      const assertLeaseOwned = jest
+        .fn()
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(true)
+        .mockRejectedValueOnce(new Error('revoked by logout'));
+      withOpenIDRefreshFlightLease.mockImplementationOnce(({ operation }) =>
+        operation({ assertLeaseOwned, markLeaseSettled: jest.fn() }),
+      );
+      const req = buildReq(buildExpiredSession('rt-old'));
+      const res = buildRes({ headersSent: true });
+
+      await expect(
+        refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('revoked by logout');
+
+      expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
+        oldRefreshToken: 'rt-old',
+        newRefreshToken: 'rt-rotated',
+        userId: 'local-id-1',
+        tenantId: 'tenant-1',
+        openidIssuer: 'https://issuer.example.com',
+      });
+      expect(deleteRefreshTokenBridges).toHaveBeenCalledWith({
+        refreshTokens: ['rt-old'],
+        userId: 'local-id-1',
+        tenantId: 'tenant-1',
+      });
+      expect(req.session.openidTokens.refreshToken).toBe('rt-old');
+      expect(req.session.save).not.toHaveBeenCalled();
     });
 
     it('fails closed before publishing cookies when the durable session transition fails', async () => {

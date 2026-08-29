@@ -210,6 +210,38 @@ describe('OpenIDRefreshFlight', () => {
     }
   });
 
+  it("does not treat the owner's completed flight as heartbeat lease loss", async () => {
+    jest.useFakeTimers();
+    db.renewOpenIDRefreshFlight.mockResolvedValueOnce(null);
+    db.findOpenIDRefreshFlight.mockResolvedValueOnce({
+      ownerId: 'owner-1',
+      status: 'completed',
+    });
+    let finishOperation;
+    const operation = jest.fn(
+      () =>
+        new Promise((resolve) => {
+          finishOperation = resolve;
+        }),
+    );
+
+    try {
+      const resultPromise = withOpenIDRefreshFlightLease({
+        key: 'flight-key',
+        ownerId: 'owner-1',
+        heartbeatInterval: 1000,
+        operation,
+      });
+
+      await jest.advanceTimersByTimeAsync(1000);
+      finishOperation('tokens');
+      await expect(resultPromise).resolves.toBe('tokens');
+      expect(db.findOpenIDRefreshFlight).toHaveBeenCalledWith({ key: 'flight-key' });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('encrypts completed token results before storing them', async () => {
     const tokens = {
       access_token: 'access',

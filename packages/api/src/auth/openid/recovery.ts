@@ -17,6 +17,7 @@ export interface OpenIDRefreshRecoveryDeps {
   setOpenIDAuthTokens: (...args: any[]) => string | undefined;
   createRefreshTokenBridgeFlightKey: (args: Record<string, any>) => string | null;
   storeRefreshTokenBridge: (args: Record<string, any>) => Promise<any>;
+  deleteRefreshTokenBridges: (args: Record<string, any>) => Promise<any>;
   acquireOpenIDRefreshFlight: (args: Record<string, any>) => Promise<Record<string, any>>;
   completeOpenIDRefreshFlight: (args: Record<string, any>) => Promise<any>;
   failOpenIDRefreshFlight: (args: Record<string, any>) => Promise<any>;
@@ -40,6 +41,7 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
     setOpenIDAuthTokens,
     createRefreshTokenBridgeFlightKey,
     storeRefreshTokenBridge,
+    deleteRefreshTokenBridges,
     acquireOpenIDRefreshFlight,
     completeOpenIDRefreshFlight,
     failOpenIDRefreshFlight,
@@ -170,6 +172,7 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
           }
 
           await assertLeaseOwned();
+          let graceBridgeStored = false;
           try {
             await storeRefreshTokenBridge({
               oldRefreshToken: refreshToken,
@@ -179,11 +182,31 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
               openidIssuer: bridgeUser.openidIssuer,
               ttl: bridgeGraceMs,
             });
+            graceBridgeStored = true;
           } catch (graceError) {
             logger.warn(
               '[refreshController] Bridge grace-period storage failed after successful recovery',
               graceError,
             );
+          }
+          if (graceBridgeStored) {
+            try {
+              await assertLeaseOwned();
+            } catch (ownershipError) {
+              try {
+                await deleteRefreshTokenBridges({
+                  refreshTokens: [refreshToken],
+                  userId,
+                  tenantId: bridgeUser.tenantId,
+                });
+              } catch (cleanupError) {
+                logger.warn(
+                  '[refreshController] Failed to remove grace bridge after ownership loss',
+                  cleanupError,
+                );
+              }
+              throw ownershipError;
+            }
           }
 
           const sharedResult = {

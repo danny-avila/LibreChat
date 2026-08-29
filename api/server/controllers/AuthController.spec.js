@@ -25,6 +25,7 @@ jest.mock('~/models', () => ({
 jest.mock('~/server/services/RefreshTokenBridge', () => ({
   OPENID_REFRESH_BRIDGE_GRACE_MS: 60 * 1000,
   createRefreshTokenBridgeFlightKey: jest.fn(() => 'bridge-flight-key'),
+  deleteRefreshTokenBridges: jest.fn(),
   getRefreshTokenBridge: jest.fn(),
   storeRefreshTokenBridge: jest.fn(),
 }));
@@ -99,6 +100,7 @@ const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 const { getUserById, findSession, updateUser } = require('~/models');
 const {
   createRefreshTokenBridgeFlightKey,
+  deleteRefreshTokenBridges,
   getRefreshTokenBridge,
   storeRefreshTokenBridge,
 } = require('~/server/services/RefreshTokenBridge');
@@ -1362,6 +1364,40 @@ describe('refreshController – OpenID path', () => {
       expect.any(Error),
     );
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('removes a grace bridge published concurrently with logout revocation', async () => {
+    setOpenIDReuseCookies();
+    req.session = {};
+    getUserById.mockResolvedValue({
+      _id: 'user-db-id',
+      email: baseClaims.email,
+      openidId: baseClaims.sub,
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    });
+    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    openIdClient.refreshTokenGrant
+      .mockRejectedValueOnce(new Error('invalid_grant'))
+      .mockResolvedValueOnce(mockTokenset);
+    const assertLeaseOwned = jest
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(new Error('revoked by logout'));
+    withOpenIDRefreshFlightLease.mockImplementationOnce(({ operation }) =>
+      operation({ assertLeaseOwned, markLeaseSettled: jest.fn() }),
+    );
+
+    await refreshController(req, res);
+
+    expect(deleteRefreshTokenBridges).toHaveBeenCalledWith({
+      refreshTokens: ['stored-refresh'],
+      userId: 'user-db-id',
+      tenantId: 'tenant-1',
+    });
+    expect(completeOpenIDRefreshFlight).not.toHaveBeenCalled();
+    expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 
   it('does not use the bridge for generic HTTP 400 errors without invalid_grant', async () => {
