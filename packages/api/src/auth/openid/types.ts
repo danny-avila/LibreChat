@@ -12,6 +12,11 @@ export type AsyncVoidCallback = (error?: Error | null) => void;
 export type LeaseAssertion = () => Promise<object | null | boolean>;
 export type LogArgument = string | number | boolean | Error | object | null | undefined;
 
+export interface OpenIDPublicationGeneration {
+  key: string;
+  ownerId: string;
+}
+
 export interface OpenIDClaims {
   sub: string;
   oid?: string;

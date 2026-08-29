@@ -127,6 +127,7 @@ jest.mock('./RefreshTokenBridge', () => ({
 jest.mock('./OpenIDRefreshFlight', () => ({
   acquireOpenIDRefreshFlight: jest.fn(),
   assertOpenIDRefreshFlightAvailable: jest.fn(),
+  assertOpenIDRefreshSessionGenerationAvailable: jest.fn(),
   completeOpenIDRefreshFlight: jest.fn(),
   createOpenIDRefreshFlightKey: jest.fn(),
   failOpenIDRefreshFlight: jest.fn(),
@@ -155,6 +156,7 @@ const { deleteRefreshTokenBridges, storeRefreshTokenBridge } = require('./Refres
 const {
   acquireOpenIDRefreshFlight,
   assertOpenIDRefreshFlightAvailable,
+  assertOpenIDRefreshSessionGenerationAvailable,
   completeOpenIDRefreshFlight,
   createOpenIDRefreshFlightKey,
   failOpenIDRefreshFlight,
@@ -224,6 +226,7 @@ describe('OpenIDSessionRefresh', () => {
     );
     acquireOpenIDRefreshFlight.mockResolvedValue({ acquired: true, ownerId: 'owner-1' });
     assertOpenIDRefreshFlightAvailable.mockResolvedValue({ status: 'completed' });
+    assertOpenIDRefreshSessionGenerationAvailable.mockResolvedValue(true);
     completeOpenIDRefreshFlight.mockResolvedValue({});
     failOpenIDRefreshFlight.mockResolvedValue({});
     waitForOpenIDRefreshFlight.mockResolvedValue(null);
@@ -325,6 +328,31 @@ describe('OpenIDSessionRefresh', () => {
         refresh_token: 'rt-1',
         expires_at: farFutureExp,
       });
+    });
+
+    it('rejects a live OBO token whose recorded publication generation was revoked', async () => {
+      const farFutureExp = Math.floor(Date.now() / 1000) + 600;
+      const sessionTokens = {
+        accessToken: makeJwt(farFutureExp),
+        idToken: makeJwt(farFutureExp),
+        refreshToken: 'rt-revoked',
+        publicationFlightKey: 'publication-key',
+        publicationFlightOwnerId: 'publication-owner',
+      };
+      const req = buildReq(sessionTokens);
+      assertOpenIDRefreshSessionGenerationAvailable.mockRejectedValueOnce(
+        ownershipLost('revoked by logout'),
+      );
+
+      await expect(
+        refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('revoked by logout');
+
+      expect(assertOpenIDRefreshSessionGenerationAvailable).toHaveBeenCalledWith({
+        key: 'publication-key',
+        ownerId: 'publication-owner',
+      });
+      expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
     });
 
     it('rejects legacy session tokens without a verifiable signed marker', async () => {
@@ -1546,6 +1574,12 @@ describe('OpenIDSessionRefresh', () => {
       expect(setRefreshTokenCookie).toHaveBeenCalledWith(leaderRes, 'rt-rotated', expect.any(Date));
       expect(setRefreshTokenCookie).toHaveBeenCalledWith(joinerRes, 'rt-rotated', expect.any(Date));
       expect(leaderReq.session.openidTokens.browserRefreshToken).toBe('rt-rotated');
+      expect(leaderReq.session.openidTokens).toEqual(
+        expect.objectContaining({
+          publicationFlightKey: 'flight:session-cookie-joined:rt-stale',
+          publicationFlightOwnerId: 'owner-1',
+        }),
+      );
       expect(joinerReq.session.openidTokens.refreshToken).toBe('rt-rotated');
       expect(joinerReq.session.openidTokens.browserRefreshToken).toBe('rt-rotated');
       expect(Object.keys(joinerTokens)).not.toContain('__browserRefreshToken');
@@ -1625,6 +1659,10 @@ describe('OpenIDSessionRefresh', () => {
         refresh_token: 'rt-cross-worker-rotated',
         expires_at: refreshedExp,
       };
+      Object.defineProperty(sharedTokens, '__flightOwnerId', {
+        value: 'owner-leader',
+        enumerable: false,
+      });
       waitForOpenIDRefreshFlight.mockResolvedValueOnce(sharedTokens);
 
       const leaderPromise = refreshOpenIDSession(leaderReq, undefined, user, 'access_token');
@@ -1644,6 +1682,12 @@ describe('OpenIDSessionRefresh', () => {
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
       expect(joinerTokens).toStrictEqual(sharedTokens);
       expect(joinerReq.session.openidTokens.refreshToken).toBe('rt-cross-worker-rotated');
+      expect(joinerReq.session.openidTokens).toEqual(
+        expect.objectContaining({
+          publicationFlightKey: 'flight:session-cross-worker:rt-cross-worker',
+          publicationFlightOwnerId: 'owner-leader',
+        }),
+      );
       expect(joinerReq.session.save).toHaveBeenCalled();
 
       resolveGrant({
@@ -2205,6 +2249,8 @@ describe('OpenIDSessionRefresh', () => {
           idToken: makeJwt(advancedExp),
           refreshToken: 'rt-advanced',
           accessTokenExpiresAt: advancedExp,
+          publicationFlightKey: 'advanced-publication-key',
+          publicationFlightOwnerId: 'advanced-publication-owner',
         });
         callback();
       });
@@ -2219,12 +2265,20 @@ describe('OpenIDSessionRefresh', () => {
         value: 'rt-predecessor',
         enumerable: false,
       });
+      Object.defineProperty(staleResult, '__flightOwnerId', {
+        value: 'stale-publication-owner',
+        enumerable: false,
+      });
       waitForOpenIDRefreshFlight.mockResolvedValueOnce(staleResult);
 
       await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
       expect(req.session.reload).toHaveBeenCalled();
       expect(req.session.openidTokens.refreshToken).toBe('rt-advanced');
+      expect(assertOpenIDRefreshSessionGenerationAvailable).toHaveBeenCalledWith({
+        key: 'advanced-publication-key',
+        ownerId: 'advanced-publication-owner',
+      });
       expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
       expect(storeOpenIdSession).not.toHaveBeenCalled();
       expect(setRefreshTokenCookie).not.toHaveBeenCalled();

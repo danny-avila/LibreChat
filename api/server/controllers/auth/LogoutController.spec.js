@@ -36,7 +36,11 @@ function buildReq(overrides = {}) {
     user: { _id: 'user1', openidId: 'oid1', provider: 'openid' },
     headers: { cookie: 'refreshToken=rt1' },
     session: {
-      openidTokens: { refreshToken: 'srt', idToken: 'small-id-token' },
+      openidTokens: {
+        refreshToken: 'srt',
+        idToken: 'small-id-token',
+        publicationFlightKey: 'recorded-publication-key',
+      },
       destroy: jest.fn(),
     },
     ...overrides,
@@ -288,6 +292,7 @@ describe('LogoutController', () => {
           openidIssuer: undefined,
         },
         refreshTokens: ['cookie-rt', 'srt'],
+        publicationKeys: ['recorded-publication-key'],
         ttl: 7 * 24 * 60 * 60 * 1000,
       });
       expect(mockRevokeOpenIDRefreshTokenChain.mock.invocationCallOrder[0]).toBeLessThan(

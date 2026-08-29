@@ -55,6 +55,7 @@ const logoutController = async (req, res) => {
         user: req.user,
         identityContext: refreshIdentity,
         refreshTokens: [...logoutTokens],
+        publicationKeys: [req.session?.openidTokens?.publicationFlightKey].filter(Boolean),
         ttl: math(process.env.REFRESH_TOKEN_EXPIRY, DEFAULT_REFRESH_TOKEN_EXPIRY),
       });
       logoutTokens.push(...revokedRefreshTokens);

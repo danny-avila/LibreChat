@@ -37,6 +37,8 @@ module.exports = api.createOpenIDRefreshRecoveryService({
   failOpenIDRefreshFlight: flight.failOpenIDRefreshFlight,
   waitForOpenIDRefreshFlight: flight.waitForOpenIDRefreshFlight,
   assertOpenIDRefreshFlightAvailable: flight.assertOpenIDRefreshFlightAvailable,
+  assertOpenIDRefreshSessionGenerationAvailable:
+    flight.assertOpenIDRefreshSessionGenerationAvailable,
   revokeOpenIDRefreshFlights: flight.revokeOpenIDRefreshFlights,
   withOpenIDRefreshFlightLease: flight.withOpenIDRefreshFlightLease,
   bridgeGraceMs: bridge.OPENID_REFRESH_BRIDGE_GRACE_MS,

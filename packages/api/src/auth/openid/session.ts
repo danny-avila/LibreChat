@@ -9,6 +9,7 @@ import type {
   OpenIDLogger,
   OpenIDRequest,
   OpenIDResponse,
+  OpenIDPublicationGeneration,
   OpenIDSessionIdentitySource,
   OpenIDTokenSet,
   OpenIDUser,
@@ -108,6 +109,10 @@ interface OpenIDSessionRefreshDeps {
   }) => Promise<RefreshFlightRecord | null>;
   waitForOpenIDRefreshFlight: (args: { key?: string | null }) => Promise<TokenResult | null>;
   assertOpenIDRefreshFlightAvailable: (args: {
+    key?: string | null;
+    ownerId?: string;
+  }) => Promise<RefreshFlightRecord | boolean>;
+  assertOpenIDRefreshSessionGenerationAvailable: (args: {
     key?: string | null;
     ownerId?: string;
   }) => Promise<RefreshFlightRecord | boolean>;
@@ -219,6 +224,7 @@ export function createOpenIDSessionRefreshService(
     failOpenIDRefreshFlight,
     waitForOpenIDRefreshFlight,
     assertOpenIDRefreshFlightAvailable,
+    assertOpenIDRefreshSessionGenerationAvailable,
     withOpenIDRefreshFlightLease,
   } = deps;
 
@@ -1192,6 +1198,7 @@ export function createOpenIDSessionRefreshService(
     predecessorRefreshToken,
     tokenPreference,
     assertLeaseOwned,
+    publicationGeneration,
     effects,
   }: {
     req: OpenIDRequest;
@@ -1202,6 +1209,7 @@ export function createOpenIDSessionRefreshService(
     predecessorRefreshToken?: string;
     tokenPreference: TokenPreference;
     assertLeaseOwned?: LeaseAssertion;
+    publicationGeneration?: OpenIDPublicationGeneration;
     effects?: SessionPublicationEffects;
   }): Promise<MarkedOIDCTokens | null> {
     if (!resolvedTokens?.access_token) return null;
@@ -1221,6 +1229,10 @@ export function createOpenIDSessionRefreshService(
       logger.info(
         '[OpenIDSessionRefresh] Skipping stale flight publication because the session advanced',
       );
+      await assertOpenIDRefreshSessionGenerationAvailable({
+        key: req.session.openidTokens.publicationFlightKey,
+        ownerId: req.session.openidTokens.publicationFlightOwnerId,
+      });
       const effectiveTokens = buildOIDCTokensFromSession(req.session.openidTokens, tokenPreference);
       attachPredecessorRefreshTokenMarker(
         effectiveTokens,
@@ -1272,6 +1284,7 @@ export function createOpenIDSessionRefreshService(
       requestTokens,
       predecessorRefreshToken,
       false,
+      publicationGeneration,
     );
     if (effects && hydrated) {
       effects.expressSession = true;
@@ -1401,6 +1414,10 @@ export function createOpenIDSessionRefreshService(
     if (resolvedTokens.__deferredPublication) {
       throw new Error('OpenID refresh result is awaiting identity validation');
     }
+    if (!resolvedTokens.__flightOwnerId) {
+      throw new Error('OpenID refresh result is missing its publication generation');
+    }
+    const publicationGeneration = { key, ownerId: resolvedTokens.__flightOwnerId };
     const effects = createSessionPublicationEffects();
     try {
       const effectiveTokens = await publishResolvedSessionTokens({
@@ -1411,8 +1428,8 @@ export function createOpenIDSessionRefreshService(
         resolvedTokens,
         predecessorRefreshToken,
         tokenPreference,
-        assertLeaseOwned: () =>
-          assertOpenIDRefreshFlightAvailable({ key, ownerId: resolvedTokens.__flightOwnerId }),
+        assertLeaseOwned: () => assertOpenIDRefreshFlightAvailable(publicationGeneration),
+        publicationGeneration,
         effects,
       });
       if (!effectiveTokens) {
@@ -1517,6 +1534,7 @@ export function createOpenIDSessionRefreshService(
           attachPredecessorRefreshTokenMarker(resolvedTokens, refreshToken);
           attachPredecessorAccessTokenMarker(resolvedTokens, predecessorAccessToken);
           attachDeferredPublicationMarker(resolvedTokens, deferPublication);
+          attachFlightOwnerMarker(resolvedTokens, flight.ownerId);
           successorRefreshToken = resolvedTokens?.refresh_token ?? refreshToken;
           const browserRefreshToken = resolvedTokens
             ? (getBrowserRefreshTokenMarker(resolvedTokens) ?? refreshToken)
@@ -1557,6 +1575,7 @@ export function createOpenIDSessionRefreshService(
               predecessorRefreshToken: refreshToken,
               tokenPreference,
               assertLeaseOwned,
+              publicationGeneration: { key, ownerId: flight.ownerId },
               effects: publicationEffects,
             });
           }
@@ -1637,6 +1656,7 @@ export function createOpenIDSessionRefreshService(
     resolvedTokens: MarkedOIDCTokens | null,
     predecessorOverride?: string,
     reloadSession = true,
+    publicationGeneration?: OpenIDPublicationGeneration,
   ): Promise<boolean> {
     if (!req?.session || !resolvedTokens?.access_token) {
       return false;
@@ -1668,13 +1688,18 @@ export function createOpenIDSessionRefreshService(
     const expiresAtChanged = hasResolvedExpiry
       ? existing.accessTokenExpiresAt !== resolvedTokens.expires_at
       : accessTokenChanged && existing.accessTokenExpiresAt !== undefined;
+    const publicationGenerationChanged = publicationGeneration
+      ? existing.publicationFlightKey !== publicationGeneration.key ||
+        existing.publicationFlightOwnerId !== publicationGeneration.ownerId
+      : false;
 
     if (
       !accessTokenChanged &&
       !idTokenChanged &&
       !refreshTokenChanged &&
       !browserRefreshTokenChanged &&
-      !expiresAtChanged
+      !expiresAtChanged &&
+      !publicationGenerationChanged
     ) {
       return false;
     }
@@ -1686,6 +1711,12 @@ export function createOpenIDSessionRefreshService(
       refreshToken: resolvedTokens.refresh_token ?? existing.refreshToken,
       browserRefreshToken: resolvedBrowserRefreshToken ?? existing.browserRefreshToken,
       lastRefreshedAt: Date.now(),
+      ...(publicationGeneration
+        ? {
+            publicationFlightKey: publicationGeneration.key,
+            publicationFlightOwnerId: publicationGeneration.ownerId,
+          }
+        : {}),
     };
     if (hasResolvedExpiry) {
       nextSessionTokens.accessTokenExpiresAt = resolvedTokens.expires_at;
@@ -1713,6 +1744,10 @@ export function createOpenIDSessionRefreshService(
     }
 
     if (!forceRefresh && isLiveSessionTokenStillValid(sessionTokens, tokenPreference)) {
+      await assertOpenIDRefreshSessionGenerationAvailable({
+        key: sessionTokens.publicationFlightKey,
+        ownerId: sessionTokens.publicationFlightOwnerId,
+      });
       logger.debug('[OpenIDSessionRefresh] Live session token reused');
       return buildOIDCTokensFromSession(sessionTokens, tokenPreference);
     }

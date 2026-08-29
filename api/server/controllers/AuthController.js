@@ -255,8 +255,9 @@ const refreshController = async (req, res) => {
         : getReusableOpenIDSessionToken(req.session?.openidTokens);
       const reuseUserId = reusableSessionToken ? getValidOpenIDReuseUserId(parsedCookies) : null;
       if (reuseUserId) {
+        const reuseSessionTokens = req.session?.openidTokens;
         try {
-          await assertReusableOpenIDSessionGeneration(req.session?.openidTokens);
+          await assertReusableOpenIDSessionGeneration(reuseSessionTokens);
         } catch (error) {
           if (!isOpenIDRefreshOwnershipError(error)) {
             throw error;
@@ -265,12 +266,21 @@ const refreshController = async (req, res) => {
           return res.status(403).send('Invalid OpenID refresh token');
         }
         const user = await getUserById(reuseUserId, AUTH_REFRESH_USER_PROJECTION);
-        if (user && isReusableOpenIDSessionIdentity(req.session?.openidTokens, user)) {
+        if (user && isReusableOpenIDSessionIdentity(reuseSessionTokens, user)) {
+          try {
+            await assertReusableOpenIDSessionGeneration(reuseSessionTokens);
+          } catch (error) {
+            if (!isOpenIDRefreshOwnershipError(error)) {
+              throw error;
+            }
+            clearOpenIDAuthTokens(req, res, reuseUserId, reuseSessionTokens?.tenantId);
+            return res.status(403).send('Invalid OpenID refresh token');
+          }
           const cloudFrontCookiesSet = setCloudFrontAuthCookies(req, res, user);
           logger.debug('[refreshController] OpenID session token reused', {
             token_type: reusableSessionToken.type,
-            has_id_token: Boolean(req.session?.openidTokens?.idToken),
-            has_access_token: Boolean(req.session?.openidTokens?.accessToken),
+            has_id_token: Boolean(reuseSessionTokens?.idToken),
+            has_access_token: Boolean(reuseSessionTokens?.accessToken),
             cloudfront_cookies_set: cloudFrontCookiesSet,
           });
           return res.status(200).send({

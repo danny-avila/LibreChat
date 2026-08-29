@@ -4,6 +4,7 @@ import type {
   LeaseContext,
   OpenIDClaims,
   OpenIDLogger,
+  OpenIDPublicationGeneration,
   OpenIDRefreshResolution,
   OpenIDRequest,
   OpenIDResponse,
@@ -73,6 +74,7 @@ interface RevokeOpenIDRefreshTokenChainInput {
   user: OpenIDUser;
   identityContext: AuthIdentityContext;
   refreshTokens: string[];
+  publicationKeys?: string[];
   ttl: number;
 }
 
@@ -88,7 +90,7 @@ interface SendOpenIDAuthResponseInput {
   req: OpenIDRequest;
   res: OpenIDResponse;
   assertLeaseOwned?: LeaseAssertion;
-  publicationGeneration?: { key: string; ownerId: string };
+  publicationGeneration?: OpenIDPublicationGeneration;
   commitPublication?: (
     appAuthToken: string,
     publishedTokenset: OpenIDTokenSet,
@@ -200,6 +202,10 @@ export interface OpenIDRefreshRecoveryDeps {
     key: string;
     ownerId: string;
   }) => Promise<RefreshFlightRecord | boolean>;
+  assertOpenIDRefreshSessionGenerationAvailable: (args: {
+    key?: string | null;
+    ownerId?: string;
+  }) => Promise<RefreshFlightRecord | boolean>;
   revokeOpenIDRefreshFlights: (args: {
     keys: Array<string | null>;
     ttl: number;
@@ -239,6 +245,7 @@ export function createOpenIDRefreshRecoveryService(
     failOpenIDRefreshFlight,
     waitForOpenIDRefreshFlight,
     assertOpenIDRefreshFlightAvailable,
+    assertOpenIDRefreshSessionGenerationAvailable,
     revokeOpenIDRefreshFlights,
     withOpenIDRefreshFlightLease,
     bridgeGraceMs,
@@ -252,6 +259,7 @@ export function createOpenIDRefreshRecoveryService(
     user,
     identityContext,
     refreshTokens,
+    publicationKeys = [],
     ttl,
   }: RevokeOpenIDRefreshTokenChainInput): Promise<string[]> {
     const userId = identityContext.appUserId;
@@ -274,20 +282,25 @@ export function createOpenIDRefreshRecoveryService(
     for (const target of frontier) {
       scheduled.add(`${target.refreshToken}\x1e${identityKey(target.identity)}`);
     }
+    let directPublicationKeys = [...new Set(publicationKeys.filter(Boolean))];
 
-    for (let depth = 0; frontier.length > 0; depth++) {
+    for (let depth = 0; frontier.length > 0 || directPublicationKeys.length > 0; depth++) {
       if (depth >= MAX_LOGOUT_REFRESH_CHAIN_DEPTH) {
         throw new Error('OpenID logout refresh chain exceeded the safety limit');
       }
-      const keys = frontier.flatMap(({ refreshToken, identity }) => [
-        createOpenIDRefreshFlightKey({ req, user, refreshToken, identityContext: identity }),
-        createRefreshTokenBridgeFlightKey({
-          oldRefreshToken: refreshToken,
-          userId: identity.appUserId ?? userId,
-          tenantId: identity.tenantId,
-          openidIssuer: identity.openidIssuer,
-        }),
-      ]);
+      const keys = [
+        ...directPublicationKeys,
+        ...frontier.flatMap(({ refreshToken, identity }) => [
+          createOpenIDRefreshFlightKey({ req, user, refreshToken, identityContext: identity }),
+          createRefreshTokenBridgeFlightKey({
+            oldRefreshToken: refreshToken,
+            userId: identity.appUserId ?? userId,
+            tenantId: identity.tenantId,
+            openidIssuer: identity.openidIssuer,
+          }),
+        ]),
+      ];
+      directPublicationKeys = [];
       const revoked = await revokeOpenIDRefreshFlights({ keys, ttl });
       const inheritedIdentities = frontier.map(({ identity }) => identity);
       const acceptedIdentities = revoked.flatMap((result) => {
@@ -751,6 +764,35 @@ export function createOpenIDRefreshRecoveryService(
       };
       usesAdvancedSession = true;
     }
+    const advancedSessionGeneration = usesAdvancedSession
+      ? (() => {
+          const key = currentSessionTokens?.publicationFlightKey;
+          const ownerId = currentSessionTokens?.publicationFlightOwnerId;
+          if (!key && !ownerId) return undefined;
+          if (!key || !ownerId) {
+            throw createOpenIDRefreshOwnershipError(
+              'OpenID advanced session publication generation is incomplete',
+            );
+          }
+          return { key, ownerId };
+        })()
+      : undefined;
+    if (advancedSessionGeneration) {
+      await assertOpenIDRefreshSessionGenerationAvailable(advancedSessionGeneration);
+    }
+    const effectiveSessionGeneration = advancedSessionGeneration ?? publicationGeneration;
+    const assertSettledPublicationAvailable = async (): Promise<void> => {
+      if (publicationGeneration) {
+        await assertOpenIDRefreshFlightAvailable(publicationGeneration);
+      }
+      if (
+        advancedSessionGeneration &&
+        (advancedSessionGeneration.key !== publicationGeneration?.key ||
+          advancedSessionGeneration.ownerId !== publicationGeneration?.ownerId)
+      ) {
+        await assertOpenIDRefreshSessionGenerationAvailable(advancedSessionGeneration);
+      }
+    };
     const nextRefreshToken = effectiveTokenset.refresh_token || effectiveExistingRefreshToken;
     if (!nextRefreshToken) {
       throw new Error('OpenID refresh returned no refresh token');
@@ -847,9 +889,7 @@ export function createOpenIDRefreshRecoveryService(
               openidIssuer: openidIssuer ?? user.openidIssuer,
             },
       });
-      if (publicationGeneration) {
-        await assertOpenIDRefreshFlightAvailable(publicationGeneration);
-      }
+      await assertSettledPublicationAvailable();
 
       const publishedAppAuthToken = setOpenIDAuthTokens(authTokenset, req, res, {
         userId,
@@ -858,13 +898,11 @@ export function createOpenIDRefreshRecoveryService(
         openidSubject: openidSubject ?? user.openidId,
         openidIssuer: openidIssuer ?? user.openidIssuer,
       });
-      if (req.session?.openidTokens && publicationGeneration) {
-        req.session.openidTokens.publicationFlightKey = publicationGeneration.key;
-        req.session.openidTokens.publicationFlightOwnerId = publicationGeneration.ownerId;
+      if (req.session?.openidTokens && effectiveSessionGeneration) {
+        req.session.openidTokens.publicationFlightKey = effectiveSessionGeneration.key;
+        req.session.openidTokens.publicationFlightOwnerId = effectiveSessionGeneration.ownerId;
       }
-      if (publicationGeneration) {
-        await assertOpenIDRefreshFlightAvailable(publicationGeneration);
-      }
+      await assertSettledPublicationAvailable();
       if (publishedAppAuthToken !== preparedAppAuthToken) {
         throw new Error('OpenID authentication publication returned an inconsistent token');
       }

@@ -184,12 +184,14 @@ describe('OpenID logout refresh chain', () => {
         user,
         identityContext,
         refreshTokens: ['rt-predecessor'],
+        publicationKeys: ['recorded-publication-key'],
         ttl: 60_000,
       }),
     ).resolves.toEqual(['rt-predecessor', 'rt-successor-1', 'rt-successor-2']);
 
     expect(revokeOpenIDRefreshFlights).toHaveBeenNthCalledWith(1, {
       keys: [
+        'recorded-publication-key',
         'session:subject-1:rt-predecessor',
         'bridge:user-1:https://issuer.example.com:rt-predecessor',
       ],
@@ -832,6 +834,37 @@ describe('refreshController – OpenID path', () => {
     expect(clearOpenIDAuthTokens).toHaveBeenCalledWith(req, res, 'user-db-id', 'tenant-1');
     expect(getUserById).not.toHaveBeenCalled();
     expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('rechecks the reusable generation after user lookup and before response delivery', async () => {
+    setOpenIDReuseCookies();
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: makeSessionToken(),
+        refreshToken: 'stored-refresh',
+        lastRefreshedAt: Date.now(),
+        appUserId: 'user-db-id',
+        openidSubject: baseClaims.sub,
+        tenantId: 'tenant-1',
+        openidIssuer: baseClaims.iss,
+        publicationFlightKey: 'publication-key',
+        publicationFlightOwnerId: 'publication-owner',
+      },
+    };
+    assertOpenIDRefreshSessionGenerationAvailable
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(ownershipLost('logout won during user lookup'));
+
+    await refreshController(req, res);
+
+    expect(assertOpenIDRefreshSessionGenerationAvailable).toHaveBeenCalledTimes(2);
+    expect(clearOpenIDAuthTokens).toHaveBeenCalledWith(req, res, 'user-db-id', 'tenant-1');
+    expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
+    expect(res.send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ token: expect.any(String) }),
+    );
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
@@ -1586,6 +1619,8 @@ describe('refreshController – OpenID path', () => {
           openidSubject: baseClaims.sub,
           tenantId: 'tenant-1',
           openidIssuer: baseClaims.iss,
+          publicationFlightKey: 'advanced-publication-key',
+          publicationFlightOwnerId: 'advanced-publication-owner',
         };
         callback();
       }),
@@ -1620,6 +1655,12 @@ describe('refreshController – OpenID path', () => {
       expect.any(Object),
     );
     expect(res.send).toHaveBeenCalledWith(expect.objectContaining({ token: 'advanced-app-token' }));
+    expect(req.session.openidTokens).toEqual(
+      expect.objectContaining({
+        publicationFlightKey: 'advanced-publication-key',
+        publicationFlightOwnerId: 'advanced-publication-owner',
+      }),
+    );
   });
 
   it('recovers with serialized identity claims when the refreshed ID token is omitted', async () => {
