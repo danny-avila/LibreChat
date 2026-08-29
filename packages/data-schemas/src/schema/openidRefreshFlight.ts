@@ -24,6 +24,15 @@ const openidRefreshFlightSchema: Schema<IOpenIDRefreshFlight> = new Schema<IOpen
   errorMessage: {
     type: String,
   },
+  deliveryId: {
+    type: String,
+  },
+  deliveryExpiresAt: {
+    type: Date,
+  },
+  revocationRequestedAt: {
+    type: Date,
+  },
   createdAt: {
     type: Date,
     required: true,

@@ -289,12 +289,29 @@ describe('OpenIDSessionRefresh', () => {
       await expect(provider()).resolves.toBeNull();
     });
 
-    it('returns null when req.session.openidTokens is missing', async () => {
+    it('rejects a stale user token snapshot when an Express session lost its OpenID tokens', async () => {
       const provider = createOpenIDSessionTokenProvider({
         req: buildReq(undefined),
         user: makeOpenIdUser(),
         tokenPreference: 'access_token',
       });
+      await expect(provider()).rejects.toMatchObject({
+        code: 'OPENID_REFRESH_OWNERSHIP_LOST',
+      });
+      expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
+    });
+
+    it('allows remote OIDC bearer fallback when the request itself carries the upstream token', async () => {
+      const req = buildReq(undefined);
+      req.headers = { authorization: 'Bearer remote-access-token' };
+      const provider = createOpenIDSessionTokenProvider({
+        req,
+        user: makeOpenIdUser({
+          federatedTokens: { access_token: 'remote-access-token' },
+        }),
+        tokenPreference: 'access_token',
+      });
+
       await expect(provider()).resolves.toBeNull();
       expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
     });
@@ -1940,6 +1957,55 @@ describe('OpenIDSessionRefresh', () => {
       expect(failOpenIDRefreshFlight).toHaveBeenCalled();
     });
 
+    it('keeps an indeterminate completed generation recoverable instead of marking it failed', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const req = buildReq({
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-predecessor',
+      });
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        id_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        refresh_token: 'rt-successor',
+        expires_in: 3600,
+      });
+      completeOpenIDRefreshFlight.mockRejectedValueOnce(new Error('completion timed out'));
+      assertOpenIDRefreshFlightAvailable.mockRejectedValueOnce(new Error('read timed out'));
+
+      await expect(
+        refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('completion timed out');
+
+      expect(req.session.openidTokens.refreshToken).toBe('rt-successor');
+      expect(failOpenIDRefreshFlight).not.toHaveBeenCalled();
+    });
+
+    it('accepts an observed completed generation after the completion acknowledgement is lost', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const req = buildReq({
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-predecessor',
+      });
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        id_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        refresh_token: 'rt-successor',
+        expires_in: 3600,
+      });
+      completeOpenIDRefreshFlight.mockRejectedValueOnce(new Error('completion timed out'));
+      assertOpenIDRefreshFlightAvailable.mockResolvedValueOnce({
+        status: 'completed',
+        ownerId: 'owner-1',
+      });
+
+      await expect(
+        refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token'),
+      ).resolves.toMatchObject({ refresh_token: 'rt-successor' });
+      expect(failOpenIDRefreshFlight).not.toHaveBeenCalled();
+    });
+
     it('rolls back session and cookie publication when logout revokes the pending flight', async () => {
       const expiredExp = Math.floor(Date.now() / 1000) - 60;
       const req = buildReq({
@@ -2282,6 +2348,64 @@ describe('OpenIDSessionRefresh', () => {
       expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
       expect(storeOpenIdSession).not.toHaveBeenCalled();
       expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+      expect(req.session.save).not.toHaveBeenCalled();
+    });
+
+    it('keeps the newer generation when stale and current flights contain identical token strings', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const liveExp = Math.floor(Date.now() / 1000) + 3600;
+      const req = buildReq(
+        {
+          accessToken: makeJwt(expiredExp),
+          idToken: makeJwt(expiredExp),
+          refreshToken: 'rt-stable',
+        },
+        'session-identical-generations',
+      );
+      req.session.reload = jest.fn((callback) => {
+        req.session.openidTokens = withSessionIdentity({
+          accessToken: 'identical-access',
+          idToken: 'identical-id',
+          refreshToken: 'rt-stable',
+          accessTokenExpiresAt: liveExp,
+          publicationFlightKey: 'newer-publication-key',
+          publicationFlightOwnerId: 'newer-publication-owner',
+          publicationFlightCreatedAt: 2000,
+        });
+        callback();
+      });
+      acquireOpenIDRefreshFlight.mockResolvedValueOnce({ acquired: false, ownerId: 'other' });
+      const staleResult = {
+        access_token: 'identical-access',
+        id_token: 'identical-id',
+        refresh_token: 'rt-stable',
+        expires_at: liveExp,
+      };
+      Object.defineProperty(staleResult, '__predecessorRefreshToken', {
+        value: 'rt-stable',
+        enumerable: false,
+      });
+      Object.defineProperty(staleResult, '__flightOwnerId', {
+        value: 'stale-publication-owner',
+        enumerable: false,
+      });
+      Object.defineProperty(staleResult, '__flightCreatedAt', {
+        value: 1000,
+        enumerable: false,
+      });
+      waitForOpenIDRefreshFlight.mockResolvedValueOnce(staleResult);
+
+      await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
+
+      expect(req.session.openidTokens).toEqual(
+        expect.objectContaining({
+          accessToken: 'identical-access',
+          refreshToken: 'rt-stable',
+          publicationFlightKey: 'newer-publication-key',
+          publicationFlightOwnerId: 'newer-publication-owner',
+          publicationFlightCreatedAt: 2000,
+        }),
+      );
       expect(req.session.save).not.toHaveBeenCalled();
     });
 

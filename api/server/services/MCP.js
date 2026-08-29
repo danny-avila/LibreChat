@@ -1252,8 +1252,9 @@ function createToolInstance({
        * `req`/`res` are in scope) and captured here, so this layer never holds
        * the raw Express request. The closure reads/refreshes the LIVE
        * `req.session.openidTokens` at call time and persists rotations; it is a
-       * no-op when reuse is off, the user is non-OpenID, or the session lacks
-       * openidTokens. `tokenPreference: 'access_token'` (set at construction)
+       * no-op when reuse is off or the user is non-OpenID. A browser request whose session loses
+       * openidTokens rejects instead of falling back to a stale strategy snapshot.
+       * `tokenPreference: 'access_token'` (set at construction)
        * is required for OBO since the grant sends the access token to the IdP
        * as the jwt-bearer assertion.
        */

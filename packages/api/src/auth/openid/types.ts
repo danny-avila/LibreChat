@@ -15,6 +15,7 @@ export type LogArgument = string | number | boolean | Error | object | null | un
 export interface OpenIDPublicationGeneration {
   key: string;
   ownerId: string;
+  createdAt?: number;
 }
 
 export interface OpenIDClaims {
@@ -49,6 +50,7 @@ export interface SharedOpenIDRefreshResult {
   acceptedIdentity?: AuthIdentityContext;
   /** Non-enumerable durable generation marker restored by the flight service. */
   __flightOwnerId?: string;
+  __flightCreatedAt?: number;
 }
 
 export interface SessionOpenIDTokens {
@@ -66,6 +68,7 @@ export interface SessionOpenIDTokens {
   /** Durable coordination generation that authorized this session publication. */
   publicationFlightKey?: string;
   publicationFlightOwnerId?: string;
+  publicationFlightCreatedAt?: number;
 }
 
 export interface OpenIDSession {
@@ -76,7 +79,7 @@ export interface OpenIDSession {
 }
 
 export interface OpenIDRequest {
-  headers?: { cookie?: string };
+  headers?: { authorization?: string; cookie?: string };
   session?: OpenIDSession;
   sessionID?: string;
   user?: OpenIDUser;
@@ -96,6 +99,7 @@ export interface OpenIDUser extends AuthIdentitySource {
   openidId?: string;
   tenantId?: string;
   openidIssuer?: string;
+  federatedTokens?: OIDCTokens;
 }
 
 export interface OpenIDRefreshResolution {
@@ -129,6 +133,10 @@ export interface RefreshFlightAcquireResult {
 export interface RefreshFlightRecord {
   status?: 'pending' | 'completed' | 'failed' | 'revoked';
   ownerId?: string;
+  createdAt?: Date | string;
+  deliveryId?: string;
+  deliveryExpiresAt?: Date | string;
+  revocationRequestedAt?: Date | string;
   encryptedResult?: string;
   errorMessage?: string;
   expiresAt?: Date | string;

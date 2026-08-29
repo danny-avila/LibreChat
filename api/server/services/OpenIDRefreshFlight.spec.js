@@ -25,11 +25,13 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('~/models', () => ({
   acquireOpenIDRefreshFlight: jest.fn(),
+  claimOpenIDRefreshFlightDelivery: jest.fn(),
   completeOpenIDRefreshFlight: jest.fn(),
   failOpenIDRefreshFlight: jest.fn(),
   findOpenIDRefreshFlight: jest.fn(),
   revokeOpenIDRefreshFlight: jest.fn(),
   renewOpenIDRefreshFlight: jest.fn(),
+  releaseOpenIDRefreshFlightDelivery: jest.fn(),
 }));
 
 const { encryptV2, decryptV2 } = require('@librechat/data-schemas');
@@ -37,11 +39,14 @@ const db = require('~/models');
 const {
   acquireOpenIDRefreshFlight,
   assertOpenIDRefreshFlightAvailable,
+  assertOpenIDRefreshFlightDeliveryAvailable,
   assertOpenIDRefreshSessionGenerationAvailable,
+  claimOpenIDRefreshFlightDelivery,
   completeOpenIDRefreshFlight,
   createOpenIDRefreshFlightKey,
   failOpenIDRefreshFlight,
   renewOpenIDRefreshFlight,
+  releaseOpenIDRefreshFlightDelivery,
   revokeOpenIDRefreshFlights,
   waitForOpenIDRefreshFlight,
   withOpenIDRefreshFlightLease,
@@ -52,10 +57,16 @@ describe('OpenIDRefreshFlight', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     db.acquireOpenIDRefreshFlight.mockResolvedValue({ acquired: true, flight: null });
+    db.claimOpenIDRefreshFlightDelivery.mockResolvedValue({
+      status: 'completed',
+      ownerId: 'owner-1',
+      deliveryId: 'delivery-1',
+    });
     db.completeOpenIDRefreshFlight.mockResolvedValue({});
     db.failOpenIDRefreshFlight.mockResolvedValue({});
     db.findOpenIDRefreshFlight.mockResolvedValue(null);
     db.renewOpenIDRefreshFlight.mockResolvedValue({ ownerId: 'owner-1', status: 'pending' });
+    db.releaseOpenIDRefreshFlightDelivery.mockResolvedValue({ status: 'completed' });
     db.revokeOpenIDRefreshFlight.mockResolvedValue({ status: 'revoked' });
   });
 
@@ -109,6 +120,88 @@ describe('OpenIDRefreshFlight', () => {
     await expect(
       assertOpenIDRefreshSessionGenerationAvailable({ key: 'flight-key', ownerId: 'owner-1' }),
     ).resolves.toBe(true);
+  });
+
+  it('claims and releases a durable response-delivery lease for the exact generation', async () => {
+    const createdAt = Date.now() - 1000;
+    const claimed = await claimOpenIDRefreshFlightDelivery({
+      key: 'flight-key',
+      ownerId: 'owner-1',
+      createdAt,
+      deliveryId: 'delivery-1',
+      ttl: 5000,
+    });
+
+    expect(claimed.deliveryId).toBe('delivery-1');
+    expect(db.claimOpenIDRefreshFlightDelivery).toHaveBeenCalledWith({
+      key: 'flight-key',
+      ownerId: 'owner-1',
+      deliveryId: 'delivery-1',
+      deliveryExpiresAt: expect.any(Date),
+      createdAt: new Date(createdAt),
+    });
+
+    await releaseOpenIDRefreshFlightDelivery({
+      key: 'flight-key',
+      ownerId: 'owner-1',
+      deliveryId: 'delivery-1',
+    });
+    expect(db.releaseOpenIDRefreshFlightDelivery).toHaveBeenCalledWith({
+      key: 'flight-key',
+      ownerId: 'owner-1',
+      deliveryId: 'delivery-1',
+    });
+  });
+
+  it('retries an expired synthetic generation when its previous delivery releases between reads', async () => {
+    db.claimOpenIDRefreshFlightDelivery.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      status: 'completed',
+      ownerId: 'owner-1',
+      deliveryId: 'delivery-2',
+    });
+    db.findOpenIDRefreshFlight.mockResolvedValueOnce(null);
+
+    await expect(
+      claimOpenIDRefreshFlightDelivery({
+        key: 'flight-key',
+        ownerId: 'owner-1',
+        createdAt: Date.now() - 1000,
+        deliveryId: 'delivery-2',
+        ttl: 1000,
+      }),
+    ).resolves.toMatchObject({ deliveryId: 'delivery-2' });
+    expect(db.claimOpenIDRefreshFlightDelivery).toHaveBeenCalledTimes(2);
+  });
+
+  it('authorizes only the active, unrevoked response-delivery lease', async () => {
+    db.findOpenIDRefreshFlight.mockResolvedValueOnce({
+      status: 'completed',
+      ownerId: 'owner-1',
+      deliveryId: 'delivery-1',
+      deliveryExpiresAt: new Date(Date.now() + 5000),
+    });
+    await expect(
+      assertOpenIDRefreshFlightDeliveryAvailable({
+        key: 'flight-key',
+        ownerId: 'owner-1',
+        deliveryId: 'delivery-1',
+      }),
+    ).resolves.toBeUndefined();
+
+    db.findOpenIDRefreshFlight.mockResolvedValueOnce({
+      status: 'completed',
+      ownerId: 'owner-1',
+      deliveryId: 'delivery-1',
+      deliveryExpiresAt: new Date(Date.now() + 5000),
+      revocationRequestedAt: new Date(),
+    });
+    await expect(
+      assertOpenIDRefreshFlightDeliveryAvailable({
+        key: 'flight-key',
+        ownerId: 'owner-1',
+        deliveryId: 'delivery-1',
+      }),
+    ).rejects.toMatchObject({ code: 'OPENID_REFRESH_OWNERSHIP_LOST' });
   });
 
   it('uses explicit identity context when safe user lacks tenant and issuer', () => {
@@ -527,9 +620,11 @@ describe('OpenIDRefreshFlight', () => {
   });
 
   it('restores publication metadata as non-enumerable', async () => {
+    const createdAt = new Date('2026-08-29T12:00:00.000Z');
     const result = await __internals.readCompletedFlight({
       status: 'completed',
       ownerId: 'generation-owner',
+      createdAt,
       encryptedResult:
         'encrypted:{"access_token":"access","__browserRefreshToken":"browser-refresh","__predecessorRefreshToken":"predecessor-refresh","__predecessorAccessToken":"predecessor-access","__deferredPublication":true}',
     });
@@ -539,6 +634,7 @@ describe('OpenIDRefreshFlight', () => {
     expect(result.__predecessorAccessToken).toBe('predecessor-access');
     expect(result.__deferredPublication).toBe(true);
     expect(result.__flightOwnerId).toBe('generation-owner');
+    expect(result.__flightCreatedAt).toBe(createdAt.getTime());
     expect(Object.keys(result)).toEqual(['access_token']);
   });
 });

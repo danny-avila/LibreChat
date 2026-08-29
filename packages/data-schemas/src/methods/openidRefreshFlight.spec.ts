@@ -78,6 +78,10 @@ describe('OpenIDRefreshFlight Methods', () => {
       lockExpiresAt: new Date(Date.now() - 1000),
       expiresAt: new Date(Date.now() + 60000),
     });
+    await mongoose.models.OpenIDRefreshFlight.updateOne(
+      { key: 'flight-key' },
+      { $set: { createdAt: new Date('2020-01-01T00:00:00.000Z') } },
+    );
 
     const reclaimed = await methods.acquireOpenIDRefreshFlight({
       key: 'flight-key',
@@ -88,6 +92,9 @@ describe('OpenIDRefreshFlight Methods', () => {
 
     expect(reclaimed.acquired).toBe(true);
     expect(reclaimed.flight?.ownerId).toBe('owner-2');
+    expect(reclaimed.flight?.createdAt.getTime()).toBeGreaterThan(
+      new Date('2020-01-01T00:00:00.000Z').getTime(),
+    );
   });
 
   it('reclaims a failed flight immediately so transient failures can retry', async () => {
@@ -261,5 +268,157 @@ describe('OpenIDRefreshFlight Methods', () => {
 
     expect(revoked?.status).toBe('revoked');
     expect(revoked?.encryptedResult).toBe('encrypted-successor');
+  });
+
+  it('serializes response delivery without changing the completed publication state', async () => {
+    const expiresAt = new Date(Date.now() + 60000);
+    await methods.acquireOpenIDRefreshFlight({
+      key: 'delivery-flight',
+      ownerId: 'owner-1',
+      lockExpiresAt: new Date(Date.now() + 30000),
+      expiresAt,
+    });
+    await methods.completeOpenIDRefreshFlight({
+      key: 'delivery-flight',
+      ownerId: 'owner-1',
+      encryptedResult: 'encrypted-result',
+      expiresAt,
+    });
+
+    const first = await methods.claimOpenIDRefreshFlightDelivery({
+      key: 'delivery-flight',
+      ownerId: 'owner-1',
+      deliveryId: 'delivery-1',
+      deliveryExpiresAt: new Date(Date.now() + 30000),
+    });
+    expect(first).toMatchObject({ status: 'completed', deliveryId: 'delivery-1' });
+
+    await expect(
+      methods.claimOpenIDRefreshFlightDelivery({
+        key: 'delivery-flight',
+        ownerId: 'owner-1',
+        deliveryId: 'delivery-2',
+        deliveryExpiresAt: new Date(Date.now() + 30000),
+      }),
+    ).resolves.toBeNull();
+
+    const released = await methods.releaseOpenIDRefreshFlightDelivery({
+      key: 'delivery-flight',
+      ownerId: 'owner-1',
+      deliveryId: 'delivery-1',
+    });
+    expect(released).toMatchObject({ status: 'completed', encryptedResult: 'encrypted-result' });
+    expect(released?.deliveryId).toBeUndefined();
+  });
+
+  it('recreates an expired generation only for delivery and removes the synthetic row on release', async () => {
+    const createdAt = new Date('2026-08-29T12:00:00.000Z');
+    const claimed = await methods.claimOpenIDRefreshFlightDelivery({
+      key: 'expired-generation',
+      ownerId: 'owner-1',
+      deliveryId: 'delivery-1',
+      deliveryExpiresAt: new Date(Date.now() + 30000),
+      createdAt,
+    });
+
+    expect(claimed).toMatchObject({
+      key: 'expired-generation',
+      ownerId: 'owner-1',
+      status: 'completed',
+      deliveryId: 'delivery-1',
+    });
+    expect(claimed?.createdAt.getTime()).toBe(createdAt.getTime());
+
+    await methods.releaseOpenIDRefreshFlightDelivery({
+      key: 'expired-generation',
+      ownerId: 'owner-1',
+      deliveryId: 'delivery-1',
+    });
+    await expect(
+      mongoose.models.OpenIDRefreshFlight.findOne({ key: 'expired-generation' }).lean(),
+    ).resolves.toBeNull();
+  });
+
+  it('makes logout wait for an active delivery and revokes it when the response releases', async () => {
+    const expiresAt = new Date(Date.now() + 60000);
+    await methods.acquireOpenIDRefreshFlight({
+      key: 'logout-delivery-flight',
+      ownerId: 'owner-1',
+      lockExpiresAt: new Date(Date.now() + 30000),
+      expiresAt,
+    });
+    await methods.completeOpenIDRefreshFlight({
+      key: 'logout-delivery-flight',
+      ownerId: 'owner-1',
+      encryptedResult: 'encrypted-result',
+      expiresAt,
+    });
+    await methods.claimOpenIDRefreshFlightDelivery({
+      key: 'logout-delivery-flight',
+      ownerId: 'owner-1',
+      deliveryId: 'delivery-1',
+      deliveryExpiresAt: new Date(Date.now() + 30000),
+    });
+
+    let logoutSettled = false;
+    const logout = methods
+      .revokeOpenIDRefreshFlight({
+        key: 'logout-delivery-flight',
+        expiresAt: new Date(Date.now() + 3600000),
+      })
+      .finally(() => {
+        logoutSettled = true;
+      });
+
+    let revocationRequested = false;
+    for (let attempt = 0; attempt < 20 && !revocationRequested; attempt++) {
+      const flight = await mongoose.models.OpenIDRefreshFlight.findOne({
+        key: 'logout-delivery-flight',
+      }).lean<t.IOpenIDRefreshFlight>();
+      revocationRequested = Boolean(flight?.revocationRequestedAt);
+      if (!revocationRequested) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    }
+    expect(revocationRequested).toBe(true);
+    expect(logoutSettled).toBe(false);
+
+    const released = await methods.releaseOpenIDRefreshFlightDelivery({
+      key: 'logout-delivery-flight',
+      ownerId: 'owner-1',
+      deliveryId: 'delivery-1',
+    });
+    expect(released?.status).toBe('revoked');
+    await expect(logout).resolves.toMatchObject({
+      status: 'revoked',
+      encryptedResult: 'encrypted-result',
+    });
+  });
+
+  it('treats a malformed delivery without an expiry as abandoned during logout', async () => {
+    const expiresAt = new Date(Date.now() + 60000);
+    await methods.acquireOpenIDRefreshFlight({
+      key: 'abandoned-delivery-flight',
+      ownerId: 'owner-1',
+      lockExpiresAt: new Date(Date.now() + 30000),
+      expiresAt,
+    });
+    await methods.completeOpenIDRefreshFlight({
+      key: 'abandoned-delivery-flight',
+      ownerId: 'owner-1',
+      encryptedResult: 'encrypted-result',
+      expiresAt,
+    });
+    await mongoose.models.OpenIDRefreshFlight.updateOne(
+      { key: 'abandoned-delivery-flight' },
+      { $set: { deliveryId: 'orphaned-delivery' }, $unset: { deliveryExpiresAt: '' } },
+    );
+
+    await expect(
+      methods.revokeOpenIDRefreshFlight({
+        key: 'abandoned-delivery-flight',
+        expiresAt: new Date(Date.now() + 3600000),
+      }),
+    ).resolves.toMatchObject({ status: 'revoked' });
   });
 });

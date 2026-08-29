@@ -33,8 +33,8 @@ export type OboTokenResolver = (
  * Contract:
  *   - non-null result: `access_token` MUST be populated; the closure enforces
  *     this internally so callers do not defend against missing access_token.
- *   - null: not applicable (non-OpenID user, OPENID_REUSE_TOKENS off, no
- *     session). Caller treats as `missing_upstream_token`.
+ *   - null: not applicable, or a bearer-authenticated remote-agent request whose
+ *     current upstream token can be read from `user.federatedTokens`.
  *   - throws: refresh was attempted and the IdP rejected it. Caller wraps as
  *     `session_refresh_failed`.
  */
@@ -187,8 +187,10 @@ function buildUpstreamTokenInfo(
  * tool calls. Required (not optional) so wiring bugs surface at compile time.
  *
  * When the provider yields no live session (it resolves to null), this falls
- * back to `user.federatedTokens` so the OIDC remote-agent flow — which carries a
- * verified bearer token but no Express session — still works.
+ * back to `user.federatedTokens` so the OIDC remote-agent flow — whose request
+ * itself carries that verified upstream bearer — still works. Browser requests
+ * whose Express session was cleared reject in the provider instead of reaching
+ * this fallback with a stale strategy-time snapshot.
  */
 export async function resolveOboToken(
   user: IUser,

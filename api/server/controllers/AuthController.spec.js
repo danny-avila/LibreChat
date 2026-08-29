@@ -34,11 +34,14 @@ jest.mock('~/server/services/RefreshTokenBridge', () => ({
 }));
 jest.mock('~/server/services/OpenIDRefreshFlight', () => ({
   acquireOpenIDRefreshFlight: jest.fn(),
+  assertOpenIDRefreshFlightDeliveryAvailable: jest.fn(),
   assertOpenIDRefreshFlightAvailable: jest.fn(),
   assertOpenIDRefreshSessionGenerationAvailable: jest.fn(),
+  claimOpenIDRefreshFlightDelivery: jest.fn(),
   completeOpenIDRefreshFlight: jest.fn(),
   createOpenIDRefreshFlightKey: jest.fn(),
   failOpenIDRefreshFlight: jest.fn(),
+  releaseOpenIDRefreshFlightDelivery: jest.fn(),
   revokeOpenIDRefreshFlights: jest.fn(),
   waitForOpenIDRefreshFlight: jest.fn(),
   withOpenIDRefreshFlightLease: jest.fn(),
@@ -115,11 +118,14 @@ const {
 } = require('~/server/services/RefreshTokenBridge');
 const {
   acquireOpenIDRefreshFlight,
+  assertOpenIDRefreshFlightDeliveryAvailable,
   assertOpenIDRefreshFlightAvailable,
   assertOpenIDRefreshSessionGenerationAvailable,
+  claimOpenIDRefreshFlightDelivery,
   completeOpenIDRefreshFlight,
   createOpenIDRefreshFlightKey,
   failOpenIDRefreshFlight,
+  releaseOpenIDRefreshFlightDelivery,
   revokeOpenIDRefreshFlights,
   waitForOpenIDRefreshFlight,
   withOpenIDRefreshFlightLease,
@@ -224,6 +230,14 @@ describe('graphTokenController', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     isEnabled.mockReturnValue(true);
+    assertOpenIDRefreshSessionGenerationAvailable.mockResolvedValue(true);
+    claimOpenIDRefreshFlightDelivery.mockResolvedValue({
+      status: 'completed',
+      ownerId: 'publication-owner',
+      deliveryId: 'delivery-1',
+    });
+    assertOpenIDRefreshFlightDeliveryAvailable.mockResolvedValue(undefined);
+    releaseOpenIDRefreshFlightDelivery.mockResolvedValue(undefined);
 
     req = {
       user: {
@@ -273,6 +287,99 @@ describe('graphTokenController', () => {
       token_type: 'Bearer',
       expires_in: 3600,
     });
+  });
+
+  it('leases the session generation across a Graph OBO exchange and response delivery', async () => {
+    req.user.federatedTokens.access_token = 'session-access-token';
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        appUserId: 'user-1',
+        tenantId: 'tenant-1',
+        publicationFlightKey: 'publication-key',
+        publicationFlightOwnerId: 'publication-owner',
+        publicationFlightCreatedAt: 1000,
+      },
+    };
+
+    await graphTokenController(req, res);
+
+    expect(claimOpenIDRefreshFlightDelivery).toHaveBeenCalledWith({
+      key: 'publication-key',
+      ownerId: 'publication-owner',
+      createdAt: 1000,
+    });
+    expect(assertOpenIDRefreshFlightDeliveryAvailable).toHaveBeenCalledWith({
+      key: 'publication-key',
+      ownerId: 'publication-owner',
+      deliveryId: 'delivery-1',
+    });
+    expect(getGraphApiToken).toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ access_token: 'graph-access-token' }),
+    );
+    expect(releaseOpenIDRefreshFlightDelivery).toHaveBeenCalledWith({
+      key: 'publication-key',
+      ownerId: 'publication-owner',
+      deliveryId: 'delivery-1',
+    });
+  });
+
+  it('does not exchange a session-backed Graph token after logout tombstones its generation', async () => {
+    req.user.federatedTokens.access_token = 'session-access-token';
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        appUserId: 'user-1',
+        tenantId: 'tenant-1',
+        publicationFlightKey: 'publication-key',
+        publicationFlightOwnerId: 'publication-owner',
+      },
+    };
+    assertOpenIDRefreshSessionGenerationAvailable.mockRejectedValueOnce(
+      ownershipLost('revoked by logout'),
+    );
+
+    await graphTokenController(req, res);
+
+    expect(getGraphApiToken).not.toHaveBeenCalled();
+    expect(clearOpenIDAuthTokens).toHaveBeenCalledWith(req, res, undefined, 'tenant-1');
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('does not fall back to a stale Graph token snapshot after the Express session is cleared', async () => {
+    req.session = {};
+
+    await graphTokenController(req, res);
+
+    expect(getGraphApiToken).not.toHaveBeenCalled();
+    expect(clearOpenIDAuthTokens).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('withholds a minted Graph token when logout revokes its delivery lease', async () => {
+    req.user.federatedTokens.access_token = 'session-access-token';
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        appUserId: 'user-1',
+        tenantId: 'tenant-1',
+        publicationFlightKey: 'publication-key',
+        publicationFlightOwnerId: 'publication-owner',
+      },
+    };
+    assertOpenIDRefreshFlightDeliveryAvailable.mockRejectedValueOnce(
+      ownershipLost('logout requested revocation'),
+    );
+
+    await graphTokenController(req, res);
+
+    expect(getGraphApiToken).toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalledWith(
+      expect.objectContaining({ access_token: 'graph-access-token' }),
+    );
+    expect(releaseOpenIDRefreshFlightDelivery).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 
   it('should return 403 when user is not authenticated via Entra ID', async () => {
@@ -420,9 +527,16 @@ describe('refreshController – OpenID path', () => {
       status: 'completed',
       ownerId: 'bridge-owner',
     });
+    assertOpenIDRefreshFlightDeliveryAvailable.mockResolvedValue(undefined);
     assertOpenIDRefreshSessionGenerationAvailable.mockResolvedValue(true);
+    claimOpenIDRefreshFlightDelivery.mockResolvedValue({
+      status: 'completed',
+      ownerId: 'publication-owner',
+      deliveryId: 'delivery-1',
+    });
     completeOpenIDRefreshFlight.mockResolvedValue({ status: 'completed' });
     failOpenIDRefreshFlight.mockResolvedValue({ status: 'failed' });
+    releaseOpenIDRefreshFlightDelivery.mockResolvedValue(undefined);
     waitForOpenIDRefreshFlight.mockResolvedValue(null);
     withOpenIDRefreshFlightLease.mockImplementation(({ operation }) =>
       operation({
@@ -721,6 +835,10 @@ describe('refreshController – OpenID path', () => {
         idToken: 'advanced-id',
         refreshToken: 'advanced-refresh',
         accessTokenExpiresAt: Math.floor(Date.now() / 1000) + 3600,
+        appUserId: 'advanced-user-id',
+        openidSubject: 'advanced-subject',
+        tenantId: 'advanced-tenant',
+        openidIssuer: 'https://advanced-issuer.example.com',
       };
       callback();
     });
@@ -728,9 +846,9 @@ describe('refreshController – OpenID path', () => {
     await refreshController(req, res);
 
     expect(storeOpenIDSession).toHaveBeenCalledWith(
-      'user-db-id',
+      'advanced-user-id',
       'advanced-refresh',
-      'tenant-1',
+      'advanced-tenant',
       'advanced-refresh',
     );
     expect(setOpenIDAuthTokens).toHaveBeenCalledWith(
@@ -741,7 +859,13 @@ describe('refreshController – OpenID path', () => {
       }),
       req,
       res,
-      expect.objectContaining({ existingRefreshToken: 'advanced-refresh' }),
+      {
+        userId: 'advanced-user-id',
+        existingRefreshToken: 'advanced-refresh',
+        tenantId: 'advanced-tenant',
+        openidSubject: 'advanced-subject',
+        openidIssuer: 'https://advanced-issuer.example.com',
+      },
     );
   });
 
@@ -837,7 +961,7 @@ describe('refreshController – OpenID path', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
-  it('rechecks the reusable generation after user lookup and before response delivery', async () => {
+  it('withholds a reusable response when logout revokes its delivery lease', async () => {
     setOpenIDReuseCookies();
     req.session = {
       openidTokens: {
@@ -851,15 +975,26 @@ describe('refreshController – OpenID path', () => {
         openidIssuer: baseClaims.iss,
         publicationFlightKey: 'publication-key',
         publicationFlightOwnerId: 'publication-owner',
+        publicationFlightCreatedAt: 1000,
       },
     };
-    assertOpenIDRefreshSessionGenerationAvailable
-      .mockResolvedValueOnce(true)
-      .mockRejectedValueOnce(ownershipLost('logout won during user lookup'));
+    assertOpenIDRefreshFlightDeliveryAvailable.mockRejectedValueOnce(
+      ownershipLost('logout won during user lookup'),
+    );
 
     await refreshController(req, res);
 
-    expect(assertOpenIDRefreshSessionGenerationAvailable).toHaveBeenCalledTimes(2);
+    expect(claimOpenIDRefreshFlightDelivery).toHaveBeenCalledWith({
+      key: 'publication-key',
+      ownerId: 'publication-owner',
+      createdAt: 1000,
+    });
+    expect(assertOpenIDRefreshFlightDeliveryAvailable).toHaveBeenCalledWith({
+      key: 'publication-key',
+      ownerId: 'publication-owner',
+      deliveryId: 'delivery-1',
+    });
+    expect(releaseOpenIDRefreshFlightDelivery).toHaveBeenCalled();
     expect(clearOpenIDAuthTokens).toHaveBeenCalledWith(req, res, 'user-db-id', 'tenant-1');
     expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
     expect(res.send).not.toHaveBeenCalledWith(
@@ -1563,6 +1698,59 @@ describe('refreshController – OpenID path', () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  it('claims the completed generation before delivering a newly refreshed app token', async () => {
+    setOpenIDReuseCookies();
+    req.session = {};
+    setOpenIDAuthTokens.mockImplementationOnce(() => {
+      req.session.openidTokens = {
+        accessToken: 'new-access',
+        refreshToken: 'new-refresh',
+        appUserId: 'user-db-id',
+        tenantId: 'tenant-1',
+      };
+      return 'new-app-token';
+    });
+
+    await refreshController(req, res);
+
+    expect(claimOpenIDRefreshFlightDelivery).toHaveBeenCalledWith({
+      key: 'bridge-flight-key',
+      ownerId: 'bridge-owner',
+      createdAt: expect.any(Number),
+    });
+    expect(assertOpenIDRefreshFlightDeliveryAvailable).toHaveBeenCalledWith({
+      key: 'bridge-flight-key',
+      ownerId: 'bridge-owner',
+      deliveryId: 'delivery-1',
+    });
+    expect(res.send).toHaveBeenCalledWith(expect.objectContaining({ token: 'new-app-token' }));
+    expect(releaseOpenIDRefreshFlightDelivery).toHaveBeenCalled();
+  });
+
+  it('does not deliver a newly refreshed app token after logout requests revocation', async () => {
+    setOpenIDReuseCookies();
+    req.session = {};
+    setOpenIDAuthTokens.mockImplementationOnce(() => {
+      req.session.openidTokens = {
+        accessToken: 'new-access',
+        refreshToken: 'new-refresh',
+        appUserId: 'user-db-id',
+        tenantId: 'tenant-1',
+      };
+      return 'new-app-token';
+    });
+    assertOpenIDRefreshFlightDeliveryAvailable.mockRejectedValueOnce(
+      ownershipLost('logout requested revocation'),
+    );
+
+    await refreshController(req, res);
+
+    expect(releaseOpenIDRefreshFlightDelivery).toHaveBeenCalled();
+    expect(clearOpenIDAuthTokens).toHaveBeenCalled();
+    expect(res.send).not.toHaveBeenCalledWith(expect.objectContaining({ token: 'new-app-token' }));
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
   it('clears a follower publication when logout revokes its generation after emission', async () => {
     setOpenIDReuseCookies();
     req.session = {};
@@ -1918,6 +2106,7 @@ describe('refreshController – OpenID path', () => {
       .mockRejectedValueOnce(new Error('invalid_grant'))
       .mockResolvedValueOnce(mockTokenset);
     completeOpenIDRefreshFlight.mockRejectedValueOnce(new Error('mongo timeout'));
+    assertOpenIDRefreshFlightAvailable.mockRejectedValueOnce(new Error('mongo read timeout'));
 
     await refreshController(req, res);
 
@@ -1937,6 +2126,7 @@ describe('refreshController – OpenID path', () => {
     expect(deleteSession).not.toHaveBeenCalledWith({ refreshToken: 'new-refresh' });
     expect(clearOpenIDAuthTokens).not.toHaveBeenCalled();
     expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(failOpenIDRefreshFlight).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
   });
 

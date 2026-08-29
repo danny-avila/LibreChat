@@ -6,6 +6,7 @@ const {
   math,
   isEnabled,
   createAuthIdentityContext,
+  createOpenIDRefreshOwnershipError,
   isOpenIDRefreshOwnershipError,
   isOpenIDSessionIdentityMatch,
   OPENID_EXPIRY_BUFFER_SECONDS,
@@ -27,7 +28,10 @@ const {
   sendOpenIDAuthResponse,
 } = require('~/server/services/OpenIDRefreshRecovery');
 const {
+  assertOpenIDRefreshFlightDeliveryAvailable,
   assertOpenIDRefreshSessionGenerationAvailable,
+  claimOpenIDRefreshFlightDelivery,
+  releaseOpenIDRefreshFlightDelivery,
 } = require('~/server/services/OpenIDRefreshFlight');
 
 const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
@@ -198,6 +202,83 @@ const assertReusableOpenIDSessionGeneration = async (openidTokens) =>
     ownerId: openidTokens?.publicationFlightOwnerId,
   });
 
+/**
+ * Serializes response delivery for one durable OpenID publication generation. A logout that
+ * reaches the same flight either tombstones it before this claim or waits for the response to
+ * finish before returning. The send callback keeps the final authorization check adjacent to the
+ * synchronous Express write while allowing callers to do slow preparation under the lease.
+ */
+const withOpenIDResponseDelivery = async ({ res, openidTokens, context }, operation) => {
+  let delivery;
+  let responseSent = false;
+  let releaseStarted = false;
+  let listenersArmed = false;
+  const releaseDelivery = async () => {
+    if (!delivery || releaseStarted) {
+      return;
+    }
+    releaseStarted = true;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await releaseOpenIDRefreshFlightDelivery(delivery);
+        return;
+      } catch (error) {
+        if (attempt === 3) {
+          logger.warn(`[${context}] Failed to release OpenID response delivery`, {
+            error: error instanceof Error ? error.message : error,
+          });
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+  };
+
+  try {
+    await assertReusableOpenIDSessionGeneration(openidTokens);
+    if (openidTokens?.publicationFlightKey && openidTokens?.publicationFlightOwnerId) {
+      const claimed = await claimOpenIDRefreshFlightDelivery({
+        key: openidTokens.publicationFlightKey,
+        ownerId: openidTokens.publicationFlightOwnerId,
+        createdAt: openidTokens.publicationFlightCreatedAt,
+      });
+      if (!claimed.deliveryId) {
+        throw new Error('OpenID response delivery claim returned no owner');
+      }
+      delivery = {
+        key: openidTokens.publicationFlightKey,
+        ownerId: openidTokens.publicationFlightOwnerId,
+        deliveryId: claimed.deliveryId,
+      };
+    }
+
+    const sendAuthorized = async (send) => {
+      if (delivery) {
+        await assertOpenIDRefreshFlightDeliveryAvailable(delivery);
+        if (!listenersArmed && typeof res.once === 'function') {
+          listenersArmed = true;
+          res.once('finish', () => void releaseDelivery());
+          res.once('close', () => void releaseDelivery());
+        }
+      } else {
+        await assertReusableOpenIDSessionGeneration(openidTokens);
+      }
+      const response = send();
+      responseSent = true;
+      if (delivery && typeof res.once !== 'function') {
+        await releaseDelivery();
+      }
+      return response;
+    };
+
+    return await operation(sendAuthorized);
+  } finally {
+    if (delivery && !responseSent) {
+      await releaseDelivery();
+    }
+  }
+};
+
 const resetPasswordRequestController = async (req, res) => {
   try {
     const resetService = await requestPasswordReset(req);
@@ -257,36 +338,41 @@ const refreshController = async (req, res) => {
       if (reuseUserId) {
         const reuseSessionTokens = req.session?.openidTokens;
         try {
-          await assertReusableOpenIDSessionGeneration(reuseSessionTokens);
+          const response = await withOpenIDResponseDelivery(
+            {
+              res,
+              openidTokens: reuseSessionTokens,
+              context: 'refreshController',
+            },
+            async (sendAuthorized) => {
+              const user = await getUserById(reuseUserId, AUTH_REFRESH_USER_PROJECTION);
+              if (!user || !isReusableOpenIDSessionIdentity(reuseSessionTokens, user)) {
+                return undefined;
+              }
+              return sendAuthorized(() => {
+                const cloudFrontCookiesSet = setCloudFrontAuthCookies(req, res, user);
+                logger.debug('[refreshController] OpenID session token reused', {
+                  token_type: reusableSessionToken.type,
+                  has_id_token: Boolean(reuseSessionTokens?.idToken),
+                  has_access_token: Boolean(reuseSessionTokens?.accessToken),
+                  cloudfront_cookies_set: cloudFrontCookiesSet,
+                });
+                return res.status(200).send({
+                  token: reusableSessionToken.token,
+                  user: sanitizeUserForAuthResponse(user),
+                });
+              });
+            },
+          );
+          if (response !== undefined) {
+            return response;
+          }
         } catch (error) {
           if (!isOpenIDRefreshOwnershipError(error)) {
             throw error;
           }
-          clearOpenIDAuthTokens(req, res, reuseUserId, req.session?.openidTokens?.tenantId);
+          clearOpenIDAuthTokens(req, res, reuseUserId, reuseSessionTokens?.tenantId);
           return res.status(403).send('Invalid OpenID refresh token');
-        }
-        const user = await getUserById(reuseUserId, AUTH_REFRESH_USER_PROJECTION);
-        if (user && isReusableOpenIDSessionIdentity(reuseSessionTokens, user)) {
-          try {
-            await assertReusableOpenIDSessionGeneration(reuseSessionTokens);
-          } catch (error) {
-            if (!isOpenIDRefreshOwnershipError(error)) {
-              throw error;
-            }
-            clearOpenIDAuthTokens(req, res, reuseUserId, reuseSessionTokens?.tenantId);
-            return res.status(403).send('Invalid OpenID refresh token');
-          }
-          const cloudFrontCookiesSet = setCloudFrontAuthCookies(req, res, user);
-          logger.debug('[refreshController] OpenID session token reused', {
-            token_type: reusableSessionToken.type,
-            has_id_token: Boolean(reuseSessionTokens?.idToken),
-            has_access_token: Boolean(reuseSessionTokens?.accessToken),
-            cloudfront_cookies_set: cloudFrontCookiesSet,
-          });
-          return res.status(200).send({
-            token: reusableSessionToken.token,
-            user: sanitizeUserForAuthResponse(user),
-          });
         }
       }
 
@@ -374,8 +460,26 @@ const refreshController = async (req, res) => {
         req,
         res,
       });
-      return res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });
+      return await withOpenIDResponseDelivery(
+        {
+          res,
+          openidTokens: req.session?.openidTokens,
+          context: 'refreshController',
+        },
+        (sendAuthorized) =>
+          sendAuthorized(() =>
+            res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) }),
+          ),
+      );
     } catch (error) {
+      if (isOpenIDRefreshOwnershipError(error)) {
+        clearOpenIDAuthTokens(
+          req,
+          res,
+          req.session?.openidTokens?.appUserId,
+          req.session?.openidTokens?.tenantId,
+        );
+      }
       logger.error('[refreshController] OpenID token refresh error', error);
 
       /**
@@ -419,9 +523,20 @@ const refreshController = async (req, res) => {
                   bridgeUser,
                 });
 
-                return res
-                  .status(200)
-                  .send({ token: appAuthToken, user: sanitizeUserForAuthResponse(bridgeUser) });
+                return await withOpenIDResponseDelivery(
+                  {
+                    res,
+                    openidTokens: req.session?.openidTokens,
+                    context: 'refreshController',
+                  },
+                  (sendAuthorized) =>
+                    sendAuthorized(() =>
+                      res.status(200).send({
+                        token: appAuthToken,
+                        user: sanitizeUserForAuthResponse(bridgeUser),
+                      }),
+                    ),
+                );
               } catch (retryError) {
                 logger.error('[refreshController] Bridge recovery retry failed', retryError);
                 // Fall through to generic error response
@@ -516,12 +631,37 @@ const graphTokenController = async (req, res) => {
       });
     }
 
-    const tokenResponse = await getGraphApiToken(req.user, accessToken, scopes);
-
-    res.json(tokenResponse);
+    const sessionTokens = req.session?.openidTokens;
+    const usesSessionToken = Boolean(
+      sessionTokens?.accessToken && sessionTokens.accessToken === accessToken,
+    );
+    const requestBearer = req.headers?.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (req.session && !usesSessionToken && requestBearer !== accessToken) {
+      throw createOpenIDRefreshOwnershipError('OpenID session tokens are no longer available');
+    }
+    const exchangeAndSend = async (sendAuthorized) => {
+      const tokenResponse = await getGraphApiToken(req.user, accessToken, scopes);
+      return sendAuthorized(() => res.json(tokenResponse));
+    };
+    if (usesSessionToken) {
+      return await withOpenIDResponseDelivery(
+        {
+          res,
+          openidTokens: sessionTokens,
+          context: 'graphTokenController',
+        },
+        exchangeAndSend,
+      );
+    }
+    return await exchangeAndSend((send) => send());
   } catch (error) {
+    if (isOpenIDRefreshOwnershipError(error)) {
+      const userId = req.user?.id ?? req.user?._id?.toString?.();
+      clearOpenIDAuthTokens(req, res, userId, req.session?.openidTokens?.tenantId);
+      return res.status(401).json({ message: 'OpenID session is no longer authorized' });
+    }
     logger.error('[graphTokenController] Failed to obtain Graph API token:', error);
-    res.status(500).json({
+    return res.status(500).json({
       message: 'Failed to obtain Microsoft Graph token',
     });
   }
