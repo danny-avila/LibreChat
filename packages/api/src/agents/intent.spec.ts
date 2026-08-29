@@ -551,7 +551,7 @@ describe('sanitizeIntentLabels', () => {
     const registryOnly = sdkNativeDef('tool_search');
     const toolRegistry: LCToolRegistry = new Map([['tool_search', registryOnly]]);
 
-    const { semanticIntentToolNames } = sanitizeIntentLabels({
+    const { semanticIntentToolNames, semanticIntentBlockedToolNames } = sanitizeIntentLabels({
       toolDefinitions: [skill, hostInjected, optedOut, businessIntent],
       toolRegistry,
       toolOptions: { read_file: { describe_intent: false } },
@@ -559,10 +559,11 @@ describe('sanitizeIntentLabels', () => {
     });
 
     expect(semanticIntentToolNames).toEqual(['skill', 'web_search', 'tool_search']);
+    expect(semanticIntentBlockedToolNames).toEqual(['read_file', 'create_record']);
   });
 
   it('projects no semantic intent names when the capability is disabled', () => {
-    const { semanticIntentToolNames } = sanitizeIntentLabels({
+    const { semanticIntentToolNames, semanticIntentBlockedToolNames } = sanitizeIntentLabels({
       toolDefinitions: [sdkNativeDef('skill')],
       toolRegistry: undefined,
       toolOptions: undefined,
@@ -570,6 +571,7 @@ describe('sanitizeIntentLabels', () => {
     });
 
     expect(semanticIntentToolNames).toEqual([]);
+    expect(semanticIntentBlockedToolNames).toEqual(['skill']);
   });
 
   it('enforces explicit opt-outs on late-registered defs when the capability is on', () => {

@@ -1772,6 +1772,7 @@ describe('AgentClient - startup telemetry', () => {
         model_parameters: { model: 'gpt-4' },
         hide_sequential_outputs: false,
         semanticIntentToolNames: ['web_search'],
+        semanticIntentBlockedToolNames: ['create_record'],
       },
       agentConfigs: new Map([
         [
@@ -1781,7 +1782,7 @@ describe('AgentClient - startup telemetry', () => {
             endpoint: EModelEndpoint.openAI,
             provider: EModelEndpoint.openAI,
             model_parameters: { model: 'gpt-4' },
-            semanticIntentToolNames: ['read_file'],
+            semanticIntentToolNames: ['read_file', 'create_record'],
           },
         ],
       ]),

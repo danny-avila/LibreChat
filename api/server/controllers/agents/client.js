@@ -3868,10 +3868,17 @@ class AgentClient extends BaseClient {
       let semanticIntentToolNames;
       if (deriveCompactionSemanticIndex) {
         semanticIntentToolNames = new Set();
+        const semanticIntentBlockedToolNames = new Set();
         for (const agent of reachableAgents) {
           for (const toolName of agent.semanticIntentToolNames ?? []) {
             semanticIntentToolNames.add(toolName);
           }
+          for (const toolName of agent.semanticIntentBlockedToolNames ?? []) {
+            semanticIntentBlockedToolNames.add(toolName);
+          }
+        }
+        for (const toolName of semanticIntentBlockedToolNames) {
+          semanticIntentToolNames.delete(toolName);
         }
       }
       const hasMessageFormatOptions =

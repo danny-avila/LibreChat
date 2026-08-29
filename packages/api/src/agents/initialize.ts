@@ -405,6 +405,8 @@ export type InitializedAgent = Agent & {
   intentToolNames?: string[];
   /** Marker-verified tool names whose model-authored intent labels are safe compaction guidance. */
   semanticIntentToolNames?: string[];
+  /** Tool names whose unverified schemas veto global semantic-intent trust for same-name calls. */
+  semanticIntentBlockedToolNames?: string[];
   /** Whether the inline memory tools (`set_memory`/`delete_memory`) were
    *  registered for this agent. Authoritative LibreChat-only signal of the
    *  inline memory opt-in for the execution path, since some contexts hold the
@@ -1524,6 +1526,7 @@ export async function initializeAgent(
 
   let intentToolNames: string[] | undefined;
   let semanticIntentToolNames: string[] | undefined;
+  let semanticIntentBlockedToolNames: string[] | undefined;
 
   /**
    * Inject the `run_in_background` param into eligible opted-in tools and
@@ -1707,6 +1710,9 @@ export async function initializeAgent(
   if (intentSanitized.semanticIntentToolNames.length > 0) {
     semanticIntentToolNames = intentSanitized.semanticIntentToolNames;
   }
+  if (intentSanitized.semanticIntentBlockedToolNames.length > 0) {
+    semanticIntentBlockedToolNames = intentSanitized.semanticIntentBlockedToolNames;
+  }
 
   const hasFinalAgentTools =
     (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
@@ -1771,6 +1777,7 @@ export async function initializeAgent(
     backgroundToolNames,
     intentToolNames,
     semanticIntentToolNames,
+    semanticIntentBlockedToolNames,
     actionsEnabled,
     accessibleMcpServerNames: resolvedAuditNames,
     baseContextTokens,
