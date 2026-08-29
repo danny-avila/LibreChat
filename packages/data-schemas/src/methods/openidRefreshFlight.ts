@@ -1,5 +1,5 @@
-import type { Model } from 'mongoose';
 import { setTimeout as delay } from 'node:timers/promises';
+import type { Model } from 'mongoose';
 import type {
   IOpenIDRefreshFlight,
   OpenIDRefreshFlightCreateData,
