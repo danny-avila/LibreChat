@@ -412,7 +412,7 @@ export function sanitizeIntentLabels(params: {
   capabilityEnabled: boolean;
   /** Capability marker → registered definition names, from `initializeAgent`. */
   capabilityToolNames?: CapabilityToolNames;
-}): { toolDefinitions: LCTool[] } {
+}): { toolDefinitions: LCTool[]; semanticIntentToolNames: string[] } {
   const { toolRegistry, toolOptions, capabilityEnabled, capabilityToolNames } = params;
   const defs = params.toolDefinitions ?? [];
   const shouldStrip = (name: string): boolean =>
@@ -422,8 +422,12 @@ export function sanitizeIntentLabels(params: {
       : true;
 
   let changed = false;
+  const semanticIntentToolNames = new Set<string>();
   const nextDefs = defs.map((def) => {
     if (!shouldStrip(def.name)) {
+      if (isIntentLabelProperty(def.parameters?.properties?.[INTENT_ARG])) {
+        semanticIntentToolNames.add(def.name);
+      }
       return def;
     }
     const stripped = removeIntentParam(def);
@@ -439,6 +443,9 @@ export function sanitizeIntentLabels(params: {
   if (toolRegistry) {
     for (const [name, entry] of toolRegistry) {
       if (!shouldStrip(name)) {
+        if (isIntentLabelProperty(entry.parameters?.properties?.[INTENT_ARG])) {
+          semanticIntentToolNames.add(name);
+        }
         continue;
       }
       const stripped = removeIntentParam(entry);
@@ -447,7 +454,10 @@ export function sanitizeIntentLabels(params: {
       }
     }
   }
-  return { toolDefinitions: changed ? nextDefs : defs };
+  return {
+    toolDefinitions: changed ? nextDefs : defs,
+    semanticIntentToolNames: Array.from(semanticIntentToolNames),
+  };
 }
 
 /**
