@@ -6,11 +6,13 @@ const {
   math,
   isEnabled,
   createAuthIdentityContext,
+  isOpenIDRefreshOwnershipError,
   isOpenIDSessionIdentityMatch,
   OPENID_EXPIRY_BUFFER_SECONDS,
 } = require('@librechat/api');
 const {
   requestPasswordReset,
+  clearOpenIDAuthTokens,
   setCloudFrontAuthCookies,
   resetPassword,
   setAuthTokens,
@@ -24,6 +26,9 @@ const {
   refreshOpenIDUser,
   sendOpenIDAuthResponse,
 } = require('~/server/services/OpenIDRefreshRecovery');
+const {
+  assertOpenIDRefreshSessionGenerationAvailable,
+} = require('~/server/services/OpenIDRefreshFlight');
 
 const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
 /**
@@ -187,6 +192,12 @@ const getReusableOpenIDSessionToken = (openidTokens) => {
   return null;
 };
 
+const assertReusableOpenIDSessionGeneration = async (openidTokens) =>
+  assertOpenIDRefreshSessionGenerationAvailable({
+    key: openidTokens?.publicationFlightKey,
+    ownerId: openidTokens?.publicationFlightOwnerId,
+  });
+
 const resetPasswordRequestController = async (req, res) => {
   try {
     const resetService = await requestPasswordReset(req);
@@ -244,6 +255,15 @@ const refreshController = async (req, res) => {
         : getReusableOpenIDSessionToken(req.session?.openidTokens);
       const reuseUserId = reusableSessionToken ? getValidOpenIDReuseUserId(parsedCookies) : null;
       if (reuseUserId) {
+        try {
+          await assertReusableOpenIDSessionGeneration(req.session?.openidTokens);
+        } catch (error) {
+          if (!isOpenIDRefreshOwnershipError(error)) {
+            throw error;
+          }
+          clearOpenIDAuthTokens(req, res, reuseUserId, req.session?.openidTokens?.tenantId);
+          return res.status(403).send('Invalid OpenID refresh token');
+        }
         const user = await getUserById(reuseUserId, AUTH_REFRESH_USER_PROJECTION);
         if (user && isReusableOpenIDSessionIdentity(req.session?.openidTokens, user)) {
           const cloudFrontCookiesSet = setCloudFrontAuthCookies(req, res, user);

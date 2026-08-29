@@ -1751,12 +1751,14 @@ describe('OpenIDSessionRefresh', () => {
         expires_at: Math.floor(Date.now() / 1000) + 3600,
         __predecessorRefreshToken: 'rt-stable',
         __predecessorAccessToken: predecessorAccessToken,
+        __flightOwnerId: 'stable-generation-owner',
       });
 
       const result = await refreshOpenIDSession(req, buildRes(), makeOpenIdUser(), 'access_token');
 
       expect(req.session.openidTokens.accessToken).toBe(advancedAccessToken);
       expect(result.access_token).toBe(advancedAccessToken);
+      expect(result.__predecessorAccessToken).toBe(predecessorAccessToken);
       expect(storeOpenIdSession).not.toHaveBeenCalled();
       expect(setRefreshTokenCookie).not.toHaveBeenCalled();
       expect(req.session.save).not.toHaveBeenCalled();

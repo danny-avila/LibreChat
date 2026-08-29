@@ -250,6 +250,8 @@ export function createOpenIDSessionRefreshService(
    *                                               from the IdP `tokenset.expires_in` so opaque
    *                                               access tokens can still be reused without
    *                                               redundant refreshes.
+   * @property {string} [publicationFlightKey]  — durable publication key authorizing this state.
+   * @property {string} [publicationFlightOwnerId] — exact completed generation for that key.
    */
 
   /**
@@ -1219,7 +1221,13 @@ export function createOpenIDSessionRefreshService(
       logger.info(
         '[OpenIDSessionRefresh] Skipping stale flight publication because the session advanced',
       );
-      return buildOIDCTokensFromSession(req.session.openidTokens, tokenPreference);
+      const effectiveTokens = buildOIDCTokensFromSession(req.session.openidTokens, tokenPreference);
+      attachPredecessorRefreshTokenMarker(
+        effectiveTokens,
+        getPredecessorRefreshTokenMarker(requestTokens) ?? predecessorRefreshToken,
+      );
+      attachPredecessorAccessTokenMarker(effectiveTokens, requestTokens.__predecessorAccessToken);
+      return effectiveTokens;
     }
     const nextRefreshToken = requestTokens.refresh_token ?? predecessorRefreshToken;
     const browserRefreshToken =

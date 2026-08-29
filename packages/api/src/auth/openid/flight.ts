@@ -97,6 +97,10 @@ export interface OpenIDRefreshFlightService {
     key?: string | null;
     ownerId?: string;
   }) => Promise<RefreshFlightRecord | boolean>;
+  assertOpenIDRefreshSessionGenerationAvailable: (args: {
+    key?: string | null;
+    ownerId?: string;
+  }) => Promise<RefreshFlightRecord | boolean>;
   revokeOpenIDRefreshFlights: (args: {
     keys?: Array<string | null | undefined>;
     ttl?: number;
@@ -266,6 +270,33 @@ export function createOpenIDRefreshFlightService({
     }
     throw createOpenIDRefreshOwnershipError(
       'OpenID refresh result is no longer available for publication',
+    );
+  }
+
+  /**
+   * Validates a generation already installed in an Express session. Completed-flight rows may
+   * expire before the session reuse window, so absence is acceptable; an extant row must still
+   * name the same completed generation. Logout tombstones and replacement generations fail closed.
+   */
+  async function assertOpenIDRefreshSessionGenerationAvailable({
+    key,
+    ownerId,
+  }: {
+    key?: string | null;
+    ownerId?: string;
+  }): Promise<RefreshFlightRecord | boolean> {
+    if (!key && !ownerId) return true;
+    if (!key || !ownerId) {
+      throw createOpenIDRefreshOwnershipError(
+        'OpenID session publication generation is incomplete',
+      );
+    }
+    const flight = await db.findOpenIDRefreshFlight({ key });
+    if (!flight || (flight.status === 'completed' && flight.ownerId === ownerId)) {
+      return flight ?? true;
+    }
+    throw createOpenIDRefreshOwnershipError(
+      'OpenID session publication generation is no longer available',
     );
   }
 
@@ -484,6 +515,7 @@ export function createOpenIDRefreshFlightService({
   return {
     acquireOpenIDRefreshFlight,
     assertOpenIDRefreshFlightAvailable,
+    assertOpenIDRefreshSessionGenerationAvailable,
     completeOpenIDRefreshFlight,
     createOpenIDRefreshFlightKey,
     failOpenIDRefreshFlight,

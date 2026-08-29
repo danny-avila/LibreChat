@@ -88,6 +88,7 @@ interface SendOpenIDAuthResponseInput {
   req: OpenIDRequest;
   res: OpenIDResponse;
   assertLeaseOwned?: LeaseAssertion;
+  publicationGeneration?: { key: string; ownerId: string };
   commitPublication?: (
     appAuthToken: string,
     publishedTokenset: OpenIDTokenSet,
@@ -195,6 +196,10 @@ export interface OpenIDRefreshRecoveryDeps {
     error: Error;
   }) => Promise<RefreshFlightRecord | null>;
   waitForOpenIDRefreshFlight: (args: { key: string }) => Promise<SharedOpenIDRefreshResult | null>;
+  assertOpenIDRefreshFlightAvailable: (args: {
+    key: string;
+    ownerId: string;
+  }) => Promise<RefreshFlightRecord | boolean>;
   revokeOpenIDRefreshFlights: (args: {
     keys: Array<string | null>;
     ttl: number;
@@ -233,6 +238,7 @@ export function createOpenIDRefreshRecoveryService(
     completeOpenIDRefreshFlight,
     failOpenIDRefreshFlight,
     waitForOpenIDRefreshFlight,
+    assertOpenIDRefreshFlightAvailable,
     revokeOpenIDRefreshFlights,
     withOpenIDRefreshFlightLease,
     bridgeGraceMs,
@@ -277,7 +283,7 @@ export function createOpenIDRefreshRecoveryService(
         createOpenIDRefreshFlightKey({ req, user, refreshToken, identityContext: identity }),
         createRefreshTokenBridgeFlightKey({
           oldRefreshToken: refreshToken,
-          userId,
+          userId: identity.appUserId ?? userId,
           tenantId: identity.tenantId,
           openidIssuer: identity.openidIssuer,
         }),
@@ -442,9 +448,10 @@ export function createOpenIDRefreshRecoveryService(
     const flight = await acquireOpenIDRefreshFlight({ key });
     if (!flight.acquired) {
       const resolved = await waitForOpenIDRefreshFlight({ key });
-      if (!resolved?.appAuthToken) {
+      if (!resolved?.appAuthToken || !resolved.__flightOwnerId) {
         throw new Error('OpenID refresh bridge coordination is temporarily unavailable');
       }
+      const publicationGeneration = { key, ownerId: resolved.__flightOwnerId };
       const publishedAppAuthToken = await sendOpenIDAuthResponse({
         tokenset: resolved.tokenset,
         user: bridgeUser,
@@ -459,6 +466,8 @@ export function createOpenIDRefreshRecoveryService(
         predecessorAccessToken: resolved.predecessorAccessToken,
         req,
         res,
+        assertLeaseOwned: () => assertOpenIDRefreshFlightAvailable(publicationGeneration),
+        publicationGeneration,
         commitPublication: async () => {},
         preparePublication: false,
       });
@@ -559,6 +568,7 @@ export function createOpenIDRefreshRecoveryService(
             req,
             res,
             assertLeaseOwned,
+            publicationGeneration: { key, ownerId: flight.ownerId },
             commitPublication: async (preparedAppAuthToken, publishedTokenset, metadata) => {
               const result = {
                 ...sharedResult,
@@ -615,6 +625,7 @@ export function createOpenIDRefreshRecoveryService(
     req,
     res,
     assertLeaseOwned,
+    publicationGeneration,
     commitPublication,
     preparePublication = true,
   }: SendOpenIDAuthResponseInput): Promise<string | undefined> {
@@ -635,9 +646,10 @@ export function createOpenIDRefreshRecoveryService(
         const flight = await acquireOpenIDRefreshFlight({ key });
         if (!flight.acquired) {
           const shared = await waitForOpenIDRefreshFlight({ key });
-          if (!shared?.appAuthToken) {
+          if (!shared?.appAuthToken || !shared.__flightOwnerId) {
             throw new Error('OpenID authentication publication is temporarily unavailable');
           }
+          const sharedGeneration = { key, ownerId: shared.__flightOwnerId };
           return sendOpenIDAuthResponse({
             tokenset: shared.tokenset,
             user,
@@ -649,6 +661,8 @@ export function createOpenIDRefreshRecoveryService(
             rejectedRefreshTokens,
             req,
             res,
+            assertLeaseOwned: () => assertOpenIDRefreshFlightAvailable(sharedGeneration),
+            publicationGeneration: sharedGeneration,
             commitPublication: async () => {},
             preparePublication: false,
           });
@@ -668,6 +682,7 @@ export function createOpenIDRefreshRecoveryService(
               req,
               res,
               assertLeaseOwned,
+              publicationGeneration: { key, ownerId: flight.ownerId },
               commitPublication: async (appAuthToken, publishedTokenset, metadata) => {
                 const completed = await completeOpenIDRefreshFlight({
                   key,
@@ -691,6 +706,9 @@ export function createOpenIDRefreshRecoveryService(
             }),
         });
       }
+    }
+    if (assertLeaseOwned) {
+      await assertLeaseOwned();
     }
     if (typeof req?.session?.reload === 'function') {
       const reload = req.session.reload.bind(req.session);
@@ -829,6 +847,28 @@ export function createOpenIDRefreshRecoveryService(
               openidIssuer: openidIssuer ?? user.openidIssuer,
             },
       });
+      if (publicationGeneration) {
+        await assertOpenIDRefreshFlightAvailable(publicationGeneration);
+      }
+
+      const publishedAppAuthToken = setOpenIDAuthTokens(authTokenset, req, res, {
+        userId,
+        existingRefreshToken: effectiveExistingRefreshToken,
+        tenantId: user.tenantId,
+        openidSubject: openidSubject ?? user.openidId,
+        openidIssuer: openidIssuer ?? user.openidIssuer,
+      });
+      if (req.session?.openidTokens && publicationGeneration) {
+        req.session.openidTokens.publicationFlightKey = publicationGeneration.key;
+        req.session.openidTokens.publicationFlightOwnerId = publicationGeneration.ownerId;
+      }
+      if (publicationGeneration) {
+        await assertOpenIDRefreshFlightAvailable(publicationGeneration);
+      }
+      if (publishedAppAuthToken !== preparedAppAuthToken) {
+        throw new Error('OpenID authentication publication returned an inconsistent token');
+      }
+      return publishedAppAuthToken;
     } catch (error) {
       if (!isOpenIDRefreshOwnershipError(error)) {
         logger.warn(
@@ -863,18 +903,6 @@ export function createOpenIDRefreshRecoveryService(
       clearOpenIDAuthTokens(req, res, userId, user.tenantId);
       throw error;
     }
-
-    const publishedAppAuthToken = setOpenIDAuthTokens(authTokenset, req, res, {
-      userId,
-      existingRefreshToken: effectiveExistingRefreshToken,
-      tenantId: user.tenantId,
-      openidSubject: openidSubject ?? user.openidId,
-      openidIssuer: openidIssuer ?? user.openidIssuer,
-    });
-    if (publishedAppAuthToken !== preparedAppAuthToken) {
-      throw new Error('OpenID authentication publication returned an inconsistent token');
-    }
-    return publishedAppAuthToken;
   }
 
   return {

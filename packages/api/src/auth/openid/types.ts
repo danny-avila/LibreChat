@@ -42,6 +42,8 @@ export interface SharedOpenIDRefreshResult {
   appAuthToken: string;
   predecessorAccessToken?: string;
   acceptedIdentity?: AuthIdentityContext;
+  /** Non-enumerable durable generation marker restored by the flight service. */
+  __flightOwnerId?: string;
 }
 
 export interface SessionOpenIDTokens {
@@ -56,6 +58,9 @@ export interface SessionOpenIDTokens {
   tenantId?: string;
   openidIssuer?: string;
   accessTokenExpiresAt?: number;
+  /** Durable coordination generation that authorized this session publication. */
+  publicationFlightKey?: string;
+  publicationFlightOwnerId?: string;
 }
 
 export interface OpenIDSession {

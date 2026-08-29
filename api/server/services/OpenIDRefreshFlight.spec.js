@@ -37,6 +37,7 @@ const db = require('~/models');
 const {
   acquireOpenIDRefreshFlight,
   assertOpenIDRefreshFlightAvailable,
+  assertOpenIDRefreshSessionGenerationAvailable,
   completeOpenIDRefreshFlight,
   createOpenIDRefreshFlightKey,
   failOpenIDRefreshFlight,
@@ -91,6 +92,23 @@ describe('OpenIDRefreshFlight', () => {
     await expect(
       assertOpenIDRefreshFlightAvailable({ key: 'flight-key', ownerId: 'owner-1' }),
     ).rejects.toMatchObject({ code: 'OPENID_REFRESH_OWNERSHIP_LOST' });
+  });
+
+  it('rejects tombstoned or replaced session generations but permits expired records', async () => {
+    db.findOpenIDRefreshFlight.mockResolvedValueOnce({ status: 'revoked', ownerId: 'owner-1' });
+    await expect(
+      assertOpenIDRefreshSessionGenerationAvailable({ key: 'flight-key', ownerId: 'owner-1' }),
+    ).rejects.toMatchObject({ code: 'OPENID_REFRESH_OWNERSHIP_LOST' });
+
+    db.findOpenIDRefreshFlight.mockResolvedValueOnce({ status: 'completed', ownerId: 'owner-2' });
+    await expect(
+      assertOpenIDRefreshSessionGenerationAvailable({ key: 'flight-key', ownerId: 'owner-1' }),
+    ).rejects.toMatchObject({ code: 'OPENID_REFRESH_OWNERSHIP_LOST' });
+
+    db.findOpenIDRefreshFlight.mockResolvedValueOnce(null);
+    await expect(
+      assertOpenIDRefreshSessionGenerationAvailable({ key: 'flight-key', ownerId: 'owner-1' }),
+    ).resolves.toBe(true);
   });
 
   it('uses explicit identity context when safe user lacks tenant and issuer', () => {
