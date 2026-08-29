@@ -3270,10 +3270,10 @@ describe('MCPManager', () => {
     });
 
     it.each([false, true])(
-      'disposes a connection created during mutation teardown and re-establishes it (forceNew=%s)',
+      'cancels and disposes a pending connection during mutation teardown (forceNew=%s)',
       async (forceNew) => {
-        const cancelledConnection = newUserConnection();
-        const reestablishedConnection = newUserConnection();
+        const pendingConnection = newUserConnection();
+        const neverReached = newUserConnection();
         let resolveConnection: ((connection: MCPConnection) => void) | undefined;
         const factoryResult = new Promise<MCPConnection>((resolve) => {
           resolveConnection = resolve;
@@ -3287,7 +3287,7 @@ describe('MCPManager', () => {
         });
         (MCPConnectionFactory.create as jest.Mock)
           .mockReturnValueOnce(factoryResult)
-          .mockResolvedValue(reestablishedConnection);
+          .mockResolvedValue(neverReached);
 
         const manager = await MCPManager.createInstance(newMCPServersConfig());
         const creation = manager.getUserConnection({ serverName, user: mockUser, forceNew });
@@ -3296,12 +3296,14 @@ describe('MCPManager', () => {
         }
 
         await manager.disconnectUserConnection(userId, serverName);
-        resolveConnection?.(cancelledConnection);
+        resolveConnection?.(pendingConnection);
 
-        await expect(creation).resolves.toBe(reestablishedConnection);
-        expect(cancelledConnection.removeAllListeners).toHaveBeenCalledWith('toolsChanged');
-        expect(cancelledConnection.dispose).toHaveBeenCalledTimes(1);
-        expect(manager.getUserConnections(userId)?.get(serverName)).toBe(reestablishedConnection);
+        await expect(creation).rejects.toThrow('Connection creation was cancelled during teardown');
+        expect(pendingConnection.removeAllListeners).toHaveBeenCalledWith('toolsChanged');
+        expect(pendingConnection.dispose).toHaveBeenCalledTimes(1);
+        expect(manager.getUserConnections(userId)?.has(serverName) ?? false).toBe(false);
+        /** A committed mutation invalidates what the caller resolved, so nothing re-establishes. */
+        expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
       },
     );
 
@@ -3331,7 +3333,34 @@ describe('MCPManager', () => {
       expect(original.dispose).toHaveBeenCalledTimes(1);
     });
 
-    it('re-establishes a creation cancelled by a user-wide idle teardown', async () => {
+    it('tears down idle users with a lifecycle teardown', async () => {
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'user',
+        dbId: 'server-1',
+      });
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(newUserConnection());
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.getUserConnection({ serverName, user: mockUser });
+      const internals = manager as unknown as {
+        userLastActivity: Map<string, number>;
+        checkIdleConnections(currentUserId?: string): void;
+      };
+      internals.userLastActivity.set(userId, 0);
+      const disconnectSpy = jest
+        .spyOn(manager, 'disconnectUserConnections')
+        .mockResolvedValue(undefined);
+
+      internals.checkIdleConnections();
+
+      expect(disconnectSpy).toHaveBeenCalledWith(userId, { reason: 'lifecycle' });
+      disconnectSpy.mockRestore();
+    });
+
+    it('re-establishes a creation cancelled by a user-wide lifecycle teardown', async () => {
       const cancelledConnection = newUserConnection();
       const reestablishedConnection = newUserConnection();
       let resolveConnection: ((connection: MCPConnection) => void) | undefined;
@@ -3355,20 +3384,19 @@ describe('MCPManager', () => {
         await new Promise((resolve) => setImmediate(resolve));
       }
 
-      await manager.disconnectUserConnections(userId);
+      await manager.disconnectUserConnections(userId, { reason: 'lifecycle' });
       resolveConnection?.(cancelledConnection);
 
       await expect(creation).resolves.toBe(reestablishedConnection);
       expect(cancelledConnection.dispose).toHaveBeenCalledTimes(1);
       expect(manager.getUserConnections(userId)?.get(serverName)).toBe(reestablishedConnection);
     });
-
-    it('re-reads the committed config when a teardown fences a caller-resolved creation', async () => {
+    it('fails a caller-resolved creation fenced by a credential mutation', async () => {
       const fencedConnection = newUserConnection();
-      const reestablishedConnection = newUserConnection();
-      const staleConfig: t.ParsedServerConfig = {
+      const neverReached = newUserConnection();
+      const serverConfig: t.ParsedServerConfig = {
         type: 'streamable-http',
-        url: 'https://mcp.example.com/old',
+        url: 'https://mcp.example.com/mcp',
         source: 'user',
         dbId: 'server-1',
       };
@@ -3377,115 +3405,34 @@ describe('MCPManager', () => {
         resolveConnection = resolve;
       });
       mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(staleConfig);
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
       (MCPConnectionFactory.create as jest.Mock)
         .mockReturnValueOnce(factoryResult)
-        .mockResolvedValue(reestablishedConnection);
+        .mockResolvedValue(neverReached);
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
-      /** `MCPManager.getConnection` resolves the config once and hands it to every attempt. */
+      /** Callers resolve the config and credentials per request and hand them in; a mutation
+       *  teardown invalidates both, and only the caller can resolve them again. */
       const creation = manager.getUserConnection({
         serverName,
         user: mockUser,
-        serverConfig: staleConfig,
+        serverConfig,
+        customUserVars: { API_KEY: 'revoked-key' },
       });
       while ((MCPConnectionFactory.create as jest.Mock).mock.calls.length === 0) {
         await new Promise((resolve) => setImmediate(resolve));
       }
 
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
-        ...staleConfig,
-        url: 'https://mcp.example.com/new',
-      });
       await manager.disconnectUserConnection(userId, serverName);
       resolveConnection?.(fencedConnection);
 
-      await expect(creation).resolves.toBe(reestablishedConnection);
-      expect(fencedConnection.dispose).toHaveBeenCalledTimes(1);
-      expect(MCPConnectionFactory.create).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          serverConfig: expect.objectContaining({ url: 'https://mcp.example.com/new' }),
-        }),
-        expect.anything(),
-      );
-    });
-
-    it('fails a fenced creation whose user server was deleted during the teardown', async () => {
-      const fencedConnection = newUserConnection();
-      const deletedConfig: t.ParsedServerConfig = {
-        type: 'streamable-http',
-        url: 'https://mcp.example.com/deleted',
-        source: 'user',
-        dbId: 'server-1',
-      };
-      let resolveConnection: ((connection: MCPConnection) => void) | undefined;
-      const factoryResult = new Promise<MCPConnection>((resolve) => {
-        resolveConnection = resolve;
-      });
-      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(deletedConfig);
-      (MCPConnectionFactory.create as jest.Mock).mockReturnValue(factoryResult);
-
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      const creation = manager.getUserConnection({
-        serverName,
-        user: mockUser,
-        serverConfig: deletedConfig,
-      });
-      while ((MCPConnectionFactory.create as jest.Mock).mock.calls.length === 0) {
-        await new Promise((resolve) => setImmediate(resolve));
-      }
-
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(undefined);
-      await manager.disconnectUserConnection(userId, serverName);
-      resolveConnection?.(fencedConnection);
-
-      await expect(creation).rejects.toThrow(`Configuration for server "${serverName}" not found`);
+      await expect(creation).rejects.toThrow('Connection creation was cancelled during teardown');
       expect(fencedConnection.dispose).toHaveBeenCalledTimes(1);
       expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
       expect(manager.getUserConnections(userId)?.has(serverName) ?? false).toBe(false);
     });
 
-    it('keeps a config-source config the registry cannot resolve when re-establishing', async () => {
-      const fencedConnection = newUserConnection();
-      const reestablishedConnection = newUserConnection();
-      const configSourced: t.ParsedServerConfig = {
-        type: 'streamable-http',
-        url: 'https://mcp.example.com/config-sourced',
-        source: 'config',
-      };
-      let resolveConnection: ((connection: MCPConnection) => void) | undefined;
-      const factoryResult = new Promise<MCPConnection>((resolve) => {
-        resolveConnection = resolve;
-      });
-      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(undefined);
-      (MCPConnectionFactory.create as jest.Mock)
-        .mockReturnValueOnce(factoryResult)
-        .mockResolvedValue(reestablishedConnection);
-
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
-      const creation = manager.getUserConnection({
-        serverName,
-        user: mockUser,
-        serverConfig: configSourced,
-      });
-      while ((MCPConnectionFactory.create as jest.Mock).mock.calls.length === 0) {
-        await new Promise((resolve) => setImmediate(resolve));
-      }
-
-      await manager.disconnectUserConnection(userId, serverName);
-      resolveConnection?.(fencedConnection);
-
-      await expect(creation).resolves.toBe(reestablishedConnection);
-      expect(fencedConnection.dispose).toHaveBeenCalledTimes(1);
-      expect(MCPConnectionFactory.create).toHaveBeenLastCalledWith(
-        expect.objectContaining({ serverConfig: expect.objectContaining(configSourced) }),
-        expect.anything(),
-      );
-    });
-
-    it('fails a creation that a teardown keeps cancelling on every attempt', async () => {
+    it('fails a creation that a lifecycle teardown keeps cancelling on every attempt', async () => {
       mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
         type: 'streamable-http',
@@ -3497,7 +3444,7 @@ describe('MCPManager', () => {
       (MCPConnectionFactory.create as jest.Mock).mockReset();
       (MCPConnectionFactory.create as jest.Mock).mockImplementation(async () => {
         const connection = newUserConnection();
-        await manager.disconnectUserConnection(userId, serverName);
+        await manager.disconnectUserConnection(userId, serverName, { reason: 'lifecycle' });
         return connection;
       });
 
@@ -3892,7 +3839,7 @@ describe('MCPManager', () => {
       }
     });
 
-    it('re-establishes a reused connection cancelled while its lease renewal is pending', async () => {
+    it('does not return a reused connection cancelled while its lease renewal is pending', async () => {
       const generationSpy = jest
         .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
         .mockResolvedValue('generation-a');
@@ -3917,12 +3864,9 @@ describe('MCPManager', () => {
         source: 'yaml',
         startup: false,
       };
-      const reestablishedConnection = newUserConnection();
       mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
-      (MCPConnectionFactory.create as jest.Mock)
-        .mockResolvedValueOnce(connection)
-        .mockResolvedValue(reestablishedConnection);
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(connection);
 
       try {
         const manager = await MCPManager.createInstance(newMCPServersConfig());
@@ -3941,9 +3885,8 @@ describe('MCPManager', () => {
         await manager.disconnectUserConnection(userId, serverName);
         resolveRenewal?.(true);
 
-        await expect(reuse).resolves.toBe(reestablishedConnection);
+        await expect(reuse).rejects.toThrow('Connection creation was cancelled during teardown');
         expect(connection.dispose).toHaveBeenCalled();
-        expect(manager.getUserConnections(userId)?.get(serverName)).toBe(reestablishedConnection);
       } finally {
         generationSpy.mockRestore();
         renewalSpy.mockRestore();
