@@ -28,6 +28,13 @@ export interface OpenIDRefreshFlightCompleteData {
   expiresAt: Date;
 }
 
+export interface OpenIDRefreshFlightRenewData {
+  key: string;
+  ownerId: string;
+  lockExpiresAt: Date;
+  expiresAt: Date;
+}
+
 export interface OpenIDRefreshFlightFailData {
   key: string;
   ownerId: string;

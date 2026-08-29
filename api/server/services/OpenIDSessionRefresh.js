@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const cookies = require('cookie');
 const crypto = require('node:crypto');
 const openIdClient = require('openid-client');
 const { logger, DEFAULT_REFRESH_TOKEN_EXPIRY } = require('@librechat/data-schemas');
@@ -25,6 +26,7 @@ const {
   createOpenIDRefreshFlightKey,
   failOpenIDRefreshFlight,
   waitForOpenIDRefreshFlight,
+  withOpenIDRefreshFlightLease,
 } = require('./OpenIDRefreshFlight');
 
 /**
@@ -79,9 +81,9 @@ const IDENTITY_PART_SEPARATOR = '\x1f';
  * session coalesces into one IdP refresh-token grant. Mirrors the
  * single-flight pattern in `OboTokenService.js`.
  *
- * Process-local: multi-worker deployments may double-refresh on the very
- * first concurrent miss across workers — acceptable because the IdP accepts
- * both and the session store uses last-write-wins.
+ * Process-local coalescing is backed by a renewable Mongo lease in
+ * `performIdpRefresh`, so distinct workers do not admit parallel rotating-token
+ * grants for the same key.
  */
 const inFlightRefreshes = new Map();
 
@@ -167,6 +169,55 @@ function resolveExpectedOpenIDSessionIdentity(req, user, identityContext) {
   });
 }
 
+function hasAnyOpenIDSessionIdentity(sessionTokens) {
+  return ['appUserId', 'openidSubject', 'tenantId', 'openidIssuer'].some(
+    (field) => sessionTokens?.[field] != null,
+  );
+}
+
+function canBindLegacyOpenIDSession(req, sessionTokens, expectedIdentity) {
+  if (
+    hasAnyOpenIDSessionIdentity(sessionTokens) ||
+    !expectedIdentity.appUserId ||
+    !expectedIdentity.openidSubject ||
+    !process.env.JWT_REFRESH_SECRET
+  ) {
+    return false;
+  }
+
+  const parsedCookies = req?.headers?.cookie ? cookies.parse(req.headers.cookie) : {};
+  const browserRefreshToken = parsedCookies.refreshToken;
+  const expectedBrowserRefreshToken =
+    sessionTokens.browserRefreshToken || sessionTokens.refreshToken;
+  if (
+    !browserRefreshToken ||
+    !expectedBrowserRefreshToken ||
+    browserRefreshToken !== expectedBrowserRefreshToken ||
+    !parsedCookies.openid_user_id
+  ) {
+    return false;
+  }
+
+  try {
+    const marker = jwt.verify(parsedCookies.openid_user_id, process.env.JWT_REFRESH_SECRET);
+    if (
+      typeof marker !== 'object' ||
+      marker == null ||
+      marker.id !== expectedIdentity.appUserId ||
+      typeof marker.refreshTokenHash !== 'string'
+    ) {
+      return false;
+    }
+    const refreshTokenHash = crypto
+      .createHash('sha256')
+      .update(browserRefreshToken)
+      .digest('base64url');
+    return marker.refreshTokenHash === refreshTokenHash;
+  } catch {
+    return false;
+  }
+}
+
 function assertOpenIDSessionIdentityMatch(req, user, identityContext) {
   const sessionTokens = req?.session?.openidTokens;
   if (!sessionTokens) {
@@ -176,6 +227,22 @@ function assertOpenIDSessionIdentityMatch(req, user, identityContext) {
   const expectedIdentity = resolveExpectedOpenIDSessionIdentity(req, user, identityContext);
   if (isOpenIDSessionIdentityMatch(sessionTokens, expectedIdentity)) {
     return;
+  }
+
+  /**
+   * Sessions minted before identity stamping was deployed have none of these
+   * fields. During a rolling upgrade, bind that legacy record only when the
+   * signed browser marker proves the current app user and refresh-token cookie
+   * are the ones that created it. Partial or unverifiable metadata still fails
+   * closed, preventing cross-user token adoption.
+   */
+  if (canBindLegacyOpenIDSession(req, sessionTokens, expectedIdentity)) {
+    Object.assign(sessionTokens, expectedIdentity);
+    return persistSession(req).then(() => {
+      logger.info('[OpenIDSessionRefresh] Bound verified legacy OpenID session identity', {
+        userId: expectedIdentity.appUserId,
+      });
+    });
   }
 
   logger.warn('[OpenIDSessionRefresh] OpenID session token identity mismatch; refusing reuse', {
@@ -601,11 +668,8 @@ async function performIdpRefresh(req, res, user, tokenPreference, identityContex
   try {
     flight = await acquireOpenIDRefreshFlight({ key });
   } catch (error) {
-    logger.warn(
-      '[OpenIDSessionRefresh] Failed to acquire shared refresh flight; refreshing directly',
-      error,
-    );
-    return performIdpRefreshGrant(req, res, user, tokenPreference, identityContext);
+    logger.warn('[OpenIDSessionRefresh] Failed to acquire shared refresh flight', error);
+    throw new Error('OpenID refresh coordination is temporarily unavailable', { cause: error });
   }
 
   if (!flight.acquired) {
@@ -618,44 +682,50 @@ async function performIdpRefresh(req, res, user, tokenPreference, identityContex
       return resolvedTokens;
     }
 
-    logger.warn('[OpenIDSessionRefresh] Shared refresh flight unavailable; refreshing directly', {
+    logger.warn('[OpenIDSessionRefresh] Shared refresh flight remained unresolved', {
       key: hashKeyForLogs(key),
     });
-    return performIdpRefreshGrant(req, res, user, tokenPreference, identityContext);
+    throw new Error('OpenID refresh coordination is temporarily unavailable');
   }
 
-  try {
-    const resolvedTokens = await performIdpRefreshGrant(
-      req,
-      res,
-      user,
-      tokenPreference,
-      identityContext,
-    );
-    try {
-      await completeOpenIDRefreshFlight({
-        key,
-        ownerId: flight.ownerId,
-        tokens: resolvedTokens,
-      });
-    } catch (flightError) {
-      logger.warn('[OpenIDSessionRefresh] Failed to complete shared refresh flight', {
-        key: hashKeyForLogs(key),
-        error: flightError?.message,
-      });
-    }
-    return resolvedTokens;
-  } catch (error) {
-    try {
-      await failOpenIDRefreshFlight({ key, ownerId: flight.ownerId, error });
-    } catch (flightError) {
-      logger.warn('[OpenIDSessionRefresh] Failed to mark shared refresh flight failed', {
-        key: hashKeyForLogs(key),
-        error: flightError?.message,
-      });
-    }
-    throw error;
-  }
+  return withOpenIDRefreshFlightLease({
+    key,
+    ownerId: flight.ownerId,
+    operation: async () => {
+      try {
+        const resolvedTokens = await performIdpRefreshGrant(
+          req,
+          res,
+          user,
+          tokenPreference,
+          identityContext,
+        );
+        try {
+          await completeOpenIDRefreshFlight({
+            key,
+            ownerId: flight.ownerId,
+            tokens: resolvedTokens,
+          });
+        } catch (flightError) {
+          logger.warn('[OpenIDSessionRefresh] Failed to complete shared refresh flight', {
+            key: hashKeyForLogs(key),
+            error: flightError?.message,
+          });
+        }
+        return resolvedTokens;
+      } catch (error) {
+        try {
+          await failOpenIDRefreshFlight({ key, ownerId: flight.ownerId, error });
+        } catch (flightError) {
+          logger.warn('[OpenIDSessionRefresh] Failed to mark shared refresh flight failed', {
+            key: hashKeyForLogs(key),
+            error: flightError?.message,
+          });
+        }
+        throw error;
+      }
+    },
+  });
 }
 
 /**
@@ -743,7 +813,10 @@ async function refreshOrReuseSession(req, res, user, tokenPreference, identityCo
  *   returned `expires_at`. OBO callers pass 'access_token'.
  */
 async function refreshOpenIDSession(req, res, user, tokenPreference, identityContext) {
-  assertOpenIDSessionIdentityMatch(req, user, identityContext);
+  const identityBinding = assertOpenIDSessionIdentityMatch(req, user, identityContext);
+  if (identityBinding) {
+    await identityBinding;
+  }
   const key = getSingleFlightKey(req, user, identityContext);
   if (!key) {
     return refreshOrReuseSession(req, res, user, tokenPreference, identityContext);

@@ -25,10 +25,10 @@ export function createRefreshTokenBridgeMethods(mongoose: typeof import('mongoos
   ) => Promise<IRefreshTokenBridge | null>;
   findRefreshTokenBridge: (query: RefreshTokenBridgeQuery) => Promise<IRefreshTokenBridge | null>;
 } {
+  let indexesPromise: Promise<void> | null = null;
+
   const getRefreshTokenBridgeModel = () =>
     mongoose.models.RefreshTokenBridge as Model<IRefreshTokenBridge>;
-
-  let indexesPromise: Promise<void> | null = null;
 
   /**
    * A bridge holds an encrypted refresh token, and the TTL index is the only thing that ever
@@ -51,8 +51,8 @@ export function createRefreshTokenBridgeMethods(mongoose: typeof import('mongoos
   async function upsertRefreshTokenBridge(
     bridgeData: RefreshTokenBridgeCreateData,
   ): Promise<IRefreshTokenBridge | null> {
-    await ensureIndexes();
     try {
+      await ensureIndexes();
       const RefreshTokenBridge = getRefreshTokenBridgeModel();
       const filter = bridgeFilter(bridgeData);
       const update: UpdateQuery<IRefreshTokenBridge> = {

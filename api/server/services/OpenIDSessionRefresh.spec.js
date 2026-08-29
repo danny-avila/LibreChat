@@ -128,9 +128,11 @@ jest.mock('./OpenIDRefreshFlight', () => ({
   createOpenIDRefreshFlightKey: jest.fn(),
   failOpenIDRefreshFlight: jest.fn(),
   waitForOpenIDRefreshFlight: jest.fn(),
+  withOpenIDRefreshFlightLease: jest.fn(({ operation }) => operation()),
 }));
 
 const jwt = require('jsonwebtoken');
+const crypto = require('node:crypto');
 const openIdClient = require('openid-client');
 const {
   isEnabled,
@@ -148,6 +150,7 @@ const {
   createOpenIDRefreshFlightKey,
   failOpenIDRefreshFlight,
   waitForOpenIDRefreshFlight,
+  withOpenIDRefreshFlightLease,
 } = require('./OpenIDRefreshFlight');
 const {
   createOpenIDSessionTokenProvider,
@@ -210,6 +213,7 @@ describe('OpenIDSessionRefresh', () => {
     completeOpenIDRefreshFlight.mockResolvedValue({});
     failOpenIDRefreshFlight.mockResolvedValue({});
     waitForOpenIDRefreshFlight.mockResolvedValue(null);
+    withOpenIDRefreshFlightLease.mockImplementation(({ operation }) => operation());
   });
 
   describe('createOpenIDSessionTokenProvider closure no-op cases', () => {
@@ -303,7 +307,7 @@ describe('OpenIDSessionRefresh', () => {
       });
     });
 
-    it('rejects session tokens that are missing identity metadata', async () => {
+    it('rejects legacy session tokens without a verifiable signed marker', async () => {
       const farFutureExp = Math.floor(Date.now() / 1000) + 600;
       const sessionTokens = {
         accessToken: makeJwt(farFutureExp),
@@ -315,6 +319,45 @@ describe('OpenIDSessionRefresh', () => {
       await expect(
         refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token'),
       ).rejects.toThrow('OpenID session token identity mismatch');
+      expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
+    });
+
+    it('binds a verified legacy session during rolling upgrades before token reuse', async () => {
+      const farFutureExp = Math.floor(Date.now() / 1000) + 600;
+      const refreshToken = 'rt-legacy';
+      const sessionTokens = {
+        accessToken: makeJwt(farFutureExp),
+        idToken: makeJwt(farFutureExp),
+        refreshToken,
+      };
+      const req = buildReq(sessionTokens, 'session-legacy', { bindIdentity: false });
+      const previousSecret = process.env.JWT_REFRESH_SECRET;
+      process.env.JWT_REFRESH_SECRET = SECRET;
+      const refreshTokenHash = crypto.createHash('sha256').update(refreshToken).digest('base64url');
+      const marker = jwt.sign({ id: 'local-id-1', refreshTokenHash }, SECRET);
+      req.headers = {
+        cookie: `refreshToken=${refreshToken}; openid_user_id=${marker}`,
+      };
+
+      try {
+        await expect(
+          refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token'),
+        ).resolves.toEqual(
+          expect.objectContaining({
+            access_token: sessionTokens.accessToken,
+            refresh_token: refreshToken,
+          }),
+        );
+      } finally {
+        if (previousSecret == null) {
+          delete process.env.JWT_REFRESH_SECRET;
+        } else {
+          process.env.JWT_REFRESH_SECRET = previousSecret;
+        }
+      }
+
+      expect(req.session.openidTokens).toEqual(expect.objectContaining(DEFAULT_SESSION_IDENTITY));
+      expect(req.session.save).toHaveBeenCalledTimes(1);
       expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
     });
 
@@ -1290,6 +1333,54 @@ describe('OpenIDSessionRefresh', () => {
           expires_at: expect.any(Number),
         }),
       });
+      expect(withOpenIDRefreshFlightLease).toHaveBeenCalledWith({
+        key: 'flight:session-cross-worker:rt-cross-worker',
+        ownerId: 'owner-leader',
+        operation: expect.any(Function),
+      });
+    });
+
+    it('fails closed when a shared flight times out instead of issuing a duplicate grant', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const req = buildReq(
+        {
+          accessToken: makeJwt(expiredExp),
+          idToken: makeJwt(expiredExp),
+          refreshToken: 'rt-cross-worker',
+        },
+        'session-cross-worker',
+      );
+      acquireOpenIDRefreshFlight.mockResolvedValueOnce({
+        acquired: false,
+        ownerId: 'owner-joiner',
+      });
+      waitForOpenIDRefreshFlight.mockResolvedValueOnce(null);
+
+      await expect(
+        refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('OpenID refresh coordination is temporarily unavailable');
+
+      expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
+      expect(withOpenIDRefreshFlightLease).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when Mongo flight acquisition is unavailable', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const req = buildReq(
+        {
+          accessToken: makeJwt(expiredExp),
+          idToken: makeJwt(expiredExp),
+          refreshToken: 'rt-coordination-down',
+        },
+        'session-coordination-down',
+      );
+      acquireOpenIDRefreshFlight.mockRejectedValueOnce(new Error('mongo unavailable'));
+
+      await expect(
+        refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('OpenID refresh coordination is temporarily unavailable');
+
+      expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
     });
   });
 

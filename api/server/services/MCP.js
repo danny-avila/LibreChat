@@ -369,12 +369,24 @@ async function healMcpToolNames({ req, tools, toolDefinitions, accessibleServerN
  * server slices instead of relying on the static aggregate cache.
  * @param {object} params
  * @param {ServerRequest} params.req
+ * @param {ServerResponse} [params.res]
  * @param {Array<string | object>} [params.tools]
  * @returns {Promise<object>}
  */
-async function getAssistantToolDefinitions({ req, tools }) {
+async function getAssistantToolDefinitions({ req, res, tools }) {
   const registry = getMCPServersRegistry();
   const appConfig = await getAppConfigForRequest(req);
+  const oboIdentityContext = createAuthIdentityContext({
+    user: req.user,
+    tenantId: getTenantId(),
+  });
+  const upstreamTokenProvider = createOpenIDSessionTokenProvider({
+    req,
+    res: res ?? req.res,
+    user: req.user,
+    identityContext: oboIdentityContext,
+    tokenPreference: 'access_token',
+  });
   return await loadAssistantToolDefinitions(
     {
       user: req.user,
@@ -401,26 +413,12 @@ async function getAssistantToolDefinitions({ req, tools }) {
           servers: [serverName],
           findPluginAuthsByKeys,
         });
-        /**
-         * An OBO server refuses to connect without a live upstream-token closure, so this
-         * recovery has to carry one like every other reinit path. There is no `res` on an
-         * assistant write; a refresh that rotates the token falls back to the recovery bridge.
-         */
-        const oboIdentityContext = createAuthIdentityContext({
-          user: req.user,
-          tenantId: getTenantId(),
-        });
         const result = await reinitMCPServer({
           user: req.user,
           serverName,
           serverConfig,
           userMCPAuthMap,
-          upstreamTokenProvider: createOpenIDSessionTokenProvider({
-            req,
-            user: req.user,
-            identityContext: oboIdentityContext,
-            tokenPreference: 'access_token',
-          }),
+          upstreamTokenProvider,
           oboIdentityContext,
         });
         return result?.availableTools ?? null;

@@ -6,11 +6,28 @@ jest.mock('@librechat/data-schemas', () => ({
   decryptV2: jest.fn(async (value) => value.replace(/^encrypted:/, '')),
 }));
 
+jest.mock('@librechat/api', () => ({
+  createOpenIDRefreshIdentityTuple: ({ user, requestUser }) => {
+    const subject = user?.openidId || user?.id || requestUser?.openidId || requestUser?.id;
+    if (!subject) {
+      return null;
+    }
+    return {
+      tenantId: user?.tenantId || requestUser?.tenantId || 'no-tenant',
+      openidIssuer: user?.openidIssuer || requestUser?.openidIssuer || 'no-issuer',
+      subject,
+    };
+  },
+  serializeAuthIdentityTuple: ({ tenantId, openidIssuer, subject }) =>
+    [tenantId, openidIssuer, subject].join('\x1f'),
+}));
+
 jest.mock('~/models', () => ({
   acquireOpenIDRefreshFlight: jest.fn(),
   completeOpenIDRefreshFlight: jest.fn(),
   failOpenIDRefreshFlight: jest.fn(),
   findOpenIDRefreshFlight: jest.fn(),
+  renewOpenIDRefreshFlight: jest.fn(),
 }));
 
 const { encryptV2, decryptV2 } = require('@librechat/data-schemas');
@@ -20,7 +37,9 @@ const {
   completeOpenIDRefreshFlight,
   createOpenIDRefreshFlightKey,
   failOpenIDRefreshFlight,
+  renewOpenIDRefreshFlight,
   waitForOpenIDRefreshFlight,
+  withOpenIDRefreshFlightLease,
   __internals,
 } = require('./OpenIDRefreshFlight');
 
@@ -31,6 +50,7 @@ describe('OpenIDRefreshFlight', () => {
     db.completeOpenIDRefreshFlight.mockResolvedValue({});
     db.failOpenIDRefreshFlight.mockResolvedValue({});
     db.findOpenIDRefreshFlight.mockResolvedValue(null);
+    db.renewOpenIDRefreshFlight.mockResolvedValue({ ownerId: 'owner-1', status: 'pending' });
   });
 
   it('creates a stable hash key from session, user, issuer, tenant, and refresh token', () => {
@@ -108,6 +128,55 @@ describe('OpenIDRefreshFlight', () => {
       lockExpiresAt: expect.any(Date),
       expiresAt: expect.any(Date),
     });
+  });
+
+  it('renews only the owning pending flight lease', async () => {
+    await renewOpenIDRefreshFlight({
+      key: 'flight-key',
+      ownerId: 'owner-1',
+      lockTtl: 30000,
+      ttl: 60000,
+    });
+
+    expect(db.renewOpenIDRefreshFlight).toHaveBeenCalledWith({
+      key: 'flight-key',
+      ownerId: 'owner-1',
+      lockExpiresAt: expect.any(Date),
+      expiresAt: expect.any(Date),
+    });
+  });
+
+  it('keeps renewing a leader lease until its refresh operation settles', async () => {
+    jest.useFakeTimers();
+    let resolveOperation;
+    const operation = jest.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveOperation = resolve;
+        }),
+    );
+
+    try {
+      const resultPromise = withOpenIDRefreshFlightLease({
+        key: 'flight-key',
+        ownerId: 'owner-1',
+        heartbeatInterval: 1000,
+        lockTtl: 30000,
+        ttl: 60000,
+        operation,
+      });
+
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(db.renewOpenIDRefreshFlight).toHaveBeenCalledTimes(1);
+
+      resolveOperation('tokens');
+      await expect(resultPromise).resolves.toBe('tokens');
+
+      await jest.advanceTimersByTimeAsync(2000);
+      expect(db.renewOpenIDRefreshFlight).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('encrypts completed token results before storing them', async () => {

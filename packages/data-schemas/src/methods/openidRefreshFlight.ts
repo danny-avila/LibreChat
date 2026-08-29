@@ -3,6 +3,7 @@ import type {
   IOpenIDRefreshFlight,
   OpenIDRefreshFlightCreateData,
   OpenIDRefreshFlightCompleteData,
+  OpenIDRefreshFlightRenewData,
   OpenIDRefreshFlightFailData,
   OpenIDRefreshFlightQuery,
   OpenIDRefreshFlightAcquireResult,
@@ -29,6 +30,9 @@ export function createOpenIDRefreshFlightMethods(mongoose: typeof import('mongoo
   ) => Promise<OpenIDRefreshFlightAcquireResult>;
   completeOpenIDRefreshFlight: (
     data: OpenIDRefreshFlightCompleteData,
+  ) => Promise<IOpenIDRefreshFlight | null>;
+  renewOpenIDRefreshFlight: (
+    data: OpenIDRefreshFlightRenewData,
   ) => Promise<IOpenIDRefreshFlight | null>;
   failOpenIDRefreshFlight: (
     data: OpenIDRefreshFlightFailData,
@@ -147,6 +151,33 @@ export function createOpenIDRefreshFlightMethods(mongoose: typeof import('mongoo
     }
   }
 
+  async function renewOpenIDRefreshFlight(
+    data: OpenIDRefreshFlightRenewData,
+  ): Promise<IOpenIDRefreshFlight | null> {
+    try {
+      const OpenIDRefreshFlight = mongoose.models
+        .OpenIDRefreshFlight as Model<IOpenIDRefreshFlight>;
+      return await OpenIDRefreshFlight.findOneAndUpdate(
+        {
+          key: data.key,
+          ownerId: data.ownerId,
+          status: 'pending',
+        },
+        {
+          $set: {
+            lockExpiresAt: data.lockExpiresAt,
+            expiresAt: data.expiresAt,
+            updatedAt: new Date(),
+          },
+        },
+        { new: true },
+      ).lean<IOpenIDRefreshFlight>();
+    } catch (error) {
+      logger.debug('[renewOpenIDRefreshFlight] Error renewing flight:', error);
+      throw error;
+    }
+  }
+
   async function failOpenIDRefreshFlight(
     data: OpenIDRefreshFlightFailData,
   ): Promise<IOpenIDRefreshFlight | null> {
@@ -196,6 +227,7 @@ export function createOpenIDRefreshFlightMethods(mongoose: typeof import('mongoo
 
   return {
     acquireOpenIDRefreshFlight,
+    renewOpenIDRefreshFlight,
     completeOpenIDRefreshFlight,
     failOpenIDRefreshFlight,
     findOpenIDRefreshFlight,

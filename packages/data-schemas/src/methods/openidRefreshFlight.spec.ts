@@ -118,6 +118,38 @@ describe('OpenIDRefreshFlight Methods', () => {
     expect(reclaimed.flight?.errorMessage).toBeUndefined();
   });
 
+  it('renews a lease only for the owning pending worker', async () => {
+    await methods.acquireOpenIDRefreshFlight({
+      key: 'flight-key',
+      ownerId: 'owner-1',
+      lockExpiresAt: new Date(Date.now() + 30000),
+      expiresAt: new Date(Date.now() + 60000),
+    });
+
+    const nextLockExpiry = new Date(Date.now() + 45000);
+    const nextFlightExpiry = new Date(Date.now() + 90000);
+    await expect(
+      methods.renewOpenIDRefreshFlight({
+        key: 'flight-key',
+        ownerId: 'owner-2',
+        lockExpiresAt: nextLockExpiry,
+        expiresAt: nextFlightExpiry,
+      }),
+    ).resolves.toBeNull();
+
+    const renewed = await methods.renewOpenIDRefreshFlight({
+      key: 'flight-key',
+      ownerId: 'owner-1',
+      lockExpiresAt: nextLockExpiry,
+      expiresAt: nextFlightExpiry,
+    });
+
+    expect(renewed?.ownerId).toBe('owner-1');
+    expect(renewed?.status).toBe('pending');
+    expect(renewed?.lockExpiresAt.getTime()).toBe(nextLockExpiry.getTime());
+    expect(renewed?.expiresAt.getTime()).toBe(nextFlightExpiry.getTime());
+  });
+
   it('completes a flight only for the owning pending worker', async () => {
     await methods.acquireOpenIDRefreshFlight({
       key: 'flight-key',

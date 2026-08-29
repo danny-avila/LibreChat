@@ -8,6 +8,7 @@ const DEFAULT_FLIGHT_TTL_MS = 2 * 60 * 1000;
 const DEFAULT_LOCK_TTL_MS = 30 * 1000;
 const DEFAULT_WAIT_TIMEOUT_MS = DEFAULT_LOCK_TTL_MS + 1000;
 const DEFAULT_WAIT_INTERVAL_MS = 100;
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 10 * 1000;
 const INTERNAL_BROWSER_REFRESH_TOKEN_FIELD = '__browserRefreshToken';
 
 function sha256(value) {
@@ -81,6 +82,74 @@ async function completeOpenIDRefreshFlight({ key, ownerId, tokens, ttl = DEFAULT
     encryptedResult,
     expiresAt: new Date(Date.now() + ttl),
   });
+}
+
+async function renewOpenIDRefreshFlight({
+  key,
+  ownerId,
+  lockTtl = DEFAULT_LOCK_TTL_MS,
+  ttl = DEFAULT_FLIGHT_TTL_MS,
+}) {
+  if (!key || !ownerId) {
+    return null;
+  }
+
+  return db.renewOpenIDRefreshFlight({
+    key,
+    ownerId,
+    lockExpiresAt: new Date(Date.now() + lockTtl),
+    expiresAt: new Date(Date.now() + ttl),
+  });
+}
+
+/**
+ * Keeps the Mongo lease alive while the IdP grant is in progress. Without
+ * renewal, a slow-but-live owner can outlast the lease and a follower may
+ * reclaim the flight, admitting a second rotating refresh-token grant.
+ */
+async function withOpenIDRefreshFlightLease({
+  key,
+  ownerId,
+  operation,
+  heartbeatInterval = DEFAULT_HEARTBEAT_INTERVAL_MS,
+  lockTtl = DEFAULT_LOCK_TTL_MS,
+  ttl = DEFAULT_FLIGHT_TTL_MS,
+}) {
+  if (!key || !ownerId) {
+    return operation();
+  }
+
+  let renewalPromise = null;
+  const heartbeat = setInterval(() => {
+    if (renewalPromise) {
+      return;
+    }
+    renewalPromise = renewOpenIDRefreshFlight({ key, ownerId, lockTtl, ttl })
+      .then((flight) => {
+        if (!flight) {
+          logger.warn('[OpenIDRefreshFlight] Refresh flight lease ownership was lost', { key });
+        }
+      })
+      .catch((error) => {
+        logger.warn('[OpenIDRefreshFlight] Failed to renew refresh flight lease', {
+          key,
+          error: error?.message,
+        });
+      })
+      .finally(() => {
+        renewalPromise = null;
+      });
+  }, heartbeatInterval);
+  heartbeat.unref?.();
+
+  try {
+    return await operation();
+  } finally {
+    clearInterval(heartbeat);
+    if (renewalPromise) {
+      await renewalPromise;
+    }
+  }
 }
 
 async function failOpenIDRefreshFlight({ key, ownerId, error, ttl = DEFAULT_FLIGHT_TTL_MS }) {
@@ -157,7 +226,9 @@ module.exports = {
   completeOpenIDRefreshFlight,
   createOpenIDRefreshFlightKey,
   failOpenIDRefreshFlight,
+  renewOpenIDRefreshFlight,
   waitForOpenIDRefreshFlight,
+  withOpenIDRefreshFlightLease,
   __internals: {
     sha256,
     readCompletedFlight,
@@ -165,5 +236,6 @@ module.exports = {
     DEFAULT_LOCK_TTL_MS,
     DEFAULT_WAIT_TIMEOUT_MS,
     DEFAULT_WAIT_INTERVAL_MS,
+    DEFAULT_HEARTBEAT_INTERVAL_MS,
   },
 };
