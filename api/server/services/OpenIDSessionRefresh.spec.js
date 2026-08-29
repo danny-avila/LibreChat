@@ -126,6 +126,7 @@ jest.mock('./RefreshTokenBridge', () => ({
 }));
 jest.mock('./OpenIDRefreshFlight', () => ({
   acquireOpenIDRefreshFlight: jest.fn(),
+  assertOpenIDRefreshFlightAvailable: jest.fn(),
   completeOpenIDRefreshFlight: jest.fn(),
   createOpenIDRefreshFlightKey: jest.fn(),
   failOpenIDRefreshFlight: jest.fn(),
@@ -153,6 +154,7 @@ const { getOpenIdConfig } = require('~/strategies/openidStrategy');
 const { deleteRefreshTokenBridges, storeRefreshTokenBridge } = require('./RefreshTokenBridge');
 const {
   acquireOpenIDRefreshFlight,
+  assertOpenIDRefreshFlightAvailable,
   completeOpenIDRefreshFlight,
   createOpenIDRefreshFlightKey,
   failOpenIDRefreshFlight,
@@ -221,6 +223,7 @@ describe('OpenIDSessionRefresh', () => {
       ({ req, refreshToken }) => refreshToken && `flight:${req?.sessionID}:${refreshToken}`,
     );
     acquireOpenIDRefreshFlight.mockResolvedValue({ acquired: true, ownerId: 'owner-1' });
+    assertOpenIDRefreshFlightAvailable.mockResolvedValue({ status: 'completed' });
     completeOpenIDRefreshFlight.mockResolvedValue({});
     failOpenIDRefreshFlight.mockResolvedValue({});
     waitForOpenIDRefreshFlight.mockResolvedValue(null);
@@ -1641,6 +1644,154 @@ describe('OpenIDSessionRefresh', () => {
         ownerId: 'owner-leader',
         operation: expect.any(Function),
       });
+    });
+
+    it('rolls back a follower replay when logout revokes the completed flight', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const predecessorAccessToken = makeJwt(expiredExp);
+      const req = buildReq({
+        accessToken: predecessorAccessToken,
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-predecessor',
+        browserRefreshToken: 'rt-predecessor',
+      });
+      const res = buildRes({ headersSent: false });
+      req.session.destroy = jest.fn((callback) => {
+        delete req.session.openidTokens;
+        callback();
+      });
+      acquireOpenIDRefreshFlight.mockResolvedValueOnce({ acquired: false, ownerId: 'follower' });
+      waitForOpenIDRefreshFlight.mockResolvedValueOnce({
+        access_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        id_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        refresh_token: 'rt-successor',
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        __predecessorRefreshToken: 'rt-predecessor',
+        __predecessorAccessToken: predecessorAccessToken,
+      });
+      assertOpenIDRefreshFlightAvailable
+        .mockResolvedValueOnce({ status: 'completed' })
+        .mockResolvedValueOnce({ status: 'completed' })
+        .mockResolvedValueOnce({ status: 'completed' })
+        .mockResolvedValueOnce({ status: 'completed' })
+        .mockResolvedValueOnce({ status: 'completed' })
+        .mockRejectedValueOnce(ownershipLost('revoked by logout'));
+
+      await expect(
+        refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('revoked by logout');
+
+      expect(storeOpenIdSession).toHaveBeenCalled();
+      expect(setRefreshTokenCookie).toHaveBeenCalled();
+      expect(req.session.save).toHaveBeenCalled();
+      expect(deleteSession).toHaveBeenCalledWith({ refreshToken: 'rt-successor' });
+      expect(req.session.destroy).toHaveBeenCalled();
+      expect(res.clearCookie).toHaveBeenCalledWith('refreshToken');
+    });
+
+    it('does not replay a stable-token flight over a newer access token', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const predecessorAccessToken = makeJwt(expiredExp);
+      const advancedAccessToken = makeJwt(Math.floor(Date.now() / 1000) + 7200);
+      const req = buildReq({
+        accessToken: predecessorAccessToken,
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-stable',
+      });
+      req.session.reload = jest.fn((callback) => {
+        req.session.openidTokens = {
+          ...req.session.openidTokens,
+          accessToken: advancedAccessToken,
+          refreshToken: 'rt-stable',
+        };
+        callback();
+      });
+      acquireOpenIDRefreshFlight.mockResolvedValueOnce({ acquired: false, ownerId: 'follower' });
+      waitForOpenIDRefreshFlight.mockResolvedValueOnce({
+        access_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        id_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        refresh_token: 'rt-stable',
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        __predecessorRefreshToken: 'rt-stable',
+        __predecessorAccessToken: predecessorAccessToken,
+      });
+
+      await refreshOpenIDSession(req, buildRes(), makeOpenIdUser(), 'access_token');
+
+      expect(req.session.openidTokens.accessToken).toBe(advancedAccessToken);
+      expect(storeOpenIdSession).not.toHaveBeenCalled();
+      expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+      expect(req.session.save).not.toHaveBeenCalled();
+    });
+
+    it('does not publish a deferred local leader result through an immediate joiner', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const makeExpiredSession = () => ({
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-mixed-mode',
+      });
+      const leaderReq = buildReq(makeExpiredSession(), 'session-mixed-mode');
+      const joinerReq = buildReq(makeExpiredSession(), 'session-mixed-mode');
+      let resolveGrant;
+      openIdClient.refreshTokenGrant.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveGrant = resolve;
+        }),
+      );
+
+      const leaderPromise = refreshOpenIDSession(
+        leaderReq,
+        undefined,
+        makeOpenIdUser(),
+        'access_token',
+        undefined,
+        { forceRefresh: true, deferPublication: true },
+      );
+      const joinerPromise = refreshOpenIDSession(
+        joinerReq,
+        buildRes(),
+        makeOpenIdUser(),
+        'access_token',
+      );
+      await Promise.resolve();
+      resolveGrant({
+        access_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        id_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        refresh_token: 'rt-mixed-successor',
+        expires_in: 3600,
+      });
+
+      await expect(leaderPromise).resolves.toBeDefined();
+      await expect(joinerPromise).rejects.toThrow('awaiting identity validation');
+      expect(joinerReq.session.save).not.toHaveBeenCalled();
+      expect(storeOpenIdSession).not.toHaveBeenCalled();
+      expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+    });
+
+    it('does not publish a deferred cross-replica result through an immediate follower', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const req = buildReq({
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-deferred-worker',
+      });
+      acquireOpenIDRefreshFlight.mockResolvedValueOnce({ acquired: false, ownerId: 'follower' });
+      waitForOpenIDRefreshFlight.mockResolvedValueOnce({
+        access_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        id_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        refresh_token: 'rt-deferred-successor',
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        __deferredPublication: true,
+      });
+
+      await expect(
+        refreshOpenIDSession(req, buildRes(), makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('awaiting identity validation');
+
+      expect(storeOpenIdSession).not.toHaveBeenCalled();
+      expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+      expect(req.session.save).not.toHaveBeenCalled();
     });
 
     it('fails closed when a shared flight times out instead of issuing a duplicate grant', async () => {

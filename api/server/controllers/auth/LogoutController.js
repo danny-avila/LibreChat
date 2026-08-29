@@ -2,14 +2,8 @@ const cookies = require('cookie');
 const { isEnabled, math, clearCloudFrontCookies } = require('@librechat/api');
 const { logger, DEFAULT_REFRESH_TOKEN_EXPIRY } = require('@librechat/data-schemas');
 const { logoutUser } = require('~/server/services/AuthService');
-const {
-  createRefreshTokenBridgeFlightKey,
-  deleteAllRefreshTokenBridges,
-} = require('~/server/services/RefreshTokenBridge');
-const {
-  createOpenIDRefreshFlightKey,
-  revokeOpenIDRefreshFlights,
-} = require('~/server/services/OpenIDRefreshFlight');
+const { deleteAllRefreshTokenBridges } = require('~/server/services/RefreshTokenBridge');
+const { revokeOpenIDRefreshTokenChain } = require('~/server/services/OpenIDRefreshRecovery');
 const { getOpenIdConfig } = require('~/strategies');
 
 /** Parses and validates OPENID_MAX_LOGOUT_URL_LENGTH, returning defaultValue on invalid input */
@@ -56,28 +50,14 @@ const logoutController = async (req, res) => {
         tenantId: req.session?.openidTokens?.tenantId ?? req.user?.tenantId,
         openidIssuer: req.session?.openidTokens?.openidIssuer ?? req.user?.openidIssuer,
       };
-      const flightKeys = logoutTokens.flatMap((token) => [
-        createOpenIDRefreshFlightKey({
-          req,
-          user: req.user,
-          refreshToken: token,
-          identityContext: refreshIdentity,
-        }),
-        createRefreshTokenBridgeFlightKey({
-          oldRefreshToken: token,
-          userId,
-          tenantId: refreshIdentity.tenantId,
-          openidIssuer: refreshIdentity.openidIssuer,
-        }),
-      ]);
-      const revokedResults = await revokeOpenIDRefreshFlights({
-        keys: flightKeys,
+      const revokedRefreshTokens = await revokeOpenIDRefreshTokenChain({
+        req,
+        user: req.user,
+        identityContext: refreshIdentity,
+        refreshTokens: [...logoutTokens],
         ttl: math(process.env.REFRESH_TOKEN_EXPIRY, DEFAULT_REFRESH_TOKEN_EXPIRY),
       });
-      const revokedSuccessorTokens = revokedResults.flatMap((result) =>
-        [result?.refresh_token, result?.tokenset?.refresh_token].filter(Boolean),
-      );
-      logoutTokens.push(...revokedSuccessorTokens);
+      logoutTokens.push(...revokedRefreshTokens);
       await deleteAllRefreshTokenBridges({
         userId,
         tenantId: req.user?.tenantId,

@@ -35,6 +35,7 @@ module.exports = api.createOpenIDSessionRefreshService({
   storeRefreshTokenBridge: bridge.storeRefreshTokenBridge,
   deleteRefreshTokenBridges: bridge.deleteRefreshTokenBridges,
   acquireOpenIDRefreshFlight: flight.acquireOpenIDRefreshFlight,
+  assertOpenIDRefreshFlightAvailable: flight.assertOpenIDRefreshFlightAvailable,
   completeOpenIDRefreshFlight: flight.completeOpenIDRefreshFlight,
   createOpenIDRefreshFlightKey: flight.createOpenIDRefreshFlightKey,
   failOpenIDRefreshFlight: flight.failOpenIDRefreshFlight,

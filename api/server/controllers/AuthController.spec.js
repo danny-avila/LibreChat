@@ -35,7 +35,9 @@ jest.mock('~/server/services/RefreshTokenBridge', () => ({
 jest.mock('~/server/services/OpenIDRefreshFlight', () => ({
   acquireOpenIDRefreshFlight: jest.fn(),
   completeOpenIDRefreshFlight: jest.fn(),
+  createOpenIDRefreshFlightKey: jest.fn(),
   failOpenIDRefreshFlight: jest.fn(),
+  revokeOpenIDRefreshFlights: jest.fn(),
   waitForOpenIDRefreshFlight: jest.fn(),
   withOpenIDRefreshFlightLease: jest.fn(),
 }));
@@ -112,11 +114,14 @@ const {
 const {
   acquireOpenIDRefreshFlight,
   completeOpenIDRefreshFlight,
+  createOpenIDRefreshFlightKey,
   failOpenIDRefreshFlight,
+  revokeOpenIDRefreshFlights,
   waitForOpenIDRefreshFlight,
   withOpenIDRefreshFlightLease,
 } = require('~/server/services/OpenIDRefreshFlight');
 const { refreshOpenIDSession } = require('~/server/services/OpenIDSessionRefresh');
+const { revokeOpenIDRefreshTokenChain } = require('~/server/services/OpenIDRefreshRecovery');
 
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
 const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
@@ -125,6 +130,60 @@ const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
 const { createOpenIDRefreshOwnershipError } = jest.requireActual('@librechat/api');
 const ownershipLost = (message) => createOpenIDRefreshOwnershipError(message);
+
+describe('OpenID logout refresh chain', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    createOpenIDRefreshFlightKey.mockImplementation(
+      ({ refreshToken }) => `session:${refreshToken}`,
+    );
+    createRefreshTokenBridgeFlightKey.mockImplementation(
+      ({ oldRefreshToken }) => `bridge:${oldRefreshToken}`,
+    );
+  });
+
+  afterEach(() => {
+    createRefreshTokenBridgeFlightKey.mockImplementation(() => 'bridge-flight-key');
+  });
+
+  it('tombstones every discovered successor generation before logout completes', async () => {
+    revokeOpenIDRefreshFlights
+      .mockResolvedValueOnce([{ refresh_token: 'rt-successor-1' }, null])
+      .mockResolvedValueOnce([{ tokenset: { refresh_token: 'rt-successor-2' } }, null])
+      .mockResolvedValueOnce([null, null]);
+    const req = { user: { _id: 'user-1', openidId: 'subject-1' } };
+    const user = req.user;
+    const identityContext = {
+      appUserId: 'user-1',
+      openidSubject: 'subject-1',
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    };
+
+    await expect(
+      revokeOpenIDRefreshTokenChain({
+        req,
+        user,
+        identityContext,
+        refreshTokens: ['rt-predecessor'],
+        ttl: 60_000,
+      }),
+    ).resolves.toEqual(['rt-predecessor', 'rt-successor-1', 'rt-successor-2']);
+
+    expect(revokeOpenIDRefreshFlights).toHaveBeenNthCalledWith(1, {
+      keys: ['session:rt-predecessor', 'bridge:rt-predecessor'],
+      ttl: 60_000,
+    });
+    expect(revokeOpenIDRefreshFlights).toHaveBeenNthCalledWith(2, {
+      keys: ['session:rt-successor-1', 'bridge:rt-successor-1'],
+      ttl: 60_000,
+    });
+    expect(revokeOpenIDRefreshFlights).toHaveBeenNthCalledWith(3, {
+      keys: ['session:rt-successor-2', 'bridge:rt-successor-2'],
+      ttl: 60_000,
+    });
+  });
+});
 
 describe('graphTokenController', () => {
   let req, res;

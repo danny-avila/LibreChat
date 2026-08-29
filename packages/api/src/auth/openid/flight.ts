@@ -24,6 +24,8 @@ const DEFAULT_WAIT_INTERVAL_MS = 100;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 10 * 1000;
 const INTERNAL_BROWSER_REFRESH_TOKEN_FIELD = '__browserRefreshToken';
 const INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD = '__predecessorRefreshToken';
+const INTERNAL_PREDECESSOR_ACCESS_TOKEN_FIELD = '__predecessorAccessToken';
+const INTERNAL_DEFERRED_PUBLICATION_FIELD = '__deferredPublication';
 
 export interface TokenResult extends Omit<OpenIDTokenSet, 'claims'> {
   tokenset?: OpenIDTokenSet;
@@ -31,6 +33,8 @@ export interface TokenResult extends Omit<OpenIDTokenSet, 'claims'> {
   openidIssuer?: string;
   __browserRefreshToken?: string;
   __predecessorRefreshToken?: string;
+  __predecessorAccessToken?: string;
+  __deferredPublication?: boolean;
 }
 
 interface FlightAcquireData {
@@ -84,6 +88,9 @@ export interface OpenIDRefreshFlightService {
     lockTtl?: number;
     ttl?: number;
   }) => Promise<RefreshFlightRecord | null>;
+  assertOpenIDRefreshFlightAvailable: (args: {
+    key?: string | null;
+  }) => Promise<RefreshFlightRecord | boolean>;
   revokeOpenIDRefreshFlights: (args: {
     keys?: Array<string | null | undefined>;
     ttl?: number;
@@ -201,6 +208,12 @@ export function createOpenIDRefreshFlightService({
     if (tokens.__predecessorRefreshToken) {
       serializedTokens.__predecessorRefreshToken = tokens.__predecessorRefreshToken;
     }
+    if (tokens.__predecessorAccessToken) {
+      serializedTokens.__predecessorAccessToken = tokens.__predecessorAccessToken;
+    }
+    if (tokens.__deferredPublication) {
+      serializedTokens.__deferredPublication = true;
+    }
     const accessTokenExpiresAt = Number(tokens.expires_at) * 1000;
     const usableTokenTtl = Number.isFinite(accessTokenExpiresAt)
       ? Math.max(1, accessTokenExpiresAt - Date.now() - OPENID_EXPIRY_BUFFER_SECONDS * 1000)
@@ -231,6 +244,21 @@ export function createOpenIDRefreshFlightService({
       lockExpiresAt: new Date(Date.now() + lockTtl),
       expiresAt: new Date(Date.now() + ttl),
     });
+  }
+
+  async function assertOpenIDRefreshFlightAvailable({
+    key,
+  }: {
+    key?: string | null;
+  }): Promise<RefreshFlightRecord | boolean> {
+    if (!key) return true;
+    const flight = await db.findOpenIDRefreshFlight({ key });
+    if (flight?.status === 'completed') {
+      return flight;
+    }
+    throw createOpenIDRefreshOwnershipError(
+      'OpenID refresh result is no longer available for publication',
+    );
   }
 
   async function withOpenIDRefreshFlightLease<T>({
@@ -372,6 +400,8 @@ export function createOpenIDRefreshFlightService({
     for (const [field, value] of [
       [INTERNAL_BROWSER_REFRESH_TOKEN_FIELD, tokens.__browserRefreshToken],
       [INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD, tokens.__predecessorRefreshToken],
+      [INTERNAL_PREDECESSOR_ACCESS_TOKEN_FIELD, tokens.__predecessorAccessToken],
+      [INTERNAL_DEFERRED_PUBLICATION_FIELD, tokens.__deferredPublication],
     ] as const) {
       if (value) {
         delete tokens[field];
@@ -435,6 +465,7 @@ export function createOpenIDRefreshFlightService({
 
   return {
     acquireOpenIDRefreshFlight,
+    assertOpenIDRefreshFlightAvailable,
     completeOpenIDRefreshFlight,
     createOpenIDRefreshFlightKey,
     failOpenIDRefreshFlight,

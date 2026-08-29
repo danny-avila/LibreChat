@@ -107,6 +107,9 @@ interface OpenIDSessionRefreshDeps {
     error?: Error | null;
   }) => Promise<RefreshFlightRecord | null>;
   waitForOpenIDRefreshFlight: (args: { key?: string | null }) => Promise<TokenResult | null>;
+  assertOpenIDRefreshFlightAvailable: (args: {
+    key?: string | null;
+  }) => Promise<RefreshFlightRecord | boolean>;
   withOpenIDRefreshFlightLease: <T>(args: {
     key?: string | null;
     ownerId?: string;
@@ -118,6 +121,8 @@ interface MarkedOIDCTokens extends OIDCTokens {
   __browserRefreshToken?: string;
   __identityClaims?: OpenIDClaims;
   __predecessorRefreshToken?: string;
+  __predecessorAccessToken?: string;
+  __deferredPublication?: boolean;
   __identityIdToken?: string;
 }
 
@@ -131,7 +136,11 @@ interface SessionPublicationEffects {
   durableSession: boolean;
   browserCookies: boolean;
   expressSession: boolean;
-  bridgeVersion: string | null;
+  bridge?: {
+    version: string;
+    predecessorRefreshToken: string;
+    identity: RefreshTokenBridgeIdentity;
+  };
 }
 
 interface CreateOpenIDSessionTokenProviderInput {
@@ -207,6 +216,7 @@ export function createOpenIDSessionRefreshService(
     createOpenIDRefreshFlightKey,
     failOpenIDRefreshFlight,
     waitForOpenIDRefreshFlight,
+    assertOpenIDRefreshFlightAvailable,
     withOpenIDRefreshFlightLease,
   } = deps;
 
@@ -248,6 +258,8 @@ export function createOpenIDSessionRefreshService(
   const UPSTREAM_TOKEN_EXPIRY_BUFFER_SECONDS = 30;
   const INTERNAL_BROWSER_REFRESH_TOKEN_FIELD = '__browserRefreshToken';
   const INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD = '__predecessorRefreshToken';
+  const INTERNAL_PREDECESSOR_ACCESS_TOKEN_FIELD = '__predecessorAccessToken';
+  const INTERNAL_DEFERRED_PUBLICATION_FIELD = '__deferredPublication';
   const INTERNAL_IDENTITY_ID_TOKEN_FIELD = '__identityIdToken';
   const IDENTITY_PART_SEPARATOR = '\x1f';
 
@@ -639,6 +651,32 @@ export function createOpenIDSessionRefreshService(
     return tokens;
   }
 
+  function attachPredecessorAccessTokenMarker<T extends MarkedOIDCTokens | null>(
+    tokens: T,
+    predecessorAccessToken?: string,
+  ): T {
+    if (!tokens || !predecessorAccessToken) return tokens;
+    Object.defineProperty(tokens, INTERNAL_PREDECESSOR_ACCESS_TOKEN_FIELD, {
+      value: predecessorAccessToken,
+      enumerable: false,
+      configurable: true,
+    });
+    return tokens;
+  }
+
+  function attachDeferredPublicationMarker<T extends MarkedOIDCTokens | null>(
+    tokens: T,
+    deferred: boolean,
+  ): T {
+    if (!tokens || !deferred) return tokens;
+    Object.defineProperty(tokens, INTERNAL_DEFERRED_PUBLICATION_FIELD, {
+      value: true,
+      enumerable: false,
+      configurable: true,
+    });
+    return tokens;
+  }
+
   function getPredecessorRefreshTokenMarker(tokens: MarkedOIDCTokens): string | null {
     const predecessor = tokens?.[INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD];
     return typeof predecessor === 'string' && predecessor ? predecessor : null;
@@ -651,6 +689,8 @@ export function createOpenIDSessionRefreshService(
       clone,
       getPredecessorRefreshTokenMarker(tokens) ?? undefined,
     );
+    attachPredecessorAccessTokenMarker(clone, tokens.__predecessorAccessToken);
+    attachDeferredPublicationMarker(clone, tokens.__deferredPublication === true);
     attachIdentityIdTokenMarker(clone, tokens.__identityIdToken);
     return clone;
   }
@@ -662,12 +702,20 @@ export function createOpenIDSessionRefreshService(
   ): boolean {
     const predecessorRefreshToken =
       getPredecessorRefreshTokenMarker(resolvedTokens) ?? predecessorOverride;
-    return Boolean(
+    const refreshTokenAdvanced = Boolean(
       predecessorRefreshToken &&
         existing.refreshToken &&
         existing.refreshToken !== predecessorRefreshToken &&
         existing.refreshToken !== resolvedTokens.refresh_token,
     );
+    const predecessorAccessToken = resolvedTokens.__predecessorAccessToken;
+    const accessTokenAdvanced = Boolean(
+      predecessorAccessToken &&
+        existing.accessToken &&
+        existing.accessToken !== predecessorAccessToken &&
+        existing.accessToken !== resolvedTokens.access_token,
+    );
+    return refreshTokenAdvanced || accessTokenAdvanced;
   }
 
   async function persistSession(req: OpenIDRequest): Promise<void> {
@@ -1176,8 +1224,12 @@ export function createOpenIDSessionRefreshService(
         openidIssuer: bridgeIdentity?.openidIssuer,
         assertLeaseOwned,
       });
-      if (effects && bridgeVersion) {
-        effects.bridgeVersion = bridgeVersion;
+      if (effects && bridgeVersion && browserRefreshToken && bridgeIdentity) {
+        effects.bridge = {
+          version: bridgeVersion,
+          predecessorRefreshToken: browserRefreshToken,
+          identity: bridgeIdentity,
+        };
       }
       if (writesBrowserCookie) {
         if (effects) {
@@ -1268,6 +1320,81 @@ export function createOpenIDSessionRefreshService(
         res?.clearCookie?.(name);
       }
     }
+    if (effects.bridge) {
+      try {
+        await deleteRefreshTokenBridges({
+          refreshTokens: [effects.bridge.predecessorRefreshToken],
+          userId: effects.bridge.identity.userId,
+          tenantId: effects.bridge.identity.tenantId,
+          version: effects.bridge.version,
+        });
+      } catch (error) {
+        logger.warn(
+          '[OpenIDSessionRefresh] Failed to remove publication bridge during rollback',
+          toOpenIDLogArgument(error),
+        );
+      }
+    }
+  }
+
+  function hasPublicationEffects(effects: SessionPublicationEffects): boolean {
+    return Boolean(
+      effects.durableSession || effects.browserCookies || effects.expressSession || effects.bridge,
+    );
+  }
+
+  function createSessionPublicationEffects(): SessionPublicationEffects {
+    return {
+      durableSession: false,
+      browserCookies: false,
+      expressSession: false,
+    };
+  }
+
+  async function publishCompletedFlightTokens({
+    key,
+    req,
+    res,
+    user,
+    identityContext,
+    resolvedTokens,
+    predecessorRefreshToken,
+  }: {
+    key: string;
+    req: OpenIDRequest;
+    res?: OpenIDResponse;
+    user: OpenIDUser;
+    identityContext?: AuthIdentityContext;
+    resolvedTokens: MarkedOIDCTokens;
+    predecessorRefreshToken?: string;
+  }): Promise<void> {
+    if (resolvedTokens.__deferredPublication) {
+      throw new Error('OpenID refresh result is awaiting identity validation');
+    }
+    const effects = createSessionPublicationEffects();
+    try {
+      await publishResolvedSessionTokens({
+        req,
+        res,
+        user,
+        identityContext,
+        resolvedTokens,
+        predecessorRefreshToken,
+        assertLeaseOwned: () => assertOpenIDRefreshFlightAvailable({ key }),
+        effects,
+      });
+    } catch (error) {
+      if (isOpenIDRefreshOwnershipError(error) && hasPublicationEffects(effects)) {
+        await rollbackSessionPublication(
+          req,
+          res,
+          resolvedTokens,
+          effects,
+          resolvedTokens.refresh_token ?? predecessorRefreshToken,
+        );
+      }
+      throw error;
+    }
   }
 
   async function performIdpRefresh(
@@ -1279,6 +1406,7 @@ export function createOpenIDSessionRefreshService(
     deferPublication = false,
   ): Promise<MarkedOIDCTokens | null> {
     const refreshToken = req?.session?.openidTokens?.refreshToken;
+    const predecessorAccessToken = req?.session?.openidTokens?.accessToken;
     const key = createOpenIDRefreshFlightKey({ req, user, refreshToken, identityContext });
     if (!key) {
       return performIdpRefreshGrant(
@@ -1310,7 +1438,8 @@ export function createOpenIDSessionRefreshService(
       const resolvedTokens = await waitForOpenIDRefreshFlight({ key });
       if (resolvedTokens) {
         if (!deferPublication) {
-          await publishResolvedSessionTokens({
+          await publishCompletedFlightTokens({
+            key,
             req,
             res,
             user,
@@ -1337,12 +1466,7 @@ export function createOpenIDSessionRefreshService(
         let recoveryBridgePredecessor: string | undefined;
         let resolvedTokens: MarkedOIDCTokens | null = null;
         let successorRefreshToken: string | undefined;
-        const publicationEffects: SessionPublicationEffects = {
-          durableSession: false,
-          browserCookies: false,
-          expressSession: false,
-          bridgeVersion: null,
-        };
+        const publicationEffects = createSessionPublicationEffects();
         try {
           resolvedTokens = await performIdpRefreshGrant(
             req,
@@ -1354,6 +1478,8 @@ export function createOpenIDSessionRefreshService(
             true,
           );
           attachPredecessorRefreshTokenMarker(resolvedTokens, refreshToken);
+          attachPredecessorAccessTokenMarker(resolvedTokens, predecessorAccessToken);
+          attachDeferredPublicationMarker(resolvedTokens, deferPublication);
           successorRefreshToken = resolvedTokens?.refresh_token ?? refreshToken;
           const browserRefreshToken = resolvedTokens
             ? (getBrowserRefreshTokenMarker(resolvedTokens) ?? refreshToken)
@@ -1409,12 +1535,7 @@ export function createOpenIDSessionRefreshService(
           markLeaseSettled();
           return resolvedTokens;
         } catch (error) {
-          if (
-            isOpenIDRefreshOwnershipError(error) &&
-            (publicationEffects.durableSession ||
-              publicationEffects.browserCookies ||
-              publicationEffects.expressSession)
-          ) {
+          if (isOpenIDRefreshOwnershipError(error) && hasPublicationEffects(publicationEffects)) {
             await rollbackSessionPublication(
               req,
               res,
@@ -1427,14 +1548,15 @@ export function createOpenIDSessionRefreshService(
             isOpenIDRefreshOwnershipError(error) &&
             recoveryBridgeVersion &&
             recoveryBridgeIdentity &&
-            recoveryBridgePredecessor
+            recoveryBridgePredecessor &&
+            !publicationEffects.bridge
           ) {
             try {
               await deleteRefreshTokenBridges({
                 refreshTokens: [recoveryBridgePredecessor],
                 userId: recoveryBridgeIdentity.userId,
                 tenantId: recoveryBridgeIdentity.tenantId,
-                version: publicationEffects.bridgeVersion ?? recoveryBridgeVersion,
+                version: recoveryBridgeVersion,
               });
             } catch (cleanupError) {
               logger.warn(
@@ -1611,6 +1733,12 @@ export function createOpenIDSessionRefreshService(
     const inFlight = inFlightRefreshes.get(key);
     if (inFlight) {
       const predecessorRefreshToken = req?.session?.openidTokens?.refreshToken;
+      const sharedFlightKey = createOpenIDRefreshFlightKey({
+        req,
+        user,
+        refreshToken: predecessorRefreshToken,
+        identityContext,
+      });
       logger.debug(`[OpenIDSessionRefresh] Joining in-flight refresh (key=${hashKeyForLogs(key)})`);
       const resolvedTokens = await inFlight;
       /**
@@ -1619,7 +1747,20 @@ export function createOpenIDSessionRefreshService(
        * reads the rotated refresh token instead of replaying the stale one.
        */
       if (!options.deferPublication) {
-        await publishResolvedSessionTokens({
+        const currentSessionTokens = req.session?.openidTokens;
+        const alreadyCurrent = Boolean(
+          currentSessionTokens?.accessToken === resolvedTokens?.access_token &&
+            currentSessionTokens?.refreshToken ===
+              (resolvedTokens?.refresh_token ?? predecessorRefreshToken),
+        );
+        if (alreadyCurrent) {
+          return resolvedTokens;
+        }
+        if (!sharedFlightKey || !resolvedTokens) {
+          throw new Error('OpenID refresh coordination key is unavailable for publication');
+        }
+        await publishCompletedFlightTokens({
+          key: sharedFlightKey,
           req,
           res,
           user,

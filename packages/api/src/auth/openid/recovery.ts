@@ -17,6 +17,7 @@ import type {
   SharedOpenIDRefreshResult,
   TokenPreference,
 } from './types';
+import type { TokenResult } from './flight';
 import {
   createOpenIDRefreshOwnershipError,
   isOpenIDRefreshOwnershipError,
@@ -67,6 +68,14 @@ interface RecoverOpenIDRefreshBridgeInput {
   bridgeUser: BridgeUser;
 }
 
+interface RevokeOpenIDRefreshTokenChainInput {
+  req: OpenIDRequest;
+  user: OpenIDUser;
+  identityContext: AuthIdentityContext;
+  refreshTokens: string[];
+  ttl: number;
+}
+
 interface SendOpenIDAuthResponseInput {
   tokenset: OpenIDTokenSet;
   user: BridgeUser;
@@ -91,6 +100,7 @@ export interface OpenIDRefreshRecoveryService {
     input: ResolveOpenIDRefreshInput,
   ) => Promise<OpenIDRefreshResolution>;
   sendOpenIDAuthResponse: (input: SendOpenIDAuthResponseInput) => Promise<string | undefined>;
+  revokeOpenIDRefreshTokenChain: (input: RevokeOpenIDRefreshTokenChainInput) => Promise<string[]>;
   __internals: {
     getTokenClaims: (tokenset: OpenIDTokenSet) => OpenIDClaims;
     seedRefreshSession: (input: SeedRefreshSessionInput) => AuthIdentityContext;
@@ -157,6 +167,12 @@ export interface OpenIDRefreshRecoveryDeps {
     tenantId?: string;
     openidIssuer?: string;
   }) => string | null;
+  createOpenIDRefreshFlightKey: (args: {
+    req: OpenIDRequest;
+    user: OpenIDUser;
+    refreshToken: string;
+    identityContext: AuthIdentityContext;
+  }) => string | null;
   storeRefreshTokenBridge: (args: RefreshTokenBridgeInput) => Promise<string | null>;
   deleteRefreshTokenBridges: (args: RefreshTokenBridgeDeleteInput) => Promise<object | null>;
   acquireOpenIDRefreshFlight: (args: { key: string }) => Promise<RefreshFlightAcquireResult>;
@@ -171,6 +187,10 @@ export interface OpenIDRefreshRecoveryDeps {
     error: Error;
   }) => Promise<RefreshFlightRecord | null>;
   waitForOpenIDRefreshFlight: (args: { key: string }) => Promise<SharedOpenIDRefreshResult | null>;
+  revokeOpenIDRefreshFlights: (args: {
+    keys: Array<string | null>;
+    ttl: number;
+  }) => Promise<Array<TokenResult | null>>;
   withOpenIDRefreshFlightLease: <T>(args: {
     key: string;
     ownerId: string;
@@ -198,15 +218,62 @@ export function createOpenIDRefreshRecoveryService(
     clearOpenIDAuthTokens,
     deleteOpenIDSession,
     createRefreshTokenBridgeFlightKey,
+    createOpenIDRefreshFlightKey,
     storeRefreshTokenBridge,
     deleteRefreshTokenBridges,
     acquireOpenIDRefreshFlight,
     completeOpenIDRefreshFlight,
     failOpenIDRefreshFlight,
     waitForOpenIDRefreshFlight,
+    revokeOpenIDRefreshFlights,
     withOpenIDRefreshFlightLease,
     bridgeGraceMs,
   } = deps;
+
+  const MAX_LOGOUT_REFRESH_CHAIN_DEPTH = 16;
+
+  async function revokeOpenIDRefreshTokenChain({
+    req,
+    user,
+    identityContext,
+    refreshTokens,
+    ttl,
+  }: RevokeOpenIDRefreshTokenChainInput): Promise<string[]> {
+    const userId = identityContext.appUserId;
+    if (!userId) {
+      throw new Error('OpenID logout identity is unavailable');
+    }
+    const discovered = new Set(refreshTokens.filter(Boolean));
+    let frontier = [...discovered];
+
+    for (let depth = 0; frontier.length > 0; depth++) {
+      if (depth >= MAX_LOGOUT_REFRESH_CHAIN_DEPTH) {
+        throw new Error('OpenID logout refresh chain exceeded the safety limit');
+      }
+      const keys = frontier.flatMap((refreshToken) => [
+        createOpenIDRefreshFlightKey({ req, user, refreshToken, identityContext }),
+        createRefreshTokenBridgeFlightKey({
+          oldRefreshToken: refreshToken,
+          userId,
+          tenantId: identityContext.tenantId,
+          openidIssuer: identityContext.openidIssuer,
+        }),
+      ]);
+      const revoked = await revokeOpenIDRefreshFlights({ keys, ttl });
+      const successors = revoked.flatMap((result) =>
+        [result?.refresh_token, result?.tokenset?.refresh_token].filter((token): token is string =>
+          Boolean(token),
+        ),
+      );
+      frontier = successors.filter((token) => {
+        if (discovered.has(token)) return false;
+        discovered.add(token);
+        return true;
+      });
+    }
+
+    return [...discovered];
+  }
 
   function getTokenClaims(tokenset: OpenIDTokenSet): OpenIDClaims {
     if (typeof tokenset?.claims === 'function') {
@@ -740,6 +807,7 @@ export function createOpenIDRefreshRecoveryService(
 
   return {
     recoverOpenIDRefreshBridge,
+    revokeOpenIDRefreshTokenChain,
     refreshOpenIDUser,
     resolveOpenIDRefreshResult,
     sendOpenIDAuthResponse,

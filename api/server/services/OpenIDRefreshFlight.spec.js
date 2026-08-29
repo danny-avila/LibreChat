@@ -36,6 +36,7 @@ const { encryptV2, decryptV2 } = require('@librechat/data-schemas');
 const db = require('~/models');
 const {
   acquireOpenIDRefreshFlight,
+  assertOpenIDRefreshFlightAvailable,
   completeOpenIDRefreshFlight,
   createOpenIDRefreshFlightKey,
   failOpenIDRefreshFlight,
@@ -77,6 +78,19 @@ describe('OpenIDRefreshFlight', () => {
     expect(keyA).toBe(keyFromNewSession);
     expect(keyA).not.toBe(keyC);
     expect(keyA).not.toContain('rt-old');
+  });
+
+  it('allows follower publication only while the completed flight remains available', async () => {
+    db.findOpenIDRefreshFlight.mockResolvedValueOnce({ status: 'completed', ownerId: 'owner-1' });
+
+    await expect(assertOpenIDRefreshFlightAvailable({ key: 'flight-key' })).resolves.toMatchObject({
+      status: 'completed',
+    });
+
+    db.findOpenIDRefreshFlight.mockResolvedValueOnce({ status: 'revoked', ownerId: 'revoked' });
+    await expect(assertOpenIDRefreshFlightAvailable({ key: 'flight-key' })).rejects.toMatchObject({
+      code: 'OPENID_REFRESH_OWNERSHIP_LOST',
+    });
   });
 
   it('uses explicit identity context when safe user lacks tenant and issuer', () => {
@@ -333,7 +347,7 @@ describe('OpenIDRefreshFlight', () => {
     Date.now.mockRestore();
   });
 
-  it('preserves non-enumerable browser refresh-token metadata for shared flight joiners', async () => {
+  it('preserves non-enumerable publication metadata for shared flight joiners', async () => {
     const tokens = {
       access_token: 'access',
       refresh_token: 'refresh',
@@ -347,6 +361,14 @@ describe('OpenIDRefreshFlight', () => {
       value: 'predecessor-refresh',
       enumerable: false,
     });
+    Object.defineProperty(tokens, '__predecessorAccessToken', {
+      value: 'predecessor-access',
+      enumerable: false,
+    });
+    Object.defineProperty(tokens, '__deferredPublication', {
+      value: true,
+      enumerable: false,
+    });
 
     await completeOpenIDRefreshFlight({
       key: 'flight-key',
@@ -358,6 +380,8 @@ describe('OpenIDRefreshFlight', () => {
     const serializedTokens = JSON.parse(encryptV2.mock.calls[0][0]);
     expect(serializedTokens.__browserRefreshToken).toBe('browser-refresh');
     expect(serializedTokens.__predecessorRefreshToken).toBe('predecessor-refresh');
+    expect(serializedTokens.__predecessorAccessToken).toBe('predecessor-access');
+    expect(serializedTokens.__deferredPublication).toBe(true);
     expect(Object.keys(tokens)).not.toContain('__browserRefreshToken');
   });
 
@@ -484,15 +508,17 @@ describe('OpenIDRefreshFlight', () => {
     ).resolves.toEqual(tokens);
   });
 
-  it('restores browser refresh-token metadata as non-enumerable', async () => {
+  it('restores publication metadata as non-enumerable', async () => {
     const result = await __internals.readCompletedFlight({
       status: 'completed',
       encryptedResult:
-        'encrypted:{"access_token":"access","__browserRefreshToken":"browser-refresh","__predecessorRefreshToken":"predecessor-refresh"}',
+        'encrypted:{"access_token":"access","__browserRefreshToken":"browser-refresh","__predecessorRefreshToken":"predecessor-refresh","__predecessorAccessToken":"predecessor-access","__deferredPublication":true}',
     });
 
     expect(result.__browserRefreshToken).toBe('browser-refresh');
     expect(result.__predecessorRefreshToken).toBe('predecessor-refresh');
+    expect(result.__predecessorAccessToken).toBe('predecessor-access');
+    expect(result.__deferredPublication).toBe(true);
     expect(Object.keys(result)).toEqual(['access_token']);
   });
 });
