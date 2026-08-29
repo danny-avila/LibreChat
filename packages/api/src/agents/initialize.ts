@@ -10,6 +10,8 @@ import {
   isAgentsEndpoint,
   AgentCapabilities,
   resolveAllowedStatefulCodeEnvironments,
+  hasActivePiiFields,
+  hasActivePiiPatterns,
   replaceSpecialVars,
   providerEndpointMap,
 } from 'librechat-data-provider';
@@ -27,28 +29,39 @@ import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/ag
 import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
 import type { Response as ServerResponse } from 'express';
 import type {
+  ResolvedManualSkill,
+  ResolvedAlwaysApplySkill,
+  ResolvedSkillCatalog,
+  TListSkillsByAccess,
+  TGetSkillByName,
+} from './skills';
+import type {
   ServerRequest,
   RequestBody,
   EndpointDbMethods,
   EndpointTokenConfig,
   InitializeResultBase,
 } from '~/types';
-import type {
-  ResolvedManualSkill,
-  ResolvedAlwaysApplySkill,
-  TListSkillsByAccess,
-  TGetSkillByName,
-} from './skills';
 import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
+import type { ContentTraversalLimitError } from '../protection/adapters/nested';
+import type { SkillContentInput } from '../protection/adapters/submissions';
+import type { TextContentFragment } from '../protection/types';
 import type { TFilterFilesByAgentAccess } from './resources';
 import type { MCPToolAlias } from '~/tools/classification';
 import {
   injectSkillCatalog,
+  resolveSkillCatalog,
   resolveManualSkills,
   resolveAlwaysApplySkills,
+  selectSkillPrimesForTurn,
   unionPrimeAllowedTools,
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
+import {
+  getContentTraversalFragments,
+  isContentTraversalProtected,
+  isContentTraversalLimitError,
+} from '../protection/adapters/nested';
 import {
   normalizeServerName,
   requiresEphemeralUserConnection,
@@ -75,8 +88,13 @@ import {
   createStatefulCodeEnvironmentPolicyError,
   isFatalAgentInitializationError,
 } from './errors';
+import { extractAgentContent, extractSkillContent } from '../protection/adapters/submissions';
+import { createConfiguredContentInspector, inspectContent } from '../protection/runtime';
+import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
+import { ContentFilterError } from '../middleware/contentFilter';
+import { PARTIAL_RESOLVED_CONVERSATION } from './guard';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
@@ -100,6 +118,64 @@ const googleToolCombinationTextModels = [
 const googleToolCombinationExcludedModalityRegex =
   /(?:^|-)image(?:-|$)|(?:^|-)live(?:-|$)|(?:^|-)tts(?:-|$)/;
 
+function assertResolvedSkillContentAllowed(
+  skills: readonly SkillContentInput[],
+  filters: NonNullable<ServerRequest['config']>['filters'] | undefined,
+): void {
+  const pii = filters?.skills?.pii;
+  if (!hasActivePiiPatterns(pii) || skills.length === 0) {
+    return;
+  }
+
+  const inspectionSession = createConfiguredContentInspector({ filters })?.createSession();
+  if (inspectionSession == null) {
+    return;
+  }
+  const selectedFields = pii?.fields == null ? null : new Set<string>(pii.fields);
+  const selected = (field: string): boolean => selectedFields == null || selectedFields.has(field);
+  const traversalErrors: ContentTraversalLimitError[] = [];
+  for (const skill of skills) {
+    const projected: SkillContentInput = {
+      ...(selected('name') && { name: skill.name }),
+      ...(selected('display_title') && { displayTitle: skill.displayTitle }),
+      ...(selected('description') && { description: skill.description }),
+      ...(selected('category') && { category: skill.category }),
+      ...(selected('instructions') && {
+        body: skill.body,
+        instructions: skill.instructions,
+      }),
+      ...(selected('imported_text') && { importedText: skill.importedText }),
+      ...(selected('frontmatter') && { frontmatter: skill.frontmatter }),
+      ...((selected('file_name') || selected('file_text')) && {
+        files: skill.files?.map((file) => ({
+          ...(selected('file_name') && { name: file?.name, filename: file?.filename }),
+          ...(selected('file_text') && { text: file?.text, content: file?.content }),
+        })),
+      }),
+    };
+    let fragments: readonly TextContentFragment[];
+    try {
+      fragments = extractSkillContent(projected);
+    } catch (error) {
+      if (!isContentTraversalLimitError(error)) {
+        throw error;
+      }
+      fragments = getContentTraversalFragments(error);
+      traversalErrors.push(error);
+    }
+    const finding = inspectionSession.inspect(fragments);
+    if (finding != null) {
+      throw new ContentFilterError(finding);
+    }
+  }
+  const protectedTraversal = traversalErrors.find((error) =>
+    isContentTraversalProtected({ error, filters }),
+  );
+  if (protectedTraversal != null) {
+    throw protectedTraversal;
+  }
+}
+
 function hasTemporalSpecialVars(text: string): boolean {
   return temporalSpecialVarRegex.test(text);
 }
@@ -111,6 +187,32 @@ function appendAdditionalInstructions(agent: Agent, text?: string | null): void 
   agent.additional_instructions = [agent.additional_instructions ?? '', text]
     .filter(Boolean)
     .join('\n\n');
+}
+
+/**
+ * The request middleware already read this conversation once (`null` = looked up, absent).
+ * A stored document without `files` genuinely has none; only the branded lineage-only
+ * partial from a bound agent-event continuation cannot speak for the database.
+ */
+export function readResolvedConversationFiles(
+  req: Pick<ServerRequest, 'resolvedConversation'>,
+  conversationId: string,
+): string[] | undefined {
+  if (!Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')) {
+    return undefined;
+  }
+  const resolved = req.resolvedConversation;
+  if (resolved === null) {
+    return [];
+  }
+  if (
+    resolved == null ||
+    resolved.conversationId !== conversationId ||
+    (resolved as Record<symbol, unknown>)[PARTIAL_RESOLVED_CONVERSATION] === true
+  ) {
+    return undefined;
+  }
+  return resolved.files ?? [];
 }
 
 function getMaxCatalogSkills(req: ServerRequest): number | undefined {
@@ -453,6 +555,8 @@ export interface InitializeAgentParams {
     hasDeferredTools?: boolean;
     mcpToolAliases?: MCPToolAlias[];
     actionsEnabled?: boolean;
+    /** Action tool names backed by OAuth — excluded from background dispatch. */
+    oauthActionToolNames?: string[];
     /**
      * Pre-uploaded code-env file refs for the agent's
      * `tool_resources.execute_code`. Bubbled up so the run host can seed
@@ -631,6 +735,41 @@ export async function initializeAgent(
   }
 
   /**
+   * Reject the stored agent definition before initialization performs usage
+   * accounting, resource priming, tool/MCP loading, or provider setup. Inspect
+   * definition fragments directly here: the raw agent may still contain
+   * canonical file IDs that can only be validated after resource hydration.
+   */
+  let agentFragments: readonly TextContentFragment[] = [];
+  let agentTraversalError: ContentTraversalLimitError | null = null;
+  try {
+    agentFragments = extractAgentContent(
+      agent as unknown as Parameters<typeof extractAgentContent>[0],
+    );
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    agentFragments = getContentTraversalFragments(error);
+    agentTraversalError = error;
+  }
+  const agentDefinitionFinding = inspectContent(agentFragments, {
+    filters: req.config?.filters,
+  });
+  if (agentDefinitionFinding != null) {
+    throw new ContentFilterError(agentDefinitionFinding);
+  }
+  if (
+    agentTraversalError != null &&
+    isContentTraversalProtected({
+      error: agentTraversalError,
+      filters: req.config?.filters,
+    })
+  ) {
+    throw agentTraversalError;
+  }
+
+  /**
    * Heal legacy MCP tool keys ONCE, before anything reads them: model-facing
    * keys embed the normalized server name (cache keys, definition names,
    * runtime instance names), so an agent document persisted with raw-named
@@ -712,6 +851,85 @@ export async function initializeAgent(
     );
   }
 
+  /**
+   * Manual and always-apply skill resolution is read-only. Resolve and inspect
+   * those exact model-bound skill bodies before file usage/resource priming or
+   * tool loading, then reuse the results below when expanding allowed tools.
+   */
+  const hasSkillAccess = (params.accessibleSkillIds?.length ?? 0) > 0;
+  const skillAuthoringAvailable = params.skillAuthoringAvailable === true;
+  let manualSkillPrimes: ResolvedManualSkill[] | undefined;
+  let alwaysApplySkillPrimes: ResolvedAlwaysApplySkill[] | undefined;
+  let extraAllowedToolNames: string[] = [];
+  let perSkillExtras: Map<string, string[]> = new Map();
+  let resolvedSkillCatalog: ResolvedSkillCatalog | undefined;
+  if (hasSkillAccess) {
+    const [manualPrimesResult, alwaysApplyPrimesResult, catalogResult] = await Promise.all([
+      params.manualSkills?.length && db.getSkillByName
+        ? resolveManualSkills({
+            names: params.manualSkills,
+            getSkillByName: db.getSkillByName,
+            accessibleSkillIds: params.accessibleSkillIds!,
+            userId: req.user?.id,
+            skillStates: params.skillStates,
+            defaultActiveOnShare: params.defaultActiveOnShare,
+          })
+        : Promise.resolve<ResolvedManualSkill[] | undefined>(undefined),
+      db.listAlwaysApplySkills
+        ? resolveAlwaysApplySkills({
+            listAlwaysApplySkills: db.listAlwaysApplySkills,
+            accessibleSkillIds: params.accessibleSkillIds!,
+            userId: req.user?.id,
+            skillStates: params.skillStates,
+            defaultActiveOnShare: params.defaultActiveOnShare,
+          })
+        : Promise.resolve<ResolvedAlwaysApplySkill[] | undefined>(undefined),
+      hasActivePiiFields(req.config?.filters?.skills?.pii, ['name', 'description'])
+        ? resolveSkillCatalog({
+            accessibleSkillIds: params.accessibleSkillIds!,
+            listSkillsByAccess: db.listSkillsByAccess,
+            userId: req.user?.id,
+            skillStates: params.skillStates,
+            defaultActiveOnShare: params.defaultActiveOnShare,
+            maxCatalogSkills: getMaxCatalogSkills(req),
+          })
+        : Promise.resolve<ResolvedSkillCatalog | undefined>(undefined),
+    ]);
+
+    manualSkillPrimes = manualPrimesResult;
+    alwaysApplySkillPrimes = alwaysApplyPrimesResult;
+    resolvedSkillCatalog = catalogResult;
+
+    const selectedPrimes = selectSkillPrimesForTurn({
+      manualSkillPrimes: manualSkillPrimes ?? [],
+      alwaysApplySkillPrimes: alwaysApplySkillPrimes ?? [],
+    });
+    if (selectedPrimes.alwaysApplyDedupedFromManual > 0) {
+      logger.info(
+        `[initializeAgent] Dropped ${selectedPrimes.alwaysApplyDedupedFromManual} always-apply prime(s) already present in the manual list; same-named skills prime only once per turn.`,
+      );
+    }
+    if (selectedPrimes.alwaysApplyDropped > 0) {
+      logger.warn(
+        `[initializeAgent] Combined primes exceeds MAX_PRIMED_SKILLS_PER_TURN (${MAX_PRIMED_SKILLS_PER_TURN}); truncating ${selectedPrimes.alwaysApplyDropped} always-apply prime(s) so every initializer consumer sees the model-bound set.`,
+      );
+    }
+    manualSkillPrimes = manualSkillPrimes == null ? undefined : selectedPrimes.manualSkillPrimes;
+    alwaysApplySkillPrimes =
+      alwaysApplySkillPrimes == null ? undefined : selectedPrimes.alwaysApplySkillPrimes;
+
+    assertResolvedSkillContentAllowed(
+      [
+        ...(manualSkillPrimes ?? []),
+        ...(alwaysApplySkillPrimes ?? []),
+        ...(resolvedSkillCatalog?.activeSkills.filter(
+          (skill) => skill.disableModelInvocation !== true,
+        ) ?? []),
+      ],
+      req.config?.filters,
+    );
+  }
+
   let currentFiles: IMongoFile[] | undefined;
 
   const _modelOptions = structuredClone(
@@ -755,6 +973,14 @@ export async function initializeAgent(
     agentId: agent.id,
     conversationId,
   });
+  const requestFileIds = [
+    ...new Set(
+      requestFiles
+        .map((file) => file.file_id)
+        .filter((fileId): fileId is string => typeof fileId === 'string' && fileId.length > 0),
+    ),
+  ];
+  const toolFileIds: string[] = [];
 
   /**
    * Load conversation files for ALL agents, not just the initial agent.
@@ -790,7 +1016,7 @@ export async function initializeAgent(
      * every code-output ref.
      */
     const [convoFileIds, threadMessages] = await Promise.all([
-      db.getConvoFiles(conversationId),
+      readResolvedConversationFiles(req, conversationId) ?? db.getConvoFiles(conversationId),
       needsThreadWalk && getThreadMessages
         ? getThreadMessages({ conversationId }, 'messageId parentMessageId files attachments')
         : null,
@@ -842,34 +1068,54 @@ export async function initializeAgent(
     ]);
 
     const allToolFiles = toolFiles.concat(codeGeneratedFiles, userCodeFiles);
-    if (requestFiles.length || allToolFiles.length) {
-      const requestUsageFiles =
-        requestFiles.length && requestFileOwnerId
-          ? ((await db.updateFilesUsage(requestFiles, undefined, {
-              user: requestFileOwnerId,
-              tenantId: req.user?.tenantId,
-            })) as IMongoFile[])
-          : [];
-      const requestUsageFileIds = new Set(requestUsageFiles.map((file) => file.file_id));
-      const trustedToolFiles = allToolFiles.filter(
-        (file) => !requestUsageFileIds.has(file.file_id),
-      );
-      let toolUsageFiles: IMongoFile[] = [];
-      if (trustedToolFiles.length > 0 && requestFileOwnerId) {
-        toolUsageFiles = (await db.updateFilesUsage(trustedToolFiles, undefined, {
-          user: requestFileOwnerId,
-          tenantId: req.user?.tenantId,
-        })) as IMongoFile[];
+    const snapshotFileIds = new Set(requestFileIds);
+    for (const file of allToolFiles) {
+      if (typeof file.file_id !== 'string' || snapshotFileIds.has(file.file_id)) {
+        continue;
       }
-      currentFiles = requestUsageFiles.concat(toolUsageFiles);
+      snapshotFileIds.add(file.file_id);
+      toolFileIds.push(file.file_id);
     }
-  } else if (requestFiles.length) {
-    currentFiles = requestFileOwnerId
-      ? ((await db.updateFilesUsage(requestFiles, undefined, {
-          user: requestFileOwnerId,
-          tenantId: req.user?.tenantId,
-        })) as IMongoFile[])
-      : [];
+  }
+
+  /**
+   * Hydrate the complete candidate set through one owner-scoped, read-only
+   * query. Some discovery queries intentionally omit file text; this snapshot
+   * includes the content fields needed by policy checks. `updateFilesUsage`
+   * both mutates usage and returns hydrated rows, so it cannot be the hydrator:
+   * keep this exact snapshot authoritative for inspection, priming, and the
+   * later usage update to avoid a post-inspection re-read.
+   */
+  const snapshotFileIds = [...requestFileIds, ...toolFileIds];
+  let requestUsageFiles: IMongoFile[] = [];
+  let toolUsageFiles: IMongoFile[] = [];
+  if (requestFileOwnerScope && snapshotFileIds.length > 0) {
+    const hydratedFiles =
+      ((await db.getFiles(
+        {
+          file_id: { $in: snapshotFileIds },
+          user: requestFileOwnerScope.userId,
+          ...(requestFileOwnerScope.tenantId != null && {
+            tenantId: requestFileOwnerScope.tenantId,
+          }),
+        },
+        {},
+        {},
+      )) as IMongoFile[] | null) ?? [];
+    const hydratedFilesById = new Map(
+      hydratedFiles
+        .filter((file) => snapshotFileIds.includes(file.file_id))
+        .map((file) => [file.file_id, file]),
+    );
+    requestUsageFiles = requestFileIds
+      .map((fileId) => hydratedFilesById.get(fileId))
+      .filter((file): file is IMongoFile => file != null);
+    toolUsageFiles = toolFileIds
+      .map((fileId) => hydratedFilesById.get(fileId))
+      .filter((file): file is IMongoFile => file != null);
+  }
+  if (requestFiles.length > 0 || toolFileIds.length > 0) {
+    currentFiles = requestUsageFiles.concat(toolUsageFiles);
   }
 
   if (currentFiles && currentFiles.length) {
@@ -882,6 +1128,30 @@ export async function initializeAgent(
       files: currentFiles,
       endpoint: agent.endpoint ?? '',
       endpointType,
+    });
+  }
+
+  assertModelBoundContent({
+    filters: req.config?.filters,
+    files: currentFiles,
+  });
+
+  /**
+   * Usage accounting is the first file mutation. It runs only after every
+   * hydrated file in the exact snapshot above has passed endpoint filtering
+   * and current content policy checks. Ignore returned rows so priming cannot
+   * observe a different post-inspection snapshot.
+   */
+  if (requestFileOwnerId && requestUsageFiles.length > 0) {
+    await db.updateFilesUsage(requestUsageFiles, undefined, {
+      user: requestFileOwnerId,
+      tenantId: req.user?.tenantId,
+    });
+  }
+  if (requestFileOwnerId && toolUsageFiles.length > 0) {
+    await db.updateFilesUsage(toolUsageFiles, undefined, {
+      user: requestFileOwnerId,
+      tenantId: req.user?.tenantId,
     });
   }
 
@@ -924,85 +1194,7 @@ export async function initializeAgent(
    * go first so their names win on dedup (primes earlier in the list
    * contribute before the same name gets deduped on a later prime).
    */
-  const hasSkillAccess = (params.accessibleSkillIds?.length ?? 0) > 0;
-  const skillAuthoringAvailable = params.skillAuthoringAvailable === true;
-  let manualSkillPrimes: ResolvedManualSkill[] | undefined;
-  let alwaysApplySkillPrimes: ResolvedAlwaysApplySkill[] | undefined;
-  let extraAllowedToolNames: string[] = [];
-  let perSkillExtras: Map<string, string[]> = new Map();
   if (hasSkillAccess) {
-    const [manualPrimesResult, alwaysApplyPrimesResult] = await Promise.all([
-      params.manualSkills?.length && db.getSkillByName
-        ? resolveManualSkills({
-            names: params.manualSkills,
-            getSkillByName: db.getSkillByName,
-            accessibleSkillIds: params.accessibleSkillIds!,
-            userId: req.user?.id,
-            skillStates: params.skillStates,
-            defaultActiveOnShare: params.defaultActiveOnShare,
-          })
-        : Promise.resolve<ResolvedManualSkill[] | undefined>(undefined),
-      db.listAlwaysApplySkills
-        ? resolveAlwaysApplySkills({
-            listAlwaysApplySkills: db.listAlwaysApplySkills,
-            accessibleSkillIds: params.accessibleSkillIds!,
-            userId: req.user?.id,
-            skillStates: params.skillStates,
-            defaultActiveOnShare: params.defaultActiveOnShare,
-          })
-        : Promise.resolve<ResolvedAlwaysApplySkill[] | undefined>(undefined),
-    ]);
-
-    manualSkillPrimes = manualPrimesResult;
-    alwaysApplySkillPrimes = alwaysApplyPrimesResult;
-
-    /**
-     * Cross-list dedup: when a user `$`-invokes a skill that is also
-     * marked `always-apply`, the always-apply copy is dropped here so
-     * the same SKILL.md body isn't primed twice in the same turn.
-     * Manual wins because it sits closer to the user message and
-     * carries explicit intent. Done at the initializer (not just at
-     * splice time in `injectSkillPrimes`) so persisted user-bubble
-     * `alwaysAppliedSkills` pills reflect the post-dedup set and the
-     * tool-union step below doesn't bill allowed-tools to the dropped
-     * always-apply entry.
-     */
-    if (
-      alwaysApplySkillPrimes &&
-      alwaysApplySkillPrimes.length > 0 &&
-      manualSkillPrimes &&
-      manualSkillPrimes.length > 0
-    ) {
-      const manualNames = new Set(manualSkillPrimes.map((p) => p.name));
-      const deduped = alwaysApplySkillPrimes.filter((p) => !manualNames.has(p.name));
-      const removed = alwaysApplySkillPrimes.length - deduped.length;
-      if (removed > 0) {
-        logger.info(
-          `[initializeAgent] Dropped ${removed} always-apply prime(s) already present in the manual list; same-named skills prime only once per turn.`,
-        );
-        alwaysApplySkillPrimes = deduped;
-      }
-    }
-
-    /**
-     * Enforce the combined `MAX_PRIMED_SKILLS_PER_TURN` ceiling up-front
-     * so persisted user-bubble `alwaysAppliedSkills` pills stay in sync
-     * with what actually gets primed. `injectSkillPrimes` re-applies the
-     * cap as defense-in-depth at splice time. Always-apply primes are
-     * truncated first — manual invocation is explicit user intent and
-     * should never be silently dropped.
-     */
-    const manualCount = manualSkillPrimes?.length ?? 0;
-    const alwaysApplyCount = alwaysApplySkillPrimes?.length ?? 0;
-    if (alwaysApplySkillPrimes && manualCount + alwaysApplyCount > MAX_PRIMED_SKILLS_PER_TURN) {
-      const budgetForAlwaysApply = Math.max(0, MAX_PRIMED_SKILLS_PER_TURN - manualCount);
-      const dropped = alwaysApplyCount - budgetForAlwaysApply;
-      logger.warn(
-        `[initializeAgent] Combined primes (${manualCount} manual + ${alwaysApplyCount} always-apply) exceeds MAX_PRIMED_SKILLS_PER_TURN (${MAX_PRIMED_SKILLS_PER_TURN}); truncating ${dropped} always-apply prime(s) so persisted user-message pills stay in sync with what got primed.`,
-      );
-      alwaysApplySkillPrimes = alwaysApplySkillPrimes.slice(0, budgetForAlwaysApply);
-    }
-
     /** Skill `allowed-tools` are legacy-heal candidates too: a raw MCP key
      *  declared before the normalized-key convention would neither dedupe
      *  against the healed agent tools nor match the normalized-keyed tool
@@ -1089,8 +1281,8 @@ export async function initializeAgent(
     }
     if (extraAllowedToolNames.length > 0) {
       logger.warn(
-        `[allowedTools] loadTools threw with skill-added extras [${extraAllowedToolNames.join(', ')}]; retrying without them:`,
-        err instanceof Error ? err.message : err,
+        `[allowedTools] loadTools threw with ${extraAllowedToolNames.length} skill-added extra(s); retrying without them`,
+        { errorName: err instanceof Error ? err.name : 'UnknownError' },
       );
       loadToolsResult = await callLoadTools(baseToolNames);
     } else {
@@ -1102,7 +1294,7 @@ export async function initializeAgent(
        the same as a throw when extras were requested — the agent's own
        tools must still load. */
     logger.warn(
-      `[allowedTools] loadTools returned no result with skill-added extras [${extraAllowedToolNames.join(', ')}]; retrying without them.`,
+      `[allowedTools] loadTools returned no result with ${extraAllowedToolNames.length} skill-added extra(s); retrying without them.`,
     );
     loadToolsResult = await callLoadTools(baseToolNames);
   }
@@ -1118,6 +1310,7 @@ export async function initializeAgent(
     hasDeferredTools,
     mcpToolAliases,
     actionsEnabled,
+    oauthActionToolNames,
     tools: structuredTools,
     primedCodeFiles,
   } = loadToolsResult ?? {
@@ -1132,6 +1325,7 @@ export async function initializeAgent(
     hasDeferredTools: false,
     mcpToolAliases: [],
     actionsEnabled: undefined,
+    oauthActionToolNames: undefined,
     primedCodeFiles: undefined,
   };
 
@@ -1149,17 +1343,8 @@ export async function initializeAgent(
     const loadedNames = new Set((toolDefinitions ?? []).map((d) => d.name));
     const dropped = extraAllowedToolNames.filter((n) => !loadedNames.has(n));
     if (dropped.length > 0) {
-      const sources: string[] = [];
-      for (const [skillName, names] of perSkillExtras) {
-        const droppedFromSkill = names.filter((n) => !loadedNames.has(n));
-        if (droppedFromSkill.length > 0) {
-          sources.push(`"${skillName}" → [${droppedFromSkill.join(', ')}]`);
-        }
-      }
       logger.debug(
-        `[allowedTools] Dropped unrecognized tool names: ${
-          sources.length > 0 ? sources.join('; ') : dropped.join(', ')
-        }`,
+        `[allowedTools] Dropped ${dropped.length} unrecognized tool name(s) from ${perSkillExtras.size} skill(s)`,
       );
     }
   }
@@ -1359,6 +1544,7 @@ export async function initializeAgent(
      *  ephemeral subset: a non-ephemeral name ending in an ephemeral one would
      *  otherwise be misread as ephemeral. */
     const allServerNames = Object.keys(req.config?.mcpConfig ?? {}).map(normalizeServerName);
+    const oauthActionNames = new Set(oauthActionToolNames ?? []);
     const backgroundResult = applyBackgroundToolCalls({
       toolDefinitions,
       toolRegistry,
@@ -1368,8 +1554,13 @@ export async function initializeAgent(
        *  placeholders) never get the param: their connection dies at request
        *  end, so the executor would only downgrade the call to foreground.
        *  Unknown servers stay eligible — the executor's per-instance tag is
-       *  the fail-safe for those. */
+       *  the fail-safe for those. OAuth-backed action tools are excluded too:
+       *  a detached call can block on an interactive login prompt the user
+       *  never sees. */
       excludeTool: (toolName) => {
+        if (oauthActionNames.has(toolName)) {
+          return true;
+        }
         const [, serverName] = splitMCPToolKey(toolName, allServerNames);
         return serverName != null && ephemeralServerNames.has(serverName);
       },
@@ -1469,6 +1660,7 @@ export async function initializeAgent(
       skillStates: params.skillStates,
       defaultActiveOnShare: params.defaultActiveOnShare,
       maxCatalogSkills: getMaxCatalogSkills(req),
+      resolvedCatalog: resolvedSkillCatalog,
     });
     toolDefinitions = skillResult.toolDefinitions;
     skillCount = skillResult.skillCount;

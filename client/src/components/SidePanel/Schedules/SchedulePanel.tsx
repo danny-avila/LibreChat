@@ -5,6 +5,7 @@ import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { PanelContent, PanelFooter } from '~/components/ui';
 import { useChatProjectNames } from './useScheduleProjects';
 import ScheduleCardSkeleton from './ScheduleCardSkeleton';
+import ScheduleEmptyState from './ScheduleEmptyState';
 import { useSchedulesQuery } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
 import ScheduleDialog from './ScheduleDialog';
@@ -32,22 +33,9 @@ export default function SchedulePanel() {
   let panelContent: ReactNode;
 
   if (isError) {
-    panelContent = (
-      <div className="flex min-h-40 flex-col items-center justify-center gap-2 p-4">
-        <p className="text-center text-sm text-text-secondary">
-          {localize('com_ui_schedules_error')}
-        </p>
-        <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
-          {localize('com_ui_retry')}
-        </Button>
-      </div>
-    );
+    panelContent = <ScheduleEmptyState isError onRetry={() => refetch()} />;
   } else if (schedules.length === 0) {
-    panelContent = (
-      <div className="rounded-lg border border-dashed border-border-light p-4 text-center">
-        <p className="text-sm text-text-secondary">{localize('com_ui_schedules_empty')}</p>
-      </div>
-    );
+    panelContent = <ScheduleEmptyState canCreate={hasCreateAccess && !atLimit} />;
   } else {
     panelContent = (
       <div className="space-y-2" role="list" aria-label={localize('com_ui_schedules')}>

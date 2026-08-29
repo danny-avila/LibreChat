@@ -829,9 +829,9 @@ describe('MCPConnectionFactory', () => {
         ephemeralConnection: false,
       });
       expect(mockLogger.debug).toHaveBeenCalledWith(
-        expect.stringContaining('No existing tokens found or error loading tokens'),
-        expect.any(Error),
+        '[MCP][User: user123] No existing tokens found or token loading failed',
       );
+      expect(JSON.stringify(mockLogger.debug.mock.calls)).not.toContain('Token fetch failed');
     });
   });
 
@@ -1247,9 +1247,9 @@ describe('MCPConnectionFactory', () => {
       expect(oauthOptions.oauthStart).toHaveBeenCalledWith('https://auth.example.com');
       // The background monitor error should be logged, not silently swallowed
       expect(mockLogger.debug).toHaveBeenCalledWith(
-        expect.stringContaining('OAuth flow monitor ended'),
-        expect.any(Error),
+        '[MCP][User: user123] OAuth flow monitor ended',
       );
+      expect(JSON.stringify(mockLogger.debug.mock.calls)).not.toContain('mcp_oauth flow timed out');
     });
 
     it('should call initFlow before createFlow in blocking OAuth path (non-returnOnOAuth)', async () => {

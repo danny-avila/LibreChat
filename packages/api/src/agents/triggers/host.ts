@@ -9,6 +9,11 @@ import type {
 } from './envelope';
 import type { AgentTriggerDispatchContext } from './dispatch';
 import type { AgentRunPrincipal } from '../envelope';
+import {
+  EVENT_ACTOR_DETACHED_COMPLETION_SOURCE,
+  EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
+  parseAgentEventActorDetachedCompletion,
+} from './detachedAction';
 import { dispatchAgentTrigger } from './dispatch';
 
 const DEFAULT_FIRE_TIMEOUT_MS = 30_000;
@@ -119,7 +124,7 @@ export type AgentTriggerExecutionResult =
 
 export interface AgentTriggerExecutionHostDeps {
   /** Trusted root URL for this LibreChat server. */
-  getBaseUrl: () => string;
+  getBaseUrl: (options?: { localOnly?: boolean }) => string;
   /** Mint a short-lived token for the envelope's already-authenticated principal. */
   mintToken: (principal: AgentRunPrincipal, envelope: AgentTriggerEnvelope) => MaybePromise<string>;
   /** Optional user-timezone resolver for dynamic date variables in a new run. */
@@ -505,7 +510,11 @@ function canReleasePreparedResult(error: AgentTriggerExecutionError): boolean {
   if (error.code === 'START_ABORTED' || error.status == null) {
     return true;
   }
-  if (error.code === 'PARENT_NOT_READY' || error.code === 'PARENT_STATE_UNAVAILABLE') {
+  if (
+    error.code === 'PARENT_NOT_READY' ||
+    error.code === 'PARENT_STATE_UNAVAILABLE' ||
+    error.code === 'EVENT_ACTOR_NOT_READY'
+  ) {
     return true;
   }
   return error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 409;
@@ -530,6 +539,13 @@ async function startRun(
   timeoutMs: number,
 ): Promise<AgentTriggerContinueResult | AgentTriggerFireResult> {
   const mode = envelope.mode;
+  const detachedCompletion =
+    mode === 'continue' &&
+    envelope.event.type === EVENT_ACTOR_DETACHED_COMPLETION_TYPE &&
+    envelope.event.source.type === 'internal' &&
+    envelope.event.source.id === EVENT_ACTOR_DETACHED_COMPLETION_SOURCE
+      ? parseAgentEventActorDetachedCompletion(envelope.event.payload)
+      : undefined;
   const scope = abortScope(context.signal, timeoutMs);
   let preparation: AgentTriggerContinuePreparation | undefined;
   try {
@@ -554,7 +570,8 @@ async function startRun(
         conversationId: envelope.target.conversationId,
       };
     }
-    const input = preparation?.status === 'ready' ? preparation.input : envelope.input;
+    const readyPreparation = preparation?.status === 'ready' ? preparation : undefined;
+    const input = readyPreparation?.input ?? envelope.input;
     const parentMessageId = resolveParentMessageId(preparation, envelope);
     const [token, resolvedTimezone, baseUrl] = await Promise.all([
       setupValue(
@@ -569,7 +586,12 @@ async function startRun(
         scope,
         context.signal,
       ),
-      setupValue(() => deps.getBaseUrl(), mode, scope, context.signal),
+      setupValue(
+        () => deps.getBaseUrl(detachedCompletion == null ? undefined : { localOnly: true }),
+        mode,
+        scope,
+        context.signal,
+      ),
     ]).catch((error: unknown) => {
       scope.abort();
       throw error;
@@ -590,6 +612,12 @@ async function startRun(
           'User-Agent': TRIGGER_USER_AGENT,
           'x-lc-agent-trigger': '1',
           'x-request-id': context.idempotencyKey,
+          ...(envelope.mode === 'continue' && envelope.target.bindingId != null
+            ? {
+                'x-lc-agent-event-binding': envelope.target.bindingId,
+                'x-lc-agent-event-source-key': envelope.target.sourceKeyId!,
+              }
+            : {}),
           [GENERATION_PROTOCOL_HEADER]: '2',
         },
         body: JSON.stringify({
@@ -604,6 +632,26 @@ async function startRun(
           isRegenerate: false,
           clientRequestId: context.idempotencyKey,
           generationProtocolVersion: 2,
+          ...(envelope.mode === 'continue' &&
+            envelope.target.bindingId != null && {
+              agentEventDelivery: {
+                deliveryKey: context.idempotencyKey,
+                /** Identity only, matching the `fire` body: the actor uses this
+                 * to bind an invocation, never to build the turn's prompt. The
+                 * source payload is unbounded and would push large deliveries
+                 * past the chat route's body limit. */
+                event: {
+                  id: envelope.event.id,
+                  type: envelope.event.type,
+                  occurredAt: envelope.event.occurredAt,
+                  source: envelope.event.source,
+                },
+                ...(envelope.expectedAction != null && {
+                  expectedAction: envelope.expectedAction,
+                }),
+                ...(detachedCompletion == null ? {} : { internalCompletion: detachedCompletion }),
+              },
+            }),
           ...(envelope.mode === 'fire' && {
             agentTrigger: {
               version: envelope.version,
@@ -666,18 +714,15 @@ async function startRun(
     if (!response.ok) {
       const message =
         errorMessage(payload) ?? (boundedBody.text.slice(0, 300) || 'request rejected');
+      const deferredContinue =
+        mode === 'continue' &&
+        response.status === 409 &&
+        ['PARENT_NOT_READY', 'EVENT_ACTOR_NOT_READY'].includes(errorCode(payload) ?? '');
       throw executionError(`Agent trigger ${mode} was rejected (${response.status}): ${message}`, {
         mode,
         certainty: 'definite',
-        retryable:
-          isRetryableStatus(response.status) ||
-          (mode === 'continue' &&
-            response.status === 409 &&
-            errorCode(payload) === 'PARENT_NOT_READY'),
-        deferWithoutAttempt:
-          mode === 'continue' &&
-          response.status === 409 &&
-          errorCode(payload) === 'PARENT_NOT_READY',
+        retryable: isRetryableStatus(response.status) || deferredContinue,
+        deferWithoutAttempt: deferredContinue,
         code: errorCode(payload) ?? (mode === 'fire' ? 'FIRE_REJECTED' : 'CONTINUE_REJECTED'),
         status: response.status,
         ...(response.headers.get('retry-after') != null && {

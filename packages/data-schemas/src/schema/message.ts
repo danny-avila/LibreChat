@@ -63,6 +63,27 @@ const messageSchema: Schema<IMessage> = new Schema(
       required: true,
       default: false,
     },
+    isUserSubmitted: {
+      type: Boolean,
+    },
+    userSubmittedPaths: {
+      type: [String],
+      default: undefined,
+    },
+    userSubmittedMessageFieldPaths: {
+      type: [
+        {
+          _id: false,
+          path: { type: String, required: true },
+          field: {
+            type: String,
+            enum: ['answer', 'decision_response', 'decision_reason'],
+            required: true,
+          },
+        },
+      ],
+      default: undefined,
+    },
     isTemporary: {
       type: Boolean,
       default: false,
@@ -134,6 +155,30 @@ const messageSchema: Schema<IMessage> = new Schema(
       select: false,
       default: undefined,
     },
+    subagentActivityProjection: {
+      type: {
+        taskId: { type: String, required: true },
+        version: { type: Number, enum: [1], required: true },
+        activityJson: { type: String, required: true },
+        truncated: { type: Boolean, required: true },
+      },
+      _id: false,
+      select: false,
+      default: undefined,
+    },
+    /** Bounded, display-safe identity for an event-authored child turn. */
+    subagentTriggerProjection: {
+      type: {
+        version: { type: Number, enum: [1], required: true },
+        eventType: { type: String, required: true },
+        sourceType: { type: String, required: true },
+        occurredAt: { type: Date, required: true },
+        expectedActionToolName: { type: String },
+      },
+      _id: false,
+      select: false,
+      default: undefined,
+    },
     /** Durable, server-only marker used to make detached retries at-most-once. */
     subagentTask: {
       type: {
@@ -152,6 +197,33 @@ const messageSchema: Schema<IMessage> = new Schema(
             claimedAt: { type: Date, required: true },
           },
           _id: false,
+          default: undefined,
+        },
+        controlReceipts: {
+          type: [
+            {
+              invocationId: { type: String, required: true },
+              fingerprint: { type: String, required: true },
+              controlId: { type: String },
+              action: {
+                type: String,
+                enum: ['steer', 'queue', 'interrupt', 'cancel', 'cancel_message'],
+                required: true,
+              },
+              status: {
+                type: String,
+                enum: ['reserved', 'accepted', 'applied', 'rejected', 'failed'],
+                required: true,
+              },
+              createdAt: { type: Date, required: true },
+              updatedAt: { type: Date, required: true },
+              boundary: { type: String, enum: ['preempt', 'tool', 'turn'] },
+              reason: { type: String },
+              message: { type: String },
+              messageTruncated: { type: Boolean },
+              _id: false,
+            },
+          ],
           default: undefined,
         },
       },
@@ -252,6 +324,16 @@ messageSchema.index({
  * the sort back into memory for them.
  */
 messageSchema.index({ conversationId: 1, user: 1, createdAt: 1, _id: 1 });
+
+/**
+ * Serves the batched newest-task read for child threads. `user` is an equality
+ * prefix and `conversationId` is the partition key, so Mongo/DocumentDB can
+ * stream each partition newest-first without materializing an unbounded sort.
+ */
+messageSchema.index(
+  { user: 1, conversationId: 1, createdAt: -1, _id: -1 },
+  { name: 'subagent_thread_latest_message' },
+);
 
 /** Bounds parent-run completion snapshots without scanning a user's message history. */
 messageSchema.index(

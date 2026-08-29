@@ -90,8 +90,8 @@ async function userCanUseMCPServers(user, req) {
       permissions: [Permissions.USE],
       getRoleByName: db.getRoleByName,
     });
-  } catch (error) {
-    logger.error(`[MCP][User: ${user.id}] Failed MCP permission check`, error);
+  } catch {
+    logger.error(`[MCP][User: ${user.id}] Failed MCP permission check`);
     return false;
   }
 }
@@ -147,11 +147,8 @@ async function resolveConfigServers(req) {
     const registry = getMCPServersRegistry();
     const appConfig = await getAppConfigForRequest(req);
     return await registry.ensureConfigServers(appConfig?.mcpConfig || {});
-  } catch (error) {
-    logger.warn(
-      '[resolveConfigServers] Failed to resolve config servers, degrading to empty:',
-      error,
-    );
+  } catch {
+    logger.warn('[resolveConfigServers] Failed to resolve config servers; degrading to empty');
     return {};
   }
 }
@@ -460,11 +457,8 @@ async function resolveAllMcpConfigs(userId, user) {
   let configServers = {};
   try {
     configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
-  } catch (error) {
-    logger.warn(
-      '[resolveAllMcpConfigs] Config server resolution failed, continuing without:',
-      error,
-    );
+  } catch {
+    logger.warn('[resolveAllMcpConfigs] Config server resolution failed; continuing without');
   }
   if (user?.role) {
     return await registry.getAllServerConfigs(userId, configServers, user.role);
@@ -705,9 +699,10 @@ async function reconnectServer({
   streamId = null,
   jobCreatedAt,
 }) {
-  logger.debug(
-    `[MCP][reconnectServer] serverName: ${serverName}, user: ${user?.id}, hasUserMCPAuthMap: ${!!userMCPAuthMap}`,
-  );
+  logger.debug('[MCP][reconnectServer] Starting reconnect', {
+    userId: user?.id,
+    hasUserMCPAuthMap: Boolean(userMCPAuthMap),
+  });
 
   // Request-scoped servers reconnect on every message by design; throttling them
   // would stub out healthy tools for messages sent within the throttle window.
@@ -717,7 +712,7 @@ async function reconnectServer({
     const now = Date.now();
     const lastAttempt = lastReconnectAttempts.get(throttleKey) ?? 0;
     if (now - lastAttempt < RECONNECT_THROTTLE_MS) {
-      logger.debug(`[MCP][reconnectServer] Throttled reconnect for ${serverName}`);
+      logger.debug('[MCP][reconnectServer] Throttled reconnect');
       return null;
     }
     lastReconnectAttempts.set(throttleKey, now);
@@ -832,7 +827,7 @@ async function createMCPTools({
       allowedAddresses,
     });
     if (!isDomainAllowed) {
-      logger.warn(`[MCP][${serverName}] Domain not allowed, skipping all tools`);
+      logger.warn('[MCP] Domain not allowed; skipping all server tools');
       return [];
     }
   }
@@ -852,11 +847,11 @@ async function createMCPTools({
     jobCreatedAt,
   });
   if (result === null) {
-    logger.debug(`[MCP][${serverName}] Reconnect throttled, skipping tool creation.`);
+    logger.debug('[MCP] Reconnect throttled; skipping tool creation');
     return [];
   }
   if (!result || !result.tools) {
-    logger.warn(`[MCP][${serverName}] Failed to reinitialize MCP server.`);
+    logger.warn('[MCP] Failed to reinitialize server');
     return [];
   }
 
@@ -988,7 +983,7 @@ async function createMCPTool({
       allowedAddresses,
     });
     if (!isDomainAllowed) {
-      logger.warn(`[MCP][${serverName}] Domain no longer allowed, skipping tool: ${toolName}`);
+      logger.warn('[MCP] Domain no longer allowed; skipping tool creation');
       return undefined;
     }
   }
@@ -1040,15 +1035,11 @@ async function createMCPTool({
   if (!toolEntry) {
     const cachedAt = useMissingToolCache ? missingToolCache.get(toolKey) : undefined;
     if (cachedAt && Date.now() - cachedAt < MISSING_TOOL_TTL_MS) {
-      logger.debug(
-        `[MCP][${serverName}][${toolName}] Tool in negative cache, returning unavailable stub.`,
-      );
+      logger.debug('[MCP] Tool is in negative cache; returning unavailable stub');
       return createUnavailableToolStub(toolName, serverName);
     }
 
-    logger.warn(
-      `[MCP][${serverName}][${toolName}] Requested tool not found in available tools, re-initializing MCP server.`,
-    );
+    logger.warn('[MCP] Requested tool not found in available tools; reinitializing server');
     const result = await reconnectServer({
       res,
       user,

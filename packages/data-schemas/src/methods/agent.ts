@@ -6,7 +6,7 @@ import {
   actionDelimiter,
   isActionTool,
 } from 'librechat-data-provider';
-import type { FilterQuery, Model, PipelineStage, Types } from 'mongoose';
+import type { FilterQuery, Model, PipelineStage, ProjectionType, Types } from 'mongoose';
 import type { AgentToolResources } from 'librechat-data-provider';
 import type { IAgent, IAclEntry } from '~/types';
 import { filterExistingSkillIds } from './skill';
@@ -440,21 +440,18 @@ export function createAgentMethods(
   mongoose: typeof import('mongoose'),
   deps: AgentDeps,
 ): {
-  getAgent: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent | null>;
+  getAgent: (
+    searchParameter: FilterQuery<IAgent>,
+    projection?: ProjectionType<IAgent>,
+  ) => Promise<IAgent | null>;
   getAgentVersions: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent['versions'] | null>;
   getAgentWithVersionCount: (
     searchParameter: FilterQuery<IAgent>,
   ) => Promise<(IAgent & { version: number }) | null>;
   getAgents: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent[]>;
   createAgent: (agentData: Record<string, unknown>) => Promise<IAgent>;
-  hasAgentWithMCPServerName: ({
-    agentIds,
-    serverName,
-  }: {
-    agentIds: Types.ObjectId[];
-    serverName: string;
-  }) => Promise<boolean>;
-  getMCPServerNamesByAgentIds: (agentIds: Types.ObjectId[]) => Promise<string[]>;
+  getAgentIdsByMCPServerName: (serverName: string) => Promise<Types.ObjectId[]>;
+  getAgentsWithMCPServerNames: () => Promise<Array<Pick<IAgent, '_id' | 'mcpServerNames'>>>;
   updateAgent: (
     searchParameter: FilterQuery<IAgent>,
     updateData: Record<string, unknown>,
@@ -562,9 +559,12 @@ export function createAgentMethods(
   /**
    * Get an agent document based on the provided search parameter.
    */
-  async function getAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
+  async function getAgent(
+    searchParameter: FilterQuery<IAgent>,
+    projection?: ProjectionType<IAgent>,
+  ): Promise<IAgent | null> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    return await Agent.findOne(searchParameter).lean<IAgent>();
+    return await Agent.findOne(searchParameter, projection).lean<IAgent>();
   }
 
   /**
@@ -609,48 +609,26 @@ export function createAgentMethods(
     return await Agent.find(searchParameter).lean<IAgent[]>();
   }
 
-  async function hasAgentWithMCPServerName({
-    agentIds,
-    serverName,
-  }: {
-    agentIds: Types.ObjectId[];
-    serverName: string;
-  }): Promise<boolean> {
-    if (agentIds.length === 0) {
-      return false;
-    }
-
+  /** Returns the ids of every agent referencing `serverName`, the candidate set
+   *  for agent-mediated MCP access checks. Index-covered by `mcpServerNames`. */
+  async function getAgentIdsByMCPServerName(serverName: string): Promise<Types.ObjectId[]> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    const agent = await Agent.exists({
-      _id: { $in: agentIds },
-      mcpServerNames: serverName,
-    });
-
-    return agent !== null;
+    const agents = await Agent.find({ mcpServerNames: serverName }, { _id: 1 }).lean<
+      Array<Pick<IAgent, '_id'>>
+    >();
+    return agents.map((agent) => agent._id);
   }
 
-  async function getMCPServerNamesByAgentIds(agentIds: Types.ObjectId[]): Promise<string[]> {
-    if (agentIds.length === 0) {
-      return [];
-    }
-
+  /** Returns every agent with a non-empty `mcpServerNames`, so access
+   *  calculations can start from the (typically small) set of agents that
+   *  actually reference MCP servers instead of every accessible agent. */
+  async function getAgentsWithMCPServerNames(): Promise<
+    Array<Pick<IAgent, '_id' | 'mcpServerNames'>>
+  > {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    const agents = await Agent.find(
-      {
-        _id: { $in: agentIds },
-        mcpServerNames: { $exists: true, $not: { $size: 0 } },
-      },
-      { mcpServerNames: 1 },
-    ).lean<Array<Pick<IAgent, 'mcpServerNames'>>>();
-
-    const serverNames = new Set<string>();
-    for (const agent of agents) {
-      for (const serverName of agent.mcpServerNames ?? []) {
-        serverNames.add(serverName);
-      }
-    }
-
-    return Array.from(serverNames);
+    return await Agent.find({ mcpServerNames: { $type: 'string' } }, { mcpServerNames: 1 }).lean<
+      Array<Pick<IAgent, '_id' | 'mcpServerNames'>>
+    >();
   }
 
   /**
@@ -1264,8 +1242,8 @@ export function createAgentMethods(
     getAgentWithVersionCount,
     getAgents,
     createAgent,
-    hasAgentWithMCPServerName,
-    getMCPServerNamesByAgentIds,
+    getAgentIdsByMCPServerName,
+    getAgentsWithMCPServerNames,
     updateAgent,
     deleteAgent,
     deleteUserAgents,

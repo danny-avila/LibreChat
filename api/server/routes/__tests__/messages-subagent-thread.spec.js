@@ -6,11 +6,18 @@ const mockIsSubagentThreadWriteBlocked = jest.fn();
 jest.mock('@librechat/agents', () => ({ sleep: jest.fn() }));
 
 jest.mock('@librechat/api', () => ({
+  createContentFilter: jest.fn(() => (_req, _res, next) => next()),
   unescapeLaTeX: jest.fn((value) => value),
   countTokens: jest.fn().mockResolvedValue(1),
   sendFeedbackScore: jest.fn().mockResolvedValue(undefined),
   traceIdForMessage: jest.fn((messageId) => `trace-${messageId}`),
   mergeQuotedTextForCount: jest.fn((text) => text),
+  assertStoredMessageMutationAllowed: jest.fn(),
+  assertChatMutationAllowed: jest.fn(),
+  assertStoredMessageBranchAllowed: jest.fn(),
+  mergeUserSubmittedPaths: (...lists) => [...new Set(lists.flat().filter(Boolean))],
+  mergeUserSubmittedMessageFieldPaths: (...lists) => lists.flat().filter(Boolean),
+  isContentFilterError: jest.fn(() => false),
   CHILD_THREAD_READ_ONLY_ERROR: 'This subagent thread is view-only.',
   isSubagentThreadWriteBlocked: (...args) => mockIsSubagentThreadWriteBlocked(...args),
   requireFeedbackEnabled: (req, res, next) => next(),

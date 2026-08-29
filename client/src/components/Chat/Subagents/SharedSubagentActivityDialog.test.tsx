@@ -31,6 +31,9 @@ jest.mock('~/hooks/MCP', () => ({ useMCPServerNames: () => [] }));
 
 jest.mock('./SubagentActivity', () => ({
   __esModule: true,
+  SubagentActivityScrollSurface: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="shared-scroll-surface">{children}</div>
+  ),
   default: ({
     activity,
   }: {
@@ -40,6 +43,30 @@ jest.mock('./SubagentActivity', () => ({
       <span>{activity.title}</span>
       {activity.items.map((item, index) => (
         <span key={index}>{item.text ?? item.type}</span>
+      ))}
+    </div>
+  ),
+}));
+
+jest.mock('./SubagentConversation', () => ({
+  __esModule: true,
+  default: ({
+    turns,
+  }: {
+    turns: Array<{
+      taskId: string;
+      trigger: { summary: string };
+      activity: { items: Array<{ type: string; text?: string }> };
+    }>;
+  }) => (
+    <div data-testid="subagent-conversation">
+      {turns.map((turn) => (
+        <div key={turn.taskId}>
+          {turn.trigger.summary}
+          {turn.activity.items.map((item, index) => (
+            <span key={index}>{item.text ?? item.type}</span>
+          ))}
+        </div>
       ))}
     </div>
   ),
@@ -129,5 +156,21 @@ describe('SharedSubagentActivityDialog', () => {
     expect(screen.getByRole('button', { name: 'Agent activity' })).toBeDisabled();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(mockUseSubagentThreadQuery).not.toHaveBeenCalled();
+  });
+
+  it('keeps a shared detached card with only invisible reservations noninteractive', () => {
+    renderSharedCall({
+      output: detachedOutput,
+      detached: true,
+      persistedContent: [
+        {
+          type: ContentTypes.ACTIVITY_LABEL,
+          activity_label: '',
+        } as TMessageContentParts,
+      ],
+    });
+
+    expect(screen.getByRole('button', { name: 'Agent activity' })).toBeDisabled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

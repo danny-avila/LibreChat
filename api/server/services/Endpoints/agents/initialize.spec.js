@@ -49,6 +49,7 @@ const mockArtifactToolEndCallback = jest.fn();
 jest.mock('~/server/controllers/agents/callbacks', () => ({
   createToolEndCallback: jest.fn(() => mockArtifactToolEndCallback),
   createAttachmentEmitter: jest.fn(() => jest.fn()),
+  createPtcProgressEmitter: jest.fn(() => jest.fn()),
   createBackgroundCodeResultHandler: jest.fn(() => jest.fn()),
   getDefaultHandlers: jest.fn((opts) => {
     capturedDefaultHandlerOptions = opts;
@@ -206,6 +207,7 @@ describe('initializeClient — processAgent ACL gate', () => {
   it('threads the owning job epoch into resumable event handlers', async () => {
     const {
       createAttachmentEmitter,
+      createPtcProgressEmitter,
       createToolEndCallback,
     } = require('~/server/controllers/agents/callbacks');
     mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
@@ -237,6 +239,13 @@ describe('initializeClient — processAgent ACL gate', () => {
       streamId: 'conv_1',
       jobCreatedAt: 1234,
     });
+    /** The PTC trace emitter is generation-fenced like every other resumable
+     *  emitter; a stale epoch would leak one run's inner calls into the next. */
+    expect(createPtcProgressEmitter).toHaveBeenCalledWith({
+      res: {},
+      streamId: 'conv_1',
+      jobCreatedAt: 1234,
+    });
 
     mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [], configurable: {} });
     await capturedToolExecuteOptions.loadTools([], PRIMARY_ID);
@@ -246,6 +255,46 @@ describe('initializeClient — processAgent ACL gate', () => {
         jobCreatedAt: 1234,
       }),
     );
+  });
+
+  it('publishes event-root activity through the owning child task stream', async () => {
+    const subagentThreadTaskStore = require('./subagentThreadStore');
+    const publishTaskActivity = jest
+      .spyOn(subagentThreadTaskStore, 'publishTaskActivity')
+      .mockResolvedValueOnce(undefined);
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const req = makeReq();
+    req._resumableStreamId = 'child-conversation';
+    req.body.conversationId = 'child-conversation';
+    req._agentEventTaskId = 'event-task';
+    req._agentEventBindingParentConversationId = 'parent-conversation';
+    req._agentEventBindingParentAgentId = 'parent-agent';
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(capturedDefaultHandlerOptions.eventChildActivity).toEqual(
+      expect.objectContaining({
+        runId: 'child-conversation',
+        parentRunId: 'parent-conversation',
+        subagentRunId: 'event-task',
+        subagentType: PRIMARY_ID,
+        subagentAgentId: PRIMARY_ID,
+        parentAgentId: 'parent-agent',
+      }),
+    );
+    await capturedDefaultHandlerOptions.eventChildActivity.publish({
+      phase: 'writing',
+      label: 'Drafting response',
+    });
+    expect(publishTaskActivity).toHaveBeenCalledWith('child-conversation', 'event-task', {
+      phase: 'writing',
+      label: 'Drafting response',
+    });
   });
 
   it('propagates an expected-MCP-tools failure from the runtime tool loader', async () => {
@@ -767,6 +816,33 @@ describe('initializeClient — subagent loading', () => {
     );
   });
 
+  it('retains only root-attributed model-invoked Skills for durable replay', async () => {
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig({}));
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    const rootSkill = {
+      id: 'root-skill',
+      name: 'root-skill',
+      version: 1,
+      contentDigest: 'root-digest',
+    };
+    const childSkill = {
+      id: 'child-skill',
+      name: 'child-skill',
+      version: 1,
+      contentDigest: 'child-digest',
+    };
+
+    capturedToolExecuteOptions.onSkillResolved(childSkill, { agentId: SUBAGENT_ID });
+    capturedToolExecuteOptions.onSkillResolved(rootSkill, { agentId: PRIMARY_ID });
+
+    expect([...agentClientArgs.invokedSkillIdentities.values()]).toEqual([rootSkill]);
+  });
+
   it('keeps an existing detached task controllable after subagent config is disabled', async () => {
     mockInitializeAgent.mockResolvedValue(
       makePrimaryConfig({
@@ -937,6 +1013,7 @@ describe('initializeClient — subagent loading', () => {
       author: new mongoose.Types.ObjectId(),
       tools: ['web'],
       stateful_code_environment: 'agent-user',
+      memory_scope: 'agent',
     });
     await grantView(subAgent);
 
@@ -970,6 +1047,8 @@ describe('initializeClient — subagent loading', () => {
         id: SUBAGENT_ID,
         configId: expect.any(String),
         statefulCodeEnvironment: 'agent-user',
+        memory_scope: 'agent',
+        memoryToolsRegistered: false,
       }),
     );
     expect(agentClientArgs.agent.lazySubagentConfigs[0]).not.toHaveProperty('tools');
@@ -990,6 +1069,103 @@ describe('initializeClient — subagent loading', () => {
      *  graph would treat them as a parallel/handoff node. */
     expect(agentClientArgs.agentConfigs).toBeDefined();
     expect(agentClientArgs.agentConfigs.has(SUBAGENT_ID)).toBe(false);
+  });
+
+  it('includes current always-apply Skill revisions in lazy descriptor metadata', async () => {
+    const secondSubagentId = 'agent_subagent_skill_2';
+    const { skill } = await createSkill({
+      name: 'lazy-specialist',
+      description: 'Prime a lazy specialist.',
+      body: '# Lazy specialist v1\n',
+      alwaysApply: true,
+      author: testUser._id,
+      authorName: testUser.name,
+    });
+    await AclEntry.create({
+      principalType: PrincipalType.USER,
+      principalId: testUser._id,
+      principalModel: PrincipalModel.USER,
+      resourceType: ResourceType.SKILL,
+      resourceId: skill._id,
+      permBits: PermissionBits.VIEW,
+      grantedBy: testUser._id,
+    });
+    const subAgent = await createAgent({
+      id: SUBAGENT_ID,
+      name: 'Skill Subagent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: testUser._id,
+      tools: [],
+      skills_enabled: true,
+      skills: [skill._id.toString()],
+    });
+    await grantView(subAgent);
+    const secondSubAgent = await createAgent({
+      id: secondSubagentId,
+      name: 'Second Skill Subagent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: testUser._id,
+      tools: [],
+      skills_enabled: true,
+      skills: [skill._id.toString()],
+    });
+    await grantView(secondSubAgent);
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: {
+          enabled: true,
+          allowSelf: true,
+          agent_ids: [SUBAGENT_ID, secondSubagentId],
+        },
+      }),
+    );
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('skills');
+    const listAlwaysApplySkillsSpy = jest.spyOn(getSkillDbMethods(), 'listAlwaysApplySkills');
+
+    try {
+      await initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      });
+
+      expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+      expect(listAlwaysApplySkillsSpy).not.toHaveBeenCalled();
+      for (const descriptor of agentClientArgs.agent.lazySubagentConfigs) {
+        expect(descriptor.alwaysApplySkillPrimes).toEqual([]);
+      }
+
+      const eventReq = makeSubagentReq();
+      eventReq.config.endpoints.agents.capabilities.push('skills');
+      eventReq._isAgentTrigger = true;
+      eventReq._agentEventBindingParentConversationId = 'parent-conversation';
+      await initializeClient({
+        req: eventReq,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      });
+
+      expect(mockInitializeAgent).toHaveBeenCalledTimes(2);
+      expect(listAlwaysApplySkillsSpy).toHaveBeenCalledTimes(1);
+      expect(agentClientArgs.agent.lazySubagentConfigs).toHaveLength(2);
+      for (const descriptor of agentClientArgs.agent.lazySubagentConfigs) {
+        expect(descriptor.alwaysApplySkillPrimes).toEqual([
+          expect.objectContaining({
+            _id: skill._id,
+            name: 'lazy-specialist',
+            version: 1,
+            body: '# Lazy specialist v1\n',
+          }),
+        ]);
+      }
+    } finally {
+      listAlwaysApplySkillsSpy.mockRestore();
+    }
   });
 
   it('rejects a disallowed lazy subagent scope before exposing it for prewarm', async () => {

@@ -51,6 +51,17 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
     };
   }
 
+  describe('toPendingSteer', () => {
+    test('keeps quotes in the client-safe projection while dropping userId', () => {
+      const projected = toPendingSteer({
+        ...buildSteer('with context'),
+        quotes: ['the excerpt'],
+      });
+      expect(projected.quotes).toEqual(['the excerpt']);
+      expect(projected).not.toHaveProperty('userId');
+    });
+  });
+
   describe('enqueue', () => {
     test('appends to a running job and returns the queue depth', async () => {
       const streamId = 'steer-enqueue';
@@ -286,6 +297,103 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
     });
   });
 
+  describe('execution-bound quote capability', () => {
+    function pauseAction(streamId: string) {
+      const payload = buildToolApprovalPayload([
+        { name: 'shell', arguments: { command: 'ls' }, tool_call_id: 'call_qc' },
+      ]);
+      return buildPendingAction(payload, {
+        streamId,
+        conversationId: streamId,
+        runId: 'run-qc',
+        responseMessageId: 'msg-qc',
+      });
+    }
+
+    test('a capable resume re-binds the marker to its own execution', async () => {
+      const streamId = 'steer-quote-capability-resume';
+      const job = await manager.createJob(streamId, 'user-1', undefined, {
+        initialMetadata: { steerQuotesCapable: true },
+      });
+      expect(await manager.approvals.pause(streamId, pauseAction(streamId))).toBe(true);
+
+      expect(
+        await manager.approvals.resolve(
+          streamId,
+          undefined,
+          { steerQuotesCapable: true, providerExecutionId: 'resumed-exec', providerDrained: true },
+          job.createdAt,
+        ),
+      ).toBe(true);
+
+      const resumed = await manager.getJob(streamId);
+      expect(resumed?.metadata.steerQuotesExecutionId).toBe('resumed-exec');
+      const depth = await manager.steering.enqueue(streamId, {
+        ...buildSteer('quoted after resume'),
+        quotes: ['kept excerpt'],
+      });
+      expect(depth).toBe(1);
+      const [queued] = await manager.steering.peek(streamId);
+      expect(queued.quotes).toEqual(['kept excerpt']);
+    });
+
+    test('a legacy resume (no assertion) invalidates the previous marker atomically', async () => {
+      const streamId = 'steer-quote-capability-legacy-resume';
+      const job = await manager.createJob(streamId, 'user-1', undefined, {
+        initialMetadata: { steerQuotesCapable: true },
+      });
+      expect(await manager.approvals.pause(streamId, pauseAction(streamId))).toBe(true);
+
+      // A pre-quotes replica's patch rewrites the execution id but cannot
+      // know the marker field — exactly the omit-not-clear shape.
+      expect(
+        await manager.approvals.resolve(
+          streamId,
+          undefined,
+          { providerExecutionId: 'legacy-exec', providerDrained: true },
+          job.createdAt,
+        ),
+      ).toBe(true);
+
+      await manager.steering.enqueue(streamId, {
+        ...buildSteer('quoted after legacy resume'),
+        quotes: ['dropped excerpt'],
+      });
+      const [queued] = await manager.steering.peek(streamId);
+      expect(queued).not.toHaveProperty('quotes');
+    });
+  });
+
+  describe('recovered-steer payload proof', () => {
+    const { buildRecoveredSteerPayload, recoveredSteerPayloadMatches } =
+      jest.requireActual<typeof import('~/stream/SteerRecovery')>('~/stream/SteerRecovery');
+
+    test('binds normalized quotes into the proof (empty when none)', () => {
+      expect(buildRecoveredSteerPayload('words', undefined)).toEqual({
+        text: 'words',
+        fileIds: [],
+        quotes: [],
+      });
+      expect(buildRecoveredSteerPayload('words', undefined, ['  kept  ', ''])).toEqual({
+        text: 'words',
+        fileIds: [],
+        quotes: ['kept'],
+      });
+    });
+
+    test('a recovery matches only when the quotes match, order-significant', () => {
+      const item = { text: 'words', quotes: ['first', 'second'] };
+      const proofFor = (quotes?: unknown) => buildRecoveredSteerPayload('words', undefined, quotes);
+      expect(recoveredSteerPayloadMatches(item, proofFor(['first', 'second'])!)).toBe(true);
+      expect(recoveredSteerPayloadMatches(item, proofFor(['second', 'first'])!)).toBe(false);
+      expect(recoveredSteerPayloadMatches(item, proofFor(['first'])!)).toBe(false);
+      // A stale client omitting the quotes must not consume the parked source.
+      expect(recoveredSteerPayloadMatches(item, proofFor(undefined)!)).toBe(false);
+      // Quote-less sources keep matching quote-less recoveries (pre-quotes parity).
+      expect(recoveredSteerPayloadMatches({ text: 'words' }, proofFor(undefined)!)).toBe(true);
+    });
+  });
+
   describe('park / claim (no-subscriber recovery)', () => {
     const owner = { userId: 'user-1' };
 
@@ -430,7 +538,7 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
 
       const failedRecovery = await manager.createJob(streamId, 'user-1', undefined, {
         recoveredSteerId: 'p3',
-        recoveredSteerPayload: { text: 'stale', fileIds: [] },
+        recoveredSteerPayload: { text: 'stale', fileIds: [], quotes: [] },
       });
       expect(await manager.steering.claim(streamId, owner)).toEqual([]);
 
@@ -443,7 +551,7 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
 
       const persistedRecovery = await manager.createJob(streamId, 'user-1', undefined, {
         recoveredSteerId: 'p3',
-        recoveredSteerPayload: { text: 'stale', fileIds: [] },
+        recoveredSteerPayload: { text: 'stale', fileIds: [], quotes: [] },
       });
       expect(
         await manager.steering.consumeRecovered(streamId, 'p3', owner, persistedRecovery.createdAt),
@@ -452,8 +560,8 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
     });
 
     test.each([
-      ['changed text', { text: 'forged words', fileIds: ['file-a', 'file-b'] }],
-      ['changed files', { text: 'original words', fileIds: ['file-a', 'file-c'] }],
+      ['changed text', { text: 'forged words', fileIds: ['file-a', 'file-b'], quotes: [] }],
+      ['changed files', { text: 'original words', fileIds: ['file-a', 'file-c'], quotes: [] }],
     ])(
       'refuses recovery with %s without leasing or consuming the source',
       async (_label, proof) => {
@@ -705,6 +813,48 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
         releaseSnapshot?.();
         await racingManager.destroy();
       }
+    });
+
+    test('abort final events preserve HITL paths and derive applied steer paths', async () => {
+      const streamId = 'steer-abort-provenance';
+      await manager.createJob(streamId, 'user-1');
+      await jobStore.updateJob(streamId, {
+        conversationId: streamId,
+        createdEventEmitted: true,
+        responseMessageId: 'response-1',
+        userMessage: { messageId: 'user-1' },
+        userSubmittedPaths: ['/content/0/tool_call/args'],
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/0/tool_call/output', field: 'decision_response' },
+        ],
+      });
+      manager.setContentParts(streamId, [
+        {
+          type: 'tool_call',
+          tool_call: { id: 'call-1', output: 'Human response' },
+        },
+        { type: 'steer', steer: 'Change direction' },
+      ] as unknown as Agents.MessageContentComplex[]);
+
+      const result = await manager.abortJob(streamId);
+
+      expect(
+        (
+          result.finalEvent as
+            | {
+                responseMessage?: {
+                  userSubmittedPaths?: string[];
+                  userSubmittedMessageFieldPaths?: Array<{ path: string; field: string }>;
+                };
+              }
+            | undefined
+        )?.responseMessage,
+      ).toMatchObject({
+        userSubmittedPaths: ['/content/0/tool_call/args', '/content/1'],
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/0/tool_call/output', field: 'decision_response' },
+        ],
+      });
     });
   });
 

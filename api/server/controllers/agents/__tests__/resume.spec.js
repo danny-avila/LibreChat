@@ -22,7 +22,7 @@
 
 const express = require('express');
 const request = require('supertest');
-const { Constants } = require('librechat-data-provider');
+const { Tools, Constants, ResourceType, AgentCapabilities } = require('librechat-data-provider');
 
 const USER_ID = 'user-1';
 const TENANT_ID = 'tenant-1';
@@ -47,9 +47,12 @@ const mockJobStore = {
 };
 
 const mockGenerationJobManager = {
+  detachedAgentEventActionStoreMode: 'distributed',
+  supportsDetachedAgentEventActions: true,
   getJob: jest.fn(),
   getJobStore: jest.fn(() => mockJobStore),
   getResumeState: jest.fn(),
+  updateMetadata: jest.fn(),
   setContentParts: jest.fn(),
   /** Resume moves ownership and rebuilds armed interrupts from the durable queue. */
   rearmQueuedPreempts: jest.fn().mockResolvedValue(0),
@@ -76,10 +79,20 @@ const mockDeleteAgentCheckpoint = jest.fn();
 const mockCaptureAgentCheckpointGeneration = jest.fn();
 const mockDecrementPendingRequest = jest.fn();
 const mockCheckAndIncrementPendingRequest = jest.fn();
+const mockGetAgentCheckpointer = jest.fn();
+const mockCheckpointGetTuple = jest.fn();
 
 const mockSaveMessage = jest.fn();
 const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
+const mockGetFiles = jest.fn();
+const mockGetAgent = jest.fn();
+const mockGetActions = jest.fn();
+const mockGetUserMemories = jest.fn();
+const mockGetRoleByName = jest.fn();
+const mockCheckAccess = jest.fn();
+const mockCheckPermission = jest.fn();
+const mockDecryptMetadata = jest.fn();
 const mockDisposeClient = jest.fn();
 const mockGetMCPRequestContext = jest.fn();
 const mockCleanupMCPRequestContextForReq = jest.fn();
@@ -89,6 +102,22 @@ const mockClaimScheduleResume = jest.fn();
 const mockReleaseScheduleResumeClaim = jest.fn();
 const mockFinalizeScheduleResumeClaim = jest.fn();
 const mockReleaseScheduleResumeFence = jest.fn();
+const mockAcquireEventChildGenerationLease = jest.fn();
+const mockReleaseEventChildLease = jest.fn();
+const mockIsSubagentOwnerAdmissible = jest.fn();
+const mockCompleteAgentEventActorLegacyTurn = jest.fn();
+const mockGetAgentEventActorSnapshot = jest.fn();
+const mockCommitAgentEventActorState = jest.fn();
+const mockStoreAgentEventActorSuspension = jest.fn();
+const mockClaimAgentEventActorSuspension = jest.fn();
+const mockSettleAgentEventActorSuspension = jest.fn();
+const mockRecordAgentEventActorReconciliation = jest.fn();
+const mockResumeAgentEventActor = jest.fn();
+const mockCreateAgentEventActorDetachedActionLifecycle = jest.fn();
+const mockGetAgentTriggerDelivery = jest.fn();
+const mockReserveAgentEventActorDetachedAction = jest.fn();
+const mockMarkAgentEventActorDetachedActionRunning = jest.fn();
+const mockSettleAgentEventActorDetachedAction = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -108,12 +137,51 @@ jest.mock('@librechat/api', () => ({
     conversationId,
     parentMessageId,
   }),
+  getAgentCheckpointer: (...args) => mockGetAgentCheckpointer(...args),
+  checkAccess: (...args) => mockCheckAccess(...args),
+  resumeAgentEventActor: (...args) => mockResumeAgentEventActor(...args),
+  settleAgentEventActorHistoryTurn: (input, complete) => complete(input),
+  createAgentEventActorDetachedActionLifecycle: (...args) =>
+    mockCreateAgentEventActorDetachedActionLifecycle(...args),
 }));
 
 jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
   getConvo: (...args) => mockGetConvo(...args),
   getMessages: (...args) => mockGetMessages(...args),
+  getFiles: (...args) => mockGetFiles(...args),
+  getAgent: (...args) => mockGetAgent(...args),
+  getActions: (...args) => mockGetActions(...args),
+  getUserMemories: (...args) => mockGetUserMemories(...args),
+  getRoleByName: (...args) => mockGetRoleByName(...args),
+  getAgentTriggerDelivery: (...args) => mockGetAgentTriggerDelivery(...args),
+  isSubagentOwnerAdmissible: (...args) => mockIsSubagentOwnerAdmissible(...args),
+  completeAgentEventActorLegacyTurn: (...args) => mockCompleteAgentEventActorLegacyTurn(...args),
+  getAgentEventActorSnapshot: (...args) => mockGetAgentEventActorSnapshot(...args),
+  commitAgentEventActorState: (...args) => mockCommitAgentEventActorState(...args),
+  storeAgentEventActorSuspension: (...args) => mockStoreAgentEventActorSuspension(...args),
+  claimAgentEventActorSuspension: (...args) => mockClaimAgentEventActorSuspension(...args),
+  settleAgentEventActorSuspension: (...args) => mockSettleAgentEventActorSuspension(...args),
+  recordAgentEventActorReconciliation: (...args) =>
+    mockRecordAgentEventActorReconciliation(...args),
+  reserveAgentEventActorDetachedAction: (...args) =>
+    mockReserveAgentEventActorDetachedAction(...args),
+  markAgentEventActorDetachedActionRunning: (...args) =>
+    mockMarkAgentEventActorDetachedActionRunning(...args),
+  settleAgentEventActorDetachedAction: (...args) =>
+    mockSettleAgentEventActorDetachedAction(...args),
+}));
+
+jest.mock('~/server/services/Endpoints/agents/eventChildLease', () => ({
+  acquireEventChildGenerationLease: (...args) => mockAcquireEventChildGenerationLease(...args),
+}));
+
+jest.mock('~/server/services/ActionService', () => ({
+  decryptMetadata: (...args) => mockDecryptMetadata(...args),
+}));
+
+jest.mock('~/server/services/PermissionService', () => ({
+  checkPermission: (...args) => mockCheckPermission(...args),
 }));
 
 jest.mock('~/server/services/Schedules', () => ({
@@ -216,11 +284,26 @@ function makeClient(overrides = {}) {
   };
 }
 
+function makeToolCallContent(overrides = {}) {
+  return {
+    type: 'tool_call',
+    tool_call: {
+      id: 'tc1',
+      name: 'lookup',
+      args: '{}',
+      ...overrides,
+    },
+  };
+}
+
 describe('ResumeAgentController (POST /agents/chat/resume)', () => {
   let app;
   let mockInitializeClient;
   let mockAddTitle;
   let capturedInit;
+  let requestConfigOverrides;
+  let requestStateOverrides;
+  let endpointAgent;
   let settle;
   let settled;
 
@@ -228,6 +311,8 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     jest.clearAllMocks();
 
     capturedInit = null;
+    requestConfigOverrides = {};
+    requestStateOverrides = {};
     mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: true });
     mockDecrementPendingRequest.mockResolvedValue(undefined);
     mockDeleteAgentCheckpoint.mockResolvedValue(undefined);
@@ -239,6 +324,18 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockSaveMessage.mockResolvedValue({});
     mockGetConvo.mockResolvedValue(null);
     mockGetMessages.mockResolvedValue([]);
+    mockGetFiles.mockResolvedValue([]);
+    mockGetAgent.mockResolvedValue(null);
+    mockGetActions.mockResolvedValue([]);
+    mockGetUserMemories.mockResolvedValue([]);
+    mockGetRoleByName.mockResolvedValue(null);
+    mockCheckAccess.mockResolvedValue(true);
+    mockCheckPermission.mockResolvedValue(true);
+    mockDecryptMetadata.mockImplementation(async (metadata) => metadata);
+    mockCheckpointGetTuple.mockResolvedValue({
+      checkpoint: { channel_values: { messages: [] } },
+    });
+    mockGetAgentCheckpointer.mockResolvedValue({ getTuple: mockCheckpointGetTuple });
     mockJobStore.getJob.mockResolvedValue({
       createdAt: 1000,
       tokenUsage: null,
@@ -246,6 +343,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     });
     mockJobStore.updateJob.mockResolvedValue(undefined);
     mockGenerationJobManager.getResumeState.mockResolvedValue({ aggregatedContent: [] });
+    mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.emitDone.mockResolvedValue(undefined);
     mockGenerationJobManager.emitError.mockResolvedValue(undefined);
     mockGenerationJobManager.emitChunk.mockResolvedValue(undefined);
@@ -273,6 +371,13 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockGenerationJobManager.beginProviderExecution.mockResolvedValue(true);
     mockGenerationJobManager.markProviderExecutionDrained.mockResolvedValue(true);
     mockGenerationJobManager.failPausePersistence.mockResolvedValue(true);
+    mockGenerationJobManager.isRedis = true;
+    mockGenerationJobManager.detachedAgentEventActionStoreMode = 'distributed';
+    mockGenerationJobManager.supportsDetachedAgentEventActions = true;
+    mockGenerationJobManager.persistAgentEventDetachedTerminalEvidence = jest
+      .fn()
+      .mockResolvedValue(true);
+    mockGenerationJobManager.retryTerminalHostAction = jest.fn().mockResolvedValue(undefined);
     mockGenerationJobManager.approvals.resolve.mockResolvedValue(true);
     mockGenerationJobManager.approvals.ownsPausePersistence.mockResolvedValue(true);
     mockGenerationJobManager.approvals.finishPausePersistence.mockResolvedValue(true);
@@ -286,6 +391,28 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockReleaseScheduleResumeClaim.mockResolvedValue(true);
     mockFinalizeScheduleResumeClaim.mockResolvedValue(true);
     mockReleaseScheduleResumeFence.mockResolvedValue(undefined);
+    mockAcquireEventChildGenerationLease.mockResolvedValue(mockReleaseEventChildLease);
+    mockReleaseEventChildLease.mockResolvedValue(undefined);
+    mockIsSubagentOwnerAdmissible.mockResolvedValue(true);
+    mockCompleteAgentEventActorLegacyTurn.mockResolvedValue(true);
+    mockGetAgentEventActorSnapshot.mockResolvedValue(undefined);
+    mockCommitAgentEventActorState.mockResolvedValue({ status: 'committed' });
+    mockStoreAgentEventActorSuspension.mockResolvedValue({ status: 'stored' });
+    mockClaimAgentEventActorSuspension.mockResolvedValue({ status: 'claimed' });
+    mockSettleAgentEventActorSuspension.mockResolvedValue({ status: 'settled' });
+    mockRecordAgentEventActorReconciliation.mockResolvedValue(true);
+    mockGetAgentTriggerDelivery.mockResolvedValue(undefined);
+    mockCreateAgentEventActorDetachedActionLifecycle.mockReturnValue(undefined);
+    endpointAgent = {
+      _id: 'mongo-agent-abc',
+      id: AGENT_ID,
+      provider: 'openAI',
+      model: 'gpt-test',
+      instructions: 'Help the user.',
+      model_parameters: {},
+      tools: [],
+      edges: [],
+    };
 
     // `decrementPendingRequest` runs in the controller's `finally` on every
     // post-ACK path, so resolving on it signals the async continuation is done.
@@ -304,6 +431,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         files: req.body.files,
         isTemporary: req.body.isTemporary,
         conversationCreatedAt: req.conversationCreatedAt,
+        isScheduledFire: req._isScheduledFire,
         timezone: req.body.timezone,
         checkpointNamespace,
         requestBody,
@@ -314,11 +442,19 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     app = express();
     app.use(express.json());
     app.use((req, _res, next) => {
-      req.user = { id: USER_ID, tenantId: TENANT_ID };
+      req.user = { id: USER_ID, tenantId: TENANT_ID, role: 'USER' };
       req.config = {
         endpoints: { agents: { checkpointer: { type: 'mongo' } } },
         interfaceConfig: {},
+        ...requestConfigOverrides,
       };
+      req.body.endpointOption = {
+        endpoint: 'agents',
+        agent_id: AGENT_ID,
+        model_parameters: {},
+        agent: Promise.resolve(endpointAgent),
+      };
+      Object.assign(req, requestStateOverrides);
       next();
     });
     app.post('/api/agents/chat/resume', (req, res, next) =>
@@ -335,6 +471,589 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     endpoint: 'agents',
     decisions: [{ tool_call_id: 'tc1', decision: 'approve' }],
     ...extra,
+  });
+
+  const configureEventActorResume = (expiredAt = new Date(Date.now() + 60_000)) => {
+    requestStateOverrides = {
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: TENANT_ID,
+      _agentEventBindingRetention: { isTemporary: true, expiredAt },
+    };
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: TENANT_ID,
+      createdAt: new Date('2026-08-22T00:00:00.000Z'),
+    });
+    return expiredAt;
+  };
+
+  describe('event-bound actor resume lifecycle', () => {
+    it('claims a versioned Conversation suspension and recovers an ambiguous job projection ACK', async () => {
+      configureEventActorResume();
+      requestStateOverrides._agentEventBindingId = 'binding-1';
+      const expectedAction = { toolName: 'lookup' };
+      const suspension = {
+        version: 1,
+        suspensionId: 'suspension-1',
+        attempt: 0,
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+        invocation: {
+          invocationId: 'trigger_event_delivery',
+          continuation: 'warm',
+          base: { actorThreadId: CONVO_ID, generation: 1 },
+          fork: {
+            threadId: CONVO_ID,
+            checkpointNs: 'event-actor',
+            checkpointId: 'checkpoint-paused',
+            invocationId: 'trigger_event_delivery',
+          },
+        },
+        checkpoint: {
+          threadId: CONVO_ID,
+          checkpointNs: 'event-actor',
+          checkpointId: 'checkpoint-paused',
+          invocationId: 'trigger_event_delivery',
+        },
+        interrupt: {
+          id: 'interrupt-1',
+          payload: {
+            type: 'tool_approval',
+            _librechatEventActor: { expectedAction },
+          },
+        },
+        suspensionDigest: 'signed-digest',
+      };
+      const pausedJob = makeToolApprovalJob({
+        metadata: {
+          idempotencyClientRequestId: 'trigger_event_delivery',
+          agentEventDeliveryKey: 'completion-delivery-1',
+          agentEventInvocationKey: 'trigger_event_delivery',
+          agentEventExpectedAction: expectedAction,
+          agentEventSuspension: {
+            version: 1,
+            suspensionId: suspension.suspensionId,
+            attempt: suspension.attempt,
+          },
+        },
+      });
+      pausedJob.metadata.pendingAction.payload.review_configs = [
+        { tool_call_id: 'tc1', allowed_decisions: ['respond'] },
+      ];
+      mockGenerationJobManager.getJob.mockResolvedValue(pausedJob);
+      const detachedSuspension = {
+        kind: 'internal_completion',
+        actionId: 'detached-action-next',
+      };
+      const repausedSuspension = {
+        ...suspension,
+        suspensionId: 'suspension-detached-next',
+        attempt: 1,
+      };
+      mockCreateAgentEventActorDetachedActionLifecycle.mockReturnValue({
+        readSuspension: () => detachedSuspension,
+      });
+      let projectedProviderExecutionId;
+      mockGenerationJobManager.approvals.resolve.mockImplementation(
+        async (_streamId, _actionId, resumePatch) => {
+          projectedProviderExecutionId = resumePatch.providerExecutionId;
+          mockGenerationJobManager.getJob.mockResolvedValue({
+            ...pausedJob,
+            status: 'running',
+            metadata: {
+              ...pausedJob.metadata,
+              providerExecutionId: resumePatch.providerExecutionId,
+            },
+          });
+          throw new Error('redis committed the CAS but lost its reply');
+        },
+      );
+      mockGetAgentEventActorSnapshot.mockResolvedValue({
+        state: null,
+        epoch: 1,
+        legacyTurn: null,
+        reconciliations: [],
+        suspension: {
+          suspension,
+          kind: 'internal_completion',
+          handlingGenerationCreatedAt: 500,
+          actionId: ACTION_ID,
+          jobCreatedAt: 1000,
+          status: 'pending',
+        },
+      });
+      const resumedClient = makeClient({
+        publishStagedApproval: jest.fn(),
+        contentParts: [makeToolCallContent({ output: 'human supplied output' })],
+        run: {
+          getRunSteps: () => [
+            {
+              type: 'tool_calls',
+              status: 'completed',
+              stepDetails: {
+                type: 'tool_calls',
+                tool_calls: [
+                  {
+                    id: 'tc1',
+                    name: 'lookup',
+                    args: {},
+                    output: 'human supplied output',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      });
+      mockInitializeClient.mockImplementation(async ({ req }) => {
+        expect(req._agentEventDetachedActionLifecycle).toBe(
+          mockCreateAgentEventActorDetachedActionLifecycle.mock.results[0].value,
+        );
+        return { client: resumedClient, userMCPAuthMap: {} };
+      });
+      mockResumeAgentEventActor.mockImplementation(async (input, dependencies) => {
+        expect(input.readSuspension()).toBe(detachedSuspension);
+        await dependencies.claimSuspension({
+          user: USER_ID,
+          tenantId: TENANT_ID,
+          conversationId: CONVO_ID,
+          suspensionId: suspension.suspensionId,
+          attempt: suspension.attempt,
+          actionId: ACTION_ID,
+          jobCreatedAt: 1000,
+          resumeAttemptId: input.resumeAttemptId,
+        });
+        expect(await input.claimProjection()).toBe(true);
+        expect(input.resumeAttemptId).toBe(projectedProviderExecutionId);
+        const value = await input.resume({
+          checkpointNamespace: 'event-actor',
+          checkpointId: 'checkpoint-paused',
+          invocationId: 'trigger_event_delivery',
+          continuation: 'warm',
+          signal: input.signal,
+        });
+        return {
+          value,
+          execution: { status: 'suspended', suspension: repausedSuspension },
+        };
+      });
+
+      const res = await post(
+        approveBody({
+          decisions: [
+            { tool_call_id: 'tc1', decision: 'respond', responseText: 'human supplied output' },
+          ],
+        }),
+      );
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockGetAgentEventActorSnapshot).toHaveBeenCalledWith({
+        user: USER_ID,
+        tenantId: TENANT_ID,
+        conversationId: CONVO_ID,
+      });
+      expect(mockClaimAgentEventActorSuspension.mock.invocationCallOrder[0]).toBeLessThan(
+        mockGenerationJobManager.approvals.resolve.mock.invocationCallOrder[0],
+      );
+      expect(mockGenerationJobManager.getJob).toHaveBeenCalledTimes(2);
+      expect(mockGetAgentTriggerDelivery).not.toHaveBeenCalled();
+      expect(mockCreateAgentEventActorDetachedActionLifecycle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invocationId: 'trigger_event_delivery',
+          generationCreatedAt: 500,
+          turnCreatedAt: 1000,
+          expectedAction,
+        }),
+        expect.objectContaining({
+          reserveAgentEventActorDetachedAction: expect.any(Function),
+          markAgentEventActorDetachedActionRunning: expect.any(Function),
+          settleAgentEventActorDetachedAction: expect.any(Function),
+        }),
+      );
+      expect(
+        mockCreateAgentEventActorDetachedActionLifecycle.mock.invocationCallOrder[0],
+      ).toBeLessThan(mockInitializeClient.mock.invocationCallOrder[0]);
+      const lifecycleDependencies =
+        mockCreateAgentEventActorDetachedActionLifecycle.mock.calls[0][1];
+      expect(lifecycleDependencies.storeMode()).toBe('distributed');
+      mockGenerationJobManager.detachedAgentEventActionStoreMode = 'process_local';
+      expect(lifecycleDependencies.storeMode()).toBe('process_local');
+      expect(resumedClient.resumeCompletion).toHaveBeenCalledTimes(1);
+      expect(mockGenerationJobManager.updateMetadata).toHaveBeenCalledWith(
+        CONVO_ID,
+        {
+          agentEventSuspension: {
+            version: repausedSuspension.version,
+            suspensionId: repausedSuspension.suspensionId,
+            attempt: repausedSuspension.attempt,
+          },
+        },
+        1000,
+      );
+      expect(resumedClient.publishStagedApproval).not.toHaveBeenCalled();
+      expect(mockRecordAgentEventActorReconciliation).not.toHaveBeenCalled();
+    });
+
+    it('refuses a prior-head expected-action suspension before claiming it on an incapable replica', async () => {
+      configureEventActorResume();
+      requestStateOverrides._agentEventBindingId = 'binding-1';
+      const expectedAction = { toolName: 'submit_move' };
+      const suspension = {
+        version: 1,
+        suspensionId: 'suspension-producer-required',
+        attempt: 0,
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+        invocation: { invocationId: 'trigger_event_delivery' },
+        interrupt: {
+          id: 'interrupt-producer-required',
+          payload: {
+            type: 'tool_approval',
+            _librechatEventActor: { expectedAction },
+          },
+        },
+        suspensionDigest: 'signed-digest',
+      };
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: {
+            idempotencyClientRequestId: 'trigger_event_delivery',
+            agentEventDeliveryKey: 'trigger_event_delivery',
+            agentEventExpectedAction: expectedAction,
+            agentEventSuspension: {
+              version: 1,
+              suspensionId: suspension.suspensionId,
+              attempt: suspension.attempt,
+            },
+          },
+        }),
+      );
+      mockGetAgentEventActorSnapshot.mockResolvedValue({
+        state: null,
+        epoch: 1,
+        legacyTurn: null,
+        reconciliations: [],
+        suspension: {
+          suspension,
+          kind: 'human_decision',
+          handlingGenerationCreatedAt: 1000,
+          actionId: ACTION_ID,
+          jobCreatedAt: 1000,
+          status: 'pending',
+        },
+      });
+      mockGenerationJobManager.isRedis = false;
+      mockGenerationJobManager.supportsDetachedAgentEventActions = false;
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(503);
+      expect(res.body).toMatchObject({
+        code: 'EVENT_ACTOR_RESUME_CAPABILITY_UNAVAILABLE',
+      });
+      expect(res.headers['retry-after']).toBe('1');
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockResumeAgentEventActor).not.toHaveBeenCalled();
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+      expect(mockDecrementPendingRequest).toHaveBeenCalledTimes(1);
+      expect(mockReleaseEventChildLease).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['pre-feature expected-action', { toolName: 'lookup' }, undefined],
+      ['actionless PR-era', undefined, 1000],
+    ])(
+      'preserves a %s suspension when client reconstruction fails before continuation',
+      async (_case, expectedAction, handlingGenerationCreatedAt) => {
+        configureEventActorResume();
+        const suspension = {
+          version: 1,
+          suspensionId: 'suspension-init-failure',
+          attempt: 0,
+          issuedAt: Date.now(),
+          expiresAt: Date.now() + 60_000,
+          invocation: {
+            invocationId: 'trigger_event_delivery',
+            continuation: 'warm',
+            base: { actorThreadId: CONVO_ID, generation: 0 },
+            fork: {
+              threadId: CONVO_ID,
+              checkpointNs: 'event-actor',
+              checkpointId: 'checkpoint-paused',
+              invocationId: 'trigger_event_delivery',
+            },
+          },
+          checkpoint: {
+            threadId: CONVO_ID,
+            checkpointNs: 'event-actor',
+            checkpointId: 'checkpoint-paused',
+            invocationId: 'trigger_event_delivery',
+          },
+          interrupt: {
+            id: 'interrupt-init-failure',
+            payload: {
+              type: 'tool_approval',
+              _librechatEventActor: expectedAction == null ? {} : { expectedAction },
+            },
+          },
+          suspensionDigest: 'signed-digest',
+        };
+        mockGenerationJobManager.getJob.mockResolvedValue(
+          makeToolApprovalJob({
+            metadata: {
+              idempotencyClientRequestId: 'trigger_event_delivery',
+              ...(expectedAction == null ? {} : { agentEventExpectedAction: expectedAction }),
+              agentEventSuspension: {
+                version: 1,
+                suspensionId: suspension.suspensionId,
+                attempt: suspension.attempt,
+              },
+            },
+          }),
+        );
+        mockGetAgentEventActorSnapshot.mockResolvedValue({
+          state: null,
+          epoch: 1,
+          legacyTurn: null,
+          reconciliations: [],
+          suspension: {
+            suspension,
+            ...(handlingGenerationCreatedAt == null ? {} : { handlingGenerationCreatedAt }),
+            actionId: ACTION_ID,
+            jobCreatedAt: 1000,
+            status: 'pending',
+          },
+        });
+        mockGenerationJobManager.isRedis = false;
+        mockInitializeClient.mockRejectedValue(new Error('client reconstruction failed'));
+        mockResumeAgentEventActor.mockImplementation(async (input) => {
+          expect(await input.claimProjection()).toBe(true);
+          return input.resume({
+            checkpointNamespace: 'event-actor',
+            checkpointId: 'checkpoint-paused',
+            invocationId: 'trigger_event_delivery',
+            continuation: 'warm',
+            signal: input.signal,
+          });
+        });
+
+        const res = await post(approveBody());
+        expect(res.status).toBe(200);
+        await settled;
+        await flush();
+
+        expect(mockInitializeClient).toHaveBeenCalledTimes(1);
+        expect(mockCreateAgentEventActorDetachedActionLifecycle).not.toHaveBeenCalled();
+        expect(mockGenerationJobManager.beginProviderExecution).not.toHaveBeenCalled();
+        expect(mockGenerationJobManager.completeJob).toHaveBeenCalled();
+      },
+    );
+
+    it('fails closed when a versioned job marker no longer matches canonical suspension', async () => {
+      configureEventActorResume();
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: {
+            agentEventSuspension: { version: 1, suspensionId: 'stale', attempt: 0 },
+          },
+        }),
+      );
+      mockGetAgentEventActorSnapshot.mockResolvedValue({
+        state: null,
+        epoch: 1,
+        legacyTurn: null,
+        reconciliations: [],
+        suspension: null,
+      });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'EVENT_ACTOR_SUSPENSION_STALE' });
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockResumeAgentEventActor).not.toHaveBeenCalled();
+    });
+
+    it('fails promptly when suspension validation rejects before the job claim callback', async () => {
+      configureEventActorResume();
+      const suspension = {
+        version: 1,
+        suspensionId: 'suspension-invalid-signature',
+        attempt: 0,
+        invocation: { invocationId: 'trigger_event_delivery' },
+        interrupt: {
+          payload: { _librechatEventActor: { expectedAction: { toolName: 'lookup' } } },
+        },
+      };
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: {
+            idempotencyClientRequestId: 'trigger_event_delivery',
+            agentEventSuspension: {
+              version: 1,
+              suspensionId: suspension.suspensionId,
+              attempt: 0,
+            },
+          },
+        }),
+      );
+      mockGetAgentEventActorSnapshot.mockResolvedValue({
+        state: null,
+        epoch: 1,
+        legacyTurn: null,
+        reconciliations: [],
+        suspension: {
+          suspension,
+          actionId: ACTION_ID,
+          jobCreatedAt: 1000,
+          status: 'pending',
+        },
+      });
+      mockResumeAgentEventActor.mockRejectedValue(new Error('invalid signed suspension'));
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(500);
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockDecrementPendingRequest).toHaveBeenCalled();
+    });
+
+    it('leaves the approval pending when the previous segment still owns the lease', async () => {
+      configureEventActorResume();
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockAcquireEventChildGenerationLease.mockResolvedValue(null);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'EVENT_ACTOR_NOT_READY' });
+      expect(mockAcquireEventChildGenerationLease).toHaveBeenCalled();
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
+    });
+
+    it('classifies an expired binding as ended when no lease can be acquired', async () => {
+      configureEventActorResume(new Date(Date.now() - 1));
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockAcquireEventChildGenerationLease.mockResolvedValue(null);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'EVENT_BINDING_PARENT_ENDED' });
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    it('owns the lease before consuming approval and preserves the inherited deadline', async () => {
+      const expiredAt = configureEventActorResume();
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: {
+            isTemporary: true,
+            idempotencyClientRequestId: 'trigger_event_delivery',
+          },
+        }),
+      );
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockAcquireEventChildGenerationLease.mock.invocationCallOrder[0]).toBeLessThan(
+        mockGenerationJobManager.approvals.resolve.mock.invocationCallOrder[0],
+      );
+      expect(mockIsSubagentOwnerAdmissible.mock.invocationCallOrder[0]).toBeLessThan(
+        mockGenerationJobManager.approvals.resolve.mock.invocationCallOrder[0],
+      );
+      expect(mockAcquireEventChildGenerationLease).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskId: 'trigger_event_delivery',
+          retentionExpiresAt: expiredAt,
+        }),
+      );
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ isTemporary: true, expiredAt }),
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(mockReleaseEventChildLease).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves the inherited deadline when the resumed actor pauses again', async () => {
+      const expiredAt = configureEventActorResume();
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { isTemporary: true } }),
+      );
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          pendingApproval: { actionId: NEXT_ACTION_ID },
+          contentParts: [{ type: 'text', text: 'partial' }],
+        }),
+        userMCPAuthMap: {},
+      });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ isTemporary: true, expiredAt }),
+        expect.objectContaining({ unfinished: true }),
+        expect.objectContaining({
+          context: 'api/server/controllers/agents/resume.js - re-pause progress persist',
+        }),
+      );
+    });
+
+    it('defers a resume when the owner admission fence is temporarily closed', async () => {
+      configureEventActorResume();
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockIsSubagentOwnerAdmissible.mockResolvedValue(false);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'EVENT_ACTOR_NOT_READY' });
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
+    });
+
+    it('rejects a binding that expires after the route guard but before approval consumption', async () => {
+      configureEventActorResume(new Date(Date.now() - 1));
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      const res = await post(approveBody());
+
+      expect(res.body).toMatchObject({ code: 'EVENT_BINDING_PARENT_ENDED' });
+      expect(res.status).toBe(409);
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
+    });
+
+    it('uses the guard-normalized tenant for a legacy untenanted event actor', async () => {
+      const expiredAt = configureEventActorResume();
+      requestStateOverrides._agentEventBindingTenantId = undefined;
+      mockGetConvo.mockResolvedValue({
+        conversationId: 'parent-conversation',
+        agent_id: 'parent-agent',
+      });
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockAcquireEventChildGenerationLease).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: undefined, retentionExpiresAt: expiredAt }),
+      );
+    });
   });
 
   describe('scheduled occurrence lifecycle', () => {
@@ -484,6 +1203,8 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       const res = await post(approveBody());
       expect(res.status).toBe(200);
       await settled;
+
+      expect(capturedInit.isScheduledFire).toBe(true);
 
       expect(mockClaimScheduleResume).toHaveBeenCalledWith('schedule-1', scheduledFor, {
         expectedConfigRevision: 4,
@@ -679,6 +1400,718 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     });
   });
 
+  describe('content policy preflight', () => {
+    it('preserves the default-off path without reading the durable checkpoint', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockGetAgentCheckpointer).not.toHaveBeenCalled();
+      expect(mockInitializeClient).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not read the checkpoint for a source unrelated to resume content', async () => {
+      requestConfigOverrides = {
+        filters: {
+          prompts: {
+            pii: {
+              fields: ['text'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockGetAgentCheckpointer.mockRejectedValue(new Error('checkpoint unavailable'));
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockGetAgentCheckpointer).not.toHaveBeenCalled();
+      expect(mockInitializeClient).toHaveBeenCalledTimes(1);
+    });
+
+    it('blocks the current saved agent instructions before consuming or acknowledging approval', async () => {
+      requestConfigOverrides = {
+        filters: {
+          agentInstructions: {
+            pii: {
+              fields: ['instructions'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      endpointAgent.instructions = 'Use sk-current-agent-secret when answering.';
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'agent_instruction',
+          field: 'instructions',
+        }),
+      );
+      expect(mockGetAgentCheckpointer).not.toHaveBeenCalled();
+      expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockGetMCPRequestContext).not.toHaveBeenCalled();
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+    });
+
+    it('blocks model parameters on a currently reachable nested agent before ACK', async () => {
+      requestConfigOverrides = {
+        filters: {
+          modelParameters: {
+            pii: {
+              fields: ['request_fields'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      endpointAgent.edges = [{ from: AGENT_ID, to: 'nested-agent' }];
+      mockGetAgent.mockResolvedValue({
+        _id: 'mongo-nested-agent',
+        id: 'nested-agent',
+        provider: 'openAI',
+        model: 'gpt-test',
+        model_parameters: { privateHeader: 'sk-nested-model-secret' },
+        tools: [],
+        edges: [],
+      });
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'model_parameter',
+          field: 'request_fields',
+        }),
+      );
+      expect(mockGetAgent).toHaveBeenCalledWith({ id: 'nested-agent' });
+      expect(mockCheckPermission).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: USER_ID,
+          resourceType: ResourceType.AGENT,
+          resourceId: 'mongo-nested-agent',
+        }),
+      );
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+    });
+
+    it('blocks current action metadata before consuming approval', async () => {
+      requestConfigOverrides = {
+        filters: {
+          actionMetadata: {
+            pii: {
+              fields: ['privacy_policy_url'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      endpointAgent.tools = ['lookup_action_example'];
+      mockGetActions.mockResolvedValue([
+        {
+          action_id: 'action-1',
+          agent_id: AGENT_ID,
+          metadata: {
+            domain: 'example.test',
+            privacy_policy_url: 'sk-current-action-secret',
+          },
+        },
+      ]);
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(400);
+      expect(mockGetActions).toHaveBeenCalledWith({ agent_id: { $in: [AGENT_ID] } }, false);
+      expect(mockDecryptMetadata).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+    });
+
+    it('blocks current model-bound memory before consuming approval', async () => {
+      requestConfigOverrides = {
+        memory: { disabled: false },
+        filters: {
+          memories: {
+            pii: {
+              fields: ['value'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      mockGetUserMemories.mockResolvedValue([
+        { key: 'credential', value: 'sk-current-memory-secret' },
+      ]);
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(400);
+      expect(mockGetUserMemories).toHaveBeenCalledWith({
+        userId: USER_ID,
+        agentId: undefined,
+      });
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+    });
+
+    it('claims and ACKs a safe current agent graph, action, and memory snapshot', async () => {
+      requestConfigOverrides = {
+        memory: { disabled: false },
+        endpoints: {
+          agents: {
+            checkpointer: { type: 'mongo' },
+            capabilities: [AgentCapabilities.memory],
+          },
+        },
+        filters: {
+          agentInstructions: {
+            pii: { fields: ['instructions'], starterPatterns: ['sk_prefix'] },
+          },
+          modelParameters: {
+            pii: { fields: ['request_fields'], starterPatterns: ['sk_prefix'] },
+          },
+          actionMetadata: {
+            pii: { fields: ['privacy_policy_url'], starterPatterns: ['sk_prefix'] },
+          },
+          memories: {
+            pii: { fields: ['value'], starterPatterns: ['sk_prefix'] },
+          },
+        },
+      };
+      endpointAgent.edges = [{ from: AGENT_ID, to: 'nested-agent' }];
+      endpointAgent.tools = ['lookup_action_example'];
+      mockGetAgent.mockResolvedValue({
+        _id: 'mongo-nested-agent',
+        id: 'nested-agent',
+        provider: 'openAI',
+        model: 'gpt-test',
+        instructions: 'Safe nested instructions.',
+        model_parameters: { privateHeader: 'safe-header' },
+        tools: [Tools.memory],
+        edges: [],
+      });
+      mockGetActions.mockResolvedValue([
+        {
+          action_id: 'action-1',
+          agent_id: AGENT_ID,
+          metadata: {
+            domain: 'example.test',
+            privacy_policy_url: 'https://example.test/privacy',
+          },
+        },
+      ]);
+      mockGetUserMemories.mockResolvedValue([{ key: 'preference', value: 'Likes tea.' }]);
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        streamId: CONVO_ID,
+        conversationId: CONVO_ID,
+        status: 'resuming',
+        generationProtocolVersion: 1,
+      });
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalledWith(
+        CONVO_ID,
+        ACTION_ID,
+        expect.objectContaining({
+          preemptCapable: true,
+          providerDrained: true,
+          providerExecutionId: expect.any(String),
+        }),
+        1000,
+      );
+      await settled;
+      await flush();
+      expect(mockInitializeClient).toHaveBeenCalledTimes(1);
+    });
+
+    it('blocks legacy checkpoint content before initializeClient', async () => {
+      requestConfigOverrides = {
+        filters: {
+          messages: {
+            pii: {
+              fields: ['text'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      const job = makeToolApprovalJob();
+      job.metadata.userMessage.parentMessageId = Constants.NO_PARENT;
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockCheckpointGetTuple.mockResolvedValue({
+        checkpoint: {
+          channel_values: {
+            messages: [{ role: 'user', content: 'sk-legacy-checkpoint-secret' }],
+          },
+        },
+      });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'message',
+        }),
+      );
+
+      expect(mockCheckpointGetTuple).toHaveBeenCalledWith({
+        configurable: {
+          thread_id: CONVO_ID,
+          checkpoint_ns: '',
+        },
+      });
+      expect(mockGetMessages).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        user: USER_ID,
+      });
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+      expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockGetMCPRequestContext).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.emitError).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
+    });
+
+    it('blocks checkpoint-only content from the active generation namespace', async () => {
+      requestConfigOverrides = {
+        filters: {
+          messages: {
+            pii: {
+              fields: ['text'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      const job = makeToolApprovalJob({
+        metadata: { checkpointNamespace: 'generation-1000' },
+      });
+      job.metadata.userMessage.parentMessageId = Constants.NO_PARENT;
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockCheckpointGetTuple.mockResolvedValue({
+        checkpoint: {
+          channel_values: {
+            messages: [{ role: 'user', content: 'sk-namespaced-checkpoint-secret' }],
+          },
+        },
+      });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'message',
+        }),
+      );
+      expect(mockCheckpointGetTuple).toHaveBeenCalledWith({
+        configurable: {
+          thread_id: CONVO_ID,
+          checkpoint_ns: '',
+          __librechat_checkpoint_ns: 'generation-1000',
+        },
+      });
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    it('keeps checkpoint tool arguments visible to files-only fail-close policy', async () => {
+      requestConfigOverrides = {
+        filters: {
+          files: {
+            pii: {
+              fields: ['content'],
+              starterPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        },
+      };
+      const job = makeToolApprovalJob();
+      job.metadata.userMessage.parentMessageId = Constants.NO_PARENT;
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockCheckpointGetTuple.mockResolvedValue({
+        checkpoint: {
+          channel_values: {
+            messages: [
+              {
+                role: 'assistant',
+                content: 'inspect the attachment',
+                tool_calls: [
+                  {
+                    name: 'inspect_file',
+                    args: { file_id: 'checkpoint-tool-file' },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_uninspectable',
+          source: 'file',
+          field: 'content',
+        }),
+      );
+      expect(mockGetFiles).toHaveBeenCalledWith(
+        { file_id: { $in: ['checkpoint-tool-file'] }, user: USER_ID, tenantId: TENANT_ID },
+        {},
+        {},
+      );
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+    });
+
+    it('keeps structured checkpoint text metadata visible to files-only policy', async () => {
+      requestConfigOverrides = {
+        filters: {
+          files: {
+            pii: {
+              fields: ['content'],
+              starterPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        },
+      };
+      const job = makeToolApprovalJob();
+      job.metadata.userMessage.parentMessageId = Constants.NO_PARENT;
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockCheckpointGetTuple.mockResolvedValue({
+        checkpoint: {
+          channel_values: {
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: {
+                      value: 'inspect the attachment',
+                      annotations: [{ file_id: 'checkpoint-annotation-file' }],
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_uninspectable',
+          source: 'file',
+          field: 'content',
+        }),
+      );
+      expect(mockGetFiles).toHaveBeenCalledWith(
+        { file_id: { $in: ['checkpoint-annotation-file'] }, user: USER_ID, tenantId: TENANT_ID },
+        {},
+        {},
+      );
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+    });
+
+    it('blocks protected values nested in cyclic checkpoint tool arguments', async () => {
+      requestConfigOverrides = {
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['arguments'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      const cyclicArguments = { token: 'sk-cyclic-checkpoint-secret' };
+      cyclicArguments.self = cyclicArguments;
+      const job = makeToolApprovalJob();
+      job.metadata.userMessage.parentMessageId = Constants.NO_PARENT;
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockCheckpointGetTuple.mockResolvedValue({
+        checkpoint: {
+          channel_values: {
+            messages: [
+              {
+                role: 'assistant',
+                content: '',
+                tool_calls: [{ name: 'lookup', args: cyclicArguments }],
+              },
+            ],
+          },
+        },
+      });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'tool_argument',
+          field: 'arguments',
+        }),
+      );
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when selected checkpoint tool arguments cannot be fully traversed', async () => {
+      requestConfigOverrides = {
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['arguments'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      const deepArguments = {};
+      let current = deepArguments;
+      for (let depth = 0; depth < 30; depth++) {
+        current.nested = {};
+        current = current.nested;
+      }
+      Object.defineProperty(deepArguments, 'toJSON', {
+        value: () => {
+          throw new Error('cannot serialize');
+        },
+      });
+      const job = makeToolApprovalJob();
+      job.metadata.userMessage.parentMessageId = Constants.NO_PARENT;
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockCheckpointGetTuple.mockResolvedValue({
+        checkpoint: {
+          channel_values: {
+            messages: [
+              {
+                role: 'assistant',
+                content: '',
+                tool_calls: [{ name: 'lookup', args: deepArguments }],
+              },
+            ],
+          },
+        },
+      });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_uninspectable',
+          source: 'tool_argument',
+          field: 'arguments',
+        }),
+      );
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    it('allows incomplete checkpoint arguments when only tool output is selected', async () => {
+      requestConfigOverrides = {
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['output'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      const deepArguments = {};
+      let current = deepArguments;
+      for (let depth = 0; depth < 30; depth++) {
+        current.nested = {};
+        current = current.nested;
+      }
+      Object.defineProperty(deepArguments, 'toJSON', {
+        value: () => {
+          throw new Error('cannot serialize');
+        },
+      });
+      const job = makeToolApprovalJob();
+      job.metadata.userMessage.parentMessageId = Constants.NO_PARENT;
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockCheckpointGetTuple.mockResolvedValue({
+        checkpoint: {
+          channel_values: {
+            messages: [
+              {
+                role: 'assistant',
+                content: '',
+                tool_calls: [{ name: 'lookup', args: deepArguments }],
+              },
+            ],
+          },
+        },
+      });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+      expect(mockInitializeClient).toHaveBeenCalledTimes(1);
+    });
+
+    it('blocks legacy seed tool content before initializeClient', async () => {
+      requestConfigOverrides = {
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['output'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      const job = makeToolApprovalJob();
+      job.metadata.userMessage.parentMessageId = Constants.NO_PARENT;
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockGenerationJobManager.getResumeState.mockResolvedValue({
+        aggregatedContent: [makeToolCallContent({ output: 'sk-legacy-seed-secret' })],
+      });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'tool_argument',
+          field: 'output',
+        }),
+      );
+
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+      expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.emitError).not.toHaveBeenCalled();
+    });
+
+    it('blocks a user-authored respond decision before consuming the action', async () => {
+      requestConfigOverrides = {
+        filters: {
+          messages: {
+            pii: {
+              fields: ['decision_response'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      const job = makeToolApprovalJob();
+      job.metadata.userMessage.parentMessageId = Constants.NO_PARENT;
+      job.metadata.pendingAction.payload.review_configs = [
+        { tool_call_id: 'tc1', allowed_decisions: ['approve', 'respond'] },
+      ];
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+
+      const res = await post(
+        approveBody({
+          decisions: [
+            {
+              tool_call_id: 'tc1',
+              decision: 'respond',
+              responseText: 'sk-user-response-secret',
+            },
+          ],
+        }),
+      );
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'message',
+          field: 'decision_response',
+        }),
+      );
+      expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+    });
+
+    it('blocks user-edited tool arguments before consuming the action', async () => {
+      requestConfigOverrides = {
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['arguments'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      const job = makeToolApprovalJob();
+      job.metadata.userMessage.parentMessageId = Constants.NO_PARENT;
+      job.metadata.pendingAction.payload.review_configs = [
+        { tool_call_id: 'tc1', allowed_decisions: ['approve', 'edit'] },
+      ];
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+
+      const res = await post(
+        approveBody({
+          decisions: [
+            {
+              tool_call_id: 'tc1',
+              decision: 'edit',
+              editedArguments: { token: 'sk-user-edited-secret' },
+            },
+          ],
+        }),
+      );
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'tool_argument',
+          field: 'arguments',
+        }),
+      );
+      expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+    });
+  });
+
   describe('MCP request-context lifecycle', () => {
     it('pre-seeds the run-scoped MCP context before initializeClient and tears it down after', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
@@ -722,7 +2155,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       );
       expect(
         mockGenerationJobManager.beginProviderExecution.mock.invocationCallOrder[0],
-      ).toBeLessThan(mockInitializeClient.mock.invocationCallOrder[0]);
+      ).toBeGreaterThan(mockInitializeClient.mock.invocationCallOrder[0]);
     });
   });
 
@@ -1080,7 +2513,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(res.status).toBe(429);
       expect(mockLogger.warn).toHaveBeenCalledWith(
         '[ResumeAgentController] Failed to capture checkpoint generation',
-        expect.any(Error),
+        { type: 'Error' },
       );
     });
 
@@ -1143,6 +2576,27 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
   });
 
   describe('happy path: approve -> reconstruct -> resume -> finalize', () => {
+    it('seals the exact paused legacy-event fence only after resumed history persists', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { agentEventLegacyTurnToken: 'legacy-hitl-token' } }),
+      );
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockCompleteAgentEventActorLegacyTurn).toHaveBeenCalledWith({
+        user: USER_ID,
+        tenantId: TENANT_ID,
+        conversationId: CONVO_ID,
+        token: 'legacy-hitl-token',
+      });
+      expect(mockSaveMessage.mock.invocationCallOrder[0]).toBeLessThan(
+        mockCompleteAgentEventActorLegacyTurn.mock.invocationCallOrder[0],
+      );
+    });
+
     it('ACKs immediately and claims the action atomically with the submitted actionId', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       const res = await post(approveBody());
@@ -1348,11 +2802,12 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     });
 
     it.each([
-      { stored: true, supplied: false },
-      { stored: false, supplied: true },
+      { stored: true, supplied: false, expected: true },
+      { stored: false, supplied: true, expected: false },
+      { stored: undefined, supplied: true, expected: false },
     ])(
       'restores authoritative isTemporary=$stored before reconstruction',
-      async ({ stored, supplied }) => {
+      async ({ stored, supplied, expected }) => {
         mockGenerationJobManager.getJob.mockResolvedValue(
           makeToolApprovalJob({ metadata: { isTemporary: stored } }),
         );
@@ -1361,7 +2816,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         expect(res.status).toBe(200);
         await settled;
 
-        expect(capturedInit.isTemporary).toBe(stored);
+        expect(capturedInit.isTemporary).toBe(expected);
       },
     );
 
@@ -1782,18 +3237,29 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     });
 
     it('resumes an ask_user_question with the free-form answer', async () => {
-      mockGenerationJobManager.getJob.mockResolvedValue(makeAskUserJob());
+      const job = makeAskUserJob();
+      const olderAsk = {
+        type: 'tool_call',
+        tool_call: { id: 'older-ask', name: 'ask_user_question', args: '' },
+      };
+      const currentAsk = {
+        type: 'tool_call',
+        tool_call: { id: 'current-ask', name: 'ask_user_question', args: '' },
+      };
+      const answeredPart = makeToolCallContent({
+        id: 'current-ask',
+        name: 'ask_user_question',
+        output: 'call it report.pdf',
+      });
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
       mockGenerationJobManager.getResumeState.mockResolvedValue({
-        aggregatedContent: [
-          {
-            type: 'tool_call',
-            tool_call: { id: 'older-ask', name: 'ask_user_question', args: '' },
-          },
-          {
-            type: 'tool_call',
-            tool_call: { id: 'current-ask', name: 'ask_user_question', args: '' },
-          },
-        ],
+        aggregatedContent: [olderAsk, currentAsk],
+      });
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          contentParts: [olderAsk, answeredPart, { type: 'text', text: 'Done' }],
+        }),
+        userMCPAuthMap: {},
       });
       const res = await post({
         conversationId: CONVO_ID,
@@ -1827,6 +3293,25 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         }),
         1000,
       );
+      expect(mockJobStore.updateJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        {
+          userSubmittedMessageFieldPaths: [
+            { path: '/content/1/tool_call/output', field: 'answer' },
+          ],
+        },
+        1000,
+      );
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          userSubmittedMessageFieldPaths: [
+            { path: '/content/1/tool_call/output', field: 'answer' },
+          ],
+        }),
+        expect.anything(),
+      );
+      expect(mockSaveMessage.mock.calls[0][1]).not.toHaveProperty('userSubmittedPaths');
       expect(mockGenerationJobManager.claimTerminalJob).toHaveBeenCalledWith(
         CONVO_ID,
         'complete',
@@ -1875,6 +3360,21 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     it('resumes a batched ask_user_question with answers keyed by question id', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeAskUserBatchJob());
       const answers = { environment: 'staging', window: '7d' };
+      const output = JSON.stringify({ answers });
+      mockGenerationJobManager.getResumeState.mockResolvedValue({
+        aggregatedContent: [
+          makeToolCallContent({ id: 'tc1', name: 'ask_user_question', args: '', output: '' }),
+        ],
+      });
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          contentParts: [
+            makeToolCallContent({ id: 'tc1', name: 'ask_user_question', output }),
+            { type: 'text', text: 'Done' },
+          ],
+        }),
+        userMCPAuthMap: {},
+      });
       const res = await post({
         conversationId: CONVO_ID,
         actionId: ACTION_ID,
@@ -1900,13 +3400,170 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           resolvedAskUserQuestions: [
             {
               request: { questions: expect.any(Array) },
-              output: JSON.stringify({ answers }),
+              output,
               toolCallId: 'tc1',
             },
           ],
         }),
         1000,
       );
+      const exactProvenance = [{ path: '/content/0/tool_call/output', field: 'answer' }];
+      expect(mockJobStore.updateJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        { userSubmittedMessageFieldPaths: exactProvenance },
+        1000,
+      );
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ userSubmittedMessageFieldPaths: exactProvenance }),
+        expect.anything(),
+      );
+    });
+
+    it('persists answer provenance for the payload tool_call_id in a multi-ask turn', async () => {
+      const job = makeAskUserJob();
+      job.metadata.pendingAction.payload.tool_call_id = 'ask-first';
+      const firstAsk = makeToolCallContent({
+        id: 'ask-first',
+        name: 'ask_user_question',
+        args: '',
+        output: '',
+      });
+      const secondAsk = makeToolCallContent({
+        id: 'ask-second',
+        name: 'ask_user_question',
+        args: '',
+        output: '',
+      });
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockGenerationJobManager.getResumeState.mockResolvedValue({
+        aggregatedContent: [firstAsk, secondAsk],
+      });
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          contentParts: [
+            makeToolCallContent({
+              id: 'ask-first',
+              name: 'ask_user_question',
+              output: 'first answer',
+            }),
+            secondAsk,
+          ],
+        }),
+        userMCPAuthMap: {},
+      });
+
+      const res = await post({
+        conversationId: CONVO_ID,
+        actionId: ACTION_ID,
+        agent_id: AGENT_ID,
+        endpoint: 'agents',
+        answer: 'first answer',
+      });
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      const exactProvenance = [{ path: '/content/0/tool_call/output', field: 'answer' }];
+      expect(mockJobStore.updateJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        { userSubmittedMessageFieldPaths: exactProvenance },
+        1000,
+      );
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ userSubmittedMessageFieldPaths: exactProvenance }),
+        expect.anything(),
+      );
+    });
+
+    it.each([
+      {
+        name: 'respond text',
+        resolution: { tool_call_id: 'tc1', decision: 'respond', responseText: 'human response' },
+        finalToolCall: { output: 'human response' },
+        expectedPath: '/content/0/tool_call/output',
+        expectedField: 'decision_response',
+      },
+      {
+        name: 'reject reason',
+        resolution: { tool_call_id: 'tc1', decision: 'reject', reason: 'human rejection' },
+        finalToolCall: { output: 'human rejection' },
+        expectedPath: '/content/0/tool_call/output',
+        expectedField: 'decision_reason',
+      },
+      {
+        name: 'edited arguments',
+        resolution: { tool_call_id: 'tc1', decision: 'edit', editedArguments: { q: 'human edit' } },
+        finalToolCall: { args: '{"q":"human edit"}' },
+        expectedPath: '/content/0/tool_call/args',
+        expectedField: undefined,
+      },
+    ])(
+      'persists exact provenance for $name',
+      async ({ resolution, finalToolCall, expectedPath, expectedField }) => {
+        const job = makeToolApprovalJob();
+        job.metadata.pendingAction.payload.review_configs = [
+          {
+            tool_call_id: 'tc1',
+            allowed_decisions: ['approve', resolution.decision],
+          },
+        ];
+        mockGenerationJobManager.getJob.mockResolvedValue(job);
+        mockGenerationJobManager.getResumeState.mockResolvedValue({
+          aggregatedContent: [makeToolCallContent()],
+        });
+        mockInitializeClient.mockResolvedValue({
+          client: makeClient({
+            contentParts: [makeToolCallContent(finalToolCall), { type: 'text', text: 'Done' }],
+          }),
+          userMCPAuthMap: {},
+        });
+
+        await post(approveBody({ decisions: [resolution] }));
+        await settled;
+        await flush();
+
+        const expectedProvenance = expectedField
+          ? {
+              userSubmittedMessageFieldPaths: [{ path: expectedPath, field: expectedField }],
+            }
+          : { userSubmittedPaths: [expectedPath] };
+        expect(mockJobStore.updateJob).toHaveBeenCalledWith(CONVO_ID, expectedProvenance, 1000);
+        expect(mockSaveMessage).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining(expectedProvenance),
+          expect.anything(),
+        );
+        if (expectedField) {
+          expect(mockSaveMessage.mock.calls[0][1]).not.toHaveProperty('userSubmittedPaths');
+        } else {
+          expect(mockSaveMessage.mock.calls[0][1]).not.toHaveProperty(
+            'userSubmittedMessageFieldPaths',
+          );
+        }
+      },
+    );
+
+    it('does not mark approve-only HITL content as user-submitted', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockGenerationJobManager.getResumeState.mockResolvedValue({
+        aggregatedContent: [makeToolCallContent()],
+      });
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({ contentParts: [makeToolCallContent({ output: 'tool result' })] }),
+        userMCPAuthMap: {},
+      });
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(mockJobStore.updateJob).not.toHaveBeenCalledWith(
+        CONVO_ID,
+        expect.objectContaining({ userSubmittedPaths: expect.anything() }),
+      );
+      expect(mockSaveMessage.mock.calls[0][1]).not.toHaveProperty('userSubmittedPaths');
     });
 
     it('generates a title for a first-turn pause before completing the stream', async () => {
@@ -1958,8 +3615,12 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
   describe('non-finalizing outcomes', () => {
     it('re-pause: does not finalize when the run pauses again', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      const exposePendingApproval = jest.fn().mockResolvedValue(undefined);
       mockInitializeClient.mockResolvedValue({
-        client: makeClient({ pendingApproval: { actionId: NEXT_ACTION_ID } }),
+        client: makeClient({
+          pendingApproval: { actionId: NEXT_ACTION_ID },
+          exposePendingApproval,
+        }),
         userMCPAuthMap: {},
       });
 
@@ -1989,6 +3650,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         1000,
       );
       expect(mockGenerationJobManager.failPausePersistence).not.toHaveBeenCalled();
+      expect(exposePendingApproval.mock.invocationCallOrder[0]).toBeLessThan(
+        mockGenerationJobManager.approvals.finishPausePersistence.mock.invocationCallOrder[0],
+      );
       // The slot is still released and the client disposed.
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
       expect(mockDisposeClient).toHaveBeenCalledTimes(1);
@@ -2021,6 +3685,43 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         }),
       );
       expect(mockGenerationJobManager.publishTerminalClaim).not.toHaveBeenCalled();
+    });
+
+    it('re-pause: preserves HITL response provenance on the unfinished row', async () => {
+      const job = makeToolApprovalJob();
+      job.metadata.pendingAction.payload.review_configs = [
+        { tool_call_id: 'tc1', allowed_decisions: ['respond'] },
+      ];
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockGenerationJobManager.getResumeState.mockResolvedValue({
+        aggregatedContent: [makeToolCallContent()],
+      });
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          pendingApproval: true,
+          contentParts: [makeToolCallContent({ output: 'human response' })],
+        }),
+        userMCPAuthMap: {},
+      });
+
+      await post(
+        approveBody({
+          decisions: [{ tool_call_id: 'tc1', decision: 'respond', responseText: 'human response' }],
+        }),
+      );
+      await settled;
+      await flush();
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          unfinished: true,
+          userSubmittedMessageFieldPaths: [
+            { path: '/content/0/tool_call/output', field: 'decision_response' },
+          ],
+        }),
+        expect.anything(),
+      );
     });
 
     it('re-pause: persists artifacts produced before pausing again (unfinished)', async () => {
@@ -2155,7 +3856,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockGenerationJobManager.failPausePersistence).toHaveBeenCalledTimes(1);
       expect(mockLogger.error).toHaveBeenCalledWith(
         '[ResumeAgentController] Failed to prune checkpoint after re-pause persistence failure',
-        checkpointError,
+        { type: 'Error' },
       );
       expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
@@ -2192,13 +3893,23 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
 
     it('abort-during-resume: lets the abort route finalize, does not double-save', async () => {
       const job = makeToolApprovalJob();
+      job.metadata.pendingAction.payload.review_configs = [
+        { tool_call_id: 'tc1', allowed_decisions: ['respond'] },
+      ];
       mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockGenerationJobManager.getResumeState.mockResolvedValue({
+        aggregatedContent: [makeToolCallContent()],
+      });
       mockInitializeClient.mockImplementation(async () => {
         job.abortController.abort();
         return { client: makeClient(), userMCPAuthMap: {} };
       });
 
-      const res = await post(approveBody());
+      const res = await post(
+        approveBody({
+          decisions: [{ tool_call_id: 'tc1', decision: 'respond', responseText: 'human response' }],
+        }),
+      );
       expect(res.status).toBe(200);
       await settled;
       await flush();
@@ -2206,14 +3917,24 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockSaveMessage).not.toHaveBeenCalled();
       expect(mockGenerationJobManager.publishTerminalClaim).not.toHaveBeenCalled();
       expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
+      expect(mockJobStore.updateJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        {
+          userSubmittedMessageFieldPaths: [
+            { path: '/content/0/tool_call/output', field: 'decision_response' },
+          ],
+        },
+        1000,
+      );
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
     });
 
-    it('resume failure delegates single-winner error publication and prunes the checkpoint', async () => {
+    it('resume failure delegates safe single-winner error publication and prunes the checkpoint', async () => {
+      const rawValue = 'PRIVATE-RESUME-PROVIDER-ECHO';
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       mockInitializeClient.mockResolvedValue({
         client: makeClient({
-          resumeCompletion: jest.fn().mockRejectedValue(new Error('boom')),
+          resumeCompletion: jest.fn().mockRejectedValue(new Error(`Provider echoed ${rawValue}`)),
         }),
         userMCPAuthMap: {},
       });
@@ -2224,7 +3945,12 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await flush();
 
       expect(mockGenerationJobManager.emitError).not.toHaveBeenCalled();
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, 'boom', 1000);
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        `Provider echoed ${rawValue}`,
+        1000,
+      );
+      expect(JSON.stringify(mockLogger.error.mock.calls)).not.toContain(rawValue);
       expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
         CONVO_ID,
         { type: 'mongo' },
@@ -2232,6 +3958,67 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       );
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
       expect(mockSaveMessage).not.toHaveBeenCalled();
+    });
+
+    it('uses a normalized resume error when protection is active', async () => {
+      const rawValue = 'PRIVATE-RESUME-PROVIDER-ECHO';
+      requestConfigOverrides = { filters: { messages: { pii: {} } } };
+      const job = makeToolApprovalJob();
+      job.metadata.userMessage.parentMessageId = Constants.NO_PARENT;
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          resumeCompletion: jest.fn().mockRejectedValue(new Error(`Provider echoed ${rawValue}`)),
+        }),
+        userMCPAuthMap: {},
+      });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockGenerationJobManager.emitError).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        'Resume failed',
+        1000,
+      );
+      expect(JSON.stringify(mockGenerationJobManager.completeJob.mock.calls)).not.toContain(
+        rawValue,
+      );
+      expect(JSON.stringify(mockLogger.error.mock.calls)).not.toContain(rawValue);
+    });
+
+    it('preserves resume error behavior for an unrelated-only source policy', async () => {
+      const rawValue = 'PROMPT-SOURCE-DOES-NOT-PARTICIPATE-IN-RESUME';
+      requestConfigOverrides = {
+        filters: {
+          prompts: {
+            pii: {
+              fields: ['text'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          resumeCompletion: jest.fn().mockRejectedValue(new Error(rawValue)),
+        }),
+        userMCPAuthMap: {},
+      });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockGetAgentCheckpointer).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.emitError).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, rawValue, 1000);
+      expect(JSON.stringify(mockLogger.error.mock.calls)).not.toContain(rawValue);
     });
 
     it('contains checkpoint deletion failure after winning ordinary resume-error finalization', async () => {
@@ -2253,7 +4040,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, 'boom', 1000);
       expect(mockLogger.error).toHaveBeenCalledWith(
         '[ResumeAgentController] Failed to prune checkpoint after failed resume finalization',
-        checkpointError,
+        { type: 'Error' },
       );
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
       expect(mockDisposeClient).toHaveBeenCalledTimes(1);

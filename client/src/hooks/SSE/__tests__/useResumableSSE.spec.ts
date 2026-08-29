@@ -236,6 +236,7 @@ jest.mock('~/hooks/SSE/useEventHandlers', () => {
       contentHandler: jest.fn(),
       resetContentHandler: jest.fn(),
       syncStepMessage: jest.fn(),
+      prunePtcTraces: jest.fn(),
       clearStepMaps: mockClearStepMaps,
       flushPendingDeltas: jest.fn(),
       messageHandler: jest.fn(),
@@ -2428,8 +2429,22 @@ describe('useResumableSSE', () => {
       });
     }
 
-    expect(mockResolveSteerChip).toHaveBeenNthCalledWith(1, CONV_ID, 'server-1', 'client-1');
-    expect(mockResolveSteerChip).toHaveBeenNthCalledWith(2, CONV_ID, 'server-2', 'client-2');
+    // 4th arg: the applied part's quotes (absent here) — see the pre-quotes
+    // server restage in resolveSteerChip.
+    expect(mockResolveSteerChip).toHaveBeenNthCalledWith(
+      1,
+      CONV_ID,
+      'server-1',
+      'client-1',
+      undefined,
+    );
+    expect(mockResolveSteerChip).toHaveBeenNthCalledWith(
+      2,
+      CONV_ID,
+      'server-2',
+      'client-2',
+      undefined,
+    );
     expect(requestFrame).toHaveBeenCalledTimes(2);
 
     await act(async () => {

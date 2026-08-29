@@ -1,5 +1,10 @@
-import type { Agents } from 'librechat-data-provider';
+import type { Agents, UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { EventEmitter } from 'events';
+import type {
+  AgentEventDetachedTerminalEvidence,
+  AgentEventSuspensionProjection,
+  AgentTriggerExpectedAction,
+} from '../agents/triggers/types';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '../agents/hitl/resume';
 import type { MCPRuntimeRequestBody } from '../mcp/types';
@@ -23,6 +28,10 @@ export interface GenerationJobMetadata {
   /** Exact normalized MCP placeholder identity for this turn. Persisted so HITL
    * resume does not reconstruct a different parent or overridden conversation. */
   mcpRequestBody?: MCPRuntimeRequestBody;
+  /** Exact assistant-message fields authored by the user during this running job. */
+  userSubmittedPaths?: string[];
+  /** Exact HITL message-filter fields embedded at those assistant-message paths. */
+  userSubmittedMessageFieldPaths?: UserSubmittedMessageFieldPath[];
   /** Sender label for the response (e.g., "GPT-4.1", "Claude") */
   sender?: string;
   /** Endpoint identifier for abort handling */
@@ -37,6 +46,24 @@ export interface GenerationJobMetadata {
   agent_id?: string;
   /** Whether the originating turn was a temporary chat; a HITL resume keeps it so. */
   isTemporary?: boolean;
+  /** Exact durable delivery whose accepted continuation created this generation. */
+  agentEventDeliveryKey?: string;
+  /** Original actor invocation when the current mailbox delivery is an internal completion. */
+  agentEventInvocationKey?: string;
+  /** Original actor invocation generation retained across completion HITL resumes. */
+  agentEventInvocationGenerationCreatedAt?: number;
+  /** This generation must resume on a durable detached-action producer. */
+  agentEventDetachedActionProducerRequired?: boolean;
+  /** Durable retry payload captured before detached terminal evidence reaches Mongo. */
+  agentEventDetachedTerminalEvidence?: AgentEventDetachedTerminalEvidence;
+  /** Trusted actor binding copied from the authenticated delivery envelope. */
+  agentEventBindingId?: string;
+  /** Optional action evidence contract declared by the authenticated event source. */
+  agentEventExpectedAction?: AgentTriggerExpectedAction;
+  /** Versioned pointer to the canonical signed suspension stored on the Conversation. */
+  agentEventSuspension?: AgentEventSuspensionProjection;
+  /** Exact durable legacy-turn fence carried across a HITL pause/resume. */
+  agentEventLegacyTurnToken?: string;
   /** Trusted scheduled-occurrence identity. These fields are accepted only from a
    * verified agent-trigger request and let pause/resume/reconciliation keep the
    * occurrence attached to the exact generation that owns it. */
@@ -61,8 +88,14 @@ export interface GenerationJobMetadata {
   activityPhaseSnapshot?: ActivityPhaseSnapshot;
   /** See `SerializableJobData.preemptCapable`. */
   preemptCapable?: boolean;
+  /** See `SerializableJobData.steerQuotesCapable`. */
+  steerQuotesCapable?: boolean;
+  /** See `SerializableJobData.steerQuotesExecutionId`. */
+  steerQuotesExecutionId?: string;
   /** Exact provider segment whose completion gates destructive user cleanup. */
   providerExecutionId?: string;
+  /** Exact provider owner that crossed its start fence. */
+  providerExecutionStartedId?: string;
   /** False only while that exact provider segment can still mutate user data. */
   providerDrained?: boolean;
   /** Terminal close has atomically stopped new steer acceptance, even if the

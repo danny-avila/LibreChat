@@ -88,6 +88,7 @@ jest.mock('@librechat/api', () => ({
     conversationId,
     parentMessageId,
   }),
+  parseAgentEventActorDetachedCompletion: jest.fn(() => undefined),
 }));
 
 jest.mock('~/server/cleanup', () => ({

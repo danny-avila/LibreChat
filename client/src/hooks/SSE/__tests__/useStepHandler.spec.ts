@@ -15,8 +15,11 @@ import type {
   TConversation,
   TMessage,
   SubagentUpdateEvent,
+  PtcToolCallEvent,
   Agents,
 } from 'librechat-data-provider';
+import type { PtcTrace, PtcTraceEntry } from '~/store/ptc';
+import { ptcTraceByToolCallId, ptcTraceKey, PTC_TRACE_MAX_ENTRIES } from '~/store/ptc';
 import { subagentProgressByToolCallId, subagentProgressKey } from '~/store/subagents';
 import { resolveAskUserQuestionPart } from '~/utils/approval';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
@@ -3532,6 +3535,42 @@ describe('useStepHandler', () => {
 
       expect(getProgress('call_keep')).not.toBeNull();
     });
+
+    it('uses parent stream closure to release a detached sequence waiting at handoff', () => {
+      const { result, getProgress } = renderStepHandlerWithReader();
+      const { submission } = seedResponseWithSubagentToolCalls(result, ['call_handoff']);
+
+      act(() => {
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeUpdate({
+              parentToolCallId: 'call_handoff',
+              activityEventId: 'task:5',
+              activitySequence: 5,
+              phase: 'message_delta',
+              data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'suffix' }] } },
+            }),
+          },
+          submission,
+        );
+      });
+
+      expect(getProgress('call_handoff')).toEqual(
+        expect.objectContaining({ contentParts: [], pendingSequencedEvents: [expect.any(Object)] }),
+      );
+
+      act(() => {
+        (result.current as any).clearStepMaps();
+      });
+
+      expect(getProgress('call_handoff')).toEqual(
+        expect.objectContaining({
+          contentParts: [{ type: ContentTypes.TEXT, text: 'suffix' }],
+          lastActivitySequence: 5,
+        }),
+      );
+    });
   });
 
   /**
@@ -3875,6 +3914,317 @@ describe('useStepHandler', () => {
       const response = currentMessages.find((m) => !m.isCreatedByUser);
       expect(response?.content?.[2]).toMatchObject({ [ContentTypes.TEXT]: 'streamed' });
       expect(response?.content).toHaveLength(3);
+    });
+  });
+
+  describe('PTC inner tool-call trace', () => {
+    const renderWithTraceReader = () => {
+      const hookResult = renderHook(
+        () => {
+          const stepHandler = useStepHandler(createHookParams());
+          const read = useRecoilCallback(
+            ({ snapshot }) =>
+              (messageId: string, toolCallId: string): PtcTrace =>
+                snapshot
+                  .getLoadable(ptcTraceByToolCallId(ptcTraceKey(messageId, toolCallId)))
+                  .valueOrThrow(),
+            [],
+          );
+          return { ...stepHandler, read };
+        },
+        { wrapper: RecoilRoot },
+      );
+      return {
+        result: hookResult.result,
+        getEntries: (toolCallId: string, messageId = 'response-msg-1'): PtcTraceEntry[] =>
+          (
+            hookResult.result.current as unknown as { read: (m: string, id: string) => PtcTrace }
+          ).read(messageId, toolCallId).entries,
+        getTrace: (toolCallId: string, messageId = 'response-msg-1'): PtcTrace =>
+          (
+            hookResult.result.current as unknown as { read: (m: string, id: string) => PtcTrace }
+          ).read(messageId, toolCallId),
+      };
+    };
+
+    const ptcEvent = (overrides: Partial<PtcToolCallEvent>): PtcToolCallEvent => ({
+      tool_call_id: 'call_ptc',
+      call_id: 'call_ptc:0',
+      name: 'read_file',
+      status: 'running',
+      runId: 'response-msg-1',
+      ...overrides,
+    });
+
+    it('appends a row for each inner call the program starts', () => {
+      const { result, getEntries } = renderWithTraceReader();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_PTC_TOOL_CALL,
+            data: ptcEvent({ call_id: 'call_ptc:0', args: 'path=a.ts' }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_PTC_TOOL_CALL,
+            data: ptcEvent({ call_id: 'call_ptc:1', name: 'write_file', args: 'path=b.ts' }),
+          },
+          submission,
+        );
+      });
+
+      expect(getEntries('call_ptc')).toEqual([
+        { callId: 'call_ptc:0', name: 'read_file', status: 'running', args: 'path=a.ts' },
+        { callId: 'call_ptc:1', name: 'write_file', status: 'running', args: 'path=b.ts' },
+      ]);
+    });
+
+    it('settles a row in place instead of appending a duplicate', () => {
+      const { result, getEntries } = renderWithTraceReader();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_PTC_TOOL_CALL, data: ptcEvent({ args: 'path=a.ts' }) },
+          submission,
+        );
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_PTC_TOOL_CALL,
+            data: ptcEvent({ status: 'success', durationMs: 1200 }),
+          },
+          submission,
+        );
+      });
+
+      expect(getEntries('call_ptc')).toEqual([
+        {
+          callId: 'call_ptc:0',
+          name: 'read_file',
+          status: 'success',
+          args: 'path=a.ts',
+          durationMs: 1200,
+        },
+      ]);
+    });
+
+    it('keeps each PTC call trace under its own tool call id', () => {
+      const { result, getEntries } = renderWithTraceReader();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_PTC_TOOL_CALL, data: ptcEvent({}) },
+          submission,
+        );
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_PTC_TOOL_CALL,
+            data: ptcEvent({ tool_call_id: 'call_other', call_id: 'call_other:0' }),
+          },
+          submission,
+        );
+      });
+
+      expect(getEntries('call_ptc')).toHaveLength(1);
+      expect(getEntries('call_other')).toHaveLength(1);
+    });
+
+    it('drops an envelope with no call identity rather than seeding a blank row', () => {
+      const { result, getEntries } = renderWithTraceReader();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_PTC_TOOL_CALL, data: ptcEvent({ call_id: '' }) },
+          submission,
+        );
+      });
+
+      expect(getEntries('call_ptc')).toEqual([]);
+    });
+
+    it('keeps a reused tool_call_id isolated across parent messages', () => {
+      const { result, getEntries } = renderWithTraceReader();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_PTC_TOOL_CALL, data: ptcEvent({ name: 'read_file' }) },
+          submission,
+        );
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_PTC_TOOL_CALL,
+            data: ptcEvent({ name: 'write_file', runId: 'response-msg-2' }),
+          },
+          submission,
+        );
+      });
+
+      expect(getEntries('call_ptc').map((e) => e.name)).toEqual(['read_file']);
+      expect(getEntries('call_ptc', 'response-msg-2').map((e) => e.name)).toEqual(['write_file']);
+    });
+
+    it('drops an envelope that cannot be scoped to a parent message', () => {
+      const { result, getEntries } = renderWithTraceReader();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_PTC_TOOL_CALL, data: ptcEvent({ runId: undefined }) },
+          submission,
+        );
+      });
+
+      expect(getEntries('call_ptc')).toEqual([]);
+    });
+
+    it('marks rows still running across a resume gap and keeps settled ones', () => {
+      const { result, getEntries } = renderWithTraceReader();
+      const submission = createSubmission();
+
+      act(() => {
+        /** Real order: each row opens as `running` before it settles. */
+        result.current.stepHandler(
+          { event: StepEvents.ON_PTC_TOOL_CALL, data: ptcEvent({ call_id: 'call_ptc:0' }) },
+          submission,
+        );
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_PTC_TOOL_CALL,
+            data: ptcEvent({ call_id: 'call_ptc:0', status: 'success', durationMs: 900 }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_PTC_TOOL_CALL,
+            data: ptcEvent({ call_id: 'call_ptc:1', name: 'write_file' }),
+          },
+          submission,
+        );
+      });
+      expect(getEntries('call_ptc')).toHaveLength(2);
+
+      act(() => {
+        (result.current as unknown as { prunePtcTraces: () => void }).prunePtcTraces();
+      });
+
+      expect(getEntries('call_ptc').map((e) => [e.callId, e.status])).toEqual([
+        ['call_ptc:0', 'success'],
+        ['call_ptc:1', 'interrupted'],
+      ]);
+    });
+
+    it('lets a call still running across the gap settle onto its marked row', () => {
+      const { result, getEntries } = renderWithTraceReader();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_PTC_TOOL_CALL,
+            data: ptcEvent({ call_id: 'call_ptc:0', name: 'write_file' }),
+          },
+          submission,
+        );
+      });
+
+      act(() => {
+        (result.current as unknown as { prunePtcTraces: () => void }).prunePtcTraces();
+      });
+      expect(getEntries('call_ptc').map((e) => e.status)).toEqual(['interrupted']);
+
+      /** The call outlived the disconnect, so its terminal event arrives on
+       *  the restored live stream and must land on the row it opened. */
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_PTC_TOOL_CALL,
+            data: ptcEvent({
+              call_id: 'call_ptc:0',
+              name: 'write_file',
+              status: 'success',
+              durationMs: 1400,
+            }),
+          },
+          submission,
+        );
+      });
+
+      expect(getEntries('call_ptc')).toEqual([
+        expect.objectContaining({ callId: 'call_ptc:0', status: 'success', durationMs: 1400 }),
+      ]);
+    });
+
+    it('caps the retained rows and reports how many it dropped', () => {
+      const { result, getTrace } = renderWithTraceReader();
+      const submission = createSubmission();
+      const total = PTC_TRACE_MAX_ENTRIES + 25;
+
+      act(() => {
+        for (let i = 0; i < total; i++) {
+          result.current.stepHandler(
+            { event: StepEvents.ON_PTC_TOOL_CALL, data: ptcEvent({ call_id: `call_ptc:${i}` }) },
+            submission,
+          );
+        }
+      });
+
+      const trace = getTrace('call_ptc');
+      expect(trace.entries).toHaveLength(PTC_TRACE_MAX_ENTRIES);
+      expect(trace.dropped).toBe(25);
+      /** The tail is retained, so the newest call is still visible. */
+      expect(trace.entries.at(-1)?.callId).toBe(`call_ptc:${total - 1}`);
+    });
+
+    it('ignores a settle whose row the cap already evicted', () => {
+      const { result, getTrace } = renderWithTraceReader();
+      const submission = createSubmission();
+
+      act(() => {
+        for (let i = 0; i < PTC_TRACE_MAX_ENTRIES + 5; i++) {
+          result.current.stepHandler(
+            { event: StepEvents.ON_PTC_TOOL_CALL, data: ptcEvent({ call_id: `call_ptc:${i}` }) },
+            submission,
+          );
+        }
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_PTC_TOOL_CALL,
+            data: ptcEvent({ call_id: 'call_ptc:0', status: 'success', durationMs: 10 }),
+          },
+          submission,
+        );
+      });
+
+      const trace = getTrace('call_ptc');
+      expect(trace.entries).toHaveLength(PTC_TRACE_MAX_ENTRIES);
+      expect(trace.entries.some((e) => e.callId === 'call_ptc:0')).toBe(false);
+    });
+
+    it('releases the trace atoms on reset', () => {
+      const { result, getEntries } = renderWithTraceReader();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_PTC_TOOL_CALL, data: ptcEvent({}) },
+          submission,
+        );
+      });
+      expect(getEntries('call_ptc')).toHaveLength(1);
+
+      act(() => {
+        (result.current as unknown as { resetPtcAtoms: () => void }).resetPtcAtoms();
+      });
+
+      expect(getEntries('call_ptc')).toEqual([]);
     });
   });
 });

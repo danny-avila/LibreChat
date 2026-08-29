@@ -19,19 +19,23 @@ import type {
   TMessageContentParts,
   SubagentUpdateEvent,
   SandboxStartingEvent,
+  PtcToolCallEvent,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
 import {
-  foldSubagentEvent,
-  foldSubagentEventIntoTicker,
-  initSubagentAggregatorState,
-  initSubagentTickerState,
-} from '~/utils/subagentContent';
-import {
+  closeParentSubagentProgress,
+  listRegisteredSubagentProgressKeys,
+  reduceSubagentProgress,
+  registerSubagentProgressKey,
+  subagentParentStreamOpenByToolCallId,
   subagentProgressByToolCallId,
-  subagentProgressKey,
+  takeRegisteredSubagentProgressKeys,
   sandboxStartingByToolCallId,
+  ptcTraceByToolCallId,
+  PTC_TRACE_MAX_ENTRIES,
+  subagentProgressKey,
+  ptcTraceKey,
 } from '~/store';
 import { isAskUserQuestionPart, isAnsweredAskUserQuestionPart } from '~/utils/approval';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
@@ -63,7 +67,8 @@ type TStepEvent =
   | { event: StepEvents.ON_SUMMARIZE_DELTA; data: Agents.SummarizeDeltaEvent }
   | { event: StepEvents.ON_SUMMARIZE_COMPLETE; data: Agents.SummarizeCompleteEvent }
   | { event: StepEvents.ON_SUBAGENT_UPDATE; data: SubagentUpdateEvent }
-  | { event: StepEvents.ON_SANDBOX_STARTING; data: SandboxStartingEvent };
+  | { event: StepEvents.ON_SANDBOX_STARTING; data: SandboxStartingEvent }
+  | { event: StepEvents.ON_PTC_TOOL_CALL; data: PtcToolCallEvent };
 
 type MessageDeltaUpdate = {
   type: ContentTypes.TEXT;
@@ -183,13 +188,6 @@ export default function useStepHandler({
   const pendingSubagentBuffer = useRef(
     new Map<string, { parentMessageId: string; events: SubagentUpdateEvent[] }>(),
   );
-  /**
-   * Tracked atom keys so `clearStepMaps` can reset them. Without this, each
-   * subagent invocation leaks an `events: SubagentUpdateEvent[]` array in the
-   * `atomFamily` — atoms persist for the app lifetime.
-   */
-  const knownSubagentAtomKeys = useRef(new Set<string>());
-
   const getCurrentMessages = useCallback(
     (messages: TMessage[]) => {
       const freshMessages = getMessages();
@@ -276,35 +274,11 @@ export default function useStepHandler({
         }
         const toApply = pending ? [...pending.events, payload] : [payload];
 
-        knownSubagentAtomKeys.current.add(invocationKey);
-        set(subagentProgressByToolCallId(invocationKey), (prev) => {
-          /** Fold the batch into both aggregators. Pure functions — they
-           *  return a new reference only when something actually changed,
-           *  so React bails out of unnecessary re-renders downstream. */
-          let contentParts = prev?.contentParts ?? [];
-          let aggregatorState = prev?.aggregatorState ?? initSubagentAggregatorState();
-          let tickerState = prev?.tickerState ?? initSubagentTickerState();
-          for (const event of toApply) {
-            ({ parts: contentParts, state: aggregatorState } = foldSubagentEvent(
-              contentParts,
-              aggregatorState,
-              event,
-            ));
-            tickerState = foldSubagentEventIntoTicker(tickerState, event);
-          }
-
-          const last = toApply[toApply.length - 1];
-          return {
-            subagentRunId: payload.subagentRunId,
-            subagentType: payload.subagentType,
-            subagentAgentId: payload.subagentAgentId ?? prev?.subagentAgentId,
-            contentParts,
-            aggregatorState,
-            tickerState,
-            status: last.phase,
-            latestLabel: last.label ?? prev?.latestLabel,
-          };
-        });
+        registerSubagentProgressKey(invocationKey);
+        set(subagentParentStreamOpenByToolCallId(invocationKey), true);
+        set(subagentProgressByToolCallId(invocationKey), (prev) =>
+          reduceSubagentProgress(prev, toApply, 'parent', true),
+        );
       },
     [resolveSubagentInvocationKey],
   );
@@ -323,10 +297,21 @@ export default function useStepHandler({
   const resetSubagentAtoms = useRecoilCallback(
     ({ reset }) =>
       (): void => {
-        for (const invocationKey of knownSubagentAtomKeys.current) {
+        for (const invocationKey of takeRegisteredSubagentProgressKeys()) {
           reset(subagentProgressByToolCallId(invocationKey));
+          reset(subagentParentStreamOpenByToolCallId(invocationKey));
         }
-        knownSubagentAtomKeys.current.clear();
+      },
+    [],
+  );
+
+  const closeParentSubagentStreams = useRecoilCallback(
+    ({ set }) =>
+      (): void => {
+        for (const invocationKey of listRegisteredSubagentProgressKeys()) {
+          set(subagentParentStreamOpenByToolCallId(invocationKey), false);
+          set(subagentProgressByToolCallId(invocationKey), closeParentSubagentProgress);
+        }
       },
     [],
   );
@@ -362,6 +347,108 @@ export default function useStepHandler({
           reset(sandboxStartingByToolCallId(toolCallId));
         }
         knownSandboxAtomKeys.current.clear();
+      },
+    [],
+  );
+
+  /** PTC tool call ids with a live trace, so the atoms can be released. */
+  const knownPtcAtomKeys = useRef(new Set<string>());
+
+  /**
+   * Folds one `on_ptc_tool_call` envelope into its program's trace: the
+   * `running` event appends a row, the settling event updates that row in
+   * place by `call_id`. Order follows the sandbox's dispatch order, which is
+   * what the code reads like — a round trip can settle out of order.
+   */
+  const applyPtcToolCall = useRecoilCallback(
+    ({ set }) =>
+      (event: PtcToolCallEvent, parentMessageId: string): void => {
+        const { tool_call_id: toolCallId, call_id: callId, name, status } = event;
+        /** No parent message means no occurrence to scope this to; a raw
+         *  `tool_call_id` would leak the rows into whichever card reused it. */
+        if (!toolCallId || !callId || !parentMessageId) {
+          return;
+        }
+        const atomKey = ptcTraceKey(parentMessageId, toolCallId);
+        knownPtcAtomKeys.current.add(atomKey);
+        set(ptcTraceByToolCallId(atomKey), (previous) => {
+          const index = previous.entries.findIndex((entry) => entry.callId === callId);
+          const entry = {
+            callId,
+            name,
+            status,
+            ...(event.args ? { args: event.args } : {}),
+            ...(event.error ? { error: event.error } : {}),
+            ...(event.durationMs != null ? { durationMs: event.durationMs } : {}),
+          };
+
+          if (index !== -1) {
+            const next = [...previous.entries];
+            next[index] = { ...previous.entries[index], ...entry };
+            return { entries: next, dropped: previous.dropped };
+          }
+
+          /** A settle whose row is gone — evicted by the cap, or pruned across
+           *  a resume gap — must not reappear at the tail out of order. */
+          if (status !== 'running') {
+            return previous;
+          }
+
+          const appended = [...previous.entries, entry];
+          const overflow = appended.length - PTC_TRACE_MAX_ENTRIES;
+          if (overflow <= 0) {
+            return { entries: appended, dropped: previous.dropped };
+          }
+          return {
+            entries: appended.slice(overflow),
+            dropped: previous.dropped + overflow,
+          };
+        });
+      },
+    [],
+  );
+
+  const resetPtcAtoms = useRecoilCallback(
+    ({ reset }) =>
+      (): void => {
+        for (const atomKey of knownPtcAtomKeys.current) {
+          reset(ptcTraceByToolCallId(atomKey));
+        }
+        knownPtcAtomKeys.current.clear();
+      },
+    [],
+  );
+
+  /**
+   * Settles rows still marked `running` after a stream gap as `interrupted`.
+   * Inner calls carry no durable state — they are not content parts, so the
+   * resume snapshot cannot rebuild them and a settling event lost in the gap
+   * is never replayed — which means such a row would otherwise spin forever.
+   *
+   * Marked, not removed: a call can also still be executing across the
+   * reconnect, and its settling event then arrives normally on the restored
+   * live stream. That event updates this row in place, so the call reports its
+   * real outcome. Deleting the row would strand it — a settle whose row is
+   * gone is dropped rather than re-appended out of order — and the call would
+   * vanish from the trace despite having run. Settled rows are untouched.
+   */
+  const prunePtcTraces = useRecoilCallback(
+    ({ set }) =>
+      (): void => {
+        for (const atomKey of knownPtcAtomKeys.current) {
+          set(ptcTraceByToolCallId(atomKey), (previous) =>
+            previous.entries.some((entry) => entry.status === 'running')
+              ? {
+                  ...previous,
+                  entries: previous.entries.map((entry) =>
+                    entry.status === 'running'
+                      ? { ...entry, status: 'interrupted' as const }
+                      : entry,
+                  ),
+                }
+              : previous,
+          );
+        }
       },
     [],
   );
@@ -867,7 +954,7 @@ export default function useStepHandler({
         // Store tool call IDs if present
         if (runStep.stepDetails.type === StepTypes.TOOL_CALLS) {
           let updatedResponse = { ...response };
-          (runStep.stepDetails.tool_calls as Agents.ToolCall[]).forEach((toolCall) => {
+          ((runStep.stepDetails.tool_calls ?? []) as Agents.ToolCall[]).forEach((toolCall) => {
             const toolCallId = toolCall.id ?? '';
             if ('id' in toolCall && toolCallId) {
               toolCallIdMap.current.set(runStep.id, toolCallId);
@@ -1278,6 +1365,14 @@ export default function useStepHandler({
         );
       } else if (stepEvent.event === StepEvents.ON_SANDBOX_STARTING) {
         setSandboxStarting(stepEvent.data.tool_call_id);
+      } else if (stepEvent.event === StepEvents.ON_PTC_TOOL_CALL) {
+        /** `runId` is the response message id (the run configurable's
+         *  `run_id`), the same correlation the subagent path uses. */
+        let responseMessageId = stepEvent.data.runId ?? '';
+        if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
+          responseMessageId = submission?.initialResponse?.messageId ?? '';
+        }
+        applyPtcToolCall(stepEvent.data, responseMessageId);
       } else if (stepEvent.event === StepEvents.ON_SUBAGENT_UPDATE) {
         let responseMessageId = stepEvent.data.runId;
         if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
@@ -1389,6 +1484,7 @@ export default function useStepHandler({
       applySubagentUpdate,
       setSandboxStarting,
       clearSandboxStarting,
+      applyPtcToolCall,
       onSkillAuthoringComplete,
     ],
   );
@@ -1437,6 +1533,7 @@ export default function useStepHandler({
     subagentRunToInvocationKey.current.clear();
     claimedSubagentInvocationKeys.current.clear();
     pendingSubagentBuffer.current.clear();
+    closeParentSubagentStreams();
     /** Unlike subagent atoms below, sandbox-starting flags are transient
      *  status with no audit value — reset them at this boundary so an
      *  interrupted cold boot can't leak a stale "starting" label onto a
@@ -1450,7 +1547,7 @@ export default function useStepHandler({
      *  persisted `subagent_content` takes over for historical messages
      *  once the conversation is saved, and we prevent unbounded
      *  atomFamily growth across multi-conversation sessions. */
-  }, [cancelPendingDeltaFlush, resetSandboxAtoms]);
+  }, [cancelPendingDeltaFlush, closeParentSubagentStreams, resetSandboxAtoms]);
 
   /**
    * Sync a message into the step handler's messageMap.
@@ -1478,6 +1575,8 @@ export default function useStepHandler({
     stepHandler,
     clearStepMaps,
     resetSubagentAtoms,
+    resetPtcAtoms,
+    prunePtcTraces,
     syncStepMessage,
     cancelPendingDeltaFlush,
     flushPendingDeltas,

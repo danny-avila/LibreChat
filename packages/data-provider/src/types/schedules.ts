@@ -1,7 +1,15 @@
 import { z } from 'zod';
 
-export const scheduleFrequencies = ['hourly', 'daily', 'weekdays', 'weekly'] as const;
+/** Cadences the dialog builds from structured pickers (hour, minute, weekday). */
+export const scheduleStructuredFrequencies = ['hourly', 'daily', 'weekdays', 'weekly'] as const;
+export type ScheduleStructuredFrequency = (typeof scheduleStructuredFrequencies)[number];
+
+export const scheduleFrequencies = [...scheduleStructuredFrequencies, 'cron'] as const;
 export type ScheduleFrequency = (typeof scheduleFrequencies)[number];
+
+/** Bounds a stored expression. Generous for five fields, because each one can hold a
+ *  list: an every-minute-of-the-hour cadence spelled out runs past two hundred chars. */
+export const SCHEDULE_CRON_MAX_LENGTH = 256;
 
 export const scheduleTargets = ['new'] as const;
 export type ScheduleTarget = (typeof scheduleTargets)[number];
@@ -24,8 +32,8 @@ export type ScheduleRunStatus =
   | 'skipped_overlap'
   | 'skipped_balance';
 
-export const scheduleCadenceSchema = z.object({
-  frequency: z.enum(scheduleFrequencies),
+export const structuredCadenceSchema = z.object({
+  frequency: z.enum(scheduleStructuredFrequencies),
   hour: z.number().int().min(0).max(23),
   minute: z.number().int().min(0).max(59),
   daysOfWeek: z
@@ -35,7 +43,28 @@ export const scheduleCadenceSchema = z.object({
     .transform((days) => Array.from(new Set(days)))
     .optional(),
 });
+export type TStructuredCadence = z.infer<typeof structuredCadenceSchema>;
+
+/**
+ * A raw cron expression carries its own hour and minute, so it cannot share the
+ * structured shape: there is no single `hour` for `0 9,17 * * 1-5`. Syntax is
+ * validated server-side by croner, the same parser the engine fires from, rather
+ * than by a regex that would accept patterns croner then rejects at fire time.
+ */
+export const cronCadenceSchema = z.object({
+  frequency: z.literal('cron'),
+  expression: z.string().trim().min(1).max(SCHEDULE_CRON_MAX_LENGTH),
+});
+export type TCronCadence = z.infer<typeof cronCadenceSchema>;
+
+export const scheduleCadenceSchema = z.discriminatedUnion('frequency', [
+  structuredCadenceSchema,
+  cronCadenceSchema,
+]);
 export type TScheduleCadence = z.infer<typeof scheduleCadenceSchema>;
+
+export const isCronCadence = (cadence: TScheduleCadence): cadence is TCronCadence =>
+  cadence.frequency === 'cron';
 
 export const createSchedulePayloadSchema = z.object({
   name: z.string().trim().min(1).max(256),
@@ -129,6 +158,9 @@ export type TScheduleRun = {
  *  path enforce, so the form can never offer a choice the server would refuse. */
 export type TScheduleLimits = {
   maxPerUser: number;
+  /** Served with the list so the dialog can refuse a cadence the floor would reject
+   *  rather than surfacing it as a 400 after submit. */
+  minIntervalMinutes: number;
   /** Every schedule must be filed under a chat project. */
   requireProject: boolean;
   /** Operator-pinned destination project; when set it is the ONLY destination and

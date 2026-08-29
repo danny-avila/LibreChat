@@ -1089,6 +1089,45 @@ test.describe('message tree stream operations', () => {
     await expectVisibleMessages(page, [editedMiddlePrompt, editedMiddleReply, afterEditReply]);
   });
 
+  /** Regression: the editor's submit button was disabled until the draft differed, so
+   *  reissuing a cancelled request or one that failed on a since-restarted backend meant
+   *  typing a throwaway character first. An untouched draft reruns as-is. */
+  test('reruns an untouched user request from the editor', async ({ page }) => {
+    const label = uniqueLabel('rerun-untouched');
+    const prompt = countedPrompt(label);
+    const firstReply = countedReplyText(label, 1);
+    const secondReply = countedReplyText(label, 2);
+
+    await openMockChat(page);
+    await sendAndExpectReply(page, prompt, firstReply);
+    const conversationId = await conversationIdFromPage(page);
+
+    await clickMessageTitleButton(page, prompt, 'Edit');
+    const editor = page.getByTestId('message-text-editor');
+    await expect(editor).toBeVisible();
+    await expect(editor).toHaveValue(prompt);
+
+    const rerun = page.getByRole('button', { name: 'Rerun', exact: true });
+    await expect(rerun).toBeEnabled();
+    /** Nothing to save, so that button stays out of reach; the rerun does not. */
+    await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+    await waitForGenerationStart(page, () => rerun.click());
+
+    await expect(messagesView(page).getByText(secondReply)).toBeVisible({ timeout: 30000 });
+
+    const messages = await waitForMessages(
+      page,
+      conversationId,
+      (items) => items.some((message) => messageText(message).includes(secondReply)),
+      'rerun of an untouched request',
+    );
+    /** Reissued verbatim: a second user turn carrying exactly the original text. */
+    const reissued = messages.filter(
+      (message) => message.isCreatedByUser === true && messageText(message) === prompt,
+    );
+    expect(reissued).toHaveLength(2);
+  });
+
   test('error responses remain valid parents for follow-ups', async ({ page }) => {
     const label = uniqueLabel('error');
     const basePrompt = replyPrompt(`${label}-base`);

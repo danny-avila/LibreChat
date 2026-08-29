@@ -17,16 +17,26 @@ import {
   useFocusChatEffect,
 } from '~/hooks';
 import {
+  cn,
+  getModelSpec,
+  hasIncompleteFiles,
+  removeFocusRings,
+  getComposerDraftId,
+  getFilesDraftCached,
+  isPastedTextFileMarked,
+} from '~/utils';
+import {
   useChatContext,
   useChatFormContext,
   useAddedChatContext,
   useAssistantsMapContext,
 } from '~/Providers';
-import { cn, getModelSpec, hasIncompleteFiles, removeFocusRings } from '~/utils';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
+import usePastedTextEdit from '~/hooks/Files/usePastedTextEdit';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import InterruptSteerButton from './InterruptSteerButton';
+import PastedTextDialog from './Files/PastedTextDialog';
 import DuringRunSendButton from './DuringRunSendButton';
 import ProjectLandingChip from '../ProjectLandingChip';
 import { useGetStartupConfig } from '~/data-provider';
@@ -196,6 +206,31 @@ const ChatForm = memo(function ChatForm({
     // when the question resolves.
     draftId: answerMode.draftId,
   });
+
+  const pastedTextEdit = usePastedTextEdit({ index, files, setFiles, textAreaRef });
+
+  /** Provenance, not the filename, decides which chips are pastes: a user can deliberately
+   * upload a `pasted-text.txt`. Restored provenance comes from the files draft; marks made
+   * this session are read live from the registry, so new pastes need no recompute. */
+  const pastedTextFileIds = useMemo(() => {
+    const draftId = getComposerDraftId(index, conversationId, isSubmitting);
+    const draftIds = getFilesDraftCached(draftId).pastedTextIds ?? [];
+    return new Set<string>(draftIds);
+  }, [index, conversationId, isSubmitting]);
+  const isPastedTextFile = useCallback(
+    (file: ExtendedFile) =>
+      pastedTextFileIds.has(file.file_id) ||
+      (file.temp_file_id != null && pastedTextFileIds.has(file.temp_file_id)) ||
+      isPastedTextFileMarked(file.file_id) ||
+      isPastedTextFileMarked(file.temp_file_id),
+    [pastedTextFileIds],
+  );
+  /** The chip's actions hide while a replacement upload or inline move is in flight, so the
+   * same original cannot be acted on twice. */
+  const isPasteActionPending = useCallback(
+    (file: ExtendedFile) => pastedTextEdit.isActionPending(file.file_id),
+    [pastedTextEdit],
+  );
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
 
@@ -586,10 +621,20 @@ const ChatForm = memo(function ChatForm({
                 setBadges={setBadges}
               />
               <FileFormChat
+                index={index}
                 conversation={conversation}
                 files={files}
                 setFiles={setFiles}
                 setFilesLoading={setFilesLoading}
+                isPastedTextFile={isPastedTextFile}
+                isPasteActionPending={isPasteActionPending}
+                onEditPastedText={pastedTextEdit.openEditor}
+                onMovePastedTextInline={pastedTextEdit.moveInline}
+              />
+              <PastedTextDialog
+                edit={pastedTextEdit.editing}
+                onClose={pastedTextEdit.closeEditor}
+                onSave={pastedTextEdit.saveEdit}
               />
               {endpoint && (
                 <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>

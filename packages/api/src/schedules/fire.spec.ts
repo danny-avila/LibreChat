@@ -270,6 +270,23 @@ describe('fireSchedule', () => {
     expect([...runs.values()][0].status).toBe('started');
   });
 
+  it('refuses to fire a cadence the engine cannot read at all', async () => {
+    // A cron cadence reaches the fire path with a stored timezone croner cannot use,
+    // so the next run is uncomputable: disable without dispatching.
+    const { methods, runs } = makeMethods();
+    mockFetch(async () => okResponse());
+    const schedule = makeSchedule({
+      cadence: { frequency: 'cron', expression: '0 9 * * *' },
+      timezone: 'Not/AZone',
+    });
+
+    const result = await fireSchedule(makeDeps(methods), schedule, LIMITS, dueAt());
+
+    expect(result.fired).toBe(false);
+    expect(runs.size).toBe(0);
+    expect(methods.disableSchedule).toHaveBeenCalledWith('sched-1', 'invalid_schedule', 'ct-1');
+  });
+
   it('releases the old holder when a post-enqueue owner edit fences the advance', async () => {
     const { methods } = makeMethods();
     const enqueueTrigger = jest.fn(async () => undefined);

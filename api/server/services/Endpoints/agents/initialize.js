@@ -14,8 +14,10 @@ const {
   discoverConnectedAgents,
   resolveAgentTokenConfig,
   resolveAgentScopedSkillIds,
+  resolveAlwaysApplySkills,
   resolveModelSpecSkillIds,
   getAgentStartupTelemetry,
+  isContentFilterError,
   buildAgentContextAttachmentsByAgentId,
   collectCodeExecutionProfileRoutes,
   getLazySubagentConfigId,
@@ -38,6 +40,7 @@ const {
 const {
   createToolEndCallback,
   createAttachmentEmitter,
+  createPtcProgressEmitter,
   createBackgroundCodeResultHandler,
   getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
@@ -122,7 +125,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
         accessibleMcpServerNames,
       });
     } catch (error) {
-      if (isFatalAgentInitializationError(error)) {
+      if (isFatalAgentInitializationError(error) || isContentFilterError(error)) {
         throw error;
       }
       logger.error('Error loading tools for agent ' + agentId, error);
@@ -306,6 +309,22 @@ const initializeClient = async ({
    * server-owned per-agent map. This covers both traditional TOOL_END events
    * and event-driven ON_TOOL_EXECUTE callbacks. */
   const toolEndCallback = async (data, metadata = {}) => {
+    /** Event-actor action receipt: recorded in graph context at execution time
+     * so fork classification never races the asynchronously populated run-step
+     * collection. Observational only — a recorder failure must not disturb the
+     * tool result path. */
+    if (typeof req._agentEventActionObserver === 'function') {
+      try {
+        req._agentEventActionObserver(data);
+      } catch (observerError) {
+        logger.warn('[toolEndCallback] Event actor action observer failed', observerError);
+      }
+    }
+    /** Policy-withheld outputs exist solely as execution evidence for the
+     * observer above; nothing may flow to artifact processing. */
+    if (data?.outputFiltered === true) {
+      return;
+    }
     const node = typeof metadata.langgraph_node === 'string' ? metadata.langgraph_node : '';
     const nodeAgentId = node.startsWith(GraphNodeKeys.TOOLS)
       ? node.slice(GraphNodeKeys.TOOLS.length)
@@ -327,8 +346,9 @@ const initializeClient = async ({
   /** @type {Map<string, import('@librechat/api').EndpointTokenConfig | undefined>} */
   const endpointTokenConfigByAgentId = new Map();
 
+  const invokedSkillIdentities = new Map();
   const toolExecuteOptions = {
-    loadTools: async (toolNames, agentId) => {
+    loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
       const ctx = agentToolContexts.get(agentId) ?? {};
       logger.debug(`[ON_TOOL_EXECUTE] ctx found: ${!!ctx.userMCPAuthMap}, agent: ${ctx.agent?.id}`);
       logger.debug(`[ON_TOOL_EXECUTE] toolRegistry size: ${ctx.toolRegistry?.size ?? 'undefined'}`);
@@ -343,6 +363,7 @@ const initializeClient = async ({
         toolNames,
         agent: ctx.agent,
         toolRegistry: ctx.toolRegistry,
+        callerCapabilityProjection,
         backgroundToolNames: ctx.backgroundToolNames,
         intentToolNames: ctx.intentToolNames,
         mcpAvailableTools: ctx.mcpAvailableTools,
@@ -367,11 +388,29 @@ const initializeClient = async ({
       });
     },
     toolEndCallback,
+    /** Bound later by request.js once the authenticated Event Actor owner and
+     * generation fence are known. Ordinary background calls remain unchanged. */
+    eventActorDetachedAction: {
+      reserve: (input) =>
+        req._agentEventDetachedActionLifecycle?.reserve(input) ??
+        Promise.resolve({ status: 'ignored' }),
+      markRunning: (input) =>
+        req._agentEventDetachedActionLifecycle?.markRunning(input) ?? Promise.resolve(false),
+      settle: (input) =>
+        req._agentEventDetachedActionLifecycle?.settle(input) ?? Promise.resolve(false),
+      wake: (input) => req._agentEventDetachedActionLifecycle?.wake(input) ?? Promise.resolve(),
+    },
     persistBackgroundCodeResult: createBackgroundCodeResultHandler({
       req,
       updateToolCallResult: db.updateToolCallResult,
     }),
     emitAttachment: createAttachmentEmitter({ res, streamId, jobCreatedAt }),
+    emitPtcProgress: createPtcProgressEmitter({ res, streamId, jobCreatedAt }),
+    onSkillResolved: (skill, { agentId }) => {
+      if (agentId === primaryConfig.id) {
+        invokedSkillIdentities.set(skill.id, skill);
+      }
+    },
     ...getSkillToolDeps(),
   };
 
@@ -706,6 +745,12 @@ const initializeClient = async ({
   const skippedAgentIds = new Set(discoveredSkippedIds ?? []);
 
   const lazyMetadataByAgentId = new Map();
+  const eventActorContextRequested =
+    req._isAgentTrigger === true && req._agentEventBindingParentConversationId != null;
+  /** Request-scoped cache: lazy descriptors sharing the same Skill ACL scope
+   * reuse one metadata-only always-apply lookup without initializing tools,
+   * files, model clients, or MCP connections. */
+  const lazyAlwaysApplySkillsByScope = new Map();
   const subagentGraphIds = new Set();
   const expandedSubagentDescriptorState = { configCount: 0, rootAgentIds: [] };
 
@@ -816,7 +861,38 @@ const initializeClient = async ({
       ),
     );
 
-  const toLazySubagentMetadata = (agent) => {
+  const resolveLazyAlwaysApplySkillPrimes = (agent) => {
+    if (!eventActorContextRequested) {
+      return Promise.resolve([]);
+    }
+    const scopedSkillIds = resolveAgentScopedSkillIds({
+      agent,
+      accessibleSkillIds,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    });
+    if (scopedSkillIds.length === 0 || typeof skillDbMethods.listAlwaysApplySkills !== 'function') {
+      return Promise.resolve([]);
+    }
+    const scopeKey = scopedSkillIds
+      .map((skillId) => skillId.toString())
+      .sort()
+      .join(':');
+    let resolution = lazyAlwaysApplySkillsByScope.get(scopeKey);
+    if (resolution == null) {
+      resolution = resolveAlwaysApplySkills({
+        listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
+        accessibleSkillIds: scopedSkillIds,
+        userId,
+        skillStates,
+        defaultActiveOnShare,
+      });
+      lazyAlwaysApplySkillsByScope.set(scopeKey, resolution);
+    }
+    return resolution;
+  };
+
+  const toLazySubagentMetadata = async (agent) => {
     const statefulCodeSessions =
       statefulSessionsAvailable === true &&
       codeEnvAvailable === true &&
@@ -837,6 +913,9 @@ const initializeClient = async ({
       model: agent.model,
       model_parameters: { model: agent.model_parameters?.model },
       recursion_limit: agent.recursion_limit,
+      memory_scope: agent.memory_scope,
+      memoryToolsRegistered:
+        memoryAvailable === true && agent.tools?.includes(Tools.memory) === true,
       subagents: agent.subagents,
       configId: getLazySubagentConfigId(agent),
       codeEnvAvailable:
@@ -844,6 +923,7 @@ const initializeClient = async ({
       statefulCodeSessions,
       statefulCodeEnvironment,
       includeReasoningHistory: getIncludeReasoningHistory(agent),
+      alwaysApplySkillPrimes: await resolveLazyAlwaysApplySkillPrimes(agent),
     };
   };
 
@@ -857,7 +937,7 @@ const initializeClient = async ({
         skippedAgentIds.add(agentId);
         return null;
       }
-      const metadata = toLazySubagentMetadata(agent);
+      const metadata = await toLazySubagentMetadata(agent);
       lazyMetadataByAgentId.set(agentId, metadata);
       return metadata;
     } catch (error) {
@@ -1067,12 +1147,15 @@ const initializeClient = async ({
         model: metadata.model,
         model_parameters: metadata.model_parameters,
         recursion_limit: metadata.recursion_limit,
+        memory_scope: metadata.memory_scope,
+        memoryToolsRegistered: metadata.memoryToolsRegistered,
         subagents: metadata.subagents,
         configId: metadata.configId,
         codeEnvAvailable: metadata.codeEnvAvailable,
         statefulCodeSessions: metadata.statefulCodeSessions,
         statefulCodeEnvironment: metadata.statefulCodeEnvironment,
         includeReasoningHistory: metadata.includeReasoningHistory,
+        alwaysApplySkillPrimes: metadata.alwaysApplySkillPrimes,
         lazySubagentConfigs: lazyChildren,
         subagentAgentConfigs: eagerChildren,
         subagentGraphMemberMetadata,
@@ -1247,9 +1330,7 @@ const initializeClient = async ({
               ? { tenantId: req.user.tenantId }
               : {}),
           },
-          {
-            completionWakeups: subagentThreadTaskStore.completionWakeupsEnabled === true,
-          },
+          { completionWakeups: true },
         )
       : undefined;
   let hasExistingSubagentTask = false;
@@ -1337,10 +1418,11 @@ const initializeClient = async ({
     },
   );
   const handlePrimeInvokedSkills = skillsCapabilityEnabled
-    ? (payload) =>
+    ? (payload, skillNames) =>
         primeInvokedSkillsForProfiles({
           req,
           payload,
+          skillNames,
           accessibleSkillIds,
           executionProfiles: codeExecutionProfiles,
           ...getSkillToolDeps(),
@@ -1368,6 +1450,25 @@ const initializeClient = async ({
       fallback: usageCost.endpointTokenConfig,
     });
 
+  const eventTaskId = req._agentEventTaskId;
+  const eventChildActivity =
+    req._agentEventBindingParentConversationId != null &&
+    typeof conversationId === 'string' &&
+    conversationId !== '' &&
+    typeof eventTaskId === 'string' &&
+    eventTaskId !== ''
+      ? {
+          runId: streamId ?? eventTaskId,
+          parentRunId: req._agentEventBindingParentConversationId,
+          subagentRunId: eventTaskId,
+          subagentType: primaryConfig.id,
+          subagentAgentId: primaryConfig.id,
+          parentAgentId: req._agentEventBindingParentAgentId,
+          publish: (event) =>
+            subagentThreadTaskStore.publishTaskActivity(conversationId, eventTaskId, event),
+        }
+      : null;
+
   const eventHandlers = getDefaultHandlers({
     res,
     contentParts,
@@ -1385,6 +1486,7 @@ const initializeClient = async ({
     usageCost,
     contextUsageSink,
     usageEmitSink,
+    eventChildActivity,
   });
 
   const client = new AgentClient({
@@ -1400,6 +1502,7 @@ const initializeClient = async ({
     aggregateContent,
     artifactPromises,
     primeInvokedSkills: handlePrimeInvokedSkills,
+    invokedSkillIdentities,
     agent: primaryConfig,
     spec: endpointOption.spec,
     iconURL: endpointOption.iconURL,

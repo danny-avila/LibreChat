@@ -248,6 +248,41 @@ describe('GenerationJobManager startup telemetry', () => {
     await manager.destroy();
   });
 
+  it('waits for provider-owner drain before settling an event-driven abort', async () => {
+    const manager = createManager();
+    const handler = jest.fn().mockResolvedValue(undefined);
+    manager.setTerminalHostActionHandler(handler);
+    const streamId = 'stream-event-provider-drain-wait';
+    const job = await manager.createJob(streamId, 'user-1', streamId, {
+      initialMetadata: { agentEventDeliveryKey: 'delivery-1' },
+    });
+    await expect(
+      manager.beginProviderExecution(streamId, job.createdAt, job.metadata.providerExecutionId!),
+    ).resolves.toBe(true);
+
+    let abortSettled = false;
+    const aborting = manager.abortJob(streamId).finally(() => (abortSettled = true));
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(job.abortController.signal.aborted).toBe(true);
+    expect(abortSettled).toBe(false);
+    expect(handler).not.toHaveBeenCalled();
+
+    await manager.markProviderExecutionDrained(
+      streamId,
+      job.createdAt,
+      job.metadata.providerExecutionId!,
+    );
+    await expect(aborting).resolves.toMatchObject({ success: true });
+    expect(handler).toHaveBeenCalledWith(
+      streamId,
+      expect.objectContaining({ agentEventDeliveryKey: 'delivery-1', status: 'aborted' }),
+      [],
+      expect.any(Array),
+    );
+    await manager.destroy();
+  });
+
   it('finishes a destructive abort immediately when the provider never started', async () => {
     const manager = createManager();
     const streamId = 'stream-provider-never-started';
@@ -2779,6 +2814,86 @@ describe('GenerationJobManager startup telemetry', () => {
       status: 'error',
       error: 'initialization failed',
     });
+    subscription?.unsubscribe();
+    await manager.destroy();
+  });
+
+  it('holds terminal error publication until required persistence finishes', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore,
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    manager.initialize();
+    const streamId = 'stream-error-persistence-barrier';
+    const job = await manager.createJob(streamId, 'user-1');
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+    let releasePersistence!: () => void;
+    const persistence = new Promise<void>((resolve) => {
+      releasePersistence = resolve;
+    });
+
+    const completing = manager.completeJob(streamId, 'initialization failed', job.createdAt, {
+      beforeErrorPublication: () => persistence,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(onError).not.toHaveBeenCalled();
+    await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
+      status: 'error',
+      error: 'initialization failed',
+      terminalPersistencePending: true,
+    });
+
+    releasePersistence();
+    await expect(completing).resolves.toBe(true);
+
+    expect(onError).toHaveBeenCalledWith('initialization failed');
+    await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
+      status: 'error',
+      error: 'initialization failed',
+      terminalPersistencePending: false,
+    });
+    subscription?.unsubscribe();
+    await manager.destroy();
+  });
+
+  it('publishes reconciliation when required error persistence fails', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore,
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    manager.initialize();
+    const streamId = 'stream-error-persistence-fails';
+    const job = await manager.createJob(streamId, 'user-1');
+    const onDone = jest.fn();
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, onDone, onError);
+
+    await expect(
+      manager.completeJob(streamId, 'initialization failed', job.createdAt, {
+        beforeErrorPublication: async () => {
+          throw new Error('message store unavailable');
+        },
+      }),
+    ).resolves.toBe(true);
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(onDone).toHaveBeenCalledWith(
+      expect.objectContaining({
+        final: true,
+        reconcile: true,
+        terminalStatus: 'error',
+      }),
+    );
     subscription?.unsubscribe();
     await manager.destroy();
   });

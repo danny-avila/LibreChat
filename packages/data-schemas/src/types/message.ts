@@ -1,5 +1,46 @@
-import type { TFeedbackRating, TFeedbackTag } from 'librechat-data-provider';
+import type {
+  TFeedbackRating,
+  TFeedbackTag,
+  UserSubmittedMessageFieldPath,
+} from 'librechat-data-provider';
 import type { Document } from 'mongoose';
+
+export type SubagentTaskControlAction =
+  | 'steer'
+  | 'queue'
+  | 'interrupt'
+  | 'cancel'
+  | 'cancel_message';
+
+export type SubagentTaskControlReceiptStatus =
+  | 'reserved'
+  | 'accepted'
+  | 'applied'
+  | 'rejected'
+  | 'failed';
+
+export type SubagentTriggerProjection = {
+  version: 1;
+  eventType: string;
+  sourceType: string;
+  occurredAt: Date;
+  expectedActionToolName?: string;
+};
+
+/** Server-private durable receipt for one parent-to-child control invocation. */
+export interface ISubagentTaskControlReceipt {
+  invocationId: string;
+  fingerprint: string;
+  controlId?: string;
+  action: SubagentTaskControlAction;
+  status: SubagentTaskControlReceiptStatus;
+  createdAt: Date;
+  updatedAt: Date;
+  boundary?: 'preempt' | 'tool' | 'turn';
+  reason?: string;
+  message?: string;
+  messageTruncated?: boolean;
+}
 
 // @ts-ignore
 export interface IMessage extends Document {
@@ -18,6 +59,12 @@ export interface IMessage extends Document {
   text?: string;
   summary?: string;
   isCreatedByUser: boolean;
+  /** True when the complete stored row came from outside the model. */
+  isUserSubmitted?: boolean;
+  /** JSON pointers to caller-authored fields in an otherwise mixed model response. */
+  userSubmittedPaths?: string[];
+  /** Exact HITL message fields stored at caller-authored paths in a mixed response. */
+  userSubmittedMessageFieldPaths?: UserSubmittedMessageFieldPath[];
   isTemporary?: boolean;
   unfinished?: boolean;
   error?: boolean;
@@ -48,6 +95,13 @@ export interface IMessage extends Document {
     mode: 'append' | 'replace';
     messagesJson: string;
   };
+  /** Server-private bounded rendering projection derived once at child settlement. */
+  subagentActivityProjection?: {
+    taskId: string;
+    version: 1;
+    activityJson: string;
+    truncated: boolean;
+  };
   /** Server-private durable idempotency marker for one detached subagent turn. */
   subagentTask?: {
     attemptKey: string;
@@ -60,7 +114,9 @@ export interface IMessage extends Document {
       claimId: string;
       claimedAt: Date;
     };
+    controlReceipts?: ISubagentTaskControlReceipt[];
   };
+  subagentTriggerProjection?: SubagentTriggerProjection;
   contextMeta?: {
     calibrationRatio?: number;
     encoding?: string;

@@ -1,6 +1,6 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
-import { groupParallelContent } from '../ParallelContent';
+import { groupParallelContent, lastParallelColumnCursorIdx } from '../ParallelContent';
 
 describe('groupParallelContent', () => {
   test('reports absolute indices for a dense phase segment', () => {
@@ -39,5 +39,29 @@ describe('groupParallelContent', () => {
     expect(grouped.parallelSections[0]?.columns[0]?.parts).toEqual([
       { part: parallel, idx: 10_000 },
     ]);
+  });
+});
+
+describe('lastParallelColumnCursorIdx', () => {
+  test('keeps the lane cursor on visible output before an empty placeholder', () => {
+    const visible = {
+      type: ContentTypes.TEXT,
+      text: 'Visible answer',
+      groupId: 1,
+      agentId: 'agent-1',
+    } as unknown as TMessageContentParts;
+    const empty = {
+      type: ContentTypes.TEXT,
+      text: '',
+      groupId: 1,
+      agentId: 'agent-1',
+    } as unknown as TMessageContentParts;
+
+    expect(
+      lastParallelColumnCursorIdx([
+        { part: visible, idx: 7 },
+        { part: empty, idx: 8 },
+      ]),
+    ).toBe(7);
   });
 });

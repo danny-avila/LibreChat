@@ -1,53 +1,217 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Button } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
-import {
-  AlertCircle,
-  ArrowDown,
-  CheckCircle2,
-  Clock3,
-  Maximize2,
-  Minimize2,
-  XCircle,
-} from 'lucide-react';
+import { ArrowDown, CheckCircle2, Clock3, Maximize2, Minimize2, XCircle } from 'lucide-react';
 import type { TMessageContentParts } from 'librechat-data-provider';
-import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelContent';
 import type { ChildActivity, ChildActivityItem } from './adapters';
-import ToolCallGroup from '~/components/Chat/Messages/Content/ToolCallGroup';
+import type { TranslationKeys } from '~/hooks';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
-import ToolApproval from '~/components/Chat/Messages/Content/ToolApproval';
-import Reasoning from '~/components/Chat/Messages/Content/Parts/Reasoning';
+import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
+import { subagentStatusIcon, subagentStatusLabelKey } from './status';
 import Container from '~/components/Chat/Messages/Content/Container';
-import ToolCall from '~/components/Chat/Messages/Content/ToolCall';
-import Text from '~/components/Chat/Messages/Content/Parts/Text';
-import { MessageContext } from '~/Providers/MessageContext';
-import { cn, groupSequentialToolCalls } from '~/utils';
+import { EmptyText } from '~/components/Chat/Messages/Content/Parts';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 const AT_BOTTOM_THRESHOLD_PX = 120;
-
-const statusIcon = (status: ChildActivity['status']) => {
-  if (status === 'completed') return CheckCircle2;
-  if (status === 'failed' || status === 'interrupted') return AlertCircle;
-  if (status === 'cancelled') return XCircle;
-  return Clock3;
+const CONTROL_ACTION_LABELS = {
+  steer: 'com_ui_subagent_control_steer',
+  queue: 'com_ui_subagent_control_queue',
+  interrupt: 'com_ui_subagent_control_interrupt',
+  cancel: 'com_ui_subagent_control_cancel',
+  cancel_message: 'com_ui_subagent_control_cancel_message',
+} as const satisfies Record<string, TranslationKeys>;
+const CONTROL_STATUS_LABELS = {
+  submitted: 'com_ui_subagent_control_status_submitted',
+  accepted: 'com_ui_subagent_control_status_accepted',
+  applied: 'com_ui_subagent_control_status_applied',
+  rejected: 'com_ui_subagent_control_status_rejected',
+  failed: 'com_ui_subagent_control_status_failed',
+} as const satisfies Record<string, TranslationKeys>;
+const CONTROL_REASON_LABELS: Record<string, TranslationKeys> = {
+  control_not_found: 'com_ui_subagent_control_reason_control_not_found',
+  invalid_command: 'com_ui_subagent_control_reason_invalid_command',
+  owner_unavailable: 'com_ui_subagent_control_reason_owner_unavailable',
+  task_inaccessible: 'com_ui_subagent_control_reason_task_inaccessible',
+  task_cancelled: 'com_ui_subagent_control_reason_task_cancelled',
+  task_completed: 'com_ui_subagent_control_reason_task_completed',
+  task_failed: 'com_ui_subagent_control_reason_task_failed',
+  task_not_running: 'com_ui_subagent_control_reason_task_not_running',
+  withdrawn: 'com_ui_subagent_control_reason_withdrawn',
 };
 
-const statusLabels = {
-  dispatched: 'com_ui_subagent_thread_status_dispatched',
-  running: 'com_ui_subagent_thread_status_running',
-  completed: 'com_ui_subagent_thread_status_completed',
-  failed: 'com_ui_subagent_thread_status_failed',
-  interrupted: 'com_ui_subagent_thread_status_interrupted',
-  cancelled: 'com_ui_subagent_thread_status_cancelled',
-} as const;
+function SubagentControlHistory({
+  controls,
+  onCancelControl,
+}: {
+  controls: NonNullable<ChildActivity['controls']>;
+  onCancelControl?: (controlId: string) => void;
+}) {
+  const localize = useLocalize();
+  if (controls.length === 0) return null;
+  /** Storage keeps actionable accepted receipts ahead of bounded terminal history.
+   * Presentation restores chronology without changing that retention priority. */
+  const chronologicalControls = controls
+    .map((control, index) => ({ control, index }))
+    .sort(
+      (left, right) =>
+        left.control.createdAt.localeCompare(right.control.createdAt) || left.index - right.index,
+    )
+    .map(({ control }) => control);
+  return (
+    <section aria-label={localize('com_ui_subagent_control_history')} className="mb-3 space-y-2">
+      {chronologicalControls.map((control) => {
+        const pending = control.status === 'submitted' || control.status === 'accepted';
+        let StatusIcon = XCircle;
+        if (pending) StatusIcon = Clock3;
+        if (control.status === 'applied') StatusIcon = CheckCircle2;
+        return (
+          <div
+            key={control.invocationId}
+            className="rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-sm"
+          >
+            <div className="flex items-center gap-2">
+              <StatusIcon size={14} aria-hidden className="shrink-0 text-text-secondary" />
+              <span className="font-medium">{localize(CONTROL_ACTION_LABELS[control.action])}</span>
+              <span className="ml-auto text-xs text-text-secondary" aria-live="polite">
+                {localize(CONTROL_STATUS_LABELS[control.status])}
+              </span>
+            </div>
+            {control.message != null && control.message !== '' && (
+              <div className="mt-1 break-words text-text-secondary">
+                {control.message}
+                {control.messageTruncated === true && (
+                  <span className="ml-1 text-xs italic">
+                    {localize('com_ui_subagent_control_message_truncated')}
+                  </span>
+                )}
+              </div>
+            )}
+            {control.reason != null && (
+              <div className="mt-1 text-xs text-status-error">
+                {localize(
+                  CONTROL_REASON_LABELS[control.reason] ??
+                    'com_ui_subagent_control_reason_invalid_command',
+                )}
+              </div>
+            )}
+            {control.status === 'accepted' &&
+              control.controlId != null &&
+              onCancelControl != null && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-1 h-7 px-2 text-xs"
+                  onClick={() => onCancelControl(control.controlId as string)}
+                >
+                  {localize('com_ui_subagent_control_withdraw')}
+                </Button>
+              )}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
 
-const toContentPart = (item: ChildActivityItem): TMessageContentParts => {
+export function SubagentActivityScrollSurface({
+  children,
+  padded = true,
+}: {
+  children: React.ReactNode;
+  padded?: boolean;
+}) {
+  const localize = useLocalize();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    const content = contentRef.current;
+    if (scroll == null || content == null || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (isAtBottom) scroll.scrollTop = scroll.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [isAtBottom]);
+
+  const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    setIsAtBottom(
+      element.scrollHeight - element.scrollTop - element.clientHeight <= AT_BOTTOM_THRESHOLD_PX,
+    );
+  }, []);
+
+  return (
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      className={cn('relative min-h-0 flex-1 overflow-y-auto', padded && 'px-4 py-4')}
+      data-subagent-activity-scroll-surface
+    >
+      {!isAtBottom && (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => {
+            scrollRef.current?.scrollTo({
+              top: scrollRef.current.scrollHeight,
+              behavior: 'smooth',
+            });
+            setIsAtBottom(true);
+          }}
+          aria-label={localize('com_ui_subagent_scroll_to_bottom')}
+          className="sticky top-[calc(100%-2.75rem)] z-10 ml-auto h-8 w-8 rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md"
+        >
+          <ArrowDown size={16} aria-hidden />
+        </Button>
+      )}
+      <div ref={contentRef}>{children}</div>
+    </div>
+  );
+}
+
+const toContentPart = (
+  item: ChildActivityItem,
+  reasoningMarkerLabel: string,
+): TMessageContentParts => {
   if (item.type === 'writing') {
-    return { type: ContentTypes.TEXT, text: item.text } as TMessageContentParts;
+    return {
+      type: ContentTypes.TEXT,
+      text: item.text,
+      ...(item.phase == null ? {} : { phase: item.phase }),
+    } as TMessageContentParts;
   }
   if (item.type === 'reasoning') {
-    return { type: ContentTypes.THINK, think: item.text ?? '' } as TMessageContentParts;
+    if (item.text == null || item.text === '') {
+      return {
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: item.label ?? reasoningMarkerLabel,
+        activity_label_type: 'phase',
+      } as TMessageContentParts;
+    }
+    return {
+      type: ContentTypes.THINK,
+      think: item.text ?? '',
+      ...(item.label == null ? {} : { reasoning_label: item.label }),
+    } as TMessageContentParts;
+  }
+  if (item.type === 'activity_label') {
+    return {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: item.label,
+      ...(item.labelType == null ? {} : { activity_label_type: item.labelType }),
+      ...(item.toolCallIds == null ? {} : { tool_call_ids: item.toolCallIds }),
+      ...(item.activityStartIndex == null ? {} : { activity_start_index: item.activityStartIndex }),
+      ...(item.activityEndIndex == null ? {} : { activity_end_index: item.activityEndIndex }),
+      ...(item.activityCount == null ? {} : { activity_count: item.activityCount }),
+      ...(item.agentIds == null ? {} : { agent_ids: item.agentIds }),
+      ...(item.status == null ? {} : { status: item.status }),
+      ...(item.pending == null ? {} : { pending: item.pending }),
+    } as TMessageContentParts;
   }
   return {
     type: ContentTypes.TOOL_CALL,
@@ -57,98 +221,12 @@ const toContentPart = (item: ChildActivityItem): TMessageContentParts => {
       args: item.input ?? '',
       output: item.output ?? '',
       progress: item.status === 'running' ? 0.1 : 1,
+      ...(item.status === 'running' ? {} : { runStepStatus: item.status }),
+      ...(item.inputValidationError === true ? { inputValidationError: true } : {}),
       ...(item.approval == null ? {} : { approval: item.approval }),
     },
   } as TMessageContentParts;
 };
-
-function ActivityPart({
-  item,
-  part,
-  isSubmitting,
-  showCursor,
-  isLast,
-  onToolExpand,
-}: {
-  item: ChildActivityItem;
-  part: TMessageContentParts;
-  isSubmitting: boolean;
-  showCursor: boolean;
-  isLast: boolean;
-  onToolExpand?: () => void;
-}) {
-  const localize = useLocalize();
-  if (item.type === 'writing') {
-    return (
-      <Container>
-        <div className="mb-1 text-xs font-medium text-text-secondary">
-          {localize('com_ui_subagent_ticker_writing')}
-        </div>
-        <Text text={item.text} showCursor={showCursor} isCreatedByUser={false} />
-        {item.textTruncated === true && (
-          <div className="mt-2 text-xs italic text-text-secondary">
-            {localize('com_ui_subagent_thread_message_truncated')}
-          </div>
-        )}
-      </Container>
-    );
-  }
-  if (item.type === 'reasoning') {
-    if (item.text == null || item.text === '') {
-      return (
-        <div className="my-2 text-sm text-text-secondary" role="status">
-          {localize('com_ui_subagent_ticker_reasoning')}
-        </div>
-      );
-    }
-    return <Reasoning reasoning={item.text} isLast={isLast} />;
-  }
-  const tool = (
-    part as {
-      [ContentTypes.TOOL_CALL]: {
-        id: string;
-        args: string | Record<string, unknown>;
-        output: string;
-        name: string;
-        progress: number;
-      };
-    }
-  )[ContentTypes.TOOL_CALL];
-  const toolCall = (
-    <ToolCall
-      args={tool.args}
-      output={tool.output}
-      initialProgress={tool.progress}
-      isSubmitting={isSubmitting && item.status === 'running'}
-      isLast={isLast}
-      toolCallId={tool.id}
-      name={tool.name}
-      onExpand={onToolExpand}
-      runStepStatus={item.status === 'running' ? undefined : item.status}
-    />
-  );
-  const truncationNotice =
-    item.inputTruncated === true || item.outputTruncated === true ? (
-      <div className="mb-2 text-xs italic text-text-secondary">
-        {localize('com_ui_subagent_thread_message_truncated')}
-      </div>
-    ) : null;
-  if (item.approval != null && (item.output?.length ?? 0) === 0) {
-    return (
-      <>
-        {toolCall}
-        {truncationNotice}
-        <ToolApproval approval={item.approval} toolCallId={item.toolCallId} args={item.input} />
-      </>
-    );
-  }
-  return (
-    <>
-      {toolCall}
-      {truncationNotice}
-    </>
-  );
-}
 
 function SubagentPrompt({ prompt }: { prompt: string }) {
   const localize = useLocalize();
@@ -200,73 +278,46 @@ function SubagentPrompt({ prompt }: { prompt: string }) {
   );
 }
 
-export default function SubagentActivity({
+export const hasTruncatedActivityDetails = (activity: ChildActivity): boolean =>
+  activity.items.some(
+    (item) =>
+      (item.type === 'writing' && item.textTruncated === true) ||
+      (item.type === 'activity_label' && item.labelTruncated === true) ||
+      (item.type === 'tool' && (item.inputTruncated === true || item.outputTruncated === true)),
+  );
+
+export function SubagentActivityContent({
   activity,
+  activityId,
   state = 'ready',
+  showPrompt = true,
+  showDetailTruncationNotice = true,
+  conversationId = null,
+  onCancelControl,
 }: {
   activity: ChildActivity;
+  activityId?: string;
   state?: 'ready' | 'loading' | 'error';
+  showPrompt?: boolean;
+  showDetailTruncationNotice?: boolean;
+  conversationId?: string | null;
+  onCancelControl?: (controlId: string) => void;
 }) {
   const localize = useLocalize();
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [isAtBottom, setIsAtBottom] = useState(true);
   const isSubmitting = activity.status === 'running' || activity.status === 'dispatched';
-  const StatusIcon = statusIcon(activity.status);
-  const parts = useMemo(() => activity.items.map(toContentPart), [activity.items]);
-  const groupedParts = useMemo(() => {
-    const indexed: PartWithIndex[] = parts.map((part, idx) => ({ part, idx }));
-    return groupSequentialToolCalls(indexed);
-  }, [parts]);
-  const context = useMemo(
-    () => ({
-      messageId: 'subagent-activity-panel',
-      isExpanded: true,
-      isSubmitting,
-      isLatestMessage: isSubmitting,
-      conversationId: null,
-    }),
-    [isSubmitting],
+  const reasoningMarkerLabel = localize('com_ui_subagent_ticker_reasoning');
+  const parts = useMemo(
+    () => activity.items.map((item) => toContentPart(item, reasoningMarkerLabel)),
+    [activity.items, reasoningMarkerLabel],
   );
-  const renderPart = useCallback(
-    (part: TMessageContentParts, idx: number, isLast: boolean, onToolExpand?: () => void) => (
-      <ActivityPart
-        key={`activity-${idx}`}
-        item={activity.items[idx]}
-        part={part}
-        isSubmitting={isSubmitting}
-        showCursor={isSubmitting && isLast}
-        isLast={isLast}
-        onToolExpand={onToolExpand}
-      />
-    ),
-    [activity.items, isSubmitting],
-  );
-
-  useEffect(() => {
-    const scroll = scrollRef.current;
-    const content = contentRef.current;
-    if (scroll == null || content == null || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => {
-      if (isAtBottom) scroll.scrollTop = scroll.scrollHeight;
-    });
-    observer.observe(content);
-    return () => observer.disconnect();
-  }, [isAtBottom]);
-
-  const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
-    const element = event.currentTarget;
-    setIsAtBottom(
-      element.scrollHeight - element.scrollTop - element.clientHeight <= AT_BOTTOM_THRESHOLD_PX,
-    );
-  }, []);
+  const activityDetailsTruncated = hasTruncatedActivityDetails(activity);
 
   let body: React.ReactNode;
   if (state === 'loading') {
     body = (
-      <div className="py-8 text-center text-sm text-text-secondary" role="status">
-        {localize('com_ui_subagent_waiting')}
-      </div>
+      <Container>
+        <EmptyText />
+      </Container>
     );
   } else if (state === 'error') {
     body = (
@@ -275,83 +326,110 @@ export default function SubagentActivity({
       </div>
     );
   } else if (activity.items.length === 0) {
+    body = isSubmitting ? (
+      <Container>
+        <EmptyText />
+      </Container>
+    ) : null;
+  } else {
     body = (
-      <div className="rounded-lg border border-border-light bg-surface-secondary p-3 text-sm text-text-secondary">
-        {isSubmitting
-          ? localize('com_ui_subagent_no_result_yet')
-          : localize('com_ui_subagent_empty_result')}
+      <ContentParts
+        content={parts}
+        messageId={activityId ?? 'subagent-activity-panel'}
+        conversationId={conversationId}
+        isCreatedByUser={false}
+        isLast
+        isSubmitting={isSubmitting}
+        isLatestMessage={isSubmitting}
+      />
+    );
+  }
+
+  return (
+    <div className="flex max-w-full flex-col gap-0">
+      {showPrompt && activity.prompt != null && <SubagentPrompt prompt={activity.prompt} />}
+      <SubagentControlHistory
+        controls={activity.controls ?? []}
+        onCancelControl={onCancelControl}
+      />
+      {activity.controlsTruncated === true && (
+        <div className="mb-3 text-xs italic text-text-secondary">
+          {localize('com_ui_subagent_control_history_truncated')}
+        </div>
+      )}
+      {showDetailTruncationNotice && activityDetailsTruncated && (
+        <div className="mb-3 text-xs italic text-text-secondary">
+          {localize('com_ui_subagent_activity_details_truncated')}
+        </div>
+      )}
+      {body}
+    </div>
+  );
+}
+
+export function SubagentStatus({ activity }: { activity: ChildActivity }) {
+  const localize = useLocalize();
+  const StatusIcon = subagentStatusIcon(activity.status);
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-1 text-xs text-text-secondary',
+        activity.status === 'failed' || activity.status === 'interrupted'
+          ? 'text-status-error'
+          : '',
+      )}
+      aria-live="polite"
+    >
+      <StatusIcon size={13} aria-hidden />
+      <span>{localize(subagentStatusLabelKey(activity.status))}</span>
+    </div>
+  );
+}
+
+export default function SubagentActivity({
+  activity,
+  activityId,
+  state = 'ready',
+  embedded = false,
+  showPrompt = true,
+  onCancelControl,
+}: {
+  activity: ChildActivity;
+  activityId?: string;
+  state?: 'ready' | 'loading' | 'error';
+  embedded?: boolean;
+  showPrompt?: boolean;
+  onCancelControl?: (controlId: string) => void;
+}) {
+  const statusHeader =
+    activity.status === 'completed' ? null : (
+      <div className="shrink-0 border-b border-border-light px-4 py-2">
+        <SubagentStatus activity={activity} />
       </div>
     );
-  } else {
-    const last = parts.length - 1;
-    body = (
-      <MessageContext.Provider value={context}>
-        {groupedParts.map((group) =>
-          group.type === 'single' ? (
-            renderPart(group.part.part, group.part.idx, group.part.idx === last)
-          ) : (
-            <ToolCallGroup
-              key={`activity-group-${group.parts[0].idx}`}
-              parts={group.parts}
-              isSubmitting={isSubmitting}
-              isLast={group.parts.some((part) => part.idx === last)}
-              renderPart={renderPart}
-              lastContentIdx={last}
-            />
-          ),
-        )}
-      </MessageContext.Provider>
+  const content = (
+    <SubagentActivityContent
+      activity={activity}
+      activityId={activityId}
+      state={state}
+      showPrompt={showPrompt}
+      onCancelControl={onCancelControl}
+    />
+  );
+
+  if (embedded) {
+    return (
+      <section className="border-b border-border-light last:border-b-0" data-subagent-thread-turn>
+        {statusHeader}
+        <div className="px-4 py-4">{content}</div>
+      </section>
     );
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 border-b border-border-light px-4 py-2">
-        <div
-          className={cn(
-            'flex items-center gap-1 text-xs text-text-secondary',
-            activity.status === 'failed' || activity.status === 'interrupted'
-              ? 'text-status-error'
-              : '',
-          )}
-          aria-live="polite"
-        >
-          <StatusIcon size={13} aria-hidden />
-          <span>{localize(statusLabels[activity.status])}</span>
-        </div>
-      </div>
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="relative min-h-0 flex-1 overflow-y-auto px-4 py-4"
-      >
-        {!isAtBottom && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              scrollRef.current?.scrollTo({
-                top: scrollRef.current.scrollHeight,
-                behavior: 'smooth',
-              });
-              setIsAtBottom(true);
-            }}
-            aria-label={localize('com_ui_subagent_scroll_to_bottom')}
-            className="sticky top-[calc(100%-2.75rem)] z-10 ml-auto h-8 w-8 rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md"
-          >
-            <ArrowDown size={16} aria-hidden />
-          </Button>
-        )}
-        <div ref={contentRef} className="flex max-w-full flex-col gap-0">
-          {activity.prompt != null && <SubagentPrompt prompt={activity.prompt} />}
-          {activity.activityTruncated === true && (
-            <div className="mb-3 text-xs italic text-text-secondary">
-              {localize('com_ui_subagent_thread_history_truncated')}
-            </div>
-          )}
-          {body}
-        </div>
-      </div>
+      {statusHeader}
+      <SubagentActivityScrollSurface>{content}</SubagentActivityScrollSurface>
     </div>
   );
 }

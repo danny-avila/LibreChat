@@ -9,6 +9,7 @@
     "packages/*"
   ],
   "scripts": {
+    "prepare": "node -e \"import('husky').then((h) => h.default()).catch(() => {})\"",
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",
     "set-balance": "node config/set-balance.js",
@@ -104,6 +105,8 @@
     "lint": "eslint .",
     "sort-imports": "node scripts/sort-imports.mts",
     "sort-imports:check": "node scripts/sort-imports.mts --check",
+    "static-checks": "node scripts/static-checks.mts",
+    "static-checks:full": "node scripts/static-checks.mts --full",
     "format": "npx prettier --write \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
     "b:api": "NODE_ENV=production bun run api/server/index.js",
     "b:api-inspect": "NODE_ENV=production bun --inspect run api/server/index.js",

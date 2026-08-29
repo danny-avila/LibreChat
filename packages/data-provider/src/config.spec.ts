@@ -21,7 +21,15 @@ const endpointsConfig: TEndpointsConfig = {
 };
 
 describe('excludedKeys', () => {
-  it.each(['_id', 'user', 'conversationId', '__v'])('excludes system field "%s"', (field) => {
+  it.each([
+    '_id',
+    'user',
+    'conversationId',
+    'agentEventBinding',
+    'agentEventActor',
+    'agentEventActorReconciliations',
+    '__v',
+  ])('excludes system field "%s"', (field) => {
     expect(excludedKeys.has(field)).toBe(true);
   });
 
@@ -55,6 +63,61 @@ describe('bedrockEndpointSchema', () => {
       return;
     }
     expect(result.data.endpoints?.bedrock?.guardrailConfig).toEqual(guardrailConfig);
+  });
+});
+
+describe('agent event runtime config', () => {
+  it('accepts the routing choice and ignores removed rollout fields', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          eventDriven: {
+            childTurns: true,
+            completionWakeups: false,
+            coalescing: true,
+            actorMailbox: true,
+            checkpointForks: true,
+            durableReceipts: true,
+            selfUrl: 'https://triggers.internal',
+          },
+        },
+      },
+      rateLimits: {
+        agentEvents: { userMax: 80, userWindowInMinutes: 2 },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.eventDriven).toEqual({
+      selfUrl: 'https://triggers.internal',
+    });
+    expect(result.data.rateLimits?.agentEvents).toEqual({
+      userMax: 80,
+      userWindowInMinutes: 2,
+    });
+  });
+
+  it('does not let removed checkpoint fields control memory-checkpointer validation', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          eventDriven: { checkpointForks: true },
+          checkpointer: { type: 'memory' },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.eventDriven).toEqual({});
+    expect(result.data.endpoints?.agents?.checkpointer).toEqual({ type: 'memory' });
   });
 });
 
@@ -660,6 +723,66 @@ describe('webSearchSchema', () => {
     expect(() =>
       webSearchSchema.parse({
         tavilyScraperOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts Keenable search options', () => {
+    const result = webSearchSchema.parse({
+      keenableSearchOptions: {
+        maxResults: 7,
+        site: 'example.com',
+        attributionTitle: 'LibreChat',
+        timeout: 15000,
+      },
+    });
+
+    expect(result.keenableSearchOptions?.maxResults).toBe(7);
+    expect(result.keenableSearchOptions?.site).toBe('example.com');
+    expect(result.keenableSearchOptions?.attributionTitle).toBe('LibreChat');
+    expect(result.keenableSearchOptions?.timeout).toBe(15000);
+  });
+
+  it('rejects invalid Keenable search options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        keenableSearchOptions: {
+          maxResults: 0,
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        keenableSearchOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts Keenable as a scraper provider with its options', () => {
+    const result = webSearchSchema.parse({
+      searchProvider: 'keenable',
+      scraperProvider: 'keenable',
+      rerankerType: 'none',
+      keenableScraperOptions: {
+        attributionTitle: 'LibreChat',
+        timeout: 15000,
+      },
+    });
+
+    expect(result.scraperProvider).toBe('keenable');
+    expect(result.keenableScraperOptions?.attributionTitle).toBe('LibreChat');
+    expect(result.keenableScraperOptions?.timeout).toBe(15000);
+  });
+
+  it('rejects invalid Keenable scraper options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        keenableScraperOptions: {
           timeout: 120001,
         },
       }),

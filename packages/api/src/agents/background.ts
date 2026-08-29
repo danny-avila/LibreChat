@@ -56,11 +56,12 @@ import {
   warnUnmatchedSelectionNames,
   synthesizeSelectionToolOptions,
 } from './selection';
-import { SUBAGENT_WAKEUP_GUIDANCE, usesSubagentCompletionWakeups } from './subagentDelivery';
+import { SUBAGENT_WAKEUP_GUIDANCE, agentUsesSubagentCompletionWakeups } from './subagentDelivery';
 import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
 import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from './tools';
+import { normalizeActionToolName } from '~/actions/tools';
 import { truncateMiddle } from '~/utils';
 
 /** Argument the model sets on a tool call to dispatch it in the background. */
@@ -124,6 +125,36 @@ const EXCLUDED_BACKGROUND_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   'image_gen_oai',
   'image_edit_oai',
 ]);
+
+/**
+ * Agents persist action tool names with the raw encoded domain (`---` for short
+ * hostnames), while the runtime definitions those names must match against are
+ * always `_`-collapsed. The builder writes `tool_options` keyed by the persisted
+ * name, so alias every action-shaped key to its normalized form; without this
+ * the opt-in silently never resolves for short-hostname actions. Merge the raw
+ * background option into any normalized entry while keeping an explicit
+ * normalized background value authoritative.
+ */
+function expandActionToolOptions(toolOptions: AgentToolOptions): AgentToolOptions {
+  let expanded: AgentToolOptions | undefined;
+  for (const [name, options] of Object.entries(toolOptions)) {
+    const normalized = normalizeActionToolName(name);
+    const runInBackground = options?.run_in_background;
+    if (
+      normalized === name ||
+      runInBackground == null ||
+      toolOptions[normalized]?.run_in_background != null
+    ) {
+      continue;
+    }
+    expanded = expanded ?? { ...toolOptions };
+    expanded[normalized] = {
+      ...toolOptions[normalized],
+      run_in_background: runInBackground,
+    };
+  }
+  return expanded ?? toolOptions;
+}
 
 /**
  * Whether a tool may be dispatched in the background. Handoff tools
@@ -466,7 +497,8 @@ export function applyBackgroundToolCalls(params: {
    */
   excludeTool?: (toolName: string) => boolean;
 }): { toolDefinitions: LCTool[]; backgroundToolNames: string[] } {
-  const { toolRegistry, toolOptions, capabilityToolNames, excludeTool } = params;
+  const { toolRegistry, capabilityToolNames, excludeTool } = params;
+  const toolOptions = params.toolOptions && expandActionToolOptions(params.toolOptions);
   const defs = params.toolDefinitions ?? [];
   const selectionNames = getSelectionNames(toolOptions, 'run_in_background');
   const effectiveSources = new Set<string>();
@@ -586,8 +618,12 @@ export interface BackgroundTask {
    * the ORIGINAL tool-call identity.
    */
   harvestStarted?: boolean;
+  /** True until completion-time file inspection/persistence accepts or rejects the artifact. */
+  harvestPending?: boolean;
   /** True once the artifact has been handed to a live poll turn's callback. */
   artifactDelivered?: boolean;
+  /** Terminal policy rejection: blocked artifact bytes must never be restored or claimed. */
+  artifactBlocked?: boolean;
   /** Error message when status === 'error'. */
   error?: string;
   createdAt: number;
@@ -598,7 +634,17 @@ interface TaskBucket {
   tasks: Map<string, BackgroundTask>;
   /** toolCallId -> taskId, for dispatch idempotency across graph re-execution. */
   byToolCall: Map<string, string>;
+  /** Caller-owned local permits acquired before a caller persists external
+   * launch authority. They prevent capacity rejection from creating a durable
+   * action that was definitely never launched. */
+  capacityPermits: Map<string, { dedupeKey: string }>;
   lastAccess: number;
+}
+
+export interface BackgroundTaskCapacityPermit {
+  id: string;
+  userId: string;
+  conversationId: string;
 }
 
 const COMPLETED_TASK_TTL_MS = 60 * 60 * 1000;
@@ -706,7 +752,7 @@ export class BackgroundTaskRegistryClass {
     }
     this.lastGlobalSweepAt = now;
     for (const [bucketKey, bucket] of this.buckets) {
-      if (now - bucket.lastAccess > IDLE_BUCKET_TTL_MS) {
+      if (now - bucket.lastAccess > IDLE_BUCKET_TTL_MS && bucket.capacityPermits.size === 0) {
         this.buckets.delete(bucketKey);
         continue;
       }
@@ -718,11 +764,75 @@ export class BackgroundTaskRegistryClass {
     const bucketKey = this.key(userId, conversationId);
     let bucket = this.buckets.get(bucketKey);
     if (!bucket) {
-      bucket = { tasks: new Map(), byToolCall: new Map(), lastAccess: now };
+      bucket = {
+        tasks: new Map(),
+        byToolCall: new Map(),
+        capacityPermits: new Map(),
+        lastAccess: now,
+      };
       this.buckets.set(bucketKey, bucket);
     }
     bucket.lastAccess = now;
     return bucket;
+  }
+
+  private dedupeKey(params: { toolCallId: string; runId?: string; agentId?: string }): string {
+    return `${params.agentId ?? ''}::${params.runId ?? ''}::${params.toolCallId}`;
+  }
+
+  private runningCount(bucket: TaskBucket): number {
+    let running = 0;
+    for (const task of bucket.tasks.values()) {
+      if (task.status === 'running') {
+        running++;
+      }
+    }
+    return running;
+  }
+
+  /** Acquires process-local capacity before a caller persists launch authority.
+   * The synchronous permit closes the capacity-rejection crash window without
+   * making ordinary background tasks durable. */
+  reserveCapacity(params: {
+    userId: string;
+    conversationId: string;
+    toolCallId: string;
+    runId?: string;
+    agentId?: string;
+  }):
+    | { permit: BackgroundTaskCapacityPermit }
+    | { task: BackgroundTask; isNew: false }
+    | { atCapacity: true } {
+    const now = Date.now();
+    this.sweep(now);
+    const bucket = this.getBucket(params.userId, params.conversationId, now);
+    this.sweepBucketTasks(bucket, now);
+    const dedupeKey = this.dedupeKey(params);
+    const existingId = bucket.byToolCall.get(dedupeKey);
+    const existing = existingId == null ? undefined : bucket.tasks.get(existingId);
+    if (existing != null) {
+      return { task: existing, isNew: false };
+    }
+    if (this.runningCount(bucket) + bucket.capacityPermits.size >= MAX_RUNNING_PER_BUCKET) {
+      return { atCapacity: true };
+    }
+    const permit: BackgroundTaskCapacityPermit = {
+      id: randomUUID(),
+      userId: params.userId,
+      conversationId: params.conversationId,
+    };
+    /** The permit is owned by the in-flight caller until it is consumed or
+     * explicitly released. Expiring it by wall clock could strand a durable
+     * reservation when MongoDB is slow; process death already clears local
+     * permits without pretending the external launch happened. */
+    bucket.capacityPermits.set(permit.id, { dedupeKey });
+    return { permit };
+  }
+
+  releaseCapacity(permit: BackgroundTaskCapacityPermit): void {
+    this.buckets
+      .get(this.key(permit.userId, permit.conversationId))
+      ?.capacityPermits.delete(permit.id);
   }
 
   /**
@@ -738,6 +848,7 @@ export class BackgroundTaskRegistryClass {
    * task and hand back a stale/foreign result instead of executing.
    */
   create(params: {
+    taskId?: string;
     userId: string;
     conversationId: string;
     toolCallId: string;
@@ -749,29 +860,41 @@ export class BackgroundTaskRegistryClass {
      *  never settle (reaped as timed out) still take the marker/heal path
      *  instead of leaving the original card on "running" forever. */
     harvestStarted?: boolean;
+    capacityPermit?: BackgroundTaskCapacityPermit;
   }): { task: BackgroundTask; isNew: boolean } | { atCapacity: true } {
     const now = Date.now();
     this.sweep(now);
     const bucket = this.getBucket(params.userId, params.conversationId, now);
     this.sweepBucketTasks(bucket, now);
 
-    const dedupeKey = `${params.agentId ?? ''}::${params.runId ?? ''}::${params.toolCallId}`;
+    const dedupeKey = this.dedupeKey(params);
     const existingId = bucket.byToolCall.get(dedupeKey);
     if (existingId) {
       const existing = bucket.tasks.get(existingId);
       if (existing) {
+        if (params.capacityPermit != null) {
+          this.releaseCapacity(params.capacityPermit);
+        }
         return { task: existing, isNew: false };
       }
     }
 
-    let running = 0;
-    for (const task of bucket.tasks.values()) {
-      if (task.status === 'running') {
-        running++;
+    if (params.capacityPermit != null) {
+      const permit = bucket.capacityPermits.get(params.capacityPermit.id);
+      if (
+        params.capacityPermit.userId !== params.userId ||
+        params.capacityPermit.conversationId !== params.conversationId ||
+        permit?.dedupeKey !== dedupeKey
+      ) {
+        throw new Error('Background task capacity permit is stale');
       }
+      bucket.capacityPermits.delete(params.capacityPermit.id);
     }
     /** Only *running* tasks gate dispatch. */
-    if (running >= MAX_RUNNING_PER_BUCKET) {
+    if (
+      params.capacityPermit == null &&
+      this.runningCount(bucket) + bucket.capacityPermits.size >= MAX_RUNNING_PER_BUCKET
+    ) {
       return { atCapacity: true };
     }
     /** The total-tasks cap bounds memory but must NOT block new work: evict the
@@ -793,12 +916,12 @@ export class BackgroundTaskRegistryClass {
     }
 
     const task: BackgroundTask = {
-      id: randomUUID(),
+      id: params.taskId ?? randomUUID(),
       toolName: params.toolName,
       toolCallId: params.toolCallId,
       messageId: params.messageId,
       agentId: params.agentId,
-      ...(params.harvestStarted === true ? { harvestStarted: true } : {}),
+      ...(params.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
       status: 'running',
       createdAt: nextDispatchStamp(now),
       updatedAt: now,
@@ -816,7 +939,7 @@ export class BackgroundTaskRegistryClass {
   ): void {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task) {
+    if (!task || (task.artifactBlocked === true && patch.artifactBlocked !== true)) {
       return;
     }
     Object.assign(task, patch, { updatedAt: Date.now() });
@@ -832,7 +955,7 @@ export class BackgroundTaskRegistryClass {
       status: 'completed',
       result: toStoredContent(result.content),
       artifact: toStoredArtifact(taskId, result.artifact),
-      ...(result.harvestStarted === true ? { harvestStarted: true } : {}),
+      ...(result.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
       /** Marks that an artifact existed even after `claimArtifact` clears it,
        *  so re-polls keep the "produced an artifact" note. */
       artifactDelivered: false,
@@ -855,6 +978,19 @@ export class BackgroundTaskRegistryClass {
       return;
     }
     this.update(userId, conversationId, taskId, { attachments });
+  }
+
+  /** Marks completion-time inspection/persistence successful, unlocking artifact collection. */
+  finishHarvest(
+    userId: string,
+    conversationId: string,
+    taskId: string,
+    attachments: unknown[] = [],
+  ): void {
+    this.update(userId, conversationId, taskId, {
+      harvestPending: false,
+      ...(attachments.length > 0 ? { attachments } : {}),
+    });
   }
 
   /**
@@ -882,7 +1018,13 @@ export class BackgroundTaskRegistryClass {
     | undefined {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task || task.status !== 'completed' || task.artifact == null || task.artifactDelivered) {
+    if (
+      !task ||
+      task.status !== 'completed' ||
+      task.harvestPending === true ||
+      task.artifact == null ||
+      task.artifactDelivered
+    ) {
       return undefined;
     }
     const artifact = task.artifact;
@@ -906,7 +1048,7 @@ export class BackgroundTaskRegistryClass {
   restoreArtifact(userId: string, conversationId: string, taskId: string, artifact: unknown): void {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task || task.artifact != null) {
+    if (!task || task.artifactBlocked === true || task.artifact != null) {
       return;
     }
     /** Same size bound as `complete()` — a restore path must not resurrect
@@ -925,7 +1067,22 @@ export class BackgroundTaskRegistryClass {
     this.update(userId, conversationId, taskId, {
       status: 'error',
       error,
-      ...(options?.harvestStarted === true ? { harvestStarted: true } : {}),
+      ...(options?.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
+    });
+  }
+
+  /** Permanently removes a policy-rejected artifact and exposes only the raw-free policy error. */
+  blockArtifact(userId: string, conversationId: string, taskId: string, error: string): void {
+    this.update(userId, conversationId, taskId, {
+      status: 'error',
+      error,
+      result: undefined,
+      artifact: undefined,
+      attachments: undefined,
+      harvestStarted: undefined,
+      harvestPending: undefined,
+      artifactDelivered: false,
+      artifactBlocked: true,
     });
   }
 
@@ -938,10 +1095,11 @@ export class BackgroundTaskRegistryClass {
   revokeHarvest(userId: string, conversationId: string, taskId: string, artifact?: unknown): void {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task) {
+    if (!task || task.artifactBlocked === true) {
       return;
     }
     task.harvestStarted = undefined;
+    task.harvestPending = undefined;
     if (task.artifact == null && artifact != null) {
       task.artifact = artifact;
       task.artifactDelivered = false;
@@ -979,7 +1137,9 @@ export class BackgroundTaskRegistryClass {
 export const backgroundTaskRegistry = new BackgroundTaskRegistryClass();
 
 /** Content for the synthetic ToolMessage returned when a call is backgrounded. */
-export function buildBackgroundHandleContent(task: BackgroundTask): string {
+export function buildBackgroundHandleContent(
+  task: Pick<BackgroundTask, 'id' | 'toolName' | 'status'>,
+): string {
   return JSON.stringify({
     background_task_id: task.id,
     tool: task.toolName,
@@ -1256,7 +1416,7 @@ export async function runCheckBackgroundTask(params: {
               : await routedStore.claimTask(subagentTasks.scopeId, taskId, invocationId);
           const claimed = serializeSubagentClaim(
             claim,
-            usesSubagentCompletionWakeups(subagentTasks),
+            agentUsesSubagentCompletionWakeups(subagentTasks, params.agentId),
           );
           if (claimed != null) {
             return JSON.stringify(claimed);
@@ -1308,7 +1468,10 @@ export async function runCheckBackgroundTask(params: {
   const tasks = backgroundTaskRegistry.list(userId, conversationId);
   let subagentTasks: SerializedSubagentTask[] = [];
   let listWarning: string | undefined;
-  const completionWakeups = usesSubagentCompletionWakeups(params.subagentTasks);
+  const completionWakeups = agentUsesSubagentCompletionWakeups(
+    params.subagentTasks,
+    params.agentId,
+  );
   if (params.subagentTasks != null) {
     try {
       const routedStore = routedSubagentStore(params.subagentTasks.store);
@@ -1344,6 +1507,27 @@ export async function runCheckBackgroundTask(params: {
       : {}),
     ...(listWarning != null && { partial: true, warning: listWarning }),
   });
+}
+
+/** Returns a read-only snapshot of the specifically requested task, if any. */
+export function getBackgroundTaskSnapshot(params: {
+  userId: string;
+  conversationId: string;
+  args: unknown;
+}): Readonly<BackgroundTask> | undefined {
+  const rawId = coerceArgsObject(params.args)?.background_task_id;
+  const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
+  if (!taskId) {
+    return undefined;
+  }
+  const task = backgroundTaskRegistry.get(params.userId, params.conversationId, taskId);
+  if (!task) {
+    return undefined;
+  }
+  return {
+    ...task,
+    ...(task.attachments != null ? { attachments: [...task.attachments] } : {}),
+  };
 }
 
 /**
@@ -1419,7 +1603,11 @@ export function getBackgroundCodeDelivery(params: {
     return undefined;
   }
   const task = backgroundTaskRegistry.get(params.userId, params.conversationId, taskId);
-  if (!task || task.harvestStarted !== true) {
+  if (
+    !task ||
+    task.harvestStarted !== true ||
+    (task.status === 'completed' && task.harvestPending === true)
+  ) {
     return undefined;
   }
   return {

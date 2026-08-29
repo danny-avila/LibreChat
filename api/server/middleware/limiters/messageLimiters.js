@@ -74,7 +74,45 @@ const messageIpLimiter = rateLimit(ipLimiterOptions);
  */
 const messageUserLimiter = rateLimit(userLimiterOptions);
 
+/**
+ * Event admission has its own API-principal bucket. The durable worker later
+ * consumes the normal message-user bucket when it executes the delivery, so
+ * sharing that limiter here would charge every event twice.
+ */
+let configuredAgentEventUserLimiter;
+const agentEventUserLimiter = (req, res, next) => {
+  if (configuredAgentEventUserLimiter == null) {
+    const max = Number(process.env.AGENT_EVENT_USER_MAX ?? 40);
+    const windowInMinutes = Number(process.env.AGENT_EVENT_USER_WINDOW ?? 1);
+    configuredAgentEventUserLimiter = rateLimit({
+      windowMs: windowInMinutes * 60 * 1000,
+      max,
+      handler: (limitedReq, limitedRes) => {
+        const resetAt = limitedReq.rateLimit?.resetTime?.getTime?.();
+        const retryAfterSeconds = Number.isFinite(resetAt)
+          ? Math.max(1, Math.ceil((resetAt - Date.now()) / 1000))
+          : Math.max(1, Math.ceil(windowInMinutes * 60));
+        limitedRes.set('Retry-After', String(retryAfterSeconds));
+        return limitedRes
+          .status(429)
+          .type('application/json')
+          .json({
+            error: {
+              code: 'agent_event_rate_limited',
+              message: 'Agent event admission rate limit exceeded.',
+              type: 'rate_limit_error',
+            },
+          });
+      },
+      keyGenerator: (limitedReq) => String(limitedReq.apiKeyId ?? limitedReq.user?.id),
+      store: limiterCache('agent_event_user_limiter'),
+    });
+  }
+  return configuredAgentEventUserLimiter(req, res, next);
+};
+
 module.exports = {
+  agentEventUserLimiter,
   messageIpLimiter,
   messageUserLimiter,
 };

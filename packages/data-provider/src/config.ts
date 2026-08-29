@@ -2,6 +2,15 @@ import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
 import {
+  filtersConfigSchema,
+  MAX_PII_CUSTOM_REGEX_CHARACTERS,
+  MAX_PII_CUSTOM_REGEX_INSTRUCTIONS,
+  MAX_PII_PATTERN_ID_LENGTH,
+  MAX_PII_PATTERN_LABEL_LENGTH,
+  MAX_PII_PATTERNS_PER_SOURCE,
+  MAX_PII_PATTERN_LENGTH,
+} from './filters';
+import {
   EModelEndpoint,
   eModelEndpointSchema,
   isAgentsEndpoint,
@@ -30,7 +39,7 @@ export {
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
-export const BASE_ONLY_CONFIG_SECTIONS = [] as const;
+export const BASE_ONLY_CONFIG_SECTIONS = ['filters'] as const;
 /** Sections that may be stored in the tenant's base config document but must
  * not be overridden or tombstoned by role, group, or user config documents. */
 export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
@@ -60,6 +69,11 @@ export const defaultRetrievalModels = [
 
 export const excludedKeys = new Set([
   'conversationId',
+  'agentEventBinding',
+  'agentEventActor',
+  'agentEventActorReconciliations',
+  'agentEventActorEpoch',
+  'agentEventActorLegacyTurn',
   'subagentThread',
   'title',
   'iconURL',
@@ -889,7 +903,7 @@ export type ToolApprovalMode = z.infer<typeof toolApprovalModeSchema>;
  *
  * Shape mirrors `@librechat/agents`'s `ToolPolicyConfig` so the host can map it
  * directly into `createToolPolicyHook(config)`. The SDK does the evaluation
- * (`deny → bypass → allow → ask → dontAsk → fallthrough(ask)`); this config
+ * (`deny → ask → allow → bypass → dontAsk → fallthrough(ask)`); this config
  * just describes the surface.
  *
  * Conventions:
@@ -1029,6 +1043,12 @@ export const agentsEndpointSchema = baseEndpointSchema
           allowedEnvironments: z.array(z.enum(STATEFUL_CODE_ENVIRONMENTS)).min(1),
         })
         .optional(),
+      /** Optional trusted origin for in-process agent event delivery. */
+      eventDriven: z
+        .object({
+          selfUrl: z.string().url().optional(),
+        })
+        .optional(),
       skills: z
         .object({
           maxCatalogSkills: z.number().int().min(1).max(100).optional(),
@@ -1066,6 +1086,14 @@ export const paramDefinitionSchema = z.object({
       min: z.number(),
       max: z.number(),
       step: z.number().optional(),
+      positiveMin: z.number().optional(),
+    })
+    /** A floor above the ceiling admits nothing but the sentinel, while the
+     *  clamp maps every non-negative input onto a maximum the generated schema
+     *  then rejects. */
+    .refine((value) => value.positiveMin == null || value.positiveMin <= value.max, {
+      message: 'range.positiveMin cannot exceed range.max',
+      path: ['positiveMin'],
     })
     .optional(),
   enumMappings: z.record(z.union([z.number(), z.boolean(), z.string()])).optional(),
@@ -1384,6 +1412,12 @@ export enum RateLimitPrefix {
 }
 
 export const rateLimitSchema = z.object({
+  agentEvents: z
+    .object({
+      userMax: z.number().int().positive().optional(),
+      userWindowInMinutes: z.number().positive().optional(),
+    })
+    .optional(),
   fileUploads: z
     .object({
       ipMax: z.number().optional(),
@@ -1825,12 +1859,14 @@ export enum SearchProviders {
   SERPER = 'serper',
   SEARXNG = 'searxng',
   TAVILY = 'tavily',
+  KEENABLE = 'keenable',
 }
 
 export enum ScraperProviders {
   FIRECRAWL = 'firecrawl',
   SERPER = 'serper',
   TAVILY = 'tavily',
+  KEENABLE = 'keenable',
 }
 
 export enum RerankerTypes {
@@ -1876,6 +1912,8 @@ export const webSearchSchema = z.object({
   tavilyApiKeyPreview: apiKeyPreviewSchema,
   tavilySearchUrl: z.string().optional().default('${TAVILY_SEARCH_URL}'),
   tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
+  keenableApiKey: z.string().optional().default('${KEENABLE_API_KEY}'),
+  keenableApiUrl: z.string().optional().default('${KEENABLE_API_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiKeyPreview: apiKeyPreviewSchema,
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
@@ -1954,6 +1992,20 @@ export const webSearchSchema = z.object({
       includeImages: z.boolean().optional(),
       includeFavicon: z.boolean().optional(),
       format: z.enum(['markdown', 'text']).optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
+    })
+    .optional(),
+  keenableSearchOptions: z
+    .object({
+      maxResults: z.number().int().min(1).max(20).optional(),
+      site: z.string().optional(),
+      attributionTitle: z.string().optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
+    })
+    .optional(),
+  keenableScraperOptions: z
+    .object({
+      attributionTitle: z.string().optional(),
       timeout: z.number().int().nonnegative().max(120000).optional(),
     })
     .optional(),
@@ -2065,7 +2117,16 @@ const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
  * (backreferences, lookaround, control escapes, and so on) is rejected at load rather than
  * silently dropped at request time.
  */
-let messageFilterRegexValidator: (pattern: string) => boolean = (value) => {
+interface MessageFilterRegexValidation {
+  readonly supported: boolean;
+  readonly programSize?: number;
+}
+
+type MessageFilterRegexValidationResult = boolean | MessageFilterRegexValidation;
+
+let messageFilterRegexValidator: (pattern: string) => MessageFilterRegexValidationResult = (
+  value,
+) => {
   try {
     new RegExp(value, 'g');
     return true;
@@ -2074,26 +2135,68 @@ let messageFilterRegexValidator: (pattern: string) => boolean = (value) => {
   }
 };
 
-export const setMessageFilterRegexValidator = (validate: (pattern: string) => boolean): void => {
+export const setMessageFilterRegexValidator = (
+  validate: (pattern: string) => MessageFilterRegexValidationResult,
+): void => {
   messageFilterRegexValidator = validate;
 };
 
 const messageFilterPiiCustomPatternSchema = z.object({
-  id: z.string().min(1),
-  label: z.string().min(1),
-  regex: z
-    .string()
-    .min(1)
-    .refine((value) => messageFilterRegexValidator(value), {
-      message:
-        'Unsupported regex: not compatible with the RE2 engine (no backreferences, lookaround, or control escapes)',
-    }),
+  id: z.string().min(1).max(MAX_PII_PATTERN_ID_LENGTH),
+  label: z.string().min(1).max(MAX_PII_PATTERN_LABEL_LENGTH),
+  regex: z.string().min(1).max(MAX_PII_PATTERN_LENGTH),
 });
 
-export const messageFilterPiiSchema = z.object({
-  starterPatterns: z.array(z.string()).optional(),
-  customPatterns: z.array(messageFilterPiiCustomPatternSchema).optional(),
-});
+export const messageFilterPiiSchema = z
+  .object({
+    starterPatterns: z
+      .array(z.string().max(MAX_PII_PATTERN_ID_LENGTH))
+      .max(MAX_PII_PATTERNS_PER_SOURCE)
+      .optional(),
+    customPatterns: z
+      .array(messageFilterPiiCustomPatternSchema)
+      .max(MAX_PII_PATTERNS_PER_SOURCE)
+      .optional(),
+  })
+  .superRefine((pii, context) => {
+    let regexCharacters = 0;
+    let regexInstructions = 0;
+    for (let index = 0; index < (pii.customPatterns?.length ?? 0); index++) {
+      const pattern = pii.customPatterns?.[index];
+      if (pattern == null) {
+        continue;
+      }
+      regexCharacters += pattern.regex.length;
+      const result = messageFilterRegexValidator(pattern.regex);
+      const supported = typeof result === 'boolean' ? result : result.supported;
+      if (!supported) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['customPatterns', index, 'regex'],
+          message:
+            'Unsupported regex: not compatible with the RE2 engine (no backreferences, lookaround, or control escapes)',
+        });
+        continue;
+      }
+      if (typeof result !== 'boolean' && result.programSize != null) {
+        regexInstructions += result.programSize;
+      }
+    }
+    if (regexCharacters > MAX_PII_CUSTOM_REGEX_CHARACTERS) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customPatterns'],
+        message: `Custom PII regexes may contain at most ${MAX_PII_CUSTOM_REGEX_CHARACTERS} characters in total`,
+      });
+    }
+    if (regexInstructions > MAX_PII_CUSTOM_REGEX_INSTRUCTIONS) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customPatterns'],
+        message: `Custom PII regexes may compile to at most ${MAX_PII_CUSTOM_REGEX_INSTRUCTIONS} instructions in total`,
+      });
+    }
+  });
 
 export type MessageFilterPiiConfig = z.infer<typeof messageFilterPiiSchema>;
 
@@ -2188,6 +2291,7 @@ export const configSchema = z.object({
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
+  filters: filtersConfigSchema.optional(),
   messageFilter: messageFilterSchema.optional(),
   endpoints: z
     .object({
@@ -2616,6 +2720,10 @@ export enum CacheKeys {
    * Key for cached group memberships used to resolve ACL user principals.
    */
   USER_PRINCIPALS = 'USER_PRINCIPALS',
+  /**
+   * Key for cached prompt group access ID sets (accessible, public, owned).
+   */
+  PROMPT_GROUPS_ACCESS = 'PROMPT_GROUPS_ACCESS',
   /**
    * Key for per-conversation stateful code sandbox prewarm/warm state.
    */

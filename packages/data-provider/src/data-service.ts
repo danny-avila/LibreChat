@@ -1002,12 +1002,29 @@ export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage
   return request.get(endpoints.messages({ conversationId }));
 }
 
+export function getMessageById(conversationId: string, messageId: string): Promise<s.TMessage[]> {
+  return request.get(endpoints.messages({ conversationId, messageId }));
+}
+
+export function getParentSubagents(parentConversationId: string): Promise<t.ParentSubagentIndex> {
+  return request.get(endpoints.parentSubagents(parentConversationId));
+}
+
 export function getSubagentThread(
   parentConversationId: string,
   threadId: string,
   taskId?: string,
+  cursor?: string,
 ): Promise<t.SubagentThreadView> {
-  return request.get(endpoints.subagentThread(parentConversationId, threadId, taskId));
+  return request.get(endpoints.subagentThread(parentConversationId, threadId, taskId, cursor));
+}
+
+export function controlSubagentTask(
+  parentConversationId: string,
+  threadId: string,
+  body: t.SubagentControlRequest,
+): Promise<t.SubagentControlResponse> {
+  return request.post(endpoints.subagentControl(parentConversationId, threadId), body);
 }
 
 export function getPrompt(id: string): Promise<{ prompt: t.TPrompt }> {
@@ -1417,8 +1434,12 @@ export const getMemories = (): Promise<q.MemoriesResponse> => {
   return request.get(endpoints.memories());
 };
 
-export const deleteMemory = (key: string, agentId?: string): Promise<void> => {
+export const deleteMemory = (key: string, agentId?: string): Promise<q.DeleteMemoryResponse> => {
   return request.delete(endpoints.memory(key, agentId));
+};
+
+export const deleteMemoryById = (id: string, agentId?: string): Promise<q.DeleteMemoryResponse> => {
+  return request.delete(endpoints.memoryById(id, agentId));
 };
 
 export const updateMemory = (
@@ -1426,8 +1447,20 @@ export const updateMemory = (
   value: string,
   originalKey?: string,
   agentId?: string,
-): Promise<q.TUserMemory> => {
+): Promise<q.UpdateMemoryResponse> => {
   return request.patch(endpoints.memory(originalKey || key, agentId), { key, value });
+};
+
+export const updateMemoryById = (
+  id: string,
+  value: string,
+  key?: string,
+  agentId?: string,
+): Promise<q.UpdateMemoryResponse> => {
+  return request.patch(endpoints.memoryById(id, agentId), {
+    value,
+    ...(key ? { key } : {}),
+  });
 };
 
 export const updateMemoryPreferences = (preferences: {

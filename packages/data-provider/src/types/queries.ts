@@ -1,4 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query';
+import type { RerankerTypes, SearchProviders, ScraperProviders } from '../config';
 import type * as p from '../accessPermissions';
 import type * as a from '../types/agents';
 import type * as s from '../schemas';
@@ -152,6 +153,9 @@ export type VerifyToolAuthResponse = {
   authenticated: boolean;
   message?: string | s.AuthType;
   authTypes?: [string, s.AuthType][];
+  searchProvider?: SearchProviders;
+  scraperProvider?: ScraperProviders;
+  rerankerType?: RerankerTypes;
 };
 
 export type GetToolCallParams = { conversationId: string };
@@ -159,14 +163,20 @@ export type ToolCallResults = a.ToolCallResult[];
 
 /* Memories */
 export type TUserMemory = {
+  /** Stable stored record identifier retained when content fields are redacted. */
+  _id?: string;
   key: string;
   value: string;
+  /** Optional generated or legacy summary content. */
+  summary?: string;
   updated_at: string;
   tokenCount?: number;
   /** Agent partition this memory belongs to; absent = shared personal pool */
   agentId?: string;
   /** Display name of the partition's agent, resolved server-side when available */
   agentName?: string;
+  /** Current policy removed one or more memory content fields from this response. */
+  contentFilterBlocked?: boolean;
 };
 
 export type MemoriesResponse = {
@@ -174,6 +184,15 @@ export type MemoriesResponse = {
   totalTokens: number;
   tokenLimit: number | null;
   usagePercentage: number | null;
+};
+
+export type UpdateMemoryResponse = {
+  updated: boolean;
+  memory: TUserMemory;
+};
+
+export type DeleteMemoryResponse = {
+  deleted: boolean;
 };
 
 export type PrincipalSearchParams = {

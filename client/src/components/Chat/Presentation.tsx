@@ -1,14 +1,16 @@
 import { lazy, Suspense, useEffect, useMemo, useRef } from 'react';
 import { useRecoilValue, useResetRecoilState } from 'recoil';
-import { FileSources, LocalStorageKeys } from 'librechat-data-provider';
+import { EModelEndpoint, FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import useResetArtifactsOnConversationChange from '~/hooks/Artifacts/useResetArtifactsOnConversationChange';
+import { ParentSubagentsProvider } from '~/components/Chat/Subagents/ParentSubagentsProvider';
 import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
 import { EditorProvider, ArtifactsProvider } from '~/Providers';
 import { useDeleteFilesMutation } from '~/data-provider';
 import { SidePanelGroup } from '~/components/SidePanel';
 import { activeSubagentPanel } from '~/store/subagents';
 import { useSetFilesToDelete } from '~/hooks';
+import { failedFileIdsFrom } from '~/utils';
 import store from '~/store';
 
 const Artifacts = lazy(() => import('~/components/Artifacts/Artifacts'));
@@ -26,6 +28,8 @@ export default function Presentation({ children }: { children: React.ReactNode }
   // (gated on `isSubmitting`), restoring the legacy streaming UX.
   const currentArtifactId = useRecoilValue(store.currentArtifactId);
   const conversationId = useRecoilValue(store.conversationIdByIndex(0));
+  const conversationEndpoint = useRecoilValue(store.effectiveEndpointByIndex(0));
+  const conversationAgentId = useRecoilValue(store.conversationAgentIdByIndex(0));
   const selectedSubagent = useRecoilValue(activeSubagentPanel);
   const resetSelectedSubagent = useResetRecoilState(activeSubagentPanel);
   const previousConversationIdRef = useRef<string | null>(null);
@@ -42,9 +46,29 @@ export default function Presentation({ children }: { children: React.ReactNode }
   const setFilesToDelete = useSetFilesToDelete();
 
   const { mutateAsync } = useDeleteFilesMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
       console.log('Temporary Files deleted');
-      setFilesToDelete({});
+      const failed = new Set(failedFileIdsFrom(result));
+      if (failed.size === 0) {
+        setFilesToDelete({});
+        return;
+      }
+      try {
+        const filesToDelete = localStorage.getItem(LocalStorageKeys.FILES_TO_DELETE);
+        const map = JSON.parse(filesToDelete ?? '{}') as Record<string, ExtendedFile>;
+        const remaining: Record<string, ExtendedFile> = {};
+        for (const [key, file] of Object.entries(map)) {
+          if (
+            (file.file_id != null && failed.has(file.file_id)) ||
+            (file.temp_file_id != null && failed.has(file.temp_file_id))
+          ) {
+            remaining[key] = file;
+          }
+        }
+        setFilesToDelete(remaining);
+      } catch {
+        // Keep existing records if reading or parsing fails.
+      }
     },
     onError: (error) => {
       console.log('Error deleting temporary files:', error);
@@ -114,11 +138,16 @@ export default function Presentation({ children }: { children: React.ReactNode }
 
   return (
     <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
-      <SidePanelGroup panel={panelElement}>
-        <main className="flex h-full flex-col overflow-y-auto" role="main">
-          {children}
-        </main>
-      </SidePanelGroup>
+      <ParentSubagentsProvider
+        conversationId={conversationId ?? ''}
+        enabled={conversationEndpoint === EModelEndpoint.agents && conversationAgentId != null}
+      >
+        <SidePanelGroup panel={panelElement}>
+          <main className="flex h-full flex-col overflow-y-auto" role="main">
+            {children}
+          </main>
+        </SidePanelGroup>
+      </ParentSubagentsProvider>
     </DragDropWrapper>
   );
 }

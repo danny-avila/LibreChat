@@ -16,6 +16,15 @@ const {
   requireFeedbackEnabled,
   CHILD_THREAD_READ_ONLY_ERROR,
   isSubagentThreadWriteBlocked,
+  createContentFilter,
+  extractFeedbackContent,
+  extractStoredMessageContent,
+  assertStoredMessageMutationAllowed,
+  assertChatMutationAllowed,
+  assertStoredMessageBranchAllowed,
+  mergeUserSubmittedPaths,
+  mergeUserSubmittedMessageFieldPaths,
+  isContentFilterError,
 } = require('@librechat/api');
 const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
@@ -30,6 +39,24 @@ const {
 const db = require('~/models');
 
 const router = express.Router();
+const filterStoredMessageContent = createContentFilter({
+  getFilters: (req) => req.config?.filters,
+  getMessageRoles: (req) => [req.body?.role],
+  getOpaqueFileInput: (req) => req.body,
+  getFiles: db.getFiles,
+  extract: (req) => extractStoredMessageContent(req.body),
+});
+const filterFeedbackContent = createContentFilter({
+  getFilters: (req) => req.config?.filters,
+  extract: (req) => extractFeedbackContent(req.body),
+});
+const messageMutationMiddleware = [validateMessageReq, configMiddleware];
+const storedMessageMutationMiddleware = [
+  validateMessageReq,
+  configMiddleware,
+  filterStoredMessageContent,
+];
+
 router.use(requireJwtAuth);
 
 async function rejectSubagentThreadWrite(req, res, conversationId) {
@@ -174,7 +201,7 @@ router.get('/', async (req, res) => {
  * @param {string} req.body.agentId - The agentId to filter content by
  * @returns {TMessage} The newly created branch message
  */
-router.post('/branch', async (req, res) => {
+router.post('/branch', configMiddleware, async (req, res) => {
   try {
     const { messageId, agentId } = req.body;
     const userId = req.user.id;
@@ -209,10 +236,41 @@ router.post('/branch', async (req, res) => {
 
     /** @type {Array<import('librechat-data-provider').TMessageContentParts>} */
     const filteredContent = [];
-    for (const part of sourceMessage.content) {
+    const sourceUserSubmittedPaths = Array.isArray(sourceMessage.userSubmittedPaths)
+      ? sourceMessage.userSubmittedPaths.filter((path) => typeof path === 'string')
+      : [];
+    const sourceUserSubmittedMessageFieldPaths = Array.isArray(
+      sourceMessage.userSubmittedMessageFieldPaths,
+    )
+      ? sourceMessage.userSubmittedMessageFieldPaths.filter(
+          (entry) => entry != null && typeof entry.path === 'string',
+        )
+      : [];
+    const remappedUserSubmittedPaths = sourceUserSubmittedPaths.filter((path) =>
+      path.startsWith('/attachments/'),
+    );
+    const remappedUserSubmittedMessageFieldPaths = [];
+    for (let sourceIndex = 0; sourceIndex < sourceMessage.content.length; sourceIndex++) {
+      const part = sourceMessage.content[sourceIndex];
       if (part?.agentId === agentId) {
+        const targetIndex = filteredContent.length;
         const { agentId: _a, groupId: _g, ...cleanPart } = part;
         filteredContent.push(cleanPart);
+        const sourcePrefix = `/content/${sourceIndex}`;
+        const targetPrefix = `/content/${targetIndex}`;
+        for (const path of sourceUserSubmittedPaths) {
+          if (path === sourcePrefix || path.startsWith(`${sourcePrefix}/`)) {
+            remappedUserSubmittedPaths.push(`${targetPrefix}${path.slice(sourcePrefix.length)}`);
+          }
+        }
+        for (const entry of sourceUserSubmittedMessageFieldPaths) {
+          if (entry.path === sourcePrefix || entry.path.startsWith(`${sourcePrefix}/`)) {
+            remappedUserSubmittedMessageFieldPaths.push({
+              ...entry,
+              path: `${targetPrefix}${entry.path.slice(sourcePrefix.length)}`,
+            });
+          }
+        }
       }
     }
 
@@ -232,11 +290,32 @@ router.post('/branch', async (req, res) => {
       endpoint: sourceMessage.endpoint,
       sender: sourceMessage.sender,
       iconURL: sourceMessage.iconURL,
+      ...(typeof sourceMessage.isUserSubmitted === 'boolean' && {
+        isUserSubmitted: sourceMessage.isUserSubmitted,
+      }),
+      ...(remappedUserSubmittedPaths.length > 0 && {
+        userSubmittedPaths: mergeUserSubmittedPaths(remappedUserSubmittedPaths),
+      }),
+      ...(remappedUserSubmittedMessageFieldPaths.length > 0 && {
+        userSubmittedMessageFieldPaths: mergeUserSubmittedMessageFieldPaths(
+          remappedUserSubmittedMessageFieldPaths,
+        ),
+      }),
       content: filteredContent,
       unfinished: false,
       error: false,
       user: userId,
     };
+
+    await assertStoredMessageBranchAllowed(
+      {
+        filters: req.config?.filters,
+        legacyPii: req.config?.messageFilter?.pii,
+        message: newMessage,
+        user: req.user,
+      },
+      { getFiles: db.getFiles },
+    );
 
     const savedMessage = await db.saveMessage(
       {
@@ -254,12 +333,15 @@ router.post('/branch', async (req, res) => {
 
     res.status(201).json(savedMessage);
   } catch (error) {
+    if (isContentFilterError(error)) {
+      return res.status(error.statusCode).json(error.body);
+    }
     logger.error('Error creating branch message:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-router.post('/artifact/:messageId', async (req, res) => {
+router.post('/artifact/:messageId', configMiddleware, async (req, res) => {
   try {
     const { messageId } = req.params;
     const { index, original, updated } = req.body;
@@ -267,6 +349,8 @@ router.post('/artifact/:messageId', async (req, res) => {
     if (typeof index !== 'number' || index < 0 || original == null || updated == null) {
       return res.status(400).json({ error: 'Invalid request parameters' });
     }
+
+    assertStoredMessageMutationAllowed(req.config?.filters, { original, updated });
 
     const message = await db.getMessage({ user: req.user.id, messageId });
     if (!message) {
@@ -317,6 +401,12 @@ router.post('/artifact/:messageId', async (req, res) => {
       return res.status(400).json({ error: 'Original content not found in target artifact' });
     }
 
+    const filteredArtifact =
+      targetArtifact.source === 'content'
+        ? { content: [{ text: updatedText }] }
+        : { text: updatedText };
+    assertStoredMessageMutationAllowed(req.config?.filters, filteredArtifact);
+
     const savedMessage = await db.saveMessage(
       {
         userId: req?.user?.id,
@@ -328,6 +418,12 @@ router.post('/artifact/:messageId', async (req, res) => {
         conversationId: message.conversationId,
         text: message.text,
         content: message.content,
+        userSubmittedPaths: mergeUserSubmittedPaths(
+          message.userSubmittedPaths,
+          targetArtifact.source === 'content'
+            ? `/content/${targetArtifact.partIndex}/text`
+            : '/text',
+        ),
         user: req.user.id,
       },
       { context: 'POST /api/messages/artifact/:messageId' },
@@ -339,6 +435,9 @@ router.post('/artifact/:messageId', async (req, res) => {
       text: savedMessage.text,
     });
   } catch (error) {
+    if (isContentFilterError(error)) {
+      return res.status(error.statusCode).json(error.body);
+    }
     logger.error('Error editing artifact:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -375,12 +474,15 @@ router.get('/:conversationId', prepareMessageRequestValidation, async (req, res)
   }
 });
 
-router.post('/:conversationId', validateMessageReq, async (req, res) => {
+router.post('/:conversationId', storedMessageMutationMiddleware, async (req, res) => {
   try {
     if (await rejectSubagentThreadWrite(req, res, req.params.conversationId)) {
       return;
     }
     const message = { ...req.body, conversationId: req.params.conversationId };
+    delete message.isUserSubmitted;
+    delete message.userSubmittedPaths;
+    delete message.userSubmittedMessageFieldPaths;
     const reqCtx = {
       userId: req?.user?.id,
       isTemporary: req?.body?.isTemporary,
@@ -388,7 +490,7 @@ router.post('/:conversationId', validateMessageReq, async (req, res) => {
     };
     const savedMessage = await db.saveMessage(
       reqCtx,
-      { ...message, user: req.user.id },
+      { ...message, user: req.user.id, isUserSubmitted: true },
       { context: 'POST /api/messages/:conversationId' },
     );
     if (!savedMessage) {
@@ -402,6 +504,7 @@ router.post('/:conversationId', validateMessageReq, async (req, res) => {
     };
     await db.saveConvo(reqCtx, conversationUpdate, {
       context: 'POST /api/messages/:conversationId',
+      ...(savedMessage._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
     });
     res.status(201).json(savedMessage);
   } catch (error) {
@@ -427,13 +530,13 @@ router.get('/:conversationId/:messageId', validateMessageReq, async (req, res) =
   }
 });
 
-router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
+router.put('/:conversationId/:messageId', messageMutationMiddleware, async (req, res) => {
   try {
     const { conversationId, messageId } = req.params;
     const message = (
       await db.getMessages(
         { messageId, user: req.user.id },
-        'conversationId content tokenCount quotes isCreatedByUser',
+        'conversationId content tokenCount quotes isCreatedByUser userSubmittedPaths',
       )
     )?.[0];
     if (!message || message.conversationId !== conversationId) {
@@ -444,7 +547,13 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
     }
     const { text, index, model } = req.body;
 
+    if (index !== undefined && (typeof index !== 'number' || index < 0)) {
+      return res.status(400).json({ error: 'Invalid index' });
+    }
+
     if (index === undefined) {
+      assertStoredMessageMutationAllowed(req.config?.filters, { text });
+
       /** A user turn's persisted `quotes` are re-prepended into the prompt on
        *  every send, but this edit only changes `text`. Count the merged
        *  text+quotes so the stored `tokenCount` stays authoritative (matching the
@@ -454,13 +563,18 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
         message.quotes,
         message.isCreatedByUser === true,
       );
+      assertChatMutationAllowed(req.config?.filters, {
+        text,
+        quotes: message.isCreatedByUser === true ? message.quotes : undefined,
+      });
       const tokenCount = await countTokens(textToCount, model);
-      const result = await db.updateMessage(req?.user?.id, { messageId, text, tokenCount });
+      const result = await db.updateMessage(req?.user?.id, {
+        messageId,
+        text,
+        tokenCount,
+        userSubmittedPaths: mergeUserSubmittedPaths(message.userSubmittedPaths, '/text'),
+      });
       return res.status(200).json(result);
-    }
-
-    if (typeof index !== 'number' || index < 0) {
-      return res.status(400).json({ error: 'Invalid index' });
     }
 
     const existingContent = message.content;
@@ -478,6 +592,10 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
       return res.status(400).json({ error: 'Cannot update non-text content' });
     }
 
+    assertStoredMessageMutationAllowed(req.config?.filters, {
+      content: [{ [currentPartType]: text }],
+    });
+
     /** A text part is `string | { value, annotations }`. The Assistants thread sync
      *  persists the structured form with its file citations intact, and the editor
      *  reads it through the same union, so an edit has to be written into `value`
@@ -493,6 +611,9 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
     };
     updatedContent[index] =
       currentPartType === ContentTypes.THINK ? stripReasoningLabelMetadata(editedPart) : editedPart;
+    assertStoredMessageMutationAllowed(req.config?.filters, {
+      content: [updatedContent[index]],
+    });
 
     let tokenCount = message.tokenCount;
     if (tokenCount !== undefined) {
@@ -505,9 +626,16 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
       messageId,
       content: updatedContent,
       tokenCount,
+      userSubmittedPaths: mergeUserSubmittedPaths(
+        message.userSubmittedPaths,
+        `/content/${index}/${currentPartType}`,
+      ),
     });
     return res.status(200).json(result);
   } catch (error) {
+    if (isContentFilterError(error)) {
+      return res.status(error.statusCode).json(error.body);
+    }
     logger.error('Error updating message:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -518,6 +646,7 @@ router.put(
   validateMessageReq,
   configMiddleware,
   requireFeedbackEnabled,
+  filterFeedbackContent,
   async (req, res) => {
     try {
       const { conversationId, messageId } = req.params;

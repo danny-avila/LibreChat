@@ -24,6 +24,8 @@ import {
 import { buildSubagentThreadTaskConfig, SubagentThreadTaskStore } from './subagentThreads';
 import { __resetShutdownStateForTests } from '../app/shutdown';
 import { createAgentTriggerService } from './triggers/service';
+import { SubagentActivityStream } from './subagentActivity';
+import { RedisEventTransport } from '~/stream';
 
 const DB_SETUP_TIMEOUT_MS = 60_000;
 const REDIS_URI = process.env.REDIS_URI;
@@ -86,6 +88,14 @@ async function createRoutingTransport(instanceId: string, namespace: string) {
   });
 }
 
+async function createActivityStream(): Promise<SubagentActivityStream> {
+  const [publisher, subscriber] = await Promise.all([
+    connectedRedisClient(),
+    connectedRedisClient(),
+  ]);
+  return new SubagentActivityStream(new RedisEventTransport(publisher, subscriber));
+}
+
 function taskRequest(
   scopeId: string,
   input: string,
@@ -144,7 +154,10 @@ afterEach(async () => {
   triggerService = undefined;
   __resetShutdownStateForTests();
   await Promise.all(
-    taskStores.splice(0).map((store) => store.destroyTaskControlTransport().catch(() => undefined)),
+    taskStores.splice(0).map(async (store) => {
+      await store.destroyTaskControlTransport().catch(() => undefined);
+      store.destroyActivityStream();
+    }),
   );
   await Promise.all(redisClients.splice(0).map((client) => client.quit().catch(() => undefined)));
   await mongoose.connection.db?.dropDatabase();
@@ -264,6 +277,8 @@ describeWithRedis('subagent cross-replica orchestration', () => {
     await requesterStore.configureTaskControlTransport(
       await createRoutingTransport('delivery-owner', namespace),
     );
+    ownerStore.configureActivityStream(await createActivityStream());
+    requesterStore.configureActivityStream(await createActivityStream());
     const config = buildSubagentThreadTaskConfig(ownerStore, {
       userId,
       tenantId,
@@ -275,10 +290,26 @@ describeWithRedis('subagent cross-replica orchestration', () => {
     const childRun = (result: string) => {
       let markEntered = (): void => undefined;
       entered.push(new Promise<void>((resolve) => (markEntered = resolve)));
-      return async (_runtime: SubagentTaskRuntime) => {
+      return async (runtime: SubagentTaskRuntime) => {
         markEntered();
         return new Promise<{ content: string }>((resolve) =>
-          releases.push(() => resolve({ content: result })),
+          releases.push(() => {
+            runtime.reportProgress({
+              runId: 'root-run',
+              parentRunId: 'parent-run',
+              subagentRunId: runtime.taskId,
+              subagentType: 'worker',
+              subagentKind: 'agent',
+              subagentAgentId: 'agent-worker',
+              parentToolCallId: 'tool-call',
+              depth: 1,
+              ancestry: [],
+              phase: 'message_delta',
+              data: { delta: { content: [{ type: 'text', text: result }] } },
+              timestamp: new Date().toISOString(),
+            });
+            resolve({ content: result });
+          }),
         );
       };
     };
@@ -302,6 +333,20 @@ describeWithRedis('subagent cross-replica orchestration', () => {
 
     const firstTaskId = accepted(first).task.taskId;
     const secondTaskId = accepted(second).task.taskId;
+    const remoteActivity: unknown[] = [];
+    let resolveRemoteDone!: (status: string) => void;
+    const remoteDone = new Promise<string>((resolve) => {
+      resolveRemoteDone = resolve;
+    });
+    const remoteSubscription = requesterStore.subscribeActivity(
+      accepted(first).task.threadId!,
+      firstTaskId,
+      {
+        onEvent: (event) => remoteActivity.push(event),
+        onDone: (event) => resolveRemoteDone(event.status),
+      },
+    );
+    await remoteSubscription.ready;
     await expect(requesterStore.listTasks(config.scopeId)).resolves.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ taskId: firstTaskId, status: 'running' }),
@@ -318,6 +363,13 @@ describeWithRedis('subagent cross-replica orchestration', () => {
     ).resolves.toMatchObject({ status: 'accepted' });
 
     releases.forEach((release) => release());
+    await expect(remoteDone).resolves.toBe('completed');
+    expect(remoteActivity).toEqual([
+      expect.objectContaining({
+        event: 'on_subagent_update',
+        data: expect.objectContaining({ subagentRunId: firstTaskId }),
+      }),
+    ]);
     await waitUntil(() => {
       const tasks = [
         ownerStore.get(config.scopeId, firstTaskId),

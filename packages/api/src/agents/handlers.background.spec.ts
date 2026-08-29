@@ -1,5 +1,8 @@
 import { z } from 'zod';
+import { logger } from '@librechat/data-schemas';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
+import type { FiltersConfig } from 'librechat-data-provider';
+import { ContentFilterError } from '../middleware/contentFilter';
 import { CHECK_BACKGROUND_TASK_NAME } from './background';
 import { createToolExecuteHandler } from './handlers';
 
@@ -22,6 +25,23 @@ interface BatchInput {
 
 const flushMicrotasks = () => new Promise((resolve) => setImmediate(resolve));
 
+const MODEL_BOUND_FILE_CONTENT_BLOCK = JSON.stringify({
+  error: 'content_filter_block',
+  message: 'Submitted content was blocked by content policy.',
+  source: 'file',
+  field: 'content',
+});
+
+const MODEL_BOUND_TOOL_OUTPUT_BLOCK = JSON.stringify({
+  error: 'content_filter_block',
+  message: 'Submitted content was blocked by content policy.',
+  source: 'tool_argument',
+  field: 'output',
+});
+
+const CODE_TOOL_OUTPUT_BLOCK = `Error: [execute_code] tool call failed: ${MODEL_BOUND_TOOL_OUTPUT_BLOCK}`;
+const CODE_FILE_CONTENT_BLOCK = `Error: [execute_code] tool call failed: ${MODEL_BOUND_FILE_CONTENT_BLOCK}`;
+
 const makeSearchTool = (state: { calls: number; lastInput?: Record<string, unknown> }) =>
   ({
     name: 'search_mcp_docs',
@@ -34,8 +54,15 @@ const makeSearchTool = (state: { calls: number; lastInput?: Record<string, unkno
     },
   }) as unknown as StructuredToolInterface;
 
-const buildConfig = (backgroundToolNames: string[] = ['search_mcp_docs']) => ({
-  req: { user: { id: 'exec_user' }, body: { conversationId: 'exec_convo' } },
+const buildConfig = (
+  backgroundToolNames: string[] = ['search_mcp_docs'],
+  filters?: FiltersConfig,
+) => ({
+  req: {
+    user: { id: 'exec_user' },
+    body: { conversationId: 'exec_convo' },
+    ...(filters != null ? { config: { filters } } : {}),
+  },
   backgroundToolNames,
 });
 
@@ -57,6 +84,350 @@ const runBatch = async (
 };
 
 describe('createToolExecuteHandler — background tool calls', () => {
+  it('persists an Event Actor launch before invoking and terminal evidence before wakeup', async () => {
+    const events: string[] = [];
+    let finishTool: ((value: { content: string }) => void) | undefined;
+    const tool = {
+      name: 'submit_move_mcp_chess',
+      description: 'submits a move',
+      schema: z.object({ move: z.string() }),
+      invoke: () => {
+        events.push('invoke');
+        return new Promise<{ content: string }>((resolve) => {
+          finishTool = resolve;
+        });
+      },
+    } as unknown as StructuredToolInterface;
+    let reservations = 0;
+    const eventActorDetachedAction = {
+      reserve: jest.fn(async () => {
+        events.push('reserve');
+        reservations += 1;
+        return {
+          status: reservations === 1 ? ('reserved' as const) : ('replay' as const),
+          taskId: 'event-task-stable-1',
+          idempotencyKey: 'a'.repeat(64),
+        };
+      }),
+      markRunning: jest.fn(async () => {
+        events.push('running');
+        return true;
+      }),
+      settle: jest.fn(async () => {
+        events.push('terminal');
+        return true;
+      }),
+      wake: jest.fn(async () => {
+        events.push('wake');
+      }),
+    };
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      eventActorDetachedAction,
+    });
+    const request = {
+      toolCalls: [
+        {
+          id: 'call-event-detached',
+          name: tool.name,
+          args: { move: 'e4', run_in_background: true },
+        },
+      ],
+      agentId: 'agent-player',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'event-conversation', run_id: 'event-response' },
+    };
+
+    const first = await runBatch(handler, request);
+
+    expect(JSON.parse(first[0].content)).toMatchObject({
+      status: 'running',
+      background_task_id: 'event-task-stable-1',
+    });
+    expect(events).toEqual(['reserve', 'invoke', 'running']);
+    finishTool?.({ content: 'move accepted' });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(events).toEqual(['reserve', 'invoke', 'running', 'terminal', 'wake']);
+    expect(eventActorDetachedAction.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({ turnId: 'event-response:' }),
+    );
+
+    const replay = await runBatch(handler, request);
+
+    expect(JSON.parse(replay[0].content).background_task_id).toBe('event-task-stable-1');
+    expect(events).toEqual(['reserve', 'invoke', 'running', 'terminal', 'wake', 'reserve']);
+    expect(eventActorDetachedAction.settle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'event-task-stable-1',
+        status: 'succeeded',
+        result: 'move accepted',
+      }),
+    );
+  });
+
+  it('records filtered detached output as successful side-effect evidence', async () => {
+    const protectedValue = 'Authorization: Bearer detached-secret';
+    const tool = {
+      name: 'submit_move_mcp_chess',
+      description: 'submits a move',
+      schema: z.object({ move: z.string() }),
+      invoke: jest.fn(async () => ({ content: protectedValue })),
+    } as unknown as StructuredToolInterface;
+    const eventActorDetachedAction = {
+      reserve: jest.fn(async () => ({
+        status: 'reserved' as const,
+        taskId: 'event-task-filtered',
+        idempotencyKey: 'e'.repeat(64),
+      })),
+      markRunning: jest.fn(async () => true),
+      settle: jest.fn(async () => true),
+      wake: jest.fn(async () => undefined),
+    };
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      eventActorDetachedAction,
+    });
+
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-event-filtered',
+          name: tool.name,
+          args: { move: 'e4', run_in_background: true },
+        },
+      ],
+      agentId: 'agent-player',
+      configurable: buildConfig([tool.name], {
+        toolArguments: {
+          pii: { fields: ['output'], starterPatterns: ['bearer_header'] },
+        },
+      }),
+      metadata: { thread_id: 'event-filtered-conversation', run_id: 'event-filtered-turn' },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(eventActorDetachedAction.settle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'event-task-filtered',
+        status: 'succeeded',
+        result: expect.stringContaining('content_filter_block'),
+      }),
+    );
+    expect(JSON.stringify(eventActorDetachedAction.settle.mock.calls)).not.toContain(
+      protectedValue,
+    );
+    expect(eventActorDetachedAction.settle).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'failed' }),
+    );
+    expect(eventActorDetachedAction.wake).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects capacity before creating durable Event Actor launch authority', async () => {
+    let invocations = 0;
+    const tool = {
+      name: 'submit_move_mcp_chess',
+      description: 'submits a move',
+      schema: z.object({ move: z.string() }),
+      invoke: () => {
+        invocations += 1;
+        return new Promise(() => undefined);
+      },
+    } as unknown as StructuredToolInterface;
+    const configurable = {
+      req: {
+        user: { id: 'capacity-user' },
+        body: { conversationId: 'capacity-conversation' },
+      },
+      backgroundToolNames: [tool.name],
+    };
+    const metadata = { thread_id: 'capacity-conversation', run_id: 'capacity-run' };
+    const ordinaryHandler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+    });
+    await runBatch(ordinaryHandler, {
+      toolCalls: Array.from({ length: 10 }, (_, index) => ({
+        id: `capacity-${index}`,
+        name: tool.name,
+        args: { move: 'e4', run_in_background: true },
+      })),
+      agentId: 'agent-player',
+      configurable,
+      metadata,
+    });
+
+    const reserve = jest.fn(async () => ({
+      status: 'reserved' as const,
+      taskId: 'event-task-capacity',
+      idempotencyKey: 'f'.repeat(64),
+    }));
+    const detachedHandler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      eventActorDetachedAction: {
+        reserve,
+        markRunning: jest.fn(async () => true),
+        settle: jest.fn(async () => true),
+        wake: jest.fn(async () => undefined),
+      },
+    });
+
+    const [rejected] = await runBatch(detachedHandler, {
+      toolCalls: [
+        {
+          id: 'capacity-detached',
+          name: tool.name,
+          args: { move: 'e5', run_in_background: true },
+        },
+      ],
+      agentId: 'agent-player',
+      configurable,
+      metadata,
+    });
+
+    expect(rejected.content).toContain('Too many background tasks');
+    expect(invocations).toBe(10);
+    expect(reserve).not.toHaveBeenCalled();
+  });
+
+  it('does not launch an expected action when staged production is disabled', async () => {
+    const invoke = jest.fn(async () => ({ content: 'move accepted' }));
+    const tool = {
+      name: 'submit_move_mcp_chess',
+      description: 'submits a move',
+      schema: z.object({ move: z.string() }),
+      invoke,
+    } as unknown as StructuredToolInterface;
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      eventActorDetachedAction: {
+        reserve: jest.fn(async () => ({
+          status: 'conflict' as const,
+          error: 'Detached Event Actor production is not activated',
+        })),
+        markRunning: jest.fn(async () => true),
+        settle: jest.fn(async () => true),
+        wake: jest.fn(async () => undefined),
+      },
+    });
+
+    await expect(
+      runBatch(handler, {
+        toolCalls: [
+          {
+            id: 'call-disabled',
+            name: tool.name,
+            args: { move: 'e4', run_in_background: true },
+          },
+        ],
+        agentId: 'agent-player',
+        configurable: buildConfig([tool.name]),
+        metadata: { thread_id: 'event-conversation', run_id: 'event-response' },
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({ content: '', errorMessage: expect.stringContaining('activated') }),
+    ]);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('persists a synchronous detached-tool rejection as terminal evidence', async () => {
+    const tool = {
+      name: 'submit_move_mcp_chess',
+      description: 'submits a move',
+      schema: z.object({ move: z.string() }),
+      invoke: () => {
+        throw new Error('launch rejected synchronously');
+      },
+    } as unknown as StructuredToolInterface;
+    const eventActorDetachedAction = {
+      reserve: jest.fn(async () => ({
+        status: 'reserved' as const,
+        taskId: 'event-task-sync-error',
+        idempotencyKey: 'b'.repeat(64),
+      })),
+      markRunning: jest.fn(async () => true),
+      settle: jest.fn(async () => true),
+      wake: jest.fn(async () => undefined),
+    };
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      eventActorDetachedAction,
+    });
+
+    await expect(
+      runBatch(handler, {
+        toolCalls: [
+          {
+            id: 'call-sync-error',
+            name: tool.name,
+            args: { move: 'e4', run_in_background: true },
+          },
+        ],
+        agentId: 'agent-player',
+        configurable: buildConfig([tool.name]),
+        metadata: { thread_id: 'event-conversation', run_id: 'event-response' },
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({ content: expect.stringContaining('event-task-sync-error') }),
+    ]);
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(eventActorDetachedAction.settle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'event-task-sync-error',
+        status: 'failed',
+        error: expect.stringContaining('launch rejected synchronously'),
+      }),
+    );
+    expect(eventActorDetachedAction.wake).toHaveBeenCalledTimes(1);
+  });
+
+  it('records an aborted detached expected action as cancelled', async () => {
+    const abortError = Object.assign(new Error('operation aborted'), { name: 'AbortError' });
+    const tool = {
+      name: 'submit_move_mcp_chess',
+      description: 'submits a move',
+      schema: z.object({ move: z.string() }),
+      invoke: async () => {
+        throw abortError;
+      },
+    } as unknown as StructuredToolInterface;
+    const eventActorDetachedAction = {
+      reserve: jest.fn(async () => ({
+        status: 'reserved' as const,
+        taskId: 'event-task-cancelled',
+        idempotencyKey: 'c'.repeat(64),
+      })),
+      markRunning: jest.fn(async () => true),
+      settle: jest.fn(async () => true),
+      wake: jest.fn(async () => undefined),
+    };
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      eventActorDetachedAction,
+    });
+
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-cancelled',
+          name: tool.name,
+          args: { move: 'e4', run_in_background: true },
+        },
+      ],
+      agentId: 'agent-player',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'event-conversation', run_id: 'event-response' },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(eventActorDetachedAction.settle).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'cancelled', error: 'operation aborted' }),
+    );
+  });
+
   it('returns a handle immediately, runs the tool once detached, and yields the result via check_background_task', async () => {
     const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
     const searchTool = makeSearchTool(state);
@@ -107,6 +478,264 @@ describe('createToolExecuteHandler — background tool calls', () => {
     const polled = JSON.parse(pollResults[0].content);
     expect(polled.status).toBe('completed');
     expect(polled.result).toContain('RESULT for librechat');
+  });
+
+  it('blocks normalized arguments before registering or dispatching a background task', async () => {
+    const protectedValue = 'PROTECTED-BACKGROUND';
+    const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+    const searchTool = makeSearchTool(state);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [searchTool] }),
+    });
+    const configurable = buildConfig(['search_mcp_docs'], {
+      toolArguments: {
+        pii: {
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'protected-value',
+              label: 'protected value',
+              regex: 'PROTECTED-[A-Z]+',
+            },
+          ],
+        },
+      },
+    });
+
+    const results = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_filtered_background',
+          name: 'search_mcp_docs',
+          args: { q: protectedValue, run_in_background: true },
+        },
+      ],
+      agentId: 'agent_1',
+      configurable,
+      metadata: { thread_id: 'exec_convo_filtered' },
+    });
+    const result = results[0] as {
+      content: string;
+      status?: string;
+      errorMessage?: string;
+    };
+
+    await flushMicrotasks();
+    expect(result.status).toBe('error');
+    expect(result.content).toBe('');
+    expect(result.errorMessage).toContain('content_filter_block');
+    expect(result.errorMessage).not.toContain(protectedValue);
+    expect(state.calls).toBe(0);
+  });
+
+  it.each([
+    ['bearer_header', 'Authorization: Bearer background-token', 'Bearer token'],
+    ['api_key_header', 'api-key: background-token', 'api-key header'],
+  ] as const)(
+    'keeps a blocked background %s result stable across repeated model-bound polls',
+    async (starterPattern, protectedValue, detectorLabel) => {
+      const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+      const searchTool = makeSearchTool(state);
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({ loadedTools: [searchTool] }),
+      });
+      const configurable = buildConfig(['search_mcp_docs'], {
+        toolArguments: {
+          pii: {
+            fields: ['output'],
+            starterPatterns: [starterPattern],
+          },
+        },
+      });
+      const metadata = { thread_id: `exec_convo_filtered_output_${starterPattern}` };
+
+      const dispatchResults = await runBatch(handler, {
+        toolCalls: [
+          {
+            id: `call_filtered_background_output_${starterPattern}`,
+            name: 'search_mcp_docs',
+            args: { q: protectedValue, run_in_background: true },
+          },
+        ],
+        agentId: 'agent_1',
+        configurable,
+        metadata,
+      });
+      const handle = JSON.parse(dispatchResults[0].content);
+
+      await flushMicrotasks();
+      for (const pollSuffix of ['first', 'second']) {
+        const [pollResult] = (await runBatch(handler, {
+          toolCalls: [
+            {
+              id: `call_poll_filtered_output_${starterPattern}_${pollSuffix}`,
+              name: CHECK_BACKGROUND_TASK_NAME,
+              args: { background_task_id: handle.background_task_id },
+            },
+          ],
+          agentId: 'agent_1',
+          configurable,
+          metadata,
+        })) as Array<{ content: string; status?: string; errorMessage?: string }>;
+        const polled = JSON.parse(pollResult.content);
+
+        expect(pollResult.status).toBe('success');
+        expect(pollResult.errorMessage).toBeUndefined();
+        expect(polled.status).toBe('error');
+        expect(JSON.parse(polled.error)).toEqual({
+          error: 'content_filter_block',
+          message: 'Submitted content was blocked by content policy.',
+          source: 'tool_argument',
+          field: 'output',
+        });
+        expect(JSON.stringify(polled)).not.toContain(protectedValue);
+        expect(JSON.stringify(polled)).not.toContain(detectorLabel);
+      }
+      expect(state.calls).toBe(1);
+    },
+  );
+
+  it('filters poll arguments before reading the background task registry', async () => {
+    const protectedValue = 'PROTECTED-POLL-ARGUMENT';
+    const debugSpy = jest.spyOn(logger, 'debug').mockReturnValue(logger);
+    try {
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({ loadedTools: [] }),
+      });
+      const configurable = buildConfig(['search_mcp_docs'], {
+        toolArguments: {
+          pii: {
+            fields: ['arguments'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'protected-argument',
+                label: 'protected argument',
+                regex: 'PROTECTED-[A-Z-]+',
+              },
+            ],
+          },
+        },
+      });
+
+      const [result] = (await runBatch(handler, {
+        toolCalls: [
+          {
+            id: 'call_filtered_poll_argument',
+            name: CHECK_BACKGROUND_TASK_NAME,
+            args: { submitted_selector: protectedValue },
+          },
+        ],
+        agentId: 'agent_1',
+        configurable,
+        metadata: { thread_id: 'exec_convo_filtered_poll_argument' },
+      })) as Array<{ content: string; status?: string; errorMessage?: string }>;
+
+      expect(result.status).toBe('error');
+      expect(result.content).toBe('');
+      expect(result.errorMessage).toContain('content_filter_block');
+      expect(result.errorMessage).not.toContain(protectedValue);
+      expect(
+        debugSpy.mock.calls.some(([message]) =>
+          String(message).includes('check_background_task listed'),
+        ),
+      ).toBe(false);
+    } finally {
+      debugSpy.mockRestore();
+    }
+  });
+
+  it('re-inspects a pre-policy background artifact before poll callbacks or delivery', async () => {
+    const protectedValue = 'PROTECTED-TIGHTENED-POLL';
+    const artifact = { files: [protectedValue] };
+    const tool = {
+      name: 'search_mcp_docs',
+      description: 'returns historical protected output',
+      schema: z.object({ q: z.string() }),
+      invoke: async () => ({ content: 'safe historical result', artifact }),
+    } as unknown as StructuredToolInterface;
+    const toolEndCallback = jest.fn();
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      toolEndCallback,
+    });
+    const metadata = { thread_id: 'exec_convo_tightened_poll' };
+    const dispatchConfig = buildConfig(['search_mcp_docs']);
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_pre_policy_background',
+          name: 'search_mcp_docs',
+          args: { q: 'historical', run_in_background: true },
+        },
+      ],
+      agentId: 'agent_1',
+      configurable: dispatchConfig,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    const taskId = JSON.parse(dispatch.content).background_task_id;
+
+    const tightenedConfig = buildConfig(['search_mcp_docs'], {
+      toolArguments: {
+        pii: {
+          fields: ['output'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'protected-output',
+              label: 'protected output',
+              regex: 'PROTECTED-[A-Z-]+',
+            },
+          ],
+        },
+      },
+    });
+    const [blockedPoll] = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_tightened_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: taskId },
+        },
+      ],
+      agentId: 'agent_1',
+      configurable: tightenedConfig,
+      metadata,
+    })) as Array<{ content: string; status?: string; errorMessage?: string }>;
+
+    expect(blockedPoll.status).toBe('error');
+    expect(blockedPoll.content).toBe('');
+    expect(blockedPoll.errorMessage).toContain('content_filter_block');
+    expect(blockedPoll.errorMessage).not.toContain(protectedValue);
+    expect(toolEndCallback).not.toHaveBeenCalled();
+
+    const [allowedPoll] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_unfiltered_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: taskId },
+        },
+      ],
+      agentId: 'agent_1',
+      configurable: dispatchConfig,
+      metadata,
+    });
+    expect(JSON.parse(allowedPoll.content).result).toBe('safe historical result');
+    expect(toolEndCallback).toHaveBeenCalledTimes(1);
+    /** Delivery callbacks must carry provenance: they report the ORIGINAL
+     * tool's name with the poll call's arguments, so identity-fencing
+     * consumers (the event-actor action recorder) can exclude them. */
+    expect(toolEndCallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backgroundDelivery: true,
+        input: { background_task_id: taskId },
+        output: expect.objectContaining({ artifact }),
+      }),
+      expect.any(Object),
+    );
   });
 
   it('does not double-dispatch when the same tool call re-executes (resume/replay)', async () => {
@@ -537,6 +1166,7 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
   interface CodeToolState {
     calls: number;
     throwError?: boolean;
+    errorMessage?: string;
     lastInput?: Record<string, unknown>;
     lastConfig?: { toolCall?: Record<string, unknown> };
   }
@@ -559,7 +1189,7 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
         state.lastInput = input;
         state.lastConfig = config;
         if (state.throwError) {
-          throw new Error('Execution error:\n\nboom');
+          throw new Error(state.errorMessage ?? 'Execution error:\n\nboom');
         }
         return { content: 'stdout:\nhello', artifact: CODE_ARTIFACT };
       },
@@ -697,6 +1327,107 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     );
   });
 
+  it('blocks a pre-policy code artifact before poll claim, emission, or re-persistence', async () => {
+    const protectedValue = 'PROTECTED-CODE-ARTIFACT';
+    const artifact = {
+      session_id: 'exec-protected',
+      files: [{ id: 'f-protected', name: protectedValue }],
+    };
+    const codeTool = {
+      name: 'execute_code',
+      description: 'run code',
+      schema: z.object({ lang: z.string(), code: z.string() }),
+      invoke: async () => ({ content: 'safe stdout', artifact }),
+    } as unknown as StructuredToolInterface;
+    const persistCalls: Array<Record<string, unknown>> = [];
+    const emitted: unknown[] = [];
+    const toolEndCallback = jest.fn();
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [codeTool] }),
+      toolEndCallback,
+      persistBackgroundCodeResult: async (params) => {
+        persistCalls.push(params as unknown as Record<string, unknown>);
+        return { attachments: [{ file_id: 'f-protected', name: 'safe attachment' }] };
+      },
+      emitAttachment: (attachment) => {
+        emitted.push(attachment);
+      },
+    });
+    const metadata = { thread_id: 'exec_convo_tightened_code', run_id: 'msg-dispatch' };
+    const dispatchConfig = buildConfig(['execute_code']);
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_pre_policy_code' })],
+      agentId: 'a',
+      configurable: dispatchConfig,
+      metadata,
+    });
+    const taskId = JSON.parse(dispatch.content).background_task_id;
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(persistCalls).toHaveLength(1);
+    persistCalls.length = 0;
+
+    const tightenedConfig = buildConfig(['execute_code'], {
+      toolArguments: {
+        pii: {
+          fields: ['output'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'protected-output',
+              label: 'protected output',
+              regex: 'PROTECTED-[A-Z-]+',
+            },
+          ],
+        },
+      },
+    });
+    const [blockedPoll] = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_tightened_code_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: taskId },
+        },
+      ],
+      agentId: 'a',
+      configurable: tightenedConfig,
+      metadata: { thread_id: 'exec_convo_tightened_code', run_id: 'msg-poll' },
+    })) as Array<{
+      content: string;
+      status?: string;
+      errorMessage?: string;
+      artifact?: unknown;
+    }>;
+    await flushMicrotasks();
+
+    expect(blockedPoll.status).toBe('error');
+    expect(blockedPoll.content).toBe('');
+    expect(blockedPoll.errorMessage).toContain('content_filter_block');
+    expect(blockedPoll.errorMessage).not.toContain(protectedValue);
+    expect(blockedPoll.artifact).toBeUndefined();
+    expect(toolEndCallback).not.toHaveBeenCalled();
+    expect(emitted).toEqual([]);
+    expect(persistCalls).toEqual([]);
+
+    const [allowedPoll] = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_allowed_code_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: taskId },
+        },
+      ],
+      agentId: 'a',
+      configurable: dispatchConfig,
+      metadata: { thread_id: 'exec_convo_tightened_code', run_id: 'msg-poll-allowed' },
+    })) as Array<{ content: string; artifact?: unknown }>;
+    expect(JSON.parse(allowedPoll.content).result).toBe('safe stdout');
+    expect(allowedPoll.artifact).toEqual(artifact);
+  });
+
   it('does not gate task completion on the harvest (same-turn polls see completed)', async () => {
     const state: CodeToolState = { calls: 0 };
     const toolEndCalls: unknown[] = [];
@@ -742,13 +1473,11 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     expect(polled.status).toBe('completed');
     expect(polled.result).toContain('hello');
     expect(polled.note).toContain('being attached');
-    // harvest hasn't landed: no file attachments yet and no poll-identity
-    // fallback — but the completion marker fires (execution IS finished)
-    expect(emitted).toEqual([
-      expect.objectContaining({ type: 'background_task_status', status: 'completed' }),
-    ]);
+    // Harvest has not landed: no artifact, attachments, status marker, or
+    // poll-identity fallback may cross the live boundary before file inspection.
+    expect(emitted).toEqual([]);
     expect(toolEndCalls).toHaveLength(0);
-    expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
+    expect(poll[0].artifact).toBeUndefined();
   });
 
   it('falls back to poll-turn delivery when the harvest fails (files not lost)', async () => {
@@ -795,6 +1524,269 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
   });
 
+  it('makes a completion-time generated-file policy rejection terminal across polls', async () => {
+    const protectedValue = 'PROTECTED-GENERATED-FILE-BYTES';
+    const blockedArtifact = {
+      session_id: 'exec-blocked',
+      files: [{ id: 'f-blocked', name: 'output.txt', opaqueBytes: protectedValue }],
+    };
+    const codeTool = {
+      name: 'execute_code',
+      description: 'run code',
+      schema: z.object({ lang: z.string(), code: z.string() }),
+      invoke: async () => ({ content: 'safe stdout', artifact: blockedArtifact }),
+    } as unknown as StructuredToolInterface;
+    const persistBackgroundCodeResult = jest.fn(async () => {
+      throw new ContentFilterError({
+        detectorId: 'custom',
+        ruleId: 'blocked-generated-file',
+        label: 'protected generated-file content',
+        source: 'file',
+        field: 'content',
+        provenance: 'tool',
+        fragmentId: 'generated-file',
+        fragmentPath: '/content',
+      });
+    });
+    const toolEndCallback = jest.fn();
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [codeTool] }),
+      toolEndCallback,
+      persistBackgroundCodeResult,
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = {
+      thread_id: 'exec_convo_code_policy_reject',
+      run_id: 'msg-policy-reject',
+    };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_policy_reject' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    const taskId = JSON.parse(dispatch[0].content).background_task_id;
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    for (const pollId of ['call_policy_poll_1', 'call_policy_poll_2']) {
+      const [poll] = (await runBatch(handler, {
+        toolCalls: [
+          {
+            id: pollId,
+            name: CHECK_BACKGROUND_TASK_NAME,
+            args: { background_task_id: taskId },
+          },
+        ],
+        agentId: 'a',
+        configurable,
+        metadata: {
+          thread_id: 'exec_convo_code_policy_reject',
+          run_id: `msg-${pollId}`,
+        },
+      })) as Array<{ content: string; artifact?: unknown }>;
+      const polled = JSON.parse(poll.content);
+
+      expect(polled).toEqual(
+        expect.objectContaining({
+          status: 'error',
+          error: MODEL_BOUND_FILE_CONTENT_BLOCK,
+        }),
+      );
+      expect(polled.result).toBeUndefined();
+      expect(poll.artifact).toBeUndefined();
+      expect(JSON.stringify(poll)).not.toContain(protectedValue);
+    }
+
+    expect(persistBackgroundCodeResult).toHaveBeenCalledTimes(1);
+    expect(toolEndCallback).not.toHaveBeenCalled();
+  });
+
+  it('withholds code-session artifacts while completion-time file inspection is pending', async () => {
+    const protectedValue = 'PROTECTED-PENDING-HARVEST-BYTES';
+    const blockedArtifact = {
+      session_id: 'exec-pending-blocked',
+      files: [{ id: 'f-pending-blocked', name: 'output.txt', opaqueBytes: protectedValue }],
+    };
+    const codeTool = {
+      name: 'execute_code',
+      description: 'run code',
+      schema: z.object({ lang: z.string(), code: z.string() }),
+      invoke: async () => ({ content: 'safe stdout', artifact: blockedArtifact }),
+    } as unknown as StructuredToolInterface;
+    let rejectInspection: (error: Error) => void = () => undefined;
+    const persistBackgroundCodeResult = jest.fn(
+      () =>
+        new Promise<never>((_resolve, reject) => {
+          rejectInspection = reject;
+        }),
+    );
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [codeTool] }),
+      persistBackgroundCodeResult,
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = {
+      thread_id: 'exec_convo_code_pending_policy',
+      run_id: 'msg-pending-policy',
+    };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_pending_policy' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    const taskId = JSON.parse(dispatch[0].content).background_task_id;
+    await flushMicrotasks();
+
+    const [pendingPoll] = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_pending_policy_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: taskId },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: {
+        thread_id: 'exec_convo_code_pending_policy',
+        run_id: 'msg-pending-policy-poll',
+      },
+    })) as Array<{ content: string; artifact?: unknown }>;
+
+    expect(JSON.parse(pendingPoll.content).status).toBe('completed');
+    expect(pendingPoll.artifact).toBeUndefined();
+    expect(JSON.stringify(pendingPoll)).not.toContain(protectedValue);
+
+    rejectInspection(
+      new ContentFilterError({
+        detectorId: 'custom',
+        ruleId: 'blocked-pending-file',
+        label: 'protected generated-file content',
+        source: 'file',
+        field: 'content',
+        provenance: 'tool',
+        fragmentId: 'pending-generated-file',
+        fragmentPath: '/content',
+      }),
+    );
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const [blockedPoll] = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_blocked_after_pending_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: taskId },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: {
+        thread_id: 'exec_convo_code_pending_policy',
+        run_id: 'msg-blocked-after-pending',
+      },
+    })) as Array<{ content: string; artifact?: unknown }>;
+
+    expect(JSON.parse(blockedPoll.content)).toEqual(
+      expect.objectContaining({
+        status: 'error',
+        error: MODEL_BOUND_FILE_CONTENT_BLOCK,
+      }),
+    );
+    expect(blockedPoll.artifact).toBeUndefined();
+    expect(JSON.stringify(blockedPoll)).not.toContain(protectedValue);
+  });
+
+  it('makes a poll-time generated-file policy rejection terminal without delivering bytes', async () => {
+    const protectedValue = 'PROTECTED-POLL-FALLBACK-BYTES';
+    const blockedArtifact = {
+      session_id: 'exec-poll-blocked',
+      files: [{ id: 'f-poll-blocked', name: 'output.txt', opaqueBytes: protectedValue }],
+    };
+    const codeTool = {
+      name: 'execute_code',
+      description: 'run code',
+      schema: z.object({ lang: z.string(), code: z.string() }),
+      invoke: async () => ({ content: 'safe stdout', artifact: blockedArtifact }),
+    } as unknown as StructuredToolInterface;
+    const persistBackgroundCodeResult = jest.fn(async () => {
+      throw new Error('temporary harvest storage failure');
+    });
+    const toolEndCallback = jest.fn(async () => {
+      throw new ContentFilterError({
+        detectorId: 'custom',
+        ruleId: 'blocked-poll-file',
+        label: 'protected generated-file content',
+        source: 'file',
+        field: 'content',
+        provenance: 'tool',
+        fragmentId: 'poll-generated-file',
+        fragmentPath: '/content',
+      });
+    });
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [codeTool] }),
+      toolEndCallback: toolEndCallback as unknown as Parameters<
+        typeof createToolExecuteHandler
+      >[0]['toolEndCallback'],
+      persistBackgroundCodeResult,
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = {
+      thread_id: 'exec_convo_code_poll_policy_reject',
+      run_id: 'msg-poll-policy-reject',
+    };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_poll_policy_reject' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    const taskId = JSON.parse(dispatch[0].content).background_task_id;
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    for (const pollId of ['call_poll_policy_reject_1', 'call_poll_policy_reject_2']) {
+      const [poll] = (await runBatch(handler, {
+        toolCalls: [
+          {
+            id: pollId,
+            name: CHECK_BACKGROUND_TASK_NAME,
+            args: { background_task_id: taskId },
+          },
+        ],
+        agentId: 'a',
+        configurable,
+        metadata: {
+          thread_id: 'exec_convo_code_poll_policy_reject',
+          run_id: `msg-${pollId}`,
+        },
+      })) as Array<{ content: string; artifact?: unknown }>;
+      const polled = JSON.parse(poll.content);
+
+      expect(polled).toEqual(
+        expect.objectContaining({
+          status: 'error',
+          error: MODEL_BOUND_FILE_CONTENT_BLOCK,
+        }),
+      );
+      expect(polled.result).toBeUndefined();
+      expect(poll.artifact).toBeUndefined();
+      expect(JSON.stringify(poll)).not.toContain(protectedValue);
+    }
+
+    expect(persistBackgroundCodeResult).toHaveBeenCalledTimes(1);
+    expect(toolEndCallback).toHaveBeenCalledTimes(1);
+  });
+
   it('re-anchors failed code tasks on poll (error output heals like success)', async () => {
     const state: CodeToolState = { calls: 0, throwError: true };
     const persistCalls: Array<Record<string, unknown>> = [];
@@ -836,6 +1828,216 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
       expect.objectContaining({ reapply: true, toolCallId: 'call_code_errheal' }),
     );
     expect(String(persistCalls[1].output)).toContain('boom');
+  });
+
+  it('wraps filtered background code output before registry and harvest persistence', async () => {
+    const protectedValue = 'Authorization: Bearer returned-background-token';
+    const codeTool = {
+      name: 'execute_code',
+      description: 'run code',
+      schema: z.object({ lang: z.string(), code: z.string() }),
+      invoke: async () => ({ content: protectedValue }),
+    } as unknown as StructuredToolInterface;
+    const persistCalls: Array<Record<string, unknown>> = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [codeTool] }),
+      persistBackgroundCodeResult: async (params) => {
+        persistCalls.push(params as unknown as Record<string, unknown>);
+        return { attachments: [] };
+      },
+    });
+    const configurable = buildConfig(['execute_code'], {
+      toolArguments: {
+        pii: {
+          fields: ['output'],
+          starterPatterns: ['bearer_header'],
+        },
+      },
+    });
+    const metadata = {
+      thread_id: 'exec_convo_filtered_background_result',
+      run_id: 'msg-filtered-result',
+    };
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_filtered_background_result' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(persistCalls).toHaveLength(1);
+    expect(persistCalls[0].output).toBe(CODE_TOOL_OUTPUT_BLOCK);
+    expect(JSON.stringify(persistCalls)).not.toContain(protectedValue);
+    expect(JSON.stringify(persistCalls)).not.toContain('Bearer token');
+
+    const [poll] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll_filtered_background_result',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: JSON.parse(dispatch.content).background_task_id },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: {
+        thread_id: 'exec_convo_filtered_background_result',
+        run_id: 'msg-filtered-result-poll',
+      },
+    });
+    const polled = JSON.parse(poll.content);
+    expect(polled).toEqual(
+      expect.objectContaining({
+        status: 'error',
+        error: CODE_TOOL_OUTPUT_BLOCK,
+      }),
+    );
+    expect(JSON.stringify(polled)).not.toContain(protectedValue);
+    expect(JSON.stringify(polled)).not.toContain('Bearer token');
+  });
+
+  it('filters thrown background errors before registry, harvest, and persistence', async () => {
+    const protectedValue = 'Authorization: Bearer persisted-background-token';
+    const state: CodeToolState = {
+      calls: 0,
+      throwError: true,
+      errorMessage: protectedValue,
+    };
+    const persistCalls: Array<Record<string, unknown>> = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      persistBackgroundCodeResult: async (params) => {
+        persistCalls.push(params as unknown as Record<string, unknown>);
+        return { attachments: [] };
+      },
+    });
+    const configurable = buildConfig(['execute_code'], {
+      toolArguments: {
+        pii: {
+          fields: ['output'],
+          starterPatterns: ['bearer_header'],
+        },
+      },
+    });
+    const metadata = {
+      thread_id: 'exec_convo_filtered_background_error',
+      run_id: 'msg-filtered-error',
+    };
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_filtered_background_error' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(persistCalls).toHaveLength(1);
+    expect(persistCalls[0].output).toBe(CODE_TOOL_OUTPUT_BLOCK);
+    expect(JSON.stringify(persistCalls)).not.toContain(protectedValue);
+    expect(JSON.stringify(persistCalls)).not.toContain('Bearer token');
+
+    const [poll] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll_filtered_background_error',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: JSON.parse(dispatch.content).background_task_id },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: {
+        thread_id: 'exec_convo_filtered_background_error',
+        run_id: 'msg-filtered-error-poll',
+      },
+    });
+    const polled = JSON.parse(poll.content);
+    expect(polled.status).toBe('error');
+    expect(polled.error).toBe(CODE_TOOL_OUTPUT_BLOCK);
+    expect(JSON.stringify(polled)).not.toContain(protectedValue);
+    expect(JSON.stringify(polled)).not.toContain('Bearer token');
+  });
+
+  it('wraps a thrown background content-policy error without detector details', async () => {
+    const detectorLabel = 'generated-file bearer token';
+    const detectorRule = 'generated-file-bearer';
+    const codeTool = {
+      name: 'execute_code',
+      description: 'run code',
+      schema: z.object({ lang: z.string(), code: z.string() }),
+      invoke: async () => {
+        throw new ContentFilterError({
+          detectorId: 'pii-pattern',
+          ruleId: detectorRule,
+          label: detectorLabel,
+          source: 'file',
+          field: 'content',
+          provenance: 'tool',
+          fragmentId: 'generated-file',
+          fragmentPath: '/content',
+        });
+      },
+    } as unknown as StructuredToolInterface;
+    const persistCalls: Array<Record<string, unknown>> = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [codeTool] }),
+      persistBackgroundCodeResult: async (params) => {
+        persistCalls.push(params as unknown as Record<string, unknown>);
+        return { attachments: [] };
+      },
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = {
+      thread_id: 'exec_convo_policy_background_error',
+      run_id: 'msg-policy-error',
+    };
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_policy_background_error' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(persistCalls).toHaveLength(1);
+    expect(persistCalls[0].output).toBe(CODE_FILE_CONTENT_BLOCK);
+    expect(JSON.stringify(persistCalls)).not.toContain(detectorLabel);
+    expect(JSON.stringify(persistCalls)).not.toContain(detectorRule);
+
+    const [poll] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll_policy_background_error',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: JSON.parse(dispatch.content).background_task_id },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: {
+        thread_id: 'exec_convo_policy_background_error',
+        run_id: 'msg-policy-error-poll',
+      },
+    });
+    const polled = JSON.parse(poll.content);
+    expect(polled).toEqual(
+      expect.objectContaining({
+        status: 'error',
+        error: CODE_FILE_CONTENT_BLOCK,
+      }),
+    );
+    expect(JSON.stringify(polled)).not.toContain(detectorLabel);
+    expect(JSON.stringify(polled)).not.toContain(detectorRule);
   });
 
   it('re-anchors reaped (timed-out) tasks with the client-recognized failure wrapper', async () => {
@@ -921,6 +2123,7 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     expect(String(persistCalls[0].output)).toMatch(
       /^Error:\s*\[execute_code\]\s*tool call failed:/,
     );
+    expect(String(persistCalls[0].output).match(/tool call failed:/gi)).toHaveLength(1);
     expect(persistCalls[0].artifact).toBeUndefined();
 
     const poll = await runBatch(handler, {

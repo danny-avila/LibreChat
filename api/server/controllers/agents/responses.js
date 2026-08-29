@@ -30,9 +30,26 @@ const {
   createSubagentUsageSink,
   getTransactionsConfig,
   resolveAgentTokenConfig,
-  findPiiMatchInMessages,
-  discoverConnectedAgents,
   resolveSubagentGraphs,
+  inspectContent,
+  extractAgentContent,
+  extractFileContent,
+  extractMessageContent,
+  extractModelParameterContent,
+  extractSkillContent,
+  extractToolArgumentContent,
+  contentFilterBlockResponse,
+  contentFilterUninspectableResponse,
+  discoverConnectedAgents,
+  getBlockedOpaqueFileField,
+  getContentTraversalFragments,
+  isContentTraversalProtected,
+  isContentTraversalLimitError,
+  prependContentTraversalFragments,
+  assertModelBoundContent,
+  hasModelBoundContentProtection,
+  isContentFilterError,
+  getSafeErrorMetadata,
   createToolExecuteHandler,
   getRemoteAgentPermissions,
   resolveAgentScopedSkillIds,
@@ -49,6 +66,7 @@ const {
   convertInputToMessages,
   validateResponseRequest,
   buildAggregatedResponse,
+  buildResponsesUsage,
   createResponseAggregator,
   sendResponsesErrorResponse,
   createResponsesEventHandlers,
@@ -60,7 +78,7 @@ const {
 const {
   createResponsesToolEndCallback,
   buildSummarizationHandlers,
-  markSummarizationUsage,
+  contextualizeModelUsage,
   createToolEndCallback,
   agentLogHandlerObj,
 } = require('~/server/controllers/agents/callbacks');
@@ -85,12 +103,21 @@ const {
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
+const { resolveConversationTitle } = require('~/server/services/Endpoints/titlePolicy');
 const { getMCPManager } = require('~/config');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
 const filterFilesByRemoteAgentAccess = (params) =>
   filterFilesByAgentAccess({ ...params, resourceType: ResourceType.REMOTE_AGENT });
+const GENERIC_PROVIDER_ERROR = 'An error occurred while processing the request';
+
+function getUserFacingProviderError(error, protectionEnabled) {
+  if (protectionEnabled) {
+    return GENERIC_PROVIDER_ERROR;
+  }
+  return error instanceof Error ? error.message : 'An error occurred';
+}
 
 /**
  * Creates a tool loader function for the agent.
@@ -128,10 +155,10 @@ function createToolLoader(signal, definitionsOnly = true) {
         streamId: null,
       });
     } catch (error) {
-      if (isFatalAgentInitializationError(error)) {
+      if (isFatalAgentInitializationError(error) || isContentFilterError(error)) {
         throw error;
       }
-      logger.error('Error loading tools for agent ' + agentId, error);
+      logger.error('Error loading tools for agent ' + agentId, getSafeErrorMetadata(error));
     }
   };
 }
@@ -143,6 +170,108 @@ function createToolLoader(signal, definitionsOnly = true) {
  */
 function convertToInternalMessages(input) {
   return convertInputToMessages(input);
+}
+
+/**
+ * Collect file-derived context exactly as it will be exposed to the model.
+ * Dynamic tool context uses the same synthesis as packages/api/src/agents/run.ts.
+ * @param {Array} agents
+ * @returns {Array}
+ */
+function collectModelBoundAgentFiles(agents) {
+  const files = [];
+  const seenFiles = new Set();
+  for (const agent of agents) {
+    for (const attachment of [
+      ...(agent?.attachments ?? []),
+      ...(agent?.requestAttachments ?? []),
+      ...(agent?.agentContextAttachments ?? []),
+    ]) {
+      if (attachment == null || seenFiles.has(attachment)) {
+        continue;
+      }
+      seenFiles.add(attachment);
+      files.push(attachment);
+    }
+
+    const dynamicToolInstructions = Object.values(agent?.dynamicToolContextMap ?? {})
+      .filter((value) => typeof value === 'string' && value !== '')
+      .join('\n')
+      .trim();
+    if (dynamicToolInstructions !== '') {
+      files.push({ content: dynamicToolInstructions });
+    }
+  }
+  return files;
+}
+
+function extractResponseRequestContent(request, messageFragments) {
+  const fragments = [
+    ...extractAgentContent({ instructions: request.instructions }),
+    ...messageFragments,
+  ];
+
+  if (Array.isArray(request.input)) {
+    for (const item of request.input) {
+      if (item?.type !== 'message' || !Array.isArray(item.content)) {
+        continue;
+      }
+      for (const part of item.content) {
+        if (part?.type === 'input_file') {
+          fragments.push(...extractFileContent({ name: part.filename }));
+          continue;
+        }
+        if (
+          part?.type === 'input_image' &&
+          typeof part.image_url === 'string' &&
+          !part.image_url.startsWith('data:')
+        ) {
+          fragments.push(...extractFileContent({ uri: part.image_url }));
+        }
+      }
+    }
+  }
+
+  for (const tool of request.tools ?? []) {
+    if (tool?.type !== 'function') {
+      continue;
+    }
+    fragments.push(
+      ...extractAgentContent({
+        name: tool.name,
+        description: tool.description,
+      }),
+    );
+    try {
+      fragments.push(...extractToolArgumentContent({ arguments: tool.parameters }));
+    } catch (error) {
+      if (isContentTraversalLimitError(error)) {
+        prependContentTraversalFragments(error, fragments);
+      }
+      throw error;
+    }
+  }
+
+  try {
+    fragments.push(
+      ...extractModelParameterContent({
+        metadata: request.metadata,
+        response_format: request.text?.format,
+        additionalModelRequestFields: {
+          user: request.user,
+          tool_choice: request.tool_choice,
+          reasoning: request.reasoning,
+        },
+      }),
+    );
+  } catch (error) {
+    if (isContentTraversalLimitError(error)) {
+      prependContentTraversalFragments(error, fragments);
+    }
+    throw error;
+  }
+
+  return fragments;
 }
 
 /**
@@ -160,26 +289,33 @@ async function loadPreviousMessages(conversationId, userId) {
 
     // Convert stored messages to internal format
     return messages.map((msg) => {
+      let text;
+      if (typeof msg.text === 'string') {
+        text = msg.text;
+      } else if (msg.text != null) {
+        text = String(msg.text);
+      }
       const internalMsg = {
         role: msg.isCreatedByUser ? 'user' : 'assistant',
-        content: '',
+        content: Array.isArray(msg.content) ? msg.content : (text ?? ''),
         messageId: msg.messageId,
+        isCreatedByUser: msg.isCreatedByUser === true,
+        ...(text !== undefined && { text }),
+        ...(typeof msg.isUserSubmitted === 'boolean' && {
+          isUserSubmitted: msg.isUserSubmitted,
+        }),
+        ...(Array.isArray(msg.userSubmittedPaths) && {
+          userSubmittedPaths: msg.userSubmittedPaths,
+        }),
+        ...(Array.isArray(msg.userSubmittedMessageFieldPaths) && {
+          userSubmittedMessageFieldPaths: msg.userSubmittedMessageFieldPaths,
+        }),
       };
-
-      // Handle content - could be string or array
-      if (typeof msg.text === 'string') {
-        internalMsg.content = msg.text;
-      } else if (Array.isArray(msg.content)) {
-        // Handle content parts
-        internalMsg.content = msg.content;
-      } else if (msg.text) {
-        internalMsg.content = String(msg.text);
-      }
 
       return internalMsg;
     });
   } catch (error) {
-    logger.error('[Responses API] Error loading previous messages:', error);
+    logger.error('[Responses API] Error loading previous messages:', getSafeErrorMetadata(error));
     return [];
   }
 }
@@ -220,9 +356,17 @@ async function saveInputMessages(req, conversationId, inputMessages, agentId) {
  * @param {string} responseId
  * @param {import('@librechat/api').Response} response
  * @param {string} agentId
+ * @param {number | undefined} visibleOutputTokens
  * @returns {Promise<void>}
  */
-async function saveResponseOutput(req, conversationId, responseId, response, agentId) {
+async function saveResponseOutput(
+  req,
+  conversationId,
+  responseId,
+  response,
+  agentId,
+  visibleOutputTokens,
+) {
   // Extract text content from output items
   let responseText = '';
   for (const item of response.output) {
@@ -251,7 +395,7 @@ async function saveResponseOutput(req, conversationId, responseId, response, age
       endpoint: EModelEndpoint.agents,
       model: agentId,
       finish_reason: response.status === 'completed' ? 'stop' : response.status,
-      tokenCount: response.usage?.output_tokens,
+      tokenCount: visibleOutputTokens ?? response.usage?.output_tokens,
     },
     { context: 'Responses API - save assistant response' },
   );
@@ -266,6 +410,7 @@ async function saveResponseOutput(req, conversationId, responseId, response, age
  * @returns {Promise<void>}
  */
 async function saveConversation(req, conversationId, agentId, agent) {
+  const title = resolveConversationTitle(req, agent?.name || 'Open Responses Conversation');
   await db.saveConvo(
     {
       userId: req?.user?.id,
@@ -276,7 +421,7 @@ async function saveConversation(req, conversationId, agentId, agent) {
       conversationId,
       endpoint: EModelEndpoint.agents,
       agentId,
-      title: agent?.name || 'Open Responses Conversation',
+      ...(title != null && { title }),
       model: agent?.model,
     },
     { context: 'Responses API - save conversation' },
@@ -328,8 +473,85 @@ const executeResponse = async (envelope, { req, res }) => {
   // but all request-body reads now observe the detached envelope payload.
   req.body = request;
   const agentId = request.model;
+  const manualSkills = extractManualSkills(req.body);
   const isStreaming = request.stream === true;
   const summarizationConfig = appConfig?.summarization;
+
+  const uninspectableField = getBlockedOpaqueFileField(appConfig?.filters, request.input);
+  if (uninspectableField != null) {
+    const blockResponse = contentFilterUninspectableResponse(uninspectableField);
+    return sendResponsesErrorResponse(
+      res,
+      400,
+      blockResponse.message,
+      'invalid_request',
+      blockResponse.error,
+    );
+  }
+
+  const inputMessages = convertToInternalMessages(
+    typeof request.input === 'string' ? request.input : request.input,
+  );
+  const messageFragments = [];
+  const traversalErrors = [];
+  try {
+    for (const fragment of extractMessageContent(inputMessages)) {
+      messageFragments.push(fragment);
+    }
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    messageFragments.push(...getContentTraversalFragments(error));
+    traversalErrors.push(error);
+  }
+  let requestFragments;
+  try {
+    requestFragments = extractResponseRequestContent(request, messageFragments);
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    requestFragments = getContentTraversalFragments(error);
+    traversalErrors.push(error);
+  }
+  const contentFinding = inspectContent(
+    [...requestFragments, ...(manualSkills ?? []).flatMap((name) => extractSkillContent({ name }))],
+    {
+      filters: appConfig?.filters,
+      legacyPii: appConfig?.messageFilter?.pii,
+    },
+  );
+  if (contentFinding != null) {
+    const isLegacyFilter = contentFinding.detectorId === 'legacy-pattern';
+    const blockResponse = contentFilterBlockResponse(contentFinding);
+    return sendResponsesErrorResponse(
+      res,
+      400,
+      isLegacyFilter
+        ? `Message contains a ${contentFinding.label}. Remove it and try again.`
+        : blockResponse.message,
+      'invalid_request',
+      isLegacyFilter ? 'message_filter_pii_block' : blockResponse.error,
+    );
+  }
+  const traversalError = traversalErrors.find((error) =>
+    isContentTraversalProtected({
+      error,
+      filters: appConfig?.filters,
+      legacyPii: appConfig?.messageFilter?.pii,
+      roles: inputMessages.map((message) => message?.role),
+    }),
+  );
+  if (traversalError != null) {
+    return sendResponsesErrorResponse(
+      res,
+      traversalError.statusCode,
+      traversalError.body.message,
+      'invalid_request',
+      traversalError.body.error,
+    );
+  }
 
   // Look up the agent
   const agent = await db.getAgent({ id: agentId });
@@ -394,6 +616,16 @@ const executeResponse = async (envelope, { req, res }) => {
     const parentMessageId = null;
     const mcpRequestBody = createMCPRuntimeRequestBody({ messageId: responseId, conversationId });
     const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
+    const previousMessages = request.previous_response_id
+      ? await loadPreviousMessages(request.previous_response_id, principal.userId)
+      : [];
+    if (request.previous_response_id) {
+      assertModelBoundContent({
+        filters: appConfig?.filters,
+        legacyPii: appConfig?.messageFilter?.pii,
+        storedMessages: previousMessages,
+      });
+    }
 
     // Build allowed providers set
     const allowedProviders = new Set(agentsEConfig?.allowedProviders);
@@ -462,8 +694,6 @@ const executeResponse = async (envelope, { req, res }) => {
       getUserById: db.getUserById,
       accessibleSkillIds,
     });
-
-    const manualSkills = extractManualSkills(request);
 
     const primaryScopedSkillIds = resolveAgentScopedSkillIds({
       agent,
@@ -639,20 +869,33 @@ const executeResponse = async (envelope, { req, res }) => {
       });
     const runAgents = [primaryConfig, ...handoffAgentConfigs.values()];
     const initialSessions = buildInitialToolSessions({ agents: runAgents });
-    const contextAgentsById = new Map(runAgents.map((runAgent) => [runAgent.id, runAgent]));
-    for (const runAgent of runAgents) {
+    const modelBoundAgentsById = new Map();
+    const pendingModelBoundAgents = [...runAgents];
+    for (let index = 0; index < pendingModelBoundAgents.length; index++) {
+      const runAgent = pendingModelBoundAgents[index];
+      if (!runAgent?.id || modelBoundAgentsById.has(runAgent.id)) {
+        continue;
+      }
+      modelBoundAgentsById.set(runAgent.id, runAgent);
+      for (const subagent of runAgent.subagentAgentConfigs?.values?.() ?? []) {
+        pendingModelBoundAgents.push(subagent);
+      }
       for (const graph of runAgent.subagentGraphConfigs ?? []) {
-        for (const memberConfig of graph.memberConfigs) {
-          contextAgentsById.set(memberConfig.id, memberConfig);
-        }
+        pendingModelBoundAgents.push(...graph.memberConfigs);
       }
     }
-    const contextAgents = [...contextAgentsById.values()];
+    const modelBoundAgents = [...modelBoundAgentsById.values()];
     const mergedMCPAuthMap = discoveredMCPAuthMap ?? primaryConfig.userMCPAuthMap;
+    assertModelBoundContent({
+      filters: appConfig?.filters,
+      legacyPii: appConfig?.messageFilter?.pii,
+      agents: modelBoundAgents,
+    });
 
-    const agentContextAttachmentsByAgentId = buildAgentContextAttachmentsByAgentId(contextAgents);
+    const agentContextAttachmentsByAgentId =
+      buildAgentContextAttachmentsByAgentId(modelBoundAgents);
     const agentScopedContext = await buildAgentScopedContext({
-      agentIds: contextAgents.map(({ id }) => id),
+      agentIds: modelBoundAgents.map(({ id }) => id),
       attachmentsByAgentId: agentContextAttachmentsByAgentId,
       req,
     });
@@ -661,7 +904,7 @@ const executeResponse = async (envelope, { req, res }) => {
     const configServers = await resolveConfigServers(req);
 
     await Promise.all(
-      contextAgents.map(async (runAgent) => {
+      modelBoundAgents.map(async (runAgent) => {
         const memoryContext = await buildInlineMemoryContext({
           agent: runAgent,
           req,
@@ -685,31 +928,6 @@ const executeResponse = async (envelope, { req, res }) => {
     // Determine if streaming is enabled (check both request and agent config)
     const streamingDisabled = !!primaryConfig.model_parameters?.disableStreaming;
     const actuallyStreaming = isStreaming && !streamingDisabled;
-
-    // Load previous messages if previous_response_id is provided
-    let previousMessages = [];
-    if (request.previous_response_id) {
-      const userId = principal.userId;
-      previousMessages = await loadPreviousMessages(request.previous_response_id, userId);
-    }
-
-    // Convert input to internal messages
-    const inputMessages = convertToInternalMessages(
-      typeof request.input === 'string' ? request.input : request.input,
-    );
-
-    const piiHit = findPiiMatchInMessages(inputMessages, appConfig?.messageFilter?.pii);
-    if (piiHit != null) {
-      return sendResponsesErrorResponse(
-        res,
-        400,
-        piiHit.misconfigured
-          ? 'Message filtering is misconfigured; contact your administrator.'
-          : `Message contains a ${piiHit.label}. Remove it and try again.`,
-        'invalid_request',
-        'message_filter_pii_block',
-      );
-    }
 
     // Merge previous messages with new input
     const allMessages = [...previousMessages, ...inputMessages];
@@ -751,6 +969,15 @@ const executeResponse = async (envelope, { req, res }) => {
         );
       }
     }
+
+    assertModelBoundContent({
+      filters: appConfig?.filters,
+      legacyPii: appConfig?.messageFilter?.pii,
+      submittedMessages: inputMessages,
+      agents: modelBoundAgents,
+      skills: [...(manualSkillPrimes ?? []), ...(alwaysApplySkillPrimes ?? [])],
+      files: collectModelBoundAgentFiles(modelBoundAgents),
+    });
 
     /* Stable for the turn: the primary prime list is fixed once
        `initializeAgent` resolves and is used as the fallback when a
@@ -798,7 +1025,7 @@ const executeResponse = async (envelope, { req, res }) => {
 
       // Create tool execute options for event-driven tool execution
       const toolExecuteOptions = {
-        loadTools: async (toolNames, agentId) => {
+        loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
           const ctx =
             agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
           const result = await loadToolsForExecution({
@@ -811,6 +1038,7 @@ const executeResponse = async (envelope, { req, res }) => {
             agent: ctx.agent ?? agent,
             signal: abortController.signal,
             toolRegistry: ctx.toolRegistry,
+            callerCapabilityProjection,
             backgroundToolNames: ctx.backgroundToolNames,
             intentToolNames: ctx.intentToolNames,
             mcpAvailableTools: ctx.mcpAvailableTools,
@@ -837,11 +1065,12 @@ const executeResponse = async (envelope, { req, res }) => {
         on_run_step: responsesHandlers.on_run_step,
         on_run_step_delta: responsesHandlers.on_run_step_delta,
         on_chat_model_end: {
-          handle: (event, data, metadata) => {
+          handle: (event, data, metadata, graph) => {
             responsesHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
-              const taggedUsage = markSummarizationUsage(usage, metadata);
+              const agentContext = graph?.getAgentContext?.(metadata);
+              const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
               collectedUsage.push(taggedUsage);
             }
           },
@@ -879,11 +1108,7 @@ const executeResponse = async (envelope, { req, res }) => {
         tenantId: principal.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
-        subagentUsageSink: createSubagentUsageSink(collectedUsage, (usage) => {
-          responsesHandlers.on_chat_model_end.handle('on_chat_model_end', {
-            output: { usage_metadata: usage },
-          });
-        }),
+        subagentUsageSink: createSubagentUsageSink(collectedUsage),
       });
 
       if (!run) {
@@ -908,7 +1133,7 @@ const executeResponse = async (envelope, { req, res }) => {
       await run.processStream({ messages: formattedMessages }, config, {
         callbacks: {
           [Callback.TOOL_ERROR]: (graph, error, toolId) => {
-            logger.error(`[Responses API] Tool Error "${toolId}"`, error);
+            logger.error(`[Responses API] Tool Error "${toolId}"`, getSafeErrorMetadata(error));
           },
         },
       });
@@ -936,11 +1161,13 @@ const executeResponse = async (envelope, { req, res }) => {
           resolveEndpointTokenConfig,
         },
       ).catch((err) => {
-        logger.error('[Responses API] Error recording usage:', err);
+        logger.error('[Responses API] Error recording usage:', getSafeErrorMetadata(err));
       });
 
+      const usage = buildResponsesUsage(collectedUsage);
+
       // Finalize the stream
-      finalizeStream();
+      finalizeStream(usage);
       res.end();
 
       const duration = Date.now() - requestStartTime;
@@ -957,13 +1184,20 @@ const executeResponse = async (envelope, { req, res }) => {
 
           // Build response for saving (use tracker with buildResponse for streaming)
           const finalResponse = buildResponse(context, tracker, 'completed');
-          await saveResponseOutput(req, conversationId, responseId, finalResponse, agentId);
+          await saveResponseOutput(
+            req,
+            conversationId,
+            responseId,
+            finalResponse,
+            agentId,
+            tracker.usage.outputTokens,
+          );
 
           logger.debug(
             `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
           );
         } catch (saveError) {
-          logger.error('[Responses API] Error saving response:', saveError);
+          logger.error('[Responses API] Error saving response:', getSafeErrorMetadata(saveError));
           // Don't fail the request if saving fails
         }
       }
@@ -971,7 +1205,10 @@ const executeResponse = async (envelope, { req, res }) => {
       // Wait for artifact processing after response ends (non-blocking)
       if (artifactPromises.length > 0) {
         Promise.all(artifactPromises).catch((artifactError) => {
-          logger.warn('[Responses API] Error processing artifacts:', artifactError);
+          logger.warn(
+            '[Responses API] Error processing artifacts:',
+            getSafeErrorMetadata(artifactError),
+          );
         });
       }
     } else {
@@ -985,7 +1222,7 @@ const executeResponse = async (envelope, { req, res }) => {
       const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
 
       const toolExecuteOptions = {
-        loadTools: async (toolNames, agentId) => {
+        loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
           const ctx =
             agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
           const result = await loadToolsForExecution({
@@ -998,6 +1235,7 @@ const executeResponse = async (envelope, { req, res }) => {
             agent: ctx.agent ?? agent,
             signal: abortController.signal,
             toolRegistry: ctx.toolRegistry,
+            callerCapabilityProjection,
             backgroundToolNames: ctx.backgroundToolNames,
             intentToolNames: ctx.intentToolNames,
             mcpAvailableTools: ctx.mcpAvailableTools,
@@ -1023,11 +1261,12 @@ const executeResponse = async (envelope, { req, res }) => {
         on_run_step: aggregatorHandlers.on_run_step,
         on_run_step_delta: aggregatorHandlers.on_run_step_delta,
         on_chat_model_end: {
-          handle: (event, data, metadata) => {
+          handle: (event, data, metadata, graph) => {
             aggregatorHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
-              const taggedUsage = markSummarizationUsage(usage, metadata);
+              const agentContext = graph?.getAgentContext?.(metadata);
+              const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
               collectedUsage.push(taggedUsage);
             }
           },
@@ -1064,11 +1303,7 @@ const executeResponse = async (envelope, { req, res }) => {
         tenantId: principal.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
-        subagentUsageSink: createSubagentUsageSink(collectedUsage, (usage) => {
-          aggregatorHandlers.on_chat_model_end.handle('on_chat_model_end', {
-            output: { usage_metadata: usage },
-          });
-        }),
+        subagentUsageSink: createSubagentUsageSink(collectedUsage),
       });
 
       if (!run) {
@@ -1092,7 +1327,7 @@ const executeResponse = async (envelope, { req, res }) => {
       await run.processStream({ messages: formattedMessages }, config, {
         callbacks: {
           [Callback.TOOL_ERROR]: (graph, error, toolId) => {
-            logger.error(`[Responses API] Tool Error "${toolId}"`, error);
+            logger.error(`[Responses API] Tool Error "${toolId}"`, getSafeErrorMetadata(error));
           },
         },
       });
@@ -1120,18 +1355,25 @@ const executeResponse = async (envelope, { req, res }) => {
           resolveEndpointTokenConfig,
         },
       ).catch((err) => {
-        logger.error('[Responses API] Error recording usage:', err);
+        logger.error('[Responses API] Error recording usage:', getSafeErrorMetadata(err));
       });
 
       if (artifactPromises.length > 0) {
         try {
           await Promise.all(artifactPromises);
         } catch (artifactError) {
-          logger.warn('[Responses API] Error processing artifacts:', artifactError);
+          logger.warn(
+            '[Responses API] Error processing artifacts:',
+            getSafeErrorMetadata(artifactError),
+          );
         }
       }
 
-      const response = buildAggregatedResponse(context, aggregator);
+      const response = buildAggregatedResponse(
+        context,
+        aggregator,
+        buildResponsesUsage(collectedUsage),
+      );
 
       if (request.store === true) {
         try {
@@ -1139,13 +1381,20 @@ const executeResponse = async (envelope, { req, res }) => {
 
           await saveInputMessages(req, conversationId, inputMessages, agentId);
 
-          await saveResponseOutput(req, conversationId, responseId, response, agentId);
+          await saveResponseOutput(
+            req,
+            conversationId,
+            responseId,
+            response,
+            agentId,
+            aggregator.usage.outputTokens,
+          );
 
           logger.debug(
             `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
           );
         } catch (saveError) {
-          logger.error('[Responses API] Error saving response:', saveError);
+          logger.error('[Responses API] Error saving response:', getSafeErrorMetadata(saveError));
           // Don't fail the request if saving fails
         }
       }
@@ -1158,8 +1407,12 @@ const executeResponse = async (envelope, { req, res }) => {
       );
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'An error occurred';
-    logger.error('[Responses API] Error:', error);
+    logger.error('[Responses API] Error:', getSafeErrorMetadata(error));
+    const protectionEnabled = hasModelBoundContentProtection(
+      appConfig?.filters,
+      appConfig?.messageFilter?.pii,
+    );
+    const errorMessage = getUserFacingProviderError(error, protectionEnabled);
 
     // Check if we already started streaming (headers sent)
     if (res.headersSent) {
@@ -1167,13 +1420,23 @@ const executeResponse = async (envelope, { req, res }) => {
       writeDone(res);
       res.end();
     } else {
+      if (isContentFilterError(error)) {
+        return sendResponsesErrorResponse(
+          res,
+          error.statusCode,
+          error.body.message,
+          'invalid_request',
+          error.body.error,
+        );
+      }
       // Forward upstream provider status codes (e.g., Anthropic 400s) instead of masking as 500
       const statusCode =
         typeof error?.status === 'number' && error.status >= 400 && error.status < 600
           ? error.status
           : 500;
       const errorType = statusCode >= 400 && statusCode < 500 ? 'invalid_request' : 'server_error';
-      const errorCode = typeof error?.code === 'string' ? error.code : undefined;
+      const errorCode =
+        !protectionEnabled && typeof error?.code === 'string' ? error.code : undefined;
       if (errorCode === undefined) {
         sendResponsesErrorResponse(res, statusCode, errorMessage, errorType);
       } else {
@@ -1266,7 +1529,7 @@ const listModels = async (req, res) => {
       data: models,
     });
   } catch (error) {
-    logger.error('[Responses API] Error listing models:', error);
+    logger.error('[Responses API] Error listing models:', getSafeErrorMetadata(error));
     sendResponsesErrorResponse(
       res,
       500,
@@ -1371,7 +1634,7 @@ const getResponse = async (req, res) => {
 
     res.json(response);
   } catch (error) {
-    logger.error('[Responses API] Error getting response:', error);
+    logger.error('[Responses API] Error getting response:', getSafeErrorMetadata(error));
     sendResponsesErrorResponse(
       res,
       500,

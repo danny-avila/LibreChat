@@ -1337,6 +1337,7 @@ describe('Skill CRUD methods', () => {
     });
     const names = result.skills.map((s) => s.name).sort();
     expect(names).toEqual(['always-a', 'always-b']);
+    expect(result.skills.map((skill) => skill.version)).toEqual([1, 1]);
   });
 
   it('listAlwaysApplySkills excludes rows outside accessibleIds', async () => {

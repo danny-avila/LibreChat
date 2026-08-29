@@ -991,6 +991,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         });
       }
 
+      if (isBaseOnlyFieldPath(fieldPath)) {
+        logger.warn(
+          `[adminConfig] Ignoring tombstone for base-only config field "${fieldPath}" - configure it in librechat.yaml instead`,
+        );
+        return res.status(200).json({ message: 'No actionable field path provided' });
+      }
+
       if (isInterfacePermissionPath(fieldPath)) {
         logger.warn(
           `[adminConfig] Ignoring tombstone for interface permission field "${fieldPath}" — use role permissions instead`,

@@ -281,21 +281,39 @@ export default function SubagentCall({
    *  the name isn't resolvable (agent map miss). */
   const subagentNameLabel = !isSelfSpawn && subagentAgent?.name ? subagentAgent.name : '';
 
-  const canOpenDetails = useMemo(
-    () =>
-      isSharedConvo !== true ||
-      adaptLivePersistedActivity({
-        title: '',
-        progress: null,
-        persistedContent,
-        legacyOutput: backgroundHandle == null ? output : undefined,
-        initialProgress,
-        isSubmitting: false,
-        runStepStatus,
-        approvalVisibility: 'hidden',
-      }).items.length > 0,
-    [backgroundHandle, initialProgress, isSharedConvo, output, persistedContent, runStepStatus],
-  );
+  const canOpenDetails = useMemo(() => {
+    const fallbackActivity = adaptLivePersistedActivity({
+      title: '',
+      progress: null,
+      persistedContent,
+      legacyOutput: backgroundHandle == null ? output : undefined,
+      initialProgress,
+      isSubmitting: false,
+      runStepStatus,
+      approvalVisibility: 'hidden',
+    });
+    const hasRenderableFallback = fallbackActivity.items.some(
+      (item) =>
+        (item.type !== 'writing' || item.text.length > 0) &&
+        (item.type !== 'activity_label' || item.label.length > 0),
+    );
+    const hasParentContext = parentConversationId !== '' && parentMessageId !== '';
+    const canOpenLiveForeground =
+      isSharedConvo !== true && backgroundHandle == null && hasParentContext;
+    return (
+      hasParentContext && (canOpenDurablePanel || canOpenLiveForeground || hasRenderableFallback)
+    );
+  }, [
+    backgroundHandle,
+    canOpenDurablePanel,
+    initialProgress,
+    isSharedConvo,
+    output,
+    parentConversationId,
+    parentMessageId,
+    persistedContent,
+    runStepStatus,
+  ]);
 
   const panelSelection = useMemo(
     () => ({
@@ -529,13 +547,12 @@ function ToolIdentifier({
 }
 
 /**
- * Renderer for one ticker line. Splits a fixed label (e.g. "Writing:")
- * into its own `shrink-0` span so the label is never clipped when the
- * body overflows; the body then uses `dir="rtl"` + `text-align: left`
- * to push tail-side ellipsis behavior (newest characters stay flush-
- * right, oldest clip off the left). The rtl trick is scoped to the
- * body span so trailing punctuation on non-streaming lines (e.g. the
- * `…` in "Waiting for first update…") can't get flipped by bidi.
+ * Renderer for one ticker line. Writing is the default visible activity, so
+ * it renders without a redundant prefix. Reasoning retains its semantic label.
+ * Streaming bodies use `dir="rtl"` + `text-align: left` to push tail-side
+ * ellipsis behavior (newest characters stay flush-right, oldest clip off the
+ * left). The rtl trick is scoped to the body span so trailing punctuation on
+ * non-streaming lines can't get flipped by bidi.
  *
  * Tool lines (`using_tool`, `tool_complete`) go through `ToolIdentifier`
  * so MCP-hosted tools render as `<server> · <tool>` badges and native
@@ -545,14 +562,22 @@ function ToolIdentifier({
 function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
   const localize = useLocalize();
   const mcpServerNames = useMCPServerNames();
-  if (line.kind === 'writing' || line.kind === 'reasoning') {
-    const prefix =
-      line.kind === 'writing'
-        ? localize('com_ui_subagent_ticker_writing')
-        : localize('com_ui_subagent_ticker_reasoning');
+  if (line.kind === 'writing') {
+    return (
+      <li className="flex w-full items-baseline overflow-hidden text-text-primary">
+        <span
+          dir="rtl"
+          className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left"
+        >
+          {line.body}
+        </span>
+      </li>
+    );
+  }
+  if (line.kind === 'reasoning') {
     return (
       <li className="flex w-full items-baseline gap-1 overflow-hidden text-text-primary">
-        <span className="shrink-0">{prefix}:</span>
+        <span className="shrink-0">{localize('com_ui_subagent_ticker_reasoning')}:</span>
         <span
           dir="rtl"
           className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left"

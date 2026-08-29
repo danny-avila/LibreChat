@@ -80,6 +80,7 @@ const Part = memo(function Part({
       <SteerPart
         steer={part[ContentTypes.STEER]}
         files={part.files}
+        quotes={part.quotes}
         steerId={part.steerId}
         createdAt={part.createdAt}
       />
@@ -253,6 +254,7 @@ const Part = memo(function Part({
               output={typeof toolCall.output === 'string' ? toolCall.output : ''}
               toolCallId={toolCall.id}
               isSubmitting={isSubmitting}
+              runStepStatus={toolCall.runStepStatus}
               showCursor={showCursor}
               failed={'inputValidationError' in toolCall && toolCall.inputValidationError === true}
               onExpand={onToolExpand}

@@ -1,4 +1,9 @@
-import { logger, runAsSystem } from '@librechat/data-schemas';
+import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+  logger,
+  runAsSystem,
+} from '@librechat/data-schemas';
+import type { AgentTriggerDeliveryStatusRecord } from '@librechat/data-schemas';
 import type {
   AgentTriggerDeliveryFailure,
   AgentTriggerDeliveryEngine,
@@ -16,8 +21,8 @@ import type { BoundAddress } from '../../app/origin';
 import { AgentTriggerDeliveryDeferredError, createAgentTriggerDeliveryEngine } from './engine';
 import { isShutdownInProgress, registerShutdownTask } from '../../app/shutdown';
 import { generateAgentTriggerToken } from '../../crypto/jwt';
-import { selfOriginFromAddress } from '../../app/origin';
 import { prepareAgentTriggerDelivery } from './delivery';
+import { selfOriginFromAddress } from '../../app/origin';
 import { createAgentTriggerExecutionHost } from './host';
 import { parseAgentTriggerEnvelope } from './envelope';
 
@@ -44,12 +49,13 @@ export interface AgentTriggerServiceDeps {
   userDrainPollMs?: number;
   purgeRecoveryIntervalMs?: number;
   purgeRecoveryLimit?: number;
+  supportsDetachedActionCompletion?: () => boolean;
 }
 
 export interface AgentTriggerDeliveryReceipt {
   id: string;
   deliveryKey: string;
-  status: AgentTriggerStoredRecord['status'];
+  status: Exclude<AgentTriggerStoredRecord['status'], 'batched'>;
   availableAt: Date;
   replayed: boolean;
 }
@@ -85,8 +91,13 @@ export interface AgentTriggerDeliveryPersistence {
   enqueueAgentTriggerDelivery: (
     input: PreparedAgentTriggerDelivery,
   ) => Promise<{ delivery: AgentTriggerStoredRecord; replayed: boolean }>;
-  claimNextAgentTriggerDelivery: AgentTriggerDeliveryStore['claimNext'];
+  claimNextAgentTriggerDelivery: (
+    input: Parameters<AgentTriggerDeliveryStore['claimNext']>[0] & {
+      workerCapabilities?: string[];
+    },
+  ) => ReturnType<AgentTriggerDeliveryStore['claimNext']>;
   findEarlierAgentTriggerDelivery: AgentTriggerDeliveryStore['findEarlierUnsettled'];
+  getAgentTriggerDeliveryBatch: AgentTriggerDeliveryStore['getBatch'];
   releaseAgentTriggerDelivery: AgentTriggerDeliveryStore['release'];
   beginAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['beginAttempt'];
   deferAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['defer'];
@@ -94,6 +105,12 @@ export interface AgentTriggerDeliveryPersistence {
   retryAgentTriggerDelivery: AgentTriggerDeliveryStore['retry'];
   deadLetterAgentTriggerDelivery: AgentTriggerDeliveryStore['dead'];
   getAgentTriggerDelivery: (deliveryKey: string) => Promise<AgentTriggerStoredRecord | null>;
+  getAgentTriggerDeliveryStatus: (
+    deliveryKey: string,
+    userId: string,
+    sourceKeyId: string,
+    tenantId?: string,
+  ) => Promise<AgentTriggerDeliveryStatusRecord | null>;
   getAgentTriggerDeadLetters: (limit?: number) => Promise<AgentTriggerStoredRecord[]>;
   requeueAgentTriggerDelivery: (
     id: string,
@@ -101,6 +118,7 @@ export interface AgentTriggerDeliveryPersistence {
   ) => Promise<AgentTriggerStoredRecord | null>;
   countActiveAgentTriggerDeliveriesByUser: (userId: string, now: Date) => Promise<number>;
   recoverAgentTriggerLanePublications: (limit?: number) => Promise<number>;
+  recoverAgentTriggerBatchReceipts: (limit?: number) => Promise<number>;
   reclaimInactiveAgentTriggerLanes: (limit?: number) => Promise<number>;
   prepareAgentTriggerUserPurge: (
     userId: string,
@@ -109,6 +127,7 @@ export interface AgentTriggerDeliveryPersistence {
   ) => Promise<void>;
   cancelAgentTriggerUserPurge: (userId: string, fenceStartedAt: Date) => Promise<boolean>;
   recoverAgentTriggerUserPurges: (limit?: number) => Promise<number>;
+  expireLegacyAgentEventActorReceipts?: (now: Date, limit?: number) => Promise<number>;
   deleteAgentTriggerDeliveriesByUser: (userId: string) => Promise<void>;
 }
 
@@ -124,6 +143,12 @@ export interface AgentTriggerService {
     options?: AgentTriggerEnqueueOptions,
   ) => Promise<AgentTriggerDeliveryReceipt>;
   getDelivery: (deliveryKey: string) => Promise<AgentTriggerStoredRecord | null>;
+  getDeliveryStatus: (
+    deliveryKey: string,
+    userId: string,
+    sourceKeyId: string,
+    tenantId?: string,
+  ) => Promise<AgentTriggerDeliveryStatusRecord | null>;
   getDeadLetters: (limit?: number) => Promise<AgentTriggerStoredRecord[]>;
   requeue: (id: string, availableAt?: Date) => Promise<AgentTriggerStoredRecord | null>;
   drainUser: (userId: string) => Promise<void>;
@@ -132,10 +157,20 @@ export interface AgentTriggerService {
   purgeUser: (userId: string) => Promise<void>;
 }
 
-function createDeliveryStore(methods: AgentTriggerDeliveryPersistence): AgentTriggerDeliveryStore {
+function createDeliveryStore(
+  methods: AgentTriggerDeliveryPersistence,
+  supportsDetachedActionCompletion: () => boolean,
+): AgentTriggerDeliveryStore {
   return {
-    claimNext: methods.claimNextAgentTriggerDelivery,
+    claimNext: (input) =>
+      methods.claimNextAgentTriggerDelivery({
+        ...input,
+        workerCapabilities: supportsDetachedActionCompletion()
+          ? [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1]
+          : [],
+      }),
     findEarlierUnsettled: methods.findEarlierAgentTriggerDelivery,
+    getBatch: methods.getAgentTriggerDeliveryBatch,
     release: methods.releaseAgentTriggerDelivery,
     beginAttempt: methods.beginAgentTriggerDeliveryAttempt,
     defer: methods.deferAgentTriggerDeliveryAttempt,
@@ -143,6 +178,21 @@ function createDeliveryStore(methods: AgentTriggerDeliveryPersistence): AgentTri
     retry: methods.retryAgentTriggerDelivery,
     dead: methods.deadLetterAgentTriggerDelivery,
   };
+}
+
+function publicReceiptStatus(
+  status: AgentTriggerStoredRecord['status'],
+): AgentTriggerDeliveryReceipt['status'] {
+  if (status === 'batched' || status === 'capability_pending') {
+    return 'pending';
+  }
+  if (status === 'capability_staging') {
+    return 'staging';
+  }
+  if (status === 'capability_dead') {
+    return 'dead';
+  }
+  return status === 'capability_leased' ? 'leased' : status;
 }
 
 function requireDeliveryOrigin(boundOrigin: string | undefined): void {
@@ -169,6 +219,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   const purgeRecoveryIntervalMs =
     deps.purgeRecoveryIntervalMs ?? DEFAULT_PURGE_RECOVERY_INTERVAL_MS;
   const purgeRecoveryLimit = deps.purgeRecoveryLimit ?? DEFAULT_PURGE_RECOVERY_LIMIT;
+  const supportsDetachedActionCompletion = deps.supportsDetachedActionCompletion ?? (() => false);
   if (!Number.isSafeInteger(userDrainTimeoutMs) || userDrainTimeoutMs <= 0) {
     throw new TypeError('userDrainTimeoutMs must be a positive integer');
   }
@@ -190,8 +241,11 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   let stopping = false;
   const isPrincipalActive = deps.isPrincipalActive;
   const host: AgentTriggerExecutionHost = createAgentTriggerExecutionHost({
-    getBaseUrl: () => {
-      const origin = process.env.AGENT_TRIGGERS_SELF_URL ?? boundOrigin;
+    getBaseUrl: (options) => {
+      const origin =
+        options?.localOnly === true
+          ? boundOrigin
+          : (process.env.AGENT_TRIGGERS_SELF_URL ?? boundOrigin);
       if (origin == null) {
         throw new Error('Agent trigger service has not been initialized with a listener address');
       }
@@ -273,19 +327,31 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     }
     const methods = deps.methods;
     const current = runAsSystem(async () => {
-      const [purgedUsers, publishedLanes, reclaimedLanes] = await Promise.all([
-        methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit),
-        methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
-        methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit),
-      ]);
+      const [purgedUsers, publishedLanes, recoveredBatches, expiredLegacyActorReceipts] =
+        await Promise.all([
+          methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit),
+          methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
+          methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit),
+          methods.expireLegacyAgentEventActorReceipts?.(new Date(), purgeRecoveryLimit) ??
+            Promise.resolve(0),
+        ]);
+      const reclaimedLanes = await methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit);
       if (publishedLanes > 0) {
         deliveryEngine?.wake();
       }
-      if (purgedUsers > 0 || publishedLanes > 0 || reclaimedLanes > 0) {
+      if (
+        purgedUsers > 0 ||
+        publishedLanes > 0 ||
+        recoveredBatches > 0 ||
+        reclaimedLanes > 0 ||
+        expiredLegacyActorReceipts > 0
+      ) {
         logger.info('[agent-triggers] recovered durable delivery maintenance', {
           purgedUsers,
           publishedLanes,
+          recoveredBatches,
           reclaimedLanes,
+          expiredLegacyActorReceipts,
         });
       }
     })
@@ -356,7 +422,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         }
         deliveryEngine = createAgentTriggerDeliveryEngine(
           {
-            store: createDeliveryStore(methods),
+            store: createDeliveryStore(methods, supportsDetachedActionCompletion),
             dispatch: dispatchForActivePrincipal,
           },
           deps.deliveryOptions,
@@ -375,29 +441,69 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     enqueue: async (envelope, options) => {
       const methods = requireMethods();
       const prepared = prepareAgentTriggerDelivery(envelope, options);
+      const awaitTerminalHandling =
+        prepared.envelope.mode === 'continue' &&
+        prepared.envelope.target.bindingId != null &&
+        prepared.envelope.target.sourceKeyId != null;
+      const durableDelivery: PreparedAgentTriggerDelivery = {
+        ...prepared,
+        ...(awaitTerminalHandling && { awaitTerminalHandling: true }),
+      };
       await requireActivePrincipal(String(prepared.user));
-      const queued = await runAsSystem(async () => methods.enqueueAgentTriggerDelivery(prepared));
+      const queued = await runAsSystem(async () =>
+        methods.enqueueAgentTriggerDelivery(durableDelivery),
+      );
       try {
         await requireActivePrincipal(String(prepared.user));
       } catch (error) {
         await drainUser(String(prepared.user));
         throw error;
       }
-      deliveryEngine?.wake();
+      const eligibleAt = queued.delivery.availableAt;
+      if (eligibleAt instanceof Date && eligibleAt.getTime() > Date.now()) {
+        deliveryEngine?.noteEligibleAt(eligibleAt);
+      } else {
+        deliveryEngine?.wake();
+      }
+      const effective =
+        queued.delivery.status === 'batched'
+          ? await runAsSystem(async () =>
+              methods.getAgentTriggerDeliveryStatus(
+                prepared.deliveryKey,
+                prepared.user,
+                prepared.envelope.event.source.id,
+                prepared.tenantId,
+              ),
+            )
+          : null;
       return {
         id: queued.delivery.id,
         deliveryKey: queued.delivery.deliveryKey,
-        status: queued.delivery.status,
-        availableAt: queued.delivery.availableAt,
+        status: publicReceiptStatus(effective?.status ?? queued.delivery.status),
+        availableAt: effective?.availableAt ?? queued.delivery.availableAt,
         replayed: queued.replayed,
       };
     },
     getDelivery: (deliveryKey) =>
       runAsSystem(async () => requireMethods().getAgentTriggerDelivery(deliveryKey)),
+    getDeliveryStatus: (deliveryKey, userId, sourceKeyId, tenantId) =>
+      runAsSystem(async () =>
+        requireMethods().getAgentTriggerDeliveryStatus(deliveryKey, userId, sourceKeyId, tenantId),
+      ),
     getDeadLetters: (limit) =>
       runAsSystem(async () => requireMethods().getAgentTriggerDeadLetters(limit)),
     requeue: (id, availableAt = new Date()) =>
-      runAsSystem(async () => requireMethods().requeueAgentTriggerDelivery(id, availableAt)),
+      runAsSystem(async () => {
+        const revived = await requireMethods().requeueAgentTriggerDelivery(id, availableAt);
+        if (revived != null) {
+          if (availableAt.getTime() > Date.now()) {
+            deliveryEngine?.noteEligibleAt(availableAt);
+          } else {
+            deliveryEngine?.wake();
+          }
+        }
+        return revived;
+      }),
     drainUser,
     prepareUserPurge: (userId, fenceStartedAt, tenantId) =>
       runAsSystem(async () =>

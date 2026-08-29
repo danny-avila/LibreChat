@@ -1,8 +1,12 @@
 import { renderHook } from '@testing-library/react';
-import type { SubagentThreadView } from 'librechat-data-provider';
+import type { ParentSubagentIndex, SubagentThreadView } from 'librechat-data-provider';
 import {
   isSubagentReadinessPending,
+  parentSubagentsRefetchInterval,
+  reconcileSubagentControlReceipts,
+  subagentThreadHasTaskEvidence,
   subagentThreadRefetchInterval,
+  useParentSubagentsQuery,
   useSubagentThreadQuery,
 } from './queries';
 
@@ -16,6 +20,23 @@ const view = (status: SubagentThreadView['status']): SubagentThreadView =>
   ({ status }) as SubagentThreadView;
 
 describe('subagent thread refresh policy', () => {
+  it('does not downgrade a refreshed terminal control receipt to accepted', () => {
+    const applied = {
+      invocationId: 'invocation-1',
+      action: 'queue',
+      status: 'applied',
+      createdAt: '2026-08-24T12:00:00.000Z',
+      updatedAt: '2026-08-24T12:00:02.000Z',
+    } as const;
+    const accepted = {
+      ...applied,
+      status: 'accepted',
+      updatedAt: '2026-08-24T12:00:01.000Z',
+    } as const;
+
+    expect(reconcileSubagentControlReceipts([applied], accepted)).toEqual([applied]);
+  });
+
   it('bounds child-readiness retries and keeps active work fresh', () => {
     expect(subagentThreadRefetchInterval(undefined, 1_000, 500)).toBe(2_000);
     expect(subagentThreadRefetchInterval(view('dispatched'), 1_000, 500)).toBe(2_000);
@@ -44,6 +65,16 @@ describe('subagent thread refresh policy', () => {
     expect(subagentThreadRefetchInterval(prior, 1_000, 500, 'new-task')).toBe(2_000);
     expect(subagentThreadRefetchInterval(current, 1_000, 500, 'new-task')).toBe(false);
     expect(subagentThreadRefetchInterval(prior, 1_000, 1_000, 'new-task')).toBe(false);
+  });
+
+  it('associates terminal state only with evidence from the selected task', () => {
+    const prior = {
+      ...view('completed'),
+      messages: [{ messageId: 'old-task:assistant' }],
+    } as SubagentThreadView;
+
+    expect(subagentThreadHasTaskEvidence(prior, 'new-task')).toBe(false);
+    expect(subagentThreadHasTaskEvidence(prior, 'old-task')).toBe(true);
   });
 
   it('stops polling an older API view once the exact task response exists', () => {
@@ -87,5 +118,38 @@ describe('subagent thread refresh policy', () => {
       'task-2',
     ]);
     expect(refetch).not.toHaveBeenCalled();
+  });
+
+  it('refreshes active parent children quickly and discovers idle actors at a bounded cadence', () => {
+    expect(
+      parentSubagentsRefetchInterval({
+        parentConversationId: 'parent-conversation',
+        childrenTruncated: false,
+        children: [{ status: 'running' }],
+      } as ParentSubagentIndex),
+    ).toBe(2_000);
+    expect(
+      parentSubagentsRefetchInterval({
+        parentConversationId: 'parent-conversation',
+        childrenTruncated: false,
+        children: [{ status: 'dispatched' }],
+      } as ParentSubagentIndex),
+    ).toBe(10_000);
+    expect(parentSubagentsRefetchInterval(undefined)).toBe(10_000);
+
+    mockUseQuery.mockReturnValue({ data: undefined, error: null, refetch: jest.fn() });
+
+    renderHook(() => useParentSubagentsQuery('parent-conversation'));
+
+    expect(mockUseQuery.mock.calls.at(-1)?.[0]).toEqual(['parentSubagents', 'parent-conversation']);
+    expect(mockUseQuery.mock.calls.at(-1)?.[2]).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        refetchOnWindowFocus: true,
+        refetchInterval: parentSubagentsRefetchInterval,
+        refetchIntervalInBackground: false,
+        staleTime: 5_000,
+      }),
+    );
   });
 });

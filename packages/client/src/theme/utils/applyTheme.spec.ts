@@ -143,4 +143,20 @@ describe('applyTheme', () => {
     expect(root.style.getPropertyValue('--markdown-font-size')).toBe('18px');
     root.style.removeProperty('--markdown-font-size');
   });
+
+  it('applies provider brand backgrounds from the theme', () => {
+    applyResolvedTheme(
+      resolveTheme(
+        {
+          version: 1,
+          name: 'white-label',
+          modes: { light: {} },
+          brands: { 'provider-openai': '#123456' },
+        },
+        'light',
+      ),
+    );
+
+    expect(document.documentElement.style.getPropertyValue('--provider-openai')).toBe('#123456');
+  });
 });

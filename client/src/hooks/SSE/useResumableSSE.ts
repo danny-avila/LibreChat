@@ -54,6 +54,8 @@ import {
   findReasoningLabelMessageIndex,
   appendAppliedSteerIds,
   collectAppliedSteerIds,
+  collectDroppedSteerQuotes,
+  mergeRestagedQuotes,
   removeConvoFromAllQueries,
   upsertConvoInAllQueries,
   countTaggedApprovalParts,
@@ -857,9 +859,32 @@ export default function useResumableSSE(
    *  part becomes the durable record), and records the id so a 202 ACK that
    *  arrives AFTER the applied event drops its chip instead of re-minting it. */
   const resolveSteerChip = useRecoilCallback(
-    ({ set }) =>
-      (conversationId: string, steerId: string, clientSteerId?: string) => {
+    ({ snapshot, set }) =>
+      (
+        conversationId: string,
+        steerId: string,
+        clientSteerId?: string,
+        appliedPartQuotes?: string[],
+      ) => {
         const settledIds = clientSteerId ? [steerId, clientSteerId] : [steerId];
+        /** A part applied by a pre-quotes server carries no quotes while the
+         *  chip being settled may hold the only copy of the user's excerpts
+         *  (its 202 was lost, so the ACK-echo restore never ran). Re-stage
+         *  them before removal; `mergeRestagedQuotes` keeps this idempotent
+         *  with the ACK path for the same excerpts. */
+        if (appliedPartQuotes == null || appliedPartQuotes.length === 0) {
+          const chips = snapshot
+            .getLoadable(store.pendingSteersByConvoId(conversationId))
+            .getValue();
+          const droppedQuotes = chips.find(
+            (steer) => settledIds.includes(steer.steerId) && (steer.quotes?.length ?? 0) > 0,
+          )?.quotes;
+          if (droppedQuotes != null && droppedQuotes.length > 0) {
+            set(store.pendingQuotesByConvoId(conversationId), (prev) =>
+              mergeRestagedQuotes(prev, droppedQuotes),
+            );
+          }
+        }
         set(store.appliedSteerIdsByConvoId(conversationId), (prev) =>
           appendAppliedSteerIds(prev, settledIds),
         );
@@ -960,7 +985,8 @@ export default function useResumableSSE(
 
   /** Replaces the chip list with the server's still-queued steers (reconnect).
    *  Local `failed` entries are kept so their text stays recoverable, and a
-   *  reseeded chip keeps its client-only quotes/skill picks. */
+   *  reseeded chip keeps its quotes/skill picks (from the local chip, or the
+   *  server item's persisted quotes when no chip survives). */
   const seedSteerChips = useRecoilCallback(
     ({ set }) =>
       (
@@ -1013,7 +1039,10 @@ export default function useResumableSSE(
                   generationCreatedAt: chipGenerationCreatedAt,
                 }),
                 generationProtocolVersion,
-                ...carriedSteerContext(localChip),
+                // The local chip carries skill picks the server never sees; a
+                // fresh tab has no chip, so fall back to the server item's
+                // persisted quotes rather than reseeding the chip without them.
+                ...carriedSteerContext(localChip ?? steer),
               };
             }),
             ...prev.filter((steer) => steer.status === 'failed' && !claimedIds.has(steer.steerId)),
@@ -1024,13 +1053,25 @@ export default function useResumableSSE(
   );
 
   const settleAppliedSteerParts = useRecoilCallback(
-    ({ set }) =>
+    ({ snapshot, set }) =>
       (conversationId: string, values: unknown[] | undefined) => {
         const ids = collectAppliedSteerIds(values);
         if (ids.length === 0) {
           return;
         }
         const settled = new Set(ids);
+        /** Chips settled by quote-less applied parts hold the only copy of
+         *  their excerpts (a pre-quotes server injected the words bare) —
+         *  re-stage them as composer chips before the removal below. */
+        const droppedQuotes = collectDroppedSteerQuotes(
+          values,
+          snapshot.getLoadable(store.pendingSteersByConvoId(conversationId)).getValue(),
+        );
+        if (droppedQuotes.length > 0) {
+          set(store.pendingQuotesByConvoId(conversationId), (prev) =>
+            mergeRestagedQuotes(prev, droppedQuotes),
+          );
+        }
         set(store.appliedSteerIdsByConvoId(conversationId), (prev) =>
           appendAppliedSteerIds(prev, ids),
         );
@@ -1137,6 +1178,7 @@ export default function useResumableSSE(
     createdHandler,
     titleHandler,
     syncStepMessage,
+    prunePtcTraces,
     attachmentHandler,
     resetContentHandler,
     flushPendingDeltas,
@@ -1386,7 +1428,7 @@ export default function useResumableSSE(
          *  the chip pending during that wait lets an intervening error/final
          *  convert already-applied words into a duplicate queued message. */
         if (attempt === 0) {
-          resolveSteerChip(chipConvoId, event.steerId, event.clientSteerId);
+          resolveSteerChip(chipConvoId, event.steerId, event.clientSteerId, event.part?.quotes);
         }
         const retryNextFrame = () => {
           if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
@@ -2125,6 +2167,14 @@ export default function useResumableSSE(
             if (data.resumeState?.titleEvent) {
               titleHandler(data.resumeState.titleEvent);
             }
+
+            /** PTC inner calls are not content parts, so the resume snapshot
+             *  can't rebuild them and a settling event lost in this gap is
+             *  never replayed. Mark rows still `running` as interrupted rather
+             *  than leave a spinner that never resolves — and rather than drop
+             *  them, since a call still executing across the reconnect settles
+             *  normally on the restored stream and updates its row in place. */
+            prunePtcTraces();
 
             if (data.resumeState?.replayEvents?.length > 0) {
               logger.log(
@@ -3474,6 +3524,7 @@ export default function useResumableSSE(
       contentHandler,
       resetContentHandler,
       syncStepMessage,
+      prunePtcTraces,
       clearStepMaps,
       messageHandler,
       errorHandler,

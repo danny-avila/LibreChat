@@ -1,6 +1,7 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { fireEvent, render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom';
 import type { MutableSnapshot } from 'recoil';
 import ShareButton from '../ShareButton';
@@ -17,6 +18,22 @@ let mockShare: {
 };
 const mockCopyLink = jest.fn(() => true);
 const mockAnnouncePolite = jest.fn();
+const mockGetMessagesByConvoId = jest.fn();
+const mockGetMessageById = jest.fn();
+let mockResolveTargetMessageId: (() => Promise<string>) | undefined;
+let mockLatestMessageId: string | null = 'message-1';
+
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    dataService: {
+      ...actual.dataService,
+      getMessagesByConvoId: (...args: unknown[]) => mockGetMessagesByConvoId(...args),
+      getMessageById: (...args: unknown[]) => mockGetMessageById(...args),
+    },
+  };
+});
 
 jest.mock('librechat-data-provider/react-query', () => ({
   useGetSharedLinkQuery: () => ({ data: mockShare, isLoading: false }),
@@ -27,7 +44,9 @@ jest.mock('~/data-provider', () => ({
 }));
 
 jest.mock('~/hooks/Messages/useLatestMessage', () => ({
-  useLatestMessageId: () => 'message-1',
+  useLatestMessageId: () => mockLatestMessageId,
+  useGetLatestMessage: () => () =>
+    mockLatestMessageId == null ? null : { messageId: mockLatestMessageId },
 }));
 
 jest.mock('~/hooks', () => ({
@@ -46,38 +65,51 @@ jest.mock('../SharedLinkButton', () => ({
     setShowQR,
     snapshotFiles,
     targetMessageId,
+    resolveTargetMessageId,
   }: {
     showQR: boolean;
     setShowQR: (show: boolean) => void;
     snapshotFiles?: boolean;
     targetMessageId?: string;
-  }) => (
-    <button
-      type="button"
-      data-testid="share-actions"
-      data-snapshot-files={String(snapshotFiles)}
-      data-target-message-id={String(targetMessageId)}
-      onClick={() => setShowQR(!showQR)}
-    >
-      {showQR ? 'com_ui_hide_qr' : 'com_ui_show_qr'}
-    </button>
-  ),
+    resolveTargetMessageId?: () => Promise<string>;
+  }) => {
+    mockResolveTargetMessageId = resolveTargetMessageId;
+    return (
+      <button
+        type="button"
+        data-testid="share-actions"
+        data-snapshot-files={String(snapshotFiles)}
+        data-target-message-id={String(targetMessageId)}
+        onClick={() => setShowQR(!showQR)}
+      >
+        {showQR ? 'com_ui_hide_qr' : 'com_ui_show_qr'}
+      </button>
+    );
+  },
 }));
 
 const ACTIVE_CONVERSATION_ID = 'conversation-1';
 
 const renderShareButton = (conversationId = ACTIVE_CONVERSATION_ID) => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const initializeState = ({ set }: MutableSnapshot) => {
     set(store.conversationByIndex(0), {
       conversationId: ACTIVE_CONVERSATION_ID,
     } as never);
   };
 
-  return render(
-    <RecoilRoot initializeState={initializeState}>
-      <ShareButton conversationId={conversationId} open={true} onOpenChange={jest.fn()} />
-    </RecoilRoot>,
-  );
+  return {
+    queryClient,
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <RecoilRoot initializeState={initializeState}>
+          <ShareButton conversationId={conversationId} open={true} onOpenChange={jest.fn()} />
+        </RecoilRoot>
+      </QueryClientProvider>,
+    ),
+  };
 };
 
 describe('ShareButton', () => {
@@ -90,6 +122,10 @@ describe('ShareButton', () => {
     mockCopyLink.mockClear();
     mockCopyLink.mockReturnValue(true);
     mockAnnouncePolite.mockClear();
+    mockGetMessagesByConvoId.mockReset();
+    mockGetMessageById.mockReset();
+    mockLatestMessageId = 'message-1';
+    mockResolveTargetMessageId = undefined;
   });
 
   it('centers the active QR code and keeps details behind inline info controls', () => {
@@ -150,21 +186,23 @@ describe('ShareButton', () => {
 
   it('resets the file choice and link when the dialog moves to another conversation', () => {
     mockShare = { success: true, shareId: 'share-1', snapshotFiles: false };
-    const { rerender } = renderShareButton();
+    const { rerender, queryClient } = renderShareButton();
 
     expect(screen.getByRole('switch', { name: 'com_ui_share_files' })).not.toBeChecked();
 
     mockShare = { success: true, shareId: null };
     rerender(
-      <RecoilRoot
-        initializeState={({ set }: MutableSnapshot) => {
-          set(store.conversationByIndex(0), {
-            conversationId: ACTIVE_CONVERSATION_ID,
-          } as never);
-        }}
-      >
-        <ShareButton conversationId="conversation-2" open={true} onOpenChange={jest.fn()} />
-      </RecoilRoot>,
+      <QueryClientProvider client={queryClient}>
+        <RecoilRoot
+          initializeState={({ set }: MutableSnapshot) => {
+            set(store.conversationByIndex(0), {
+              conversationId: ACTIVE_CONVERSATION_ID,
+            } as never);
+          }}
+        >
+          <ShareButton conversationId="conversation-2" open={true} onOpenChange={jest.fn()} />
+        </RecoilRoot>
+      </QueryClientProvider>,
     );
 
     expect(screen.getByRole('switch', { name: 'com_ui_share_files' })).toBeChecked();
@@ -179,6 +217,52 @@ describe('ShareButton', () => {
       'data-target-message-id',
       'message-1',
     );
+  });
+
+  it('verifies the selected branch tail with a bounded persisted-message read', async () => {
+    mockGetMessageById.mockResolvedValue([{ messageId: 'message-1' }]);
+    renderShareButton();
+
+    await expect(mockResolveTargetMessageId?.()).resolves.toBe('message-1');
+    await expect(mockResolveTargetMessageId?.()).resolves.toBe('message-1');
+    expect(mockGetMessageById).toHaveBeenCalledTimes(2);
+    expect(mockGetMessageById).toHaveBeenCalledWith(ACTIVE_CONVERSATION_ID, 'message-1');
+    expect(mockGetMessagesByConvoId).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unsaved selected tail instead of dropping the branch target', async () => {
+    mockGetMessageById.mockResolvedValue([]);
+    renderShareButton();
+
+    await expect(mockResolveTargetMessageId?.()).rejects.toMatchObject({
+      code: 'TARGET_MESSAGE_NOT_FOUND',
+    });
+  });
+
+  it('hydrates the message cache before deciding an initially unloaded chat is empty', async () => {
+    mockLatestMessageId = null;
+    mockGetMessagesByConvoId.mockImplementation(async () => {
+      mockLatestMessageId = 'persisted-message';
+      return [{ messageId: 'persisted-message' }];
+    });
+    mockGetMessageById.mockResolvedValue([{ messageId: 'persisted-message' }]);
+    renderShareButton();
+
+    await expect(mockResolveTargetMessageId?.()).resolves.toBe('persisted-message');
+    expect(mockGetMessagesByConvoId).toHaveBeenCalledWith(ACTIVE_CONVERSATION_ID);
+    expect(mockGetMessageById).toHaveBeenCalledWith(ACTIVE_CONVERSATION_ID, 'persisted-message');
+  });
+
+  it('reports an empty chat only after checking persisted messages', async () => {
+    mockLatestMessageId = null;
+    mockGetMessagesByConvoId.mockResolvedValue([]);
+    renderShareButton();
+
+    await expect(mockResolveTargetMessageId?.()).rejects.toMatchObject({
+      code: 'NO_MESSAGES',
+    });
+    expect(mockGetMessagesByConvoId).toHaveBeenCalledWith(ACTIVE_CONVERSATION_ID);
+    expect(mockGetMessageById).not.toHaveBeenCalled();
   });
 
   it('sends no target message when sharing a conversation other than the open one', () => {

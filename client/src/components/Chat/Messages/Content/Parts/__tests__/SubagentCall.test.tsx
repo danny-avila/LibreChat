@@ -214,6 +214,8 @@ describe('SubagentCall', () => {
     });
 
     await waitFor(() => expect(screen.getByText('Using')).toBeInTheDocument());
+    expect(screen.getByText('Working…')).toBeInTheDocument();
+    expect(screen.queryByText('Writing')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Running agent' }));
 
     expect(rendered.getSelection()).toEqual(
@@ -325,6 +327,58 @@ describe('SubagentCall', () => {
       }),
     );
     expect(rendered.getSelection()?.legacyOutput).toBeUndefined();
+  });
+
+  it('disables an inaccessible nested detached drilldown without renderable activity', () => {
+    const output = JSON.stringify({
+      background_task_id: 'task-1',
+      subagent_thread_id: 'child-thread-1',
+      tool: 'subagent',
+      subagent_type: 'self',
+      status: 'running',
+      message:
+        'Started subagent "self" background task. Poll the host background-task tool with background_task_id "task-1".',
+    });
+
+    render(
+      <MemoryRouter>
+        <RecoilRoot>
+          <MessageContext.Provider
+            value={{ messageId: 'nested-message', conversationId: null, isExpanded: true }}
+          >
+            <SubagentCall
+              toolCallId="nested-detached-call"
+              initialProgress={1}
+              args={{ subagent_type: 'self', run_in_background: true }}
+              output={output}
+            />
+          </MessageContext.Provider>
+        </RecoilRoot>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Agent activity' })).toBeDisabled();
+  });
+
+  it('disables a nested fallback that cannot remain attached to the conversation host', () => {
+    render(
+      <MemoryRouter>
+        <RecoilRoot>
+          <MessageContext.Provider
+            value={{ messageId: 'nested-message', conversationId: null, isExpanded: true }}
+          >
+            <SubagentCall
+              toolCallId="nested-foreground-call"
+              initialProgress={1}
+              args={{ subagent_type: 'self' }}
+              output="Nested result"
+            />
+          </MessageContext.Provider>
+        </RecoilRoot>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Ran agent' })).toBeDisabled();
   });
 
   it('keeps model-authored lookalike output on the foreground adapter', () => {

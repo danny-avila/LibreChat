@@ -787,7 +787,9 @@ export type ListAlwaysApplySkillsResult = {
     name: string;
     body: string;
     author: Types.ObjectId;
+    frontmatter?: Record<string, unknown>;
     allowedTools?: string[];
+    version: number;
   }>;
   /** `true` when another page exists beyond this one. */
   has_more: boolean;
@@ -1418,7 +1420,7 @@ export function createSkillMethods(
     const rows = await Skill.find(filter)
       .sort({ updatedAt: -1, _id: 1 })
       .limit(limit + 1)
-      .select('name body author updatedAt allowedTools')
+      .select('name body author frontmatter updatedAt allowedTools version')
       .lean();
 
     const has_more = rows.length > limit;
@@ -1447,6 +1449,8 @@ export function createSkillMethods(
         name: row.name,
         body: row.body ?? '',
         author: row.author as Types.ObjectId,
+        version: row.version,
+        frontmatter: row.frontmatter,
       };
       if (row.allowedTools !== undefined) {
         result.allowedTools = row.allowedTools;

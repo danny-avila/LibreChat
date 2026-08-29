@@ -108,6 +108,20 @@ interface SplitUsage {
   completion: number;
 }
 
+export interface CollectedUsageTotals {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cacheReadTokens: number;
+  reasoningTokens: number;
+}
+
+export interface CollectedUsageBreakdown {
+  total: CollectedUsageTotals;
+  primary: CollectedUsageTotals;
+  subagent: CollectedUsageTotals;
+}
+
 function splitUsage(usage: UsageMetadata): SplitUsage {
   const cacheCreation = getCacheCreationTokens(usage);
   const cacheRead =
@@ -129,6 +143,58 @@ function splitUsage(usage: UsageMetadata): SplitUsage {
     cacheRead,
     totalInput: rawInput + cacheCreation + cacheRead,
     completion,
+  };
+}
+
+function emptyCollectedUsageTotals(): CollectedUsageTotals {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    cacheReadTokens: 0,
+    reasoningTokens: 0,
+  };
+}
+
+/**
+ * Normalizes every billed model call before folding it into API response totals.
+ * The same provider-aware split used by billing keeps additive cache tokens and
+ * repaired provider output counts consistent without coupling billing to one
+ * external wire format.
+ */
+export function aggregateCollectedUsage(
+  collectedUsage: ReadonlyArray<UsageMetadata | null | undefined>,
+): CollectedUsageBreakdown {
+  const primary = emptyCollectedUsageTotals();
+  const subagent = emptyCollectedUsageTotals();
+
+  for (const usage of collectedUsage) {
+    if (usage == null) {
+      continue;
+    }
+    const { totalInput, cacheRead, completion } = splitUsage(usage);
+    const bucket = usage.usage_type === 'subagent' ? subagent : primary;
+    const reasoningTokens =
+      Number(
+        usage.output_token_details?.reasoning ?? usage.output_token_details?.reasoning_tokens,
+      ) || 0;
+    bucket.inputTokens += totalInput;
+    bucket.outputTokens += completion;
+    bucket.totalTokens += totalInput + completion;
+    bucket.cacheReadTokens += cacheRead;
+    bucket.reasoningTokens += reasoningTokens;
+  }
+
+  return {
+    total: {
+      inputTokens: primary.inputTokens + subagent.inputTokens,
+      outputTokens: primary.outputTokens + subagent.outputTokens,
+      totalTokens: primary.totalTokens + subagent.totalTokens,
+      cacheReadTokens: primary.cacheReadTokens + subagent.cacheReadTokens,
+      reasoningTokens: primary.reasoningTokens + subagent.reasoningTokens,
+    },
+    primary,
+    subagent,
   };
 }
 

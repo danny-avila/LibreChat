@@ -23,6 +23,7 @@ const {
   createMCPRuntimeRequestBody,
   loadSkillStates,
   sendFinalChunk,
+  buildCompletionUsage,
   createSafeUser,
   validateRequest,
   initializeAgent,
@@ -35,9 +36,22 @@ const {
   getTransactionsConfig,
   resolveAgentTokenConfig,
   resolveRecursionLimit,
-  findPiiMatchInMessages,
+  inspectContent,
+  extractMessageContent,
+  extractModelParameterContent,
+  extractSkillContent,
+  contentFilterBlockResponse,
+  contentFilterUninspectableResponse,
   discoverConnectedAgents,
   resolveSubagentGraphs,
+  getBlockedOpaqueFileField,
+  getContentTraversalFragments,
+  isContentTraversalProtected,
+  isContentTraversalLimitError,
+  assertModelBoundContent,
+  hasModelBoundContentProtection,
+  isContentFilterError,
+  getSafeErrorMetadata,
   getRemoteAgentPermissions,
   createToolExecuteHandler,
   buildNonStreamingResponse,
@@ -49,7 +63,7 @@ const {
 } = require('@librechat/api');
 const {
   buildSummarizationHandlers,
-  markSummarizationUsage,
+  contextualizeModelUsage,
   createToolEndCallback,
   agentLogHandlerObj,
 } = require('~/server/controllers/agents/callbacks');
@@ -81,6 +95,14 @@ const db = require('~/models');
 
 const filterFilesByRemoteAgentAccess = (params) =>
   filterFilesByAgentAccess({ ...params, resourceType: ResourceType.REMOTE_AGENT });
+const GENERIC_PROVIDER_ERROR = 'An error occurred while processing the request';
+
+function getUserFacingProviderError(error, protectionEnabled) {
+  if (protectionEnabled) {
+    return GENERIC_PROVIDER_ERROR;
+  }
+  return error instanceof Error ? error.message : 'An error occurred';
+}
 
 /**
  * Creates a tool loader function for the agent.
@@ -118,10 +140,10 @@ function createToolLoader(signal, definitionsOnly = true) {
         streamId: null, // No resumable stream for OpenAI compat
       });
     } catch (error) {
-      if (isFatalAgentInitializationError(error)) {
+      if (isFatalAgentInitializationError(error) || isContentFilterError(error)) {
         throw error;
       }
-      logger.error('Error loading tools for agent ' + agentId, error);
+      logger.error('Error loading tools for agent ' + agentId, getSafeErrorMetadata(error));
     }
   };
 }
@@ -168,6 +190,39 @@ function convertMessages(messages) {
 }
 
 /**
+ * Collect file-derived context exactly as it will be exposed to the model.
+ * Dynamic tool context uses the same synthesis as packages/api/src/agents/run.ts.
+ * @param {Array} agents
+ * @returns {Array}
+ */
+function collectModelBoundAgentFiles(agents) {
+  const files = [];
+  const seenFiles = new Set();
+  for (const agent of agents) {
+    for (const attachment of [
+      ...(agent?.attachments ?? []),
+      ...(agent?.requestAttachments ?? []),
+      ...(agent?.agentContextAttachments ?? []),
+    ]) {
+      if (attachment == null || seenFiles.has(attachment)) {
+        continue;
+      }
+      seenFiles.add(attachment);
+      files.push(attachment);
+    }
+
+    const dynamicToolInstructions = Object.values(agent?.dynamicToolContextMap ?? {})
+      .filter((value) => typeof value === 'string' && value !== '')
+      .join('\n')
+      .trim();
+    if (dynamicToolInstructions !== '') {
+      files.push({ content: dynamicToolInstructions });
+    }
+  }
+  return files;
+}
+
+/**
  * Send an error response in OpenAI format
  */
 function sendErrorResponse(res, statusCode, message, type = 'invalid_request_error', code = null) {
@@ -190,6 +245,79 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
   // but all request-body reads now observe the detached envelope payload.
   req.body = request;
   const agentId = request.model;
+  const manualSkills = extractManualSkills(req.body);
+
+  const uninspectableField = getBlockedOpaqueFileField(appConfig?.filters, request.messages);
+  if (uninspectableField != null) {
+    const blockResponse = contentFilterUninspectableResponse(uninspectableField);
+    return sendErrorResponse(
+      res,
+      400,
+      blockResponse.message,
+      'invalid_request_error',
+      blockResponse.error,
+    );
+  }
+
+  const messageFragments = [];
+  const traversalErrors = [];
+  try {
+    for (const fragment of extractMessageContent(request.messages)) {
+      messageFragments.push(fragment);
+    }
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    messageFragments.push(...getContentTraversalFragments(error));
+    traversalErrors.push(error);
+  }
+  try {
+    messageFragments.push(...extractModelParameterContent(request));
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    messageFragments.push(...getContentTraversalFragments(error));
+    traversalErrors.push(error);
+  }
+  const contentFinding = inspectContent(
+    [...messageFragments, ...(manualSkills ?? []).flatMap((name) => extractSkillContent({ name }))],
+    {
+      filters: appConfig?.filters,
+      legacyPii: appConfig?.messageFilter?.pii,
+    },
+  );
+  if (contentFinding != null) {
+    const isLegacyFilter = contentFinding.detectorId === 'legacy-pattern';
+    const blockResponse = contentFilterBlockResponse(contentFinding);
+    return sendErrorResponse(
+      res,
+      400,
+      isLegacyFilter
+        ? `Message contains a ${contentFinding.label}. Remove it and try again.`
+        : blockResponse.message,
+      'invalid_request_error',
+      isLegacyFilter ? 'message_filter_pii_block' : blockResponse.error,
+    );
+  }
+  const traversalError = traversalErrors.find((error) =>
+    isContentTraversalProtected({
+      error,
+      filters: appConfig?.filters,
+      legacyPii: appConfig?.messageFilter?.pii,
+      roles: request.messages.map((message) => message?.role),
+    }),
+  );
+  if (traversalError != null) {
+    return sendErrorResponse(
+      res,
+      traversalError.statusCode,
+      traversalError.body.message,
+      'invalid_request_error',
+      traversalError.body.error,
+    );
+  }
 
   // Look up the agent
   const agent = await db.getAgent({ id: agentId });
@@ -200,19 +328,6 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       `Agent not found: ${agentId}`,
       'invalid_request_error',
       'model_not_found',
-    );
-  }
-
-  const piiHit = findPiiMatchInMessages(request.messages, appConfig?.messageFilter?.pii);
-  if (piiHit != null) {
-    return sendErrorResponse(
-      res,
-      400,
-      piiHit.misconfigured
-        ? 'Message filtering is misconfigured; contact your administrator.'
-        : `Message contains a ${piiHit.label}. Remove it and try again.`,
-      'invalid_request_error',
-      'message_filter_pii_block',
     );
   }
 
@@ -337,8 +452,6 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       getUserById: db.getUserById,
       accessibleSkillIds,
     });
-
-    const manualSkills = extractManualSkills(request);
 
     const primaryScopedSkillIds = resolveAgentScopedSkillIds({
       agent,
@@ -502,6 +615,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     }
 
     primaryConfig.edges = discoveredEdges;
+    const runAgents = [primaryConfig, ...handoffAgentConfigs.values()];
     const endpointTokenConfigByAgentId = new Map();
     for (const [agentId, context] of agentToolContexts) {
       endpointTokenConfigByAgentId.set(agentId, context.endpointTokenConfig);
@@ -512,6 +626,32 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         byAgentId: endpointTokenConfigByAgentId,
         fallback: primaryConfig.endpointTokenConfig,
       });
+    const modelBoundAgentsById = new Map();
+    const pendingModelBoundAgents = [...runAgents];
+    for (let index = 0; index < pendingModelBoundAgents.length; index++) {
+      const runAgent = pendingModelBoundAgents[index];
+      if (!runAgent?.id || modelBoundAgentsById.has(runAgent.id)) {
+        continue;
+      }
+      modelBoundAgentsById.set(runAgent.id, runAgent);
+      for (const subagent of runAgent.subagentAgentConfigs?.values?.() ?? []) {
+        pendingModelBoundAgents.push(subagent);
+      }
+      for (const graph of runAgent.subagentGraphConfigs ?? []) {
+        pendingModelBoundAgents.push(...graph.memberConfigs);
+      }
+    }
+    const modelBoundAgents = [...modelBoundAgentsById.values()];
+    const manualSkillPrimes = primaryConfig.manualSkillPrimes;
+    const alwaysApplySkillPrimes = primaryConfig.alwaysApplySkillPrimes;
+    assertModelBoundContent({
+      filters: appConfig?.filters,
+      legacyPii: appConfig?.messageFilter?.pii,
+      submittedMessages: request.messages,
+      agents: modelBoundAgents,
+      skills: [...(manualSkillPrimes ?? []), ...(alwaysApplySkillPrimes ?? [])],
+      files: collectModelBoundAgentFiles(modelBoundAgents),
+    });
 
     // Determine if streaming is enabled (check both request and agent config)
     const streamingDisabled = !!primaryConfig.model_parameters?.disableStreaming;
@@ -520,12 +660,6 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     // Create tracker for streaming or aggregator for non-streaming
     const tracker = isStreaming ? createOpenAIStreamTracker() : null;
     const aggregator = isStreaming ? null : createOpenAIContentAggregator();
-    const accumulateResponseUsage = (usage) => {
-      const target = isStreaming ? tracker : aggregator;
-      target.usage.promptTokens += usage.input_tokens ?? 0;
-      target.usage.completionTokens += usage.output_tokens ?? 0;
-    };
-
     // Set up response for streaming
     if (isStreaming) {
       res.setHeader('Content-Type', 'text/event-stream');
@@ -562,7 +696,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
        agent never gains sandbox access even if the admin enabled the
        capability globally. */
     const toolExecuteOptions = {
-      loadTools: async (toolNames, agentId) => {
+      loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
         const ctx = agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
         const result = await loadToolsForExecution({
           req,
@@ -574,6 +708,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
           agent: ctx.agent ?? agent,
           signal: abortController.signal,
           toolRegistry: ctx.toolRegistry,
+          callerCapabilityProjection,
           backgroundToolNames: ctx.backgroundToolNames,
           intentToolNames: ctx.intentToolNames,
           mcpAvailableTools: ctx.mcpAvailableTools,
@@ -610,8 +745,6 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
      * LibreChat-style card SSE events don't apply here; only the
      * message-context part carries over.
      */
-    const manualSkillPrimes = primaryConfig.manualSkillPrimes;
-    const alwaysApplySkillPrimes = primaryConfig.alwaysApplySkillPrimes;
     if (
       (manualSkillPrimes && manualSkillPrimes.length > 0) ||
       (alwaysApplySkillPrimes && alwaysApplySkillPrimes.length > 0)
@@ -777,12 +910,12 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
 
       // Usage tracking
       on_chat_model_end: {
-        handle: (_event, data, metadata) => {
+        handle: (_event, data, metadata, graph) => {
           const usage = data?.output?.usage_metadata;
           if (usage) {
-            const taggedUsage = markSummarizationUsage(usage, metadata);
+            const agentContext = graph?.getAgentContext?.(metadata);
+            const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
             collectedUsage.push(taggedUsage);
-            accumulateResponseUsage(taggedUsage);
           }
         },
       },
@@ -807,7 +940,6 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     // the primary and any discovered handoff sub-agents)
     const userMCPAuthMap = discoveredMCPAuthMap ?? primaryConfig.userMCPAuthMap;
 
-    const runAgents = [primaryConfig, ...handoffAgentConfigs.values()];
     const contextAgentsById = new Map(runAgents.map((runAgent) => [runAgent.id, runAgent]));
     for (const runAgent of runAgents) {
       for (const graph of runAgent.subagentGraphConfigs ?? []) {
@@ -863,7 +995,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       tenantId: principal.tenantId,
       /** Bills subagent child-run model calls (reported outside the
        *  streamEvents loop) into the same collectedUsage array. */
-      subagentUsageSink: createSubagentUsageSink(collectedUsage, accumulateResponseUsage),
+      subagentUsageSink: createSubagentUsageSink(collectedUsage),
     });
 
     if (!run) {
@@ -888,7 +1020,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     await run.processStream({ messages: formattedMessages }, config, {
       callbacks: {
         [Callback.TOOL_ERROR]: (graph, error, toolId) => {
-          logger.error(`[OpenAI API] Tool Error "${toolId}"`, error);
+          logger.error(`[OpenAI API] Tool Error "${toolId}"`, getSafeErrorMetadata(error));
         },
       },
     });
@@ -916,20 +1048,25 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         resolveEndpointTokenConfig,
       },
     ).catch((err) => {
-      logger.error('[OpenAI API] Error recording usage:', err);
+      logger.error('[OpenAI API] Error recording usage:', getSafeErrorMetadata(err));
     });
+
+    const usage = buildCompletionUsage(collectedUsage);
 
     // Finalize response
     const duration = Date.now() - requestStartTime;
     if (isStreaming) {
-      sendFinalChunk(handlerConfig);
+      sendFinalChunk(handlerConfig, 'stop', usage);
       res.end();
       logger.debug(`[OpenAI API] Response ${responseId} completed in ${duration}ms (streaming)`);
 
       // Wait for artifact processing after response ends (non-blocking)
       if (artifactPromises.length > 0) {
         Promise.all(artifactPromises).catch((artifactError) => {
-          logger.warn('[OpenAI API] Error processing artifacts:', artifactError);
+          logger.warn(
+            '[OpenAI API] Error processing artifacts:',
+            getSafeErrorMetadata(artifactError),
+          );
         });
       }
     } else {
@@ -938,21 +1075,11 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         try {
           await Promise.all(artifactPromises);
         } catch (artifactError) {
-          logger.warn('[OpenAI API] Error processing artifacts:', artifactError);
+          logger.warn(
+            '[OpenAI API] Error processing artifacts:',
+            getSafeErrorMetadata(artifactError),
+          );
         }
-      }
-
-      // Build usage from aggregated data
-      const usage = {
-        prompt_tokens: aggregator.usage.promptTokens,
-        completion_tokens: aggregator.usage.completionTokens,
-        total_tokens: aggregator.usage.promptTokens + aggregator.usage.completionTokens,
-      };
-
-      if (aggregator.usage.reasoningTokens > 0) {
-        usage.completion_tokens_details = {
-          reasoning_tokens: aggregator.usage.reasoningTokens,
-        };
       }
 
       const response = buildNonStreamingResponse(
@@ -968,8 +1095,12 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       );
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'An error occurred';
-    logger.error('[OpenAI API] Error:', error);
+    logger.error('[OpenAI API] Error:', getSafeErrorMetadata(error));
+    const protectionEnabled = hasModelBoundContentProtection(
+      appConfig?.filters,
+      appConfig?.messageFilter?.pii,
+    );
+    const errorMessage = getUserFacingProviderError(error, protectionEnabled);
 
     // Check if we already started streaming (headers sent)
     if (res.headersSent) {
@@ -979,6 +1110,15 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       writeSSE(res, '[DONE]');
       res.end();
     } else {
+      if (isContentFilterError(error)) {
+        return sendErrorResponse(
+          res,
+          error.statusCode,
+          error.body.message,
+          'invalid_request_error',
+          error.body.error,
+        );
+      }
       // Forward upstream provider status codes (e.g., Anthropic 400s) instead of masking as 500
       const statusCode =
         typeof error?.status === 'number' && error.status >= 400 && error.status < 600
@@ -986,7 +1126,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
           : 500;
       const errorType =
         statusCode >= 400 && statusCode < 500 ? 'invalid_request_error' : 'server_error';
-      const errorCode = typeof error?.code === 'string' ? error.code : null;
+      const errorCode = !protectionEnabled && typeof error?.code === 'string' ? error.code : null;
       sendErrorResponse(res, statusCode, errorMessage, errorType, errorCode);
     }
   }
@@ -1072,7 +1212,7 @@ const ListModelsController = async (req, res) => {
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to list models';
-    logger.error('[OpenAI API] Error listing models:', error);
+    logger.error('[OpenAI API] Error listing models:', getSafeErrorMetadata(error));
     sendErrorResponse(res, 500, errorMessage, 'server_error');
   }
 };
@@ -1139,7 +1279,7 @@ const GetModelController = async (req, res) => {
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to get model';
-    logger.error('[OpenAI API] Error getting model:', error);
+    logger.error('[OpenAI API] Error getting model:', getSafeErrorMetadata(error));
     sendErrorResponse(res, 500, errorMessage, 'server_error');
   }
 };

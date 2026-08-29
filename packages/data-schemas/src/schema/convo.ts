@@ -1,4 +1,11 @@
 import { Schema } from 'mongoose';
+import {
+  MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS,
+  MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
+  MAX_AGENT_EVENT_ACTOR_SKILLS,
+  MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
+  MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH,
+} from '~/types/convo';
 import { conversationPreset } from './defaults';
 import { IConversation } from '~/types';
 
@@ -49,6 +56,209 @@ const convoSchema: Schema<IConversation> = new Schema(
         token: { type: String, required: true },
         taskId: { type: String, required: true },
         expiresAt: { type: Date, required: true },
+      },
+      _id: false,
+      default: undefined,
+      select: false,
+    },
+    /** Authenticated event sources address child actors through this opaque binding.
+     * The source never supplies the stored agent/thread target during delivery. */
+    agentEventBinding: {
+      type: {
+        bindingId: { type: String, required: true },
+        sourceKeyId: { type: String, required: true },
+        actorId: { type: String, required: true },
+      },
+      _id: false,
+      default: undefined,
+      select: false,
+    },
+    /** Committed event-actor state. Invocation forks live in the checkpointer;
+     * only the current and previous committed identities live with the binding. */
+    agentEventActor: {
+      type: {
+        generation: { type: Number, min: 1, required: true },
+        checkpoint: {
+          type: {
+            threadId: { type: String, required: true },
+            checkpointId: { type: String, required: true },
+            checkpointNs: { type: String, required: true },
+          },
+          _id: false,
+          required: true,
+        },
+        contextFingerprint: {
+          type: {
+            algorithm: { type: String, enum: ['sha256'], required: true },
+            version: { type: Number, min: 1, required: true },
+            digest: { type: String, required: true },
+          },
+          _id: false,
+          default: undefined,
+        },
+        skillManifest: {
+          type: [
+            {
+              id: { type: String, required: true },
+              name: { type: String, required: true },
+              version: { type: Number, min: 1, required: true },
+              contentDigest: { type: String, default: undefined },
+              _id: false,
+            },
+          ],
+          default: undefined,
+          validate: {
+            validator: (skills: unknown[]) => skills.length <= MAX_AGENT_EVENT_ACTOR_SKILLS,
+            message: `Event actor Skill manifest exceeds ${MAX_AGENT_EVENT_ACTOR_SKILLS}`,
+          },
+        },
+        discoveredToolNames: {
+          type: [{ type: String, maxlength: MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH }],
+          default: undefined,
+          validate: {
+            validator: (names: unknown[]) => names.length <= MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS,
+            message: `Event actor discovered-tool state exceeds ${MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS}`,
+          },
+        },
+        summary: {
+          type: {
+            text: {
+              type: String,
+              required: true,
+              maxlength: MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
+            },
+            tokenCount: { type: Number, min: 0, required: true },
+          },
+          _id: false,
+          default: undefined,
+        },
+        contextMeta: {
+          type: {
+            calibrationRatio: { type: Number, min: 0.5, max: 5, required: true },
+            encoding: {
+              type: String,
+              maxlength: MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
+              default: undefined,
+            },
+          },
+          _id: false,
+          default: undefined,
+        },
+        previousCheckpoint: {
+          type: {
+            threadId: { type: String, required: true },
+            checkpointId: { type: String, required: true },
+            checkpointNs: { type: String, required: true },
+          },
+          _id: false,
+          default: undefined,
+        },
+        requiresColdStart: { type: Boolean, default: undefined },
+      },
+      _id: false,
+      default: undefined,
+      select: false,
+    },
+    /** Fail-closed invocation proof. Active records block later turns through checkpoint,
+     * history, and outcome settlement; settled receipts no longer block new IDs but keep
+     * delayed owners from reacquiring an invocation that already applied its action. */
+    agentEventActorReconciliations: {
+      type: [
+        {
+          invocationId: { type: String, required: true },
+          actionAdmitted: { type: Boolean, default: undefined },
+          status: {
+            type: String,
+            enum: [
+              'invocation_pending',
+              'persistence_pending',
+              'history_persisted',
+              'commit_conflict',
+              'commit_indeterminate',
+              'persistence_failed',
+              'settled',
+            ],
+            required: true,
+          },
+          checkpoint: {
+            type: {
+              threadId: { type: String, required: true },
+              checkpointId: { type: String, default: undefined },
+              checkpointNs: { type: String, required: true },
+            },
+            _id: false,
+            required: true,
+          },
+          action: {
+            type: {
+              toolName: { type: String, required: true },
+              toolCallId: { type: String, default: undefined },
+            },
+            _id: false,
+            required: true,
+          },
+          error: { type: String, default: undefined },
+          resolution: {
+            type: String,
+            enum: ['checkpoint_verified', 'action_compensated', 'history_repaired'],
+            default: undefined,
+          },
+          observedAt: { type: Date, required: true },
+          _id: false,
+        },
+      ],
+      default: undefined,
+      select: false,
+    },
+    /** Bumped by every legacy-path event so a concurrently prepared fork can
+     * never commit past an invalidation the head fields alone cannot show. */
+    agentEventActorEpoch: {
+      type: Number,
+      default: undefined,
+      select: false,
+    },
+    /** In-flight legacy turn. Blocks fork execution and commit until the
+     * turn's history is durable; a crash leaves it set, failing closed. */
+    agentEventActorLegacyTurn: {
+      type: {
+        token: { type: String, required: true },
+        startedAt: { type: Date, required: true },
+      },
+      _id: false,
+      default: undefined,
+      select: false,
+    },
+    /** Current SDK-issued suspended invocation. The signed evidence remains
+     * opaque/Mixed so its exact versioned JSON shape survives round trips;
+     * mirrored host fields provide bounded CAS predicates. */
+    agentEventActorSuspension: {
+      type: {
+        suspension: { type: Schema.Types.Mixed, required: true },
+        kind: {
+          type: String,
+          enum: ['human_decision', 'internal_completion'],
+          default: 'human_decision',
+        },
+        appliedAction: {
+          type: {
+            toolName: { type: String, required: true },
+            toolCallId: { type: String, default: undefined },
+          },
+          _id: false,
+          default: undefined,
+        },
+        handlingGenerationCreatedAt: { type: Number, min: 0, default: undefined },
+        actionId: { type: String, required: true },
+        jobCreatedAt: { type: Number, required: true },
+        status: { type: String, enum: ['pending', 'claimed', 'closed'], required: true },
+        resumeAttemptId: { type: String, default: undefined },
+        outcome: {
+          type: String,
+          enum: ['committed', 'stale', 'settled', 'cancelled'],
+          default: undefined,
+        },
+        closedAt: { type: Date, default: undefined },
+        observedAt: { type: Date, required: true },
       },
       _id: false,
       default: undefined,
@@ -106,6 +316,17 @@ convoSchema.index({ user: 1, isTemporary: 1, expiredAt: 1 });
 /** Owner-scoped child-thread cascade lookup used when a parent is deleted. */
 convoSchema.index({ user: 1, 'subagentThread.parentConversationId': 1 });
 convoSchema.index({ user: 1, 'subagentThreadLease.expiresAt': 1 });
+convoSchema.index(
+  { 'agentEventBinding.bindingId': 1 },
+  { unique: true, sparse: true, name: 'agent_event_binding_unique' },
+);
+convoSchema.index(
+  {
+    'agentEventActorReconciliations.status': 1,
+    'agentEventActorReconciliations.observedAt': 1,
+  },
+  { sparse: true, name: 'agent_event_actor_reconciliation_metrics' },
+);
 // index for MeiliSearch sync operations
 convoSchema.index({ _meiliIndex: 1, isTemporary: 1, expiredAt: 1 });
 

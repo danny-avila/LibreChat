@@ -28,22 +28,147 @@ env:
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
 
 jobs:
+  # Stage 2 of codegraph gating (stage 1 = backend jest in backend-review.yml). The graph decides
+  # two matrix lanes whose relevance is a reachability question: the redis-transport lane (the ten
+  # stream-boundary specs under a real Redis round-trip) and the MCP list_changed lanes. Memory
+  # shards always run. Monotone and fail-open: a lane is dropped ONLY on an explicit `false` from
+  # the service; unavailable/unconfigured/non-synchronize events keep the full matrix. Lock
+  # attribution rides along so a backend dependency bump (reaches nothing in the graph) still
+  # earns both lanes. Kill switch: repo variable CODEGRAPH_GATING=off.
+  codegraph_select:
+    name: Codegraph select
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'synchronize' &&
+      vars.CODEGRAPH_GATING != 'off' &&
+      github.event.pull_request != null &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
+    outputs:
+      decided: ${{ steps.sel.outputs.decided }}
+      e2e_include: ${{ steps.sel.outputs.e2e_include }}
+      mcp_run: ${{ steps.sel.outputs.mcp_run }}
+      e2e_skip: ${{ steps.sel.outputs.e2e_skip }}
+    steps:
+      - name: Select matrix lanes, fail open on any doubt
+        id: sel
+        env:
+          URL: ${{ secrets.CODEGRAPH_URL }}
+          TOKEN: ${{ secrets.CODEGRAPH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CHANGED: ${{ github.event.pull_request.changed_files }}
+          E2E_SKIP_ARMED: ${{ vars.CODEGRAPH_E2E_SKIP }}
+          FULL_INCLUDE: '{"include":[{"name":"memory, shard 1/3","stream_store":"memory","redis_image":"","suite":"full","shard":"1/3","artifact":"memory-1-of-3"},{"name":"memory, shard 2/3","stream_store":"memory","redis_image":"","suite":"full","shard":"2/3","artifact":"memory-2-of-3"},{"name":"memory, shard 3/3","stream_store":"memory","redis_image":"","suite":"full","shard":"3/3","artifact":"memory-3-of-3"},{"name":"redis transport","stream_store":"redis","redis_image":"redis:7-alpine","suite":"transport","shard":"","artifact":"redis-transport"}]}'
+        run: |
+          set +e
+          note() { echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
+          note "### Codegraph select — GATING (Playwright matrix lanes)"
+          if [ -z "$URL" ] || [ -z "$TOKEN" ]; then note "_no codegraph config; running FULL_"; exit 0; fi
+          # A failed or truncated page must not become a shorter file list: the pipeline would hide
+          # gh's exit status behind jq, and a partial list can turn a required lane off. Check the
+          # fetch status AND the count against the PR's own changed_files (Codex P1, #15136).
+          if ! gh api "repos/$REPO/pulls/$PR/files" --paginate \
+              --jq '.[] | {path: .filename, status, patch}' > files.ndjson; then
+            note "_could not fetch changed files; running FULL_"; exit 0
+          fi
+          jq -s . files.ndjson > files.json
+          N=$(jq 'length' files.json)
+          if [ "$N" -eq 0 ] || { [ -n "$CHANGED" ] && [ "$N" -ne "$CHANGED" ]; }; then
+            note "_changed-file list incomplete ($N of ${CHANGED:-?}); running FULL_"; exit 0
+          fi
+          jq -c --arg b "$BASE_SHA" --arg h "$HEAD_SHA" \
+            '{files: ., mode: "safe", lockBaseSha: $b, lockHeadSha: $h}' files.json > body.json
+          # curl's status is checked explicitly: a transfer that times out or truncates after a
+          # parseable body must fail open, not be honoured (Codex P1, #15136). --fail-with-body
+          # also turns HTTP errors into a failure while keeping the error text for the summary.
+          RESP=$(curl -sS --fail-with-body -m 45 -H "Authorization: Bearer $TOKEN" \
+            -H 'content-type: application/json' --data-binary @body.json "$URL/v1/select"); RC=$?
+          if [ "$RC" -ne 0 ] || [ -z "$RESP" ] || ! echo "$RESP" | jq -e '.matrix["playwright-mock"]' >/dev/null 2>&1; then
+            note "_codegraph unavailable (curl exit $RC: ${RESP:0:120}); running FULL_"
+            exit 0
+          fi
+          # A lane is skipped only on the JSON boolean false — tested inside jq, because `jq -r`
+          # prints the string "false" and the boolean identically (Codex P1, #15136). Anything
+          # else (true, null, a string, missing) runs.
+          if echo "$RESP" | jq -e '.e2e.fail_open == true' >/dev/null 2>&1; then
+            note "_fail-open decision (root/workflow/lockfile change or stale graph): everything runs_"
+          fi
+          REDIS=$(echo "$RESP" | jq -c '.matrix["playwright-mock"].redis_transport')
+          MCP=$(echo "$RESP" | jq -c '.matrix["playwright-mock"].mcp_tool_list_changed')
+          REDIS_SKIP=0; MCP_SKIP=0
+          echo "$RESP" | jq -e '.matrix["playwright-mock"].redis_transport == false' >/dev/null 2>&1 && REDIS_SKIP=1
+          echo "$RESP" | jq -e '.matrix["playwright-mock"].mcp_tool_list_changed == false' >/dev/null 2>&1 && MCP_SKIP=1
+          note "| lane | decision |"
+          note "|---|---|"
+          if [ "$REDIS_SKIP" = 1 ]; then
+            INCLUDE=$(echo "$FULL_INCLUDE" | jq -c '.include |= map(select(.suite != "transport"))')
+            note "| redis transport | skip (no reach into the stream boundary) |"
+          else
+            INCLUDE="$FULL_INCLUDE"
+            note "| redis transport | run |"
+          fi
+          if ! echo "$INCLUDE" | jq -e '.include | length >= 3' >/dev/null 2>&1; then
+            note "_matrix assembly failed; running FULL_"
+            exit 0
+          fi
+          echo "e2e_include=$INCLUDE" >> "$GITHUB_OUTPUT"
+          # Graduated per-spec skips are DARK until the operator arms repo variable
+          # CODEGRAPH_E2E_SKIP=on (the election switch — flipped only when the pre-registered
+          # resume condition holds). Even then, act only on a well-typed list from a non-fail-open
+          # decision: every entry must be a pool spec path, or nothing is skipped. The server
+          # already intersects with this PR's skippable tier and applies the streak bars
+          # (2x where history-coupled); see codegraph-poc service/graduate.ts.
+          SKIP=""
+          if [ "$E2E_SKIP_ARMED" = "on" ]; then
+            if echo "$RESP" | jq -e '(.e2e.fail_open != true) and (.e2e.graduated | type == "array" and all(.[]?; type == "string" and test("^e2e/specs/mock/[A-Za-z0-9._/-]+\\.spec\\.ts$") and (contains("..") | not)))' >/dev/null 2>&1; then
+              SKIP=$(echo "$RESP" | jq -r '[.e2e.graduated[] | sub("^e2e/"; "")] | join(" ")')
+            else
+              note "_graduated list absent or malformed; no specs skipped_"
+            fi
+          fi
+          echo "e2e_skip=$SKIP" >> "$GITHUB_OUTPUT"
+          if [ -n "$SKIP" ]; then
+            note "| graduated spec skips | $(echo "$SKIP" | wc -w | tr -d ' ') (armed) |"
+            echo "codegraph-e2e-graduated-skips: $SKIP"
+          fi
+          echo "codegraph-select: redis_transport=$REDIS mcp_tool_list_changed=$MCP matrix_entries=$(echo "$INCLUDE" | jq '.include | length')"
+          if [ "$MCP_SKIP" = 1 ]; then
+            echo "mcp_run=false" >> "$GITHUB_OUTPUT"
+            note "| MCP list_changed | skip (no reach into MCP) |"
+          else
+            echo "mcp_run=true" >> "$GITHUB_OUTPUT"
+            note "| MCP list_changed | run |"
+          fi
+          echo "decided=true" >> "$GITHUB_OUTPUT"
+          note ""
+          note "memory shards always run · kill switch: repo variable \`CODEGRAPH_GATING=off\` · full matrix on PR open and nightly"
+          exit 0
+
   e2e_shards:
     name: e2e (${{ matrix.name }})
+    needs: [codegraph_select]
     if: >-
-      github.event_name == 'schedule' ||
+      !cancelled() &&
+      (github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
       github.event.pull_request != null &&
-      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association))
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix: >-
         ${{
-          github.event_name == 'pull_request' &&
-          fromJSON('{"include":[{"name":"memory, shard 1/3","stream_store":"memory","redis_image":"","suite":"full","shard":"1/3","artifact":"memory-1-of-3"},{"name":"memory, shard 2/3","stream_store":"memory","redis_image":"","suite":"full","shard":"2/3","artifact":"memory-2-of-3"},{"name":"memory, shard 3/3","stream_store":"memory","redis_image":"","suite":"full","shard":"3/3","artifact":"memory-3-of-3"},{"name":"redis transport","stream_store":"redis","redis_image":"redis:7-alpine","suite":"transport","shard":"","artifact":"redis-transport"}]}') ||
+          (github.event_name == 'pull_request' && needs.codegraph_select.outputs.e2e_include != '' &&
+          fromJSON(needs.codegraph_select.outputs.e2e_include)) ||
+          (github.event_name == 'pull_request' &&
+          fromJSON('{"include":[{"name":"memory, shard 1/3","stream_store":"memory","redis_image":"","suite":"full","shard":"1/3","artifact":"memory-1-of-3"},{"name":"memory, shard 2/3","stream_store":"memory","redis_image":"","suite":"full","shard":"2/3","artifact":"memory-2-of-3"},{"name":"memory, shard 3/3","stream_store":"memory","redis_image":"","suite":"full","shard":"3/3","artifact":"memory-3-of-3"},{"name":"redis transport","stream_store":"redis","redis_image":"redis:7-alpine","suite":"transport","shard":"","artifact":"redis-transport"}]}')) ||
           fromJSON('{"include":[{"name":"memory, shard 1/2","stream_store":"memory","redis_image":"","suite":"full","shard":"1/2","artifact":"memory-1-of-2"},{"name":"memory, shard 2/2","stream_store":"memory","redis_image":"","suite":"full","shard":"2/2","artifact":"memory-2-of-2"},{"name":"redis, shard 1/2","stream_store":"redis","redis_image":"redis:7-alpine","suite":"full","shard":"1/2","artifact":"redis-1-of-2"},{"name":"redis, shard 2/2","stream_store":"redis","redis_image":"redis:7-alpine","suite":"full","shard":"2/2","artifact":"redis-2-of-2"}]}')
         }}
     services:
@@ -201,9 +326,33 @@ jobs:
 
       - name: Run full mock-LLM Tier-1 e2e
         if: matrix.suite == 'full'
-        run: npx playwright test --config=e2e/playwright.config.mock.ts --shard=${{ matrix.shard }}
         env:
           CI: 'true'
+          E2E_SKIP: ${{ needs.codegraph_select.outputs.e2e_skip }}
+        run: |
+          set +e
+          # Graduated-spec skipping (dark until repo var CODEGRAPH_E2E_SKIP=on upstream): subtract
+          # the earned skips from a run list derived from the tree itself, so an unknown or stale
+          # name in the skip list simply matches nothing. If subtraction would drop everything —
+          # or drops nothing — run the full shard exactly as before. Skipped specs still execute
+          # post-merge in every full-suite vote run, which is the net that catches a wrong skip.
+          RUN_ARGS=""
+          if [ -n "$E2E_SKIP" ]; then
+            KEEP=""; DROP=0
+            for spec in $(git ls-files 'e2e/specs/mock/*.spec.ts' 'e2e/specs/mock/**/*.spec.ts' | sed 's|^e2e/||' | sort -u); do
+              case "$spec" in *" "*) KEEP="$KEEP $spec"; continue;; esac
+              case " $E2E_SKIP " in
+                *" $spec "*) DROP=$((DROP+1));;
+                *) KEEP="$KEEP $spec";;
+              esac
+            done
+            if [ "$DROP" -gt 0 ] && [ -n "$KEEP" ]; then
+              RUN_ARGS="$KEEP"
+              echo "codegraph-e2e-skip: dropped $DROP graduated specs from this shard's pool"
+            fi
+          fi
+          set -e
+          npx playwright test --config=e2e/playwright.config.mock.ts --shard=${{ matrix.shard }} $RUN_ARGS
 
       - name: Run Redis stream transport e2e
         if: matrix.suite == 'transport'
@@ -231,12 +380,15 @@ jobs:
 
   mcp_tool_list_changed:
     name: MCP list_changed (replica count ${{ matrix.replicas }})
+    needs: [codegraph_select]
     if: >-
-      github.event_name == 'schedule' ||
+      !cancelled() &&
+      needs.codegraph_select.outputs.mcp_run != 'false' &&
+      (github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
       github.event.pull_request != null &&
-      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association))
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -387,11 +539,13 @@ jobs:
       (github.event_name == 'pull_request' &&
       github.event.pull_request != null &&
       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)))
-    needs: [e2e_shards, mcp_tool_list_changed]
+    needs: [codegraph_select, e2e_shards, mcp_tool_list_changed]
     runs-on: ubuntu-latest
     steps:
+      # A codegraph-skipped MCP lane reports `skipped`; that is a decision, not a failure.
       - name: Verify every Playwright job passed
         if: >-
           needs.e2e_shards.result != 'success' ||
-          needs.mcp_tool_list_changed.result != 'success'
+          (needs.mcp_tool_list_changed.result != 'success' &&
+          !(needs.mcp_tool_list_changed.result == 'skipped' && needs.codegraph_select.outputs.mcp_run == 'false'))
         run: exit 1
