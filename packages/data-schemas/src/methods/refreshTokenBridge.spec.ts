@@ -126,4 +126,30 @@ describe('RefreshTokenBridge Methods', () => {
       }),
     ).resolves.toBeNull();
   });
+
+  it('deletes only the requested user and tenant bridge hashes', async () => {
+    for (const [oldRefreshTokenHash, userId, tenantId] of [
+      ['hash-a', 'user-1', 'tenant-1'],
+      ['hash-b', 'user-1', 'tenant-1'],
+      ['hash-a', 'user-2', 'tenant-1'],
+      ['hash-a', 'user-1', 'tenant-2'],
+    ]) {
+      await methods.upsertRefreshTokenBridge({
+        oldRefreshTokenHash,
+        encryptedNewRefreshToken: `encrypted-${oldRefreshTokenHash}`,
+        userId,
+        tenantId,
+        expiresAt: new Date(Date.now() + 60000),
+      });
+    }
+
+    const result = await methods.deleteRefreshTokenBridges({
+      oldRefreshTokenHashes: ['hash-a', 'hash-b'],
+      userId: 'user-1',
+      tenantId: 'tenant-1',
+    });
+
+    expect(result.deletedCount).toBe(2);
+    expect(await mongoose.models.RefreshTokenBridge.countDocuments()).toBe(2);
+  });
 });

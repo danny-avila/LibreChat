@@ -128,7 +128,12 @@ jest.mock('./OpenIDRefreshFlight', () => ({
   createOpenIDRefreshFlightKey: jest.fn(),
   failOpenIDRefreshFlight: jest.fn(),
   waitForOpenIDRefreshFlight: jest.fn(),
-  withOpenIDRefreshFlightLease: jest.fn(({ operation }) => operation()),
+  withOpenIDRefreshFlightLease: jest.fn(({ operation }) =>
+    operation({
+      assertLeaseOwned: jest.fn().mockResolvedValue(true),
+      markLeaseSettled: jest.fn(),
+    }),
+  ),
 }));
 
 const jwt = require('jsonwebtoken');
@@ -213,7 +218,12 @@ describe('OpenIDSessionRefresh', () => {
     completeOpenIDRefreshFlight.mockResolvedValue({});
     failOpenIDRefreshFlight.mockResolvedValue({});
     waitForOpenIDRefreshFlight.mockResolvedValue(null);
-    withOpenIDRefreshFlightLease.mockImplementation(({ operation }) => operation());
+    withOpenIDRefreshFlightLease.mockImplementation(({ operation }) =>
+      operation({
+        assertLeaseOwned: jest.fn().mockResolvedValue(true),
+        markLeaseSettled: jest.fn(),
+      }),
+    );
   });
 
   describe('createOpenIDSessionTokenProvider closure no-op cases', () => {
@@ -1362,6 +1372,44 @@ describe('OpenIDSessionRefresh', () => {
 
       expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
       expect(withOpenIDRefreshFlightLease).not.toHaveBeenCalled();
+    });
+
+    it('does not mutate session state after refresh-flight ownership is lost', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const sessionTokens = {
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-lost-owner',
+      };
+      const req = buildReq(sessionTokens, 'session-lost-owner');
+      withOpenIDRefreshFlightLease.mockImplementationOnce(({ operation }) =>
+        operation({
+          assertLeaseOwned: jest
+            .fn()
+            .mockRejectedValue(new Error('OpenID refresh coordination ownership was lost')),
+          markLeaseSettled: jest.fn(),
+        }),
+      );
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        refresh_token: 'rt-rotated-by-stale-owner',
+        expires_in: 3600,
+      });
+
+      await expect(
+        refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('ownership was lost');
+
+      expect(req.session.openidTokens).toEqual(
+        expect.objectContaining({
+          accessToken: sessionTokens.accessToken,
+          idToken: sessionTokens.idToken,
+          refreshToken: sessionTokens.refreshToken,
+        }),
+      );
+      expect(req.session.save).not.toHaveBeenCalled();
+      expect(completeOpenIDRefreshFlight).not.toHaveBeenCalled();
+      expect(failOpenIDRefreshFlight).toHaveBeenCalled();
     });
 
     it('fails closed when Mongo flight acquisition is unavailable', async () => {

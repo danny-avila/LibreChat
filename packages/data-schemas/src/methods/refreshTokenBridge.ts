@@ -1,7 +1,8 @@
-import type { FilterQuery, Model, UpdateQuery } from 'mongoose';
+import type { DeleteResult, FilterQuery, Model, UpdateQuery } from 'mongoose';
 import type {
   IRefreshTokenBridge,
   RefreshTokenBridgeCreateData,
+  RefreshTokenBridgeDeleteData,
   RefreshTokenBridgeQuery,
 } from '~/types';
 import { createIndexesWithRetry } from '~/utils/retry';
@@ -24,6 +25,7 @@ export function createRefreshTokenBridgeMethods(mongoose: typeof import('mongoos
     bridgeData: RefreshTokenBridgeCreateData,
   ) => Promise<IRefreshTokenBridge | null>;
   findRefreshTokenBridge: (query: RefreshTokenBridgeQuery) => Promise<IRefreshTokenBridge | null>;
+  deleteRefreshTokenBridges: (data: RefreshTokenBridgeDeleteData) => Promise<DeleteResult>;
 } {
   let indexesPromise: Promise<void> | null = null;
 
@@ -94,9 +96,26 @@ export function createRefreshTokenBridgeMethods(mongoose: typeof import('mongoos
     }
   }
 
+  async function deleteRefreshTokenBridges(
+    data: RefreshTokenBridgeDeleteData,
+  ): Promise<DeleteResult> {
+    try {
+      const RefreshTokenBridge = getRefreshTokenBridgeModel();
+      return await RefreshTokenBridge.deleteMany({
+        oldRefreshTokenHash: { $in: data.oldRefreshTokenHashes },
+        userId: data.userId,
+        tenantId: data.tenantId ?? { $exists: false },
+      });
+    } catch (error) {
+      logger.debug('[deleteRefreshTokenBridges] Error deleting bridges:', error);
+      throw error;
+    }
+  }
+
   return {
     upsertRefreshTokenBridge,
     findRefreshTokenBridge,
+    deleteRefreshTokenBridges,
   };
 }
 

@@ -1,6 +1,5 @@
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), debug: jest.fn(), warn: jest.fn(), info: jest.fn() },
-  runAsSystem: (callback) => callback(),
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: jest.fn(),
@@ -18,7 +17,6 @@ jest.mock('~/strategies', () => ({ getOpenIdConfig: jest.fn(), getOpenIdEmail: j
 jest.mock('openid-client', () => ({ refreshTokenGrant: jest.fn() }));
 jest.mock('~/models', () => ({
   deleteAllUserSessions: jest.fn(),
-  deleteSession: jest.fn(),
   getUserById: jest.fn(),
   findSession: jest.fn(),
   updateUser: jest.fn(),
@@ -26,8 +24,16 @@ jest.mock('~/models', () => ({
 }));
 jest.mock('~/server/services/RefreshTokenBridge', () => ({
   OPENID_REFRESH_BRIDGE_GRACE_MS: 60 * 1000,
+  createRefreshTokenBridgeFlightKey: jest.fn(() => 'bridge-flight-key'),
   getRefreshTokenBridge: jest.fn(),
   storeRefreshTokenBridge: jest.fn(),
+}));
+jest.mock('~/server/services/OpenIDRefreshFlight', () => ({
+  acquireOpenIDRefreshFlight: jest.fn(),
+  completeOpenIDRefreshFlight: jest.fn(),
+  failOpenIDRefreshFlight: jest.fn(),
+  waitForOpenIDRefreshFlight: jest.fn(),
+  withOpenIDRefreshFlightLease: jest.fn(),
 }));
 jest.mock('@librechat/api', () => ({
   OPENID_EXPIRY_BUFFER_SECONDS: 30,
@@ -86,11 +92,19 @@ const {
   setAuthTokens,
 } = require('~/server/services/AuthService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
-const { getUserById, findSession, updateUser, deleteSession } = require('~/models');
+const { getUserById, findSession, updateUser } = require('~/models');
 const {
+  createRefreshTokenBridgeFlightKey,
   getRefreshTokenBridge,
   storeRefreshTokenBridge,
 } = require('~/server/services/RefreshTokenBridge');
+const {
+  acquireOpenIDRefreshFlight,
+  completeOpenIDRefreshFlight,
+  failOpenIDRefreshFlight,
+  waitForOpenIDRefreshFlight,
+  withOpenIDRefreshFlightLease,
+} = require('~/server/services/OpenIDRefreshFlight');
 
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
 const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
@@ -293,6 +307,16 @@ describe('refreshController – OpenID path', () => {
     findOpenIDUser.mockResolvedValue({ user: { ...defaultUser }, error: null, migration: false });
     getRefreshTokenBridge.mockResolvedValue(null);
     storeRefreshTokenBridge.mockResolvedValue(undefined);
+    acquireOpenIDRefreshFlight.mockResolvedValue({ acquired: true, ownerId: 'bridge-owner' });
+    completeOpenIDRefreshFlight.mockResolvedValue({ status: 'completed' });
+    failOpenIDRefreshFlight.mockResolvedValue({ status: 'failed' });
+    waitForOpenIDRefreshFlight.mockResolvedValue(null);
+    withOpenIDRefreshFlightLease.mockImplementation(({ operation }) =>
+      operation({
+        assertLeaseOwned: jest.fn().mockResolvedValue(true),
+        markLeaseSettled: jest.fn(),
+      }),
+    );
     getUserById.mockResolvedValue({
       _id: 'user-db-id',
       email: baseClaims.email,
@@ -1021,7 +1045,7 @@ describe('refreshController – OpenID path', () => {
     expect(setOpenIDAuthTokens).toHaveBeenCalledTimes(1);
     expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
       userId: 'user-db-id',
-      existingRefreshToken: 'bridged-refresh',
+      existingRefreshToken: 'stored-refresh',
       tenantId: 'tenant-1',
       openidSubject: baseClaims.sub,
       openidIssuer: baseClaims.iss,
@@ -1040,11 +1064,8 @@ describe('refreshController – OpenID path', () => {
       'user-db-id',
       'new-refresh',
       'tenant-1',
-      'bridged-refresh',
+      'stored-refresh',
     );
-    /** The stale token the browser presented is dead upstream, but its durable Session — and the
-     *  marker bound to it — would otherwise keep authorizing local image access until expiry. */
-    expect(deleteSession).toHaveBeenCalledWith({ refreshToken: 'stored-refresh' });
     const lookupIdentity = getRefreshTokenBridge.mock.calls[0][0];
     const graceIdentity = storeRefreshTokenBridge.mock.calls[0][0];
     expect(graceIdentity).toEqual(
@@ -1054,6 +1075,45 @@ describe('refreshController – OpenID path', () => {
         tenantId: lookupIdentity.tenantId,
         openidIssuer: lookupIdentity.openidIssuer,
       }),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('joins an existing stale-cookie recovery without rotating the bridged token again', async () => {
+    setOpenIDReuseCookies();
+    req.session = {};
+    const bridgeUser = {
+      _id: 'user-db-id',
+      email: baseClaims.email,
+      openidId: baseClaims.sub,
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    };
+    getUserById.mockResolvedValue(bridgeUser);
+    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    openIdClient.refreshTokenGrant.mockRejectedValueOnce(new Error('invalid_grant'));
+    acquireOpenIDRefreshFlight.mockResolvedValue({ acquired: false, ownerId: 'other-owner' });
+    waitForOpenIDRefreshFlight.mockResolvedValue({
+      tokenset: { ...mockTokenset },
+      claims: baseClaims,
+      openidIssuer: baseClaims.iss,
+    });
+
+    await refreshController(req, res);
+
+    expect(createRefreshTokenBridgeFlightKey).toHaveBeenCalledWith({
+      oldRefreshToken: 'stored-refresh',
+      userId: 'user-db-id',
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    });
+    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
+    expect(withOpenIDRefreshFlightLease).not.toHaveBeenCalled();
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(
+      expect.objectContaining({ refresh_token: 'new-refresh' }),
+      req,
+      res,
+      expect.objectContaining({ existingRefreshToken: 'stored-refresh' }),
     );
     expect(res.status).toHaveBeenCalledWith(200);
   });
@@ -1132,7 +1192,7 @@ describe('refreshController – OpenID path', () => {
 
     expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
       userId: 'user-db-id',
-      existingRefreshToken: 'bridged-refresh',
+      existingRefreshToken: 'stored-refresh',
       tenantId: 'tenant-1',
       openidSubject: baseClaims.sub,
       openidIssuer: baseClaims.iss,

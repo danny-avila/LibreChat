@@ -24,3 +24,9 @@ export interface RefreshTokenBridgeQuery {
   userId: string;
   tenantId?: string;
 }
+
+export interface RefreshTokenBridgeDeleteData {
+  oldRefreshTokenHashes: string[];
+  userId: string;
+  tenantId?: string;
+}

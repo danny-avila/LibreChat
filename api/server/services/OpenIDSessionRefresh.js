@@ -531,7 +531,14 @@ async function storeSessionSaveFailureBridge({ oldRefreshToken, newRefreshToken,
   }
 }
 
-async function performIdpRefreshGrant(req, res, user, tokenPreference, identityContext) {
+async function performIdpRefreshGrant(
+  req,
+  res,
+  user,
+  tokenPreference,
+  identityContext,
+  assertLeaseOwned,
+) {
   const sessionTokens = req?.session?.openidTokens;
   const refreshToken = sessionTokens?.refreshToken;
   if (!refreshToken) {
@@ -545,6 +552,15 @@ async function performIdpRefreshGrant(req, res, user, tokenPreference, identityC
   const refreshParams = buildOpenIDRefreshParams();
   logger.debug('[OpenIDSessionRefresh] Performing inline IdP refresh-token grant');
   const tokenset = await openIdClient.refreshTokenGrant(config, refreshToken, refreshParams);
+
+  /**
+   * A rotating grant can finish after this worker's Mongo lease was reclaimed. Re-prove
+   * ownership before mutating the Express session, cookies, bridge, or durable session so a
+   * stale owner cannot publish credentials after another worker has taken over.
+   */
+  if (assertLeaseOwned) {
+    await assertLeaseOwned();
+  }
 
   if (!tokenset?.access_token) {
     throw new Error('IdP refresh returned no access_token');
@@ -628,6 +644,11 @@ async function performIdpRefreshGrant(req, res, user, tokenPreference, identityC
     });
   }
 
+  /** Cookie/bridge synchronization may involve I/O; do not persist after losing the lease. */
+  if (assertLeaseOwned) {
+    await assertLeaseOwned();
+  }
+
   try {
     await persistSession(req);
   } catch (error) {
@@ -691,7 +712,7 @@ async function performIdpRefresh(req, res, user, tokenPreference, identityContex
   return withOpenIDRefreshFlightLease({
     key,
     ownerId: flight.ownerId,
-    operation: async () => {
+    operation: async ({ assertLeaseOwned, markLeaseSettled }) => {
       try {
         const resolvedTokens = await performIdpRefreshGrant(
           req,
@@ -699,19 +720,17 @@ async function performIdpRefresh(req, res, user, tokenPreference, identityContex
           user,
           tokenPreference,
           identityContext,
+          assertLeaseOwned,
         );
-        try {
-          await completeOpenIDRefreshFlight({
-            key,
-            ownerId: flight.ownerId,
-            tokens: resolvedTokens,
-          });
-        } catch (flightError) {
-          logger.warn('[OpenIDSessionRefresh] Failed to complete shared refresh flight', {
-            key: hashKeyForLogs(key),
-            error: flightError?.message,
-          });
+        const completedFlight = await completeOpenIDRefreshFlight({
+          key,
+          ownerId: flight.ownerId,
+          tokens: resolvedTokens,
+        });
+        if (!completedFlight) {
+          throw new Error('OpenID refresh coordination ownership was lost before completion');
         }
+        markLeaseSettled();
         return resolvedTokens;
       } catch (error) {
         try {

@@ -45,6 +45,22 @@ function hashRefreshToken(refreshToken) {
   return crypto.createHash('sha256').update(refreshToken).digest('hex');
 }
 
+function createRefreshTokenBridgeFlightKey({ oldRefreshToken, userId, tenantId, openidIssuer }) {
+  const identity = resolveBridgeIdentity({ userId, tenantId, openidIssuer });
+  if (!oldRefreshToken || !identity) {
+    return null;
+  }
+  return hashRefreshToken(
+    [
+      'bridge-recovery',
+      identity.userId,
+      identity.tenantId ?? '',
+      identity.openidIssuer ?? '',
+      hashRefreshToken(oldRefreshToken),
+    ].join('\x1f'),
+  );
+}
+
 /**
  * Stores a bridge mapping old (stale) refresh token to new (rotated) token for later
  * recovery. Called only when an inline OBO refresh rotates the token but cannot set
@@ -147,8 +163,25 @@ async function getRefreshTokenBridge({ oldRefreshToken, userId, tenantId, openid
   return decryptV2(bridge.encryptedNewRefreshToken);
 }
 
+/** Revokes recovery bridges for the supplied refresh tokens during logout/session revocation. */
+async function deleteRefreshTokenBridges({ refreshTokens, userId, tenantId }) {
+  const identity = resolveBridgeIdentity({ userId, tenantId });
+  const tokens = [...new Set((refreshTokens ?? []).filter(Boolean))];
+  if (!identity || tokens.length === 0) {
+    return null;
+  }
+
+  return db.deleteRefreshTokenBridges({
+    oldRefreshTokenHashes: tokens.map(hashRefreshToken),
+    userId: identity.userId,
+    tenantId: identity.tenantId,
+  });
+}
+
 module.exports = {
   OPENID_REFRESH_BRIDGE_GRACE_MS,
+  createRefreshTokenBridgeFlightKey,
+  deleteRefreshTokenBridges,
   storeRefreshTokenBridge,
   getRefreshTokenBridge,
   __internals: {

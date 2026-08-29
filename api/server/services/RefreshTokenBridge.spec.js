@@ -13,9 +13,17 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   math: jest.fn((_value, fallback) => fallback),
+  createRefreshTokenBridgeIdentity: ({ userId, tenantId, openidIssuer }) => ({
+    userId: userId?.trim(),
+    tenantId: tenantId?.trim() || undefined,
+    openidIssuer:
+      openidIssuer?.trim().replace('/.well-known/openid-configuration', '').replace(/\/+$/, '') ||
+      undefined,
+  }),
 }));
 
 jest.mock('~/models', () => ({
+  deleteRefreshTokenBridges: jest.fn(),
   upsertRefreshTokenBridge: jest.fn(),
   findRefreshTokenBridge: jest.fn(),
 }));
@@ -24,6 +32,8 @@ const { encryptV2, decryptV2 } = require('@librechat/data-schemas');
 const { math } = require('@librechat/api');
 const db = require('~/models');
 const {
+  createRefreshTokenBridgeFlightKey,
+  deleteRefreshTokenBridges,
   storeRefreshTokenBridge,
   getRefreshTokenBridge,
   __internals,
@@ -34,6 +44,7 @@ describe('RefreshTokenBridge', () => {
     jest.clearAllMocks();
     db.upsertRefreshTokenBridge.mockResolvedValue({});
     db.findRefreshTokenBridge.mockResolvedValue(null);
+    db.deleteRefreshTokenBridges.mockResolvedValue({ acknowledged: true, deletedCount: 1 });
   });
 
   describe('storeRefreshTokenBridge', () => {
@@ -110,6 +121,45 @@ describe('RefreshTokenBridge', () => {
       });
 
       expect(math).toHaveBeenCalledWith(process.env.REFRESH_TOKEN_EXPIRY, 604800000);
+    });
+  });
+
+  describe('coordination and revocation', () => {
+    it('creates a stable opaque flight key scoped to token and identity', () => {
+      const key = createRefreshTokenBridgeFlightKey({
+        oldRefreshToken: 'rt-old',
+        userId: ' user-123 ',
+        tenantId: ' tenant-1 ',
+        openidIssuer: 'https://issuer.example.com/',
+      });
+
+      expect(key).toHaveLength(64);
+      expect(key).not.toContain('rt-old');
+      expect(key).toBe(
+        createRefreshTokenBridgeFlightKey({
+          oldRefreshToken: 'rt-old',
+          userId: 'user-123',
+          tenantId: 'tenant-1',
+          openidIssuer: 'https://issuer.example.com',
+        }),
+      );
+    });
+
+    it('deletes bridge hashes for all distinct logout tokens', async () => {
+      await deleteRefreshTokenBridges({
+        refreshTokens: ['cookie-token', 'session-token', 'cookie-token'],
+        userId: ' user-123 ',
+        tenantId: ' tenant-1 ',
+      });
+
+      expect(db.deleteRefreshTokenBridges).toHaveBeenCalledWith({
+        oldRefreshTokenHashes: [
+          __internals.hashRefreshToken('cookie-token'),
+          __internals.hashRefreshToken('session-token'),
+        ],
+        userId: 'user-123',
+        tenantId: 'tenant-1',
+      });
     });
   });
 

@@ -2,6 +2,7 @@ const cookies = require('cookie');
 const { isEnabled, clearCloudFrontCookies } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { logoutUser } = require('~/server/services/AuthService');
+const { deleteRefreshTokenBridges } = require('~/server/services/RefreshTokenBridge');
 const { getOpenIdConfig } = require('~/strategies');
 
 /** Parses and validates OPENID_MAX_LOGOUT_URL_LENGTH, returning defaultValue on invalid input */
@@ -27,15 +28,26 @@ const logoutController = async (req, res) => {
 
   let refreshToken;
   let idToken;
+  let sessionRefreshToken;
   if (isOpenIdUser && req.session?.openidTokens) {
-    refreshToken = req.session.openidTokens.refreshToken;
+    sessionRefreshToken = req.session.openidTokens.refreshToken;
     idToken = req.session.openidTokens.idToken;
-    delete req.session.openidTokens;
   }
-  refreshToken = refreshToken || parsedCookies.refreshToken;
+  /** The browser token names the durable session and any stale-token bridge being revoked. */
+  refreshToken = parsedCookies.refreshToken || sessionRefreshToken;
   idToken = idToken || parsedCookies.openid_id_token;
 
   try {
+    if (isOpenIdUser) {
+      await deleteRefreshTokenBridges({
+        refreshTokens: [parsedCookies.refreshToken, sessionRefreshToken],
+        userId: req.user?.id ?? req.user?._id?.toString?.(),
+        tenantId: req.user?.tenantId,
+      });
+      if (req.session?.openidTokens) {
+        delete req.session.openidTokens;
+      }
+    }
     const logout = await logoutUser(req, refreshToken);
     const { status, message } = logout;
 

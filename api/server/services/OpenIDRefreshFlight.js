@@ -116,34 +116,56 @@ async function withOpenIDRefreshFlightLease({
   ttl = DEFAULT_FLIGHT_TTL_MS,
 }) {
   if (!key || !ownerId) {
-    return operation();
+    return operation({ assertLeaseOwned: async () => true, markLeaseSettled: () => {} });
   }
 
   let renewalPromise = null;
-  const heartbeat = setInterval(() => {
-    if (renewalPromise) {
-      return;
+  let ownershipLost = false;
+  let settled = false;
+  const ownershipError = () =>
+    new Error('OpenID refresh coordination ownership was lost before completion');
+
+  const renewLease = async () => {
+    if (ownershipLost) {
+      throw ownershipError();
     }
-    renewalPromise = renewOpenIDRefreshFlight({ key, ownerId, lockTtl, ttl })
-      .then((flight) => {
-        if (!flight) {
-          logger.warn('[OpenIDRefreshFlight] Refresh flight lease ownership was lost', { key });
-        }
-      })
-      .catch((error) => {
-        logger.warn('[OpenIDRefreshFlight] Failed to renew refresh flight lease', {
-          key,
-          error: error?.message,
-        });
-      })
-      .finally(() => {
+    if (!renewalPromise) {
+      renewalPromise = renewOpenIDRefreshFlight({ key, ownerId, lockTtl, ttl }).finally(() => {
         renewalPromise = null;
       });
+    }
+    const flight = await renewalPromise;
+    if (!flight) {
+      if (settled) {
+        return null;
+      }
+      ownershipLost = true;
+      throw ownershipError();
+    }
+    return flight;
+  };
+
+  const heartbeat = setInterval(() => {
+    renewLease().catch((error) => {
+      logger.warn('[OpenIDRefreshFlight] Refresh flight lease renewal failed', {
+        key,
+        error: error?.message,
+      });
+    });
   }, heartbeatInterval);
   heartbeat.unref?.();
 
   try {
-    return await operation();
+    const result = await operation({
+      assertLeaseOwned: renewLease,
+      markLeaseSettled: () => {
+        settled = true;
+      },
+    });
+    if (ownershipLost) {
+      throw ownershipError();
+    }
+    return result;
   } finally {
     clearInterval(heartbeat);
     if (renewalPromise) {

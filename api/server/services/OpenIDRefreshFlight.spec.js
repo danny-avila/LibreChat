@@ -179,6 +179,33 @@ describe('OpenIDRefreshFlight', () => {
     }
   });
 
+  it('rejects a stale owner after the heartbeat observes lease loss', async () => {
+    jest.useFakeTimers();
+    db.renewOpenIDRefreshFlight.mockResolvedValueOnce(null);
+    let finishOperation;
+    const operation = jest.fn(
+      () =>
+        new Promise((resolve) => {
+          finishOperation = resolve;
+        }),
+    );
+
+    try {
+      const resultPromise = withOpenIDRefreshFlightLease({
+        key: 'flight-key',
+        ownerId: 'owner-1',
+        heartbeatInterval: 1000,
+        operation,
+      });
+
+      await jest.advanceTimersByTimeAsync(1000);
+      finishOperation('tokens');
+      await expect(resultPromise).rejects.toThrow('ownership was lost');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('encrypts completed token results before storing them', async () => {
     const tokens = {
       access_token: 'access',
