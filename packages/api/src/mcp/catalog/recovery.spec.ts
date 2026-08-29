@@ -1,7 +1,11 @@
 import { Constants } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
-import { loadMCPServerCatalogs, recoverMCPServerCatalogs } from './recovery';
+import {
+  loadMCPServerCatalogs,
+  recoverMCPServerCatalogs,
+  createMCPCatalogRecoveryCooldown,
+} from './recovery';
 
 const user = { id: 'user-1' } as IUser;
 const serverConfig = (name: string): ParsedServerConfig =>
@@ -215,5 +219,205 @@ describe('loadMCPServerCatalogs', () => {
 
     expect(result.serverTools).toEqual(new Map([['recovered', {}]]));
     expect(result.serversWithoutTools).toEqual(['missing']);
+  });
+});
+
+describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
+  const recoveryDeps = (
+    discoverServerTools: jest.Mock,
+    userMCPAuthMap: Record<string, Record<string, string>> = {},
+  ) => ({
+    loadUserMCPAuthMap: jest.fn().mockResolvedValue(userMCPAuthMap),
+    discoverServerTools,
+    formatServerTools: jest.fn().mockReturnValue({}),
+  });
+
+  it('caps the discovery timeout so an unreachable server cannot hold the request', async () => {
+    const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
+
+    await recoverMCPServerCatalogs(
+      { user, servers: [{ serverName: 'slow', serverConfig: serverConfig('slow') }] },
+      recoveryDeps(discoverServerTools),
+    );
+
+    expect(discoverServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({ serverName: 'slow', connectionTimeout: 5000 }),
+    );
+  });
+
+  it('keeps a shorter configured initTimeout instead of raising it to the cap', async () => {
+    const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
+    const impatient = { ...serverConfig('impatient'), initTimeout: 1500 } as ParsedServerConfig;
+
+    await recoverMCPServerCatalogs(
+      { user, servers: [{ serverName: 'impatient', serverConfig: impatient }] },
+      recoveryDeps(discoverServerTools),
+    );
+
+    expect(discoverServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({ connectionTimeout: 1500 }),
+    );
+  });
+
+  it('leaves a server the config tier marked unreachable to that tier’s retry window', async () => {
+    const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
+    const deps = recoveryDeps(discoverServerTools);
+    const failed = { ...serverConfig('failed'), inspectionFailed: true } as ParsedServerConfig;
+
+    const result = await recoverMCPServerCatalogs(
+      {
+        user,
+        servers: [
+          { serverName: 'failed', serverConfig: failed },
+          { serverName: 'healthy', serverConfig: serverConfig('healthy') },
+        ],
+      },
+      deps,
+    );
+
+    expect(deps.loadUserMCPAuthMap).toHaveBeenCalledWith('user-1', ['healthy']);
+    expect(discoverServerTools).toHaveBeenCalledTimes(1);
+    expect(discoverServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({ serverName: 'healthy' }),
+    );
+    expect([...result.keys()]).toEqual(['healthy']);
+  });
+
+  it('skips a server whose user-provided variables are unset and recovers its siblings', async () => {
+    const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
+    const needsVars = {
+      ...serverConfig('needs-vars'),
+      customUserVars: { API_KEY: { title: 'API key', description: 'Server API key' } },
+    } as ParsedServerConfig;
+
+    const result = await recoverMCPServerCatalogs(
+      {
+        user,
+        servers: [
+          { serverName: 'needs-vars', serverConfig: needsVars },
+          { serverName: 'open', serverConfig: serverConfig('open') },
+        ],
+      },
+      recoveryDeps(discoverServerTools),
+    );
+
+    expect(discoverServerTools).toHaveBeenCalledTimes(1);
+    expect(discoverServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({ serverName: 'open' }),
+    );
+    expect([...result.keys()]).toEqual(['open']);
+  });
+
+  it('discovers a server whose user-provided variables are satisfied', async () => {
+    const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
+    const needsVars = {
+      ...serverConfig('needs-vars'),
+      customUserVars: { API_KEY: { title: 'API key', description: 'Server API key' } },
+    } as ParsedServerConfig;
+
+    await recoverMCPServerCatalogs(
+      { user, servers: [{ serverName: 'needs-vars', serverConfig: needsVars }] },
+      recoveryDeps(discoverServerTools, {
+        [`${Constants.mcp_prefix}needs-vars`]: { API_KEY: 'set' },
+      }),
+    );
+
+    expect(discoverServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        serverName: 'needs-vars',
+        customUserVars: { API_KEY: 'set' },
+      }),
+    );
+  });
+
+  it('does not re-dial a server that just failed discovery', async () => {
+    const discoverServerTools = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue({ tools: [] });
+    const recoveryCooldown = createMCPCatalogRecoveryCooldown();
+    const servers = [{ serverName: 'offline', serverConfig: serverConfig('offline') }];
+    const deps = { ...recoveryDeps(discoverServerTools), recoveryCooldown };
+
+    await recoverMCPServerCatalogs({ user, servers }, deps);
+    const second = await recoverMCPServerCatalogs({ user, servers }, deps);
+
+    expect(discoverServerTools).toHaveBeenCalledTimes(1);
+    expect(second.size).toBe(0);
+  });
+
+  it('keeps re-dialing a server that recovers successfully', async () => {
+    const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
+    const recoveryCooldown = createMCPCatalogRecoveryCooldown();
+    const servers = [{ serverName: 'healthy', serverConfig: serverConfig('healthy') }];
+    const deps = { ...recoveryDeps(discoverServerTools), recoveryCooldown };
+
+    await recoverMCPServerCatalogs({ user, servers }, deps);
+    await recoverMCPServerCatalogs({ user, servers }, deps);
+
+    expect(discoverServerTools).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips the auth lookup entirely when every cold server is ineligible', async () => {
+    const discoverServerTools = jest.fn();
+    const deps = recoveryDeps(discoverServerTools);
+    const failed = { ...serverConfig('failed'), inspectionFailed: true } as ParsedServerConfig;
+
+    const result = await recoverMCPServerCatalogs(
+      { user, servers: [{ serverName: 'failed', serverConfig: failed }] },
+      deps,
+    );
+
+    expect(deps.loadUserMCPAuthMap).not.toHaveBeenCalled();
+    expect(discoverServerTools).not.toHaveBeenCalled();
+    expect(result.size).toBe(0);
+  });
+});
+
+describe('createMCPCatalogRecoveryCooldown', () => {
+  it('holds a failure for the cooldown window and releases it afterwards', () => {
+    jest.useFakeTimers();
+    try {
+      const cooldown = createMCPCatalogRecoveryCooldown(60_000);
+      cooldown.recordFailure('user-1', 'alpha');
+
+      expect(cooldown.isCoolingDown('user-1', 'alpha')).toBe(true);
+      jest.advanceTimersByTime(59_000);
+      expect(cooldown.isCoolingDown('user-1', 'alpha')).toBe(true);
+      jest.advanceTimersByTime(2_000);
+      expect(cooldown.isCoolingDown('user-1', 'alpha')).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('scopes failures per user and per server, and clears them on success', () => {
+    const cooldown = createMCPCatalogRecoveryCooldown(60_000);
+    cooldown.recordFailure('user-1', 'alpha');
+
+    expect(cooldown.isCoolingDown('user-1', 'beta')).toBe(false);
+    expect(cooldown.isCoolingDown('user-2', 'alpha')).toBe(false);
+
+    cooldown.recordSuccess('user-1', 'alpha');
+    expect(cooldown.isCoolingDown('user-1', 'alpha')).toBe(false);
+  });
+
+  it('sweeps expired entries so the failure map cannot grow without bound', () => {
+    jest.useFakeTimers();
+    try {
+      const cooldown = createMCPCatalogRecoveryCooldown(60_000);
+      for (let i = 0; i < 50; i++) {
+        cooldown.recordFailure(`user-${i}`, 'alpha');
+      }
+      jest.advanceTimersByTime(61_000);
+      cooldown.recordFailure('user-current', 'alpha');
+
+      expect(cooldown.isCoolingDown('user-current', 'alpha')).toBe(true);
+      for (let i = 0; i < 50; i++) {
+        expect(cooldown.isCoolingDown(`user-${i}`, 'alpha')).toBe(false);
+      }
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

@@ -124,6 +124,28 @@ describe('loadMCPServerCatalogs', () => {
       serversWithoutTools: [],
     });
   });
+
+  it('shares one failure cooldown across requests so a cold server is not re-dialed', async () => {
+    const user = { id: 'user-123' };
+    const servers = [
+      { serverName: 'offline', serverConfig: { type: 'sse', url: 'https://offline.example/sse' } },
+    ];
+    const cooldowns = [];
+    mockLoadCatalogs.mockImplementation(async (_params, deps) => {
+      cooldowns.push(deps.recoveryCooldown);
+      return { serverTools: new Map(), serversWithoutTools: ['offline'] };
+    });
+
+    await loadMCPServerCatalogs({ user, servers });
+    await loadMCPServerCatalogs({ user, servers });
+
+    expect(cooldowns[0]).toBeDefined();
+    expect(cooldowns[1]).toBe(cooldowns[0]);
+    expect(cooldowns[0].isCoolingDown(user.id, 'offline')).toBe(false);
+    cooldowns[0].recordFailure(user.id, 'offline');
+    expect(cooldowns[0].isCoolingDown(user.id, 'offline')).toBe(true);
+    cooldowns[0].recordSuccess(user.id, 'offline');
+  });
 });
 
 describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
