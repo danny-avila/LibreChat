@@ -38,6 +38,7 @@ const {
   requiresOAuthMachinery,
   hasRuntimeUrlPlaceholders,
   containsGraphTokenPlaceholder,
+  createAuthIdentityContext,
   isOAuthServer,
   OpenIDReauthRequiredError,
 } = require('@librechat/api');
@@ -60,6 +61,7 @@ const { findToken, createToken, updateToken, deleteTokens, findPluginAuthsByKeys
 const { getGraphApiToken } = require('./GraphTokenService');
 const { exchangeOboToken } = require('./OboTokenService');
 const { createOboTrustChecker } = require('./OboPolicyService');
+const { createOpenIDSessionTokenProvider } = require('./OpenIDSessionRefresh');
 const { reinitMCPServer } = require('./Tools/mcp');
 const {
   getAppConfig,
@@ -399,11 +401,27 @@ async function getAssistantToolDefinitions({ req, tools }) {
           servers: [serverName],
           findPluginAuthsByKeys,
         });
+        /**
+         * An OBO server refuses to connect without a live upstream-token closure, so this
+         * recovery has to carry one like every other reinit path. There is no `res` on an
+         * assistant write; a refresh that rotates the token falls back to the recovery bridge.
+         */
+        const oboIdentityContext = createAuthIdentityContext({
+          user: req.user,
+          tenantId: getTenantId(),
+        });
         const result = await reinitMCPServer({
           user: req.user,
           serverName,
           serverConfig,
           userMCPAuthMap,
+          upstreamTokenProvider: createOpenIDSessionTokenProvider({
+            req,
+            user: req.user,
+            identityContext: oboIdentityContext,
+            tokenPreference: 'access_token',
+          }),
+          oboIdentityContext,
         });
         return result?.availableTools ?? null;
       },

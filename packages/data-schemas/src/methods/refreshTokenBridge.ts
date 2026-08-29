@@ -4,6 +4,7 @@ import type {
   RefreshTokenBridgeCreateData,
   RefreshTokenBridgeQuery,
 } from '~/types';
+import { createIndexesWithRetry } from '~/utils/retry';
 import logger from '~/config/winston';
 
 function bridgeFilter({
@@ -27,9 +28,30 @@ export function createRefreshTokenBridgeMethods(mongoose: typeof import('mongoos
   const getRefreshTokenBridgeModel = () =>
     mongoose.models.RefreshTokenBridge as Model<IRefreshTokenBridge>;
 
+  let indexesPromise: Promise<void> | null = null;
+
+  /**
+   * A bridge holds an encrypted refresh token, and the TTL index is the only thing that ever
+   * deletes one. `MONGO_AUTO_INDEX=false` is a supported deployment setting, and under it Mongoose
+   * builds neither that index nor the compound uniqueness the upsert relies on — so bridges would
+   * accumulate for the life of the collection and concurrent writes could leave duplicates. The
+   * indexes are therefore installed before the first write, and a failed build is retried on the
+   * next attempt rather than cached.
+   */
+  function ensureIndexes(): Promise<void> {
+    if (!indexesPromise) {
+      indexesPromise = createIndexesWithRetry(getRefreshTokenBridgeModel()).catch((error) => {
+        indexesPromise = null;
+        throw error;
+      });
+    }
+    return indexesPromise;
+  }
+
   async function upsertRefreshTokenBridge(
     bridgeData: RefreshTokenBridgeCreateData,
   ): Promise<IRefreshTokenBridge | null> {
+    await ensureIndexes();
     try {
       const RefreshTokenBridge = getRefreshTokenBridgeModel();
       const filter = bridgeFilter(bridgeData);

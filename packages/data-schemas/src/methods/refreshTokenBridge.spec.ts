@@ -19,7 +19,6 @@ beforeAll(async () => {
   if (!mongoose.models.RefreshTokenBridge) {
     mongoose.model<t.IRefreshTokenBridge>('RefreshTokenBridge', refreshTokenBridgeSchema);
   }
-  methods = createRefreshTokenBridgeMethods(mongoose);
 });
 
 afterAll(async () => {
@@ -29,6 +28,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await mongoose.connection.dropDatabase();
+  methods = createRefreshTokenBridgeMethods(mongoose);
 });
 
 describe('RefreshTokenBridge Methods', () => {
@@ -42,6 +42,28 @@ describe('RefreshTokenBridge Methods', () => {
       tenantId: 1,
       openidIssuer: 1,
     });
+  });
+
+  /** The TTL index is the only thing that deletes a bridge, and a bridge holds an encrypted
+   *  refresh token — so a deployment with `MONGO_AUTO_INDEX=false` must not silently keep them. */
+  it('creates the lookup and TTL indexes before the first write', async () => {
+    await methods.upsertRefreshTokenBridge({
+      oldRefreshTokenHash: 'old-hash',
+      encryptedNewRefreshToken: 'encrypted-new',
+      userId: 'user-1',
+      expiresAt: new Date(Date.now() + 60000),
+    });
+
+    const indexes = await mongoose.models.RefreshTokenBridge.listIndexes();
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: { oldRefreshTokenHash: 1, userId: 1, tenantId: 1 },
+          unique: true,
+        }),
+        expect.objectContaining({ key: { expiresAt: 1 }, expireAfterSeconds: 0 }),
+      ]),
+    );
   });
 
   it('upserts and finds a bridge by old token hash, user, and tenant', async () => {
