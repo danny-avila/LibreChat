@@ -2,7 +2,6 @@ import express from 'express';
 import request from 'supertest';
 import { logger } from '@librechat/data-schemas';
 import type { NextFunction, Request, Response } from 'express';
-import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import {
   detectGenerationRetry,
   generationRetryLimiter,
@@ -11,6 +10,7 @@ import {
   GENERATION_RETRY_PROBE_MAX,
   isConfirmedGenerationRetry,
 } from './generationRetry';
+import { GenerationJobManager } from '~/stream/GenerationJobManager';
 
 function generationRequest(overrides: Partial<Request> = {}): Request {
   return {

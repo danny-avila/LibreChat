@@ -68,11 +68,7 @@ describe('InMemoryJobStore.claimIdempotencyKey', () => {
     jest.useFakeTimers();
     try {
       jest.setSystemTime(new Date('2026-08-29T00:00:00Z'));
-      await store.claimIdempotencyKey(
-        'user:expired',
-        { streamId: 's1', conversationId: 'c1' },
-        1,
-      );
+      await store.claimIdempotencyKey('user:expired', { streamId: 's1', conversationId: 'c1' }, 1);
       await expect(store.hasIdempotencyKey('user:expired')).resolves.toBe(true);
 
       jest.setSystemTime(new Date('2026-08-29T00:00:02Z'));
