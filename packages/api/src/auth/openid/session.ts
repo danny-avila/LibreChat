@@ -697,6 +697,17 @@ export function createOpenIDSessionRefreshService(deps: any): any {
       nextAccessTokenExp = decodeJwtExp(tokenset.access_token);
     }
 
+    /**
+     * `normalizeExpiresIn` preserves a zero or negative lifetime rather than discarding it, so a
+     * grant can succeed while declaring a credential that is already spent. Publishing it rotates
+     * the refresh token and hands the caller a token every freshness check rejects, which turns
+     * each OBO call into another rotation. An unknown expiry is not an elapsed one and still
+     * publishes.
+     */
+    if (nextAccessTokenExp != null && nextAccessTokenExp <= Math.floor(Date.now() / 1000)) {
+      throw new Error('IdP refresh returned an already-expired access_token');
+    }
+
     const updatedSessionTokens = {
       ...sessionTokens,
       accessToken: tokenset.access_token,

@@ -837,6 +837,41 @@ describe('OpenIDSessionRefresh', () => {
       expect(setOpenIDMarkerCookies).not.toHaveBeenCalled();
     });
 
+    it('rejects a grant whose declared access-token lifetime has already elapsed', async () => {
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: 'opaque-and-already-spent',
+        id_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        refresh_token: 'rt-rotated',
+        expires_in: 0,
+      });
+      const req = buildReq(buildExpiredSession('rt-old'));
+      const res = buildRes({ headersSent: false });
+
+      await expect(
+        refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('already-expired access_token');
+
+      expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+      expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
+      expect(storeOpenIdSession).not.toHaveBeenCalled();
+      expect(req.session.openidTokens.refreshToken).toBe('rt-old');
+    });
+
+    it('publishes a grant whose access-token lifetime is unknown', async () => {
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: 'opaque-unknown-lifetime',
+        id_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        refresh_token: 'rt-rotated',
+      });
+      const req = buildReq(buildExpiredSession('rt-old'));
+      const res = buildRes({ headersSent: false });
+
+      await refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token');
+
+      expect(req.session.openidTokens.refreshToken).toBe('rt-rotated');
+      expect(req.session.openidTokens.accessTokenExpiresAt).toBeUndefined();
+    });
+
     it('repairs a stale browser cookie when a stable refresh omits refresh_token', async () => {
       const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
       openIdClient.refreshTokenGrant.mockResolvedValueOnce({

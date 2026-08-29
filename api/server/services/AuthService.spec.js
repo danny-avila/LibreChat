@@ -472,6 +472,43 @@ describe('setOpenIDAuthTokens', () => {
       expect(req.session.openidTokens.accessToken).toBe('new-access-token');
     });
 
+    it('falls back to access_token when the refresh carried an expired id_token forward', () => {
+      const expiredIdToken = jwt.sign(
+        { sub: 'user-123', exp: Math.floor(Date.now() / 1000) - 60 },
+        'idp-signing-secret',
+      );
+      const tokenset = {
+        id_token: expiredIdToken,
+        access_token: 'new-access-token',
+        refresh_token: 'new-refresh-token',
+      };
+      const req = mockRequest({
+        openidTokens: {
+          accessToken: 'old-access-token',
+          idToken: expiredIdToken,
+          refreshToken: 'old-refresh-token',
+        },
+      });
+      const res = mockResponse();
+
+      const result = setOpenIDAuthTokens(tokenset, req, res, 'user-123');
+
+      expect(result).toBe('new-access-token');
+      expect(req.session.openidTokens.idToken).toBe(expiredIdToken);
+    });
+
+    it('still prefers an id_token whose expiry cannot be read', () => {
+      const tokenset = {
+        id_token: 'opaque-but-not-a-jwt',
+        access_token: 'new-access-token',
+        refresh_token: 'new-refresh-token',
+      };
+      const req = mockRequest();
+      const res = mockResponse();
+
+      expect(setOpenIDAuthTokens(tokenset, req, res, 'user-123')).toBe('opaque-but-not-a-jwt');
+    });
+
     it('should fall back to access_token when the existing session id_token is near expiry', () => {
       const nearExpiryIdToken = jwt.sign(
         { sub: 'user-123', exp: Math.floor(Date.now() / 1000) + 10 },

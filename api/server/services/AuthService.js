@@ -158,6 +158,21 @@ const getPasswordResetTokenDeleteQuery = (passwordResetToken) => {
   };
 };
 
+const isExpiredOpenIDIdToken = (idToken) => {
+  if (!idToken) {
+    return false;
+  }
+
+  const decoded = jwt.decode(idToken);
+  if (!decoded || typeof decoded !== 'object' || typeof decoded.exp !== 'number') {
+    return false;
+  }
+
+  return (
+    decoded.exp <= Math.floor(Date.now() / 1000) + OPENID_SESSION_ID_TOKEN_EXPIRY_BUFFER_SECONDS
+  );
+};
+
 const getUnexpiredOpenIDSessionIdToken = (idToken) => {
   if (!idToken) {
     return;
@@ -814,8 +829,14 @@ const setOpenIDAuthTokens = (
      * Falls back to access_token for providers where id_token is not available.
      */
     const sessionIdToken = req.session?.openidTokens?.idToken;
+    /**
+     * An inline refresh carries the previous id_token forward when the IdP omits one on
+     * rotation, so `tokenset.id_token` is not necessarily freshly issued. Skip it only when it
+     * is provably expired; an id_token whose expiry cannot be read stays preferred, since
+     * access_token may be opaque or scoped to another audience and fail JWKS validation.
+     */
     const appAuthToken =
-      tokenset.id_token ||
+      (isExpiredOpenIDIdToken(tokenset.id_token) ? undefined : tokenset.id_token) ||
       getUnexpiredOpenIDSessionIdToken(sessionIdToken) ||
       tokenset.access_token;
     const logoutIdToken = tokenset.id_token || sessionIdToken;
