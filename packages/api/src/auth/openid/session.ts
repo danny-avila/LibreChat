@@ -3,6 +3,8 @@
  * OpenID session refresh implementation. Runtime-only Express, model, and strategy dependencies
  * are supplied by the thin /api wrapper; the authentication and coordination logic lives here.
  */
+import { createOpenIDRefreshOwnershipError, isOpenIDRefreshOwnershipError } from './errors';
+
 export function createOpenIDSessionRefreshService(deps: any): any {
   const {
     jwt,
@@ -560,6 +562,19 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     try {
       await assertLeaseOwned();
     } catch (error) {
+      /**
+       * Only a proven ownership loss justifies removing what we just published. A coordination
+       * read that merely failed leaves ownership unknown, and on the headers-already-sent path
+       * this bridge is the only mapping from the token the browser still holds to the one the
+       * IdP has already rotated to — deleting it on a transient error signs the user out.
+       */
+      if (!isOpenIDRefreshOwnershipError(error)) {
+        logger.warn(
+          '[OpenIDSessionRefresh] Keeping the recovery bridge; lease ownership is undetermined',
+          { userId: bridge.userId, error: (error as Error)?.message },
+        );
+        throw error;
+      }
       try {
         await deleteRefreshTokenBridges({
           refreshTokens: [bridge.oldRefreshToken],
@@ -818,7 +833,9 @@ export function createOpenIDSessionRefreshService(deps: any): any {
             tokens: resolvedTokens,
           });
           if (!completedFlight) {
-            throw new Error('OpenID refresh coordination ownership was lost before completion');
+            throw createOpenIDRefreshOwnershipError(
+              'OpenID refresh coordination ownership was lost before completion',
+            );
           }
           markLeaseSettled();
           return resolvedTokens;

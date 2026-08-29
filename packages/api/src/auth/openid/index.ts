@@ -1,3 +1,4 @@
+export * from './errors';
 export * from './flight';
 export * from './bridge';
 export * from './recovery';

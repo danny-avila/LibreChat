@@ -206,6 +206,9 @@ const makeOpenIdUser = (overrides = {}) => ({
   ...overrides,
 });
 
+const { createOpenIDRefreshOwnershipError } = jest.requireActual('@librechat/api');
+const ownershipLost = (message) => createOpenIDRefreshOwnershipError(message);
+
 describe('OpenIDSessionRefresh', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -677,7 +680,7 @@ describe('OpenIDSessionRefresh', () => {
         .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(true)
-        .mockRejectedValueOnce(new Error('revoked by logout'));
+        .mockRejectedValueOnce(ownershipLost('revoked by logout'));
       withOpenIDRefreshFlightLease.mockImplementationOnce(({ operation }) =>
         operation({ assertLeaseOwned, markLeaseSettled: jest.fn() }),
       );
@@ -704,6 +707,34 @@ describe('OpenIDSessionRefresh', () => {
       expect(req.session.save).not.toHaveBeenCalled();
     });
 
+    it('keeps the bridge when the ownership check fails for an undetermined reason', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-rotated',
+        expires_in: 3600,
+      });
+      const assertLeaseOwned = jest
+        .fn()
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(true)
+        .mockRejectedValueOnce(new Error('connection timed out'));
+      withOpenIDRefreshFlightLease.mockImplementationOnce(({ operation }) =>
+        operation({ assertLeaseOwned, markLeaseSettled: jest.fn() }),
+      );
+      const req = buildReq(buildExpiredSession('rt-old'));
+      const res = buildRes({ headersSent: true });
+
+      await expect(
+        refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('connection timed out');
+
+      expect(storeRefreshTokenBridge).toHaveBeenCalled();
+      expect(deleteRefreshTokenBridges).not.toHaveBeenCalled();
+    });
+
     it('surfaces the lease error when removing the orphaned bridge also fails', async () => {
       const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
       openIdClient.refreshTokenGrant.mockResolvedValueOnce({
@@ -718,7 +749,7 @@ describe('OpenIDSessionRefresh', () => {
         .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(true)
-        .mockRejectedValueOnce(new Error('revoked by logout'));
+        .mockRejectedValueOnce(ownershipLost('revoked by logout'));
       withOpenIDRefreshFlightLease.mockImplementationOnce(({ operation }) =>
         operation({ assertLeaseOwned, markLeaseSettled: jest.fn() }),
       );

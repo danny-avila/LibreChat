@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createOpenIDRefreshIdentityTuple, serializeAuthIdentityTuple } from '~/utils/identity';
 import { OPENID_EXPIRY_BUFFER_SECONDS } from '~/oauth/expiry';
+import { createOpenIDRefreshOwnershipError } from './errors';
 
 const DEFAULT_FLIGHT_TTL_MS = 2 * 60 * 1000;
 const DEFAULT_LOCK_TTL_MS = 30 * 1000;
@@ -139,7 +140,9 @@ export function createOpenIDRefreshFlightService({
     let ownershipLost = false;
     let settled = false;
     const ownershipError = () =>
-      new Error('OpenID refresh coordination ownership was lost before completion');
+      createOpenIDRefreshOwnershipError(
+        'OpenID refresh coordination ownership was lost before completion',
+      );
     const renewLease = async () => {
       if (ownershipLost) throw ownershipError();
       if (!renewalPromise)

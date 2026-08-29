@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- dependency-injected Express/OpenID boundary */
+import { createOpenIDRefreshOwnershipError, isOpenIDRefreshOwnershipError } from './errors';
 
 export interface OpenIDRefreshRecoveryDeps {
   jwt: { decode: (token: string) => unknown };
@@ -193,6 +194,14 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
             try {
               await assertLeaseOwned();
             } catch (ownershipError) {
+              /** Ownership must be proven, not merely unreadable; see the note in `session.ts`. */
+              if (!isOpenIDRefreshOwnershipError(ownershipError)) {
+                logger.warn(
+                  '[refreshController] Keeping the grace bridge; lease ownership is undetermined',
+                  { userId, error: (ownershipError as Error)?.message },
+                );
+                throw ownershipError;
+              }
               try {
                 await deleteRefreshTokenBridges({
                   refreshTokens: [refreshToken],
@@ -221,7 +230,9 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
             tokens: sharedResult,
           });
           if (!completed) {
-            throw new Error('OpenID refresh bridge coordination ownership was lost');
+            throw createOpenIDRefreshOwnershipError(
+              'OpenID refresh bridge coordination ownership was lost',
+            );
           }
           markLeaseSettled();
           return sharedResult;

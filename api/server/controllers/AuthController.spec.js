@@ -118,6 +118,9 @@ const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
 const ORIGINAL_JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
+const { createOpenIDRefreshOwnershipError } = jest.requireActual('@librechat/api');
+const ownershipLost = (message) => createOpenIDRefreshOwnershipError(message);
+
 describe('graphTokenController', () => {
   let req, res;
 
@@ -1383,7 +1386,7 @@ describe('refreshController – OpenID path', () => {
     const assertLeaseOwned = jest
       .fn()
       .mockResolvedValueOnce(true)
-      .mockRejectedValueOnce(new Error('revoked by logout'));
+      .mockRejectedValueOnce(ownershipLost('revoked by logout'));
     withOpenIDRefreshFlightLease.mockImplementationOnce(({ operation }) =>
       operation({ assertLeaseOwned, markLeaseSettled: jest.fn() }),
     );
@@ -1395,6 +1398,36 @@ describe('refreshController – OpenID path', () => {
       userId: 'user-db-id',
       tenantId: 'tenant-1',
     });
+    expect(completeOpenIDRefreshFlight).not.toHaveBeenCalled();
+    expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('keeps the grace bridge when the ownership check fails for an undetermined reason', async () => {
+    setOpenIDReuseCookies();
+    req.session = {};
+    getUserById.mockResolvedValue({
+      _id: 'user-db-id',
+      email: baseClaims.email,
+      openidId: baseClaims.sub,
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    });
+    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    openIdClient.refreshTokenGrant
+      .mockRejectedValueOnce(new Error('invalid_grant'))
+      .mockResolvedValueOnce(mockTokenset);
+    const assertLeaseOwned = jest
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(new Error('connection timed out'));
+    withOpenIDRefreshFlightLease.mockImplementationOnce(({ operation }) =>
+      operation({ assertLeaseOwned, markLeaseSettled: jest.fn() }),
+    );
+
+    await refreshController(req, res);
+
+    expect(deleteRefreshTokenBridges).not.toHaveBeenCalled();
     expect(completeOpenIDRefreshFlight).not.toHaveBeenCalled();
     expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
