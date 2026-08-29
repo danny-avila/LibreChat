@@ -102,7 +102,9 @@ export function createRefreshTokenBridgeMethods(mongoose: typeof import('mongoos
     try {
       const RefreshTokenBridge = getRefreshTokenBridgeModel();
       return await RefreshTokenBridge.deleteMany({
-        oldRefreshTokenHash: { $in: data.oldRefreshTokenHashes },
+        ...(data.oldRefreshTokenHashes && {
+          oldRefreshTokenHash: { $in: data.oldRefreshTokenHashes },
+        }),
         userId: data.userId,
         tenantId: data.tenantId ?? { $exists: false },
       });

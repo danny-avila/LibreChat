@@ -14,6 +14,7 @@ jest.mock('@librechat/data-schemas', () => ({
   DEFAULT_REFRESH_TOKEN_EXPIRY: 1000 * 60 * 60 * 24 * 7,
 }));
 jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   isEnabled: jest.fn(),
   math: jest.fn((_value, fallback) => fallback),
   createAuthIdentityContext: jest.fn(({ user, requestUser }) => ({
@@ -638,6 +639,9 @@ describe('OpenIDSessionRefresh', () => {
         },
         { upsertSession, deleteSession },
       );
+      expect(storeOpenIdSession.mock.invocationCallOrder[0]).toBeLessThan(
+        setRefreshTokenCookie.mock.invocationCallOrder[0],
+      );
     });
 
     /** Headers are already sent, so the browser keeps the old cookie: revoking the record it still
@@ -659,8 +663,7 @@ describe('OpenIDSessionRefresh', () => {
       expect(storeOpenIdSession).not.toHaveBeenCalled();
     });
 
-    /** A failed session write must not fail the refresh: the caller still holds a usable token. */
-    it('survives a durable session write failure', async () => {
+    it('fails closed before publishing cookies when the durable session transition fails', async () => {
       const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
       openIdClient.refreshTokenGrant.mockResolvedValueOnce({
         access_token: makeJwt(refreshedExp),
@@ -674,8 +677,39 @@ describe('OpenIDSessionRefresh', () => {
 
       await expect(
         refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token'),
-      ).resolves.toBeTruthy();
-      expect(req.session.openidTokens.browserRefreshToken).toBe('rt-rotated');
+      ).rejects.toThrow('mongo down');
+      expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+      expect(setOpenIDMarkerCookies).not.toHaveBeenCalled();
+      expect(req.session.openidTokens.refreshToken).toBe('rt-old');
+    });
+
+    it('does not publish cookies when lease ownership is lost during the durable transition', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-rotated',
+        expires_in: 3600,
+      });
+      const assertLeaseOwned = jest
+        .fn()
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(true)
+        .mockRejectedValueOnce(new Error('lease lost during durable transition'));
+      withOpenIDRefreshFlightLease.mockImplementationOnce(({ operation }) =>
+        operation({ assertLeaseOwned, markLeaseSettled: jest.fn() }),
+      );
+      const req = buildReq(buildExpiredSession('rt-old'));
+      const res = buildRes({ headersSent: false });
+
+      await expect(
+        refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('lease lost');
+
+      expect(storeOpenIdSession).toHaveBeenCalled();
+      expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+      expect(setOpenIDMarkerCookies).not.toHaveBeenCalled();
+      expect(req.session.openidTokens.refreshToken).toBe('rt-old');
     });
 
     it('does not write the cookie when the IdP does not rotate the refresh token', async () => {
@@ -908,7 +942,7 @@ describe('OpenIDSessionRefresh', () => {
       });
     });
 
-    it('does not fail the refresh when bridge storage fails after headers are sent', async () => {
+    it('fails closed without mutating the session when bridge storage fails', async () => {
       const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
       openIdClient.refreshTokenGrant.mockResolvedValueOnce({
         access_token: makeJwt(refreshedExp),
@@ -922,9 +956,9 @@ describe('OpenIDSessionRefresh', () => {
 
       await expect(
         refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token'),
-      ).resolves.toBeDefined();
+      ).rejects.toThrow('encrypt failed');
 
-      expect(req.session.openidTokens.refreshToken).toBe('rt-rotated');
+      expect(req.session.openidTokens.refreshToken).toBe('rt-old');
     });
   });
 

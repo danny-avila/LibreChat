@@ -7,6 +7,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   createOpenIDRefreshIdentityTuple: ({ user, requestUser }) => {
     const subject = user?.openidId || user?.id || requestUser?.openidId || requestUser?.id;
     if (!subject) {

@@ -33,6 +33,7 @@ const { math } = require('@librechat/api');
 const db = require('~/models');
 const {
   createRefreshTokenBridgeFlightKey,
+  deleteAllRefreshTokenBridges,
   deleteRefreshTokenBridges,
   storeRefreshTokenBridge,
   getRefreshTokenBridge,
@@ -157,6 +158,15 @@ describe('RefreshTokenBridge', () => {
           __internals.hashRefreshToken('cookie-token'),
           __internals.hashRefreshToken('session-token'),
         ],
+        userId: 'user-123',
+        tenantId: 'tenant-1',
+      });
+    });
+
+    it('deletes every predecessor bridge for a logout identity', async () => {
+      await deleteAllRefreshTokenBridges({ userId: ' user-123 ', tenantId: ' tenant-1 ' });
+
+      expect(db.deleteRefreshTokenBridges).toHaveBeenCalledWith({
         userId: 'user-123',
         tenantId: 'tenant-1',
       });

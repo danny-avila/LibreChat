@@ -5,7 +5,7 @@ const mockLogger = { warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
 const mockIsEnabled = jest.fn();
 const mockGetOpenIdConfig = jest.fn();
 const mockClearCloudFrontCookies = jest.fn();
-const mockDeleteRefreshTokenBridges = jest.fn();
+const mockDeleteAllRefreshTokenBridges = jest.fn();
 
 jest.mock('cookie');
 jest.mock('@librechat/api', () => ({
@@ -17,7 +17,7 @@ jest.mock('~/server/services/AuthService', () => ({
   logoutUser: (...args) => mockLogoutUser(...args),
 }));
 jest.mock('~/server/services/RefreshTokenBridge', () => ({
-  deleteRefreshTokenBridges: (...args) => mockDeleteRefreshTokenBridges(...args),
+  deleteAllRefreshTokenBridges: (...args) => mockDeleteAllRefreshTokenBridges(...args),
 }));
 jest.mock('~/strategies', () => ({ getOpenIdConfig: () => mockGetOpenIdConfig() }));
 
@@ -58,7 +58,7 @@ beforeEach(() => {
   };
   cookies.parse.mockReturnValue({ refreshToken: 'cookie-rt' });
   mockLogoutUser.mockResolvedValue({ status: 200, message: 'Logout successful' });
-  mockDeleteRefreshTokenBridges.mockResolvedValue({ acknowledged: true, deletedCount: 1 });
+  mockDeleteAllRefreshTokenBridges.mockResolvedValue({ acknowledged: true, deletedCount: 1 });
   mockIsEnabled.mockReturnValue(true);
   mockGetOpenIdConfig.mockReturnValue({
     serverMetadata: () => ({
@@ -252,7 +252,7 @@ describe('LogoutController', () => {
   });
 
   describe('bridge revocation', () => {
-    it('revokes cookie and session-token bridges and deletes the browser durable session', async () => {
+    it('revokes all predecessor bridges and deletes the browser durable session', async () => {
       const req = buildReq({
         user: {
           _id: 'user1',
@@ -265,8 +265,7 @@ describe('LogoutController', () => {
 
       await logoutController(req, res);
 
-      expect(mockDeleteRefreshTokenBridges).toHaveBeenCalledWith({
-        refreshTokens: ['cookie-rt', 'srt'],
+      expect(mockDeleteAllRefreshTokenBridges).toHaveBeenCalledWith({
         userId: 'user1',
         tenantId: 'tenantA',
       });
@@ -275,7 +274,7 @@ describe('LogoutController', () => {
     });
 
     it('fails closed before logout when bridge revocation fails', async () => {
-      mockDeleteRefreshTokenBridges.mockRejectedValue(new Error('bridge delete failed'));
+      mockDeleteAllRefreshTokenBridges.mockRejectedValue(new Error('bridge delete failed'));
       const req = buildReq();
       const res = buildRes();
 
