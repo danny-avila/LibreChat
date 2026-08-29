@@ -254,7 +254,8 @@ export abstract class UserConnectionManager {
    * next in line rather than stale — nothing it resolved changed — so its attempt is discarded
    * and re-established. After a `mutation` teardown the config and credentials it resolved may
    * be the ones that were just replaced, and only the caller can resolve them again, so the
-   * fence stays fatal.
+   * fence stays fatal. A caller that has since aborted gets neither: there is nobody left to
+   * hand the connection to.
    */
   public async getUserConnection(opts: t.UserMCPConnectionOptions): Promise<MCPConnection> {
     for (let attempt = 0; ; attempt++) {
@@ -264,7 +265,8 @@ export abstract class UserConnectionManager {
         if (
           !(error instanceof ConnectionCreationCancelledError) ||
           error.reason !== 'lifecycle' ||
-          attempt >= MAX_TEARDOWN_RESTARTS
+          attempt >= MAX_TEARDOWN_RESTARTS ||
+          opts.signal?.aborted === true
         ) {
           throw error;
         }
@@ -1082,7 +1084,7 @@ export abstract class UserConnectionManager {
      * timestamp: `checkIdleConnections` walks activity rather than connections, so clearing it
      * would hide that connection from every later idle sweep.
      */
-    if (!this.userConnections.has(userId)) {
+    if ((this.userConnections.get(userId)?.size ?? 0) === 0) {
       this.userLastActivity.delete(userId);
     }
   }

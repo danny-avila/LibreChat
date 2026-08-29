@@ -3478,6 +3478,45 @@ describe('MCPManager', () => {
       expect(internals.userLastActivity.has(userId)).toBe(true);
     });
 
+    it('does not re-establish a lifecycle-fenced creation whose caller aborted', async () => {
+      const fencedConnection = newUserConnection();
+      const neverReached = newUserConnection();
+      let resolveConnection: ((connection: MCPConnection) => void) | undefined;
+      const factoryResult = new Promise<MCPConnection>((resolve) => {
+        resolveConnection = resolve;
+      });
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'user',
+        dbId: 'server-1',
+      });
+      (MCPConnectionFactory.create as jest.Mock)
+        .mockReturnValueOnce(factoryResult)
+        .mockResolvedValue(neverReached);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const controller = new AbortController();
+      const creation = manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        signal: controller.signal,
+      });
+      while ((MCPConnectionFactory.create as jest.Mock).mock.calls.length === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+
+      controller.abort();
+      await manager.disconnectUserConnection(userId, serverName, { reason: 'lifecycle' });
+      resolveConnection?.(fencedConnection);
+
+      await expect(creation).rejects.toThrow('Connection creation was cancelled during teardown');
+      expect(fencedConnection.dispose).toHaveBeenCalledTimes(1);
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
+      expect(manager.getUserConnections(userId)?.has(serverName) ?? false).toBe(false);
+    });
+
     it('fails a creation that a lifecycle teardown keeps cancelling on every attempt', async () => {
       mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
