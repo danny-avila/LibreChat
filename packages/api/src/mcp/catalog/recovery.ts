@@ -2,21 +2,24 @@ import { logger } from '@librechat/data-schemas';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { IUser } from '@librechat/data-schemas';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
+import { hasCustomUserVars, getMissingCustomUserVars } from '../utils';
 import { createConcurrencyLimiter } from '~/utils/promise';
-import { getMissingCustomUserVars } from '../utils';
 import { getServerCustomUserVars } from '../auth';
 
-const RECOVERY_CONCURRENCY = 3;
+/** Bounds outbound MCP fan-out from one catalog request: snapshot refreshes issue a real
+ *  `tools/list`, so they burst as readily as passive discovery does. */
+const CATALOG_FANOUT_CONCURRENCY = 3;
 /**
- * Recovery exists for a server that is reachable and authorized but whose catalog cache expired,
- * and such a server answers `tools/list` well inside this window. Anything slower is a server
- * recovery cannot rescue anyway, so failing fast costs nothing and keeps the request responsive.
+ * Bounds `connection.connect()` only — it is the sole segment of discovery a caller can bound
+ * today. It does NOT bound the whole operation: `discoverToolsInternal` spends this value once
+ * per connection attempt (authenticated, then unauthenticated), and `fetchToolsSnapshot` then
+ * applies its own `TOOLS_LIST_TIMEOUT_MS` (30s) to `tools/list`. A server that connects quickly
+ * and stalls while listing therefore still holds its slot for that longer window.
  *
- * This bounds one connection attempt, which is the unit the factory actually spends:
- * `MCPConnectionFactory.discoverToolsInternal` uses it for the authenticated connection and again
- * for the unauthenticated listing, so a server's ceiling is this value times the attempts made.
- * Bounding the work rather than racing it keeps the concurrency limit honest — a slot is held for
- * exactly as long as its network operation runs.
+ * Bounding discovery end to end needs a deadline threaded through `MCPConnectionFactory` into
+ * both `connect()` and `fetchToolsSnapshot()`; until that exists, this keeps the common
+ * unreachable case cheap, because recovery targets a server that is reachable and authorized but
+ * whose catalog cache expired, and such a server connects well inside this window.
  */
 const RECOVERY_ATTEMPT_TIMEOUT_MS = 1500;
 
@@ -116,9 +119,11 @@ export async function recoverMCPServerCatalogs(
   deps: MCPServerCatalogRecoveryDeps,
 ): Promise<Map<string, LCAvailableTools>> {
   const { user, servers } = params;
-  /** The config tier owns its own retry window for a server it already found unreachable. */
+  /** Only the config tier retries a failed stub on its own clock. A `yaml`- or `user`-sourced
+   *  stub has no such timer, so skipping it unconditionally would hide the server for good —
+   *  exactly the state this recovery exists to escape. */
   const recoverable = servers.filter(({ serverName, serverConfig }) => {
-    if (!serverConfig.inspectionFailed) {
+    if (!serverConfig.inspectionFailed || serverConfig.source !== 'config') {
       return true;
     }
     logger.debug(`[MCP catalog recovery] Skipping ${serverName}: awaiting config-tier retry`);
@@ -128,10 +133,17 @@ export async function recoverMCPServerCatalogs(
     return new Map();
   }
 
-  const userMCPAuthMap = await deps.loadUserMCPAuthMap(
-    user.id,
-    recoverable.map(({ serverName }) => serverName),
+  /** Only credential-bearing servers can consume the auth map, so a list without any avoids
+   *  the plugin-auth round trip entirely. */
+  const credentialServers = recoverable.filter(({ serverConfig }) =>
+    hasCustomUserVars(serverConfig),
   );
+  const userMCPAuthMap = credentialServers.length
+    ? await deps.loadUserMCPAuthMap(
+        user.id,
+        credentialServers.map(({ serverName }) => serverName),
+      )
+    : {};
 
   /** A server missing its user-provided credentials fails auth on connect (see issue #10969),
    *  so discovering it would spend a doomed connection on every request. */
@@ -151,7 +163,7 @@ export async function recoverMCPServerCatalogs(
     return new Map();
   }
 
-  const recover = createConcurrencyLimiter(RECOVERY_CONCURRENCY);
+  const recover = createConcurrencyLimiter(CATALOG_FANOUT_CONCURRENCY);
   const results = await Promise.all(
     authorized.map((candidate) => recover(() => discoverCandidate(user, candidate, deps))),
   );
@@ -177,25 +189,30 @@ export async function loadMCPServerCatalogs(
     }),
   );
 
+  /** A snapshot is not a local read — both connection paths issue a fresh `tools/list` — so a
+   *  cache reset across many servers would otherwise burst unbounded outbound requests. */
+  const refresh = createConcurrencyLimiter(CATALOG_FANOUT_CONCURRENCY);
   const snapshots = await Promise.all(
-    cached.map(async (entry) => {
+    cached.map((entry) => {
       if (entry.tools != null) {
         return entry;
       }
-      try {
-        const snapshot = await deps.getServerToolFunctionsSnapshot(
-          user.id,
-          entry.serverName,
-          entry.serverConfig,
-        );
-        return { ...entry, ...snapshot, source: 'snapshot' as const };
-      } catch (error) {
-        logger.error(
-          `[MCP catalog loader] Failed to read connected tools for ${entry.serverName}:`,
-          error,
-        );
-        return { ...entry, tools: null, source: 'snapshot' as const };
-      }
+      return refresh(async () => {
+        try {
+          const snapshot = await deps.getServerToolFunctionsSnapshot(
+            user.id,
+            entry.serverName,
+            entry.serverConfig,
+          );
+          return { ...entry, ...snapshot, source: 'snapshot' as const };
+        } catch (error) {
+          logger.error(
+            `[MCP catalog loader] Failed to read connected tools for ${entry.serverName}:`,
+            error,
+          );
+          return { ...entry, tools: null, source: 'snapshot' as const };
+        }
+      });
     }),
   );
 

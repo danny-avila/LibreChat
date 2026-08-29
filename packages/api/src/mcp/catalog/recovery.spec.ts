@@ -6,6 +6,11 @@ import { loadMCPServerCatalogs, recoverMCPServerCatalogs } from './recovery';
 const user = { id: 'user-1' } as IUser;
 const serverConfig = (name: string): ParsedServerConfig =>
   ({ type: 'streamable-http', url: `https://${name}.example.com/mcp` }) as ParsedServerConfig;
+const withUserVars = (config: ParsedServerConfig): ParsedServerConfig =>
+  ({
+    ...config,
+    customUserVars: { API_KEY: { title: 'API key', description: 'Server API key' } },
+  }) as ParsedServerConfig;
 const availableTools = (name: string): LCAvailableTools => ({
   [name]: {
     type: 'function',
@@ -20,11 +25,12 @@ const availableTools = (name: string): LCAvailableTools => ({
 describe('recoverMCPServerCatalogs', () => {
   it('loads user auth once and preserves config-only lookup context for each server', async () => {
     const servers = [
-      { serverName: 'alpha', serverConfig: serverConfig('alpha') },
-      { serverName: 'beta', serverConfig: serverConfig('beta') },
+      { serverName: 'alpha', serverConfig: withUserVars(serverConfig('alpha')) },
+      { serverName: 'beta', serverConfig: withUserVars(serverConfig('beta')) },
     ];
     const loadUserMCPAuthMap = jest.fn().mockResolvedValue({
       [`${Constants.mcp_prefix}alpha`]: { API_KEY: 'alpha-secret' },
+      [`${Constants.mcp_prefix}beta`]: { API_KEY: 'beta-secret' },
     });
     const discoverServerTools = jest.fn(async ({ serverName }: ToolDiscoveryOptions) => ({
       tools: [{ name: `${serverName}-tool`, inputSchema: { type: 'object' as const } }],
@@ -53,7 +59,7 @@ describe('recoverMCPServerCatalogs', () => {
         user,
         serverName: 'beta',
         configServers: { beta: servers[1].serverConfig },
-        customUserVars: undefined,
+        customUserVars: { API_KEY: 'beta-secret' },
       }),
     );
     expect(result.size).toBe(2);
@@ -258,7 +264,11 @@ describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
   it('leaves a server the config tier marked unreachable to that tier’s retry window', async () => {
     const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
     const deps = recoveryDeps(discoverServerTools);
-    const failed = { ...serverConfig('failed'), inspectionFailed: true } as ParsedServerConfig;
+    const failed = {
+      ...serverConfig('failed'),
+      inspectionFailed: true,
+      source: 'config',
+    } as ParsedServerConfig;
 
     const result = await recoverMCPServerCatalogs(
       {
@@ -271,7 +281,6 @@ describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
       deps,
     );
 
-    expect(deps.loadUserMCPAuthMap).toHaveBeenCalledWith('user-1', ['healthy']);
     expect(discoverServerTools).toHaveBeenCalledTimes(1);
     expect(discoverServerTools).toHaveBeenCalledWith(
       expect.objectContaining({ serverName: 'healthy' }),
@@ -281,10 +290,7 @@ describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
 
   it('skips a server whose user-provided variables are unset and recovers its siblings', async () => {
     const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
-    const needsVars = {
-      ...serverConfig('needs-vars'),
-      customUserVars: { API_KEY: { title: 'API key', description: 'Server API key' } },
-    } as ParsedServerConfig;
+    const needsVars = withUserVars(serverConfig('needs-vars'));
 
     const result = await recoverMCPServerCatalogs(
       {
@@ -306,10 +312,7 @@ describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
 
   it('discovers a server whose user-provided variables are satisfied', async () => {
     const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
-    const needsVars = {
-      ...serverConfig('needs-vars'),
-      customUserVars: { API_KEY: { title: 'API key', description: 'Server API key' } },
-    } as ParsedServerConfig;
+    const needsVars = withUserVars(serverConfig('needs-vars'));
 
     await recoverMCPServerCatalogs(
       { user, servers: [{ serverName: 'needs-vars', serverConfig: needsVars }] },
@@ -329,7 +332,11 @@ describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
   it('skips the auth lookup entirely when every cold server is ineligible', async () => {
     const discoverServerTools = jest.fn();
     const deps = recoveryDeps(discoverServerTools);
-    const failed = { ...serverConfig('failed'), inspectionFailed: true } as ParsedServerConfig;
+    const failed = {
+      ...serverConfig('failed'),
+      inspectionFailed: true,
+      source: 'config',
+    } as ParsedServerConfig;
 
     const result = await recoverMCPServerCatalogs(
       { user, servers: [{ serverName: 'failed', serverConfig: failed }] },
@@ -339,6 +346,64 @@ describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
     expect(deps.loadUserMCPAuthMap).not.toHaveBeenCalled();
     expect(discoverServerTools).not.toHaveBeenCalled();
     expect(result.size).toBe(0);
+  });
+
+  it('still attempts a yaml stub, which has no retry timer of its own', async () => {
+    const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
+    const stub = {
+      ...serverConfig('yaml-stub'),
+      inspectionFailed: true,
+      source: 'yaml',
+    } as ParsedServerConfig;
+
+    await recoverMCPServerCatalogs(
+      { user, servers: [{ serverName: 'yaml-stub', serverConfig: stub }] },
+      recoveryDeps(discoverServerTools),
+    );
+
+    expect(discoverServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({ serverName: 'yaml-stub' }),
+    );
+  });
+
+  it('reads plugin auth only when a cold server actually declares user variables', async () => {
+    const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
+    const deps = recoveryDeps(discoverServerTools);
+
+    await recoverMCPServerCatalogs(
+      {
+        user,
+        servers: [
+          { serverName: 'open-a', serverConfig: serverConfig('open-a') },
+          { serverName: 'open-b', serverConfig: serverConfig('open-b') },
+        ],
+      },
+      deps,
+    );
+
+    expect(deps.loadUserMCPAuthMap).not.toHaveBeenCalled();
+    expect(discoverServerTools).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks plugin auth only for the credential-bearing servers in a mixed list', async () => {
+    const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
+    const deps = recoveryDeps(discoverServerTools, {
+      [`${Constants.mcp_prefix}guarded`]: { API_KEY: 'set' },
+    });
+
+    await recoverMCPServerCatalogs(
+      {
+        user,
+        servers: [
+          { serverName: 'open', serverConfig: serverConfig('open') },
+          { serverName: 'guarded', serverConfig: withUserVars(serverConfig('guarded')) },
+        ],
+      },
+      deps,
+    );
+
+    expect(deps.loadUserMCPAuthMap).toHaveBeenCalledWith('user-1', ['guarded']);
+    expect(discoverServerTools).toHaveBeenCalledTimes(2);
   });
 
   it('holds a limiter slot until its discovery settles, so concurrency stays honest', async () => {
@@ -386,5 +451,34 @@ describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
     for (const { serverName } of servers) {
       expect(discoverServerTools).toHaveBeenCalledWith(expect.objectContaining({ serverName }));
     }
+  });
+
+  it('bounds snapshot refreshes, which each issue a real tools/list', async () => {
+    let active = 0;
+    let maxActive = 0;
+    const servers = Array.from({ length: 9 }, (_, index) => ({
+      serverName: `server-${index}`,
+      serverConfig: serverConfig(`server-${index}`),
+    }));
+
+    await loadMCPServerCatalogs(
+      { user, servers },
+      {
+        getCachedServerTools: jest.fn().mockResolvedValue(null),
+        getServerToolFunctionsSnapshot: jest.fn(async () => {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          active -= 1;
+          return { tools: null };
+        }),
+        cacheServerTools: jest.fn(),
+        loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+        discoverServerTools: jest.fn().mockResolvedValue({ tools: null }),
+        formatServerTools: jest.fn().mockReturnValue({}),
+      },
+    );
+
+    expect(maxActive).toBe(3);
   });
 });
