@@ -35,7 +35,11 @@ jest.mock('~/server/services/OpenIDRefreshFlight', () => ({
   waitForOpenIDRefreshFlight: jest.fn(),
   withOpenIDRefreshFlightLease: jest.fn(),
 }));
+jest.mock('~/server/services/OpenIDSessionRefresh', () => ({
+  refreshOpenIDSession: jest.fn(),
+}));
 jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   OPENID_EXPIRY_BUFFER_SECONDS: 30,
   math: jest.fn((value, fallback) => fallback),
   isEnabled: jest.fn(),
@@ -105,6 +109,7 @@ const {
   waitForOpenIDRefreshFlight,
   withOpenIDRefreshFlightLease,
 } = require('~/server/services/OpenIDRefreshFlight');
+const { refreshOpenIDSession } = require('~/server/services/OpenIDSessionRefresh');
 
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
 const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
@@ -317,6 +322,35 @@ describe('refreshController – OpenID path', () => {
         markLeaseSettled: jest.fn(),
       }),
     );
+    refreshOpenIDSession.mockImplementation(async (refreshReq) => {
+      const activeRefreshToken = refreshReq.session.openidTokens.refreshToken;
+      const refreshParams = buildOpenIDRefreshParams();
+      logger.debug('[refreshController] OpenID refresh params', {
+        has_scope: Boolean(process.env.OPENID_SCOPE),
+        has_refresh_audience: Boolean(process.env.OPENID_REFRESH_AUDIENCE),
+      });
+      const tokenset = await openIdClient.refreshTokenGrant(
+        getOpenIdConfig(),
+        activeRefreshToken,
+        refreshParams,
+      );
+      logger.debug('[refreshController] OpenID refresh succeeded', {
+        has_access_token: Boolean(tokenset.access_token),
+        has_id_token: Boolean(tokenset.id_token),
+        has_refresh_token: Boolean(tokenset.refresh_token),
+        expires_in: tokenset.expires_in,
+      });
+      const resolvedTokenset = tokenset.refresh_token
+        ? tokenset
+        : { ...tokenset, refresh_token: activeRefreshToken };
+      refreshReq.session.openidTokens = {
+        ...refreshReq.session.openidTokens,
+        accessToken: tokenset.access_token,
+        idToken: tokenset.id_token,
+        refreshToken: resolvedTokenset.refresh_token,
+      };
+      return resolvedTokenset;
+    });
     getUserById.mockResolvedValue({
       _id: 'user-db-id',
       email: baseClaims.email,
@@ -327,7 +361,9 @@ describe('refreshController – OpenID path', () => {
     updateUser.mockResolvedValue({});
 
     req = {
-      headers: { cookie: 'token_provider=openid; refreshToken=stored-refresh' },
+      headers: {
+        cookie: `token_provider=openid; refreshToken=stored-refresh; openid_user_id=${makeSignedUserId()}`,
+      },
       session: {},
     };
 
@@ -380,18 +416,47 @@ describe('refreshController – OpenID path', () => {
     );
   };
 
-  it('prefers the browser refresh-token cookie when it differs from the session marker', async () => {
-    req.headers.cookie = 'token_provider=openid; refreshToken=rt-cookie-current';
+  it('falls back to the browser token only after the advanced session token is rejected', async () => {
+    req.headers.cookie = `token_provider=openid; refreshToken=rt-cookie-current; openid_user_id=${makeSignedUserId()}`;
     req.session = {
       openidTokens: {
         refreshToken: 'rt-session-stale',
         browserRefreshToken: 'rt-browser-stale',
+        appUserId: 'user-db-id',
       },
     };
+    openIdClient.refreshTokenGrant
+      .mockRejectedValueOnce(new Error('invalid_grant'))
+      .mockResolvedValueOnce(mockTokenset);
 
     await refreshController(req, res);
 
-    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
+    expect(openIdClient.refreshTokenGrant).toHaveBeenNthCalledWith(
+      1,
+      { some: 'config' },
+      'rt-session-stale',
+      {},
+    );
+    expect(refreshOpenIDSession).toHaveBeenNthCalledWith(
+      1,
+      req,
+      res,
+      expect.objectContaining({ _id: 'user-db-id' }),
+      'id_token',
+      expect.objectContaining({ appUserId: 'user-db-id' }),
+      { forceRefresh: true },
+    );
+    expect(refreshOpenIDSession).toHaveBeenNthCalledWith(
+      2,
+      req,
+      res,
+      expect.objectContaining({ _id: 'user-db-id' }),
+      'id_token',
+      expect.objectContaining({ appUserId: 'user-db-id' }),
+      { forceRefresh: true },
+    );
+    expect(openIdClient.refreshTokenGrant).toHaveBeenNthCalledWith(
+      2,
       { some: 'config' },
       'rt-cookie-current',
       {},
@@ -405,7 +470,7 @@ describe('refreshController – OpenID path', () => {
     });
   });
 
-  it('refreshes with the browser cookie instead of reusing stale session tokens on drift', async () => {
+  it('keeps the advanced session token when an older browser cookie arrives on drift', async () => {
     const reusableIdToken = makeSessionToken();
     req.headers.cookie = [
       'token_provider=openid',
@@ -428,27 +493,28 @@ describe('refreshController – OpenID path', () => {
 
     await refreshController(req, res);
 
-    expect(getUserById).not.toHaveBeenCalled();
+    expect(getUserById).toHaveBeenCalled();
     expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
     expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
       { some: 'config' },
-      'rt-cookie-current',
+      'rt-session-stale',
       {},
     );
     expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
       userId: 'user-db-id',
-      existingRefreshToken: 'rt-cookie-current',
+      existingRefreshToken: 'rt-session-stale',
       tenantId: 'tenant-1',
       openidSubject: baseClaims.sub,
       openidIssuer: baseClaims.iss,
     });
   });
 
-  it('prefers the browser refresh-token cookie when pre-marker session state differs', async () => {
-    req.headers.cookie = 'token_provider=openid; refreshToken=rt-cookie-current';
+  it('prefers the session token when pre-marker session state differs', async () => {
+    req.headers.cookie = `token_provider=openid; refreshToken=rt-cookie-current; openid_user_id=${makeSignedUserId()}`;
     req.session = {
       openidTokens: {
         refreshToken: 'rt-session-stale',
+        appUserId: 'user-db-id',
       },
     };
 
@@ -456,12 +522,12 @@ describe('refreshController – OpenID path', () => {
 
     expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
       { some: 'config' },
-      'rt-cookie-current',
+      'rt-session-stale',
       {},
     );
     expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
       userId: 'user-db-id',
-      existingRefreshToken: 'rt-cookie-current',
+      existingRefreshToken: 'rt-session-stale',
       tenantId: 'tenant-1',
       openidSubject: baseClaims.sub,
       openidIssuer: baseClaims.iss,
@@ -469,11 +535,12 @@ describe('refreshController – OpenID path', () => {
   });
 
   it('keeps the session refresh token when the browser cookie matches the session marker', async () => {
-    req.headers.cookie = 'token_provider=openid; refreshToken=rt-browser-stale';
+    req.headers.cookie = `token_provider=openid; refreshToken=rt-browser-stale; openid_user_id=${makeSignedUserId()}`;
     req.session = {
       openidTokens: {
         refreshToken: 'rt-session-current',
         browserRefreshToken: 'rt-browser-stale',
+        appUserId: 'user-db-id',
       },
     };
 
@@ -505,6 +572,23 @@ describe('refreshController – OpenID path', () => {
       }),
     );
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('stores a recovery bridge when durable rotation fails after the IdP grant', async () => {
+    storeOpenIDSession.mockRejectedValueOnce(new Error('durable transition failed'));
+
+    await refreshController(req, res);
+
+    expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
+      oldRefreshToken: 'stored-refresh',
+      newRefreshToken: 'new-refresh',
+      userId: 'user-db-id',
+      tenantId: 'tenant-1',
+      openidIssuer: baseClaims.iss,
+      ttl: 60 * 1000,
+    });
+    expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 
   it('reuses valid OpenID session tokens and refreshes CloudFront cookies', async () => {
@@ -616,7 +700,7 @@ describe('refreshController – OpenID path', () => {
 
     await refreshController(req, res);
 
-    expect(getUserById).not.toHaveBeenCalled();
+    expect(getUserById).toHaveBeenCalled();
     expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
     expectOpenIDRefreshGrant();
   });
@@ -635,7 +719,7 @@ describe('refreshController – OpenID path', () => {
 
     await refreshController(req, res);
 
-    expect(getUserById).not.toHaveBeenCalled();
+    expect(getUserById).toHaveBeenCalled();
     expectOpenIDRefreshGrant();
   });
 
@@ -653,11 +737,11 @@ describe('refreshController – OpenID path', () => {
 
     await refreshController(req, res);
 
-    expect(getUserById).not.toHaveBeenCalled();
+    expect(getUserById).toHaveBeenCalled();
     expectOpenIDRefreshGrant();
   });
 
-  it('falls through to full OpenID refresh when the signed reuse user cookie is invalid', async () => {
+  it('rejects refresh when neither the session nor signed marker identifies the user', async () => {
     setOpenIDReuseCookies('tampered-cookie');
     req.session = {
       openidTokens: {
@@ -671,7 +755,8 @@ describe('refreshController – OpenID path', () => {
     await refreshController(req, res);
 
     expect(getUserById).not.toHaveBeenCalled();
-    expectOpenIDRefreshGrant();
+    expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 
   it('falls through to full OpenID refresh when the reuse user no longer exists', async () => {
@@ -709,7 +794,7 @@ describe('refreshController – OpenID path', () => {
 
     await refreshController(req, res);
 
-    expect(getUserById).not.toHaveBeenCalled();
+    expect(getUserById).toHaveBeenCalled();
     expectOpenIDRefreshGrant();
   });
 
@@ -726,7 +811,7 @@ describe('refreshController – OpenID path', () => {
 
     await refreshController(req, res);
 
-    expect(getUserById).not.toHaveBeenCalled();
+    expect(getUserById).toHaveBeenCalled();
     expectOpenIDRefreshGrant();
   });
 
@@ -742,7 +827,7 @@ describe('refreshController – OpenID path', () => {
 
     await refreshController(req, res);
 
-    expect(getUserById).not.toHaveBeenCalled();
+    expect(getUserById).toHaveBeenCalled();
     expectOpenIDRefreshGrant();
   });
 
@@ -957,7 +1042,7 @@ describe('refreshController – OpenID path', () => {
 
     await refreshController(req, res);
 
-    expect(getRefreshTokenBridge).not.toHaveBeenCalled();
+    expect(getRefreshTokenBridge).toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.send).toHaveBeenCalledWith('Invalid OpenID refresh token');
   });
@@ -979,7 +1064,7 @@ describe('refreshController – OpenID path', () => {
 
     await refreshController(req, res);
 
-    expect(getUserById).not.toHaveBeenCalled();
+    expect(getUserById).toHaveBeenCalled();
     expect(getRefreshTokenBridge).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
   });
@@ -992,7 +1077,7 @@ describe('refreshController – OpenID path', () => {
 
     await refreshController(req, res);
 
-    expect(getUserById).not.toHaveBeenCalled();
+    expect(getUserById).toHaveBeenCalled();
     expect(getRefreshTokenBridge).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
   });

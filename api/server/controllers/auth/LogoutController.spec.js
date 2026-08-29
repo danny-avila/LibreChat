@@ -270,6 +270,8 @@ describe('LogoutController', () => {
         tenantId: 'tenantA',
       });
       expect(mockLogoutUser).toHaveBeenCalledWith(req, 'cookie-rt');
+      expect(mockLogoutUser).toHaveBeenCalledWith(req, 'srt');
+      expect(mockLogoutUser).toHaveBeenCalledTimes(2);
       expect(req.session.openidTokens).toBeUndefined();
     });
 

@@ -33,7 +33,7 @@ const logoutController = async (req, res) => {
     sessionRefreshToken = req.session.openidTokens.refreshToken;
     idToken = req.session.openidTokens.idToken;
   }
-  /** The browser token names the durable session and any stale-token bridge being revoked. */
+  /** Both can name distinct durable sessions when an older browser request races rotation. */
   refreshToken = parsedCookies.refreshToken || sessionRefreshToken;
   idToken = idToken || parsedCookies.openid_id_token;
 
@@ -47,7 +47,19 @@ const logoutController = async (req, res) => {
         delete req.session.openidTokens;
       }
     }
-    const logout = await logoutUser(req, refreshToken);
+    const logoutTokens = isOpenIdUser
+      ? [...new Set([parsedCookies.refreshToken, sessionRefreshToken].filter(Boolean))]
+      : [refreshToken];
+    if (logoutTokens.length === 0) {
+      logoutTokens.push(undefined);
+    }
+    let logout = { status: 200, message: 'Logout successful' };
+    for (const token of logoutTokens) {
+      const result = await logoutUser(req, token);
+      if (result.status !== 200) {
+        logout = result;
+      }
+    }
     const { status, message } = logout;
 
     res.clearCookie('refreshToken');

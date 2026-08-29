@@ -680,6 +680,14 @@ describe('OpenIDSessionRefresh', () => {
       ).rejects.toThrow('mongo down');
       expect(setRefreshTokenCookie).not.toHaveBeenCalled();
       expect(setOpenIDMarkerCookies).not.toHaveBeenCalled();
+      expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
+        oldRefreshToken: 'rt-old',
+        newRefreshToken: 'rt-rotated',
+        userId: 'local-id-1',
+        tenantId: 'tenant-1',
+        openidIssuer: 'https://issuer.example.com',
+        ttl: 60 * 1000,
+      });
       expect(req.session.openidTokens.refreshToken).toBe('rt-old');
     });
 
@@ -749,6 +757,28 @@ describe('OpenIDSessionRefresh', () => {
       expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
       expect(req.session.openidTokens.refreshToken).toBe('rt-session-current');
       expect(req.session.openidTokens.browserRefreshToken).toBe('rt-session-current');
+    });
+
+    it('revokes the advanced session token rather than the stale browser token on rotation', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-next',
+        expires_in: 3600,
+      });
+      const req = buildReq(buildExpiredSession('rt-session-current', 'rt-browser-stale'));
+      const res = buildRes({ headersSent: false });
+
+      await refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token');
+
+      expect(storeOpenIdSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          refreshToken: 'rt-next',
+          previousRefreshToken: 'rt-session-current',
+        }),
+        { upsertSession, deleteSession },
+      );
     });
 
     it('stores a bridge for stale browser cookies when a stable refresh cannot write cookies', async () => {

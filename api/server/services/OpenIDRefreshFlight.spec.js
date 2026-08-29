@@ -231,6 +231,27 @@ describe('OpenIDRefreshFlight', () => {
     });
   });
 
+  it('expires a completed flight at the access token usable-lifetime boundary', async () => {
+    const now = Date.now();
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+    const tokens = {
+      access_token: 'short-access',
+      expires_at: Math.floor(now / 1000) + 45,
+    };
+
+    await completeOpenIDRefreshFlight({
+      key: 'flight-key',
+      ownerId: 'owner-1',
+      tokens,
+      ttl: 60000,
+    });
+
+    const storedExpiry = db.completeOpenIDRefreshFlight.mock.calls[0][0].expiresAt;
+    expect(storedExpiry.getTime()).toBeLessThanOrEqual(now + 15_000);
+    expect(storedExpiry.getTime()).toBeGreaterThan(now);
+    Date.now.mockRestore();
+  });
+
   it('preserves non-enumerable browser refresh-token metadata for shared flight joiners', async () => {
     const tokens = {
       access_token: 'access',
@@ -271,7 +292,11 @@ describe('OpenIDRefreshFlight', () => {
   });
 
   it('waits for and decrypts a completed flight result', async () => {
-    const tokens = { access_token: 'access', refresh_token: 'refresh', expires_at: 123 };
+    const tokens = {
+      access_token: 'access',
+      refresh_token: 'refresh',
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+    };
     db.findOpenIDRefreshFlight.mockResolvedValueOnce({
       status: 'completed',
       encryptedResult: `encrypted:${JSON.stringify(tokens)}`,
@@ -296,6 +321,29 @@ describe('OpenIDRefreshFlight', () => {
     await expect(
       waitForOpenIDRefreshFlight({ key: 'flight-key', timeoutMs: 1, intervalMs: 1 }),
     ).rejects.toThrow('invalid_grant');
+  });
+
+  it('waits for the full renewable-flight lifetime by default', () => {
+    expect(__internals.DEFAULT_WAIT_TIMEOUT_MS).toBe(__internals.DEFAULT_FLIGHT_TTL_MS);
+    expect(__internals.DEFAULT_WAIT_TIMEOUT_MS).toBeGreaterThan(__internals.DEFAULT_LOCK_TTL_MS);
+    const initialDeadline = Date.now() + __internals.DEFAULT_WAIT_TIMEOUT_MS;
+    const renewedExpiry = new Date(initialDeadline + 60_000);
+    expect(__internals.getRenewedWaitDeadline(initialDeadline, { expiresAt: renewedExpiry })).toBe(
+      renewedExpiry.getTime(),
+    );
+  });
+
+  it('does not reuse a completed result inside the access-token expiry buffer', async () => {
+    const tokens = {
+      access_token: 'near-expiry',
+      expires_at: Math.floor(Date.now() / 1000) + 10,
+    };
+    await expect(
+      __internals.readCompletedFlight({
+        status: 'completed',
+        encryptedResult: `encrypted:${JSON.stringify(tokens)}`,
+      }),
+    ).resolves.toBeNull();
   });
 
   it('exposes completed-flight parsing for focused tests', async () => {

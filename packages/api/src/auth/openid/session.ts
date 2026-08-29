@@ -430,6 +430,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
    * @param {import('express').Response} [args.res]
    * @param {string} args.newRefreshToken — the rotated token to sync
    * @param {string} [args.oldRefreshToken] — the browser-cookie token to bridge from
+   * @param {string} [args.previousSessionRefreshToken] — durable session token to revoke
    * @param {string} [args.userId] — user._id (required for bridge verification)
    * @param {string} [args.tenantId] — user.tenantId (optional, verified on bridge lookup)
    * @param {string} [args.openidIssuer] — user.openidIssuer (optional, verified on bridge lookup)
@@ -438,6 +439,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     res,
     newRefreshToken,
     oldRefreshToken,
+    previousSessionRefreshToken,
     userId,
     tenantId,
     openidIssuer,
@@ -462,15 +464,30 @@ export function createOpenIDSessionRefreshService(deps: any): any {
        * old cookie, and `refreshController` rewrites both once it recovers through the bridge.
        */
       if (userId) {
-        await storeOpenIdSession(
-          {
-            userId,
-            refreshToken: newRefreshToken,
-            tenantId,
-            previousRefreshToken: oldRefreshToken,
-          },
-          { upsertSession, deleteSession },
-        );
+        try {
+          await storeOpenIdSession(
+            {
+              userId,
+              refreshToken: newRefreshToken,
+              tenantId,
+              previousRefreshToken: previousSessionRefreshToken ?? oldRefreshToken,
+            },
+            { upsertSession, deleteSession },
+          );
+        } catch (error) {
+          /**
+           * The durable transition is an upsert followed by deletion. If deletion fails after
+           * the upsert succeeds, the IdP has already spent the old token while the browser still
+           * carries it. Persist a short predecessor bridge before surfacing the failure so the
+           * next request can recover the only viable credential.
+           */
+          await storeSessionSaveFailureBridge({
+            oldRefreshToken,
+            newRefreshToken,
+            bridgeIdentity: { userId, tenantId, openidIssuer },
+          });
+          throw error;
+        }
       }
       if (assertLeaseOwned) {
         await assertLeaseOwned();
@@ -654,6 +671,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
         res,
         newRefreshToken: nextRefreshToken,
         oldRefreshToken: browserRefreshToken,
+        previousSessionRefreshToken: refreshToken,
         userId: bridgeIdentity?.userId,
         tenantId: bridgeIdentity?.tenantId,
         openidIssuer: bridgeIdentity?.openidIssuer,
@@ -835,6 +853,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     user: any,
     tokenPreference: any,
     identityContext?: any,
+    forceRefresh = false,
   ) {
     const sessionTokens = req?.session?.openidTokens;
     if (!sessionTokens) {
@@ -842,7 +861,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
       return null;
     }
 
-    if (isLiveSessionTokenStillValid(sessionTokens, tokenPreference)) {
+    if (!forceRefresh && isLiveSessionTokenStillValid(sessionTokens, tokenPreference)) {
       logger.debug('[OpenIDSessionRefresh] Live session token reused');
       return buildOIDCTokensFromSession(sessionTokens, tokenPreference);
     }
@@ -869,6 +888,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     user: any,
     tokenPreference: any,
     identityContext?: any,
+    options: any = {},
   ) {
     const identityBinding = assertOpenIDSessionIdentityMatch(req, user, identityContext);
     if (identityBinding) {
@@ -876,7 +896,14 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     }
     const key = getSingleFlightKey(req, user, identityContext);
     if (!key) {
-      return refreshOrReuseSession(req, res, user, tokenPreference, identityContext);
+      return refreshOrReuseSession(
+        req,
+        res,
+        user,
+        tokenPreference,
+        identityContext,
+        options.forceRefresh,
+      );
     }
 
     const inFlight = inFlightRefreshes.get(key);
@@ -892,13 +919,18 @@ export function createOpenIDSessionRefreshService(deps: any): any {
       return resolvedTokens;
     }
 
-    const promise = refreshOrReuseSession(req, res, user, tokenPreference, identityContext).finally(
-      () => {
-        if (inFlightRefreshes.get(key) === promise) {
-          inFlightRefreshes.delete(key);
-        }
-      },
-    );
+    const promise = refreshOrReuseSession(
+      req,
+      res,
+      user,
+      tokenPreference,
+      identityContext,
+      options.forceRefresh,
+    ).finally(() => {
+      if (inFlightRefreshes.get(key) === promise) {
+        inFlightRefreshes.delete(key);
+      }
+    });
     inFlightRefreshes.set(key, promise);
     /** Swallow rejection on the cleanup chain; the original is delivered to the awaiter. */
     promise.catch(() => {});

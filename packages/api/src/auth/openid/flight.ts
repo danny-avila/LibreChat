@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- dependency-injected legacy API boundary */
 import crypto from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { OPENID_EXPIRY_BUFFER_SECONDS } from '~/oauth/expiry';
 import { createOpenIDRefreshIdentityTuple, serializeAuthIdentityTuple } from '~/utils/identity';
 
 const DEFAULT_FLIGHT_TTL_MS = 2 * 60 * 1000;
 const DEFAULT_LOCK_TTL_MS = 30 * 1000;
-const DEFAULT_WAIT_TIMEOUT_MS = DEFAULT_LOCK_TTL_MS + 1000;
+const DEFAULT_WAIT_TIMEOUT_MS = DEFAULT_FLIGHT_TTL_MS;
 const DEFAULT_WAIT_INTERVAL_MS = 100;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 10 * 1000;
 const INTERNAL_BROWSER_REFRESH_TOKEN_FIELD = '__browserRefreshToken';
@@ -16,6 +17,7 @@ type FlightRecord = {
   ownerId?: string;
   encryptedResult?: string;
   errorMessage?: string;
+  expiresAt?: Date | string;
   [key: string]: any;
 };
 
@@ -90,11 +92,15 @@ export function createOpenIDRefreshFlightService({
     const browserRefreshToken = tokens[INTERNAL_BROWSER_REFRESH_TOKEN_FIELD];
     if (typeof browserRefreshToken === 'string' && browserRefreshToken)
       serializedTokens[INTERNAL_BROWSER_REFRESH_TOKEN_FIELD] = browserRefreshToken;
+    const accessTokenExpiresAt = Number(tokens.expires_at) * 1000;
+    const usableTokenTtl = Number.isFinite(accessTokenExpiresAt)
+      ? Math.max(1, accessTokenExpiresAt - Date.now() - OPENID_EXPIRY_BUFFER_SECONDS * 1000)
+      : ttl;
     return db.completeOpenIDRefreshFlight({
       key,
       ownerId,
       encryptedResult: await encrypt(JSON.stringify(serializedTokens)),
-      expiresAt: new Date(Date.now() + ttl),
+      expiresAt: new Date(Date.now() + Math.min(ttl, usableTokenTtl)),
     });
   }
 
@@ -189,6 +195,13 @@ export function createOpenIDRefreshFlightService({
       throw new Error(flight.errorMessage || 'OpenID refresh failed in another worker');
     if (flight.status !== 'completed' || !flight.encryptedResult) return null;
     const tokens: TokenResult = JSON.parse(await decrypt(flight.encryptedResult));
+    const accessTokenExpiresAt = Number(tokens.expires_at) * 1000;
+    if (
+      Number.isFinite(accessTokenExpiresAt) &&
+      accessTokenExpiresAt <= Date.now() + OPENID_EXPIRY_BUFFER_SECONDS * 1000
+    ) {
+      return null;
+    }
     const browserRefreshToken = tokens[INTERNAL_BROWSER_REFRESH_TOKEN_FIELD];
     if (typeof browserRefreshToken === 'string' && browserRefreshToken) {
       delete tokens[INTERNAL_BROWSER_REFRESH_TOKEN_FIELD];
@@ -201,18 +214,28 @@ export function createOpenIDRefreshFlightService({
     return tokens;
   }
 
+  function getRenewedWaitDeadline(deadline: number, flight: FlightRecord | null): number {
+    const renewedExpiry = flight?.expiresAt ? new Date(flight.expiresAt).getTime() : NaN;
+    return Number.isFinite(renewedExpiry) ? Math.max(deadline, renewedExpiry) : deadline;
+  }
+
   async function waitForOpenIDRefreshFlight({
     key,
-    timeoutMs = DEFAULT_WAIT_TIMEOUT_MS,
+    timeoutMs,
     intervalMs = DEFAULT_WAIT_INTERVAL_MS,
   }: any) {
     if (!key) return null;
-    const deadline = Date.now() + timeoutMs;
+    const followRenewals = timeoutMs == null;
+    let deadline = Date.now() + (timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS);
     while (Date.now() <= deadline) {
       const flight = await db.findOpenIDRefreshFlight({ key });
       const completed = await readCompletedFlight(flight);
       if (completed) return completed;
+      if (flight?.status === 'completed') return null;
       if (!flight) return null;
+      if (followRenewals) {
+        deadline = getRenewedWaitDeadline(deadline, flight);
+      }
       await delay(intervalMs);
     }
     logger.warn('[OpenIDRefreshFlight] Timed out waiting for refresh flight', { key });
@@ -235,6 +258,7 @@ export function createOpenIDRefreshFlightService({
       DEFAULT_WAIT_TIMEOUT_MS,
       DEFAULT_WAIT_INTERVAL_MS,
       DEFAULT_HEARTBEAT_INTERVAL_MS,
+      getRenewedWaitDeadline,
     },
   };
 }
