@@ -229,9 +229,10 @@ export abstract class UserConnectionManager {
    * against the config and connection state the teardown left behind, instead of failing.
    */
   public async getUserConnection(opts: t.UserMCPConnectionOptions): Promise<MCPConnection> {
+    let attemptOptions = opts;
     for (let attempt = 0; ; attempt++) {
       try {
-        return await this.establishUserConnection(opts);
+        return await this.establishUserConnection(attemptOptions);
       } catch (error) {
         if (
           !(error instanceof ConnectionCreationCancelledError) ||
@@ -242,8 +243,36 @@ export abstract class UserConnectionManager {
         logger.info(
           `[MCP][User: ${opts.user?.id}][${opts.serverName}] Connection creation raced a teardown; re-establishing`,
         );
+        attemptOptions = await this.refreshFencedServerConfig(attemptOptions);
       }
     }
+  }
+
+  /**
+   * Callers hand in a config they resolved before the teardown, so a re-established attempt
+   * re-reads it: a registry-backed server picks up the committed update, and a deleted user
+   * server resolves to nothing and fails the attempt instead of reconnecting to the removed
+   * endpoint. A caller-supplied config the registry cannot resolve on its own — a config-source
+   * server not cached yet — is kept, since no user mutation removes it.
+   */
+  private async refreshFencedServerConfig(
+    opts: t.UserMCPConnectionOptions,
+  ): Promise<t.UserMCPConnectionOptions> {
+    const userId = opts.user?.id;
+    if (!userId) {
+      return opts;
+    }
+    const serverConfig = await MCPServersRegistry.getInstance().getServerConfig(
+      opts.serverName,
+      userId,
+    );
+    if (serverConfig) {
+      return { ...opts, serverConfig };
+    }
+    if (opts.serverConfig && !isUserSourced(opts.serverConfig)) {
+      return opts;
+    }
+    return { ...opts, serverConfig: undefined };
   }
 
   private async establishUserConnection(opts: t.UserMCPConnectionOptions): Promise<MCPConnection> {

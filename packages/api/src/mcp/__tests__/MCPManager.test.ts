@@ -3363,7 +3363,7 @@ describe('MCPManager', () => {
       expect(manager.getUserConnections(userId)?.get(serverName)).toBe(reestablishedConnection);
     });
 
-    it('re-reads the server config when a teardown fences an in-flight creation', async () => {
+    it('re-reads the committed config when a teardown fences a caller-resolved creation', async () => {
       const fencedConnection = newUserConnection();
       const reestablishedConnection = newUserConnection();
       const staleConfig: t.ParsedServerConfig = {
@@ -3383,7 +3383,12 @@ describe('MCPManager', () => {
         .mockResolvedValue(reestablishedConnection);
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
-      const creation = manager.getUserConnection({ serverName, user: mockUser });
+      /** `MCPManager.getConnection` resolves the config once and hands it to every attempt. */
+      const creation = manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        serverConfig: staleConfig,
+      });
       while ((MCPConnectionFactory.create as jest.Mock).mock.calls.length === 0) {
         await new Promise((resolve) => setImmediate(resolve));
       }
@@ -3401,6 +3406,81 @@ describe('MCPManager', () => {
         expect.objectContaining({
           serverConfig: expect.objectContaining({ url: 'https://mcp.example.com/new' }),
         }),
+        expect.anything(),
+      );
+    });
+
+    it('fails a fenced creation whose user server was deleted during the teardown', async () => {
+      const fencedConnection = newUserConnection();
+      const deletedConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/deleted',
+        source: 'user',
+        dbId: 'server-1',
+      };
+      let resolveConnection: ((connection: MCPConnection) => void) | undefined;
+      const factoryResult = new Promise<MCPConnection>((resolve) => {
+        resolveConnection = resolve;
+      });
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(deletedConfig);
+      (MCPConnectionFactory.create as jest.Mock).mockReturnValue(factoryResult);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const creation = manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        serverConfig: deletedConfig,
+      });
+      while ((MCPConnectionFactory.create as jest.Mock).mock.calls.length === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(undefined);
+      await manager.disconnectUserConnection(userId, serverName);
+      resolveConnection?.(fencedConnection);
+
+      await expect(creation).rejects.toThrow(`Configuration for server "${serverName}" not found`);
+      expect(fencedConnection.dispose).toHaveBeenCalledTimes(1);
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
+      expect(manager.getUserConnections(userId)?.has(serverName) ?? false).toBe(false);
+    });
+
+    it('keeps a config-source config the registry cannot resolve when re-establishing', async () => {
+      const fencedConnection = newUserConnection();
+      const reestablishedConnection = newUserConnection();
+      const configSourced: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/config-sourced',
+        source: 'config',
+      };
+      let resolveConnection: ((connection: MCPConnection) => void) | undefined;
+      const factoryResult = new Promise<MCPConnection>((resolve) => {
+        resolveConnection = resolve;
+      });
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(undefined);
+      (MCPConnectionFactory.create as jest.Mock)
+        .mockReturnValueOnce(factoryResult)
+        .mockResolvedValue(reestablishedConnection);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const creation = manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        serverConfig: configSourced,
+      });
+      while ((MCPConnectionFactory.create as jest.Mock).mock.calls.length === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+
+      await manager.disconnectUserConnection(userId, serverName);
+      resolveConnection?.(fencedConnection);
+
+      await expect(creation).resolves.toBe(reestablishedConnection);
+      expect(fencedConnection.dispose).toHaveBeenCalledTimes(1);
+      expect(MCPConnectionFactory.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({ serverConfig: expect.objectContaining(configSourced) }),
         expect.anything(),
       );
     });
