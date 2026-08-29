@@ -26,9 +26,10 @@ export async function detectGenerationRetry(
 ): Promise<void> {
   const clientRequestId = req.body?.clientRequestId;
   const userId = req.user?.id;
+  const normalizedPath = req.path.replace(/\/+$/, '').toLowerCase();
   if (
     req.method !== 'POST' ||
-    req.path === '/resume' ||
+    normalizedPath === '/resume' ||
     typeof userId !== 'string' ||
     typeof clientRequestId !== 'string' ||
     !CLIENT_REQUEST_ID_PATTERN.test(clientRequestId)

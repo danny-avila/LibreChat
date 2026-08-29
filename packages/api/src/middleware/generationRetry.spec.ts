@@ -48,6 +48,8 @@ describe('generation retry admission', () => {
 
   it.each([
     ['a resume', { path: '/resume' }],
+    ['a resume with a trailing slash', { path: '/resume/' }],
+    ['a case-insensitive resume route', { path: '/Resume' }],
     ['a request without an authenticated user', { user: undefined }],
     ['an invalid idempotency key', { body: { clientRequestId: 'invalid key' } }],
   ])('does not probe %s', async (_label, overrides) => {
