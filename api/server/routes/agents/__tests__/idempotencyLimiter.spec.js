@@ -5,6 +5,7 @@ const mockHasGenerationClaim = jest.fn();
 const mockIpLimiter = jest.fn((_req, res) => res.status(429).json({ limited: 'ip' }));
 const mockUserLimiter = jest.fn((_req, res) => res.status(429).json({ limited: 'user' }));
 const mockRetryLimiter = jest.fn((_req, _res, next) => next());
+const mockRetryProbeLimiter = jest.fn((_req, _res, next) => next());
 const mockExemptAgentTrigger = jest.fn(() => false);
 const mockExemptSchedule = jest.fn(() => false);
 
@@ -27,6 +28,7 @@ jest.mock('@librechat/api', () => ({
     next();
   },
   isConfirmedGenerationRetry: (req) => req._isConfirmedGenerationRetry === true,
+  generationRetryProbeLimiter: (...args) => mockRetryProbeLimiter(...args),
   generationRetryLimiter: (...args) => mockRetryLimiter(...args),
   isAgentTriggerRequest: jest.fn(() => false),
   captureScheduleFireContext: jest.fn(),
@@ -86,6 +88,7 @@ describe('start-generation idempotency before message limiters', () => {
     const response = await request(app).post('/agents/chat').send({ clientRequestId: 'request-1' });
 
     expect(response.status).toBe(201);
+    expect(mockRetryProbeLimiter).toHaveBeenCalledTimes(1);
     expect(mockRetryLimiter).toHaveBeenCalledTimes(1);
     expect(mockIpLimiter).not.toHaveBeenCalled();
     expect(mockUserLimiter).not.toHaveBeenCalled();
@@ -98,21 +101,36 @@ describe('start-generation idempotency before message limiters', () => {
 
     expect(response.status).toBe(429);
     expect(response.body).toEqual({ limited: 'ip' });
+    expect(mockRetryProbeLimiter).toHaveBeenCalledTimes(1);
     expect(mockRetryLimiter).toHaveBeenCalledTimes(1);
     expect(mockIpLimiter).toHaveBeenCalledTimes(1);
     expect(mockUserLimiter).not.toHaveBeenCalled();
   });
 
-  it('rejects an excessive confirmed retry before the chat pipeline', async () => {
+  it('defers an excessive confirmed retry before the chat pipeline', async () => {
     mockHasGenerationClaim.mockResolvedValue(true);
     mockRetryLimiter.mockImplementationOnce((_req, res) =>
-      res.status(429).json({ error: { code: 'generation_retry_rate_limited' } }),
+      res.status(503).json({ code: 'SERVER_NOT_READY' }),
     );
 
     const response = await request(app).post('/agents/chat').send({ clientRequestId: 'request-3' });
 
-    expect(response.status).toBe(429);
-    expect(response.body.error.code).toBe('generation_retry_rate_limited');
+    expect(response.status).toBe(503);
+    expect(response.body.code).toBe('SERVER_NOT_READY');
+    expect(mockIpLimiter).not.toHaveBeenCalled();
+    expect(mockUserLimiter).not.toHaveBeenCalled();
+  });
+
+  it('bounds candidate probes before durable storage inspection', async () => {
+    mockRetryProbeLimiter.mockImplementationOnce((_req, res) =>
+      res.status(503).json({ code: 'SERVER_NOT_READY' }),
+    );
+
+    const response = await request(app).post('/agents/chat').send({ clientRequestId: 'request-5' });
+
+    expect(response.status).toBe(503);
+    expect(mockHasGenerationClaim).not.toHaveBeenCalled();
+    expect(mockRetryLimiter).not.toHaveBeenCalled();
     expect(mockIpLimiter).not.toHaveBeenCalled();
     expect(mockUserLimiter).not.toHaveBeenCalled();
   });
@@ -127,6 +145,7 @@ describe('start-generation idempotency before message limiters', () => {
     const response = await request(app).post('/agents/chat').send({ clientRequestId: 'request-4' });
 
     expect(response.status).toBe(201);
+    expect(mockRetryProbeLimiter).not.toHaveBeenCalled();
     expect(mockRetryLimiter).not.toHaveBeenCalled();
     expect(mockIpLimiter).not.toHaveBeenCalled();
     expect(mockUserLimiter).not.toHaveBeenCalled();

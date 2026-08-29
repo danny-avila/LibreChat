@@ -6,7 +6,9 @@ import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import {
   detectGenerationRetry,
   generationRetryLimiter,
+  generationRetryProbeLimiter,
   GENERATION_RETRY_MAX,
+  GENERATION_RETRY_PROBE_MAX,
   isConfirmedGenerationRetry,
 } from './generationRetry';
 
@@ -82,7 +84,39 @@ describe('generation retry admission', () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
-  it('bounds confirmed retries before downstream paid processing', async () => {
+  it('bounds fresh claim probes before accessing the shared store', async () => {
+    const hasClaim = jest
+      .spyOn(GenerationJobManager, 'hasGenerationClaim')
+      .mockResolvedValue(false);
+    const downstream = jest.fn((_req, res) => res.sendStatus(204));
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.user = { id: 'bounded-probe-user' };
+      next();
+    });
+    app.use(generationRetryProbeLimiter);
+    app.use(detectGenerationRetry);
+    app.post('/', downstream);
+
+    for (let attempt = 0; attempt < GENERATION_RETRY_PROBE_MAX; attempt += 1) {
+      await request(app)
+        .post('/')
+        .send({ clientRequestId: `probe-${attempt}` })
+        .expect(204);
+    }
+    const rejected = await request(app)
+      .post('/')
+      .send({ clientRequestId: 'probe-rejected' })
+      .expect(503);
+
+    expect(rejected.headers['retry-after']).toBeDefined();
+    expect(rejected.body.code).toBe('SERVER_NOT_READY');
+    expect(hasClaim).toHaveBeenCalledTimes(GENERATION_RETRY_PROBE_MAX);
+    expect(downstream).toHaveBeenCalledTimes(GENERATION_RETRY_PROBE_MAX);
+  });
+
+  it('makes a bounded confirmed retry delay participate in readiness recovery', async () => {
     jest.spyOn(GenerationJobManager, 'hasGenerationClaim').mockResolvedValue(true);
     const downstream = jest.fn((_req, res) => res.sendStatus(204));
     const app = express();
@@ -101,9 +135,10 @@ describe('generation retry admission', () => {
     const rejected = await request(app)
       .post('/')
       .send({ clientRequestId: 'bounded-request' })
-      .expect(429);
+      .expect(503);
 
-    expect(rejected.body.error.code).toBe('generation_retry_rate_limited');
+    expect(rejected.headers['retry-after']).toBeDefined();
+    expect(rejected.body.code).toBe('SERVER_NOT_READY');
     expect(downstream).toHaveBeenCalledTimes(GENERATION_RETRY_MAX);
   });
 });

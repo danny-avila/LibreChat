@@ -9,11 +9,24 @@ const confirmedGenerationRetry: unique symbol = Symbol('confirmedGenerationRetry
 
 export const GENERATION_RETRY_WINDOW_MS = 60_000;
 export const GENERATION_RETRY_MAX = 10;
+export const GENERATION_RETRY_PROBE_MAX = 60;
 
 type GenerationRetryRequest = Request & {
   user?: { id?: string };
   [confirmedGenerationRetry]?: boolean;
 };
+
+function isGenerationRetryCandidate(req: GenerationRetryRequest): boolean {
+  const clientRequestId = req.body?.clientRequestId;
+  const normalizedPath = req.path.replace(/\/+$/, '').toLowerCase();
+  return (
+    req.method === 'POST' &&
+    normalizedPath !== '/resume' &&
+    typeof req.user?.id === 'string' &&
+    typeof clientRequestId === 'string' &&
+    CLIENT_REQUEST_ID_PATTERN.test(clientRequestId)
+  );
+}
 
 /**
  * Classifies only retries already represented by a durable generation claim.
@@ -24,16 +37,14 @@ export async function detectGenerationRetry(
   _res: Response,
   next: NextFunction,
 ): Promise<void> {
+  if (!isGenerationRetryCandidate(req)) {
+    next();
+    return;
+  }
+
   const clientRequestId = req.body?.clientRequestId;
   const userId = req.user?.id;
-  const normalizedPath = req.path.replace(/\/+$/, '').toLowerCase();
-  if (
-    req.method !== 'POST' ||
-    normalizedPath === '/resume' ||
-    typeof userId !== 'string' ||
-    typeof clientRequestId !== 'string' ||
-    !CLIENT_REQUEST_ID_PATTERN.test(clientRequestId)
-  ) {
+  if (typeof userId !== 'string' || typeof clientRequestId !== 'string') {
     next();
     return;
   }
@@ -57,6 +68,29 @@ export function isConfirmedGenerationRetry(req: Request): boolean {
   return (req as GenerationRetryRequest)[confirmedGenerationRetry] === true;
 }
 
+const retryAdmissionHandler: RequestHandler = (_req, res) => {
+  res.status(503).type('application/json').json({
+    code: 'SERVER_NOT_READY',
+    error: 'Generation retry admission is temporarily busy. Please retry shortly.',
+  });
+};
+
+/**
+ * Bounds read-only claim probes before they touch the shared generation store.
+ * The retryable response participates in the client's existing 120-second
+ * readiness loop and express-rate-limit supplies its Retry-After header.
+ */
+export const generationRetryProbeLimiter: RequestHandler = rateLimit({
+  windowMs: GENERATION_RETRY_WINDOW_MS,
+  max: GENERATION_RETRY_PROBE_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => !isGenerationRetryCandidate(req as GenerationRetryRequest),
+  keyGenerator: (req) => String((req as GenerationRetryRequest).user?.id),
+  store: limiterCache('generation_retry_probe_limiter'),
+  handler: retryAdmissionHandler,
+});
+
 /**
  * Confirmed retries bypass the ordinary message buckets so a lost response can
  * be recovered, but they still receive a small user-scoped allowance before
@@ -71,16 +105,5 @@ export const generationRetryLimiter: RequestHandler = rateLimit({
   skip: (req) => !isConfirmedGenerationRetry(req),
   keyGenerator: (req) => String((req as GenerationRetryRequest).user?.id),
   store: limiterCache('generation_retry_limiter'),
-  handler: (_req, res) => {
-    res
-      .status(429)
-      .type('application/json')
-      .json({
-        error: {
-          code: 'generation_retry_rate_limited',
-          message: 'Too many generation retry attempts. Please try again shortly.',
-          type: 'rate_limit_error',
-        },
-      });
-  },
+  handler: retryAdmissionHandler,
 });

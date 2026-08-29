@@ -20,6 +20,7 @@ const {
   exemptFromUserLimiter: exemptScheduleFromUserLimiter,
   detectGenerationRetry,
   isConfirmedGenerationRetry,
+  generationRetryProbeLimiter,
   generationRetryLimiter,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
@@ -1082,6 +1083,12 @@ const useMessageIpLimiter = isEnabled(LIMIT_MESSAGE_IP);
 const useMessageUserLimiter = isEnabled(LIMIT_MESSAGE_USER);
 chatRouter.use(configMiddleware);
 if (useMessageIpLimiter || useMessageUserLimiter) {
+  chatRouter.use(
+    unless(
+      (req) => exemptAgentTriggerFromIpLimiter(req) || exemptScheduleFromUserLimiter(req),
+      generationRetryProbeLimiter,
+    ),
+  );
   chatRouter.use(detectGenerationRetry);
   chatRouter.use(
     unless(
