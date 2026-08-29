@@ -18,6 +18,9 @@ const {
   exemptAgentTriggerFromIpLimiter,
   captureScheduleFireContext,
   exemptFromUserLimiter: exemptScheduleFromUserLimiter,
+  detectGenerationRetry,
+  isConfirmedGenerationRetry,
+  generationRetryLimiter,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -39,10 +42,6 @@ const {
   negotiateExistingGenerationProtocol,
 } = require('~/server/controllers/agents/protocol');
 const { getFiles, saveMessage } = require('~/models');
-const {
-  detectGenerationRetry,
-  isConfirmedGenerationRetry,
-} = require('~/server/middleware/idempotency');
 const {
   recordScheduleOutcome,
   beginScheduledStop,
@@ -1084,6 +1083,7 @@ const useMessageUserLimiter = isEnabled(LIMIT_MESSAGE_USER);
 chatRouter.use(configMiddleware);
 if (useMessageIpLimiter || useMessageUserLimiter) {
   chatRouter.use(detectGenerationRetry);
+  chatRouter.use(generationRetryLimiter);
 }
 
 if (useMessageIpLimiter) {

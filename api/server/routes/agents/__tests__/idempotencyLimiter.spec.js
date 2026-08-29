@@ -4,6 +4,7 @@ const request = require('supertest');
 const mockHasGenerationClaim = jest.fn();
 const mockIpLimiter = jest.fn((_req, res) => res.status(429).json({ limited: 'ip' }));
 const mockUserLimiter = jest.fn((_req, res) => res.status(429).json({ limited: 'user' }));
+const mockRetryLimiter = jest.fn((_req, _res, next) => next());
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -16,9 +17,15 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => true),
-  GenerationJobManager: {
-    hasGenerationClaim: (...args) => mockHasGenerationClaim(...args),
+  detectGenerationRetry: async (req, _res, next) => {
+    req._isConfirmedGenerationRetry = await mockHasGenerationClaim(
+      req.user?.id,
+      req.body?.clientRequestId,
+    );
+    next();
   },
+  isConfirmedGenerationRetry: (req) => req._isConfirmedGenerationRetry === true,
+  generationRetryLimiter: (...args) => mockRetryLimiter(...args),
   isAgentTriggerRequest: jest.fn(() => false),
   captureScheduleFireContext: jest.fn(),
   exemptAgentTriggerFromIpLimiter: jest.fn(() => false),
@@ -75,6 +82,7 @@ describe('start-generation idempotency before message limiters', () => {
     const response = await request(app).post('/agents/chat').send({ clientRequestId: 'request-1' });
 
     expect(response.status).toBe(201);
+    expect(mockRetryLimiter).toHaveBeenCalledTimes(1);
     expect(mockIpLimiter).not.toHaveBeenCalled();
     expect(mockUserLimiter).not.toHaveBeenCalled();
   });
@@ -86,7 +94,22 @@ describe('start-generation idempotency before message limiters', () => {
 
     expect(response.status).toBe(429);
     expect(response.body).toEqual({ limited: 'ip' });
+    expect(mockRetryLimiter).toHaveBeenCalledTimes(1);
     expect(mockIpLimiter).toHaveBeenCalledTimes(1);
+    expect(mockUserLimiter).not.toHaveBeenCalled();
+  });
+
+  it('rejects an excessive confirmed retry before the chat pipeline', async () => {
+    mockHasGenerationClaim.mockResolvedValue(true);
+    mockRetryLimiter.mockImplementationOnce((_req, res) =>
+      res.status(429).json({ error: { code: 'generation_retry_rate_limited' } }),
+    );
+
+    const response = await request(app).post('/agents/chat').send({ clientRequestId: 'request-3' });
+
+    expect(response.status).toBe(429);
+    expect(response.body.error.code).toBe('generation_retry_rate_limited');
+    expect(mockIpLimiter).not.toHaveBeenCalled();
     expect(mockUserLimiter).not.toHaveBeenCalled();
   });
 });
