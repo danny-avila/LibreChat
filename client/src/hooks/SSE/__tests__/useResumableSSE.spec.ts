@@ -3951,7 +3951,29 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
-  it('leaves a still-open stream alone when the page returns to the foreground', async () => {
+  it('reconciles durable messages when an apparently open stream is terminal on foreground', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: 'stream-epoch',
+      status: 'started',
+      generationCreatedAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    mockFetchStreamStatus.mockResolvedValue({
+      active: false,
+      status: 'complete',
+      createdAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    const persisted = [
+      {
+        messageId: 'resp-1',
+        parentMessageId: 'msg-1',
+        conversationId: CONV_ID,
+        text: 'Completed while backgrounded',
+        isCreatedByUser: false,
+      },
+    ] as TMessage[];
+    mockFetchQuery.mockResolvedValue(persisted);
     const submission = buildSubmission();
     const chatHelpers = buildChatHelpers();
 
@@ -3964,9 +3986,84 @@ describe('useResumableSSE', () => {
 
     await act(async () => {
       document.dispatchEvent(new Event('visibilitychange'));
+      await Promise.resolve();
     });
+    await flushMicrotasks();
+
+    expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONV_ID);
+    expect(mockSSEInstances).toHaveLength(sseCount + 1);
+    expect(getLastSSE()._url).toBe(
+      '/api/agents/chat/stream/stream-epoch?resume=true&generationCreatedAt=1000&generationProtocolVersion=2',
+    );
+    expect(initialSSE.close).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      getLastSSE()._emit('error', { responseCode: 404 });
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockFetchQuery).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.messages, CONV_ID],
+    });
+    expect(mockSettleAppliedSteerParts).toHaveBeenCalledWith(CONV_ID, persisted);
+    unmount();
+  });
+
+  it('leaves a still-open active stream alone when the page returns to the foreground', async () => {
+    mockFetchStreamStatus.mockResolvedValue({
+      active: true,
+      streamId: 'stream-123',
+      status: 'running',
+      createdAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const initialSSE = getLastSSE();
+    const sseCount = mockSSEInstances.length;
+    initialSSE.readyState = MOCK_SSE_OPEN;
+
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONV_ID);
+    expect(mockSSEInstances).toHaveLength(sseCount);
+    expect(initialSSE.close).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('keeps an apparently open stream when foreground status belongs to another epoch', async () => {
+    mockFetchStreamStatus.mockResolvedValue({
+      active: false,
+      status: 'complete',
+      createdAt: 2000,
+      generationProtocolVersion: 2,
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const initialSSE = getLastSSE();
+    const sseCount = mockSSEInstances.length;
+
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
 
     expect(mockSSEInstances).toHaveLength(sseCount);
+    expect(initialSSE.close).not.toHaveBeenCalled();
     unmount();
   });
 
