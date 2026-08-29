@@ -1092,6 +1092,11 @@ export interface IJobStoreV2 extends IJobStore {
     ttlSeconds: number,
   ): Promise<IdempotencyClaimResult>;
 
+  /** Read-only existence probe used to identify a confirmed retry before
+   * request-rate admission. Optional stores keep the conservative behavior
+   * where every request remains subject to the limiter. */
+  hasIdempotencyKey?(key: string): Promise<boolean>;
+
   /** Compare-and-swap an abandoned pre-create claim. */
   takeoverIdempotencyKey(
     key: string,
