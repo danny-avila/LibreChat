@@ -129,11 +129,20 @@ export function getTokenExpiresAtMs({
  * buffer, so a credential handed on with this stamp cannot be accepted into its final seconds.
  */
 export function getSkewedTokenExpiresAtMs(expiresAt: number, now: number): number {
+  /** An expiry already in the past is the provider saying the credential is dead. Flooring it to a
+   *  moment in the future would hand a consumer a token that cannot work, so it stays elapsed and
+   *  the caller rejects the exchange instead of failing downstream. */
+  if (expiresAt <= now) {
+    return expiresAt;
+  }
   return Math.max(now + MIN_LIVE_TOKEN_TTL_MS, expiresAt - OPENID_EXPIRY_BUFFER_SECONDS * 1000);
 }
 
 /** Cache TTL for a token whose absolute expiry is already known, buffered as above. */
 export function getSkewedTokenCacheTtlMs(expiresAt: number, now: number): number {
+  if (expiresAt <= now) {
+    return EXPIRED_CACHE_TTL_MS;
+  }
   return Math.max(MIN_LIVE_TOKEN_TTL_MS, expiresAt - now - OPENID_EXPIRY_BUFFER_SECONDS * 1000);
 }
 

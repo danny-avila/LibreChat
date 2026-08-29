@@ -1,5 +1,6 @@
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), debug: jest.fn(), warn: jest.fn(), info: jest.fn() },
+  runAsSystem: (callback) => callback(),
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: jest.fn(),
@@ -17,6 +18,7 @@ jest.mock('~/strategies', () => ({ getOpenIdConfig: jest.fn(), getOpenIdEmail: j
 jest.mock('openid-client', () => ({ refreshTokenGrant: jest.fn() }));
 jest.mock('~/models', () => ({
   deleteAllUserSessions: jest.fn(),
+  deleteSession: jest.fn(),
   getUserById: jest.fn(),
   findSession: jest.fn(),
   updateUser: jest.fn(),
@@ -84,7 +86,7 @@ const {
   setAuthTokens,
 } = require('~/server/services/AuthService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
-const { getUserById, findSession, updateUser } = require('~/models');
+const { getUserById, findSession, updateUser, deleteSession } = require('~/models');
 const {
   getRefreshTokenBridge,
   storeRefreshTokenBridge,
@@ -1040,6 +1042,9 @@ describe('refreshController – OpenID path', () => {
       'tenant-1',
       'bridged-refresh',
     );
+    /** The stale token the browser presented is dead upstream, but its durable Session — and the
+     *  marker bound to it — would otherwise keep authorizing local image access until expiry. */
+    expect(deleteSession).toHaveBeenCalledWith({ refreshToken: 'stored-refresh' });
     const lookupIdentity = getRefreshTokenBridge.mock.calls[0][0];
     const graceIdentity = storeRefreshTokenBridge.mock.calls[0][0];
     expect(graceIdentity).toEqual(

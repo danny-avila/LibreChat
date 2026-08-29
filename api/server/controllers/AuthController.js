@@ -2,7 +2,7 @@ const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const crypto = require('node:crypto');
 const openIdClient = require('openid-client');
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   math,
   isEnabled,
@@ -24,6 +24,7 @@ const {
 } = require('~/server/services/AuthService');
 const {
   deleteAllUserSessions,
+  deleteSession,
   getUserById,
   findSession,
   updateUser,
@@ -183,6 +184,7 @@ const sendOpenIDAuthResponse = async ({
   tokenset,
   user,
   existingRefreshToken,
+  revokedRefreshToken,
   openidSubject,
   openidIssuer,
   req,
@@ -201,6 +203,23 @@ const sendOpenIDAuthResponse = async ({
     user.tenantId,
     existingRefreshToken,
   );
+  /**
+   * Bridge recovery replaces a token the IdP already rejected, and only the token it recovered
+   * through is passed above. The stale one the browser presented keeps its own durable Session
+   * until its original expiry otherwise, and that record — with the marker cookie still bound to
+   * it — is what authorizes local image access, so a copy of that cookie would outlive the
+   * rotation it lost. Revoked explicitly here.
+   */
+  if (revokedRefreshToken && revokedRefreshToken !== existingRefreshToken) {
+    try {
+      await runAsSystem(() => deleteSession({ refreshToken: revokedRefreshToken }));
+    } catch (error) {
+      logger.warn(
+        '[refreshController] Failed to revoke the superseded refresh-token session',
+        error,
+      );
+    }
+  }
   const token = setOpenIDAuthTokens(tokenset, req, res, {
     userId,
     existingRefreshToken,
@@ -450,6 +469,7 @@ const refreshController = async (req, res) => {
                     tokenset: retryTokenset,
                     user: retryUser,
                     existingRefreshToken: bridgedRefreshToken,
+                    revokedRefreshToken: refreshToken,
                     openidSubject: retryClaims?.sub,
                     openidIssuer: retryOpenidIssuer,
                     req,

@@ -211,12 +211,20 @@ describe('skew helpers', () => {
     expect(getSkewedTokenCacheTtlMs(expiresAt, now)).toBe(120_000 - bufferMs);
   });
 
-  it('floors a lifetime shorter than the buffer to a usable minimum, never 0', () => {
+  it('floors a live lifetime shorter than the buffer to a usable minimum, never 0', () => {
     const expiresAt = now + 10_000;
 
     expect(getSkewedTokenExpiresAtMs(expiresAt, now)).toBe(now + 1000);
     expect(getSkewedTokenCacheTtlMs(expiresAt, now)).toBe(1000);
-    expect(getSkewedTokenCacheTtlMs(now - 60_000, now)).toBe(1000);
+  });
+
+  /** The floor exists to keep a short-but-real credential usable, not to revive a dead one: a
+   *  provider that declares an elapsed expiry must not have it stamped into the future. */
+  it('leaves an already-elapsed expiry elapsed', () => {
+    expect(getSkewedTokenExpiresAtMs(now - 60_000, now)).toBe(now - 60_000);
+    expect(getSkewedTokenExpiresAtMs(now, now)).toBe(now);
+    expect(getSkewedTokenCacheTtlMs(now - 60_000, now)).toBe(1);
+    expect(getSkewedTokenCacheTtlMs(now, now)).toBe(1);
   });
 });
 
