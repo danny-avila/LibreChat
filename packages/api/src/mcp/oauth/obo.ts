@@ -202,10 +202,13 @@ export async function resolveOboToken(
     liveTokens = await upstreamTokenProvider();
   } catch (error) {
     logger.error('[OBO] Upstream session refresh failed:', error);
+    const retryable = isRetryableOboExchangeError(error);
     throw new OboTokenResolutionError(
       'session_refresh_failed',
-      'Your sign-in session expired and could not be refreshed. Please sign in again.',
-      false,
+      retryable
+        ? 'Temporary sign-in session refresh failure.'
+        : 'Your sign-in session expired and could not be refreshed. Please sign in again.',
+      retryable,
       error,
     );
   }

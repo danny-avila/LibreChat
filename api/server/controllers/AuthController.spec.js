@@ -70,6 +70,7 @@ jest.mock('@librechat/api', () => ({
   }),
 }));
 
+const { createHash } = require('node:crypto');
 const openIdClient = require('openid-client');
 const jwt = require('jsonwebtoken');
 const { logger } = require('@librechat/data-schemas');
@@ -251,8 +252,19 @@ describe('refreshController – OpenID path', () => {
       idpSigningSecret,
     );
 
-  const makeSignedUserId = (id = 'user-db-id', options = { expiresIn: '1h' }) =>
-    jwt.sign({ id }, process.env.JWT_REFRESH_SECRET, options);
+  const makeSignedUserId = (
+    id = 'user-db-id',
+    options = { expiresIn: '1h' },
+    refreshToken = 'stored-refresh',
+  ) =>
+    jwt.sign(
+      {
+        id,
+        refreshTokenHash: createHash('sha256').update(refreshToken).digest('base64url'),
+      },
+      process.env.JWT_REFRESH_SECRET,
+      options,
+    );
 
   const setOpenIDReuseCookies = (signedUserId = makeSignedUserId()) => {
     req.headers.cookie = [
@@ -926,6 +938,30 @@ describe('refreshController – OpenID path', () => {
 
   it('does not use the bridge when signed user-id cookie payload is invalid', async () => {
     setOpenIDReuseCookies(jwt.sign({ id: 123 }, process.env.JWT_REFRESH_SECRET));
+    openIdClient.refreshTokenGrant.mockRejectedValue(new Error('invalid_grant'));
+
+    await refreshController(req, res);
+
+    expect(getUserById).not.toHaveBeenCalled();
+    expect(getRefreshTokenBridge).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('does not use the bridge when the signed marker belongs to another refresh token', async () => {
+    setOpenIDReuseCookies(makeSignedUserId('user-db-id', { expiresIn: '1h' }, 'different-refresh'));
+    openIdClient.refreshTokenGrant.mockRejectedValue(new Error('invalid_grant'));
+
+    await refreshController(req, res);
+
+    expect(getUserById).not.toHaveBeenCalled();
+    expect(getRefreshTokenBridge).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('does not use the bridge when the signed marker lacks a refresh-token binding', async () => {
+    setOpenIDReuseCookies(
+      jwt.sign({ id: 'user-db-id' }, process.env.JWT_REFRESH_SECRET, { expiresIn: '1h' }),
+    );
     openIdClient.refreshTokenGrant.mockRejectedValue(new Error('invalid_grant'));
 
     await refreshController(req, res);

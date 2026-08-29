@@ -53,6 +53,12 @@ jest.mock(
           });
         }
       }),
+      normalizeExpiresIn: (value) => {
+        const normalized = typeof value === 'string' && value.trim() ? Number(value) : value;
+        return typeof normalized === 'number' && Number.isFinite(normalized)
+          ? normalized
+          : undefined;
+      },
       resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
       createOpenIDSessionIdentity: jest.fn(
         ({ user, userId, openidSubject, tenantId, openidIssuer }) => {
@@ -379,6 +385,24 @@ describe('setOpenIDAuthTokens', () => {
       expect(typeof persisted).toBe('number');
       expect(persisted).toBeGreaterThanOrEqual(beforeSec + 3590);
       expect(persisted).toBeLessThanOrEqual(beforeSec + 3610);
+    });
+
+    it('should persist accessTokenExpiresAt when tokenset.expires_in is a numeric string', () => {
+      const tokenset = {
+        id_token: 'the-id-token',
+        access_token: 'the-access-token',
+        refresh_token: 'the-refresh-token',
+        expires_in: '3600',
+      };
+      const req = mockRequest();
+      const res = mockResponse();
+      const beforeSec = Math.floor(Date.now() / 1000);
+
+      setOpenIDAuthTokens(tokenset, req, res, 'user-123');
+
+      expect(req.session.openidTokens.accessTokenExpiresAt).toBeGreaterThanOrEqual(
+        beforeSec + 3590,
+      );
     });
 
     it('should NOT persist accessTokenExpiresAt when tokenset.expires_in is missing', () => {

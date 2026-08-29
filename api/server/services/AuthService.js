@@ -21,6 +21,7 @@ const {
   shouldUseSecureCookie,
   setRefreshTokenCookie,
   setOpenIDMarkerCookies,
+  normalizeExpiresIn,
   createOpenIDSessionIdentity,
   resolveAppConfigForUser,
 } = require('@librechat/api');
@@ -858,9 +859,10 @@ const setOpenIDAuthTokens = (
        * always trigger a redundant inline refresh whenever the IdP issues
        * opaque access tokens (e.g. Microsoft Graph audiences).
        */
-      if (typeof tokenset.expires_in === 'number') {
+      const accessTokenExpiresIn = normalizeExpiresIn(tokenset.expires_in);
+      if (accessTokenExpiresIn != null) {
         sessionOpenidTokens.accessTokenExpiresAt =
-          Math.floor(Date.now() / 1000) + tokenset.expires_in;
+          Math.floor(Date.now() / 1000) + accessTokenExpiresIn;
       }
       req.session.openidTokens = sessionOpenidTokens;
     } else {

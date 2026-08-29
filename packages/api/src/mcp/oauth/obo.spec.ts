@@ -125,6 +125,21 @@ describe('resolveOboToken', () => {
     expect(mockResolver).not.toHaveBeenCalled();
   });
 
+  it('marks transient session refresh failures as retryable', async () => {
+    const failingProvider: UpstreamTokenProvider = jest
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('service unavailable'), { status: 503 }));
+
+    await expect(
+      resolveOboToken(mockUser as IUser, oboConfig, mockResolver, failingProvider),
+    ).rejects.toMatchObject({
+      reason: 'session_refresh_failed',
+      retryable: true,
+      userMessage: 'Temporary sign-in session refresh failure.',
+    });
+    expect(mockResolver).not.toHaveBeenCalled();
+  });
+
   it('throws missing_upstream_token when isOpenIDTokenValid returns false (live token expired)', async () => {
     mockIsOpenIDTokenValid.mockReturnValue(false);
 

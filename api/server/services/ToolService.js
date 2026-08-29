@@ -1154,6 +1154,8 @@ async function loadToolDefinitionsWrapper({
       userMCPAuthMap,
       requestBody: runtimeRequestBody,
       requestScopedConnections,
+      upstreamTokenProvider,
+      oboIdentityContext,
     });
 
     rememberMCPAvailableTools(serverName, result?.availableTools);

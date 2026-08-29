@@ -1,5 +1,6 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
+const crypto = require('node:crypto');
 const openIdClient = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const {
@@ -74,7 +75,7 @@ const sanitizeUserForAuthResponse = (user) => {
   return safeUser;
 };
 
-const getValidOpenIDReuseUserId = (parsedCookies) => {
+const getValidOpenIDReuseUserId = (parsedCookies, refreshToken) => {
   const openidUserId = parsedCookies.openid_user_id;
   if (!openidUserId || !process.env.JWT_REFRESH_SECRET) {
     return null;
@@ -82,9 +83,17 @@ const getValidOpenIDReuseUserId = (parsedCookies) => {
 
   try {
     const payload = jwt.verify(openidUserId, process.env.JWT_REFRESH_SECRET);
-    return typeof payload === 'object' && payload != null && typeof payload.id === 'string'
-      ? payload.id
-      : null;
+    if (typeof payload !== 'object' || payload == null || typeof payload.id !== 'string') {
+      return null;
+    }
+    if (refreshToken == null) {
+      return payload.id;
+    }
+    if (typeof payload.refreshTokenHash !== 'string') {
+      return null;
+    }
+    const refreshTokenHash = crypto.createHash('sha256').update(refreshToken).digest('base64url');
+    return payload.refreshTokenHash === refreshTokenHash ? payload.id : null;
   } catch {
     return null;
   }
@@ -368,7 +377,7 @@ const refreshController = async (req, res) => {
        */
       if (isInvalidGrantError(error) && refreshToken) {
         // Bridge lookup uses the signed user-id cookie because /refresh is unauthenticated.
-        const userId = getValidOpenIDReuseUserId(parsedCookies);
+        const userId = getValidOpenIDReuseUserId(parsedCookies, refreshToken);
         if (userId) {
           try {
             const bridgeUser = await getUserById(userId, AUTH_REFRESH_USER_PROJECTION);

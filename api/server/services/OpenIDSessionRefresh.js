@@ -14,6 +14,7 @@ const {
   setRefreshTokenCookie,
   setOpenIDMarkerCookies,
   storeOpenIdSession,
+  normalizeExpiresIn,
 } = require('@librechat/api');
 const { upsertSession, deleteSession } = require('~/models');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
@@ -511,8 +512,9 @@ async function performIdpRefreshGrant(req, res, user, tokenPreference, identityC
    * freshness check will correctly fall through to refresh.
    */
   let nextAccessTokenExp = null;
-  if (typeof tokenset.expires_in === 'number') {
-    nextAccessTokenExp = Math.floor(Date.now() / 1000) + tokenset.expires_in;
+  const accessTokenExpiresIn = normalizeExpiresIn(tokenset.expires_in);
+  if (accessTokenExpiresIn != null) {
+    nextAccessTokenExp = Math.floor(Date.now() / 1000) + accessTokenExpiresIn;
   } else {
     nextAccessTokenExp = decodeJwtExp(tokenset.access_token);
   }

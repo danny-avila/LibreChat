@@ -108,6 +108,10 @@ jest.mock('@librechat/api', () => ({
       res.cookie('openid_user_id', `signed:${userId}`, { expires });
     }
   }),
+  normalizeExpiresIn: (value) => {
+    const normalized = typeof value === 'string' && value.trim() ? Number(value) : value;
+    return typeof normalized === 'number' && Number.isFinite(normalized) ? normalized : undefined;
+  },
   storeOpenIdSession: jest.fn(),
 }));
 jest.mock('~/models', () => ({
@@ -1420,6 +1424,27 @@ describe('OpenIDSessionRefresh', () => {
       expect(typeof persistedExp).toBe('number');
       expect(persistedExp).toBeGreaterThanOrEqual(beforeSec + 3590);
       expect(persistedExp).toBeLessThanOrEqual(beforeSec + 3610);
+    });
+
+    it('persists accessTokenExpiresAt when the refreshed expires_in is a numeric string', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const sessionTokens = {
+        accessToken: 'opaque-stale',
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-string-expiry',
+      };
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: 'opaque-fresh',
+        expires_in: '3600',
+      });
+      const req = buildReq(sessionTokens);
+      const beforeSec = Math.floor(Date.now() / 1000);
+
+      await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
+
+      expect(req.session.openidTokens.accessTokenExpiresAt).toBeGreaterThanOrEqual(
+        beforeSec + 3590,
+      );
     });
 
     it('drops a stale accessTokenExpiresAt when the new tokenset has neither expires_in nor a JWT access_token', async () => {

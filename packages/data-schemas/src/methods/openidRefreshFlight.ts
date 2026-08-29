@@ -7,6 +7,7 @@ import type {
   OpenIDRefreshFlightQuery,
   OpenIDRefreshFlightAcquireResult,
 } from '~/types';
+import { createIndexesWithRetry } from '~/utils/retry';
 import logger from '~/config/winston';
 
 function hasErrorCode(error: unknown): error is { code: number } {
@@ -36,11 +37,27 @@ export function createOpenIDRefreshFlightMethods(mongoose: typeof import('mongoo
     query: OpenIDRefreshFlightQuery,
   ) => Promise<IOpenIDRefreshFlight | null>;
 } {
+  let indexesPromise: Promise<void> | null = null;
+
+  function ensureIndexes(): Promise<void> {
+    if (!indexesPromise) {
+      const OpenIDRefreshFlight = mongoose.models
+        .OpenIDRefreshFlight as Model<IOpenIDRefreshFlight>;
+      indexesPromise = createIndexesWithRetry(OpenIDRefreshFlight).catch((error) => {
+        indexesPromise = null;
+        throw error;
+      });
+    }
+    return indexesPromise;
+  }
+
   async function acquireOpenIDRefreshFlight(
     data: OpenIDRefreshFlightCreateData,
   ): Promise<OpenIDRefreshFlightAcquireResult> {
     const OpenIDRefreshFlight = mongoose.models.OpenIDRefreshFlight as Model<IOpenIDRefreshFlight>;
     const now = new Date();
+
+    await ensureIndexes();
 
     try {
       const flight = await OpenIDRefreshFlight.create({

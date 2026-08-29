@@ -534,7 +534,7 @@ describe('MCPServersInitializer', () => {
     });
   });
 
-  describe('OBO + OPENID_REUSE_TOKENS startup warning', () => {
+  describe('OBO initialization without browser token reuse', () => {
     const oboConfigs: t.MCPServers = {
       obo_server: {
         type: 'streamable-http',
@@ -553,7 +553,7 @@ describe('MCPServersInitializer', () => {
       }
     });
 
-    it('warns when OBO is configured and OPENID_REUSE_TOKENS is unset', async () => {
+    it('does not declare OBO unusable because bearer-auth flows remain valid', async () => {
       delete process.env.OPENID_REUSE_TOKENS;
       mockInspect.mockImplementationOnce(
         async (_n, raw) =>
@@ -566,33 +566,8 @@ describe('MCPServersInitializer', () => {
       await MCPServersInitializer.initialize(oboConfigs);
 
       const warnCalls = mockLogger.warn.mock.calls.flat().join(' | ');
-      expect(warnCalls).toMatch(/OBO is configured/);
-      expect(warnCalls).toMatch(/OPENID_REUSE_TOKENS/);
-    });
-
-    it('does not warn when OPENID_REUSE_TOKENS is enabled', async () => {
-      process.env.OPENID_REUSE_TOKENS = 'true';
-      mockInspect.mockImplementationOnce(
-        async (_n, raw) =>
-          ({
-            ...raw,
-            requiresOAuth: false,
-          }) as unknown as t.ParsedServerConfig,
-      );
-
-      await MCPServersInitializer.initialize(oboConfigs);
-
-      const warnCalls = mockLogger.warn.mock.calls.flat().join(' | ');
       expect(warnCalls).not.toMatch(/OBO is configured/);
-    });
-
-    it('does not warn when no OBO config is present', async () => {
-      delete process.env.OPENID_REUSE_TOKENS;
-
-      await MCPServersInitializer.initialize(testConfigs);
-
-      const warnCalls = mockLogger.warn.mock.calls.flat().join(' | ');
-      expect(warnCalls).not.toMatch(/OBO is configured/);
+      expect(await registry.getServerConfig('obo_server')).toBeDefined();
     });
   });
 });

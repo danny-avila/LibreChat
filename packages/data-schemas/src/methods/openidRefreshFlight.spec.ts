@@ -19,7 +19,6 @@ beforeAll(async () => {
   if (!mongoose.models.OpenIDRefreshFlight) {
     mongoose.model<t.IOpenIDRefreshFlight>('OpenIDRefreshFlight', openidRefreshFlightSchema);
   }
-  methods = createOpenIDRefreshFlightMethods(mongoose);
 });
 
 afterAll(async () => {
@@ -29,16 +28,27 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await mongoose.connection.dropDatabase();
-  /**
-   * Mutual exclusion between workers rests entirely on the unique `key` index: without it a second
-   * `create` succeeds instead of raising a duplicate-key error, and every caller believes it won
-   * the flight. `dropDatabase` takes the indexes with it, and Mongoose only builds them once when
-   * the model is compiled, so they are rebuilt here rather than left to that race.
-   */
-  await mongoose.models.OpenIDRefreshFlight.createIndexes();
+  methods = createOpenIDRefreshFlightMethods(mongoose);
 });
 
 describe('OpenIDRefreshFlight Methods', () => {
+  it('creates coordination indexes before the first acquisition', async () => {
+    await methods.acquireOpenIDRefreshFlight({
+      key: 'flight-key',
+      ownerId: 'owner-1',
+      lockExpiresAt: new Date(Date.now() + 30000),
+      expiresAt: new Date(Date.now() + 60000),
+    });
+
+    const indexes = await mongoose.models.OpenIDRefreshFlight.listIndexes();
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: { key: 1 }, unique: true }),
+        expect.objectContaining({ key: { expiresAt: 1 }, expireAfterSeconds: 0 }),
+      ]),
+    );
+  });
+
   it('acquires a new pending flight and returns existing flight to joiners', async () => {
     const first = await methods.acquireOpenIDRefreshFlight({
       key: 'flight-key',
