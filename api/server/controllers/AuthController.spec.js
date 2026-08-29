@@ -997,6 +997,42 @@ describe('refreshController – OpenID path', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
+  /** The recovery grant need not rotate. When it does not, the browser must still be moved onto
+   *  the bridged token rather than back onto the stale one the bridge exists to retire. */
+  it('installs the bridged token when the recovery grant does not rotate', async () => {
+    setOpenIDReuseCookies();
+    req.session = {};
+    getUserById.mockResolvedValue({
+      _id: 'user-db-id',
+      email: baseClaims.email,
+      openidId: baseClaims.sub,
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    });
+    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    const nonRotatingTokenset = { ...mockTokenset };
+    delete nonRotatingTokenset.refresh_token;
+    openIdClient.refreshTokenGrant
+      .mockRejectedValueOnce(new Error('invalid_grant'))
+      .mockResolvedValueOnce(nonRotatingTokenset);
+
+    await refreshController(req, res);
+
+    expect(storeOpenIDSession).toHaveBeenCalledWith(
+      'user-db-id',
+      'bridged-refresh',
+      'tenant-1',
+      'stored-refresh',
+    );
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(
+      expect.objectContaining({ refresh_token: 'bridged-refresh' }),
+      req,
+      res,
+      expect.any(Object),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
   it('recovers stale refresh-token cookies and keeps a short grace bridge', async () => {
     setOpenIDReuseCookies();
     req.session = {};

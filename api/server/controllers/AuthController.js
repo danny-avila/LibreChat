@@ -247,8 +247,16 @@ const recoverOpenIDRefreshBridge = async ({ refreshToken, bridgedRefreshToken, b
           );
         }
 
+        /**
+         * The caller passes the browser's stale token as `existingRefreshToken` so the durable
+         * Session naming it is the record replaced. That makes the stale token the fallback for
+         * the cookie and the installed session too, which is only harmless while the grant
+         * rotates. An IdP that answers this one without a new `refresh_token` would otherwise
+         * send the browser back to the token the bridge exists to retire, so the recovered token
+         * is carried explicitly — for the followers reading this shared result as well.
+         */
         const resolved = {
-          tokenset: { ...tokenset },
+          tokenset: { ...tokenset, refresh_token: tokenset.refresh_token || bridgedRefreshToken },
           claims,
           openidIssuer,
         };
