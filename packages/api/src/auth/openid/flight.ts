@@ -10,6 +10,7 @@ const DEFAULT_WAIT_TIMEOUT_MS = DEFAULT_FLIGHT_TTL_MS;
 const DEFAULT_WAIT_INTERVAL_MS = 100;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 10 * 1000;
 const INTERNAL_BROWSER_REFRESH_TOKEN_FIELD = '__browserRefreshToken';
+const INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD = '__predecessorRefreshToken';
 
 type TokenResult = Record<string, any>;
 type FlightRecord = {
@@ -27,6 +28,7 @@ export interface OpenIDRefreshFlightDeps {
     completeOpenIDRefreshFlight: (data: Record<string, any>) => Promise<FlightRecord | null>;
     renewOpenIDRefreshFlight: (data: Record<string, any>) => Promise<FlightRecord | null>;
     failOpenIDRefreshFlight: (data: Record<string, any>) => Promise<FlightRecord | null>;
+    revokeOpenIDRefreshFlight: (data: Record<string, any>) => Promise<FlightRecord | null>;
     findOpenIDRefreshFlight: (data: { key: string }) => Promise<FlightRecord | null>;
   };
   logger: { warn: (...args: any[]) => void };
@@ -89,9 +91,13 @@ export function createOpenIDRefreshFlightService({
   }: any) {
     if (!key || !ownerId || !tokens) return null;
     const serializedTokens: TokenResult = { ...tokens };
-    const browserRefreshToken = tokens[INTERNAL_BROWSER_REFRESH_TOKEN_FIELD];
-    if (typeof browserRefreshToken === 'string' && browserRefreshToken)
-      serializedTokens[INTERNAL_BROWSER_REFRESH_TOKEN_FIELD] = browserRefreshToken;
+    for (const field of [
+      INTERNAL_BROWSER_REFRESH_TOKEN_FIELD,
+      INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD,
+    ]) {
+      const value = tokens[field];
+      if (typeof value === 'string' && value) serializedTokens[field] = value;
+    }
     const accessTokenExpiresAt = Number(tokens.expires_at) * 1000;
     const usableTokenTtl = Number.isFinite(accessTokenExpiresAt)
       ? Math.max(1, accessTokenExpiresAt - Date.now() - OPENID_EXPIRY_BUFFER_SECONDS * 1000)
@@ -189,8 +195,17 @@ export function createOpenIDRefreshFlightService({
     });
   }
 
+  async function revokeOpenIDRefreshFlights({ keys, ttl = DEFAULT_FLIGHT_TTL_MS }: any) {
+    const uniqueKeys = [...new Set<string>((keys ?? []).filter(Boolean))];
+    if (uniqueKeys.length === 0) return [];
+    const expiresAt = new Date(Date.now() + ttl);
+    return Promise.all(uniqueKeys.map((key) => db.revokeOpenIDRefreshFlight({ key, expiresAt })));
+  }
+
   async function readCompletedFlight(flight: FlightRecord | null): Promise<TokenResult | null> {
     if (!flight) return null;
+    if (flight.status === 'revoked')
+      throw new Error(flight.errorMessage || 'OpenID refresh was revoked by logout');
     if (flight.status === 'failed')
       throw new Error(flight.errorMessage || 'OpenID refresh failed in another worker');
     if (flight.status !== 'completed' || !flight.encryptedResult) return null;
@@ -202,14 +217,19 @@ export function createOpenIDRefreshFlightService({
     ) {
       return null;
     }
-    const browserRefreshToken = tokens[INTERNAL_BROWSER_REFRESH_TOKEN_FIELD];
-    if (typeof browserRefreshToken === 'string' && browserRefreshToken) {
-      delete tokens[INTERNAL_BROWSER_REFRESH_TOKEN_FIELD];
-      Object.defineProperty(tokens, INTERNAL_BROWSER_REFRESH_TOKEN_FIELD, {
-        value: browserRefreshToken,
-        enumerable: false,
-        configurable: true,
-      });
+    for (const field of [
+      INTERNAL_BROWSER_REFRESH_TOKEN_FIELD,
+      INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD,
+    ]) {
+      const value = tokens[field];
+      if (typeof value === 'string' && value) {
+        delete tokens[field];
+        Object.defineProperty(tokens, field, {
+          value,
+          enumerable: false,
+          configurable: true,
+        });
+      }
     }
     return tokens;
   }
@@ -248,6 +268,7 @@ export function createOpenIDRefreshFlightService({
     createOpenIDRefreshFlightKey,
     failOpenIDRefreshFlight,
     renewOpenIDRefreshFlight,
+    revokeOpenIDRefreshFlights,
     waitForOpenIDRefreshFlight,
     withOpenIDRefreshFlightLease,
     __internals: {
@@ -258,6 +279,7 @@ export function createOpenIDRefreshFlightService({
       DEFAULT_WAIT_TIMEOUT_MS,
       DEFAULT_WAIT_INTERVAL_MS,
       DEFAULT_HEARTBEAT_INTERVAL_MS,
+      INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD,
       getRenewedWaitDeadline,
     },
   };

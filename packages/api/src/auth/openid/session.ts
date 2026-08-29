@@ -73,6 +73,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
    */
   const UPSTREAM_TOKEN_EXPIRY_BUFFER_SECONDS = 30;
   const INTERNAL_BROWSER_REFRESH_TOKEN_FIELD = '__browserRefreshToken';
+  const INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD = '__predecessorRefreshToken';
   const IDENTITY_PART_SEPARATOR = '\x1f';
 
   /**
@@ -396,6 +397,21 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     return typeof browserRefreshToken === 'string' && browserRefreshToken
       ? browserRefreshToken
       : null;
+  }
+
+  function attachPredecessorRefreshTokenMarker(tokens: any, predecessorRefreshToken: any) {
+    if (!tokens || !predecessorRefreshToken) return tokens;
+    Object.defineProperty(tokens, INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD, {
+      value: predecessorRefreshToken,
+      enumerable: false,
+      configurable: true,
+    });
+    return tokens;
+  }
+
+  function getPredecessorRefreshTokenMarker(tokens: any) {
+    const predecessor = tokens?.[INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD];
+    return typeof predecessor === 'string' && predecessor ? predecessor : null;
   }
 
   async function persistSession(req: any) {
@@ -742,7 +758,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
       });
       const resolvedTokens = await waitForOpenIDRefreshFlight({ key });
       if (resolvedTokens) {
-        await hydrateSessionFromResolvedTokens(req, resolvedTokens);
+        await hydrateSessionFromResolvedTokens(req, resolvedTokens, refreshToken);
         return resolvedTokens;
       }
 
@@ -765,6 +781,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
             identityContext,
             assertLeaseOwned,
           );
+          attachPredecessorRefreshTokenMarker(resolvedTokens, refreshToken);
           const completedFlight = await completeOpenIDRefreshFlight({
             key,
             ownerId: flight.ownerId,
@@ -800,11 +817,33 @@ export function createOpenIDSessionRefreshService(deps: any): any {
    * were refreshed by the leader.
    * Idempotent when the joiner shares the leader's `req` object.
    */
-  async function hydrateSessionFromResolvedTokens(req: any, resolvedTokens: any) {
+  async function hydrateSessionFromResolvedTokens(
+    req: any,
+    resolvedTokens: any,
+    predecessorOverride?: any,
+  ) {
     if (!req?.session || !resolvedTokens?.access_token) {
       return;
     }
+    if (typeof req.session.reload === 'function') {
+      await new Promise<void>((resolve, reject) => {
+        req.session.reload((error: any) => (error ? reject(error) : resolve()));
+      });
+    }
     const existing = req.session.openidTokens ?? {};
+    const predecessorRefreshToken =
+      getPredecessorRefreshTokenMarker(resolvedTokens) ?? predecessorOverride;
+    if (
+      predecessorRefreshToken &&
+      existing.refreshToken &&
+      existing.refreshToken !== predecessorRefreshToken &&
+      existing.refreshToken !== resolvedTokens.refresh_token
+    ) {
+      logger.info(
+        '[OpenIDSessionRefresh] Skipping stale flight hydration because the session advanced',
+      );
+      return;
+    }
     const accessTokenChanged = existing.accessToken !== resolvedTokens.access_token;
     const idTokenChanged =
       resolvedTokens.id_token != null && existing.idToken !== resolvedTokens.id_token;
@@ -908,6 +947,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
 
     const inFlight = inFlightRefreshes.get(key);
     if (inFlight) {
+      const predecessorRefreshToken = req?.session?.openidTokens?.refreshToken;
       logger.debug(`[OpenIDSessionRefresh] Joining in-flight refresh (key=${hashKeyForLogs(key)})`);
       const resolvedTokens = await inFlight;
       /**
@@ -915,7 +955,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
        * tokens into THIS request's session so a later OBO call on the joiner
        * reads the rotated refresh token instead of replaying the stale one.
        */
-      await hydrateSessionFromResolvedTokens(req, resolvedTokens);
+      await hydrateSessionFromResolvedTokens(req, resolvedTokens, predecessorRefreshToken);
       return resolvedTokens;
     }
 

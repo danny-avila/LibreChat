@@ -1,6 +1,6 @@
 import type { Document } from 'mongoose';
 
-export type OpenIDRefreshFlightStatus = 'pending' | 'completed' | 'failed';
+export type OpenIDRefreshFlightStatus = 'pending' | 'completed' | 'failed' | 'revoked';
 
 export interface IOpenIDRefreshFlight extends Document {
   key: string;
@@ -39,6 +39,11 @@ export interface OpenIDRefreshFlightFailData {
   key: string;
   ownerId: string;
   errorMessage: string;
+  expiresAt: Date;
+}
+
+export interface OpenIDRefreshFlightRevokeData {
+  key: string;
   expiresAt: Date;
 }
 

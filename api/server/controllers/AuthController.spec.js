@@ -591,6 +591,37 @@ describe('refreshController – OpenID path', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
+  it('uses a reloaded advanced session instead of publishing a stale flight result', async () => {
+    req.session.reload = jest.fn((callback) => {
+      req.session.openidTokens = {
+        accessToken: 'advanced-access',
+        idToken: 'advanced-id',
+        refreshToken: 'advanced-refresh',
+        accessTokenExpiresAt: Math.floor(Date.now() / 1000) + 3600,
+      };
+      callback();
+    });
+
+    await refreshController(req, res);
+
+    expect(storeOpenIDSession).toHaveBeenCalledWith(
+      'user-db-id',
+      'advanced-refresh',
+      'tenant-1',
+      'advanced-refresh',
+    );
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(
+      expect.objectContaining({
+        access_token: 'advanced-access',
+        id_token: 'advanced-id',
+        refresh_token: 'advanced-refresh',
+      }),
+      req,
+      res,
+      expect.objectContaining({ existingRefreshToken: 'advanced-refresh' }),
+    );
+  });
+
   it('reuses valid OpenID session tokens and refreshes CloudFront cookies', async () => {
     const reusableIdToken = makeSessionToken();
     const signedUserId = makeSignedUserId();

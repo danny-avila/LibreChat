@@ -5,6 +5,7 @@ import type {
   OpenIDRefreshFlightCompleteData,
   OpenIDRefreshFlightRenewData,
   OpenIDRefreshFlightFailData,
+  OpenIDRefreshFlightRevokeData,
   OpenIDRefreshFlightQuery,
   OpenIDRefreshFlightAcquireResult,
 } from '~/types';
@@ -36,6 +37,9 @@ export function createOpenIDRefreshFlightMethods(mongoose: typeof import('mongoo
   ) => Promise<IOpenIDRefreshFlight | null>;
   failOpenIDRefreshFlight: (
     data: OpenIDRefreshFlightFailData,
+  ) => Promise<IOpenIDRefreshFlight | null>;
+  revokeOpenIDRefreshFlight: (
+    data: OpenIDRefreshFlightRevokeData,
   ) => Promise<IOpenIDRefreshFlight | null>;
   findOpenIDRefreshFlight: (
     query: OpenIDRefreshFlightQuery,
@@ -225,11 +229,41 @@ export function createOpenIDRefreshFlightMethods(mongoose: typeof import('mongoo
     }
   }
 
+  async function revokeOpenIDRefreshFlight(
+    data: OpenIDRefreshFlightRevokeData,
+  ): Promise<IOpenIDRefreshFlight | null> {
+    const OpenIDRefreshFlight = mongoose.models.OpenIDRefreshFlight as Model<IOpenIDRefreshFlight>;
+    const now = new Date();
+    await ensureIndexes();
+    try {
+      return await OpenIDRefreshFlight.findOneAndUpdate(
+        { key: data.key },
+        {
+          $set: {
+            ownerId: 'revoked',
+            status: 'revoked',
+            errorMessage: 'OpenID refresh was revoked by logout',
+            lockExpiresAt: data.expiresAt,
+            expiresAt: data.expiresAt,
+            updatedAt: now,
+          },
+          $setOnInsert: { createdAt: now },
+          $unset: { encryptedResult: '' },
+        },
+        { new: true, upsert: true },
+      ).lean<IOpenIDRefreshFlight>();
+    } catch (error) {
+      logger.debug('[revokeOpenIDRefreshFlight] Error revoking flight:', error);
+      throw error;
+    }
+  }
+
   return {
     acquireOpenIDRefreshFlight,
     renewOpenIDRefreshFlight,
     completeOpenIDRefreshFlight,
     failOpenIDRefreshFlight,
+    revokeOpenIDRefreshFlight,
     findOpenIDRefreshFlight,
   };
 }

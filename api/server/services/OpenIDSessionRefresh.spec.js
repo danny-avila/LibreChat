@@ -1650,6 +1650,46 @@ describe('OpenIDSessionRefresh', () => {
       );
     });
 
+    it('does not roll an advanced session backward with a stale completed flight', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const advancedExp = Math.floor(Date.now() / 1000) + 3600;
+      const req = buildReq(
+        {
+          accessToken: makeJwt(expiredExp),
+          idToken: makeJwt(expiredExp),
+          refreshToken: 'rt-predecessor',
+        },
+        'session-stale-follower',
+      );
+      req.session.reload = jest.fn((callback) => {
+        req.session.openidTokens = withSessionIdentity({
+          accessToken: makeJwt(advancedExp),
+          idToken: makeJwt(advancedExp),
+          refreshToken: 'rt-advanced',
+          accessTokenExpiresAt: advancedExp,
+        });
+        callback();
+      });
+      acquireOpenIDRefreshFlight.mockResolvedValueOnce({ acquired: false, ownerId: 'other' });
+      const staleResult = {
+        access_token: makeJwt(advancedExp - 60),
+        id_token: makeJwt(advancedExp - 60),
+        refresh_token: 'rt-stale-result',
+        expires_at: advancedExp - 60,
+      };
+      Object.defineProperty(staleResult, '__predecessorRefreshToken', {
+        value: 'rt-predecessor',
+        enumerable: false,
+      });
+      waitForOpenIDRefreshFlight.mockResolvedValueOnce(staleResult);
+
+      await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
+
+      expect(req.session.reload).toHaveBeenCalled();
+      expect(req.session.openidTokens.refreshToken).toBe('rt-advanced');
+      expect(req.session.save).not.toHaveBeenCalled();
+    });
+
     it('drops a stale accessTokenExpiresAt when the new tokenset has neither expires_in nor a JWT access_token', async () => {
       const expiredExp = Math.floor(Date.now() / 1000) - 60;
       const sessionTokens = {

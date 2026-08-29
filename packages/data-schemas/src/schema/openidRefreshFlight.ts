@@ -13,7 +13,7 @@ const openidRefreshFlightSchema: Schema<IOpenIDRefreshFlight> = new Schema<IOpen
   },
   status: {
     type: String,
-    enum: ['pending', 'completed', 'failed'],
+    enum: ['pending', 'completed', 'failed', 'revoked'],
     required: true,
     default: 'pending',
     index: true,

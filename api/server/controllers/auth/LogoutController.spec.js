@@ -6,18 +6,32 @@ const mockIsEnabled = jest.fn();
 const mockGetOpenIdConfig = jest.fn();
 const mockClearCloudFrontCookies = jest.fn();
 const mockDeleteAllRefreshTokenBridges = jest.fn();
+const mockRevokeOpenIDRefreshFlights = jest.fn();
+const mockCreateOpenIDRefreshFlightKey = jest.fn(({ refreshToken }) => `session:${refreshToken}`);
+const mockCreateRefreshTokenBridgeFlightKey = jest.fn(
+  ({ oldRefreshToken }) => `bridge:${oldRefreshToken}`,
+);
 
 jest.mock('cookie');
 jest.mock('@librechat/api', () => ({
   isEnabled: (...args) => mockIsEnabled(...args),
+  math: (_value, fallback) => fallback,
   clearCloudFrontCookies: (...args) => mockClearCloudFrontCookies(...args),
 }));
-jest.mock('@librechat/data-schemas', () => ({ logger: mockLogger }));
+jest.mock('@librechat/data-schemas', () => ({
+  logger: mockLogger,
+  DEFAULT_REFRESH_TOKEN_EXPIRY: 7 * 24 * 60 * 60 * 1000,
+}));
 jest.mock('~/server/services/AuthService', () => ({
   logoutUser: (...args) => mockLogoutUser(...args),
 }));
 jest.mock('~/server/services/RefreshTokenBridge', () => ({
+  createRefreshTokenBridgeFlightKey: (...args) => mockCreateRefreshTokenBridgeFlightKey(...args),
   deleteAllRefreshTokenBridges: (...args) => mockDeleteAllRefreshTokenBridges(...args),
+}));
+jest.mock('~/server/services/OpenIDRefreshFlight', () => ({
+  createOpenIDRefreshFlightKey: (...args) => mockCreateOpenIDRefreshFlightKey(...args),
+  revokeOpenIDRefreshFlights: (...args) => mockRevokeOpenIDRefreshFlights(...args),
 }));
 jest.mock('~/strategies', () => ({ getOpenIdConfig: () => mockGetOpenIdConfig() }));
 
@@ -59,6 +73,7 @@ beforeEach(() => {
   cookies.parse.mockReturnValue({ refreshToken: 'cookie-rt' });
   mockLogoutUser.mockResolvedValue({ status: 200, message: 'Logout successful' });
   mockDeleteAllRefreshTokenBridges.mockResolvedValue({ acknowledged: true, deletedCount: 1 });
+  mockRevokeOpenIDRefreshFlights.mockResolvedValue([]);
   mockIsEnabled.mockReturnValue(true);
   mockGetOpenIdConfig.mockReturnValue({
     serverMetadata: () => ({
@@ -269,6 +284,13 @@ describe('LogoutController', () => {
         userId: 'user1',
         tenantId: 'tenantA',
       });
+      expect(mockRevokeOpenIDRefreshFlights).toHaveBeenCalledWith({
+        keys: ['session:cookie-rt', 'bridge:cookie-rt', 'session:srt', 'bridge:srt'],
+        ttl: 7 * 24 * 60 * 60 * 1000,
+      });
+      expect(mockRevokeOpenIDRefreshFlights.mock.invocationCallOrder[0]).toBeLessThan(
+        mockDeleteAllRefreshTokenBridges.mock.invocationCallOrder[0],
+      );
       expect(mockLogoutUser).toHaveBeenCalledWith(req, 'cookie-rt');
       expect(mockLogoutUser).toHaveBeenCalledWith(req, 'srt');
       expect(mockLogoutUser).toHaveBeenCalledTimes(2);
@@ -282,6 +304,19 @@ describe('LogoutController', () => {
 
       await logoutController(req, res);
 
+      expect(mockLogoutUser).not.toHaveBeenCalled();
+      expect(req.session.openidTokens).toBeDefined();
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+
+    it('fails closed before deleting auth state when the refresh-flight fence fails', async () => {
+      mockRevokeOpenIDRefreshFlights.mockRejectedValue(new Error('flight fence failed'));
+      const req = buildReq();
+      const res = buildRes();
+
+      await logoutController(req, res);
+
+      expect(mockDeleteAllRefreshTokenBridges).not.toHaveBeenCalled();
       expect(mockLogoutUser).not.toHaveBeenCalled();
       expect(req.session.openidTokens).toBeDefined();
       expect(res.status).toHaveBeenCalledWith(500);

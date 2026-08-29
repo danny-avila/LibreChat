@@ -205,4 +205,37 @@ describe('OpenIDRefreshFlight Methods', () => {
 
     await expect(methods.findOpenIDRefreshFlight({ key: 'flight-key' })).resolves.toBeNull();
   });
+
+  it('persists a logout revocation fence that an active owner cannot publish through', async () => {
+    await methods.acquireOpenIDRefreshFlight({
+      key: 'flight-key',
+      ownerId: 'owner-1',
+      lockExpiresAt: new Date(Date.now() + 30000),
+      expiresAt: new Date(Date.now() + 60000),
+    });
+    const revocationExpiry = new Date(Date.now() + 3600000);
+
+    const revoked = await methods.revokeOpenIDRefreshFlight({
+      key: 'flight-key',
+      expiresAt: revocationExpiry,
+    });
+
+    expect(revoked?.status).toBe('revoked');
+    await expect(
+      methods.completeOpenIDRefreshFlight({
+        key: 'flight-key',
+        ownerId: 'owner-1',
+        encryptedResult: 'late-result',
+        expiresAt: revocationExpiry,
+      }),
+    ).resolves.toBeNull();
+    const reacquire = await methods.acquireOpenIDRefreshFlight({
+      key: 'flight-key',
+      ownerId: 'owner-2',
+      lockExpiresAt: new Date(Date.now() + 30000),
+      expiresAt: new Date(Date.now() + 60000),
+    });
+    expect(reacquire.acquired).toBe(false);
+    expect(reacquire.flight?.status).toBe('revoked');
+  });
 });

@@ -28,6 +28,7 @@ jest.mock('~/models', () => ({
   completeOpenIDRefreshFlight: jest.fn(),
   failOpenIDRefreshFlight: jest.fn(),
   findOpenIDRefreshFlight: jest.fn(),
+  revokeOpenIDRefreshFlight: jest.fn(),
   renewOpenIDRefreshFlight: jest.fn(),
 }));
 
@@ -39,6 +40,7 @@ const {
   createOpenIDRefreshFlightKey,
   failOpenIDRefreshFlight,
   renewOpenIDRefreshFlight,
+  revokeOpenIDRefreshFlights,
   waitForOpenIDRefreshFlight,
   withOpenIDRefreshFlightLease,
   __internals,
@@ -52,6 +54,7 @@ describe('OpenIDRefreshFlight', () => {
     db.failOpenIDRefreshFlight.mockResolvedValue({});
     db.findOpenIDRefreshFlight.mockResolvedValue(null);
     db.renewOpenIDRefreshFlight.mockResolvedValue({ ownerId: 'owner-1', status: 'pending' });
+    db.revokeOpenIDRefreshFlight.mockResolvedValue({ status: 'revoked' });
   });
 
   it('creates a stable hash key from session, user, issuer, tenant, and refresh token', () => {
@@ -262,6 +265,10 @@ describe('OpenIDRefreshFlight', () => {
       value: 'browser-refresh',
       enumerable: false,
     });
+    Object.defineProperty(tokens, '__predecessorRefreshToken', {
+      value: 'predecessor-refresh',
+      enumerable: false,
+    });
 
     await completeOpenIDRefreshFlight({
       key: 'flight-key',
@@ -272,6 +279,7 @@ describe('OpenIDRefreshFlight', () => {
 
     const serializedTokens = JSON.parse(encryptV2.mock.calls[0][0]);
     expect(serializedTokens.__browserRefreshToken).toBe('browser-refresh');
+    expect(serializedTokens.__predecessorRefreshToken).toBe('predecessor-refresh');
     expect(Object.keys(tokens)).not.toContain('__browserRefreshToken');
   });
 
@@ -287,6 +295,23 @@ describe('OpenIDRefreshFlight', () => {
       key: 'flight-key',
       ownerId: 'owner-1',
       errorMessage: 'invalid_grant',
+      expiresAt: expect.any(Date),
+    });
+  });
+
+  it('persists logout revocation fences for every distinct flight key', async () => {
+    await revokeOpenIDRefreshFlights({
+      keys: ['flight-a', 'flight-b', 'flight-a', null],
+      ttl: 60000,
+    });
+
+    expect(db.revokeOpenIDRefreshFlight).toHaveBeenCalledTimes(2);
+    expect(db.revokeOpenIDRefreshFlight).toHaveBeenCalledWith({
+      key: 'flight-a',
+      expiresAt: expect.any(Date),
+    });
+    expect(db.revokeOpenIDRefreshFlight).toHaveBeenCalledWith({
+      key: 'flight-b',
       expiresAt: expect.any(Date),
     });
   });
@@ -321,6 +346,17 @@ describe('OpenIDRefreshFlight', () => {
     await expect(
       waitForOpenIDRefreshFlight({ key: 'flight-key', timeoutMs: 1, intervalMs: 1 }),
     ).rejects.toThrow('invalid_grant');
+  });
+
+  it('throws when logout revokes the flight', async () => {
+    db.findOpenIDRefreshFlight.mockResolvedValueOnce({
+      status: 'revoked',
+      errorMessage: 'OpenID refresh was revoked by logout',
+    });
+
+    await expect(
+      waitForOpenIDRefreshFlight({ key: 'flight-key', timeoutMs: 1, intervalMs: 1 }),
+    ).rejects.toThrow('revoked by logout');
   });
 
   it('waits for the full renewable-flight lifetime by default', () => {
@@ -360,10 +396,11 @@ describe('OpenIDRefreshFlight', () => {
     const result = await __internals.readCompletedFlight({
       status: 'completed',
       encryptedResult:
-        'encrypted:{"access_token":"access","__browserRefreshToken":"browser-refresh"}',
+        'encrypted:{"access_token":"access","__browserRefreshToken":"browser-refresh","__predecessorRefreshToken":"predecessor-refresh"}',
     });
 
     expect(result.__browserRefreshToken).toBe('browser-refresh');
+    expect(result.__predecessorRefreshToken).toBe('predecessor-refresh');
     expect(Object.keys(result)).toEqual(['access_token']);
   });
 });

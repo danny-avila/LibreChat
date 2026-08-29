@@ -1,8 +1,15 @@
 const cookies = require('cookie');
-const { isEnabled, clearCloudFrontCookies } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { isEnabled, math, clearCloudFrontCookies } = require('@librechat/api');
+const { logger, DEFAULT_REFRESH_TOKEN_EXPIRY } = require('@librechat/data-schemas');
 const { logoutUser } = require('~/server/services/AuthService');
-const { deleteAllRefreshTokenBridges } = require('~/server/services/RefreshTokenBridge');
+const {
+  createRefreshTokenBridgeFlightKey,
+  deleteAllRefreshTokenBridges,
+} = require('~/server/services/RefreshTokenBridge');
+const {
+  createOpenIDRefreshFlightKey,
+  revokeOpenIDRefreshFlights,
+} = require('~/server/services/OpenIDRefreshFlight');
 const { getOpenIdConfig } = require('~/strategies');
 
 /** Parses and validates OPENID_MAX_LOGOUT_URL_LENGTH, returning defaultValue on invalid input */
@@ -39,8 +46,36 @@ const logoutController = async (req, res) => {
 
   try {
     if (isOpenIdUser) {
+      const userId = req.user?.id ?? req.user?._id?.toString?.();
+      const refreshIdentity = {
+        appUserId: userId,
+        openidSubject: req.session?.openidTokens?.openidSubject ?? req.user?.openidId,
+        tenantId: req.session?.openidTokens?.tenantId ?? req.user?.tenantId,
+        openidIssuer: req.session?.openidTokens?.openidIssuer ?? req.user?.openidIssuer,
+      };
+      const logoutTokens = [
+        ...new Set([parsedCookies.refreshToken, sessionRefreshToken].filter(Boolean)),
+      ];
+      const flightKeys = logoutTokens.flatMap((token) => [
+        createOpenIDRefreshFlightKey({
+          req,
+          user: req.user,
+          refreshToken: token,
+          identityContext: refreshIdentity,
+        }),
+        createRefreshTokenBridgeFlightKey({
+          oldRefreshToken: token,
+          userId,
+          tenantId: refreshIdentity.tenantId,
+          openidIssuer: refreshIdentity.openidIssuer,
+        }),
+      ]);
+      await revokeOpenIDRefreshFlights({
+        keys: flightKeys,
+        ttl: math(process.env.REFRESH_TOKEN_EXPIRY, DEFAULT_REFRESH_TOKEN_EXPIRY),
+      });
       await deleteAllRefreshTokenBridges({
-        userId: req.user?.id ?? req.user?._id?.toString?.(),
+        userId,
         tenantId: req.user?.tenantId,
       });
       if (req.session?.openidTokens) {

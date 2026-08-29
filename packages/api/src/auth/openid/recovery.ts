@@ -226,14 +226,47 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
     res,
   }: any) {
     const userId = user._id.toString();
-    const nextRefreshToken = tokenset.refresh_token || existingRefreshToken;
+    if (typeof req?.session?.reload === 'function') {
+      await new Promise<void>((resolve, reject) => {
+        req.session.reload((error: any) => (error ? reject(error) : resolve()));
+      });
+    }
+    let effectiveTokenset = tokenset;
+    let effectiveExistingRefreshToken = existingRefreshToken;
+    const currentSessionTokens = req?.session?.openidTokens;
+    const proposedRefreshToken = tokenset.refresh_token || existingRefreshToken;
+    if (
+      currentSessionTokens?.refreshToken &&
+      currentSessionTokens.refreshToken !== existingRefreshToken &&
+      currentSessionTokens.refreshToken !== proposedRefreshToken
+    ) {
+      if (!currentSessionTokens.accessToken) {
+        throw new Error('OpenID refresh result was superseded by an incomplete session state');
+      }
+      logger.debug(
+        '[refreshController] Using the advanced session instead of a stale flight result',
+      );
+      effectiveExistingRefreshToken = currentSessionTokens.refreshToken;
+      effectiveTokenset = {
+        access_token: currentSessionTokens.accessToken,
+        id_token: currentSessionTokens.idToken,
+        refresh_token: currentSessionTokens.refreshToken,
+        expires_at: currentSessionTokens.accessTokenExpiresAt,
+      };
+    }
+    const nextRefreshToken = effectiveTokenset.refresh_token || effectiveExistingRefreshToken;
     try {
-      await storeOpenIDSession(userId, nextRefreshToken, user.tenantId, existingRefreshToken);
+      await storeOpenIDSession(
+        userId,
+        nextRefreshToken,
+        user.tenantId,
+        effectiveExistingRefreshToken,
+      );
     } catch (error) {
-      if (existingRefreshToken && nextRefreshToken !== existingRefreshToken) {
+      if (effectiveExistingRefreshToken && nextRefreshToken !== effectiveExistingRefreshToken) {
         try {
           await storeRefreshTokenBridge({
-            oldRefreshToken: existingRefreshToken,
+            oldRefreshToken: effectiveExistingRefreshToken,
             newRefreshToken: nextRefreshToken,
             userId,
             tenantId: user.tenantId,
@@ -250,16 +283,16 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
       throw error;
     }
 
-    let authTokenset = tokenset;
-    if (tokenset.expires_in == null && Number.isFinite(tokenset.expires_at)) {
+    let authTokenset = effectiveTokenset;
+    if (effectiveTokenset.expires_in == null && Number.isFinite(effectiveTokenset.expires_at)) {
       authTokenset = {
-        ...tokenset,
-        expires_in: Math.max(0, Math.floor(tokenset.expires_at - Date.now() / 1000)),
+        ...effectiveTokenset,
+        expires_in: Math.max(0, Math.floor(effectiveTokenset.expires_at - Date.now() / 1000)),
       };
     }
     return setOpenIDAuthTokens(authTokenset, req, res, {
       userId,
-      existingRefreshToken,
+      existingRefreshToken: effectiveExistingRefreshToken,
       tenantId: user.tenantId,
       openidSubject: openidSubject ?? user.openidId,
       openidIssuer: openidIssuer ?? user.openidIssuer,
