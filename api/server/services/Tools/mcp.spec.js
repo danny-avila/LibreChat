@@ -139,12 +139,13 @@ describe('loadMCPServerCatalogs', () => {
     await loadMCPServerCatalogs({ user, servers });
     await loadMCPServerCatalogs({ user, servers });
 
+    const identity = `${user.id}:offline:generation`;
     expect(cooldowns[0]).toBeDefined();
     expect(cooldowns[1]).toBe(cooldowns[0]);
-    expect(cooldowns[0].isCoolingDown(user.id, 'offline')).toBe(false);
-    cooldowns[0].recordFailure(user.id, 'offline');
-    expect(cooldowns[0].isCoolingDown(user.id, 'offline')).toBe(true);
-    cooldowns[0].recordSuccess(user.id, 'offline');
+    expect(cooldowns[0].isCoolingDown(identity)).toBe(false);
+    cooldowns[0].recordFailure(identity);
+    expect(cooldowns[0].isCoolingDown(identity)).toBe(true);
+    cooldowns[0].recordSuccess(identity);
   });
 });
 
