@@ -147,10 +147,23 @@ describe('OpenID logout refresh chain', () => {
   });
 
   it('tombstones every discovered successor generation before logout completes', async () => {
+    createOpenIDRefreshFlightKey.mockImplementation(
+      ({ refreshToken, identityContext }) =>
+        `session:${identityContext.openidSubject}:${refreshToken}`,
+    );
+    createRefreshTokenBridgeFlightKey.mockImplementation(
+      ({ oldRefreshToken, openidIssuer }) => `bridge:${openidIssuer}:${oldRefreshToken}`,
+    );
+    const acceptedIdentity = {
+      appUserId: 'user-1',
+      openidSubject: 'subject-2',
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer-2.example.com',
+    };
     revokeOpenIDRefreshFlights
-      .mockResolvedValueOnce([{ refresh_token: 'rt-successor-1' }, null])
-      .mockResolvedValueOnce([{ tokenset: { refresh_token: 'rt-successor-2' } }, null])
-      .mockResolvedValueOnce([null, null]);
+      .mockResolvedValueOnce([{ refresh_token: 'rt-successor-1', acceptedIdentity }, null])
+      .mockResolvedValueOnce([{ tokenset: { refresh_token: 'rt-successor-2' } }, null, null, null])
+      .mockResolvedValueOnce([null, null, null, null]);
     const req = { user: { _id: 'user-1', openidId: 'subject-1' } };
     const user = req.user;
     const identityContext = {
@@ -171,15 +184,28 @@ describe('OpenID logout refresh chain', () => {
     ).resolves.toEqual(['rt-predecessor', 'rt-successor-1', 'rt-successor-2']);
 
     expect(revokeOpenIDRefreshFlights).toHaveBeenNthCalledWith(1, {
-      keys: ['session:rt-predecessor', 'bridge:rt-predecessor'],
+      keys: [
+        'session:subject-1:rt-predecessor',
+        'bridge:https://issuer.example.com:rt-predecessor',
+      ],
       ttl: 60_000,
     });
     expect(revokeOpenIDRefreshFlights).toHaveBeenNthCalledWith(2, {
-      keys: ['session:rt-successor-1', 'bridge:rt-successor-1'],
+      keys: [
+        'session:subject-1:rt-successor-1',
+        'bridge:https://issuer.example.com:rt-successor-1',
+        'session:subject-2:rt-successor-1',
+        'bridge:https://issuer-2.example.com:rt-successor-1',
+      ],
       ttl: 60_000,
     });
     expect(revokeOpenIDRefreshFlights).toHaveBeenNthCalledWith(3, {
-      keys: ['session:rt-successor-2', 'bridge:rt-successor-2'],
+      keys: [
+        'session:subject-1:rt-successor-2',
+        'bridge:https://issuer.example.com:rt-successor-2',
+        'session:subject-2:rt-successor-2',
+        'bridge:https://issuer-2.example.com:rt-successor-2',
+      ],
       ttl: 60_000,
     });
   });
@@ -1458,6 +1484,54 @@ describe('refreshController – OpenID path', () => {
     );
     expect(res.send).toHaveBeenCalledWith(expect.objectContaining({ token: 'shared-app-token' }));
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('returns a newer stable-refresh session instead of a stale publication result', async () => {
+    setOpenIDReuseCookies();
+    req.session = {
+      reload: jest.fn((callback) => {
+        req.session.openidTokens = {
+          accessToken: 'advanced-access',
+          idToken: 'advanced-id',
+          refreshToken: 'stored-refresh',
+          accessTokenExpiresAt: Math.floor(Date.now() / 1000) + 7200,
+          appUserId: 'user-db-id',
+          openidSubject: baseClaims.sub,
+          tenantId: 'tenant-1',
+          openidIssuer: baseClaims.iss,
+        };
+        callback();
+      }),
+    };
+    getUserById.mockResolvedValue(defaultUser);
+    acquireOpenIDRefreshFlight.mockResolvedValue({ acquired: false, ownerId: 'other-owner' });
+    waitForOpenIDRefreshFlight.mockResolvedValue({
+      appAuthToken: 'stale-app-token',
+      tokenset: {
+        access_token: 'stale-access',
+        id_token: 'stale-id',
+        refresh_token: 'stored-refresh',
+        expires_in: 3600,
+      },
+      claims: baseClaims,
+      openidIssuer: baseClaims.iss,
+      predecessorAccessToken: 'predecessor-access',
+    });
+    getOpenIDAppAuthToken.mockReturnValueOnce('advanced-app-token');
+    setOpenIDAuthTokens.mockReturnValueOnce('advanced-app-token');
+
+    await refreshController(req, res);
+
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(
+      expect.objectContaining({
+        access_token: 'advanced-access',
+        refresh_token: 'stored-refresh',
+      }),
+      req,
+      res,
+      expect.any(Object),
+    );
+    expect(res.send).toHaveBeenCalledWith(expect.objectContaining({ token: 'advanced-app-token' }));
   });
 
   it('recovers with serialized identity claims when the refreshed ID token is omitted', async () => {

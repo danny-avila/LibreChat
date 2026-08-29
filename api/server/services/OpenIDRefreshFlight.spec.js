@@ -83,14 +83,14 @@ describe('OpenIDRefreshFlight', () => {
   it('allows follower publication only while the completed flight remains available', async () => {
     db.findOpenIDRefreshFlight.mockResolvedValueOnce({ status: 'completed', ownerId: 'owner-1' });
 
-    await expect(assertOpenIDRefreshFlightAvailable({ key: 'flight-key' })).resolves.toMatchObject({
-      status: 'completed',
-    });
+    await expect(
+      assertOpenIDRefreshFlightAvailable({ key: 'flight-key', ownerId: 'owner-1' }),
+    ).resolves.toMatchObject({ status: 'completed' });
 
-    db.findOpenIDRefreshFlight.mockResolvedValueOnce({ status: 'revoked', ownerId: 'revoked' });
-    await expect(assertOpenIDRefreshFlightAvailable({ key: 'flight-key' })).rejects.toMatchObject({
-      code: 'OPENID_REFRESH_OWNERSHIP_LOST',
-    });
+    db.findOpenIDRefreshFlight.mockResolvedValueOnce({ status: 'completed', ownerId: 'owner-2' });
+    await expect(
+      assertOpenIDRefreshFlightAvailable({ key: 'flight-key', ownerId: 'owner-1' }),
+    ).rejects.toMatchObject({ code: 'OPENID_REFRESH_OWNERSHIP_LOST' });
   });
 
   it('uses explicit identity context when safe user lacks tenant and issuer', () => {
@@ -511,6 +511,7 @@ describe('OpenIDRefreshFlight', () => {
   it('restores publication metadata as non-enumerable', async () => {
     const result = await __internals.readCompletedFlight({
       status: 'completed',
+      ownerId: 'generation-owner',
       encryptedResult:
         'encrypted:{"access_token":"access","__browserRefreshToken":"browser-refresh","__predecessorRefreshToken":"predecessor-refresh","__predecessorAccessToken":"predecessor-access","__deferredPublication":true}',
     });
@@ -519,6 +520,7 @@ describe('OpenIDRefreshFlight', () => {
     expect(result.__predecessorRefreshToken).toBe('predecessor-refresh');
     expect(result.__predecessorAccessToken).toBe('predecessor-access');
     expect(result.__deferredPublication).toBe(true);
+    expect(result.__flightOwnerId).toBe('generation-owner');
     expect(Object.keys(result)).toEqual(['access_token']);
   });
 });

@@ -83,11 +83,19 @@ interface SendOpenIDAuthResponseInput {
   openidSubject?: string;
   openidIssuer?: string;
   predecessorIdentity?: RefreshTokenBridgeIdentity;
+  predecessorAccessToken?: string;
   rejectedRefreshTokens?: string[];
   req: OpenIDRequest;
   res: OpenIDResponse;
   assertLeaseOwned?: LeaseAssertion;
-  commitPublication?: (appAuthToken: string, publishedTokenset: OpenIDTokenSet) => Promise<void>;
+  commitPublication?: (
+    appAuthToken: string,
+    publishedTokenset: OpenIDTokenSet,
+    metadata: {
+      predecessorAccessToken?: string;
+      acceptedIdentity: AuthIdentityContext;
+    },
+  ) => Promise<void>;
   preparePublication?: boolean;
 }
 
@@ -231,6 +239,7 @@ export function createOpenIDRefreshRecoveryService(
   } = deps;
 
   const MAX_LOGOUT_REFRESH_CHAIN_DEPTH = 16;
+  const MAX_LOGOUT_REFRESH_TARGETS = 128;
 
   async function revokeOpenIDRefreshTokenChain({
     req,
@@ -243,32 +252,70 @@ export function createOpenIDRefreshRecoveryService(
     if (!userId) {
       throw new Error('OpenID logout identity is unavailable');
     }
+    const identityKey = (identity: AuthIdentityContext): string =>
+      [
+        identity.appUserId ?? '',
+        identity.tenantId ?? '',
+        identity.openidIssuer ?? '',
+        identity.openidSubject ?? '',
+      ].join('\x1f');
     const discovered = new Set(refreshTokens.filter(Boolean));
-    let frontier = [...discovered];
+    const scheduled = new Set<string>();
+    let frontier = [...discovered].map((refreshToken) => ({
+      refreshToken,
+      identity: identityContext,
+    }));
+    for (const target of frontier) {
+      scheduled.add(`${target.refreshToken}\x1e${identityKey(target.identity)}`);
+    }
 
     for (let depth = 0; frontier.length > 0; depth++) {
       if (depth >= MAX_LOGOUT_REFRESH_CHAIN_DEPTH) {
         throw new Error('OpenID logout refresh chain exceeded the safety limit');
       }
-      const keys = frontier.flatMap((refreshToken) => [
-        createOpenIDRefreshFlightKey({ req, user, refreshToken, identityContext }),
+      const keys = frontier.flatMap(({ refreshToken, identity }) => [
+        createOpenIDRefreshFlightKey({ req, user, refreshToken, identityContext: identity }),
         createRefreshTokenBridgeFlightKey({
           oldRefreshToken: refreshToken,
           userId,
-          tenantId: identityContext.tenantId,
-          openidIssuer: identityContext.openidIssuer,
+          tenantId: identity.tenantId,
+          openidIssuer: identity.openidIssuer,
         }),
       ]);
       const revoked = await revokeOpenIDRefreshFlights({ keys, ttl });
+      const inheritedIdentities = frontier.map(({ identity }) => identity);
+      const acceptedIdentities = revoked.flatMap((result) => {
+        if (result?.acceptedIdentity) return [result.acceptedIdentity];
+        const claims = result?.__identityClaims;
+        if (!claims?.sub) return [];
+        return [
+          {
+            ...identityContext,
+            openidSubject: claims.sub,
+            openidIssuer: result?.openidIssuer ?? claims.iss ?? identityContext.openidIssuer,
+          },
+        ];
+      });
+      const identities = [...inheritedIdentities, ...acceptedIdentities].filter(
+        (identity, index, all) =>
+          all.findIndex((candidate) => identityKey(candidate) === identityKey(identity)) === index,
+      );
       const successors = revoked.flatMap((result) =>
         [result?.refresh_token, result?.tokenset?.refresh_token].filter((token): token is string =>
           Boolean(token),
         ),
       );
-      frontier = successors.filter((token) => {
-        if (discovered.has(token)) return false;
-        discovered.add(token);
-        return true;
+      frontier = successors.flatMap((refreshToken) => {
+        discovered.add(refreshToken);
+        return identities.flatMap((identity) => {
+          const targetKey = `${refreshToken}\x1e${identityKey(identity)}`;
+          if (scheduled.has(targetKey)) return [];
+          if (scheduled.size >= MAX_LOGOUT_REFRESH_TARGETS) {
+            throw new Error('OpenID logout refresh chain exceeded the target safety limit');
+          }
+          scheduled.add(targetKey);
+          return [{ refreshToken, identity }];
+        });
       });
     }
 
@@ -409,15 +456,13 @@ export function createOpenIDRefreshRecoveryService(
           tenantId: bridgeUser.tenantId,
           openidIssuer: bridgeUser.openidIssuer,
         },
+        predecessorAccessToken: resolved.predecessorAccessToken,
         req,
         res,
         commitPublication: async () => {},
         preparePublication: false,
       });
-      if (publishedAppAuthToken !== resolved.appAuthToken) {
-        throw new Error('OpenID refresh bridge follower published an inconsistent token');
-      }
-      return resolved;
+      return { ...resolved, appAuthToken: publishedAppAuthToken ?? resolved.appAuthToken };
     }
 
     return withOpenIDRefreshFlightLease({
@@ -514,12 +559,13 @@ export function createOpenIDRefreshRecoveryService(
             req,
             res,
             assertLeaseOwned,
-            commitPublication: async (preparedAppAuthToken, publishedTokenset) => {
+            commitPublication: async (preparedAppAuthToken, publishedTokenset, metadata) => {
               const result = {
                 ...sharedResult,
                 tokenset: publishedTokenset,
                 expires_at: publishedTokenset.expires_at,
                 appAuthToken: preparedAppAuthToken,
+                ...metadata,
               };
               const completed = await completeOpenIDRefreshFlight({
                 key,
@@ -564,6 +610,7 @@ export function createOpenIDRefreshRecoveryService(
     openidSubject,
     openidIssuer,
     predecessorIdentity,
+    predecessorAccessToken,
     rejectedRefreshTokens = [],
     req,
     res,
@@ -591,23 +638,20 @@ export function createOpenIDRefreshRecoveryService(
           if (!shared?.appAuthToken) {
             throw new Error('OpenID authentication publication is temporarily unavailable');
           }
-          const publishedAppAuthToken = await sendOpenIDAuthResponse({
+          return sendOpenIDAuthResponse({
             tokenset: shared.tokenset,
             user,
             existingRefreshToken,
             openidSubject: shared.claims.sub,
             openidIssuer: shared.openidIssuer,
             predecessorIdentity: publicationIdentity,
+            predecessorAccessToken: shared.predecessorAccessToken,
             rejectedRefreshTokens,
             req,
             res,
             commitPublication: async () => {},
             preparePublication: false,
           });
-          if (publishedAppAuthToken !== shared.appAuthToken) {
-            throw new Error('OpenID authentication follower published an inconsistent token');
-          }
-          return publishedAppAuthToken;
         }
         return withOpenIDRefreshFlightLease({
           key,
@@ -624,7 +668,7 @@ export function createOpenIDRefreshRecoveryService(
               req,
               res,
               assertLeaseOwned,
-              commitPublication: async (appAuthToken, publishedTokenset) => {
+              commitPublication: async (appAuthToken, publishedTokenset, metadata) => {
                 const completed = await completeOpenIDRefreshFlight({
                   key,
                   ownerId: flight.ownerId,
@@ -634,6 +678,7 @@ export function createOpenIDRefreshRecoveryService(
                     openidIssuer: openidIssuer ?? user.openidIssuer,
                     expires_at: publishedTokenset.expires_at,
                     appAuthToken,
+                    ...metadata,
                   },
                 });
                 if (!completed) {
@@ -655,14 +700,24 @@ export function createOpenIDRefreshRecoveryService(
     }
     let effectiveTokenset = tokenset;
     let effectiveExistingRefreshToken = existingRefreshToken;
+    let usesAdvancedSession = false;
     const currentSessionTokens = req?.session?.openidTokens;
     const proposedRefreshToken = tokenset.refresh_token || existingRefreshToken;
-    if (
+    const refreshTokenAdvanced = Boolean(
       currentSessionTokens?.refreshToken &&
-      !rejectedRefreshTokens.includes(currentSessionTokens.refreshToken) &&
-      currentSessionTokens.refreshToken !== existingRefreshToken &&
-      currentSessionTokens.refreshToken !== proposedRefreshToken
-    ) {
+        !rejectedRefreshTokens.includes(currentSessionTokens.refreshToken) &&
+        currentSessionTokens.refreshToken !== existingRefreshToken &&
+        currentSessionTokens.refreshToken !== proposedRefreshToken,
+    );
+    const candidatePredecessorAccessToken =
+      predecessorAccessToken ?? tokenset.__predecessorAccessToken;
+    const accessTokenAdvanced = Boolean(
+      candidatePredecessorAccessToken &&
+        currentSessionTokens?.accessToken &&
+        currentSessionTokens.accessToken !== candidatePredecessorAccessToken &&
+        currentSessionTokens.accessToken !== tokenset.access_token,
+    );
+    if ((refreshTokenAdvanced || accessTokenAdvanced) && currentSessionTokens) {
       if (!currentSessionTokens.accessToken) {
         throw new Error('OpenID refresh result was superseded by an incomplete session state');
       }
@@ -676,6 +731,7 @@ export function createOpenIDRefreshRecoveryService(
         refresh_token: currentSessionTokens.refreshToken,
         expires_at: currentSessionTokens.accessTokenExpiresAt,
       };
+      usesAdvancedSession = true;
     }
     const nextRefreshToken = effectiveTokenset.refresh_token || effectiveExistingRefreshToken;
     if (!nextRefreshToken) {
@@ -756,7 +812,23 @@ export function createOpenIDRefreshRecoveryService(
       if (assertLeaseOwned) {
         await assertLeaseOwned();
       }
-      await commitPublication?.(preparedAppAuthToken, authTokenset);
+      await commitPublication?.(preparedAppAuthToken, authTokenset, {
+        predecessorAccessToken: candidatePredecessorAccessToken,
+        acceptedIdentity: usesAdvancedSession
+          ? {
+              appUserId: currentSessionTokens?.appUserId ?? userId,
+              openidSubject:
+                currentSessionTokens?.openidSubject ?? openidSubject ?? user.openidId ?? userId,
+              tenantId: currentSessionTokens?.tenantId ?? user.tenantId,
+              openidIssuer: currentSessionTokens?.openidIssuer ?? openidIssuer ?? user.openidIssuer,
+            }
+          : {
+              appUserId: userId,
+              openidSubject: openidSubject ?? user.openidId ?? userId,
+              tenantId: user.tenantId,
+              openidIssuer: openidIssuer ?? user.openidIssuer,
+            },
+      });
     } catch (error) {
       if (!isOpenIDRefreshOwnershipError(error)) {
         logger.warn(

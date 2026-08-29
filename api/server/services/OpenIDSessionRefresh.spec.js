@@ -1230,7 +1230,7 @@ describe('OpenIDSessionRefresh', () => {
       });
 
       const [r1, r2] = await Promise.all([p1, p2]);
-      expect(r1).toBe(r2);
+      expect(r1).toStrictEqual(r2);
       expect(__internals.inFlightRefreshes.size).toBe(0);
     });
 
@@ -1416,6 +1416,38 @@ describe('OpenIDSessionRefresh', () => {
       expect(joinerReq.session.openidTokens.refreshToken).toBe('rt-rotated');
       expect(joinerReq.session.openidTokens.browserRefreshToken).toBe('rt-stale');
       expect(joinerReq.session.save).toHaveBeenCalled();
+    });
+
+    it('checks revocation before an already-current local joiner returns', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const req = buildReq({
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-shared-request',
+      });
+      let resolveGrant;
+      openIdClient.refreshTokenGrant.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveGrant = resolve;
+        }),
+      );
+      const leaderPromise = refreshOpenIDSession(req, buildRes(), makeOpenIdUser(), 'access_token');
+      const joinerPromise = refreshOpenIDSession(req, buildRes(), makeOpenIdUser(), 'access_token');
+      await Promise.resolve();
+      resolveGrant({
+        access_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        id_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        refresh_token: 'rt-shared-successor',
+        expires_in: 3600,
+      });
+      assertOpenIDRefreshFlightAvailable.mockRejectedValueOnce(ownershipLost('revoked by logout'));
+
+      await expect(leaderPromise).resolves.toBeDefined();
+      await expect(joinerPromise).rejects.toThrow('revoked by logout');
+      expect(assertOpenIDRefreshFlightAvailable).toHaveBeenCalledWith({
+        key: 'flight:session-A:rt-shared-request',
+        ownerId: 'owner-1',
+      });
     });
 
     it('keeps both local coalescing participants unpublished when publication is deferred', async () => {
@@ -1610,7 +1642,7 @@ describe('OpenIDSessionRefresh', () => {
         key: 'flight:session-cross-worker:rt-cross-worker',
       });
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
-      expect(joinerTokens).toBe(sharedTokens);
+      expect(joinerTokens).toStrictEqual(sharedTokens);
       expect(joinerReq.session.openidTokens.refreshToken).toBe('rt-cross-worker-rotated');
       expect(joinerReq.session.save).toHaveBeenCalled();
 
@@ -1668,6 +1700,7 @@ describe('OpenIDSessionRefresh', () => {
         expires_at: Math.floor(Date.now() / 1000) + 3600,
         __predecessorRefreshToken: 'rt-predecessor',
         __predecessorAccessToken: predecessorAccessToken,
+        __flightOwnerId: 'generation-owner',
       });
       assertOpenIDRefreshFlightAvailable
         .mockResolvedValueOnce({ status: 'completed' })
@@ -1687,6 +1720,10 @@ describe('OpenIDSessionRefresh', () => {
       expect(deleteSession).toHaveBeenCalledWith({ refreshToken: 'rt-successor' });
       expect(req.session.destroy).toHaveBeenCalled();
       expect(res.clearCookie).toHaveBeenCalledWith('refreshToken');
+      expect(assertOpenIDRefreshFlightAvailable).toHaveBeenCalledWith({
+        key: 'flight:session-A:rt-predecessor',
+        ownerId: 'generation-owner',
+      });
     });
 
     it('does not replay a stable-token flight over a newer access token', async () => {
@@ -1716,9 +1753,10 @@ describe('OpenIDSessionRefresh', () => {
         __predecessorAccessToken: predecessorAccessToken,
       });
 
-      await refreshOpenIDSession(req, buildRes(), makeOpenIdUser(), 'access_token');
+      const result = await refreshOpenIDSession(req, buildRes(), makeOpenIdUser(), 'access_token');
 
       expect(req.session.openidTokens.accessToken).toBe(advancedAccessToken);
+      expect(result.access_token).toBe(advancedAccessToken);
       expect(storeOpenIdSession).not.toHaveBeenCalled();
       expect(setRefreshTokenCookie).not.toHaveBeenCalled();
       expect(req.session.save).not.toHaveBeenCalled();

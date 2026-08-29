@@ -30,6 +30,8 @@ export interface OpenIDTokenSet extends OIDCTokens {
   __identityIdToken?: string;
   /** Serializable identity evidence for shared-flight followers. */
   __identityClaims?: OpenIDClaims;
+  /** Access token that the shared candidate advanced from. */
+  __predecessorAccessToken?: string;
 }
 
 export interface SharedOpenIDRefreshResult {
@@ -38,6 +40,8 @@ export interface SharedOpenIDRefreshResult {
   openidIssuer?: string;
   expires_at?: number;
   appAuthToken: string;
+  predecessorAccessToken?: string;
+  acceptedIdentity?: AuthIdentityContext;
 }
 
 export interface SessionOpenIDTokens {

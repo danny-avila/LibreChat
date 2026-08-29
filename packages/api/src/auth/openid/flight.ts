@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type {
+  AuthIdentityContext,
   LeaseContext,
   OpenIDLogger,
   OpenIDClaims,
@@ -26,6 +27,7 @@ const INTERNAL_BROWSER_REFRESH_TOKEN_FIELD = '__browserRefreshToken';
 const INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD = '__predecessorRefreshToken';
 const INTERNAL_PREDECESSOR_ACCESS_TOKEN_FIELD = '__predecessorAccessToken';
 const INTERNAL_DEFERRED_PUBLICATION_FIELD = '__deferredPublication';
+const INTERNAL_FLIGHT_OWNER_FIELD = '__flightOwnerId';
 
 export interface TokenResult extends Omit<OpenIDTokenSet, 'claims'> {
   tokenset?: OpenIDTokenSet;
@@ -35,6 +37,9 @@ export interface TokenResult extends Omit<OpenIDTokenSet, 'claims'> {
   __predecessorRefreshToken?: string;
   __predecessorAccessToken?: string;
   __deferredPublication?: boolean;
+  __flightOwnerId?: string;
+  predecessorAccessToken?: string;
+  acceptedIdentity?: AuthIdentityContext;
 }
 
 interface FlightAcquireData {
@@ -90,6 +95,7 @@ export interface OpenIDRefreshFlightService {
   }) => Promise<RefreshFlightRecord | null>;
   assertOpenIDRefreshFlightAvailable: (args: {
     key?: string | null;
+    ownerId?: string;
   }) => Promise<RefreshFlightRecord | boolean>;
   revokeOpenIDRefreshFlights: (args: {
     keys?: Array<string | null | undefined>;
@@ -248,12 +254,14 @@ export function createOpenIDRefreshFlightService({
 
   async function assertOpenIDRefreshFlightAvailable({
     key,
+    ownerId,
   }: {
     key?: string | null;
+    ownerId?: string;
   }): Promise<RefreshFlightRecord | boolean> {
     if (!key) return true;
     const flight = await db.findOpenIDRefreshFlight({ key });
-    if (flight?.status === 'completed') {
+    if (flight?.status === 'completed' && ownerId && flight.ownerId === ownerId) {
       return flight;
     }
     throw createOpenIDRefreshOwnershipError(
@@ -411,6 +419,16 @@ export function createOpenIDRefreshFlightService({
     return tokens;
   }
 
+  function attachFlightOwner(tokens: TokenResult, ownerId?: string): TokenResult {
+    if (!ownerId) return tokens;
+    Object.defineProperty(tokens, INTERNAL_FLIGHT_OWNER_FIELD, {
+      value: ownerId,
+      enumerable: false,
+      configurable: true,
+    });
+    return tokens;
+  }
+
   async function readCompletedFlight(
     flight: RefreshFlightRecord | null,
   ): Promise<TokenResult | null> {
@@ -428,7 +446,7 @@ export function createOpenIDRefreshFlightService({
     ) {
       return null;
     }
-    return restoreInternalTokenFields(tokens);
+    return attachFlightOwner(restoreInternalTokenFields(tokens), flight.ownerId);
   }
 
   function getRenewedWaitDeadline(deadline: number, flight: RefreshFlightRecord | null): number {

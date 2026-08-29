@@ -109,6 +109,7 @@ interface OpenIDSessionRefreshDeps {
   waitForOpenIDRefreshFlight: (args: { key?: string | null }) => Promise<TokenResult | null>;
   assertOpenIDRefreshFlightAvailable: (args: {
     key?: string | null;
+    ownerId?: string;
   }) => Promise<RefreshFlightRecord | boolean>;
   withOpenIDRefreshFlightLease: <T>(args: {
     key?: string | null;
@@ -123,6 +124,7 @@ interface MarkedOIDCTokens extends OIDCTokens {
   __predecessorRefreshToken?: string;
   __predecessorAccessToken?: string;
   __deferredPublication?: boolean;
+  __flightOwnerId?: string;
   __identityIdToken?: string;
 }
 
@@ -677,6 +679,19 @@ export function createOpenIDSessionRefreshService(
     return tokens;
   }
 
+  function attachFlightOwnerMarker<T extends MarkedOIDCTokens | null>(
+    tokens: T,
+    ownerId?: string,
+  ): T {
+    if (!tokens || !ownerId) return tokens;
+    Object.defineProperty(tokens, '__flightOwnerId', {
+      value: ownerId,
+      enumerable: false,
+      configurable: true,
+    });
+    return tokens;
+  }
+
   function getPredecessorRefreshTokenMarker(tokens: MarkedOIDCTokens): string | null {
     const predecessor = tokens?.[INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD];
     return typeof predecessor === 'string' && predecessor ? predecessor : null;
@@ -691,6 +706,7 @@ export function createOpenIDSessionRefreshService(
     );
     attachPredecessorAccessTokenMarker(clone, tokens.__predecessorAccessToken);
     attachDeferredPublicationMarker(clone, tokens.__deferredPublication === true);
+    attachFlightOwnerMarker(clone, tokens.__flightOwnerId);
     attachIdentityIdTokenMarker(clone, tokens.__identityIdToken);
     return clone;
   }
@@ -1074,6 +1090,7 @@ export function createOpenIDSessionRefreshService(
       tokenPreference,
       nextAccessTokenExp ?? undefined,
     );
+    attachPredecessorAccessTokenMarker(resolvedTokens, sessionTokens.accessToken);
     const identityClaims = resolveRefreshIdentityClaims(tokenset, sessionTokens.idToken);
     if (identityClaims) {
       resolvedTokens.__identityClaims = identityClaims;
@@ -1171,6 +1188,7 @@ export function createOpenIDSessionRefreshService(
     identityContext,
     resolvedTokens,
     predecessorRefreshToken,
+    tokenPreference,
     assertLeaseOwned,
     effects,
   }: {
@@ -1180,10 +1198,11 @@ export function createOpenIDSessionRefreshService(
     identityContext?: AuthIdentityContext;
     resolvedTokens: MarkedOIDCTokens | null;
     predecessorRefreshToken?: string;
+    tokenPreference: TokenPreference;
     assertLeaseOwned?: LeaseAssertion;
     effects?: SessionPublicationEffects;
-  }): Promise<void> {
-    if (!resolvedTokens?.access_token) return;
+  }): Promise<MarkedOIDCTokens | null> {
+    if (!resolvedTokens?.access_token) return null;
     if (assertLeaseOwned) await assertLeaseOwned();
     if (typeof req.session?.reload === 'function') {
       const reload = req.session.reload.bind(req.session);
@@ -1200,7 +1219,7 @@ export function createOpenIDSessionRefreshService(
       logger.info(
         '[OpenIDSessionRefresh] Skipping stale flight publication because the session advanced',
       );
-      return;
+      return buildOIDCTokensFromSession(req.session.openidTokens, tokenPreference);
     }
     const nextRefreshToken = requestTokens.refresh_token ?? predecessorRefreshToken;
     const browserRefreshToken =
@@ -1250,6 +1269,7 @@ export function createOpenIDSessionRefreshService(
       effects.expressSession = true;
     }
     if (assertLeaseOwned) await assertLeaseOwned();
+    return requestTokens;
   }
 
   async function rollbackSessionPublication(
@@ -1359,6 +1379,7 @@ export function createOpenIDSessionRefreshService(
     identityContext,
     resolvedTokens,
     predecessorRefreshToken,
+    tokenPreference,
   }: {
     key: string;
     req: OpenIDRequest;
@@ -1367,22 +1388,29 @@ export function createOpenIDSessionRefreshService(
     identityContext?: AuthIdentityContext;
     resolvedTokens: MarkedOIDCTokens;
     predecessorRefreshToken?: string;
-  }): Promise<void> {
+    tokenPreference: TokenPreference;
+  }): Promise<MarkedOIDCTokens> {
     if (resolvedTokens.__deferredPublication) {
       throw new Error('OpenID refresh result is awaiting identity validation');
     }
     const effects = createSessionPublicationEffects();
     try {
-      await publishResolvedSessionTokens({
+      const effectiveTokens = await publishResolvedSessionTokens({
         req,
         res,
         user,
         identityContext,
         resolvedTokens,
         predecessorRefreshToken,
-        assertLeaseOwned: () => assertOpenIDRefreshFlightAvailable({ key }),
+        tokenPreference,
+        assertLeaseOwned: () =>
+          assertOpenIDRefreshFlightAvailable({ key, ownerId: resolvedTokens.__flightOwnerId }),
         effects,
       });
+      if (!effectiveTokens) {
+        throw new Error('OpenID refresh result is unavailable for publication');
+      }
+      return effectiveTokens;
     } catch (error) {
       if (isOpenIDRefreshOwnershipError(error) && hasPublicationEffects(effects)) {
         await rollbackSessionPublication(
@@ -1438,7 +1466,7 @@ export function createOpenIDSessionRefreshService(
       const resolvedTokens = await waitForOpenIDRefreshFlight({ key });
       if (resolvedTokens) {
         if (!deferPublication) {
-          await publishCompletedFlightTokens({
+          return publishCompletedFlightTokens({
             key,
             req,
             res,
@@ -1446,6 +1474,7 @@ export function createOpenIDSessionRefreshService(
             identityContext,
             resolvedTokens,
             predecessorRefreshToken: refreshToken,
+            tokenPreference,
           });
         }
         return resolvedTokens;
@@ -1518,6 +1547,7 @@ export function createOpenIDSessionRefreshService(
               identityContext,
               resolvedTokens,
               predecessorRefreshToken: refreshToken,
+              tokenPreference,
               assertLeaseOwned,
               effects: publicationEffects,
             });
@@ -1532,6 +1562,7 @@ export function createOpenIDSessionRefreshService(
               'OpenID refresh coordination ownership was lost before completion',
             );
           }
+          attachFlightOwnerMarker(resolvedTokens, completedFlight.ownerId ?? flight.ownerId);
           markLeaseSettled();
           return resolvedTokens;
         } catch (error) {
@@ -1747,6 +1778,9 @@ export function createOpenIDSessionRefreshService(
        * reads the rotated refresh token instead of replaying the stale one.
        */
       if (!options.deferPublication) {
+        if (resolvedTokens?.__deferredPublication) {
+          throw new Error('OpenID refresh result is awaiting identity validation');
+        }
         const currentSessionTokens = req.session?.openidTokens;
         const alreadyCurrent = Boolean(
           currentSessionTokens?.accessToken === resolvedTokens?.access_token &&
@@ -1754,12 +1788,21 @@ export function createOpenIDSessionRefreshService(
               (resolvedTokens?.refresh_token ?? predecessorRefreshToken),
         );
         if (alreadyCurrent) {
+          if (resolvedTokens?.__flightOwnerId) {
+            if (!sharedFlightKey) {
+              throw new Error('OpenID refresh coordination key is unavailable for publication');
+            }
+            await assertOpenIDRefreshFlightAvailable({
+              key: sharedFlightKey,
+              ownerId: resolvedTokens.__flightOwnerId,
+            });
+          }
           return resolvedTokens;
         }
         if (!sharedFlightKey || !resolvedTokens) {
           throw new Error('OpenID refresh coordination key is unavailable for publication');
         }
-        await publishCompletedFlightTokens({
+        return publishCompletedFlightTokens({
           key: sharedFlightKey,
           req,
           res,
@@ -1767,6 +1810,7 @@ export function createOpenIDSessionRefreshService(
           identityContext,
           resolvedTokens,
           predecessorRefreshToken,
+          tokenPreference,
         });
       }
       return resolvedTokens;
