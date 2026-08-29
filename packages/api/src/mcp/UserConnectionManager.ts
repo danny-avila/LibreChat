@@ -1074,13 +1074,17 @@ export abstract class UserConnectionManager {
       logger.info(`[MCP][User: ${userId}] All connections processed for disconnection.`);
     }
     /**
-     * Always clear the activity timestamp, even when userMap was missing.
-     * `updateUserLastActivity` can be called before a connection is established
-     * (e.g. in MCPManager.callTool prior to getConnection); if that connection
-     * attempt fails, the activity entry would otherwise leak and trigger the
-     * idle check repeatedly for the same userId.
+     * Clear the activity timestamp whenever nothing is left to track, including when userMap
+     * was missing. `updateUserLastActivity` can be called before a connection is established
+     * (e.g. in MCPManager.callTool prior to getConnection); if that connection attempt fails,
+     * the activity entry would otherwise leak and trigger the idle check repeatedly for the
+     * same userId. A connection installed while this teardown was disposing keeps its own
+     * timestamp: `checkIdleConnections` walks activity rather than connections, so clearing it
+     * would hide that connection from every later idle sweep.
      */
-    this.userLastActivity.delete(userId);
+    if (!this.userConnections.has(userId)) {
+      this.userLastActivity.delete(userId);
+    }
   }
 
   /** Check for and disconnect idle connections */

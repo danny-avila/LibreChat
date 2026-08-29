@@ -3432,6 +3432,52 @@ describe('MCPManager', () => {
       expect(manager.getUserConnections(userId)?.has(serverName) ?? false).toBe(false);
     });
 
+    it('keeps the activity timestamp for a connection installed during a user-wide teardown', async () => {
+      const otherServer = 'other_server';
+      const installedConnection = newUserConnection();
+      let resolveDispose: (() => void) | undefined;
+      (installedConnection.dispose as jest.Mock).mockReturnValue(
+        new Promise<void>((resolve) => {
+          resolveDispose = () => resolve();
+        }),
+      );
+      const fencedConnection = newUserConnection();
+      const reestablishedConnection = newUserConnection();
+      let resolveConnection: ((connection: MCPConnection) => void) | undefined;
+      const factoryResult = new Promise<MCPConnection>((resolve) => {
+        resolveConnection = resolve;
+      });
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'user',
+        dbId: 'server-1',
+      });
+      (MCPConnectionFactory.create as jest.Mock)
+        .mockResolvedValueOnce(installedConnection)
+        .mockReturnValueOnce(factoryResult)
+        .mockResolvedValue(reestablishedConnection);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.getUserConnection({ serverName, user: mockUser });
+      const creation = manager.getUserConnection({ serverName: otherServer, user: mockUser });
+      while ((MCPConnectionFactory.create as jest.Mock).mock.calls.length < 2) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+
+      /** The sweep is still disposing the first connection when the fenced one re-establishes. */
+      const teardown = manager.disconnectUserConnections(userId, { reason: 'lifecycle' });
+      resolveConnection?.(fencedConnection);
+      await expect(creation).resolves.toBe(reestablishedConnection);
+      resolveDispose?.();
+      await teardown;
+
+      const internals = manager as unknown as { userLastActivity: Map<string, number> };
+      expect(manager.getUserConnections(userId)?.get(otherServer)).toBe(reestablishedConnection);
+      expect(internals.userLastActivity.has(userId)).toBe(true);
+    });
+
     it('fails a creation that a lifecycle teardown keeps cancelling on every attempt', async () => {
       mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
