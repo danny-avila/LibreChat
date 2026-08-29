@@ -150,7 +150,7 @@ export function createOpenIDRefreshFlightService({
       if (!flight) {
         if (settled) return null;
         const terminalFlight = await db.findOpenIDRefreshFlight({ key });
-        if (terminalFlight?.ownerId === ownerId && terminalFlight.status === 'completed') {
+        if (terminalFlight?.ownerId === ownerId && terminalFlight?.status === 'completed') {
           return terminalFlight;
         }
         ownershipLost = true;
