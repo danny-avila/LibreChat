@@ -327,35 +327,42 @@ describe('refreshController – OpenID path', () => {
         markLeaseSettled: jest.fn(),
       }),
     );
-    refreshOpenIDSession.mockImplementation(async (refreshReq) => {
-      const activeRefreshToken = refreshReq.session.openidTokens.refreshToken;
-      const refreshParams = buildOpenIDRefreshParams();
-      logger.debug('[refreshController] OpenID refresh params', {
-        has_scope: Boolean(process.env.OPENID_SCOPE),
-        has_refresh_audience: Boolean(process.env.OPENID_REFRESH_AUDIENCE),
-      });
-      const tokenset = await openIdClient.refreshTokenGrant(
-        getOpenIdConfig(),
-        activeRefreshToken,
-        refreshParams,
-      );
-      logger.debug('[refreshController] OpenID refresh succeeded', {
-        has_access_token: Boolean(tokenset.access_token),
-        has_id_token: Boolean(tokenset.id_token),
-        has_refresh_token: Boolean(tokenset.refresh_token),
-        expires_in: tokenset.expires_in,
-      });
-      const resolvedTokenset = tokenset.refresh_token
-        ? tokenset
-        : { ...tokenset, refresh_token: activeRefreshToken };
-      refreshReq.session.openidTokens = {
-        ...refreshReq.session.openidTokens,
-        accessToken: tokenset.access_token,
-        idToken: tokenset.id_token,
-        refreshToken: resolvedTokenset.refresh_token,
-      };
-      return resolvedTokenset;
-    });
+    refreshOpenIDSession.mockImplementation(
+      async (refreshReq, _res, _user, _preference, _identity, options = {}) => {
+        const activeRefreshToken = refreshReq.session.openidTokens.refreshToken;
+        const refreshParams = buildOpenIDRefreshParams();
+        logger.debug('[refreshController] OpenID refresh params', {
+          has_scope: Boolean(process.env.OPENID_SCOPE),
+          has_refresh_audience: Boolean(process.env.OPENID_REFRESH_AUDIENCE),
+        });
+        const tokenset = await openIdClient.refreshTokenGrant(
+          getOpenIdConfig(),
+          activeRefreshToken,
+          refreshParams,
+        );
+        if (options.assertLeaseOwned) {
+          await options.assertLeaseOwned();
+        }
+        logger.debug('[refreshController] OpenID refresh succeeded', {
+          has_access_token: Boolean(tokenset.access_token),
+          has_id_token: Boolean(tokenset.id_token),
+          has_refresh_token: Boolean(tokenset.refresh_token),
+          expires_in: tokenset.expires_in,
+        });
+        const resolvedTokenset = tokenset.refresh_token
+          ? tokenset
+          : { ...tokenset, refresh_token: activeRefreshToken };
+        if (!options.deferPublication) {
+          refreshReq.session.openidTokens = {
+            ...refreshReq.session.openidTokens,
+            accessToken: tokenset.access_token,
+            idToken: tokenset.id_token,
+            refreshToken: resolvedTokenset.refresh_token,
+          };
+        }
+        return resolvedTokenset;
+      },
+    );
     getUserById.mockResolvedValue({
       _id: 'user-db-id',
       email: baseClaims.email,
@@ -1386,6 +1393,7 @@ describe('refreshController – OpenID path', () => {
     const assertLeaseOwned = jest
       .fn()
       .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
       .mockRejectedValueOnce(ownershipLost('revoked by logout'));
     withOpenIDRefreshFlightLease.mockImplementationOnce(({ operation }) =>
       operation({ assertLeaseOwned, markLeaseSettled: jest.fn() }),
@@ -1420,6 +1428,7 @@ describe('refreshController – OpenID path', () => {
     const assertLeaseOwned = jest
       .fn()
       .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
       .mockRejectedValueOnce(new Error('connection timed out'));
     withOpenIDRefreshFlightLease.mockImplementationOnce(({ operation }) =>
       operation({ assertLeaseOwned, markLeaseSettled: jest.fn() }),
@@ -1430,6 +1439,46 @@ describe('refreshController – OpenID path', () => {
     expect(deleteRefreshTokenBridges).not.toHaveBeenCalled();
     expect(completeOpenIDRefreshFlight).not.toHaveBeenCalled();
     expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('does not publish a nested bridge refresh after the outer logout fence is revoked', async () => {
+    setOpenIDReuseCookies();
+    req.session = {};
+    getUserById.mockResolvedValue({
+      _id: 'user-db-id',
+      email: baseClaims.email,
+      openidId: baseClaims.sub,
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    });
+    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    openIdClient.refreshTokenGrant
+      .mockRejectedValueOnce(new Error('invalid_grant'))
+      .mockResolvedValueOnce(mockTokenset);
+    const assertLeaseOwned = jest.fn().mockRejectedValueOnce(ownershipLost('revoked by logout'));
+    withOpenIDRefreshFlightLease.mockImplementationOnce(({ operation }) =>
+      operation({ assertLeaseOwned, markLeaseSettled: jest.fn() }),
+    );
+
+    await refreshController(req, res);
+
+    expect(refreshOpenIDSession).toHaveBeenCalledWith(
+      expect.anything(),
+      res,
+      expect.objectContaining({ _id: 'user-db-id' }),
+      'id_token',
+      expect.anything(),
+      expect.objectContaining({
+        assertLeaseOwned,
+        deferPublication: true,
+        forceRefresh: true,
+      }),
+    );
+    expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
+    expect(completeOpenIDRefreshFlight).not.toHaveBeenCalled();
+    expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(req.session.openidTokens.accessToken).toBeUndefined();
     expect(res.status).toHaveBeenCalledWith(403);
   });
 

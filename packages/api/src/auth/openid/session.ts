@@ -1,11 +1,172 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- Express and openid-client runtime boundary */
+import type {
+  AuthIdentityContext,
+  AuthIdentitySource,
+  AuthIdentityTuple,
+  LeaseAssertion,
+  LeaseContext,
+  OIDCTokens,
+  OpenIDLogger,
+  OpenIDRequest,
+  OpenIDResponse,
+  OpenIDSessionIdentitySource,
+  OpenIDTokenSet,
+  OpenIDUser,
+  RefreshFlightAcquireResult,
+  RefreshFlightRecord,
+  RefreshKeyInput,
+  RefreshTokenBridgeDeleteInput,
+  RefreshTokenBridgeIdentity,
+  RefreshTokenBridgeInput,
+  SessionOpenIDTokens,
+  TokenPreference,
+} from './types';
+import type { OpenIdSessionDeps, OpenIdSessionParams } from '~/images/session';
+import type { TokenResult } from './flight';
+import {
+  createOpenIDRefreshOwnershipError,
+  isOpenIDRefreshOwnershipError,
+  toOpenIDLogArgument,
+} from './errors';
+
+interface OpenIDSessionRefreshDeps {
+  jwt: {
+    decode: (token: string) => { exp?: number } | string | null;
+    verify: (token: string, secret: string) => { id?: string; refreshTokenHash?: string } | string;
+  };
+  cookies: { parse: (header: string) => Record<string, string> };
+  crypto: {
+    createHash: (algorithm: string) => {
+      update: (value: string) => { digest: (encoding: 'hex' | 'base64url') => string };
+    };
+  };
+  openIdClient: {
+    refreshTokenGrant: (
+      config: object,
+      refreshToken: string,
+      params: Record<string, string>,
+    ) => Promise<OpenIDTokenSet>;
+  };
+  logger: OpenIDLogger;
+  defaultRefreshTokenExpiry: number;
+  isEnabled: (value?: string) => boolean;
+  math: (value: string | undefined, fallback: number) => number;
+  createAuthIdentityContext: (args: {
+    user?: AuthIdentitySource | null;
+    requestUser?: AuthIdentitySource | null;
+    tenantId?: string;
+    openidIssuer?: string;
+  }) => AuthIdentityContext;
+  isOpenIDSessionIdentityMatch: (
+    session: OpenIDSessionIdentitySource,
+    expected: OpenIDSessionIdentitySource,
+  ) => boolean;
+  createOpenIDRefreshIdentityTuple: (args: {
+    user?: AuthIdentitySource | null;
+    requestUser?: AuthIdentitySource | null;
+  }) => AuthIdentityTuple | null;
+  createRefreshTokenBridgeIdentity: (args: {
+    user?: AuthIdentitySource | null;
+    requestUser?: AuthIdentitySource | null;
+    userId?: string;
+    tenantId?: string;
+    openidIssuer?: string;
+  }) => RefreshTokenBridgeIdentity | null;
+  serializeAuthIdentityTuple: (tuple: AuthIdentityTuple) => string;
+  buildOpenIDRefreshParams: () => Record<string, string>;
+  setRefreshTokenCookie: (res: OpenIDResponse, token: string, expires: Date) => void;
+  setOpenIDMarkerCookies: (
+    res: OpenIDResponse,
+    args: {
+      userId?: string;
+      expires: Date;
+      refreshExpiryMs: number;
+      refreshToken: string;
+    },
+  ) => void;
+  storeOpenIdSession: (data: OpenIdSessionParams, methods: OpenIdSessionDeps) => Promise<boolean>;
+  normalizeExpiresIn: (value?: number | string) => number | undefined;
+  upsertSession: OpenIdSessionDeps['upsertSession'];
+  deleteSession: OpenIdSessionDeps['deleteSession'];
+  getOpenIdConfig: () => object;
+  OPENID_REFRESH_BRIDGE_GRACE_MS: number;
+  storeRefreshTokenBridge: (input: RefreshTokenBridgeInput) => Promise<void>;
+  deleteRefreshTokenBridges: (input: RefreshTokenBridgeDeleteInput) => Promise<object | null>;
+  acquireOpenIDRefreshFlight: (args: {
+    key?: string | null;
+  }) => Promise<RefreshFlightAcquireResult>;
+  completeOpenIDRefreshFlight: (args: {
+    key?: string | null;
+    ownerId?: string;
+    tokens?: TokenResult | null;
+  }) => Promise<RefreshFlightRecord | null>;
+  createOpenIDRefreshFlightKey: (input: RefreshKeyInput) => string | null;
+  failOpenIDRefreshFlight: (args: {
+    key?: string | null;
+    ownerId?: string;
+    error?: Error | null;
+  }) => Promise<RefreshFlightRecord | null>;
+  waitForOpenIDRefreshFlight: (args: { key?: string | null }) => Promise<TokenResult | null>;
+  withOpenIDRefreshFlightLease: <T>(args: {
+    key?: string | null;
+    ownerId?: string;
+    operation: (context: LeaseContext) => Promise<T>;
+  }) => Promise<T>;
+}
+
+interface MarkedOIDCTokens extends OIDCTokens {
+  __browserRefreshToken?: string;
+  __predecessorRefreshToken?: string;
+}
+
+interface RefreshSessionOptions {
+  forceRefresh?: boolean;
+  assertLeaseOwned?: LeaseAssertion;
+  deferPublication?: boolean;
+}
+
+interface CreateOpenIDSessionTokenProviderInput {
+  req?: OpenIDRequest;
+  res?: OpenIDResponse;
+  user?: OpenIDUser;
+  tokenPreference: TokenPreference;
+  identityContext?: AuthIdentityContext;
+}
+
+export interface OpenIDSessionRefreshService {
+  createOpenIDSessionTokenProvider: (
+    input: CreateOpenIDSessionTokenProviderInput,
+  ) => () => Promise<OIDCTokens | null>;
+  refreshOpenIDSession: (
+    req: OpenIDRequest,
+    res: OpenIDResponse | undefined,
+    user: OpenIDUser,
+    tokenPreference: TokenPreference,
+    identityContext?: AuthIdentityContext,
+    options?: RefreshSessionOptions,
+  ) => Promise<MarkedOIDCTokens | null>;
+  __internals: {
+    UPSTREAM_TOKEN_EXPIRY_BUFFER_SECONDS: number;
+    inFlightRefreshes: Map<string, Promise<MarkedOIDCTokens | null>>;
+    getSingleFlightKey: (
+      req: OpenIDRequest,
+      user: OpenIDUser,
+      identityContext?: AuthIdentityContext,
+    ) => string | null;
+    isLiveSessionTokenStillValid: (
+      sessionTokens: SessionOpenIDTokens,
+      tokenPreference: TokenPreference,
+    ) => boolean;
+    getAccessTokenExp: (sessionTokens: SessionOpenIDTokens) => number | null;
+  };
+}
+
 /**
  * OpenID session refresh implementation. Runtime-only Express, model, and strategy dependencies
  * are supplied by the thin /api wrapper; the authentication and coordination logic lives here.
  */
-import { createOpenIDRefreshOwnershipError, isOpenIDRefreshOwnershipError } from './errors';
-
-export function createOpenIDSessionRefreshService(deps: any): any {
+export function createOpenIDSessionRefreshService(
+  deps: OpenIDSessionRefreshDeps,
+): OpenIDSessionRefreshService {
   const {
     jwt,
     cookies,
@@ -96,7 +257,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
    * `performIdpRefresh`, so distinct workers do not admit parallel rotating-token
    * grants for the same key.
    */
-  const inFlightRefreshes = new Map();
+  const inFlightRefreshes = new Map<string, Promise<MarkedOIDCTokens | null>>();
 
   /**
    * Returns the single-flight key for a refresh attempt, composed from the
@@ -119,7 +280,11 @@ export function createOpenIDSessionRefreshService(deps: any): any {
    * Returns null when there's no usable identity at all; callers fall through
    * to a non-coalesced refresh, which is safe but missing the optimization.
    */
-  function getSingleFlightKey(req: any, user: any, identityContext?: any) {
+  function getSingleFlightKey(
+    req: OpenIDRequest,
+    user: OpenIDUser,
+    identityContext?: AuthIdentityContext,
+  ): string | null {
     const identitySource = identityContext
       ? {
           id: identityContext.appUserId,
@@ -155,11 +320,15 @@ export function createOpenIDSessionRefreshService(deps: any): any {
    * 12 hex chars = 48 bits of entropy: ~7×10^14 distinct keys before a 50%
    * collision chance — more than enough for correlating concurrent refreshes.
    */
-  function hashKeyForLogs(key: any) {
+  function hashKeyForLogs(key: string): string {
     return crypto.createHash('sha256').update(key).digest('hex').slice(0, 12);
   }
 
-  function resolveExpectedOpenIDSessionIdentity(req: any, user: any, identityContext?: any) {
+  function resolveExpectedOpenIDSessionIdentity(
+    req: OpenIDRequest,
+    user: OpenIDUser,
+    identityContext?: AuthIdentityContext,
+  ): AuthIdentityContext {
     if (!identityContext) {
       return createAuthIdentityContext({
         user,
@@ -180,13 +349,21 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     });
   }
 
-  function hasAnyOpenIDSessionIdentity(sessionTokens: any) {
-    return ['appUserId', 'openidSubject', 'tenantId', 'openidIssuer'].some(
-      (field) => sessionTokens?.[field] != null,
-    );
+  function hasAnyOpenIDSessionIdentity(sessionTokens: SessionOpenIDTokens): boolean {
+    const identityFields: Array<keyof OpenIDSessionIdentitySource> = [
+      'appUserId',
+      'openidSubject',
+      'tenantId',
+      'openidIssuer',
+    ];
+    return identityFields.some((field) => sessionTokens?.[field] != null);
   }
 
-  function canBindLegacyOpenIDSession(req: any, sessionTokens: any, expectedIdentity: any) {
+  function canBindLegacyOpenIDSession(
+    req: OpenIDRequest,
+    sessionTokens: SessionOpenIDTokens,
+    expectedIdentity: AuthIdentityContext,
+  ): boolean {
     if (
       hasAnyOpenIDSessionIdentity(sessionTokens) ||
       !expectedIdentity.appUserId ||
@@ -229,7 +406,11 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     }
   }
 
-  function assertOpenIDSessionIdentityMatch(req: any, user: any, identityContext?: any) {
+  function assertOpenIDSessionIdentityMatch(
+    req: OpenIDRequest,
+    user: OpenIDUser,
+    identityContext?: AuthIdentityContext,
+  ): Promise<void> | undefined {
     const sessionTokens = req?.session?.openidTokens;
     if (!sessionTokens) {
       return;
@@ -265,7 +446,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     throw new Error('OpenID session token identity mismatch');
   }
 
-  function decodeJwtExp(token: any) {
+  function decodeJwtExp(token?: string): number | null {
     if (typeof token !== 'string' || token.length === 0) {
       return null;
     }
@@ -298,7 +479,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
    * @param {{ accessToken?: string, accessTokenExpiresAt?: number }} sessionTokens
    * @returns {number | null} unix seconds, or null when no source proves an expiry
    */
-  function getAccessTokenExp(sessionTokens: any) {
+  function getAccessTokenExp(sessionTokens: SessionOpenIDTokens): number | null {
     const fromJwt = decodeJwtExp(sessionTokens?.accessToken);
     if (fromJwt != null) {
       return fromJwt;
@@ -307,7 +488,9 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     return typeof persisted === 'number' ? persisted : null;
   }
 
-  function canWriteRefreshTokenCookie(res: any) {
+  function canWriteRefreshTokenCookie(res?: OpenIDResponse): res is OpenIDResponse & {
+    cookie: NonNullable<OpenIDResponse['cookie']>;
+  } {
     return !!res && typeof res.cookie === 'function' && !res.headersSent;
   }
 
@@ -330,7 +513,10 @@ export function createOpenIDSessionRefreshService(deps: any): any {
    * @param {{ accessToken?: string, idToken?: string, accessTokenExpiresAt?: number }} sessionTokens
    * @param {'access_token' | 'id_token'} tokenPreference
    */
-  function isLiveSessionTokenStillValid(sessionTokens: any, tokenPreference: any) {
+  function isLiveSessionTokenStillValid(
+    sessionTokens: SessionOpenIDTokens,
+    tokenPreference: TokenPreference,
+  ): boolean {
     if (tokenPreference !== 'access_token' && tokenPreference !== 'id_token') {
       throw new Error(
         `[OpenIDSessionRefresh] tokenPreference must be 'access_token' or 'id_token', got: ${tokenPreference}`,
@@ -359,10 +545,10 @@ export function createOpenIDSessionRefreshService(deps: any): any {
    * @param {number} [expiresAtOverride] — unix seconds (preferred when present)
    */
   function buildOIDCTokensFromSession(
-    sessionTokens: any,
-    tokenPreference: any,
-    expiresAtOverride?: any,
-  ) {
+    sessionTokens: SessionOpenIDTokens,
+    tokenPreference: TokenPreference,
+    expiresAtOverride?: number,
+  ): MarkedOIDCTokens {
     if (tokenPreference !== 'access_token' && tokenPreference !== 'id_token') {
       throw new Error(
         `[OpenIDSessionRefresh] tokenPreference must be 'access_token' or 'id_token', got: ${tokenPreference}`,
@@ -383,7 +569,10 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     };
   }
 
-  function attachBrowserRefreshTokenMarker(tokens: any, browserRefreshToken: any) {
+  function attachBrowserRefreshTokenMarker<T extends MarkedOIDCTokens | null>(
+    tokens: T,
+    browserRefreshToken?: string,
+  ): T {
     if (!tokens || !browserRefreshToken) {
       return tokens;
     }
@@ -395,14 +584,17 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     return tokens;
   }
 
-  function getBrowserRefreshTokenMarker(tokens: any) {
+  function getBrowserRefreshTokenMarker(tokens: MarkedOIDCTokens): string | null {
     const browserRefreshToken = tokens?.[INTERNAL_BROWSER_REFRESH_TOKEN_FIELD];
     return typeof browserRefreshToken === 'string' && browserRefreshToken
       ? browserRefreshToken
       : null;
   }
 
-  function attachPredecessorRefreshTokenMarker(tokens: any, predecessorRefreshToken: any) {
+  function attachPredecessorRefreshTokenMarker<T extends MarkedOIDCTokens | null>(
+    tokens: T,
+    predecessorRefreshToken?: string,
+  ): T {
     if (!tokens || !predecessorRefreshToken) return tokens;
     Object.defineProperty(tokens, INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD, {
       value: predecessorRefreshToken,
@@ -412,17 +604,18 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     return tokens;
   }
 
-  function getPredecessorRefreshTokenMarker(tokens: any) {
+  function getPredecessorRefreshTokenMarker(tokens: MarkedOIDCTokens): string | null {
     const predecessor = tokens?.[INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD];
     return typeof predecessor === 'string' && predecessor ? predecessor : null;
   }
 
-  async function persistSession(req: any) {
+  async function persistSession(req: OpenIDRequest): Promise<void> {
     if (typeof req?.session?.save !== 'function') {
       return;
     }
+    const save = req.session.save.bind(req.session);
     await new Promise<void>((resolve, reject) => {
-      req.session.save((err: any) => {
+      save((err?: Error | null) => {
         if (err) {
           reject(err);
         } else {
@@ -463,7 +656,16 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     tenantId,
     openidIssuer,
     assertLeaseOwned,
-  }: any) {
+  }: {
+    res?: OpenIDResponse;
+    newRefreshToken: string;
+    oldRefreshToken?: string;
+    previousSessionRefreshToken?: string;
+    userId?: string;
+    tenantId?: string;
+    openidIssuer?: string;
+    assertLeaseOwned?: LeaseAssertion;
+  }): Promise<void> {
     if (assertLeaseOwned) {
       await assertLeaseOwned();
     }
@@ -551,7 +753,10 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     }
   }
 
-  async function storeRefreshTokenBridgeWithLease({ assertLeaseOwned, ...bridge }: any) {
+  async function storeRefreshTokenBridgeWithLease({
+    assertLeaseOwned,
+    ...bridge
+  }: RefreshTokenBridgeInput & { assertLeaseOwned?: LeaseAssertion }): Promise<void> {
     if (assertLeaseOwned) {
       await assertLeaseOwned();
     }
@@ -584,7 +789,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
       } catch (cleanupError) {
         logger.error(
           '[OpenIDSessionRefresh] Failed to remove bridge after refresh ownership loss',
-          cleanupError,
+          toOpenIDLogArgument(cleanupError),
         );
       }
       throw error;
@@ -596,7 +801,12 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     newRefreshToken,
     bridgeIdentity,
     assertLeaseOwned,
-  }: any) {
+  }: {
+    oldRefreshToken?: string;
+    newRefreshToken?: string;
+    bridgeIdentity?: RefreshTokenBridgeIdentity | null;
+    assertLeaseOwned?: LeaseAssertion;
+  }): Promise<void> {
     if (!oldRefreshToken || !newRefreshToken || !bridgeIdentity?.userId) {
       return;
     }
@@ -621,19 +831,20 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     } catch (bridgeError) {
       logger.warn(
         '[OpenIDSessionRefresh] Failed to store refresh-token bridge after session save failure',
-        bridgeError,
+        toOpenIDLogArgument(bridgeError),
       );
     }
   }
 
   async function performIdpRefreshGrant(
-    req: any,
-    res: any,
-    user: any,
-    tokenPreference: any,
-    identityContext: any,
-    assertLeaseOwned?: any,
-  ) {
+    req: OpenIDRequest,
+    res: OpenIDResponse | undefined,
+    user: OpenIDUser,
+    tokenPreference: TokenPreference,
+    identityContext: AuthIdentityContext | undefined,
+    assertLeaseOwned?: LeaseAssertion,
+    deferPublication = false,
+  ): Promise<MarkedOIDCTokens | null> {
     const sessionTokens = req?.session?.openidTokens;
     const refreshToken = sessionTokens?.refreshToken;
     if (!refreshToken) {
@@ -696,7 +907,6 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     } else {
       nextAccessTokenExp = decodeJwtExp(tokenset.access_token);
     }
-
     /**
      * `normalizeExpiresIn` preserves a zero or negative lifetime rather than discarding it, so a
      * grant can succeed while declaring a credential that is already spent. Publishing it rotates
@@ -721,6 +931,27 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     } else {
       /** Drop a stale value rather than carry it across an unknown-expiry rotation. */
       delete updatedSessionTokens.accessTokenExpiresAt;
+    }
+
+    const resolvedTokens = buildOIDCTokensFromSession(
+      updatedSessionTokens,
+      tokenPreference,
+      nextAccessTokenExp ?? undefined,
+    );
+    const fallbackIdTokenExp = decodeJwtExp(sessionTokens.idToken);
+    if (
+      !tokenset.id_token &&
+      (fallbackIdTokenExp == null ||
+        fallbackIdTokenExp <= Math.floor(Date.now() / 1000) + UPSTREAM_TOKEN_EXPIRY_BUFFER_SECONDS)
+    ) {
+      delete resolvedTokens.id_token;
+    }
+
+    if (deferPublication) {
+      return attachBrowserRefreshTokenMarker(
+        resolvedTokens,
+        updatedSessionTokens.browserRefreshToken,
+      );
     }
 
     /**
@@ -755,6 +986,9 @@ export function createOpenIDSessionRefreshService(deps: any): any {
       await assertLeaseOwned();
     }
 
+    if (!req.session) {
+      throw new Error('OpenID refresh requires an Express session');
+    }
     req.session.openidTokens = updatedSessionTokens;
 
     try {
@@ -778,33 +1012,41 @@ export function createOpenIDSessionRefreshService(deps: any): any {
      * refresh the IdP's value is authoritative and supersedes any decode.
      */
     return attachBrowserRefreshTokenMarker(
-      buildOIDCTokensFromSession(
-        updatedSessionTokens,
-        tokenPreference,
-        nextAccessTokenExp ?? undefined,
-      ),
+      resolvedTokens,
       updatedSessionTokens.browserRefreshToken,
     );
   }
 
   async function performIdpRefresh(
-    req: any,
-    res: any,
-    user: any,
-    tokenPreference: any,
-    identityContext?: any,
-  ) {
+    req: OpenIDRequest,
+    res: OpenIDResponse | undefined,
+    user: OpenIDUser,
+    tokenPreference: TokenPreference,
+    identityContext?: AuthIdentityContext,
+    deferPublication = false,
+  ): Promise<MarkedOIDCTokens | null> {
     const refreshToken = req?.session?.openidTokens?.refreshToken;
     const key = createOpenIDRefreshFlightKey({ req, user, refreshToken, identityContext });
     if (!key) {
-      return performIdpRefreshGrant(req, res, user, tokenPreference, identityContext);
+      return performIdpRefreshGrant(
+        req,
+        res,
+        user,
+        tokenPreference,
+        identityContext,
+        undefined,
+        deferPublication,
+      );
     }
 
     let flight;
     try {
       flight = await acquireOpenIDRefreshFlight({ key });
     } catch (error) {
-      logger.warn('[OpenIDSessionRefresh] Failed to acquire shared refresh flight', error);
+      logger.warn(
+        '[OpenIDSessionRefresh] Failed to acquire shared refresh flight',
+        toOpenIDLogArgument(error),
+      );
       throw new Error('OpenID refresh coordination is temporarily unavailable', { cause: error });
     }
 
@@ -814,7 +1056,9 @@ export function createOpenIDSessionRefreshService(deps: any): any {
       });
       const resolvedTokens = await waitForOpenIDRefreshFlight({ key });
       if (resolvedTokens) {
-        await hydrateSessionFromResolvedTokens(req, resolvedTokens, refreshToken);
+        if (!deferPublication) {
+          await hydrateSessionFromResolvedTokens(req, resolvedTokens, refreshToken);
+        }
         return resolvedTokens;
       }
 
@@ -827,7 +1071,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     return withOpenIDRefreshFlightLease({
       key,
       ownerId: flight.ownerId,
-      operation: async ({ assertLeaseOwned, markLeaseSettled }: any) => {
+      operation: async ({ assertLeaseOwned, markLeaseSettled }: LeaseContext) => {
         try {
           const resolvedTokens = await performIdpRefreshGrant(
             req,
@@ -836,6 +1080,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
             tokenPreference,
             identityContext,
             assertLeaseOwned,
+            deferPublication,
           );
           attachPredecessorRefreshTokenMarker(resolvedTokens, refreshToken);
           const completedFlight = await completeOpenIDRefreshFlight({
@@ -852,7 +1097,11 @@ export function createOpenIDSessionRefreshService(deps: any): any {
           return resolvedTokens;
         } catch (error) {
           try {
-            await failOpenIDRefreshFlight({ key, ownerId: flight.ownerId, error });
+            await failOpenIDRefreshFlight({
+              key,
+              ownerId: flight.ownerId,
+              error: error instanceof Error ? error : new Error('OpenID session refresh failed'),
+            });
           } catch (flightError) {
             logger.warn('[OpenIDSessionRefresh] Failed to mark shared refresh flight failed', {
               key: hashKeyForLogs(key),
@@ -876,16 +1125,17 @@ export function createOpenIDSessionRefreshService(deps: any): any {
    * Idempotent when the joiner shares the leader's `req` object.
    */
   async function hydrateSessionFromResolvedTokens(
-    req: any,
-    resolvedTokens: any,
-    predecessorOverride?: any,
-  ) {
+    req: OpenIDRequest,
+    resolvedTokens: MarkedOIDCTokens | null,
+    predecessorOverride?: string,
+  ): Promise<void> {
     if (!req?.session || !resolvedTokens?.access_token) {
       return;
     }
     if (typeof req.session.reload === 'function') {
+      const reload = req.session.reload.bind(req.session);
       await new Promise<void>((resolve, reject) => {
-        req.session.reload((error: any) => (error ? reject(error) : resolve()));
+        reload((error?: Error | null) => (error ? reject(error) : resolve()));
       });
     }
     const existing = req.session.openidTokens ?? {};
@@ -945,13 +1195,14 @@ export function createOpenIDSessionRefreshService(deps: any): any {
   }
 
   async function refreshOrReuseSession(
-    req: any,
-    res: any,
-    user: any,
-    tokenPreference: any,
-    identityContext?: any,
+    req: OpenIDRequest,
+    res: OpenIDResponse | undefined,
+    user: OpenIDUser,
+    tokenPreference: TokenPreference,
+    identityContext?: AuthIdentityContext,
     forceRefresh = false,
-  ) {
+    deferPublication = false,
+  ): Promise<MarkedOIDCTokens | null> {
     const sessionTokens = req?.session?.openidTokens;
     if (!sessionTokens) {
       logger.debug('[OpenIDSessionRefresh] No session tokens to refresh from');
@@ -963,7 +1214,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
       return buildOIDCTokensFromSession(sessionTokens, tokenPreference);
     }
 
-    return performIdpRefresh(req, res, user, tokenPreference, identityContext);
+    return performIdpRefresh(req, res, user, tokenPreference, identityContext, deferPublication);
   }
 
   /**
@@ -980,16 +1231,27 @@ export function createOpenIDSessionRefreshService(deps: any): any {
    *   returned `expires_at`. OBO callers pass 'access_token'.
    */
   async function refreshOpenIDSession(
-    req: any,
-    res: any,
-    user: any,
-    tokenPreference: any,
-    identityContext?: any,
-    options: any = {},
-  ) {
+    req: OpenIDRequest,
+    res: OpenIDResponse | undefined,
+    user: OpenIDUser,
+    tokenPreference: TokenPreference,
+    identityContext?: AuthIdentityContext,
+    options: RefreshSessionOptions = {},
+  ): Promise<MarkedOIDCTokens | null> {
     const identityBinding = assertOpenIDSessionIdentityMatch(req, user, identityContext);
     if (identityBinding) {
       await identityBinding;
+    }
+    if (options.assertLeaseOwned) {
+      return performIdpRefreshGrant(
+        req,
+        res,
+        user,
+        tokenPreference,
+        identityContext,
+        options.assertLeaseOwned,
+        options.deferPublication,
+      );
     }
     const key = getSingleFlightKey(req, user, identityContext);
     if (!key) {
@@ -1000,6 +1262,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
         tokenPreference,
         identityContext,
         options.forceRefresh,
+        options.deferPublication,
       );
     }
 
@@ -1024,6 +1287,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
       tokenPreference,
       identityContext,
       options.forceRefresh,
+      options.deferPublication,
     ).finally(() => {
       if (inFlightRefreshes.get(key) === promise) {
         inFlightRefreshes.delete(key);
@@ -1040,7 +1304,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
    * users and deployments without `OPENID_REUSE_TOKENS` never had a populated
    * `req.session.openidTokens` to begin with — the closure is a no-op there.
    */
-  function isOIDCRefreshApplicable(user: any) {
+  function isOIDCRefreshApplicable(user?: OpenIDUser): user is OpenIDUser {
     if (!isEnabled(process.env.OPENID_REUSE_TOKENS)) {
       return false;
     }
@@ -1084,7 +1348,7 @@ export function createOpenIDSessionRefreshService(deps: any): any {
     user,
     tokenPreference,
     identityContext,
-  }: any) {
+  }: CreateOpenIDSessionTokenProviderInput): () => Promise<OIDCTokens | null> {
     if (tokenPreference !== 'access_token' && tokenPreference !== 'id_token') {
       throw new Error(
         `[OpenIDSessionRefresh] createOpenIDSessionTokenProvider requires tokenPreference 'access_token' or 'id_token', got: ${tokenPreference}`,

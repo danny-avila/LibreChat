@@ -1,4 +1,10 @@
+import type { LogArgument } from './types';
+
 export const OPENID_REFRESH_OWNERSHIP_LOST = 'OPENID_REFRESH_OWNERSHIP_LOST';
+
+export function toOpenIDLogArgument(error: unknown): LogArgument {
+  return error instanceof Error ? error : String(error);
+}
 
 /**
  * Marks the one failure mode that proves another worker owns this refresh: the coordination

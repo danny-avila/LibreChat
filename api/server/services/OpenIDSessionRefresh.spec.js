@@ -476,7 +476,7 @@ describe('OpenIDSessionRefresh', () => {
       );
     });
 
-    it('preserves prior id_token and refresh_token when IdP omits them on rotation', async () => {
+    it('preserves an expired prior id_token only as session metadata when rotation omits it', async () => {
       const expiredExp = Math.floor(Date.now() / 1000) - 60;
       const priorIdToken = makeJwt(expiredExp);
       const sessionTokens = {
@@ -494,10 +494,34 @@ describe('OpenIDSessionRefresh', () => {
 
       const result = await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
-      expect(result.id_token).toBe(priorIdToken);
+      expect(result.id_token).toBeUndefined();
       expect(result.refresh_token).toBe('rt-keep');
       expect(req.session.openidTokens.idToken).toBe(priorIdToken);
       expect(req.session.openidTokens.refreshToken).toBe('rt-keep');
+    });
+
+    it.each([0, -30])('rejects an elapsed IdP access-token lifetime (%s)', async (expiresIn) => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const req = buildReq({
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-elapsed',
+      });
+      const res = buildRes({ headersSent: false });
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: 'elapsed-access-token',
+        refresh_token: 'rt-rotated',
+        expires_in: expiresIn,
+      });
+
+      await expect(
+        refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('expired access_token');
+
+      expect(req.session.openidTokens.refreshToken).toBe('rt-elapsed');
+      expect(req.session.save).not.toHaveBeenCalled();
+      expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+      expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
     });
 
     /**

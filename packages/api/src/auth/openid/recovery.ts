@@ -1,33 +1,173 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- dependency-injected Express/OpenID boundary */
-import { createOpenIDRefreshOwnershipError, isOpenIDRefreshOwnershipError } from './errors';
+import type {
+  AuthIdentityContext,
+  LeaseAssertion,
+  LeaseContext,
+  OpenIDClaims,
+  OpenIDLogger,
+  OpenIDRefreshResolution,
+  OpenIDRequest,
+  OpenIDResponse,
+  OpenIDTokenSet,
+  OpenIDUser,
+  RefreshFlightAcquireResult,
+  RefreshFlightRecord,
+  RefreshTokenBridgeDeleteInput,
+  RefreshTokenBridgeInput,
+  SharedOpenIDRefreshResult,
+  TokenPreference,
+} from './types';
+import {
+  createOpenIDRefreshOwnershipError,
+  isOpenIDRefreshOwnershipError,
+  toOpenIDLogArgument,
+} from './errors';
+
+type FindUser = (...args: Array<string | object | undefined>) => Promise<OpenIDUser | null>;
+
+interface FindOpenIDUserArgs {
+  findUser: FindUser;
+  email: string;
+  openidId: string;
+  openidIssuer?: string;
+  idOnTheSource?: string;
+  strategyName: string;
+}
+
+interface RefreshOpenIDUserArgs {
+  req: OpenIDRequest;
+  res?: OpenIDResponse;
+  user: OpenIDUser;
+  refreshToken: string;
+  browserRefreshToken?: string;
+  strategyName: string;
+  assertLeaseOwned?: LeaseAssertion;
+  deferPublication?: boolean;
+}
+
+interface BridgeUser extends OpenIDUser {
+  _id: string | number | { toString(): string };
+}
+
+interface ResolveOpenIDRefreshInput {
+  tokenset: OpenIDTokenSet | null;
+  strategyName: string;
+}
+
+type SeedRefreshSessionInput = Omit<
+  RefreshOpenIDUserArgs,
+  'strategyName' | 'assertLeaseOwned' | 'deferPublication'
+>;
+
+interface RecoverOpenIDRefreshBridgeInput {
+  req: OpenIDRequest;
+  res?: OpenIDResponse;
+  refreshToken: string;
+  bridgedRefreshToken: string;
+  bridgeUser: BridgeUser;
+}
+
+interface SendOpenIDAuthResponseInput {
+  tokenset: OpenIDTokenSet;
+  user: BridgeUser;
+  existingRefreshToken?: string;
+  openidSubject?: string;
+  openidIssuer?: string;
+  req: OpenIDRequest;
+  res: OpenIDResponse;
+}
+
+export interface OpenIDRefreshRecoveryService {
+  recoverOpenIDRefreshBridge: (
+    input: RecoverOpenIDRefreshBridgeInput,
+  ) => Promise<SharedOpenIDRefreshResult>;
+  refreshOpenIDUser: (input: RefreshOpenIDUserArgs) => Promise<OpenIDRefreshResolution>;
+  resolveOpenIDRefreshResult: (
+    input: ResolveOpenIDRefreshInput,
+  ) => Promise<OpenIDRefreshResolution>;
+  sendOpenIDAuthResponse: (input: SendOpenIDAuthResponseInput) => Promise<string | undefined>;
+  __internals: {
+    getTokenClaims: (tokenset: OpenIDTokenSet) => OpenIDClaims;
+    seedRefreshSession: (input: SeedRefreshSessionInput) => AuthIdentityContext;
+  };
+}
 
 export interface OpenIDRefreshRecoveryDeps {
-  jwt: { decode: (token: string) => unknown };
-  logger: {
-    debug: (...args: any[]) => void;
-    warn: (...args: any[]) => void;
-  };
-  findOpenIDUser: (args: Record<string, any>) => Promise<Record<string, any>>;
-  findUser: (...args: any[]) => Promise<any>;
-  getOpenIdConfig: () => any;
-  getOpenIdEmail: (claims: Record<string, any>) => string;
-  getOpenIdIssuer: (claims: Record<string, any>, config: any) => string | undefined;
-  createAuthIdentityContext: (args: Record<string, any>) => Record<string, any>;
-  refreshOpenIDSession: (...args: any[]) => Promise<Record<string, any> | null>;
-  storeOpenIDSession: (...args: any[]) => Promise<any>;
-  setOpenIDAuthTokens: (...args: any[]) => string | undefined;
-  createRefreshTokenBridgeFlightKey: (args: Record<string, any>) => string | null;
-  storeRefreshTokenBridge: (args: Record<string, any>) => Promise<any>;
-  deleteRefreshTokenBridges: (args: Record<string, any>) => Promise<any>;
-  acquireOpenIDRefreshFlight: (args: Record<string, any>) => Promise<Record<string, any>>;
-  completeOpenIDRefreshFlight: (args: Record<string, any>) => Promise<any>;
-  failOpenIDRefreshFlight: (args: Record<string, any>) => Promise<any>;
-  waitForOpenIDRefreshFlight: (args: Record<string, any>) => Promise<any>;
-  withOpenIDRefreshFlightLease: (args: Record<string, any>) => Promise<any>;
+  jwt: { decode: (token: string) => OpenIDClaims | string | null };
+  logger: Pick<OpenIDLogger, 'debug' | 'warn'>;
+  findOpenIDUser: (args: FindOpenIDUserArgs) => Promise<{
+    user?: OpenIDUser | null;
+    error?: string | null;
+    migration?: boolean;
+  }>;
+  findUser: FindUser;
+  getOpenIdConfig: () => object;
+  getOpenIdEmail: (claims: OpenIDClaims) => string;
+  getOpenIdIssuer: (claims: OpenIDClaims, config: object) => string | undefined;
+  createAuthIdentityContext: (args: {
+    user?: OpenIDUser;
+    requestUser?: OpenIDUser;
+  }) => AuthIdentityContext;
+  refreshOpenIDSession: (
+    req: OpenIDRequest,
+    res: OpenIDResponse | undefined,
+    user: OpenIDUser,
+    preference: TokenPreference,
+    identity: AuthIdentityContext,
+    options: {
+      forceRefresh: boolean;
+      assertLeaseOwned?: LeaseAssertion;
+      deferPublication?: boolean;
+    },
+  ) => Promise<OpenIDTokenSet | null>;
+  storeOpenIDSession: (
+    userId: string,
+    refreshToken: string,
+    tenantId?: string,
+    previousRefreshToken?: string,
+  ) => Promise<void>;
+  setOpenIDAuthTokens: (
+    tokens: OpenIDTokenSet,
+    req: OpenIDRequest,
+    res: OpenIDResponse,
+    identity: {
+      userId: string;
+      existingRefreshToken?: string;
+      tenantId?: string;
+      openidSubject?: string;
+      openidIssuer?: string;
+    },
+  ) => string | undefined;
+  createRefreshTokenBridgeFlightKey: (args: {
+    oldRefreshToken: string;
+    userId: string;
+    tenantId?: string;
+    openidIssuer?: string;
+  }) => string | null;
+  storeRefreshTokenBridge: (args: RefreshTokenBridgeInput) => Promise<void>;
+  deleteRefreshTokenBridges: (args: RefreshTokenBridgeDeleteInput) => Promise<object | null>;
+  acquireOpenIDRefreshFlight: (args: { key: string }) => Promise<RefreshFlightAcquireResult>;
+  completeOpenIDRefreshFlight: (args: {
+    key: string;
+    ownerId: string;
+    tokens: SharedOpenIDRefreshResult;
+  }) => Promise<RefreshFlightRecord | null>;
+  failOpenIDRefreshFlight: (args: {
+    key: string;
+    ownerId: string;
+    error: Error;
+  }) => Promise<RefreshFlightRecord | null>;
+  waitForOpenIDRefreshFlight: (args: { key: string }) => Promise<SharedOpenIDRefreshResult | null>;
+  withOpenIDRefreshFlightLease: <T>(args: {
+    key: string;
+    ownerId: string;
+    operation: (context: LeaseContext) => Promise<T>;
+  }) => Promise<T>;
   bridgeGraceMs: number;
 }
 
-export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDeps): any {
+export function createOpenIDRefreshRecoveryService(
+  deps: OpenIDRefreshRecoveryDeps,
+): OpenIDRefreshRecoveryService {
   const {
     jwt,
     logger,
@@ -51,7 +191,7 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
     bridgeGraceMs,
   } = deps;
 
-  function getTokenClaims(tokenset: any): Record<string, any> {
+  function getTokenClaims(tokenset: OpenIDTokenSet): OpenIDClaims {
     if (typeof tokenset?.claims === 'function') {
       return tokenset.claims();
     }
@@ -59,10 +199,13 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
     if (!decoded || typeof decoded !== 'object') {
       throw new Error('OpenID refresh returned no usable identity claims');
     }
-    return decoded as Record<string, any>;
+    return decoded as OpenIDClaims;
   }
 
-  async function resolveOpenIDRefreshResult({ tokenset, strategyName }: any) {
+  async function resolveOpenIDRefreshResult({
+    tokenset,
+    strategyName,
+  }: ResolveOpenIDRefreshInput): Promise<OpenIDRefreshResolution> {
     if (!tokenset?.access_token) {
       throw new Error('OpenID refresh returned no access token');
     }
@@ -84,7 +227,12 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
     return { tokenset, claims, openidIssuer, user, error, migration };
   }
 
-  function seedRefreshSession({ req, user, refreshToken, browserRefreshToken }: any) {
+  function seedRefreshSession({
+    req,
+    user,
+    refreshToken,
+    browserRefreshToken,
+  }: SeedRefreshSessionInput): AuthIdentityContext {
     if (!req.session) {
       throw new Error('OpenID refresh requires an Express session');
     }
@@ -108,16 +256,33 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
     refreshToken,
     browserRefreshToken,
     strategyName,
-  }: any) {
+    assertLeaseOwned,
+    deferPublication = false,
+  }: RefreshOpenIDUserArgs): Promise<OpenIDRefreshResolution> {
+    const previousSessionTokens = deferPublication ? req.session?.openidTokens : undefined;
+    const hadSessionTokens = Boolean(req.session && 'openidTokens' in req.session);
     const identityContext = seedRefreshSession({
       req,
       user,
       refreshToken,
       browserRefreshToken,
     });
-    const tokenset = await refreshOpenIDSession(req, res, user, 'id_token', identityContext, {
-      forceRefresh: true,
-    });
+    let tokenset: OpenIDTokenSet | null;
+    try {
+      tokenset = await refreshOpenIDSession(req, res, user, 'id_token', identityContext, {
+        forceRefresh: true,
+        ...(assertLeaseOwned ? { assertLeaseOwned } : {}),
+        ...(deferPublication ? { deferPublication: true } : {}),
+      });
+    } finally {
+      if (deferPublication && req.session) {
+        if (hadSessionTokens) {
+          req.session.openidTokens = previousSessionTokens;
+        } else {
+          delete req.session.openidTokens;
+        }
+      }
+    }
     return resolveOpenIDRefreshResult({ tokenset, strategyName });
   }
 
@@ -127,7 +292,7 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
     refreshToken,
     bridgedRefreshToken,
     bridgeUser,
-  }: any) {
+  }: RecoverOpenIDRefreshBridgeInput): Promise<SharedOpenIDRefreshResult> {
     const userId = bridgeUser._id.toString();
     const key = createRefreshTokenBridgeFlightKey({
       oldRefreshToken: refreshToken,
@@ -151,7 +316,7 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
     return withOpenIDRefreshFlightLease({
       key,
       ownerId: flight.ownerId,
-      operation: async ({ assertLeaseOwned, markLeaseSettled }: any) => {
+      operation: async ({ assertLeaseOwned, markLeaseSettled }: LeaseContext) => {
         try {
           const resolved = await refreshOpenIDUser({
             req,
@@ -160,13 +325,16 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
             refreshToken: bridgedRefreshToken,
             browserRefreshToken: refreshToken,
             strategyName: 'refreshController (bridge recovery)',
+            assertLeaseOwned,
+            deferPublication: true,
           });
           const { tokenset, user, error } = resolved;
-          if (!user || error || user._id.toString() !== userId) {
-            if (user && user._id.toString() !== userId) {
+          const resolvedUserId = user?._id?.toString();
+          if (!user || error || !resolvedUserId || resolvedUserId !== userId) {
+            if (resolvedUserId && resolvedUserId !== userId) {
               logger.warn(
                 '[refreshController] Bridge recovery resolved a different user; refusing token issuance',
-                { cookieUserId: userId, resolvedUserId: user._id.toString() },
+                { cookieUserId: userId, resolvedUserId },
               );
             }
             throw new Error('Invalid OpenID refresh token');
@@ -187,7 +355,7 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
           } catch (graceError) {
             logger.warn(
               '[refreshController] Bridge grace-period storage failed after successful recovery',
-              graceError,
+              toOpenIDLogArgument(graceError),
             );
           }
           if (graceBridgeStored) {
@@ -211,7 +379,7 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
               } catch (cleanupError) {
                 logger.warn(
                   '[refreshController] Failed to remove grace bridge after ownership loss',
-                  cleanupError,
+                  toOpenIDLogArgument(cleanupError),
                 );
               }
               throw ownershipError;
@@ -238,7 +406,11 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
           return sharedResult;
         } catch (error) {
           try {
-            await failOpenIDRefreshFlight({ key, ownerId: flight.ownerId, error });
+            await failOpenIDRefreshFlight({
+              key,
+              ownerId: flight.ownerId,
+              error: error instanceof Error ? error : new Error('OpenID bridge recovery failed'),
+            });
           } catch (flightError) {
             logger.warn('[refreshController] Failed to mark refresh bridge flight failed', {
               error: (flightError as Error)?.message,
@@ -258,11 +430,12 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
     openidIssuer,
     req,
     res,
-  }: any) {
+  }: SendOpenIDAuthResponseInput): Promise<string | undefined> {
     const userId = user._id.toString();
     if (typeof req?.session?.reload === 'function') {
+      const reload = req.session.reload.bind(req.session);
       await new Promise<void>((resolve, reject) => {
-        req.session.reload((error: any) => (error ? reject(error) : resolve()));
+        reload((error?: Error | null) => (error ? reject(error) : resolve()));
       });
     }
     let effectiveTokenset = tokenset;
@@ -289,6 +462,9 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
       };
     }
     const nextRefreshToken = effectiveTokenset.refresh_token || effectiveExistingRefreshToken;
+    if (!nextRefreshToken) {
+      throw new Error('OpenID refresh returned no refresh token');
+    }
     try {
       await storeOpenIDSession(
         userId,
@@ -310,7 +486,7 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
         } catch (bridgeError) {
           logger.warn(
             '[refreshController] Failed to preserve a rotated token after durable-session failure',
-            bridgeError,
+            toOpenIDLogArgument(bridgeError),
           );
         }
       }
@@ -318,10 +494,11 @@ export function createOpenIDRefreshRecoveryService(deps: OpenIDRefreshRecoveryDe
     }
 
     let authTokenset = effectiveTokenset;
-    if (effectiveTokenset.expires_in == null && Number.isFinite(effectiveTokenset.expires_at)) {
+    const effectiveExpiresAt = effectiveTokenset.expires_at;
+    if (effectiveTokenset.expires_in == null && Number.isFinite(effectiveExpiresAt)) {
       authTokenset = {
         ...effectiveTokenset,
-        expires_in: Math.max(0, Math.floor(effectiveTokenset.expires_at - Date.now() / 1000)),
+        expires_in: Math.max(0, Math.floor((effectiveExpiresAt as number) - Date.now() / 1000)),
       };
     }
     return setOpenIDAuthTokens(authTokenset, req, res, {

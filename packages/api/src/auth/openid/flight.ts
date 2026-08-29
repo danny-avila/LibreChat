@@ -1,6 +1,14 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- dependency-injected legacy API boundary */
 import crypto from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import type {
+  LeaseContext,
+  OpenIDLogger,
+  OpenIDClaims,
+  OpenIDTokenSet,
+  RefreshFlightAcquireResult,
+  RefreshFlightRecord,
+  RefreshKeyInput,
+} from './types';
 import { createOpenIDRefreshIdentityTuple, serializeAuthIdentityTuple } from '~/utils/identity';
 import { OPENID_EXPIRY_BUFFER_SECONDS } from '~/oauth/expiry';
 import { createOpenIDRefreshOwnershipError } from './errors';
@@ -13,26 +21,108 @@ const DEFAULT_HEARTBEAT_INTERVAL_MS = 10 * 1000;
 const INTERNAL_BROWSER_REFRESH_TOKEN_FIELD = '__browserRefreshToken';
 const INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD = '__predecessorRefreshToken';
 
-type TokenResult = Record<string, any>;
-type FlightRecord = {
-  status?: string;
-  ownerId?: string;
-  encryptedResult?: string;
-  errorMessage?: string;
-  expiresAt?: Date | string;
-  [key: string]: any;
-};
+export interface TokenResult extends Omit<OpenIDTokenSet, 'claims'> {
+  tokenset?: OpenIDTokenSet;
+  claims?: OpenIDClaims | (() => OpenIDClaims);
+  openidIssuer?: string;
+  __browserRefreshToken?: string;
+  __predecessorRefreshToken?: string;
+}
+
+interface FlightAcquireData {
+  key: string;
+  ownerId: string;
+  lockExpiresAt: Date;
+  expiresAt: Date;
+}
+
+interface FlightOwnerData {
+  key: string;
+  ownerId: string;
+  expiresAt: Date;
+}
+
+interface FlightCompleteData extends FlightOwnerData {
+  encryptedResult: string;
+}
+
+interface FlightRenewData extends FlightOwnerData {
+  lockExpiresAt: Date;
+}
+
+interface FlightFailData extends FlightOwnerData {
+  errorMessage: string;
+}
+
+export interface OpenIDRefreshFlightService {
+  acquireOpenIDRefreshFlight: (args: {
+    key?: string | null;
+    ownerId?: string;
+    ttl?: number;
+    lockTtl?: number;
+  }) => Promise<RefreshFlightAcquireResult>;
+  completeOpenIDRefreshFlight: (args: {
+    key?: string | null;
+    ownerId?: string;
+    tokens?: TokenResult | null;
+    ttl?: number;
+  }) => Promise<RefreshFlightRecord | null>;
+  createOpenIDRefreshFlightKey: (input: RefreshKeyInput) => string | null;
+  failOpenIDRefreshFlight: (args: {
+    key?: string | null;
+    ownerId?: string;
+    error?: Error | { message?: string } | null;
+    ttl?: number;
+  }) => Promise<RefreshFlightRecord | null>;
+  renewOpenIDRefreshFlight: (args: {
+    key?: string | null;
+    ownerId?: string;
+    lockTtl?: number;
+    ttl?: number;
+  }) => Promise<RefreshFlightRecord | null>;
+  revokeOpenIDRefreshFlights: (args: {
+    keys?: Array<string | null | undefined>;
+    ttl?: number;
+  }) => Promise<Array<RefreshFlightRecord | null>>;
+  waitForOpenIDRefreshFlight: (args: {
+    key?: string | null;
+    timeoutMs?: number;
+    intervalMs?: number;
+  }) => Promise<TokenResult | null>;
+  withOpenIDRefreshFlightLease: <T>(args: {
+    key?: string | null;
+    ownerId?: string;
+    operation: (context: LeaseContext) => Promise<T>;
+    heartbeatInterval?: number;
+    lockTtl?: number;
+    ttl?: number;
+  }) => Promise<T>;
+  __internals: {
+    sha256: (value: string) => string;
+    readCompletedFlight: (flight: RefreshFlightRecord | null) => Promise<TokenResult | null>;
+    DEFAULT_FLIGHT_TTL_MS: number;
+    DEFAULT_LOCK_TTL_MS: number;
+    DEFAULT_WAIT_TIMEOUT_MS: number;
+    DEFAULT_WAIT_INTERVAL_MS: number;
+    DEFAULT_HEARTBEAT_INTERVAL_MS: number;
+    INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD: string;
+    getRenewedWaitDeadline: (deadline: number, flight: RefreshFlightRecord | null) => number;
+  };
+}
 
 export interface OpenIDRefreshFlightDeps {
   db: {
-    acquireOpenIDRefreshFlight: (data: Record<string, any>) => Promise<Record<string, any>>;
-    completeOpenIDRefreshFlight: (data: Record<string, any>) => Promise<FlightRecord | null>;
-    renewOpenIDRefreshFlight: (data: Record<string, any>) => Promise<FlightRecord | null>;
-    failOpenIDRefreshFlight: (data: Record<string, any>) => Promise<FlightRecord | null>;
-    revokeOpenIDRefreshFlight: (data: Record<string, any>) => Promise<FlightRecord | null>;
-    findOpenIDRefreshFlight: (data: { key: string }) => Promise<FlightRecord | null>;
+    acquireOpenIDRefreshFlight: (data: FlightAcquireData) => Promise<{ acquired: boolean }>;
+    completeOpenIDRefreshFlight: (data: FlightCompleteData) => Promise<RefreshFlightRecord | null>;
+    renewOpenIDRefreshFlight: (data: FlightRenewData) => Promise<RefreshFlightRecord | null>;
+    failOpenIDRefreshFlight: (data: FlightFailData) => Promise<RefreshFlightRecord | null>;
+    revokeOpenIDRefreshFlight: (data: {
+      key: string;
+      expiresAt: Date;
+    }) => Promise<RefreshFlightRecord | null>;
+    findOpenIDRefreshFlight: (data: { key: string }) => Promise<RefreshFlightRecord | null>;
   };
-  logger: { warn: (...args: any[]) => void };
+  logger: Pick<OpenIDLogger, 'warn'>;
   encrypt: (value: string) => Promise<string>;
   decrypt: (value: string) => Promise<string>;
 }
@@ -42,10 +132,15 @@ export function createOpenIDRefreshFlightService({
   logger,
   encrypt,
   decrypt,
-}: OpenIDRefreshFlightDeps): any {
+}: OpenIDRefreshFlightDeps): OpenIDRefreshFlightService {
   const sha256 = (value: string): string => crypto.createHash('sha256').update(value).digest('hex');
 
-  function createOpenIDRefreshFlightKey({ req, user, refreshToken, identityContext }: any) {
+  function createOpenIDRefreshFlightKey({
+    req,
+    user,
+    refreshToken,
+    identityContext,
+  }: RefreshKeyInput): string | null {
     const identitySource = identityContext
       ? {
           id: identityContext.appUserId,
@@ -73,7 +168,12 @@ export function createOpenIDRefreshFlightService({
     ownerId = crypto.randomUUID(),
     ttl = DEFAULT_FLIGHT_TTL_MS,
     lockTtl = DEFAULT_LOCK_TTL_MS,
-  }: any) {
+  }: {
+    key?: string | null;
+    ownerId?: string;
+    ttl?: number;
+    lockTtl?: number;
+  }): Promise<RefreshFlightAcquireResult> {
     if (!key) return { acquired: true, key: null, ownerId, flight: null };
     const acquired = await db.acquireOpenIDRefreshFlight({
       key,
@@ -89,15 +189,19 @@ export function createOpenIDRefreshFlightService({
     ownerId,
     tokens,
     ttl = DEFAULT_FLIGHT_TTL_MS,
-  }: any) {
+  }: {
+    key?: string | null;
+    ownerId?: string;
+    tokens?: TokenResult | null;
+    ttl?: number;
+  }): Promise<RefreshFlightRecord | null> {
     if (!key || !ownerId || !tokens) return null;
     const serializedTokens: TokenResult = { ...tokens };
-    for (const field of [
-      INTERNAL_BROWSER_REFRESH_TOKEN_FIELD,
-      INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD,
-    ]) {
-      const value = tokens[field];
-      if (typeof value === 'string' && value) serializedTokens[field] = value;
+    if (tokens.__browserRefreshToken) {
+      serializedTokens.__browserRefreshToken = tokens.__browserRefreshToken;
+    }
+    if (tokens.__predecessorRefreshToken) {
+      serializedTokens.__predecessorRefreshToken = tokens.__predecessorRefreshToken;
     }
     const accessTokenExpiresAt = Number(tokens.expires_at) * 1000;
     const usableTokenTtl = Number.isFinite(accessTokenExpiresAt)
@@ -116,7 +220,12 @@ export function createOpenIDRefreshFlightService({
     ownerId,
     lockTtl = DEFAULT_LOCK_TTL_MS,
     ttl = DEFAULT_FLIGHT_TTL_MS,
-  }: any) {
+  }: {
+    key?: string | null;
+    ownerId?: string;
+    lockTtl?: number;
+    ttl?: number;
+  }): Promise<RefreshFlightRecord | null> {
     if (!key || !ownerId) return null;
     return db.renewOpenIDRefreshFlight({
       key,
@@ -126,17 +235,24 @@ export function createOpenIDRefreshFlightService({
     });
   }
 
-  async function withOpenIDRefreshFlightLease({
+  async function withOpenIDRefreshFlightLease<T>({
     key,
     ownerId,
     operation,
     heartbeatInterval = DEFAULT_HEARTBEAT_INTERVAL_MS,
     lockTtl = DEFAULT_LOCK_TTL_MS,
     ttl = DEFAULT_FLIGHT_TTL_MS,
-  }: any) {
+  }: {
+    key?: string | null;
+    ownerId?: string;
+    operation: (context: LeaseContext) => Promise<T>;
+    heartbeatInterval?: number;
+    lockTtl?: number;
+    ttl?: number;
+  }): Promise<T> {
     if (!key || !ownerId)
       return operation({ assertLeaseOwned: async () => true, markLeaseSettled: () => {} });
-    let renewalPromise: Promise<FlightRecord | null> | null = null;
+    let renewalPromise: Promise<RefreshFlightRecord | null> | null = null;
     let ownershipLost = false;
     let settled = false;
     const ownershipError = () =>
@@ -190,7 +306,12 @@ export function createOpenIDRefreshFlightService({
     ownerId,
     error,
     ttl = DEFAULT_FLIGHT_TTL_MS,
-  }: any) {
+  }: {
+    key?: string | null;
+    ownerId?: string;
+    error?: Error | { message?: string } | null;
+    ttl?: number;
+  }): Promise<RefreshFlightRecord | null> {
     if (!key || !ownerId) return null;
     const errorMessage =
       typeof error?.message === 'string' && error.message ? error.message : 'OpenID refresh failed';
@@ -202,21 +323,29 @@ export function createOpenIDRefreshFlightService({
     });
   }
 
-  async function revokeOpenIDRefreshFlights({ keys, ttl = DEFAULT_FLIGHT_TTL_MS }: any) {
-    const uniqueKeys = [...new Set<string>((keys ?? []).filter(Boolean))];
+  async function revokeOpenIDRefreshFlights({
+    keys,
+    ttl = DEFAULT_FLIGHT_TTL_MS,
+  }: {
+    keys?: Array<string | null | undefined>;
+    ttl?: number;
+  }): Promise<Array<RefreshFlightRecord | null>> {
+    const uniqueKeys = [...new Set<string>((keys ?? []).filter((key): key is string => !!key))];
     if (uniqueKeys.length === 0) return [];
     const expiresAt = new Date(Date.now() + ttl);
     return Promise.all(uniqueKeys.map((key) => db.revokeOpenIDRefreshFlight({ key, expiresAt })));
   }
 
-  async function readCompletedFlight(flight: FlightRecord | null): Promise<TokenResult | null> {
+  async function readCompletedFlight(
+    flight: RefreshFlightRecord | null,
+  ): Promise<TokenResult | null> {
     if (!flight) return null;
     if (flight.status === 'revoked')
       throw new Error(flight.errorMessage || 'OpenID refresh was revoked by logout');
     if (flight.status === 'failed')
       throw new Error(flight.errorMessage || 'OpenID refresh failed in another worker');
     if (flight.status !== 'completed' || !flight.encryptedResult) return null;
-    const tokens: TokenResult = JSON.parse(await decrypt(flight.encryptedResult));
+    const tokens = JSON.parse(await decrypt(flight.encryptedResult)) as TokenResult;
     const accessTokenExpiresAt = Number(tokens.expires_at) * 1000;
     if (
       Number.isFinite(accessTokenExpiresAt) &&
@@ -224,24 +353,19 @@ export function createOpenIDRefreshFlightService({
     ) {
       return null;
     }
-    for (const field of [
-      INTERNAL_BROWSER_REFRESH_TOKEN_FIELD,
-      INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD,
-    ]) {
-      const value = tokens[field];
-      if (typeof value === 'string' && value) {
+    for (const [field, value] of [
+      [INTERNAL_BROWSER_REFRESH_TOKEN_FIELD, tokens.__browserRefreshToken],
+      [INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD, tokens.__predecessorRefreshToken],
+    ] as const) {
+      if (value) {
         delete tokens[field];
-        Object.defineProperty(tokens, field, {
-          value,
-          enumerable: false,
-          configurable: true,
-        });
+        Object.defineProperty(tokens, field, { value, enumerable: false, configurable: true });
       }
     }
     return tokens;
   }
 
-  function getRenewedWaitDeadline(deadline: number, flight: FlightRecord | null): number {
+  function getRenewedWaitDeadline(deadline: number, flight: RefreshFlightRecord | null): number {
     const renewedExpiry = flight?.expiresAt ? new Date(flight.expiresAt).getTime() : NaN;
     return Number.isFinite(renewedExpiry) ? Math.max(deadline, renewedExpiry) : deadline;
   }
@@ -250,7 +374,11 @@ export function createOpenIDRefreshFlightService({
     key,
     timeoutMs,
     intervalMs = DEFAULT_WAIT_INTERVAL_MS,
-  }: any) {
+  }: {
+    key?: string | null;
+    timeoutMs?: number;
+    intervalMs?: number;
+  }): Promise<TokenResult | null> {
     if (!key) return null;
     const followRenewals = timeoutMs == null;
     let deadline = Date.now() + (timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS);

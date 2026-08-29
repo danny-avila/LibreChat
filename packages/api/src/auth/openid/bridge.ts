@@ -1,34 +1,82 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- dependency-injected legacy API boundary */
 import crypto from 'node:crypto';
+import type {
+  RefreshTokenBridgeDeleteInput,
+  RefreshTokenBridgeIdentity,
+  RefreshTokenBridgeInput,
+  OpenIDLogger,
+} from './types';
 
-type BridgeIdentity = { userId: string; tenantId?: string; openidIssuer?: string };
+interface StoredRefreshTokenBridge {
+  encryptedNewRefreshToken: string;
+  userId: string;
+  tenantId?: string;
+  openidIssuer?: string;
+  createdAt: Date | string;
+}
+
+interface BridgeQuery {
+  oldRefreshTokenHash?: string;
+  oldRefreshTokenHashes?: string[];
+  encryptedNewRefreshToken?: string;
+  userId: string;
+  tenantId?: string;
+  openidIssuer?: string;
+  expiresAt?: Date;
+}
+
+type IdentityInput = Partial<RefreshTokenBridgeIdentity>;
+
+export interface RefreshTokenBridgeService {
+  OPENID_REFRESH_BRIDGE_GRACE_MS: number;
+  createRefreshTokenBridgeFlightKey: (args: {
+    oldRefreshToken?: string;
+    userId?: string;
+    tenantId?: string;
+    openidIssuer?: string;
+  }) => string | null;
+  deleteAllRefreshTokenBridges: (args: {
+    userId?: string;
+    tenantId?: string;
+  }) => Promise<object | null>;
+  deleteRefreshTokenBridges: (args: RefreshTokenBridgeDeleteInput) => Promise<object | null>;
+  storeRefreshTokenBridge: (args: RefreshTokenBridgeInput) => Promise<void>;
+  getRefreshTokenBridge: (args: {
+    oldRefreshToken?: string;
+    userId?: string;
+    tenantId?: string;
+    openidIssuer?: string;
+  }) => Promise<string | null>;
+  __internals: {
+    hashRefreshToken: (refreshToken: string) => string;
+    getBridgeTtlMs: () => number;
+    resolveBridgeIdentity: (input: IdentityInput) => RefreshTokenBridgeIdentity | null;
+  };
+}
 
 export interface RefreshTokenBridgeDeps {
   db: {
-    upsertRefreshTokenBridge: (data: Record<string, any>) => Promise<any>;
-    findRefreshTokenBridge: (data: Record<string, any>) => Promise<any>;
-    deleteRefreshTokenBridges: (data: Record<string, any>) => Promise<any>;
+    upsertRefreshTokenBridge: (data: BridgeQuery) => Promise<StoredRefreshTokenBridge | null>;
+    findRefreshTokenBridge: (data: BridgeQuery) => Promise<StoredRefreshTokenBridge | null>;
+    deleteRefreshTokenBridges: (data: BridgeQuery) => Promise<object>;
   };
-  logger: {
-    warn: (...args: any[]) => void;
-    debug: (...args: any[]) => void;
-    info: (...args: any[]) => void;
-  };
+  logger: Pick<OpenIDLogger, 'warn' | 'debug' | 'info'>;
   encrypt: (value: string) => Promise<string>;
   decrypt: (value: string) => Promise<string>;
   math: (value: string | undefined, fallback: number) => number;
   defaultRefreshTokenExpiry: number;
-  createIdentity: (data: Record<string, any>) => BridgeIdentity | null;
+  createIdentity: (data: IdentityInput) => RefreshTokenBridgeIdentity | null;
 }
 
-export function createRefreshTokenBridgeService(deps: RefreshTokenBridgeDeps): any {
+export function createRefreshTokenBridgeService(
+  deps: RefreshTokenBridgeDeps,
+): RefreshTokenBridgeService {
   const { db, logger, encrypt, decrypt, math, defaultRefreshTokenExpiry, createIdentity } = deps;
   const OPENID_REFRESH_BRIDGE_GRACE_MS = math(
     process.env.OPENID_REFRESH_BRIDGE_GRACE_MS,
     60 * 1000,
   );
   const getBridgeTtlMs = () => math(process.env.REFRESH_TOKEN_EXPIRY, defaultRefreshTokenExpiry);
-  const resolveBridgeIdentity = ({ userId, tenantId, openidIssuer }: any) =>
+  const resolveBridgeIdentity = ({ userId, tenantId, openidIssuer }: IdentityInput) =>
     createIdentity({ userId, tenantId, openidIssuer });
   const hashRefreshToken = (refreshToken: string) =>
     crypto.createHash('sha256').update(refreshToken).digest('hex');
@@ -38,7 +86,12 @@ export function createRefreshTokenBridgeService(deps: RefreshTokenBridgeDeps): a
     userId,
     tenantId,
     openidIssuer,
-  }: any) {
+  }: {
+    oldRefreshToken?: string;
+    userId?: string;
+    tenantId?: string;
+    openidIssuer?: string;
+  }) {
     const identity = resolveBridgeIdentity({ userId, tenantId, openidIssuer });
     if (!oldRefreshToken || !identity) return null;
     return hashRefreshToken(
@@ -59,7 +112,7 @@ export function createRefreshTokenBridgeService(deps: RefreshTokenBridgeDeps): a
     tenantId,
     openidIssuer,
     ttl,
-  }: any) {
+  }: RefreshTokenBridgeInput): Promise<void> {
     const identity = resolveBridgeIdentity({ userId, tenantId, openidIssuer });
     if (!oldRefreshToken || !newRefreshToken || !identity) {
       logger.warn('[RefreshTokenBridge] Attempted to store bridge with missing required fields');
@@ -82,7 +135,17 @@ export function createRefreshTokenBridgeService(deps: RefreshTokenBridgeDeps): a
     });
   }
 
-  async function getRefreshTokenBridge({ oldRefreshToken, userId, tenantId, openidIssuer }: any) {
+  async function getRefreshTokenBridge({
+    oldRefreshToken,
+    userId,
+    tenantId,
+    openidIssuer,
+  }: {
+    oldRefreshToken?: string;
+    userId?: string;
+    tenantId?: string;
+    openidIssuer?: string;
+  }): Promise<string | null> {
     const identity = resolveBridgeIdentity({ userId, tenantId, openidIssuer });
     if (!oldRefreshToken || !identity) return null;
     const oldRefreshTokenHash = hashRefreshToken(oldRefreshToken);
@@ -111,7 +174,11 @@ export function createRefreshTokenBridgeService(deps: RefreshTokenBridgeDeps): a
     return decrypt(bridge.encryptedNewRefreshToken);
   }
 
-  async function deleteRefreshTokenBridges({ refreshTokens, userId, tenantId }: any) {
+  async function deleteRefreshTokenBridges({
+    refreshTokens,
+    userId,
+    tenantId,
+  }: RefreshTokenBridgeDeleteInput): Promise<object | null> {
     const identity = resolveBridgeIdentity({ userId, tenantId });
     const tokens = [...new Set<string>((refreshTokens ?? []).filter(Boolean))];
     if (!identity || tokens.length === 0) return null;
@@ -122,7 +189,13 @@ export function createRefreshTokenBridgeService(deps: RefreshTokenBridgeDeps): a
     });
   }
 
-  async function deleteAllRefreshTokenBridges({ userId, tenantId }: any) {
+  async function deleteAllRefreshTokenBridges({
+    userId,
+    tenantId,
+  }: {
+    userId?: string;
+    tenantId?: string;
+  }): Promise<object | null> {
     const identity = resolveBridgeIdentity({ userId, tenantId });
     if (!identity) return null;
     return db.deleteRefreshTokenBridges({ userId: identity.userId, tenantId: identity.tenantId });

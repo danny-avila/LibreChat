@@ -1,0 +1,142 @@
+import type { OIDCTokens } from '@librechat/data-schemas';
+import type {
+  AuthIdentityContext,
+  AuthIdentitySource,
+  AuthIdentityTuple,
+  OpenIDSessionIdentitySource,
+  RefreshTokenBridgeIdentity,
+} from '~/utils/identity';
+
+export type TokenPreference = 'access_token' | 'id_token';
+export type AsyncVoidCallback = (error?: Error | null) => void;
+export type LeaseAssertion = () => Promise<object | null | boolean>;
+export type LogArgument = string | number | boolean | Error | object | null | undefined;
+
+export interface OpenIDClaims {
+  sub: string;
+  oid?: string;
+  email?: string;
+  iss?: string;
+}
+
+export interface OpenIDTokenSet extends OIDCTokens {
+  access_token?: string;
+  expires_in?: number | string;
+  claims?: () => OpenIDClaims;
+}
+
+export interface SharedOpenIDRefreshResult {
+  tokenset: OpenIDTokenSet;
+  claims: OpenIDClaims;
+  openidIssuer?: string;
+  expires_at?: number;
+}
+
+export interface SessionOpenIDTokens {
+  accessToken?: string;
+  idToken?: string;
+  refreshToken?: string;
+  browserRefreshToken?: string;
+  expiresAt?: number;
+  lastRefreshedAt?: number;
+  appUserId?: string;
+  openidSubject?: string;
+  tenantId?: string;
+  openidIssuer?: string;
+  accessTokenExpiresAt?: number;
+}
+
+export interface OpenIDSession {
+  openidTokens?: SessionOpenIDTokens;
+  save?: (callback: AsyncVoidCallback) => void;
+  reload?: (callback: AsyncVoidCallback) => void;
+}
+
+export interface OpenIDRequest {
+  headers?: { cookie?: string };
+  session?: OpenIDSession;
+  sessionID?: string;
+  user?: OpenIDUser;
+}
+
+export interface OpenIDResponse {
+  headersSent?: boolean;
+  cookie?: (name: string, value: string, options?: { expires?: Date }) => void;
+}
+
+export interface OpenIDUser extends AuthIdentitySource {
+  _id?: string | number | { toString(): string };
+  id?: string;
+  email?: string;
+  provider?: string;
+  openidId?: string;
+  tenantId?: string;
+  openidIssuer?: string;
+}
+
+export interface OpenIDRefreshResolution {
+  tokenset: OpenIDTokenSet;
+  claims: OpenIDClaims;
+  openidIssuer?: string;
+  user?: OpenIDUser | null;
+  error?: string | null;
+  migration?: boolean;
+}
+
+export interface OpenIDLogger {
+  debug: (...args: LogArgument[]) => void;
+  info: (...args: LogArgument[]) => void;
+  warn: (...args: LogArgument[]) => void;
+  error: (...args: LogArgument[]) => void;
+}
+
+export interface LeaseContext {
+  assertLeaseOwned: LeaseAssertion;
+  markLeaseSettled: () => void;
+}
+
+export interface RefreshFlightAcquireResult {
+  acquired: boolean;
+  key: string | null;
+  ownerId: string;
+  flight?: RefreshFlightRecord | null;
+}
+
+export interface RefreshFlightRecord {
+  status?: 'pending' | 'completed' | 'failed' | 'revoked';
+  ownerId?: string;
+  encryptedResult?: string;
+  errorMessage?: string;
+  expiresAt?: Date | string;
+}
+
+export interface RefreshTokenBridgeInput {
+  oldRefreshToken: string;
+  newRefreshToken: string;
+  userId: string;
+  tenantId?: string;
+  openidIssuer?: string;
+  ttl?: number;
+}
+
+export interface RefreshTokenBridgeDeleteInput {
+  refreshTokens: string[];
+  userId: string;
+  tenantId?: string;
+}
+
+export interface RefreshKeyInput {
+  req?: OpenIDRequest;
+  user?: OpenIDUser;
+  refreshToken?: string;
+  identityContext?: AuthIdentityContext;
+}
+
+export type {
+  AuthIdentityContext,
+  AuthIdentitySource,
+  AuthIdentityTuple,
+  OpenIDSessionIdentitySource,
+  OIDCTokens,
+  RefreshTokenBridgeIdentity,
+};
