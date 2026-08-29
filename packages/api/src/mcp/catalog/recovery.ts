@@ -2,38 +2,27 @@ import { logger } from '@librechat/data-schemas';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { IUser } from '@librechat/data-schemas';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
-import { createConcurrencyLimiter, withTimeout } from '~/utils/promise';
-import { getMCPAppToolsPublicationGeneration } from '../toolsChanged';
+import { createConcurrencyLimiter } from '~/utils/promise';
 import { getMissingCustomUserVars } from '../utils';
 import { getServerCustomUserVars } from '../auth';
 
 const RECOVERY_CONCURRENCY = 3;
 /**
- * Wall-clock deadline for one server's discovery, enforced here rather than by tuning
- * `connectionTimeout`: the factory spends that per connection attempt and makes several
- * (authenticated, then unauthenticated), so a per-attempt value bounds no total this layer
- * can reason about. The deadline holds however many attempts the factory grows.
+ * Recovery exists for a server that is reachable and authorized but whose catalog cache expired,
+ * and such a server answers `tools/list` well inside this window. Anything slower is a server
+ * recovery cannot rescue anyway, so failing fast costs nothing and keeps the request responsive.
+ *
+ * This bounds one connection attempt, which is the unit the factory actually spends:
+ * `MCPConnectionFactory.discoverToolsInternal` uses it for the authenticated connection and again
+ * for the unauthenticated listing, so a server's ceiling is this value times the attempts made.
+ * Bounding the work rather than racing it keeps the concurrency limit honest — a slot is held for
+ * exactly as long as its network operation runs.
  */
-const RECOVERY_SERVER_DEADLINE_MS = 5000;
-/** Ceiling on the recovery a single list request performs, whatever the server count. */
-const RECOVERY_REQUEST_BUDGET_MS = 10_000;
-/** How long a server that failed passive recovery is skipped before it is dialed again. */
-const RECOVERY_COOLDOWN_MS = 60 * 1000;
+const RECOVERY_ATTEMPT_TIMEOUT_MS = 1500;
 
 export interface MCPServerCatalogRecoveryInput {
   serverName: string;
   serverConfig: ParsedServerConfig;
-}
-
-/**
- * Per-process record of recoveries that just failed, keyed by an opaque identity the caller
- * builds. Recovered catalogs are request-local, so without this every list request re-dials the
- * same unreachable servers.
- */
-export interface MCPCatalogRecoveryCooldown {
-  isCoolingDown: (identity: string) => boolean;
-  recordFailure: (identity: string) => void;
-  recordSuccess: (identity: string) => void;
 }
 
 export interface MCPServerCatalogRecoveryDeps {
@@ -43,7 +32,6 @@ export interface MCPServerCatalogRecoveryDeps {
   ) => Promise<Record<string, Record<string, string>>>;
   discoverServerTools: (options: ToolDiscoveryOptions) => Promise<{ tools: Tool[] | null }>;
   formatServerTools: (serverName: string, tools: Tool[]) => LCAvailableTools;
-  recoveryCooldown?: MCPCatalogRecoveryCooldown;
 }
 
 export interface MCPServerCatalogSnapshot {
@@ -78,153 +66,64 @@ export interface MCPServerCatalogLoaderResult {
   serversWithoutTools: string[];
 }
 
-/**
- * Creates the failure cooldown shared by every request in one process. Entries expire on their
- * own, and an expired sweep runs at most once per window so lookups stay amortized constant.
- */
-export function createMCPCatalogRecoveryCooldown(
-  cooldownMs: number = RECOVERY_COOLDOWN_MS,
-): MCPCatalogRecoveryCooldown {
-  const failedAt = new Map<string, number>();
-  let lastSweptAt = 0;
-
-  const sweep = (now: number): void => {
-    if (now - lastSweptAt < cooldownMs) {
-      return;
-    }
-    lastSweptAt = now;
-    for (const [identity, timestamp] of failedAt) {
-      if (now - timestamp >= cooldownMs) {
-        failedAt.delete(identity);
-      }
-    }
-  };
-
-  return {
-    isCoolingDown: (identity) => {
-      const now = Date.now();
-      sweep(now);
-      const timestamp = failedAt.get(identity);
-      return timestamp != null && now - timestamp < cooldownMs;
-    },
-    recordFailure: (identity) => {
-      failedAt.set(identity, Date.now());
-    },
-    recordSuccess: (identity) => {
-      failedAt.delete(identity);
-    },
-  };
-}
-
 interface RecoveryCandidate extends MCPServerCatalogRecoveryInput {
-  cooldownIdentity: string;
   customUserVars?: Record<string, string>;
 }
 
-/**
- * A cooldown must not outlive the configuration that failed: correcting a server's URL or
- * transport has to be retryable at once, and the client refetches this catalog as soon as the
- * server is updated. Keying by the publication generation — the same effective-config identity
- * the tool caches fence on — means an edited server simply keys a new entry.
- */
-function cooldownIdentity(
-  userId: string,
-  { serverName, serverConfig }: MCPServerCatalogRecoveryInput,
-): string {
-  try {
-    return `${userId}:${serverName}:${getMCPAppToolsPublicationGeneration(serverConfig)}`;
-  } catch {
-    logger.debug(
-      `[MCP catalog recovery] ${serverName}: cooldown falls back to config-agnostic key`,
-    );
-    return `${userId}:${serverName}`;
-  }
-}
-
-/** Bounds one connection attempt: honours a shorter operator `initTimeout`, never the deadline. */
+/** Bounds one connection attempt, honouring a shorter operator `initTimeout`. */
 function resolveAttemptTimeout(serverConfig: ParsedServerConfig): number {
   const { initTimeout } = serverConfig;
   if (typeof initTimeout === 'number') {
-    return Math.min(initTimeout, RECOVERY_SERVER_DEADLINE_MS);
+    return Math.min(initTimeout, RECOVERY_ATTEMPT_TIMEOUT_MS);
   }
-  return RECOVERY_SERVER_DEADLINE_MS;
-}
-
-/**
- * A server the config tier already marked unreachable is left to that tier's retry window, and
- * one that just failed recovery is left to its cooldown; dialing either again on this request
- * only repeats a known failure.
- */
-function isRecoverable(
-  { serverName, serverConfig, cooldownIdentity: identity }: RecoveryCandidate,
-  cooldown?: MCPCatalogRecoveryCooldown,
-): boolean {
-  if (serverConfig.inspectionFailed) {
-    logger.debug(`[MCP catalog recovery] Skipping ${serverName}: awaiting config-tier retry`);
-    return false;
-  }
-  if (cooldown?.isCoolingDown(identity)) {
-    logger.debug(`[MCP catalog recovery] Skipping ${serverName}: recent discovery failure`);
-    return false;
-  }
-  return true;
+  return RECOVERY_ATTEMPT_TIMEOUT_MS;
 }
 
 async function discoverCandidate(
   user: IUser,
-  candidate: RecoveryCandidate,
-  budgetExpiresAt: number,
+  { serverName, serverConfig, customUserVars }: RecoveryCandidate,
   deps: MCPServerCatalogRecoveryDeps,
 ): Promise<[string, LCAvailableTools | null]> {
-  const { serverName, serverConfig, customUserVars, cooldownIdentity: identity } = candidate;
-  /** Never dialing a server is not evidence against it, so an exhausted budget records no
-   *  cooldown; a later request reaches it once the servers ahead are cached or cooling down. */
-  if (Date.now() + RECOVERY_SERVER_DEADLINE_MS > budgetExpiresAt) {
-    logger.debug(`[MCP catalog recovery] Skipping ${serverName}: request recovery budget spent`);
-    return [serverName, null];
-  }
-
   try {
-    /** The deadline is what bounds this server's share of the request. `connectionTimeout` only
-     *  bounds each attempt the factory makes inside it, and an attempt abandoned by the deadline
-     *  still disposes its own connection when it eventually settles. */
-    const result = await withTimeout(
-      deps.discoverServerTools({
-        user,
-        serverName,
-        configServers: { [serverName]: serverConfig },
-        customUserVars,
-        connectionTimeout: resolveAttemptTimeout(serverConfig),
-      }),
-      RECOVERY_SERVER_DEADLINE_MS,
-      `Discovery for ${serverName} exceeded ${RECOVERY_SERVER_DEADLINE_MS}ms`,
-    );
-    if (result.tools == null) {
-      deps.recoveryCooldown?.recordFailure(identity);
-      return [serverName, null];
-    }
-    deps.recoveryCooldown?.recordSuccess(identity);
-    return [serverName, deps.formatServerTools(serverName, result.tools)];
+    const result = await deps.discoverServerTools({
+      user,
+      serverName,
+      configServers: { [serverName]: serverConfig },
+      customUserVars,
+      connectionTimeout: resolveAttemptTimeout(serverConfig),
+    });
+    return [
+      serverName,
+      result.tools == null ? null : deps.formatServerTools(serverName, result.tools),
+    ];
   } catch (error) {
-    deps.recoveryCooldown?.recordFailure(identity);
     logger.error(`[MCP catalog recovery] Failed to discover tools for ${serverName}:`, error);
     return [serverName, null];
   }
 }
 
 /**
- * Passively discovers cold MCP catalogs for one request. Results are intentionally not cached:
- * discovery connections do not own a publication generation, so publishing them could overwrite
- * a newer user or app catalog. Callers may still serve the isolated result to the current user.
+ * Passively discovers cold MCP catalogs for one request.
+ *
+ * A recovered catalog cannot be retained: a discovery connection owns no publication generation
+ * and is disposed, and the tool cache refuses unfenced writes, so the result is served only to
+ * the requesting user. Recovery therefore stays stateless and individually cheap rather than
+ * scheduling around a result it is not allowed to keep — it skips only what configuration alone
+ * proves pointless, and fails fast on everything else.
  */
 export async function recoverMCPServerCatalogs(
   params: { user: IUser; servers: readonly MCPServerCatalogRecoveryInput[] },
   deps: MCPServerCatalogRecoveryDeps,
 ): Promise<Map<string, LCAvailableTools>> {
   const { user, servers } = params;
-  const recoverable = servers
-    .map((server) => ({ ...server, cooldownIdentity: cooldownIdentity(user.id, server) }))
-    .filter((candidate) => isRecoverable(candidate, deps.recoveryCooldown));
+  /** The config tier owns its own retry window for a server it already found unreachable. */
+  const recoverable = servers.filter(({ serverName, serverConfig }) => {
+    if (!serverConfig.inspectionFailed) {
+      return true;
+    }
+    logger.debug(`[MCP catalog recovery] Skipping ${serverName}: awaiting config-tier retry`);
+    return false;
+  });
   if (recoverable.length === 0) {
     return new Map();
   }
@@ -252,12 +151,9 @@ export async function recoverMCPServerCatalogs(
     return new Map();
   }
 
-  const budgetExpiresAt = Date.now() + RECOVERY_REQUEST_BUDGET_MS;
   const recover = createConcurrencyLimiter(RECOVERY_CONCURRENCY);
   const results = await Promise.all(
-    authorized.map((candidate) =>
-      recover(() => discoverCandidate(user, candidate, budgetExpiresAt, deps)),
-    ),
+    authorized.map((candidate) => recover(() => discoverCandidate(user, candidate, deps))),
   );
 
   return new Map(results.filter((entry): entry is [string, LCAvailableTools] => entry[1] != null));

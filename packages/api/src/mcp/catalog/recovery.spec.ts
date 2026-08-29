@@ -1,11 +1,7 @@
 import { Constants } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
-import {
-  loadMCPServerCatalogs,
-  recoverMCPServerCatalogs,
-  createMCPCatalogRecoveryCooldown,
-} from './recovery';
+import { loadMCPServerCatalogs, recoverMCPServerCatalogs } from './recovery';
 
 const user = { id: 'user-1' } as IUser;
 const serverConfig = (name: string): ParsedServerConfig =>
@@ -241,13 +237,13 @@ describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
     );
 
     expect(discoverServerTools).toHaveBeenCalledWith(
-      expect.objectContaining({ serverName: 'slow', connectionTimeout: 5000 }),
+      expect.objectContaining({ serverName: 'slow', connectionTimeout: 1500 }),
     );
   });
 
   it('keeps a shorter configured initTimeout instead of raising it to the cap', async () => {
     const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
-    const impatient = { ...serverConfig('impatient'), initTimeout: 1500 } as ParsedServerConfig;
+    const impatient = { ...serverConfig('impatient'), initTimeout: 900 } as ParsedServerConfig;
 
     await recoverMCPServerCatalogs(
       { user, servers: [{ serverName: 'impatient', serverConfig: impatient }] },
@@ -255,7 +251,7 @@ describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
     );
 
     expect(discoverServerTools).toHaveBeenCalledWith(
-      expect.objectContaining({ connectionTimeout: 1500 }),
+      expect.objectContaining({ connectionTimeout: 900 }),
     );
   });
 
@@ -330,34 +326,6 @@ describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
     );
   });
 
-  it('does not re-dial a server that just failed discovery', async () => {
-    const discoverServerTools = jest
-      .fn()
-      .mockRejectedValueOnce(new Error('offline'))
-      .mockResolvedValue({ tools: [] });
-    const recoveryCooldown = createMCPCatalogRecoveryCooldown();
-    const servers = [{ serverName: 'offline', serverConfig: serverConfig('offline') }];
-    const deps = { ...recoveryDeps(discoverServerTools), recoveryCooldown };
-
-    await recoverMCPServerCatalogs({ user, servers }, deps);
-    const second = await recoverMCPServerCatalogs({ user, servers }, deps);
-
-    expect(discoverServerTools).toHaveBeenCalledTimes(1);
-    expect(second.size).toBe(0);
-  });
-
-  it('keeps re-dialing a server that recovers successfully', async () => {
-    const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
-    const recoveryCooldown = createMCPCatalogRecoveryCooldown();
-    const servers = [{ serverName: 'healthy', serverConfig: serverConfig('healthy') }];
-    const deps = { ...recoveryDeps(discoverServerTools), recoveryCooldown };
-
-    await recoverMCPServerCatalogs({ user, servers }, deps);
-    await recoverMCPServerCatalogs({ user, servers }, deps);
-
-    expect(discoverServerTools).toHaveBeenCalledTimes(2);
-  });
-
   it('skips the auth lookup entirely when every cold server is ineligible', async () => {
     const discoverServerTools = jest.fn();
     const deps = recoveryDeps(discoverServerTools);
@@ -372,138 +340,51 @@ describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
     expect(discoverServerTools).not.toHaveBeenCalled();
     expect(result.size).toBe(0);
   });
-});
 
-describe('createMCPCatalogRecoveryCooldown', () => {
-  it('holds a failure for the cooldown window and releases it afterwards', () => {
-    jest.useFakeTimers();
-    try {
-      const cooldown = createMCPCatalogRecoveryCooldown(60_000);
-      cooldown.recordFailure('user-1:alpha:gen-1');
+  it('holds a limiter slot until its discovery settles, so concurrency stays honest', async () => {
+    /** A slot released while its network operation is still running would let a fourth
+     *  discovery start; awaiting the work rather than racing it keeps the limit real. */
+    let active = 0;
+    let maxActive = 0;
+    const discoverServerTools = jest.fn(async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      active -= 1;
+      return { tools: null };
+    });
+    const servers = Array.from({ length: 9 }, (_, index) => ({
+      serverName: `slow-${index}`,
+      serverConfig: serverConfig(`slow-${index}`),
+    }));
 
-      expect(cooldown.isCoolingDown('user-1:alpha:gen-1')).toBe(true);
-      jest.advanceTimersByTime(59_000);
-      expect(cooldown.isCoolingDown('user-1:alpha:gen-1')).toBe(true);
-      jest.advanceTimersByTime(2_000);
-      expect(cooldown.isCoolingDown('user-1:alpha:gen-1')).toBe(false);
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  it('keeps distinct identities apart and clears one on success', () => {
-    const cooldown = createMCPCatalogRecoveryCooldown(60_000);
-    cooldown.recordFailure('user-1:alpha:gen-1');
-
-    expect(cooldown.isCoolingDown('user-1:beta:gen-1')).toBe(false);
-    expect(cooldown.isCoolingDown('user-2:alpha:gen-1')).toBe(false);
-    expect(cooldown.isCoolingDown('user-1:alpha:gen-2')).toBe(false);
-
-    cooldown.recordSuccess('user-1:alpha:gen-1');
-    expect(cooldown.isCoolingDown('user-1:alpha:gen-1')).toBe(false);
-  });
-
-  it('sweeps expired entries so the failure map cannot grow without bound', () => {
-    jest.useFakeTimers();
-    try {
-      const cooldown = createMCPCatalogRecoveryCooldown(60_000);
-      for (let i = 0; i < 50; i++) {
-        cooldown.recordFailure(`user-${i}:alpha:gen-1`);
-      }
-      jest.advanceTimersByTime(61_000);
-      cooldown.recordFailure('user-current:alpha:gen-1');
-
-      expect(cooldown.isCoolingDown('user-current:alpha:gen-1')).toBe(true);
-      for (let i = 0; i < 50; i++) {
-        expect(cooldown.isCoolingDown(`user-${i}:alpha:gen-1`)).toBe(false);
-      }
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-});
-
-describe('recoverMCPServerCatalogs — request-level bounds', () => {
-  const hangingDeps = (discoverServerTools: jest.Mock) => ({
-    loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
-    discoverServerTools,
-    formatServerTools: jest.fn().mockReturnValue({}),
-  });
-
-  it('gives up on a server that outlives the deadline, however long the factory waits', async () => {
-    jest.useFakeTimers();
-    try {
-      /** Mirrors MCPConnectionFactory spending `connectionTimeout` on the authenticated attempt
-       *  and again on the unauthenticated one: the deadline must bound the pair, not each. */
-      const discoverServerTools = jest.fn(
-        ({ connectionTimeout }: ToolDiscoveryOptions) =>
-          new Promise<{ tools: null }>((resolve) =>
-            setTimeout(() => resolve({ tools: null }), (connectionTimeout ?? 0) * 2),
-          ),
-      );
-      const servers = [{ serverName: 'unreachable', serverConfig: serverConfig('unreachable') }];
-
-      const pending = recoverMCPServerCatalogs({ user, servers }, hangingDeps(discoverServerTools));
-      /** Only the 5s deadline can settle this; the discovery itself resolves at 10s. */
-      await jest.advanceTimersByTimeAsync(5_000);
-      const result = await pending;
-
-      expect(discoverServerTools).toHaveBeenCalledWith(
-        expect.objectContaining({ connectionTimeout: 5000 }),
-      );
-      expect(result.size).toBe(0);
-      await jest.advanceTimersByTimeAsync(10_000);
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  it('stops dialing once the request budget is spent and records no cooldown for the untried', async () => {
-    jest.useFakeTimers();
-    try {
-      const recoveryCooldown = createMCPCatalogRecoveryCooldown(60_000);
-      const recordFailure = jest.spyOn(recoveryCooldown, 'recordFailure');
-      /** Each discovery consumes the full per-server deadline, so the 10s budget funds two waves. */
-      const discoverServerTools = jest.fn(
-        () =>
-          new Promise<{ tools: null }>((resolve) =>
-            setTimeout(() => resolve({ tools: null }), 5000),
-          ),
-      );
-      const servers = Array.from({ length: 9 }, (_, index) => ({
-        serverName: `server-${index}`,
-        serverConfig: serverConfig(`server-${index}`),
-      }));
-
-      const pending = recoverMCPServerCatalogs(
-        { user, servers },
-        { ...hangingDeps(discoverServerTools), recoveryCooldown },
-      );
-      await jest.advanceTimersByTimeAsync(30_000);
-      const result = await pending;
-
-      expect(discoverServerTools).toHaveBeenCalledTimes(6);
-      expect(recordFailure).toHaveBeenCalledTimes(6);
-      expect(result.size).toBe(0);
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  it('retries immediately once a failed server’s configuration changes', async () => {
-    const recoveryCooldown = createMCPCatalogRecoveryCooldown(60_000);
-    const discoverServerTools = jest.fn().mockResolvedValue({ tools: null });
-    const deps = { ...hangingDeps(discoverServerTools), recoveryCooldown };
-    const broken = { serverName: 'edited', serverConfig: serverConfig('typo') };
-    const corrected = { serverName: 'edited', serverConfig: serverConfig('fixed') };
-
-    await recoverMCPServerCatalogs({ user, servers: [broken] }, deps);
-    await recoverMCPServerCatalogs({ user, servers: [broken] }, deps);
-    await recoverMCPServerCatalogs({ user, servers: [corrected] }, deps);
-
-    expect(discoverServerTools).toHaveBeenCalledTimes(2);
-    expect(discoverServerTools).toHaveBeenLastCalledWith(
-      expect.objectContaining({ configServers: { edited: corrected.serverConfig } }),
+    const result = await recoverMCPServerCatalogs(
+      { user, servers },
+      {
+        loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+        discoverServerTools,
+        formatServerTools: jest.fn().mockReturnValue({}),
+      },
     );
+
+    expect(discoverServerTools).toHaveBeenCalledTimes(9);
+    expect(maxActive).toBe(3);
+    expect(result.size).toBe(0);
+  });
+
+  it('attempts every cold server, so none is starved by those ahead of it', async () => {
+    const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
+    const servers = Array.from({ length: 12 }, (_, index) => ({
+      serverName: `server-${index}`,
+      serverConfig: serverConfig(`server-${index}`),
+    }));
+
+    await recoverMCPServerCatalogs({ user, servers }, recoveryDeps(discoverServerTools));
+    await recoverMCPServerCatalogs({ user, servers }, recoveryDeps(discoverServerTools));
+
+    expect(discoverServerTools).toHaveBeenCalledTimes(24);
+    for (const { serverName } of servers) {
+      expect(discoverServerTools).toHaveBeenCalledWith(expect.objectContaining({ serverName }));
+    }
   });
 });

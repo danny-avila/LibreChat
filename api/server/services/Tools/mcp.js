@@ -5,7 +5,6 @@ const {
   getMissingCustomUserVars,
   loadMCPServerCatalogs: loadCatalogs,
   requiresEphemeralUserConnection,
-  createMCPCatalogRecoveryCooldown,
   getMissingRuntimeBodyPlaceholderFields,
 } = require('@librechat/api');
 const { CacheKeys, Constants } = require('librechat-data-provider');
@@ -35,10 +34,6 @@ const MCP_REINITIALIZE_FAILURE_REASONS = {
   INITIALIZATION_FAILED: 'initialization_failed',
 };
 
-/** Recovered catalogs are request-local, so this process-wide cooldown is what keeps an
- *  unreachable server from being re-dialed by every catalog list request. */
-const recoveryCooldown = createMCPCatalogRecoveryCooldown();
-
 /** Wires application dependencies into the passive, request-local catalog recovery service. */
 async function loadMCPServerCatalogs({ user, servers }) {
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
@@ -67,7 +62,6 @@ async function loadMCPServerCatalogs({ user, servers }) {
       getServerToolFunctionsSnapshot: (userId, serverName, serverConfig) =>
         mcpManager.getServerToolFunctionsSnapshot(userId, serverName, serverConfig),
       cacheServerTools: cacheMCPServerTools,
-      recoveryCooldown,
     },
   );
 }
