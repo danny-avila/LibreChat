@@ -29,6 +29,13 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await mongoose.connection.dropDatabase();
+  /**
+   * Mutual exclusion between workers rests entirely on the unique `key` index: without it a second
+   * `create` succeeds instead of raising a duplicate-key error, and every caller believes it won
+   * the flight. `dropDatabase` takes the indexes with it, and Mongoose only builds them once when
+   * the model is compiled, so they are rebuilt here rather than left to that race.
+   */
+  await mongoose.models.OpenIDRefreshFlight.createIndexes();
 });
 
 describe('OpenIDRefreshFlight Methods', () => {
