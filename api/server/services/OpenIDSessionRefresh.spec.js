@@ -704,6 +704,34 @@ describe('OpenIDSessionRefresh', () => {
       expect(req.session.save).not.toHaveBeenCalled();
     });
 
+    it('surfaces the lease error when removing the orphaned bridge also fails', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-rotated',
+        expires_in: 3600,
+      });
+      deleteRefreshTokenBridges.mockRejectedValueOnce(new Error('mongo unavailable'));
+      const assertLeaseOwned = jest
+        .fn()
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(true)
+        .mockRejectedValueOnce(new Error('revoked by logout'));
+      withOpenIDRefreshFlightLease.mockImplementationOnce(({ operation }) =>
+        operation({ assertLeaseOwned, markLeaseSettled: jest.fn() }),
+      );
+      const req = buildReq(buildExpiredSession('rt-old'));
+      const res = buildRes({ headersSent: true });
+
+      await expect(
+        refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('revoked by logout');
+
+      expect(deleteRefreshTokenBridges).toHaveBeenCalled();
+    });
+
     it('fails closed before publishing cookies when the durable session transition fails', async () => {
       const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
       openIdClient.refreshTokenGrant.mockResolvedValueOnce({
