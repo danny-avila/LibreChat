@@ -335,6 +335,31 @@ describe('resolveOboToken', () => {
     expect(result.expires_at).toBe(absoluteExpiresAt - 30 * 1000);
   });
 
+  /** A credential the IdP declares already spent must not reach the MCP connection: `callTool`
+   *  checks only for an access token before setting the Authorization header. */
+  it('rejects an exchange response whose declared expiry has already elapsed', async () => {
+    const expiredResolver: OboTokenResolver = jest.fn().mockResolvedValue({
+      access_token: 'already-expired-token',
+      expires_in: 0,
+    });
+
+    await expect(
+      resolveOboToken(mockUser as IUser, oboConfig, expiredResolver, liveProvider),
+    ).rejects.toMatchObject({ reason: 'exchange_failed', retryable: true });
+  });
+
+  it('rejects an exchange response carrying an absolute expiry in the past', async () => {
+    const expiredResolver: OboTokenResolver = jest.fn().mockResolvedValue({
+      access_token: 'already-expired-token',
+      expires_in: 3600,
+      expires_at: Date.now() - 60_000,
+    });
+
+    await expect(
+      resolveOboToken(mockUser as IUser, oboConfig, expiredResolver, liveProvider),
+    ).rejects.toMatchObject({ reason: 'exchange_failed' });
+  });
+
   it('keeps a positive expires_at lifetime for very short-lived OBO tokens', async () => {
     const shortLivedResolver: OboTokenResolver = jest.fn().mockResolvedValue({
       access_token: 'very-short-lived-token',

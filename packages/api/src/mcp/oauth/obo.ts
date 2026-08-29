@@ -257,11 +257,28 @@ export async function resolveOboToken(
       now,
     });
 
+    /**
+     * Preserving an elapsed expiry only helps if someone acts on it. `MCPManager.callTool` checks
+     * the access token and nothing else before setting the Authorization header, so a credential
+     * the IdP already declared spent would be sent downstream to fail there. Rejected here, where
+     * the reason is still known, and retryably: the exchange itself worked, so another attempt
+     * with a fresh grant can succeed.
+     */
+    const skewedExpiresAt = getSkewedTokenExpiresAtMs(expiresAt, now);
+    if (skewedExpiresAt <= now) {
+      logger.warn('[OBO] Token exchange returned a credential that is already expired');
+      throw new OboTokenResolutionError(
+        'exchange_failed',
+        'The identity provider returned an already-expired token for the OBO exchange.',
+        true,
+      );
+    }
+
     return {
       access_token: response.access_token,
       token_type: 'Bearer',
       obtained_at: now,
-      expires_at: getSkewedTokenExpiresAtMs(expiresAt, now),
+      expires_at: skewedExpiresAt,
     };
   } catch (error) {
     if (error instanceof OboTokenResolutionError) {
