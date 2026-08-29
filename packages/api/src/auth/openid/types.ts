@@ -28,6 +28,8 @@ export interface OpenIDTokenSet extends OIDCTokens {
    * the result. It is identity material only — never an authentication response token.
    */
   __identityIdToken?: string;
+  /** Serializable identity evidence for shared-flight followers. */
+  __identityClaims?: OpenIDClaims;
 }
 
 export interface SharedOpenIDRefreshResult {
@@ -35,6 +37,7 @@ export interface SharedOpenIDRefreshResult {
   claims: OpenIDClaims;
   openidIssuer?: string;
   expires_at?: number;
+  appAuthToken: string;
 }
 
 export interface SessionOpenIDTokens {

@@ -189,6 +189,11 @@ const getUnexpiredOpenIDSessionIdToken = (idToken) => {
   }
 };
 
+const getOpenIDAppAuthToken = (tokenset, sessionIdToken) =>
+  (isExpiredOpenIDIdToken(tokenset?.id_token) ? undefined : tokenset?.id_token) ||
+  getUnexpiredOpenIDSessionIdToken(sessionIdToken) ||
+  tokenset?.access_token;
+
 /**
  * Logout user
  *
@@ -835,10 +840,7 @@ const setOpenIDAuthTokens = (
      * is provably expired; an id_token whose expiry cannot be read stays preferred, since
      * access_token may be opaque or scoped to another audience and fail JWKS validation.
      */
-    const appAuthToken =
-      (isExpiredOpenIDIdToken(tokenset.id_token) ? undefined : tokenset.id_token) ||
-      getUnexpiredOpenIDSessionIdToken(sessionIdToken) ||
-      tokenset.access_token;
+    const appAuthToken = getOpenIDAppAuthToken(tokenset, sessionIdToken);
     const logoutIdToken = tokenset.id_token || sessionIdToken;
     const claims = getOpenIDTokenClaims(tokenset);
     const sessionIdentity = createOpenIDSessionIdentity({
@@ -995,6 +997,7 @@ module.exports = {
   registerUser,
   setAuthTokens,
   resetPassword,
+  getOpenIDAppAuthToken,
   setOpenIDAuthTokens,
   storeOpenIDSession,
   setCloudFrontAuthCookies,

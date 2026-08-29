@@ -9,8 +9,12 @@ import type {
   RefreshFlightRecord,
   RefreshKeyInput,
 } from './types';
+import {
+  createOpenIDRefreshOwnershipError,
+  isOpenIDRefreshOwnershipError,
+  toOpenIDLogArgument,
+} from './errors';
 import { createOpenIDRefreshIdentityTuple, serializeAuthIdentityTuple } from '~/utils/identity';
-import { createOpenIDRefreshOwnershipError, toOpenIDLogArgument } from './errors';
 import { OPENID_EXPIRY_BUFFER_SECONDS } from '~/oauth/expiry';
 
 const DEFAULT_FLIGHT_TTL_MS = 2 * 60 * 1000;
@@ -277,16 +281,6 @@ export function createOpenIDRefreshFlightService({
       }
       return flight;
     };
-    const drainPendingRenewal = async () => {
-      try {
-        await renewalPromise;
-      } catch (error) {
-        logger.warn('[OpenIDRefreshFlight] Trailing refresh flight lease renewal failed', {
-          key,
-          error: toOpenIDLogArgument(error),
-        });
-      }
-    };
     const heartbeat = setInterval(() => {
       renewLease().catch((error) =>
         logger.warn('[OpenIDRefreshFlight] Refresh flight lease renewal failed', {
@@ -296,25 +290,43 @@ export function createOpenIDRefreshFlightService({
       );
     }, heartbeatInterval);
     heartbeat.unref?.();
+    let result: T;
     try {
-      const result = await operation({
+      result = await operation({
         assertLeaseOwned: renewLease,
         markLeaseSettled: () => {
           settled = true;
         },
       });
       if (ownershipLost) throw ownershipError();
-      return result;
-    } finally {
+    } catch (error) {
       clearInterval(heartbeat);
-      /**
-       * Drain a renewal still in flight so it cannot outlive the lease, but never let its
-       * outcome become the caller's. Proven ownership loss is already recorded on
-       * `ownershipLost` and checked above; all this await can add is a transient coordination
-       * error, which would replace a published, settled result with a failure.
-       */
-      await drainPendingRenewal();
+      if (renewalPromise) {
+        try {
+          await renewalPromise;
+        } catch (cleanupError) {
+          logger.warn('[OpenIDRefreshFlight] Lease cleanup also failed after the operation', {
+            key,
+            error: toOpenIDLogArgument(cleanupError),
+          });
+        }
+      }
+      throw error;
     }
+    clearInterval(heartbeat);
+    if (renewalPromise) {
+      try {
+        await renewalPromise;
+      } catch (error) {
+        if (!settled || isOpenIDRefreshOwnershipError(error)) {
+          throw error;
+        }
+      }
+    }
+    if (ownershipLost) {
+      throw ownershipError();
+    }
+    return result;
   }
 
   async function failOpenIDRefreshFlight({

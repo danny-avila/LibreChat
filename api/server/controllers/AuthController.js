@@ -366,11 +366,7 @@ const refreshController = async (req, res) => {
               );
 
               try {
-                const {
-                  tokenset: retryTokenset,
-                  claims: retryClaims,
-                  openidIssuer,
-                } = await recoverOpenIDRefreshBridge({
+                const { appAuthToken } = await recoverOpenIDRefreshBridge({
                   req,
                   res,
                   refreshToken: bridgeSourceToken,
@@ -378,23 +374,9 @@ const refreshController = async (req, res) => {
                   bridgeUser,
                 });
 
-                const token = await sendOpenIDAuthResponse({
-                  tokenset: retryTokenset,
-                  user: bridgeUser,
-                  /**
-                   * The durable Session still names the browser's stale token. Replacing that
-                   * exact record removes the original credential while installing the shared
-                   * recovery result.
-                   */
-                  existingRefreshToken: bridgeSourceToken,
-                  openidSubject: retryClaims?.sub,
-                  openidIssuer,
-                  req,
-                  res,
-                });
                 return res
                   .status(200)
-                  .send({ token, user: sanitizeUserForAuthResponse(bridgeUser) });
+                  .send({ token: appAuthToken, user: sanitizeUserForAuthResponse(bridgeUser) });
               } catch (retryError) {
                 logger.error('[refreshController] Bridge recovery retry failed', retryError);
                 // Fall through to generic error response

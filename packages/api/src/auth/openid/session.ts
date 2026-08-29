@@ -5,6 +5,7 @@ import type {
   LeaseAssertion,
   LeaseContext,
   OIDCTokens,
+  OpenIDClaims,
   OpenIDLogger,
   OpenIDRequest,
   OpenIDResponse,
@@ -30,7 +31,7 @@ import {
 
 interface OpenIDSessionRefreshDeps {
   jwt: {
-    decode: (token: string) => { exp?: number } | string | null;
+    decode: (token: string) => (Partial<OpenIDClaims> & { exp?: number }) | string | null;
     verify: (token: string, secret: string) => { id?: string; refreshTokenHash?: string } | string;
   };
   cookies: { parse: (header: string) => Record<string, string> };
@@ -115,6 +116,7 @@ interface OpenIDSessionRefreshDeps {
 
 interface MarkedOIDCTokens extends OIDCTokens {
   __browserRefreshToken?: string;
+  __identityClaims?: OpenIDClaims;
   __predecessorRefreshToken?: string;
   __identityIdToken?: string;
 }
@@ -571,6 +573,24 @@ export function createOpenIDSessionRefreshService(
     };
   }
 
+  function resolveRefreshIdentityClaims(
+    tokenset: OpenIDTokenSet,
+    fallbackIdToken?: string,
+  ): OpenIDClaims | null {
+    if (typeof tokenset.claims === 'function') {
+      const claims = tokenset.claims();
+      if (claims?.sub) {
+        return claims;
+      }
+    }
+    const idToken = tokenset.id_token || fallbackIdToken;
+    const decoded = idToken ? jwt.decode(idToken) : null;
+    if (!decoded || typeof decoded !== 'object' || typeof decoded.sub !== 'string') {
+      return null;
+    }
+    return decoded as OpenIDClaims;
+  }
+
   function attachBrowserRefreshTokenMarker<T extends MarkedOIDCTokens | null>(
     tokens: T,
     browserRefreshToken?: string,
@@ -953,6 +973,10 @@ export function createOpenIDSessionRefreshService(
       tokenPreference,
       nextAccessTokenExp ?? undefined,
     );
+    const identityClaims = resolveRefreshIdentityClaims(tokenset, sessionTokens.idToken);
+    if (identityClaims) {
+      resolvedTokens.__identityClaims = identityClaims;
+    }
     const fallbackIdTokenExp = decodeJwtExp(sessionTokens.idToken);
     if (
       !tokenset.id_token &&

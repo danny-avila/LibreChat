@@ -495,6 +495,7 @@ describe('OpenIDSessionRefresh', () => {
       const result = await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
       expect(result.id_token).toBeUndefined();
+      expect(result.__identityClaims).toEqual(expect.objectContaining({ sub: 'user-123' }));
       expect(result.refresh_token).toBe('rt-keep');
       expect(req.session.openidTokens.idToken).toBe(priorIdToken);
       expect(req.session.openidTokens.refreshToken).toBe('rt-keep');

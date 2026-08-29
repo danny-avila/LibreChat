@@ -5,6 +5,7 @@ jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: jest.fn(),
 }));
 jest.mock('~/server/services/AuthService', () => ({
+  getOpenIDAppAuthToken: jest.fn(),
   requestPasswordReset: jest.fn(),
   setOpenIDAuthTokens: jest.fn(),
   storeOpenIDSession: jest.fn(),
@@ -16,6 +17,7 @@ jest.mock('~/server/services/AuthService', () => ({
 jest.mock('~/strategies', () => ({ getOpenIdConfig: jest.fn(), getOpenIdEmail: jest.fn() }));
 jest.mock('openid-client', () => ({ refreshTokenGrant: jest.fn() }));
 jest.mock('~/models', () => ({
+  deleteSession: jest.fn(),
   deleteAllUserSessions: jest.fn(),
   getUserById: jest.fn(),
   findSession: jest.fn(),
@@ -91,13 +93,14 @@ const { isEnabled, findOpenIDUser, buildOpenIDRefreshParams } = require('@librec
 const { graphTokenController, refreshController } = require('./AuthController');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const {
+  getOpenIDAppAuthToken,
   setOpenIDAuthTokens,
   storeOpenIDSession,
   setCloudFrontAuthCookies,
   setAuthTokens,
 } = require('~/server/services/AuthService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
-const { getUserById, findSession, updateUser } = require('~/models');
+const { deleteSession, getUserById, findSession, updateUser } = require('~/models');
 const {
   createRefreshTokenBridgeFlightKey,
   deleteRefreshTokenBridges,
@@ -312,6 +315,7 @@ describe('refreshController – OpenID path', () => {
     mockTokenset.claims.mockReturnValue(baseClaims);
     getOpenIdEmail.mockReturnValue(baseClaims.email);
     setOpenIDAuthTokens.mockReturnValue('new-app-token');
+    getOpenIDAppAuthToken.mockReturnValue('new-app-token');
     storeOpenIDSession.mockResolvedValue(true);
     setCloudFrontAuthCookies.mockReturnValue(true);
     findOpenIDUser.mockResolvedValue({ user: { ...defaultUser }, error: null, migration: false });
@@ -1259,6 +1263,18 @@ describe('refreshController – OpenID path', () => {
       openidSubject: baseClaims.sub,
       openidIssuer: baseClaims.iss,
     });
+    expect(completeOpenIDRefreshFlight).toHaveBeenCalledWith({
+      key: 'bridge-flight-key',
+      ownerId: 'bridge-owner',
+      tokens: expect.objectContaining({
+        appAuthToken: 'new-app-token',
+        claims: baseClaims,
+        tokenset: mockTokenset,
+      }),
+    });
+    expect(completeOpenIDRefreshFlight.mock.invocationCallOrder[0]).toBeLessThan(
+      setOpenIDAuthTokens.mock.invocationCallOrder[0],
+    );
     expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
       oldRefreshToken: 'stored-refresh',
       newRefreshToken: 'new-refresh',
@@ -1303,6 +1319,7 @@ describe('refreshController – OpenID path', () => {
     openIdClient.refreshTokenGrant.mockRejectedValueOnce(new Error('invalid_grant'));
     acquireOpenIDRefreshFlight.mockResolvedValue({ acquired: false, ownerId: 'other-owner' });
     waitForOpenIDRefreshFlight.mockResolvedValue({
+      appAuthToken: 'shared-app-token',
       tokenset: { ...mockTokenset },
       claims: baseClaims,
       openidIssuer: baseClaims.iss,
@@ -1318,12 +1335,44 @@ describe('refreshController – OpenID path', () => {
     });
     expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
     expect(withOpenIDRefreshFlightLease).not.toHaveBeenCalled();
+    expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(storeOpenIDSession).not.toHaveBeenCalled();
+    expect(res.send).toHaveBeenCalledWith(expect.objectContaining({ token: 'shared-app-token' }));
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('recovers with serialized identity claims when the refreshed ID token is omitted', async () => {
+    setOpenIDReuseCookies();
+    req.session = {};
+    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    refreshOpenIDSession
+      .mockRejectedValueOnce(Object.assign(new Error('invalid_grant'), { error: 'invalid_grant' }))
+      .mockResolvedValueOnce({
+        access_token: 'new-access',
+        refresh_token: 'new-refresh',
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        __identityClaims: baseClaims,
+      });
+
+    await refreshController(req, res);
+
+    expect(findOpenIDUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: baseClaims.email,
+        openidId: baseClaims.sub,
+        strategyName: 'refreshController (bridge recovery)',
+      }),
+    );
     expect(setOpenIDAuthTokens).toHaveBeenCalledWith(
-      expect.objectContaining({ refresh_token: 'new-refresh' }),
+      expect.objectContaining({
+        access_token: 'new-access',
+        __identityClaims: baseClaims,
+      }),
       req,
       res,
-      expect.objectContaining({ existingRefreshToken: 'stored-refresh' }),
+      expect.objectContaining({ openidSubject: baseClaims.sub }),
     );
+    expect(setOpenIDAuthTokens.mock.calls[0][0]).not.toHaveProperty('id_token');
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -1482,6 +1531,38 @@ describe('refreshController – OpenID path', () => {
     await refreshController(req, res);
 
     expect(deleteRefreshTokenBridges).not.toHaveBeenCalled();
+    expect(completeOpenIDRefreshFlight).not.toHaveBeenCalled();
+    expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('removes a prepared durable session when logout wins before publication commits', async () => {
+    setOpenIDReuseCookies();
+    req.session = {};
+    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    openIdClient.refreshTokenGrant
+      .mockRejectedValueOnce(new Error('invalid_grant'))
+      .mockResolvedValueOnce(mockTokenset);
+    const assertLeaseOwned = jest
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(ownershipLost('revoked by logout'));
+    withOpenIDRefreshFlightLease.mockImplementationOnce(({ operation }) =>
+      operation({ assertLeaseOwned, markLeaseSettled: jest.fn() }),
+    );
+
+    await refreshController(req, res);
+
+    expect(storeOpenIDSession).toHaveBeenCalledWith(
+      'user-db-id',
+      'new-refresh',
+      'tenant-1',
+      'stored-refresh',
+    );
+    expect(deleteSession).toHaveBeenCalledWith({ refreshToken: 'new-refresh' });
     expect(completeOpenIDRefreshFlight).not.toHaveBeenCalled();
     expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);

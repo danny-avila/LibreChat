@@ -286,6 +286,8 @@ describe('OpenIDRefreshFlight', () => {
       id_token: 'id',
       refresh_token: 'refresh',
       expires_at: 123,
+      appAuthToken: 'app-auth-token',
+      __identityClaims: { sub: 'user-123', iss: 'https://issuer.example.com' },
     };
 
     await completeOpenIDRefreshFlight({

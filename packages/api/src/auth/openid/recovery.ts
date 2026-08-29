@@ -60,7 +60,7 @@ type SeedRefreshSessionInput = Omit<
 
 interface RecoverOpenIDRefreshBridgeInput {
   req: OpenIDRequest;
-  res?: OpenIDResponse;
+  res: OpenIDResponse;
   refreshToken: string;
   bridgedRefreshToken: string;
   bridgeUser: BridgeUser;
@@ -74,6 +74,8 @@ interface SendOpenIDAuthResponseInput {
   openidIssuer?: string;
   req: OpenIDRequest;
   res: OpenIDResponse;
+  assertLeaseOwned?: LeaseAssertion;
+  commitPublication?: (appAuthToken: string) => Promise<void>;
 }
 
 export interface OpenIDRefreshRecoveryService {
@@ -137,6 +139,8 @@ export interface OpenIDRefreshRecoveryDeps {
       openidIssuer?: string;
     },
   ) => string | undefined;
+  getOpenIDAppAuthToken: (tokens: OpenIDTokenSet, sessionIdToken?: string) => string | undefined;
+  deleteOpenIDSession: (refreshToken: string) => Promise<object | null>;
   createRefreshTokenBridgeFlightKey: (args: {
     oldRefreshToken: string;
     userId: string;
@@ -180,6 +184,8 @@ export function createOpenIDRefreshRecoveryService(
     refreshOpenIDSession,
     storeOpenIDSession,
     setOpenIDAuthTokens,
+    getOpenIDAppAuthToken,
+    deleteOpenIDSession,
     createRefreshTokenBridgeFlightKey,
     storeRefreshTokenBridge,
     deleteRefreshTokenBridges,
@@ -195,11 +201,10 @@ export function createOpenIDRefreshRecoveryService(
     if (typeof tokenset?.claims === 'function') {
       return tokenset.claims();
     }
-    /**
-     * A refresh that strips an expired carried-forward `id_token` leaves it here instead, so
-     * identity still resolves without that token re-entering the authentication response.
-     */
-    const identityToken = tokenset?.id_token ?? tokenset?.__identityIdToken;
+    if (tokenset.__identityClaims?.sub) {
+      return tokenset.__identityClaims;
+    }
+    const identityToken = tokenset.id_token ?? tokenset.__identityIdToken;
     const decoded = identityToken ? jwt.decode(identityToken) : null;
     if (!decoded || typeof decoded !== 'object') {
       throw new Error('OpenID refresh returned no usable identity claims');
@@ -312,7 +317,7 @@ export function createOpenIDRefreshRecoveryService(
     const flight = await acquireOpenIDRefreshFlight({ key });
     if (!flight.acquired) {
       const resolved = await waitForOpenIDRefreshFlight({ key });
-      if (!resolved) {
+      if (!resolved?.appAuthToken) {
         throw new Error('OpenID refresh bridge coordination is temporarily unavailable');
       }
       return resolved;
@@ -391,24 +396,42 @@ export function createOpenIDRefreshRecoveryService(
             }
           }
 
+          const publication: { result?: SharedOpenIDRefreshResult } = {};
           const sharedResult = {
             tokenset,
             claims: resolved.claims,
             openidIssuer: resolved.openidIssuer,
             expires_at: tokenset.expires_at,
           };
-          const completed = await completeOpenIDRefreshFlight({
-            key,
-            ownerId: flight.ownerId,
-            tokens: sharedResult,
+          const appAuthToken = await sendOpenIDAuthResponse({
+            tokenset,
+            user: bridgeUser,
+            existingRefreshToken: refreshToken,
+            openidSubject: resolved.claims.sub,
+            openidIssuer: resolved.openidIssuer,
+            req,
+            res,
+            assertLeaseOwned,
+            commitPublication: async (preparedAppAuthToken) => {
+              const result = { ...sharedResult, appAuthToken: preparedAppAuthToken };
+              const completed = await completeOpenIDRefreshFlight({
+                key,
+                ownerId: flight.ownerId,
+                tokens: result,
+              });
+              if (!completed) {
+                throw createOpenIDRefreshOwnershipError(
+                  'OpenID refresh bridge coordination ownership was lost',
+                );
+              }
+              publication.result = result;
+              markLeaseSettled();
+            },
           });
-          if (!completed) {
-            throw createOpenIDRefreshOwnershipError(
-              'OpenID refresh bridge coordination ownership was lost',
-            );
+          if (!publication.result || publication.result.appAuthToken !== appAuthToken) {
+            throw new Error('OpenID refresh bridge publication did not settle');
           }
-          markLeaseSettled();
-          return sharedResult;
+          return publication.result;
         } catch (error) {
           try {
             await failOpenIDRefreshFlight({
@@ -435,6 +458,8 @@ export function createOpenIDRefreshRecoveryService(
     openidIssuer,
     req,
     res,
+    assertLeaseOwned,
+    commitPublication,
   }: SendOpenIDAuthResponseInput): Promise<string | undefined> {
     const userId = user._id.toString();
     if (typeof req?.session?.reload === 'function') {
@@ -470,6 +495,25 @@ export function createOpenIDRefreshRecoveryService(
     if (!nextRefreshToken) {
       throw new Error('OpenID refresh returned no refresh token');
     }
+
+    let authTokenset = effectiveTokenset;
+    const effectiveExpiresAt = effectiveTokenset.expires_at;
+    if (effectiveTokenset.expires_in == null && Number.isFinite(effectiveExpiresAt)) {
+      authTokenset = {
+        ...effectiveTokenset,
+        expires_in: Math.max(0, Math.floor((effectiveExpiresAt as number) - Date.now() / 1000)),
+      };
+    }
+    const preparedAppAuthToken = getOpenIDAppAuthToken(
+      authTokenset,
+      req.session?.openidTokens?.idToken,
+    );
+    if (!preparedAppAuthToken) {
+      throw new Error('OpenID refresh returned no application authentication token');
+    }
+    if (assertLeaseOwned) {
+      await assertLeaseOwned();
+    }
     try {
       await storeOpenIDSession(
         userId,
@@ -498,21 +542,35 @@ export function createOpenIDRefreshRecoveryService(
       throw error;
     }
 
-    let authTokenset = effectiveTokenset;
-    const effectiveExpiresAt = effectiveTokenset.expires_at;
-    if (effectiveTokenset.expires_in == null && Number.isFinite(effectiveExpiresAt)) {
-      authTokenset = {
-        ...effectiveTokenset,
-        expires_in: Math.max(0, Math.floor((effectiveExpiresAt as number) - Date.now() / 1000)),
-      };
+    try {
+      if (assertLeaseOwned) {
+        await assertLeaseOwned();
+      }
+      await commitPublication?.(preparedAppAuthToken);
+    } catch (error) {
+      if (isOpenIDRefreshOwnershipError(error)) {
+        try {
+          await deleteOpenIDSession(nextRefreshToken);
+        } catch (cleanupError) {
+          logger.warn(
+            '[refreshController] Failed to remove prepared session after ownership loss',
+            toOpenIDLogArgument(cleanupError),
+          );
+        }
+      }
+      throw error;
     }
-    return setOpenIDAuthTokens(authTokenset, req, res, {
+    const publishedAppAuthToken = setOpenIDAuthTokens(authTokenset, req, res, {
       userId,
       existingRefreshToken: effectiveExistingRefreshToken,
       tenantId: user.tenantId,
       openidSubject: openidSubject ?? user.openidId,
       openidIssuer: openidIssuer ?? user.openidIssuer,
     });
+    if (publishedAppAuthToken !== preparedAppAuthToken) {
+      throw new Error('OpenID authentication publication returned an inconsistent token');
+    }
+    return publishedAppAuthToken;
   }
 
   return {
