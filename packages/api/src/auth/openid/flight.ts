@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- dependency-injected legacy API boundary */
 import crypto from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { OPENID_EXPIRY_BUFFER_SECONDS } from '~/oauth/expiry';
 import { createOpenIDRefreshIdentityTuple, serializeAuthIdentityTuple } from '~/utils/identity';
+import { OPENID_EXPIRY_BUFFER_SECONDS } from '~/oauth/expiry';
 
 const DEFAULT_FLIGHT_TTL_MS = 2 * 60 * 1000;
 const DEFAULT_LOCK_TTL_MS = 30 * 1000;
