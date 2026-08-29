@@ -90,7 +90,7 @@ interface OpenIDSessionRefreshDeps {
   deleteSession: OpenIdSessionDeps['deleteSession'];
   getOpenIdConfig: () => object;
   OPENID_REFRESH_BRIDGE_GRACE_MS: number;
-  storeRefreshTokenBridge: (input: RefreshTokenBridgeInput) => Promise<void>;
+  storeRefreshTokenBridge: (input: RefreshTokenBridgeInput) => Promise<string | null>;
   deleteRefreshTokenBridges: (input: RefreshTokenBridgeDeleteInput) => Promise<object | null>;
   acquireOpenIDRefreshFlight: (args: {
     key?: string | null;
@@ -246,15 +246,14 @@ export function createOpenIDSessionRefreshService(
 
   /**
    * In-flight upstream refreshes keyed by `getSingleFlightKey(req, user, identityContext)` —
-   * a composite of `tenantId:openidIssuer:subject:sessionId:refreshTokenHash`.
+   * a composite of `tenantId:openidIssuer:subject:refreshTokenHash`.
    * See that helper for the rationale on why each component is needed; in short,
-   * per-session keying prevents refresh-token rotation from breaking sibling
-   * sessions, tenant+issuer keying prevents cross-tenant token crossover when
-   * distinct users share an IdP `sub`, and refresh-token keying prevents a request
-   * carrying a newly-rotated session token from joining an older pending refresh.
+   * tenant+issuer keying prevents cross-tenant token crossover when distinct users
+   * share an IdP `sub`, and refresh-token keying makes every request holding the same
+   * rotating credential join the same logical grant across sessions and replicas.
    *
-   * A fan-out of tool calls landing on an expired session within the SAME
-   * session coalesces into one IdP refresh-token grant. Mirrors the
+   * A fan-out of tool calls carrying the same expired credential coalesces into
+   * one IdP refresh-token grant. Mirrors the
    * single-flight pattern in `OboTokenService.js`.
    *
    * Process-local coalescing is backed by a renewable Mongo lease in
@@ -264,15 +263,13 @@ export function createOpenIDSessionRefreshService(
   const inFlightRefreshes = new Map<string, Promise<MarkedOIDCTokens | null>>();
 
   /**
-   * Returns the single-flight key for a refresh attempt, composed from the
-   * Express session id, the user's tenant (if any), the IdP issuer + sub, and
-   * the current session refresh token.
+   * Returns the single-flight key for a refresh attempt, composed from the user's
+   * tenant (if any), the IdP issuer + sub, and the current refresh token.
    * Tightening past `openidId` alone serves two purposes:
    *
-   *  1. Same human, multiple sessions: refresh-token rotation by the IdP would
-   *     otherwise let session A's refresh invalidate session B's stored
-   *     refresh_token, leaving B silently broken. Per-session keying ensures
-   *     each session refreshes its own credentials.
+   *  1. Same credential, multiple Express sessions: every holder joins one grant,
+   *     so token rotation cannot admit duplicate IdP refreshes merely because an
+   *     Express session expired or a request landed on another replica.
    *  2. Multi-tenant deployments where two distinct users share an IdP `sub`
    *     (different issuers, same sub): tenant + issuer disambiguates them so
    *     tokens never cross tenant boundaries via shared in-flight Promises.
@@ -314,8 +311,7 @@ export function createOpenIDSessionRefreshService(
    * Preserves correlation across "started" / "joined" / "completed" log events
    * for the same refresh attempt without leaking the underlying values:
    *
-   *   - sessionId is effectively a credential (cookie material) and must never
-   *     reach log sinks in clear text.
+   *   - refresh-token hashes are still credential-derived and remain private.
    *   - openidId (the IdP `sub`) and openidIssuer are tenant/user fingerprints.
    *
    * 12 hex chars = 48 bits of entropy: ~7×10^14 distinct keys before a 50%
@@ -744,7 +740,29 @@ export function createOpenIDSessionRefreshService(
         }
       }
       if (assertLeaseOwned) {
-        await assertLeaseOwned();
+        try {
+          await assertLeaseOwned();
+        } catch (error) {
+          if (!isOpenIDRefreshOwnershipError(error)) {
+            await storeSessionSaveFailureBridge({
+              oldRefreshToken,
+              newRefreshToken,
+              bridgeIdentity: userId ? { userId, tenantId, openidIssuer } : null,
+            });
+            throw error;
+          }
+          if (userId) {
+            try {
+              await deleteSession({ refreshToken: newRefreshToken });
+            } catch (cleanupError) {
+              logger.warn(
+                '[OpenIDSessionRefresh] Failed to remove the successor after ownership loss',
+                toOpenIDLogArgument(cleanupError),
+              );
+            }
+          }
+          throw error;
+        }
       }
       setRefreshTokenCookie(res, newRefreshToken, expirationDate);
       setOpenIDMarkerCookies(res, {
@@ -788,13 +806,13 @@ export function createOpenIDSessionRefreshService(
   async function storeRefreshTokenBridgeWithLease({
     assertLeaseOwned,
     ...bridge
-  }: RefreshTokenBridgeInput & { assertLeaseOwned?: LeaseAssertion }): Promise<void> {
+  }: RefreshTokenBridgeInput & { assertLeaseOwned?: LeaseAssertion }): Promise<string | null> {
     if (assertLeaseOwned) {
       await assertLeaseOwned();
     }
-    await storeRefreshTokenBridge(bridge);
+    const bridgeVersion = await storeRefreshTokenBridge(bridge);
     if (!assertLeaseOwned) {
-      return;
+      return bridgeVersion;
     }
     try {
       await assertLeaseOwned();
@@ -817,6 +835,7 @@ export function createOpenIDSessionRefreshService(
           refreshTokens: [bridge.oldRefreshToken],
           userId: bridge.userId,
           tenantId: bridge.tenantId,
+          ...(bridgeVersion ? { version: bridgeVersion } : {}),
         });
       } catch (cleanupError) {
         logger.error(
@@ -826,6 +845,7 @@ export function createOpenIDSessionRefreshService(
       }
       throw error;
     }
+    return bridgeVersion;
   }
 
   async function storeSessionSaveFailureBridge({
@@ -913,7 +933,8 @@ export function createOpenIDSessionRefreshService(
     const nextRefreshToken = tokenset.refresh_token || refreshToken;
     const browserRefreshToken = sessionTokens.browserRefreshToken || refreshToken;
     const needsRefreshTokenSync = nextRefreshToken !== browserRefreshToken;
-    const willWriteRefreshTokenCookie = needsRefreshTokenSync && canWriteRefreshTokenCookie(res);
+    const willWriteRefreshTokenCookie =
+      !deferPublication && needsRefreshTokenSync && canWriteRefreshTokenCookie(res);
 
     /**
      * Capture the freshly-issued access-token's expiry (unix seconds) so the
@@ -1060,6 +1081,50 @@ export function createOpenIDSessionRefreshService(
     );
   }
 
+  async function publishResolvedSessionTokens({
+    req,
+    res,
+    user,
+    identityContext,
+    resolvedTokens,
+    predecessorRefreshToken,
+  }: {
+    req: OpenIDRequest;
+    res?: OpenIDResponse;
+    user: OpenIDUser;
+    identityContext?: AuthIdentityContext;
+    resolvedTokens: MarkedOIDCTokens | null;
+    predecessorRefreshToken?: string;
+  }): Promise<void> {
+    if (!resolvedTokens?.access_token) return;
+    const nextRefreshToken = resolvedTokens.refresh_token ?? predecessorRefreshToken;
+    const browserRefreshToken =
+      getBrowserRefreshTokenMarker(resolvedTokens) ?? predecessorRefreshToken;
+    if (nextRefreshToken && nextRefreshToken !== browserRefreshToken) {
+      const writesBrowserCookie = canWriteRefreshTokenCookie(res);
+      const bridgeIdentity = createRefreshTokenBridgeIdentity({
+        user,
+        requestUser: req.user,
+        userId: identityContext?.appUserId,
+        tenantId: identityContext?.tenantId,
+        openidIssuer: identityContext?.openidIssuer,
+      });
+      await syncRefreshTokenCookie({
+        res,
+        newRefreshToken: nextRefreshToken,
+        oldRefreshToken: browserRefreshToken,
+        previousSessionRefreshToken: predecessorRefreshToken,
+        userId: bridgeIdentity?.userId,
+        tenantId: bridgeIdentity?.tenantId,
+        openidIssuer: bridgeIdentity?.openidIssuer,
+      });
+      if (writesBrowserCookie) {
+        attachBrowserRefreshTokenMarker(resolvedTokens, nextRefreshToken);
+      }
+    }
+    await hydrateSessionFromResolvedTokens(req, resolvedTokens, predecessorRefreshToken);
+  }
+
   async function performIdpRefresh(
     req: OpenIDRequest,
     res: OpenIDResponse | undefined,
@@ -1100,7 +1165,14 @@ export function createOpenIDSessionRefreshService(
       const resolvedTokens = await waitForOpenIDRefreshFlight({ key });
       if (resolvedTokens) {
         if (!deferPublication) {
-          await hydrateSessionFromResolvedTokens(req, resolvedTokens, refreshToken);
+          await publishResolvedSessionTokens({
+            req,
+            res,
+            user,
+            identityContext,
+            resolvedTokens,
+            predecessorRefreshToken: refreshToken,
+          });
         }
         return resolvedTokens;
       }
@@ -1115,6 +1187,9 @@ export function createOpenIDSessionRefreshService(
       key,
       ownerId: flight.ownerId,
       operation: async ({ assertLeaseOwned, markLeaseSettled }: LeaseContext) => {
+        let recoveryBridgeVersion: string | null = null;
+        let recoveryBridgeIdentity: RefreshTokenBridgeIdentity | null = null;
+        let recoveryBridgePredecessor: string | undefined;
         try {
           const resolvedTokens = await performIdpRefreshGrant(
             req,
@@ -1123,9 +1198,39 @@ export function createOpenIDSessionRefreshService(
             tokenPreference,
             identityContext,
             assertLeaseOwned,
-            deferPublication,
+            true,
           );
           attachPredecessorRefreshTokenMarker(resolvedTokens, refreshToken);
+          const successorRefreshToken = resolvedTokens?.refresh_token ?? refreshToken;
+          const browserRefreshToken = resolvedTokens
+            ? (getBrowserRefreshTokenMarker(resolvedTokens) ?? refreshToken)
+            : refreshToken;
+          if (
+            !deferPublication &&
+            successorRefreshToken &&
+            browserRefreshToken &&
+            successorRefreshToken !== browserRefreshToken
+          ) {
+            recoveryBridgeIdentity = createRefreshTokenBridgeIdentity({
+              user,
+              requestUser: req.user,
+              userId: identityContext?.appUserId,
+              tenantId: identityContext?.tenantId,
+              openidIssuer: identityContext?.openidIssuer,
+            });
+            recoveryBridgePredecessor = browserRefreshToken;
+            if (recoveryBridgeIdentity) {
+              recoveryBridgeVersion = await storeRefreshTokenBridgeWithLease({
+                oldRefreshToken: browserRefreshToken,
+                newRefreshToken: successorRefreshToken,
+                userId: recoveryBridgeIdentity.userId,
+                tenantId: recoveryBridgeIdentity.tenantId,
+                openidIssuer: recoveryBridgeIdentity.openidIssuer,
+                ttl: OPENID_REFRESH_BRIDGE_GRACE_MS,
+                assertLeaseOwned,
+              });
+            }
+          }
           const completedFlight = await completeOpenIDRefreshFlight({
             key,
             ownerId: flight.ownerId,
@@ -1137,8 +1242,38 @@ export function createOpenIDSessionRefreshService(
             );
           }
           markLeaseSettled();
+          if (!deferPublication) {
+            await publishResolvedSessionTokens({
+              req,
+              res,
+              user,
+              identityContext,
+              resolvedTokens,
+              predecessorRefreshToken: refreshToken,
+            });
+          }
           return resolvedTokens;
         } catch (error) {
+          if (
+            isOpenIDRefreshOwnershipError(error) &&
+            recoveryBridgeVersion &&
+            recoveryBridgeIdentity &&
+            recoveryBridgePredecessor
+          ) {
+            try {
+              await deleteRefreshTokenBridges({
+                refreshTokens: [recoveryBridgePredecessor],
+                userId: recoveryBridgeIdentity.userId,
+                tenantId: recoveryBridgeIdentity.tenantId,
+                version: recoveryBridgeVersion,
+              });
+            } catch (cleanupError) {
+              logger.warn(
+                '[OpenIDSessionRefresh] Failed to remove the owned bridge after refresh revocation',
+                toOpenIDLogArgument(cleanupError),
+              );
+            }
+          }
           try {
             await failOpenIDRefreshFlight({
               key,
@@ -1160,8 +1295,8 @@ export function createOpenIDSessionRefreshService(
   /**
    * Hydrates `req.session.openidTokens` from a resolved OIDCTokens result and
    * persists it. Used by joining requests in the single-flight path: the leader
-   * mutates only its own `req.session`, so a joiner that shares the session id but
-   * carries a distinct `req` (concurrent HTTP requests) would otherwise re-read
+   * mutates only its own `req.session`, so a joiner carrying a distinct `req`
+   * (including a renewed Express session) would otherwise re-read
    * stale tokens on its next OBO call. This includes stable-refresh-token IdPs,
    * where the refresh token remains unchanged but the access token and expiry
    * were refreshed by the leader.
@@ -1319,7 +1454,16 @@ export function createOpenIDSessionRefreshService(
        * tokens into THIS request's session so a later OBO call on the joiner
        * reads the rotated refresh token instead of replaying the stale one.
        */
-      await hydrateSessionFromResolvedTokens(req, resolvedTokens, predecessorRefreshToken);
+      if (!options.deferPublication) {
+        await publishResolvedSessionTokens({
+          req,
+          res,
+          user,
+          identityContext,
+          resolvedTokens,
+          predecessorRefreshToken,
+        });
+      }
       return resolvedTokens;
     }
 

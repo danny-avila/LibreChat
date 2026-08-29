@@ -22,6 +22,9 @@ const refreshTokenBridgeSchema: Schema<IRefreshTokenBridge> = new Schema<IRefres
   openidIssuer: {
     type: String,
   },
+  version: {
+    type: String,
+  },
   createdAt: {
     type: Date,
     required: true,

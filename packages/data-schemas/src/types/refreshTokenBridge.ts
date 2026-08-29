@@ -6,6 +6,7 @@ export interface IRefreshTokenBridge extends Document {
   userId: string;
   tenantId?: string;
   openidIssuer?: string;
+  version?: string;
   createdAt: Date;
   expiresAt: Date;
 }
@@ -16,6 +17,7 @@ export interface RefreshTokenBridgeCreateData {
   userId: string;
   tenantId?: string;
   openidIssuer?: string;
+  version?: string;
   expiresAt: Date;
 }
 
@@ -29,4 +31,5 @@ export interface RefreshTokenBridgeDeleteData {
   oldRefreshTokenHashes?: string[];
   userId: string;
   tenantId?: string;
+  version?: string;
 }

@@ -72,10 +72,13 @@ interface SendOpenIDAuthResponseInput {
   existingRefreshToken?: string;
   openidSubject?: string;
   openidIssuer?: string;
+  predecessorIdentity?: RefreshTokenBridgeIdentity;
+  rejectedRefreshTokens?: string[];
   req: OpenIDRequest;
   res: OpenIDResponse;
   assertLeaseOwned?: LeaseAssertion;
-  commitPublication?: (appAuthToken: string) => Promise<void>;
+  commitPublication?: (appAuthToken: string, publishedTokenset: OpenIDTokenSet) => Promise<void>;
+  preparePublication?: boolean;
 }
 
 export interface OpenIDRefreshRecoveryService {
@@ -153,7 +156,7 @@ export interface OpenIDRefreshRecoveryDeps {
     tenantId?: string;
     openidIssuer?: string;
   }) => string | null;
-  storeRefreshTokenBridge: (args: RefreshTokenBridgeInput) => Promise<void>;
+  storeRefreshTokenBridge: (args: RefreshTokenBridgeInput) => Promise<string | null>;
   deleteRefreshTokenBridges: (args: RefreshTokenBridgeDeleteInput) => Promise<object | null>;
   acquireOpenIDRefreshFlight: (args: { key: string }) => Promise<RefreshFlightAcquireResult>;
   completeOpenIDRefreshFlight: (args: {
@@ -327,6 +330,25 @@ export function createOpenIDRefreshRecoveryService(
       if (!resolved?.appAuthToken) {
         throw new Error('OpenID refresh bridge coordination is temporarily unavailable');
       }
+      const publishedAppAuthToken = await sendOpenIDAuthResponse({
+        tokenset: resolved.tokenset,
+        user: bridgeUser,
+        existingRefreshToken: refreshToken,
+        openidSubject: resolved.claims.sub,
+        openidIssuer: resolved.openidIssuer,
+        predecessorIdentity: {
+          userId,
+          tenantId: bridgeUser.tenantId,
+          openidIssuer: bridgeUser.openidIssuer,
+        },
+        req,
+        res,
+        commitPublication: async () => {},
+        preparePublication: false,
+      });
+      if (publishedAppAuthToken !== resolved.appAuthToken) {
+        throw new Error('OpenID refresh bridge follower published an inconsistent token');
+      }
       return resolved;
     }
 
@@ -358,9 +380,9 @@ export function createOpenIDRefreshRecoveryService(
           }
 
           await assertLeaseOwned();
-          let graceBridgeStored = false;
+          let graceBridgeVersion: string | null = null;
           try {
-            await storeRefreshTokenBridge({
+            graceBridgeVersion = await storeRefreshTokenBridge({
               oldRefreshToken: refreshToken,
               newRefreshToken: tokenset.refresh_token || bridgedRefreshToken,
               userId,
@@ -368,14 +390,13 @@ export function createOpenIDRefreshRecoveryService(
               openidIssuer: bridgeUser.openidIssuer,
               ttl: bridgeGraceMs,
             });
-            graceBridgeStored = true;
           } catch (graceError) {
             logger.warn(
               '[refreshController] Bridge grace-period storage failed after successful recovery',
               toOpenIDLogArgument(graceError),
             );
           }
-          if (graceBridgeStored) {
+          if (graceBridgeVersion) {
             try {
               await assertLeaseOwned();
             } catch (ownershipError) {
@@ -392,6 +413,7 @@ export function createOpenIDRefreshRecoveryService(
                   refreshTokens: [refreshToken],
                   userId,
                   tenantId: bridgeUser.tenantId,
+                  version: graceBridgeVersion,
                 });
               } catch (cleanupError) {
                 logger.warn(
@@ -416,11 +438,21 @@ export function createOpenIDRefreshRecoveryService(
             existingRefreshToken: refreshToken,
             openidSubject: resolved.claims.sub,
             openidIssuer: resolved.openidIssuer,
+            predecessorIdentity: {
+              userId,
+              tenantId: bridgeUser.tenantId,
+              openidIssuer: bridgeUser.openidIssuer,
+            },
             req,
             res,
             assertLeaseOwned,
-            commitPublication: async (preparedAppAuthToken) => {
-              const result = { ...sharedResult, appAuthToken: preparedAppAuthToken };
+            commitPublication: async (preparedAppAuthToken, publishedTokenset) => {
+              const result = {
+                ...sharedResult,
+                tokenset: publishedTokenset,
+                expires_at: publishedTokenset.expires_at,
+                appAuthToken: preparedAppAuthToken,
+              };
               const completed = await completeOpenIDRefreshFlight({
                 key,
                 ownerId: flight.ownerId,
@@ -463,18 +495,26 @@ export function createOpenIDRefreshRecoveryService(
     existingRefreshToken,
     openidSubject,
     openidIssuer,
+    predecessorIdentity,
+    rejectedRefreshTokens = [],
     req,
     res,
     assertLeaseOwned,
     commitPublication,
+    preparePublication = true,
   }: SendOpenIDAuthResponseInput): Promise<string | undefined> {
     const userId = user._id.toString();
+    const publicationIdentity = predecessorIdentity ?? {
+      userId,
+      tenantId: user.tenantId,
+      openidIssuer: user.openidIssuer,
+    };
     if (!commitPublication && existingRefreshToken) {
       const key = createRefreshTokenBridgeFlightKey({
         oldRefreshToken: existingRefreshToken,
-        userId,
-        tenantId: user.tenantId,
-        openidIssuer: openidIssuer ?? user.openidIssuer,
+        userId: publicationIdentity.userId,
+        tenantId: publicationIdentity.tenantId,
+        openidIssuer: publicationIdentity.openidIssuer,
       });
       if (key) {
         const flight = await acquireOpenIDRefreshFlight({ key });
@@ -483,7 +523,23 @@ export function createOpenIDRefreshRecoveryService(
           if (!shared?.appAuthToken) {
             throw new Error('OpenID authentication publication is temporarily unavailable');
           }
-          return shared.appAuthToken;
+          const publishedAppAuthToken = await sendOpenIDAuthResponse({
+            tokenset: shared.tokenset,
+            user,
+            existingRefreshToken,
+            openidSubject: shared.claims.sub,
+            openidIssuer: shared.openidIssuer,
+            predecessorIdentity: publicationIdentity,
+            rejectedRefreshTokens,
+            req,
+            res,
+            commitPublication: async () => {},
+            preparePublication: false,
+          });
+          if (publishedAppAuthToken !== shared.appAuthToken) {
+            throw new Error('OpenID authentication follower published an inconsistent token');
+          }
+          return publishedAppAuthToken;
         }
         return withOpenIDRefreshFlightLease({
           key,
@@ -495,18 +551,20 @@ export function createOpenIDRefreshRecoveryService(
               existingRefreshToken,
               openidSubject,
               openidIssuer,
+              predecessorIdentity: publicationIdentity,
+              rejectedRefreshTokens,
               req,
               res,
               assertLeaseOwned,
-              commitPublication: async (appAuthToken) => {
+              commitPublication: async (appAuthToken, publishedTokenset) => {
                 const completed = await completeOpenIDRefreshFlight({
                   key,
                   ownerId: flight.ownerId,
                   tokens: {
-                    tokenset,
+                    tokenset: publishedTokenset,
                     claims: { sub: openidSubject ?? user.openidId ?? userId },
                     openidIssuer: openidIssuer ?? user.openidIssuer,
-                    expires_at: tokenset.expires_at,
+                    expires_at: publishedTokenset.expires_at,
                     appAuthToken,
                   },
                 });
@@ -533,6 +591,7 @@ export function createOpenIDRefreshRecoveryService(
     const proposedRefreshToken = tokenset.refresh_token || existingRefreshToken;
     if (
       currentSessionTokens?.refreshToken &&
+      !rejectedRefreshTokens.includes(currentSessionTokens.refreshToken) &&
       currentSessionTokens.refreshToken !== existingRefreshToken &&
       currentSessionTokens.refreshToken !== proposedRefreshToken
     ) {
@@ -570,54 +629,74 @@ export function createOpenIDRefreshRecoveryService(
     if (!preparedAppAuthToken) {
       throw new Error('OpenID refresh returned no application authentication token');
     }
-    if (assertLeaseOwned) {
-      await assertLeaseOwned();
-    }
-    try {
-      await storeOpenIDSession(
-        userId,
-        nextRefreshToken,
-        user.tenantId,
-        effectiveExistingRefreshToken,
-      );
-    } catch (error) {
-      if (effectiveExistingRefreshToken && nextRefreshToken !== effectiveExistingRefreshToken) {
+    let bridgeVersion: string | null = null;
+    const rotated =
+      !!effectiveExistingRefreshToken && nextRefreshToken !== effectiveExistingRefreshToken;
+
+    if (preparePublication) {
+      if (assertLeaseOwned) {
+        await assertLeaseOwned();
+      }
+      try {
+        await storeOpenIDSession(
+          userId,
+          nextRefreshToken,
+          user.tenantId,
+          effectiveExistingRefreshToken,
+        );
+      } catch (error) {
+        if (rotated) {
+          try {
+            await storeRefreshTokenBridge({
+              oldRefreshToken: effectiveExistingRefreshToken,
+              newRefreshToken: nextRefreshToken,
+              userId,
+              tenantId: publicationIdentity.tenantId,
+              openidIssuer: publicationIdentity.openidIssuer,
+              ttl: bridgeGraceMs,
+            });
+          } catch (bridgeError) {
+            logger.warn(
+              '[refreshController] Failed to preserve a rotated token after durable-session failure',
+              toOpenIDLogArgument(bridgeError),
+            );
+          }
+        }
+        throw error;
+      }
+
+      if (rotated) {
         try {
-          await storeRefreshTokenBridge({
+          bridgeVersion = await storeRefreshTokenBridge({
             oldRefreshToken: effectiveExistingRefreshToken,
             newRefreshToken: nextRefreshToken,
             userId,
-            tenantId: user.tenantId,
-            openidIssuer: openidIssuer ?? user.openidIssuer,
+            tenantId: publicationIdentity.tenantId,
+            openidIssuer: publicationIdentity.openidIssuer,
             ttl: bridgeGraceMs,
           });
         } catch (bridgeError) {
           logger.warn(
-            '[refreshController] Failed to preserve a rotated token after durable-session failure',
+            '[refreshController] Failed to store the publication recovery bridge',
             toOpenIDLogArgument(bridgeError),
           );
         }
       }
-      throw error;
     }
 
     try {
       if (assertLeaseOwned) {
         await assertLeaseOwned();
       }
-      const publishedAppAuthToken = setOpenIDAuthTokens(authTokenset, req, res, {
-        userId,
-        existingRefreshToken: effectiveExistingRefreshToken,
-        tenantId: user.tenantId,
-        openidSubject: openidSubject ?? user.openidId,
-        openidIssuer: openidIssuer ?? user.openidIssuer,
-      });
-      if (publishedAppAuthToken !== preparedAppAuthToken) {
-        throw new Error('OpenID authentication publication returned an inconsistent token');
-      }
-      await commitPublication?.(preparedAppAuthToken);
-      return publishedAppAuthToken;
+      await commitPublication?.(preparedAppAuthToken, authTokenset);
     } catch (error) {
+      if (!isOpenIDRefreshOwnershipError(error)) {
+        logger.warn(
+          '[refreshController] Keeping the prepared successor after an indeterminate publication failure',
+          toOpenIDLogArgument(error),
+        );
+        throw error;
+      }
       try {
         await deleteOpenIDSession(nextRefreshToken);
       } catch (cleanupError) {
@@ -626,9 +705,36 @@ export function createOpenIDRefreshRecoveryService(
           toOpenIDLogArgument(cleanupError),
         );
       }
+      if (bridgeVersion && effectiveExistingRefreshToken) {
+        try {
+          await deleteRefreshTokenBridges({
+            refreshTokens: [effectiveExistingRefreshToken],
+            userId,
+            tenantId: publicationIdentity.tenantId,
+            version: bridgeVersion,
+          });
+        } catch (cleanupError) {
+          logger.warn(
+            '[refreshController] Failed to remove the owned bridge after publication revocation',
+            toOpenIDLogArgument(cleanupError),
+          );
+        }
+      }
       clearOpenIDAuthTokens(req, res, userId, user.tenantId);
       throw error;
     }
+
+    const publishedAppAuthToken = setOpenIDAuthTokens(authTokenset, req, res, {
+      userId,
+      existingRefreshToken: effectiveExistingRefreshToken,
+      tenantId: user.tenantId,
+      openidSubject: openidSubject ?? user.openidId,
+      openidIssuer: openidIssuer ?? user.openidIssuer,
+    });
+    if (publishedAppAuthToken !== preparedAppAuthToken) {
+      throw new Error('OpenID authentication publication returned an inconsistent token');
+    }
+    return publishedAppAuthToken;
   }
 
   return {

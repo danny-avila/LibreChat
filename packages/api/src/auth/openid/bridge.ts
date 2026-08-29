@@ -11,6 +11,7 @@ interface StoredRefreshTokenBridge {
   userId: string;
   tenantId?: string;
   openidIssuer?: string;
+  version?: string;
   createdAt: Date | string;
 }
 
@@ -21,6 +22,7 @@ interface BridgeQuery {
   userId: string;
   tenantId?: string;
   openidIssuer?: string;
+  version?: string;
   expiresAt?: Date;
 }
 
@@ -39,7 +41,7 @@ export interface RefreshTokenBridgeService {
     tenantId?: string;
   }) => Promise<object | null>;
   deleteRefreshTokenBridges: (args: RefreshTokenBridgeDeleteInput) => Promise<object | null>;
-  storeRefreshTokenBridge: (args: RefreshTokenBridgeInput) => Promise<void>;
+  storeRefreshTokenBridge: (args: RefreshTokenBridgeInput) => Promise<string | null>;
   getRefreshTokenBridge: (args: {
     oldRefreshToken?: string;
     userId?: string;
@@ -112,20 +114,22 @@ export function createRefreshTokenBridgeService(
     tenantId,
     openidIssuer,
     ttl,
-  }: RefreshTokenBridgeInput): Promise<void> {
+  }: RefreshTokenBridgeInput): Promise<string | null> {
     const identity = resolveBridgeIdentity({ userId, tenantId, openidIssuer });
     if (!oldRefreshToken || !newRefreshToken || !identity) {
       logger.warn('[RefreshTokenBridge] Attempted to store bridge with missing required fields');
-      return;
+      return null;
     }
     const oldRefreshTokenHash = hashRefreshToken(oldRefreshToken);
     const bridgeTtl = ttl ?? getBridgeTtlMs();
+    const version = crypto.randomUUID();
     await db.upsertRefreshTokenBridge({
       oldRefreshTokenHash,
       encryptedNewRefreshToken: await encrypt(newRefreshToken),
       userId: identity.userId,
       tenantId: identity.tenantId,
       openidIssuer: identity.openidIssuer,
+      version,
       expiresAt: new Date(Date.now() + bridgeTtl),
     });
     logger.debug('[RefreshTokenBridge] Stored recovery bridge', {
@@ -133,6 +137,7 @@ export function createRefreshTokenBridgeService(
       userId: identity.userId,
       ttl: bridgeTtl,
     });
+    return version;
   }
 
   async function getRefreshTokenBridge({
@@ -178,6 +183,7 @@ export function createRefreshTokenBridgeService(
     refreshTokens,
     userId,
     tenantId,
+    version,
   }: RefreshTokenBridgeDeleteInput): Promise<object | null> {
     const identity = resolveBridgeIdentity({ userId, tenantId });
     const tokens = [...new Set<string>((refreshTokens ?? []).filter(Boolean))];
@@ -186,6 +192,7 @@ export function createRefreshTokenBridgeService(
       oldRefreshTokenHashes: tokens.map(hashRefreshToken),
       userId: identity.userId,
       tenantId: identity.tenantId,
+      version,
     });
   }
 

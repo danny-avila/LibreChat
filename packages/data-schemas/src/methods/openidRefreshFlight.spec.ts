@@ -238,4 +238,28 @@ describe('OpenIDRefreshFlight Methods', () => {
     expect(reacquire.acquired).toBe(false);
     expect(reacquire.flight?.status).toBe('revoked');
   });
+
+  it('retains a completed result when logout atomically revokes its delivery', async () => {
+    const expiresAt = new Date(Date.now() + 60000);
+    await methods.acquireOpenIDRefreshFlight({
+      key: 'completed-flight',
+      ownerId: 'owner-1',
+      lockExpiresAt: new Date(Date.now() + 30000),
+      expiresAt,
+    });
+    await methods.completeOpenIDRefreshFlight({
+      key: 'completed-flight',
+      ownerId: 'owner-1',
+      encryptedResult: 'encrypted-successor',
+      expiresAt,
+    });
+
+    const revoked = await methods.revokeOpenIDRefreshFlight({
+      key: 'completed-flight',
+      expiresAt: new Date(Date.now() + 3600000),
+    });
+
+    expect(revoked?.status).toBe('revoked');
+    expect(revoked?.encryptedResult).toBe('encrypted-successor');
+  });
 });

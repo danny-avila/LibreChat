@@ -87,7 +87,7 @@ export interface OpenIDRefreshFlightService {
   revokeOpenIDRefreshFlights: (args: {
     keys?: Array<string | null | undefined>;
     ttl?: number;
-  }) => Promise<Array<RefreshFlightRecord | null>>;
+  }) => Promise<Array<TokenResult | null>>;
   waitForOpenIDRefreshFlight: (args: {
     key?: string | null;
     timeoutMs?: number;
@@ -351,11 +351,34 @@ export function createOpenIDRefreshFlightService({
   }: {
     keys?: Array<string | null | undefined>;
     ttl?: number;
-  }): Promise<Array<RefreshFlightRecord | null>> {
+  }): Promise<Array<TokenResult | null>> {
     const uniqueKeys = [...new Set<string>((keys ?? []).filter((key): key is string => !!key))];
     if (uniqueKeys.length === 0) return [];
     const expiresAt = new Date(Date.now() + ttl);
-    return Promise.all(uniqueKeys.map((key) => db.revokeOpenIDRefreshFlight({ key, expiresAt })));
+    const revoked = await Promise.all(
+      uniqueKeys.map((key) => db.revokeOpenIDRefreshFlight({ key, expiresAt })),
+    );
+    return Promise.all(
+      revoked.map(async (flight) => {
+        if (!flight?.encryptedResult) return null;
+        return restoreInternalTokenFields(
+          JSON.parse(await decrypt(flight.encryptedResult)) as TokenResult,
+        );
+      }),
+    );
+  }
+
+  function restoreInternalTokenFields(tokens: TokenResult): TokenResult {
+    for (const [field, value] of [
+      [INTERNAL_BROWSER_REFRESH_TOKEN_FIELD, tokens.__browserRefreshToken],
+      [INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD, tokens.__predecessorRefreshToken],
+    ] as const) {
+      if (value) {
+        delete tokens[field];
+        Object.defineProperty(tokens, field, { value, enumerable: false, configurable: true });
+      }
+    }
+    return tokens;
   }
 
   async function readCompletedFlight(
@@ -375,16 +398,7 @@ export function createOpenIDRefreshFlightService({
     ) {
       return null;
     }
-    for (const [field, value] of [
-      [INTERNAL_BROWSER_REFRESH_TOKEN_FIELD, tokens.__browserRefreshToken],
-      [INTERNAL_PREDECESSOR_REFRESH_TOKEN_FIELD, tokens.__predecessorRefreshToken],
-    ] as const) {
-      if (value) {
-        delete tokens[field];
-        Object.defineProperty(tokens, field, { value, enumerable: false, configurable: true });
-      }
-    }
-    return tokens;
+    return restoreInternalTokenFields(tokens);
   }
 
   function getRenewedWaitDeadline(deadline: number, flight: RefreshFlightRecord | null): number {

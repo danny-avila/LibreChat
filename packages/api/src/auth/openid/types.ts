@@ -132,6 +132,7 @@ export interface RefreshTokenBridgeDeleteInput {
   refreshTokens: string[];
   userId: string;
   tenantId?: string;
+  version?: string;
 }
 
 export interface RefreshKeyInput {

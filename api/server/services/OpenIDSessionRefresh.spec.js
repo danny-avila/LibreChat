@@ -223,6 +223,7 @@ describe('OpenIDSessionRefresh', () => {
     completeOpenIDRefreshFlight.mockResolvedValue({});
     failOpenIDRefreshFlight.mockResolvedValue({});
     waitForOpenIDRefreshFlight.mockResolvedValue(null);
+    storeRefreshTokenBridge.mockResolvedValue('bridge-version-1');
     withOpenIDRefreshFlightLease.mockImplementation(({ operation }) =>
       operation({
         assertLeaseOwned: jest.fn().mockResolvedValue(true),
@@ -640,7 +641,13 @@ describe('OpenIDSessionRefresh', () => {
         refreshExpiryMs: 1000 * 60 * 60 * 24 * 7,
         refreshToken: 'rt-rotated',
       });
-      expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
+      expect(storeRefreshTokenBridge).toHaveBeenCalledWith(
+        expect.objectContaining({
+          oldRefreshToken: 'rt-old',
+          newRefreshToken: 'rt-rotated',
+          ttl: 60 * 1000,
+        }),
+      );
       expect(req.session.openidTokens.browserRefreshToken).toBe('rt-rotated');
     });
 
@@ -704,7 +711,6 @@ describe('OpenIDSessionRefresh', () => {
         .fn()
         .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(true)
         .mockRejectedValueOnce(ownershipLost('revoked by logout'));
       withOpenIDRefreshFlightLease.mockImplementationOnce(({ operation }) =>
         operation({ assertLeaseOwned, markLeaseSettled: jest.fn() }),
@@ -722,11 +728,13 @@ describe('OpenIDSessionRefresh', () => {
         userId: 'local-id-1',
         tenantId: 'tenant-1',
         openidIssuer: 'https://issuer.example.com',
+        ttl: 60 * 1000,
       });
       expect(deleteRefreshTokenBridges).toHaveBeenCalledWith({
         refreshTokens: ['rt-old'],
         userId: 'local-id-1',
         tenantId: 'tenant-1',
+        version: 'bridge-version-1',
       });
       expect(req.session.openidTokens.refreshToken).toBe('rt-old');
       expect(req.session.save).not.toHaveBeenCalled();
@@ -742,7 +750,6 @@ describe('OpenIDSessionRefresh', () => {
       });
       const assertLeaseOwned = jest
         .fn()
-        .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(true)
         .mockRejectedValueOnce(new Error('connection timed out'));
@@ -771,7 +778,6 @@ describe('OpenIDSessionRefresh', () => {
       deleteRefreshTokenBridges.mockRejectedValueOnce(new Error('mongo unavailable'));
       const assertLeaseOwned = jest
         .fn()
-        .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(true)
         .mockRejectedValueOnce(ownershipLost('revoked by logout'));
@@ -816,7 +822,7 @@ describe('OpenIDSessionRefresh', () => {
       expect(req.session.openidTokens.refreshToken).toBe('rt-old');
     });
 
-    it('does not publish cookies when lease ownership is lost during the durable transition', async () => {
+    it('does not begin durable publication when ownership is lost at candidate settlement', async () => {
       const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
       openIdClient.refreshTokenGrant.mockResolvedValueOnce({
         access_token: makeJwt(refreshedExp),
@@ -839,7 +845,8 @@ describe('OpenIDSessionRefresh', () => {
         refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token'),
       ).rejects.toThrow('lease lost');
 
-      expect(storeOpenIdSession).toHaveBeenCalled();
+      expect(storeOpenIdSession).not.toHaveBeenCalled();
+      expect(storeRefreshTokenBridge).toHaveBeenCalled();
       expect(setRefreshTokenCookie).not.toHaveBeenCalled();
       expect(setOpenIDMarkerCookies).not.toHaveBeenCalled();
       expect(req.session.openidTokens.refreshToken).toBe('rt-old');
@@ -914,7 +921,13 @@ describe('OpenIDSessionRefresh', () => {
         'rt-session-current',
         expect.any(Date),
       );
-      expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
+      expect(storeRefreshTokenBridge).toHaveBeenCalledWith(
+        expect.objectContaining({
+          oldRefreshToken: 'rt-browser-stale',
+          newRefreshToken: 'rt-session-current',
+          ttl: 60 * 1000,
+        }),
+      );
       expect(req.session.openidTokens.refreshToken).toBe('rt-session-current');
       expect(req.session.openidTokens.browserRefreshToken).toBe('rt-session-current');
     });
@@ -1397,6 +1410,61 @@ describe('OpenIDSessionRefresh', () => {
       expect(joinerReq.session.openidTokens.refreshToken).toBe('rt-rotated');
       expect(joinerReq.session.openidTokens.browserRefreshToken).toBe('rt-stale');
       expect(joinerReq.session.save).toHaveBeenCalled();
+    });
+
+    it('keeps both local coalescing participants unpublished when publication is deferred', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const makeExpiredSession = () => ({
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-deferred',
+        browserRefreshToken: 'rt-deferred',
+      });
+      const leaderReq = buildReq(makeExpiredSession(), 'session-deferred-leader');
+      const joinerReq = buildReq(makeExpiredSession(), 'session-deferred-joiner');
+      const user = makeOpenIdUser();
+      let resolveGrant;
+      openIdClient.refreshTokenGrant.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveGrant = resolve;
+        }),
+      );
+
+      const options = { forceRefresh: true, deferPublication: true };
+      const leaderPromise = refreshOpenIDSession(
+        leaderReq,
+        undefined,
+        user,
+        'access_token',
+        undefined,
+        options,
+      );
+      const joinerPromise = refreshOpenIDSession(
+        joinerReq,
+        undefined,
+        user,
+        'access_token',
+        undefined,
+        options,
+      );
+      await Promise.resolve();
+      resolveGrant({
+        access_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        id_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        refresh_token: 'rt-deferred-rotated',
+        expires_in: 3600,
+      });
+
+      const [leaderTokens, joinerTokens] = await Promise.all([leaderPromise, joinerPromise]);
+
+      expect(leaderTokens.refresh_token).toBe('rt-deferred-rotated');
+      expect(joinerTokens.refresh_token).toBe('rt-deferred-rotated');
+      expect(leaderReq.session.openidTokens.refreshToken).toBe('rt-deferred');
+      expect(joinerReq.session.openidTokens.refreshToken).toBe('rt-deferred');
+      expect(leaderReq.session.save).not.toHaveBeenCalled();
+      expect(joinerReq.session.save).not.toHaveBeenCalled();
+      expect(storeOpenIdSession).not.toHaveBeenCalled();
+      expect(setRefreshTokenCookie).not.toHaveBeenCalled();
     });
 
     it('hydrates a joining request with the rotated browser marker when the leader wrote cookies', async () => {

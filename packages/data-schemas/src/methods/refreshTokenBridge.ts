@@ -60,6 +60,7 @@ export function createRefreshTokenBridgeMethods(mongoose: typeof import('mongoos
       const update: UpdateQuery<IRefreshTokenBridge> = {
         $set: {
           encryptedNewRefreshToken: bridgeData.encryptedNewRefreshToken,
+          version: bridgeData.version,
           expiresAt: bridgeData.expiresAt,
           ...(bridgeData.openidIssuer != null && { openidIssuer: bridgeData.openidIssuer }),
         },
@@ -105,6 +106,7 @@ export function createRefreshTokenBridgeMethods(mongoose: typeof import('mongoos
         ...(data.oldRefreshTokenHashes && {
           oldRefreshTokenHash: { $in: data.oldRefreshTokenHashes },
         }),
+        ...(data.version && { version: data.version }),
         userId: data.userId,
         tenantId: data.tenantId ?? { $exists: false },
       });

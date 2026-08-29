@@ -153,6 +153,42 @@ describe('RefreshTokenBridge Methods', () => {
     expect(await mongoose.models.RefreshTokenBridge.countDocuments()).toBe(2);
   });
 
+  it('does not let a stale owner delete a replacement bridge version', async () => {
+    const expiresAt = new Date(Date.now() + 60000);
+    await methods.upsertRefreshTokenBridge({
+      oldRefreshTokenHash: 'old-hash',
+      encryptedNewRefreshToken: 'encrypted-old',
+      userId: 'user-1',
+      tenantId: 'tenant-1',
+      version: 'owner-version',
+      expiresAt,
+    });
+    await methods.upsertRefreshTokenBridge({
+      oldRefreshTokenHash: 'old-hash',
+      encryptedNewRefreshToken: 'encrypted-winner',
+      userId: 'user-1',
+      tenantId: 'tenant-1',
+      version: 'winner-version',
+      expiresAt,
+    });
+
+    const staleDelete = await methods.deleteRefreshTokenBridges({
+      oldRefreshTokenHashes: ['old-hash'],
+      userId: 'user-1',
+      tenantId: 'tenant-1',
+      version: 'owner-version',
+    });
+    const winner = await methods.findRefreshTokenBridge({
+      oldRefreshTokenHash: 'old-hash',
+      userId: 'user-1',
+      tenantId: 'tenant-1',
+    });
+
+    expect(staleDelete.deletedCount).toBe(0);
+    expect(winner?.encryptedNewRefreshToken).toBe('encrypted-winner');
+    expect(winner?.version).toBe('winner-version');
+  });
+
   it('deletes all predecessor bridges for one user and tenant', async () => {
     for (const [oldRefreshTokenHash, userId, tenantId] of [
       ['hash-a', 'user-1', 'tenant-1'],

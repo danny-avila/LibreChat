@@ -335,6 +335,12 @@ const refreshController = async (req, res) => {
         existingRefreshToken: successfulRefreshToken,
         openidSubject: claims?.sub,
         openidIssuer,
+        predecessorIdentity: {
+          userId: refreshUser._id.toString(),
+          tenantId: refreshUser.tenantId,
+          openidIssuer: refreshUser.openidIssuer,
+        },
+        rejectedRefreshTokens: successfulRefreshToken === refreshToken ? [] : [refreshToken],
         req,
         res,
       });

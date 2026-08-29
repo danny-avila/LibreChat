@@ -394,6 +394,20 @@ describe('OpenIDRefreshFlight', () => {
     });
   });
 
+  it('returns the retained successor from a completed flight during revocation', async () => {
+    const result = {
+      tokenset: { access_token: 'access', refresh_token: 'successor' },
+      claims: { sub: 'subject' },
+      appAuthToken: 'app-token',
+    };
+    db.revokeOpenIDRefreshFlight.mockResolvedValueOnce({
+      status: 'revoked',
+      encryptedResult: `encrypted:${JSON.stringify(result)}`,
+    });
+
+    await expect(revokeOpenIDRefreshFlights({ keys: ['flight-a'] })).resolves.toEqual([result]);
+  });
+
   it('waits for and decrypts a completed flight result', async () => {
     const tokens = {
       access_token: 'access',

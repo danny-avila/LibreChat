@@ -248,7 +248,6 @@ export function createOpenIDRefreshFlightMethods(mongoose: typeof import('mongoo
             updatedAt: now,
           },
           $setOnInsert: { createdAt: now },
-          $unset: { encryptedResult: '' },
         },
         { new: true, upsert: true },
       ).lean<IOpenIDRefreshFlight>();

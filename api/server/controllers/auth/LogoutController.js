@@ -43,6 +43,9 @@ const logoutController = async (req, res) => {
   /** Both can name distinct durable sessions when an older browser request races rotation. */
   refreshToken = parsedCookies.refreshToken || sessionRefreshToken;
   idToken = idToken || parsedCookies.openid_id_token;
+  const logoutTokens = isOpenIdUser
+    ? [...new Set([parsedCookies.refreshToken, sessionRefreshToken].filter(Boolean))]
+    : [refreshToken];
 
   try {
     if (isOpenIdUser) {
@@ -53,9 +56,6 @@ const logoutController = async (req, res) => {
         tenantId: req.session?.openidTokens?.tenantId ?? req.user?.tenantId,
         openidIssuer: req.session?.openidTokens?.openidIssuer ?? req.user?.openidIssuer,
       };
-      const logoutTokens = [
-        ...new Set([parsedCookies.refreshToken, sessionRefreshToken].filter(Boolean)),
-      ];
       const flightKeys = logoutTokens.flatMap((token) => [
         createOpenIDRefreshFlightKey({
           req,
@@ -70,10 +70,14 @@ const logoutController = async (req, res) => {
           openidIssuer: refreshIdentity.openidIssuer,
         }),
       ]);
-      await revokeOpenIDRefreshFlights({
+      const revokedResults = await revokeOpenIDRefreshFlights({
         keys: flightKeys,
         ttl: math(process.env.REFRESH_TOKEN_EXPIRY, DEFAULT_REFRESH_TOKEN_EXPIRY),
       });
+      const revokedSuccessorTokens = revokedResults.flatMap((result) =>
+        [result?.refresh_token, result?.tokenset?.refresh_token].filter(Boolean),
+      );
+      logoutTokens.push(...revokedSuccessorTokens);
       await deleteAllRefreshTokenBridges({
         userId,
         tenantId: req.user?.tenantId,
@@ -82,14 +86,11 @@ const logoutController = async (req, res) => {
         delete req.session.openidTokens;
       }
     }
-    const logoutTokens = isOpenIdUser
-      ? [...new Set([parsedCookies.refreshToken, sessionRefreshToken].filter(Boolean))]
-      : [refreshToken];
     if (logoutTokens.length === 0) {
       logoutTokens.push(undefined);
     }
     let logout = { status: 200, message: 'Logout successful' };
-    for (const token of logoutTokens) {
+    for (const token of new Set(logoutTokens)) {
       const result = await logoutUser(req, token);
       if (result.status !== 200) {
         logout = result;

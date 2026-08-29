@@ -297,6 +297,23 @@ describe('LogoutController', () => {
       expect(req.session.openidTokens).toBeUndefined();
     });
 
+    it('deletes successors retained by completed flights before a late refresh response arrives', async () => {
+      mockRevokeOpenIDRefreshFlights.mockResolvedValue([
+        { refresh_token: 'grant-successor' },
+        { tokenset: { refresh_token: 'publication-successor' } },
+      ]);
+      const req = buildReq();
+      const res = buildRes();
+
+      await logoutController(req, res);
+
+      expect(mockLogoutUser).toHaveBeenCalledWith(req, 'cookie-rt');
+      expect(mockLogoutUser).toHaveBeenCalledWith(req, 'srt');
+      expect(mockLogoutUser).toHaveBeenCalledWith(req, 'grant-successor');
+      expect(mockLogoutUser).toHaveBeenCalledWith(req, 'publication-successor');
+      expect(mockLogoutUser).toHaveBeenCalledTimes(4);
+    });
+
     it('fails closed before logout when bridge revocation fails', async () => {
       mockDeleteAllRefreshTokenBridges.mockRejectedValue(new Error('bridge delete failed'));
       const req = buildReq();

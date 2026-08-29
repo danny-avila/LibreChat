@@ -65,6 +65,7 @@ describe('RefreshTokenBridge', () => {
         userId: 'user-123',
         tenantId: undefined,
         openidIssuer: undefined,
+        version: expect.any(String),
         expiresAt: expect.any(Date),
       });
       const stored = db.upsertRefreshTokenBridge.mock.calls[0][0];
