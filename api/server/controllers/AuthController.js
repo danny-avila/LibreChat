@@ -279,6 +279,7 @@ const refreshController = async (req, res) => {
           refreshToken,
           browserRefreshToken: parsedCookies.refreshToken,
           strategyName: 'refreshController',
+          deferPublication: true,
         });
       } catch (error) {
         if (!fallbackRefreshToken || !isInvalidGrantError(error)) {
@@ -295,6 +296,7 @@ const refreshController = async (req, res) => {
           refreshToken: fallbackRefreshToken,
           browserRefreshToken: parsedCookies.refreshToken,
           strategyName: 'refreshController (browser fallback)',
+          deferPublication: true,
         });
       }
       const { tokenset, claims, openidIssuer, user, error, migration } = refreshResult;
@@ -318,6 +320,13 @@ const refreshController = async (req, res) => {
         logger.info(
           `[refreshController] Updated user ${user.email} openidId (${reason}): ${user.openidId ?? 'null'} -> ${claims.sub}`,
         );
+      }
+
+      if (
+        successfulRefreshToken !== refreshToken &&
+        req.session?.openidTokens?.refreshToken === refreshToken
+      ) {
+        delete req.session.openidTokens;
       }
 
       const token = await sendOpenIDAuthResponse({

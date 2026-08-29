@@ -82,6 +82,7 @@ jest.mock(
         },
       ),
       setCloudFrontCookies: jest.fn(() => true),
+      clearCloudFrontCookies: jest.fn(),
       getCloudFrontConfig: jest.fn(() => ({
         domain: 'https://cdn.example.com',
         imageSigning: 'cookies',

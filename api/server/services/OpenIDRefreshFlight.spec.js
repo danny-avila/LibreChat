@@ -67,8 +67,14 @@ describe('OpenIDRefreshFlight', () => {
     const keyA = createOpenIDRefreshFlightKey({ req, user, refreshToken: 'rt-old' });
     const keyB = createOpenIDRefreshFlightKey({ req, user, refreshToken: 'rt-old' });
     const keyC = createOpenIDRefreshFlightKey({ req, user, refreshToken: 'rt-other' });
+    const keyFromNewSession = createOpenIDRefreshFlightKey({
+      req: { ...req, sessionID: 'session-2' },
+      user,
+      refreshToken: 'rt-old',
+    });
 
     expect(keyA).toBe(keyB);
+    expect(keyA).toBe(keyFromNewSession);
     expect(keyA).not.toBe(keyC);
     expect(keyA).not.toContain('rt-old');
   });

@@ -21,6 +21,7 @@ const {
   shouldUseSecureCookie,
   setRefreshTokenCookie,
   setOpenIDMarkerCookies,
+  clearCloudFrontCookies,
   normalizeExpiresIn,
   createOpenIDSessionIdentity,
   resolveAppConfigForUser,
@@ -193,6 +194,22 @@ const getOpenIDAppAuthToken = (tokenset, sessionIdToken) =>
   (isExpiredOpenIDIdToken(tokenset?.id_token) ? undefined : tokenset?.id_token) ||
   getUnexpiredOpenIDSessionIdToken(sessionIdToken) ||
   tokenset?.access_token;
+
+const clearOpenIDAuthTokens = (req, res, userId, tenantId) => {
+  if (req.session?.openidTokens) {
+    delete req.session.openidTokens;
+  }
+  for (const name of [
+    'refreshToken',
+    'openid_access_token',
+    'openid_id_token',
+    'openid_user_id',
+    'token_provider',
+  ]) {
+    res.clearCookie?.(name);
+  }
+  clearCloudFrontCookies(res, { userId, tenantId });
+};
 
 /**
  * Logout user
@@ -997,6 +1014,7 @@ module.exports = {
   registerUser,
   setAuthTokens,
   resetPassword,
+  clearOpenIDAuthTokens,
   getOpenIDAppAuthToken,
   setOpenIDAuthTokens,
   storeOpenIDSession,

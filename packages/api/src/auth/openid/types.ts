@@ -70,6 +70,7 @@ export interface OpenIDRequest {
 export interface OpenIDResponse {
   headersSent?: boolean;
   cookie?: (name: string, value: string, options?: { expires?: Date }) => void;
+  clearCookie?: (name: string) => void;
 }
 
 export interface OpenIDUser extends AuthIdentitySource {

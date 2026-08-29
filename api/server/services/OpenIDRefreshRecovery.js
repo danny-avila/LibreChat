@@ -3,7 +3,12 @@ const api = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { deleteSession, findUser } = require('~/models');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
-const { getOpenIDAppAuthToken, setOpenIDAuthTokens, storeOpenIDSession } = require('./AuthService');
+const {
+  clearOpenIDAuthTokens,
+  getOpenIDAppAuthToken,
+  setOpenIDAuthTokens,
+  storeOpenIDSession,
+} = require('./AuthService');
 const bridge = require('./RefreshTokenBridge');
 const flight = require('./OpenIDRefreshFlight');
 const { refreshOpenIDSession } = require('./OpenIDSessionRefresh');
@@ -20,6 +25,7 @@ module.exports = api.createOpenIDRefreshRecoveryService({
   refreshOpenIDSession,
   storeOpenIDSession,
   setOpenIDAuthTokens,
+  clearOpenIDAuthTokens,
   getOpenIDAppAuthToken,
   deleteOpenIDSession: (refreshToken) => deleteSession({ refreshToken }),
   createRefreshTokenBridgeFlightKey: bridge.createRefreshTokenBridgeFlightKey,

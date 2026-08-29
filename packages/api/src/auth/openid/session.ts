@@ -305,11 +305,8 @@ export function createOpenIDSessionRefreshService(
     if (!tuple || !refreshToken) {
       return null;
     }
-    const sessionId = req?.sessionID || 'no-session';
     const refreshTokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-    return [serializeAuthIdentityTuple(tuple), sessionId, refreshTokenHash].join(
-      IDENTITY_PART_SEPARATOR,
-    );
+    return [serializeAuthIdentityTuple(tuple), refreshTokenHash].join(IDENTITY_PART_SEPARATOR);
   }
 
   /**

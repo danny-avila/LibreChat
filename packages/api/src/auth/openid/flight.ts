@@ -158,13 +158,7 @@ export function createOpenIDRefreshFlightService({
       requestUser: req?.user,
     });
     if (!tuple || !refreshToken) return null;
-    return sha256(
-      [
-        serializeAuthIdentityTuple(tuple),
-        req?.sessionID ?? 'no-session',
-        sha256(refreshToken),
-      ].join('\x1f'),
-    );
+    return sha256([serializeAuthIdentityTuple(tuple), sha256(refreshToken)].join('\x1f'));
   }
 
   async function acquireOpenIDRefreshFlight({

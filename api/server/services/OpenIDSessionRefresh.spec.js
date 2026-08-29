@@ -1178,7 +1178,7 @@ describe('OpenIDSessionRefresh', () => {
       expect(keyA).not.toContain('rt-shared');
     });
 
-    it('shares one refreshTokenGrant call across concurrent waiters in the SAME session', async () => {
+    it('shares one refreshTokenGrant across new Express sessions with the same token', async () => {
       const expiredExp = Math.floor(Date.now() / 1000) - 60;
       const sessionTokens = {
         accessToken: makeJwt(expiredExp),
@@ -1191,11 +1191,12 @@ describe('OpenIDSessionRefresh', () => {
       });
       openIdClient.refreshTokenGrant.mockReturnValueOnce(grantPromise);
 
-      const req = buildReq(sessionTokens, 'session-shared');
+      const reqA = buildReq(sessionTokens, 'session-A');
+      const reqB = buildReq(sessionTokens, 'session-B');
       const user = makeOpenIdUser();
 
-      const p1 = refreshOpenIDSession(req, undefined, user, 'access_token');
-      const p2 = refreshOpenIDSession(req, undefined, user, 'access_token');
+      const p1 = refreshOpenIDSession(reqA, undefined, user, 'access_token');
+      const p2 = refreshOpenIDSession(reqB, undefined, user, 'access_token');
       await Promise.resolve();
 
       // Both calls land before the IdP responds
@@ -1214,12 +1215,7 @@ describe('OpenIDSessionRefresh', () => {
       expect(__internals.inFlightRefreshes.size).toBe(0);
     });
 
-    /**
-     * Codex Finding 3: distinct sessions for the same OpenID subject must NOT
-     * share an in-flight refresh, otherwise refresh-token rotation breaks the
-     * non-winning session silently. Per-sessionID keying isolates them.
-     */
-    it('does NOT share an in-flight refresh across DIFFERENT sessions for the same user', async () => {
+    it('does not share an in-flight refresh across distinct refresh tokens', async () => {
       const expiredExp = Math.floor(Date.now() / 1000) - 60;
       const reqA = buildReq(
         {
