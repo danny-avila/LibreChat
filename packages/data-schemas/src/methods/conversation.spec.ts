@@ -1963,6 +1963,29 @@ describe('Conversation Operations', () => {
       );
     });
 
+    it('supports an idempotent empty recovery sweep without hiding storage failures', async () => {
+      await expect(
+        deleteConvos(
+          'user123',
+          { conversationId: { $in: ['already-absent'] } },
+          { allowEmpty: true },
+        ),
+      ).resolves.toEqual({
+        acknowledged: true,
+        deletedCount: 0,
+        messages: { acknowledged: true, deletedCount: 0 },
+        conversationIds: [],
+      });
+
+      const find = jest.spyOn(Conversation, 'find').mockImplementationOnce(() => {
+        throw new Error('database unavailable');
+      });
+      await expect(deleteConvos('user123', {}, { allowEmpty: true })).rejects.toThrow(
+        'database unavailable',
+      );
+      find.mockRestore();
+    });
+
     it('should decrement tag counts for a deleted bookmarked conversation', async () => {
       await ConversationTag.create({ user: 'user123', tag: 'work', count: 2, position: 1 });
       const convoId = uuidv4();

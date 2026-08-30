@@ -2834,7 +2834,12 @@ export function createConversationMethods(
   async function deleteConvos(
     user: string,
     filter: FilterQuery<IConversation>,
-    options?: { beforeDelete?: (conversationIds: string[]) => Promise<void> },
+    options?: {
+      beforeDelete?: (conversationIds: string[]) => Promise<void>;
+      /** Idempotent destructive-recovery mode. An empty selection is success, while
+       * query, cascade, reconciliation, and deletion failures still propagate. */
+      allowEmpty?: boolean;
+    },
   ) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
@@ -2881,6 +2886,14 @@ export function createConversationMethods(
         conversations = descendants;
         recoveryConversationIds.push(filter.conversationId);
       } else if (!conversations.length) {
+        if (options?.allowEmpty === true) {
+          return {
+            acknowledged: true,
+            deletedCount: 0,
+            messages: { acknowledged: true, deletedCount: 0 },
+            conversationIds: [],
+          };
+        }
         throw new Error('Conversation not found or already deleted.');
       }
 
