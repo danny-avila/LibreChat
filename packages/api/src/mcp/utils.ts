@@ -420,6 +420,12 @@ export function canBackfillSharedServerInstructions(config: UserScopedConnection
   return (
     config.startup === false &&
     !requiresUserScopedConnection(config) &&
+    /** A configured `oauth` block is identity-scoped even when `requiresOAuth`
+     *  is unset or was stamped `false` by the skipped startup inspection —
+     *  `requiresUserScopedConnection` alone would let it through while
+     *  `isOAuthServer` still arms the OAuth machinery for the unstamped case. */
+    config.oauth == null &&
+    config.oauth_headers == null &&
     config.apiKey?.source !== 'user'
   );
 }

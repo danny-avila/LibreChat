@@ -34,9 +34,16 @@ export class ServerConfigsCacheInMemory {
 
   /** Merges derived fields into an existing entry without bumping `updatedAt` —
    * see the interface doc: a bump would mark live connections stale. */
-  public async patch(serverName: string, fields: Partial<ParsedServerConfig>): Promise<boolean> {
+  public async patch(
+    serverName: string,
+    fields: Partial<ParsedServerConfig>,
+    expectedUpdatedAt?: number,
+  ): Promise<boolean> {
     const existing = this.cache.get(serverName);
     if (!existing) {
+      return false;
+    }
+    if (expectedUpdatedAt != null && existing.updatedAt !== expectedUpdatedAt) {
       return false;
     }
     if (fields.resolvedInstructions != null && existing.resolvedInstructions != null) {

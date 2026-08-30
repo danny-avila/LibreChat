@@ -28,6 +28,7 @@ if not encoded then return 0 end
 local envelope = cjson.decode(encoded)
 if not envelope.value then return 0 end
 local fields = cjson.decode(ARGV[1])
+if ARGV[2] ~= '' and tonumber(ARGV[2]) ~= envelope.value.updatedAt then return 0 end
 if fields.resolvedInstructions and envelope.value.resolvedInstructions then return 0 end
 local ttl = redis.call('PTTL', KEYS[1])
 for field, value in pairs(fields) do envelope.value[field] = value end
@@ -97,17 +98,27 @@ export class ServerConfigsCacheRedis
 
   /** Merges derived fields into an existing entry without bumping `updatedAt` —
    * see the interface doc: a bump would mark live connections stale. */
-  public async patch(serverName: string, fields: Partial<ParsedServerConfig>): Promise<boolean> {
+  public async patch(
+    serverName: string,
+    fields: Partial<ParsedServerConfig>,
+    expectedUpdatedAt?: number,
+  ): Promise<boolean> {
     if (this.leaderOnly) await this.leaderCheck(`patch ${this.namespace} MCP servers`);
     if (this.usesRedisStore()) {
       const result = await evalKeyvRedisScript(PATCH_ENTRY, {
         keys: [this.redisKey(serverName)],
-        arguments: [JSON.stringify(fields)],
+        arguments: [
+          JSON.stringify(fields),
+          expectedUpdatedAt != null ? String(expectedUpdatedAt) : '',
+        ],
       });
       return result === 1;
     }
     const existing = (await this.cache.get(serverName)) as ParsedServerConfig | undefined;
     if (!existing) {
+      return false;
+    }
+    if (expectedUpdatedAt != null && existing.updatedAt !== expectedUpdatedAt) {
       return false;
     }
     if (fields.resolvedInstructions != null && existing.resolvedInstructions != null) {

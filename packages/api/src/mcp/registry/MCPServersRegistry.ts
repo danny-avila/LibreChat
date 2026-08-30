@@ -11,12 +11,12 @@ import {
 } from './cache/ServerConfigsCacheFactory';
 import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
 import { ReadThroughAllCache } from './cache/ReadThroughAllCache';
+import { canBackfillSharedServerInstructions } from '~/mcp/utils';
 import { isPluginSourced, MCP_PLUGIN_SOURCE } from '~/utils/env';
 import { ReadThroughCache } from './cache/ReadThroughCache';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
 import { cacheConfig } from '~/cache';
-import { canBackfillSharedServerInstructions } from '~/mcp/utils';
 import { withTimeout } from '~/utils';
 
 /** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
@@ -629,9 +629,15 @@ export class MCPServersRegistry {
       );
       return false;
     }
-    const patched = await this.cacheConfigsRepo.patch(serverName, {
-      resolvedInstructions: instructions,
-    });
+    /** The identity comparison above ran against a snapshot that can lag by the
+     *  registry cache TTL; passing the validated entry's `updatedAt` makes the
+     *  store-side patch a compare-and-set, so instructions never land on an
+     *  entry another replica replaced in between. */
+    const patched = await this.cacheConfigsRepo.patch(
+      serverName,
+      { resolvedInstructions: instructions },
+      yamlEntry.updatedAt,
+    );
     if (!patched) {
       return false;
     }

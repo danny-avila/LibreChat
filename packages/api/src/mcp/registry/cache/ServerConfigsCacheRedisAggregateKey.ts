@@ -38,6 +38,7 @@ if not envelope.value then return 0 end
 local entry = envelope.value[ARGV[1]]
 if not entry then return 0 end
 local fields = cjson.decode(ARGV[2])
+if ARGV[3] ~= '' and tonumber(ARGV[3]) ~= entry.updatedAt then return 0 end
 if fields.resolvedInstructions and entry.resolvedInstructions then return 0 end
 local ttl = redis.call('PTTL', KEYS[1])
 for field, value in pairs(fields) do entry[field] = value end
@@ -195,13 +196,21 @@ export class ServerConfigsCacheRedisAggregateKey
 
   /** Merges derived fields into an existing entry without bumping `updatedAt` —
    * see the interface doc: a bump would mark live connections stale. */
-  public async patch(serverName: string, fields: Partial<ParsedServerConfig>): Promise<boolean> {
+  public async patch(
+    serverName: string,
+    fields: Partial<ParsedServerConfig>,
+    expectedUpdatedAt?: number,
+  ): Promise<boolean> {
     if (this.leaderOnly) await this.leaderCheck('patch MCP servers');
     return this.withWriteLock(async () => {
       if (this.usesRedisStore()) {
         const result = await evalKeyvRedisScript(PATCH_AGGREGATE_ENTRY, {
           keys: [this.aggregateRedisKey()],
-          arguments: [serverName, JSON.stringify(fields)],
+          arguments: [
+            serverName,
+            JSON.stringify(fields),
+            expectedUpdatedAt != null ? String(expectedUpdatedAt) : '',
+          ],
         });
         return result === 1;
       }
@@ -209,6 +218,9 @@ export class ServerConfigsCacheRedisAggregateKey
       const all = await this.getAll();
       const existing = all[serverName];
       if (!existing) {
+        return false;
+      }
+      if (expectedUpdatedAt != null && existing.updatedAt !== expectedUpdatedAt) {
         return false;
       }
       if (fields.resolvedInstructions != null && existing.resolvedInstructions != null) {

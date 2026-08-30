@@ -139,13 +139,22 @@ describe('MCPServersRegistry.setResolvedInstructions', () => {
   it.each([
     ['OAuth', oauthDeferredYamlEntry],
     ['runtime placeholders', runtimePlaceholderYamlEntry],
+    [
+      'configured-oauth-block',
+      {
+        ...startupDeferredYamlEntry,
+        oauth: { authorization_url: 'https://idp.example.com/authorize' },
+      } as unknown as t.ParsedServerConfig,
+    ],
   ])('refuses a %s-deferred server at the shared-registry boundary', async (_reason, config) => {
     await registry['cacheConfigsRepo'].add('deferred_server', config);
 
     const updated = await registry.setResolvedInstructions('deferred_server', INSTRUCTIONS);
 
     expect(updated).toBe(false);
-    expect((await registry.getServerConfig('deferred_server'))?.resolvedInstructions).toBeUndefined();
+    expect(
+      (await registry.getServerConfig('deferred_server'))?.resolvedInstructions,
+    ).toBeUndefined();
   });
 
   it('stores instructions when the connected config matches the stored YAML entry', async () => {
@@ -219,13 +228,53 @@ describe('MCPServersRegistry.setResolvedInstructions', () => {
     expect(await repo.patch!('unknown_server', { resolvedInstructions: INSTRUCTIONS })).toBe(false);
   });
 
+  /** The registry validates config identity against a snapshot that can lag by
+   *  the cache TTL; the store-side compare-and-set on `updatedAt` is what stops
+   *  instructions landing on an entry another replica replaced in between. */
+  it('refuses a patch whose expectedUpdatedAt no longer matches the entry', async () => {
+    const repo = registry['cacheConfigsRepo'];
+    await repo.add('deferred_server', startupDeferredYamlEntry);
+    const stale = (await repo.get('deferred_server'))!.updatedAt!;
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(stale + 5000);
+    await repo.update('deferred_server', {
+      ...startupDeferredYamlEntry,
+      url: 'https://replaced.example.com/mcp',
+    });
+    nowSpy.mockRestore();
+
+    const patched = await repo.patch!(
+      'deferred_server',
+      { resolvedInstructions: INSTRUCTIONS },
+      stale,
+    );
+
+    expect(patched).toBe(false);
+    expect((await repo.get('deferred_server'))?.resolvedInstructions).toBeUndefined();
+  });
+
+  it('passes the validated entry updatedAt into the store patch', async () => {
+    const repo = registry['cacheConfigsRepo'];
+    await repo.add('deferred_server', startupDeferredYamlEntry);
+    const stored = await repo.get('deferred_server');
+    const patchSpy = jest.spyOn(repo, 'patch');
+
+    const updated = await registry.setResolvedInstructions('deferred_server', INSTRUCTIONS);
+
+    expect(updated).toBe(true);
+    expect(patchSpy).toHaveBeenCalledWith(
+      'deferred_server',
+      { resolvedInstructions: INSTRUCTIONS },
+      stored?.updatedAt,
+    );
+  });
+
   it('keeps the first resolved instructions when patches race', async () => {
     const repo = registry['cacheConfigsRepo'];
     await repo.add('deferred_server', startupDeferredYamlEntry);
 
-    await expect(repo.patch!('deferred_server', { resolvedInstructions: INSTRUCTIONS })).resolves.toBe(
-      true,
-    );
+    await expect(
+      repo.patch!('deferred_server', { resolvedInstructions: INSTRUCTIONS }),
+    ).resolves.toBe(true);
     await expect(
       repo.patch!('deferred_server', { resolvedInstructions: 'later connection instructions' }),
     ).resolves.toBe(false);
@@ -325,13 +374,13 @@ describe('UserConnectionManager.backfillResolvedInstructions', () => {
 
   it.each([
     ['OAuth', oauthDeferredYamlEntry],
-    [
-      'OBO',
-      { ...startupDeferredYamlEntry, obo: {} } as unknown as t.ParsedServerConfig,
-    ],
+    ['OBO', { ...startupDeferredYamlEntry, obo: {} } as unknown as t.ParsedServerConfig],
     [
       'user API keys',
-      { ...startupDeferredYamlEntry, apiKey: { source: 'user' } } as unknown as t.ParsedServerConfig,
+      {
+        ...startupDeferredYamlEntry,
+        apiKey: { source: 'user' },
+      } as unknown as t.ParsedServerConfig,
     ],
     [
       'custom user variables',
@@ -341,6 +390,20 @@ describe('UserConnectionManager.backfillResolvedInstructions', () => {
       },
     ],
     ['runtime placeholders', runtimePlaceholderYamlEntry],
+    [
+      'a configured oauth block with requiresOAuth stamped false',
+      {
+        ...startupDeferredYamlEntry,
+        oauth: { authorization_url: 'https://idp.example.com/authorize' },
+      } as unknown as t.ParsedServerConfig,
+    ],
+    [
+      'configured oauth_headers with requiresOAuth stamped false',
+      {
+        ...startupDeferredYamlEntry,
+        oauth_headers: { 'X-Tenant': 'per-user' },
+      } as unknown as t.ParsedServerConfig,
+    ],
   ])('does not persist instructions for %s context', async (_reason, config) => {
     await backfill(config, connectionWith(INSTRUCTIONS));
     expect(setResolvedInstructions).not.toHaveBeenCalled();

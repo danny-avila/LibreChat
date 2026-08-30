@@ -22,7 +22,11 @@ export interface IServerConfigsRepositoryInterface {
    * includes `resolvedInstructions`, a previously stored value wins so a
    * concurrent first connection cannot replace shared instructions.
    */
-  patch?(serverName: string, fields: Partial<ParsedServerConfig>): Promise<boolean>;
+  patch?(
+    serverName: string,
+    fields: Partial<ParsedServerConfig>,
+    expectedUpdatedAt?: number,
+  ): Promise<boolean>;
 
   //ACL Entry check if remove is possible
   remove(serverName: string, userId?: string): Promise<void>;
