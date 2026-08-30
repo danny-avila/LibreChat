@@ -508,6 +508,7 @@ const runPreviewFinalize = ({ finalize, fileId, previewRevision, onResolved }) =
  * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
  * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
  * @param {string} [params.executionRouteKey] - Trusted deployment-local route identity.
+ * @param {string} [params.bridgeWorkerId] - Trusted bridge worker selected for this execution.
  * @param {Buffer} [params.preparedBuffer] - Bytes downloaded during a
  *   no-write content inspection preflight.
  * @param {boolean} [params.downloadFallback] - Return the bounded download
@@ -978,7 +979,7 @@ function checkIfActive(dateString) {
  *   into codeapi storage. Carries kind/id/storage_session_id/file_id;
  *   codeapi resolves the sessionKey from the request's auth context.
  * @param {ServerRequest} [req] - Current authenticated request, used to mint Code API auth.
- * @param {{baseUrl?: string, executionProfile?: 'default'|'stateful'}} [route]
+ * @param {{baseUrl?: string, executionProfile?: 'default'|'stateful', bridgeWorkerId?: string}} [route]
  *   Trusted host-selected Code API route.
  *
  * @returns {Promise<string|null>}
@@ -1256,6 +1257,7 @@ const primeFiles = async (options) => {
           ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
           codeApiBaseUrl,
           executionProfile,
+          bridgeWorkerId,
         });
 
         /**

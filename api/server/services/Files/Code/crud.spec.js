@@ -70,7 +70,12 @@ const {
   getCodeApiAuthHeaders,
   getCodeExecutionBaseUrl,
 } = require('@librechat/api');
-const { deleteCodeEnvFile, getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./crud');
+const {
+  deleteCodeEnvFile,
+  getCodeOutputDownloadStream,
+  uploadCodeEnvFile,
+  batchUploadCodeEnvFiles,
+} = require('./crud');
 
 describe('Code CRUD', () => {
   beforeEach(() => {
@@ -438,7 +443,7 @@ describe('Code CRUD', () => {
       await uploadCodeEnvFile(baseUploadParams);
 
       const callConfig = mockAxios.post.mock.calls[0][2];
-      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(baseUploadParams.req);
+      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(baseUploadParams.req, undefined);
       expect(callConfig.headers.Authorization).toBe('Bearer codeapi-token');
     });
 
@@ -455,11 +460,14 @@ describe('Code CRUD', () => {
         ...baseUploadParams,
         codeApiBaseUrl: 'https://stateful-code.example.com',
         executionProfile: 'stateful',
+        bridgeWorkerId: 'personal-worker-1',
       });
 
       const [url, , callConfig] = mockAxios.post.mock.calls[0];
       expect(url).toBe('https://stateful-code.example.com/upload');
       expect(callConfig.headers['X-CodeAPI-Expected-Profile']).toBe('stateful');
+      expect(callConfig.headers['X-LibreChat-Code-Worker-ID']).toBe('personal-worker-1');
+      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(baseUploadParams.req, 'personal-worker-1');
     });
 
     /* Phase C / option α (codeapi #1455): the upload wire carries the
@@ -558,6 +566,37 @@ describe('Code CRUD', () => {
       mockAxios.post.mockRejectedValue(new Error('ECONNREFUSED'));
 
       await expect(uploadCodeEnvFile(baseUploadParams)).rejects.toThrow();
+    });
+  });
+
+  describe('batchUploadCodeEnvFiles', () => {
+    it('routes batch uploads through the selected bridge worker', async () => {
+      const req = { user: { id: 'user-123' } };
+      mockAxios.post.mockResolvedValue({
+        data: {
+          message: 'success',
+          storage_session_id: 'sess-1',
+          files: [{ status: 'success', fileId: 'fid-1', filename: 'data.csv' }],
+          succeeded: 1,
+          failed: 0,
+        },
+      });
+
+      await batchUploadCodeEnvFiles({
+        req,
+        files: [{ stream: Readable.from(['file-content']), filename: 'data.csv' }],
+        kind: 'user',
+        id: 'user-123',
+        codeApiBaseUrl: 'https://stateful-code.example.com',
+        executionProfile: 'stateful',
+        bridgeWorkerId: 'personal-worker-1',
+      });
+
+      const [url, , callConfig] = mockAxios.post.mock.calls[0];
+      expect(url).toBe('https://stateful-code.example.com/upload/batch');
+      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(req, 'personal-worker-1');
+      expect(callConfig.headers['X-CodeAPI-Expected-Profile']).toBe('stateful');
+      expect(callConfig.headers['X-LibreChat-Code-Worker-ID']).toBe('personal-worker-1');
     });
   });
 });

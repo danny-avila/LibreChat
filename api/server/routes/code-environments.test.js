@@ -11,6 +11,10 @@ const mockRequireCapability = jest.fn((capability) => (req, _res, next) => {
   middlewareCalls.push(capability);
   next();
 });
+const mockCodeEnvironmentPairingLimiter = jest.fn((_req, _res, next) => {
+  middlewareCalls.push('pairing-limit');
+  next();
+});
 const mockRegistry = {};
 const mockGetCodeEnvironmentRegistry = jest.fn(() => mockRegistry);
 const mockHandlers = {
@@ -30,6 +34,9 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('~/server/middleware/roles/capabilities', () => ({
   requireCapability: mockRequireCapability,
+}));
+jest.mock('~/server/middleware/limiters/code', () => ({
+  codeEnvironmentPairingLimiter: mockCodeEnvironmentPairingLimiter,
 }));
 
 jest.mock('~/server/middleware', () => ({ requireJwtAuth: mockRequireJwtAuth }));
@@ -82,7 +89,7 @@ describe('code environment routes', () => {
       .send({ name: 'Personal VM', controlPlaneId: 'shared-code-api' })
       .expect(201);
 
-    expect(middlewareCalls).toEqual(['jwt']);
+    expect(middlewareCalls).toEqual(['jwt', 'pairing-limit']);
     expect(mockHandlers.pair).toHaveBeenCalledTimes(1);
   });
 });

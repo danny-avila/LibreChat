@@ -2411,6 +2411,7 @@ describe('Code Process', () => {
         agentId: 'agent-id',
         codeApiBaseUrl: 'https://stateful-code.example.com',
         executionProfile: 'stateful',
+        bridgeWorkerId: 'personal-worker-1',
       });
 
       expect(mockAxios).not.toHaveBeenCalled();
@@ -2418,6 +2419,7 @@ describe('Code Process', () => {
         expect.objectContaining({
           codeApiBaseUrl: 'https://stateful-code.example.com',
           executionProfile: 'stateful',
+          bridgeWorkerId: 'personal-worker-1',
         }),
       );
       expect(updateFile).toHaveBeenCalledWith(

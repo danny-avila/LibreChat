@@ -27,12 +27,16 @@ export interface CodeExecutionContext {
 
 export function createCodeExecutionRouteKey(
   profile: CodeExecutionProfile,
-  environment?: Pick<CodeEnvironmentConfig, 'id' | 'baseURL'>,
+  environment?: Pick<CodeEnvironmentConfig, 'id' | 'baseURL' | 'workerId' | 'pairing'>,
 ): string {
   if (profile === 'default' || environment == null) {
     return profile;
   }
-  const identity = JSON.stringify([environment.id, environment.baseURL.trim().replace(/\/+$/, '')]);
+  const identity = JSON.stringify([
+    environment.id,
+    environment.baseURL.trim().replace(/\/+$/, ''),
+    environment.workerId ?? environment.pairing?.workerId ?? '',
+  ]);
   return `stateful:${createHash('sha256').update(identity).digest('hex').slice(0, 32)}`;
 }
 

@@ -260,6 +260,32 @@ describe('resolveCodeExecutionContext', () => {
     expect(first.codeSessionKey).not.toBe(replacement.codeSessionKey);
   });
 
+  it('namespaces replacement workers independently under a stable environment route', () => {
+    const environment = (workerId: string) => ({
+      id: 'personal-vm',
+      name: 'Personal VM',
+      type: 'attached' as const,
+      baseURL: 'https://bridge.example/v1',
+      default: true,
+      owner: 'principal' as const,
+      workerId,
+    });
+    const first = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environments: [environment('worker-a')],
+      userId: 'user-1',
+    });
+    const replacement = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environments: [environment('worker-b')],
+      userId: 'user-1',
+    });
+
+    expect(first.runtimeSessionHint).toBe(replacement.runtimeSessionHint);
+    expect(first.executionRouteKey).not.toBe(replacement.executionRouteKey);
+    expect(first.codeSessionKey).not.toBe(replacement.codeSessionKey);
+  });
+
   it('uses the operator-selected default environment when the agent has no override', () => {
     const context = resolveCodeExecutionContext({
       statefulSessions: true,

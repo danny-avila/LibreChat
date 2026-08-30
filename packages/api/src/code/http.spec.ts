@@ -155,6 +155,59 @@ describe('code environment HTTP handlers', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  test('does not pair through a control plane removed from the caller effective config', async () => {
+    const fetchImpl = jest.fn();
+    const baseConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'self-service',
+                name: 'Self-service',
+                type: 'attached',
+                baseURL: 'https://code.librechat.example',
+                owner: 'deployment',
+                pairing: { allowPrincipalWorkers: true, tokenEnv: 'CODE_ADMIN_TOKEN' },
+              },
+            ],
+          },
+        },
+      },
+    } as AppConfig;
+    const effectiveConfig = {
+      endpoints: { [EModelEndpoint.agents]: { statefulCodeSessions: { environments: [] } } },
+    } as AppConfig;
+    const getAppConfig = jest.fn(async (options) =>
+      options.baseOnly === true ? baseConfig : effectiveConfig,
+    );
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig,
+      registry: { register: jest.fn(), listAccessible: jest.fn() },
+      readSecret: jest.fn(() => 'administrator-token'),
+      principalAuthEnabled: jest.fn(() => true),
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.pair(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER', tenantId: 'tenant-1' },
+        body: { name: 'Personal VM', controlPlaneId: 'self-service' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(404);
+    expect(getAppConfig).toHaveBeenCalledWith({
+      role: 'USER',
+      userId: '68b2f0c498f24c1e78fa0001',
+      idOnTheSource: undefined,
+      tenantId: 'tenant-1',
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   test('registers against an operator-configured control plane and ignores client URLs', async () => {
     const register = jest.fn().mockResolvedValue({
       resourceId: '68b2f0c498f24c1e78fa0111',

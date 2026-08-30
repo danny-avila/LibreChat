@@ -75,6 +75,7 @@ export interface PrimeSkillFilesParams {
     read_only?: boolean;
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
   }) => Promise<{
     storage_session_id: string;
     files: Array<{ fileId: string; filename: string }>;
@@ -86,12 +87,13 @@ export interface PrimeSkillFilesParams {
     route?: {
       baseUrl?: string;
       executionProfile?: CodeExecutionContext['executionProfile'];
+      bridgeWorkerId?: string;
     },
   ) => Promise<string | null>;
   /** Trusted Code API route selected for the executing agent. */
   codeExecutionContext?: Pick<
     CodeExecutionContext,
-    'baseUrl' | 'executionProfile' | 'executionRouteKey'
+    'baseUrl' | 'executionProfile' | 'executionRouteKey' | 'bridgeWorkerId'
   >;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
@@ -517,6 +519,7 @@ async function executePrimeSkillFiles(
           read_only: true,
           codeApiBaseUrl: codeExecutionContext?.baseUrl,
           executionProfile: codeExecutionContext?.executionProfile,
+          bridgeWorkerId: codeExecutionContext?.bridgeWorkerId,
         });
         return { filesToUpload, result };
       }, `skill "${skill.name}"`),

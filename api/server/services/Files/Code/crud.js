@@ -14,7 +14,6 @@ const {
   getCodeExecutionBaseUrl,
   createCodeExecutionRouteKey,
   codeExecutionHeaders,
-  CODE_API_EXPECTED_PROFILE_HEADER,
 } = require('@librechat/api');
 
 const axios = createAxiosInstance();
@@ -195,6 +194,7 @@ async function deleteCodeEnvFile(req, file) {
  * @param {number} [params.version] - Required when `kind === 'skill'`; absent otherwise.
  * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
  * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
+ * @param {string} [params.bridgeWorkerId] - Trusted worker selected for this execution.
  * @returns {Promise<{ storage_session_id: string; file_id: string }>}
  *   The codeapi storage location of the uploaded file.
  * @throws {Error} If there's an error during the upload process.
@@ -208,6 +208,7 @@ async function uploadCodeEnvFile({
   version,
   codeApiBaseUrl,
   executionProfile,
+  bridgeWorkerId,
 }) {
   try {
     const form = new FormData();
@@ -215,7 +216,7 @@ async function uploadCodeEnvFile({
     appendCodeEnvFile(form, stream, filename);
 
     const baseURL = codeApiBaseUrl ?? getCodeBaseURL();
-    const authHeaders = await getCodeApiAuthHeaders(req);
+    const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
     /** @type {import('axios').AxiosRequestConfig} */
     const options = {
       headers: {
@@ -224,7 +225,7 @@ async function uploadCodeEnvFile({
         'User-Agent': 'LibreChat/1.0',
         'User-Id': req.user.id,
         ...authHeaders,
-        ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
+        ...(executionProfile ? codeExecutionHeaders({ executionProfile, bridgeWorkerId }) : {}),
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -276,6 +277,7 @@ async function uploadCodeEnvFile({
  *   `inherited: true`, never as a generated artifact.
  * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
  * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
+ * @param {string} [params.bridgeWorkerId] - Trusted worker selected for this execution.
  * @returns {Promise<{ storage_session_id: string; files: Array<{ fileId: string; filename: string }> }>}
  * @throws {Error} If the batch upload fails entirely.
  */
@@ -288,6 +290,7 @@ async function batchUploadCodeEnvFiles({
   read_only = false,
   codeApiBaseUrl,
   executionProfile,
+  bridgeWorkerId,
 }) {
   const form = new FormData();
   appendCodeEnvFileIdentity(form, { kind, id, version });
@@ -299,7 +302,7 @@ async function batchUploadCodeEnvFiles({
   }
 
   const baseURL = codeApiBaseUrl ?? getCodeBaseURL();
-  const authHeaders = await getCodeApiAuthHeaders(req);
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
   /** @type {import('axios').AxiosRequestConfig} */
   const options = {
     headers: {
@@ -308,7 +311,7 @@ async function batchUploadCodeEnvFiles({
       'User-Agent': 'LibreChat/1.0',
       'User-Id': req.user.id,
       ...authHeaders,
-      ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
+      ...(executionProfile ? codeExecutionHeaders({ executionProfile, bridgeWorkerId }) : {}),
     },
     httpAgent: codeServerHttpAgent,
     httpsAgent: codeServerHttpsAgent,

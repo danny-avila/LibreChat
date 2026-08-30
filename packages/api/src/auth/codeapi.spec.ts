@@ -221,6 +221,21 @@ describe('Code API JWT minting', () => {
     expect(second).not.toBe(first);
   });
 
+  it('does not collide cache entries for colon-containing plans and worker IDs', async () => {
+    const first = await mintCodeApiToken(baseRequest({ subscription: { planId: 'basic:a' } }), 'b');
+    const second = await mintCodeApiToken(
+      baseRequest({ subscription: { planId: 'basic' } }),
+      'a:b',
+    );
+
+    expect(decodeToken(first).claims).toMatchObject({ plan_id: 'basic:a', code_worker_id: 'b' });
+    expect(decodeToken(second).claims).toMatchObject({
+      plan_id: 'basic',
+      code_worker_id: 'a:b',
+    });
+    expect(second).not.toBe(first);
+  });
+
   it('uses the single-tenant namespace when tenant context is absent outside strict mode', async () => {
     mockGetTenantId.mockReturnValue(undefined);
 

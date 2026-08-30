@@ -757,9 +757,22 @@ describe('primeSkillFiles — resource identity propagation', () => {
           bytes: 256,
         },
       ],
+      codeExecutionContext: {
+        baseUrl: 'https://stateful-code.example.com',
+        executionProfile: 'stateful',
+        bridgeWorkerId: 'personal-worker-1',
+      },
     });
 
     const result = await primeSkillFiles(deps);
+
+    expect(deps.batchUploadCodeEnvFiles).toHaveBeenCalledWith(
+      expect.objectContaining({
+        codeApiBaseUrl: 'https://stateful-code.example.com',
+        executionProfile: 'stateful',
+        bridgeWorkerId: 'personal-worker-1',
+      }),
+    );
 
     expect(result?.files).toEqual([
       {

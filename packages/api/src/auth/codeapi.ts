@@ -326,7 +326,7 @@ function signJwt(config: SigningConfig, claims: CodeApiClaims): string {
 }
 
 function cacheKey(config: SigningConfig, claims: CodeApiClaims): string {
-  return [
+  return JSON.stringify([
     config.alg,
     config.kid,
     claims.sub,
@@ -339,7 +339,7 @@ function cacheKey(config: SigningConfig, claims: CodeApiClaims): string {
     claims.plan_id ?? '',
     claims.code_worker_id ?? '',
     claims.auth_context_hash,
-  ].join(':');
+  ]);
 }
 
 function pruneTokenCache(now: number): void {

@@ -13,6 +13,7 @@ import type { CodeBridgeFetch } from './bridge';
 import { CodeBridgePairingError, createCodeBridgePairing, readCodeBridgeSecret } from './bridge';
 import { CodeEnvironmentValidationError, normalizeCodeEnvironmentName } from './environments';
 import { getCodeApiTenantId, isCodeApiJwtAuthEnabled } from '~/auth/codeapi';
+import { getAppConfigOptionsFromUser } from '~/app/service';
 
 type Registry = {
   register: (params: {
@@ -141,7 +142,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
 
     /** Control-plane destinations are deployment policy. Client-provided URLs
      * are deliberately ignored to prevent an authenticated SSRF primitive. */
-    const appConfig = await deps.getAppConfig({ baseOnly: true });
+    const appConfig = await deps.getAppConfig(getAppConfigOptionsFromUser(req.user));
     const controlPlane = configuredControlPlane(appConfig, controlPlaneId);
     if (controlPlane == null) {
       return res.status(404).json({ error: 'Code control plane was not found' });
@@ -206,7 +207,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
       });
     }
 
-    const appConfig = await deps.getAppConfig({ baseOnly: true });
+    const appConfig = await deps.getAppConfig(getAppConfigOptionsFromUser(req.user));
     const controlPlane = configuredPrincipalControlPlane(appConfig, controlPlaneId);
     if (controlPlane == null) {
       return res.status(404).json({ error: 'Principal code control plane was not found' });
