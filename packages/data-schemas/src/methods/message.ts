@@ -1424,7 +1424,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                   'tool_call.backgroundTask.resultClaim.kind': kind,
                   'tool_call.backgroundTask.resultClaim.claimId': claimId,
                 }
-              : { 'tool_call.backgroundTask.resultClaim': { $exists: false } }),
+              : /** Missing OR stored null: the in-memory claimable scan, the
+                 * claim arrayFilters, and the settle stamp all treat a null
+                 * claim as unclaimed, and the subfield-preserving settle write
+                 * keeps a persisted null a whole-object rewrite used to drop.
+                 * `$exists: false` here would strand such a part as terminal
+                 * but permanently unclaimable. */
+                { 'tool_call.backgroundTask.resultClaim': null }),
           },
         },
         ...(agentId != null

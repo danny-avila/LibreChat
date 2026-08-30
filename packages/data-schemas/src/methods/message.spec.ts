@@ -1047,6 +1047,53 @@ describe('Message Operations', () => {
       expect(task).not.toHaveProperty('completionWakeup');
     });
 
+    it('claims a terminal result whose persisted claim stamp is a stored null', async () => {
+      /** A full-row save can persist `resultClaim: null`, and the
+       * subfield-preserving settle write keeps it where the old whole-object
+       * rewrite dropped it. Every layer must read that as unclaimed — a
+       * `$exists: false` fence would strand the part as terminal but
+       * permanently unclaimable. */
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [
+          {
+            type: 'tool_call',
+            tool_call: {
+              id: 'call-null-claim',
+              name: 'slow_tool',
+              output: 'done',
+              backgroundTask: {
+                version: 1,
+                taskId: 'task-null-claim',
+                toolName: 'slow_tool',
+                status: 'completed',
+                settledAt: new Date(),
+                completionWakeup: true,
+                resultClaim: null,
+              },
+            },
+          },
+        ],
+      });
+
+      /** The stored stamp must actually BE null, or this test proves nothing. */
+      const stored = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      const storedTask = (
+        stored?.content?.[0] as { tool_call?: { backgroundTask?: Record<string, unknown> } }
+      ).tool_call?.backgroundTask;
+      expect(storedTask).toHaveProperty('resultClaim', null);
+
+      const claim = await claimBackgroundToolResults({
+        userId: 'user123',
+        conversationId: mockMessageData.conversationId as string,
+        messageId: 'msg123',
+        taskId: 'task-null-claim',
+        kind: 'wakeup',
+        claimId: 'delivery-null',
+      });
+      expect(claim.status).toBe('acquired');
+    });
+
     it('elects one result consumer and batches terminal siblings for a wakeup', async () => {
       const terminal = (id: string, taskId: string, output: string) => ({
         type: 'tool_call',
