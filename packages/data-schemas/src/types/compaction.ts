@@ -39,6 +39,8 @@ export type TCompactionSemanticIndexEntry =
 export interface ICompactionSemanticIndexProjection {
   version: typeof COMPACTION_SEMANTIC_INDEX_PROJECTION_VERSION;
   entries: TCompactionSemanticIndexEntry[];
+  /** Cumulative entries supplied before bounded retention. Absent on legacy snapshots. */
+  providedEntryCount?: number;
 }
 
 function isBoundedIdentity(value: string | undefined): value is string {
@@ -89,7 +91,10 @@ export function isCompactionSemanticIndexProjection(
     projection?.version !== COMPACTION_SEMANTIC_INDEX_PROJECTION_VERSION ||
     !Array.isArray(projection.entries) ||
     projection.entries.length === 0 ||
-    projection.entries.length > MAX_COMPACTION_SEMANTIC_INDEX_ENTRIES
+    projection.entries.length > MAX_COMPACTION_SEMANTIC_INDEX_ENTRIES ||
+    (projection.providedEntryCount !== undefined &&
+      (!Number.isSafeInteger(projection.providedEntryCount) ||
+        projection.providedEntryCount < projection.entries.length))
   ) {
     return false;
   }

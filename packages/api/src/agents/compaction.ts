@@ -7,10 +7,14 @@ import {
   isCompactionSemanticIndexProjection,
 } from '@librechat/data-schemas';
 import type {
+  CompactionSemanticIndex,
+  CompactionSemanticIndexEntry,
+  CompactionSemanticIndexSnapshot,
+} from '@librechat/agents';
+import type {
   ICompactionSemanticIndexProjection,
   TCompactionSemanticIndexEntry,
 } from '@librechat/data-schemas';
-import type { CompactionSemanticIndex, CompactionSemanticIndexEntry } from '@librechat/agents';
 
 function snapshotEntry(
   entry: CompactionSemanticIndexEntry,
@@ -67,14 +71,28 @@ function snapshotEntry(
   return { type, toolCallId, ...common };
 }
 
+function isCompactionSemanticIndexSnapshot(
+  input: CompactionSemanticIndex | CompactionSemanticIndexSnapshot,
+): input is CompactionSemanticIndexSnapshot {
+  return !Array.isArray(input);
+}
+
 export function createCompactionSemanticIndexProjection(
-  index: CompactionSemanticIndex | undefined,
+  input: CompactionSemanticIndex | CompactionSemanticIndexSnapshot | undefined,
 ): ICompactionSemanticIndexProjection | undefined {
+  if (input == null) {
+    return undefined;
+  }
+  const isSnapshot = isCompactionSemanticIndexSnapshot(input);
+  const index = isSnapshot ? input.entries : input;
+  const providedEntryCount = isSnapshot ? input.providedEntryCount : input.length;
   if (
-    index == null ||
     !Array.isArray(index) ||
     index.length === 0 ||
-    index.length > MAX_COMPACTION_SEMANTIC_INDEX_ENTRIES
+    index.length > MAX_COMPACTION_SEMANTIC_INDEX_ENTRIES ||
+    providedEntryCount == null ||
+    !Number.isSafeInteger(providedEntryCount) ||
+    providedEntryCount < index.length
   ) {
     return undefined;
   }
@@ -89,12 +107,13 @@ export function createCompactionSemanticIndexProjection(
   return {
     version: COMPACTION_SEMANTIC_INDEX_PROJECTION_VERSION,
     entries,
+    providedEntryCount,
   };
 }
 
-export function restoreCompactionSemanticIndex(
+export function restoreCompactionSemanticIndexSnapshot(
   projection: ICompactionSemanticIndexProjection | null | undefined,
-): CompactionSemanticIndex | undefined {
+): CompactionSemanticIndexSnapshot | undefined {
   if (!isCompactionSemanticIndexProjection(projection)) {
     return undefined;
   }
@@ -106,5 +125,14 @@ export function restoreCompactionSemanticIndex(
     }
     entries.push(Object.freeze(snapshot));
   }
-  return Object.freeze(entries);
+  return Object.freeze({
+    entries: Object.freeze(entries),
+    providedEntryCount: projection.providedEntryCount ?? entries.length,
+  });
+}
+
+export function restoreCompactionSemanticIndex(
+  projection: ICompactionSemanticIndexProjection | null | undefined,
+): CompactionSemanticIndex | undefined {
+  return restoreCompactionSemanticIndexSnapshot(projection)?.entries;
 }
