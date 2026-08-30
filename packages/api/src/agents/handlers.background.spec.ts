@@ -3,7 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { FiltersConfig } from 'librechat-data-provider';
 import { ContentFilterError } from '../middleware/contentFilter';
-import { CHECK_BACKGROUND_TASK_NAME } from './background';
+import { backgroundTaskRegistry, CHECK_BACKGROUND_TASK_NAME } from './background';
 import { createToolExecuteHandler } from './handlers';
 
 interface BatchInput {
@@ -244,7 +244,48 @@ describe('createToolExecuteHandler — background tool calls', () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(retire).toHaveBeenCalledWith('background tool result was not persisted');
+    expect(retire).toHaveBeenCalledWith('background tool result was not persisted', {
+      onlyIfUnclaimed: true,
+    });
+  });
+
+  it('keeps durable ownership active when an ambiguous persistence failure cannot retire a lease', async () => {
+    const tool = makeSearchTool({ calls: 0 });
+    const retire = jest.fn(async () => false);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({ retire })),
+        persist: jest.fn(async () => {
+          throw new Error('write receipt lost');
+        }),
+        claim: jest.fn(async () => ({ status: 'claimed' as const })),
+      },
+    });
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-ambiguous-persistence',
+          name: tool.name,
+          args: { q: 'ambiguous', run_in_background: true },
+          stepId: 'step-ambiguous-persistence',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-ambiguous' },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const taskId = JSON.parse(dispatch.content).background_task_id as string;
+    expect(retire).toHaveBeenCalledWith('background tool result persistence failed', {
+      onlyIfUnclaimed: true,
+    });
+    const task = backgroundTaskRegistry.get('exec_user', 'exec_convo', taskId);
+    expect(task?.completionWakeup).toBe(true);
+    expect(task?.completionPersistenceFailed).toBeUndefined();
   });
 
   it('persists ordinary background failures in the renderer-recognized error shape', async () => {

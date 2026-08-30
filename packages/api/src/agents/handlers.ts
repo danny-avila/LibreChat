@@ -4673,21 +4673,33 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   );
                   const backgroundTask = resolveBackgroundTask();
                   const retireFailedPersistence = async (reason: string): Promise<void> => {
-                    backgroundTaskRegistry.markCompletionPersistenceFailed(
-                      backgroundUserId,
-                      backgroundConversationId,
-                      task.id,
-                    );
                     if (completionAdmission == null) {
+                      backgroundTaskRegistry.markCompletionPersistenceFailed(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                      );
                       return;
                     }
                     try {
-                      const retired = await completionAdmission.retire(reason);
+                      /** A rejected write receipt is ambiguous: Mongo may have
+                       * applied the terminal row before the response was lost.
+                       * Poll-only fallback is safe only if no resolver owns the
+                       * delivery that could already be preparing that receipt. */
+                      const retired = await completionAdmission.retire(reason, {
+                        onlyIfUnclaimed: true,
+                      });
                       if (!retired) {
                         logger.warn(
                           `[background] Could not retire failed completion delivery for task ${task.id}.`,
                         );
+                        return;
                       }
+                      backgroundTaskRegistry.markCompletionPersistenceFailed(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                      );
                     } catch (retireError) {
                       logger.warn(
                         `[background] Failed to retire completion delivery for task ${task.id}:`,

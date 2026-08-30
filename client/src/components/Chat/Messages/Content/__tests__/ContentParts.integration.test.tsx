@@ -128,7 +128,12 @@ jest.mock('~/utils', () => {
 
 const MCP_DELIMITER = '_mcp_';
 
-const makeMcpToolCall = (id: string, hasOutput = true, stepId?: string): TMessageContentParts =>
+const makeMcpToolCall = (
+  id: string,
+  hasOutput = true,
+  stepId?: string,
+  agentId?: string,
+): TMessageContentParts =>
   ({
     type: ContentTypes.TOOL_CALL,
     [ContentTypes.TOOL_CALL]: {
@@ -137,6 +142,7 @@ const makeMcpToolCall = (id: string, hasOutput = true, stepId?: string): TMessag
       args: '{}',
       output: hasOutput ? 'image_returned' : '',
       ...(stepId == null ? {} : { stepId }),
+      ...(agentId == null ? {} : { agentId }),
     },
   }) as unknown as TMessageContentParts;
 
@@ -259,6 +265,27 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     });
 
     expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();
+  });
+
+  it('keeps an earlier step attachment off a live repeated provider call', () => {
+    const content = [
+      makeMcpToolCall('call_0', true, 'step-1', 'agent_a'),
+      makeMcpToolCall('call_1', true, 'step-1', 'agent_a'),
+      makeTextPart('between runs'),
+      makeMcpToolCall('call_0', false, undefined, 'agent_a'),
+      makeMcpToolCall('call_2', false, undefined, 'agent_a'),
+    ];
+    const previousAttachment = {
+      ...imageAttachment('call_0', 'previous.png'),
+      agentId: 'agent_a',
+      stepId: 'step-1',
+    } as unknown as TAttachment;
+
+    renderContentParts({ ...baseProps, content, attachments: [previousAttachment] });
+
+    const groups = screen.getAllByTestId('attachment-group');
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toHaveAttribute('data-count', '1');
   });
 
   it('keeps a manually expanded completed tool group open when its content index shifts', () => {

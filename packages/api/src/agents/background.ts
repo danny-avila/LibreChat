@@ -1529,42 +1529,41 @@ export async function runCheckBackgroundTask(params: {
             });
           }
           if (durableClaim.status === 'not_found' || durableClaim.status === 'not_ready') {
-            /** The dispatch response cannot become durable until this same
-             * generation ends. Elect the local poll immediately, then let the
-             * persistence retry copy that immutable claim into the receipt. */
+            /** An exact replay can only exist after this invocation already
+             * retired the automatic delivery and acquired local ownership. */
+            if (task.resultClaim?.kind === 'manual' && task.resultClaim.claimId === invocationId) {
+              return JSON.stringify(serializeTask(task, { includeResult: true }));
+            }
+            /** Retire the still-unclaimed durable delivery before creating a
+             * process-local manual claim. If a resolver already owns a lease,
+             * it wins without any local claim for persistence to copy later. */
+            let retired = false;
+            try {
+              retired = await backgroundTaskRegistry.retireCompletionWakeup(
+                userId,
+                conversationId,
+                taskId,
+                'completion claimed by same-generation manual poll',
+                { onlyIfUnclaimed: true },
+              );
+            } catch (error) {
+              logger.warn(
+                `[background] Failed to retire automatic completion for manual claim ${taskId}:`,
+                error,
+              );
+            }
+            if (!retired) {
+              return JSON.stringify({
+                status: 'result_persisting',
+                background_task_id: taskId,
+                message:
+                  'The task is finished and completion ownership is being settled. Retry this poll shortly.',
+              });
+            }
             const localClaim = backgroundTaskRegistry.claimResult(userId, conversationId, taskId, {
               kind: 'manual',
               claimId: invocationId,
             });
-            if (localClaim === 'acquired') {
-              let retired = false;
-              try {
-                retired = await backgroundTaskRegistry.retireCompletionWakeup(
-                  userId,
-                  conversationId,
-                  taskId,
-                  'completion claimed by same-generation manual poll',
-                  { onlyIfUnclaimed: true },
-                );
-              } catch (error) {
-                logger.warn(
-                  `[background] Failed to retire automatic completion for manual claim ${taskId}:`,
-                  error,
-                );
-              }
-              if (!retired) {
-                backgroundTaskRegistry.releaseResultClaim(userId, conversationId, taskId, {
-                  kind: 'manual',
-                  claimId: invocationId,
-                });
-                return JSON.stringify({
-                  status: 'result_persisting',
-                  background_task_id: taskId,
-                  message:
-                    'The task is finished and completion ownership is being settled. Retry this poll shortly.',
-                });
-              }
-            }
             if (localClaim === 'claimed') {
               return JSON.stringify({
                 status: 'delivery_scheduled',

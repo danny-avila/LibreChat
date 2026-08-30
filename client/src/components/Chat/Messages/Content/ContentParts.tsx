@@ -63,6 +63,30 @@ const getToolGroupAnchorIndex = (parts: PartWithIndex[]): number => {
   return parts[0]?.idx ?? -1;
 };
 
+type ToolCallStepOwner = { agentId?: string; stepId: string };
+
+const getSiblingStepIds = (
+  part: TMessageContentParts,
+  ownersByToolCallId: ReadonlyMap<string, readonly ToolCallStepOwner[]>,
+): ReadonlySet<string> | undefined => {
+  if (getPartStepId(part) != null) {
+    return;
+  }
+  const toolCallId = getToolCallId(part);
+  const owners = ownersByToolCallId.get(toolCallId);
+  if (toolCallId === '' || owners == null) {
+    return;
+  }
+  const agentId = getPartAgentId(part);
+  const siblingStepIds = new Set<string>();
+  for (const owner of owners) {
+    if (agentId == null || owner.agentId == null || owner.agentId === agentId) {
+      siblingStepIds.add(owner.stepId);
+    }
+  }
+  return siblingStepIds.size === 0 ? undefined : siblingStepIds;
+};
+
 const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string => {
   const firstPart = parts[0];
   if (!firstPart) {
@@ -204,6 +228,8 @@ type ContentPartsProps = {
   toolGroupExpansionState?: Map<string, ToolCallGroupExpansionState>;
   /** Message-wide occurrence number for each grouped tool block's first tool. */
   toolGroupOccurrenceByIndex?: ReadonlyMap<number, number>;
+  /** Completed step owners used to keep older attachments off a live repeated call. */
+  toolCallStepOwnersById?: ReadonlyMap<string, readonly ToolCallStepOwner[]>;
 };
 
 /**
@@ -237,6 +263,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   resumeAuthors,
   toolGroupExpansionState,
   toolGroupOccurrenceByIndex,
+  toolCallStepOwnersById,
 }: ContentPartsProps) {
   const { inlineAttachments, workspaceChanges } = useMemo(
     () =>
@@ -246,6 +273,26 @@ const ContentPartsBody = memo(function ContentPartsBody({
     [attachments, workspaceAttachmentsPartitioned],
   );
   const attachmentMap = useMemo(() => mapAttachments(inlineAttachments), [inlineAttachments]);
+  const resolvedToolCallStepOwners = useMemo(() => {
+    if (toolCallStepOwnersById != null) {
+      return toolCallStepOwnersById;
+    }
+    const owners = new Map<string, ToolCallStepOwner[]>();
+    for (const part of content ?? []) {
+      if (part == null) {
+        continue;
+      }
+      const toolCallId = getToolCallId(part);
+      const stepId = getPartStepId(part);
+      if (toolCallId === '' || stepId == null) {
+        continue;
+      }
+      const entries = owners.get(toolCallId) ?? [];
+      entries.push({ stepId, agentId: getPartAgentId(part) });
+      owners.set(toolCallId, entries);
+    }
+    return owners;
+  }, [toolCallStepOwnersById, content]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
   const localToolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
   const expansionState = toolGroupExpansionState ?? localToolGroupExpansionRef.current;
@@ -421,6 +468,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
             attachmentMap[getToolCallId(part)],
             getPartAgentId(part),
             getPartStepId(part),
+            getSiblingStepIds(part, resolvedToolCallStepOwners),
           )}
         />
       );
@@ -436,6 +484,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
       isLast,
       isLatestMessage,
       messageId,
+      resolvedToolCallStepOwners,
     ],
   );
 
@@ -459,6 +508,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
             attachmentMap[getToolCallId(part)],
             getPartAgentId(part),
             getPartStepId(part),
+            getSiblingStepIds(part, resolvedToolCallStepOwners),
           )}
           hideAttachments
           onToolExpand={onToolExpand}
@@ -476,6 +526,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
       isLast,
       isLatestMessage,
       messageId,
+      resolvedToolCallStepOwners,
     ],
   );
 
@@ -548,11 +599,18 @@ const ContentPartsBody = memo(function ContentPartsBody({
             attachmentMap[getToolCallId(part)],
             getPartAgentId(part),
             getPartStepId(part),
+            getSiblingStepIds(part, resolvedToolCallStepOwners),
           ) ?? [],
       );
       return { ...group, groupId, groupAttachments };
     });
-  }, [sequentialParts, attachmentMap, fallbackScope, resolvedToolGroupOccurrences]);
+  }, [
+    sequentialParts,
+    attachmentMap,
+    fallbackScope,
+    resolvedToolGroupOccurrences,
+    resolvedToolCallStepOwners,
+  ]);
 
   /** The re-attribution node for a part resuming after a steer block, shared
    *  by the sequential path and the parallel renderer's sequential stretches. */
@@ -647,6 +705,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
           resumeAuthors={postSteerAuthors}
           toolGroupExpansionState={expansionState}
           toolGroupOccurrenceByIndex={resolvedToolGroupOccurrences}
+          toolCallStepOwnersById={resolvedToolCallStepOwners}
         />
       );
     };

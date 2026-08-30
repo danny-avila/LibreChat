@@ -36,6 +36,24 @@ describe('filterAttachmentsForPart', () => {
     expect(filterAttachmentsForPart(attachments, undefined, 'step-1')).toHaveLength(1);
   });
 
+  it('keeps earlier owned steps off a live repeated call', () => {
+    const attachments = [
+      att({ agentId: 'agent_a', stepId: 'step-1' }),
+      att({ agentId: 'agent_a', stepId: 'step-live', file_id: 'live' }),
+      att({ agentId: 'agent_a', file_id: 'legacy' }),
+    ];
+    const filtered = filterAttachmentsForPart(
+      attachments,
+      'agent_a',
+      undefined,
+      new Set(['step-1']),
+    );
+    expect(filtered?.map((attachment) => (attachment as { file_id?: string }).file_id)).toEqual([
+      'live',
+      'legacy',
+    ]);
+  });
+
   it('returns the same reference when nothing is filtered (render stability)', () => {
     const attachments = [att({ agentId: 'agent_a' })];
     expect(filterAttachmentsForPart(attachments, 'agent_a')).toBe(attachments);
