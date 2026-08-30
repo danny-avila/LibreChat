@@ -127,6 +127,31 @@ describe('resolveCodeExecutionContext', () => {
       }),
     );
     expect(context.runtimeSessionHint).toMatch(/^v3:[a-f0-9]{12}:agent-user:/);
+    expect(context.executionRouteKey).toMatch(/^stateful:[a-f0-9]{32}$/);
+  });
+
+  it('namespaces configured deployments independently of the shared wire profile', () => {
+    const environment = (id: string, baseURL: string) => ({
+      id,
+      name: id,
+      type: 'attached' as const,
+      baseURL,
+      default: true,
+    });
+    const first = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environments: [environment('first', 'https://first.example/v1')],
+      userId: 'user-1',
+    });
+    const second = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environments: [environment('second', 'https://second.example/v1')],
+      userId: 'user-1',
+    });
+
+    expect(first.executionProfile).toBe('stateful');
+    expect(second.executionProfile).toBe('stateful');
+    expect(first.executionRouteKey).not.toBe(second.executionRouteKey);
   });
 
   it('uses the operator-selected default environment when the agent has no override', () => {

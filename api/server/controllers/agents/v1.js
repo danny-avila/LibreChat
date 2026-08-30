@@ -443,7 +443,17 @@ const isCodeInterpreterCapabilityEnabled = (req) => {
 /** Reject a newly selected stateful workspace scope that the deployment owner
  * has excluded. Disabled sessions and unrelated edits remain saveable so an
  * allowlist tightening never silently rewrites or strands an existing agent. */
-const validateStatefulCodeEnvironment = (req, res, enabled, environment) => {
+const validateStatefulCodeEnvironment = (req, res, enabled, environment, environmentId) => {
+  if (environmentId != null) {
+    const configuredEnvironments =
+      req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments ?? [];
+    if (!configuredEnvironments.some((configured) => configured.id === environmentId)) {
+      res.status(400).json({
+        error: `Stateful code environment is not configured: ${environmentId}`,
+      });
+      return false;
+    }
+  }
   if (enabled !== true) {
     return true;
   }
@@ -721,6 +731,7 @@ const createAgentHandler = async (req, res) => {
         res,
         agentData.stateful_code_sessions,
         agentData.stateful_code_environment,
+        agentData.code_environment_id,
       )
     ) {
       return;
@@ -1003,7 +1014,8 @@ const updateAgentHandler = async (req, res) => {
 
     const includesStatefulConfiguration =
       updateData.stateful_code_sessions !== undefined ||
-      updateData.stateful_code_environment !== undefined;
+      updateData.stateful_code_environment !== undefined ||
+      updateData.code_environment_id !== undefined;
     const includesToolsConfiguration = Array.isArray(updateData.tools);
     const includesToolOptionsConfiguration = updateData.tool_options !== undefined;
     if (
@@ -1022,7 +1034,9 @@ const updateAgentHandler = async (req, res) => {
             (existingAgent.stateful_code_sessions === true)) ||
         (updateData.stateful_code_environment !== undefined &&
           (updateData.stateful_code_environment ?? 'user') !==
-            (existingAgent.stateful_code_environment ?? 'user'));
+            (existingAgent.stateful_code_environment ?? 'user')) ||
+        (updateData.code_environment_id !== undefined &&
+          updateData.code_environment_id !== existingAgent.code_environment_id);
       const activatesCodeExecution =
         includesToolsConfiguration &&
         updateData.tools.includes(Tools.execute_code) &&
@@ -1032,12 +1046,15 @@ const updateAgentHandler = async (req, res) => {
           updateData.stateful_code_sessions ?? existingAgent.stateful_code_sessions;
         const effectiveStatefulEnvironment =
           updateData.stateful_code_environment ?? existingAgent.stateful_code_environment;
+        const effectiveCodeEnvironmentId =
+          updateData.code_environment_id ?? existingAgent.code_environment_id;
         if (
           !validateStatefulCodeEnvironment(
             req,
             res,
             effectiveStatefulSessions,
             effectiveStatefulEnvironment,
+            effectiveCodeEnvironmentId,
           )
         ) {
           return;
@@ -1333,6 +1350,7 @@ const duplicateAgentHandler = async (req, res) => {
         res,
         newAgentData.stateful_code_sessions,
         newAgentData.stateful_code_environment,
+        newAgentData.code_environment_id,
       )
     ) {
       return;
@@ -1925,6 +1943,7 @@ const revertAgentVersionHandler = async (req, res) => {
         res,
         revertVersion.stateful_code_sessions,
         revertVersion.stateful_code_environment,
+        revertVersion.code_environment_id,
       )
     ) {
       return;

@@ -1102,6 +1102,7 @@ const primeFiles = async (options) => {
     agentResourceType,
     codeApiBaseUrl,
     executionProfile = 'default',
+    executionRouteKey = executionProfile,
   } = options;
   const codeApiRoute = { baseUrl: codeApiBaseUrl, executionProfile };
   const file_ids = tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
@@ -1160,7 +1161,7 @@ const primeFiles = async (options) => {
       continue;
     }
 
-    const ref = getCodeEnvRefForProfile(file.metadata, executionProfile);
+    const ref = getCodeEnvRefForProfile(file.metadata, executionRouteKey);
     const sourceRef = ref ?? getCodeEnvRefs(file.metadata)[0]?.[1];
     if (!sourceRef) {
       skippedNoRef += 1;
@@ -1250,6 +1251,7 @@ const primeFiles = async (options) => {
           storage_session_id: uploaded.storage_session_id,
           file_id: uploaded.file_id,
           executionProfile,
+          ...(executionRouteKey !== executionProfile ? { executionRouteKey } : {}),
           ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
         };
 
@@ -1258,7 +1260,7 @@ const primeFiles = async (options) => {
         await updateFile({
           file_id: file.file_id,
           'metadata.codeEnvRef': updatedRefs.codeEnvRef,
-          [`metadata.codeEnvRefs.${executionProfile}`]: newRef,
+          [`metadata.codeEnvRefs.${executionRouteKey}`]: newRef,
         });
         sessions.set(newRef.storage_session_id, true);
         pushFile(newRef.storage_session_id, newRef.file_id);

@@ -21,6 +21,7 @@ const {
   buildAgentContextAttachmentsByAgentId,
   collectCodeExecutionProfileRoutes,
   getLazySubagentConfigId,
+  resolveCodeExecutionContext,
   createStatefulCodeEnvironmentPolicyError,
   buildSubagentThreadTaskConfig,
   backgroundCompletionWakeupsEnabled,
@@ -921,9 +922,11 @@ const initializeClient = async ({
   };
 
   const toLazySubagentMetadata = async (agent) => {
+    const lazyCodeEnvAvailable =
+      codeEnvAvailable === true && agent.tools?.includes(Tools.execute_code) === true;
     const statefulCodeSessions =
       statefulSessionsAvailable === true &&
-      codeEnvAvailable === true &&
+      lazyCodeEnvAvailable &&
       agent.stateful_code_sessions === true &&
       agent.tools?.includes(Tools.execute_code) === true;
     const statefulCodeEnvironment = agent.stateful_code_environment ?? 'user';
@@ -933,6 +936,23 @@ const initializeClient = async ({
     ) {
       throw createStatefulCodeEnvironmentPolicyError(statefulCodeEnvironment);
     }
+    const configuredCodeEnvironments =
+      appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
+    const hasConfiguredCodeEnvironment =
+      agent.code_environment_id != null ||
+      configuredCodeEnvironments?.some((environment) => environment.default === true) === true;
+    const codeExecutionContext =
+      lazyCodeEnvAvailable && (!statefulCodeSessions || hasConfiguredCodeEnvironment)
+        ? resolveCodeExecutionContext({
+            statefulSessions: statefulCodeSessions,
+            environment: statefulCodeEnvironment,
+            environmentId: agent.code_environment_id,
+            environments: configuredCodeEnvironments,
+            userId,
+            agentId: agent.id,
+            conversationId,
+          })
+        : undefined;
     return {
       id: agent.id,
       name: agent.name,
@@ -946,10 +966,11 @@ const initializeClient = async ({
         memoryAvailable === true && agent.tools?.includes(Tools.memory) === true,
       subagents: agent.subagents,
       configId: getLazySubagentConfigId(agent),
-      codeEnvAvailable:
-        codeEnvAvailable === true && agent.tools?.includes(Tools.execute_code) === true,
+      codeEnvAvailable: lazyCodeEnvAvailable,
       statefulCodeSessions,
       statefulCodeEnvironment,
+      codeExecutionContext,
+      codeSessionKey: codeExecutionContext?.codeSessionKey,
       includeReasoningHistory: getIncludeReasoningHistory(agent),
       alwaysApplySkillPrimes: await resolveLazyAlwaysApplySkillPrimes(agent),
     };
@@ -1182,6 +1203,8 @@ const initializeClient = async ({
         codeEnvAvailable: metadata.codeEnvAvailable,
         statefulCodeSessions: metadata.statefulCodeSessions,
         statefulCodeEnvironment: metadata.statefulCodeEnvironment,
+        codeExecutionContext: metadata.codeExecutionContext,
+        codeSessionKey: metadata.codeSessionKey,
         includeReasoningHistory: metadata.includeReasoningHistory,
         alwaysApplySkillPrimes: metadata.alwaysApplySkillPrimes,
         lazySubagentConfigs: lazyChildren,

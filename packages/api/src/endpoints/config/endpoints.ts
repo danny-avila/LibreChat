@@ -72,12 +72,28 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
     if (mergedConfig[EModelEndpoint.agents] && appConfig?.endpoints?.[EModelEndpoint.agents]) {
       const { disableBuilder, capabilities, allowedProviders, statefulCodeSessions, maxSubagents } =
         appConfig.endpoints[EModelEndpoint.agents];
+      const clientStatefulCodeSessions = statefulCodeSessions
+        ? {
+            allowedEnvironments: statefulCodeSessions.allowedEnvironments,
+            environments: statefulCodeSessions.environments?.map(
+              ({ id, name, type, default: isDefault }) => ({
+                id,
+                name,
+                type,
+                default: isDefault,
+              }),
+            ),
+          }
+        : undefined;
       mergedConfig[EModelEndpoint.agents] = {
         ...mergedConfig[EModelEndpoint.agents],
         allowedProviders,
         disableBuilder,
         capabilities,
-        statefulCodeSessions,
+        /** The public endpoint shape intentionally omits server-only baseURL.
+         * TEndpointsConfig still shares its source type with the deployment
+         * schema, so narrow through the boundary until those types split. */
+        statefulCodeSessions: clientStatefulCodeSessions as unknown as typeof statefulCodeSessions,
         maxSubagents,
       };
     }

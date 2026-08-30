@@ -559,7 +559,10 @@ export const agentBaseSchema: z.ZodObject<
   hide_sequential_outputs: z.boolean().optional(),
   stateful_code_sessions: z.boolean().optional(),
   stateful_code_environment: z.enum(['user', 'agent-user', 'conversation']).optional(),
-  code_environment_id: z.string().min(1).max(128).optional(),
+  code_environment_id: z
+    .string()
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/)
+    .optional(),
   artifacts: z.string().optional(),
   recursion_limit: z.number().optional(),
   conversation_starters: z.array(z.string()).optional(),

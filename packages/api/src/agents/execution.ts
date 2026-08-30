@@ -13,10 +13,31 @@ export interface CodeExecutionContext {
   baseUrl: string;
   codeSessionKey: string;
   executionProfile: CodeExecutionProfile;
+  /** Stable server-side namespace for deployment-local file references and
+   * priming work. Unlike `executionProfile`, this distinguishes configured
+   * Code API deployments that all use the `stateful` wire profile. */
+  executionRouteKey?: string;
   runtimeSessionHint?: string;
   statefulSessions: boolean;
   environmentId?: string;
   environmentType?: CodeEnvironmentConfig['type'];
+}
+
+export function createCodeExecutionRouteKey(
+  profile: CodeExecutionProfile,
+  environment?: Pick<CodeEnvironmentConfig, 'id' | 'baseURL'>,
+): string {
+  if (profile === 'default' || environment == null) {
+    return profile;
+  }
+  const identity = JSON.stringify([environment.id, environment.baseURL.trim().replace(/\/+$/, '')]);
+  return `stateful:${createHash('sha256').update(identity).digest('hex').slice(0, 32)}`;
+}
+
+export function getCodeExecutionRouteKey(
+  context: Pick<CodeExecutionContext, 'executionProfile' | 'executionRouteKey'>,
+): string {
+  return context.executionRouteKey ?? context.executionProfile;
 }
 
 export function normalizeStatefulCodeEnvironment(
@@ -125,6 +146,9 @@ export function resolveCodeExecutionContext(params: {
     baseUrl: getCodeExecutionBaseUrl('stateful', configuredEnvironment),
     codeSessionKey: `${Constants.EXECUTE_CODE}:stateful:${runtimeSessionHint}`,
     executionProfile: 'stateful',
+    ...(configuredEnvironment
+      ? { executionRouteKey: createCodeExecutionRouteKey('stateful', configuredEnvironment) }
+      : {}),
     runtimeSessionHint,
     statefulSessions: true,
     environmentId: configuredEnvironment?.id,

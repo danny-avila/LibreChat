@@ -237,6 +237,39 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(await Agent.countDocuments()).toBe(0);
     });
 
+    test('rejects an unconfigured code environment id', async () => {
+      mockReq.config = {
+        endpoints: {
+          agents: {
+            statefulCodeSessions: {
+              allowedEnvironments: ['user'],
+              environments: [
+                {
+                  id: 'configured-vm',
+                  name: 'Configured VM',
+                  type: 'attached',
+                  baseURL: 'https://code.example.com/v1',
+                  default: true,
+                },
+              ],
+            },
+          },
+        },
+      };
+      mockReq.body = {
+        name: 'Invalid Environment Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        stateful_code_sessions: true,
+        code_environment_id: 'missing-vm',
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(await Agent.countDocuments()).toBe(0);
+    });
+
     test('should block configured agent instruction content before persistence', async () => {
       mockReq.config = {
         filters: {
@@ -1180,6 +1213,28 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(mockRes.status).toHaveBeenCalledWith(403);
       const agentInDb = await Agent.findOne({ id: existingAgentId });
       expect(agentInDb.stateful_code_sessions).not.toBe(true);
+    });
+
+    test('rejects updating an agent to an unconfigured code environment id', async () => {
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.config = {
+        endpoints: {
+          agents: {
+            statefulCodeSessions: {
+              allowedEnvironments: ['user'],
+              environments: [],
+            },
+          },
+        },
+      };
+      mockReq.body = { code_environment_id: 'missing-vm' };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.code_environment_id).toBeUndefined();
     });
 
     test('allows unrelated edits to an existing scope after policy is tightened', async () => {

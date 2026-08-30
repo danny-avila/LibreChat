@@ -1394,6 +1394,7 @@ async function loadToolDefinitionsWrapper({
         agentResourceType,
         codeApiBaseUrl: resolvedCodeExecutionContext.baseUrl,
         executionProfile: resolvedCodeExecutionContext.executionProfile,
+        executionRouteKey: resolvedCodeExecutionContext.executionRouteKey,
       });
       if (toolContext) {
         dynamicToolContextMap[Tools.execute_code] = toolContext;

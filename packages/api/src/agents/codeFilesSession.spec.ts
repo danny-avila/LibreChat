@@ -565,6 +565,29 @@ describe('collectCodeExecutionProfileRoutes', () => {
     expect(routes).toEqual([{ codeExecutionContext: graphContext, codeSessionKeys: [graphKey] }]);
   });
 
+  it('keeps configured stateful deployments in separate routing namespaces', () => {
+    const context = (executionRouteKey: string, baseUrl: string) => ({
+      baseUrl,
+      codeSessionKey: `execute_code:stateful:${executionRouteKey}`,
+      executionProfile: 'stateful' as const,
+      executionRouteKey,
+      runtimeSessionHint: `v3:${executionRouteKey}:user:scope`,
+      statefulSessions: true,
+    });
+    const first = context('stateful:first', 'https://first.example/v1');
+    const second = context('stateful:second', 'https://second.example/v1');
+
+    const routes = collectCodeExecutionProfileRoutes([
+      { codeEnvAvailable: true, codeExecutionContext: first },
+      { codeEnvAvailable: true, codeExecutionContext: second },
+    ]);
+
+    expect(routes).toEqual([
+      { codeExecutionContext: first, codeSessionKeys: [first.codeSessionKey] },
+      { codeExecutionContext: second, codeSessionKeys: [second.codeSessionKey] },
+    ]);
+  });
+
   it('derives and includes the trusted profile for a lazy subagent descriptor', () => {
     process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'https://stateful.example.com/v1';
     const routes = collectCodeExecutionProfileRoutes(
