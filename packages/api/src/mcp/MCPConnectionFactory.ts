@@ -26,7 +26,6 @@ import { createDeadlineAbortSignal, isClientRejectionMessage, isOAuthServer } fr
 import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
 import { isOAuthAuthenticationError } from './errors';
 import { preProcessGraphTokens } from '~/utils/graph';
-import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
 import { mcpConfig } from './mcpConfig';
@@ -139,10 +138,13 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     options?: Omit<t.OAuthConnectionOptions, 'returnOnOAuth'> | t.UserConnectionContext,
   ): Promise<ToolDiscoveryResult> {
-    /** Checked before credential preparation begins: a spent budget must not start Graph
-     *  preprocessing or token resolution it cannot cancel. */
-    if (options?.deadlineMs != null && Date.now() >= options.deadlineMs) {
-      logger.debug('[MCP] [Discovery] Budget exhausted before discovery began');
+    /** Checked before credential preparation begins: a spent budget or an already-cancelled
+     *  caller must not start Graph preprocessing or token resolution it cannot cancel. */
+    if (
+      (options?.deadlineMs != null && Date.now() >= options.deadlineMs) ||
+      options?.signal?.aborted === true
+    ) {
+      logger.debug('[MCP] [Discovery] Cancelled or out of budget before discovery began');
       return { tools: null, connection: null, oauthRequired: false, oauthUrl: null };
     }
     const preparedBasic = await this.prepareBasicConnectionOptions(basic, options);
@@ -178,9 +180,12 @@ export class MCPConnectionFactory {
 
   protected async discoverToolsInternal(): Promise<ToolDiscoveryResult> {
     /** Rechecked here because credential preparation in `discoverTools` is uncancellable: a
-     *  budget that expired while it ran must not go on to token resolution or a connect. */
-    if (this.isPastDeadline()) {
-      logger.debug(`${this.logPrefix} [Discovery] Budget exhausted before discovery began`);
+     *  budget that expired or a caller that cancelled while it ran must not go on to token
+     *  resolution or a connect. */
+    if (this.isDiscoveryCancelled()) {
+      logger.debug(
+        `${this.logPrefix} [Discovery] Cancelled or out of budget before discovery began`,
+      );
       return { tools: null, connection: null, oauthRequired: false, oauthUrl: null };
     }
     const oauthUrl: string | null = null;
@@ -233,12 +238,7 @@ export class MCPConnectionFactory {
       connection.once('oauthRequired', oauthHandler);
 
       try {
-        const connectTimeout = this.resolveConnectTimeout(30000);
-        await withTimeout(
-          connection.connect(),
-          connectTimeout,
-          `Connection timeout after ${connectTimeout}ms`,
-        );
+        await this.connectWithinBudget(connection, this.resolveConnectTimeout(30000), abortSignal);
 
         if (await connection.isConnected(abortSignal)) {
           const snapshot = await connection.fetchOrderedToolsSnapshot(this.deadlineMs, abortSignal);
@@ -257,18 +257,18 @@ export class MCPConnectionFactory {
         );
       }
 
-      /** The authenticated attempt is done with, but `withTimeout` does not cancel the `connect()`
-       *  it gave up on — that socket stays open. Dispose before the fallback opens a second one so
-       *  a single discovery never holds two concurrent connects to the same server. */
+      /** The authenticated attempt is done with, but abandoning `connect()` does not cancel it —
+       *  that socket stays open. Dispose before the fallback opens a second one so a single
+       *  discovery never holds two concurrent connects to the same server. */
       connection.removeListener('oauthRequired', oauthHandler);
       await this.disposeQuietly(connection);
       connection = null;
       oauthHandler = null;
     }
 
-    if (this.isPastDeadline()) {
+    if (this.isDiscoveryCancelled()) {
       logger.debug(
-        `${this.logPrefix} [Discovery] Budget exhausted; skipping unauthenticated tool listing`,
+        `${this.logPrefix} [Discovery] Cancelled or out of budget; skipping unauthenticated tool listing`,
       );
       return { tools: null, connection: null, oauthRequired, oauthUrl };
     }
@@ -301,6 +301,54 @@ export class MCPConnectionFactory {
 
   private isPastDeadline(): boolean {
     return this.deadlineMs != null && Date.now() >= this.deadlineMs;
+  }
+
+  /** The ONE cancellation predicate for discovery gates. The budget and the caller's signal are
+   *  two representations of the same fact; a gate that consults only one re-opens the class of
+   *  bug where cancelled callers keep starting work. */
+  private isDiscoveryCancelled(): boolean {
+    return this.isPastDeadline() || this.signal?.aborted === true;
+  }
+
+  /**
+   * Races `connect()` against the discovery signal as well as the timeout. `connect()` cannot
+   * carry the signal itself, so an abort rejects this wait and the caller's normal cleanup
+   * disposes the attempt — the connection's mid-connect disposal guard then discards whatever
+   * the abandoned connect still constructs, instead of the socket living to the full timeout.
+   */
+  private async connectWithinBudget(
+    connection: MCPConnection,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (signal?.aborted === true) {
+      throw new Error('Discovery cancelled before connect');
+    }
+    const connect = connection.connect();
+    /** The abandoned attempt still settles eventually; swallow its rejection so losing the race
+     *  never surfaces as an unhandled rejection. */
+    connect.catch(() => undefined);
+    let timer: NodeJS.Timeout | undefined;
+    let onAbort: (() => void) | undefined;
+    const interrupted = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`Connection timeout after ${timeoutMs}ms`)),
+        timeoutMs,
+      );
+      timer.unref?.();
+      if (signal != null) {
+        onAbort = () => reject(new Error('Discovery cancelled during connect'));
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+    });
+    try {
+      return await Promise.race([connect, interrupted]);
+    } finally {
+      clearTimeout(timer);
+      if (onAbort != null) {
+        signal?.removeEventListener('abort', onAbort);
+      }
+    }
   }
 
   /**
@@ -343,8 +391,7 @@ export class MCPConnectionFactory {
     });
 
     try {
-      const connectTimeout = this.resolveConnectTimeout(15000);
-      await withTimeout(unauthConnection.connect(), connectTimeout, `Unauth connection timeout`);
+      await this.connectWithinBudget(unauthConnection, this.resolveConnectTimeout(15000), signal);
 
       if (await unauthConnection.isConnected(signal)) {
         const snapshot = await unauthConnection.fetchOrderedToolsSnapshot(this.deadlineMs, signal);
