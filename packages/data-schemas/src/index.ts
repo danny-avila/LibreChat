@@ -37,6 +37,7 @@ export {
   AgentTriggerDeliveryConflictError,
   AgentQueuedTurnCapacityError,
   AgentQueuedTurnConflictError,
+  AgentQueuedTurnLaneRetiredError,
   recordAgentEventActorReceiptMetric,
   setAgentEventActorReceiptMetricObserver,
   MCPAuthorityProofError,

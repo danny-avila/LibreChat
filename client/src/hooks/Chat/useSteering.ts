@@ -759,7 +759,11 @@ export default function useSteering({
           return;
         }
         const parentMessageId = liveMessageState?.parentMessageId;
-        const serverOwned = serverQueueEnabled && parentMessageId != null;
+        /** The active epoch is the authority-transfer fence. During startup an
+         * existing branch tail may already be visible while no generation owns
+         * it yet, so keep those turns local until the epoch is concrete. */
+        const serverOwned =
+          serverQueueEnabled && parentMessageId != null && activeGenerationCreatedAt != null;
         const generatedClientRequestId = options?.clientRequestId == null;
         const clientRequestId = options?.clientRequestId ?? (serverOwned ? v4() : undefined);
         const item: QueuedMessage = {

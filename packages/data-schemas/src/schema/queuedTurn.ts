@@ -53,13 +53,13 @@ const queuedTurnSchema: Schema<IAgentQueuedTurnDocument> = new Schema(
     parentMessageId: { type: String, required: true, maxlength: 256 },
     clientRequestId: { type: String, required: true, maxlength: 128 },
     fingerprint: { type: String, required: true, minlength: 43, maxlength: 64 },
-    sequence: { type: Number, required: true, min: 1 },
+    sequence: { type: Number, min: 1 },
     activeSlot: { type: Number, min: 0, max: 99 },
     status: {
       type: String,
-      enum: ['queued', 'claimed', 'admitted', 'cancelled', 'dead'],
+      enum: ['reserving', 'queued', 'claimed', 'admitted', 'cancelled', 'dead'],
       required: true,
-      default: 'queued',
+      default: 'reserving',
     },
     priority: { type: Boolean, required: true, default: false },
     text: { type: String, required: true, maxlength: 32_768 },
@@ -70,6 +70,12 @@ const queuedTurnSchema: Schema<IAgentQueuedTurnDocument> = new Schema(
     attempts: { type: Number, required: true, default: 0, min: 0 },
     availableAt: { type: Date, required: true },
     deliveryKey: { type: String, maxlength: 128 },
+    deliveryState: {
+      type: String,
+      enum: ['pending', 'publishing', 'published', 'retired'],
+      required: true,
+      default: 'pending',
+    },
     scheduledAt: { type: Date },
     claimId: { type: String, maxlength: 128 },
     claimBy: { type: String, maxlength: 256 },
@@ -83,7 +89,14 @@ queuedTurnSchema.index(
   { tenantId: 1, user: 1, conversationId: 1, clientRequestId: 1 },
   { unique: true },
 );
-queuedTurnSchema.index({ tenantId: 1, user: 1, conversationId: 1, sequence: 1 }, { unique: true });
+queuedTurnSchema.index(
+  { tenantId: 1, user: 1, conversationId: 1, sequence: 1 },
+  {
+    name: 'agent_queued_turn_sequence',
+    unique: true,
+    partialFilterExpression: { sequence: { $exists: true } },
+  },
+);
 queuedTurnSchema.index(
   { tenantId: 1, user: 1, conversationId: 1, activeSlot: 1 },
   {
@@ -116,6 +129,7 @@ queuedTurnSchema.index(
   { name: 'agent_queued_turn_active' },
 );
 queuedTurnSchema.index({ tenantId: 1, user: 1, status: 1, claimUntil: 1 });
+queuedTurnSchema.index({ status: 1, createdAt: 1, _id: 1 });
 queuedTurnSchema.index({
   status: 1,
   scheduledAt: 1,

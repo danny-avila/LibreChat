@@ -12,7 +12,11 @@ const queuedTurnSequenceSchema: Schema<IAgentQueuedTurnSequenceDocument> = new S
     },
     tenantId: { type: String, index: true },
     conversationId: { type: String, required: true, maxlength: 256 },
-    value: { type: Number, required: true, min: 1 },
+    value: { type: Number, required: true, min: 0 },
+    reservationId: { type: String, maxlength: 24 },
+    writerId: { type: String, maxlength: 128 },
+    writerUntil: { type: Date },
+    retiredAt: { type: Date },
   },
   { timestamps: true },
 );

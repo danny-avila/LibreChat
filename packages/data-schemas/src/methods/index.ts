@@ -127,6 +127,7 @@ import {
   createAgentQueuedTurnMethods,
   AgentQueuedTurnCapacityError,
   AgentQueuedTurnConflictError,
+  AgentQueuedTurnLaneRetiredError,
   type AgentQueuedTurnMethods,
 } from './queuedTurn';
 import {
@@ -197,7 +198,11 @@ export {
 export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT, MAX_AUDIT_VERIFY_ROWS };
 export { MAX_TOOL_FAVORITES };
 export { AgentTriggerDeliveryConflictError };
-export { AgentQueuedTurnCapacityError, AgentQueuedTurnConflictError };
+export {
+  AgentQueuedTurnCapacityError,
+  AgentQueuedTurnConflictError,
+  AgentQueuedTurnLaneRetiredError,
+};
 
 export type AllMethods = UserMethods &
   SessionMethods &
@@ -303,6 +308,12 @@ export function createMethods(
     getMessages: messageMethods.getMessages,
     deleteMessages: messageMethods.deleteMessages,
     deleteAgentQueuedTurns: async (user, conversations) => {
+      /** Queued-turn ownership is ObjectId-backed. Conversation methods also
+       * support synthetic/non-ObjectId owners in embedded integrations and
+       * tests; those owners cannot have queued-turn rows to retire. */
+      if (!mongoose.isObjectIdOrHexString(user)) {
+        return;
+      }
       const owner = new mongoose.Types.ObjectId(user);
       const settledAt = new Date();
       const deliveryKeys = await agentQueuedTurnMethods.prepareAgentQueuedTurnConversationDeletion({
@@ -318,15 +329,18 @@ export function createMethods(
             reason: 'queued_turn_conversation_deleted',
             settledAt,
           };
-          const retired = await agentTriggerDeliveryMethods.retireAgentTriggerDelivery(retirement);
+          let retired = await agentTriggerDeliveryMethods.retireAgentTriggerDelivery(retirement);
           if (!retired) {
             /** A delivery can exhaust immediately before owner deletion wins.
              * Convert that operator-requeueable dead row into the same terminal
              * retirement receipt before removing its source record. */
-            await agentTriggerDeliveryMethods.retireAgentTriggerDelivery({
+            retired = await agentTriggerDeliveryMethods.retireAgentTriggerDelivery({
               ...retirement,
               onlyIfDead: true,
             });
+          }
+          if (retired) {
+            await agentQueuedTurnMethods.markAgentQueuedTurnDeliveryRetired({ deliveryKey });
           }
         }),
       );

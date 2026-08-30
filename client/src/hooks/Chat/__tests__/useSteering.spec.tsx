@@ -243,10 +243,10 @@ describe('useSteering', () => {
   });
 
   describe('server-owned Agent queued turns', () => {
-    function setupServerQueue() {
+    function setupServerQueue(initializer = withActiveGeneration()) {
       const sendNow = jest.fn();
       const wrapper = ({ children }: { children: React.ReactNode }) => (
-        <RecoilRoot initializeState={withActiveGeneration()}>{children}</RecoilRoot>
+        <RecoilRoot initializeState={initializer}>{children}</RecoilRoot>
       );
       const rendered = renderHook(
         () => ({
@@ -274,6 +274,25 @@ describe('useSteering', () => {
           content: [],
         } as unknown as TMessage,
       ];
+    });
+
+    it('keeps startup turns local until the server generation epoch exists', async () => {
+      const { result } = setupServerQueue(
+        withActiveGeneration(({ set }) => {
+          set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), null);
+        }),
+      );
+
+      await act(async () => {
+        expect(result.current.steering.queueFromComposer('wait for the epoch')).toBe(true);
+        await Promise.resolve();
+      });
+
+      expect(mockEnqueueQueuedTurn).not.toHaveBeenCalled();
+      expect(result.current.queue).toEqual([
+        expect.objectContaining({ text: 'wait for the epoch' }),
+      ]);
+      expect(result.current.queue[0].server).toBeUndefined();
     });
 
     it('enrolls one optimistic row with a stable request and visible branch identity', async () => {

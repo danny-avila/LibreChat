@@ -1,4 +1,5 @@
 import { Types } from 'mongoose';
+import { AgentQueuedTurnLaneRetiredError } from '@librechat/data-schemas';
 import type { AgentQueuedTurnMethods, AgentQueuedTurnRecord } from '@librechat/data-schemas';
 import type { AgentQueuedTurnHttpDeps } from './queuedTurnHttp';
 import {
@@ -38,6 +39,30 @@ function requestBody() {
 }
 
 describe('Agent queued-turn HTTP admission receipts', () => {
+  it('rejects an enqueue after conversation deletion closes its lane', async () => {
+    const methods = {
+      getConvo: jest.fn(async () => ({ agent_id: 'agent_1', endpoint: 'agents' })),
+      getAgentQueuedTurnByClientRequestId: jest.fn(async () => null),
+      enqueueAgentQueuedTurn: jest.fn(async () => {
+        throw new AgentQueuedTurnLaneRetiredError();
+      }),
+    };
+    const deps = {
+      methods: methods as unknown as AgentQueuedTurnMethods & {
+        getConvo: typeof methods.getConvo;
+      },
+      scheduler: { schedule: jest.fn() },
+      checkAgentAccess: jest.fn(async () => true),
+    } satisfies AgentQueuedTurnHttpDeps;
+
+    await expect(
+      handleAgentQueuedTurnEnqueue({ id: USER_ID }, requestBody(), deps),
+    ).resolves.toEqual({
+      status: 409,
+      body: { code: 'QUEUED_TURN_CONVERSATION_DELETING' },
+    });
+  });
+
   it('resolves a scheduling-pending response through an exact same-body terminal replay', async () => {
     const enqueueAgentQueuedTurn = jest
       .fn()
@@ -118,8 +143,16 @@ describe('Agent queued-turn HTTP admission receipts', () => {
         outcome: 'cancelled' as const,
         turn: cancelled,
       })),
+      markAgentQueuedTurnDeliveryRetired: jest.fn(async () => true),
     };
-    const retireDelivery = jest.fn(async () => true);
+    const retireDelivery = jest.fn(
+      async (
+        _deliveryKey: string,
+        _sourceId: string,
+        _reason: string,
+        options?: { onlyIfDead?: boolean },
+      ) => options?.onlyIfDead === true,
+    );
     const deps = {
       methods: methods as unknown as AgentQueuedTurnMethods & {
         getConvo: typeof methods.getConvo;
@@ -154,5 +187,14 @@ describe('Agent queued-turn HTTP admission receipts', () => {
       'agent-queued-turn',
       'queued_turn_cancelled',
     );
+    expect(retireDelivery).toHaveBeenLastCalledWith(
+      'delivery-1',
+      'agent-queued-turn',
+      'queued_turn_cancelled',
+      { onlyIfDead: true },
+    );
+    expect(methods.markAgentQueuedTurnDeliveryRetired).toHaveBeenCalledWith({
+      deliveryKey: 'delivery-1',
+    });
   });
 });

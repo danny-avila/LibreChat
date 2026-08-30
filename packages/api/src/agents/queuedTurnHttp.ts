@@ -1,13 +1,14 @@
 import { Types } from 'mongoose';
 import {
-  AgentQueuedTurnCapacityError,
-  AgentQueuedTurnConflictError,
-} from '@librechat/data-schemas';
-import {
   enqueueAgentQueuedTurnSchema,
   isAgentsEndpoint,
   isEphemeralAgentId,
 } from 'librechat-data-provider';
+import {
+  AgentQueuedTurnCapacityError,
+  AgentQueuedTurnConflictError,
+  AgentQueuedTurnLaneRetiredError,
+} from '@librechat/data-schemas';
 import type {
   AgentQueuedTurnActiveRecord,
   AgentQueuedTurnMethods,
@@ -50,7 +51,12 @@ export interface AgentQueuedTurnHttpDeps {
   ) => Promise<unknown[]>;
   checkAgentAccess?: (run: { agentId?: string; endpoint?: string }) => Promise<boolean>;
   isPrincipalActive?: (userId: string) => boolean | Promise<boolean>;
-  retireDelivery?: (deliveryKey: string, sourceId: string, reason: string) => Promise<boolean>;
+  retireDelivery?: (
+    deliveryKey: string,
+    sourceId: string,
+    reason: string,
+    options?: { onlyIfDead?: boolean },
+  ) => Promise<boolean>;
 }
 
 export interface AgentQueuedTurnHttpResult {
@@ -375,6 +381,9 @@ export async function handleAgentQueuedTurnEnqueue(
         body: { code: 'QUEUED_TURN_IDEMPOTENCY_CONFLICT' },
       };
     }
+    if (error instanceof AgentQueuedTurnLaneRetiredError) {
+      return { status: 409, body: { code: 'QUEUED_TURN_CONVERSATION_DELETING' } };
+    }
     throw error;
   }
 }
@@ -446,11 +455,24 @@ export async function handleAgentQueuedTurnCancel(
     return { status: 409, body: { code: 'QUEUED_TURN_ALREADY_ADMITTING' } };
   }
   if (cancelled.turn.deliveryKey != null && deps.retireDelivery != null) {
-    await deps.retireDelivery(
+    let retired = await deps.retireDelivery(
       cancelled.turn.deliveryKey,
       'agent-queued-turn',
       'queued_turn_cancelled',
     );
+    if (!retired) {
+      retired = await deps.retireDelivery(
+        cancelled.turn.deliveryKey,
+        'agent-queued-turn',
+        'queued_turn_cancelled',
+        { onlyIfDead: true },
+      );
+    }
+    if (retired) {
+      await deps.methods.markAgentQueuedTurnDeliveryRetired({
+        deliveryKey: cancelled.turn.deliveryKey,
+      });
+    }
   }
   return { status: 200, body: { receipt: receipt(cancelled.turn) } };
 }

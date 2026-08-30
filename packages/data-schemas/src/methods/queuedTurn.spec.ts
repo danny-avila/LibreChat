@@ -8,6 +8,7 @@ import type {
 import {
   AgentQueuedTurnCapacityError,
   AgentQueuedTurnConflictError,
+  AgentQueuedTurnLaneRetiredError,
   createAgentQueuedTurnMethods,
   type AgentQueuedTurnMethods,
 } from './queuedTurn';
@@ -163,9 +164,44 @@ describe('agent queued turn methods', () => {
       ),
     );
 
-    expect(results.map(({ turn }) => turn.sequence).sort((a, b) => a - b)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8,
-    ]);
+    const sequences = results.map(({ turn }) => turn.sequence).sort((a, b) => a - b);
+    expect(new Set(sequences).size).toBe(8);
+    expect(sequences.every((value, index) => index === 0 || value > sequences[index - 1])).toBe(
+      true,
+    );
+  });
+
+  it('blocks claims behind a visible reservation and repairs it oldest-first', async () => {
+    const first = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'visible-first' }),
+    );
+    await Turn.create({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      agentId: 'agent-1',
+      parentMessageId: 'parent-1',
+      clientRequestId: 'interrupted-reservation',
+      fingerprint: 'x'.repeat(43),
+      activeSlot: ((first.turn.activeSlot ?? 0) + 1) % 100,
+      status: 'reserving',
+      priority: false,
+      text: 'repair me',
+      attempts: 0,
+      availableAt: START,
+      deliveryState: 'pending',
+    });
+
+    await expect(
+      methods.claimNextAgentQueuedTurn(claimInput(first.turn.queuedTurnId)),
+    ).resolves.toMatchObject({ outcome: 'blocked' });
+    await methods.findQueuedTurnsNeedingDelivery();
+    await expect(
+      methods.claimNextAgentQueuedTurn(claimInput(first.turn.queuedTurnId)),
+    ).resolves.toMatchObject({ outcome: 'acquired' });
+    await expect(
+      Turn.findOne({ clientRequestId: 'interrupted-reservation' }).lean(),
+    ).resolves.toMatchObject({ status: 'queued', sequence: expect.any(Number) });
   });
 
   it('caps each conversation at 100 active turns while preserving exact replay', async () => {
@@ -769,6 +805,15 @@ describe('agent queued turn methods', () => {
       queuedTurnId: tenantOne.turn.queuedTurnId,
       deliveryKey: 'delivery-delete-one',
     });
+    await Sequence.updateOne(
+      { user, tenantId: 'tenant-1', conversationId: 'conversation-1' },
+      {
+        $set: {
+          writerId: 'enqueue-in-flight',
+          writerUntil: new Date(Date.now() + 25),
+        },
+      },
+    );
     await methods.enqueueAgentQueuedTurn(
       enqueueInput({ tenantId: 'tenant-2', clientRequestId: 'delete-tenant-two' }),
     );
@@ -783,12 +828,40 @@ describe('agent queued turn methods', () => {
         settledAt: START,
       }),
     ).resolves.toEqual(['delivery-delete-one']);
+    await expect(
+      Sequence.findOne({ user, tenantId: 'tenant-1', conversationId: 'conversation-1' }).lean(),
+    ).resolves.toMatchObject({ retiredAt: START });
     expect(
       await Turn.findById(tenantOne.turn.queuedTurnId).select('status terminalReceipt').lean(),
     ).toMatchObject({
       status: 'cancelled',
       terminalReceipt: { failure: { code: 'OWNER_DRAINED' } },
     });
+    await expect(methods.findQueuedTurnsNeedingDelivery()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          queuedTurnId: tenantOne.turn.queuedTurnId,
+          deliveryState: 'publishing',
+        }),
+      ]),
+    );
+    await expect(
+      methods.deletePreparedAgentQueuedTurnConversations({
+        user,
+        targets: [{ conversationId: 'conversation-1', tenantId: 'tenant-1' }],
+      }),
+    ).rejects.toThrow('deliveries must retire');
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: tenantOne.turn.queuedTurnId,
+      deliveryKey: 'delivery-delete-one',
+      scheduledAt: START,
+    });
+    await expect(
+      methods.markAgentQueuedTurnDeliveryRetired({ deliveryKey: 'delivery-delete-one' }),
+    ).resolves.toBe(true);
     await expect(
       methods.deletePreparedAgentQueuedTurnConversations({
         user,
@@ -796,6 +869,11 @@ describe('agent queued turn methods', () => {
       }),
     ).resolves.toBe(1);
     expect(await Turn.countDocuments({ user, conversationId: 'conversation-1' })).toBe(1);
+    await expect(
+      methods.enqueueAgentQueuedTurn(
+        enqueueInput({ clientRequestId: 'cannot-reopen-deleted-lane' }),
+      ),
+    ).rejects.toBeInstanceOf(AgentQueuedTurnLaneRetiredError);
 
     await methods.prepareAgentQueuedTurnConversationDeletion({
       user,
@@ -808,5 +886,49 @@ describe('agent queued turn methods', () => {
     });
     expect(await Turn.countDocuments({ user, conversationId: 'conversation-1' })).toBe(0);
     expect(await Turn.countDocuments({ user, conversationId: 'conversation-2' })).toBe(1);
+  });
+
+  it('includes preexisting dead deliveries in conversation retirement', async () => {
+    const queued = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'dead-before-delete' }),
+    );
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey: 'delivery-dead-before-delete',
+    });
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey: 'delivery-dead-before-delete',
+      scheduledAt: START,
+    });
+    const claim = await methods.claimNextAgentQueuedTurn(claimInput(queued.turn.queuedTurnId));
+    expect(claim.outcome).toBe('acquired');
+    if (claim.outcome !== 'acquired') {
+      throw new Error('Expected queued-turn claim');
+    }
+    await methods.releaseAgentQueuedTurn({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      claimId: claim.claim.claimId,
+      claimBy: claim.claim.claimBy,
+      disposition: 'dead',
+      settledAt: START,
+      failure: { code: 'TEST_DEAD', message: 'dead before conversation deletion' },
+    });
+
+    await expect(
+      methods.prepareAgentQueuedTurnConversationDeletion({
+        user,
+        targets: [{ conversationId: 'conversation-1', tenantId: 'tenant-1' }],
+      }),
+    ).resolves.toEqual(['delivery-dead-before-delete']);
   });
 });

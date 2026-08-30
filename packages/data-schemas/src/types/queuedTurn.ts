@@ -1,6 +1,14 @@
 import type { Document, Types } from 'mongoose';
 
-export type AgentQueuedTurnStatus = 'queued' | 'claimed' | 'admitted' | 'cancelled' | 'dead';
+export type AgentQueuedTurnStatus =
+  | 'reserving'
+  | 'queued'
+  | 'claimed'
+  | 'admitted'
+  | 'cancelled'
+  | 'dead';
+
+export type AgentQueuedTurnDeliveryState = 'pending' | 'publishing' | 'published' | 'retired';
 
 export interface AgentQueuedTurnFileRef {
   file_id: string;
@@ -36,7 +44,8 @@ export interface IAgentQueuedTurn {
   parentMessageId: string;
   clientRequestId: string;
   fingerprint: string;
-  sequence: number;
+  /** Assigned after the row is durably visible as `reserving`. */
+  sequence?: number;
   /** Bounded active-lane capacity token. Present only while queued/claimed. */
   activeSlot?: number;
   status: AgentQueuedTurnStatus;
@@ -49,6 +58,7 @@ export interface IAgentQueuedTurn {
   attempts: number;
   availableAt: Date;
   deliveryKey?: string;
+  deliveryState?: AgentQueuedTurnDeliveryState;
   scheduledAt?: Date;
   claimId?: string;
   claimBy?: string;
@@ -66,6 +76,11 @@ export interface IAgentQueuedTurnSequence {
   tenantId?: string;
   conversationId: string;
   value: number;
+  /** Visible reservation currently owning `value`; recovery completes it. */
+  reservationId?: string;
+  writerId?: string;
+  writerUntil?: Date;
+  retiredAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -74,8 +89,11 @@ export interface IAgentQueuedTurnSequenceDocument
   extends Omit<IAgentQueuedTurnSequence, '_id'>,
     Document<string> {}
 
-export interface AgentQueuedTurnRecord extends Omit<IAgentQueuedTurn, '_id' | 'createdAt'> {
+export interface AgentQueuedTurnRecord
+  extends Omit<IAgentQueuedTurn, '_id' | 'createdAt' | 'sequence' | 'status'> {
   queuedTurnId: string;
+  sequence: number;
+  status: Exclude<AgentQueuedTurnStatus, 'reserving'>;
   createdAt: Date;
 }
 
@@ -98,6 +116,7 @@ export type AgentQueuedTurnActiveRecord = Pick<
   | 'attempts'
   | 'availableAt'
   | 'deliveryKey'
+  | 'deliveryState'
   | 'scheduledAt'
   | 'createdAt'
   | 'updatedAt'

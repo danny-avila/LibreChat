@@ -21,8 +21,8 @@ const dependencies = (req) => {
     updateFilesUsage: db.updateFilesUsage,
     checkAgentAccess: createAgentAccessCheck(req),
     isPrincipalActive: db.isAgentTriggerPrincipalActive,
-    retireDelivery: (deliveryKey, _sourceId, reason) =>
-      retireAgentTrigger(deliveryKey, AGENT_QUEUED_TURN_SOURCE, reason),
+    retireDelivery: (deliveryKey, _sourceId, reason, options) =>
+      retireAgentTrigger(deliveryKey, AGENT_QUEUED_TURN_SOURCE, reason, options),
   };
 };
 
