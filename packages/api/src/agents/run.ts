@@ -48,6 +48,7 @@ import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
 import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { ResolvedToolApprovalHook } from '~/agents/hitl/hooks';
+import type { TerminalSteerHook } from '~/agents/steering/runtime';
 import type { ResolvedAlwaysApplySkill } from '~/agents/skills';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { SubagentUsageEvent } from '~/agents/usage';
@@ -64,6 +65,11 @@ import {
   usesSubagentCompletionWakeups,
 } from '~/agents/subagentDelivery';
 import {
+  isSteeringSupported,
+  isSteerPreemptSupported,
+  isSteerTerminalContinuationSupported,
+} from '~/agents/steering/runtime';
+import {
   resolveToolApprovalPolicy,
   healToolApprovalPolicy,
   exemptAskUserQuestionFromApproval,
@@ -74,7 +80,6 @@ import {
 } from '~/agents/hitl/askUserQuestionTool';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
-import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
 import { extractDefaultParams, resolveReasoningParams } from '~/endpoints/openai/llm';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { resolveStreamLimits, resolveSubagentMaxTurns } from '~/agents/config';
@@ -1474,6 +1479,11 @@ export async function createRun({
      */
     preemptHook?: HookCallback<'PreemptBoundary'>;
     /**
+     * Atomically claims queued steers at the SDK's terminal Stop boundary or
+     * seals admission so later messages become ordinary follow-up turns.
+     */
+    terminalHook?: TerminalSteerHook;
+    /**
      * Level-triggered O(1) poll over the job's armed preempt requests
      * (`createSteerPreemptPoll`). Threaded into `RunConfig.preemption`, which
      * also makes the SDK reserve recursion-limit headroom for its seals.
@@ -1973,6 +1983,12 @@ export async function createRun({
     hooks.register('PostToolBatch', { hooks: [steering.hook] });
     if (steering.preemptHook != null && isSteerPreemptSupported()) {
       hooks.register('PreemptBoundary', { hooks: [steering.preemptHook] });
+    }
+    if (steering.terminalHook != null && isSteerTerminalContinuationSupported()) {
+      const stopFinalizeRegistry = hooks as unknown as {
+        register: (event: 'StopFinalize', matcher: { hooks: TerminalSteerHook[] }) => () => void;
+      };
+      stopFinalizeRegistry.register('StopFinalize', { hooks: [steering.terminalHook] });
     }
   }
   /**

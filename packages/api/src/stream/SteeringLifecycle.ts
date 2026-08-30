@@ -11,6 +11,8 @@ import type {
   SteerQueueItem,
   SteerReceipt,
   SteerReceiptInput,
+  TerminalSteerAdmissionPolicy,
+  TerminalSteerAdmissionResult,
 } from '~/stream/interfaces/IJobStore';
 import type { ServerSentEvent } from '~/types';
 
@@ -173,6 +175,14 @@ export class SteeringLifecycle {
     expectedCreatedAt?: number,
   ): Promise<boolean> {
     return this.store.restoreClaimedSteers(streamId, items, expectedCreatedAt);
+  }
+
+  admitTerminal(
+    streamId: string,
+    policy: TerminalSteerAdmissionPolicy,
+    expectedCreatedAt?: number,
+  ): Promise<TerminalSteerAdmissionResult> {
+    return this.store.admitTerminalSteers(streamId, policy, expectedCreatedAt);
   }
 
   /**

@@ -65,9 +65,11 @@ const {
   createSteerIndexOffsetHandlers,
   createSteerDrainHook,
   createSteerPreemptBoundaryHook,
+  createSteerTerminalContinuationHook,
   createSteerPreemptPoll,
   isSteeringSupported,
   isSteerPreemptSupported,
+  isSteerTerminalContinuationSupported,
   buildSteerMedia,
   collectSteerStampTargets,
   stampSteerPartMedia,
@@ -557,9 +559,9 @@ class AgentClient extends BaseClient {
 
   /**
    * The `steering` fragment for `createRun`: the run-scoped PostToolBatch
-   * drain hook — plus, when the SDK can seal mid-stream, the PreemptBoundary
-   * twin and the preempt poll built from the SAME drain closures, so both
-   * boundaries inject byte-identical shapes. `undefined` when there is no
+   * drain hook — plus the capability-gated PreemptBoundary and terminal Stop
+   * twins built from the SAME drain closures, so every boundary injects
+   * byte-identical shapes. `undefined` when there is no
    * resumable job surface or the installed SDK cannot inject hook messages
    * (draining would drop them).
    *
@@ -591,6 +593,9 @@ class AgentClient extends BaseClient {
       ...(isSteerPreemptSupported() && {
         preemptHook: createSteerPreemptBoundaryHook(drainOptions),
         preemption: createSteerPreemptPoll(streamId),
+      }),
+      ...(isSteerTerminalContinuationSupported() && {
+        terminalHook: createSteerTerminalContinuationHook(drainOptions),
       }),
     };
   }
