@@ -99,7 +99,10 @@ interface ToolCallGroupProps {
   /** True inside a completed phase card. The phase summary already speaks for
    *  this activity, so the group defaults collapsed and never auto-expands —
    *  a remount into the folding card must not toggle open and shut again
-   *  while the parent entrance is playing. */
+   *  while the parent entrance is playing. A pending approval overrides the
+   *  suppression: a phase can resolve while an approval inside it still
+   *  blocks the run, and hiding that card behind a second collapsed
+   *  disclosure would bury the action the run is waiting on. */
   withinActivityPhase?: boolean;
 }
 
@@ -213,9 +216,10 @@ export default function ToolCallGroup({
    *  even at a single tool call — agent runs are full of one-call batches,
    *  and leaving those expanded defeats the grouping. */
   const autoCollapse = !autoExpand && allCompleted && (count >= 2 || activityLabelText.length > 0);
+  const suppressAutoExpand = withinActivityPhase && !hasPendingApproval;
   const initialState = initialExpansionState?.userOverride === true ? initialExpansionState : null;
   const [isExpanded, setIsExpanded] = useState(
-    initialState?.isExpanded ?? (autoExpand || (!autoCollapse && !withinActivityPhase)),
+    initialState?.isExpanded ?? (autoExpand || (!autoCollapse && !suppressAutoExpand)),
   );
   const [userOverride, setUserOverride] = useState(initialState != null);
   const [shouldRenderBody, setShouldRenderBody] = useState(isExpanded);
@@ -328,11 +332,11 @@ export default function ToolCallGroup({
   );
 
   useEffect(() => {
-    if (hasActiveToolCall && !userOverride && !withinActivityPhase) {
+    if (hasActiveToolCall && !userOverride && !suppressAutoExpand) {
       setShouldRenderBody(true);
       setIsExpanded(true);
     }
-  }, [hasActiveToolCall, userOverride, withinActivityPhase]);
+  }, [hasActiveToolCall, userOverride, suppressAutoExpand]);
 
   return (
     <div className="mb-2 mt-1" ref={rootRef}>

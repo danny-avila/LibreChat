@@ -280,6 +280,29 @@ describe('ToolCallGroup image hoisting', () => {
     expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
   });
 
+  /** A phase can resolve while an approval inside it still blocks the run
+   *  (see ActivityPhaseGroup's pending-approval retention) — the remounted
+   *  group must keep the actionable card mounted, not bury it behind a
+   *  second collapsed disclosure. */
+  it('keeps a pending approval expanded inside a completed phase', () => {
+    renderGroup({
+      ...baseProps,
+      parts: [
+        { part: makeApprovalPart('t1'), idx: 0 },
+        { part: makeApprovalPart('t2'), idx: 1 },
+      ],
+      isSubmitting: true,
+      withinActivityPhase: true,
+    });
+
+    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(screen.getByTestId('inner-0')).toBeInTheDocument();
+    expect(screen.getByTestId('inner-1')).toBeInTheDocument();
+  });
+
   it('still expands on user toggle inside a completed phase', () => {
     renderGroup({ ...baseProps, withinActivityPhase: true });
 

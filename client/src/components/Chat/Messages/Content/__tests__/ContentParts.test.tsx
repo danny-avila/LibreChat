@@ -723,6 +723,52 @@ describe('ContentParts — settled content identity across compaction', () => {
     expect(settledPhase).toHaveAttribute('data-animate-entrance', 'false');
   });
 
+  /** Identical summaries are legitimate across phases of one run. A second
+   *  marker with an already-seen text is a grown occurrence count, not a
+   *  re-key of the first — only the newcomer animates. */
+  it('animates a second phase that repeats an earlier label text', () => {
+    const repeatedPhase = (index: number, bounds: { start: number; end: number }) =>
+      ({
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: 'Completed the activity phase',
+        activity_label_type: 'phase',
+        activity_start_index: bounds.start,
+        activity_end_index: bounds.end,
+        activity_count: 1,
+        pending: false,
+        streamedIndex: index,
+      }) as unknown as TMessageContentParts;
+    const { rerender } = render(
+      <ContentParts
+        {...baseProps}
+        content={[toolPart, repeatedPhase(1, { start: 0, end: 1 })]}
+        isLast
+        isSubmitting
+        isLatestMessage
+      />,
+    );
+
+    rerender(
+      <ContentParts
+        {...baseProps}
+        content={[
+          toolPart,
+          repeatedPhase(1, { start: 0, end: 1 }),
+          toolPart,
+          repeatedPhase(3, { start: 2, end: 3 }),
+        ]}
+        isLast
+        isSubmitting
+        isLatestMessage
+      />,
+    );
+
+    const phases = screen.getAllByTestId('activity-phase-group');
+    expect(phases).toHaveLength(2);
+    expect(phases[0]).toHaveAttribute('data-animate-entrance', 'false');
+    expect(phases[1]).toHaveAttribute('data-animate-entrance', 'true');
+  });
+
   it('still animates a phase whose label first appears at settle', () => {
     const { rerender } = renderStreaming();
 

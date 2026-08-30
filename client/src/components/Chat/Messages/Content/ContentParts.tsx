@@ -258,11 +258,12 @@ const ContentPartsBody = memo(function ContentPartsBody({
   );
   const completedPhaseKeys = useMemo(() => {
     const indices = new Set<number>();
-    const labels = new Set<string>();
+    const labels = new Map<string, number>();
     for (const segment of phaseSegments ?? []) {
       if (segment.type === 'phase') {
         indices.add(getPartKeyIndex(segment.labelPart, segment.labelIndex));
-        labels.add(getActivityLabelText(segment.labelPart));
+        const text = getActivityLabelText(segment.labelPart);
+        labels.set(text, (labels.get(text) ?? 0) + 1);
       }
     }
     return { indices, labels };
@@ -277,8 +278,11 @@ const ContentPartsBody = memo(function ContentPartsBody({
    *  streamed-index stamp cannot pair the two arrays every index-derived key
    *  shifts — an index-only guard then reads each already-settled phase as
    *  new and replays its fold over content the reader already watched fold.
-   *  The label text survives any re-key, so a marker whose text was already
-   *  on screen mounts settled instead.
+   *  The label text survives any re-key, so a re-keyed marker whose text was
+   *  already on screen mounts settled instead. Texts are counted, not merely
+   *  remembered: a run may legitimately generate two phases with identical
+   *  summaries, and the second one — a grown count, not a re-key — still
+   *  deserves its entrance.
    *
    *  The recorded sets are scoped to the message they described.
    *  `MultiMessage` renders siblings without a key, so this instance survives
@@ -288,7 +292,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   const previousPhaseRef = useRef<{
     messageId: string;
     indices: Set<number>;
-    labels: Set<string>;
+    labels: Map<string, number>;
   } | null>(null);
   const previousPhases =
     previousPhaseRef.current?.messageId === messageId ? previousPhaseRef.current : null;
@@ -594,6 +598,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
               );
             }
             const phaseKeyIndex = getPartKeyIndex(segment.labelPart, segment.labelIndex);
+            const labelText = getActivityLabelText(segment.labelPart);
             return (
               <ActivityPhaseGroup
                 key={`activity-phase-${messageId}-${phaseKeyIndex}`}
@@ -605,7 +610,8 @@ const ContentPartsBody = memo(function ContentPartsBody({
                 animateEntrance={
                   previousPhases != null &&
                   !previousPhases.indices.has(phaseKeyIndex) &&
-                  !previousPhases.labels.has(getActivityLabelText(segment.labelPart))
+                  (completedPhaseKeys.labels.get(labelText) ?? 0) >
+                    (previousPhases.labels.get(labelText) ?? 0)
                 }
                 showCursor={
                   isLast &&
