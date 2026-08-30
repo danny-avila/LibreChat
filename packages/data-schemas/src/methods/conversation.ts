@@ -34,6 +34,7 @@ import {
   refreshChatProjectStatsForUser,
   updateChatProjectLastConversationForUser,
 } from './chatProject';
+import { isCompactionSemanticIndexProjection } from '~/types/compaction';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
@@ -314,6 +315,7 @@ export interface ConversationMethods {
     discoveredToolNames?: IAgentEventActorState['discoveredToolNames'];
     summary?: IAgentEventActorState['summary'];
     contextMeta?: IAgentEventActorState['contextMeta'];
+    compactionSemanticIndex?: IAgentEventActorState['compactionSemanticIndex'];
     settlementAuthority?: AgentEventActorSettlementAuthority;
   }): Promise<AgentEventActorCommitResult>;
   storeAgentEventActorSuspension(input: {
@@ -947,6 +949,7 @@ export function createConversationMethods(
     discoveredToolNames?: IAgentEventActorState['discoveredToolNames'];
     summary?: IAgentEventActorState['summary'];
     contextMeta?: IAgentEventActorState['contextMeta'];
+    compactionSemanticIndex?: IAgentEventActorState['compactionSemanticIndex'];
     settlementAuthority?: AgentEventActorSettlementAuthority;
   }): Promise<AgentEventActorCommitResult> {
     if (input.checkpoint.threadId !== input.conversationId) {
@@ -982,6 +985,12 @@ export function createConversationMethods(
             input.contextMeta.encoding.length > MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH)))
     ) {
       throw new RangeError('Event actor context calibration is invalid');
+    }
+    if (
+      input.compactionSemanticIndex != null &&
+      !isCompactionSemanticIndexProjection(input.compactionSemanticIndex)
+    ) {
+      throw new RangeError('Event actor compaction semantic index is invalid');
     }
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
     /** A legacy turn against a headless or already cold-marked actor leaves
@@ -1023,6 +1032,11 @@ export function createConversationMethods(
             ...(input.expected.contextMeta == null
               ? { 'agentEventActor.contextMeta': { $exists: false } }
               : { 'agentEventActor.contextMeta': input.expected.contextMeta }),
+            ...(input.expected.compactionSemanticIndex == null
+              ? { 'agentEventActor.compactionSemanticIndex': { $exists: false } }
+              : {
+                  'agentEventActor.compactionSemanticIndex': input.expected.compactionSemanticIndex,
+                }),
             'agentEventActor.requiresColdStart':
               input.expected.requiresColdStart === true ? true : { $ne: true },
           }),
@@ -1047,6 +1061,9 @@ export function createConversationMethods(
         : { discoveredToolNames: input.discoveredToolNames }),
       ...(input.summary == null ? {} : { summary: input.summary }),
       ...(input.contextMeta == null ? {} : { contextMeta: input.contextMeta }),
+      ...(input.compactionSemanticIndex == null
+        ? {}
+        : { compactionSemanticIndex: input.compactionSemanticIndex }),
       ...(input.expected == null ? {} : { previousCheckpoint: input.expected.checkpoint }),
     };
     const previous = await Conversation.findOneAndUpdate(

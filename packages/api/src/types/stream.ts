@@ -1,4 +1,5 @@
 import type { Agents, UserSubmittedMessageFieldPath } from 'librechat-data-provider';
+import type { ICompactionSemanticIndexProjection } from '@librechat/data-schemas';
 import type { EventEmitter } from 'events';
 import type {
   AgentEventDetachedTerminalEvidence,
@@ -86,6 +87,8 @@ export interface GenerationJobMetadata {
   discoveredTools?: string[];
   /** Bounded collector state for continuing a phase across HITL resume. */
   activityPhaseSnapshot?: ActivityPhaseSnapshot;
+  /** Exact bounded compaction guidance captured atomically with a HITL pause. */
+  compactionSemanticIndex?: ICompactionSemanticIndexProjection;
   /** See `SerializableJobData.preemptCapable`. */
   preemptCapable?: boolean;
   /** See `SerializableJobData.steerQuotesCapable`. */
