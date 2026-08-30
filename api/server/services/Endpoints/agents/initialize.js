@@ -423,6 +423,13 @@ const initializeClient = async ({
       recoverDeadClaim: createDeadBackgroundToolClaimRecovery(
         db.releaseBackgroundToolResultClaims,
         (conversationId) => GenerationJobManager.getJob(conversationId),
+        ({ userId, conversationId, claimId }) =>
+          GenerationJobManager.fenceGenerationClaimForRecovery(
+            userId,
+            claimId,
+            conversationId,
+            conversationId,
+          ),
       ),
     },
     emitAttachment: createAttachmentEmitter({ res, streamId, jobCreatedAt }),

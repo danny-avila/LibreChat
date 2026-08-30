@@ -181,7 +181,13 @@ describe('background tool completion wakeups', () => {
     const retire = jest.fn(async () => true);
     const release = jest.fn(async () => true);
     const getGenerationJob = jest.fn(async () => ({ status: 'complete' }));
-    const recover = createBackgroundToolDeadClaimRecovery(retire, release, getGenerationJob);
+    const fenceGenerationClaim = jest.fn(async () => 'fenced' as const);
+    const recover = createBackgroundToolDeadClaimRecovery(
+      retire,
+      release,
+      getGenerationJob,
+      fenceGenerationClaim,
+    );
 
     await expect(
       recover({
@@ -200,6 +206,11 @@ describe('background tool completion wakeups', () => {
     );
     expect(getGenerationJob).toHaveBeenCalledTimes(2);
     expect(getGenerationJob).toHaveBeenCalledWith('conversation-1');
+    expect(fenceGenerationClaim).toHaveBeenCalledWith({
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+      claimId: 'batch-root-delivery',
+    });
     expect(release).toHaveBeenCalledWith({
       userId: 'user-1',
       conversationId: 'conversation-1',
@@ -212,10 +223,16 @@ describe('background tool completion wakeups', () => {
   it('does not recover a dead delivery while its admitted generation is still active', async () => {
     const retire = jest.fn(async () => true);
     const release = jest.fn(async () => true);
-    const recover = createBackgroundToolDeadClaimRecovery(retire, release, async () => ({
-      status: 'running',
-      metadata: { idempotencyClientRequestId: 'batch-root-delivery' },
-    }));
+    const fenceGenerationClaim = jest.fn(async () => 'fenced' as const);
+    const recover = createBackgroundToolDeadClaimRecovery(
+      retire,
+      release,
+      async () => ({
+        status: 'running',
+        metadata: { idempotencyClientRequestId: 'batch-root-delivery' },
+      }),
+      fenceGenerationClaim,
+    );
 
     await expect(
       recover({
@@ -227,6 +244,7 @@ describe('background tool completion wakeups', () => {
     ).resolves.toBe(false);
     expect(retire).not.toHaveBeenCalled();
     expect(release).not.toHaveBeenCalled();
+    expect(fenceGenerationClaim).not.toHaveBeenCalled();
   });
 
   it('rechecks a generation published while its dead delivery is being retired', async () => {
@@ -240,7 +258,16 @@ describe('background tool completion wakeups', () => {
         metadata: { idempotencyClientRequestId: 'batch-root-delivery' },
       })
       .mockResolvedValue({ status: 'complete' });
-    const recover = createBackgroundToolDeadClaimRecovery(retire, release, getGenerationJob);
+    const fenceGenerationClaim = jest
+      .fn()
+      .mockResolvedValueOnce('started' as const)
+      .mockResolvedValueOnce('fenced' as const);
+    const recover = createBackgroundToolDeadClaimRecovery(
+      retire,
+      release,
+      getGenerationJob,
+      fenceGenerationClaim,
+    );
     const input = {
       userId: 'user-1',
       conversationId: 'conversation-1',
@@ -263,9 +290,14 @@ describe('background tool completion wakeups', () => {
       .fn()
       .mockRejectedValueOnce(new Error('release receipt lost'))
       .mockResolvedValueOnce(true);
-    const recover = createBackgroundToolDeadClaimRecovery(retire, release, async () => ({
-      status: 'complete',
-    }));
+    const recover = createBackgroundToolDeadClaimRecovery(
+      retire,
+      release,
+      async () => ({
+        status: 'complete',
+      }),
+      async () => 'fenced',
+    );
     const input = {
       userId: 'user-1',
       conversationId: 'conversation-1',

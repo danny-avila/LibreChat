@@ -22,11 +22,13 @@ function createBackgroundToolResultPersistence({ req, updateToolCallResult }) {
 function createDeadBackgroundToolClaimRecovery(
   releaseBackgroundToolResultClaims,
   getGenerationJob,
+  fenceGenerationClaim,
 ) {
   return createBackgroundToolDeadClaimRecovery(
     retireAgentTrigger,
     releaseBackgroundToolResultClaims,
     getGenerationJob,
+    fenceGenerationClaim,
   );
 }
 

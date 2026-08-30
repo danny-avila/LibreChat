@@ -457,6 +457,11 @@ export function createBackgroundToolDeadClaimRecovery(
   retire: RetireBackgroundToolCompletion,
   releaseClaims: WakeupMethods['releaseBackgroundToolResultClaims'],
   getGenerationJob: (conversationId: string) => Promise<GenerationState | null | undefined>,
+  fenceGenerationClaim: (input: {
+    userId: string;
+    conversationId: string;
+    claimId: string;
+  }) => Promise<'fenced' | 'started' | 'unavailable'>,
 ): BackgroundToolDeadClaimRecovery {
   return async ({ userId, conversationId, messageId, claimId }) => {
     const claimGenerationIsActive = async (): Promise<boolean> => {
@@ -477,11 +482,14 @@ export function createBackgroundToolDeadClaimRecovery(
     if (!retired) {
       return false;
     }
-    /** The final POST can acquire its generation start claim before the job is
-     * visible. Retirement closes further delivery retries; this second read
-     * catches a generation published across that window before any durable
-     * result claim is released. A recovery-specific retired receipt is
-     * replay-safe, so a later poll retries after that generation terminalizes. */
+    /** Retirement closes further delivery retries. The idempotency-claim CAS
+     * closes the remaining claim-to-job-publication window: recovery either
+     * installs a started tombstone that invalidates a delayed creator's token,
+     * or observes that job creation already won. */
+    const generationFence = await fenceGenerationClaim({ userId, conversationId, claimId });
+    if (generationFence === 'unavailable') {
+      return false;
+    }
     if (await claimGenerationIsActive()) {
       return false;
     }
