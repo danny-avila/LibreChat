@@ -1,8 +1,8 @@
 import type Keyv from 'keyv';
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
-import { BaseRegistryCache } from './BaseRegistryCache';
 import { cacheConfig, evalKeyvRedisScript, keyvRedisClient, standardCache } from '~/cache';
+import { BaseRegistryCache } from './BaseRegistryCache';
 
 /**
  * Redis-backed MCP server configs cache that stores all entries under a single aggregate key.
@@ -84,9 +84,11 @@ export class ServerConfigsCacheRedisAggregateKey
   }
 
   private usesRedisStore(): boolean {
+    const namespace = this.cache.namespace;
     return (
       keyvRedisClient != null &&
-      !cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(this.cache.namespace)
+      namespace != null &&
+      !cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(namespace)
     );
   }
 

@@ -50,9 +50,11 @@ export class ServerConfigsCacheRedis
   }
 
   private usesRedisStore(): boolean {
+    const namespace = this.cache.namespace;
     return (
       keyvRedisClient != null &&
-      !cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(this.cache.namespace)
+      namespace != null &&
+      !cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(namespace)
     );
   }
 
