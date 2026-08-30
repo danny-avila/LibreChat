@@ -1,11 +1,19 @@
 /**
- * A discovery caller that gives up on a slow `connect()` disposes the connection immediately, so
- * it can dispose while `constructTransport()` is still pending. `dispose()` then finds no
- * transport to close, and without a post-await check the abandoned attempt would go on to connect
- * and leave a live connection nobody owns.
+ * Real-SDK coverage for disposal landing mid-connect.
+ *
+ * A discovery caller that gives up on a slow `connect()` disposes immediately, so it can dispose
+ * while `constructTransport()` is still pending. `dispose()` then finds no transport to close, and
+ * without a post-await check the abandoned attempt goes on to connect, leaving a live session
+ * nobody owns. Only transport construction is delayed here; the client, transport, and server are
+ * real SDK objects, so the assertions are about a genuinely open or closed session rather than
+ * about which mock was called.
  */
-
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { MCPConnection } from '~/mcp/connection';
+
+jest.setTimeout(10_000);
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -23,50 +31,58 @@ jest.mock('~/auth', () => ({
   resolveHostnameSSRF: jest.fn(async () => false),
 }));
 
-jest.mock('~/mcp/mcpConfig', () => ({
-  mcpConfig: {
-    TOOLS_LIST_MAX_PAGES: 3,
-    TOOLS_LIST_MAX_TOOLS: 1000,
-    TOOLS_LIST_MAX_BYTES: 5 * 1024 * 1024,
-    TOOLS_LIST_TIMEOUT_MS: 30000,
-    CONNECTION_CHECK_TTL: 0,
-  },
-}));
-
 describe('MCPConnection disposal during connect', () => {
-  it('discards a transport constructed after the connection was disposed', async () => {
-    const conn = new MCPConnection({
+  let server: Server | undefined;
+
+  afterEach(async () => {
+    await server?.close().catch(() => undefined);
+    server = undefined;
+  });
+
+  it('leaves no live session when disposal lands while the transport is being constructed', async () => {
+    server = new Server(
+      { name: 'dispose-race-server', version: '1.0.0' },
+      { capabilities: { tools: {} } },
+    );
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [] }));
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+
+    const connection = new MCPConnection({
       serverName: 'dispose-race',
       serverConfig: { type: 'streamable-http', url: 'http://localhost/mcp' },
       useSSRFProtection: false,
     });
 
+    let serverSawClose = false;
+    serverTransport.onclose = () => {
+      serverSawClose = true;
+    };
+
+    /** The only stub: hold construction open so disposal can land inside this window. */
     let releaseTransport: (() => void) | undefined;
     const transportPending = new Promise<void>((resolve) => {
       releaseTransport = resolve;
     });
-    const transport = { close: jest.fn(), send: jest.fn(), start: jest.fn() };
-    const constructTransport = jest
+    jest
       .spyOn(
-        conn as unknown as { constructTransport: () => Promise<unknown> },
+        connection as unknown as { constructTransport: () => Promise<unknown> },
         'constructTransport',
       )
       .mockImplementation(async () => {
         await transportPending;
-        return transport;
+        return clientTransport;
       });
 
-    const clientConnect = jest.spyOn(conn.client, 'connect').mockResolvedValue(undefined);
-    const clientClose = jest.spyOn(conn.client, 'close').mockResolvedValue(undefined);
-
-    const connecting = conn.connectClient();
-    await conn.dispose();
+    const connecting = connection.connectClient();
+    await connection.dispose();
     releaseTransport?.();
     await connecting;
 
-    expect(constructTransport).toHaveBeenCalledTimes(1);
-    expect(clientConnect).not.toHaveBeenCalled();
-    expect(clientClose).toHaveBeenCalled();
-    expect(await conn.isConnected()).toBe(false);
+    /** A real `tools/list` is the honest probe: it succeeds over any session left open. */
+    await expect(connection.client.listTools()).rejects.toThrow();
+    expect(await connection.isConnected()).toBe(false);
+    expect(serverSawClose).toBe(true);
   });
 });

@@ -2077,12 +2077,21 @@ export class MCPConnection extends EventEmitter {
       return false;
     }
     logger.debug(`${this.getLogPrefix()} Disposed mid-connect; discarding the transport it opened`);
+    const transport = this.transport;
+    this.transport = null;
+    /** Closing the client only closes a transport the client has already adopted, which it has
+     *  not when disposal beat `client.connect()`. Close the transport itself first, or the
+     *  session this attempt opened outlives the connection that owned it. */
+    try {
+      await transport?.close();
+    } catch {
+      // Ignore cleanup errors
+    }
     try {
       await this.client.close();
     } catch {
       // Ignore cleanup errors
     }
-    this.transport = null;
     return true;
   }
 
