@@ -12,12 +12,14 @@ import {
 import {
   Button,
   Alert,
+  composerSurfaceClasses,
+  composerSurfaceShadow,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Textarea,
+  TextareaAutosize,
   useMediaQuery,
   useToastContext,
 } from '@librechat/client';
@@ -58,6 +60,7 @@ import { useParentSubagents } from './ParentSubagentsProvider';
 import SubagentConversation from './SubagentConversation';
 import { eventSubagentSelection } from './eventSelection';
 import { useAgentsMapContext } from '~/Providers';
+import { cn } from '~/utils';
 
 const EVENT_TASK_PAGE_SIZE = 3;
 const TERMINAL_CONTROL_REASONS = new Set([
@@ -230,6 +233,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   useEffect(() => {
     if (
       selection.event == null ||
+      selection.event.pinnedTask === true ||
       eventSummary?.latestTaskId == null ||
       eventSummary.latestTaskId === taskId
     ) {
@@ -1082,20 +1086,6 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
             </h2>
           )}
         </div>
-        {canContinueAsChat && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={continueAsChat}
-            disabled={continueChat.isLoading}
-            aria-label={localize('com_ui_continue_chat')}
-            className="h-8 shrink-0 gap-1.5"
-          >
-            <MessagesSquare size={15} aria-hidden="true" />
-            <span className="hidden sm:inline">{localize('com_ui_continue_chat')}</span>
-          </Button>
-        )}
         <Button
           type="button"
           variant="ghost"
@@ -1116,8 +1106,8 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       >
         {activityPanel}
       </ApprovalProvider>
-      {showControlFooter && (
-        <div className="shrink-0 border-t border-border-light p-3">
+      {(showControlFooter || canContinueAsChat) && (
+        <div className="shrink-0 p-3 pt-2">
           {transientControl?.status === 'failed' && (
             <Alert variant="error" className="mb-2 flex items-center gap-2">
               <span className="min-w-0 flex-1">
@@ -1139,23 +1129,33 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
             </Alert>
           )}
           {controlAvailable && (
-            <>
-              <Textarea
+            /* Same surface language as the main chat composer, scaled to the panel. */
+            <div
+              className={cn(
+                'flex w-full flex-col gap-1.5 rounded-3xl p-2.5',
+                composerSurfaceClasses(),
+                composerSurfaceShadow.within,
+              )}
+            >
+              <TextareaAutosize
                 value={controlMessage}
                 onChange={(event) => setControlMessage(event.target.value)}
                 placeholder={localize('com_ui_subagent_control_placeholder')}
                 aria-label={localize('com_ui_subagent_control_message')}
                 maxLength={4 * 1024}
-                rows={2}
+                minRows={1}
+                maxRows={6}
                 disabled={controlPending}
+                className="w-full resize-none bg-transparent px-1.5 py-1 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none disabled:cursor-not-allowed"
               />
-              <div className="mt-2 flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
                   disabled={controlPending || controlMessage.trim() === ''}
                   onClick={() => submitControl('steer')}
+                  className="rounded-full"
                 >
                   <CornerDownRight size={14} aria-hidden />
                   {localize('com_ui_steer')}
@@ -1166,6 +1166,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
                   variant="outline"
                   disabled={controlPending || controlMessage.trim() === ''}
                   onClick={() => submitControl('queue')}
+                  className="rounded-full"
                 >
                   <ListEnd size={14} aria-hidden />
                   {localize('com_ui_queue')}
@@ -1176,6 +1177,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
                   variant="outline"
                   disabled={controlPending || controlMessage.trim() === ''}
                   onClick={() => submitControl('interrupt')}
+                  className="rounded-full"
                 >
                   <Zap size={14} aria-hidden />
                   {localize('com_ui_subagent_interrupt')}
@@ -1186,13 +1188,28 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
                   variant="ghost"
                   disabled={controlPending}
                   onClick={() => submitControl('cancel')}
-                  className="ml-auto text-status-error"
+                  className="ml-auto rounded-full text-status-error"
                 >
                   <OctagonX size={14} aria-hidden />
                   {localize('com_ui_subagent_cancel_task')}
                 </Button>
               </div>
-            </>
+            </div>
+          )}
+          {!controlAvailable && canContinueAsChat && (
+            /* The settled run keeps a footer affordance where the composer was,
+               instead of the input vanishing at completion. */
+            <Button
+              type="button"
+              variant="outline"
+              onClick={continueAsChat}
+              disabled={continueChat.isLoading}
+              aria-label={localize('com_ui_continue_chat')}
+              className="w-full gap-1.5 rounded-3xl"
+            >
+              <MessagesSquare size={15} aria-hidden="true" />
+              {localize('com_ui_continue_chat')}
+            </Button>
           )}
         </div>
       )}

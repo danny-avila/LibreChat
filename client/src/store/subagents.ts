@@ -276,6 +276,9 @@ export type ActiveSubagentPanel = {
     progressKey: string;
     /** Message anchors merged into the same parent-owned activity group. */
     siblingParentMessageIds?: string[];
+    /** The selection deliberately targets a historical task; the panel must
+     *  not snap it forward when the actor thread receives a newer delivery. */
+    pinnedTask?: boolean;
   };
 };
 

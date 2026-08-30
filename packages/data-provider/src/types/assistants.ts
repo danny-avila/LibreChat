@@ -726,6 +726,9 @@ export type TMessageContentParts =
       reasoning_label_revision?: number;
       /** Whether the reasoning step can still produce a newer label. */
       reasoning_label_status?: 'streaming' | 'complete';
+      /** The reasoning happened but its text is not available to this view
+       *  (e.g. detached subagent projections retain only a marker). */
+      reasoning_unavailable?: boolean;
     } & ContentMetadata)
   | (SteerContentPart & ContentMetadata)
   | ({
