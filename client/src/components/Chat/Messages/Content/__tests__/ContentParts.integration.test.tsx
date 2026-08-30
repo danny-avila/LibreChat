@@ -343,6 +343,8 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
       </RecoilRoot>,
     );
 
+    fireEvent.click(screen.getByRole('button', { name: 'First phase' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Second phase' }));
     const toggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
     fireEvent.click(toggles[1]);
 
@@ -351,6 +353,12 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
         <ContentParts {...baseProps} content={shiftedContent} />
       </RecoilRoot>,
     );
+    for (const phase of ['First phase', 'Second phase']) {
+      const phaseToggle = screen.getByRole('button', { name: phase });
+      if (phaseToggle.getAttribute('aria-expanded') !== 'true') {
+        fireEvent.click(phaseToggle);
+      }
+    }
     const shiftedToggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
     expect(shiftedToggles[0]).toHaveAttribute('aria-expanded', 'false');
     expect(shiftedToggles[1]).toHaveAttribute('aria-expanded', 'true');
