@@ -1,4 +1,5 @@
 import { AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1 } from '@librechat/data-schemas';
+import type { AgentTriggerProducerLeaseStatus } from '@librechat/data-schemas';
 import type { EnqueueBackgroundToolCompletion } from './backgroundCompletionWakeup';
 import {
   BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS,
@@ -83,10 +84,12 @@ function resolverMethods() {
         ],
       })),
       releaseBackgroundToolResultClaims,
-      getAgentTriggerDeliveryProducerLease: jest.fn(async () => ({
-        status: 'live' as const,
-        leaseUntil: new Date(NOW + 30_000),
-      })),
+      getAgentTriggerDeliveryProducerLease: jest.fn(
+        async (): Promise<AgentTriggerProducerLeaseStatus> => ({
+          status: 'live',
+          leaseUntil: new Date(NOW + 30_000),
+        }),
+      ),
     },
   };
 }

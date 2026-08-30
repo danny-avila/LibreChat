@@ -21,7 +21,6 @@ import type {
   BackgroundToolWakeupAdmission,
   BackgroundToolWakeupRegistration,
 } from './backgroundCompletion';
-import { BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS } from './backgroundCompletion';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { BackgroundToolResultState } from './harvest';
 import type { CodeExecutionContext } from './execution';
@@ -75,6 +74,7 @@ import {
 } from './intent';
 import { getSafeErrorMetadata, logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
+import { BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS } from './backgroundCompletion';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { createSkillContentDigest } from './compatibility';
 import { parseFrontmatter } from '../skills/import';

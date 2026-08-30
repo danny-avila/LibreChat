@@ -1401,6 +1401,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     });
     const retire = jest.fn(async () => true);
     backgroundTaskRegistry.markCompletionWakeup('claim_user', 'claim_convo', created.task.id, {
+      renew: jest.fn(async () => true),
       retire,
     });
     const claimBackgroundToolResult = jest
@@ -1487,6 +1488,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     });
     const retire = jest.fn(async () => false);
     backgroundTaskRegistry.markCompletionWakeup('retire_user', 'retire_convo', created.task.id, {
+      renew: jest.fn(async () => true),
       retire,
     });
 
@@ -1533,6 +1535,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     });
     const retire = jest.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     backgroundTaskRegistry.markCompletionWakeup('dead_user', 'dead_convo', created.task.id, {
+      renew: jest.fn(async () => true),
       retire,
     });
 

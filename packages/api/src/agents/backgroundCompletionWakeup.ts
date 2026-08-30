@@ -13,7 +13,6 @@ import type {
   BackgroundToolWakeupRegistration,
   BackgroundToolWakeupRetireOptions,
 } from './backgroundCompletion';
-import { BACKGROUND_TOOL_PRODUCER_LEASE_MS } from './backgroundCompletion';
 import type {
   AgentTriggerContinuePreparation,
   AgentTriggerExecutionHostDeps,
@@ -21,6 +20,7 @@ import type {
 import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
 import type { AgentTriggerDispatchContext } from './triggers/dispatch';
 import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
+import { BACKGROUND_TOOL_PRODUCER_LEASE_MS } from './backgroundCompletion';
 import { createAgentTriggerEnvelope } from './triggers/envelope';
 import { AgentTriggerExecutionError } from './triggers/host';
 import { truncateMiddle } from '~/utils';

@@ -128,6 +128,7 @@ import {
   recordAgentEventActorReceiptMetric,
   setAgentEventActorReceiptMetricObserver,
   type AgentTriggerDeliveryMethods,
+  type AgentTriggerProducerLeaseStatus,
   type AgentEventActorReceiptMetric,
   type AgentEventActorReceiptStorageMetrics,
 } from './triggerDelivery';
@@ -450,6 +451,7 @@ export type {
   UpsertSkillSyncCredentialInput,
   SkillSyncMethods,
   AgentTriggerDeliveryMethods,
+  AgentTriggerProducerLeaseStatus,
   AgentEventActorReceiptMetric,
   AgentEventActorReceiptStorageMetrics,
   ScheduleMethods,
