@@ -267,7 +267,7 @@ describe('background tool completion wakeups', () => {
 
   it('waits through the invocation and persistence budgets before abandoning missing evidence', async () => {
     const { methods } = resolverMethods();
-    methods.claimBackgroundToolResults.mockResolvedValue({ status: 'missing' });
+    methods.claimBackgroundToolResults.mockResolvedValue({ status: 'missing', results: [] });
     const deliveryEnvelope = await envelope({ createdAt: NOW });
     const resolveDuringPersistence = createBackgroundToolCompletionWakeupResolver({
       methods: methods as never,
