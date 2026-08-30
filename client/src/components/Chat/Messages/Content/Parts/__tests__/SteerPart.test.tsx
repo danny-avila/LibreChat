@@ -213,7 +213,7 @@ describe('SteerPart live receipt draw-in', () => {
 
   it('animates the checks once when its applied event landed this session, then consumes the id', () => {
     renderLive(['s1', 'other']);
-    expect(appliedChecks()).toHaveClass('steer-receipt-live');
+    expect(appliedChecks()).toHaveClass('animate-in');
     // Consumed on mount so a remount (revisit, reload) renders without motion;
     // unrelated ids survive for their own parts.
     expect(screen.getByTestId('live-ids')).toHaveTextContent('other');
@@ -221,6 +221,6 @@ describe('SteerPart live receipt draw-in', () => {
 
   it('renders the settled checks without the draw-in when not applied live', () => {
     renderLive([]);
-    expect(appliedChecks()).not.toHaveClass('steer-receipt-live');
+    expect(appliedChecks()).not.toHaveClass('animate-in');
   });
 });

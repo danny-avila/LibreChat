@@ -136,10 +136,15 @@ const InFlightSteer = memo(function InFlightSteer({
   const { images, others } = useMemo(() => splitFiles(steer.files), [steer.files]);
   const sending = steer.status === 'sending';
   const preempting = steer.preempt === true;
-  /** An interrupt shows as interrupting even before its 202 (the click must
-   *  react instantly); `confirmed` below withholds the check until the ACK. */
+  /** This row's own arm request is in flight (the convo-scoped escalating flag
+   *  cannot say WHICH row asked). The receipt must react on the click, not the
+   *  ACK — the silent round trip is exactly what reads as broken. */
+  const [arming, setArming] = useState(false);
+  /** An interrupt shows as interrupting even before its confirmation (the
+   *  click must react instantly); `confirmed` below withholds the check until
+   *  the server durably acknowledged the enqueue/arm. */
   let receiptState: SteerReceiptState = 'delivered';
-  if (preempting) {
+  if (preempting || arming) {
     receiptState = 'interrupting';
   } else if (sending) {
     receiptState = 'sending';
@@ -209,6 +214,7 @@ const InFlightSteer = memo(function InFlightSteer({
       const trigger = event.currentTarget;
       setEscalationAnnouncement('');
       setEscalating(true);
+      setArming(true);
       const params = {
         conversationId,
         steerId: steer.steerId,
@@ -303,7 +309,10 @@ const InFlightSteer = memo(function InFlightSteer({
           clearTimeout(timeout);
         }
       };
-      void requestArm().finally(() => setEscalating(false));
+      void requestArm().finally(() => {
+        setEscalating(false);
+        setArming(false);
+      });
     },
     [
       armSteer,
@@ -563,7 +572,7 @@ const InFlightSteer = memo(function InFlightSteer({
        *  present; the rail hides while sending or already escalated. */}
       <SteerReceipt
         state={receiptState}
-        confirmed={!sending}
+        confirmed={!sending && !arming}
         className={!sending && !preempting ? 'mr-[30px]' : undefined}
       />
       <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">

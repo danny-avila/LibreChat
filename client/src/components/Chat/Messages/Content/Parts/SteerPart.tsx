@@ -78,12 +78,12 @@ const SteerPart = memo(function SteerPart({
   /** The receipt draw-in plays exactly once, at the live chip→inline hand-off:
    *  the applied handler stamps the id before this part mounts, the initial
    *  render captures it, and the effect consumes it so a remount (conversation
-   *  revisit, reload, share view) renders the settled checks without motion. */
-  const liveAppliedIds = useRecoilValue(store.liveAppliedSteerIds);
+   *  revisit, reload, share view) renders the settled checks without motion.
+   *  The membership selector scopes the subscription to THIS id — stamping or
+   *  consuming one steer never re-renders the other mounted parts. */
+  const isLiveApplied = useRecoilValue(store.liveAppliedSteerFamily(steerId ?? ''));
   const setLiveAppliedIds = useSetRecoilState(store.liveAppliedSteerIds);
-  const [animateIn] = useState(
-    () => steerId != null && steerId.length > 0 && liveAppliedIds.includes(steerId),
-  );
+  const [animateIn] = useState(isLiveApplied);
   useEffect(() => {
     if (!animateIn || steerId == null) {
       return;

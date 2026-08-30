@@ -28,16 +28,15 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('@librechat/client', () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
-  InfoHoverCard: () => null,
-  ESide: { Top: 'top', Bottom: 'bottom' },
-  HoverCard: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  HoverCardTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  HoverCardPortal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  HoverCardContent: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="hover-card-content" hidden>
+  /** Trigger-only stand-in: the receipt renders its marks as the hover card's
+   *  custom trigger, so the mock must render children under the accessible
+   *  name rather than swallowing them. */
+  InfoHoverCard: ({ text, children }: { text: string; children?: React.ReactNode }) => (
+    <button type="button" aria-label={text}>
       {children}
-    </div>
+    </button>
   ),
+  ESide: { Top: 'top', Bottom: 'bottom' },
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -812,6 +811,40 @@ describe('InFlightSteers — interrupt-now escalation', () => {
     expect(screen.queryByTestId('steer-escalate-now')).toBeNull();
     expect(document.activeElement).toBe(screen.getByLabelText('com_ui_more_options'));
     expect(screen.getByRole('status')).toHaveTextContent('com_ui_steer_in_flight_preempt');
+  });
+
+  it('flips the receipt to interrupting on the click, confirming its check only on the ACK', async () => {
+    let resolveArm: (value: unknown) => void = () => {};
+    mockArmMutateAsync.mockReturnValue(
+      new Promise((resolve) => {
+        resolveArm = resolve;
+      }),
+    );
+    renderSteers([{ steerId: 's1', text: 'hold on', status: 'pending', createdAt: 1 }]);
+    expect(screen.getByTestId('steer-receipt')).toHaveAttribute('data-receipt-state', 'delivered');
+
+    fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    // The silent round trip is what reads as broken: the label and pulse react
+    // on the click, while the check waits for the confirmed durable arm.
+    const receipt = screen.getByTestId('steer-receipt');
+    expect(receipt).toHaveAttribute('data-receipt-state', 'interrupting');
+    expect(receipt.querySelector('svg')).toBeNull();
+
+    await act(async () => {
+      resolveArm({ armed: true, generationProtocolVersion: 2, preemptRevision: 1 });
+    });
+    expect(receipt).toHaveAttribute('data-receipt-state', 'interrupting');
+    expect(receipt.querySelector('svg')).not.toBeNull();
+  });
+
+  it('returns the receipt to delivered when the arm loses its race', async () => {
+    mockArmMutateAsync.mockResolvedValue({ armed: false, generationProtocolVersion: 2 });
+    renderSteers([{ steerId: 's1', text: 'hold on', status: 'pending', createdAt: 1 }]);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    });
+    expect(screen.getByTestId('steer-receipt')).toHaveAttribute('data-receipt-state', 'delivered');
   });
 
   it('names each escalation control with the message it will interrupt for', () => {

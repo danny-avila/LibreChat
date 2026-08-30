@@ -551,6 +551,17 @@ const liveAppliedSteerIds = atom<string[]>({
   default: [],
 });
 
+/** Membership view of `liveAppliedSteerIds` so each `SteerPart` subscribes to
+ *  its own id only: stamping/consuming one steer re-renders that part, not
+ *  every mounted historical part in a long conversation. */
+const liveAppliedSteerFamily = selectorFamily<boolean, string>({
+  key: 'liveAppliedSteerFamily',
+  get:
+    (steerId) =>
+    ({ get }) =>
+      steerId.length > 0 && get(liveAppliedSteerIds).includes(steerId),
+});
+
 /** Optimistic ids the server has proven accepted via ACK or SYNC. Separate
  * from `appliedSteerIdsByConvoId`: accepted-but-still-queued steers must not
  * be suppressed by terminal conversion, but a late POST error must not
@@ -754,6 +765,7 @@ export default {
   drainAfterAbortByIndex,
   appliedSteerIdsByConvoId,
   liveAppliedSteerIds,
+  liveAppliedSteerFamily,
   acceptedSteerClientIdsByConvoId,
   activeGenerationCreatedAtByConvoId,
   activeGenerationProtocolVersionByConvoId,

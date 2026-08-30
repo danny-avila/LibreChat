@@ -885,13 +885,22 @@ export default function useResumableSSE(
             );
           }
         }
+        /** Stamped in the same batch as the chip removal, so the inline part's
+         *  first render already sees it and can play its one-shot receipt
+         *  draw-in; `SteerPart` consumes the id on mount. Only a FIRST
+         *  application stamps: a replayed applied event (resume, duplicate
+         *  frame) whose ids are already in the durable applied set must not
+         *  re-arm an animation its part already consumed. */
+        const alreadyApplied = snapshot
+          .getLoadable(store.appliedSteerIdsByConvoId(conversationId))
+          .getValue();
+        const firstApplication = settledIds.filter((id) => !alreadyApplied.includes(id));
+        if (firstApplication.length > 0) {
+          set(store.liveAppliedSteerIds, (prev) => appendAppliedSteerIds(prev, firstApplication));
+        }
         set(store.appliedSteerIdsByConvoId(conversationId), (prev) =>
           appendAppliedSteerIds(prev, settledIds),
         );
-        /** Stamped in the same batch as the chip removal, so the inline part's
-         *  first render already sees it and can play its one-shot receipt
-         *  draw-in; `SteerPart` consumes the id on mount. */
-        set(store.liveAppliedSteerIds, (prev) => appendAppliedSteerIds(prev, settledIds));
         set(store.pendingSteersByConvoId(conversationId), (prev) =>
           prev.some((steer) => settledIds.includes(steer.steerId))
             ? prev.filter((steer) => !settledIds.includes(steer.steerId))
