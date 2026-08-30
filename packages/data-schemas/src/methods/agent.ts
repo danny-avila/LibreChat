@@ -9,6 +9,10 @@ import {
 import type { FilterQuery, Model, PipelineStage, ProjectionType, Types } from 'mongoose';
 import type { AgentToolResources } from 'librechat-data-provider';
 import type { IAgent, IAclEntry } from '~/types';
+import {
+  releaseCodeEnvironmentReference,
+  reserveCodeEnvironmentReference,
+} from './codeEnvironment';
 import { filterExistingSkillIds } from './skill';
 import logger from '~/config/winston';
 
@@ -585,7 +589,15 @@ export function createAgentMethods(
         extractMCPServerNames(agentData.tools as string[] | undefined),
     };
 
-    return (await Agent.create(initialAgentData)).toObject() as IAgent;
+    const reservation = await reserveCodeEnvironmentReference(
+      mongoose,
+      typeof agentData.code_environment_id === 'string' ? agentData.code_environment_id : undefined,
+    );
+    try {
+      return (await Agent.create(initialAgentData)).toObject() as IAgent;
+    } finally {
+      await releaseCodeEnvironmentReference(mongoose, reservation);
+    }
   }
 
   /**
@@ -828,11 +840,28 @@ export function createAgentMethods(
       }
     }
 
-    const updatedAgent = (await Agent.findOneAndUpdate(
-      searchParameter,
-      updateData,
-      mongoOptions,
-    ).lean()) as IAgent | null;
+    const directEnvironmentId = updateData.code_environment_id;
+    const setEnvironmentId =
+      typeof updateData.$set === 'object' && updateData.$set != null
+        ? (updateData.$set as Record<string, unknown>).code_environment_id
+        : undefined;
+    let nextEnvironmentId: string | undefined;
+    if (typeof directEnvironmentId === 'string') {
+      nextEnvironmentId = directEnvironmentId;
+    } else if (typeof setEnvironmentId === 'string') {
+      nextEnvironmentId = setEnvironmentId;
+    }
+    const reservation = await reserveCodeEnvironmentReference(mongoose, nextEnvironmentId);
+    let updatedAgent: IAgent | null;
+    try {
+      updatedAgent = (await Agent.findOneAndUpdate(
+        searchParameter,
+        updateData,
+        mongoOptions,
+      ).lean()) as IAgent | null;
+    } finally {
+      await releaseCodeEnvironmentReference(mongoose, reservation);
+    }
 
     /** `version` is a response-only field holding the count of `versions`. It is reported
      *  here so a suppressed entry keeps the shape callers saw before the write was fixed.
@@ -1251,9 +1280,20 @@ export function createAgentMethods(
     const revertUpdate = restoresDeploymentDefault
       ? { $set: revertToVersion, $unset: { code_environment_id: 1 } }
       : { $set: revertToVersion };
-    const revertedAgent = await Agent.findOneAndUpdate(searchParameter, revertUpdate, {
-      new: true,
-    }).lean<IAgent>();
+    const reservation = await reserveCodeEnvironmentReference(
+      mongoose,
+      typeof revertToVersion.code_environment_id === 'string'
+        ? revertToVersion.code_environment_id
+        : undefined,
+    );
+    let revertedAgent: IAgent | null;
+    try {
+      revertedAgent = await Agent.findOneAndUpdate(searchParameter, revertUpdate, {
+        new: true,
+      }).lean<IAgent>();
+    } finally {
+      await releaseCodeEnvironmentReference(mongoose, reservation);
+    }
     if (!revertedAgent) {
       throw new Error('Agent not found');
     }

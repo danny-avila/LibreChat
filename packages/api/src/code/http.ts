@@ -12,18 +12,18 @@ import type { GetAppConfigOptions } from '~/app/service';
 import type { ServerRequest } from '~/types/http';
 import type { CodeBridgeFetch } from './bridge';
 import {
+  CodeEnvironmentInUseError,
+  CodeEnvironmentLimitError,
+  CodeEnvironmentValidationError,
+  normalizeCodeEnvironmentName,
+} from './environments';
+import {
   CodeBridgeLifecycleError,
   CodeBridgePairingError,
   createCodeBridgePairing,
   readCodeBridgeSecret,
   revokeCodeBridgeWorker,
 } from './bridge';
-import {
-  CodeEnvironmentInUseError,
-  CodeEnvironmentLimitError,
-  CodeEnvironmentValidationError,
-  normalizeCodeEnvironmentName,
-} from './environments';
 import {
   assertCodeApiJwtSigningReady,
   getCodeApiTenantId,
@@ -168,7 +168,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     ]);
     return res.status(200).json({
       environments,
-      controlPlanes: principalControlPlanes(appConfig),
+      controlPlanes: principalAuthEnabled() ? principalControlPlanes(appConfig) : [],
     });
   }
 
@@ -224,7 +224,6 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
           name,
           type: 'attached',
           baseURL: controlPlane.baseURL,
-          controlPlaneId,
           workerId: controlPlane.pairing?.workerId,
           controlPlaneId: controlPlane.id,
           workerPrincipal: { type: 'deployment', id: controlPlane.id },

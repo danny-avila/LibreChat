@@ -20,6 +20,44 @@ function response() {
 }
 
 describe('code environment HTTP handlers', () => {
+  test('does not advertise principal pairing when Code API principal auth is disabled', async () => {
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              environments: [
+                {
+                  id: 'principal-workers',
+                  name: 'Principal workers',
+                  type: 'attached',
+                  baseURL: 'https://code.example.com/v1',
+                  owner: 'deployment',
+                  pairing: { allowPrincipalWorkers: true },
+                },
+              ],
+            },
+          },
+        },
+      } as AppConfig),
+      registry: {
+        register: jest.fn(),
+        listAccessible: jest.fn().mockResolvedValue([]),
+        remove: jest.fn(),
+      },
+      principalAuthEnabled: () => false,
+    });
+    const res = response();
+
+    await handlers.list(
+      { user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' } } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ environments: [], controlPlanes: [] });
+  });
+
   test('returns 400 when registration has no request body', async () => {
     const register = jest.fn();
     const handlers = createCodeEnvironmentHttpHandlers({
@@ -142,18 +180,21 @@ describe('code environment HTTP handlers', () => {
   });
 
   test('revokes an upstream pairing when the atomic owner quota is exhausted', async () => {
-    const fetchImpl = jest.fn(async (url: string) => ({
-      ok: true,
-      json: async () =>
-        url.endsWith('/bridge/pairings')
-          ? {
-              protocolVersion: 1,
-              workerId: 'code-generated',
-              code: 'a'.repeat(32),
-              expiresAt: new Date(Date.now() + 60_000).toISOString(),
-            }
-          : { protocolVersion: 1, revoked: true },
-    }));
+    const fetchImpl = jest.fn(
+      async (input: string | URL | Request) =>
+        ({
+          ok: true,
+          json: async () =>
+            String(input).endsWith('/bridge/pairings')
+              ? {
+                  protocolVersion: 1,
+                  workerId: 'code-generated',
+                  code: 'a'.repeat(32),
+                  expiresAt: new Date(Date.now() + 60_000).toISOString(),
+                }
+              : { protocolVersion: 1, revoked: true },
+        }) as Response,
+    );
     const handlers = createCodeEnvironmentHttpHandlers({
       getAppConfig: jest.fn().mockResolvedValue({
         endpoints: {

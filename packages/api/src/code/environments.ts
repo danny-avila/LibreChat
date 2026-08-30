@@ -262,7 +262,7 @@ export function createCodeEnvironmentRegistry(
           resourceType: ResourceType.CODE_ENVIRONMENT,
           resourceId: created._id,
         }),
-        methods.deleteCodeEnvironmentById(created._id),
+        methods.discardCodeEnvironmentById(created._id),
       ]);
       for (const result of cleanup) {
         if (result.status === 'rejected') {
@@ -411,31 +411,39 @@ export function createCodeEnvironmentRegistry(
       requiredPermission: PermissionBits.DELETE,
     });
     if (!allowed) return null;
-    const Agent = mongoose.models.Agent;
-    if (Agent != null && (await Agent.exists({ code_environment_id: environmentId })) != null) {
+    const removal = await methods.beginCodeEnvironmentRemoval(environment._id);
+    if (removal == null) {
       throw new CodeEnvironmentInUseError(environmentId);
     }
-
-    await beforeDelete?.({
-      ...toSummary(environment),
-      baseURL: environment.baseURL,
-      workerId: environment.workerId,
-      controlPlaneId: environment.controlPlaneId,
-      revocationTokenEnv: environment.revocationTokenEnv,
-      workerPrincipal: environment.workerPrincipal,
-    });
-    const deleted = await methods.deleteCodeEnvironmentById(environment._id);
-    if (deleted == null) return null;
     try {
-      await access.removeAllPermissions({
-        resourceType: ResourceType.CODE_ENVIRONMENT,
-        resourceId: environment._id,
+      const Agent = mongoose.models.Agent;
+      if (Agent != null && (await Agent.exists({ code_environment_id: environmentId })) != null) {
+        throw new CodeEnvironmentInUseError(environmentId);
+      }
+      await beforeDelete?.({
+        ...toSummary(environment),
+        baseURL: environment.baseURL,
+        workerId: environment.workerId,
+        controlPlaneId: environment.controlPlaneId,
+        revocationTokenEnv: environment.revocationTokenEnv,
+        workerPrincipal: environment.workerPrincipal,
       });
+      const deleted = await methods.deleteCodeEnvironmentById(environment._id);
+      if (deleted == null) return null;
+      try {
+        await access.removeAllPermissions({
+          resourceType: ResourceType.CODE_ENVIRONMENT,
+          resourceId: environment._id,
+        });
+      } catch (error) {
+        logger.warn('[code-environments] environment deleted with orphaned ACL entries', error);
+      }
+      await invalidateAccessibleConfigurations();
+      return toSummary(deleted, true);
     } catch (error) {
-      logger.warn('[code-environments] environment deleted with orphaned ACL entries', error);
+      await methods.cancelCodeEnvironmentRemoval(environment._id);
+      throw error;
     }
-    await invalidateAccessibleConfigurations();
-    return toSummary(deleted, true);
   }
 
   return {

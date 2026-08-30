@@ -49,6 +49,23 @@ const codeEnvironmentSchema: Schema<CodeEnvironmentDocument> = new Schema<CodeEn
       type: Number,
       min: 0,
     },
+    pendingAgentReferences: {
+      type: [String],
+      default: undefined,
+    },
+    deletionStartedAt: {
+      type: Date,
+    },
+    revocationPendingAt: {
+      type: Date,
+    },
+    revocationAttempts: {
+      type: Number,
+      min: 0,
+    },
+    revocationLastError: {
+      type: String,
+    },
     workerId: {
       type: String,
     },
@@ -70,14 +87,6 @@ const codeEnvironmentSchema: Schema<CodeEnvironmentDocument> = new Schema<CodeEn
 );
 
 codeEnvironmentSchema.index({ environmentId: 1, tenantId: 1 }, { unique: true });
-codeEnvironmentSchema.index(
-  { createdBy: 1, ownerSlot: 1 },
-  {
-    unique: true,
-    name: 'code_environment_owner_slot',
-    partialFilterExpression: { ownerSlot: { $type: 'number' } },
-  },
-);
 codeEnvironmentSchema.index({ updatedAt: -1, _id: 1 });
 
 export default codeEnvironmentSchema;

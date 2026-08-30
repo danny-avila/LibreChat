@@ -8,6 +8,11 @@ export type CodeEnvironment = {
   controlPlaneId: string;
   createdBy: Types.ObjectId;
   ownerSlot?: number;
+  pendingAgentReferences?: string[];
+  deletionStartedAt?: Date;
+  revocationPendingAt?: Date;
+  revocationAttempts?: number;
+  revocationLastError?: string;
   workerId?: string;
   controlPlaneId?: string;
   revocationTokenEnv?: string;
