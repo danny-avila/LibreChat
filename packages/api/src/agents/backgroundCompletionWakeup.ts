@@ -459,11 +459,13 @@ export function createBackgroundToolDeadClaimRecovery(
   getGenerationJob: (conversationId: string) => Promise<GenerationState | null | undefined>,
 ): BackgroundToolDeadClaimRecovery {
   return async ({ userId, conversationId, messageId, claimId }) => {
-    const generation = await getGenerationJob(conversationId);
-    if (
-      generation?.metadata?.idempotencyClientRequestId === claimId &&
-      isParentActive(generation)
-    ) {
+    const claimGenerationIsActive = async (): Promise<boolean> => {
+      const generation = await getGenerationJob(conversationId);
+      return (
+        generation?.metadata?.idempotencyClientRequestId === claimId && isParentActive(generation)
+      );
+    };
+    if (await claimGenerationIsActive()) {
       return false;
     }
     const retired = await retire(
@@ -473,6 +475,14 @@ export function createBackgroundToolDeadClaimRecovery(
       { onlyIfDead: true },
     );
     if (!retired) {
+      return false;
+    }
+    /** The final POST can acquire its generation start claim before the job is
+     * visible. Retirement closes further delivery retries; this second read
+     * catches a generation published across that window before any durable
+     * result claim is released. A recovery-specific retired receipt is
+     * replay-safe, so a later poll retries after that generation terminalizes. */
+    if (await claimGenerationIsActive()) {
       return false;
     }
     return releaseClaims({

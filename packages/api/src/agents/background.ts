@@ -1559,6 +1559,7 @@ export async function runCheckBackgroundTask(params: {
           let durableClaim = await params.claimBackgroundToolResult(durableClaimInput);
           if (durableClaim.status === 'claimed') {
             let recovered = false;
+            let recoveryUnavailable = false;
             if (
               durableClaim.claim?.kind === 'wakeup' &&
               params.recoverDeadBackgroundToolClaim != null
@@ -1571,6 +1572,7 @@ export async function runCheckBackgroundTask(params: {
                   claimId: durableClaim.claim.claimId,
                 });
               } catch (error) {
+                recoveryUnavailable = true;
                 logger.warn(
                   `[background] Failed to reconcile claimed completion for manual poll ${taskId}:`,
                   error,
@@ -1579,9 +1581,11 @@ export async function runCheckBackgroundTask(params: {
             }
             if (!recovered) {
               return JSON.stringify({
-                status: 'delivery_scheduled',
+                status: recoveryUnavailable ? 'result_persisting' : 'delivery_scheduled',
                 background_task_id: taskId,
-                message: 'This result is already assigned to an automatic continuation.',
+                message: recoveryUnavailable
+                  ? 'The automatic delivery recovery is temporarily unavailable. Retry this poll shortly.'
+                  : 'This result is already assigned to an automatic continuation.',
               });
             }
             durableClaim = await params.claimBackgroundToolResult(durableClaimInput);
@@ -1604,7 +1608,8 @@ export async function runCheckBackgroundTask(params: {
           if (durableClaim.status === 'not_found' || durableClaim.status === 'not_ready') {
             const localReplay =
               task.resultClaim?.kind === 'manual' && task.resultClaim.claimId === invocationId;
-            let localClaimNeedsNoDurableConfirmation = false;
+            let localClaimNeedsNoDurableConfirmation =
+              localReplay && task.liveArtifactPollRequired === true;
             if (!localReplay) {
               /** Retire the still-unclaimed delivery before creating local
                * ownership. A live resolver lease wins. Once that resolver is

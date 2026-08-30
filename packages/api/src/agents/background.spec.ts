@@ -1465,22 +1465,23 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
     const claimBackgroundToolResult = jest.fn(async () => ({ status: 'not_ready' as const }));
 
-    const result = JSON.parse(
-      await runCheckBackgroundTask({
-        userId: 'artifact_poll_user',
-        conversationId: 'artifact_poll_convo',
-        args: { background_task_id: created.task.id },
-        toolCallId: 'poll-live-artifact',
-        runId: 'dispatch-run',
-        claimBackgroundToolResult,
-      }),
-    );
+    const request = {
+      userId: 'artifact_poll_user',
+      conversationId: 'artifact_poll_convo',
+      args: { background_task_id: created.task.id },
+      toolCallId: 'poll-live-artifact',
+      runId: 'dispatch-run',
+      claimBackgroundToolResult,
+    };
+    const result = JSON.parse(await runCheckBackgroundTask(request));
+    const replay = JSON.parse(await runCheckBackgroundTask(request));
 
     expect(result).toMatchObject({ status: 'completed', result: 'CONTENT WITH LIVE ARTIFACT' });
+    expect(replay).toMatchObject({ status: 'completed', result: 'CONTENT WITH LIVE ARTIFACT' });
     expect(retire).toHaveBeenCalledWith('completion claimed by same-generation manual poll', {
       onlyIfUnclaimed: true,
     });
-    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(1);
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(2);
     expect(
       backgroundTaskRegistry.get('artifact_poll_user', 'artifact_poll_convo', created.task.id)
         ?.resultClaim,

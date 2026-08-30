@@ -726,15 +726,17 @@ describe('agent trigger delivery methods', () => {
       { $set: { status: 'dead', settledAt: START } },
     );
 
-    await expect(
-      methods.retireAgentTriggerDelivery({
-        deliveryKey: queued.delivery.deliveryKey,
-        sourceId: source.id,
-        settledAt: new Date(START.getTime() + 1),
-        reason: 'manual poll recovered dead completion',
-        onlyIfDead: true,
-      }),
-    ).resolves.toBe(true);
+    const retirement = {
+      deliveryKey: queued.delivery.deliveryKey,
+      sourceId: source.id,
+      settledAt: new Date(START.getTime() + 1),
+      reason: 'manual poll recovered dead completion',
+      onlyIfDead: true,
+    } as const;
+    await expect(methods.retireAgentTriggerDelivery(retirement)).resolves.toBe(true);
+    /** A later claim-release retry must recognize the recovery receipt even
+     * though the delivery no longer has a dead status. */
+    await expect(methods.retireAgentTriggerDelivery(retirement)).resolves.toBe(true);
     await expect(
       Delivery.findOne({ deliveryKey: queued.delivery.deliveryKey }).lean(),
     ).resolves.toMatchObject({

@@ -198,6 +198,7 @@ describe('background tool completion wakeups', () => {
       'dead background completion batch recovered by manual poll',
       { onlyIfDead: true },
     );
+    expect(getGenerationJob).toHaveBeenCalledTimes(2);
     expect(getGenerationJob).toHaveBeenCalledWith('conversation-1');
     expect(release).toHaveBeenCalledWith({
       userId: 'user-1',
@@ -226,6 +227,56 @@ describe('background tool completion wakeups', () => {
     ).resolves.toBe(false);
     expect(retire).not.toHaveBeenCalled();
     expect(release).not.toHaveBeenCalled();
+  });
+
+  it('rechecks a generation published while its dead delivery is being retired', async () => {
+    const retire = jest.fn(async () => true);
+    const release = jest.fn(async () => true);
+    const getGenerationJob = jest
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({
+        status: 'running',
+        metadata: { idempotencyClientRequestId: 'batch-root-delivery' },
+      })
+      .mockResolvedValue({ status: 'complete' });
+    const recover = createBackgroundToolDeadClaimRecovery(retire, release, getGenerationJob);
+    const input = {
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+      messageId: 'response-1',
+      claimId: 'batch-root-delivery',
+    };
+
+    await expect(recover(input)).resolves.toBe(false);
+    expect(retire).toHaveBeenCalledTimes(1);
+    expect(release).not.toHaveBeenCalled();
+
+    await expect(recover(input)).resolves.toBe(true);
+    expect(retire).toHaveBeenCalledTimes(2);
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries claim release through an idempotently retired recovery receipt', async () => {
+    const retire = jest.fn(async () => true);
+    const release = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('release receipt lost'))
+      .mockResolvedValueOnce(true);
+    const recover = createBackgroundToolDeadClaimRecovery(retire, release, async () => ({
+      status: 'complete',
+    }));
+    const input = {
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+      messageId: 'response-1',
+      claimId: 'batch-root-delivery',
+    };
+
+    await expect(recover(input)).rejects.toThrow('release receipt lost');
+    await expect(recover(input)).resolves.toBe(true);
+    expect(retire).toHaveBeenCalledTimes(2);
+    expect(release).toHaveBeenCalledTimes(2);
   });
 
   it("keeps unfinished sibling tasks out of each other's delivery lanes", async () => {
