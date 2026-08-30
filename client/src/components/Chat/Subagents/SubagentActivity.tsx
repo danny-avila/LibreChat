@@ -7,9 +7,9 @@ import { CheckCircle2, Clock3, Maximize2, Minimize2, XCircle } from 'lucide-reac
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { ChildActivity, ChildActivityItem } from './adapters';
 import type { TranslationKeys } from '~/hooks';
+import { isAbnormalTerminalStatus, subagentStatusIcon, subagentStatusLabelKey } from './status';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
-import { subagentStatusIcon, subagentStatusLabelKey } from './status';
 import Container from '~/components/Chat/Messages/Content/Container';
 import { EmptyText } from '~/components/Chat/Messages/Content/Parts';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
@@ -295,6 +295,7 @@ export const hasTruncatedActivityDetails = (activity: ChildActivity): boolean =>
   activity.items.some(
     (item) =>
       (item.type === 'writing' && item.textTruncated === true) ||
+      (item.type === 'reasoning' && item.textTruncated === true) ||
       (item.type === 'activity_label' && item.labelTruncated === true) ||
       (item.type === 'tool' && (item.inputTruncated === true || item.outputTruncated === true)),
   );
@@ -410,12 +411,11 @@ export default function SubagentActivity({
   showPrompt?: boolean;
   onCancelControl?: (controlId: string) => void;
 }) {
-  const statusHeader =
-    activity.status === 'completed' ? null : (
-      <div className="shrink-0 border-b border-border-light px-4 py-2">
-        <SubagentStatus activity={activity} />
-      </div>
-    );
+  const statusHeader = isAbnormalTerminalStatus(activity.status) ? (
+    <div className="shrink-0 border-b border-border-light px-4 py-2">
+      <SubagentStatus activity={activity} />
+    </div>
+  ) : null;
   const content = (
     <SubagentActivityContent
       activity={activity}

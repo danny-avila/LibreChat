@@ -93,8 +93,9 @@ const shrinkStringField = <T extends SubagentActivityItem>(
 
 const fitNewestItemToSerializedBudget = (item: SubagentActivityItem): SubagentActivityItem => {
   if (serializedBytes([item]) <= MAX_ACTIVITY_BYTES) return item;
-  if (item.type === 'writing') return shrinkStringField(item, 'text', 'textTruncated');
-  if (item.type === 'reasoning') return item;
+  if (item.type === 'writing' || item.type === 'reasoning') {
+    return shrinkStringField(item, 'text', 'textTruncated');
+  }
   if (item.type === 'activity_label') {
     const withoutAssociations = { ...item, toolCallIds: undefined, agentIds: undefined };
     return shrinkStringField(withoutAssociations, 'label', 'labelTruncated');
@@ -173,7 +174,17 @@ export function projectPersistedMessageActivity(
         },
       ];
     }
-    if (candidate.type === 'reasoning') return [{ type: 'reasoning' }];
+    if (candidate.type === 'reasoning') {
+      return [
+        {
+          type: 'reasoning',
+          ...(typeof candidate.text === 'string' && candidate.text !== ''
+            ? { text: candidate.text }
+            : {}),
+          ...(candidate.textTruncated === true ? { textTruncated: true } : {}),
+        },
+      ];
+    }
     if (candidate.type === 'activity_label') {
       if (typeof candidate.label !== 'string') {
         truncated = true;
@@ -251,21 +262,34 @@ export function projectPersistedMessageActivityJson(
   }
 }
 
-const visibleContent = (value: unknown): { text: string; hasReasoning: boolean } => {
-  if (typeof value === 'string') return { text: value, hasReasoning: false };
-  if (!Array.isArray(value)) return { text: '', hasReasoning: false };
+const reasoningBlockText = (block: Record<string, unknown>): string => {
+  if (typeof block.reasoning === 'string') return block.reasoning;
+  if (typeof block.thinking === 'string') return block.thinking;
+  if (typeof block.text === 'string') return block.text;
+  return '';
+};
+
+const visibleContent = (
+  value: unknown,
+): { text: string; hasReasoning: boolean; reasoning: string } => {
+  if (typeof value === 'string') return { text: value, hasReasoning: false, reasoning: '' };
+  if (!Array.isArray(value)) return { text: '', hasReasoning: false, reasoning: '' };
   const text: string[] = [];
+  const reasoning: string[] = [];
   let hasReasoning = false;
   for (const block of value) {
     if (!isRecord(block) || typeof block.type !== 'string') continue;
     if ((block.type === 'text' || block.type === 'text-plain') && typeof block.text === 'string') {
       text.push(block.text);
     } else if (block.type === 'reasoning' || block.type === 'thinking') {
-      // Preserve the user-visible lifecycle marker, never the model's hidden reasoning payload.
+      /** The same user reads this exact reasoning in the main chat view, so the
+       *  bounded projection keeps its text rather than only a lifecycle marker. */
       hasReasoning = true;
+      const blockText = reasoningBlockText(block);
+      if (blockText !== '') reasoning.push(blockText);
     }
   }
-  return { text: text.join(''), hasReasoning };
+  return { text: text.join(''), hasReasoning, reasoning: reasoning.join('\n\n') };
 };
 
 const readToolCalls = (data: Record<string, unknown>): unknown[] => {
@@ -317,9 +341,9 @@ const uniqueToolActivityId = (
 
 /**
  * Converts one server-private LangChain transcript into a bounded public
- * activity projection. Only visible text and declared tool calls/results are
- * retained; response metadata, artifacts, runtime fields, and reasoning text
- * are intentionally ignored.
+ * activity projection. Visible text, bounded reasoning text, and declared
+ * tool calls/results are retained; response metadata, artifacts, and runtime
+ * fields are intentionally ignored.
  */
 export function projectSubagentActivity(
   messagesJson: string | undefined,
@@ -380,7 +404,14 @@ export function projectSubagentActivity(
     const { data } = stored;
     if (stored.type === 'ai' || stored.type === 'assistant') {
       const content = visibleContent(data.content);
-      if (content.hasReasoning) append({ type: 'reasoning' });
+      if (content.hasReasoning) {
+        const reasoning = truncateUtf8(content.reasoning, MAX_ACTIVITY_TEXT_BYTES);
+        append({
+          type: 'reasoning',
+          ...(reasoning.value === '' ? {} : { text: reasoning.value }),
+          ...(reasoning.truncated ? { textTruncated: true } : {}),
+        });
+      }
       if (content.text !== '') {
         const text = truncateUtf8(content.text, MAX_ACTIVITY_TEXT_BYTES);
         append({

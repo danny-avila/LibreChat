@@ -702,7 +702,6 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         initialProgress: selection.durable == null ? selection.initialProgress : 0,
         isSubmitting: selection.durable == null ? selection.isSubmitting : detachedLiveSubmitting,
         runStepStatus: selection.durable == null ? selection.runStepStatus : undefined,
-        reasoningVisibility: selection.durable == null ? 'visible' : 'marker',
       }),
     [detachedLiveSubmitting, foregroundTitle, progress, selection],
   );
