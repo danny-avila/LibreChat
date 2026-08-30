@@ -154,8 +154,7 @@ const makeTextPart = (text: string): TMessageContentParts =>
 const makePhasePart = (start: number, end: number, label: string): TMessageContentParts =>
   ({
     type: ContentTypes.ACTIVITY_LABEL,
-    [ContentTypes.ACTIVITY_LABEL]: '',
-    activity_label: label,
+    [ContentTypes.ACTIVITY_LABEL]: label,
     activity_label_type: 'phase',
     activity_start_index: start,
     activity_end_index: end,
