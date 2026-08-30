@@ -33,7 +33,7 @@ const {
   cancelAgentTriggerUserPurge,
   purgeAgentTriggerDeliveriesForUser,
 } = require('~/server/services/Agents/triggers');
-const { getAppConfig } = require('~/server/services/Config');
+const { getAppConfig, invalidateCodeEnvironmentConfigCache } = require('~/server/services/Config');
 const { randomUUID } = require('node:crypto');
 const {
   quiesceUserSchedules,
@@ -460,6 +460,10 @@ const deleteUserController = async (req, res) => {
     await db.deleteAllUserMemories(user.id);
     await db.deleteUserPrompts(user.id);
     await db.deleteUserSkills(user.id);
+    await db.deleteUserCodeEnvironments(user.id);
+    await invalidateCodeEnvironmentConfigCache(user.tenantId).catch((error) => {
+      logger.error('[deleteUserController] code environment cache invalidation failed:', error);
+    });
     await deleteUserMcpServers(user.id);
     await db.deleteActions({ user: user.id });
     await db.deleteTokens({ userId: user.id });
