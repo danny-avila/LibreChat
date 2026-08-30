@@ -4468,7 +4468,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                * exception because their completion harvester durably anchors
                * generated files before the automatic continuation runs. */
               const completionWakeupEligible =
-                harvestEnabled || tool.responseFormat !== Constants.CONTENT_AND_ARTIFACT;
+                harvestEnabled ||
+                (tool as StructuredToolInterface & { responseFormat?: unknown }).responseFormat !==
+                  Constants.CONTENT_AND_ARTIFACT;
               const backgroundStepId =
                 typeof tc.stepId === 'string' && tc.stepId.trim() !== '' ? tc.stepId : undefined;
               const strippedArgs = stripIntentForInvoke(stripRunInBackgroundArg(tc.args), tool);

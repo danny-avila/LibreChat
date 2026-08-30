@@ -1561,6 +1561,7 @@ export async function runCheckBackgroundTask(params: {
           if (durableClaim.status === 'not_found' || durableClaim.status === 'not_ready') {
             const localReplay =
               task.resultClaim?.kind === 'manual' && task.resultClaim.claimId === invocationId;
+            let deadFallbackRecovered = false;
             if (!localReplay) {
               /** Retire the still-unclaimed delivery before creating local
                * ownership. A live resolver lease wins. Once that resolver is
@@ -1584,6 +1585,7 @@ export async function runCheckBackgroundTask(params: {
                     { onlyIfDead: true },
                   );
                   if (retired) {
+                    deadFallbackRecovered = true;
                     backgroundTaskRegistry.markCompletionPersistenceFailed(
                       userId,
                       conversationId,
@@ -1630,7 +1632,7 @@ export async function runCheckBackgroundTask(params: {
             /** Do not expose the local result until the durable row has copied
              * this manual claim. This closes the last-write race where a
              * persister snapshots the task before the poll claims it. */
-            if (task.completionPersistenceFailed !== true) {
+            if (!deadFallbackRecovered) {
               const reconciledClaim = await params.claimBackgroundToolResult(durableClaimInput);
               if (reconciledClaim.status === 'claimed') {
                 backgroundTaskRegistry.releaseResultClaim(userId, conversationId, taskId, {
