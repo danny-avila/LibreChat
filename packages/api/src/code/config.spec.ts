@@ -46,7 +46,10 @@ describe('mergeAccessibleCodeEnvironments', () => {
       appConfig,
       deploymentConfig: appConfig,
       actor: { userId: '68b2f0c498f24c1e78fa0001', role: 'USER', idOnTheSource: null },
-      registry: { listAccessibleConfigurations },
+      registry: {
+        listAccessibleConfigurations,
+        listRegisteredIds: jest.fn().mockResolvedValue(['personal-vm', 'deployment-vm']),
+      },
     });
 
     expect(result).not.toBe(appConfig);
@@ -83,7 +86,10 @@ describe('mergeAccessibleCodeEnvironments', () => {
       appConfig,
       deploymentConfig: appConfig,
       actor: { userId: '68b2f0c498f24c1e78fa0001', role: 'USER', idOnTheSource: null },
-      registry: { listAccessibleConfigurations },
+      registry: {
+        listAccessibleConfigurations,
+        listRegisteredIds: jest.fn().mockResolvedValue(['personal-vm']),
+      },
     });
 
     expect(result).toBe(appConfig);
@@ -131,6 +137,7 @@ describe('mergeAccessibleCodeEnvironments', () => {
       deploymentConfig,
       actor: { userId: '68b2f0c498f24c1e78fa0001', role: 'USER', idOnTheSource: null },
       registry: {
+        listRegisteredIds: jest.fn().mockResolvedValue(['personal-vm']),
         listAccessibleConfigurations: jest.fn().mockResolvedValue([
           {
             id: 'personal-vm',
@@ -196,6 +203,7 @@ describe('mergeAccessibleCodeEnvironments', () => {
       deploymentConfig,
       actor: { userId: '68b2f0c498f24c1e78fa0001', role: 'USER', idOnTheSource: null },
       registry: {
+        listRegisteredIds: jest.fn().mockResolvedValue(['personal-vm']),
         listAccessibleConfigurations: jest.fn().mockResolvedValue([
           {
             id: 'personal-vm',
@@ -218,6 +226,53 @@ describe('mergeAccessibleCodeEnvironments', () => {
         owner: 'principal',
         default: true,
       }),
+    ]);
+  });
+
+  test('suppresses a registered environment shadow after its ACL is revoked', async () => {
+    const appConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'revoked-vm',
+                name: 'Revoked Shadow',
+                type: 'attached',
+                baseURL: 'https://shadow.example',
+                owner: 'deployment',
+                pairing: { workerId: 'shadow-worker', tokenEnv: 'SHADOW_TOKEN' },
+              },
+              {
+                id: 'unrelated-override',
+                name: 'Unrelated Override',
+                type: 'attached',
+                baseURL: 'https://unrelated.example',
+                owner: 'deployment',
+                pairing: { workerId: 'other-worker', tokenEnv: 'OTHER_TOKEN' },
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as AppConfig;
+
+    const result = await mergeAccessibleCodeEnvironments({
+      appConfig,
+      deploymentConfig: {
+        endpoints: {
+          [EModelEndpoint.agents]: { statefulCodeSessions: { environments: [] } },
+        },
+      } as unknown as AppConfig,
+      actor: { userId: '68b2f0c498f24c1e78fa0001', role: 'USER', idOnTheSource: null },
+      registry: {
+        listAccessibleConfigurations: jest.fn().mockResolvedValue([]),
+        listRegisteredIds: jest.fn().mockResolvedValue(['revoked-vm']),
+      },
+    });
+
+    expect(result.endpoints?.agents?.statefulCodeSessions?.environments).toEqual([
+      expect.objectContaining({ id: 'unrelated-override' }),
     ]);
   });
 });

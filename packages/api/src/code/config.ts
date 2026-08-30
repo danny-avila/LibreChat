@@ -9,6 +9,7 @@ type ConfigurationRegistry = {
   listAccessibleConfigurations: (
     actor: CodeEnvironmentPrincipalContext,
   ) => Promise<AccessibleCodeEnvironmentConfiguration[]>;
+  listRegisteredIds: () => Promise<string[]>;
 };
 
 export async function mergeAccessibleCodeEnvironments({
@@ -26,8 +27,10 @@ export async function mergeAccessibleCodeEnvironments({
   const sessions = agents?.statefulCodeSessions;
   if (sessions == null) return appConfig;
 
-  const accessible = await registry.listAccessibleConfigurations(actor);
-  if (accessible.length === 0) return appConfig;
+  const [accessible, registeredIds] = await Promise.all([
+    registry.listAccessibleConfigurations(actor),
+    registry.listRegisteredIds(),
+  ]);
   const deploymentSessions =
     deploymentConfig.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions;
   const deploymentEnvironments = new Map(
@@ -40,6 +43,9 @@ export async function mergeAccessibleCodeEnvironments({
       )
       .map((environment) => [environment.id, environment]) ?? [],
   );
+  const registeredAliasIds = new Set(
+    registeredIds.filter((environmentId) => !deploymentEnvironments.has(environmentId)),
+  );
   const principalEnvironments = accessible.flatMap(
     ({ controlPlaneId, baseURL: _persistedBaseURL, ...environment }) => {
       const controlPlane = deploymentEnvironments.get(controlPlaneId);
@@ -47,7 +53,6 @@ export async function mergeAccessibleCodeEnvironments({
       return [{ ...environment, baseURL: controlPlane.baseURL }];
     },
   );
-  if (principalEnvironments.length === 0) return appConfig;
   const principalEnvironmentIds = new Set(
     principalEnvironments.map((environment) => environment.id),
   );
@@ -64,6 +69,16 @@ export async function mergeAccessibleCodeEnvironments({
       ? { ...environment, default: true as const }
       : environment,
   );
+  const existingEnvironments = sessions.environments ?? [];
+  const filteredEnvironments = existingEnvironments.filter(
+    (environment) => !registeredAliasIds.has(environment.id),
+  );
+  if (
+    effectivePrincipalEnvironments.length === 0 &&
+    filteredEnvironments.length === existingEnvironments.length
+  ) {
+    return appConfig;
+  }
 
   return {
     ...appConfig,
@@ -73,12 +88,7 @@ export async function mergeAccessibleCodeEnvironments({
         ...agents,
         statefulCodeSessions: {
           ...sessions,
-          environments: [
-            ...(sessions.environments ?? []).filter(
-              (environment) => !principalEnvironmentIds.has(environment.id),
-            ),
-            ...effectivePrincipalEnvironments,
-          ],
+          environments: [...filteredEnvironments, ...effectivePrincipalEnvironments],
         },
       },
     },

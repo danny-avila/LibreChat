@@ -122,6 +122,7 @@ export function createCodeEnvironmentRegistry(
   listAccessibleConfigurations: (
     actor: CodeEnvironmentPrincipalContext,
   ) => Promise<AccessibleCodeEnvironmentConfiguration[]>;
+  listRegisteredIds: () => Promise<string[]>;
   invalidateAccessibleConfigurations: (tenantId?: string) => Promise<void>;
 } {
   const methods = createMethods(mongoose);
@@ -139,6 +140,10 @@ export function createCodeEnvironmentRegistry(
   async function invalidateAccessibleConfigurations(tenantId?: string): Promise<void> {
     if (configurationCache == null) return;
     await configurationCache.set(revisionKey(tenantId), randomUUID());
+  }
+
+  async function listRegisteredIds(): Promise<string[]> {
+    return await methods.listCodeEnvironmentIds();
   }
 
   async function register({
@@ -285,6 +290,7 @@ export function createCodeEnvironmentRegistry(
     register,
     listAccessible,
     listAccessibleConfigurations,
+    listRegisteredIds,
     invalidateAccessibleConfigurations,
   };
 }

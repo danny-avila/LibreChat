@@ -60,6 +60,7 @@ describe('code environment registry', () => {
       name: "Danny's VM",
       type: 'attached',
     });
+    await expect(registry.listRegisteredIds()).resolves.toEqual(['danny-vm']);
     await expect(
       registry.listAccessible({ userId: ownerId, role: 'USER', idOnTheSource: null }),
     ).resolves.toEqual([created]);

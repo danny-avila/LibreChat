@@ -18,6 +18,7 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
   findCodeEnvironmentByEnvironmentId: (
     environmentId: string,
   ) => Promise<CodeEnvironmentDocument | null>;
+  listCodeEnvironmentIds: () => Promise<string[]>;
   deleteCodeEnvironmentById: (
     id: string | Types.ObjectId,
   ) => Promise<CodeEnvironmentDocument | null>;
@@ -45,6 +46,10 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
     environmentId: string,
   ): Promise<CodeEnvironmentDocument | null> {
     return await model().findOne({ environmentId }).lean<CodeEnvironmentDocument>();
+  }
+
+  async function listCodeEnvironmentIds(): Promise<string[]> {
+    return await model().distinct('environmentId');
   }
 
   async function deleteCodeEnvironmentById(
@@ -75,6 +80,7 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
     createCodeEnvironment,
     findCodeEnvironmentsByIds,
     findCodeEnvironmentByEnvironmentId,
+    listCodeEnvironmentIds,
     deleteCodeEnvironmentById,
     deleteUserCodeEnvironments,
   };
