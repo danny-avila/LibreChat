@@ -276,4 +276,61 @@ describe('mergeAccessibleCodeEnvironments', () => {
       expect.objectContaining({ id: 'unrelated-override', default: true }),
     ]);
   });
+
+  test('preserves unrelated restrictions while failing closed to deployment environments', async () => {
+    const deploymentEnvironment = {
+      id: 'approved-plane',
+      name: 'Approved Plane',
+      type: 'attached' as const,
+      baseURL: 'https://approved.example',
+      owner: 'deployment' as const,
+      default: true,
+      pairing: { workerId: 'approved-worker', tokenEnv: 'CODE_ADMIN_TOKEN' },
+    };
+    const deploymentConfig = {
+      interfaceConfig: { schedules: true },
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: { environments: [deploymentEnvironment] },
+        },
+      },
+    } as unknown as AppConfig;
+    const appConfig = {
+      interfaceConfig: { schedules: false },
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'principal-shadow',
+                name: 'Principal Shadow',
+                type: 'attached',
+                baseURL: 'https://shadow.example',
+                owner: 'deployment',
+                default: true,
+                pairing: { workerId: 'shadow-worker', tokenEnv: 'SHADOW_TOKEN' },
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as AppConfig;
+
+    const result = await mergeAccessibleCodeEnvironments({
+      appConfig,
+      deploymentConfig,
+      actor: { userId: '68b2f0c498f24c1e78fa0001', role: 'USER', idOnTheSource: null },
+      registry: {
+        listAccessibleConfigurations: jest
+          .fn()
+          .mockRejectedValue(new Error('authorization unavailable')),
+        listRegisteredIds: jest.fn().mockResolvedValue(['principal-shadow']),
+      },
+    });
+
+    expect(result.interfaceConfig?.schedules).toBe(false);
+    expect(result.endpoints?.agents?.statefulCodeSessions?.environments).toEqual([
+      deploymentEnvironment,
+    ]);
+  });
 });

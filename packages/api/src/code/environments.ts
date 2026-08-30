@@ -51,6 +51,7 @@ const ENVIRONMENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const WORKER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const CONFIGURATION_CACHE_TTL_MS = 5_000;
 const CONFIGURATION_CACHE_REVISION_PREFIX = 'revision';
+const CONFIGURATION_CACHE_REGISTERED_PREFIX = 'registered';
 const CONFIGURATION_CACHE_USER_PREFIX = 'user';
 
 type CodeEnvironmentConfigurationCache = {
@@ -143,7 +144,26 @@ export function createCodeEnvironmentRegistry(
   }
 
   async function listRegisteredIds(): Promise<string[]> {
-    return await methods.listCodeEnvironmentIds();
+    if (configurationCache == null) return await methods.listCodeEnvironmentIds();
+
+    const tenant = tenantCacheKey();
+    const revision = String((await configurationCache.get(revisionKey())) ?? '0');
+    const key = `${CONFIGURATION_CACHE_REGISTERED_PREFIX}:${tenant}:${revision}`;
+    const cached = await configurationCache.get(key);
+    if (
+      Array.isArray(cached) &&
+      cached.every((environmentId) => typeof environmentId === 'string')
+    ) {
+      return cached;
+    }
+
+    const environmentIds = await methods.listCodeEnvironmentIds();
+    const currentRevision = String((await configurationCache.get(revisionKey())) ?? '0');
+    if (currentRevision !== revision) {
+      return await listRegisteredIds();
+    }
+    await configurationCache.set(key, environmentIds, CONFIGURATION_CACHE_TTL_MS);
+    return environmentIds;
   }
 
   async function register({

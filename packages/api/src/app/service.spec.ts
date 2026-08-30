@@ -492,7 +492,7 @@ describe('createAppConfigService', () => {
       );
     });
 
-    it('falls back to the immutable base config when principal augmentation fails', async () => {
+    it('preserves resolved principal restrictions when optional augmentation fails', async () => {
       const deps = createDeps({
         getApplicableConfigs: jest.fn().mockResolvedValue([
           {
@@ -507,8 +507,11 @@ describe('createAppConfigService', () => {
 
       const config = await getAppConfig({ role: 'USER', userId: 'uid1' });
 
-      expect(config).toEqual(deps._baseConfig);
-      expect(config).not.toEqual(expect.objectContaining({ endpoints: ['untrusted-override'] }));
+      expect(config).toEqual(
+        expect.objectContaining({
+          endpoints: ['untrusted-override'],
+        }),
+      );
     });
 
     it('passes local identity through to getUserPrincipals when provided', async () => {

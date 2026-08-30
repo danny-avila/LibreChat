@@ -194,6 +194,33 @@ describe('code environment registry', () => {
     ]);
   });
 
+  test('caches registered environment ids behind the shared tenant revision', async () => {
+    const cache = createSharedCache();
+    const firstWorker = createCodeEnvironmentRegistry(mongoose, { configurationCache: cache });
+    const secondWorker = createCodeEnvironmentRegistry(mongoose, { configurationCache: cache });
+    const distinct = jest.spyOn(mongoose.models.CodeEnvironment, 'distinct');
+    const ownerId = new Types.ObjectId();
+
+    await expect(firstWorker.listRegisteredIds()).resolves.toEqual([]);
+    await expect(firstWorker.listRegisteredIds()).resolves.toEqual([]);
+    expect(distinct).toHaveBeenCalledTimes(1);
+
+    await secondWorker.register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'revision-cached-vm',
+        name: 'Revision Cached VM',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+      },
+    });
+
+    await expect(firstWorker.listRegisteredIds()).resolves.toEqual(['revision-cached-vm']);
+    expect(distinct).toHaveBeenCalledTimes(2);
+    distinct.mockRestore();
+  });
+
   test('invalidates shared configuration caches after ACL revocation', async () => {
     const cache = createSharedCache();
     const registry = createCodeEnvironmentRegistry(mongoose, { configurationCache: cache });

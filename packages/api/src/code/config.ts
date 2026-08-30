@@ -1,4 +1,5 @@
 import { EModelEndpoint } from 'librechat-data-provider';
+import { logger } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
 import type {
   AccessibleCodeEnvironmentConfiguration,
@@ -11,6 +12,31 @@ type ConfigurationRegistry = {
   ) => Promise<AccessibleCodeEnvironmentConfiguration[]>;
   listRegisteredIds: () => Promise<string[]>;
 };
+
+function retainDeploymentCodeEnvironments(
+  appConfig: AppConfig,
+  deploymentConfig: AppConfig,
+): AppConfig {
+  const agents = appConfig.endpoints?.[EModelEndpoint.agents];
+  const sessions = agents?.statefulCodeSessions;
+  if (sessions == null) return appConfig;
+
+  return {
+    ...appConfig,
+    endpoints: {
+      ...appConfig.endpoints,
+      [EModelEndpoint.agents]: {
+        ...agents,
+        statefulCodeSessions: {
+          ...sessions,
+          environments:
+            deploymentConfig.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions
+              ?.environments ?? [],
+        },
+      },
+    },
+  };
+}
 
 export async function mergeAccessibleCodeEnvironments({
   appConfig,
@@ -27,10 +53,20 @@ export async function mergeAccessibleCodeEnvironments({
   const sessions = agents?.statefulCodeSessions;
   if (sessions == null) return appConfig;
 
-  const [accessible, registeredIds] = await Promise.all([
-    registry.listAccessibleConfigurations(actor),
-    registry.listRegisteredIds(),
-  ]);
+  let accessible: AccessibleCodeEnvironmentConfiguration[];
+  let registeredIds: string[];
+  try {
+    [accessible, registeredIds] = await Promise.all([
+      registry.listAccessibleConfigurations(actor),
+      registry.listRegisteredIds(),
+    ]);
+  } catch (error) {
+    logger.error(
+      '[mergeAccessibleCodeEnvironments] Unable to authorize principal environments; retaining deployment environments:',
+      error,
+    );
+    return retainDeploymentCodeEnvironments(appConfig, deploymentConfig);
+  }
   const deploymentSessions =
     deploymentConfig.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions;
   const deploymentEnvironments = new Map(
