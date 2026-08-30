@@ -51,6 +51,9 @@ const getPartAgentId = (part: TMessageContentParts): string | undefined =>
   (part as { agentId?: string })?.agentId ??
   (part?.[ContentTypes.TOOL_CALL] as { agentId?: string } | undefined)?.agentId;
 
+const getPartStepId = (part: TMessageContentParts): string | undefined =>
+  (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.stepId;
+
 const getToolGroupAnchorIndex = (parts: PartWithIndex[]): number => {
   for (const { part, idx } of parts) {
     if (getToolCallId(part) || part?.type === ContentTypes.TOOL_CALL) {
