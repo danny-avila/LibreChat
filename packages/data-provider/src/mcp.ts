@@ -181,6 +181,13 @@ const BaseOptionsSchema = z.object({
   /** Controls visibility in chat dropdown menu (MCPSelect) */
   chatMenu: z.boolean().optional(),
   /**
+   * When true, replace exact current-request `/mnt/data/<index>.<image-extension>`
+   * placeholders in MCP tool arguments with validated data URLs before the call.
+   * This deliberately sends the referenced uploaded image to the configured MCP
+   * server and can substantially increase the downstream JSON request body.
+   */
+  forwardUploadedImages: z.boolean().optional(),
+  /**
    * Controls server instruction behavior:
    * - undefined/not set: No instructions included (default)
    * - true: Use server-provided instructions
