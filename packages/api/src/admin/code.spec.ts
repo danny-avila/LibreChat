@@ -12,7 +12,7 @@ interface MockResponse extends Response {
 function mockResponse(): MockResponse {
   const response = {
     statusCode: 200,
-    body: undefined,
+    body: undefined as Record<string, unknown> | undefined,
     status(code: number) {
       response.statusCode = code;
       return response;

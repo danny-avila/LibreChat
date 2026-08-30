@@ -13,7 +13,11 @@ type AgentsEndpointConfig = NonNullable<AppConfig['endpoints']>[EModelEndpoint.a
 type StatefulCodeSessionsConfig = NonNullable<
   NonNullable<AgentsEndpointConfig>['statefulCodeSessions']
 >;
-type ConfiguredCodeEnvironment = StatefulCodeSessionsConfig['environments'][number];
+type ConfiguredCodeEnvironment = NonNullable<StatefulCodeSessionsConfig['environments']>[number];
+type FetchImpl = (
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1],
+) => ReturnType<typeof fetch>;
 
 interface CodePairingResponse {
   protocolVersion: number;
@@ -25,7 +29,7 @@ interface CodePairingResponse {
 export interface AdminCodeEnvironmentDeps {
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>;
   readSecret?: (name: string) => string | undefined;
-  fetchImpl?: typeof fetch;
+  fetchImpl?: FetchImpl;
 }
 
 function environmentId(req: ServerRequest): string {
