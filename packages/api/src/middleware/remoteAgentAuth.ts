@@ -27,6 +27,7 @@ export interface RemoteAgentAuthDeps {
   findUser: UserMethods['findUser'];
   getRolesByNames: RoleMethods['findRolesByNames'];
   updateUser: UserMethods['updateUser'];
+  isPrincipalActive: (userId: string) => Promise<boolean>;
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
 }
 
@@ -601,6 +602,7 @@ export function createRemoteAgentAuth({
   findUser,
   getRolesByNames,
   updateUser,
+  isPrincipalActive,
   getAppConfig,
 }: RemoteAgentAuthDeps): RequestHandler {
   /**
@@ -726,6 +728,14 @@ export function createRemoteAgentAuth({
         ))
       ) {
         res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      if (!(await isPrincipalActive(userResolution.user.id))) {
+        res.status(409).json({
+          error: 'Account deletion is in progress',
+          code: 'ACCOUNT_DELETION_IN_PROGRESS',
+        });
         return;
       }
 

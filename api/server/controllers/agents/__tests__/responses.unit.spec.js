@@ -148,6 +148,20 @@ const mockResponsesUsage = {
   subagent: { input_tokens: 25, output_tokens: 10, total_tokens: 35 },
 };
 const mockBuildResponsesUsage = jest.fn().mockReturnValue(mockResponsesUsage);
+const mockEnrollAgentExecution = jest.fn();
+let mockExecution;
+
+function resetMockExecution() {
+  const controller = new AbortController();
+  mockExecution = {
+    signal: controller.signal,
+    abort: jest.fn((reason) => controller.abort(reason)),
+    track: jest.fn((promise) => promise),
+    beginProviderExecution: jest.fn().mockResolvedValue(undefined),
+    settle: jest.fn().mockResolvedValue(undefined),
+  };
+  mockEnrollAgentExecution.mockResolvedValue(mockExecution);
+}
 
 jest.mock('nanoid', () => ({
   nanoid: jest.fn(() => 'mock-nanoid-123'),
@@ -340,6 +354,7 @@ jest.mock('@librechat/api', () => ({
     on_run_step_delta: { handle: jest.fn() },
     on_chat_model_end: { handle: jest.fn() },
   }),
+  enrollAgentExecution: (...args) => mockEnrollAgentExecution(...args),
 }));
 
 jest.mock('~/server/services/ToolService', () => ({
@@ -441,6 +456,7 @@ jest.mock('~/models', () => ({
   getFormattedMemories: jest.fn().mockResolvedValue({ withKeys: '', withoutKeys: '' }),
   saveConvo: jest.fn().mockResolvedValue({}),
   getConvo: jest.fn().mockResolvedValue(null),
+  isAgentTriggerPrincipalActive: jest.fn().mockResolvedValue(true),
 }));
 
 let mockGlobalDiscoveredAgentConfigs = null;
@@ -451,6 +467,7 @@ describe('createResponse controller', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    resetMockExecution();
     mockGlobalDiscoveredAgentConfigs = null;
     require('@librechat/api').inspectContent.mockReset().mockReturnValue(null);
 
@@ -469,7 +486,8 @@ describe('createResponse controller', () => {
           agents: { allowedProviders: ['anthropic'] },
         },
       },
-      on: jest.fn(),
+      once: jest.fn(),
+      off: jest.fn(),
     };
 
     res = {
@@ -480,6 +498,28 @@ describe('createResponse controller', () => {
       end: jest.fn(),
       write: jest.fn(),
     };
+  });
+
+  it('enrolls, starts, and settles the remote execution lifecycle', async () => {
+    await createResponse(req, res);
+
+    expect(mockEnrollAgentExecution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: 'resp_mock-123',
+        userId: 'user-123',
+        agentId: 'agent-123',
+        protocol: 'responses',
+      }),
+    );
+    const { createRun } = require('@librechat/api');
+    const processStream = await createRun.mock.results.at(-1).value;
+    expect(mockExecution.beginProviderExecution).toHaveBeenCalledTimes(1);
+    expect(mockExecution.beginProviderExecution.mock.invocationCallOrder[0]).toBeLessThan(
+      processStream.processStream.mock.invocationCallOrder[0],
+    );
+    expect(mockExecution.settle).toHaveBeenCalledWith(undefined);
+    expect(req.once).toHaveBeenCalledWith('close', expect.any(Function));
+    expect(req.off).toHaveBeenCalledWith('close', expect.any(Function));
   });
 
   it('resolves saved graph subagents for remote Responses API runs', async () => {

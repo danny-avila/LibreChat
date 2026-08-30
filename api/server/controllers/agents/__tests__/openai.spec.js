@@ -26,6 +26,20 @@ const mockCompletionUsage = {
   subagent: { prompt_tokens: 25, completion_tokens: 10, total_tokens: 35 },
 };
 const mockBuildCompletionUsage = jest.fn().mockReturnValue(mockCompletionUsage);
+const mockEnrollAgentExecution = jest.fn();
+let mockExecution;
+
+function resetMockExecution() {
+  const controller = new AbortController();
+  mockExecution = {
+    signal: controller.signal,
+    abort: jest.fn((reason) => controller.abort(reason)),
+    track: jest.fn((promise) => promise),
+    beginProviderExecution: jest.fn().mockResolvedValue(undefined),
+    settle: jest.fn().mockResolvedValue(undefined),
+  };
+  mockEnrollAgentExecution.mockResolvedValue(mockExecution);
+}
 const mockInitialSessions = new Map([['execute_code', { session_id: 'seeded' }]]);
 const mockGetSafeErrorMetadata = jest.fn((error) => {
   const status = error?.status ?? error?.statusCode ?? error?.response?.status;
@@ -274,6 +288,7 @@ jest.mock('@librechat/api', () => ({
     userMCPAuthMap: undefined,
   }),
   resolveSubagentGraphs: jest.fn().mockResolvedValue(undefined),
+  enrollAgentExecution: (...args) => mockEnrollAgentExecution(...args),
 }));
 
 jest.mock('~/server/controllers/ModelController', () => ({
@@ -365,6 +380,7 @@ jest.mock('~/models', () => ({
   getConvoFiles: jest.fn().mockResolvedValue([]),
   getFormattedMemories: jest.fn().mockResolvedValue({ withKeys: '', withoutKeys: '' }),
   getConvo: jest.fn().mockResolvedValue(null),
+  isAgentTriggerPrincipalActive: jest.fn().mockResolvedValue(true),
 }));
 
 describe('OpenAIChatCompletionController', () => {
@@ -373,6 +389,7 @@ describe('OpenAIChatCompletionController', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    resetMockExecution();
 
     const controller = require('../openai');
     OpenAIChatCompletionController = controller.OpenAIChatCompletionController;
@@ -389,7 +406,8 @@ describe('OpenAIChatCompletionController', () => {
           agents: { allowedProviders: ['openAI'] },
         },
       },
-      on: jest.fn(),
+      once: jest.fn(),
+      off: jest.fn(),
     };
 
     res = {
@@ -400,6 +418,26 @@ describe('OpenAIChatCompletionController', () => {
       end: jest.fn(),
       write: jest.fn(),
     };
+  });
+
+  it('enrolls, starts, and settles the remote execution lifecycle', async () => {
+    await OpenAIChatCompletionController(req, res);
+
+    expect(mockEnrollAgentExecution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: 'chatcmpl-mock-nanoid-123',
+        userId: 'user-123',
+        agentId: 'agent-123',
+        protocol: 'chat.completions',
+      }),
+    );
+    expect(mockExecution.beginProviderExecution).toHaveBeenCalledTimes(1);
+    expect(mockExecution.beginProviderExecution.mock.invocationCallOrder[0]).toBeLessThan(
+      mockProcessStream.mock.invocationCallOrder[0],
+    );
+    expect(mockExecution.settle).toHaveBeenCalledWith(undefined);
+    expect(req.once).toHaveBeenCalledWith('close', expect.any(Function));
+    expect(req.off).toHaveBeenCalledWith('close', expect.any(Function));
   });
 
   it('resolves saved graph subagents for remote chat-completion runs', async () => {
