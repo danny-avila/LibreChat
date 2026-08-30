@@ -1,5 +1,5 @@
-import type { GenerationJob } from '~/types/stream';
 import type { GenerationJobManagerClass } from '~/stream';
+import type { GenerationJob } from '~/types/stream';
 import { GenerationJobManager } from '~/stream';
 
 const ACCOUNT_DELETION_ERROR = 'Account deletion is in progress';
