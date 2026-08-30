@@ -614,6 +614,23 @@ export function escapeRegex(str: string): string {
  * @param title - The display title to convert
  * @returns A slug suitable for use as serverName (e.g., "GitHub MCP Tool" → "github-mcp-tool")
  */
+/**
+ * One cancellation signal for a budgeted operation: the remaining budget and the caller's own
+ * signal, whichever fires first. Undefined when neither bound exists, so unbudgeted callers pay
+ * nothing.
+ */
+export function createDeadlineAbortSignal(
+  deadlineMs?: number,
+  callerSignal?: AbortSignal,
+): AbortSignal | undefined {
+  const budget =
+    deadlineMs != null ? AbortSignal.timeout(Math.max(1, deadlineMs - Date.now())) : undefined;
+  if (budget != null && callerSignal != null) {
+    return AbortSignal.any([budget, callerSignal]);
+  }
+  return budget ?? callerSignal;
+}
+
 export function generateServerNameFromTitle(title: string): string {
   const slug = title
     .toLowerCase()

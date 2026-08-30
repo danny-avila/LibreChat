@@ -227,6 +227,9 @@ export interface UserConnectionContext {
   requestScopedConnections?: RequestScopedMCPConnectionStore;
   graphTokenResolver?: GraphTokenResolver;
   connectionTimeout?: number;
+  /** Cancels the connection's SDK requests when the caller itself is cancelled; previously only
+   *  OAuth connections could carry a signal, leaving non-OAuth discovery uncancellable. */
+  signal?: AbortSignal;
   /** Absolute epoch-ms bound on the whole connect-and-list operation. `connectionTimeout` bounds
    *  only a single `connect()`, so a caller that must return within a fixed budget sets this to
    *  cap every segment, including `tools/list` pagination and the unauthenticated fallback. */

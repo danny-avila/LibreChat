@@ -13,6 +13,7 @@ import type { RequestBody } from '~/types';
 import type * as t from './types';
 import {
   getMissingRuntimeBodyPlaceholderFields,
+  createDeadlineAbortSignal,
   canUseAppConnection,
   isOAuthServer,
   isUserSourced,
@@ -279,8 +280,18 @@ export class MCPManager extends UserConnectionManager {
       const existingAppConnection = useAppConnection
         ? await this.appConnections?.get(serverName)
         : null;
-      if (existingAppConnection && (await existingAppConnection.isConnected())) {
-        const snapshot = await existingAppConnection.fetchOrderedToolsSnapshot(args.deadlineMs);
+      /** Cancels the shared connection's health probe and `tools/list` for THIS caller only —
+       *  an aborted probe reports false without touching the shared connection's state. Combines
+       *  the budget with the caller's own signal so cancelling the request also stops the work. */
+      const budgetSignal =
+        existingAppConnection != null
+          ? createDeadlineAbortSignal(args.deadlineMs, args.signal)
+          : undefined;
+      if (existingAppConnection && (await existingAppConnection.isConnected(budgetSignal))) {
+        const snapshot = await existingAppConnection.fetchOrderedToolsSnapshot(
+          args.deadlineMs,
+          budgetSignal,
+        );
         return {
           tools: snapshot.complete ? snapshot.tools : null,
           oauthRequired: false,
@@ -289,6 +300,19 @@ export class MCPManager extends UserConnectionManager {
       }
     } catch {
       logger.debug('[MCP][Discovery] App connection unavailable; trying discovery mode');
+    }
+
+    /** A probe aborted by the caller is not a dead server: falling through here would open a
+     *  fresh connection on behalf of a request that no longer exists (or a budget already
+     *  spent), and the fallback keeps running after the caller has gone. */
+    if (
+      args.signal?.aborted === true ||
+      (args.deadlineMs != null && Date.now() >= args.deadlineMs)
+    ) {
+      logger.debug(
+        '[MCP][Discovery] Caller cancelled or budget spent; skipping discovery fallback',
+      );
+      return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
     const missingBodyFields = getMissingRuntimeBodyPlaceholderFields(
@@ -351,6 +375,7 @@ export class MCPManager extends UserConnectionManager {
         graphTokenResolver: args.graphTokenResolver,
         connectionTimeout: args.connectionTimeout,
         deadlineMs: args.deadlineMs,
+        signal: args.signal,
       });
       return finalizeDiscoveryResult(result);
     }

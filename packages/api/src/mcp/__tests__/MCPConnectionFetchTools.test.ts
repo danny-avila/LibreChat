@@ -296,6 +296,7 @@ describe('MCPConnection.fetchTools pagination', () => {
       .spyOn(Date, 'now')
       .mockReturnValueOnce(deadline - 20)
       .mockReturnValueOnce(deadline - 20)
+      .mockReturnValueOnce(deadline - 20)
       .mockReturnValue(deadline + 1);
 
     const snapshot = await conn.fetchToolsSnapshot(deadline);
@@ -306,15 +307,42 @@ describe('MCPConnection.fetchTools pagination', () => {
     dateNow.mockRestore();
   });
 
-  it('returns an incomplete empty snapshot without a request when the deadline has passed', async () => {
+  it('returns an incomplete empty snapshot without a request or a reservation when the deadline has passed', async () => {
     const listTools = jest.fn();
     const conn = createConnectionWithListTools(listTools);
+    const reserve = jest.spyOn(conn, 'reserveToolsPublicationRevision');
 
     const snapshot = await conn.fetchToolsSnapshot(Date.now() - 1);
 
     expect(snapshot.tools).toEqual([]);
     expect(snapshot.complete).toBe(false);
     expect(listTools).not.toHaveBeenCalled();
+    expect(reserve).not.toHaveBeenCalled();
+  });
+
+  it('hands the caller signal to the SDK so an in-flight page is cancellable', async () => {
+    const listTools = jest.fn().mockResolvedValue({ tools: [makeTool('a')] });
+    const conn = createConnectionWithListTools(listTools);
+    const signal = AbortSignal.timeout(5000);
+
+    await conn.fetchToolsSnapshot(Date.now() + 5000, signal);
+
+    const options = listTools.mock.calls[0][1]!;
+    expect(options.signal).toBe(signal);
+  });
+
+  it('makes no request and no reservation when the signal is already aborted', async () => {
+    const listTools = jest.fn();
+    const conn = createConnectionWithListTools(listTools);
+    const reserve = jest.spyOn(conn, 'reserveToolsPublicationRevision');
+    const controller = new AbortController();
+    controller.abort();
+
+    const snapshot = await conn.fetchToolsSnapshot(undefined, controller.signal);
+
+    expect(snapshot.complete).toBe(false);
+    expect(listTools).not.toHaveBeenCalled();
+    expect(reserve).not.toHaveBeenCalled();
   });
 
   it('stops waiting on an in-flight refresh that outlasts the caller deadline', async () => {
@@ -336,6 +364,30 @@ describe('MCPConnection.fetchTools pagination', () => {
 
     const start = Date.now();
     const snapshot = await conn.fetchOrderedToolsSnapshot(Date.now() + 30);
+
+    expect(snapshot.complete).toBe(false);
+    expect(Date.now() - start).toBeLessThan(2000);
+  });
+
+  it('stops waiting on an in-flight refresh when the caller signal aborts, without a deadline', async () => {
+    mcpConfig.TOOLS_LIST_TIMEOUT_MS = 30000;
+    const conn = createConnectionWithListTools(jest.fn());
+    const mutable = conn as unknown as {
+      toolListChangeGeneration: number;
+      toolListRefreshPromise: Promise<void> | null;
+    };
+    const listTools = jest.fn(async () => {
+      mutable.toolListChangeGeneration = 1;
+      return { tools: [makeTool('a')] };
+    });
+    conn.client.listTools = listTools;
+    mutable.toolListRefreshPromise = new Promise<void>(() => {});
+    jest.spyOn(conn.client, 'getServerCapabilities').mockReturnValue({ tools: {} });
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 20);
+
+    const start = Date.now();
+    const snapshot = await conn.fetchOrderedToolsSnapshot(undefined, controller.signal);
 
     expect(snapshot.complete).toBe(false);
     expect(Date.now() - start).toBeLessThan(2000);
