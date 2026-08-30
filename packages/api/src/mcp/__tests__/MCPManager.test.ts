@@ -2957,6 +2957,23 @@ describe('MCPManager', () => {
       expect(MCPConnectionFactory.discoverTools).not.toHaveBeenCalled();
     });
 
+    it('gives a budgeted caller an abort signal for the app-connection probe and snapshot', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+      const deadlineMs = Date.now() + 3000;
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({ serverName, deadlineMs });
+
+      expect(result.tools).toEqual(mockTools);
+      expect(mockConnection.isConnected).toHaveBeenCalledWith(expect.any(AbortSignal));
+      expect(mockConnection.fetchOrderedToolsSnapshot).toHaveBeenCalledWith(
+        deadlineMs,
+        expect.any(AbortSignal),
+      );
+    });
+
     it('does not reuse an app connection for a tenant-scoped config override', async () => {
       const configOverride = {
         type: 'streamable-http' as const,

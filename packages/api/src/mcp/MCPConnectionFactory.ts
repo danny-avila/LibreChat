@@ -139,6 +139,12 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     options?: Omit<t.OAuthConnectionOptions, 'returnOnOAuth'> | t.UserConnectionContext,
   ): Promise<ToolDiscoveryResult> {
+    /** Checked before credential preparation begins: a spent budget must not start Graph
+     *  preprocessing or token resolution it cannot cancel. */
+    if (options?.deadlineMs != null && Date.now() >= options.deadlineMs) {
+      logger.debug('[MCP] [Discovery] Budget exhausted before discovery began');
+      return { tools: null, connection: null, oauthRequired: false, oauthUrl: null };
+    }
     const preparedBasic = await this.prepareBasicConnectionOptions(basic, options);
     if (options != null && 'useOAuth' in options) {
       const factory = new this(preparedBasic, { ...options, returnOnOAuth: true });
@@ -174,6 +180,7 @@ export class MCPConnectionFactory {
     const oauthUrl: string | null = null;
     let oauthRequired = false;
     let shouldAttemptAuthenticatedDiscovery = true;
+    const abortSignal = this.createDiscoveryAbortSignal();
 
     let oauthTokens: MCPOAuthTokens | null = null;
     if (this.usesObo) {
@@ -227,8 +234,8 @@ export class MCPConnectionFactory {
           `Connection timeout after ${connectTimeout}ms`,
         );
 
-        if (await connection.isConnected()) {
-          const snapshot = await connection.fetchOrderedToolsSnapshot(this.deadlineMs);
+        if (await connection.isConnected(abortSignal)) {
+          const snapshot = await connection.fetchOrderedToolsSnapshot(this.deadlineMs, abortSignal);
           connection.removeListener('oauthRequired', oauthHandler);
           return {
             tools: snapshot.complete ? snapshot.tools : null,
@@ -261,7 +268,7 @@ export class MCPConnectionFactory {
     }
 
     try {
-      const tools = await this.attemptUnauthenticatedToolListing();
+      const tools = await this.attemptUnauthenticatedToolListing(abortSignal);
       if (tools && tools.length > 0) {
         logger.info(
           `${this.logPrefix} [Discovery] Successfully discovered ${tools.length} tools without auth`,
@@ -290,6 +297,23 @@ export class MCPConnectionFactory {
     return this.deadlineMs != null && Date.now() >= this.deadlineMs;
   }
 
+  /**
+   * One abort signal for this discovery operation: the remaining budget and the caller's own
+   * cancellation, whichever fires first. It reaches only work the SDK can genuinely cancel —
+   * the health probe and `tools/list` requests. Teardown is deliberately exempt: `dispose()`
+   * must finish, so cancelling it would trade a bounded overrun for a leaked session.
+   */
+  private createDiscoveryAbortSignal(): AbortSignal | undefined {
+    const budget =
+      this.deadlineMs != null
+        ? AbortSignal.timeout(Math.max(1, this.deadlineMs - Date.now()))
+        : undefined;
+    if (budget != null && this.signal != null) {
+      return AbortSignal.any([budget, this.signal]);
+    }
+    return budget ?? this.signal;
+  }
+
   private async disposeQuietly(connection: MCPConnection): Promise<void> {
     try {
       await connection.dispose();
@@ -298,7 +322,7 @@ export class MCPConnectionFactory {
     }
   }
 
-  protected async attemptUnauthenticatedToolListing(): Promise<Tool[] | null> {
+  protected async attemptUnauthenticatedToolListing(signal?: AbortSignal): Promise<Tool[] | null> {
     const unauthConnection = new MCPConnection({
       serverName: this.serverName,
       serverConfig: this.serverConfig,
@@ -323,8 +347,8 @@ export class MCPConnectionFactory {
       const connectTimeout = this.resolveConnectTimeout(15000);
       await withTimeout(unauthConnection.connect(), connectTimeout, `Unauth connection timeout`);
 
-      if (await unauthConnection.isConnected()) {
-        const snapshot = await unauthConnection.fetchOrderedToolsSnapshot(this.deadlineMs);
+      if (await unauthConnection.isConnected(signal)) {
+        const snapshot = await unauthConnection.fetchOrderedToolsSnapshot(this.deadlineMs, signal);
         await this.disposeQuietly(unauthConnection);
         return snapshot.complete ? snapshot.tools : null;
       }

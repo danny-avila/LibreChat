@@ -279,8 +279,17 @@ export class MCPManager extends UserConnectionManager {
       const existingAppConnection = useAppConnection
         ? await this.appConnections?.get(serverName)
         : null;
-      if (existingAppConnection && (await existingAppConnection.isConnected())) {
-        const snapshot = await existingAppConnection.fetchOrderedToolsSnapshot(args.deadlineMs);
+      /** Cancels the shared connection's health probe and `tools/list` for THIS caller only —
+       *  an aborted probe reports false without touching the shared connection's state. */
+      const budgetSignal =
+        existingAppConnection != null && args.deadlineMs != null
+          ? AbortSignal.timeout(Math.max(1, args.deadlineMs - Date.now()))
+          : undefined;
+      if (existingAppConnection && (await existingAppConnection.isConnected(budgetSignal))) {
+        const snapshot = await existingAppConnection.fetchOrderedToolsSnapshot(
+          args.deadlineMs,
+          budgetSignal,
+        );
         return {
           tools: snapshot.complete ? snapshot.tools : null,
           oauthRequired: false,

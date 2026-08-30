@@ -4236,7 +4236,7 @@ describe('MCPConnectionFactory', () => {
         ]);
       });
 
-      it('skips the unauthenticated fallback once the deadline has passed', async () => {
+      it('skips discovery entirely once the deadline has passed', async () => {
         const events: string[] = [];
         trackConnections(events);
 
@@ -4246,8 +4246,9 @@ describe('MCPConnectionFactory', () => {
         );
 
         expect(result.tools).toBeNull();
-        expect(events).toEqual(['auth:connect', 'auth:dispose']);
-        expect(mockMCPConnection).toHaveBeenCalledTimes(1);
+        expect(events).toEqual([]);
+        expect(mockMCPConnection).not.toHaveBeenCalled();
+        expect(mockPreProcessGraphTokens).not.toHaveBeenCalled();
       });
 
       it('forwards the deadline to the tools/list snapshot', async () => {
@@ -4263,7 +4264,11 @@ describe('MCPConnectionFactory', () => {
           { deadlineMs },
         );
 
-        expect(mockConnectionInstance.fetchOrderedToolsSnapshot).toHaveBeenCalledWith(deadlineMs);
+        expect(mockConnectionInstance.fetchOrderedToolsSnapshot).toHaveBeenCalledWith(
+          deadlineMs,
+          expect.any(AbortSignal),
+        );
+        expect(mockConnectionInstance.isConnected).toHaveBeenCalledWith(expect.any(AbortSignal));
       });
 
       it('clamps a long initTimeout to the remaining budget instead of waiting it out', async () => {
