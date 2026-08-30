@@ -600,7 +600,9 @@ const executeResponse = async (envelope, { req, res }) => {
       conversationId,
       agentId,
       protocol: 'responses',
-      isPrincipalActive: db.isAgentTriggerPrincipalActive,
+      /** Conversation delete-all uses the shared owner-admission fence. Remote
+       * execution must observe it after durable enrollment and before provider work. */
+      isPrincipalActive: db.isSubagentOwnerAdmissible,
     });
     if (responseClosed || (res.destroyed === true && res.writableEnded !== true)) {
       execution.abort();

@@ -468,7 +468,7 @@ jest.mock('~/models', () => ({
   getFormattedMemories: jest.fn().mockResolvedValue({ withKeys: '', withoutKeys: '' }),
   saveConvo: jest.fn().mockResolvedValue({}),
   getConvo: jest.fn().mockResolvedValue(null),
-  isAgentTriggerPrincipalActive: jest.fn().mockResolvedValue(true),
+  isSubagentOwnerAdmissible: jest.fn().mockResolvedValue(true),
 }));
 
 let mockGlobalDiscoveredAgentConfigs = null;

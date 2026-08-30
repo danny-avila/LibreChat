@@ -280,16 +280,19 @@ async function confirmAgentGenerationsDrained(
   conversationIds,
   leaseTaskIds = [],
   tenantId,
+  ownerWide = false,
 ) {
   let foundActiveGeneration = false;
   const drainErrors = [];
   let conversationRunIds;
   try {
-    conversationRunIds = await GenerationJobManager.getCleanupBlockingJobIdsForConversations(
-      userId,
-      conversationIds,
-      tenantId,
-    );
+    conversationRunIds = ownerWide
+      ? await GenerationJobManager.getCleanupBlockingJobIdsForUser(userId, tenantId)
+      : await GenerationJobManager.getCleanupBlockingJobIdsForConversations(
+          userId,
+          conversationIds,
+          tenantId,
+        );
   } catch (error) {
     logger.warn('Conversation generation index lookup failed', error);
     throw new Error('Conversation generations could not be confirmed drained.');
@@ -356,20 +359,12 @@ async function confirmAgentGenerationsDrained(
   return true;
 }
 
-/** Repeats generation discovery after the conversation wave is gone. Remote
- * enrollment commits its job before validating an existing conversation, so a
- * run that misses the pre-delete snapshot either fails that validation or is
- * visible to this post-delete drain before persistence is repaired. */
+/** Repeats generation discovery after the conversation wave is gone, then always
+ * removes remnants for that immutable deletion set. A remote run may settle and
+ * leave the cleanup index between persisting and this lookup; absence from the
+ * index is therefore not evidence that the second persistence sweep is unnecessary. */
 async function drainDeletedAgentGenerations(userId, conversationIds, leaseTaskIds = [], tenantId) {
-  const foundActiveGeneration = await confirmAgentGenerationsDrained(
-    userId,
-    conversationIds,
-    leaseTaskIds,
-    tenantId,
-  );
-  if (!foundActiveGeneration) {
-    return;
-  }
+  await confirmAgentGenerationsDrained(userId, conversationIds, leaseTaskIds, tenantId);
   try {
     await db.deleteConvos(userId, { conversationId: { $in: conversationIds } });
   } catch {
@@ -501,17 +496,21 @@ router.delete('/all', configMiddleware, async (req, res) => {
     const dbResponse = await subagentThreadTaskStore.withOwnerDeletionFence(
       req.user.id,
       tenantId,
-      () =>
-        db.deleteConvos(
+      async () => {
+        /** Drain before the database selects its first deletion wave. A remote run
+         * that passed admission immediately before the fence can otherwise persist a
+         * brand-new conversation after that snapshot and disappear from the job index. */
+        await confirmAgentGenerationsDrained(req.user.id, [], [], tenantId, true);
+        return db.deleteConvos(
           req.user.id,
           {},
           {
             beforeDelete: (conversationIds) =>
               confirmAgentGenerationsDrained(req.user.id, conversationIds, [], tenantId),
           },
-        ),
+        );
+      },
     );
-    await drainDeletedAgentGenerations(req.user.id, dbResponse.conversationIds ?? [], [], tenantId);
     // HITL: prune ALL the deleted conversations' durable checkpoints in one bulk pass.
     await deleteAgentCheckpoints(
       dbResponse.conversationIds,

@@ -392,7 +392,7 @@ jest.mock('~/models', () => ({
   getConvoFiles: jest.fn().mockResolvedValue([]),
   getFormattedMemories: jest.fn().mockResolvedValue({ withKeys: '', withoutKeys: '' }),
   getConvo: jest.fn().mockResolvedValue(null),
-  isAgentTriggerPrincipalActive: jest.fn().mockResolvedValue(true),
+  isSubagentOwnerAdmissible: jest.fn().mockResolvedValue(true),
 }));
 
 describe('OpenAIChatCompletionController', () => {
