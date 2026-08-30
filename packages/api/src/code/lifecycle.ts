@@ -25,6 +25,12 @@ export async function revokeUserCodeEnvironmentWorkers({
       (environment) => environment.workerPrincipal?.type === 'user' && environment.workerId != null,
     )
     .map((environment) => {
+      const workerId = environment.workerId;
+      if (workerId == null) {
+        throw new Error(
+          `Code environment worker id is unavailable for ${environment.environmentId}`,
+        );
+      }
       const fallbackControlPlane = controlPlanes.find(
         (candidate) =>
           candidate.id === environment.controlPlaneId &&
@@ -40,24 +46,25 @@ export async function revokeUserCodeEnvironmentWorkers({
           `Code environment revocation is unavailable for ${environment.environmentId}`,
         );
       }
-      return { environment, token };
+      return { environment, token, workerId };
     });
   const results = await Promise.allSettled(
-    targets.map(({ environment, token }) =>
+    targets.map(({ environment, token, workerId }) =>
       revokeCodeBridgeWorker({
         baseURL: environment.baseURL,
         token,
-        workerId: environment.workerId,
+        workerId,
         fetchImpl,
       }),
     ),
   );
   const failures = results.filter((result) => result.status === 'rejected');
   if (failures.length > 0) {
-    throw new AggregateError(
-      failures.map((failure) => failure.reason),
+    const error = new Error(
       'One or more code environment workers could not be revoked',
-    );
+    ) as Error & { errors: unknown[] };
+    error.errors = failures.map((failure) => failure.reason);
+    throw error;
   }
   return targets.length;
 }
