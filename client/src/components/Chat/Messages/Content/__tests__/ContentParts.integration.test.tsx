@@ -151,6 +151,18 @@ const makeMcpToolCallWithoutId = (name: string, hasOutput = true): TMessageConte
 const makeTextPart = (text: string): TMessageContentParts =>
   ({ type: ContentTypes.TEXT, text }) as unknown as TMessageContentParts;
 
+const makePhasePart = (start: number, end: number, label: string): TMessageContentParts =>
+  ({
+    type: ContentTypes.ACTIVITY_LABEL,
+    [ContentTypes.ACTIVITY_LABEL]: '',
+    activity_label: label,
+    activity_label_type: 'phase',
+    activity_start_index: start,
+    activity_end_index: end,
+    activity_count: end - start,
+    pending: false,
+  }) as unknown as TMessageContentParts;
+
 const imageAttachment = (toolCallId: string, name = 'tiny.png'): TAttachment =>
   ({
     filename: name,
@@ -299,6 +311,43 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     rerender(
       <RecoilRoot>
         <ContentParts {...baseProps} content={nextContent} />
+      </RecoilRoot>,
+    );
+    const shiftedToggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
+    expect(shiftedToggles[0]).toHaveAttribute('aria-expanded', 'false');
+    expect(shiftedToggles[1]).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('counts repeated legacy provider-id groups across activity phases', () => {
+    const content = [
+      makeMcpToolCall('call_0'),
+      makeMcpToolCall('call_1'),
+      makePhasePart(0, 2, 'First phase'),
+      makeMcpToolCall('call_0'),
+      makeMcpToolCall('call_2'),
+      makePhasePart(3, 5, 'Second phase'),
+    ];
+    const shiftedContent = [
+      makeTextPart('streamed preface'),
+      makeMcpToolCall('call_0'),
+      makeMcpToolCall('call_1'),
+      makePhasePart(1, 3, 'First phase'),
+      makeMcpToolCall('call_0'),
+      makeMcpToolCall('call_2'),
+      makePhasePart(4, 6, 'Second phase'),
+    ];
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={content} />
+      </RecoilRoot>,
+    );
+
+    const toggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
+    fireEvent.click(toggles[1]);
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={shiftedContent} />
       </RecoilRoot>,
     );
     const shiftedToggles = screen.getAllByRole('button', { name: 'Used 2 tools' });

@@ -54,6 +54,15 @@ const getPartAgentId = (part: TMessageContentParts): string | undefined =>
 const getPartStepId = (part: TMessageContentParts): string | undefined =>
   (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.stepId;
 
+const getToolGroupAnchorIndex = (parts: PartWithIndex[]): number => {
+  for (const { part, idx } of parts) {
+    if (getToolCallId(part) || part?.type === ContentTypes.TOOL_CALL) {
+      return idx;
+    }
+  }
+  return parts[0]?.idx ?? -1;
+};
+
 const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string => {
   const firstPart = parts[0];
   if (!firstPart) {
@@ -192,6 +201,8 @@ type ContentPartsProps = {
   resumeAuthors?: ReadonlyMap<number, string | undefined>;
   /** Message-wide tool-group expansion overrides retained across phase slices. */
   toolGroupExpansionState?: Map<string, ToolCallGroupExpansionState>;
+  /** Message-wide occurrence number for each grouped tool block's first tool. */
+  toolGroupOccurrenceByIndex?: ReadonlyMap<number, number>;
 };
 
 /**
@@ -224,6 +235,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   contentIndices,
   resumeAuthors,
   toolGroupExpansionState,
+  toolGroupOccurrenceByIndex,
 }: ContentPartsProps) {
   const { inlineAttachments, workspaceChanges } = useMemo(
     () =>
@@ -499,15 +511,32 @@ const ContentPartsBody = memo(function ContentPartsBody({
   }, [absoluteIndexAt, content]);
   const postSteerAuthors = resumeAuthors ?? detectedResumeAuthors;
 
+  const resolvedToolGroupOccurrences = useMemo(() => {
+    if (toolGroupOccurrenceByIndex != null) {
+      return toolGroupOccurrenceByIndex;
+    }
+    const occurrences = new Map<number, number>();
+    const counts = new Map<string, number>();
+    for (const group of groupSequentialToolCalls(sequentialParts)) {
+      if (group.type === 'single') {
+        continue;
+      }
+      const baseGroupId = getToolGroupId(group.parts, fallbackScope);
+      const occurrence = (counts.get(baseGroupId) ?? 0) + 1;
+      counts.set(baseGroupId, occurrence);
+      occurrences.set(getToolGroupAnchorIndex(group.parts), occurrence);
+    }
+    return occurrences;
+  }, [toolGroupOccurrenceByIndex, sequentialParts, fallbackScope]);
+
   const groupedParts = useMemo(() => {
-    const groupIdOccurrences = new Map<string, number>();
     return groupSequentialToolCalls(sequentialParts).map((group) => {
       if (group.type === 'single') {
         return group;
       }
       const baseGroupId = getToolGroupId(group.parts, fallbackScope);
-      const occurrence = (groupIdOccurrences.get(baseGroupId) ?? 0) + 1;
-      groupIdOccurrences.set(baseGroupId, occurrence);
+      const occurrence =
+        resolvedToolGroupOccurrences.get(getToolGroupAnchorIndex(group.parts)) ?? 1;
       /** Legacy rows lack run-step identity. Their provider ids may repeat,
        * so preserve the first group's historic stable key and distinguish
        * later occurrences by sequence rather than a shifting content index. */
@@ -522,7 +551,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
       );
       return { ...group, groupId, groupAttachments };
     });
-  }, [sequentialParts, attachmentMap, fallbackScope]);
+  }, [sequentialParts, attachmentMap, fallbackScope, resolvedToolGroupOccurrences]);
 
   /** The re-attribution node for a part resuming after a steer block, shared
    *  by the sequential path and the parallel renderer's sequential stretches. */
@@ -616,6 +645,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
           contentIndices={segmentIndices}
           resumeAuthors={postSteerAuthors}
           toolGroupExpansionState={expansionState}
+          toolGroupOccurrenceByIndex={resolvedToolGroupOccurrences}
         />
       );
     };

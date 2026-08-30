@@ -1490,9 +1490,18 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
       configurable,
       metadata: { thread_id: metadata.thread_id, run_id: 'poll-step-less' },
     })) as Array<{ content: string; artifact?: unknown }>;
+    await flushMicrotasks();
 
     expect(JSON.parse(poll.content)).toMatchObject({ status: 'completed' });
     expect(poll.artifact).toEqual(CODE_ARTIFACT);
+    expect(persistBackgroundCodeResult).toHaveBeenCalledTimes(2);
+    expect(persistBackgroundCodeResult).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        reapply: true,
+        toolCallId: 'call_step_less_code',
+        stepId: undefined,
+      }),
+    );
   });
 
   it('carries full code-session config into the detached invoke, harvests onto the dispatch turn, and re-emits on poll', async () => {

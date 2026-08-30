@@ -5201,11 +5201,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         );
                       }
                     }
-                    if (
-                      persistBackgroundCodeResult &&
-                      delivery.messageId &&
-                      (backgroundToolCompletion == null || delivery.stepId != null)
-                    ) {
+                    if (persistBackgroundCodeResult && delivery.messageId) {
                       /** Error tasks carry their message in `error`, not
                        *  `result`; reaped (timed-out) tasks store it raw, so
                        *  wrap here — `toBackgroundToolFailure` is a no-op for
