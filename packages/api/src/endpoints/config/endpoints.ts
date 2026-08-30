@@ -90,10 +90,7 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
         allowedProviders,
         disableBuilder,
         capabilities,
-        /** The public endpoint shape intentionally omits server-only baseURL.
-         * TEndpointsConfig still shares its source type with the deployment
-         * schema, so narrow through the boundary until those types split. */
-        statefulCodeSessions: clientStatefulCodeSessions as unknown as typeof statefulCodeSessions,
+        statefulCodeSessions: clientStatefulCodeSessions,
         maxSubagents,
       };
     }

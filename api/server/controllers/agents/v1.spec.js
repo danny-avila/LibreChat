@@ -1257,7 +1257,10 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
           },
         },
       };
-      mockReq.body = { stateful_code_sessions: false };
+      mockReq.body = {
+        stateful_code_sessions: false,
+        code_environment_id: 'removed-vm',
+      };
 
       await updateAgentHandler(mockReq, mockRes);
 

@@ -1039,6 +1039,9 @@ const updateAgentHandler = async (req, res) => {
         return res.status(404).json({ error: 'Agent not found' });
       }
 
+      const codeEnvironmentSelectionChanged =
+        updateData.code_environment_id !== undefined &&
+        updateData.code_environment_id !== existingAgent.code_environment_id;
       const statefulConfigurationChanged =
         (updateData.stateful_code_sessions !== undefined &&
           (updateData.stateful_code_sessions === true) !==
@@ -1046,8 +1049,7 @@ const updateAgentHandler = async (req, res) => {
         (updateData.stateful_code_environment !== undefined &&
           (updateData.stateful_code_environment ?? 'user') !==
             (existingAgent.stateful_code_environment ?? 'user')) ||
-        (updateData.code_environment_id !== undefined &&
-          updateData.code_environment_id !== existingAgent.code_environment_id);
+        codeEnvironmentSelectionChanged;
       const activatesCodeExecution =
         includesToolsConfiguration &&
         updateData.tools.includes(Tools.execute_code) &&
@@ -1066,7 +1068,7 @@ const updateAgentHandler = async (req, res) => {
             effectiveStatefulSessions,
             effectiveStatefulEnvironment,
             effectiveCodeEnvironmentId,
-            updateData.code_environment_id !== undefined,
+            codeEnvironmentSelectionChanged,
           )
         ) {
           return;
