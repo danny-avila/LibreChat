@@ -7,21 +7,24 @@ const {
 const { logger } = require('@librechat/data-schemas');
 const db = require('~/models');
 const { createAgentAccessCheck } = require('./steer');
-const {
-  scheduleAgentQueuedTurn,
-  retireAgentTrigger,
-} = require('~/server/services/Agents/triggers');
-
-const dependencies = (req) => ({
-  methods: db,
-  scheduler: { schedule: scheduleAgentQueuedTurn },
-  getFiles: db.getFiles,
-  updateFilesUsage: db.updateFilesUsage,
-  checkAgentAccess: createAgentAccessCheck(req),
-  isPrincipalActive: db.isAgentTriggerPrincipalActive,
-  retireDelivery: (deliveryKey, _sourceId, reason) =>
-    retireAgentTrigger(deliveryKey, AGENT_QUEUED_TURN_SOURCE, reason),
-});
+const dependencies = (req) => {
+  /** Keep trigger-service composition lazy so importing the route for unrelated
+   * middleware probes does not initialize or require the worker graph. */
+  const {
+    scheduleAgentQueuedTurn,
+    retireAgentTrigger,
+  } = require('~/server/services/Agents/triggers');
+  return {
+    methods: db,
+    scheduler: { schedule: scheduleAgentQueuedTurn },
+    getFiles: db.getFiles,
+    updateFilesUsage: db.updateFilesUsage,
+    checkAgentAccess: createAgentAccessCheck(req),
+    isPrincipalActive: db.isAgentTriggerPrincipalActive,
+    retireDelivery: (deliveryKey, _sourceId, reason) =>
+      retireAgentTrigger(deliveryKey, AGENT_QUEUED_TURN_SOURCE, reason),
+  };
+};
 
 const send = (res, result) => res.status(result.status).json(result.body);
 
