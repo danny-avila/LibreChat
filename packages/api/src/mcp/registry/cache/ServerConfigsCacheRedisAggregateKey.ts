@@ -3,6 +3,7 @@ import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerCon
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import { cacheConfig, evalKeyvRedisScript, keyvRedisClient, standardCache } from '~/cache';
 import { BaseRegistryCache } from './BaseRegistryCache';
+import { PRESERVE_EMPTY_ARRAYS_LUA } from './preserveEmptyArraysLua';
 
 /**
  * Redis-backed MCP server configs cache that stores all entries under a single aggregate key.
@@ -26,76 +27,8 @@ import { BaseRegistryCache } from './BaseRegistryCache';
  */
 const AGGREGATE_KEY = '__all__';
 
-/** Lua CJSON cannot distinguish decoded empty arrays from empty objects. Protect empty arrays
- * with a collision-free string sentinel before decoding, then restore them after encoding. */
-const PRESERVE_EMPTY_ARRAYS = `
-local function emptyArraySentinel(...)
-  local sentinel = '__librechat_empty_array__'
-  while true do
-    local collision = false
-    for index = 1, select('#', ...) do
-      local json = select(index, ...)
-      if json and string.find(json, sentinel, 1, true) then
-        collision = true
-        break
-      end
-    end
-    if not collision then return sentinel end
-    sentinel = sentinel .. '_'
-  end
-end
-
-local function protectEmptyArrays(json, sentinel)
-  local output = {}
-  local inString = false
-  local escaped = false
-  local index = 1
-  while index <= #json do
-    local character = string.sub(json, index, index)
-    if inString then
-      table.insert(output, character)
-      if escaped then
-        escaped = false
-      elseif string.byte(character) == 92 then
-        escaped = true
-      elseif character == '"' then
-        inString = false
-      end
-      index = index + 1
-    elseif character == '"' then
-      inString = true
-      table.insert(output, character)
-      index = index + 1
-    elseif character == '[' then
-      local closeIndex = index + 1
-      while closeIndex <= #json do
-        local candidate = string.sub(json, closeIndex, closeIndex)
-        if not string.find(' \\t\\r\\n', candidate, 1, true) then break end
-        closeIndex = closeIndex + 1
-      end
-      if string.sub(json, closeIndex, closeIndex) == ']' then
-        table.insert(output, '"' .. sentinel .. '"')
-        index = closeIndex + 1
-      else
-        table.insert(output, character)
-        index = index + 1
-      end
-    else
-      table.insert(output, character)
-      index = index + 1
-    end
-  end
-  return table.concat(output)
-end
-
-local function restoreEmptyArrays(json, sentinel)
-  local restored = string.gsub(json, '"' .. sentinel .. '"', '[]')
-  return restored
-end
-`;
-
 const MUTATE_AGGREGATE_ENTRY = `
-${PRESERVE_EMPTY_ARRAYS}
+${PRESERVE_EMPTY_ARRAYS_LUA}
 local operation = ARGV[1]
 local serverName = ARGV[2]
 local encoded = redis.call('GET', KEYS[1])
@@ -126,7 +59,7 @@ return 1
 /** Keyv stores its serialized value in an envelope with a `value` member. This script
  * updates that envelope atomically and preserves a configured Redis expiration. */
 const PATCH_AGGREGATE_ENTRY = `
-${PRESERVE_EMPTY_ARRAYS}
+${PRESERVE_EMPTY_ARRAYS_LUA}
 local encoded = redis.call('GET', KEYS[1])
 if not encoded then return 0 end
 local sentinel = emptyArraySentinel(encoded, ARGV[2])

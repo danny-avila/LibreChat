@@ -132,6 +132,24 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
     });
   });
 
+  describe('patch operation', () => {
+    it('preserves empty arrays in a patched per-key entry', async () => {
+      const { config } = await cache.add('empty-arrays', { ...mockConfig1, args: [] });
+
+      await expect(
+        cache.patch(
+          'empty-arrays',
+          { resolvedInstructions: 'patched' },
+          config.updatedAt,
+        ),
+      ).resolves.toBe(true);
+
+      const result = await cache.get('empty-arrays');
+      expect(result?.args).toEqual([]);
+      expect(result?.resolvedInstructions).toBe('patched');
+    });
+  });
+
   describe('getAll operation', () => {
     it('should return empty object when no servers exist', async () => {
       const result = await cache.getAll();

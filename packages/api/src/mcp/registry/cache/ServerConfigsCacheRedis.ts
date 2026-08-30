@@ -12,6 +12,7 @@ import {
   standardCache,
 } from '~/cache';
 import { BaseRegistryCache } from './BaseRegistryCache';
+import { PRESERVE_EMPTY_ARRAYS_LUA } from './preserveEmptyArraysLua';
 
 /**
  * Redis-backed implementation of MCP server configurations cache for distributed deployments.
@@ -23,16 +24,18 @@ import { BaseRegistryCache } from './BaseRegistryCache';
 const BATCH_SIZE = 100;
 
 const PATCH_ENTRY = `
+${PRESERVE_EMPTY_ARRAYS_LUA}
 local encoded = redis.call('GET', KEYS[1])
 if not encoded then return 0 end
-local envelope = cjson.decode(encoded)
+local sentinel = emptyArraySentinel(encoded, ARGV[1])
+local envelope = cjson.decode(protectEmptyArrays(encoded, sentinel))
 if not envelope.value then return 0 end
-local fields = cjson.decode(ARGV[1])
+local fields = cjson.decode(protectEmptyArrays(ARGV[1], sentinel))
 if ARGV[2] ~= '' and tonumber(ARGV[2]) ~= envelope.value.updatedAt then return 0 end
 if fields.resolvedInstructions and envelope.value.resolvedInstructions then return 0 end
 local ttl = redis.call('PTTL', KEYS[1])
 for field, value in pairs(fields) do envelope.value[field] = value end
-redis.call('SET', KEYS[1], cjson.encode(envelope))
+redis.call('SET', KEYS[1], restoreEmptyArrays(cjson.encode(envelope), sentinel))
 if ttl > 0 then redis.call('PEXPIRE', KEYS[1], ttl) end
 return 1
 `;

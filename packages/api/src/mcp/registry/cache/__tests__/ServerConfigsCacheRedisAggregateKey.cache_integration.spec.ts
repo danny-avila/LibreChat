@@ -299,6 +299,16 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
       await cache.upsert('empty-arrays', { ...mockConfig3, args: [] } as ParsedServerConfig);
       expect((await cache.get('empty-arrays'))?.args).toEqual([]);
     });
+
+    it('preserves empty arrays in an untouched entry when another entry is patched', async () => {
+      await cache.add('untouched-empty-arrays', { ...mockConfig1, args: [] });
+      await cache.add('patched-entry', mockConfig2);
+
+      await cache.patch('patched-entry', { resolvedInstructions: 'patched' });
+
+      expect((await cache.get('untouched-empty-arrays'))?.args).toEqual([]);
+      expect((await cache.get('patched-entry'))?.resolvedInstructions).toBe('patched');
+    });
   });
 
   describe('reset operation', () => {
