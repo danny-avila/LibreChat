@@ -156,6 +156,13 @@ describe('MCPServersRegistry.setResolvedInstructions', () => {
         oauth: { authorization_url: 'https://idp.example.com/authorize' },
       } as unknown as t.ParsedServerConfig,
     ],
+    [
+      'placeholder-bearing-admin-key',
+      {
+        ...startupDeferredYamlEntry,
+        apiKey: { source: 'admin', authorization_type: 'bearer', key: '{{LIBRECHAT_USER_ID}}' },
+      } as unknown as t.ParsedServerConfig,
+    ],
   ])('refuses a %s-deferred server at the shared-registry boundary', async (_reason, config) => {
     await registry['cacheConfigsRepo'].add('deferred_server', config);
 
@@ -415,9 +422,36 @@ describe('UserConnectionManager.backfillResolvedInstructions', () => {
         oauth_headers: { 'X-Tenant': 'per-user' },
       } as unknown as t.ParsedServerConfig,
     ],
+    [
+      'an admin API key whose value is a runtime identity placeholder',
+      {
+        ...startupDeferredYamlEntry,
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'bearer',
+          key: '{{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        },
+      } as unknown as t.ParsedServerConfig,
+    ],
   ])('does not persist instructions for %s context', async (_reason, config) => {
     await backfill(config, connectionWith(INSTRUCTIONS));
     expect(setResolvedInstructions).not.toHaveBeenCalled();
+  });
+
+  it('still persists instructions for a static admin API key', async () => {
+    const config = {
+      ...startupDeferredYamlEntry,
+      apiKey: { source: 'admin', authorization_type: 'bearer', key: 'static-shared-secret' },
+    } as unknown as t.ParsedServerConfig;
+
+    await backfill(config, connectionWith(INSTRUCTIONS));
+
+    expect(setResolvedInstructions).toHaveBeenCalledWith(
+      'deferred_server',
+      INSTRUCTIONS,
+      'user-1',
+      config,
+    );
   });
 
   it('still backfills when the stored config carries no source stamp', async () => {
