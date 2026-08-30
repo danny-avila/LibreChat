@@ -148,6 +148,15 @@ describe('agent context compatibility', () => {
     expect(changed.digest).not.toBe(fingerprint.digest);
   });
 
+  it('invalidates initialized context when the code execution route changes', () => {
+    const fingerprint = (executionRouteKey: string) =>
+      createInitializedAgentContextFingerprint({
+        agents: [{ id: 'agent-1', execution: { executionRouteKey } }],
+      });
+
+    expect(fingerprint('stateful:first').digest).not.toBe(fingerprint('stateful:second').digest);
+  });
+
   it('invalidates a constant-version deployment Skill when its body changes', () => {
     const fingerprint = (body: string) =>
       createInitializedAgentContextFingerprint({

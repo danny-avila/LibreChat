@@ -406,31 +406,42 @@ function PendingSteerChips({
   }
 
   return (
-    <div
-      className="flex flex-col gap-1.5 px-2 pt-2"
-      role="list"
-      aria-label={localize('com_ui_queued_messages')}
-      data-testid="pending-steer-chips"
-    >
-      {failedSteers.map((steer) => (
-        <FailedSteerRow
-          key={steer.steerId}
-          steer={steer}
-          steering={steering}
-          onEditToComposer={onEditToComposer}
-        />
-      ))}
-      {queued.map((message) => (
-        <QueuedRow
-          key={message.id}
-          message={message}
-          steering={steering}
-          conversationId={conversationId}
-          interruptPending={interruptPending}
-          onEditToComposer={onEditToComposer}
-          onRestoreToComposer={onRestoreToComposer}
-        />
-      ))}
+    <div className="flex flex-col gap-1.5 px-2 pt-2" data-testid="pending-steer-chips">
+      {/* The list owns only listitem rows; the caption lives beside it so the
+       *  ARIA list structure stays valid for assistive tech. */}
+      <div
+        className="flex flex-col gap-1.5"
+        role="list"
+        aria-label={localize('com_ui_queued_messages')}
+      >
+        {failedSteers.map((steer) => (
+          <FailedSteerRow
+            key={steer.steerId}
+            steer={steer}
+            steering={steering}
+            onEditToComposer={onEditToComposer}
+          />
+        ))}
+        {queued.map((message) => (
+          <QueuedRow
+            key={message.id}
+            message={message}
+            steering={steering}
+            conversationId={conversationId}
+            interruptPending={interruptPending}
+            onEditToComposer={onEditToComposer}
+            onRestoreToComposer={onRestoreToComposer}
+          />
+        ))}
+      </div>
+      {/* One caption for the whole queued group: the single fact users need
+       *  ("did my message vanish?" it did not), shown only while a run is
+       *  actually pending — after it, rows drain or convert on their own. */}
+      {queued.length > 0 && steering.duringRunActive && (
+        <div className="px-3 text-xs text-text-secondary" data-testid="queued-caption">
+          {localize('com_ui_steer_queued_info')}
+        </div>
+      )}
     </div>
   );
 }

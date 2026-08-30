@@ -237,7 +237,15 @@ jest.mock('@librechat/client', () => {
         </button>
       );
     },
-    Textarea: (props: React.ComponentProps<'textarea'>) => <textarea {...props} />,
+    composerSurfaceClasses: () => '',
+    composerSurfaceShadow: { focused: '', blurred: '', within: '' },
+    TextareaAutosize: ({
+      minRows: _minRows,
+      maxRows: _maxRows,
+      ...props
+    }: React.ComponentProps<'textarea'> & { minRows?: number; maxRows?: number }) => (
+      <textarea {...props} />
+    ),
     useMediaQuery: () => mockIsMobile,
     useToastContext: () => ({ showToast: mockShowToast }),
   };

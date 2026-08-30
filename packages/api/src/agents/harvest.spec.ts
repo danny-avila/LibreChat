@@ -20,6 +20,7 @@ const params = {
     baseUrl: 'https://code-stateful.example.com',
     codeSessionKey: 'execute_code:stateful:test',
     executionProfile: 'stateful' as const,
+    executionRouteKey: `stateful:${'a'.repeat(32)}`,
     statefulSessions: true,
   },
 };
@@ -64,6 +65,7 @@ describe('createBackgroundCodeResultHandler generated-file preflight', () => {
         session_id: 'storage-session',
         codeApiBaseUrl: 'https://code-stateful.example.com',
         executionProfile: 'stateful',
+        executionRouteKey: `stateful:${'a'.repeat(32)}`,
         preparedBuffer,
       }),
     );

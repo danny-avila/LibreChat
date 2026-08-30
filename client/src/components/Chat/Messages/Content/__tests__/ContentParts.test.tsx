@@ -29,6 +29,10 @@ jest.mock('~/Providers', () => {
     SearchContext: {
       Provider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     },
+    /** `WebSearch` reads this; leaving it off the mock threw inside the render and
+     * the component's own catch swallowed it, so the sources path was dead here
+     * while the suite still passed. */
+    useSearchContext: () => ({ searchResults: undefined }),
   };
 });
 

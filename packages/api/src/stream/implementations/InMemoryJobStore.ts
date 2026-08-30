@@ -9,6 +9,8 @@ import type {
   SteerArmResult,
   SteerEnqueueReceiptResult,
   SteerEnqueueVersionedResult,
+  TerminalSteerAdmissionPolicy,
+  TerminalSteerAdmissionResult,
   SteerQueueItem,
   SteerReceipt,
   SteerReceiptInput,
@@ -1899,6 +1901,39 @@ export class InMemoryJobStore implements IJobStoreV2 {
       this.settleSteerReceipts(streamId, restored, 'queued');
     }
     return true;
+  }
+
+  async admitTerminalSteers(
+    streamId: string,
+    policy: TerminalSteerAdmissionPolicy,
+    expectedCreatedAt?: number,
+  ): Promise<TerminalSteerAdmissionResult> {
+    const job = this.jobs.get(streamId);
+    if (
+      job?.status !== 'running' ||
+      this.closedSteerQueues.has(streamId) ||
+      (expectedCreatedAt != null && job.createdAt !== expectedCreatedAt)
+    ) {
+      return { outcome: 'unavailable' };
+    }
+    const queue = this.steerQueues.get(streamId);
+    if (!policy.allowClaim || job.generationProtocolVersion !== 2) {
+      this.closedSteerQueues.add(streamId);
+      return { outcome: 'sealed' };
+    }
+    if (queue == null || queue.length === 0) {
+      if (policy.keepOpenWhenEmpty) {
+        return { outcome: 'open' };
+      }
+      this.closedSteerQueues.add(streamId);
+      return { outcome: 'sealed' };
+    }
+    const items = await this.drainSteers(streamId, expectedCreatedAt);
+    if (items.length === 0) {
+      this.closedSteerQueues.add(streamId);
+      return { outcome: 'sealed' };
+    }
+    return { outcome: 'claimed', items };
   }
 
   async closeAndDrainSteers(

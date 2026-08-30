@@ -562,6 +562,15 @@ export interface SteerEnqueueResult {
   position: number;
 }
 
+export type TerminalSteerAdmissionResult =
+  | { outcome: 'claimed'; items: SteerQueueItem[] }
+  | { outcome: 'open' | 'sealed' | 'unavailable' };
+
+export interface TerminalSteerAdmissionPolicy {
+  allowClaim: boolean;
+  keepOpenWhenEmpty: boolean;
+}
+
 export type SteerEnqueueVersionedResult = SteerEnqueueResult | number;
 
 /**
@@ -1387,6 +1396,21 @@ export interface IJobStoreV2 extends IJobStore {
     items: SteerQueueItem[],
     expectedCreatedAt?: number,
   ): Promise<boolean>;
+
+  /**
+   * Terminal admission fence. When `allowClaim` and queued work are both
+   * present, atomically claim the FIFO batch while leaving admission open for
+   * the continued run. Otherwise atomically close admission so a racing steer
+   * is rejected and remains an ordinary follow-up, unless
+   * `keepOpenWhenEmpty` proves another folded Stop hook already planned a
+   * continuation. V1 generations always seal because they lack
+   * crash-recoverable claimed-steer receipts.
+   */
+  admitTerminalSteers(
+    streamId: string,
+    policy: TerminalSteerAdmissionPolicy,
+    expectedCreatedAt?: number,
+  ): Promise<TerminalSteerAdmissionResult>;
 
   /**
    * Atomically CLOSE the queue to new steers, then take all queued items

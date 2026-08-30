@@ -94,4 +94,99 @@ describe('resolveCodeExecutionContext', () => {
     expect(first.runtimeSessionHint).not.toContain('user-1');
     expect(second.runtimeSessionHint).not.toContain('user-2');
   });
+
+  it('routes an agent to its configured attached environment', () => {
+    const context = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environment: 'agent-user',
+      environmentId: 'my-vm',
+      environments: [
+        {
+          id: 'managed',
+          name: 'Managed',
+          type: 'managed',
+          baseURL: 'https://managed.example/v1',
+          owner: 'deployment',
+        },
+        {
+          id: 'my-vm',
+          name: 'My VM',
+          type: 'attached',
+          baseURL: 'https://bridge.example/v1/',
+          owner: 'deployment',
+        },
+      ],
+      userId: 'user-1',
+      agentId: 'agent-1',
+    });
+
+    expect(context).toEqual(
+      expect.objectContaining({
+        baseUrl: 'https://bridge.example/v1',
+        environmentId: 'my-vm',
+        environmentType: 'attached',
+        executionProfile: 'stateful',
+      }),
+    );
+    expect(context.runtimeSessionHint).toMatch(/^v3:[a-f0-9]{12}:agent-user:/);
+    expect(context.executionRouteKey).toMatch(/^stateful:[a-f0-9]{32}$/);
+  });
+
+  it('namespaces configured deployments independently of the shared wire profile', () => {
+    const environment = (id: string, baseURL: string) => ({
+      id,
+      name: id,
+      type: 'attached' as const,
+      baseURL,
+      default: true,
+      owner: 'deployment' as const,
+    });
+    const first = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environments: [environment('first', 'https://first.example/v1')],
+      userId: 'user-1',
+    });
+    const replacement = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environments: [environment('first', 'https://replacement.example/v1')],
+      userId: 'user-1',
+    });
+
+    expect(first.executionProfile).toBe('stateful');
+    expect(replacement.executionProfile).toBe('stateful');
+    expect(first.runtimeSessionHint).toBe(replacement.runtimeSessionHint);
+    expect(first.executionRouteKey).not.toBe(replacement.executionRouteKey);
+    expect(first.codeSessionKey).not.toBe(replacement.codeSessionKey);
+  });
+
+  it('uses the operator-selected default environment when the agent has no override', () => {
+    const context = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environments: [
+        {
+          id: 'default-vm',
+          name: 'Default VM',
+          type: 'attached',
+          baseURL: 'https://bridge.example/v1',
+          default: true,
+          owner: 'deployment',
+        },
+      ],
+      userId: 'user-1',
+    });
+
+    expect(context.environmentId).toBe('default-vm');
+    expect(context.baseUrl).toBe('https://bridge.example/v1');
+  });
+
+  it('fails closed when an agent references an unknown configured environment', () => {
+    expect(() =>
+      resolveCodeExecutionContext({
+        statefulSessions: true,
+        environmentId: 'missing-vm',
+        environments: [],
+        userId: 'user-1',
+      }),
+    ).toThrow('Stateful code environment "missing-vm" is not configured');
+  });
 });

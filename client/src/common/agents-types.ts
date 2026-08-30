@@ -47,6 +47,8 @@ export type AgentForm = {
   memory_scope?: MemoryScope;
   /** Sharing scope for stateful Code API workspaces. */
   stateful_code_environment?: StatefulCodeEnvironment;
+  /** Operator-configured managed or attached execution environment. */
+  code_environment_id?: string | null;
   provider?: AgentProvider | OptionWithIcon;
   /** @deprecated Use edges instead */
   agent_ids?: string[];

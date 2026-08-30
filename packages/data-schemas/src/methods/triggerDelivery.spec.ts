@@ -13,6 +13,8 @@ import {
   createAgentTriggerDeliveryMethods,
   recordAgentEventActorReceiptMetric,
   setAgentEventActorReceiptMetricObserver,
+  AgentTriggerClaimContentionError,
+  CLAIM_CAS_MAX_ATTEMPTS,
   type AgentTriggerDeliveryMethods,
 } from './triggerDelivery';
 import {
@@ -239,6 +241,28 @@ describe('agent trigger delivery methods', () => {
     );
 
     expect(claims.filter((claim) => claim != null)).toHaveLength(1);
+  });
+
+  it('surfaces exhausted claim contention as a retryable failure, not an empty queue', async () => {
+    const enqueued = await methods.enqueueAgentTriggerDelivery(enqueueInput());
+    const casSpy = jest.spyOn(Delivery.collection, 'findOneAndUpdate').mockResolvedValue(null);
+    try {
+      await expect(
+        methods.claimNextAgentTriggerDelivery({
+          workerId: 'worker-contended',
+          claimToken: 'claim-contended',
+          now: START,
+          leaseUntil: new Date(START.getTime() + 60_000),
+        }),
+      ).rejects.toBeInstanceOf(AgentTriggerClaimContentionError);
+      expect(casSpy).toHaveBeenCalledTimes(CLAIM_CAS_MAX_ATTEMPTS);
+    } finally {
+      casSpy.mockRestore();
+    }
+    /** The losing worker owns nothing: the delivery stays claimable. */
+    await expect(Delivery.findById(enqueued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'pending',
+    });
   });
 
   it('keeps capability work visible but nonclaimable to pre-capability consumers', async () => {

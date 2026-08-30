@@ -104,8 +104,9 @@ const contentPartsToActivity = (
         {
           type: 'reasoning',
           ...(reasoningVisibility === 'visible' ? { text: (part as { think: string }).think } : {}),
-          ...(reasoningVisibility === 'visible' &&
-          typeof (part as { reasoning_label?: string }).reasoning_label === 'string'
+          /** The generated reasoning label is display-safe orientation, kept
+           *  even when the reasoning text itself stays server-private. */
+          ...(typeof (part as { reasoning_label?: string }).reasoning_label === 'string'
             ? { label: (part as { reasoning_label: string }).reasoning_label }
             : {}),
         },

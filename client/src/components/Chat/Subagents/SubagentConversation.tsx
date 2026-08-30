@@ -4,6 +4,7 @@ import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
 import { Bot, ChevronDown, CornerDownRight, Radio } from 'lucide-react';
 import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@librechat/client';
 import type { TMessageContentParts } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
 import type { ChildConversationTurn } from './adapters';
 import type { TranslationKeys } from '~/hooks';
 import {
@@ -166,8 +167,27 @@ function ChildMessage({
   const agentsMap = useAgentsMapContext();
   const agent = agentId == null ? undefined : agentsMap?.[agentId];
   const label = agent?.name ?? turn.activity.title;
-  const detailsLimited =
-    turn.activity.activityTruncated === true || hasTruncatedActivityDetails(turn.activity);
+  const wholeActivityTruncated = turn.activity.activityTruncated === true;
+  const detailsLimited = wholeActivityTruncated || hasTruncatedActivityDetails(turn.activity);
+  let limitedNotice: ReactNode;
+  if (wholeActivityTruncated && onLoadDetails != null && detailState !== 'unavailable') {
+    limitedNotice = (
+      <Button type="button" variant="ghost" size="sm" onClick={onLoadDetails}>
+        {detailState === 'error'
+          ? localize('com_ui_retry')
+          : localize('com_ui_subagent_show_full_activity')}
+      </Button>
+    );
+  } else if (wholeActivityTruncated) {
+    limitedNotice = localize('com_ui_subagent_activity_details_unavailable');
+  } else {
+    /** Only item-level fields were shortened for display; the run's full
+     *  activity is otherwise present, so avoid the alarming "unavailable"
+     *  framing there. */
+    limitedNotice = (
+      <span className="italic">{localize('com_ui_subagent_activity_details_truncated')}</span>
+    );
+  }
   const iconData = {
     endpoint: EModelEndpoint.agents,
     modelLabel: label,
@@ -204,19 +224,7 @@ function ChildMessage({
         onCancelControl={onCancelControl}
       />
       {detailsLimited && detailState !== 'loading' && (
-        <div className="mt-2 text-xs text-text-secondary">
-          {turn.activity.activityTruncated === true &&
-          onLoadDetails != null &&
-          detailState !== 'unavailable' ? (
-            <Button type="button" variant="ghost" size="sm" onClick={onLoadDetails}>
-              {detailState === 'error'
-                ? localize('com_ui_retry')
-                : localize('com_ui_subagent_show_full_activity')}
-            </Button>
-          ) : (
-            localize('com_ui_subagent_activity_details_unavailable')
-          )}
-        </div>
+        <div className="mt-2 text-xs text-text-secondary">{limitedNotice}</div>
       )}
       {detailState === 'loading' && (
         <div className="mt-2 text-xs text-text-secondary" aria-live="polite">

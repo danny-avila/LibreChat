@@ -1182,6 +1182,11 @@ describe('MessageNav', () => {
     });
   });
 
+  /** The tooltip anchors off the column's `left`, so a rect stub without one makes
+   * the computed `right` NaN and React rejects the style write. Keep the stub a
+   * complete rect. */
+  const COLUMN_RECT = { top: 0, bottom: 50, height: 50, left: 0, right: 0 } as DOMRect;
+
   describe('click to jump', () => {
     it('jumps to the hovered (focused) message when the column is clicked off a rib line', () => {
       const messages = [
@@ -1191,7 +1196,7 @@ describe('MessageNav', () => {
       ];
       const { container, scrollable } = renderNav(messages);
       const column = getColumn(container);
-      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      column.getBoundingClientRect = () => COLUMN_RECT;
 
       const writes: number[] = [];
       Object.defineProperty(scrollable, 'scrollTop', {
@@ -1221,7 +1226,7 @@ describe('MessageNav', () => {
       ];
       const { container } = renderNav(messages);
       const column = getColumn(container);
-      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      column.getBoundingClientRect = () => COLUMN_RECT;
 
       act(() => {
         fireEvent.pointerMove(column, { pointerId: 1, clientY: 5 });
@@ -1246,7 +1251,7 @@ describe('MessageNav', () => {
       ];
       const result = renderNav(messages);
       const column = getColumn(result.container);
-      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      column.getBoundingClientRect = () => COLUMN_RECT;
       return { ...result, column };
     }
 
@@ -1301,7 +1306,7 @@ describe('MessageNav', () => {
       ];
       const { container } = renderNav(messages);
       const column = getColumn(container);
-      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      column.getBoundingClientRect = () => COLUMN_RECT;
 
       act(() => {
         fireEvent.pointerMove(column, { pointerId: 1, clientY: 5 });
@@ -1370,7 +1375,7 @@ describe('MessageNav', () => {
       const restoreLayout = stubRibLayout(messages.map((m) => m.messageId));
       const result = renderNav(messages);
       const column = getColumn(result.container);
-      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      column.getBoundingClientRect = () => COLUMN_RECT;
 
       const ribs = Array.from(column.querySelectorAll('[data-msg-id]')) as HTMLElement[];
 
@@ -1861,7 +1866,7 @@ describe('MessageNav', () => {
       const restoreLayout = stubRibLayout(messages.map((m) => m.messageId));
       const { container } = renderNavWithEnd(messages);
       const column = getColumn(container);
-      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      column.getBoundingClientRect = () => COLUMN_RECT;
       const getById = jest.spyOn(document, 'getElementById');
 
       act(() => {
@@ -1885,7 +1890,13 @@ describe('MessageNav', () => {
       const { container } = renderNavWithEnd(messages);
       const column = getColumn(container);
       column.getBoundingClientRect = () =>
-        ({ top: 0, bottom: messages.length * 12, height: messages.length * 12 }) as DOMRect;
+        ({
+          top: 0,
+          bottom: messages.length * 12,
+          height: messages.length * 12,
+          left: 0,
+          right: 0,
+        }) as DOMRect;
 
       act(() => {
         fireEvent.pointerMove(column, { pointerId: 1, clientY: 3 * 12 + 3 });
@@ -1909,7 +1920,7 @@ describe('MessageNav', () => {
       const restoreLayout = stubRibLayout(messages.map((m) => m.messageId));
       const { container, scrollable } = renderNavWithEnd(messages);
       const column = getColumn(container);
-      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      column.getBoundingClientRect = () => COLUMN_RECT;
       const wrapper = container.querySelector('[data-msg-id="messages-end"]')!
         .parentElement as HTMLElement;
       const getById = jest.spyOn(document, 'getElementById');
@@ -2089,7 +2100,7 @@ describe('MessageNav', () => {
       );
       const { container, scrollable } = renderNavWithEnd(messages);
       const column = getColumn(container);
-      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      column.getBoundingClientRect = () => COLUMN_RECT;
       const qs = jest.spyOn(scrollable, 'querySelector');
 
       act(() => {
@@ -2172,7 +2183,7 @@ describe('MessageNav', () => {
       const restoreLayout = stubRibLayout(messages.map((m) => m.messageId));
       const { container } = renderNav(messages);
       const column = getColumn(container);
-      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      column.getBoundingClientRect = () => COLUMN_RECT;
 
       act(() => {
         fireEvent.pointerMove(column, { pointerId: 1, clientY: 3 * 12 + 3 });
@@ -2305,7 +2316,9 @@ describe('MessageNav', () => {
       const column = getColumn(container);
       const ribs = messageRibs(container);
 
-      ribs[0].focus();
+      act(() => {
+        ribs[0].focus();
+      });
       act(() => {
         fireEvent.keyDown(column, { key: 'ArrowDown' });
       });
@@ -2336,7 +2349,9 @@ describe('MessageNav', () => {
       const ribs = messageRibs(container);
       expect(ribs[0].getAttribute('tabindex')).toBe('0');
 
-      ribs[0].focus();
+      act(() => {
+        ribs[0].focus();
+      });
       act(() => {
         fireEvent.keyDown(column, { key: 'ArrowDown' });
         fireEvent.keyDown(column, { key: 'ArrowDown' });
@@ -2353,7 +2368,9 @@ describe('MessageNav', () => {
       const column = getColumn(container);
       const ribs = messageRibs(container);
 
-      ribs[0].focus();
+      act(() => {
+        ribs[0].focus();
+      });
       act(() => {
         fireEvent.keyDown(column, { key: 'End' });
       });
@@ -2375,13 +2392,17 @@ describe('MessageNav', () => {
       const column = getColumn(container);
       const ribs = messageRibs(container);
 
-      ribs[0].focus();
+      act(() => {
+        ribs[0].focus();
+      });
       act(() => {
         fireEvent.keyDown(column, { key: 'ArrowUp' });
       });
       expect(document.activeElement).toBe(ribs[0]);
 
-      ribs[ribs.length - 1].focus();
+      act(() => {
+        ribs[ribs.length - 1].focus();
+      });
       act(() => {
         fireEvent.keyDown(column, { key: 'ArrowDown' });
       });
@@ -2399,7 +2420,8 @@ describe('MessageNav', () => {
       const restoreLayout = stubRibLayout(messages.map((m) => m.messageId));
       const { container } = renderNav(messages);
       const column = getColumn(container);
-      column.getBoundingClientRect = () => ({ top: 0, bottom: 40, height: 40 }) as DOMRect;
+      column.getBoundingClientRect = () =>
+        ({ top: 0, bottom: 40, height: 40, left: 0, right: 0 }) as DOMRect;
       Object.defineProperty(column, 'scrollTop', { value: 0, writable: true, configurable: true });
 
       act(() => {

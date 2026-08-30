@@ -17,6 +17,9 @@ type MessageRowProps = {
   hasParallelContent?: boolean;
   fullWidth?: boolean;
   isEditing?: boolean;
+  /** Full-width block without the author header or user bubble — for rows
+   *  whose body carries its own header (e.g. wake-up task cards). */
+  plain?: boolean;
   className?: string;
 };
 
@@ -47,6 +50,7 @@ export default function MessageRow({
   hasParallelContent = false,
   fullWidth = false,
   isEditing = false,
+  plain = false,
 }: MessageRowProps) {
   // Same column as ChatForm: max-width plus `sm:px-2`, so the body lines
   // up with the composer surface rather than the form's outer box.
@@ -60,7 +64,7 @@ export default function MessageRow({
       className={cn(
         'message-render group mx-auto flex min-w-0 flex-1 font-theme-ui transition-[max-width] duration-theme-normal motion-reduce:transition-none',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
-        isCreatedByUser ? 'justify-end' : 'items-start',
+        isCreatedByUser && !plain ? 'justify-end' : 'items-start',
         widthClass,
         className,
       )}
@@ -69,14 +73,16 @@ export default function MessageRow({
         className={cn(
           'relative flex min-w-0 flex-col',
           isCreatedByUser ? 'user-turn' : 'agent-turn',
-          (hasParallelContent || isEditing) && 'w-full',
+          (hasParallelContent || isEditing || plain) && 'w-full',
           !hasParallelContent &&
+            !plain &&
             isCreatedByUser &&
             cn('ml-auto items-end', !isEditing && 'w-fit max-w-[90%] sm:max-w-[85%]'),
           !hasParallelContent && !isCreatedByUser && !isEditing && 'flex-1',
         )}
       >
         {!hasParallelContent &&
+          !plain &&
           (isCreatedByUser ? (
             <h2 className="sr-only">
               {headerPrefix}
@@ -98,11 +104,11 @@ export default function MessageRow({
             </h2>
           ))}
 
-        <div className={cn('flex w-full flex-col gap-1', isCreatedByUser && 'items-end')}>
+        <div className={cn('flex w-full flex-col gap-1', isCreatedByUser && !plain && 'items-end')}>
           <div
             className={cn(
               'flex min-h-[20px] max-w-full flex-grow flex-col gap-0',
-              isCreatedByUser && !isEditing
+              isCreatedByUser && !isEditing && !plain
                 ? 'w-fit rounded-theme-surface rounded-br-theme-control bg-surface-tertiary px-theme-normal py-2.5'
                 : 'w-full',
             )}
@@ -110,7 +116,9 @@ export default function MessageRow({
           >
             {children}
           </div>
-          <div className={cn('w-full', isCreatedByUser && 'flex justify-end')}>{footer}</div>
+          <div className={cn('w-full', isCreatedByUser && !plain && 'flex justify-end')}>
+            {footer}
+          </div>
         </div>
       </div>
     </div>

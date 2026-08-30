@@ -8,7 +8,7 @@ import {
   stripHeavyErrorFields,
 } from './parsers';
 import { appendLogContext, attachRequestContext } from './requestLogContext';
-import { getLogDirectory } from './utils';
+import { getLogDirectory, logLevels, resolveConsoleLevel } from './utils';
 
 const { NODE_ENV, DEBUG_LOGGING, CONSOLE_JSON, DEBUG_CONSOLE, LOG_TO_FILE } = process.env;
 
@@ -19,17 +19,6 @@ const useDebugConsole = typeof DEBUG_CONSOLE === 'string' && DEBUG_CONSOLE.toLow
 const useDebugLogging = typeof DEBUG_LOGGING === 'string' && DEBUG_LOGGING.toLowerCase() === 'true';
 
 const useFileLogging = typeof LOG_TO_FILE !== 'string' || LOG_TO_FILE.toLowerCase() !== 'false';
-
-const levels: winston.config.AbstractConfigSetLevels = {
-  error: 0,
-  warn: 1,
-  info: 2,
-  http: 3,
-  verbose: 4,
-  debug: 5,
-  activity: 6,
-  silly: 7,
-};
 
 const requestContextFormat = winston.format(attachRequestContext);
 
@@ -98,16 +87,18 @@ const consoleFormat = winston.format.combine(
   }),
 );
 
-let consoleLogLevel: string = 'info';
-if (useDebugConsole) {
-  consoleLogLevel = 'debug';
-}
+/** `DEBUG_CONSOLE` still picks the debug *format* below; here it only moves the
+ * default level, so an explicit `CONSOLE_LOG_LEVEL` stays in charge of verbosity. */
+const { level: consoleLogLevel, silent: consoleSilent } = resolveConsoleLevel(
+  useDebugConsole ? 'debug' : 'info',
+);
 
 // Add console transport
 if (useDebugConsole) {
   transports.push(
     new winston.transports.Console({
       level: consoleLogLevel,
+      silent: consoleSilent,
       format: useConsoleJson
         ? winston.format.combine(fileFormat, jsonTruncateFormat(), winston.format.json())
         : winston.format.combine(fileFormat, debugTraverse),
@@ -117,6 +108,7 @@ if (useDebugConsole) {
   transports.push(
     new winston.transports.Console({
       level: consoleLogLevel,
+      silent: consoleSilent,
       format: winston.format.combine(fileFormat, jsonTruncateFormat(), winston.format.json()),
     }),
   );
@@ -124,6 +116,7 @@ if (useDebugConsole) {
   transports.push(
     new winston.transports.Console({
       level: consoleLogLevel,
+      silent: consoleSilent,
       format: consoleFormat,
     }),
   );
@@ -132,7 +125,7 @@ if (useDebugConsole) {
 // Create logger
 const logger: winston.Logger = winston.createLogger({
   level: level(),
-  levels,
+  levels: logLevels,
   transports,
 });
 

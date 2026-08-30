@@ -49,7 +49,6 @@ const useFileDeletion = ({
         assistant_id,
         tool_resource,
       });
-      console.log('Deleting files:', filesToDelete, payload);
       /** The chips are already gone by the time this runs, so a lost request leaves nothing that
        * could rebuild the payload: whatever the server did not delete is kept for the retry pass.
        * A resolved request proves nothing on its own, since a failed storage delete is reported

@@ -4680,6 +4680,7 @@ describe('Conversation Operations', () => {
       const contextMeta = { calibrationRatio: 1.25, encoding: 'o200k_base' };
       const compactionSemanticIndex = {
         version: 1 as const,
+        providedEntryCount: 9,
         entries: [
           {
             type: 'activity_phase' as const,
@@ -4828,6 +4829,22 @@ describe('Conversation Operations', () => {
           compactionSemanticIndex: {
             version: 1,
             entries: [{ ...compactionSemanticIndex.entries[0], sourceContentIndex: -1 }],
+          },
+        }),
+      ).rejects.toThrow('Event actor compaction semantic index is invalid');
+
+      await expect(
+        methods.commitAgentEventActorState({
+          user: 'actor-context-user',
+          conversationId,
+          invocationId: 'invalid-compaction-count',
+          expectedEpoch: 0,
+          action: { toolName: 'submit_move' },
+          checkpoint: actorCheckpoint,
+          compactionSemanticIndex: {
+            version: 1,
+            entries: compactionSemanticIndex.entries,
+            providedEntryCount: 0,
           },
         }),
       ).rejects.toThrow('Event actor compaction semantic index is invalid');

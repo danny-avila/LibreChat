@@ -1,12 +1,12 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { matchModelName, findMatchingPattern } from './test-helpers';
-import { createModels } from '~/models';
+import type { IBalance } from '..';
+import type { ITransaction } from '~/schema/transaction';
 import { createTxMethods, tokenValues, premiumTokenValues } from './tx';
+import { matchModelName, findMatchingPattern } from './test-helpers';
 import { createTransactionMethods } from './transaction';
 import { createSpendTokensMethods } from './spendTokens';
-import type { ITransaction } from '~/schema/transaction';
-import type { IBalance } from '..';
+import { createModels } from '~/models';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -300,20 +300,6 @@ describe('spendTokens', () => {
     const transactions = await Transaction.find({ user: userId });
     expect(transactions).toHaveLength(4); // 2 transactions (prompt+completion) for each call
 
-    // Let's examine the actual transaction records to see what's happening
-    const transactionDetails = await Transaction.find({ user: userId }).sort({ createdAt: 1 });
-
-    // Log the transaction details for debugging
-    console.log('Transaction details:');
-    transactionDetails.forEach((tx, i: number) => {
-      console.log(`Transaction ${i + 1}:`, {
-        tokenType: tx.tokenType,
-        rawAmount: tx.rawAmount,
-        tokenValue: tx.tokenValue,
-        model: tx.model,
-      });
-    });
-
     // Check the return values from Transaction.create directly
     // This is to verify that the incrementValue is not becoming positive
     const directResult = await createTransaction({
@@ -325,8 +311,6 @@ describe('spendTokens', () => {
       context: 'test',
       balance: { enabled: true },
     });
-
-    console.log('Direct Transaction.create result:', directResult);
 
     // The completion value should never be positive
     expect(directResult!.completion).not.toBeGreaterThan(0);
@@ -366,7 +350,6 @@ describe('spendTokens', () => {
 
       // Verify tokenValue is negative for all transactions
       transactions.forEach((tx) => {
-        console.log(`Model ${model}, Type ${tx.tokenType}: tokenValue = ${tx.tokenValue}`);
         expect(tx.tokenValue).toBeLessThan(0);
       });
     }
@@ -430,23 +413,6 @@ describe('spendTokens', () => {
     // Verify all transactions were created
     const transactions = await Transaction.find({ user: userId });
     expect(transactions).toHaveLength(4); // 2 transactions (prompt+completion) for each call
-
-    // Let's examine the actual transaction records to see what's happening
-    const transactionDetails = await Transaction.find({ user: userId }).sort({ createdAt: 1 });
-
-    // Log the transaction details for debugging
-    console.log('Structured transaction details:');
-    transactionDetails.forEach((tx, i: number) => {
-      console.log(`Transaction ${i + 1}:`, {
-        tokenType: tx.tokenType,
-        rawAmount: tx.rawAmount,
-        tokenValue: tx.tokenValue,
-        inputTokens: tx.inputTokens,
-        writeTokens: tx.writeTokens,
-        readTokens: tx.readTokens,
-        model: tx.model,
-      });
-    });
   });
 
   it('should not allow balance to go below zero when spending structured tokens', async () => {
@@ -594,11 +560,6 @@ describe('spendTokens', () => {
     // The final balance should be the initial balance minus the expected total spend
     const expectedFinalBalance = initialBalance - expectedTotalSpend;
 
-    console.log('Initial balance:', initialBalance);
-    console.log('Expected total spend:', expectedTotalSpend);
-    console.log('Expected final balance:', expectedFinalBalance);
-    console.log('Actual final balance:', finalBalance!.tokenCredits);
-
     // Allow for small rounding differences
     expect(finalBalance!.tokenCredits).toBeCloseTo(expectedFinalBalance, 0);
 
@@ -612,20 +573,15 @@ describe('spendTokens', () => {
     // Some might be structured, some regular
     expect(transactions.length).toBeGreaterThanOrEqual(collectedUsage.length);
 
-    // Log transaction details for debugging
-    console.log('Transaction summary:');
     let totalTokenValue = 0;
     transactions.forEach((tx) => {
-      console.log(`${tx.tokenType}: rawAmount=${tx.rawAmount}, tokenValue=${tx.tokenValue}`);
       totalTokenValue += tx.tokenValue!;
     });
-    console.log('Total token value from transactions:', totalTokenValue);
 
     // The difference between expected and actual is significant
     // This is likely due to the multipliers being different in the test environment
     // Let's adjust our expectation based on the actual transactions
     const actualSpend = initialBalance - finalBalance!.tokenCredits;
-    console.log('Actual spend:', actualSpend);
 
     // Instead of checking the exact balance, let's verify that:
     // 1. The balance was reduced (tokens were spent)
@@ -669,11 +625,6 @@ describe('spendTokens', () => {
     // The final balance should be the initial balance plus the sum of all refills
     const expectedFinalBalance = initialBalance + numberOfRefills * refillAmount;
 
-    console.log('Initial balance (Increase Test):', initialBalance);
-    console.log(`Performed ${numberOfRefills} refills of ${refillAmount} each.`);
-    console.log('Expected final balance (Increase Test):', expectedFinalBalance);
-    console.log('Actual final balance (Increase Test):', finalBalance!.tokenCredits);
-
     // Use toBeCloseTo for safety, though toBe should work for integer math
     expect(finalBalance!.tokenCredits).toBeCloseTo(expectedFinalBalance, 0);
 
@@ -695,7 +646,6 @@ describe('spendTokens', () => {
       const r = result as Record<string, Record<string, unknown>>;
       return sum + ((r?.transaction?.rawAmount as number) || 0);
     }, 0);
-    console.log('Total increment reported by results:', totalIncrementReported);
     expect(totalIncrementReported).toBe(expectedFinalBalance - initialBalance);
 
     // Optional: Check the sum of tokenValue from saved transactions
@@ -706,7 +656,6 @@ describe('spendTokens', () => {
       // If calculation is involved, adjust accordingly
       totalTokenValueFromDb += tx.rawAmount!; // Or tx.tokenValue if that holds the increment
     });
-    console.log('Total rawAmount from DB transactions:', totalTokenValueFromDb);
     expect(totalTokenValueFromDb).toBeCloseTo(expectedFinalBalance - initialBalance, 0);
   });
 
