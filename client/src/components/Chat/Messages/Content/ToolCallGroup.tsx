@@ -96,6 +96,11 @@ interface ToolCallGroupProps {
   /** Activity-label part terminating this block; when it carries generated
    *  text the header shows that text instead of the default tool summary. */
   labelPart?: PartWithIndex;
+  /** True inside a completed phase card. The phase summary already speaks for
+   *  this activity, so the group defaults collapsed and never auto-expands —
+   *  a remount into the folding card must not toggle open and shut again
+   *  while the parent entrance is playing. */
+  withinActivityPhase?: boolean;
 }
 
 export type ToolCallGroupExpansionState = {
@@ -113,6 +118,7 @@ export default function ToolCallGroup({
   initialExpansionState,
   onExpansionChange,
   labelPart,
+  withinActivityPhase = false,
 }: ToolCallGroupProps) {
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
@@ -209,7 +215,7 @@ export default function ToolCallGroup({
   const autoCollapse = !autoExpand && allCompleted && (count >= 2 || activityLabelText.length > 0);
   const initialState = initialExpansionState?.userOverride === true ? initialExpansionState : null;
   const [isExpanded, setIsExpanded] = useState(
-    initialState?.isExpanded ?? (autoExpand || !autoCollapse),
+    initialState?.isExpanded ?? (autoExpand || (!autoCollapse && !withinActivityPhase)),
   );
   const [userOverride, setUserOverride] = useState(initialState != null);
   const [shouldRenderBody, setShouldRenderBody] = useState(isExpanded);
@@ -322,11 +328,11 @@ export default function ToolCallGroup({
   );
 
   useEffect(() => {
-    if (hasActiveToolCall && !userOverride) {
+    if (hasActiveToolCall && !userOverride && !withinActivityPhase) {
       setShouldRenderBody(true);
       setIsExpanded(true);
     }
-  }, [hasActiveToolCall, userOverride]);
+  }, [hasActiveToolCall, userOverride, withinActivityPhase]);
 
   return (
     <div className="mb-2 mt-1" ref={rootRef}>

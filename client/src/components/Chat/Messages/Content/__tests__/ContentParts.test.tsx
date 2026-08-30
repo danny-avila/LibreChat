@@ -708,7 +708,11 @@ describe('ContentParts — settled content identity across compaction', () => {
     expect(phaseNode).toHaveAttribute('data-animate-entrance', 'false');
   });
 
-  it('remounts and replays the phase entrance without the stamp (regression control)', () => {
+  /** When the stamp cannot pair the two arrays every index-derived key
+   *  shifts and the phase group remounts — but its label text was already on
+   *  screen, so the remounted card must mount settled instead of replaying
+   *  the fold over content the reader already watched fold. */
+  it('remounts without replaying the phase entrance when the settle re-keys the content', () => {
     const { rerender } = renderStreaming();
     const phaseNode = screen.getByTestId('activity-phase-group');
 
@@ -716,6 +720,28 @@ describe('ContentParts — settled content identity across compaction', () => {
 
     const settledPhase = screen.getByTestId('activity-phase-group');
     expect(settledPhase).not.toBe(phaseNode);
-    expect(settledPhase).toHaveAttribute('data-animate-entrance', 'true');
+    expect(settledPhase).toHaveAttribute('data-animate-entrance', 'false');
+  });
+
+  it('still animates a phase whose label first appears at settle', () => {
+    const { rerender } = renderStreaming();
+
+    const lateLabel = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Wrote the final summary',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+      activity_count: 1,
+      pending: false,
+    } as unknown as TMessageContentParts;
+    rerender(
+      <ContentParts {...baseProps} content={[toolPart, batchLabel, answer, lateLabel]} isLast />,
+    );
+
+    expect(screen.getByTestId('activity-phase-group')).toHaveAttribute(
+      'data-animate-entrance',
+      'true',
+    );
   });
 });

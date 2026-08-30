@@ -253,6 +253,42 @@ describe('ToolCallGroup image hoisting', () => {
     expect(screen.getByTestId('inner-0')).toBeInTheDocument();
   });
 
+  /** A remount into a completed phase card must not flash open and collapse
+   *  again while the parent entrance fold is playing — the phase summary
+   *  already speaks for this activity. */
+  it('mounts collapsed inside a completed phase even while a tool is still active', () => {
+    const voidToolParts = [{ part: makePart('t1', '', 'update_settings'), idx: 0 }];
+    const labelPart = {
+      part: {
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: '',
+        pending: true,
+      } as unknown as TMessageContentParts,
+      idx: 1,
+    };
+
+    renderGroup({
+      ...baseProps,
+      parts: voidToolParts,
+      lastContentIdx: 1,
+      labelPart,
+      isSubmitting: true,
+      withinActivityPhase: true,
+    });
+
+    expect(screen.queryByTestId('inner-0')).not.toBeInTheDocument();
+    expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('still expands on user toggle inside a completed phase', () => {
+    renderGroup({ ...baseProps, withinActivityPhase: true });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Used 2 tools' }));
+
+    expect(screen.getByTestId('inner-0')).toBeInTheDocument();
+    expect(screen.getByTestId('inner-1')).toBeInTheDocument();
+  });
+
   it('does not render tool bodies for an initially collapsed large completed group', () => {
     const largeParts = Array.from({ length: 59 }, (_, idx) => ({
       part: makePart(`t${idx}`),
