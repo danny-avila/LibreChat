@@ -2,13 +2,6 @@ import { logger } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type * as t from './types';
 import {
-  cancelMCPToolsChanged,
-  getMCPAppToolsPublicationGeneration,
-  getMCPToolsChangedGeneration,
-  notifyMCPToolsChanged,
-  renewMCPToolsChangedGeneration,
-} from '~/mcp/toolsChanged';
-import {
   canBackfillSharedServerInstructions,
   getMissingRuntimeBodyPlaceholderFields,
   hasRuntimeUrlPlaceholders,
@@ -16,6 +9,13 @@ import {
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
 } from './utils';
+import {
+  cancelMCPToolsChanged,
+  getMCPAppToolsPublicationGeneration,
+  getMCPToolsChangedGeneration,
+  notifyMCPToolsChanged,
+  renewMCPToolsChangedGeneration,
+} from '~/mcp/toolsChanged';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';

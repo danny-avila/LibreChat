@@ -209,8 +209,11 @@ export interface MCPRequestScope {
 
 type UserScopedConnectionConfig = Pick<
   ParsedServerConfig,
-  'apiKey' | 'requiresOAuth' | 'source' | 'dbId' | 'startup'
+  'requiresOAuth' | 'source' | 'dbId' | 'startup'
 > & {
+  /** Loosened like the fields below: raw (pre-inspection) configs carry an
+   *  optional `source`, and the gating predicates only read `apiKey?.source`. */
+  apiKey?: { source?: 'user' | 'admin' } | null;
   args?: string[];
   /** Loosened from the parsed shapes so raw (pre-inspection) configs qualify;
    *  scoping predicates only check key presence */
