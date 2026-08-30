@@ -53,6 +53,10 @@ jest.mock('@librechat/api', () => {
     getCodeExecutionBaseUrl: jest.fn((profile) =>
       profile === 'stateful' ? 'https://code-stateful.example.com' : 'https://code-api.example.com',
     ),
+    codeExecutionHeaders: jest.fn(({ executionProfile, bridgeWorkerId }) => ({
+      'X-CodeAPI-Expected-Profile': executionProfile,
+      ...(bridgeWorkerId ? { 'X-LibreChat-Code-Worker-ID': bridgeWorkerId } : {}),
+    })),
     CODE_API_EXPECTED_PROFILE_HEADER: 'X-CodeAPI-Expected-Profile',
     createAxiosInstance: jest.fn(() => mockAxios),
     codeServerHttpAgent: new http.Agent({ keepAlive: false }),
@@ -118,12 +122,16 @@ describe('Code CRUD', () => {
       await getCodeOutputDownloadStream('session-1/file-1', userIdentity, undefined, {
         baseUrl: 'https://code-stateful.example.com',
         executionProfile: 'stateful',
+        bridgeWorkerId: 'personal-worker-1',
       });
 
       expect(mockAxios).toHaveBeenCalledWith(
         expect.objectContaining({
           url: 'https://code-stateful.example.com/download/session-1/file-1?kind=user&id=user-123',
-          headers: expect.objectContaining({ 'X-CodeAPI-Expected-Profile': 'stateful' }),
+          headers: expect.objectContaining({
+            'X-CodeAPI-Expected-Profile': 'stateful',
+            'X-LibreChat-Code-Worker-ID': 'personal-worker-1',
+          }),
         }),
       );
     });

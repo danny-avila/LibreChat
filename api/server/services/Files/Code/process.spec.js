@@ -995,7 +995,10 @@ describe('Code Process', () => {
         expect(mockAxios).toHaveBeenCalledWith(
           expect.objectContaining({
             url: expect.stringContaining('https://code-stateful.example.com/download/'),
-            headers: expect.objectContaining({ 'X-CodeAPI-Expected-Profile': 'stateful' }),
+            headers: expect.objectContaining({
+              'X-CodeAPI-Expected-Profile': 'stateful',
+              'X-LibreChat-Code-Worker-ID': 'personal-worker-1',
+            }),
           }),
         );
         expect(result.filepath).toContain('execution_profile=stateful');

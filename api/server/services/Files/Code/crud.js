@@ -13,6 +13,7 @@ const {
   getCodeApiAuthHeaders,
   getCodeExecutionBaseUrl,
   createCodeExecutionRouteKey,
+  codeExecutionHeaders,
   CODE_API_EXPECTED_PROFILE_HEADER,
 } = require('@librechat/api');
 
@@ -29,7 +30,7 @@ const MAX_FILE_SIZE = 150 * 1024 * 1024;
  *   `kind: 'user', id: <userId>`; for skill/agent re-downloads pass
  *   the kind+id (+version for skill) from the file's `metadata.codeEnvRef`.
  * @param {ServerRequest} req - Current authenticated request.
- * @param {{baseUrl?: string, executionProfile?: 'default'|'stateful'}} [route]
+ * @param {{baseUrl?: string, executionProfile?: 'default'|'stateful', bridgeWorkerId?: string}} [route]
  *   Trusted host-selected Code API route.
  * @returns {Promise<AxiosResponse>} A promise that resolves to a readable stream of the file content.
  * @throws {Error} If there's an error during the download process.
@@ -48,7 +49,10 @@ async function getCodeOutputDownloadStream(fileIdentifier, identity, req, route 
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
         ...(route.executionProfile
-          ? { [CODE_API_EXPECTED_PROFILE_HEADER]: route.executionProfile }
+          ? codeExecutionHeaders({
+              executionProfile: route.executionProfile,
+              bridgeWorkerId: route.bridgeWorkerId,
+            })
           : {}),
       },
       httpAgent: codeServerHttpAgent,
@@ -127,7 +131,11 @@ async function deleteCodeEnvFile(req, file) {
       headers: {
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
-        [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile,
+        ...codeExecutionHeaders({
+          executionProfile,
+          bridgeWorkerId:
+            configuredEnvironment?.workerId ?? configuredEnvironment?.pairing?.workerId,
+        }),
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,

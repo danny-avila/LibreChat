@@ -23,7 +23,6 @@ const {
   getCodeExecutionBaseUrl,
   buildCodeEnvDownloadQuery,
   codeExecutionHeaders,
-  CODE_API_EXPECTED_PROFILE_HEADER,
 } = require('@librechat/api');
 const {
   Tools,
@@ -80,6 +79,7 @@ const downloadCodeOutputBuffer = async ({
   maxBytes,
   codeApiBaseUrl,
   executionProfile = 'default',
+  bridgeWorkerId,
 }) => {
   const baseURL = codeApiBaseUrl ?? getCodeExecutionBaseUrl(executionProfile);
   const authHeaders = await getCodeApiAuthHeaders(req);
@@ -93,7 +93,7 @@ const downloadCodeOutputBuffer = async ({
       headers: {
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
-        [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile,
+        ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -134,6 +134,7 @@ const downloadCodeOutputBuffer = async ({
  * @param {number} [params.maxBytes] - Remaining aggregate inspection budget.
  * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
  * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
+ * @param {string} [params.bridgeWorkerId] - Trusted worker selected for this execution.
  */
 const prepareCodeOutputForInspection = async ({
   req,
@@ -144,6 +145,7 @@ const prepareCodeOutputForInspection = async ({
   inspectContent = true,
   codeApiBaseUrl,
   executionProfile = 'default',
+  bridgeWorkerId,
 }) => {
   const { fileSizeLimit } = getCodeOutputFileSettings(req);
   const transportLimit =
@@ -155,6 +157,7 @@ const prepareCodeOutputForInspection = async ({
     maxBytes: transportLimit,
     codeApiBaseUrl,
     executionProfile,
+    bridgeWorkerId,
   });
   const safeName = sanitizeArtifactPath(name);
   const fallbackType = inferMimeType(name, '') || 'application/octet-stream';
@@ -524,6 +527,7 @@ const processCodeOutput = async ({
   codeApiBaseUrl,
   executionProfile = 'default',
   executionRouteKey = executionProfile,
+  bridgeWorkerId,
   preparedBuffer,
   downloadFallback,
 }) => {
@@ -561,6 +565,7 @@ const processCodeOutput = async ({
         maxBytes: fileSizeLimit,
         codeApiBaseUrl,
         executionProfile,
+        bridgeWorkerId,
       }));
 
     // Enforce file size limit
@@ -1002,7 +1007,10 @@ async function getSessionInfo(ref, req, route = {}) {
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
         ...(route.executionProfile
-          ? { [CODE_API_EXPECTED_PROFILE_HEADER]: route.executionProfile }
+          ? codeExecutionHeaders({
+              executionProfile: route.executionProfile,
+              bridgeWorkerId: route.bridgeWorkerId,
+            })
           : {}),
       },
       httpAgent: codeServerHttpAgent,
@@ -1120,8 +1128,9 @@ const primeFiles = async (options) => {
     codeApiBaseUrl,
     executionProfile = 'default',
     executionRouteKey = executionProfile,
+    bridgeWorkerId,
   } = options;
-  const codeApiRoute = { baseUrl: codeApiBaseUrl, executionProfile };
+  const codeApiRoute = { baseUrl: codeApiBaseUrl, executionProfile, bridgeWorkerId };
   const file_ids = tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
   const agentResourceIds = new Set(file_ids);
   const resourceFiles = tool_resources?.[EToolResources.execute_code]?.files ?? [];
