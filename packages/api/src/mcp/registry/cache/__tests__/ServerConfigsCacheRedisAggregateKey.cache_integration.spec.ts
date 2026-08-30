@@ -257,7 +257,7 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
       await replica.upsert('atomic-server', mockConfig3);
       await replica.remove('atomic-server');
 
-      expect(cacheSetSpy).not.toHaveBeenCalled();
+      expect(cacheSetSpy.mock.calls).toHaveLength(0);
       cacheSetSpy.mockRestore();
     });
 
