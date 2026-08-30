@@ -473,7 +473,15 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         await drainUser(String(prepared.user));
         throw error;
       }
-      const eligibleAt = queued.delivery.availableAt;
+      /** Capability-fenced rows expose a legacy-safe shell whose public
+       * `availableAt` may be the far-future shield. This worker understands
+       * the capability, so schedule its claim from the producer's private
+       * eligibility time instead of putting the local engine to sleep behind
+       * the compatibility fence. */
+      const eligibleAt =
+        prepared.requiredWorkerCapability == null
+          ? queued.delivery.availableAt
+          : prepared.availableAt;
       if (eligibleAt instanceof Date && eligibleAt.getTime() > Date.now()) {
         deliveryEngine?.noteEligibleAt(eligibleAt);
       } else {
