@@ -346,12 +346,28 @@ describe('retention helpers', () => {
         config: { interfaceConfig: { retentionMode: RetentionMode.TEMPORARY } },
       }),
     ).toEqual({
+      /* The snapshot carries the resolved scope so a later write is charged to the
+       * same tenant and cap the live request would have used. */
+      storageScope: expect.objectContaining({ userId: 'user-1', tenantId: 'tenant-1' }),
       user: { id: 'user-1', tenantId: 'tenant-1' },
       body: { conversationId: 'convo-1', isTemporary: 'true' },
       config: { interfaceConfig: { retentionMode: RetentionMode.TEMPORARY } },
     });
 
+    /* Remote-agent auth puts the tenant only on `req.tenantId`. Re-deriving it from the
+     * fields a snapshot happened to keep is what billed generated images to a second,
+     * null-tenant ledger; carrying the resolved scope removes that possibility. */
+    expect(
+      createMinimalRetentionRequest({
+        tenantId: 'request-tenant',
+        user: { id: 'user-1' },
+        body: { conversationId: 'convo-1' },
+        config: {},
+      })?.storageScope,
+    ).toEqual(expect.objectContaining({ userId: 'user-1', tenantId: 'request-tenant' }));
+
     expect(createMinimalRetentionRequest()).toBeUndefined();
+    expect(createMinimalRetentionRequest({ body: {} })).toBeUndefined();
   });
 
   describe('getSharedLinkExpiration', () => {

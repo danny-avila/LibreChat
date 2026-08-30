@@ -71,6 +71,13 @@ type ScopeSource = {
    * disables the quota.
    */
   config: { fileConfig?: Parameters<typeof mergeFileConfig>[0] };
+  /**
+   * Already-resolved scope, carried by request snapshots. Image-generation tools hold a
+   * reduced copy of the request rather than the live one; carrying the branded scope is
+   * how such a copy stays chargeable, and it is honoured before the config requirement
+   * above because a snapshot that carries a real scope needs nothing further.
+   */
+  storageScope?: StorageScope;
 };
 
 /** Keyed by request identity so the scope neither mutates the request nor outlives it. */
@@ -113,6 +120,10 @@ function assertChargeableBytes(bytes: number | null | undefined, label: string):
  * authenticates users that carry no tenant of their own and supplies it per request.
  */
 export function resolveStorageScope(req: ScopeSource): StorageScope {
+  if (req.storageScope) {
+    return req.storageScope;
+  }
+
   const cached = scopesByRequest.get(req);
   if (cached) {
     return cached;

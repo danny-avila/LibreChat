@@ -111,6 +111,9 @@ describe('image tools - agent mode ToolMessage format', () => {
       expect(dalle.tenantId).toBe('tenant-a');
       expect(dalle.req).toBeUndefined();
       expect(dalle.retentionRequest).toEqual({
+        /* Carried so the later image write is charged to the request's tenant rather
+         * than whatever a rebuilt snapshot could infer from the fields it kept. */
+        storageScope: expect.objectContaining({ userId: 'user-1', tenantId: 'tenant-a' }),
         user: { id: 'user-1', tenantId: 'tenant-a' },
         body: { conversationId: 'convo-1', isTemporary: 'true' },
         config: { interfaceConfig: { retentionMode: 'all' } },
@@ -202,6 +205,9 @@ describe('image tools - agent mode ToolMessage format', () => {
       expect(flux.tenantId).toBe('tenant-a');
       expect(flux.req).toBeUndefined();
       expect(flux.retentionRequest).toEqual({
+        /* Carried so the later image write is charged to the request's tenant rather
+         * than whatever a rebuilt snapshot could infer from the fields it kept. */
+        storageScope: expect.objectContaining({ userId: 'user-1', tenantId: 'tenant-a' }),
         user: { id: 'user-1', tenantId: 'tenant-a' },
         body: { conversationId: 'convo-1', isTemporary: 'true' },
         config: { interfaceConfig: { retentionMode: 'all' } },
@@ -231,11 +237,14 @@ describe('image tools - agent mode ToolMessage format', () => {
 
       expect(processFileURL).toHaveBeenCalledWith(
         expect.objectContaining({
-          req: {
+          /* The snapshot carries the resolved storage scope so the later image write is
+           * charged to the same tenant and cap the live request would have used. */
+          req: expect.objectContaining({
+            storageScope: expect.objectContaining({ userId: 'user-1', tenantId: 'tenant-a' }),
             user: { id: 'user-1', tenantId: 'tenant-a' },
             body: { conversationId: 'convo-1', isTemporary: 'true' },
             config: { interfaceConfig: { retentionMode: 'all' } },
-          },
+          }),
         }),
       );
     });
@@ -268,11 +277,14 @@ describe('image tools - agent mode ToolMessage format', () => {
 
       expect(processFileURL).toHaveBeenCalledWith(
         expect.objectContaining({
-          req: {
+          /* The snapshot carries the resolved storage scope so the later image write is
+           * charged to the same tenant and cap the live request would have used. */
+          req: expect.objectContaining({
+            storageScope: expect.objectContaining({ userId: 'user-1', tenantId: 'tenant-a' }),
             user: { id: 'user-1', tenantId: 'tenant-a' },
             body: { conversationId: 'convo-1', isTemporary: 'true' },
             config: { interfaceConfig: { retentionMode: 'all' } },
-          },
+          }),
         }),
       );
     });
