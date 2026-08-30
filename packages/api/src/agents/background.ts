@@ -590,6 +590,8 @@ export interface BackgroundTask {
   id: string;
   toolName: string;
   toolCallId: string;
+  /** Stable run-step identity; provider tool-call ids may repeat within one response. */
+  stepId?: string;
   /** The dispatch turn's response messageId, for post-hoc result anchoring. */
   messageId?: string;
   /** The dispatching agent, disambiguating repeated provider tool-call ids
@@ -861,6 +863,7 @@ export class BackgroundTaskRegistryClass {
     userId: string;
     conversationId: string;
     toolCallId: string;
+    stepId?: string;
     toolName: string;
     messageId?: string;
     runId?: string;
@@ -928,6 +931,7 @@ export class BackgroundTaskRegistryClass {
       id: params.taskId ?? randomUUID(),
       toolName: params.toolName,
       toolCallId: params.toolCallId,
+      stepId: params.stepId,
       messageId: params.messageId,
       agentId: params.agentId,
       ...(params.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
@@ -1019,6 +1023,7 @@ export class BackgroundTaskRegistryClass {
     | {
         toolName: string;
         toolCallId: string;
+        stepId?: string;
         messageId?: string;
         harvestStarted?: boolean;
         artifact: unknown;
@@ -1042,6 +1047,7 @@ export class BackgroundTaskRegistryClass {
     return {
       toolName: task.toolName,
       toolCallId: task.toolCallId,
+      stepId: task.stepId,
       messageId: task.messageId,
       harvestStarted: task.harvestStarted,
       artifact,
@@ -1655,6 +1661,7 @@ export function claimBackgroundArtifact(params: {
       taskId: string;
       toolName: string;
       toolCallId: string;
+      stepId?: string;
       messageId?: string;
       harvestStarted?: boolean;
       artifact: unknown;
@@ -1697,6 +1704,7 @@ export function getBackgroundCodeDelivery(params: {
       status: BackgroundTaskStatus;
       toolName: string;
       toolCallId: string;
+      stepId?: string;
       messageId?: string;
       agentId?: string;
       harvestStarted?: boolean;
@@ -1723,6 +1731,7 @@ export function getBackgroundCodeDelivery(params: {
     status: task.status,
     toolName: task.toolName,
     toolCallId: task.toolCallId,
+    stepId: task.stepId,
     messageId: task.messageId,
     agentId: task.agentId,
     harvestStarted: task.harvestStarted,

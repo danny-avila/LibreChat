@@ -184,6 +184,7 @@ export interface ToolExecuteOptions {
   persistBackgroundCodeResult?: (params: {
     toolName: string;
     toolCallId: string;
+    stepId?: string;
     messageId?: string;
     conversationId?: string;
     agentId?: string;
@@ -198,10 +199,11 @@ export interface ToolExecuteOptions {
   /** Shared ordinary-tool completion lifecycle. The delivery is registered
    * before invoke; settlement is persisted onto the original response row. */
   backgroundToolCompletion?: {
-    preregister?: (registration: BackgroundToolWakeupRegistration) => Promise<void>;
+    preregister?: (registration: BackgroundToolWakeupRegistration) => Promise<boolean>;
     persist: (params: {
       toolName: string;
       toolCallId: string;
+      stepId?: string;
       messageId?: string;
       conversationId?: string;
       agentId?: string;
@@ -4453,6 +4455,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               }
               const isCodeCall = isCodeSessionAwareToolCall(tc.name, mergedConfigurable);
               const harvestEnabled = isCodeCall && persistBackgroundCodeResult != null;
+              const backgroundStepId =
+                typeof tc.stepId === 'string' && tc.stepId.trim() !== '' ? tc.stepId : undefined;
               const strippedArgs = stripIntentForInvoke(stripRunInBackgroundArg(tc.args), tool);
               const normalizedArgs = normalizeToolInvokeArgs(strippedArgs, tool);
               const filtered = filteredToolArgumentsResult(tc, backgroundReq, normalizedArgs);
@@ -4463,6 +4467,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 userId: backgroundUserId,
                 conversationId: backgroundConversationId,
                 toolCallId: tc.id,
+                stepId: backgroundStepId,
                 toolName: tc.name,
                 messageId: backgroundRunId,
                 harvestStarted: harvestEnabled,
@@ -4570,11 +4575,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 if (
                   detachedReservation?.status !== 'reserved' &&
                   backgroundToolCompletion?.preregister != null &&
+                  backgroundStepId != null &&
                   backgroundRunId != null &&
                   backgroundRunId !== ''
                 ) {
                   try {
-                    await backgroundToolCompletion.preregister({
+                    const registered = await backgroundToolCompletion.preregister({
                       taskId: task.id,
                       toolCallId: tc.id,
                       toolName: tc.name,
@@ -4588,12 +4594,14 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       parentAgentId: agentId,
                       createdAt: task.createdAt,
                     });
-                    completionPreregistered = true;
-                    backgroundTaskRegistry.markCompletionWakeup(
-                      backgroundUserId,
-                      backgroundConversationId,
-                      task.id,
-                    );
+                    if (registered) {
+                      completionPreregistered = true;
+                      backgroundTaskRegistry.markCompletionWakeup(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                      );
+                    }
                   } catch (registrationError) {
                     logger.warn(
                       `[background] Failed to preregister completion for task ${task.id}; polling remains available.`,
@@ -4614,6 +4622,17 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   artifact?: unknown;
                   status: 'completed' | 'error';
                 }): void => {
+                  /** A provider id alone is not a durable part identity: it may
+                   * repeat in later turns of the same response. New automatic
+                   * completion delivery therefore fails closed to the legacy
+                   * poll path when the host run-step anchor is unavailable. */
+                  if (
+                    detachedReservation?.status !== 'reserved' &&
+                    backgroundToolCompletion != null &&
+                    backgroundStepId == null
+                  ) {
+                    return;
+                  }
                   const localTask = backgroundTaskRegistry.get(
                     backgroundUserId,
                     backgroundConversationId,
@@ -4645,6 +4664,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       .persist({
                         toolName: tc.name,
                         toolCallId: tc.id,
+                        stepId: backgroundStepId,
                         messageId: backgroundRunId,
                         conversationId: backgroundConversationId,
                         agentId,
@@ -4678,6 +4698,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       const persisted = await persistBackgroundCodeResult({
                         toolName: tc.name,
                         toolCallId: tc.id,
+                        stepId: backgroundStepId,
                         messageId: backgroundRunId,
                         conversationId: backgroundConversationId,
                         /** Disambiguates repeated provider ids (e.g. `call_0`)
@@ -5140,16 +5161,17 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       try {
                         emitAttachment({
                           type: BACKGROUND_STATUS_ATTACHMENT_TYPE,
-                          /** Provider ids repeat across agents in handoffs;
-                           *  the agent suffix keeps sibling markers from
+                          /** Provider ids repeat across agents and turns; the
+                           *  host identity suffix keeps sibling markers from
                            *  upserting over each other client-side. */
                           file_id: `bg-${delivery.toolCallId}${
                             delivery.agentId != null ? `-${delivery.agentId}` : ''
-                          }`,
+                          }${delivery.stepId != null ? `-${delivery.stepId}` : ''}`,
                           messageId: delivery.messageId,
                           conversationId: backgroundConversationId,
                           toolCallId: delivery.toolCallId,
                           agentId: delivery.agentId,
+                          stepId: delivery.stepId,
                           status: delivery.status,
                         });
                       } catch (emitError) {
@@ -5159,7 +5181,11 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         );
                       }
                     }
-                    if (persistBackgroundCodeResult && delivery.messageId) {
+                    if (
+                      persistBackgroundCodeResult &&
+                      delivery.messageId &&
+                      (backgroundToolCompletion == null || delivery.stepId != null)
+                    ) {
                       /** Error tasks carry their message in `error`, not
                        *  `result`; reaped (timed-out) tasks store it raw, so
                        *  wrap here — `toCodeToolFailure` is a no-op for
@@ -5174,6 +5200,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       void persistBackgroundCodeResult({
                         toolName: delivery.toolName,
                         toolCallId: delivery.toolCallId,
+                        stepId: delivery.stepId,
                         messageId: delivery.messageId,
                         conversationId: backgroundConversationId,
                         agentId: delivery.agentId,

@@ -1,9 +1,9 @@
-import { parseAgentTriggerEnvelope } from './triggers/envelope';
+import type { EnqueueBackgroundToolCompletion } from './backgroundCompletionWakeup';
 import {
   createBackgroundToolCompletionWakeupHandler,
   createBackgroundToolCompletionWakeupResolver,
 } from './backgroundCompletionWakeup';
-import type { EnqueueBackgroundToolCompletion } from './backgroundCompletionWakeup';
+import { parseAgentTriggerEnvelope } from './triggers/envelope';
 
 const NOW = Date.parse('2026-08-30T12:00:00Z');
 
@@ -96,7 +96,7 @@ describe('background tool completion wakeups', () => {
     >(async () => undefined);
     const notify = createBackgroundToolCompletionWakeupHandler(enqueue);
 
-    await notify(registration());
+    await expect(notify(registration())).resolves.toBe(true);
 
     const [value, options] = enqueue.mock.calls[0]!;
     expect(parseAgentTriggerEnvelope(value)).toMatchObject({
@@ -117,6 +117,14 @@ describe('background tool completion wakeups', () => {
       orderingKey: 'background-tool-completion:conversation-1',
       availableAt: new Date(NOW + 250),
     });
+  });
+
+  it('reports skipped registration for an ephemeral invoking agent', async () => {
+    const enqueue = jest.fn(async () => undefined);
+    const notify = createBackgroundToolCompletionWakeupHandler(enqueue);
+
+    await expect(notify(registration({ parentAgentId: 'ephemeral-agent' }))).resolves.toBe(false);
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it('claims a bounded sibling batch and continues from the latest branch leaf', async () => {

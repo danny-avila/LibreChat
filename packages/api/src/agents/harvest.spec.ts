@@ -8,6 +8,7 @@ const req = {
 const params = {
   toolName: 'execute_code',
   toolCallId: 'tool-call-1',
+  stepId: 'step-1',
   messageId: 'message-1',
   conversationId: 'conversation-1',
   output: 'safe output',
@@ -47,7 +48,7 @@ describe('createBackgroundCodeResultHandler generated-file preflight', () => {
     });
 
     await expect(handler(params)).resolves.toEqual({
-      attachments: [{ file_id: 'persisted-file' }],
+      attachments: [{ file_id: 'persisted-file', stepId: 'step-1' }],
     });
 
     expect(preflightCodeOutputBatch).toHaveBeenCalledWith({
@@ -72,7 +73,8 @@ describe('createBackgroundCodeResultHandler generated-file preflight', () => {
     expect(updateToolCallResult).toHaveBeenCalledWith(
       expect.objectContaining({
         output: 'safe output',
-        attachments: [{ file_id: 'persisted-file' }],
+        stepId: 'step-1',
+        attachments: [{ file_id: 'persisted-file', stepId: 'step-1' }],
       }),
     );
   });

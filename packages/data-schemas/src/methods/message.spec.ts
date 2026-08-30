@@ -826,6 +826,67 @@ describe('Message Operations', () => {
       expect(content[1].tool_call?.output).toBe('stdout-b');
     });
 
+    it('patches only the matching run step when one agent repeats a provider id', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [
+          {
+            type: 'tool_call',
+            agentId: 'agent_a',
+            tool_call: { id: 'call_0', stepId: 'step-1', name: 'slow_tool', output: 'handle-1' },
+          },
+          {
+            type: 'tool_call',
+            agentId: 'agent_a',
+            tool_call: { id: 'call_0', stepId: 'step-2', name: 'slow_tool', output: 'handle-2' },
+          },
+        ],
+      });
+
+      const result = await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_0',
+        stepId: 'step-2',
+        agentId: 'agent_a',
+        output: 'terminal-2',
+        backgroundTask: {
+          taskId: 'task-2',
+          toolName: 'slow_tool',
+          status: 'completed',
+          settledAt: new Date(),
+        },
+      });
+      expect(result).toEqual({ matched: true, unfinished: false });
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      const content = saved?.content as Array<{
+        tool_call?: { output?: string; backgroundTask?: { taskId?: string } };
+      }>;
+      expect(content[0].tool_call).toMatchObject({ output: 'handle-1' });
+      expect(content[0].tool_call?.backgroundTask).toBeUndefined();
+      expect(content[1].tool_call).toMatchObject({
+        output: 'terminal-2',
+        backgroundTask: { taskId: 'task-2' },
+      });
+    });
+
+    it('reports no match when the targeted tool-call part is absent', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      await expect(
+        updateToolCallResult({
+          userId: 'user123',
+          messageId: 'msg123',
+          conversationId: mockMessageData.conversationId as string,
+          toolCallId: 'call_bg',
+          stepId: 'missing-step',
+          output: 'must not persist',
+        }),
+      ).resolves.toEqual({ matched: false, unfinished: false });
+    });
+
     it('flags unfinished partial rows so callers keep re-applying until finalize', async () => {
       await saveMessage(mockCtx, {
         ...mockMessageData,
@@ -969,6 +1030,79 @@ describe('Message Operations', () => {
           claimId: 'poll-1',
         }),
       ).resolves.toEqual({ status: 'claimed' });
+    });
+
+    it('uses nested tool-call agent identity when batching sibling results', async () => {
+      const backgroundTask = (taskId: string) => ({
+        version: 1,
+        taskId,
+        toolName: 'slow_tool',
+        status: 'completed',
+        settledAt: new Date(),
+      });
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [
+          {
+            type: 'tool_call',
+            agentId: 'agent-a',
+            tool_call: {
+              id: 'call-a',
+              name: 'slow_tool',
+              output: 'a',
+              backgroundTask: backgroundTask('task-a'),
+            },
+          },
+          {
+            type: 'tool_call',
+            tool_call: {
+              id: 'call-b',
+              agentId: 'agent-b',
+              name: 'slow_tool',
+              output: 'b',
+              backgroundTask: backgroundTask('task-b'),
+            },
+          },
+        ],
+      });
+
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'task-a',
+          agentId: 'agent-a',
+          kind: 'wakeup',
+          claimId: 'delivery-a',
+        }),
+      ).resolves.toEqual({
+        status: 'acquired',
+        results: [
+          {
+            taskId: 'task-a',
+            toolCallId: 'call-a',
+            toolName: 'slow_tool',
+            status: 'completed',
+            output: 'a',
+            agentId: 'agent-a',
+          },
+        ],
+      });
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'task-b',
+          agentId: 'agent-b',
+          kind: 'manual',
+          claimId: 'poll-b',
+        }),
+      ).resolves.toMatchObject({
+        status: 'acquired',
+        results: [expect.objectContaining({ taskId: 'task-b', agentId: 'agent-b' })],
+      });
     });
 
     it('releases only the exact wakeup batch claim', async () => {

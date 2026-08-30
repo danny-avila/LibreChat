@@ -521,6 +521,7 @@ export interface MessageMethods {
     messageId: string;
     conversationId: string;
     toolCallId: string;
+    stepId?: string;
     agentId?: string;
     output?: string;
     attachments?: unknown[];
@@ -915,6 +916,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     messageId,
     conversationId,
     toolCallId,
+    stepId,
     agentId,
     output,
     attachments,
@@ -925,6 +927,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     messageId: string;
     conversationId: string;
     toolCallId: string;
+    stepId?: string;
     /** Scopes the part match when provider tool-call ids repeat across
      *  agents in one response message (e.g. `call_0` per response); a part
      *  without agent identity matches any caller (single-agent runs). */
@@ -951,6 +954,25 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       };
     };
   }): Promise<{ matched: boolean; unfinished: boolean }> {
+    const targetPartMatch = {
+      $and: [
+        { $eq: ['$$part.type', 'tool_call'] },
+        { $eq: ['$$part.tool_call.id', toolCallId] },
+        ...(stepId != null ? [{ $eq: ['$$part.tool_call.stepId', stepId] }] : []),
+        ...(agentId != null
+          ? [
+              {
+                $in: [
+                  {
+                    $ifNull: [{ $ifNull: ['$$part.agentId', '$$part.tool_call.agentId'] }, null],
+                  },
+                  [null, agentId],
+                ],
+              },
+            ]
+          : []),
+      ],
+    };
     const stages: Record<string, unknown>[] = [];
     if (output !== undefined || backgroundTask != null) {
       stages.push({
@@ -961,22 +983,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
               as: 'part',
               in: {
                 $cond: [
-                  {
-                    $and: [
-                      { $eq: ['$$part.type', 'tool_call'] },
-                      { $eq: ['$$part.tool_call.id', toolCallId] },
-                      ...(agentId != null
-                        ? [
-                            {
-                              $in: [
-                                { $ifNull: ['$$part.agentId', '$$part.tool_call.agentId'] },
-                                [null, agentId],
-                              ],
-                            },
-                          ]
-                        : []),
-                    ],
-                  },
+                  targetPartMatch,
                   {
                     $mergeObjects: [
                       '$$part',
@@ -1088,6 +1095,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                                 },
                               ]
                             : []),
+                          ...(stepId != null
+                            ? [
+                                {
+                                  $in: [{ $ifNull: ['$$existing.stepId', null] }, [null, stepId]],
+                                },
+                              ]
+                            : []),
                         ],
                       },
                     ],
@@ -1106,7 +1120,20 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
       const result = await Message.findOneAndUpdate(
-        { messageId, user: userId, conversationId },
+        {
+          messageId,
+          user: userId,
+          conversationId,
+          $expr: {
+            $anyElementTrue: {
+              $map: {
+                input: { $ifNull: ['$content', []] },
+                as: 'part',
+                in: targetPartMatch,
+              },
+            },
+          },
+        },
         stages,
         { new: true, projection: { unfinished: 1 } },
       ).lean<{ unfinished?: boolean } | null>();
@@ -1132,6 +1159,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         agentId?: unknown;
         tool_call?: {
           id?: unknown;
+          agentId?: unknown;
           output?: unknown;
           backgroundTask?: {
             taskId?: unknown;
@@ -1153,13 +1181,19 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       ) {
         continue;
       }
+      let resultAgentId: string | undefined;
+      if (typeof record.agentId === 'string') {
+        resultAgentId = record.agentId;
+      } else if (typeof toolCall.agentId === 'string') {
+        resultAgentId = toolCall.agentId;
+      }
       results.push({
         taskId: task.taskId,
         toolCallId: toolCall.id,
         toolName: task.toolName,
         status: task.status,
         output: typeof toolCall.output === 'string' ? toolCall.output : '',
-        ...(typeof record.agentId === 'string' ? { agentId: record.agentId } : {}),
+        ...(resultAgentId == null ? {} : { agentId: resultAgentId }),
       });
     }
     return results;
@@ -1237,7 +1271,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       }
       const task = (part as { tool_call?: { backgroundTask?: Record<string, unknown> } }).tool_call
         ?.backgroundTask;
-      const partAgentId = (part as { agentId?: unknown }).agentId;
+      const partRecord = part as { agentId?: unknown; tool_call?: { agentId?: unknown } };
+      const partAgentId = partRecord.agentId ?? partRecord.tool_call?.agentId;
       const candidateId = task?.taskId;
       if (typeof candidateId !== 'string') {
         continue;
@@ -1296,9 +1331,38 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                   'tool_call.backgroundTask.resultClaim.claimId': claimId,
                 }
               : { 'tool_call.backgroundTask.resultClaim': { $exists: false } }),
-            ...(agentId != null ? { agentId: { $in: [null, agentId] } } : {}),
           },
         },
+        ...(agentId != null
+          ? {
+              $expr: {
+                $anyElementTrue: {
+                  $map: {
+                    input: { $ifNull: ['$content', []] },
+                    as: 'candidate',
+                    in: {
+                      $and: [
+                        { $eq: ['$$candidate.tool_call.backgroundTask.taskId', taskId] },
+                        {
+                          $in: [
+                            {
+                              $ifNull: [
+                                {
+                                  $ifNull: ['$$candidate.agentId', '$$candidate.tool_call.agentId'],
+                                },
+                                null,
+                              ],
+                            },
+                            [null, agentId],
+                          ],
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            }
+          : {}),
       },
       [
         {
@@ -1316,7 +1380,15 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                         ...(agentId != null
                           ? [
                               {
-                                $in: [{ $ifNull: ['$$part.agentId', null] }, [null, agentId]],
+                                $in: [
+                                  {
+                                    $ifNull: [
+                                      { $ifNull: ['$$part.agentId', '$$part.tool_call.agentId'] },
+                                      null,
+                                    ],
+                                  },
+                                  [null, agentId],
+                                ],
                               },
                             ]
                           : []),

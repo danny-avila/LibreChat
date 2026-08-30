@@ -299,11 +299,11 @@ export function createBackgroundToolCompletionWakeupResolver({
 /** Pre-registers the ordered completion delivery before external tool work starts. */
 export function createBackgroundToolCompletionWakeupHandler(
   enqueue: EnqueueBackgroundToolCompletion,
-): (registration: BackgroundToolWakeupRegistration) => Promise<void> {
+): (registration: BackgroundToolWakeupRegistration) => Promise<boolean> {
   return async (registration) => {
     const parentAgentId = registration.parentAgentId?.trim();
     if (parentAgentId == null || parentAgentId === '' || isEphemeralAgentId(parentAgentId)) {
-      return;
+      return false;
     }
     const envelope = createAgentTriggerEnvelope({
       mode: 'continue',
@@ -338,5 +338,6 @@ export function createBackgroundToolCompletionWakeupHandler(
         Math.max(Date.now(), registration.createdAt) + WAKEUP_ADMISSION_DELAY_MS,
       ),
     });
+    return true;
   };
 }

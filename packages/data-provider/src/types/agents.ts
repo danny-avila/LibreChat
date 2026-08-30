@@ -79,6 +79,8 @@ export namespace Agents {
 
     /** If provided, an identifier associated with the tool call */
     id?: string;
+    /** Host run-step identity; unlike provider ids, this is unique across turns. */
+    stepId?: string;
     /** If provided, the output of the tool call */
     output?: string;
     /** Host-owned durable receipt for a detached ordinary tool result.

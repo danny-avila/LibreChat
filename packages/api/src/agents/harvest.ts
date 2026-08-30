@@ -51,6 +51,7 @@ export interface CodeHarvestDeps {
     messageId: string;
     conversationId: string;
     toolCallId: string;
+    stepId?: string;
     agentId?: string;
     output?: string;
     attachments?: unknown[];
@@ -90,6 +91,7 @@ export interface CodeHarvestDeps {
 export interface CodeHarvestParams {
   toolName: string;
   toolCallId: string;
+  stepId?: string;
   messageId?: string;
   conversationId?: string;
   /** Dispatching agent — scopes the part patch when provider tool-call ids
@@ -120,6 +122,7 @@ async function persistBackgroundToolResultRow(
     messageId: string;
     conversationId: string;
     toolCallId: string;
+    stepId?: string;
     agentId?: string;
     output?: string;
     attachments?: unknown[];
@@ -145,6 +148,7 @@ export function createBackgroundToolResultHandler(
 ): (params: Omit<CodeHarvestParams, 'artifact' | 'codeExecutionContext'>) => Promise<boolean> {
   return async ({
     toolCallId,
+    stepId,
     messageId,
     conversationId,
     agentId,
@@ -161,6 +165,7 @@ export function createBackgroundToolResultHandler(
       messageId,
       conversationId,
       toolCallId,
+      stepId,
       agentId,
       output,
       attachments,
@@ -195,6 +200,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
   } = deps;
   return async ({
     toolCallId,
+    stepId,
     messageId,
     conversationId,
     agentId,
@@ -217,6 +223,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
         messageId,
         conversationId,
         toolCallId,
+        stepId,
         agentId,
         output,
         attachments: knownAttachments ?? [],
@@ -264,7 +271,8 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
           downloadFallback,
         });
         if (result?.file) {
-          attachments.push(result.file);
+          const anchoredFile = stepId == null ? result.file : { ...result.file, stepId };
+          attachments.push(anchoredFile);
           /** No live stream at completion time; the client's preview polling
            *  (or the poll turn's re-emit) surfaces the finalized preview. */
           runPreviewFinalize({
@@ -283,6 +291,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
       messageId,
       conversationId,
       toolCallId,
+      stepId,
       agentId,
       output,
       attachments,

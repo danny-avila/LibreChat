@@ -88,6 +88,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
     const events: string[] = [];
     const preregister = jest.fn(async () => {
       events.push('preregister');
+      return true;
     });
     const persist = jest.fn(async () => {
       events.push('persist');
@@ -117,6 +118,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
           id: 'call-wakeup',
           name: tool.name,
           args: { q: 'continuations', run_in_background: true },
+          stepId: 'step-wakeup',
         },
       ],
       agentId: 'agent_parent_1',
@@ -139,12 +141,77 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(persist).toHaveBeenCalledWith(
       expect.objectContaining({
         output: 'durable result',
+        stepId: 'step-wakeup',
         backgroundTask: expect.objectContaining({
           taskId: expect.any(String),
           status: 'completed',
         }),
       }),
     );
+  });
+
+  it('keeps polling guidance when the completion adapter skips registration', async () => {
+    const tool = makeSearchTool({ calls: 0 });
+    const preregister = jest.fn(async () => false);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister,
+        persist: jest.fn(async () => true),
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-skipped-wakeup',
+          name: tool.name,
+          args: { q: 'ephemeral', run_in_background: true },
+          stepId: 'step-skipped-wakeup',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-1' },
+    });
+
+    expect(preregister).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(dispatch.content).message).toContain('Call check_background_task');
+    expect(JSON.parse(dispatch.content).message).not.toContain('host will resume you');
+  });
+
+  it('keeps repeated provider ids poll-only when the host step identity is absent', async () => {
+    const tool = makeSearchTool({ calls: 0 });
+    const preregister = jest.fn(async () => true);
+    const persist = jest.fn(async () => true);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister,
+        persist,
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-without-step',
+          name: tool.name,
+          args: { q: 'legacy', run_in_background: true },
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-1' },
+    });
+    await flushMicrotasks();
+
+    expect(preregister).not.toHaveBeenCalled();
+    expect(persist).not.toHaveBeenCalled();
+    expect(JSON.parse(dispatch.content).message).toContain('Call check_background_task');
+    expect(JSON.parse(dispatch.content).message).not.toContain('host will resume you');
   });
 
   it('persists an Event Actor launch before invoking and terminal evidence before wakeup', async () => {
