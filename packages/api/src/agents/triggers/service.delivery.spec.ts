@@ -268,6 +268,7 @@ describe('durable agent trigger service', () => {
       };
       check();
     });
+    expect(claimNext.mock.calls.length).toBeGreaterThan(claimsBeforeEnqueue);
     await service.stop();
   });
 
