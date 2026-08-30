@@ -5,7 +5,6 @@ export class MediaSourceAppender {
 
   private objectUrl?: string;
   private sourceBuffer?: SourceBuffer;
-  private hasAppended = false;
   private isClosed = false;
 
   constructor(type: string) {
@@ -38,12 +37,13 @@ export class MediaSourceAppender {
       return;
     }
 
-    this.hasAppended = true;
     this.sourceBuffer.appendBuffer(chunk);
   }
 
   private tryEndOfStream() {
-    if (!this.isClosed || !this.hasAppended || this.mediaSource.readyState !== 'open') {
+    /** `endOfStream()` only throws while the source is not open or a buffer is updating —
+     *  an empty response still has to end, or the element waits on it forever. */
+    if (!this.isClosed || this.mediaSource.readyState !== 'open') {
       return;
     }
     if (this.audioChunks.length > 0 || this.sourceBuffer?.updating === true) {

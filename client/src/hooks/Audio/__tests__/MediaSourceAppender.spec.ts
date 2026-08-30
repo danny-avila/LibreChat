@@ -127,16 +127,32 @@ describe('MediaSourceAppender', () => {
     expect(source.readyState).toBe('ended');
   });
 
-  it('does not end a stream that never received data', async () => {
+  it('ends a closed stream that never received data', async () => {
     const appender = new MediaSourceAppender('audio/mpeg');
     const source = createdSources[0];
     appender.mediaSourceUrl;
 
+    /** An empty response, or a read timeout before the first byte, still has to end —
+     *  otherwise the element waits on a source that can never receive data. */
     source.attach();
     appender.close();
     await flush();
 
-    expect(source.readyState).toBe('open');
+    expect(source.readyState).toBe('ended');
+  });
+
+  it('ends a stream closed before the media element attached', async () => {
+    const appender = new MediaSourceAppender('audio/mpeg');
+    const source = createdSources[0];
+    appender.mediaSourceUrl;
+
+    appender.close();
+    expect(source.readyState).toBe('closed');
+
+    source.attach();
+    await flush();
+
+    expect(source.readyState).toBe('ended');
   });
 
   it('reuses a single object URL for the lifetime of the appender', () => {
