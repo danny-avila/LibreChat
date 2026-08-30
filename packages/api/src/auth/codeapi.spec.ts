@@ -1,7 +1,7 @@
 import { createHash, generateKeyPairSync, verify as cryptoVerify } from 'crypto';
 import type { KeyObject } from 'crypto';
 import type { ServerRequest } from '~/types';
-import { getCodeApiAuthHeaders, mintCodeApiToken } from './codeapi';
+import { assertCodeApiJwtSigningReady, getCodeApiAuthHeaders, mintCodeApiToken } from './codeapi';
 
 jest.mock(
   '@librechat/data-schemas',
@@ -168,6 +168,18 @@ describe('Code API JWT minting', () => {
     );
     expect(decoded.claims).not.toHaveProperty('refresh_token');
     expect(decoded.claims).not.toHaveProperty('openid_token');
+  });
+
+  it('validates that the configured signing key is usable by the selected algorithm', () => {
+    expect(() => assertCodeApiJwtSigningReady()).not.toThrow();
+
+    const rsaKeyPair = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    process.env.CODEAPI_JWT_PRIVATE_JWK_JSON = JSON.stringify(
+      rsaKeyPair.privateKey.export({ format: 'jwk' }),
+    );
+    process.env.CODEAPI_JWT_ALGORITHM = 'EdDSA';
+
+    expect(() => assertCodeApiJwtSigningReady()).toThrow();
   });
 
   it('marks OpenID reuse callers without forwarding upstream credentials', async () => {

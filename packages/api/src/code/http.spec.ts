@@ -82,6 +82,7 @@ describe('code environment HTTP handlers', () => {
       readSecret: jest.fn(() => 'administrator-token'),
       resolveTenantId: jest.fn(() => 'tenant-1'),
       principalAuthEnabled: jest.fn(() => true),
+      principalAuthReady: jest.fn(),
       fetchImpl,
     });
     const req = {
@@ -186,6 +187,7 @@ describe('code environment HTTP handlers', () => {
       registry: { register: jest.fn(), listAccessible: jest.fn() },
       readSecret: jest.fn(() => 'administrator-token'),
       principalAuthEnabled: jest.fn(() => true),
+      principalAuthReady: jest.fn(),
       fetchImpl,
     });
     const res = response();
@@ -204,7 +206,142 @@ describe('code environment HTTP handlers', () => {
       userId: '68b2f0c498f24c1e78fa0001',
       idOnTheSource: undefined,
       tenantId: 'tenant-1',
+      failClosed: true,
     });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('fails closed when effective pairing policy cannot be loaded', async () => {
+    const fetchImpl = jest.fn();
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn(async (options) => {
+        if (options.baseOnly === true) return {} as AppConfig;
+        throw new Error('authorization unavailable');
+      }),
+      registry: { register: jest.fn(), listAccessible: jest.fn() },
+      principalAuthEnabled: jest.fn(() => true),
+      principalAuthReady: jest.fn(),
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.pair(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'Personal VM', controlPlaneId: 'self-service' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(503);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('authorizes pairing effectively but resolves destinations and secrets from deployment config', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        protocolVersion: 1,
+        workerId: 'code-generated',
+        code: 'a'.repeat(32),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    });
+    const deploymentConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'self-service',
+                name: 'Self-service',
+                type: 'attached',
+                baseURL: 'https://code.librechat.example',
+                owner: 'deployment',
+                pairing: { allowPrincipalWorkers: true, tokenEnv: 'CODE_ADMIN_TOKEN' },
+              },
+            ],
+          },
+        },
+      },
+    } as AppConfig;
+    const effectiveConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'self-service',
+                name: 'Override attempt',
+                type: 'attached',
+                baseURL: 'https://attacker.example',
+                owner: 'deployment',
+                pairing: { allowPrincipalWorkers: true, tokenEnv: 'DATABASE_URL' },
+              },
+            ],
+          },
+        },
+      },
+    } as AppConfig;
+    const readSecret = jest.fn((name) =>
+      name === 'CODE_ADMIN_TOKEN' ? 'administrator-token' : 'database-secret',
+    );
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn(async (options) =>
+        options.baseOnly === true ? deploymentConfig : effectiveConfig,
+      ),
+      registry: {
+        register: jest.fn().mockResolvedValue({ id: 'code-generated' }),
+        listAccessible: jest.fn(),
+      },
+      createEnvironmentId: () => 'code-generated',
+      readSecret,
+      resolveTenantId: jest.fn(() => 'tenant-1'),
+      principalAuthEnabled: jest.fn(() => true),
+      principalAuthReady: jest.fn(),
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.pair(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'Personal VM', controlPlaneId: 'self-service' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(201);
+    expect(readSecret).toHaveBeenCalledWith('CODE_ADMIN_TOKEN');
+    expect(readSecret).not.toHaveBeenCalledWith('DATABASE_URL');
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://code.librechat.example/bridge/pairings',
+      expect.any(Object),
+    );
+  });
+
+  test('validates JWT signing before creating upstream pairing state', async () => {
+    const fetchImpl = jest.fn();
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn(),
+      registry: { register: jest.fn(), listAccessible: jest.fn() },
+      principalAuthEnabled: jest.fn(() => true),
+      principalAuthReady: jest.fn(() => {
+        throw new Error('invalid signing key');
+      }),
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.pair(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'Personal VM', controlPlaneId: 'self-service' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(503);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -340,6 +477,7 @@ describe('code environment HTTP handlers', () => {
       registry: { register: jest.fn(), listAccessible: jest.fn() },
       readSecret: jest.fn(() => 'administrator-token'),
       principalAuthEnabled: jest.fn(() => true),
+      principalAuthReady: jest.fn(),
       fetchImpl,
     });
     const res = response();

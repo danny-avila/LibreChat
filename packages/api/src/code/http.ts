@@ -10,9 +10,13 @@ import type {
 import type { GetAppConfigOptions } from '~/app/service';
 import type { ServerRequest } from '~/types/http';
 import type { CodeBridgeFetch } from './bridge';
+import {
+  assertCodeApiJwtSigningReady,
+  getCodeApiTenantId,
+  isCodeApiJwtAuthEnabled,
+} from '~/auth/codeapi';
 import { CodeBridgePairingError, createCodeBridgePairing, readCodeBridgeSecret } from './bridge';
 import { CodeEnvironmentValidationError, normalizeCodeEnvironmentName } from './environments';
-import { getCodeApiTenantId, isCodeApiJwtAuthEnabled } from '~/auth/codeapi';
 import { getAppConfigOptionsFromUser } from '~/app/service';
 
 type Registry = {
@@ -37,6 +41,7 @@ export interface CodeEnvironmentHttpDeps {
   readSecret?: (name: string) => string | undefined;
   resolveTenantId?: (req: ServerRequest) => string;
   principalAuthEnabled?: () => boolean;
+  principalAuthReady?: () => Promise<void> | void;
   fetchImpl?: CodeBridgeFetch;
 }
 
@@ -105,6 +110,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
   const readSecret = deps.readSecret ?? readCodeBridgeSecret;
   const resolveTenantId = deps.resolveTenantId ?? getCodeApiTenantId;
   const principalAuthEnabled = deps.principalAuthEnabled ?? isCodeApiJwtAuthEnabled;
+  const principalAuthReady = deps.principalAuthReady ?? assertCodeApiJwtSigningReady;
 
   async function list(req: ServerRequest, res: Response): Promise<Response> {
     const principal = actor(req);
@@ -142,9 +148,20 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
 
     /** Control-plane destinations are deployment policy. Client-provided URLs
      * are deliberately ignored to prevent an authenticated SSRF primitive. */
-    const appConfig = await deps.getAppConfig(getAppConfigOptionsFromUser(req.user));
-    const controlPlane = configuredControlPlane(appConfig, controlPlaneId);
-    if (controlPlane == null) {
+    let effectiveConfig: AppConfig;
+    let deploymentConfig: AppConfig;
+    try {
+      [effectiveConfig, deploymentConfig] = await Promise.all([
+        deps.getAppConfig({ ...getAppConfigOptionsFromUser(req.user), failClosed: true }),
+        deps.getAppConfig({ baseOnly: true }),
+      ]);
+    } catch (error) {
+      logger.error('[codeEnvironments] control-plane policy resolution failed:', error);
+      return res.status(503).json({ error: 'Code environment policy is unavailable' });
+    }
+    const authorizedControlPlane = configuredControlPlane(effectiveConfig, controlPlaneId);
+    const controlPlane = configuredControlPlane(deploymentConfig, controlPlaneId);
+    if (authorizedControlPlane == null || controlPlane == null) {
       return res.status(404).json({ error: 'Code control plane was not found' });
     }
 
@@ -206,10 +223,27 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
         error: error instanceof Error ? error.message : 'Code environment name is invalid',
       });
     }
+    try {
+      await principalAuthReady();
+    } catch (error) {
+      logger.error('[codeEnvironments] Code API JWT signing is unavailable:', error);
+      return res.status(503).json({ error: 'Principal code worker authentication is unavailable' });
+    }
 
-    const appConfig = await deps.getAppConfig(getAppConfigOptionsFromUser(req.user));
-    const controlPlane = configuredPrincipalControlPlane(appConfig, controlPlaneId);
-    if (controlPlane == null) {
+    let effectiveConfig: AppConfig;
+    let deploymentConfig: AppConfig;
+    try {
+      [effectiveConfig, deploymentConfig] = await Promise.all([
+        deps.getAppConfig({ ...getAppConfigOptionsFromUser(req.user), failClosed: true }),
+        deps.getAppConfig({ baseOnly: true }),
+      ]);
+    } catch (error) {
+      logger.error('[codeEnvironments] pairing policy resolution failed:', error);
+      return res.status(503).json({ error: 'Code environment pairing policy is unavailable' });
+    }
+    const authorizedControlPlane = configuredPrincipalControlPlane(effectiveConfig, controlPlaneId);
+    const controlPlane = configuredPrincipalControlPlane(deploymentConfig, controlPlaneId);
+    if (authorizedControlPlane == null || controlPlane == null) {
       return res.status(404).json({ error: 'Principal code control plane was not found' });
     }
     const tokenEnv = controlPlane.pairing?.tokenEnv;

@@ -168,6 +168,22 @@ function getSigningConfig(): SigningConfig {
   return signingConfigCache;
 }
 
+export function assertCodeApiJwtSigningReady(): void {
+  const config = getSigningConfig();
+  const keyType = config.key.asymmetricKeyType;
+  if (config.alg === 'EdDSA' && keyType !== 'ed25519' && keyType !== 'ed448') {
+    throw new Error(`Code API JWT algorithm EdDSA requires an EdDSA key, received ${keyType}`);
+  }
+  if (config.alg === 'RS256' && keyType !== 'rsa') {
+    throw new Error(`Code API JWT algorithm RS256 requires an RSA key, received ${keyType}`);
+  }
+  cryptoSign(
+    config.alg === 'RS256' ? 'RSA-SHA256' : null,
+    Buffer.from('librechat-codeapi-signing-readiness'),
+    config.key,
+  );
+}
+
 function stringifyClaimValue(value: unknown): string | undefined {
   if (typeof value === 'string' && value.trim() !== '') {
     return value;
