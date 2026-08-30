@@ -64,6 +64,7 @@ const {
   codeServerHttpAgent,
   codeServerHttpsAgent,
   getCodeApiAuthHeaders,
+  getCodeExecutionBaseUrl,
 } = require('@librechat/api');
 const { deleteCodeEnvFile, getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./crud');
 
@@ -284,6 +285,24 @@ describe('Code CRUD', () => {
       };
 
       await expect(deleteCodeEnvFile(req, historicalFile)).resolves.toBeUndefined();
+
+      expect(mockAxios).not.toHaveBeenCalled();
+    });
+
+    it('skips legacy stateful cleanup after its endpoint is retired', async () => {
+      getCodeExecutionBaseUrl.mockImplementationOnce(() => {
+        throw new Error('LIBRECHAT_CODE_BASEURL_STATEFUL is not configured');
+      });
+      const legacyStatefulFile = {
+        metadata: {
+          codeEnvRef: {
+            ...file.metadata.codeEnvRef,
+            executionProfile: 'stateful',
+          },
+        },
+      };
+
+      await expect(deleteCodeEnvFile(req, legacyStatefulFile)).resolves.toBeUndefined();
 
       expect(mockAxios).not.toHaveBeenCalled();
     });

@@ -476,7 +476,9 @@ describe('agentsEndpointSchema', () => {
 
   it.each([
     'ftp://code.example.com/v1',
+    'https://code.example.com/v1?',
     'https://code.example.com/v1?token=secret',
+    'https://code.example.com/v1#',
     'https://code.example.com/v1#fragment',
   ])('rejects a non-base execution environment URL: %s', (baseURL) => {
     const result = agentsEndpointSchema.safeParse({

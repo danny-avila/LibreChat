@@ -143,15 +143,17 @@ describe('resolveCodeExecutionContext', () => {
       environments: [environment('first', 'https://first.example/v1')],
       userId: 'user-1',
     });
-    const second = resolveCodeExecutionContext({
+    const replacement = resolveCodeExecutionContext({
       statefulSessions: true,
-      environments: [environment('second', 'https://second.example/v1')],
+      environments: [environment('first', 'https://replacement.example/v1')],
       userId: 'user-1',
     });
 
     expect(first.executionProfile).toBe('stateful');
-    expect(second.executionProfile).toBe('stateful');
-    expect(first.executionRouteKey).not.toBe(second.executionRouteKey);
+    expect(replacement.executionProfile).toBe('stateful');
+    expect(first.runtimeSessionHint).toBe(replacement.runtimeSessionHint);
+    expect(first.executionRouteKey).not.toBe(replacement.executionRouteKey);
+    expect(first.codeSessionKey).not.toBe(replacement.codeSessionKey);
   });
 
   it('uses the operator-selected default environment when the agent has no override', () => {

@@ -1011,6 +1011,8 @@ const codeEnvironmentBaseURLSchema = z
         const url = new URL(value);
         return (
           (url.protocol === 'http:' || url.protocol === 'https:') &&
+          !value.includes('?') &&
+          !value.includes('#') &&
           url.search.length === 0 &&
           url.hash.length === 0
         );

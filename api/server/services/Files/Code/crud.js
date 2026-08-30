@@ -101,7 +101,22 @@ async function deleteCodeEnvFile(req, file) {
       );
       continue;
     }
-    const baseURL = getCodeExecutionBaseUrl(executionProfile, configuredEnvironment);
+    let baseURL;
+    try {
+      baseURL = getCodeExecutionBaseUrl(executionProfile, configuredEnvironment);
+    } catch (error) {
+      if (
+        executionProfile === 'stateful' &&
+        executionRouteKey === executionProfile &&
+        !configuredEnvironment
+      ) {
+        logger.warn(
+          '[deleteCodeEnvFile] Skipping remote cleanup for retired legacy stateful route',
+        );
+        continue;
+      }
+      throw error;
+    }
     const query = buildCodeEnvDownloadQuery({
       kind: ref.kind,
       id: ref.id,

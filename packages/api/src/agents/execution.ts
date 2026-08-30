@@ -142,13 +142,12 @@ export function resolveCodeExecutionContext(params: {
     agentId: params.agentId,
     conversationId: params.conversationId,
   });
+  const executionRouteKey = createCodeExecutionRouteKey('stateful', configuredEnvironment);
   return {
     baseUrl: getCodeExecutionBaseUrl('stateful', configuredEnvironment),
-    codeSessionKey: `${Constants.EXECUTE_CODE}:stateful:${runtimeSessionHint}`,
+    codeSessionKey: `${Constants.EXECUTE_CODE}:${executionRouteKey}:${runtimeSessionHint}`,
     executionProfile: 'stateful',
-    ...(configuredEnvironment
-      ? { executionRouteKey: createCodeExecutionRouteKey('stateful', configuredEnvironment) }
-      : {}),
+    ...(configuredEnvironment ? { executionRouteKey } : {}),
     runtimeSessionHint,
     statefulSessions: true,
     environmentId: configuredEnvironment?.id,
