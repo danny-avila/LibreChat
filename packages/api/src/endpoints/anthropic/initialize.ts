@@ -4,9 +4,9 @@ import type {
   AnthropicConfigOptions,
   ProviderInitializeParams,
 } from '~/types';
-import { resolveEndpointRuntime } from '~/types';
 import { loadAnthropicVertexCredentials, getVertexCredentialOptions } from './vertex';
 import { checkUserKeyExpiry, isEnabled, mergeHeaders } from '~/utils';
+import { resolveEndpointRuntime } from '~/types';
 import { getLLMConfig } from './llm';
 
 /**

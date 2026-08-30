@@ -7,7 +7,6 @@ import type {
   GoogleCredentials,
   ProviderInitializeParams,
 } from '~/types';
-import { resolveEndpointRuntime } from '~/types';
 import {
   isEnabled,
   loadServiceKey,
@@ -15,6 +14,7 @@ import {
   mergeHeaders,
   resolveHeaders,
 } from '~/utils';
+import { resolveEndpointRuntime } from '~/types';
 import { getGoogleConfig } from './llm';
 
 /**

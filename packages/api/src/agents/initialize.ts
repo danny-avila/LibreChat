@@ -47,8 +47,8 @@ import type { ContentTraversalLimitError } from '../protection/adapters/nested';
 import type { SkillContentInput } from '../protection/adapters/submissions';
 import type { TextContentFragment } from '../protection/types';
 import type { TFilterFilesByAgentAccess } from './resources';
-import type { AgentExecutionContext } from './runtime';
 import type { MCPToolAlias } from '~/tools/classification';
+import type { AgentExecutionContext } from './runtime';
 import {
   injectSkillCatalog,
   resolveSkillCatalog,
@@ -95,13 +95,13 @@ import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { ContentFilterError } from '../middleware/contentFilter';
+import { createRequestAgentExecutionContext } from './runtime';
+import { filterFilesByEndpointRuntimeConfig } from '~/files';
 import { PARTIAL_RESOLVED_CONVERSATION } from './guard';
 import { applyBackgroundToolCalls } from './background';
-import { filterFilesByEndpointRuntimeConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
-import { createRequestAgentExecutionContext } from './runtime';
 
 /**
  * Fraction of context budget reserved as headroom when no explicit maxContextTokens is set.

@@ -5,7 +5,6 @@ import type {
   ProviderInitializeParams,
   UserKeyValues,
 } from '~/types';
-import { resolveEndpointRuntime } from '~/types';
 import {
   mergeHeaders,
   resolveHeaders,
@@ -13,6 +12,7 @@ import {
   checkUserKeyExpiry,
   getAzureCredentials,
 } from '~/utils';
+import { resolveEndpointRuntime } from '~/types';
 import { validateEndpointURL } from '~/auth';
 import { getOpenAIConfig } from './config';
 

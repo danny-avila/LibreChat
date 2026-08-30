@@ -17,8 +17,8 @@ import type {
   InferenceProfileConfig,
   ProviderInitializeParams,
 } from '~/types';
-import { resolveEndpointRuntime } from '~/types';
 import { getHttpsProxyAgent } from '~/utils/proxy';
+import { resolveEndpointRuntime } from '~/types';
 import { checkUserKeyExpiry } from '~/utils';
 
 const BEDROCK_CREDENTIALS_ERROR = 'Bedrock credentials not provided. Please provide them again.';

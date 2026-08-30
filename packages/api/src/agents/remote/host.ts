@@ -1,5 +1,5 @@
-import type { AgentRunEnvelope } from '../envelope';
 import type { AgentExecutionEnrollment } from './lifecycle';
+import type { AgentRunEnvelope } from '../envelope';
 import { enrollAgentExecution } from './lifecycle';
 
 /** Transport connection observed by the execution host for cancellation only. */

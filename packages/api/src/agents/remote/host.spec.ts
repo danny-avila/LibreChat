@@ -1,5 +1,5 @@
-import type { AgentExecutionConnection } from './host';
 import type { ChatCompletionRunEnvelope } from '../envelope';
+import type { AgentExecutionConnection } from './host';
 import { GenerationJobManager } from '~/stream';
 import { executeAgentRun } from './host';
 
