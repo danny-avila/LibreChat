@@ -94,4 +94,68 @@ describe('resolveCodeExecutionContext', () => {
     expect(first.runtimeSessionHint).not.toContain('user-1');
     expect(second.runtimeSessionHint).not.toContain('user-2');
   });
+
+  it('routes an agent to its configured attached environment', () => {
+    const context = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environment: 'agent-user',
+      environmentId: 'my-vm',
+      environments: [
+        {
+          id: 'managed',
+          name: 'Managed',
+          type: 'managed',
+          baseURL: 'https://managed.example/v1',
+        },
+        {
+          id: 'my-vm',
+          name: 'My VM',
+          type: 'attached',
+          baseURL: 'https://bridge.example/v1/',
+        },
+      ],
+      userId: 'user-1',
+      agentId: 'agent-1',
+    });
+
+    expect(context).toEqual(
+      expect.objectContaining({
+        baseUrl: 'https://bridge.example/v1',
+        environmentId: 'my-vm',
+        environmentType: 'attached',
+        executionProfile: 'stateful',
+      }),
+    );
+    expect(context.runtimeSessionHint).toMatch(/^v3:[a-f0-9]{12}:agent-user:/);
+  });
+
+  it('uses the operator-selected default environment when the agent has no override', () => {
+    const context = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environments: [
+        {
+          id: 'default-vm',
+          name: 'Default VM',
+          type: 'attached',
+          baseURL: 'https://bridge.example/v1',
+          default: true,
+        },
+      ],
+      userId: 'user-1',
+    });
+
+    expect(context.environmentId).toBe('default-vm');
+    expect(context.baseUrl).toBe('https://bridge.example/v1');
+  });
+
+  it('fails closed when an agent references an unknown configured environment', () => {
+    expect(() =>
+      resolveCodeExecutionContext({
+        statefulSessions: true,
+        environmentId: 'missing-vm',
+        environments: [],
+        userId: 'user-1',
+      }),
+    ).toThrow('Stateful code environment "missing-vm" is not configured');
+  });
 });

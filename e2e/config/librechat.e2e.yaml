@@ -79,6 +79,7 @@ endpoints:
       - chain
       - ocr
       - run_in_background
+    # __E2E_CODE_BRIDGE_CONFIG__
     # Keep the shared mock profile non-interactive except for the dedicated
     # approval probe. This exercises real HITL pause/resume without wedging the
     # existing file-authoring, steering, background-tool, or MCP specs.

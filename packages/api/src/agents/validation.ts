@@ -486,6 +486,7 @@ export const agentBaseSchema: z.ZodObject<
     hide_sequential_outputs: z.ZodOptional<z.ZodBoolean>;
     stateful_code_sessions: z.ZodOptional<z.ZodBoolean>;
     stateful_code_environment: z.ZodOptional<z.ZodEnum<['user', 'agent-user', 'conversation']>>;
+    code_environment_id: z.ZodOptional<z.ZodString>;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
@@ -558,6 +559,7 @@ export const agentBaseSchema: z.ZodObject<
   hide_sequential_outputs: z.boolean().optional(),
   stateful_code_sessions: z.boolean().optional(),
   stateful_code_environment: z.enum(['user', 'agent-user', 'conversation']).optional(),
+  code_environment_id: z.string().min(1).max(128).optional(),
   artifacts: z.string().optional(),
   recursion_limit: z.number().optional(),
   conversation_starters: z.array(z.string()).optional(),
@@ -653,6 +655,7 @@ export const agentCreateSchema: z.ZodObject<
     hide_sequential_outputs: z.ZodOptional<z.ZodBoolean>;
     stateful_code_sessions: z.ZodOptional<z.ZodBoolean>;
     stateful_code_environment: z.ZodOptional<z.ZodEnum<['user', 'agent-user', 'conversation']>>;
+    code_environment_id: z.ZodOptional<z.ZodString>;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
@@ -784,6 +787,7 @@ export const agentUpdateSchema: z.ZodObject<
     hide_sequential_outputs: z.ZodOptional<z.ZodBoolean>;
     stateful_code_sessions: z.ZodOptional<z.ZodBoolean>;
     stateful_code_environment: z.ZodOptional<z.ZodEnum<['user', 'agent-user', 'conversation']>>;
+    code_environment_id: z.ZodOptional<z.ZodString>;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;

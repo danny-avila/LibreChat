@@ -449,6 +449,50 @@ describe('agentsEndpointSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts uniquely named execution environments with exactly one default', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'managed',
+            name: 'Managed',
+            type: 'managed',
+            baseURL: 'https://code.example.com/v1',
+            default: true,
+          },
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects ambiguous execution environment routing', () => {
+    const environment = {
+      id: 'attached-vm',
+      name: 'Attached VM',
+      type: 'attached',
+      baseURL: 'https://bridge.example.com/v1',
+    } as const;
+    const parse = (environments: unknown[]) =>
+      agentsEndpointSchema.safeParse({
+        statefulCodeSessions: {
+          allowedEnvironments: ['conversation'],
+          environments,
+        },
+      });
+
+    expect(parse([environment]).success).toBe(false);
+    expect(parse([{ ...environment, default: true }, { ...environment }]).success).toBe(false);
+  });
+
   it('defaults maxSubagents to MAX_SUBAGENTS and validates its bounds', () => {
     const omitted = agentsEndpointSchema.safeParse({});
     expect(omitted.success).toBe(true);

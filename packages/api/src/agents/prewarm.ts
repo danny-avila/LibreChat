@@ -15,6 +15,7 @@ type PrewarmAgent = {
   id: string;
   statefulCodeSessions?: boolean;
   statefulCodeEnvironment?: StatefulCodeEnvironment;
+  codeExecutionContext?: CodeExecutionContext;
   subagentAgentConfigs?: PrewarmAgent[];
   lazySubagentConfigs?: PrewarmAgent[];
 };
@@ -153,14 +154,18 @@ function collectPrewarmContexts(
     }
     visited.add(agent.id);
     if (agent.statefulCodeSessions === true) {
-      const context = resolveCodeExecutionContext({
-        statefulSessions: true,
-        environment: agent.statefulCodeEnvironment,
-        userId,
-        agentId: agent.id,
-        conversationId,
-      });
-      contexts.set(`${context.baseUrl}:${context.runtimeSessionHint}`, context);
+      const context =
+        agent.codeExecutionContext ??
+        resolveCodeExecutionContext({
+          statefulSessions: true,
+          environment: agent.statefulCodeEnvironment,
+          userId,
+          agentId: agent.id,
+          conversationId,
+        });
+      if (context.environmentType !== 'attached') {
+        contexts.set(`${context.baseUrl}:${context.runtimeSessionHint}`, context);
+      }
     }
     pending.push(...(agent.subagentAgentConfigs ?? []), ...(agent.lazySubagentConfigs ?? []));
   }

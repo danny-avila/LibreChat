@@ -785,6 +785,8 @@ async function loadToolDefinitionsWrapper({
         enabledCapabilities.has(AgentCapabilities.stateful_code_sessions) &&
         agent.stateful_code_sessions === true,
       environment: agent.stateful_code_environment,
+      environmentId: agent.code_environment_id,
+      environments: req.config?.endpoints?.agents?.statefulCodeSessions?.environments,
       userId: req.user.id,
       agentId: agent.id,
       conversationId: runtimeRequestBody?.conversationId,
@@ -1642,6 +1644,8 @@ async function loadAgentTools({
     resolveCodeExecutionContext({
       statefulSessions: statefulCodeSessions,
       environment: agent.stateful_code_environment,
+      environmentId: agent.code_environment_id,
+      environments: req.config?.endpoints?.agents?.statefulCodeSessions?.environments,
       userId: req.user.id,
       agentId: agent.id,
       conversationId: requestBody?.conversationId ?? req.body?.conversationId,
@@ -2022,6 +2026,8 @@ async function loadToolsForExecution({
   const codeExecutionContext = resolveCodeExecutionContext({
     statefulSessions: statefulCodeSessions,
     environment: agent?.stateful_code_environment,
+    environmentId: agent?.code_environment_id,
+    environments: req.config?.endpoints?.agents?.statefulCodeSessions?.environments,
     userId: req.user.id,
     agentId: agent?.id,
     conversationId: conversationId ?? runtimeRequestBody?.conversationId,

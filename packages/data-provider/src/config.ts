@@ -1041,6 +1041,42 @@ export const agentsEndpointSchema = baseEndpointSchema
       statefulCodeSessions: z
         .object({
           allowedEnvironments: z.array(z.enum(STATEFUL_CODE_ENVIRONMENTS)).min(1),
+          /** Operator-managed execution environments. Attached entries route to a
+           * Code API deployment backed by an outbound librechat-code worker. */
+          environments: z
+            .array(
+              z.object({
+                id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
+                name: z.string().min(1).max(100),
+                type: z.enum(['managed', 'attached']),
+                baseURL: z.string().url(),
+                default: z.boolean().optional(),
+              }),
+            )
+            .optional(),
+        })
+        .superRefine((value, context) => {
+          if (!value?.environments) return;
+          const ids = new Set<string>();
+          let defaults = 0;
+          for (const environment of value.environments) {
+            if (ids.has(environment.id)) {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: `Duplicate code environment id: ${environment.id}`,
+                path: ['environments'],
+              });
+            }
+            ids.add(environment.id);
+            if (environment.default === true) defaults += 1;
+          }
+          if (value.environments.length > 0 && defaults !== 1) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: 'Exactly one stateful code environment must be the default',
+              path: ['environments'],
+            });
+          }
         })
         .optional(),
       /** Optional trusted origin for in-process agent event delivery. */

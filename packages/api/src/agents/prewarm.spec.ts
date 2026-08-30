@@ -1,4 +1,5 @@
 import type { StatefulCodeEnvironment } from 'librechat-data-provider';
+import type { CodeExecutionContext } from './execution';
 import {
   markSandboxReady,
   maybePrewarmCodeSandbox,
@@ -12,6 +13,7 @@ interface TestAgent {
   id: string;
   statefulCodeSessions?: boolean;
   statefulCodeEnvironment?: StatefulCodeEnvironment;
+  codeExecutionContext?: CodeExecutionContext;
   subagentAgentConfigs?: TestAgent[];
   lazySubagentConfigs?: TestAgent[];
 }
@@ -90,6 +92,28 @@ describe('maybePrewarmCodeSandbox', () => {
       code: 'true',
       runtime_session_hint: 'v2:user:b5729fb0e3ca12e7a61ff6857b99d98e',
     });
+    await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(false);
+  });
+
+  it('does not prewarm an attached environment that leases a single worker', async () => {
+    const attachedAgent: TestAgent = {
+      id: 'agent_attached',
+      statefulCodeSessions: true,
+      codeExecutionContext: {
+        baseUrl: 'http://attached-code.test/v1',
+        codeSessionKey: 'execute_code:stateful:attached',
+        executionProfile: 'stateful',
+        runtimeSessionHint: 'v3:attached:conversation:abc',
+        statefulSessions: true,
+        environmentId: 'e2e-vm',
+        environmentType: 'attached',
+      },
+    };
+
+    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(attachedAgent) });
+    await flushAsync();
+
+    expect(fetchMock).not.toHaveBeenCalled();
     await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(false);
   });
 

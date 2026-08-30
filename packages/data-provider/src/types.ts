@@ -551,6 +551,13 @@ export type TConfig = {
   capabilities?: string[];
   statefulCodeSessions?: {
     allowedEnvironments: StatefulCodeEnvironment[];
+    environments?: Array<{
+      id: string;
+      name: string;
+      type: 'managed' | 'attached';
+      baseURL: string;
+      default?: boolean;
+    }>;
   };
   /** Effective subagents-per-agent cap served from `endpoints.agents.maxSubagents`. */
   maxSubagents?: number;
