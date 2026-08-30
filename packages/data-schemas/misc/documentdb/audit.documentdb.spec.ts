@@ -146,16 +146,16 @@ describeLive('Amazon DocumentDB - 2026-08-30 audit surface', () => {
 
   describe('raw construct probes (isolates which primitive the engine refuses)', () => {
     it('probes the pipeline-update form', async () => {
-      await probe('pipeline-form findOneAndUpdate', () =>
+      const verdict = await probe('pipeline-form findOneAndUpdate', () =>
         getDb()
           .collection(probeCollection)
           .findOneAndUpdate({ probe: 1 }, [{ $set: { touched: true } }]),
       );
-      expect(verdicts['pipeline-form findOneAndUpdate']).toBeDefined();
+      expect(verdict).toBeTruthy();
     });
 
     it('probes $$REMOVE, documented unsupported on every engine', async () => {
-      await probe('$$REMOVE in $project', () =>
+      const verdict = await probe('$$REMOVE in $project', () =>
         getDb()
           .collection(probeCollection)
           .aggregate([
@@ -163,17 +163,17 @@ describeLive('Amazon DocumentDB - 2026-08-30 audit surface', () => {
           ])
           .toArray(),
       );
-      expect(verdicts['$$REMOVE in $project']).toBeDefined();
+      expect(verdict).toBeTruthy();
     });
 
     it('probes $facet, documented unsupported on every engine', async () => {
-      await probe('$facet stage', () =>
+      const verdict = await probe('$facet stage', () =>
         getDb()
           .collection(probeCollection)
           .aggregate([{ $facet: { rows: [{ $project: { label: 1 } }] } }])
           .toArray(),
       );
-      expect(verdicts['$facet stage']).toBeDefined();
+      expect(verdict).toBeTruthy();
     });
 
     it('probes the operators the subagent projections rely on', async () => {
@@ -246,7 +246,16 @@ describeLive('Amazon DocumentDB - 2026-08-30 audit surface', () => {
           ])
           .toArray(),
       );
-      expect(verdicts['$regexMatch']).toBeDefined();
+      for (const label of [
+        '$regexMatch',
+        '$switch',
+        '$let',
+        '$convert',
+        '$strLenBytes + $substrCP',
+        '$mergeObjects + $map',
+      ]) {
+        expect(verdicts[label]).toBeTruthy();
+      }
     });
 
     it('probes the classic-operator replacements the fix would use', async () => {

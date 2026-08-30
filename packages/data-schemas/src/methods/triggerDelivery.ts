@@ -37,6 +37,9 @@ const MAX_BATCH_BYTES = 512 * 1024;
 /** Bounds the claim's compare-and-swap retries. Each lost round means another
  * worker claimed the row this one read, so the queue is making progress. */
 export const CLAIM_CAS_MAX_ATTEMPTS = 16;
+/** Candidates fetched per claim read; losing claimers advance through the
+ * batch instead of re-reading the same head-of-queue row. */
+const CLAIM_CANDIDATE_BATCH = 8;
 /** Capability work is inert to legacy claimers while preserving their lane
  * behavior: publishing is `staging`; queued work is `leased` without a lease
  * owner/deadline; execution adds a private lease; dead work is terminal. */
@@ -86,6 +89,13 @@ export function recordAgentEventActorReceiptMetric(metric: AgentEventActorReceip
     observeAgentEventActorReceipt(metric);
   } catch (error) {
     logger.warn('[trigger-delivery] Event actor receipt metric observer failed', error);
+  }
+}
+
+export class AgentTriggerClaimContentionError extends Error {
+  constructor(attempts: number) {
+    super(`Agent trigger claim lost ${attempts} compare-and-swap rounds to concurrent workers`);
+    this.name = 'AgentTriggerClaimContentionError';
   }
 }
 
@@ -1286,85 +1296,98 @@ export function createAgentTriggerDeliveryMethods(
     };
     /** The claim's written values depend on the row's own lifecycle, which a
      * classic update cannot branch on and Amazon DocumentDB will not accept as
-     * an aggregation pipeline. Read the globally oldest candidate under the
-     * same sort, then claim that exact `_id` and lifecycle state with a
-     * compare-and-swap. Ownership is still granted only by the fenced write, so
-     * concurrent workers cannot both win. An empty queue costs the one read it
-     * costs today; a successful claim costs one additional round trip. A lost
-     * CAS means another worker advanced the row, so retrying is bounded. */
-    for (let attempt = 0; attempt < CLAIM_CAS_MAX_ATTEMPTS; attempt += 1) {
-      const candidate = await Delivery()
-        .findOne(claimableFilter)
+     * an aggregation pipeline. Read the oldest claimable candidates under the
+     * same sort, then claim one by pinning its exact `_id` and lifecycle state
+     * with a compare-and-swap. Ownership is still granted only by the fenced
+     * write, so concurrent workers cannot both win. Reading a BATCH is what
+     * keeps concurrent claimers from convoying on one head-of-queue row: a
+     * worker that loses a candidate moves to the next from the same read
+     * instead of re-reading, so a fleet of claimers spreads across the batch
+     * while each still prefers the oldest work. An empty queue costs the one
+     * read it costs today; a successful claim costs one additional round trip. */
+    let casAttempts = 0;
+    while (casAttempts < CLAIM_CAS_MAX_ATTEMPTS) {
+      const candidates = await Delivery()
+        .find(claimableFilter)
         .read('primary')
         .sort({ claimAvailableAt: 1, availableAt: 1, createdAt: 1, _id: 1 })
+        .limit(CLAIM_CANDIDATE_BATCH)
         .select('_id status capabilityStatus availableAt')
-        .lean<Pick<
-          IAgentTriggerDelivery,
-          '_id' | 'status' | 'capabilityStatus' | 'availableAt'
-        > | null>();
-      if (candidate == null) {
+        .lean<
+          Array<Pick<IAgentTriggerDelivery, '_id' | 'status' | 'capabilityStatus' | 'availableAt'>>
+        >();
+      if (candidates.length === 0) {
         return null;
       }
-      const hasCapabilityLifecycle = candidate.capabilityStatus !== undefined;
-      const adoptsDeadCapability =
-        candidate.status === 'capability_pending' && candidate.capabilityStatus === 'dead';
-      const claimedStatus: IAgentTriggerDelivery['status'] =
-        !hasCapabilityLifecycle &&
-        (candidate.status === 'capability_pending' || candidate.status === 'capability_leased')
-          ? 'capability_leased'
-          : 'leased';
-      const claimed = await Delivery()
-        .findOneAndUpdate(
-          {
-            ...claimableFilter,
-            _id: candidate._id,
-            status: candidate.status,
-            capabilityStatus: hasCapabilityLifecycle
-              ? candidate.capabilityStatus
-              : { $exists: false },
-          },
-          {
-            $set: {
-              status: claimedStatus,
-              ...(adoptsDeadCapability ? { claimAvailableAt: candidate.availableAt } : {}),
-              ...(hasCapabilityLifecycle
-                ? {
-                    capabilityStatus: 'leased',
-                    capabilityLeaseBy: input.workerId,
-                    capabilityLeaseUntil: input.leaseUntil,
-                    capabilityClaimToken: input.claimToken,
-                  }
-                : {}),
-              leaseBy: hasCapabilityLifecycle ? LEGACY_CAPABILITY_SHIELD_OWNER : input.workerId,
-              leaseUntil: hasCapabilityLifecycle ? LEGACY_CAPABILITY_SHIELD_AT : input.leaseUntil,
-              claimToken: hasCapabilityLifecycle
-                ? LEGACY_CAPABILITY_SHIELD_OWNER
-                : input.claimToken,
-              updatedAt: input.now,
+      for (const candidate of candidates) {
+        if (casAttempts >= CLAIM_CAS_MAX_ATTEMPTS) {
+          break;
+        }
+        casAttempts += 1;
+        const hasCapabilityLifecycle = candidate.capabilityStatus !== undefined;
+        const adoptsDeadCapability =
+          candidate.status === 'capability_pending' && candidate.capabilityStatus === 'dead';
+        const claimedStatus: IAgentTriggerDelivery['status'] =
+          !hasCapabilityLifecycle &&
+          (candidate.status === 'capability_pending' || candidate.status === 'capability_leased')
+            ? 'capability_leased'
+            : 'leased';
+        const claimed = await Delivery()
+          .findOneAndUpdate(
+            {
+              ...claimableFilter,
+              _id: candidate._id,
+              status: candidate.status,
+              capabilityStatus: hasCapabilityLifecycle
+                ? candidate.capabilityStatus
+                : { $exists: false },
+              /** The adoption write copies the read-time `availableAt` into the
+               * ordering key, so the fence must pin it: a concurrent requeue
+               * that bumps it (without changing the pinned lifecycle pair)
+               * would otherwise get a stale ordering stamp. */
+              ...(adoptsDeadCapability ? { availableAt: candidate.availableAt } : {}),
             },
-            $unset: {
-              settledAt: 1,
-              expiresAt: 1,
-              ...(hasCapabilityLifecycle
-                ? {}
-                : { capabilityLeaseBy: 1, capabilityLeaseUntil: 1, capabilityClaimToken: 1 }),
+            {
+              $set: {
+                status: claimedStatus,
+                ...(adoptsDeadCapability ? { claimAvailableAt: candidate.availableAt } : {}),
+                ...(hasCapabilityLifecycle
+                  ? {
+                      capabilityStatus: 'leased',
+                      capabilityLeaseBy: input.workerId,
+                      capabilityLeaseUntil: input.leaseUntil,
+                      capabilityClaimToken: input.claimToken,
+                    }
+                  : {}),
+                leaseBy: hasCapabilityLifecycle ? LEGACY_CAPABILITY_SHIELD_OWNER : input.workerId,
+                leaseUntil: hasCapabilityLifecycle ? LEGACY_CAPABILITY_SHIELD_AT : input.leaseUntil,
+                claimToken: hasCapabilityLifecycle
+                  ? LEGACY_CAPABILITY_SHIELD_OWNER
+                  : input.claimToken,
+                updatedAt: input.now,
+              },
+              $unset: {
+                settledAt: 1,
+                expiresAt: 1,
+                ...(hasCapabilityLifecycle
+                  ? {}
+                  : { capabilityLeaseBy: 1, capabilityLeaseUntil: 1, capabilityClaimToken: 1 }),
+              },
             },
-          },
-          { new: true, timestamps: false },
-        )
-        .lean<IAgentTriggerDelivery>();
-      if (claimed != null) {
-        return requireClaim(claimed);
+            { new: true, timestamps: false },
+          )
+          .lean<IAgentTriggerDelivery>();
+        if (claimed != null) {
+          return requireClaim(claimed);
+        }
       }
     }
-    /** Exhausting the budget means every round read a claimable row and lost it
-     * to another worker — heavy contention, not an empty queue. `null` is the
-     * engine's confirmed-empty signal and advances its idle backoff, which
-     * would leave queued work waiting; a throw lands on the engine's retryable
+    /** Exhausting the budget means every attempted row was taken by another
+     * worker — heavy contention, not an empty queue. `null` is the engine's
+     * confirmed-empty signal and advances its idle backoff, which would leave
+     * queued work waiting; the typed throw lands on the engine's retryable
      * claim-failure path, which holds the polling cadence instead. */
-    throw new Error(
-      `Agent trigger claim lost ${CLAIM_CAS_MAX_ATTEMPTS} compare-and-swap rounds to concurrent workers`,
-    );
+    throw new AgentTriggerClaimContentionError(CLAIM_CAS_MAX_ATTEMPTS);
   }
 
   async function findEarlierAgentTriggerDelivery(

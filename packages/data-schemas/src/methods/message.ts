@@ -448,30 +448,27 @@ export type SubagentThreadViewMessageRecord = Pick<
 /** Amazon DocumentDB does not support `$$REMOVE`, so the bounded thread-view
  * projections emit `null` where they mean "omit this key". This is the shape as
  * it leaves the aggregation, before those sentinels are pruned back to absent. */
-export type ProjectedSubagentThreadViewMessage = Omit<
-  SubagentThreadViewMessageRecord,
-  'subagentTask' | 'subagentTranscriptProjectionTruncated' | 'subagentTriggerProjection'
+/** Widens the given keys to admit the projection's `null` sentinel. */
+type WithNullSentinels<T, K extends keyof T> = Omit<T, K> & {
+  [P in K]?: NonNullable<T[P]> | null;
+};
+
+type ThreadViewRecord = SubagentThreadViewMessageRecord;
+export type ProjectedSubagentThreadViewMessage = WithNullSentinels<
+  Omit<ThreadViewRecord, 'subagentTask' | 'subagentTriggerProjection'>,
+  'subagentTranscriptProjectionTruncated'
 > & {
-  subagentTranscriptProjectionTruncated?: boolean | null;
-  subagentTriggerProjection?:
-    | (Omit<
-        NonNullable<SubagentThreadViewMessageRecord['subagentTriggerProjection']>,
-        'expectedActionToolName'
-      > & { expectedActionToolName?: string | null })
-    | null;
+  subagentTriggerProjection?: WithNullSentinels<
+    NonNullable<ThreadViewRecord['subagentTriggerProjection']>,
+    'expectedActionToolName'
+  > | null;
   subagentTask?:
-    | (Omit<NonNullable<SubagentThreadViewMessageRecord['subagentTask']>, 'controlReceipts'> & {
+    | (Omit<NonNullable<ThreadViewRecord['subagentTask']>, 'controlReceipts'> & {
         controlReceipts?: Array<
-          Omit<
-            NonNullable<
-              NonNullable<SubagentThreadViewMessageRecord['subagentTask']>['controlReceipts']
-            >[number],
+          WithNullSentinels<
+            NonNullable<NonNullable<ThreadViewRecord['subagentTask']>['controlReceipts']>[number],
             'controlId' | 'reason' | 'message'
-          > & {
-            controlId?: string | null;
-            reason?: string | null;
-            message?: string | null;
-          }
+          >
         >;
       })
     | null;
@@ -677,6 +674,21 @@ export interface MessageMethods {
     hydrate?: boolean,
   ): Promise<unknown>;
   deleteMessages(filter: FilterQuery<IMessage>): Promise<DeleteResult>;
+}
+
+/** The agent-ownership rule shared by background-tool settling and claiming:
+ * `agentId` on the part wins, then `tool_call.agentId`, and a part without
+ * agent identity belongs to any caller (single-agent runs). `field: null`
+ * matches both a missing field and a stored null. The settle and claim paths
+ * MUST apply the identical rule, or a settled part becomes unclaimable. */
+function agentOwnershipFilter(prefix: string, agentId: string): Record<string, unknown> {
+  return {
+    $or: [
+      { [`${prefix}agentId`]: agentId },
+      { [`${prefix}agentId`]: null, [`${prefix}tool_call.agentId`]: agentId },
+      { [`${prefix}agentId`]: null, [`${prefix}tool_call.agentId`]: null },
+    ],
+  };
 }
 
 export function createMessageMethods(mongoose: typeof import('mongoose')): MessageMethods {
@@ -1017,51 +1029,33 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       };
     };
   }): Promise<{ matched: boolean; unfinished: boolean }> {
-    const targetPartMatch = {
-      $and: [
-        { $eq: ['$$part.type', 'tool_call'] },
-        { $eq: ['$$part.tool_call.id', toolCallId] },
-        ...(stepId != null ? [{ $eq: ['$$part.tool_call.stepId', stepId] }] : []),
-        ...(agentId != null
-          ? [
-              {
-                $in: [
-                  {
-                    $ifNull: [{ $ifNull: ['$$part.agentId', '$$part.tool_call.agentId'] }, null],
-                  },
-                  [null, agentId],
-                ],
-              },
-            ]
-          : []),
-      ],
+    /** One source of truth for which content part this settle may touch:
+     * `prefix: ''` yields the `$elemMatch` document filter, `prefix: 'part.'`
+     * the arrayFilters element filter — the same predicate in one dialect,
+     * where the old code kept an aggregation `$expr` twin of it. `field: null`
+     * matches both a missing field and a stored null, mirroring the previous
+     * `$ifNull` chains. */
+    const partScope = (prefix: string): Record<string, unknown> => ({
+      [`${prefix}type`]: 'tool_call',
+      [`${prefix}tool_call.id`]: toolCallId,
+      ...(stepId != null ? { [`${prefix}tool_call.stepId`]: stepId } : {}),
+      ...(agentId != null ? agentOwnershipFilter(prefix, agentId) : {}),
+    });
+    const messageFilter = {
+      messageId,
+      user: userId,
+      conversationId,
+      content: { $elemMatch: partScope('') },
     };
+    const partIdentityFilter = partScope('part.');
     /** Amazon DocumentDB rejects aggregation-pipeline updates, so the part
      * patch addresses the matching tool-call parts with the filtered positional
      * operator and plain `$set`/`$unset`. Setting `backgroundTask` subfields
      * individually preserves an existing `resultClaim` without the per-part
      * branching the old pipeline needed, and clearing `completionWakeup` keeps
      * the old whole-object replacement's disarm semantics. */
-    const partIdentityFilter: Record<string, unknown> = {
-      'part.type': 'tool_call',
-      'part.tool_call.id': toolCallId,
-      ...(stepId != null ? { 'part.tool_call.stepId': stepId } : {}),
-      ...(agentId != null
-        ? {
-            /** `part.agentId` wins, then `tool_call.agentId`; a part without
-             * agent identity stays patchable by any caller (single-agent runs).
-             * `field: null` matches both a missing field and a stored null,
-             * mirroring the `$ifNull` chain in `targetPartMatch`. */
-            $or: [
-              { 'part.agentId': agentId },
-              { 'part.agentId': null, 'part.tool_call.agentId': agentId },
-              { 'part.agentId': null, 'part.tool_call.agentId': null },
-            ],
-          }
-        : {}),
-    };
-    const partPatch: Record<string, unknown> = {};
-    const partClears: Record<string, 1> = {};
+    const partPatch: Record<string, string | number | boolean | Date> = {};
+    let disarmWakeup = false;
     if (output !== undefined || backgroundTask != null) {
       if (output !== undefined) {
         partPatch['content.$[part].tool_call.output'] = output;
@@ -1078,95 +1072,38 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         if (backgroundTask.completionWakeup === true) {
           partPatch['content.$[part].tool_call.backgroundTask.completionWakeup'] = true;
         } else {
-          partClears['content.$[part].tool_call.backgroundTask.completionWakeup'] = 1;
+          disarmWakeup = true;
         }
       }
     }
     const mergingAttachments = attachments !== undefined && attachments.length > 0;
-    /** Dedupe key mirrors the resume merge: `file_id ?? filepath`, so
-     * download-fallback attachments (no `file_id`, only a filepath) stay
-     * idempotent across re-applications instead of duplicating per poll. */
-    const attachmentKeys = mergingAttachments
-      ? attachments
-          .map((attachment) => {
-            const { file_id, filepath } = attachment as { file_id?: unknown; filepath?: unknown };
-            return typeof file_id === 'string' ? file_id : filepath;
-          })
-          .filter((key): key is string => typeof key === 'string')
-      : [];
     if (Object.keys(partPatch).length === 0 && !mergingAttachments) {
       return { matched: false, unfinished: false };
     }
-    const messageFilter = {
-      messageId,
-      user: userId,
-      conversationId,
-      $expr: {
-        $anyElementTrue: {
-          $map: {
-            input: { $ifNull: ['$content', []] },
-            as: 'part',
-            in: targetPartMatch,
-          },
-        },
-      },
+    const settleUpdate = {
+      ...(Object.keys(partPatch).length > 0 ? { $set: partPatch } : {}),
+      ...(disarmWakeup
+        ? { $unset: { 'content.$[part].tool_call.backgroundTask.completionWakeup': 1 } }
+        : {}),
+    };
+    const settleOptions = {
+      new: true,
+      projection: { unfinished: 1 },
+      ...(Object.keys(partPatch).length > 0 || disarmWakeup
+        ? { arrayFilters: [partIdentityFilter] }
+        : {}),
     };
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const result = await Message.findOneAndUpdate(
-        messageFilter,
-        {
-          ...(Object.keys(partPatch).length > 0 ? { $set: partPatch } : {}),
-          ...(Object.keys(partClears).length > 0 ? { $unset: partClears } : {}),
-          ...(mergingAttachments
-            ? {
-                /** Replace only THIS tool call's prior entries: sibling calls
-                 * can legitimately share a `file_id` (the filename claim is
-                 * per-conversation), and the client anchors attachments to
-                 * cards by `toolCallId`. Provider tool-call ids repeat across
-                 * agents in handoff messages, so a sibling agent's attachment
-                 * under the same id/key must survive (missing agent identity =
-                 * legacy wildcard). */
-                $pull: {
-                  attachments: {
-                    $and: [
-                      {
-                        $or: [
-                          { file_id: { $in: attachmentKeys } },
-                          { file_id: null, filepath: { $in: attachmentKeys } },
-                        ],
-                      },
-                      { toolCallId },
-                      ...(agentId != null ? [{ agentId: { $in: [null, agentId] } }] : []),
-                      ...(stepId != null ? [{ stepId: { $in: [null, stepId] } }] : []),
-                    ],
-                  },
-                },
-              }
-            : {}),
-        },
-        {
-          new: true,
-          projection: { unfinished: 1 },
-          ...(Object.keys(partPatch).length > 0 || Object.keys(partClears).length > 0
-            ? { arrayFilters: [partIdentityFilter] }
-            : {}),
-        },
-      ).lean<{ unfinished?: boolean } | null>();
-      if (result == null) {
-        return { matched: false, unfinished: false };
-      }
-      /** The pipeline form removed and appended in one write; classic `$pull`
-       * and `$push` conflict on the same field, so the append is a second
-       * atomic write. A retry after a failure between them converges: the
-       * patch and pull are idempotent and the push re-adds what the pull
-       * removed. Claim fencing keeps one settler per task. */
-      if (mergingAttachments) {
-        await Message.updateOne(messageFilter, { $push: { attachments: { $each: attachments } } });
-      }
-      /** A supplied claim stamps only parts that carry none, matching the old
-       * pipeline's preference for an existing claim; the common settle path
-       * never pays this round trip. */
+      /** A supplied claim is stamped BEFORE the settle write, on parts that
+       * carry none (`resultClaim: null` also admits a stored null, as the old
+       * `$ifNull` did). Ordering is what keeps the split safe: until the settle
+       * write lands, the part is not terminal, so a concurrent wakeup or manual
+       * poll sees `not_ready` and stands down; the old single pipeline wrote
+       * claim and receipt atomically, and a claim-after-settle order would
+       * instead expose a claimable terminal part that lets a second consumer
+       * deliver the same result. A crash between the writes is healed by the
+       * settle retry, whose claim write no-ops against its own stamp. */
       if (backgroundTask?.resultClaim != null) {
         await Message.updateOne(
           messageFilter,
@@ -1177,15 +1114,91 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           },
           {
             arrayFilters: [
-              {
-                ...partIdentityFilter,
-                'part.tool_call.backgroundTask.resultClaim': { $exists: false },
-              },
+              { ...partIdentityFilter, 'part.tool_call.backgroundTask.resultClaim': null },
             ],
           },
         );
       }
-      return { matched: true, unfinished: result.unfinished === true };
+      if (!mergingAttachments) {
+        const result = await Message.findOneAndUpdate(
+          messageFilter,
+          settleUpdate,
+          settleOptions,
+        ).lean<{ unfinished?: boolean } | null>();
+        return { matched: result != null, unfinished: result?.unfinished === true };
+      }
+      /** Dedupe key mirrors the resume merge: `file_id ?? filepath`, so
+       * download-fallback attachments (no `file_id`, only a filepath) stay
+       * idempotent across re-applications instead of duplicating per poll.
+       * Replace only THIS tool call's prior entries: sibling calls can
+       * legitimately share a `file_id` (the filename claim is per-conversation),
+       * and the client anchors attachments to cards by `toolCallId`. Provider
+       * tool-call ids repeat across agents in handoff messages, so a sibling
+       * agent's attachment under the same id/key must survive (missing agent
+       * identity = legacy wildcard). */
+      const attachmentKeys = new Set(
+        attachments
+          .map((attachment) => {
+            const { file_id, filepath } = attachment as { file_id?: unknown; filepath?: unknown };
+            return typeof file_id === 'string' ? file_id : filepath;
+          })
+          .filter((key): key is string => typeof key === 'string'),
+      );
+      const replacesEntry = (existing: unknown): boolean => {
+        if (existing == null || typeof existing !== 'object') return false;
+        const entry = existing as {
+          file_id?: unknown;
+          filepath?: unknown;
+          toolCallId?: unknown;
+          agentId?: unknown;
+          stepId?: unknown;
+        };
+        const key = entry.file_id ?? entry.filepath;
+        if (typeof key !== 'string' || !attachmentKeys.has(key)) return false;
+        if (entry.toolCallId !== toolCallId) return false;
+        const entryAgent = entry.agentId ?? null;
+        if (agentId != null && entryAgent !== null && entryAgent !== agentId) return false;
+        const entryStep = entry.stepId ?? null;
+        if (stepId != null && entryStep !== null && entryStep !== stepId) return false;
+        return true;
+      };
+      /** The old pipeline replaced-and-appended `attachments` in one atomic
+       * write; classic `$pull` and `$push` conflict on one field and splitting
+       * them opens a window where a crash strips attachments and concurrent
+       * re-applications duplicate them. Instead: read the array, merge it here
+       * with the exact semantics the old `$filter`/`$concatArrays` had, and
+       * write everything back in ONE update fenced on the array being unchanged
+       * — the same guarded full-array compare-and-swap this file already uses
+       * for `subagentTask.controlReceipts`. A lost fence means a concurrent
+       * writer advanced the array; re-reading converges to exactly one copy. */
+      for (let attempt = 0; attempt < ATTACHMENT_MERGE_CAS_ATTEMPTS; attempt += 1) {
+        const row = await Message.findOne(messageFilter)
+          .select({ _id: 1, attachments: 1 })
+          .lean<{ _id: Types.ObjectId; attachments?: unknown[] } | null>();
+        if (row == null) {
+          return { matched: false, unfinished: false };
+        }
+        const prior = Array.isArray(row.attachments) ? row.attachments : [];
+        const merged = [...prior.filter((entry) => !replacesEntry(entry)), ...attachments];
+        const result = await Message.findOneAndUpdate(
+          {
+            ...messageFilter,
+            _id: row._id,
+            attachments: row.attachments == null ? null : row.attachments,
+          },
+          {
+            ...settleUpdate,
+            $set: { ...partPatch, attachments: merged },
+          },
+          settleOptions,
+        ).lean<{ unfinished?: boolean } | null>();
+        if (result != null) {
+          return { matched: true, unfinished: result.unfinished === true };
+        }
+      }
+      throw new Error(
+        `Attachment merge for tool call ${toolCallId} lost ${ATTACHMENT_MERGE_CAS_ATTEMPTS} compare-and-swap rounds`,
+      );
     } catch (err) {
       logger.error('Error updating tool call result:', err);
       throw err;
@@ -1193,6 +1206,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }
 
   const MAX_BACKGROUND_TOOL_RESULT_BATCH = 8;
+  /** Bounds the attachments-merge fence retries. Each lost round means a
+   * concurrent writer changed the array, so re-reading converges. */
+  const ATTACHMENT_MERGE_CAS_ATTEMPTS = 8;
 
   function readBackgroundToolResultClaim(
     row: Pick<IMessage, 'content'>,
@@ -1462,19 +1478,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                   },
                 ],
               },
-              ...(agentId == null
-                ? []
-                : [
-                    {
-                      /** `part.agentId` wins, then `tool_call.agentId`; an
-                       * absent effective owner stays claimable by anyone. */
-                      $or: [
-                        { 'part.agentId': agentId },
-                        { 'part.agentId': null, 'part.tool_call.agentId': agentId },
-                        { 'part.agentId': null, 'part.tool_call.agentId': null },
-                      ],
-                    },
-                  ]),
+              ...(agentId == null ? [] : [agentOwnershipFilter('part.', agentId)]),
             ],
           },
         ],
@@ -1515,9 +1519,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     /** Drops the claim stamp from every content part this claimant owns. The
      * filtered positional operator addresses those parts by predicate in one
      * atomic write, so no read-modify-write and no rewrite of untouched parts;
-     * Amazon DocumentDB rejects the aggregation-pipeline form this replaces. */
+     * Amazon DocumentDB rejects the aggregation-pipeline form this replaces.
+     * The filter requires a `content` array because the filtered positional
+     * operator errors on a row without one, where the old pipeline's
+     * `$ifNull` no-op'd — a legacy row with no array simply has no claims. */
     const updated = await Message.findOneAndUpdate(
-      { user: userId, conversationId, messageId },
+      { user: userId, conversationId, messageId, content: { $type: 'array' } },
       { $unset: { 'content.$[part].tool_call.backgroundTask.resultClaim': 1 } },
       {
         new: true,
@@ -1534,7 +1541,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       },
     ).lean<IMessage | null>();
     if (updated == null) {
-      return false;
+      const arraylessRow = await Message.exists({
+        user: userId,
+        conversationId,
+        messageId,
+        content: { $not: { $type: 'array' } },
+      });
+      return arraylessRow != null;
     }
     const remaining = parseBackgroundToolResults(updated, { kind, claimId });
     return taskIds == null
@@ -2392,9 +2405,14 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           cond: { $ne: ['$$activity', null] },
         },
       };
-      type ActivitySourceProjection = Pick<
-        SubagentThreadViewMessageRecord,
-        | 'messageId'
+      type ActivitySourceProjection = WithNullSentinels<
+        Pick<
+          SubagentThreadViewMessageRecord,
+          | 'messageId'
+          | 'subagentTranscript'
+          | 'subagentActivityProjectionJson'
+          | 'subagentActivityProjectionTruncated'
+        >,
         | 'subagentTranscript'
         | 'subagentActivityProjectionJson'
         | 'subagentActivityProjectionTruncated'

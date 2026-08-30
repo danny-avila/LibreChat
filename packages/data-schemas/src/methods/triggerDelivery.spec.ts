@@ -13,6 +13,7 @@ import {
   createAgentTriggerDeliveryMethods,
   recordAgentEventActorReceiptMetric,
   setAgentEventActorReceiptMetricObserver,
+  AgentTriggerClaimContentionError,
   CLAIM_CAS_MAX_ATTEMPTS,
   type AgentTriggerDeliveryMethods,
 } from './triggerDelivery';
@@ -253,7 +254,7 @@ describe('agent trigger delivery methods', () => {
           now: START,
           leaseUntil: new Date(START.getTime() + 60_000),
         }),
-      ).rejects.toThrow(/compare-and-swap/);
+      ).rejects.toBeInstanceOf(AgentTriggerClaimContentionError);
       expect(casSpy).toHaveBeenCalledTimes(CLAIM_CAS_MAX_ATTEMPTS);
     } finally {
       casSpy.mockRestore();

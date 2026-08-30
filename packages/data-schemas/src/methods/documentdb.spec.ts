@@ -15,12 +15,20 @@ import ts from 'typescript';
  *
  * The scan walks the TypeScript AST rather than source text, so it also
  * catches a pipeline bound to a variable first, cast with `as`, or nested in a
- * `bulkWrite` operation's `update` property. If a construct here becomes
- * genuinely necessary, the fix is a compatible rewrite, not an exception list:
- * `misc/documentdb/audit.documentdb.spec.ts` re-adjudicates any of this
- * against a real cluster.
+ * `bulkWrite` operation's `update` property. It covers every backend workspace
+ * that talks to MongoDB — this package, `packages/api`, and `api` — because the
+ * regression class is repo-wide and new backend code lands in `packages/api`.
+ * If a construct here becomes genuinely necessary, the fix is a compatible
+ * rewrite, not an exception list: `misc/documentdb/audit.documentdb.spec.ts`
+ * re-adjudicates any of this against a real cluster.
  */
-const SOURCE_ROOT = path.join(__dirname, '..');
+const REPO_ROOT = path.join(__dirname, '../../../..');
+const SCAN_ROOTS = [
+  path.join(REPO_ROOT, 'packages/data-schemas/src'),
+  path.join(REPO_ROOT, 'packages/api/src'),
+  path.join(REPO_ROOT, 'api'),
+];
+const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'build', 'coverage', '.turbo']);
 
 /** Aggregation-pipeline updates: `Failed to parse update: field must be of BSON type object`. */
 const UPDATE_METHODS = new Set([
@@ -37,12 +45,15 @@ const FORBIDDEN_TOKENS = ['$$REMOVE', '$$CURRENT', '$facet', '$graphLookup', '$u
 
 function collectSourceFiles(directory: string, found: string[] = []): string[] {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isDirectory() && SKIPPED_DIRECTORIES.has(entry.name)) {
+      continue;
+    }
     const target = path.join(directory, entry.name);
     if (entry.isDirectory()) {
       collectSourceFiles(target, found);
       continue;
     }
-    if (/\.ts$/.test(entry.name) && !/\.(spec|test)\.ts$/.test(entry.name)) {
+    if (/\.(ts|js)$/.test(entry.name) && !/\.(spec|test)\.[tj]s$|\.d\.ts$/.test(entry.name)) {
       found.push(target);
     }
   }
@@ -113,8 +124,7 @@ function offenseAt(sourceFile: ts.SourceFile, node: ts.Node, label: string): str
 /** Reports every update argument that is an array — the pipeline-update form —
  * whether passed directly to an update method or carried inside a `bulkWrite`
  * operation's `update` property. */
-function findPipelineUpdates(fileName: string, source: string): string[] {
-  const sourceFile = parse(fileName, source);
+function findPipelineUpdates(sourceFile: ts.SourceFile): string[] {
   const arrayNames = collectArrayVariableNames(sourceFile);
   const offenses: string[] = [];
   const visit = (node: ts.Node): void => {
@@ -150,8 +160,7 @@ function findPipelineUpdates(fileName: string, source: string): string[] {
 
 /** Reports forbidden operator tokens in string literals and property names,
  * ignoring prose — the rewrites explain themselves by naming the construct. */
-function findForbiddenTokens(fileName: string, source: string): string[] {
-  const sourceFile = parse(fileName, source);
+function findForbiddenTokens(sourceFile: ts.SourceFile): string[] {
   const offenses: string[] = [];
   const visit = (node: ts.Node): void => {
     if (ts.isStringLiteralLike(node) || ts.isIdentifier(node)) {
@@ -168,24 +177,21 @@ function findForbiddenTokens(fileName: string, source: string): string[] {
 }
 
 describe('Amazon DocumentDB compatibility', () => {
-  const sourceFiles = collectSourceFiles(SOURCE_ROOT);
+  /** Each file is read and parsed once; both detectors walk the same tree. */
+  const parsedSources = SCAN_ROOTS.flatMap((root) => collectSourceFiles(root)).map((file) =>
+    parse(path.relative(REPO_ROOT, file), fs.readFileSync(file, 'utf8')),
+  );
 
-  it('scans the package sources', () => {
-    expect(sourceFiles.length).toBeGreaterThan(0);
+  it('scans the backend workspaces', () => {
+    expect(parsedSources.length).toBeGreaterThan(0);
   });
 
   it('uses no aggregation-pipeline updates', () => {
-    const offenses = sourceFiles.flatMap((file) =>
-      findPipelineUpdates(path.relative(SOURCE_ROOT, file), fs.readFileSync(file, 'utf8')),
-    );
-    expect(offenses).toEqual([]);
+    expect(parsedSources.flatMap(findPipelineUpdates)).toEqual([]);
   });
 
   it('uses no aggregation constructs the engine rejects', () => {
-    const offenses = sourceFiles.flatMap((file) =>
-      findForbiddenTokens(path.relative(SOURCE_ROOT, file), fs.readFileSync(file, 'utf8')),
-    );
-    expect(offenses).toEqual([]);
+    expect(parsedSources.flatMap(findForbiddenTokens)).toEqual([]);
   });
 
   /** A guard that cannot fail protects nothing, so every shape the detectors
@@ -212,7 +218,7 @@ describe('Amazon DocumentDB compatibility', () => {
         `const update = [{ $set: { a: 1 } }];\nawait Model.bulkWrite([{ updateMany: { filter, update } }]);`,
       ],
     ])('flags a pipeline update: %s', (_shape, source) => {
-      expect(findPipelineUpdates('fixture.ts', source)).not.toEqual([]);
+      expect(findPipelineUpdates(parse('fixture.ts', source))).not.toEqual([]);
     });
 
     it.each([
@@ -223,18 +229,18 @@ describe('Amazon DocumentDB compatibility', () => {
       ],
       ['unrelated array variable', `const stages = [{ $match: {} }];\nModel.aggregate(stages);`],
     ])('accepts a supported shape: %s', (_shape, source) => {
-      expect(findPipelineUpdates('fixture.ts', source)).toEqual([]);
+      expect(findPipelineUpdates(parse('fixture.ts', source))).toEqual([]);
     });
 
     it('flags forbidden operators in code but not in prose', () => {
       expect(
-        findForbiddenTokens('fixture.ts', `const projection = { x: '$$REMOVE' };`),
+        findForbiddenTokens(parse('fixture.ts', `const projection = { x: '$$REMOVE' };`)),
       ).not.toEqual([]);
       expect(
-        findForbiddenTokens('fixture.ts', `pipeline.push({ $facet: { rows: [] } });`),
+        findForbiddenTokens(parse('fixture.ts', `pipeline.push({ $facet: { rows: [] } });`)),
       ).not.toEqual([]);
       expect(
-        findForbiddenTokens('fixture.ts', `/** $$REMOVE and $facet are unsupported. */`),
+        findForbiddenTokens(parse('fixture.ts', `/** $$REMOVE and $facet are unsupported. */`)),
       ).toEqual([]);
     });
   });

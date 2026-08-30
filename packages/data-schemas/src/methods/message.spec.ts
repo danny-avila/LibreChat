@@ -2056,13 +2056,12 @@ describe('Message Operations', () => {
       const selectedPipeline = aggregateSpy.mock.calls[2][0] as unknown as Array<
         Record<string, unknown>
       >;
-      expect(selectedPipeline).not.toEqual(
-        expect.arrayContaining([expect.objectContaining({ $facet: expect.anything() })]),
-      );
+      for (const [pipeline] of aggregateSpy.mock.calls) {
+        expect(pipeline).not.toEqual(
+          expect.arrayContaining([expect.objectContaining({ $facet: expect.anything() })]),
+        );
+      }
       expect(messagesPipeline[2]).toEqual({ $limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT });
-      expect(messagesPipeline).not.toEqual(
-        expect.arrayContaining([expect.objectContaining({ $facet: expect.anything() })]),
-      );
       expect(recentSourcesPipeline[2]).toEqual({
         $limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT * 2,
       });
