@@ -137,11 +137,7 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
       const { config } = await cache.add('empty-arrays', { ...mockConfig1, args: [] });
 
       await expect(
-        cache.patch(
-          'empty-arrays',
-          { resolvedInstructions: 'patched' },
-          config.updatedAt,
-        ),
+        cache.patch('empty-arrays', { resolvedInstructions: 'patched' }, config.updatedAt),
       ).resolves.toBe(true);
 
       const result = await cache.get('empty-arrays');

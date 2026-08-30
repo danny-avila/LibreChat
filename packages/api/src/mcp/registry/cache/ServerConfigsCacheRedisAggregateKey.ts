@@ -2,8 +2,8 @@ import type Keyv from 'keyv';
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import { cacheConfig, evalKeyvRedisScript, keyvRedisClient, standardCache } from '~/cache';
-import { BaseRegistryCache } from './BaseRegistryCache';
 import { PRESERVE_EMPTY_ARRAYS_LUA } from './preserveEmptyArraysLua';
+import { BaseRegistryCache } from './BaseRegistryCache';
 
 /**
  * Redis-backed MCP server configs cache that stores all entries under a single aggregate key.

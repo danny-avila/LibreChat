@@ -11,8 +11,8 @@ import {
   RedisUseCases,
   standardCache,
 } from '~/cache';
-import { BaseRegistryCache } from './BaseRegistryCache';
 import { PRESERVE_EMPTY_ARRAYS_LUA } from './preserveEmptyArraysLua';
+import { BaseRegistryCache } from './BaseRegistryCache';
 
 /**
  * Redis-backed implementation of MCP server configurations cache for distributed deployments.
