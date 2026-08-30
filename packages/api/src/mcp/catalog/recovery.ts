@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { IUser } from '@librechat/data-schemas';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
@@ -94,6 +95,16 @@ async function discoverCandidate(
       result.tools == null ? null : deps.formatServerTools(serverName, result.tools),
     ];
   } catch (error) {
+    /** Discovery raises `InvalidRequest` precisely when configuration makes the attempt
+     *  impossible — domain policy, unresolved placeholders, missing runtime fields. That
+     *  failure recurs on every request until an admin changes configuration, so it is
+     *  expected state, logged at the same level as this file's other config-proven skips. */
+    if (error instanceof McpError && error.code === ErrorCode.InvalidRequest) {
+      logger.debug(
+        `[MCP catalog recovery] ${serverName} is not recoverable under current configuration: ${error.message}`,
+      );
+      return [serverName, null];
+    }
     logger.error(`[MCP catalog recovery] Failed to discover tools for ${serverName}:`, error);
     return [serverName, null];
   }
