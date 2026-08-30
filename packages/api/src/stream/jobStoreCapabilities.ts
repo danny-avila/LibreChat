@@ -22,6 +22,7 @@ export const JOB_STORE_V2_REQUIRED_METHODS = [
   'enqueueSteerWithReceipt',
   'getSteerReceipt',
   'restoreClaimedSteers',
+  'admitTerminalSteers',
   'peekClaimedSteers',
   'armSteer',
   'armSteerVersioned',

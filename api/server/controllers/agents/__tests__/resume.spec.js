@@ -132,6 +132,7 @@ jest.mock('@librechat/api', () => ({
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
   checkAndIncrementPendingRequest: (...args) => mockCheckAndIncrementPendingRequest(...args),
   isSteerPreemptSupported: jest.fn(() => true),
+  isSteerTerminalContinuationSupported: jest.fn(() => false),
   createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
     messageId,
     conversationId,

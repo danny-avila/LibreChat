@@ -254,6 +254,7 @@ jest.mock('@librechat/api', () => ({
   /** Recorded onto the job so the steer route can honour the OWNING replica's
    *  seal capability rather than its own probe. */
   isSteerPreemptSupported: jest.fn(() => true),
+  isSteerTerminalContinuationSupported: jest.fn(() => false),
   buildRecoveredSteerPayload: jest.fn((text, files) => {
     if (typeof text !== 'string' || (files != null && !Array.isArray(files))) {
       return null;
