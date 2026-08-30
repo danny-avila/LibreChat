@@ -556,8 +556,6 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       return false;
     }
 
-    reportSkippedUploads(selection.skipped, endpointFileConfig);
-
     /* Process files */
     const processedUploads: ProcessedUpload[] = [];
     for (const [fileIndex, originalFile] of acceptedFileList.entries()) {
@@ -753,7 +751,9 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     for (const { index } of batch.skipped) {
       discardProcessedUpload(processedUploads[index]);
     }
-    reportSkippedUploads(batch.skipped, endpointFileConfig);
+    /** Held until the batch is known to be uploading: a selection that is rejected in full reports
+     * itself through the batch-level errors alone, never alongside a partial-success notice. */
+    reportSkippedUploads([...selection.skipped, ...batch.skipped], endpointFileConfig);
 
     const filesWithProcessedUploads = new Map(existingFiles);
     for (const { extendedFile } of acceptedUploads) {

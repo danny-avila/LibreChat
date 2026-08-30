@@ -486,6 +486,52 @@ describe('useFileHandling', () => {
       }
     });
 
+    it('does not announce skipped files when the batch is rejected anyway', async () => {
+      jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileSizeLimit: 20, totalSizeLimit: 7 } },
+        });
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        await act(async () => {
+          await result.current.handleFiles([
+            makeSizedFile('attached.txt', 'text/plain', 1 * megabyte),
+          ]);
+          await Promise.resolve();
+        });
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+
+        mockLocalize.mockClear();
+        /** The duplicate drops out, but what is left still busts the total, so nothing uploads. */
+        await act(async () => {
+          await result.current.handleFiles([
+            makeSizedFile('attached.txt', 'text/plain', 1 * megabyte),
+            makeSizedFile('one.txt', 'text/plain', 4 * megabyte),
+            makeSizedFile('two.txt', 'text/plain', 4 * megabyte),
+          ]);
+          await Promise.resolve();
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+        expect(mockLocalize).not.toHaveBeenCalledWith(
+          'com_error_files_skipped_dupe',
+          expect.anything(),
+        );
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'Total file size limit exceeded: 7 MB',
+          status: 'error',
+          duration: 5000,
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('does not let an oversized file spend the last file limit slot', async () => {
       jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
       try {
