@@ -19,6 +19,7 @@ import type {
 import {
   AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
 } from '~/types/triggerDelivery';
 import { createIndexesWithRetry } from '~/utils/retry';
 import logger from '~/config/winston';
@@ -412,15 +413,25 @@ function toRecord(delivery: IAgentTriggerDelivery): AgentTriggerDeliveryRecord {
     ...(delivery.history != null && { history: delivery.history }),
     ...(delivery.settledAt != null && { settledAt: delivery.settledAt }),
     ...(delivery.expiresAt != null && { expiresAt: delivery.expiresAt }),
-    ...(delivery.requeueCount != null && { requeueCount: delivery.requeueCount }),
+    ...(delivery.requeueCount != null && {
+      requeueCount: delivery.requeueCount,
+    }),
     ...(delivery.updatedAt != null && { updatedAt: delivery.updatedAt }),
-    ...(delivery.envelopeBytes != null && { envelopeBytes: delivery.envelopeBytes }),
+    ...(delivery.envelopeBytes != null && {
+      envelopeBytes: delivery.envelopeBytes,
+    }),
     ...(delivery.coalesceKey != null && { coalesceKey: delivery.coalesceKey }),
-    ...(delivery.coalesceFrom != null && { coalesceFrom: delivery.coalesceFrom }),
-    ...(delivery.coalesceUntil != null && { coalesceUntil: delivery.coalesceUntil }),
+    ...(delivery.coalesceFrom != null && {
+      coalesceFrom: delivery.coalesceFrom,
+    }),
+    ...(delivery.coalesceUntil != null && {
+      coalesceUntil: delivery.coalesceUntil,
+    }),
     ...(delivery.batchSize != null && { batchSize: delivery.batchSize }),
     ...(delivery.batchBytes != null && { batchBytes: delivery.batchBytes }),
-    ...(delivery.batchMemberIds != null && { batchMemberIds: delivery.batchMemberIds }),
+    ...(delivery.batchMemberIds != null && {
+      batchMemberIds: delivery.batchMemberIds,
+    }),
     ...(delivery.batchRootId != null && { batchRootId: delivery.batchRootId }),
     ...(delivery.batchMembersSettledAt != null && {
       batchMembersSettledAt: delivery.batchMembersSettledAt,
@@ -429,7 +440,9 @@ function toRecord(delivery: IAgentTriggerDelivery): AgentTriggerDeliveryRecord {
       awaitTerminalHandling: delivery.awaitTerminalHandling,
     }),
     ...(delivery.handling != null && { handling: delivery.handling }),
-    ...(delivery.actorReceipt != null && { actorReceipt: delivery.actorReceipt }),
+    ...(delivery.actorReceipt != null && {
+      actorReceipt: delivery.actorReceipt,
+    }),
   };
 }
 
@@ -490,7 +503,11 @@ export function createAgentTriggerDeliveryMethods(
     const released = await LaneSequence().updateOne(publisherFence, {
       $inc: { value: -1 },
       $set: { cleanupRequestedAt: new Date() },
-      $unset: { publisherDeliveryId: 1, publisherRequeueCount: 1, publisherStartedAt: 1 },
+      $unset: {
+        publisherDeliveryId: 1,
+        publisherRequeueCount: 1,
+        publisherStartedAt: 1,
+      },
     });
     return released.modifiedCount === 1;
   }
@@ -524,7 +541,10 @@ export function createAgentTriggerDeliveryMethods(
         return false;
       }
     }
-    const publicationLane = { ...lane, publisherRequeueCount: publicationGeneration };
+    const publicationLane = {
+      ...lane,
+      publisherRequeueCount: publicationGeneration,
+    };
     let batchRoot: IAgentTriggerDelivery | null = null;
     if (
       staged?._id != null &&
@@ -713,7 +733,11 @@ export function createAgentTriggerDeliveryMethods(
     if (publicationCommitted) {
       const released = await LaneSequence().updateOne(publisherFence, {
         $set: { tailDeliveryId: publisherDeliveryId },
-        $unset: { publisherDeliveryId: 1, publisherRequeueCount: 1, publisherStartedAt: 1 },
+        $unset: {
+          publisherDeliveryId: 1,
+          publisherRequeueCount: 1,
+          publisherStartedAt: 1,
+        },
       });
       return published.modifiedCount === 1 || released.modifiedCount === 1;
     }
@@ -933,7 +957,8 @@ export function createAgentTriggerDeliveryMethods(
     if (
       input.requiredWorkerCapability != null &&
       input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 &&
-      input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1
+      input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1 &&
+      input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1
     ) {
       throw new TypeError('Agent trigger delivery requires an unsupported worker capability');
     }
@@ -1080,7 +1105,10 @@ export function createAgentTriggerDeliveryMethods(
             .lean<IAgentTriggerDelivery[]>()
         : [];
     const staged = [
-      ...legacyStaged.map((delivery) => ({ ...delivery, stagingRecoveryAt: legacyCursor })),
+      ...legacyStaged.map((delivery) => ({
+        ...delivery,
+        stagingRecoveryAt: legacyCursor,
+      })),
       ...indexedStaged,
     ];
     const stagingRecoveryCursor = new Date();
@@ -1444,7 +1472,9 @@ export function createAgentTriggerDeliveryMethods(
         : earlier.availableAt,
       ...(leaseUntil != null && { leaseUntil }),
       ...(earlier.status === 'succeeded' &&
-        earlier.handling?.status === 'started' && { reason: 'active_handling' as const }),
+        earlier.handling?.status === 'started' && {
+          reason: 'active_handling' as const,
+        }),
     };
   }
 
@@ -1601,7 +1631,10 @@ export function createAgentTriggerDeliveryMethods(
             leaseUntil: 1,
             claimToken: 1,
             ...(input.status === 'succeeded'
-              ? { lastError: 1, ...(awaitsTerminalHandling && { expiresAt: 1 }) }
+              ? {
+                  lastError: 1,
+                  ...(awaitsTerminalHandling && { expiresAt: 1 }),
+                }
               : { result: 1, expiresAt: 1 }),
           },
           $push: {
@@ -1644,7 +1677,11 @@ export function createAgentTriggerDeliveryMethods(
       }
     }
     await Delivery().updateOne(
-      { _id: root._id, status: input.status, batchMembersSettledAt: { $exists: false } },
+      {
+        _id: root._id,
+        status: input.status,
+        batchMembersSettledAt: { $exists: false },
+      },
       { $set: { batchMembersSettledAt: input.settledAt } },
       { timestamps: false },
     );
@@ -1800,11 +1837,18 @@ export function createAgentTriggerDeliveryMethods(
     }
     const update = {
       $inc: { attempts: -1 },
-      $set: { availableAt: input.availableAt, claimAvailableAt: input.availableAt },
+      $set: {
+        availableAt: input.availableAt,
+        claimAvailableAt: input.availableAt,
+      },
       $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1 },
     };
     const shieldResult = await Delivery().updateOne(
-      { _id: input.id, ...shieldCapabilityFence(input), attempts: input.attempt },
+      {
+        _id: input.id,
+        ...shieldCapabilityFence(input),
+        attempts: input.attempt,
+      },
       {
         $inc: update.$inc,
         $set: {
@@ -1827,7 +1871,11 @@ export function createAgentTriggerDeliveryMethods(
       return true;
     }
     const capabilityResult = await Delivery().updateOne(
-      { _id: input.id, ...legacyCapabilityFence(input), attempts: input.attempt },
+      {
+        _id: input.id,
+        ...legacyCapabilityFence(input),
+        attempts: input.attempt,
+      },
       {
         ...update,
         $set: { ...update.$set, status: 'capability_pending' },
@@ -2071,7 +2119,9 @@ export function createAgentTriggerDeliveryMethods(
         requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
         'envelope.event.source.type': 'internal',
         'envelope.event.source.id': input.sourceId,
-        status: { $in: ['pending', 'leased', 'capability_pending', 'capability_leased'] },
+        status: {
+          $in: ['pending', 'leased', 'capability_pending', 'capability_leased'],
+        },
         capabilityStatus: { $ne: 'dead' },
         settledAt: { $exists: false },
       },
@@ -2878,8 +2928,14 @@ export function createAgentTriggerDeliveryMethods(
           actorReceipt: { $exists: false },
         },
         {
-          $set: { status: 'succeeded', settledAt: input.settledAt, actorReceipt },
-          $max: { expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS) },
+          $set: {
+            status: 'succeeded',
+            settledAt: input.settledAt,
+            actorReceipt,
+          },
+          $max: {
+            expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
+          },
           $unset: { lastError: 1 },
         },
         { new: true },
@@ -2959,11 +3015,17 @@ export function createAgentTriggerDeliveryMethods(
     now: Date,
   ): Promise<AgentEventActorReceiptStorageMetrics> {
     const [byResolution, expiryEligible, retryDeliveries, deadDeliveries] = await Promise.all([
-      Delivery().aggregate<{ _id: AgentEventActorReceipt['resolution']; count: number }>([
+      Delivery().aggregate<{
+        _id: AgentEventActorReceipt['resolution'];
+        count: number;
+      }>([
         { $match: { actorReceipt: { $exists: true } } },
         { $group: { _id: '$actorReceipt.resolution', count: { $sum: 1 } } },
       ]),
-      Delivery().countDocuments({ actorReceipt: { $exists: true }, expiresAt: { $lte: now } }),
+      Delivery().countDocuments({
+        actorReceipt: { $exists: true },
+        expiresAt: { $lte: now },
+      }),
       Delivery().countDocuments({
         $or: [
           { status: { $in: ['pending', 'capability_pending'] } },
@@ -2994,7 +3056,12 @@ export function createAgentTriggerDeliveryMethods(
         retainedByResolution[row._id] = row.count;
       }
     }
-    return { retainedByResolution, expiryEligible, retryDeliveries, deadDeliveries };
+    return {
+      retainedByResolution,
+      expiryEligible,
+      retryDeliveries,
+      deadDeliveries,
+    };
   }
 
   async function retryAgentTriggerDelivery(
@@ -3012,7 +3079,13 @@ export function createAgentTriggerDeliveryMethods(
         claimAvailableAt: input.availableAt,
         lastError: error,
       },
-      $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, settledAt: 1, expiresAt: 1 },
+      $unset: {
+        leaseBy: 1,
+        leaseUntil: 1,
+        claimToken: 1,
+        settledAt: 1,
+        expiresAt: 1,
+      },
       $push: {
         history: {
           $each: [
@@ -3454,10 +3527,16 @@ export function createAgentTriggerDeliveryMethods(
           continue;
         }
         await Delivery().updateMany(
-          { user: marker._id, actorActionAdmissionClosedAt: marker.fenceStartedAt },
+          {
+            user: marker._id,
+            actorActionAdmissionClosedAt: marker.fenceStartedAt,
+          },
           { $unset: { actorActionAdmissionClosedAt: 1 } },
         );
-        await UserPurge().deleteOne({ _id: marker._id, fenceStartedAt: marker.fenceStartedAt });
+        await UserPurge().deleteOne({
+          _id: marker._id,
+          fenceStartedAt: marker.fenceStartedAt,
+        });
         continue;
       }
       await Promise.all([

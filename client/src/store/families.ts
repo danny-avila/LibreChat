@@ -74,7 +74,11 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
     ({ onSet, node }) => {
       onSet(async (newValue, oldValue) => {
         const index = Number(node.key.split('__')[1]);
-        logger.log('conversation', 'Setting conversation:', { index, newValue, oldValue });
+        logger.log('conversation', 'Setting conversation:', {
+          index,
+          newValue,
+          oldValue,
+        });
         if (newValue?.assistant_id != null && newValue.assistant_id) {
           localStorage.setItem(
             `${LocalStorageKeys.ASST_ID_PREFIX}${index}${newValue.endpoint}`,
@@ -392,9 +396,22 @@ export type QueuedMessage = {
   id: string;
   text: string;
   createdAt: number;
-  /** Stable only for this queued recovery attempt and its transport retries.
-   * A failed generation re-converts the durable source with a fresh key. */
+  /** Server authority for an Agent queued turn. Absence means the row remains
+   * on the legacy mounted-client drain path (including a definite old-server
+   * fallback). `uncertain` is deliberately still server-owned: falling back
+   * after an ambiguous POST could submit the same words twice. */
+  server?: {
+    id?: string;
+    status: 'sending' | 'uncertain' | 'queued' | 'claimed';
+    revision?: number;
+  };
+  /** Stable identity for server enqueue/retry. Recovered steer rows also use
+   * it to dismiss their parked source; a later recovery attempt gets a fresh
+   * identity. */
   clientRequestId?: string;
+  /** Exact visible branch leaf captured when this turn entered the server
+   * queue. The server revalidates it before admitting the fresh successor. */
+  parentMessageId?: string;
   /** Correlation used only to durably dismiss/reclaim the parked source. */
   recoveryClientSteerId?: string;
   recoverySteerId?: string;

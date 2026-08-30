@@ -1,0 +1,117 @@
+import { Schema } from 'mongoose';
+import type { IAgentQueuedTurnDocument } from '~/types/queuedTurn';
+
+const fileRefSchema = new Schema(
+  {
+    file_id: { type: String, required: true, maxlength: 256 },
+    type: { type: String, maxlength: 256 },
+    filepath: { type: String, maxlength: 2048 },
+    filename: { type: String, maxlength: 1024 },
+    height: { type: Number, min: 0 },
+    width: { type: Number, min: 0 },
+    bytes: { type: Number, min: 0 },
+  },
+  { _id: false },
+);
+
+const failureSchema = new Schema(
+  {
+    code: { type: String, required: true, maxlength: 128 },
+    message: { type: String, required: true, maxlength: 2048 },
+  },
+  { _id: false },
+);
+
+const terminalReceiptSchema = new Schema(
+  {
+    outcome: {
+      type: String,
+      enum: ['admitted', 'cancelled', 'dead'],
+      required: true,
+    },
+    settledAt: { type: Date, required: true },
+    admissionId: { type: String, maxlength: 128 },
+    admissionMode: { type: String, enum: ['warm', 'ordinary'] },
+    generationId: { type: String, maxlength: 256 },
+    generationCreatedAt: { type: Number, min: 0 },
+    failure: { type: failureSchema },
+  },
+  { _id: false },
+);
+
+const queuedTurnSchema: Schema<IAgentQueuedTurnDocument> = new Schema(
+  {
+    user: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+    tenantId: { type: String, index: true },
+    conversationId: { type: String, required: true, maxlength: 256 },
+    agentId: { type: String, required: true, maxlength: 256 },
+    parentMessageId: { type: String, required: true, maxlength: 256 },
+    clientRequestId: { type: String, required: true, maxlength: 128 },
+    fingerprint: { type: String, required: true, minlength: 43, maxlength: 64 },
+    sequence: { type: Number, required: true, min: 1 },
+    status: {
+      type: String,
+      enum: ['queued', 'claimed', 'admitted', 'cancelled', 'dead'],
+      required: true,
+      default: 'queued',
+    },
+    priority: { type: Boolean, required: true, default: false },
+    text: { type: String, required: true, maxlength: 32_768 },
+    files: { type: [fileRefSchema], default: undefined },
+    quotes: { type: [String], default: undefined },
+    manualSkills: { type: [String], default: undefined },
+    expectedPredecessorCreatedAt: { type: Number, min: 0 },
+    attempts: { type: Number, required: true, default: 0, min: 0 },
+    availableAt: { type: Date, required: true },
+    deliveryKey: { type: String, maxlength: 128 },
+    scheduledAt: { type: Date },
+    claimId: { type: String, maxlength: 128 },
+    claimBy: { type: String, maxlength: 256 },
+    claimUntil: { type: Date },
+    terminalReceipt: { type: terminalReceiptSchema },
+  },
+  { timestamps: true },
+);
+
+queuedTurnSchema.index(
+  { tenantId: 1, user: 1, conversationId: 1, clientRequestId: 1 },
+  { unique: true },
+);
+queuedTurnSchema.index({ tenantId: 1, user: 1, conversationId: 1, sequence: 1 }, { unique: true });
+queuedTurnSchema.index(
+  {
+    tenantId: 1,
+    user: 1,
+    conversationId: 1,
+    status: 1,
+    priority: -1,
+    availableAt: 1,
+    sequence: 1,
+  },
+  { name: 'agent_queued_turn_claim' },
+);
+queuedTurnSchema.index(
+  {
+    tenantId: 1,
+    user: 1,
+    conversationId: 1,
+    status: 1,
+    priority: -1,
+    sequence: 1,
+  },
+  { name: 'agent_queued_turn_active' },
+);
+queuedTurnSchema.index({ tenantId: 1, user: 1, status: 1, claimUntil: 1 });
+queuedTurnSchema.index({
+  status: 1,
+  scheduledAt: 1,
+  availableAt: 1,
+  sequence: 1,
+});
+
+export default queuedTurnSchema;

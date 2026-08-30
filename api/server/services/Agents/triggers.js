@@ -6,8 +6,12 @@ const {
   SUBAGENT_COMPLETION_SOURCE,
   createBackgroundToolCompletionWakeupResolver,
   BACKGROUND_TOOL_COMPLETION_SOURCE,
+  createAgentQueuedTurnResolver,
+  createAgentQueuedTurnScheduler,
+  AGENT_QUEUED_TURN_SOURCE,
   GenerationJobManager,
 } = require('@librechat/api');
+const { runAsSystem } = require('@librechat/data-schemas');
 const methods = require('~/models');
 
 const subagentCompletionAdapter = createSubagentCompletionWakeupResolver({
@@ -22,6 +26,10 @@ const eventActorAdapter = createAgentEventContinueResolver({
   methods,
   getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
 });
+const queuedTurnAdapter = createAgentQueuedTurnResolver({
+  methods,
+  getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
+});
 
 const service = createAgentTriggerService({
   methods,
@@ -32,13 +40,34 @@ const service = createAgentTriggerService({
     internalSources: new Map([
       [SUBAGENT_COMPLETION_SOURCE, subagentCompletionAdapter],
       [BACKGROUND_TOOL_COMPLETION_SOURCE, backgroundToolCompletionAdapter],
+      [AGENT_QUEUED_TURN_SOURCE, queuedTurnAdapter],
     ]),
   }),
 });
 
+const queuedTurnScheduler = createAgentQueuedTurnScheduler({
+  methods,
+  enqueue: service.enqueue,
+});
+
+const initializeAgentTriggerService = async (options) => {
+  await service.initialize(options);
+  await queuedTurnScheduler.initialize();
+};
+
+const stopAgentTriggerService = async () => {
+  await queuedTurnScheduler.stop();
+  await service.stop();
+};
+
+const purgeAgentTriggerDeliveriesForUser = async (userId) => {
+  await service.purgeUser(userId);
+  await runAsSystem(() => methods.deleteAgentQueuedTurns({ user: userId }));
+};
+
 module.exports = {
-  initializeAgentTriggerService: service.initialize,
-  stopAgentTriggerService: service.stop,
+  initializeAgentTriggerService,
+  stopAgentTriggerService,
   dispatchAgentTrigger: service.dispatch,
   enqueueAgentTrigger: service.enqueue,
   getAgentTriggerDelivery: service.getDelivery,
@@ -50,5 +79,6 @@ module.exports = {
   drainAgentTriggerDeliveriesForUser: service.drainUser,
   prepareAgentTriggerUserPurge: service.prepareUserPurge,
   cancelAgentTriggerUserPurge: service.cancelUserPurge,
-  purgeAgentTriggerDeliveriesForUser: service.purgeUser,
+  purgeAgentTriggerDeliveriesForUser,
+  scheduleAgentQueuedTurn: queuedTurnScheduler.schedule,
 };

@@ -91,6 +91,9 @@ function QueuedRow({
   const fileCount = message.files?.length ?? 0;
   const quoteCount = message.quotes?.length ?? 0;
   const isRecovered = message.recoverySteerId != null;
+  const requiresDiscard = isRecovered || message.server != null;
+  const serverActionable =
+    message.server == null || (message.server.id != null && message.server.status === 'queued');
   const actionPendingRef = useRef(false);
   const [actionPending, setActionPending] = useState(false);
   /** A recovered item has a replayable parked source. Edit/remove must first
@@ -128,7 +131,8 @@ function QueuedRow({
   // generation. Re-steering it would leave or duplicate the parked source;
   // Edit/remove are safe because `afterDiscard` tombstones that source first.
   const canSteerNow = steering.duringRunActive && steering.canSteer && !isRecovered;
-  const showPrimary = canSteerNow || (!steering.duringRunActive && steering.canSendQueuedNow);
+  const showPrimary =
+    serverActionable && (canSteerNow || (!steering.duringRunActive && steering.canSendQueuedNow));
   /** `canSteer` is defined as false while paused on approval, but the
    *  escalation control must stay visible-and-disabled there — hiding it
    *  during the pause is exactly the discoverability gap this button fixes. */
@@ -140,10 +144,13 @@ function QueuedRow({
       key: 'edit',
       label: localize('com_ui_edit_message'),
       icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
-      disabled: actionPending,
+      disabled: actionPending || !serverActionable,
       onClick: () => {
-        const context = { quotes: message.quotes, manualSkills: message.manualSkills };
-        if (!isRecovered) {
+        const context = {
+          quotes: message.quotes,
+          manualSkills: message.manualSkills,
+        };
+        if (!requiresDiscard) {
           steering.removeQueued(message.id);
           onEditToComposer(message.text, message.files, {
             quotes: message.quotes,
@@ -159,7 +166,10 @@ function QueuedRow({
             conversationId,
           );
           if (!restored) {
-            showToast({ message: localize('com_ui_steer_edit_queued'), status: 'info' });
+            showToast({
+              message: localize('com_ui_steer_edit_queued'),
+              status: 'info',
+            });
             return false;
           }
           steering.removeQueued(message.id);
@@ -182,13 +192,15 @@ function QueuedRow({
       />
       <AttachmentCount
         count={fileCount}
-        label={localize('com_ui_queued_attachment_count', { 0: String(fileCount) })}
+        label={localize('com_ui_queued_attachment_count', {
+          0: String(fileCount),
+        })}
       />
       {showPrimary && (
         <button
           type="button"
           className={PRIMARY_BTN_CLASS}
-          disabled={actionPending}
+          disabled={actionPending || !serverActionable}
           onClick={() => steering.sendQueuedNow(message)}
         >
           {canSteerNow ? (
@@ -208,14 +220,16 @@ function QueuedRow({
         <EscalateNowButton
           surface="queued"
           messageText={message.text}
-          disabled={steering.pausedOnApproval || interruptPending || actionPending}
+          disabled={
+            steering.pausedOnApproval || interruptPending || actionPending || !serverActionable
+          }
           onClick={() => steering.sendQueuedNow(message, { preempt: true })}
         />
       )}
       <button
         type="button"
         aria-label={localize('com_ui_remove_queued')}
-        disabled={actionPending}
+        disabled={actionPending || !serverActionable}
         onClick={() => {
           const remove = () => {
             /* Same safety net as the in-flight cancel: once removal is safely
@@ -230,7 +244,7 @@ function QueuedRow({
             steering.removeQueued(message.id);
             return true;
           };
-          if (!isRecovered) {
+          if (!requiresDiscard) {
             remove();
             return;
           }
@@ -310,7 +324,9 @@ function FailedSteerRow({
       </span>
       <QuoteCount
         count={steer.quotes?.length ?? 0}
-        label={localize('com_ui_queued_quote_count', { 0: String(steer.quotes?.length ?? 0) })}
+        label={localize('com_ui_queued_quote_count', {
+          0: String(steer.quotes?.length ?? 0),
+        })}
       />
       <span className="shrink-0 text-xs text-red-500">
         {localize(

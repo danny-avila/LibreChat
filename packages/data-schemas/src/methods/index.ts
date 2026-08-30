@@ -124,6 +124,11 @@ import {
 } from './skill';
 import { createScheduleMethods, type ScheduleMethods } from './schedule';
 import {
+  createAgentQueuedTurnMethods,
+  AgentQueuedTurnConflictError,
+  type AgentQueuedTurnMethods,
+} from './queuedTurn';
+import {
   createAgentTriggerDeliveryMethods,
   AgentTriggerDeliveryConflictError,
   recordAgentEventActorReceiptMetric,
@@ -191,6 +196,7 @@ export {
 export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT, MAX_AUDIT_VERIFY_ROWS };
 export { MAX_TOOL_FAVORITES };
 export { AgentTriggerDeliveryConflictError };
+export { AgentQueuedTurnConflictError };
 
 export type AllMethods = UserMethods &
   SessionMethods &
@@ -230,6 +236,7 @@ export type AllMethods = UserMethods &
   SkillMethods &
   SkillSyncMethods &
   AgentTriggerDeliveryMethods &
+  AgentQueuedTurnMethods &
   ScheduleMethods &
   AgentMethods &
   ConfigMethods &
@@ -384,6 +391,7 @@ export function createMethods(
     ...skillMethods,
     ...createSkillSyncMethods(mongoose),
     ...createAgentTriggerDeliveryMethods(mongoose),
+    ...createAgentQueuedTurnMethods(mongoose),
     ...createScheduleMethods(mongoose),
     /* Tier 5 */
     ...agentMethods,
@@ -455,6 +463,7 @@ export type {
   UpsertSkillSyncCredentialInput,
   SkillSyncMethods,
   AgentTriggerDeliveryMethods,
+  AgentQueuedTurnMethods,
   AgentTriggerProducerLeaseStatus,
   AgentEventActorReceiptMetric,
   AgentEventActorReceiptStorageMetrics,

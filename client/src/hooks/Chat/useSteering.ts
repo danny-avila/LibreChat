@@ -2,16 +2,30 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { v4 } from 'uuid';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
-import { Constants, ContentTypes, isAssistantsEndpoint } from 'librechat-data-provider';
-import type { TMessage, TConversation, TMessageContentParts } from 'librechat-data-provider';
+import {
+  Constants,
+  ContentTypes,
+  isAgentsEndpoint,
+  isAssistantsEndpoint,
+} from 'librechat-data-provider';
+import type {
+  TAgentQueuedTurnFileRef,
+  TMessage,
+  TConversation,
+  TMessageContentParts,
+} from 'librechat-data-provider';
 import type { RunEnd, PendingSteer, QueuedMessage, QueuedMessageOrigin } from '~/store/families';
-import type { GenerationProtocolVersion } from '~/data-provider';
+import type { AgentQueuedTurnReceipt, GenerationProtocolVersion } from '~/data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
   useGetMessagesByConvoId,
   useCancelSteerMutation,
   useSteerMessageMutation,
   useMarkFilesUsageMutation,
+  useAgentQueuedTurns,
+  useCancelAgentQueuedTurnMutation,
+  useEnqueueAgentQueuedTurnMutation,
+  isDefiniteQueuedTurnsUnsupported,
   supportsGenerationProtocolV2,
 } from '~/data-provider';
 import {
@@ -123,6 +137,106 @@ function hasLiveToolApproval(messages: TMessage[] | undefined): boolean {
   return false;
 }
 
+interface LiveMessageState {
+  approval: boolean;
+  parentMessageId?: string;
+}
+
+function selectLiveMessageState(messages: TMessage[] | undefined): LiveMessageState {
+  let parentMessageId: string | undefined;
+  if (messages != null) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message.isCreatedByUser === false && typeof message.messageId === 'string') {
+        parentMessageId = message.messageId;
+        break;
+      }
+    }
+  }
+  return { approval: hasLiveToolApproval(messages), parentMessageId };
+}
+
+function compareQueuedMessages(a: QueuedMessage, b: QueuedMessage): number {
+  return Number(b.priority ?? false) - Number(a.priority ?? false) || a.createdAt - b.createdAt;
+}
+
+function queuedTurnCreatedAt(receipt: AgentQueuedTurnReceipt): number {
+  const createdAt = Date.parse(receipt.createdAt);
+  return Number.isFinite(createdAt) ? createdAt : 0;
+}
+
+function toQueuedTurnFileRefs(files: TMessage['files']): TAgentQueuedTurnFileRef[] | undefined {
+  const refs = (files ?? []).flatMap((file): TAgentQueuedTurnFileRef[] => {
+    if (typeof file.file_id !== 'string' || file.file_id.length === 0) {
+      return [];
+    }
+    return [
+      {
+        file_id: file.file_id,
+        ...(file.type != null && { type: file.type }),
+        ...(file.filepath != null && { filepath: file.filepath }),
+        ...(file.filename != null && { filename: file.filename }),
+        ...(file.height != null && { height: file.height }),
+        ...(file.width != null && { width: file.width }),
+        ...(file.bytes != null && { bytes: file.bytes }),
+      },
+    ];
+  });
+  return refs.length > 0 ? refs : undefined;
+}
+
+function reconcileServerQueuedTurns(
+  previous: QueuedMessage[],
+  receipts: AgentQueuedTurnReceipt[],
+): QueuedMessage[] {
+  const previousByClientRequestId = new Map(
+    previous.flatMap((item) =>
+      item.clientRequestId != null ? [[item.clientRequestId, item] as const] : [],
+    ),
+  );
+  const observedClientRequestIds = new Set(receipts.map((receipt) => receipt.clientRequestId));
+  const active = receipts.flatMap((receipt): QueuedMessage[] => {
+    if (receipt.status !== 'queued' && receipt.status !== 'claimed') {
+      return [];
+    }
+    const optimistic = previousByClientRequestId.get(receipt.clientRequestId);
+    return [
+      {
+        id: optimistic?.id ?? receipt.clientRequestId,
+        text: receipt.text,
+        createdAt: queuedTurnCreatedAt(receipt),
+        clientRequestId: receipt.clientRequestId,
+        parentMessageId: receipt.parentMessageId,
+        ...(receipt.expectedPredecessorCreatedAt != null && {
+          expectedPredecessorCreatedAt: receipt.expectedPredecessorCreatedAt,
+        }),
+        ...(receipt.files != null && receipt.files.length > 0 && { files: receipt.files }),
+        ...(receipt.quotes != null && receipt.quotes.length > 0 && { quotes: receipt.quotes }),
+        ...(receipt.manualSkills != null &&
+          receipt.manualSkills.length > 0 && {
+            manualSkills: receipt.manualSkills,
+          }),
+        ...(receipt.priority === true && { priority: true }),
+        server: {
+          id: receipt.queuedTurnId,
+          status: receipt.status,
+          revision: receipt.revision,
+        },
+      },
+    ];
+  });
+  const retained = previous.filter((item) => {
+    if (item.server == null) {
+      return true;
+    }
+    if (item.clientRequestId == null || observedClientRequestIds.has(item.clientRequestId)) {
+      return false;
+    }
+    return item.server.status === 'sending' || item.server.status === 'uncertain';
+  });
+  return [...retained, ...active].sort(compareQueuedMessages);
+}
+
 export interface UseSteeringParams {
   index: number;
   conversationId: string;
@@ -177,6 +291,8 @@ export default function useSteering({
   const { mutate: steerMessage } = useSteerMessageMutation();
   const { mutateAsync: cancelSteer } = useCancelSteerMutation();
   const { mutate: markFilesUsage } = useMarkFilesUsageMutation();
+  const { mutate: enqueueAgentQueuedTurn } = useEnqueueAgentQueuedTurnMutation();
+  const { mutateAsync: cancelAgentQueuedTurn } = useCancelAgentQueuedTurnMutation();
   const defaultAction = useRecoilValue<DuringRunAction>(store.duringRunDefaultAction);
   const setDefaultAction = useSetRecoilState(store.duringRunDefaultAction);
   const steerInterruptsByDefault = useRecoilValue(store.steerInterruptsByDefault);
@@ -185,15 +301,25 @@ export default function useSteering({
   const steerable = !isAssistantsEndpoint(endpoint);
   const hasRealConvoId =
     conversationId != null && conversationId !== '' && conversationId !== Constants.NEW_CONVO;
+  const serverQueueEnabled = isAgentsEndpoint(endpoint) && hasRealConvoId;
   /** v1 gates the during-run UI to the primary composer, like the HITL popover. */
   const enabled = steerable && index === 0;
   const queueKey = hasRealConvoId ? conversationId : Constants.NEW_CONVO;
+  const setQueuedMessages = useSetRecoilState(store.queuedMessagesByConvoId(queueKey));
+  const { data: serverQueuedTurns } = useAgentQueuedTurns(conversationId, serverQueueEnabled);
   const activeGenerationCreatedAt = useRecoilValue(
     store.activeGenerationCreatedAtByConvoId(queueKey),
   );
   const activeGenerationProtocolVersion = useRecoilValue(
     store.activeGenerationProtocolVersionByConvoId(queueKey),
   );
+
+  useEffect(() => {
+    if (!serverQueueEnabled || serverQueuedTurns == null) {
+      return;
+    }
+    setQueuedMessages((previous) => reconcileServerQueuedTurns(previous, serverQueuedTurns));
+  }, [serverQueueEnabled, serverQueuedTurns, setQueuedMessages]);
   /** The start POST installs this epoch before any live mutation may be sent.
    * `isSubmitting` flips earlier so the user can keep typing; during that
    * bounded interval submits degrade to the local queue and Stop/steer refuse. */
@@ -299,13 +425,13 @@ export default function useSteering({
     }
   }, [pendingSteers, queueKey]);
 
-  /** Boolean `select` so streaming deltas don't notify this subscription:
-   * structural sharing only re-renders the composer when the flag flips. */
-  const { data: liveToolApproval } = useGetMessagesByConvoId<boolean>(
+  /** The exact visible assistant tail is captured into a server queued turn,
+   * while the approval bit keeps the steering controls honest. */
+  const { data: liveMessageState } = useGetMessagesByConvoId<LiveMessageState>(
     hasRealConvoId ? conversationId : '',
     {
       enabled: hasRealConvoId,
-      select: hasLiveToolApproval,
+      select: selectLiveMessageState,
     },
   );
   /** Both approval cards and `ask_user_question` suspend the current
@@ -314,7 +440,7 @@ export default function useSteering({
    * to know a live generation exists so they remain discoverable and disabled
    * instead of looking as though the action disappeared. */
   const pausedOnApproval =
-    enabled && isSubmitting ? answerModeActive || (liveToolApproval ?? false) : false;
+    enabled && isSubmitting ? answerModeActive || (liveMessageState?.approval ?? false) : false;
 
   /** Whether a steer can reach the live run right now — independent of the
    *  user's default action, so the per-send menu can always override to
@@ -523,6 +649,22 @@ export default function useSteering({
     [markFilesUsage],
   );
 
+  const updateQueuedMessage = useRecoilCallback(
+    ({ set }) =>
+      (id: string, update: (item: QueuedMessage) => QueuedMessage | null) => {
+        set(store.queuedMessagesByConvoId(queueKey), (previous) =>
+          previous.flatMap((item) => {
+            if (item.id !== id) {
+              return [item];
+            }
+            const next = update(item);
+            return next == null ? [] : [next];
+          }),
+        );
+      },
+    [queueKey],
+  );
+
   const enqueue = useRecoilCallback(
     ({ set }) =>
       (
@@ -545,11 +687,19 @@ export default function useSteering({
         if (trimmed.length === 0) {
           return;
         }
-        const item = {
+        const parentMessageId = liveMessageState?.parentMessageId;
+        const serverOwned = serverQueueEnabled && parentMessageId != null;
+        const generatedClientRequestId = options?.clientRequestId == null;
+        const clientRequestId = options?.clientRequestId ?? (serverOwned ? v4() : undefined);
+        const item: QueuedMessage = {
           id: options?.id ?? v4(),
           text: trimmed,
           createdAt: options?.createdAt ?? Date.now(),
-          ...(options?.clientRequestId && { clientRequestId: options.clientRequestId }),
+          ...(clientRequestId != null && { clientRequestId }),
+          ...(serverOwned && {
+            parentMessageId,
+            server: { status: 'sending' },
+          }),
           ...((options?.expectedPredecessorCreatedAt ?? activeGenerationCreatedAt) != null && {
             expectedPredecessorCreatedAt:
               options?.expectedPredecessorCreatedAt ?? activeGenerationCreatedAt ?? undefined,
@@ -557,7 +707,9 @@ export default function useSteering({
           ...(options?.files && options.files.length > 0 && { files: options.files }),
           ...(options?.quotes && options.quotes.length > 0 && { quotes: options.quotes }),
           ...(options?.manualSkills &&
-            options.manualSkills.length > 0 && { manualSkills: options.manualSkills }),
+            options.manualSkills.length > 0 && {
+              manualSkills: options.manualSkills,
+            }),
           ...(options?.front && { priority: true }),
         };
         set(store.queuedMessagesByConvoId(queueKey), (prev) =>
@@ -570,8 +722,90 @@ export default function useSteering({
         if (options?.skipUsageMark !== true) {
           markQueuedFilesUsage(options?.files);
         }
+        if (!serverOwned || clientRequestId == null) {
+          return;
+        }
+        const serverFiles = toQueuedTurnFileRefs(item.files);
+        /** Commit the optimistic Recoil row before mutation callbacks can
+         * reconcile it. This also makes synchronous test/adaptor completions
+         * obey the same ordering as a real network response. */
+        queueMicrotask(() =>
+          enqueueAgentQueuedTurn(
+            {
+              conversationId,
+              clientRequestId,
+              parentMessageId,
+              text: item.text,
+              ...(serverFiles != null && { files: serverFiles }),
+              ...(item.quotes != null && item.quotes.length > 0 && { quotes: item.quotes }),
+              ...(item.manualSkills != null &&
+                item.manualSkills.length > 0 && {
+                  manualSkills: item.manualSkills,
+                }),
+              ...(item.priority === true && { priority: true }),
+              ...(item.expectedPredecessorCreatedAt != null && {
+                expectedPredecessorCreatedAt: item.expectedPredecessorCreatedAt,
+              }),
+            },
+            {
+              onSuccess: (receipt) => {
+                updateQueuedMessage(item.id, (current) => {
+                  if (
+                    receipt.status === 'admitted' ||
+                    receipt.status === 'cancelled' ||
+                    receipt.status === 'dead'
+                  ) {
+                    return null;
+                  }
+                  return {
+                    ...current,
+                    text: receipt.text,
+                    createdAt: queuedTurnCreatedAt(receipt),
+                    parentMessageId: receipt.parentMessageId,
+                    server: {
+                      id: receipt.queuedTurnId,
+                      status: receipt.status,
+                      revision: receipt.revision,
+                    },
+                  };
+                });
+              },
+              onError: (error) => {
+                updateQueuedMessage(item.id, (current) => {
+                  if (!isDefiniteQueuedTurnsUnsupported(error)) {
+                    return {
+                      ...current,
+                      server: { ...current.server, status: 'uncertain' },
+                    };
+                  }
+                  const {
+                    server: _server,
+                    parentMessageId: _parentMessageId,
+                    clientRequestId: fallbackClientRequestId,
+                    ...legacy
+                  } = current;
+                  return {
+                    ...legacy,
+                    ...(!generatedClientRequestId && fallbackClientRequestId != null
+                      ? { clientRequestId: fallbackClientRequestId }
+                      : {}),
+                  };
+                });
+              },
+            },
+          ),
+        );
       },
-    [queueKey, markQueuedFilesUsage, activeGenerationCreatedAt],
+    [
+      queueKey,
+      conversationId,
+      serverQueueEnabled,
+      liveMessageState?.parentMessageId,
+      markQueuedFilesUsage,
+      activeGenerationCreatedAt,
+      enqueueAgentQueuedTurn,
+      updateQueuedMessage,
+    ],
   );
 
   /** Consumes completed composer attachments into message file refs (clearing
@@ -678,7 +912,10 @@ export default function useSteering({
               return rest;
             }
             const { quotes: _originQuotes, ...originItem } = rest.queuedOrigin.item;
-            return { ...rest, queuedOrigin: { ...rest.queuedOrigin, item: originItem } };
+            return {
+              ...rest,
+              queuedOrigin: { ...rest.queuedOrigin, item: originItem },
+            };
           });
           return changed ? next : prev;
         });
@@ -705,6 +942,27 @@ export default function useSteering({
         set(store.queuedMessagesByConvoId(queueKey), (prev) =>
           prev.filter((item) => item.id !== id),
         );
+      },
+    [queueKey],
+  );
+
+  const downgradeServerQueuedTurn = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (id: string): boolean => {
+        const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
+        let found = false;
+        const next = queue.map((item) => {
+          if (item.id !== id) {
+            return item;
+          }
+          found = true;
+          const { server: _server, parentMessageId: _parentMessageId, ...local } = item;
+          return local;
+        });
+        if (found) {
+          set(store.queuedMessagesByConvoId(queueKey), next);
+        }
+        return found;
       },
     [queueKey],
   );
@@ -747,11 +1005,43 @@ export default function useSteering({
    * terminal source generation, not whichever run now occupies the chat. */
   const discardQueued = useCallback(
     async (item: QueuedMessage): Promise<boolean> => {
+      if (item.server != null) {
+        if (item.server.id == null || !hasRealConvoId) {
+          showToast({
+            message: localize('com_ui_steer_cancel_failed'),
+            status: 'error',
+          });
+          return false;
+        }
+        try {
+          const receipt = await cancelAgentQueuedTurn({
+            conversationId,
+            queuedTurnId: item.server.id,
+          });
+          if (receipt.status !== 'cancelled') {
+            showToast({
+              message: localize('com_ui_steer_cancel_failed'),
+              status: 'error',
+            });
+            return false;
+          }
+          return downgradeServerQueuedTurn(item.id);
+        } catch {
+          showToast({
+            message: localize('com_ui_steer_cancel_failed'),
+            status: 'error',
+          });
+          return false;
+        }
+      }
       if (item.recoverySteerId == null) {
         return true;
       }
       if (item.recoveryClientSteerId == null || !hasRealConvoId) {
-        showToast({ message: localize('com_ui_steer_cancel_failed'), status: 'error' });
+        showToast({
+          message: localize('com_ui_steer_cancel_failed'),
+          status: 'error',
+        });
         return false;
       }
       try {
@@ -761,16 +1051,31 @@ export default function useSteering({
           clientSteerId: item.recoveryClientSteerId,
         });
         if (removed !== true) {
-          showToast({ message: localize('com_ui_steer_cancel_failed'), status: 'error' });
+          showToast({
+            message: localize('com_ui_steer_cancel_failed'),
+            status: 'error',
+          });
           return false;
         }
         return downgradeQueuedRecovery(item.id);
       } catch {
-        showToast({ message: localize('com_ui_steer_cancel_failed'), status: 'error' });
+        showToast({
+          message: localize('com_ui_steer_cancel_failed'),
+          status: 'error',
+        });
         return false;
       }
     },
-    [cancelSteer, conversationId, downgradeQueuedRecovery, hasRealConvoId, localize, showToast],
+    [
+      cancelSteer,
+      cancelAgentQueuedTurn,
+      conversationId,
+      downgradeQueuedRecovery,
+      downgradeServerQueuedTurn,
+      hasRealConvoId,
+      localize,
+      showToast,
+    ],
   );
 
   /** Capture-then-remove, including the item's neighbours, so any refused send
@@ -967,8 +1272,12 @@ export default function useSteering({
           expectedPredecessorCreatedAt: targetGenerationCreatedAt,
           ...(files && { files }),
           ...carried,
-          ...(context?.clientRequestId && { clientRequestId: context.clientRequestId }),
-          ...(context?.recoverySteerId && { recoverySteerId: context.recoverySteerId }),
+          ...(context?.clientRequestId && {
+            clientRequestId: context.clientRequestId,
+          }),
+          ...(context?.recoverySteerId && {
+            recoverySteerId: context.recoverySteerId,
+          }),
         },
         beforeIds: [],
         afterIds: [],
@@ -1050,7 +1359,9 @@ export default function useSteering({
                         generationCreatedAt: targetGenerationCreatedAt,
                       }),
                       generationProtocolVersion: targetGenerationProtocolVersion,
-                      ...(opts?.queuedOrigin && { queuedOrigin: opts.queuedOrigin }),
+                      ...(opts?.queuedOrigin && {
+                        queuedOrigin: opts.queuedOrigin,
+                      }),
                       ...carried,
                     });
                   } else {
@@ -1080,7 +1391,9 @@ export default function useSteering({
                     generationCreatedAt: targetGenerationCreatedAt,
                   }),
                   generationProtocolVersion: targetGenerationProtocolVersion,
-                  ...(opts?.queuedOrigin && { queuedOrigin: opts.queuedOrigin }),
+                  ...(opts?.queuedOrigin && {
+                    queuedOrigin: opts.queuedOrigin,
+                  }),
                   ...carried,
                 } satisfies PendingSteer;
                 if (acknowledgeSteer(conversationId, localId, acknowledged)) {
@@ -1137,11 +1450,18 @@ export default function useSteering({
                     return;
                   }
                   restoreRejectedSteer();
-                  showToast({ message: localize('com_ui_steer_paused_queued'), status: 'info' });
+                  showToast({
+                    message: localize('com_ui_steer_paused_queued'),
+                    status: 'info',
+                  });
                   return;
                 }
                 const errorData = (
-                  error as { response?: { data?: { generationProtocolVersion?: unknown } } }
+                  error as {
+                    response?: {
+                      data?: { generationProtocolVersion?: unknown };
+                    };
+                  }
                 )?.response?.data;
                 if (
                   code === 'RUN_REPLACED' &&
@@ -1154,7 +1474,10 @@ export default function useSteering({
                    * drain regardless of this tab's local submission state. */
                   replaceSteerChip(conversationId, localId, null);
                   restoreRejectedSteer();
-                  showToast({ message: localize('com_ui_steer_paused_queued'), status: 'info' });
+                  showToast({
+                    message: localize('com_ui_steer_paused_queued'),
+                    status: 'info',
+                  });
                   return;
                 }
                 if (isDefiniteSteerRejection(error)) {
@@ -1173,7 +1496,9 @@ export default function useSteering({
                       generationCreatedAt: targetGenerationCreatedAt,
                     }),
                     generationProtocolVersion: targetGenerationProtocolVersion,
-                    ...(opts?.queuedOrigin && { queuedOrigin: opts.queuedOrigin }),
+                    ...(opts?.queuedOrigin && {
+                      queuedOrigin: opts.queuedOrigin,
+                    }),
                     ...carried,
                   });
                   return;
@@ -1190,7 +1515,9 @@ export default function useSteering({
                     generationCreatedAt: targetGenerationCreatedAt,
                   }),
                   generationProtocolVersion: targetGenerationProtocolVersion,
-                  ...(opts?.queuedOrigin && { queuedOrigin: opts.queuedOrigin }),
+                  ...(opts?.queuedOrigin && {
+                    queuedOrigin: opts.queuedOrigin,
+                  }),
                   ...carried,
                 });
               } finally {
@@ -1256,7 +1583,10 @@ export default function useSteering({
       if (trimmed.length === 0 || filesLoading) {
         return false;
       }
-      enqueue(trimmed, { files: takeComposerFiles(), ...takeComposerContext() });
+      enqueue(trimmed, {
+        files: takeComposerFiles(),
+        ...takeComposerContext(),
+      });
       takeComposerDraft();
       return true;
     },
@@ -1274,7 +1604,10 @@ export default function useSteering({
     ) => {
       /** A failed interrupt-steer must retry AS an interrupt — resubmitting it
        *  as an ordinary steer would silently let generation run on. */
-      submitSteer(text, steerFiles, context, { ...opts, clientSteerId: steerId });
+      submitSteer(text, steerFiles, context, {
+        ...opts,
+        clientSteerId: steerId,
+      });
     },
     [submitSteer],
   );
@@ -1356,7 +1689,7 @@ export default function useSteering({
    *  restore context so a degraded steer requeues/sends with them intact.
    *  `preempt` escalates the steer to interrupt at the next safe token
    *  boundary; it only means something on the live-run path. */
-  const sendQueuedNow = useCallback(
+  const sendLocalQueuedNow = useCallback(
     (item: QueuedMessage, opts?: { preempt?: boolean }) => {
       /** In answer mode (and any other submission-owned non-steerable state)
        * there is no immediate path. Refuse before touching queue state so a
@@ -1366,7 +1699,11 @@ export default function useSteering({
       }
       /** UI callers always find the item; a stale/direct caller has no original
        *  neighbours, so restoration falls back to the queue's priority split. */
-      const origin = takeQueued(item.id) ?? { item, beforeIds: [], afterIds: [] };
+      const origin = takeQueued(item.id) ?? {
+        item,
+        beforeIds: [],
+        afterIds: [],
+      };
       const taken = origin.item;
       if (duringRunActive && canSteer) {
         const consumed = submitSteer(
@@ -1432,6 +1769,30 @@ export default function useSteering({
     ],
   );
 
+  const queuedActionClaimsRef = useRef(new Set<string>());
+  const sendQueuedNow = useCallback(
+    (item: QueuedMessage, opts?: { preempt?: boolean }) => {
+      if (item.server == null) {
+        sendLocalQueuedNow(item, opts);
+        return;
+      }
+      if (queuedActionClaimsRef.current.has(item.id)) {
+        return;
+      }
+      queuedActionClaimsRef.current.add(item.id);
+      void discardQueued(item)
+        .then((discarded) => {
+          if (discarded) {
+            sendLocalQueuedNow(item, opts);
+          }
+        })
+        .finally(() => {
+          queuedActionClaimsRef.current.delete(item.id);
+        });
+    },
+    [discardQueued, sendLocalQueuedNow],
+  );
+
   /** Abort the current run and auto-send this text once the abort settles. */
   const interruptAndSend = useCallback(
     (text: string): boolean => {
@@ -1439,7 +1800,11 @@ export default function useSteering({
       if (trimmed.length === 0 || filesLoading || !canControlGeneration) {
         return false;
       }
-      enqueue(trimmed, { front: true, files: takeComposerFiles(), ...takeComposerContext() });
+      enqueue(trimmed, {
+        front: true,
+        files: takeComposerFiles(),
+        ...takeComposerContext(),
+      });
       takeComposerDraft();
       armDrainAfterAbort();
       stopGenerating();
