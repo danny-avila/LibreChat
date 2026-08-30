@@ -23,10 +23,12 @@ import { AgentTriggerExecutionError } from './triggers/host';
 
 export const AGENT_QUEUED_TURN_SOURCE = 'agent-queued-turn';
 const AGENT_QUEUED_TURN_EVENT = 'agent.queued-turn';
-const MESSAGE_SELECT = 'messageId parentMessageId isCreatedByUser createdAt';
+const MESSAGE_SELECT = 'messageId parentMessageId isCreatedByUser createdAt unfinished error';
 const CLAIM_LEASE_MS = 2 * 60 * 1000;
 const DEFAULT_RECOVERY_INTERVAL_MS = 30_000;
 const DEFAULT_RECOVERY_LIMIT = 100;
+const MAX_FAILURE_CODE_LENGTH = 128;
+const MAX_FAILURE_MESSAGE_LENGTH = 2048;
 /** PID is commonly identical across container replicas. Keep claim ownership
  * stable within this process while fencing every other process instance. */
 const PROCESS_CLAIM_OWNER = `agent-queued-turn:${process.pid}:${randomUUID()}`;
@@ -102,7 +104,7 @@ export function createAgentQueuedTurnDeadLetterSettlement({
       queuedTurnId,
       deliveryKey: getAgentTriggerIdempotencyKey(envelope),
       settledAt: new Date(now()),
-      failure: { code: failure.code, message: failure.message },
+      failure: normalizeFailure(failure.code, failure.message),
     });
     if (settled.outcome === 'conflict') {
       throw new Error('Queued turn delivery no longer owns its source row');
@@ -150,7 +152,7 @@ function timestamp(message: IMessage): number {
 
 /** Finds the current assistant leaf on the exact visible branch captured when
  * the turn was queued. Unrelated branch activity can never retarget the turn. */
-function latestAssistantDescendant(messages: IMessage[], anchorId: string): string | undefined {
+function latestAssistantDescendant(messages: IMessage[], anchorId: string): IMessage | undefined {
   const byId = new Map(messages.map((message) => [message.messageId, message]));
   if (!byId.has(anchorId)) {
     return;
@@ -179,7 +181,23 @@ function latestAssistantDescendant(messages: IMessage[], anchorId: string): stri
       const time = timestamp(left) - timestamp(right);
       return time === 0 ? left.messageId.localeCompare(right.messageId) : time;
     });
-  return descendants[descendants.length - 1]?.messageId;
+  return descendants[descendants.length - 1];
+}
+
+function boundedFailureValue(value: string, fallback: string, maxLength: number): string {
+  const normalized = value.trim();
+  return (normalized.length === 0 ? fallback : normalized).slice(0, maxLength);
+}
+
+function normalizeFailure(code: string, message: string): { code: string; message: string } {
+  return {
+    code: boundedFailureValue(code, 'DELIVERY_FAILED', MAX_FAILURE_CODE_LENGTH),
+    message: boundedFailureValue(
+      message,
+      'Queued turn delivery failed',
+      MAX_FAILURE_MESSAGE_LENGTH,
+    ),
+  };
 }
 
 function payloadQueuedTurnId(envelope: AgentContinueTriggerEnvelope): string | null | undefined {
@@ -230,7 +248,7 @@ function deadClaim(
     claimBy: claim.claimBy,
     disposition: 'dead',
     settledAt: new Date(),
-    failure: { code, message },
+    failure: normalizeFailure(code, message),
   });
 }
 
@@ -319,18 +337,6 @@ export function createAgentQueuedTurnResolver({
     }
 
     const claim = claimed.claim;
-    if (generation?.status === 'aborted' || generation?.status === 'error') {
-      await deadClaim(
-        methods,
-        envelope,
-        claim,
-        generation.status === 'aborted' ? 'PREDECESSOR_ABORTED' : 'PREDECESSOR_FAILED',
-        generation.status === 'aborted'
-          ? 'The preceding generation was aborted. Review this turn before sending it.'
-          : 'The preceding generation failed. Review this turn before sending it.',
-      );
-      return { status: 'settled' };
-    }
     let messages: IMessage[];
     try {
       messages = await methods.getMessages(
@@ -364,8 +370,8 @@ export function createAgentQueuedTurnResolver({
         },
       );
     }
-    const parentMessageId = latestAssistantDescendant(messages, claim.parentMessageId);
-    if (parentMessageId == null) {
+    const parentMessage = latestAssistantDescendant(messages, claim.parentMessageId);
+    if (parentMessage == null) {
       await deadClaim(
         methods,
         envelope,
@@ -378,6 +384,23 @@ export function createAgentQueuedTurnResolver({
         retryable: false,
         status: 404,
       });
+    }
+    const predecessorFailed = generation?.status === 'error' || parentMessage.error === true;
+    const predecessorAborted =
+      !predecessorFailed &&
+      (generation?.status === 'aborted' ||
+        (claim.priority !== true && parentMessage.unfinished === true));
+    if (predecessorAborted || predecessorFailed) {
+      await deadClaim(
+        methods,
+        envelope,
+        claim,
+        predecessorAborted ? 'PREDECESSOR_ABORTED' : 'PREDECESSOR_FAILED',
+        predecessorAborted
+          ? 'The preceding generation was aborted. Review this turn before sending it.'
+          : 'The preceding generation failed. Review this turn before sending it.',
+      );
+      return { status: 'settled' };
     }
 
     const effectivePredecessorCreatedAt =
@@ -394,7 +417,7 @@ export function createAgentQueuedTurnResolver({
     return {
       status: 'ready',
       input: claim.text,
-      parentMessageId,
+      parentMessageId: parentMessage.messageId,
       ...(effectivePredecessorCreatedAt != null && {
         expectedPredecessorCreatedAt: effectivePredecessorCreatedAt,
       }),
@@ -412,8 +435,8 @@ export function createAgentQueuedTurnResolver({
             methods,
             envelope,
             claim,
-            error.code ?? 'ADMISSION_REJECTED',
-            error.message,
+            error?.code ?? 'ADMISSION_REJECTED',
+            error?.message ?? 'Queued turn admission failed',
           );
           return;
         }
@@ -482,13 +505,30 @@ export function createAgentQueuedTurnScheduler({
   let recovery: Promise<number> | undefined;
 
   const schedule = async (turn: AgentQueuedTurnRecord): Promise<string> => {
-    const receipt = await enqueue(deliveryEnvelope(turn), {
+    const envelope = deliveryEnvelope(turn);
+    const deliveryKey = getAgentTriggerIdempotencyKey(envelope);
+    const reserved = await runAsSystem(() =>
+      methods.reserveAgentQueuedTurnDelivery({
+        user: turn.user,
+        ...(turn.tenantId != null && { tenantId: turn.tenantId }),
+        conversationId: turn.conversationId,
+        queuedTurnId: turn.queuedTurnId,
+        deliveryKey,
+      }),
+    );
+    if (reserved.outcome === 'conflict') {
+      throw new Error('The queued turn delivery identity could not be reserved');
+    }
+    const receipt = await enqueue(envelope, {
       /** Queue sequence in Mongo is the sole conversation-ordering authority.
        * A lane per durable row prevents a later published delivery from
        * blocking recovery of an earlier record-first outbox row. */
       orderingKey: `agent-queued-turn-delivery:${turn.queuedTurnId}`,
       requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
     });
+    if (receipt.deliveryKey !== deliveryKey) {
+      throw new Error('The queued turn delivery identity changed during publication');
+    }
     const marked = await runAsSystem(() =>
       methods.markQueuedTurnScheduled({
         user: turn.user,

@@ -2090,7 +2090,7 @@ describe('ResumableAgentController resume metadata', () => {
         conversationId: 'orig-stream',
         claimedAt: Date.now() - 60000,
         claimToken: 'existing-token',
-        startedAt: Date.now() - 59000,
+        startedAt: 1000,
       },
     });
     mockGenerationJobManager.getJob.mockResolvedValue(undefined);
@@ -2112,6 +2112,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(res.json).toHaveBeenCalledWith({
       streamId: 'orig-stream',
       conversationId: 'orig-stream',
+      generationCreatedAt: 1000,
       status: 'resumed',
       generationProtocolVersion: 1,
     });
@@ -2127,7 +2128,7 @@ describe('ResumableAgentController resume metadata', () => {
         conversationId: 'orig-stream',
         claimedAt: Date.now() - 60_000,
         claimToken: 'existing-token',
-        startedAt: Date.now() - 59_000,
+        startedAt: 2000,
         generationProtocolVersion: 2,
       },
     });
@@ -2150,6 +2151,7 @@ describe('ResumableAgentController resume metadata', () => {
 
     expect(res.json).toHaveBeenCalledWith({
       conversationId: 'orig-stream',
+      generationCreatedAt: 2000,
       status: 'settled',
       generationProtocolVersion: 2,
     });

@@ -2,7 +2,18 @@ import { memo, useMemo, useRef, useState, useCallback } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
-import { X, Zap, Send, Clock, Pencil, Trash2, Paperclip, RotateCcw, TextQuote } from 'lucide-react';
+import {
+  X,
+  Zap,
+  Send,
+  Clock,
+  Pencil,
+  Trash2,
+  Paperclip,
+  RotateCcw,
+  TextQuote,
+  TriangleAlert,
+} from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
@@ -91,6 +102,9 @@ function QueuedRow({
   const fileCount = message.files?.length ?? 0;
   const quoteCount = message.quotes?.length ?? 0;
   const isRecovered = message.recoverySteerId != null;
+  const isRejected = message.server?.status === 'rejected';
+  const isUnconfirmed =
+    message.server?.status === 'uncertain' && message.server.reconciliationExpired === true;
   const requiresDiscard = isRecovered || message.server?.id != null;
   const serverActionable =
     message.server == null ||
@@ -184,7 +198,11 @@ function QueuedRow({
 
   return (
     <div role="listitem" className={ROW_CLASS} data-testid="queued-message-row">
-      <Clock className="h-4 w-4 shrink-0 text-cyan-500" aria-hidden="true" />
+      {isRejected || isUnconfirmed ? (
+        <TriangleAlert className="h-4 w-4 shrink-0 text-text-warning" aria-hidden="true" />
+      ) : (
+        <Clock className="h-4 w-4 shrink-0 text-cyan-500" aria-hidden="true" />
+      )}
       <span className="min-w-0 flex-1 truncate" title={message.text}>
         {message.text}
       </span>
@@ -198,6 +216,13 @@ function QueuedRow({
           0: String(fileCount),
         })}
       />
+      {(isRejected || isUnconfirmed) && (
+        <span className="shrink-0 text-xs text-text-warning">
+          {localize(
+            isUnconfirmed ? 'com_ui_steer_delivery_unconfirmed' : 'com_ui_queued_turn_failed',
+          )}
+        </span>
+      )}
       {showPrimary && (
         <button
           type="button"
@@ -230,9 +255,15 @@ function QueuedRow({
       )}
       <button
         type="button"
-        aria-label={localize('com_ui_remove_queued')}
-        disabled={actionPending || !serverActionable}
+        aria-label={localize(
+          isUnconfirmed ? 'com_ui_dismiss_unconfirmed_delivery' : 'com_ui_remove_queued',
+        )}
+        disabled={actionPending || (!serverActionable && !isUnconfirmed)}
         onClick={() => {
+          if (isUnconfirmed) {
+            steering.removeQueued(message.id);
+            return;
+          }
           const remove = () => {
             /* Same safety net as the in-flight cancel: once removal is safely
              * settled, return the words to the composer when it is free (the

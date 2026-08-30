@@ -1,4 +1,8 @@
-import type { AgentTriggerDeliveryRecord, AgentTriggerDeliveryStore } from './engine';
+import type {
+  AgentTriggerDeliveryFailure,
+  AgentTriggerDeliveryRecord,
+  AgentTriggerDeliveryStore,
+} from './engine';
 import type { AgentTriggerExecutionResult } from './host';
 import { AgentTriggerDeliveryDeferredError, createAgentTriggerDeliveryEngine } from './engine';
 import { createAgentTriggerEnvelope } from './envelope';
@@ -506,6 +510,41 @@ describe('createAgentTriggerDeliveryEngine', () => {
     expect(store.retry).not.toHaveBeenCalled();
   });
 
+  it('bounds one terminal failure before source and delivery settlement', async () => {
+    const oversized = 'x'.repeat(3_000);
+    const store = storeWith();
+    const settleSourceBeforeDeadLetter = jest.fn(
+      async (_envelope: unknown, _failure: AgentTriggerDeliveryFailure) => undefined,
+    );
+    const engine = createAgentTriggerDeliveryEngine(
+      {
+        store,
+        dispatch: async () =>
+          Promise.reject(
+            new AgentTriggerExecutionError(oversized, {
+              mode: 'fire',
+              certainty: 'definite',
+              retryable: false,
+              code: oversized,
+            }),
+          ),
+        settleSourceBeforeDeadLetter,
+        now: () => START,
+      },
+      { concurrency: 1 },
+    );
+
+    await engine.runTick();
+
+    const sourceFailure = settleSourceBeforeDeadLetter.mock.calls[0]?.[1];
+    const deliveryFailure = (store.dead as jest.Mock).mock.calls[0]?.[0]?.error;
+    expect(sourceFailure).toMatchObject({
+      code: 'x'.repeat(128),
+      message: 'x'.repeat(2_048),
+    });
+    expect(deliveryFailure).toEqual(sourceFailure);
+  });
+
   it('releases the delivery when source terminalization fails before dead-lettering', async () => {
     const store = storeWith();
     const settleSourceBeforeDeadLetter = jest.fn(async () => {
@@ -548,6 +587,44 @@ describe('createAgentTriggerDeliveryEngine', () => {
     expect(dispatch).not.toHaveBeenCalled();
     expect(store.beginAttempt).not.toHaveBeenCalled();
     expect(store.dead).toHaveBeenCalledWith(expect.objectContaining({ claimToken: 'claim-1' }));
+  });
+
+  it('bounds a persisted last failure before exhausting its source', async () => {
+    const oversized = 'x'.repeat(3_000);
+    const store = storeWith({
+      claimNext: jest.fn(async () =>
+        delivery({
+          attempts: 8,
+          lastError: {
+            code: oversized,
+            message: oversized,
+            certainty: 'ambiguous',
+            retryable: true,
+            attemptedAt: START,
+          },
+        }),
+      ),
+    });
+    const settleSourceBeforeDeadLetter = jest.fn(async () => undefined);
+    const engine = createAgentTriggerDeliveryEngine(
+      { store, dispatch: jest.fn(), settleSourceBeforeDeadLetter, now: () => START },
+      { concurrency: 1, maxAttempts: 8 },
+    );
+
+    await engine.runTick();
+
+    expect(settleSourceBeforeDeadLetter).toHaveBeenCalledWith(
+      { version: 1 },
+      expect.objectContaining({ code: 'x'.repeat(128), message: 'x'.repeat(2_048) }),
+    );
+    expect(store.dead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          code: 'x'.repeat(128),
+          message: 'x'.repeat(2_048),
+        }),
+      }),
+    );
   });
 
   it('does not dead-letter an exhausted row until its source is terminal', async () => {

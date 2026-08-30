@@ -163,6 +163,48 @@ describe('PendingSteerChips — queued primary availability', () => {
   });
 });
 
+describe('PendingSteerChips — terminal server state', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('shows a durable rejection as failed work', () => {
+    renderChips([
+      {
+        id: 'rejected-turn',
+        text: 'could not be admitted',
+        createdAt: 1,
+        server: { status: 'rejected', errorCode: 'ADMISSION_FAILED' },
+      },
+    ]);
+
+    expect(screen.getByText('com_ui_queued_turn_failed')).toBeInTheDocument();
+  });
+
+  it('dismisses an expired ambiguous receipt without restoring or resending it', () => {
+    renderChips([
+      {
+        id: 'uncertain-turn',
+        text: 'delivery outcome unknown',
+        createdAt: 1,
+        server: {
+          status: 'uncertain',
+          uncertainSince: 1,
+          reconciliationExpired: true,
+        },
+      },
+    ]);
+
+    expect(screen.getByText('com_ui_steer_delivery_unconfirmed')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('com_ui_dismiss_unconfirmed_delivery'));
+
+    expect(mockRemoveQueued).toHaveBeenCalledWith('uncertain-turn');
+    expect(mockDiscardQueued).not.toHaveBeenCalled();
+    expect(mockRestoreToComposer).not.toHaveBeenCalled();
+    expect(mockSendQueuedNow).not.toHaveBeenCalled();
+  });
+});
+
 describe('PendingSteerChips — queued trash', () => {
   beforeEach(() => {
     jest.clearAllMocks();

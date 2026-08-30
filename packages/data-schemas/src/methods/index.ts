@@ -291,9 +291,50 @@ export function createMethods(
 
   const messageMethods = createMessageMethods(mongoose);
 
+  const agentQueuedTurnMethods = createAgentQueuedTurnMethods(mongoose);
+  const agentTriggerDeliveryMethods = createAgentTriggerDeliveryMethods(mongoose, {
+    purgeQueuedTurnsForUser: (user) =>
+      agentQueuedTurnMethods.deleteAllAgentQueuedTurnsForUser({
+        user: typeof user === 'string' ? new mongoose.Types.ObjectId(user) : user,
+      }),
+  });
+
   const conversationMethods = createConversationMethods(mongoose, {
     getMessages: messageMethods.getMessages,
     deleteMessages: messageMethods.deleteMessages,
+    deleteAgentQueuedTurns: async (user, conversations) => {
+      const owner = new mongoose.Types.ObjectId(user);
+      const settledAt = new Date();
+      const deliveryKeys = await agentQueuedTurnMethods.prepareAgentQueuedTurnConversationDeletion({
+        user: owner,
+        targets: conversations,
+        settledAt,
+      });
+      await Promise.all(
+        deliveryKeys.map(async (deliveryKey) => {
+          const retirement = {
+            deliveryKey,
+            sourceId: 'agent-queued-turn',
+            reason: 'queued_turn_conversation_deleted',
+            settledAt,
+          };
+          const retired = await agentTriggerDeliveryMethods.retireAgentTriggerDelivery(retirement);
+          if (!retired) {
+            /** A delivery can exhaust immediately before owner deletion wins.
+             * Convert that operator-requeueable dead row into the same terminal
+             * retirement receipt before removing its source record. */
+            await agentTriggerDeliveryMethods.retireAgentTriggerDelivery({
+              ...retirement,
+              onlyIfDead: true,
+            });
+          }
+        }),
+      );
+      await agentQueuedTurnMethods.deletePreparedAgentQueuedTurnConversations({
+        user: owner,
+        targets: conversations,
+      });
+    },
   });
 
   // ACL entry methods (used internally for removeAllPermissions)
@@ -349,14 +390,6 @@ export function createMethods(
     isExternalSkillId: deps.isExternalSkillId,
   };
   const agentMethods = createAgentMethods(mongoose, agentDeps);
-  const agentQueuedTurnMethods = createAgentQueuedTurnMethods(mongoose);
-  const agentTriggerDeliveryMethods = createAgentTriggerDeliveryMethods(mongoose, {
-    purgeQueuedTurnsForUser: (user) =>
-      agentQueuedTurnMethods.deleteAllAgentQueuedTurnsForUser({
-        user: typeof user === 'string' ? new mongoose.Types.ObjectId(user) : user,
-      }),
-  });
-
   return {
     ...createUserMethods(mongoose, { getCache: deps.getCache }),
     ...createSessionMethods(mongoose),

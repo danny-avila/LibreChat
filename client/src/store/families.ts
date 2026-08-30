@@ -408,6 +408,9 @@ export type QueuedMessage = {
     /** Observation time for a transport-ambiguous enqueue. The logical item
      * may be much older than the request that just became uncertain. */
     uncertainSince?: number;
+    /** The bounded reconciliation window elapsed without authoritative
+     * evidence. The outcome remains ambiguous and must never become resendable. */
+    reconciliationExpired?: boolean;
     /** Current one-based projection; server sequence remains the stable
      * fallback when predecessors settle and positions close up. */
     position?: number;

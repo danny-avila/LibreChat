@@ -523,20 +523,30 @@ function sendSettledGeneration(
   conversationId,
   startupTelemetry,
   generationProtocolVersion,
+  generationCreatedAt,
 ) {
   startupTelemetry?.end('deduplicated');
   if (generationProtocolVersion < GENERATION_PROTOCOL_V2) {
     return sendGenerationJson(
       res,
       200,
-      { streamId, conversationId, status: 'resumed' },
+      {
+        streamId,
+        conversationId,
+        ...(generationCreatedAt != null && { generationCreatedAt }),
+        status: 'resumed',
+      },
       generationProtocolVersion,
     );
   }
   return sendGenerationJson(
     res,
     200,
-    { conversationId, status: 'settled' },
+    {
+      conversationId,
+      ...(generationCreatedAt != null && { generationCreatedAt }),
+      status: 'settled',
+    },
     generationProtocolVersion,
   );
 }
@@ -1012,6 +1022,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           claim.existing.conversationId,
           startupTelemetry,
           generationProtocolVersion,
+          claim.existing.startedAt,
         );
       }
       if (!liveJob && isLegacyTokenlessClaim && claimAgeMs >= IDEMPOTENCY_STARTUP_GRACE_MS) {
@@ -1141,6 +1152,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             claim.existing.conversationId,
             startupTelemetry,
             generationProtocolVersion,
+            claim.existing.startedAt,
           );
         }
         if (liveClientRequestId == null && !isLegacyTokenlessClaim) {

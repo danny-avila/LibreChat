@@ -48,6 +48,14 @@ export interface AgentQueuedTurnConversationScope extends AgentQueuedTurnOwnerSc
   conversationId: string;
 }
 
+export interface AgentQueuedTurnDeletionTarget {
+  conversationId: string;
+  tenantId?: string;
+  /** Recovery for a conversation row that was already deleted cannot recover
+   * its tenant. User + conversation identity is still sufficient to purge it. */
+  allTenants?: true;
+}
+
 export interface EnqueueAgentQueuedTurnInput extends AgentQueuedTurnConversationScope {
   agentId: string;
   parentMessageId: string;
@@ -89,6 +97,10 @@ export type ScheduleAgentQueuedTurnResult =
   | { outcome: 'scheduled' | 'already_scheduled'; turn: AgentQueuedTurnRecord }
   | { outcome: 'conflict'; turn: AgentQueuedTurnRecord | null };
 
+export type ReserveAgentQueuedTurnDeliveryResult =
+  | { outcome: 'reserved' | 'already_reserved'; turn: AgentQueuedTurnRecord }
+  | { outcome: 'conflict'; turn: AgentQueuedTurnRecord | null };
+
 export type ClaimAgentQueuedTurnResult =
   | { outcome: 'acquired' | 'replayed'; claim: AgentQueuedTurnClaim }
   | { outcome: 'blocked'; claim: null }
@@ -109,6 +121,12 @@ export interface AgentQueuedTurnMethods {
     input: AgentQueuedTurnConversationScope & { clientRequestIds?: readonly string[] },
   ) => Promise<AgentQueuedTurnActiveRecord[]>;
   findQueuedTurnsNeedingDelivery: (limit?: number) => Promise<AgentQueuedTurnRecord[]>;
+  reserveAgentQueuedTurnDelivery: (
+    input: AgentQueuedTurnConversationScope & {
+      queuedTurnId: string;
+      deliveryKey: string;
+    },
+  ) => Promise<ReserveAgentQueuedTurnDeliveryResult>;
   markQueuedTurnScheduled: (
     input: AgentQueuedTurnConversationScope & {
       queuedTurnId: string;
@@ -175,6 +193,15 @@ export interface AgentQueuedTurnMethods {
   deleteAgentQueuedTurns: (
     input: AgentQueuedTurnOwnerScope & { conversationId?: string },
   ) => Promise<number>;
+  prepareAgentQueuedTurnConversationDeletion: (input: {
+    user: Types.ObjectId;
+    targets: readonly AgentQueuedTurnDeletionTarget[];
+    settledAt?: Date;
+  }) => Promise<string[]>;
+  deletePreparedAgentQueuedTurnConversations: (input: {
+    user: Types.ObjectId;
+    targets: readonly AgentQueuedTurnDeletionTarget[];
+  }) => Promise<number>;
   deleteAllAgentQueuedTurnsForUser: (input: { user: Types.ObjectId }) => Promise<number>;
 }
 
@@ -209,6 +236,23 @@ function conversationFields(input: AgentQueuedTurnConversationScope) {
     ...ownerFields(input),
     conversationId: requireBoundedString(input.conversationId, 256),
   };
+}
+
+function deletionScope(input: {
+  user: Types.ObjectId;
+  targets: readonly AgentQueuedTurnDeletionTarget[];
+}) {
+  const targets = input.targets.map((target) => {
+    const conversationId = requireBoundedString(target.conversationId, 256);
+    if (target.allTenants === true) {
+      return { conversationId };
+    }
+    return { conversationId, ...tenantScope(target.tenantId) };
+  });
+  if (targets.length === 0) {
+    throw new TypeError('Agent queued turn deletion requires at least one conversation');
+  }
+  return { user: input.user, $or: targets };
 }
 
 function requireBoundedString(value: string, maxLength: number): string {
@@ -670,6 +714,38 @@ export function createAgentQueuedTurnMethods(
     return turns.map(toRecord);
   }
 
+  async function reserveAgentQueuedTurnDelivery(
+    input: AgentQueuedTurnConversationScope & {
+      queuedTurnId: string;
+      deliveryKey: string;
+    },
+  ): Promise<ReserveAgentQueuedTurnDeliveryResult> {
+    const scope = conversationScope(input);
+    const deliveryKey = requireBoundedString(input.deliveryKey, 128);
+    const turn = await Turn()
+      .findOneAndUpdate(
+        {
+          ...scope,
+          _id: input.queuedTurnId,
+          status: { $in: ['queued', 'claimed'] },
+          deliveryKey: { $exists: false },
+        },
+        { $set: { deliveryKey } },
+        { new: true },
+      )
+      .lean<IAgentQueuedTurn>();
+    if (turn != null) {
+      return { outcome: 'reserved', turn: toRecord(turn) };
+    }
+    const current = await Turn()
+      .findOne({ ...scope, _id: input.queuedTurnId })
+      .lean<IAgentQueuedTurn>();
+    if (current?.deliveryKey === deliveryKey) {
+      return { outcome: 'already_reserved', turn: toRecord(current) };
+    }
+    return { outcome: 'conflict', turn: current == null ? null : toRecord(current) };
+  }
+
   async function markQueuedTurnScheduled(
     input: AgentQueuedTurnConversationScope & {
       queuedTurnId: string;
@@ -683,12 +759,11 @@ export function createAgentQueuedTurnMethods(
         {
           ...conversationScope(input),
           _id: input.queuedTurnId,
-          status: 'queued',
+          deliveryKey,
           scheduledAt: { $exists: false },
         },
         {
           $set: {
-            deliveryKey,
             scheduledAt: input.scheduledAt ?? new Date(),
           },
         },
@@ -1047,6 +1122,53 @@ export function createAgentQueuedTurnMethods(
     return turns.deletedCount;
   }
 
+  async function prepareAgentQueuedTurnConversationDeletion(input: {
+    user: Types.ObjectId;
+    targets: readonly AgentQueuedTurnDeletionTarget[];
+    settledAt?: Date;
+  }): Promise<string[]> {
+    const scope = deletionScope(input);
+    const settledAt = input.settledAt ?? new Date();
+    await Turn().updateMany(
+      { ...scope, status: { $in: ['queued', 'claimed'] } },
+      {
+        $set: {
+          status: 'cancelled',
+          terminalReceipt: {
+            outcome: 'cancelled',
+            settledAt,
+            failure: {
+              code: 'OWNER_DRAINED',
+              message: 'Queued turn owner was drained',
+            },
+          },
+        },
+        $unset: { activeSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
+      },
+    );
+    const turns = await Turn()
+      .find({
+        ...scope,
+        status: 'cancelled',
+        'terminalReceipt.failure.code': 'OWNER_DRAINED',
+        deliveryKey: { $exists: true },
+      })
+      .select('deliveryKey')
+      .lean<Array<Pick<IAgentQueuedTurn, 'deliveryKey'>>>();
+    return [
+      ...new Set(turns.flatMap((turn) => (turn.deliveryKey == null ? [] : [turn.deliveryKey]))),
+    ];
+  }
+
+  async function deletePreparedAgentQueuedTurnConversations(input: {
+    user: Types.ObjectId;
+    targets: readonly AgentQueuedTurnDeletionTarget[];
+  }): Promise<number> {
+    const scope = deletionScope(input);
+    const [turns] = await Promise.all([Turn().deleteMany(scope), Sequence().deleteMany(scope)]);
+    return turns.deletedCount;
+  }
+
   async function deleteAllAgentQueuedTurnsForUser(input: {
     user: Types.ObjectId;
   }): Promise<number> {
@@ -1064,6 +1186,7 @@ export function createAgentQueuedTurnMethods(
     listActiveAgentQueuedTurns,
     listAgentQueuedTurnReceipts,
     findQueuedTurnsNeedingDelivery,
+    reserveAgentQueuedTurnDelivery,
     markQueuedTurnScheduled,
     cancelAgentQueuedTurn,
     claimNextAgentQueuedTurn,
@@ -1073,6 +1196,8 @@ export function createAgentQueuedTurnMethods(
     getEffectiveAgentQueuedTurnPredecessor,
     drainAgentQueuedTurns,
     deleteAgentQueuedTurns,
+    prepareAgentQueuedTurnConversationDeletion,
+    deletePreparedAgentQueuedTurnConversations,
     deleteAllAgentQueuedTurnsForUser,
   };
 }

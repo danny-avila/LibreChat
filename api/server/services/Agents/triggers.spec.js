@@ -11,6 +11,7 @@ jest.mock('@librechat/api', () => ({
   createBackgroundToolCompletionWakeupResolver: jest.fn(() => jest.fn()),
   createSubagentCompletionWakeupResolver: jest.fn(() => jest.fn()),
   createAgentQueuedTurnResolver: jest.fn(() => jest.fn()),
+  createAgentQueuedTurnDeadLetterSettlement: jest.fn(() => jest.fn()),
   createAgentQueuedTurnScheduler: jest.fn(() => ({
     initialize: jest.fn(),
     stop: jest.fn(),

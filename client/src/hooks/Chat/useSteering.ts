@@ -339,6 +339,17 @@ export default function useSteering({
     const until = item.server.uncertainSince + QUEUED_TURN_RECONCILIATION_MS;
     return latest == null ? until : Math.max(latest, until);
   }, undefined);
+  const nextReconciliationExpiry = queuedMessages.reduce<number | undefined>((earliest, item) => {
+    if (
+      item.server?.status !== 'uncertain' ||
+      item.server.uncertainSince == null ||
+      item.server.reconciliationExpired === true
+    ) {
+      return earliest;
+    }
+    const expiry = item.server.uncertainSince + QUEUED_TURN_RECONCILIATION_MS;
+    return earliest == null ? expiry : Math.min(earliest, expiry);
+  }, undefined);
   const { data: serverQueuedTurns } = useAgentQueuedTurns(
     conversationId,
     serverQueueEnabled,
@@ -358,6 +369,33 @@ export default function useSteering({
     }
     setQueuedMessages((previous) => reconcileServerQueuedTurns(previous, serverQueuedTurns));
   }, [serverQueueEnabled, serverQueuedTurns, setQueuedMessages]);
+  useEffect(() => {
+    if (!serverQueueEnabled || nextReconciliationExpiry == null) {
+      return;
+    }
+    const expire = () => {
+      const observedAt = Date.now();
+      setQueuedMessages((previous) =>
+        previous.map((item) => {
+          if (
+            item.server?.status !== 'uncertain' ||
+            item.server.uncertainSince == null ||
+            item.server.reconciliationExpired === true ||
+            item.server.uncertainSince + QUEUED_TURN_RECONCILIATION_MS > observedAt
+          ) {
+            return item;
+          }
+          return {
+            ...item,
+            server: { ...item.server, reconciliationExpired: true },
+          };
+        }),
+      );
+    };
+    const delay = Math.max(0, nextReconciliationExpiry - Date.now());
+    const timer = window.setTimeout(expire, delay);
+    return () => window.clearTimeout(timer);
+  }, [nextReconciliationExpiry, serverQueueEnabled, setQueuedMessages]);
   /** The start POST installs this epoch before any live mutation may be sent.
    * `isSubmitting` flips earlier so the user can keep typing; during that
    * bounded interval submits degrade to the local queue and Stop/steer refuse. */

@@ -16,6 +16,8 @@ const ORDERING_RECHECK_MS = 250;
 const ACTIVE_HANDLING_RECHECK_MS = 5_000;
 const DEFAULT_DEFER_MS = 5_000;
 const MAX_RETRY_AFTER_MS = 24 * 60 * 60_000;
+const MAX_FAILURE_CODE_LENGTH = 128;
+const MAX_FAILURE_MESSAGE_LENGTH = 2048;
 
 function startedHandling(
   delivery: Pick<AgentTriggerDeliveryRecord, 'envelope'>,
@@ -267,6 +269,19 @@ function failure(error: unknown, attemptedAt: Date): AgentTriggerDeliveryFailure
   };
 }
 
+function normalizeFailure(failure: AgentTriggerDeliveryFailure): AgentTriggerDeliveryFailure {
+  const code = failure.code.trim();
+  const message = failure.message.trim();
+  return {
+    ...failure,
+    code: (code.length === 0 ? 'DELIVERY_FAILED' : code).slice(0, MAX_FAILURE_CODE_LENGTH),
+    message: (message.length === 0 ? 'Agent trigger delivery failed' : message).slice(
+      0,
+      MAX_FAILURE_MESSAGE_LENGTH,
+    ),
+  };
+}
+
 function retryAt(
   error: unknown,
   attempt: number,
@@ -368,9 +383,10 @@ export function createAgentTriggerDeliveryEngine(
     }
 
     if (delivery.attempts >= maxAttempts) {
-      const recorded =
+      const recorded = normalizeFailure(
         delivery.lastError ??
-        failure(new Error('Delivery attempt limit was already exhausted'), now());
+          failure(new Error('Delivery attempt limit was already exhausted'), now()),
+      );
       try {
         await deps.settleSourceBeforeDeadLetter?.(delivery.envelope, recorded);
       } catch (error) {
@@ -489,7 +505,7 @@ export function createAgentTriggerDeliveryEngine(
           }
           return;
         }
-        const recorded = failure(error, attemptedAt);
+        const recorded = normalizeFailure(failure(error, attemptedAt));
         if (!recorded.retryable || attempt >= maxAttempts) {
           try {
             await deps.settleSourceBeforeDeadLetter?.(delivery.envelope, recorded);

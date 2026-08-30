@@ -352,6 +352,15 @@ describe('agent queued turn methods', () => {
     expect(replay.replayed).toBe(true);
     expect(replay.turn).not.toHaveProperty('scheduledAt');
 
+    await expect(
+      methods.reserveAgentQueuedTurnDelivery({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: queued.turn.queuedTurnId,
+        deliveryKey: 'delivery-1',
+      }),
+    ).resolves.toMatchObject({ outcome: 'reserved' });
     const scheduled = await methods.markQueuedTurnScheduled({
       user,
       tenantId: 'tenant-1',
@@ -365,6 +374,15 @@ describe('agent queued turn methods', () => {
       turn: { deliveryKey: 'delivery-1', scheduledAt: START },
     });
     await expect(
+      methods.reserveAgentQueuedTurnDelivery({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: queued.turn.queuedTurnId,
+        deliveryKey: 'delivery-1',
+      }),
+    ).resolves.toMatchObject({ outcome: 'already_reserved' });
+    await expect(
       methods.markQueuedTurnScheduled({
         user,
         tenantId: 'tenant-1',
@@ -373,6 +391,15 @@ describe('agent queued turn methods', () => {
         deliveryKey: 'delivery-1',
       }),
     ).resolves.toMatchObject({ outcome: 'already_scheduled' });
+    await expect(
+      methods.reserveAgentQueuedTurnDelivery({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: queued.turn.queuedTurnId,
+        deliveryKey: 'delivery-2',
+      }),
+    ).resolves.toMatchObject({ outcome: 'conflict' });
     await expect(
       methods.markQueuedTurnScheduled({
         user,
@@ -383,6 +410,32 @@ describe('agent queued turn methods', () => {
       }),
     ).resolves.toMatchObject({ outcome: 'conflict' });
     expect(await methods.findQueuedTurnsNeedingDelivery()).toEqual([]);
+  });
+
+  it('acknowledges a reserved delivery after a worker claims the queue row', async () => {
+    const queued = await methods.enqueueAgentQueuedTurn(enqueueInput());
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey: 'delivery-fast',
+    });
+    await methods.claimNextAgentQueuedTurn(claimInput(queued.turn.queuedTurnId));
+
+    await expect(
+      methods.markQueuedTurnScheduled({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: queued.turn.queuedTurnId,
+        deliveryKey: 'delivery-fast',
+        scheduledAt: START,
+      }),
+    ).resolves.toMatchObject({
+      outcome: 'scheduled',
+      turn: { status: 'claimed', deliveryKey: 'delivery-fast', scheduledAt: START },
+    });
   });
 
   it('cancels queued work idempotently but does not cancel a claimed turn', async () => {
@@ -500,6 +553,13 @@ describe('agent queued turn methods', () => {
 
   it('lists a dead receipt until the user dismisses it', async () => {
     const queued = await methods.enqueueAgentQueuedTurn(enqueueInput());
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey: 'delivery-dead',
+    });
     await methods.markQueuedTurnScheduled({
       user,
       tenantId: 'tenant-1',
@@ -600,6 +660,13 @@ describe('agent queued turn methods', () => {
         enqueueInput({ clientRequestId: `dead-${index}`, text: `dead ${index}` }),
       );
       const deliveryKey = `delivery-${index}`;
+      await methods.reserveAgentQueuedTurnDelivery({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: queued.turn.queuedTurnId,
+        deliveryKey,
+      });
       await methods.markQueuedTurnScheduled({
         user,
         tenantId: 'tenant-1',
@@ -689,5 +756,57 @@ describe('agent queued turn methods', () => {
     expect(await Sequence.countDocuments({ user })).toBe(0);
     expect(await Turn.countDocuments({ user: otherUser })).toBe(1);
     expect(await Sequence.countDocuments({ user: otherUser })).toBe(1);
+  });
+
+  it('prepares conversation deletion for replay-safe delivery retirement before payload purge', async () => {
+    const tenantOne = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'delete-tenant-one' }),
+    );
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: tenantOne.turn.queuedTurnId,
+      deliveryKey: 'delivery-delete-one',
+    });
+    await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ tenantId: 'tenant-2', clientRequestId: 'delete-tenant-two' }),
+    );
+    await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ conversationId: 'conversation-2', clientRequestId: 'keep-conversation' }),
+    );
+
+    await expect(
+      methods.prepareAgentQueuedTurnConversationDeletion({
+        user,
+        targets: [{ conversationId: 'conversation-1', tenantId: 'tenant-1' }],
+        settledAt: START,
+      }),
+    ).resolves.toEqual(['delivery-delete-one']);
+    expect(
+      await Turn.findById(tenantOne.turn.queuedTurnId).select('status terminalReceipt').lean(),
+    ).toMatchObject({
+      status: 'cancelled',
+      terminalReceipt: { failure: { code: 'OWNER_DRAINED' } },
+    });
+    await expect(
+      methods.deletePreparedAgentQueuedTurnConversations({
+        user,
+        targets: [{ conversationId: 'conversation-1', tenantId: 'tenant-1' }],
+      }),
+    ).resolves.toBe(1);
+    expect(await Turn.countDocuments({ user, conversationId: 'conversation-1' })).toBe(1);
+
+    await methods.prepareAgentQueuedTurnConversationDeletion({
+      user,
+      targets: [{ conversationId: 'conversation-1', allTenants: true }],
+      settledAt: START,
+    });
+    await methods.deletePreparedAgentQueuedTurnConversations({
+      user,
+      targets: [{ conversationId: 'conversation-1', allTenants: true }],
+    });
+    expect(await Turn.countDocuments({ user, conversationId: 'conversation-1' })).toBe(0);
+    expect(await Turn.countDocuments({ user, conversationId: 'conversation-2' })).toBe(1);
   });
 });

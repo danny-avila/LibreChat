@@ -1767,6 +1767,59 @@ describe('Conversation Operations', () => {
   });
 
   describe('deleteConvos', () => {
+    it('retires queued-turn work before each conversation deletion wave', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        tenantId: 'tenant-1',
+        endpoint: EModelEndpoint.agents,
+      });
+      const transitions: string[] = [];
+      const deleteAgentQueuedTurns = jest.fn(async () => {
+        transitions.push('queue-retired');
+      });
+      const scopedMethods = createConversationMethods(mongoose, {
+        getMessages,
+        deleteMessages,
+        deleteAgentQueuedTurns,
+      });
+
+      await scopedMethods.deleteConvos(
+        'user123',
+        { conversationId },
+        {
+          beforeDelete: async () => {
+            transitions.push('generation-drained');
+          },
+        },
+      );
+
+      expect(deleteAgentQueuedTurns).toHaveBeenCalledWith('user123', [
+        { conversationId, tenantId: 'tenant-1' },
+      ]);
+      expect(transitions).toEqual(['queue-retired', 'generation-drained']);
+    });
+
+    it('fails closed before deleting a conversation when queued-turn retirement fails', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.agents,
+      });
+      const scopedMethods = createConversationMethods(mongoose, {
+        getMessages,
+        deleteMessages,
+        deleteAgentQueuedTurns: async () => Promise.reject(new Error('retirement unavailable')),
+      });
+
+      await expect(scopedMethods.deleteConvos('user123', { conversationId })).rejects.toThrow(
+        'retirement unavailable',
+      );
+      expect(await Conversation.findOne({ conversationId })).not.toBeNull();
+    });
+
     it('should delete conversations and associated messages', async () => {
       await Conversation.create({
         conversationId: mockConversationData.conversationId,

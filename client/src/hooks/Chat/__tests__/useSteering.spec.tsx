@@ -393,6 +393,35 @@ describe('useSteering', () => {
       );
     });
 
+    it('expires reconciliation as ambiguous instead of making the row resendable', async () => {
+      jest.useFakeTimers({ now: 1_000 });
+      try {
+        mockEnqueueQueuedTurn.mockImplementation((_input, options) => {
+          options.onError(Object.assign(new Error('connection reset'), { code: 'ERR_NETWORK' }));
+        });
+        const { result } = setupServerQueue();
+
+        act(() => {
+          result.current.steering.queueFromComposer('outcome remains unknown');
+        });
+        await act(async () => {
+          jest.runAllTicks();
+          await Promise.resolve();
+        });
+        expect(result.current.queue[0]).toMatchObject({ server: { status: 'uncertain' } });
+        expect(result.current.queue[0].server).not.toHaveProperty('reconciliationExpired');
+
+        act(() => {
+          jest.advanceTimersByTime(60_000);
+        });
+        expect(result.current.queue[0]).toMatchObject({
+          server: { status: 'uncertain', reconciliationExpired: true },
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('keeps a definitely rejected enqueue non-drainable but explicitly actionable', async () => {
       mockEnqueueQueuedTurn.mockImplementation((_input, options) => {
         options.onError({ response: { status: 413, data: { code: 'TEXT_TOO_LARGE' } } });
