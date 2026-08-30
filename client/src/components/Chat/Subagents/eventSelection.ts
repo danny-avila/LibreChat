@@ -28,3 +28,28 @@ export const eventSubagentSelection = (
     },
   };
 };
+
+/** Panel selection for one durable task of an indexed child thread, regardless
+ * of how the child was dispatched. Event actors reuse their event selection so
+ * the panel keeps its actor picker and task timeline. */
+export const durableSubagentSelection = (
+  parentConversationId: string,
+  child: ParentSubagentSummary,
+  taskId: string,
+): ActiveSubagentPanel | null => {
+  if (child.origin === 'event') {
+    return eventSubagentSelection(parentConversationId, child);
+  }
+  const taskStatus = child.tasks.find((task) => task.taskId === taskId)?.status ?? child.status;
+  return {
+    host: 'conversation',
+    parentConversationId,
+    parentMessageId: child.parentMessageId,
+    toolCallId: child.parentToolCallId ?? `subagent-thread:${child.threadId}`,
+    partIndex: 0,
+    subagentType: child.subagentType,
+    initialProgress: taskStatus === 'running' ? 0 : 1,
+    isSubmitting: taskStatus === 'running',
+    durable: { threadId: child.threadId, taskId },
+  };
+};

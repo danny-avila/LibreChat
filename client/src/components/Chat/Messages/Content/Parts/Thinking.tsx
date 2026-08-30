@@ -141,6 +141,29 @@ export const ThinkingButton = memo(
 );
 
 /**
+ * ThinkingLabel - Non-interactive variant of the ThinkingButton header row,
+ * for reasoning that happened but whose text is not available to this view
+ * (detached subagent projections retain only a marker). Keeps the reasoning
+ * presentation identical across surfaces without offering an empty disclosure.
+ */
+export const ThinkingLabel = memo(({ label, title }: { label: string; title?: string }) => {
+  const fontSize = useAtomValue(fontSizeAtom);
+  return (
+    <div className="mb-2 pb-2 pt-2">
+      <div
+        className={cn('flex w-full items-center justify-start leading-[18px]', fontSize)}
+        title={title}
+      >
+        <span className="relative mr-1.5 inline-flex h-[18px] w-[18px] items-center justify-center">
+          <Lightbulb className="icon-sm text-text-secondary" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 truncate text-left text-text-secondary">{label}</span>
+      </div>
+    </div>
+  );
+});
+
+/**
  * FloatingThinkingBar - Floating bar with expand/collapse and copy buttons
  * Shows on hover/focus, positioned at bottom right of thinking content
  * Inspired by CodeBlock's FloatingCodeBar pattern
@@ -348,6 +371,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
 
 ThinkingButton.displayName = 'ThinkingButton';
 ThinkingContent.displayName = 'ThinkingContent';
+ThinkingLabel.displayName = 'ThinkingLabel';
 FloatingThinkingBar.displayName = 'FloatingThinkingBar';
 Thinking.displayName = 'Thinking';
 
