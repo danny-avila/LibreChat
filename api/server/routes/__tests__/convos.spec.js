@@ -506,7 +506,10 @@ describe('Convos Routes', () => {
       });
       expect(deleteConvos).toHaveBeenCalledTimes(2);
       expect(deleteMessages).toHaveBeenCalledWith({ user: 'test-user-123' });
-      expect(deleteAgentCheckpoints.mock.calls[0][0]).toEqual(['original', 'gap-conversation']);
+      expect(deleteAgentCheckpoints.mock.calls.map((call) => call[0])).toEqual([
+        ['original'],
+        ['gap-conversation'],
+      ]);
     });
 
     it('retries owner message cleanup after conversations were already removed', async () => {
@@ -522,6 +525,7 @@ describe('Convos Routes', () => {
 
       expect(first.status).toBe(500);
       expect(retry.status).toBe(201);
+      expect(deleteAgentCheckpoints.mock.calls[0][0]).toEqual(['original']);
       expect(deleteConvos).toHaveBeenNthCalledWith(
         2,
         'test-user-123',
@@ -799,9 +803,12 @@ describe('Convos Routes', () => {
     });
 
     it('fails closed before checkpoint pruning when generation lookup stays unavailable', async () => {
-      deleteConvos.mockResolvedValue({
-        deletedCount: 1,
-        conversationIds: ['paused-event-child'],
+      deleteConvos.mockImplementation(async (_userId, _filter, options) => {
+        await options.beforeDelete(['paused-event-child']);
+        return {
+          deletedCount: 1,
+          conversationIds: ['paused-event-child'],
+        };
       });
       generationJobManager.getJob.mockRejectedValue(new Error('generation store unavailable'));
 

@@ -393,12 +393,15 @@ async function withAgentOwnerDeletionFence(userId, tenantId, deletion, recoverPe
   return { result, recoveryConversationIds };
 }
 
-async function deleteOwnerConversationPersistence(userId, filter, tenantId) {
+async function deleteOwnerConversationPersistence(userId, filter, tenantId, checkpointer) {
   const result = await db.deleteConvos(userId, filter, {
     allowEmpty: true,
     beforeDelete: (conversationIds) =>
       confirmAgentGenerationsDrained(userId, conversationIds, [], tenantId),
   });
+  /** Consume the deletion receipt before the fallible message sweep. A retry after
+   * conversations are gone cannot reconstruct these checkpoint identities. */
+  await deleteAgentCheckpoints(result.conversationIds ?? [], checkpointer);
   /** Always runs, including an empty conversation retry, so an interrupted writer
    * that persisted messages first cannot make its cleanup permanently unreachable. */
   await db.deleteMessages({ user: userId });
@@ -441,6 +444,7 @@ router.delete('/', configMiddleware, async (req, res) => {
       typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
         ? req.user.tenantId
         : undefined;
+    const checkpointer = req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
     let cancellationPlan;
     let dbResponse;
     let recoveryConversationIds = [];
@@ -463,8 +467,8 @@ router.delete('/', configMiddleware, async (req, res) => {
       const fencedDeletion = await withAgentOwnerDeletionFence(
         req.user.id,
         tenantId,
-        () => deleteOwnerConversationPersistence(req.user.id, filter, tenantId),
-        () => deleteOwnerConversationPersistence(req.user.id, filter, tenantId),
+        () => deleteOwnerConversationPersistence(req.user.id, filter, tenantId, checkpointer),
+        () => deleteOwnerConversationPersistence(req.user.id, filter, tenantId, checkpointer),
       );
       dbResponse = fencedDeletion.result;
       recoveryConversationIds = fencedDeletion.recoveryConversationIds;
@@ -504,10 +508,9 @@ router.delete('/', configMiddleware, async (req, res) => {
     }
     // HITL: prune the deleted conversations' durable checkpoints — a paused run's
     // checkpoint would otherwise persist until the Mongo TTL. Never throws.
-    await deleteAgentCheckpoints(
-      deletedConversationIds,
-      req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
-    );
+    if (filter.conversationId) {
+      await deleteAgentCheckpoints(deletedConversationIds, checkpointer);
+    }
     if (filter.conversationId) {
       await Promise.all(deletedConversationIds.map((id) => db.deleteToolCalls(req.user.id, id)));
       await Promise.all(
@@ -527,27 +530,17 @@ router.delete('/all', configMiddleware, async (req, res) => {
       typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
         ? req.user.tenantId
         : undefined;
+    const checkpointer = req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
     /** Fences new child admission for this owner, drains the live ones, and deletes
      * inside that fence: a child admitted on another replica mid-deletion would
      * otherwise keep running against conversations that no longer exist. */
     const fencedDeletion = await withAgentOwnerDeletionFence(
       req.user.id,
       tenantId,
-      () => deleteOwnerConversationPersistence(req.user.id, {}, tenantId),
-      () => deleteOwnerConversationPersistence(req.user.id, {}, tenantId),
+      () => deleteOwnerConversationPersistence(req.user.id, {}, tenantId, checkpointer),
+      () => deleteOwnerConversationPersistence(req.user.id, {}, tenantId, checkpointer),
     );
     const dbResponse = fencedDeletion.result;
-    const deletedConversationIds = [
-      ...new Set([
-        ...(dbResponse.conversationIds ?? []),
-        ...fencedDeletion.recoveryConversationIds,
-      ]),
-    ];
-    // HITL: prune ALL the deleted conversations' durable checkpoints in one bulk pass.
-    await deleteAgentCheckpoints(
-      deletedConversationIds,
-      req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
-    );
     await db.deleteToolCalls(req.user.id);
     await deleteAllSharedLinksWithCleanup(req.user.id);
     res.status(201).json(dbResponse);
