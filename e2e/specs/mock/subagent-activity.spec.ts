@@ -107,8 +107,6 @@ test.describe('detached subagent activity', () => {
       const activityResponse = await activityResponsePromise;
       await expect(panel).toBeVisible();
       await expect(panel).toContainText('child-1-phase-10');
-      /** An in-flight child reads through its streaming content like the main
-       *  chat view; the panel no longer stamps a "Running" status chip. */
       await expect(panel.getByText('Running', { exact: true })).toHaveCount(0);
       await expect.poll(() => activityRequests.length).toBe(1);
 
