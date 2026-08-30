@@ -24,7 +24,7 @@ import { truncateMiddle } from '~/utils';
 const WAKEUP_ADMISSION_DELAY_MS = 250;
 const RESULT_READY_WAIT_MS = 35 * 60_000;
 const MAX_WAKEUP_RESULT_CHARS = 24 * 1024;
-export const BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS = 16 * 1024;
+export const BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS: number = 16 * 1024;
 const MESSAGE_SELECT = 'messageId parentMessageId isCreatedByUser createdAt';
 export const BACKGROUND_TOOL_COMPLETION_SOURCE = 'background-tool-completion';
 const EVENT_TYPE = 'background-tool.completion';
