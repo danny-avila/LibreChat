@@ -955,6 +955,74 @@ describe('Message Operations', () => {
       });
     });
 
+    it('stamps a supplied claim only on a part that carries none', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        backgroundTask: {
+          taskId: 'task-1',
+          toolName: 'execute_code',
+          status: 'completed',
+          settledAt: new Date('2026-08-30T12:00:02Z'),
+          resultClaim: {
+            kind: 'wakeup',
+            claimId: 'wakeup-1',
+            claimedAt: new Date('2026-08-30T12:00:02Z'),
+          },
+        },
+      });
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      const task = (
+        saved?.content?.[1] as {
+          tool_call?: { backgroundTask?: Record<string, unknown> };
+        }
+      ).tool_call?.backgroundTask;
+      expect(task).toMatchObject({
+        taskId: 'task-1',
+        resultClaim: { kind: 'wakeup', claimId: 'wakeup-1' },
+      });
+    });
+
+    it('disarms a previously armed completion wakeup when the new receipt omits it', async () => {
+      const content = toolCallContent();
+      (content[1].tool_call as Record<string, unknown>).backgroundTask = {
+        version: 1,
+        taskId: 'task-1',
+        toolName: 'execute_code',
+        status: 'completed',
+        settledAt: new Date('2026-08-30T12:00:00Z'),
+        completionWakeup: true,
+      };
+      await saveMessage(mockCtx, { ...mockMessageData, content });
+
+      await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        backgroundTask: {
+          taskId: 'task-1',
+          toolName: 'execute_code',
+          status: 'error',
+          settledAt: new Date('2026-08-30T12:00:02Z'),
+        },
+      });
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      const task = (
+        saved?.content?.[1] as {
+          tool_call?: { backgroundTask?: Record<string, unknown> };
+        }
+      ).tool_call?.backgroundTask;
+      expect(task).toMatchObject({ taskId: 'task-1', status: 'error' });
+      expect(task).not.toHaveProperty('completionWakeup');
+    });
+
     it('elects one result consumer and batches terminal siblings for a wakeup', async () => {
       const terminal = (id: string, taskId: string, output: string) => ({
         type: 'tool_call',
@@ -1975,11 +2043,10 @@ describe('Message Operations', () => {
             message.subagentTranscriptProjectionTruncated === true,
         ),
       ).toHaveLength(1);
-      /** Four reads: the page, recent sources, and the selected task's messages
-       * and source. The last two were one `$facet`, a stage Amazon DocumentDB
-       * does not support; they are issued concurrently, so splitting them costs
-       * no additional wall-clock latency. */
-      expect(aggregateSpy).toHaveBeenCalledTimes(4);
+      /** Three reads: the page, recent sources, and one single-snapshot read
+       * that yields both the selected task's messages and its source — the
+       * replacement for a `$facet`, which Amazon DocumentDB does not support. */
+      expect(aggregateSpy).toHaveBeenCalledTimes(3);
       const messagesPipeline = aggregateSpy.mock.calls[0][0] as unknown as Array<
         Record<string, unknown>
       >;
@@ -1989,14 +2056,9 @@ describe('Message Operations', () => {
       const selectedPipeline = aggregateSpy.mock.calls[2][0] as unknown as Array<
         Record<string, unknown>
       >;
-      const selectedSourcePipeline = aggregateSpy.mock.calls[3][0] as unknown as Array<
-        Record<string, unknown>
-      >;
-      for (const pipeline of [selectedPipeline, selectedSourcePipeline]) {
-        expect(pipeline).not.toEqual(
-          expect.arrayContaining([expect.objectContaining({ $facet: expect.anything() })]),
-        );
-      }
+      expect(selectedPipeline).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ $facet: expect.anything() })]),
+      );
       expect(messagesPipeline[2]).toEqual({ $limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT });
       expect(messagesPipeline).not.toEqual(
         expect.arrayContaining([expect.objectContaining({ $facet: expect.anything() })]),

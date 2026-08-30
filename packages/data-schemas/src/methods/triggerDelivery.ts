@@ -36,7 +36,7 @@ const MAX_BATCH_SIZE = 8;
 const MAX_BATCH_BYTES = 512 * 1024;
 /** Bounds the claim's compare-and-swap retries. Each lost round means another
  * worker claimed the row this one read, so the queue is making progress. */
-const CLAIM_CAS_MAX_ATTEMPTS = 16;
+export const CLAIM_CAS_MAX_ATTEMPTS = 16;
 /** Capability work is inert to legacy claimers while preserving their lane
  * behavior: publishing is `staging`; queued work is `leased` without a lease
  * owner/deadline; execution adds a private lease; dead work is terminal. */
@@ -1357,7 +1357,14 @@ export function createAgentTriggerDeliveryMethods(
         return requireClaim(claimed);
       }
     }
-    return null;
+    /** Exhausting the budget means every round read a claimable row and lost it
+     * to another worker — heavy contention, not an empty queue. `null` is the
+     * engine's confirmed-empty signal and advances its idle backoff, which
+     * would leave queued work waiting; a throw lands on the engine's retryable
+     * claim-failure path, which holds the polling cadence instead. */
+    throw new Error(
+      `Agent trigger claim lost ${CLAIM_CAS_MAX_ATTEMPTS} compare-and-swap rounds to concurrent workers`,
+    );
   }
 
   async function findEarlierAgentTriggerDelivery(

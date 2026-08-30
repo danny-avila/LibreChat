@@ -1036,174 +1036,156 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           : []),
       ],
     };
-    const stages: Record<string, unknown>[] = [];
-    if (output !== undefined || backgroundTask != null) {
-      stages.push({
-        $set: {
-          content: {
-            $map: {
-              input: { $ifNull: ['$content', []] },
-              as: 'part',
-              in: {
-                $cond: [
-                  targetPartMatch,
-                  {
-                    $mergeObjects: [
-                      '$$part',
-                      {
-                        tool_call: {
-                          $mergeObjects: [
-                            '$$part.tool_call',
-                            {
-                              ...(output !== undefined ? { output: { $literal: output } } : {}),
-                              ...(markBackgrounded === true ? { backgrounded: true } : {}),
-                              ...(backgroundTask != null
-                                ? {
-                                    backgroundTask: {
-                                      $mergeObjects: [
-                                        {
-                                          $literal: {
-                                            version: 1,
-                                            taskId: backgroundTask.taskId,
-                                            toolName: backgroundTask.toolName,
-                                            status: backgroundTask.status,
-                                            settledAt: backgroundTask.settledAt,
-                                            ...(backgroundTask.completionWakeup === true
-                                              ? { completionWakeup: true }
-                                              : {}),
-                                          },
-                                        },
-                                        {
-                                          $cond: [
-                                            {
-                                              $ne: [
-                                                {
-                                                  $ifNull: [
-                                                    '$$part.tool_call.backgroundTask.resultClaim',
-                                                    null,
-                                                  ],
-                                                },
-                                                null,
-                                              ],
-                                            },
-                                            {
-                                              resultClaim:
-                                                '$$part.tool_call.backgroundTask.resultClaim',
-                                            },
-                                            backgroundTask.resultClaim != null
-                                              ? {
-                                                  $literal: {
-                                                    resultClaim: backgroundTask.resultClaim,
-                                                  },
-                                                }
-                                              : {},
-                                          ],
-                                        },
-                                      ],
-                                    },
-                                  }
-                                : {}),
-                            },
-                          ],
-                        },
-                      },
-                    ],
-                  },
-                  '$$part',
-                ],
-              },
-            },
-          },
-        },
-      });
-    }
-    if (attachments !== undefined && attachments.length > 0) {
-      /** Dedupe key mirrors the resume merge: `file_id ?? filepath`, so
-       *  download-fallback attachments (no `file_id`, only a filepath) stay
-       *  idempotent across re-applications instead of duplicating per poll. */
-      const attachmentKeys = attachments
-        .map((attachment) => {
-          const { file_id, filepath } = attachment as { file_id?: unknown; filepath?: unknown };
-          return typeof file_id === 'string' ? file_id : filepath;
-        })
-        .filter((key): key is string => typeof key === 'string');
-      stages.push({
-        $set: {
-          attachments: {
-            $concatArrays: [
-              {
-                $filter: {
-                  input: { $ifNull: ['$attachments', []] },
-                  as: 'existing',
-                  /** Replace only THIS tool call's prior entries: sibling calls
-                   *  can legitimately share a `file_id` (the filename claim is
-                   *  per-conversation), and the client anchors attachments to
-                   *  cards by `toolCallId`. */
-                  cond: {
-                    $not: [
-                      {
-                        $and: [
-                          {
-                            $in: [
-                              { $ifNull: ['$$existing.file_id', '$$existing.filepath'] },
-                              { $literal: attachmentKeys },
-                            ],
-                          },
-                          { $eq: ['$$existing.toolCallId', toolCallId] },
-                          /** Provider tool-call ids repeat across agents in
-                           *  handoff messages; a sibling agent's attachment
-                           *  under the same id/key must survive (missing
-                           *  agent identity = legacy wildcard). */
-                          ...(agentId != null
-                            ? [
-                                {
-                                  $in: [{ $ifNull: ['$$existing.agentId', null] }, [null, agentId]],
-                                },
-                              ]
-                            : []),
-                          ...(stepId != null
-                            ? [
-                                {
-                                  $in: [{ $ifNull: ['$$existing.stepId', null] }, [null, stepId]],
-                                },
-                              ]
-                            : []),
-                        ],
-                      },
-                    ],
-                  },
-                },
-              },
-              { $literal: attachments },
+    /** Amazon DocumentDB rejects aggregation-pipeline updates, so the part
+     * patch addresses the matching tool-call parts with the filtered positional
+     * operator and plain `$set`/`$unset`. Setting `backgroundTask` subfields
+     * individually preserves an existing `resultClaim` without the per-part
+     * branching the old pipeline needed, and clearing `completionWakeup` keeps
+     * the old whole-object replacement's disarm semantics. */
+    const partIdentityFilter: Record<string, unknown> = {
+      'part.type': 'tool_call',
+      'part.tool_call.id': toolCallId,
+      ...(stepId != null ? { 'part.tool_call.stepId': stepId } : {}),
+      ...(agentId != null
+        ? {
+            /** `part.agentId` wins, then `tool_call.agentId`; a part without
+             * agent identity stays patchable by any caller (single-agent runs).
+             * `field: null` matches both a missing field and a stored null,
+             * mirroring the `$ifNull` chain in `targetPartMatch`. */
+            $or: [
+              { 'part.agentId': agentId },
+              { 'part.agentId': null, 'part.tool_call.agentId': agentId },
+              { 'part.agentId': null, 'part.tool_call.agentId': null },
             ],
-          },
-        },
-      });
+          }
+        : {}),
+    };
+    const partPatch: Record<string, unknown> = {};
+    const partClears: Record<string, 1> = {};
+    if (output !== undefined || backgroundTask != null) {
+      if (output !== undefined) {
+        partPatch['content.$[part].tool_call.output'] = output;
+      }
+      if (markBackgrounded === true) {
+        partPatch['content.$[part].tool_call.backgrounded'] = true;
+      }
+      if (backgroundTask != null) {
+        partPatch['content.$[part].tool_call.backgroundTask.version'] = 1;
+        partPatch['content.$[part].tool_call.backgroundTask.taskId'] = backgroundTask.taskId;
+        partPatch['content.$[part].tool_call.backgroundTask.toolName'] = backgroundTask.toolName;
+        partPatch['content.$[part].tool_call.backgroundTask.status'] = backgroundTask.status;
+        partPatch['content.$[part].tool_call.backgroundTask.settledAt'] = backgroundTask.settledAt;
+        if (backgroundTask.completionWakeup === true) {
+          partPatch['content.$[part].tool_call.backgroundTask.completionWakeup'] = true;
+        } else {
+          partClears['content.$[part].tool_call.backgroundTask.completionWakeup'] = 1;
+        }
+      }
     }
-    if (stages.length === 0) {
+    const mergingAttachments = attachments !== undefined && attachments.length > 0;
+    /** Dedupe key mirrors the resume merge: `file_id ?? filepath`, so
+     * download-fallback attachments (no `file_id`, only a filepath) stay
+     * idempotent across re-applications instead of duplicating per poll. */
+    const attachmentKeys = mergingAttachments
+      ? attachments
+          .map((attachment) => {
+            const { file_id, filepath } = attachment as { file_id?: unknown; filepath?: unknown };
+            return typeof file_id === 'string' ? file_id : filepath;
+          })
+          .filter((key): key is string => typeof key === 'string')
+      : [];
+    if (Object.keys(partPatch).length === 0 && !mergingAttachments) {
       return { matched: false, unfinished: false };
     }
+    const messageFilter = {
+      messageId,
+      user: userId,
+      conversationId,
+      $expr: {
+        $anyElementTrue: {
+          $map: {
+            input: { $ifNull: ['$content', []] },
+            as: 'part',
+            in: targetPartMatch,
+          },
+        },
+      },
+    };
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
       const result = await Message.findOneAndUpdate(
+        messageFilter,
         {
-          messageId,
-          user: userId,
-          conversationId,
-          $expr: {
-            $anyElementTrue: {
-              $map: {
-                input: { $ifNull: ['$content', []] },
-                as: 'part',
-                in: targetPartMatch,
-              },
+          ...(Object.keys(partPatch).length > 0 ? { $set: partPatch } : {}),
+          ...(Object.keys(partClears).length > 0 ? { $unset: partClears } : {}),
+          ...(mergingAttachments
+            ? {
+                /** Replace only THIS tool call's prior entries: sibling calls
+                 * can legitimately share a `file_id` (the filename claim is
+                 * per-conversation), and the client anchors attachments to
+                 * cards by `toolCallId`. Provider tool-call ids repeat across
+                 * agents in handoff messages, so a sibling agent's attachment
+                 * under the same id/key must survive (missing agent identity =
+                 * legacy wildcard). */
+                $pull: {
+                  attachments: {
+                    $and: [
+                      {
+                        $or: [
+                          { file_id: { $in: attachmentKeys } },
+                          { file_id: null, filepath: { $in: attachmentKeys } },
+                        ],
+                      },
+                      { toolCallId },
+                      ...(agentId != null ? [{ agentId: { $in: [null, agentId] } }] : []),
+                      ...(stepId != null ? [{ stepId: { $in: [null, stepId] } }] : []),
+                    ],
+                  },
+                },
+              }
+            : {}),
+        },
+        {
+          new: true,
+          projection: { unfinished: 1 },
+          ...(Object.keys(partPatch).length > 0 || Object.keys(partClears).length > 0
+            ? { arrayFilters: [partIdentityFilter] }
+            : {}),
+        },
+      ).lean<{ unfinished?: boolean } | null>();
+      if (result == null) {
+        return { matched: false, unfinished: false };
+      }
+      /** The pipeline form removed and appended in one write; classic `$pull`
+       * and `$push` conflict on the same field, so the append is a second
+       * atomic write. A retry after a failure between them converges: the
+       * patch and pull are idempotent and the push re-adds what the pull
+       * removed. Claim fencing keeps one settler per task. */
+      if (mergingAttachments) {
+        await Message.updateOne(messageFilter, { $push: { attachments: { $each: attachments } } });
+      }
+      /** A supplied claim stamps only parts that carry none, matching the old
+       * pipeline's preference for an existing claim; the common settle path
+       * never pays this round trip. */
+      if (backgroundTask?.resultClaim != null) {
+        await Message.updateOne(
+          messageFilter,
+          {
+            $set: {
+              'content.$[part].tool_call.backgroundTask.resultClaim': backgroundTask.resultClaim,
             },
           },
-        },
-        stages,
-        { new: true, projection: { unfinished: 1 } },
-      ).lean<{ unfinished?: boolean } | null>();
-      return { matched: result != null, unfinished: result?.unfinished === true };
+          {
+            arrayFilters: [
+              {
+                ...partIdentityFilter,
+                'part.tool_call.backgroundTask.resultClaim': { $exists: false },
+              },
+            ],
+          },
+        );
+      }
+      return { matched: true, unfinished: result.unfinished === true };
     } catch (err) {
       logger.error('Error updating tool call result:', err);
       throw err;
@@ -2481,9 +2463,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         _subagentActivityProjectionSourceBytes: activityProjectionJsonBytes,
         _subagentActivityProjectionSourceIsString: activityProjectionIsString,
       };
-      const activitySourceProjection = {
-        _id: 0,
-        messageId: 1,
+      const activitySourcePayload = {
         subagentActivityProjectionJson: {
           $cond: [activityProjectionAvailable, '$subagentActivityProjection.activityJson', null],
         },
@@ -2501,6 +2481,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             },
           ],
         },
+      };
+      const activitySourceProjection = {
+        _id: 0,
+        messageId: 1,
+        ...activitySourcePayload,
       };
       const baseMatch = {
         user: input.user,
@@ -2584,61 +2569,81 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         { $limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT - (input.selectedTaskId == null ? 0 : 1) },
         { $project: activitySourceProjection },
       ]);
-      /** Two independent results rather than one `$facet`: the stage is
-       * unsupported on Amazon DocumentDB, and combining the page into a single
-       * BSON document risks the 16 MiB limit (the same reason the page and
-       * source reads above are kept separate). Both run concurrently, so this
-       * costs no additional wall-clock latency. */
+      /** One read replaces the unsupported `$facet` while keeping its guarantee:
+       * the bounded message fields and the source payload for each selected row
+       * come from the same document version, so a transcript persisted between
+       * two separate reads can never yield a message without its source. Rows
+       * stay independent results, so no combined document approaches the 16 MiB
+       * limit the surrounding reads already avoid. Only operators Amazon
+       * DocumentDB accepts are used. */
       const selectedProjectionPromise =
         input.selectedTaskId == null
           ? Promise.resolve({
               selectedMessages: [] as ProjectedSubagentThreadViewMessage[],
               selectedSources: [] as ActivitySourceProjection[],
             })
-          : Promise.all([
-              Message.aggregate<ProjectedSubagentThreadViewMessage>([
-                {
-                  $match: {
-                    ...baseMatch,
-                    messageId: {
-                      $in: [`${input.selectedTaskId}:user`, `${input.selectedTaskId}:assistant`],
-                    },
+          : Message.aggregate<
+              ProjectedSubagentThreadViewMessage & {
+                _selectedSource: ActivitySourceProjection | null;
+              }
+            >([
+              {
+                $match: {
+                  ...baseMatch,
+                  messageId: {
+                    $in: [`${input.selectedTaskId}:user`, `${input.selectedTaskId}:assistant`],
                   },
                 },
-                { $limit: 2 },
-                { $project: boundedMessageProjection },
-              ]),
-              Message.aggregate<ActivitySourceProjection>([
-                { $match: { ...baseMatch, messageId: `${input.selectedTaskId}:assistant` } },
-                { $limit: 1 },
-                { $addFields: sourceMetadataProjection },
-                {
-                  $match: {
-                    $or: [
+              },
+              { $limit: 2 },
+              { $addFields: sourceMetadataProjection },
+              {
+                $project: {
+                  ...boundedMessageProjection,
+                  _selectedSource: {
+                    $cond: [
                       {
-                        'subagentActivityProjection.taskId': input.selectedTaskId,
-                        'subagentActivityProjection.version': 1,
-                        _subagentActivityProjectionSourceIsString: true,
-                        _subagentActivityProjectionSourceBytes: {
-                          $lte: SUBAGENT_ACTIVITY_PROJECTION_SOURCE_BYTE_LIMIT,
-                        },
+                        $and: [
+                          { $eq: ['$messageId', `${input.selectedTaskId}:assistant`] },
+                          {
+                            $or: [
+                              {
+                                $and: [
+                                  {
+                                    $eq: [
+                                      '$subagentActivityProjection.taskId',
+                                      input.selectedTaskId,
+                                    ],
+                                  },
+                                  activityProjectionAvailable,
+                                ],
+                              },
+                              {
+                                $and: [
+                                  { $eq: ['$subagentTranscript.taskId', input.selectedTaskId] },
+                                  transcriptAvailable,
+                                ],
+                              },
+                            ],
+                          },
+                        ],
                       },
-                      {
-                        'subagentTranscript.taskId': input.selectedTaskId,
-                        _subagentTranscriptSourceIsString: true,
-                        _subagentTranscriptSourceBytes: {
-                          $lte: SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
-                        },
-                      },
+                      { messageId: '$messageId', ...activitySourcePayload },
+                      null,
                     ],
                   },
                 },
-                { $project: activitySourceProjection },
-              ]),
-            ]).then(([selectedMessages, selectedSources]) => ({
-              selectedMessages,
-              selectedSources,
-            }));
+              },
+            ]).then((rows) => {
+              const selectedSources: ActivitySourceProjection[] = [];
+              const selectedMessages = rows.map(({ _selectedSource, ...message }) => {
+                if (_selectedSource != null) {
+                  selectedSources.push(_selectedSource);
+                }
+                return message;
+              });
+              return { selectedMessages, selectedSources };
+            });
       const [messages, recentSources, selectedProjection] = await Promise.all([
         messagesPromise,
         recentSourcesPromise,

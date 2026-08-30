@@ -384,5 +384,41 @@ describeLive('Amazon DocumentDB - 2026-08-30 audit surface', () => {
       );
       expectShape('listSubagentTasksForThreads');
     });
+
+    it('site 7 - updateToolCallResult', async () => {
+      const settleMessageId = `audit-settle-${runId}`;
+      await mongoose.models.Message.create({
+        messageId: settleMessageId,
+        conversationId,
+        user: String(userId),
+        isCreatedByUser: false,
+        content: [
+          {
+            type: 'tool_call',
+            tool_call: { id: `audit-call-${runId}`, name: 'execute_code', output: 'pending' },
+          },
+        ],
+        attachments: [{ file_id: `audit-file-${runId}`, toolCallId: `audit-call-${runId}` }],
+      });
+      await probe('updateToolCallResult', () =>
+        messageMethods.updateToolCallResult({
+          userId: String(userId),
+          messageId: settleMessageId,
+          conversationId,
+          toolCallId: `audit-call-${runId}`,
+          output: 'settled output',
+          markBackgrounded: true,
+          backgroundTask: {
+            taskId: `audit-task-${runId}`,
+            toolName: 'execute_code',
+            status: 'completed',
+            settledAt: new Date(),
+            resultClaim: { kind: 'wakeup', claimId: `audit-claim-${runId}`, claimedAt: new Date() },
+          },
+          attachments: [{ file_id: `audit-file-${runId}`, toolCallId: `audit-call-${runId}` }],
+        }),
+      );
+      expectShape('updateToolCallResult');
+    });
   });
 });
