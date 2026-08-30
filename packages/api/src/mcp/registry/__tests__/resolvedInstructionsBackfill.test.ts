@@ -21,6 +21,20 @@ jest.mock('~/mcp/registry/db/ServerConfigsDB', () => ({
 const mockMongoose = {} as typeof import('mongoose');
 const INSTRUCTIONS = 'Prefer $select on list operations. Never invent addresses.';
 const FIXED_TIME = 1699564800000;
+const RUNTIME_IDENTITY_ENV_NAME = 'MCP_BACKFILL_RUNTIME_IDENTITY_TEST';
+const previousRuntimeIdentityEnv = process.env[RUNTIME_IDENTITY_ENV_NAME];
+
+beforeAll(() => {
+  process.env[RUNTIME_IDENTITY_ENV_NAME] = '{{LIBRECHAT_USER_ID}}';
+});
+
+afterAll(() => {
+  if (previousRuntimeIdentityEnv == null) {
+    delete process.env[RUNTIME_IDENTITY_ENV_NAME];
+  } else {
+    process.env[RUNTIME_IDENTITY_ENV_NAME] = previousRuntimeIdentityEnv;
+  }
+});
 
 /** A YAML server whose startup inspection was deferred, leaving the enabled
  * declaration without fetched text. */
@@ -51,6 +65,15 @@ const runtimeApiKeyPlaceholderYamlEntry: t.ParsedServerConfig = {
     source: 'admin',
     authorization_type: 'bearer',
     key: '{{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+  },
+};
+
+const envExpandedRuntimeApiKeyPlaceholderYamlEntry: t.ParsedServerConfig = {
+  ...startupDeferredYamlEntry,
+  apiKey: {
+    source: 'admin',
+    authorization_type: 'bearer',
+    key: `\${${RUNTIME_IDENTITY_ENV_NAME}}`,
   },
 };
 
@@ -149,6 +172,7 @@ describe('MCPServersRegistry.setResolvedInstructions', () => {
     ['OAuth', oauthDeferredYamlEntry],
     ['runtime placeholders', runtimePlaceholderYamlEntry],
     ['runtime placeholders in an admin API key', runtimeApiKeyPlaceholderYamlEntry],
+    ['env-expanded runtime placeholders', envExpandedRuntimeApiKeyPlaceholderYamlEntry],
     [
       'configured-oauth-block',
       {
@@ -408,6 +432,7 @@ describe('UserConnectionManager.backfillResolvedInstructions', () => {
     ],
     ['runtime placeholders', runtimePlaceholderYamlEntry],
     ['runtime placeholders in an admin API key', runtimeApiKeyPlaceholderYamlEntry],
+    ['env-expanded runtime placeholders', envExpandedRuntimeApiKeyPlaceholderYamlEntry],
     [
       'a configured oauth block with requiresOAuth stamped false',
       {

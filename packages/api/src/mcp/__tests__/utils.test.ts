@@ -769,6 +769,26 @@ describe('hasRuntimeContextPlaceholders', () => {
     ).toBe(true);
   });
 
+  it('detects trusted runtime placeholders introduced by environment expansion', () => {
+    const envName = 'MCP_UTILS_RUNTIME_IDENTITY_TEST';
+    const previous = process.env[envName];
+    process.env[envName] = '{{LIBRECHAT_USER_ID}}';
+    try {
+      expect(
+        hasRuntimeContextPlaceholders({
+          source: 'yaml',
+          headers: { 'X-User': `\${${envName}}` },
+        }),
+      ).toBe(true);
+    } finally {
+      if (previous == null) {
+        delete process.env[envName];
+      } else {
+        process.env[envName] = previous;
+      }
+    }
+  });
+
   it('ignores custom user variable placeholders', () => {
     expect(
       hasRuntimeContextPlaceholders({
@@ -831,6 +851,26 @@ describe('getMCPRequestScope', () => {
         },
       }).requestScoped,
     ).toBe(true);
+  });
+
+  it('tracks BODY placeholders introduced by environment expansion', () => {
+    const envName = 'MCP_UTILS_RUNTIME_BODY_TEST';
+    const previous = process.env[envName];
+    process.env[envName] = '{{LIBRECHAT_BODY_MESSAGEID}}';
+    try {
+      const config = {
+        source: 'yaml' as const,
+        headers: { 'X-Message': `\${${envName}}` },
+      };
+      expect(getMCPRequestScope(config).requestScoped).toBe(true);
+      expect(getRuntimeBodyPlaceholderFields(config)).toEqual(['messageId']);
+    } finally {
+      if (previous == null) {
+        delete process.env[envName];
+      } else {
+        process.env[envName] = previous;
+      }
+    }
   });
 
   it('ignores BODY placeholders in user-sourced configs', () => {

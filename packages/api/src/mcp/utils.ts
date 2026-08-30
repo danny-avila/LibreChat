@@ -1,6 +1,7 @@
 import {
   Constants,
   MCPOptionsSchema,
+  extractEnvVariable,
   normalizeServerName,
   normalizeMCPToolKey,
   buildServerNameAliases,
@@ -284,7 +285,7 @@ function hasRuntimeContextPlaceholder(value: PlaceholderValue): boolean {
 
 function hasPlaceholder(value: PlaceholderValue, pattern: RegExp): boolean {
   if (typeof value === 'string') {
-    return pattern.test(value);
+    return pattern.test(value) || pattern.test(extractEnvVariable(value));
   }
   if (Array.isArray(value)) {
     return value.some((item) => hasPlaceholder(item, pattern));
@@ -302,11 +303,13 @@ function addRuntimeBodyPlaceholderFields(
   fields: Set<keyof RequestBody>,
 ): void {
   if (typeof value === 'string') {
-    for (const match of value.matchAll(RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN)) {
-      const placeholderKey = match[1];
-      const field = placeholderKey ? BODY_PLACEHOLDER_FIELDS[placeholderKey] : undefined;
-      if (field) {
-        fields.add(field);
+    for (const candidate of new Set([value, extractEnvVariable(value)])) {
+      for (const match of candidate.matchAll(RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN)) {
+        const placeholderKey = match[1];
+        const field = placeholderKey ? BODY_PLACEHOLDER_FIELDS[placeholderKey] : undefined;
+        if (field) {
+          fields.add(field);
+        }
       }
     }
     return;
