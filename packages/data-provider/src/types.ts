@@ -534,6 +534,33 @@ export type TPublicCodeEnvironment = {
   pairingAvailable?: boolean;
 };
 
+export type TCodeEnvironmentSummary = {
+  resourceId: string;
+  id: string;
+  name: string;
+  type: 'managed' | 'attached';
+};
+
+export type TCodeControlPlane = {
+  id: string;
+  name: string;
+};
+
+export type TCodeEnvironmentsResponse = {
+  environments: TCodeEnvironmentSummary[];
+  controlPlanes: TCodeControlPlane[];
+};
+
+export type TCodeEnvironmentPairingResponse = {
+  environment: TCodeEnvironmentSummary;
+  pairing: {
+    workerId: string;
+    code: string;
+    expiresAt: string;
+    endpoint: string;
+  };
+};
+
 export type TConfig = {
   order: number;
   type?: EModelEndpoint;

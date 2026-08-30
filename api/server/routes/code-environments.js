@@ -27,5 +27,6 @@ router.post('/pairings', codeEnvironmentPairingLimiter, (req, res, next) =>
 router.post('/', requireCodeEnvironmentManage, (req, res, next) =>
   getHandlers().register(req, res, next),
 );
+router.delete('/:environmentId', (req, res, next) => getHandlers().remove(req, res, next));
 
 module.exports = router;

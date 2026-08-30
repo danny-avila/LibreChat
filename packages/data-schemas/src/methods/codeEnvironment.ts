@@ -8,7 +8,7 @@ type CreateCodeEnvironmentInput = Pick<
   CodeEnvironmentDocument,
   'environmentId' | 'name' | 'type' | 'baseURL' | 'controlPlaneId' | 'createdBy'
 > &
-  Pick<Partial<CodeEnvironmentDocument>, 'workerId' | 'workerPrincipal'>;
+  Pick<Partial<CodeEnvironmentDocument>, 'workerId' | 'controlPlaneId' | 'workerPrincipal'>;
 
 export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')): {
   createCodeEnvironment: (input: CreateCodeEnvironmentInput) => Promise<CodeEnvironmentDocument>;
@@ -19,6 +19,9 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
     environmentId: string,
   ) => Promise<CodeEnvironmentDocument | null>;
   listCodeEnvironmentIds: () => Promise<string[]>;
+  findCodeEnvironmentsByCreator: (
+    userId: string | Types.ObjectId,
+  ) => Promise<CodeEnvironmentDocument[]>;
   deleteCodeEnvironmentById: (
     id: string | Types.ObjectId,
   ) => Promise<CodeEnvironmentDocument | null>;
@@ -52,6 +55,16 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
     return await model().distinct('environmentId');
   }
 
+  async function findCodeEnvironmentsByCreator(
+    userId: string | Types.ObjectId,
+  ): Promise<CodeEnvironmentDocument[]> {
+    const creatorId = typeof userId === 'string' ? new Types.ObjectId(userId) : userId;
+    return await model()
+      .find({ createdBy: creatorId })
+      .sort({ createdAt: 1, _id: 1 })
+      .lean<CodeEnvironmentDocument[]>();
+  }
+
   async function deleteCodeEnvironmentById(
     id: string | Types.ObjectId,
   ): Promise<CodeEnvironmentDocument | null> {
@@ -81,6 +94,7 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
     findCodeEnvironmentsByIds,
     findCodeEnvironmentByEnvironmentId,
     listCodeEnvironmentIds,
+    findCodeEnvironmentsByCreator,
     deleteCodeEnvironmentById,
     deleteUserCodeEnvironments,
   };

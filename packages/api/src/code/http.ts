@@ -3,6 +3,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import { logger, type AppConfig } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type {
+  CodeEnvironmentLifecycleTarget,
   CodeEnvironmentPrincipalContext,
   CodeEnvironmentRegistration,
   CodeEnvironmentSummary,
@@ -11,12 +12,18 @@ import type { GetAppConfigOptions } from '~/app/service';
 import type { ServerRequest } from '~/types/http';
 import type { CodeBridgeFetch } from './bridge';
 import {
+  CodeBridgeLifecycleError,
+  CodeBridgePairingError,
+  createCodeBridgePairing,
+  readCodeBridgeSecret,
+  revokeCodeBridgeWorker,
+} from './bridge';
+import { CodeEnvironmentValidationError, normalizeCodeEnvironmentName } from './environments';
+import {
   assertCodeApiJwtSigningReady,
   getCodeApiTenantId,
   isCodeApiJwtAuthEnabled,
 } from '~/auth/codeapi';
-import { CodeBridgePairingError, createCodeBridgePairing, readCodeBridgeSecret } from './bridge';
-import { CodeEnvironmentValidationError, normalizeCodeEnvironmentName } from './environments';
 import { getAppConfigOptionsFromUser } from '~/app/service';
 
 type Registry = {
@@ -25,6 +32,11 @@ type Registry = {
     environment: CodeEnvironmentRegistration;
   }) => Promise<CodeEnvironmentSummary>;
   listAccessible: (actor: CodeEnvironmentPrincipalContext) => Promise<CodeEnvironmentSummary[]>;
+  remove: (params: {
+    actor: CodeEnvironmentPrincipalContext;
+    environmentId: string;
+    beforeDelete?: (target: CodeEnvironmentLifecycleTarget) => Promise<void>;
+  }) => Promise<CodeEnvironmentSummary | null>;
 };
 
 type StatefulCodeConfig = NonNullable<
@@ -80,6 +92,28 @@ function configuredPrincipalControlPlane(
   );
 }
 
+function principalControlPlanes(appConfig: AppConfig): Array<{ id: string; name: string }> {
+  return (
+    appConfig.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments
+      ?.filter(
+        (environment) =>
+          environment.type === 'attached' &&
+          environment.owner === 'deployment' &&
+          environment.pairing?.allowPrincipalWorkers === true,
+      )
+      .map(({ id, name }) => ({ id, name })) ?? []
+  );
+}
+
+class CodeEnvironmentLifecycleHttpError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 function pairingErrorResponse(error: unknown, res: Response): Response {
   if (!(error instanceof CodeBridgePairingError)) {
     return res.status(502).json({ error: 'Code API pairing request failed' });
@@ -105,6 +139,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
   list: (req: ServerRequest, res: Response) => Promise<Response>;
   register: (req: ServerRequest, res: Response) => Promise<Response>;
   pair: (req: ServerRequest, res: Response) => Promise<Response>;
+  remove: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
   const createEnvironmentId = deps.createEnvironmentId ?? (() => `code-${nanoid(20)}`);
   const readSecret = deps.readSecret ?? readCodeBridgeSecret;
@@ -117,8 +152,14 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     if (principal == null) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    const environments = await deps.registry.listAccessible(principal);
-    return res.status(200).json({ environments });
+    const [environments, appConfig] = await Promise.all([
+      deps.registry.listAccessible(principal),
+      deps.getAppConfig({ baseOnly: true }),
+    ]);
+    return res.status(200).json({
+      environments,
+      controlPlanes: principalControlPlanes(appConfig),
+    });
   }
 
   async function register(req: ServerRequest, res: Response): Promise<Response> {
@@ -175,6 +216,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
           baseURL: controlPlane.baseURL,
           controlPlaneId,
           workerId: controlPlane.pairing?.workerId,
+          controlPlaneId: controlPlane.id,
           workerPrincipal: { type: 'deployment', id: controlPlane.id },
         },
       });
@@ -278,6 +320,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
           type: 'attached',
           baseURL: controlPlane.baseURL,
           workerId,
+          controlPlaneId: controlPlane.id,
           workerPrincipal: { type: 'user', id: principal.userId.toString() },
         },
       });
@@ -287,9 +330,22 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
           workerId: pairing.workerId,
           code: pairing.code,
           expiresAt: pairing.expiresAt,
+          endpoint: controlPlane.baseURL,
         },
       });
     } catch (error) {
+      try {
+        await revokeCodeBridgeWorker({
+          baseURL: controlPlane.baseURL,
+          token,
+          workerId,
+          fetchImpl: deps.fetchImpl,
+        });
+      } catch {
+        return res.status(502).json({
+          error: 'Code environment registration failed and its pairing could not be revoked',
+        });
+      }
       const duplicate =
         typeof error === 'object' &&
         error != null &&
@@ -306,5 +362,66 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     }
   }
 
-  return { list, register, pair };
+  async function remove(req: ServerRequest, res: Response): Promise<Response> {
+    const principal = actor(req);
+    if (principal == null) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const params = req.params as Record<string, unknown>;
+    const environmentId = typeof params.environmentId === 'string' ? params.environmentId : '';
+    if (!environmentId) {
+      return res.status(400).json({ error: 'Code environment id is required' });
+    }
+    const appConfig = await deps.getAppConfig({ baseOnly: true });
+    try {
+      const environment = await deps.registry.remove({
+        actor: principal,
+        environmentId,
+        beforeDelete: async (target) => {
+          if (target.workerPrincipal?.type !== 'user' || target.workerId == null) return;
+          const controlPlane = configuredPrincipalControlPlane(
+            appConfig,
+            target.controlPlaneId ?? '',
+          );
+          if (controlPlane == null || controlPlane.baseURL !== target.baseURL) {
+            throw new CodeEnvironmentLifecycleHttpError(
+              409,
+              'Code environment control plane is no longer configured',
+            );
+          }
+          const tokenEnv = controlPlane.pairing?.tokenEnv;
+          const token = tokenEnv != null ? readSecret(tokenEnv)?.trim() : undefined;
+          if (!token) {
+            throw new CodeEnvironmentLifecycleHttpError(
+              503,
+              'Code environment revocation is not configured',
+            );
+          }
+          await revokeCodeBridgeWorker({
+            baseURL: controlPlane.baseURL,
+            token,
+            workerId: target.workerId,
+            fetchImpl: deps.fetchImpl,
+          });
+        },
+      });
+      if (environment == null) {
+        return res.status(404).json({ error: 'Code environment was not found' });
+      }
+      return res.status(200).json({ environment });
+    } catch (error) {
+      if (error instanceof CodeEnvironmentLifecycleHttpError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      if (error instanceof CodeBridgeLifecycleError) {
+        return res.status(error.reason === 'timeout' ? 504 : 502).json({
+          error: 'Code environment worker could not be revoked',
+          ...(error.upstreamStatus != null ? { upstreamStatus: error.upstreamStatus } : {}),
+        });
+      }
+      throw error;
+    }
+  }
+
+  return { list, register, pair, remove };
 }

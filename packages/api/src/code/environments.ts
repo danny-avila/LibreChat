@@ -52,6 +52,13 @@ type CachedAccessibleCodeEnvironmentConfiguration = AccessibleCodeEnvironmentCon
   resourceId: string;
 };
 
+export type CodeEnvironmentLifecycleTarget = CodeEnvironmentSummary & {
+  baseURL: string;
+  workerId?: string;
+  controlPlaneId?: string;
+  workerPrincipal?: CodeEnvironmentRegistration['workerPrincipal'];
+};
+
 const ENVIRONMENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const WORKER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const WORKER_PRINCIPAL_ID_PATTERN = /^\S(?:.{0,254}\S)?$/;
@@ -145,6 +152,11 @@ export function createCodeEnvironmentRegistry(
   ) => Promise<AccessibleCodeEnvironmentConfiguration[]>;
   listRegisteredIds: () => Promise<string[]>;
   invalidateAccessibleConfigurations: (tenantId?: string) => Promise<void>;
+  remove: (params: {
+    actor: CodeEnvironmentPrincipalContext;
+    environmentId: string;
+    beforeDelete?: (target: CodeEnvironmentLifecycleTarget) => Promise<void>;
+  }) => Promise<CodeEnvironmentSummary | null>;
 } {
   const methods = createMethods(mongoose);
   const access = new AccessControlService(mongoose);
@@ -201,6 +213,7 @@ export function createCodeEnvironmentRegistry(
       baseURL: environment.baseURL,
       controlPlaneId: environment.controlPlaneId,
       workerId: environment.workerId,
+      controlPlaneId: environment.controlPlaneId,
       workerPrincipal: environment.workerPrincipal,
       createdBy: new Types.ObjectId(actor.userId),
     });
@@ -340,11 +353,48 @@ export function createCodeEnvironmentRegistry(
     return configurations.map(toPublicConfiguration);
   }
 
+  async function remove({
+    actor,
+    environmentId,
+    beforeDelete,
+  }: {
+    actor: CodeEnvironmentPrincipalContext;
+    environmentId: string;
+    beforeDelete?: (target: CodeEnvironmentLifecycleTarget) => Promise<void>;
+  }): Promise<CodeEnvironmentSummary | null> {
+    const environment = await methods.findCodeEnvironmentByEnvironmentId(environmentId);
+    if (environment == null) return null;
+    const allowed = await access.checkPermission({
+      userId: actor.userId.toString(),
+      role: actor.role,
+      resourceType: ResourceType.CODE_ENVIRONMENT,
+      resourceId: environment._id,
+      requiredPermission: PermissionBits.DELETE,
+    });
+    if (!allowed) return null;
+
+    await beforeDelete?.({
+      ...toSummary(environment),
+      baseURL: environment.baseURL,
+      workerId: environment.workerId,
+      controlPlaneId: environment.controlPlaneId,
+      workerPrincipal: environment.workerPrincipal,
+    });
+    const deleted = await methods.deleteCodeEnvironmentById(environment._id);
+    if (deleted == null) return null;
+    await access.removeAllPermissions({
+      resourceType: ResourceType.CODE_ENVIRONMENT,
+      resourceId: environment._id,
+    });
+    return toSummary(deleted);
+  }
+
   return {
     register,
     listAccessible,
     listAccessibleConfigurations,
     listRegisteredIds,
     invalidateAccessibleConfigurations,
+    remove,
   };
 }

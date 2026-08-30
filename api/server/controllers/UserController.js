@@ -12,6 +12,7 @@ const {
   getWebSearchUninstallFields,
   deleteAgentCheckpoints,
   deleteAllSharedLinksWithCleanup,
+  revokeUserCodeEnvironmentWorkers,
 } = require('@librechat/api');
 const {
   Tools,
@@ -389,6 +390,19 @@ const deleteUserController = async (req, res) => {
         return res.status(result.status ?? 400).json({ message: msg });
       }
     }
+
+    const deletionAppConfig =
+      req.config ??
+      (await getAppConfig({
+        role: req.user?.role,
+        userId: req.user?.id,
+        tenantId: req.user?.tenantId,
+      }));
+    await revokeUserCodeEnvironmentWorkers({
+      mongoose,
+      userId: user.id,
+      appConfig: deletionAppConfig,
+    });
 
     // Block new trigger admissions across replicas while preserving the user
     // principal so a transient cleanup failure remains retryable.

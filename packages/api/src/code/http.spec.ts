@@ -77,7 +77,7 @@ describe('code environment HTTP handlers', () => {
     } as AppConfig;
     const handlers = createCodeEnvironmentHttpHandlers({
       getAppConfig: jest.fn().mockResolvedValue(appConfig),
-      registry: { register, listAccessible: jest.fn() },
+      registry: { register, listAccessible: jest.fn(), remove: jest.fn() },
       createEnvironmentId: () => 'code-generated',
       readSecret: jest.fn(() => 'administrator-token'),
       resolveTenantId: jest.fn(() => 'tenant-1'),
@@ -122,15 +122,20 @@ describe('code environment HTTP handlers', () => {
       environment: {
         id: 'code-generated',
         name: 'Personal VM',
-        type: 'attached',
+        type: 'attached' as const,
         baseURL: 'https://code.librechat.example/v1',
         workerId: 'code-generated',
+        controlPlaneId: 'shared-code-api',
         workerPrincipal: { type: 'user', id: '68b2f0c498f24c1e78fa0001' },
       },
     });
     expect(res.body).toEqual({
       environment: expect.objectContaining({ id: 'code-generated' }),
-      pairing: expect.objectContaining({ workerId: 'code-generated', code: 'a'.repeat(32) }),
+      pairing: expect.objectContaining({
+        workerId: 'code-generated',
+        code: 'a'.repeat(32),
+        endpoint: 'https://code.librechat.example/v1',
+      }),
     });
   });
 
@@ -373,7 +378,7 @@ describe('code environment HTTP handlers', () => {
     } as AppConfig;
     const handlers = createCodeEnvironmentHttpHandlers({
       getAppConfig: jest.fn().mockResolvedValue(appConfig),
-      registry: { register, listAccessible: jest.fn() },
+      registry: { register, listAccessible: jest.fn(), remove: jest.fn() },
       createEnvironmentId: () => 'personal-vm',
     });
     const req = {
@@ -403,6 +408,7 @@ describe('code environment HTTP handlers', () => {
         baseURL: 'https://code.librechat.example',
         controlPlaneId: 'shared-code-api',
         workerId: 'deployment-worker',
+        controlPlaneId: 'shared-code-api',
         workerPrincipal: { type: 'deployment', id: 'shared-code-api' },
       },
     });
@@ -433,7 +439,7 @@ describe('code environment HTTP handlers', () => {
           },
         },
       } as AppConfig),
-      registry: { register, listAccessible: jest.fn() },
+      registry: { register, listAccessible: jest.fn(), remove: jest.fn() },
     });
     const res = response();
 
@@ -474,7 +480,7 @@ describe('code environment HTTP handlers', () => {
           },
         },
       } as AppConfig),
-      registry: { register: jest.fn(), listAccessible: jest.fn() },
+      registry: { register: jest.fn(), listAccessible: jest.fn(), remove: jest.fn() },
       readSecret: jest.fn(() => 'administrator-token'),
       principalAuthEnabled: jest.fn(() => true),
       principalAuthReady: jest.fn(),
@@ -492,6 +498,74 @@ describe('code environment HTTP handlers', () => {
 
     expect(res.statusCode).toBe(400);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('revokes a user-bound worker before deleting its registry entry', async () => {
+    const remove = jest.fn(async ({ beforeDelete }) => {
+      await beforeDelete({
+        resourceId: '68b2f0c498f24c1e78fa0111',
+        id: 'code-generated',
+        name: 'Personal VM',
+        type: 'attached',
+        baseURL: 'https://code.librechat.example/v1',
+        workerId: 'code-generated',
+        controlPlaneId: 'self-service',
+        workerPrincipal: { type: 'user', id: '68b2f0c498f24c1e78fa0001' },
+      });
+      return {
+        resourceId: '68b2f0c498f24c1e78fa0111',
+        id: 'code-generated',
+        name: 'Personal VM',
+        type: 'attached' as const,
+      };
+    });
+    const fetchImpl = jest.fn().mockResolvedValue({ ok: true });
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              allowedEnvironments: ['user'],
+              environments: [
+                {
+                  id: 'self-service',
+                  name: 'Self-service',
+                  type: 'attached',
+                  baseURL: 'https://code.librechat.example/v1',
+                  owner: 'deployment',
+                  pairing: {
+                    allowPrincipalWorkers: true,
+                    tokenEnv: 'CODE_ADMIN_TOKEN',
+                  },
+                },
+              ],
+            },
+          },
+        },
+      } as AppConfig),
+      registry: { register: jest.fn(), listAccessible: jest.fn(), remove },
+      readSecret: jest.fn(() => 'administrator-token'),
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.remove(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        params: { environmentId: 'code-generated' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://code.librechat.example/v1/bridge/workers/code-generated/revoke',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer administrator-token' },
+      }),
+    );
+    expect(remove).toHaveBeenCalled();
   });
 
   test.each([
@@ -525,7 +599,11 @@ describe('code environment HTTP handlers', () => {
           },
         },
       } as AppConfig),
-      registry: { register: jest.fn().mockRejectedValue(error), listAccessible: jest.fn() },
+      registry: {
+        register: jest.fn().mockRejectedValue(error),
+        listAccessible: jest.fn(),
+        remove: jest.fn(),
+      },
     });
     const res = response();
 

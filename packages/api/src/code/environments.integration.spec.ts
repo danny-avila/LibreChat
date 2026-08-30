@@ -4,6 +4,7 @@ import { createMethods, createModels } from '@librechat/data-schemas';
 import { AccessRoleIds, PrincipalType, ResourceType } from 'librechat-data-provider';
 import { AccessControlService } from '~/acl/accessControlService';
 import { createCodeEnvironmentRegistry } from './environments';
+import { revokeUserCodeEnvironmentWorkers } from './lifecycle';
 
 function createSharedCache() {
   const values = new Map<string, unknown>();
@@ -176,6 +177,97 @@ describe('code environment registry', () => {
     await expect(
       registry.listAccessible({ userId: ownerId, role: 'USER', idOnTheSource: null }),
     ).resolves.toEqual([environment]);
+  });
+
+  test('deletes an owner environment and its ACL after lifecycle cleanup succeeds', async () => {
+    const registry = createCodeEnvironmentRegistry(mongoose);
+    const ownerId = new Types.ObjectId();
+    const environment = await registry.register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'remove-me',
+        name: 'Remove me',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        workerId: 'remove-me',
+        controlPlaneId: 'self-service',
+        workerPrincipal: { type: 'user', id: ownerId.toString() },
+      },
+    });
+    const beforeDelete = jest.fn().mockResolvedValue(undefined);
+
+    await expect(
+      registry.remove({
+        actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+        environmentId: 'remove-me',
+        beforeDelete,
+      }),
+    ).resolves.toEqual(environment);
+    expect(beforeDelete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'remove-me',
+        workerId: 'remove-me',
+        controlPlaneId: 'self-service',
+      }),
+    );
+    await expect(
+      mongoose.models.AclEntry.countDocuments({ resourceId: environment.resourceId }),
+    ).resolves.toBe(0);
+    await expect(
+      registry.listAccessible({ userId: ownerId, role: 'USER', idOnTheSource: null }),
+    ).resolves.toEqual([]);
+  });
+
+  test('revokes every user-bound worker before account deletion', async () => {
+    const ownerId = new Types.ObjectId();
+    await createCodeEnvironmentRegistry(mongoose).register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'account-worker',
+        name: 'Account worker',
+        type: 'attached',
+        baseURL: 'https://code.example.com/v1',
+        workerId: 'account-worker',
+        controlPlaneId: 'self-service',
+        workerPrincipal: { type: 'user', id: ownerId.toString() },
+      },
+    });
+    const fetchImpl = jest.fn().mockResolvedValue({ ok: true });
+
+    await expect(
+      revokeUserCodeEnvironmentWorkers({
+        mongoose,
+        userId: ownerId.toString(),
+        appConfig: {
+          endpoints: {
+            agents: {
+              statefulCodeSessions: {
+                allowedEnvironments: ['user'],
+                environments: [
+                  {
+                    id: 'self-service',
+                    name: 'Self-service',
+                    type: 'attached',
+                    baseURL: 'https://code.example.com/v1',
+                    owner: 'deployment',
+                    pairing: {
+                      allowPrincipalWorkers: true,
+                      tokenEnv: 'CODE_ADMIN_TOKEN',
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        } as never,
+        readSecret: () => 'administrator-token',
+        fetchImpl,
+      }),
+    ).resolves.toBe(1);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://code.example.com/v1/bridge/workers/account-worker/revoke',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   test('removes creator-owned environment records and grants when the user is deleted', async () => {

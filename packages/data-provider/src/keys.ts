@@ -95,6 +95,7 @@ export enum QueryKeys {
   schedule = 'schedule',
   parentSubagents = 'parentSubagents',
   subagentThread = 'subagentThread',
+  codeEnvironments = 'codeEnvironments',
 }
 
 // Dynamic query keys that require parameters
@@ -148,4 +149,6 @@ export enum MutationKeys {
   updateSchedule = 'updateSchedule',
   deleteSchedule = 'deleteSchedule',
   runSchedule = 'runSchedule',
+  pairCodeEnvironment = 'pairCodeEnvironment',
+  deleteCodeEnvironment = 'deleteCodeEnvironment',
 }

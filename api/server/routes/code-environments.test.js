@@ -21,6 +21,7 @@ const mockHandlers = {
   list: jest.fn((_req, res) => res.status(200).json({ environments: [] })),
   register: jest.fn((_req, res) => res.status(201).json({ environment: { id: 'code-1' } })),
   pair: jest.fn((_req, res) => res.status(201).json({ environment: { id: 'code-1' } })),
+  remove: jest.fn((_req, res) => res.status(200).json({ environment: { id: 'code-1' } })),
 };
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -91,5 +92,12 @@ describe('code environment routes', () => {
 
     expect(middlewareCalls).toEqual(['jwt', 'pairing-limit']);
     expect(mockHandlers.pair).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows an authenticated owner to remove an environment', async () => {
+    await request(createApp()).delete('/api/code-environments/code-1').expect(200);
+
+    expect(middlewareCalls).toEqual(['jwt']);
+    expect(mockHandlers.remove).toHaveBeenCalledTimes(1);
   });
 });
