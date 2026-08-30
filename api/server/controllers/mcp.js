@@ -6,10 +6,11 @@
  * @import { MCPServerDocument } from 'librechat-data-provider'
  */
 const { randomUUID } = require('crypto');
-const { logger, SystemCapabilities } = require('@librechat/data-schemas');
+const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   checkAccess,
   isUserSourced,
+  createAuthIdentityContext,
   MCPConnection,
   MCPErrorCodes,
   splitMCPToolKey,
@@ -36,6 +37,7 @@ const {
   resolveAllMcpConfigs,
 } = require('~/server/services/MCP');
 const { loadMCPServerCatalogs } = require('~/server/services/Tools/mcp');
+const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
 const {
   cacheMCPServerTools,
   getMCPServerTools,
@@ -195,12 +197,24 @@ const getMCPTools = async (req, res) => {
     }
 
     const mcpServers = {};
+    const oboIdentityContext = createAuthIdentityContext({
+      user: req.user,
+      tenantId: getTenantId(),
+    });
     const { serverTools: serverToolsMap, serversWithoutTools } = await loadMCPServerCatalogs({
       user: req.user,
       servers: configuredServers.map((serverName) => ({
         serverName,
         serverConfig: mcpConfig[serverName],
       })),
+      upstreamTokenProvider: createOpenIDSessionTokenProvider({
+        req,
+        res,
+        user: req.user,
+        identityContext: oboIdentityContext,
+        tokenPreference: 'access_token',
+      }),
+      oboIdentityContext,
     });
     if (serversWithoutTools.length > 0) {
       logger.debug(

@@ -90,7 +90,14 @@ describe('loadMCPServerCatalogs', () => {
       return { serverTools: new Map([['config-only', {}]]), serversWithoutTools: [] };
     });
 
-    const result = await loadMCPServerCatalogs({ user, servers });
+    const upstreamTokenProvider = jest.fn();
+    const oboIdentityContext = { appUserId: 'user-123' };
+    const result = await loadMCPServerCatalogs({
+      user,
+      servers,
+      upstreamTokenProvider,
+      oboIdentityContext,
+    });
 
     expect(mockGetUserMCPAuthMap).toHaveBeenCalledTimes(1);
     expect(mockGetUserMCPAuthMap).toHaveBeenCalledWith({
@@ -105,6 +112,8 @@ describe('loadMCPServerCatalogs', () => {
         configServers: { 'config-only': servers[0].serverConfig },
         flowManager: expect.any(Object),
         tokenMethods: expect.any(Object),
+        upstreamTokenProvider,
+        oboIdentityContext,
       }),
     );
     expect(mockGetConnection).not.toHaveBeenCalled();

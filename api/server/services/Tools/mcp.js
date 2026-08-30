@@ -34,8 +34,14 @@ const MCP_REINITIALIZE_FAILURE_REASONS = {
   INITIALIZATION_FAILED: 'initialization_failed',
 };
 
-/** Wires application dependencies into the passive, request-local catalog recovery service. */
-async function loadMCPServerCatalogs({ user, servers }) {
+/** Wires application dependencies into the passive, request-local catalog recovery service.
+ * @param {Object} params
+ * @param {IUser} params.user
+ * @param {Array<{ serverName: string, serverConfig: object }>} params.servers
+ * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider] - Live upstream-token closure for OBO discovery, built at the request boundary so this layer never receives the raw Express request.
+ * @param {import('@librechat/api').AuthIdentityContext} [params.oboIdentityContext] - Non-template-visible OBO identity context built from the real request user.
+ */
+async function loadMCPServerCatalogs({ user, servers, upstreamTokenProvider, oboIdentityContext }) {
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
   const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
   const mcpManager = getMCPManager();
@@ -56,6 +62,8 @@ async function loadMCPServerCatalogs({ user, servers }) {
           graphTokenResolver: getGraphApiToken,
           oboTokenResolver: exchangeOboToken,
           oboTrustChecker: createOboTrustChecker(),
+          upstreamTokenProvider,
+          oboIdentityContext,
         }),
       formatServerTools: formatMCPServerTools,
       getCachedServerTools: getMCPServerTools,

@@ -3322,6 +3322,8 @@ describe('MCP Routes', () => {
       expect(mockLoadMCPServerCatalogs).toHaveBeenCalledWith({
         user: { id: 'test-user-id' },
         servers: [{ serverName: 'user-server', serverConfig }],
+        upstreamTokenProvider: expect.any(Function),
+        oboIdentityContext: expect.any(Object),
       });
     });
 
@@ -3372,6 +3374,8 @@ describe('MCP Routes', () => {
       expect(mockLoadMCPServerCatalogs).toHaveBeenCalledWith({
         user: { id: 'test-user-id' },
         servers: [{ serverName: 'connected-server', serverConfig }],
+        upstreamTokenProvider: expect.any(Function),
+        oboIdentityContext: expect.any(Object),
       });
     });
 
@@ -3468,6 +3472,8 @@ describe('MCP Routes', () => {
           serverName,
           serverConfig,
         })),
+        upstreamTokenProvider: expect.any(Function),
+        oboIdentityContext: expect.any(Object),
       });
     });
   });
