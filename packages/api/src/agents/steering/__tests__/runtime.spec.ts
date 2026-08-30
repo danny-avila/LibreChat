@@ -135,6 +135,27 @@ describe('createSteerTerminalContinuationHook', () => {
     ).resolves.toBe(1);
   });
 
+  it('never admits terminal steers inside a subagent scope', async () => {
+    const streamId = `terminal-subagent-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    const queued = buildSteer('s1', 'keep for the parent');
+    await GenerationJobManager.steering.enqueue(streamId, queued);
+    const applySteer = jest.fn();
+    const hook = createSteerTerminalContinuationHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer,
+    });
+
+    await expect(
+      hook(stopInput(1, undefined, { agentId: 'child-agent' }), abortSignal),
+    ).resolves.toEqual({ decision: 'continue' });
+    expect(applySteer).not.toHaveBeenCalled();
+    await expect(GenerationJobManager.steering.peek(streamId, job.createdAt)).resolves.toEqual([
+      queued,
+    ]);
+  });
+
   it('seals admission when the continuation budget is exhausted without losing the queue', async () => {
     const streamId = `terminal-budget-${Date.now()}`;
     const job = await GenerationJobManager.createJob(streamId, 'user-1');

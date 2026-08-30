@@ -285,6 +285,9 @@ export function createSteerTerminalContinuationHook(
   opts: SteerDrainHookOptions,
 ): TerminalSteerHook {
   return async (input: TerminalSteerHookInput): Promise<HookOutputByEvent['Stop']> => {
+    if (input.agentId != null) {
+      return { decision: 'continue' };
+    }
     const allowClaim =
       input.continuationBudgetRemaining > 0 &&
       input.stopReason == null &&
