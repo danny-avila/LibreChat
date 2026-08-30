@@ -380,6 +380,7 @@ export class MCPConnectionFactory {
     this.ephemeralConnection = basic.ephemeralConnection === true;
     this.connectionTimeout = options?.connectionTimeout;
     this.deadlineMs = options?.deadlineMs;
+    this.signal = options?.signal;
     this.tenantContext = tenantStorage?.getStore?.();
     this.tenantId = this.tenantContext?.tenantId ?? getTenantId();
     this.logPrefix = options?.user ? `[MCP][User: ${options.user.id}]` : '[MCP]';
@@ -391,7 +392,6 @@ export class MCPConnectionFactory {
       this.userId = options.user?.id;
       this.flowManager = options.flowManager;
       this.tokenMethods = options.tokenMethods;
-      this.signal = options.signal;
       this.oauthStart = options.oauthStart;
       this.oauthEnd = options.oauthEnd;
       this.returnOnOAuth = options.returnOnOAuth;

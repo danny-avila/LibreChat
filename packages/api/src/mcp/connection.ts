@@ -2544,7 +2544,7 @@ export class MCPConnection extends EventEmitter {
       startEpoch === this.toolListRefreshEpoch &&
       this.handledToolListChangeGeneration < this.toolListChangeGeneration
     ) {
-      if (deadlineMs != null && Date.now() >= deadlineMs) {
+      if ((deadlineMs != null && Date.now() >= deadlineMs) || signal?.aborted === true) {
         break;
       }
       this.startToolListRefresh();
@@ -2553,11 +2553,13 @@ export class MCPConnection extends EventEmitter {
         break;
       }
       /** The refresh runs on the connection's own budget, not the caller's, so a refresh already
-       *  in flight can outlast this deadline. Stop waiting on it rather than adopting its budget;
-       *  it keeps running for whoever else wants it and this caller reports an incomplete read. */
-      if (deadlineMs == null) {
+       *  in flight can outlast this deadline — and a cancelled caller must stop waiting even
+       *  though the shared refresh itself is never aborted on one caller's behalf. Stop waiting
+       *  rather than adopting its budget; it keeps running for whoever else wants it and this
+       *  caller reports an incomplete read. */
+      if (deadlineMs == null && signal == null) {
         await refresh;
-      } else if (!(await this.settlesBefore(refresh, deadlineMs))) {
+      } else if (!(await this.settlesBefore(refresh, deadlineMs, signal))) {
         break;
       }
       if (this.toolListRefreshRetryTimer) {
@@ -2583,17 +2585,34 @@ export class MCPConnection extends EventEmitter {
     return { tools: [], complete: false };
   }
 
-  /** Waits for `promise` only until `deadlineMs`, reporting whether it settled in time. */
-  private async settlesBefore(promise: Promise<unknown>, deadlineMs: number): Promise<boolean> {
+  /** Waits for `promise` only until `deadlineMs` or an abort, reporting whether it settled first. */
+  private async settlesBefore(
+    promise: Promise<unknown>,
+    deadlineMs?: number,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    if (signal?.aborted === true) {
+      return false;
+    }
     let timer: NodeJS.Timeout | undefined;
-    const expiry = new Promise<false>((resolve) => {
-      timer = setTimeout(() => resolve(false), Math.max(0, deadlineMs - Date.now()));
-      timer.unref?.();
+    let onAbort: (() => void) | undefined;
+    const interrupted = new Promise<false>((resolve) => {
+      if (deadlineMs != null) {
+        timer = setTimeout(() => resolve(false), Math.max(0, deadlineMs - Date.now()));
+        timer.unref?.();
+      }
+      if (signal != null) {
+        onAbort = () => resolve(false);
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
     });
     try {
-      return await Promise.race([promise.then(() => true), expiry]);
+      return await Promise.race([promise.then(() => true), interrupted]);
     } finally {
       clearTimeout(timer);
+      if (onAbort != null) {
+        signal?.removeEventListener('abort', onAbort);
+      }
     }
   }
 

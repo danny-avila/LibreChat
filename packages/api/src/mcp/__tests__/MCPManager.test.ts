@@ -2990,6 +2990,42 @@ describe('MCPManager', () => {
       );
     });
 
+    it('does not start discovery fallback for a caller whose signal already aborted', async () => {
+      const isConnected = jest.fn().mockResolvedValue(false);
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue({ ...mockConnection, isConnected }),
+      });
+      const controller = new AbortController();
+      controller.abort();
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({ serverName, signal: controller.signal });
+
+      expect(result.tools).toBeNull();
+      expect(MCPConnectionFactory.discoverTools).not.toHaveBeenCalled();
+    });
+
+    it('forwards the caller signal into non-OAuth fallback discovery', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(null),
+      });
+      (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
+        tools: mockTools,
+        connection: null,
+        oauthRequired: false,
+        oauthUrl: null,
+      });
+      const controller = new AbortController();
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.discoverServerTools({ serverName, signal: controller.signal });
+
+      expect(MCPConnectionFactory.discoverTools).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+
     it('does not reuse an app connection for a tenant-scoped config override', async () => {
       const configOverride = {
         type: 'streamable-http' as const,

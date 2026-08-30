@@ -302,6 +302,19 @@ export class MCPManager extends UserConnectionManager {
       logger.debug('[MCP][Discovery] App connection unavailable; trying discovery mode');
     }
 
+    /** A probe aborted by the caller is not a dead server: falling through here would open a
+     *  fresh connection on behalf of a request that no longer exists (or a budget already
+     *  spent), and the fallback keeps running after the caller has gone. */
+    if (
+      args.signal?.aborted === true ||
+      (args.deadlineMs != null && Date.now() >= args.deadlineMs)
+    ) {
+      logger.debug(
+        '[MCP][Discovery] Caller cancelled or budget spent; skipping discovery fallback',
+      );
+      return { tools: null, oauthRequired: false, oauthUrl: null };
+    }
+
     const missingBodyFields = getMissingRuntimeBodyPlaceholderFields(
       serverConfig,
       args.requestBody,
@@ -362,6 +375,7 @@ export class MCPManager extends UserConnectionManager {
         graphTokenResolver: args.graphTokenResolver,
         connectionTimeout: args.connectionTimeout,
         deadlineMs: args.deadlineMs,
+        signal: args.signal,
       });
       return finalizeDiscoveryResult(result);
     }

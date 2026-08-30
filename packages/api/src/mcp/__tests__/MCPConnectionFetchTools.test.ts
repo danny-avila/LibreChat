@@ -369,6 +369,30 @@ describe('MCPConnection.fetchTools pagination', () => {
     expect(Date.now() - start).toBeLessThan(2000);
   });
 
+  it('stops waiting on an in-flight refresh when the caller signal aborts, without a deadline', async () => {
+    mcpConfig.TOOLS_LIST_TIMEOUT_MS = 30000;
+    const conn = createConnectionWithListTools(jest.fn());
+    const mutable = conn as unknown as {
+      toolListChangeGeneration: number;
+      toolListRefreshPromise: Promise<void> | null;
+    };
+    const listTools = jest.fn(async () => {
+      mutable.toolListChangeGeneration = 1;
+      return { tools: [makeTool('a')] };
+    });
+    conn.client.listTools = listTools;
+    mutable.toolListRefreshPromise = new Promise<void>(() => {});
+    jest.spyOn(conn.client, 'getServerCapabilities').mockReturnValue({ tools: {} });
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 20);
+
+    const start = Date.now();
+    const snapshot = await conn.fetchOrderedToolsSnapshot(undefined, controller.signal);
+
+    expect(snapshot.complete).toBe(false);
+    expect(Date.now() - start).toBeLessThan(2000);
+  });
+
   it('stops and warns when the server repeats a cursor instead of looping forever', async () => {
     const listTools = jest.fn().mockResolvedValue({ tools: [makeTool('x')], nextCursor: 'same' });
     const conn = createConnectionWithListTools(listTools);
