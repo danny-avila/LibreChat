@@ -1340,7 +1340,7 @@ const initializeClient = async ({
   let hasExistingSubagentTask = false;
   if (trustedSubagentTasks != null && !(subagentsAvailableForRun && hasSpawnableSubagent)) {
     try {
-      hasExistingSubagentTask = await subagentThreadTaskStore.hasTasks(
+      hasExistingSubagentTask = await trustedSubagentTasks.store.hasTasks(
         trustedSubagentTasks.scopeId,
       );
     } catch (error) {
