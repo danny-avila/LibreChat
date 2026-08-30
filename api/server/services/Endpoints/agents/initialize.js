@@ -79,17 +79,24 @@ const SUBAGENT_GRAPH_LOAD_CONCURRENCY = 4;
 
 /**
  * Creates a tool loader function for the agent.
+ * @param {ServerRequest} req - Request-backed tool adapter input
+ * @param {ServerResponse} res - Response-backed tool adapter input
  * @param {AbortSignal} signal - The abort signal
  * @param {string | null} [streamId] - The stream ID for resumable mode
  * @param {boolean} [definitionsOnly=false] - When true, returns only serializable
  *   tool definitions without creating full tool instances (for event-driven mode)
  * @param {number} [jobCreatedAt] - The generation epoch that owns emitted tool events
  */
-function createToolLoader(signal, streamId = null, definitionsOnly = false, jobCreatedAt) {
+function createToolLoader(
+  req,
+  res,
+  signal,
+  streamId = null,
+  definitionsOnly = false,
+  jobCreatedAt,
+) {
   /**
    * @param {object} params
-   * @param {ServerRequest} params.req
-   * @param {ServerResponse} params.res
    * @param {string} params.agentId
    * @param {string[]} params.tools
    * @param {string} params.provider
@@ -104,8 +111,6 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
    * } | undefined>}
    */
   return async function loadTools({
-    req,
-    res,
     tools,
     model,
     agentId,
@@ -499,7 +504,7 @@ const initializeClient = async ({
   const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);
 
   /** Event-driven mode: only load tool definitions, not full instances */
-  const loadTools = createToolLoader(signal, streamId, true, jobCreatedAt);
+  const loadTools = createToolLoader(req, res, signal, streamId, true, jobCreatedAt);
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
   /** @type {string | undefined} */
@@ -1074,7 +1079,7 @@ const initializeClient = async ({
           req,
           res,
           agent,
-          loadTools: createToolLoader(context.signal, streamId, true, jobCreatedAt),
+          loadTools: createToolLoader(req, res, context.signal, streamId, true, jobCreatedAt),
           requestFiles,
           conversationId,
           parentMessageId,
