@@ -29,6 +29,8 @@ export const SystemCapabilities = {
   READ_AGENTS: 'read:agents',
   MANAGE_AGENTS: 'manage:agents',
   MANAGE_MCP_SERVERS: 'manage:mcpservers',
+  /** Enrolls and revokes deployment-owned Code API workers. */
+  MANAGE_CODE_ENVIRONMENTS: 'manage:code_environments',
   READ_PROMPTS: 'read:prompts',
   MANAGE_PROMPTS: 'manage:prompts',
   READ_SKILLS: 'read:skills',
@@ -252,6 +254,7 @@ export const CAPABILITY_CATEGORIES: CapabilityCategory[] = [
       SystemCapabilities.MANAGE_ASSISTANTS,
       SystemCapabilities.READ_ASSISTANTS,
       SystemCapabilities.MANAGE_MCP_SERVERS,
+      SystemCapabilities.MANAGE_CODE_ENVIRONMENTS,
       SystemCapabilities.MANAGE_SHARED_LINKS,
       SystemCapabilities.READ_SHARED_LINKS,
     ],

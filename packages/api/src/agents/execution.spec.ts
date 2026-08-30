@@ -106,12 +106,14 @@ describe('resolveCodeExecutionContext', () => {
           name: 'Managed',
           type: 'managed',
           baseURL: 'https://managed.example/v1',
+          owner: 'deployment',
         },
         {
           id: 'my-vm',
           name: 'My VM',
           type: 'attached',
           baseURL: 'https://bridge.example/v1/',
+          owner: 'deployment',
         },
       ],
       userId: 'user-1',
@@ -137,6 +139,7 @@ describe('resolveCodeExecutionContext', () => {
       type: 'attached' as const,
       baseURL,
       default: true,
+      owner: 'deployment' as const,
     });
     const first = resolveCodeExecutionContext({
       statefulSessions: true,
@@ -166,6 +169,7 @@ describe('resolveCodeExecutionContext', () => {
           type: 'attached',
           baseURL: 'https://bridge.example/v1',
           default: true,
+          owner: 'deployment',
         },
       ],
       userId: 'user-1',
