@@ -1770,6 +1770,29 @@ html {
   }
 }
 
+/* One-shot draw-in for the applied steer receipt (`SteerPart`), played only at
+   the live chip-to-inline hand-off so the moment the words land is visible;
+   reloads and shared views render the settled checks with no motion. */
+@keyframes steer-receipt-in {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.steer-receipt-live {
+  animation: steer-receipt-in var(--theme-motion-normal, 200ms) ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .steer-receipt-live {
+    animation: none;
+  }
+}
+
 .shadow-stroke {
   position: relative;
 }

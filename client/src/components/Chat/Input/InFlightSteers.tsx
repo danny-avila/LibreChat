@@ -5,6 +5,7 @@ import { useRecoilValue, useRecoilCallback } from 'recoil';
 import { X, Zap, ZapOff, Clock, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
+import type { SteerReceiptState } from '~/components/Chat/Steering/Receipt';
 import type { PendingSteer } from '~/store/families';
 import type { MenuEntry } from './SteerMenu';
 import {
@@ -21,6 +22,7 @@ import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { useSteerCancel, useSteerReclaim, useLocalize } from '~/hooks';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
+import SteerReceipt from '~/components/Chat/Steering/Receipt';
 import { carriedSteerContext, cn } from '~/utils';
 import store from '~/store';
 
@@ -134,6 +136,14 @@ const InFlightSteer = memo(function InFlightSteer({
   const { images, others } = useMemo(() => splitFiles(steer.files), [steer.files]);
   const sending = steer.status === 'sending';
   const preempting = steer.preempt === true;
+  /** An interrupt shows as interrupting even before its 202 (the click must
+   *  react instantly); `confirmed` below withholds the check until the ACK. */
+  let receiptState: SteerReceiptState = 'delivered';
+  if (preempting) {
+    receiptState = 'interrupting';
+  } else if (sending) {
+    receiptState = 'sending';
+  }
 
   /** Long steers (several paragraphs) collapse to a preview so the stack stays
    *  scannable; the toggle is offered only once the content actually overflows
@@ -545,6 +555,17 @@ const InFlightSteer = memo(function InFlightSteer({
           </div>
         )}
       </div>
+      {/* Delivery receipt under the bubble, iMessage-style: present from the
+       *  first frame so the status never flickers in from nothing, and every
+       *  advance (Sending → Delivered ✓ → Interrupting) is an event the server
+       *  actually confirmed. The margin re-aligns it under the bubble's right
+       *  edge when the outboard send-now rail (24px control + 6px gap) is
+       *  present; the rail hides while sending or already escalated. */}
+      <SteerReceipt
+        state={receiptState}
+        confirmed={!sending}
+        className={!sending && !preempting ? 'mr-[30px]' : undefined}
+      />
       <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {escalationAnnouncement}
       </span>

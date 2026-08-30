@@ -888,6 +888,10 @@ export default function useResumableSSE(
         set(store.appliedSteerIdsByConvoId(conversationId), (prev) =>
           appendAppliedSteerIds(prev, settledIds),
         );
+        /** Stamped in the same batch as the chip removal, so the inline part's
+         *  first render already sees it and can play its one-shot receipt
+         *  draw-in; `SteerPart` consumes the id on mount. */
+        set(store.liveAppliedSteerIds, (prev) => appendAppliedSteerIds(prev, settledIds));
         set(store.pendingSteersByConvoId(conversationId), (prev) =>
           prev.some((steer) => settledIds.includes(steer.steerId))
             ? prev.filter((steer) => !settledIds.includes(steer.steerId))

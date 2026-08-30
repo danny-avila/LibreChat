@@ -1,12 +1,12 @@
-import { memo, useMemo, useState, useCallback } from 'react';
-import { useRecoilValue } from 'recoil';
-import { InfoHoverCard, ESide } from '@librechat/client';
+import { memo, useMemo, useState, useEffect, useCallback } from 'react';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
 import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import MessageQuotes from '~/components/Chat/Messages/Content/MessageQuotes';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
+import SteerReceipt from '~/components/Chat/Steering/Receipt';
 import Image from '~/components/Chat/Messages/Content/Image';
 import CollapsibleText from './CollapsibleText';
 import { useShareContext } from '~/Providers';
@@ -75,6 +75,24 @@ const SteerPart = memo(function SteerPart({
     }
   }, []);
 
+  /** The receipt draw-in plays exactly once, at the live chip→inline hand-off:
+   *  the applied handler stamps the id before this part mounts, the initial
+   *  render captures it, and the effect consumes it so a remount (conversation
+   *  revisit, reload, share view) renders the settled checks without motion. */
+  const liveAppliedIds = useRecoilValue(store.liveAppliedSteerIds);
+  const setLiveAppliedIds = useSetRecoilState(store.liveAppliedSteerIds);
+  const [animateIn] = useState(
+    () => steerId != null && steerId.length > 0 && liveAppliedIds.includes(steerId),
+  );
+  useEffect(() => {
+    if (!animateIn || steerId == null) {
+      return;
+    }
+    setLiveAppliedIds((prev) =>
+      prev.includes(steerId) ? prev.filter((id) => id !== steerId) : prev,
+    );
+  }, [animateIn, steerId, setLiveAppliedIds]);
+
   if (typeof steer !== 'string' || steer.length === 0) {
     return null;
   }
@@ -122,12 +140,7 @@ const SteerPart = memo(function SteerPart({
           </CollapsibleText>
         </div>
         <div className="mt-1 flex min-h-8 items-center justify-end text-text-secondary">
-          <span
-            data-testid="steer-info-affordance"
-            className="transition-opacity duration-theme-normal focus-within:opacity-100 group-hover:opacity-100 motion-reduce:transition-none [@media(hover:hover)]:opacity-0"
-          >
-            <InfoHoverCard side={ESide.Top} text={localize('com_ui_steered_info')} />
-          </span>
+          <SteerReceipt state="applied" animateIn={animateIn} />
           <MessageTimestamp value={timestamp} />
         </div>
       </div>

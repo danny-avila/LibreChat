@@ -30,6 +30,14 @@ jest.mock('@librechat/client', () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
   InfoHoverCard: () => null,
   ESide: { Top: 'top', Bottom: 'bottom' },
+  HoverCard: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  HoverCardTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  HoverCardPortal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  HoverCardContent: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="hover-card-content" hidden>
+      {children}
+    </div>
+  ),
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -1135,5 +1143,48 @@ describe('InFlightSteers — menu structure', () => {
       screen.getByRole('menuitem', { name: 'com_ui_always_interrupt' }),
     );
     expect(screen.queryByRole('menuitem', { name: 'com_ui_interrupt_steer_now' })).toBeNull();
+  });
+});
+
+describe('InFlightSteers delivery receipts', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('labels a sending steer with the muted in-progress state and no check', () => {
+    renderSteers([{ steerId: 'local-1', text: 'still posting', status: 'sending', createdAt: 1 }]);
+    const receipt = screen.getByTestId('steer-receipt');
+    expect(receipt).toHaveAttribute('data-receipt-state', 'sending');
+    expect(receipt).toHaveTextContent('com_ui_steer_sending');
+    expect(receipt.querySelector('svg')).toBeNull();
+  });
+
+  it('shows the delivered check once the server durably queued the steer', () => {
+    renderSteers([{ steerId: 's-ack', text: 'waiting', status: 'pending', createdAt: 1 }]);
+    const receipt = screen.getByTestId('steer-receipt');
+    expect(receipt).toHaveAttribute('data-receipt-state', 'delivered');
+    expect(receipt.querySelector('svg')).not.toBeNull();
+    expect(screen.getByLabelText('com_ui_steer_delivered_info')).toBeInTheDocument();
+  });
+
+  it('relabels to the interrupting state when the steer is armed to preempt', () => {
+    renderSteers([
+      { steerId: 's-armed', text: 'stop now', status: 'pending', createdAt: 1, preempt: true },
+    ]);
+    const receipt = screen.getByTestId('steer-receipt');
+    expect(receipt).toHaveAttribute('data-receipt-state', 'interrupting');
+    // A confirmed arm keeps its check alongside the pulsing dot.
+    expect(receipt.querySelector('svg')).not.toBeNull();
+    expect(screen.getByLabelText('com_ui_steer_interrupting_info')).toBeInTheDocument();
+  });
+
+  it('shows interrupting without a check while the preempting POST is unacknowledged', () => {
+    renderSteers([
+      { steerId: 'local-2', text: 'stop', status: 'sending', createdAt: 1, preempt: true },
+    ]);
+    const receipt = screen.getByTestId('steer-receipt');
+    expect(receipt).toHaveAttribute('data-receipt-state', 'interrupting');
+    // The label and pulse react instantly; the check waits for the 202.
+    expect(receipt.querySelector('svg')).toBeNull();
   });
 });

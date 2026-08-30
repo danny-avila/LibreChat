@@ -431,6 +431,14 @@ function PendingSteerChips({
           onRestoreToComposer={onRestoreToComposer}
         />
       ))}
+      {/* One caption for the whole queued group: the single fact users need
+       *  ("did my message vanish?" it did not), shown only while a run is
+       *  actually pending — after it, rows drain or convert on their own. */}
+      {queued.length > 0 && steering.duringRunActive && (
+        <div className="px-3 text-xs text-text-secondary" data-testid="queued-caption">
+          {localize('com_ui_steer_queued_info')}
+        </div>
+      )}
     </div>
   );
 }
