@@ -988,6 +988,30 @@ describe('Message Operations', () => {
       });
     });
 
+    it('reports exhausted attachment-merge contention as unmatched instead of throwing', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+      const Message = mongoose.models.Message;
+      const casSpy = jest.spyOn(Message.collection, 'findOneAndUpdate').mockResolvedValue(null);
+      try {
+        /** A throw here escapes the settle retry loop and lands on ambiguous
+         * failure handling that can retire the completion; contention must
+         * surface as a retryable unmatched result. */
+        await expect(
+          updateToolCallResult({
+            userId: 'user123',
+            messageId: 'msg123',
+            conversationId: mockMessageData.conversationId as string,
+            toolCallId: 'call_bg',
+            output: 'settled output',
+            attachments: [{ file_id: 'file-contended', toolCallId: 'call_bg' }],
+          }),
+        ).resolves.toEqual({ matched: false, unfinished: false });
+        expect(casSpy.mock.calls.length).toBeGreaterThanOrEqual(8);
+      } finally {
+        casSpy.mockRestore();
+      }
+    });
+
     it('disarms a previously armed completion wakeup when the new receipt omits it', async () => {
       const content = toolCallContent();
       (content[1].tool_call as Record<string, unknown>).backgroundTask = {

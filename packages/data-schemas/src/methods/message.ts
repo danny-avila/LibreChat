@@ -1196,9 +1196,17 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           return { matched: true, unfinished: result.unfinished === true };
         }
       }
-      throw new Error(
-        `Attachment merge for tool call ${toolCallId} lost ${ATTACHMENT_MERGE_CAS_ATTEMPTS} compare-and-swap rounds`,
+      /** Losing every fence round means concurrent writers kept advancing the
+       * array — the document exists and is healthy, so persistence must stay
+       * retryable ABOVE this bounded loop. The settle retry treats an
+       * unmatched result as retry-then-heal-later; a throw would land on
+       * ambiguous-failure handling that can retire the completion outright,
+       * losing a completed tool result to mere attachment contention. */
+      logger.warn(
+        `[updateToolCallResult] Attachment merge for tool call ${toolCallId} lost ` +
+          `${ATTACHMENT_MERGE_CAS_ATTEMPTS} fence rounds; leaving the retry to the caller`,
       );
+      return { matched: false, unfinished: false };
     } catch (err) {
       logger.error('Error updating tool call result:', err);
       throw err;
@@ -2673,11 +2681,23 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           record,
         ]),
       );
-      const retainedMessageIds = new Set(messages.map((message) => message.messageId));
-      for (const message of selectedProjection.selectedMessages) {
-        if (retainedMessageIds.has(message.messageId)) continue;
+      /** The page rows come from an independent concurrent read; for the
+       * selected task, the single-snapshot pair is authoritative — a page
+       * duplicate can predate the source read and claim a transcript that
+       * `selectedSources` does not carry. Replace duplicates in place (keeping
+       * page order) instead of discarding the snapshot version. */
+      const selectedByMessageId = new Map(
+        selectedProjection.selectedMessages.map((message) => [message.messageId, message]),
+      );
+      for (let index = 0; index < messages.length; index += 1) {
+        const snapshot = selectedByMessageId.get(messages[index].messageId);
+        if (snapshot != null) {
+          messages[index] = snapshot;
+          selectedByMessageId.delete(snapshot.messageId);
+        }
+      }
+      for (const message of selectedByMessageId.values()) {
         messages.push(message);
-        retainedMessageIds.add(message.messageId);
       }
       return messages.map((row) => {
         const message = pruneProjectedThreadViewMessage(row);
