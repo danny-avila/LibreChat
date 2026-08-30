@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
 import { Types } from 'mongoose';
+import { createHash, randomUUID } from 'node:crypto';
 import { createMethods, getTenantId, logger } from '@librechat/data-schemas';
 import {
   AccessRoleIds,
@@ -206,8 +206,19 @@ export function createCodeEnvironmentRegistry(
   async function listAccessibleConfigurations(
     actor: CodeEnvironmentPrincipalContext,
   ): Promise<AccessibleCodeEnvironmentConfiguration[]> {
+    const principals = actor.principals ?? (await methods.getUserPrincipals(actor));
+    const principalFingerprint = createHash('sha256')
+      .update(
+        principals
+          .map(
+            ({ principalType, principalId }) => `${principalType}:${principalId?.toString() ?? ''}`,
+          )
+          .sort()
+          .join('\n'),
+      )
+      .digest('base64url');
     const load = async (): Promise<AccessibleCodeEnvironmentConfiguration[]> => {
-      const environments = await findAccessible(actor);
+      const environments = await findAccessible({ ...actor, principals });
       return environments.map((environment) => ({
         id: environment.environmentId,
         name: environment.name,
@@ -221,7 +232,9 @@ export function createCodeEnvironmentRegistry(
 
     const tenant = tenantCacheKey();
     const revision = String((await configurationCache.get(revisionKey())) ?? '0');
-    const key = `${CONFIGURATION_CACHE_USER_PREFIX}:${tenant}:${actor.userId.toString()}:${revision}`;
+    const key =
+      `${CONFIGURATION_CACHE_USER_PREFIX}:${tenant}:${actor.userId.toString()}:` +
+      `${principalFingerprint}:${revision}`;
     const cached = await configurationCache.get(key);
     if (Array.isArray(cached)) {
       return cached as AccessibleCodeEnvironmentConfiguration[];

@@ -44,6 +44,7 @@ describe('mergeAccessibleCodeEnvironments', () => {
 
     const result = await mergeAccessibleCodeEnvironments({
       appConfig,
+      deploymentConfig: appConfig,
       actor: { userId: '68b2f0c498f24c1e78fa0001', role: 'USER', idOnTheSource: null },
       registry: { listAccessibleConfigurations },
     });
@@ -80,10 +81,74 @@ describe('mergeAccessibleCodeEnvironments', () => {
 
     const result = await mergeAccessibleCodeEnvironments({
       appConfig,
+      deploymentConfig: appConfig,
       actor: { userId: '68b2f0c498f24c1e78fa0001', role: 'USER', idOnTheSource: null },
       registry: { listAccessibleConfigurations },
     });
 
     expect(result).toBe(appConfig);
+  });
+
+  test('resolves principal aliases only against the YAML deployment config', async () => {
+    const deploymentConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'approved-plane',
+                name: 'Approved Plane',
+                type: 'attached',
+                baseURL: 'https://approved.example',
+                owner: 'deployment',
+                pairing: { workerId: 'approved-worker', tokenEnv: 'CODE_ADMIN_TOKEN' },
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as AppConfig;
+    const appConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'approved-plane',
+                name: 'Override Plane',
+                type: 'attached',
+                baseURL: 'https://override.example',
+                owner: 'deployment',
+                pairing: { workerId: 'override-worker', tokenEnv: 'OVERRIDE_TOKEN' },
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as AppConfig;
+    const input = {
+      appConfig,
+      deploymentConfig,
+      actor: { userId: '68b2f0c498f24c1e78fa0001', role: 'USER', idOnTheSource: null },
+      registry: {
+        listAccessibleConfigurations: jest.fn().mockResolvedValue([
+          {
+            id: 'personal-vm',
+            name: 'Personal VM',
+            type: 'attached',
+            baseURL: 'https://persisted.example',
+            controlPlaneId: 'approved-plane',
+            owner: 'principal',
+          },
+        ]),
+      },
+    };
+
+    const result = await mergeAccessibleCodeEnvironments(input);
+    const environments = result.endpoints?.agents?.statefulCodeSessions?.environments;
+
+    expect(environments?.find((environment) => environment.id === 'personal-vm')?.baseURL).toBe(
+      'https://approved.example',
+    );
   });
 });

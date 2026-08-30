@@ -13,10 +13,12 @@ type ConfigurationRegistry = {
 
 export async function mergeAccessibleCodeEnvironments({
   appConfig,
+  deploymentConfig,
   actor,
   registry,
 }: {
   appConfig: AppConfig;
+  deploymentConfig: AppConfig;
   actor: CodeEnvironmentPrincipalContext;
   registry: ConfigurationRegistry;
 }): Promise<AppConfig> {
@@ -26,8 +28,10 @@ export async function mergeAccessibleCodeEnvironments({
 
   const accessible = await registry.listAccessibleConfigurations(actor);
   if (accessible.length === 0) return appConfig;
+  const deploymentSessions =
+    deploymentConfig.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions;
   const deploymentEnvironments = new Map(
-    sessions.environments
+    deploymentSessions?.environments
       ?.filter(
         (environment) =>
           environment.owner === 'deployment' &&

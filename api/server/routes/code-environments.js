@@ -6,12 +6,22 @@ const { getAppConfig, getCodeEnvironmentRegistry } = require('~/server/services/
 const { requireJwtAuth } = require('~/server/middleware');
 
 const router = express.Router();
-const registry = getCodeEnvironmentRegistry();
-const handlers = createCodeEnvironmentHttpHandlers({ getAppConfig, registry });
+let handlers;
+function getHandlers() {
+  if (handlers == null) {
+    handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig,
+      registry: getCodeEnvironmentRegistry(),
+    });
+  }
+  return handlers;
+}
 const requireCodeEnvironmentManage = requireCapability(SystemCapabilities.MANAGE_CODE_ENVIRONMENTS);
 
 router.use(requireJwtAuth);
-router.get('/', handlers.list);
-router.post('/', requireCodeEnvironmentManage, handlers.register);
+router.get('/', (req, res, next) => getHandlers().list(req, res, next));
+router.post('/', requireCodeEnvironmentManage, (req, res, next) =>
+  getHandlers().register(req, res, next),
+);
 
 module.exports = router;

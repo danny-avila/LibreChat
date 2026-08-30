@@ -482,6 +482,7 @@ describe('createAppConfigService', () => {
       expect(augmentConfig).toHaveBeenCalledTimes(2);
       expect(augmentConfig).toHaveBeenCalledWith(
         expect.objectContaining({
+          baseConfig: deps._baseConfig,
           principals: [
             { principalType: 'role', principalId: 'USER' },
             { principalType: 'user', principalId: 'uid1' },

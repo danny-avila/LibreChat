@@ -52,10 +52,11 @@ const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfi
   cacheKeys: CacheKeys,
   getApplicableConfigs: db.getApplicableConfigs,
   getUserPrincipals: db.getUserPrincipals,
-  augmentConfig: ({ appConfig, principals, options }) => {
+  augmentConfig: ({ appConfig, baseConfig, principals, options }) => {
     if (!options.userId) return appConfig;
     return mergeAccessibleCodeEnvironments({
       appConfig,
+      deploymentConfig: baseConfig,
       actor: {
         userId: options.userId,
         role: options.role ?? null,

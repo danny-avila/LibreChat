@@ -62,6 +62,7 @@ export interface AppConfigServiceDeps {
   /** Add mutable principal-scoped runtime configuration after cached overrides are resolved. */
   augmentConfig?: (context: {
     appConfig: AppConfig;
+    baseConfig: AppConfig;
     principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }>;
     options: GetAppConfigOptions;
   }) => Promise<AppConfig>;
@@ -251,7 +252,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     const augment = async (appConfig: AppConfig): Promise<AppConfig> => {
       if (augmentConfig == null) return appConfig;
       try {
-        return await augmentConfig({ appConfig, principals, options });
+        return await augmentConfig({ appConfig, baseConfig, principals, options });
       } catch (error) {
         logger.error('[getAppConfig] Error augmenting principal config:', error);
         return appConfig;

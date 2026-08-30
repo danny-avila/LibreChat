@@ -231,6 +231,43 @@ describe('code environment registry', () => {
     await expect(registry.listAccessibleConfigurations(teammate)).resolves.toEqual([]);
   });
 
+  test('does not reuse cached access after group membership changes', async () => {
+    const cache = createSharedCache();
+    const registry = createCodeEnvironmentRegistry(mongoose, { configurationCache: cache });
+    const methods = createMethods(mongoose);
+    const ownerId = new Types.ObjectId();
+    const teammateId = new Types.ObjectId();
+    const group = await methods.createGroup({
+      name: 'Temporary Code Team',
+      source: 'local',
+      memberIds: [teammateId.toString()],
+    });
+    const environment = await registry.register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'temporary-group-vm',
+        name: 'Temporary Group VM',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+      },
+    });
+    const access = new AccessControlService(mongoose);
+    await access.grantPermission({
+      principalType: PrincipalType.GROUP,
+      principalId: group._id,
+      resourceType: ResourceType.CODE_ENVIRONMENT,
+      resourceId: environment.resourceId,
+      accessRoleId: AccessRoleIds.CODE_ENVIRONMENT_VIEWER,
+      grantedBy: ownerId,
+    });
+    const teammate = { userId: teammateId, role: 'USER', idOnTheSource: null };
+
+    await expect(registry.listAccessibleConfigurations(teammate)).resolves.toHaveLength(1);
+    await methods.updateGroupById(group._id, { memberIds: [] });
+    await expect(registry.listAccessibleConfigurations(teammate)).resolves.toEqual([]);
+  });
+
   test('rolls registration back when shared cache invalidation fails', async () => {
     const registry = createCodeEnvironmentRegistry(mongoose, {
       configurationCache: {

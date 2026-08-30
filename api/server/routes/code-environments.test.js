@@ -12,6 +12,7 @@ const mockRequireCapability = jest.fn((capability) => (req, _res, next) => {
   next();
 });
 const mockRegistry = {};
+const mockGetCodeEnvironmentRegistry = jest.fn(() => mockRegistry);
 const mockHandlers = {
   list: jest.fn((_req, res) => res.status(200).json({ environments: [] })),
   register: jest.fn((_req, res) => res.status(201).json({ environment: { id: 'code-1' } })),
@@ -33,7 +34,7 @@ jest.mock('~/server/middleware/roles/capabilities', () => ({
 jest.mock('~/server/middleware', () => ({ requireJwtAuth: mockRequireJwtAuth }));
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(),
-  getCodeEnvironmentRegistry: jest.fn(() => mockRegistry),
+  getCodeEnvironmentRegistry: mockGetCodeEnvironmentRegistry,
 }));
 
 function createApp() {
@@ -49,6 +50,12 @@ describe('code environment routes', () => {
   beforeEach(() => {
     middlewareCalls.length = 0;
     jest.clearAllMocks();
+  });
+
+  it('defers registry initialization until the route is requested', () => {
+    createApp();
+
+    expect(mockGetCodeEnvironmentRegistry).not.toHaveBeenCalled();
   });
 
   it('allows authenticated discovery without the management capability', async () => {
