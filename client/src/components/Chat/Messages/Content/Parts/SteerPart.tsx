@@ -1,12 +1,12 @@
-import { memo, useMemo, useState, useCallback } from 'react';
-import { useRecoilValue } from 'recoil';
-import { InfoHoverCard, ESide } from '@librechat/client';
+import { memo, useMemo, useState, useEffect, useCallback } from 'react';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
 import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import MessageQuotes from '~/components/Chat/Messages/Content/MessageQuotes';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
+import SteerReceipt from '~/components/Chat/Steering/Receipt';
 import Image from '~/components/Chat/Messages/Content/Image';
 import CollapsibleText from './CollapsibleText';
 import { useShareContext } from '~/Providers';
@@ -75,6 +75,35 @@ const SteerPart = memo(function SteerPart({
     }
   }, []);
 
+  /** The receipt draw-in plays exactly once, at the live chip→inline hand-off:
+   *  the applied handler stamps the id as it commits the part, the render that
+   *  first sees each identity captures it, and the effect consumes it so a
+   *  remount (conversation revisit, reload, share view) renders the settled
+   *  checks without motion. Captured per IDENTITY, not per mount — a content
+   *  slot can be overwritten with a different steer (`applySteerPart` permits
+   *  replacement at an index) while React reuses this component — and every
+   *  identity consumes its id whether it animated or not, so nothing lingers.
+   *  The membership selector scopes the subscription to THIS id — stamping or
+   *  consuming one steer never re-renders the other mounted parts. */
+  const isLiveApplied = useRecoilValue(store.liveAppliedSteerFamily(steerId ?? ''));
+  const setLiveAppliedIds = useSetRecoilState(store.liveAppliedSteerIds);
+  const [captured, setCaptured] = useState<{ id: string | undefined; animate: boolean }>({
+    id: steerId,
+    animate: isLiveApplied,
+  });
+  if (captured.id !== steerId) {
+    setCaptured({ id: steerId, animate: isLiveApplied });
+  }
+  const animateIn = captured.id === steerId && captured.animate;
+  useEffect(() => {
+    if (steerId == null || steerId.length === 0) {
+      return;
+    }
+    setLiveAppliedIds((prev) =>
+      prev.includes(steerId) ? prev.filter((id) => id !== steerId) : prev,
+    );
+  }, [steerId, setLiveAppliedIds]);
+
   if (typeof steer !== 'string' || steer.length === 0) {
     return null;
   }
@@ -122,12 +151,7 @@ const SteerPart = memo(function SteerPart({
           </CollapsibleText>
         </div>
         <div className="mt-1 flex min-h-8 items-center justify-end text-text-secondary">
-          <span
-            data-testid="steer-info-affordance"
-            className="transition-opacity duration-theme-normal focus-within:opacity-100 group-hover:opacity-100 motion-reduce:transition-none [@media(hover:hover)]:opacity-0"
-          >
-            <InfoHoverCard side={ESide.Top} text={localize('com_ui_steered_info')} />
-          </span>
+          <SteerReceipt state="applied" animateIn={animateIn} />
           <MessageTimestamp value={timestamp} />
         </div>
       </div>
