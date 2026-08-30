@@ -2,6 +2,8 @@ import { expect } from '@playwright/test';
 import type { ParsedServerConfig } from '~/mcp/types';
 import { closeRedisClients } from '~/cache/__tests__/redisClients.helper';
 
+type StdioServerConfig = Extract<ParsedServerConfig, { type: 'stdio' }>;
+
 describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
   let ServerConfigsCacheRedisAggregateKey: typeof import('../ServerConfigsCacheRedisAggregateKey').ServerConfigsCacheRedisAggregateKey;
   let keyvRedisClient: Awaited<typeof import('~/cache/redisClients')>['keyvRedisClient'];
@@ -10,19 +12,19 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
     typeof import('../ServerConfigsCacheRedisAggregateKey').ServerConfigsCacheRedisAggregateKey
   >;
 
-  const mockConfig1 = {
+  const mockConfig1: StdioServerConfig = {
     type: 'stdio',
     command: 'node',
     args: ['server1.js'],
     env: { TEST: 'value1' },
-  } as ParsedServerConfig;
+  };
 
-  const mockConfig2 = {
+  const mockConfig2: StdioServerConfig = {
     type: 'stdio',
     command: 'python',
     args: ['server2.py'],
     env: { TEST: 'value2' },
-  } as ParsedServerConfig;
+  };
 
   const mockConfig3 = {
     type: 'sse',
@@ -285,28 +287,29 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
     });
 
     it('preserves empty arrays through every Redis-side mutation path', async () => {
-      const emptyArgsConfig = { ...mockConfig1, args: [] } as ParsedServerConfig;
+      const emptyArgsConfig: StdioServerConfig = { ...mockConfig1, args: [] };
 
       await cache.add('empty-arrays', emptyArgsConfig);
-      expect((await cache.get('empty-arrays'))?.args).toEqual([]);
+      expect(await cache.get('empty-arrays')).toMatchObject({ args: [] });
 
       await cache.patch('empty-arrays', { resolvedInstructions: 'patched' });
-      expect((await cache.get('empty-arrays'))?.args).toEqual([]);
+      expect(await cache.get('empty-arrays')).toMatchObject({ args: [] });
 
-      await cache.update('empty-arrays', { ...mockConfig2, args: [] } as ParsedServerConfig);
-      expect((await cache.get('empty-arrays'))?.args).toEqual([]);
+      await cache.update('empty-arrays', { ...mockConfig2, args: [] });
+      expect(await cache.get('empty-arrays')).toMatchObject({ args: [] });
 
-      await cache.upsert('empty-arrays', { ...mockConfig3, args: [] } as ParsedServerConfig);
-      expect((await cache.get('empty-arrays'))?.args).toEqual([]);
+      await cache.upsert('empty-arrays', { ...mockConfig1, command: 'updated', args: [] });
+      expect(await cache.get('empty-arrays')).toMatchObject({ args: [] });
     });
 
     it('preserves empty arrays in an untouched entry when another entry is patched', async () => {
-      await cache.add('untouched-empty-arrays', { ...mockConfig1, args: [] });
+      const emptyArgsConfig: StdioServerConfig = { ...mockConfig1, args: [] };
+      await cache.add('untouched-empty-arrays', emptyArgsConfig);
       await cache.add('patched-entry', mockConfig2);
 
       await cache.patch('patched-entry', { resolvedInstructions: 'patched' });
 
-      expect((await cache.get('untouched-empty-arrays'))?.args).toEqual([]);
+      expect(await cache.get('untouched-empty-arrays')).toMatchObject({ args: [] });
       expect((await cache.get('patched-entry'))?.resolvedInstructions).toBe('patched');
     });
   });
