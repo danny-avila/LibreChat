@@ -66,6 +66,10 @@ const { checkPermission, findAccessibleResources } = require('~/server/services/
 const AgentClient = require('~/server/controllers/agents/client');
 const { processAddedConvo } = require('./addedConvo');
 const subagentThreadTaskStore = require('./subagentThreadStore');
+const {
+  preregisterBackgroundToolCompletion,
+  createBackgroundToolResultPersistence,
+} = require('./backgroundCompletion');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
@@ -408,6 +412,14 @@ const initializeClient = async ({
       req,
       updateToolCallResult: db.updateToolCallResult,
     }),
+    backgroundToolCompletion: {
+      ...(completionWakeupsEnabled ? { preregister: preregisterBackgroundToolCompletion } : {}),
+      persist: createBackgroundToolResultPersistence({
+        req,
+        updateToolCallResult: db.updateToolCallResult,
+      }),
+      claim: db.claimBackgroundToolResults,
+    },
     emitAttachment: createAttachmentEmitter({ res, streamId, jobCreatedAt }),
     emitPtcProgress: createPtcProgressEmitter({ res, streamId, jobCreatedAt }),
     onSkillResolved: (skill, { agentId }) => {

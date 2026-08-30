@@ -20,6 +20,7 @@ export * from './execution';
 export * from './handlers';
 export * from './guard';
 export * from './harvest';
+export * from './backgroundCompletionWakeup';
 export * from './initialize';
 export * from './legacy';
 export * from './lazySubagents';

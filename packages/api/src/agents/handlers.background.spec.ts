@@ -84,6 +84,69 @@ const runBatch = async (
 };
 
 describe('createToolExecuteHandler — background tool calls', () => {
+  it('pre-registers an ordinary completion before invoke and persists its terminal receipt', async () => {
+    const events: string[] = [];
+    const preregister = jest.fn(async () => {
+      events.push('preregister');
+    });
+    const persist = jest.fn(async () => {
+      events.push('persist');
+      return true;
+    });
+    const tool = {
+      name: 'search_mcp_docs',
+      description: 'search docs',
+      schema: z.object({ q: z.string() }),
+      invoke: jest.fn(async () => {
+        events.push('invoke');
+        return { content: 'durable result' };
+      }),
+    } as unknown as StructuredToolInterface;
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister,
+        persist,
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-wakeup',
+          name: tool.name,
+          args: { q: 'continuations', run_in_background: true },
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-1' },
+    });
+
+    expect(events.slice(0, 2)).toEqual(['preregister', 'invoke']);
+    expect(JSON.parse(dispatch.content).message).toContain('host will resume you');
+    await flushMicrotasks();
+    expect(events).toEqual(['preregister', 'invoke', 'persist']);
+    expect(preregister).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCallId: 'call-wakeup',
+        conversationId: 'exec_convo',
+        parentMessageId: 'response-1',
+        parentAgentId: 'agent_parent_1',
+      }),
+    );
+    expect(persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        output: 'durable result',
+        backgroundTask: expect.objectContaining({
+          taskId: expect.any(String),
+          status: 'completed',
+        }),
+      }),
+    );
+  });
+
   it('persists an Event Actor launch before invoking and terminal evidence before wakeup', async () => {
     const events: string[] = [];
     let finishTool: ((value: { content: string }) => void) | undefined;

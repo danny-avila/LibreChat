@@ -380,6 +380,7 @@ export const CLIENT_MESSAGE_SELECT: string = [
   '-langfuseSampled',
   '-langfuseDestinationIds',
   '-metadata.thoughtSignatures',
+  '-content.tool_call.backgroundTask.resultClaim',
   '-attachments.web_search.knowledgeGraph',
   '-attachments.web_search.peopleAlsoAsk',
   '-attachments.web_search.relatedSearches',
@@ -400,6 +401,19 @@ export type SubagentTaskResultClaim =
   | { status: 'not_found' }
   | { status: 'claimed'; message: IMessage }
   | { status: 'acquired'; message: IMessage };
+
+export interface BackgroundToolResultRecord {
+  taskId: string;
+  toolCallId: string;
+  toolName: string;
+  status: 'completed' | 'error';
+  output: string;
+  agentId?: string;
+}
+
+export type BackgroundToolResultClaim =
+  | { status: 'not_found' | 'not_ready' | 'claimed' }
+  | { status: 'acquired'; results: BackgroundToolResultRecord[] };
 
 export type SubagentThreadViewMessageRecord = Pick<
   IMessage,
@@ -511,7 +525,36 @@ export interface MessageMethods {
     output?: string;
     attachments?: unknown[];
     markBackgrounded?: boolean;
+    backgroundTask?: {
+      taskId: string;
+      toolName: string;
+      status: 'completed' | 'error';
+      settledAt: Date;
+      resultClaim?: {
+        kind: 'manual' | 'wakeup';
+        claimId: string;
+        claimedAt: Date;
+      };
+    };
   }): Promise<{ matched: boolean; unfinished: boolean }>;
+  claimBackgroundToolResults(params: {
+    userId: string;
+    conversationId: string;
+    messageId: string;
+    taskId: string;
+    agentId?: string;
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+    limit?: number;
+  }): Promise<BackgroundToolResultClaim>;
+  releaseBackgroundToolResultClaims(params: {
+    userId: string;
+    conversationId: string;
+    messageId: string;
+    taskIds: string[];
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+  }): Promise<boolean>;
   updateMessage(
     userId: string,
     message: Partial<IMessage> & { newMessageId?: string },
@@ -876,6 +919,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     output,
     attachments,
     markBackgrounded,
+    backgroundTask,
   }: {
     userId: string;
     messageId: string;
@@ -895,9 +939,20 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
      * that erases it must persist a durable one alongside.
      */
     markBackgrounded?: boolean;
+    backgroundTask?: {
+      taskId: string;
+      toolName: string;
+      status: 'completed' | 'error';
+      settledAt: Date;
+      resultClaim?: {
+        kind: 'manual' | 'wakeup';
+        claimId: string;
+        claimedAt: Date;
+      };
+    };
   }): Promise<{ matched: boolean; unfinished: boolean }> {
     const stages: Record<string, unknown>[] = [];
-    if (output !== undefined) {
+    if (output !== undefined || backgroundTask != null) {
       stages.push({
         $set: {
           content: {
@@ -930,8 +985,51 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                           $mergeObjects: [
                             '$$part.tool_call',
                             {
-                              output: { $literal: output },
+                              ...(output !== undefined ? { output: { $literal: output } } : {}),
                               ...(markBackgrounded === true ? { backgrounded: true } : {}),
+                              ...(backgroundTask != null
+                                ? {
+                                    backgroundTask: {
+                                      $mergeObjects: [
+                                        {
+                                          $literal: {
+                                            version: 1,
+                                            taskId: backgroundTask.taskId,
+                                            toolName: backgroundTask.toolName,
+                                            status: backgroundTask.status,
+                                            settledAt: backgroundTask.settledAt,
+                                          },
+                                        },
+                                        {
+                                          $cond: [
+                                            {
+                                              $ne: [
+                                                {
+                                                  $ifNull: [
+                                                    '$$part.tool_call.backgroundTask.resultClaim',
+                                                    null,
+                                                  ],
+                                                },
+                                                null,
+                                              ],
+                                            },
+                                            {
+                                              resultClaim:
+                                                '$$part.tool_call.backgroundTask.resultClaim',
+                                            },
+                                            backgroundTask.resultClaim != null
+                                              ? {
+                                                  $literal: {
+                                                    resultClaim: backgroundTask.resultClaim,
+                                                  },
+                                                }
+                                              : {},
+                                          ],
+                                        },
+                                      ],
+                                    },
+                                  }
+                                : {}),
                             },
                           ],
                         },
@@ -1017,6 +1115,358 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       logger.error('Error updating tool call result:', err);
       throw err;
     }
+  }
+
+  const MAX_BACKGROUND_TOOL_RESULT_BATCH = 8;
+
+  function parseBackgroundToolResults(
+    message: IMessage,
+    claim: { kind: 'manual' | 'wakeup'; claimId: string },
+  ): BackgroundToolResultRecord[] {
+    const results: BackgroundToolResultRecord[] = [];
+    for (const part of message.content ?? []) {
+      if (part == null || typeof part !== 'object' || Array.isArray(part)) {
+        continue;
+      }
+      const record = part as {
+        agentId?: unknown;
+        tool_call?: {
+          id?: unknown;
+          output?: unknown;
+          backgroundTask?: {
+            taskId?: unknown;
+            toolName?: unknown;
+            status?: unknown;
+            resultClaim?: { kind?: unknown; claimId?: unknown };
+          };
+        };
+      };
+      const toolCall = record.tool_call;
+      const task = toolCall?.backgroundTask;
+      if (
+        typeof toolCall?.id !== 'string' ||
+        typeof task?.taskId !== 'string' ||
+        typeof task.toolName !== 'string' ||
+        (task.status !== 'completed' && task.status !== 'error') ||
+        task.resultClaim?.kind !== claim.kind ||
+        task.resultClaim.claimId !== claim.claimId
+      ) {
+        continue;
+      }
+      results.push({
+        taskId: task.taskId,
+        toolCallId: toolCall.id,
+        toolName: task.toolName,
+        status: task.status,
+        output: typeof toolCall.output === 'string' ? toolCall.output : '',
+        ...(typeof record.agentId === 'string' ? { agentId: record.agentId } : {}),
+      });
+    }
+    return results;
+  }
+
+  /** Atomically elects manual polling or one automatic continuation. Wakeups
+   * also claim a bounded set of already-settled siblings from the same parent
+   * response, avoiding one paid continuation per concurrently completed tool. */
+  async function claimBackgroundToolResults({
+    userId,
+    conversationId,
+    messageId,
+    taskId,
+    agentId,
+    kind,
+    claimId,
+    limit = kind === 'wakeup' ? MAX_BACKGROUND_TOOL_RESULT_BATCH : 1,
+  }: {
+    userId: string;
+    conversationId: string;
+    messageId: string;
+    taskId: string;
+    agentId?: string;
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+    limit?: number;
+  }): Promise<BackgroundToolResultClaim> {
+    if (
+      messageId.length === 0 ||
+      messageId.length > 256 ||
+      taskId.length === 0 ||
+      taskId.length > 256 ||
+      claimId.length === 0 ||
+      claimId.length > 128 ||
+      (kind !== 'manual' && kind !== 'wakeup')
+    ) {
+      throw new TypeError('Invalid background tool result claim');
+    }
+    const boundedLimit = Math.max(1, Math.min(MAX_BACKGROUND_TOOL_RESULT_BATCH, limit));
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const row = await Message.findOne({ user: userId, conversationId, messageId })
+      .select({ content: 1, unfinished: 1 })
+      .lean<IMessage | null>();
+    if (row == null) {
+      return { status: 'not_found' };
+    }
+    if (row.unfinished === true) {
+      return { status: 'not_ready' };
+    }
+    const requestedPart = (row.content ?? []).find((part) => {
+      if (part == null || typeof part !== 'object' || Array.isArray(part)) {
+        return false;
+      }
+      return (
+        (part as { tool_call?: { backgroundTask?: { taskId?: unknown } } }).tool_call
+          ?.backgroundTask?.taskId === taskId
+      );
+    });
+    const requestedClaim =
+      requestedPart == null || typeof requestedPart !== 'object'
+        ? undefined
+        : (
+            requestedPart as {
+              tool_call?: {
+                backgroundTask?: { resultClaim?: { kind?: unknown; claimId?: unknown } };
+              };
+            }
+          ).tool_call?.backgroundTask?.resultClaim;
+    const replaying = requestedClaim?.kind === kind && requestedClaim.claimId === claimId;
+    const candidates: string[] = [];
+    let requestedState: 'ready' | 'claimed' | 'missing' = 'missing';
+    for (const part of row.content ?? []) {
+      if (part == null || typeof part !== 'object' || Array.isArray(part)) {
+        continue;
+      }
+      const task = (part as { tool_call?: { backgroundTask?: Record<string, unknown> } }).tool_call
+        ?.backgroundTask;
+      const partAgentId = (part as { agentId?: unknown }).agentId;
+      const candidateId = task?.taskId;
+      if (typeof candidateId !== 'string') {
+        continue;
+      }
+      const terminal = task?.status === 'completed' || task?.status === 'error';
+      const resultClaim = task?.resultClaim as { kind?: unknown; claimId?: unknown } | undefined;
+      const replay = resultClaim?.kind === kind && resultClaim.claimId === claimId;
+      const sameAgent =
+        agentId == null ||
+        partAgentId == null ||
+        (typeof partAgentId === 'string' && partAgentId === agentId);
+      /** A lost-receipt retry replays exactly its original assignment. It must
+       * not absorb siblings that completed after the already-admitted input
+       * was constructed, or those results would be claimed but never shown. */
+      const claimable = terminal && sameAgent && (replaying ? replay : resultClaim == null);
+      if (candidateId === taskId) {
+        if (claimable) {
+          requestedState = 'ready';
+        } else if (resultClaim != null) {
+          requestedState = 'claimed';
+        }
+      }
+      if (
+        claimable &&
+        (candidateId === taskId || kind === 'wakeup') &&
+        candidates.length < boundedLimit
+      ) {
+        candidates.push(candidateId);
+      }
+    }
+    if (requestedState === 'missing') {
+      return { status: 'not_ready' };
+    }
+    if (requestedState === 'claimed') {
+      return { status: 'claimed' };
+    }
+    if (!candidates.includes(taskId)) {
+      candidates.unshift(taskId);
+      candidates.splice(boundedLimit);
+    }
+    const claimedAt = new Date();
+    const updated = await Message.findOneAndUpdate(
+      {
+        user: userId,
+        conversationId,
+        messageId,
+        unfinished: { $ne: true },
+        content: {
+          $elemMatch: {
+            type: 'tool_call',
+            'tool_call.backgroundTask.taskId': taskId,
+            'tool_call.backgroundTask.status': { $in: ['completed', 'error'] },
+            ...(replaying
+              ? {
+                  'tool_call.backgroundTask.resultClaim.kind': kind,
+                  'tool_call.backgroundTask.resultClaim.claimId': claimId,
+                }
+              : { 'tool_call.backgroundTask.resultClaim': { $exists: false } }),
+            ...(agentId != null ? { agentId: { $in: [null, agentId] } } : {}),
+          },
+        },
+      },
+      [
+        {
+          $set: {
+            content: {
+              $map: {
+                input: { $ifNull: ['$content', []] },
+                as: 'part',
+                in: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ['$$part.type', 'tool_call'] },
+                        { $in: ['$$part.tool_call.backgroundTask.taskId', candidates] },
+                        ...(agentId != null
+                          ? [
+                              {
+                                $in: [{ $ifNull: ['$$part.agentId', null] }, [null, agentId]],
+                              },
+                            ]
+                          : []),
+                        {
+                          $or: [
+                            {
+                              $eq: [
+                                { $ifNull: ['$$part.tool_call.backgroundTask.resultClaim', null] },
+                                null,
+                              ],
+                            },
+                            {
+                              $and: [
+                                {
+                                  $eq: ['$$part.tool_call.backgroundTask.resultClaim.kind', kind],
+                                },
+                                {
+                                  $eq: [
+                                    '$$part.tool_call.backgroundTask.resultClaim.claimId',
+                                    claimId,
+                                  ],
+                                },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    {
+                      $mergeObjects: [
+                        '$$part',
+                        {
+                          tool_call: {
+                            $mergeObjects: [
+                              '$$part.tool_call',
+                              {
+                                backgroundTask: {
+                                  $mergeObjects: [
+                                    '$$part.tool_call.backgroundTask',
+                                    {
+                                      resultClaim: {
+                                        kind,
+                                        claimId,
+                                        claimedAt,
+                                      },
+                                    },
+                                  ],
+                                },
+                              },
+                            ],
+                          },
+                        },
+                      ],
+                    },
+                    '$$part',
+                  ],
+                },
+              },
+            },
+          },
+        },
+      ],
+      { new: true, projection: { content: 1 } },
+    ).lean<IMessage | null>();
+    if (updated == null) {
+      return { status: 'not_ready' };
+    }
+    const results = parseBackgroundToolResults(updated, { kind, claimId });
+    return results.some((result) => result.taskId === taskId)
+      ? { status: 'acquired', results }
+      : { status: 'claimed' };
+  }
+
+  async function releaseBackgroundToolResultClaims({
+    userId,
+    conversationId,
+    messageId,
+    taskIds,
+    kind,
+    claimId,
+  }: {
+    userId: string;
+    conversationId: string;
+    messageId: string;
+    taskIds: string[];
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+  }): Promise<boolean> {
+    if (taskIds.length === 0) {
+      return true;
+    }
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const updated = await Message.findOneAndUpdate(
+      { user: userId, conversationId, messageId },
+      [
+        {
+          $set: {
+            content: {
+              $map: {
+                input: { $ifNull: ['$content', []] },
+                as: 'part',
+                in: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $in: ['$$part.tool_call.backgroundTask.taskId', taskIds] },
+                        { $eq: ['$$part.tool_call.backgroundTask.resultClaim.kind', kind] },
+                        { $eq: ['$$part.tool_call.backgroundTask.resultClaim.claimId', claimId] },
+                      ],
+                    },
+                    {
+                      $mergeObjects: [
+                        '$$part',
+                        {
+                          tool_call: {
+                            $mergeObjects: [
+                              '$$part.tool_call',
+                              {
+                                backgroundTask: {
+                                  $arrayToObject: {
+                                    $filter: {
+                                      input: {
+                                        $objectToArray: '$$part.tool_call.backgroundTask',
+                                      },
+                                      as: 'field',
+                                      cond: { $ne: ['$$field.k', 'resultClaim'] },
+                                    },
+                                  },
+                                },
+                              },
+                            ],
+                          },
+                        },
+                      ],
+                    },
+                    '$$part',
+                  ],
+                },
+              },
+            },
+          },
+        },
+      ],
+      { new: true, projection: { content: 1 } },
+    ).lean<IMessage | null>();
+    if (updated == null) {
+      return false;
+    }
+    const remaining = parseBackgroundToolResults(updated, { kind, claimId });
+    return !remaining.some((result) => taskIds.includes(result.taskId));
   }
 
   /**
@@ -2436,6 +2886,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     recordMessage,
     updateMessageText,
     updateToolCallResult,
+    claimBackgroundToolResults,
+    releaseBackgroundToolResultClaims,
     updateMessage,
     recordSubagentTaskControlReceipt,
     getSubagentTaskControlReceipt,

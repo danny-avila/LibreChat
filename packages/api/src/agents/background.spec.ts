@@ -1387,6 +1387,79 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
   });
 
+  it('returns a terminal ordinary result only after its durable manual claim wins', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'claim_user',
+      conversationId: 'claim_convo',
+      toolCallId: 'call_claim',
+      toolName: 'search_mcp_docs',
+      messageId: 'response-claim',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('claim_user', 'claim_convo', created.task.id, {
+      content: 'CLAIMED RESULT',
+    });
+    backgroundTaskRegistry.markCompletionWakeup('claim_user', 'claim_convo', created.task.id);
+    const claimBackgroundToolResult = jest
+      .fn()
+      .mockResolvedValueOnce({ status: 'not_ready' })
+      .mockResolvedValueOnce({ status: 'acquired' });
+    const request = {
+      userId: 'claim_user',
+      conversationId: 'claim_convo',
+      args: { background_task_id: created.task.id },
+      toolCallId: 'poll-call',
+      agentId: 'agent_parent_1',
+      runId: 'poll-run',
+      claimBackgroundToolResult,
+    };
+
+    await expect(runCheckBackgroundTask(request)).resolves.toContain('result_persisting');
+    const claimed = JSON.parse(await runCheckBackgroundTask(request));
+    expect(claimed).toMatchObject({ status: 'completed', result: 'CLAIMED RESULT' });
+    expect(claimBackgroundToolResult).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        messageId: 'response-claim',
+        taskId: created.task.id,
+        kind: 'manual',
+      }),
+    );
+  });
+
+  it('does not expose a result already assigned to an automatic continuation', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'scheduled_user',
+      conversationId: 'scheduled_convo',
+      toolCallId: 'call_scheduled',
+      toolName: 'search_mcp_docs',
+      messageId: 'response-scheduled',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('scheduled_user', 'scheduled_convo', created.task.id, {
+      content: 'PRIVATE UNTIL CONTINUATION',
+    });
+    backgroundTaskRegistry.markCompletionWakeup(
+      'scheduled_user',
+      'scheduled_convo',
+      created.task.id,
+    );
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'scheduled_user',
+        conversationId: 'scheduled_convo',
+        args: { background_task_id: created.task.id },
+        claimBackgroundToolResult: async () => ({ status: 'claimed' }),
+      }),
+    );
+    expect(result).toMatchObject({ status: 'delivery_scheduled' });
+    expect(JSON.stringify(result)).not.toContain('PRIVATE UNTIL CONTINUATION');
+  });
+
   it('preserves local task lists when cross-replica subagent discovery is unavailable', async () => {
     const ordinary = backgroundTaskRegistry.create({
       userId: 'partial-list-owner',

@@ -19,6 +19,8 @@ import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
 import type { ValidationIssue } from '@librechat/data-schemas';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { CodeExecutionContext } from './execution';
+import type { BackgroundToolResultState } from './harvest';
+import type { BackgroundToolWakeupRegistration } from './backgroundCompletionWakeup';
 import type { TextContentFragment } from '~/protection';
 import type { ServerRequest } from '~/types';
 import {
@@ -191,7 +193,31 @@ export interface ToolExecuteOptions {
     codeExecutionContext?: CodeExecutionContext;
     attachments?: unknown[];
     reapply?: boolean;
-  }) => Promise<{ attachments?: unknown[] } | null>;
+    backgroundTask?: BackgroundToolResultState;
+  }) => Promise<{ attachments?: unknown[]; deliveryReady?: boolean } | null>;
+  /** Shared ordinary-tool completion lifecycle. The delivery is registered
+   * before invoke; settlement is persisted onto the original response row. */
+  backgroundToolCompletion?: {
+    preregister?: (registration: BackgroundToolWakeupRegistration) => Promise<void>;
+    persist: (params: {
+      toolName: string;
+      toolCallId: string;
+      messageId?: string;
+      conversationId?: string;
+      agentId?: string;
+      output?: string;
+      backgroundTask: BackgroundToolResultState;
+    }) => Promise<boolean>;
+    claim: (params: {
+      userId: string;
+      conversationId: string;
+      messageId: string;
+      taskId: string;
+      agentId?: string;
+      kind: 'manual';
+      claimId: string;
+    }) => Promise<{ status: 'acquired' | 'claimed' | 'not_found' | 'not_ready' }>;
+  };
   /** Emits an `attachment` SSE event on the current request's live stream. */
   emitAttachment?: (attachment: unknown) => void;
   /**
@@ -4270,6 +4296,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
     toolEndCallback,
     eventActorDetachedAction,
     persistBackgroundCodeResult,
+    backgroundToolCompletion,
     emitAttachment,
     emitPtcProgress,
     subagentTasks,
@@ -4538,7 +4565,42 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 };
               }
               const { task, isNew } = created;
+              let completionPreregistered = task.completionWakeup === true;
               if (isNew) {
+                if (
+                  detachedReservation?.status !== 'reserved' &&
+                  backgroundToolCompletion?.preregister != null &&
+                  backgroundRunId != null &&
+                  backgroundRunId !== ''
+                ) {
+                  try {
+                    await backgroundToolCompletion.preregister({
+                      taskId: task.id,
+                      toolCallId: tc.id,
+                      toolName: tc.name,
+                      userId: backgroundUserId,
+                      ...(typeof backgroundReq?.user?.tenantId === 'string' &&
+                      backgroundReq.user.tenantId !== ''
+                        ? { tenantId: backgroundReq.user.tenantId }
+                        : {}),
+                      conversationId: backgroundConversationId,
+                      parentMessageId: backgroundRunId,
+                      parentAgentId: agentId,
+                      createdAt: task.createdAt,
+                    });
+                    completionPreregistered = true;
+                    backgroundTaskRegistry.markCompletionWakeup(
+                      backgroundUserId,
+                      backgroundConversationId,
+                      task.id,
+                    );
+                  } catch (registrationError) {
+                    logger.warn(
+                      `[background] Failed to preregister completion for task ${task.id}; polling remains available.`,
+                      registrationError,
+                    );
+                  }
+                }
                 /** Persists the settled result onto the dispatch turn's message
                  *  (patch the tool-call part's output, persist generated files,
                  *  append attachments), so a backgrounded code call reads like a
@@ -4547,11 +4609,68 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                  *  the dispatch row may not exist until that turn finalizes, so
                  *  gating `complete()` on the patch would livelock same-turn
                  *  polls on `running`. Failures degrade to poll-only delivery. */
-                const harvestCodeResult = (params: {
+                const persistBackgroundResult = (params: {
                   output?: string;
                   artifact?: unknown;
+                  status: 'completed' | 'error';
                 }): void => {
+                  const localTask = backgroundTaskRegistry.get(
+                    backgroundUserId,
+                    backgroundConversationId,
+                    task.id,
+                  );
+                  const backgroundTask: BackgroundToolResultState = {
+                    taskId: task.id,
+                    toolName: tc.name,
+                    status: params.status,
+                    settledAt: new Date(localTask?.updatedAt ?? Date.now()),
+                    ...(localTask?.resultClaim != null
+                      ? {
+                          resultClaim: {
+                            kind: localTask.resultClaim.kind,
+                            claimId: localTask.resultClaim.claimId,
+                            claimedAt: new Date(localTask.resultClaim.claimedAt),
+                          },
+                        }
+                      : {}),
+                  };
                   if (!harvestEnabled || !persistBackgroundCodeResult) {
+                    if (
+                      backgroundToolCompletion == null ||
+                      detachedReservation?.status === 'reserved'
+                    ) {
+                      return;
+                    }
+                    void backgroundToolCompletion
+                      .persist({
+                        toolName: tc.name,
+                        toolCallId: tc.id,
+                        messageId: backgroundRunId,
+                        conversationId: backgroundConversationId,
+                        agentId,
+                        output: params.output ?? localTask?.result,
+                        backgroundTask,
+                      })
+                      .then((deliveryReady) => {
+                        if (!deliveryReady) {
+                          backgroundTaskRegistry.markCompletionPersistenceFailed(
+                            backgroundUserId,
+                            backgroundConversationId,
+                            task.id,
+                          );
+                        }
+                      })
+                      .catch((persistError) => {
+                        backgroundTaskRegistry.markCompletionPersistenceFailed(
+                          backgroundUserId,
+                          backgroundConversationId,
+                          task.id,
+                        );
+                        logger.warn(
+                          `[background] Failed to persist result for task ${task.id}:`,
+                          persistError,
+                        );
+                      });
                     return;
                   }
                   void (async () => {
@@ -4570,7 +4689,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                          *  overwrite it. */
                         dispatchedAt: task.createdAt,
                         codeExecutionContext,
-                        ...params,
+                        ...(detachedReservation?.status === 'reserved' ||
+                        backgroundToolCompletion == null
+                          ? {}
+                          : { backgroundTask }),
+                        output: params.output ?? localTask?.result,
+                        artifact: params.artifact,
                       });
                       if (persisted == null) {
                         /** Harvest never persisted anything (missing anchor
@@ -4583,7 +4707,21 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           task.id,
                           params.artifact,
                         );
+                        if (completionPreregistered) {
+                          backgroundTaskRegistry.markCompletionPersistenceFailed(
+                            backgroundUserId,
+                            backgroundConversationId,
+                            task.id,
+                          );
+                        }
                         return;
+                      }
+                      if (persisted.deliveryReady === false) {
+                        backgroundTaskRegistry.markCompletionPersistenceFailed(
+                          backgroundUserId,
+                          backgroundConversationId,
+                          task.id,
+                        );
                       }
                       backgroundTaskRegistry.finishHarvest(
                         backgroundUserId,
@@ -4592,6 +4730,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         persisted.attachments,
                       );
                     } catch (persistError) {
+                      if (completionPreregistered) {
+                        backgroundTaskRegistry.markCompletionPersistenceFailed(
+                          backgroundUserId,
+                          backgroundConversationId,
+                          task.id,
+                        );
+                      }
                       if (isContentFilterError(persistError)) {
                         backgroundTaskRegistry.blockArtifact(
                           backgroundUserId,
@@ -4719,7 +4864,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         errorOutput,
                         { harvestStarted: harvestEnabled },
                       );
-                      harvestCodeResult({ output: errorOutput });
+                      persistBackgroundResult({ output: errorOutput, status: 'error' });
                       await wakeDetachedActor();
                       return;
                     }
@@ -4744,9 +4889,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       task.id,
                       { content, artifact: result.artifact, harvestStarted: harvestEnabled },
                     );
-                    harvestCodeResult({
+                    persistBackgroundResult({
                       output: typeof content === 'string' ? content : undefined,
                       artifact: result.artifact,
+                      status: 'completed',
                     });
                     await wakeDetachedActor();
                   } catch (toolError) {
@@ -4792,7 +4938,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                        *  the dispatch card on the handle JSON forever. */
                       { harvestStarted: harvestEnabled },
                     );
-                    harvestCodeResult({ output: deliveredError });
+                    persistBackgroundResult({ output: deliveredError, status: 'error' });
                     await wakeDetachedActor();
                   }
                 })();
@@ -4810,7 +4956,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               return {
                 toolCallId: tc.id,
                 status: 'success' as const,
-                content: buildBackgroundHandleContent(task),
+                content: buildBackgroundHandleContent(task, {
+                  completionWakeup: completionPreregistered,
+                }),
               };
             };
 
@@ -4846,6 +4994,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     agentId,
                     runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
                     subagentTasks,
+                    claimBackgroundToolResult: backgroundToolCompletion?.claim,
                   });
                   const taskSnapshot = getBackgroundTaskSnapshot({
                     userId: backgroundUserId,

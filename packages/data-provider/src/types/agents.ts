@@ -81,6 +81,21 @@ export namespace Agents {
     id?: string;
     /** If provided, the output of the tool call */
     output?: string;
+    /** Host-owned durable receipt for a detached ordinary tool result.
+     * It lives beside the original call so reload, manual collection, and
+     * automatic continuation all arbitrate the same result identity. */
+    backgroundTask?: {
+      version: 1;
+      taskId: string;
+      toolName: string;
+      status: 'completed' | 'error';
+      settledAt: Date;
+      resultClaim?: {
+        kind: 'manual' | 'wakeup';
+        claimId: string;
+        claimedAt: Date;
+      };
+    };
     /** The tool call was rejected before execution because its input failed schema validation. */
     inputValidationError?: true;
     /** Auth URL */

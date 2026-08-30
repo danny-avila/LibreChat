@@ -65,6 +65,8 @@ import {
   type ParentSubagentTaskRecord,
   type SubagentThreadViewMessageRecord,
   type SubagentTaskResultClaim,
+  type BackgroundToolResultClaim,
+  type BackgroundToolResultRecord,
 } from './message';
 import {
   createConversationMethods,
@@ -424,6 +426,8 @@ export type {
   ParentSubagentThreadRecord,
   SubagentThreadViewMessageRecord,
   SubagentTaskResultClaim,
+  BackgroundToolResultClaim,
+  BackgroundToolResultRecord,
   ConversationMethods,
   AgentEventActorReconciliationStorageMetrics,
   ChatProjectMethods,

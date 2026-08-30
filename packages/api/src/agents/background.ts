@@ -341,7 +341,7 @@ Provide a background_task_id to poll one task; omit it to list every background 
 
 const CHECK_BACKGROUND_TASK_WAKEUP_DESCRIPTION = `Check, control, and retrieve tool or subagent tasks previously dispatched in the background (with run_in_background: true).
 
-Provide a background_task_id to inspect one task; omit it to list every background task in this thread. Ordinary background tool tasks require polling to retrieve their results. Detached subagent tasks use automatic completion delivery: continue independent work or end the turn instead of repeatedly polling an unchanged running task, and the host will resume you when one finishes. Use this tool for explicit status, steer, queue, interrupt, cancel, or cancel_message actions, or as a fallback if automatic delivery is unavailable. Live subagent controls route across API replicas but do not survive a restart of the process that owns the executor. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
+Provide a background_task_id to inspect one task; omit it to list every background task in this thread. Background tools and detached subagents use automatic completion delivery: continue independent work or end the turn instead of repeatedly polling an unchanged running task, and the host will resume you when one finishes. Use this tool for explicit status, steer, queue, interrupt, cancel, or cancel_message actions, or as a fallback if automatic delivery is unavailable. Ordinary tool execution remains process-local and does not survive restart; once its result is persisted, completion delivery may continue on another replica. Live subagent controls route across API replicas but do not survive a restart of the process that owns the executor. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
 
 function checkBackgroundTaskDescription(subagentCompletionWakeups: boolean): string {
   return subagentCompletionWakeups
@@ -626,6 +626,15 @@ export interface BackgroundTask {
   artifactBlocked?: boolean;
   /** Error message when status === 'error'. */
   error?: string;
+  /** One consumer owns presentation of the terminal result. A manual claim is
+   * copied into the durable receipt when the dispatch row settles. */
+  resultClaim?: {
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+    claimedAt: number;
+  };
+  completionWakeup?: boolean;
+  completionPersistenceFailed?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -1071,6 +1080,47 @@ export class BackgroundTaskRegistryClass {
     });
   }
 
+  markCompletionWakeup(userId: string, conversationId: string, taskId: string): void {
+    this.update(userId, conversationId, taskId, { completionWakeup: true });
+  }
+
+  markCompletionPersistenceFailed(userId: string, conversationId: string, taskId: string): void {
+    this.update(userId, conversationId, taskId, { completionPersistenceFailed: true });
+  }
+
+  claimResult(
+    userId: string,
+    conversationId: string,
+    taskId: string,
+    claim: { kind: 'manual' | 'wakeup'; claimId: string },
+  ): 'acquired' | 'replay' | 'claimed' | 'not_ready' {
+    const task = this.get(userId, conversationId, taskId);
+    if (task == null || task.status === 'running') {
+      return 'not_ready';
+    }
+    if (task.resultClaim == null) {
+      task.resultClaim = { ...claim, claimedAt: Date.now() };
+      task.updatedAt = Date.now();
+      return 'acquired';
+    }
+    return task.resultClaim.kind === claim.kind && task.resultClaim.claimId === claim.claimId
+      ? 'replay'
+      : 'claimed';
+  }
+
+  releaseResultClaim(
+    userId: string,
+    conversationId: string,
+    taskId: string,
+    claim: { kind: 'manual' | 'wakeup'; claimId: string },
+  ): void {
+    const task = this.buckets.get(this.key(userId, conversationId))?.tasks.get(taskId);
+    if (task?.resultClaim?.kind === claim.kind && task.resultClaim.claimId === claim.claimId) {
+      task.resultClaim = undefined;
+      task.updatedAt = Date.now();
+    }
+  }
+
   /** Permanently removes a policy-rejected artifact and exposes only the raw-free policy error. */
   blockArtifact(userId: string, conversationId: string, taskId: string, error: string): void {
     this.update(userId, conversationId, taskId, {
@@ -1139,12 +1189,16 @@ export const backgroundTaskRegistry = new BackgroundTaskRegistryClass();
 /** Content for the synthetic ToolMessage returned when a call is backgrounded. */
 export function buildBackgroundHandleContent(
   task: Pick<BackgroundTask, 'id' | 'toolName' | 'status'>,
+  options: { completionWakeup?: boolean } = {},
 ): string {
   return JSON.stringify({
     background_task_id: task.id,
     tool: task.toolName,
     status: task.status,
-    message: `Started "${task.toolName}" in the background. Call ${CHECK_BACKGROUND_TASK_NAME} with background_task_id "${task.id}" to check progress and retrieve the result; it persists on this server, so you may poll it later in this turn or in a following turn. Do not assume it has finished until you have polled and seen status "completed".`,
+    message:
+      options.completionWakeup === true
+        ? `Started "${task.toolName}" in the background. Continue independent work or end the turn; the host will resume you when task "${task.id}" finishes. Use ${CHECK_BACKGROUND_TASK_NAME} only for an explicit status check or as a fallback.`
+        : `Started "${task.toolName}" in the background. Call ${CHECK_BACKGROUND_TASK_NAME} with background_task_id "${task.id}" to check progress and retrieve the result; it persists on this server, so you may poll it later in this turn or in a following turn. Do not assume it has finished until you have polled and seen status "completed".`,
   });
 }
 
@@ -1378,6 +1432,15 @@ export async function runCheckBackgroundTask(params: {
   agentId?: string;
   runId?: string;
   subagentTasks?: SubagentTaskConfig;
+  claimBackgroundToolResult?: (params: {
+    userId: string;
+    conversationId: string;
+    messageId: string;
+    taskId: string;
+    agentId?: string;
+    kind: 'manual';
+    claimId: string;
+  }) => Promise<{ status: 'acquired' | 'claimed' | 'not_found' | 'not_ready' }>;
 }): Promise<string> {
   const { userId, conversationId } = params;
   const args = coerceArgsObject(params.args) ?? {};
@@ -1401,6 +1464,51 @@ export async function runCheckBackgroundTask(params: {
           background_task_id: taskId,
           message: 'Control actions are supported only for subagent tasks.',
         });
+      }
+      if (task.status !== 'running') {
+        if (
+          task.completionWakeup === true &&
+          task.completionPersistenceFailed !== true &&
+          params.claimBackgroundToolResult != null &&
+          task.messageId != null
+        ) {
+          const durableClaim = await params.claimBackgroundToolResult({
+            userId,
+            conversationId,
+            messageId: task.messageId,
+            taskId,
+            agentId: task.agentId,
+            kind: 'manual',
+            claimId: invocationId,
+          });
+          if (durableClaim.status === 'claimed') {
+            return JSON.stringify({
+              status: 'delivery_scheduled',
+              background_task_id: taskId,
+              message: 'This result is already assigned to an automatic continuation.',
+            });
+          }
+          if (durableClaim.status === 'not_found' || durableClaim.status === 'not_ready') {
+            return JSON.stringify({
+              status: 'result_persisting',
+              background_task_id: taskId,
+              message:
+                'The task is finished and its result is being made durable. Retry this poll shortly.',
+            });
+          }
+        } else {
+          const localClaim = backgroundTaskRegistry.claimResult(userId, conversationId, taskId, {
+            kind: 'manual',
+            claimId: invocationId,
+          });
+          if (localClaim === 'claimed') {
+            return JSON.stringify({
+              status: 'delivery_scheduled',
+              background_task_id: taskId,
+              message: 'This result is already assigned to an automatic continuation.',
+            });
+          }
+        }
       }
       return JSON.stringify(serializeTask(task, { includeResult: true }));
     }

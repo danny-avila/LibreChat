@@ -31,6 +31,18 @@ export interface ProcessedCodeOutput {
   previewRevision?: number;
 }
 
+export interface BackgroundToolResultState {
+  taskId: string;
+  toolName: string;
+  status: 'completed' | 'error';
+  settledAt: Date;
+  resultClaim?: {
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+    claimedAt: Date;
+  };
+}
+
 export interface CodeHarvestDeps {
   req: ServerRequest;
   /** Data-schemas method: idempotent tool-call part patch + attachment append. */
@@ -43,6 +55,7 @@ export interface CodeHarvestDeps {
     output?: string;
     attachments?: unknown[];
     markBackgrounded?: boolean;
+    backgroundTask?: BackgroundToolResultState;
   }) => Promise<{ matched: boolean; unfinished: boolean }>;
   /** Host preflight: inspects the entire generated-file batch before any write. */
   preflightCodeOutputBatch: (params: {
@@ -91,13 +104,70 @@ export interface CodeHarvestParams {
   codeExecutionContext?: CodeExecutionContext;
   attachments?: unknown[];
   reapply?: boolean;
+  backgroundTask?: BackgroundToolResultState;
 }
 
 export type CodeHarvestHandler = (
   params: CodeHarvestParams,
-) => Promise<{ attachments: unknown[] } | null>;
+) => Promise<{ attachments: unknown[]; deliveryReady?: boolean } | null>;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function persistBackgroundToolResultRow(
+  updateToolCallResult: CodeHarvestDeps['updateToolCallResult'],
+  params: {
+    userId: string;
+    messageId: string;
+    conversationId: string;
+    toolCallId: string;
+    agentId?: string;
+    output?: string;
+    attachments?: unknown[];
+    backgroundTask?: BackgroundToolResultState;
+  },
+): Promise<boolean> {
+  for (let attempt = 0; attempt <= BACKGROUND_PATCH_RETRY_DELAYS_MS.length; attempt++) {
+    const result = await updateToolCallResult({ ...params, markBackgrounded: true });
+    if (result.matched && !result.unfinished) {
+      return true;
+    }
+    if (attempt === BACKGROUND_PATCH_RETRY_DELAYS_MS.length) {
+      break;
+    }
+    await sleep(BACKGROUND_PATCH_RETRY_DELAYS_MS[attempt]);
+  }
+  return false;
+}
+
+/** Persists an ordinary detached tool result without invoking code-artifact processing. */
+export function createBackgroundToolResultHandler(
+  deps: Pick<CodeHarvestDeps, 'req' | 'updateToolCallResult'>,
+): (params: Omit<CodeHarvestParams, 'artifact' | 'codeExecutionContext'>) => Promise<boolean> {
+  return async ({
+    toolCallId,
+    messageId,
+    conversationId,
+    agentId,
+    output,
+    attachments,
+    backgroundTask,
+  }) => {
+    const userId = deps.req.user?.id;
+    if (!userId || !messageId || !conversationId || backgroundTask == null) {
+      return false;
+    }
+    return persistBackgroundToolResultRow(deps.updateToolCallResult, {
+      userId,
+      messageId,
+      conversationId,
+      toolCallId,
+      agentId,
+      output,
+      attachments,
+      backgroundTask,
+    });
+  };
+}
 
 /**
  * Handles a backgrounded code-execution result once the detached call settles:
@@ -134,6 +204,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
     codeExecutionContext,
     attachments: knownAttachments,
     reapply,
+    backgroundTask,
   }) => {
     const userId = req.user?.id;
     if (!userId || !messageId || !conversationId) {
@@ -152,6 +223,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
         /** The heal path must re-stamp the marker too: the full-row save it
          *  repairs reverted the whole patched part, marker included. */
         markBackgrounded: true,
+        ...(backgroundTask != null ? { backgroundTask } : {}),
       });
       if (!reapplied.matched) {
         logger.debug(
@@ -206,40 +278,22 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
       }
     }
 
-    let patched = false;
-    for (let attempt = 0; attempt <= BACKGROUND_PATCH_RETRY_DELAYS_MS.length; attempt++) {
-      const result = await updateToolCallResult({
-        userId,
-        messageId,
-        conversationId,
-        toolCallId,
-        agentId,
-        output,
-        attachments,
-        /** This patch replaces the dispatch-handle output — the client's only
-         *  transient signal that the call ran detached — so it persists the
-         *  durable `backgrounded` marker in the same atomic write. */
-        markBackgrounded: true,
-      });
-      patched = result.matched;
-      /** An `unfinished` match is a mid-turn partial save (client disconnect):
-       *  the eventual finalize overwrites it with in-memory content — the
-       *  handle JSON — so keep re-applying (idempotent) until a finalized row
-       *  holds the patch. */
-      if (
-        (result.matched && !result.unfinished) ||
-        attempt === BACKGROUND_PATCH_RETRY_DELAYS_MS.length
-      ) {
-        break;
-      }
-      await sleep(BACKGROUND_PATCH_RETRY_DELAYS_MS[attempt]);
-    }
-    if (!patched) {
+    const deliveryReady = await persistBackgroundToolResultRow(updateToolCallResult, {
+      userId,
+      messageId,
+      conversationId,
+      toolCallId,
+      agentId,
+      output,
+      attachments,
+      ...(backgroundTask != null ? { backgroundTask } : {}),
+    });
+    if (!deliveryReady) {
       logger.warn(
         `[background] Could not anchor code result onto message ${messageId} (tool call ${toolCallId}); ` +
           'the dispatch turn never persisted. Poll delivery still returns the result.',
       );
     }
-    return { attachments };
+    return { attachments, ...(backgroundTask != null ? { deliveryReady } : {}) };
   };
 }
