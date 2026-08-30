@@ -1049,6 +1049,13 @@ export const agentsEndpointSchema = baseEndpointSchema
           selfUrl: z.string().url().optional(),
         })
         .optional(),
+      /** Conversational background-task delivery policy. Automatic completion wakeups are
+       * enabled unless an administrator explicitly restores poll-only behavior. */
+      backgroundTasks: z
+        .object({
+          completionWakeups: z.boolean().optional().default(true),
+        })
+        .optional(),
       skills: z
         .object({
           maxCatalogSkills: z.number().int().min(1).max(100).optional(),

@@ -23,6 +23,7 @@ const {
   getLazySubagentConfigId,
   createStatefulCodeEnvironmentPolicyError,
   buildSubagentThreadTaskConfig,
+  backgroundCompletionWakeupsEnabled,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -157,6 +158,9 @@ const initializeClient = async ({
     throw new Error('Endpoint option not provided');
   }
   const appConfig = req.config;
+  const completionWakeupsEnabled = backgroundCompletionWakeupsEnabled(
+    appConfig?.endpoints?.[EModelEndpoint.agents],
+  );
   /** The normal controller resolves this once for timestamp anchoring. Reuse
    * that trusted document for child-thread execution policy; resume and direct
    * callers fall back to the same owner-scoped lookup. */
@@ -1330,13 +1334,13 @@ const initializeClient = async ({
               ? { tenantId: req.user.tenantId }
               : {}),
           },
-          { completionWakeups: true },
+          { completionWakeups: completionWakeupsEnabled },
         )
       : undefined;
   let hasExistingSubagentTask = false;
   if (trustedSubagentTasks != null && !(subagentsAvailableForRun && hasSpawnableSubagent)) {
     try {
-      hasExistingSubagentTask = await subagentThreadTaskStore.hasTasks(
+      hasExistingSubagentTask = await trustedSubagentTasks.store.hasTasks(
         trustedSubagentTasks.scopeId,
       );
     } catch (error) {

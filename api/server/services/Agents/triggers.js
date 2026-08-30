@@ -1,12 +1,18 @@
 const {
   createAgentTriggerService,
+  createAgentContinuationResolver,
   createAgentEventContinueResolver,
   createSubagentCompletionWakeupResolver,
+  SUBAGENT_COMPLETION_SOURCE,
   GenerationJobManager,
 } = require('@librechat/api');
 const methods = require('~/models');
 
-const completionResolver = createSubagentCompletionWakeupResolver({
+const subagentCompletionAdapter = createSubagentCompletionWakeupResolver({
+  methods,
+  getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
+});
+const eventActorAdapter = createAgentEventContinueResolver({
   methods,
   getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
 });
@@ -15,10 +21,9 @@ const service = createAgentTriggerService({
   methods,
   isPrincipalActive: methods.isAgentTriggerPrincipalActive,
   supportsDetachedActionCompletion: () => GenerationJobManager.supportsDetachedAgentEventActions,
-  prepareContinue: createAgentEventContinueResolver({
-    methods,
-    getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
-    fallback: completionResolver,
+  prepareContinue: createAgentContinuationResolver({
+    eventActor: eventActorAdapter,
+    internalSources: new Map([[SUBAGENT_COMPLETION_SOURCE, subagentCompletionAdapter]]),
   }),
 });
 
