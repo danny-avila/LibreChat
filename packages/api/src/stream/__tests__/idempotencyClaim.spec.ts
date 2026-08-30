@@ -51,6 +51,33 @@ describe('InMemoryJobStore.claimIdempotencyKey', () => {
     expect(second).toEqual({ claimed: false, existing: { streamId: 's1', conversationId: 'c1' } });
   });
 
+  it('probes an existing claim without creating a missing key', async () => {
+    await expect(store.hasIdempotencyKey('user:missing')).resolves.toBe(false);
+
+    await store.claimIdempotencyKey(
+      'user:existing',
+      { streamId: 's1', conversationId: 'c1' },
+      1200,
+    );
+
+    await expect(store.hasIdempotencyKey('user:existing')).resolves.toBe(true);
+    await expect(store.hasIdempotencyKey('user:missing')).resolves.toBe(false);
+  });
+
+  it('does not report an expired claim as existing', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(new Date('2026-08-29T00:00:00Z'));
+      await store.claimIdempotencyKey('user:expired', { streamId: 's1', conversationId: 'c1' }, 1);
+      await expect(store.hasIdempotencyKey('user:expired')).resolves.toBe(true);
+
+      jest.setSystemTime(new Date('2026-08-29T00:00:02Z'));
+      await expect(store.hasIdempotencyKey('user:expired')).resolves.toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('lets a released key be claimed again', async () => {
     await store.claimIdempotencyKey('user:req', { streamId: 's1', conversationId: 'c1' }, 1200);
     await store.releaseIdempotencyKey('user:req');
@@ -195,6 +222,16 @@ describe('GenerationJobManager start-generation claim', () => {
       expect.objectContaining({ streamId: 'stream-a', conversationId: 'convo-a' }),
     );
     expect(typeof retry.existing?.claimedAt).toBe('number');
+  });
+
+  it('detects only an already-claimed submission for pre-limiter retry admission', async () => {
+    await expect(manager.hasGenerationClaim('user-1', 'req-1')).resolves.toBe(false);
+
+    await manager.claimGeneration('user-1', 'req-1', 'stream-a', 'convo-a');
+
+    await expect(manager.hasGenerationClaim('user-1', 'req-1')).resolves.toBe(true);
+    await expect(manager.hasGenerationClaim('user-1', 'req-2')).resolves.toBe(false);
+    await expect(manager.hasGenerationClaim('user-2', 'req-1')).resolves.toBe(false);
   });
 
   it('claims the exact legacy key before the same-slot primary with staggered TTLs', async () => {

@@ -44,6 +44,7 @@ const createAssistant = async (req, res) => {
 
     const { toolDefinitions, accessibleServerNames } = await getAssistantToolDefinitions({
       req,
+      res,
       tools,
     });
     const healedTools = await healMcpToolNames({
@@ -172,6 +173,7 @@ const patchAssistant = async (req, res) => {
 
     const { toolDefinitions, accessibleServerNames } = await getAssistantToolDefinitions({
       req,
+      res,
       tools: updateData.tools,
     });
     const healedTools = await healMcpToolNames({

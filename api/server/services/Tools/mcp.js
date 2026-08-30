@@ -72,6 +72,8 @@ async function loadMCPServerCatalogs({ user, servers }) {
  * (per MCP spec, tool listing should be possible without auth).
  * @param {Object} params
  * @param {IUser} params.user - The user from the request object.
+ * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider] - Live upstream-token closure for OBO connection establishment, built at the request boundary so this layer never receives the raw Express request.
+ * @param {import('@librechat/api').AuthIdentityContext} [params.oboIdentityContext] - Non-template-visible OBO identity context built from the real request user.
  * @param {string} params.serverName - The name of the MCP server
  * @param {boolean} params.returnOnOAuth - Whether to initiate OAuth and return, or wait for OAuth flow to finish
  * @param {AbortSignal} [params.signal] - The abort signal to handle cancellation.
@@ -98,6 +100,8 @@ async function reinitMCPServer({
   serverConfig: providedConfig,
   requestBody,
   requestScopedConnections,
+  upstreamTokenProvider,
+  oboIdentityContext,
   oauthEnd,
 }) {
   /** @type {MCPConnection | null} */
@@ -247,6 +251,8 @@ async function reinitMCPServer({
         graphTokenResolver: getGraphApiToken,
         oboTokenResolver: exchangeOboToken,
         oboTrustChecker: createOboTrustChecker(),
+        upstreamTokenProvider,
+        oboIdentityContext,
       });
 
       logger.info('[MCP Reinitialize] Successfully established connection');
@@ -282,6 +288,8 @@ async function reinitMCPServer({
             graphTokenResolver: getGraphApiToken,
             oboTokenResolver: exchangeOboToken,
             oboTrustChecker: createOboTrustChecker(),
+            upstreamTokenProvider,
+            oboIdentityContext,
           });
 
           if (discoveryResult.tools && discoveryResult.tools.length > 0) {

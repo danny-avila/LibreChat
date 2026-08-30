@@ -58,19 +58,13 @@ also register this LibreChat callback URL with your identity provider:
 https://<librechat-domain>/api/admin/oauth/openid/callback
 ```
 
-## Generation protocol rollout
+## Generation protocol compatibility
 
-Redis-backed generation streams use protocol v1 by default during the first
-rollout of a v2-capable image. This keeps a rolling deployment compatible with
-replicas that still run the previous Redis queue, checkpoint, and recovery
-scripts.
-
-After every LibreChat replica is on the v2-capable image and all active
-generations owned by the old image have drained, set
-`librechat.configEnv.GENERATION_PROTOCOL_VERSION="2"` in a second rollout.
-Keep the new image in place until v2 generations have drained; an older image
-cannot safely operate on their Redis state. In-memory generation streams do not
-share state across replicas and negotiate v2 without this cutover.
+Generation protocol v2 is selected automatically; no deployment setting is
+required. Rolling upgrades must start from a v2-capable bridge release
+(LibreChat `v0.8.8-rc1` or newer, or Helm chart `2.0.8` or newer). When
+upgrading from an older release, stop the old replicas before starting the new
+image so pre-v2 and automatic-v2 binaries never share generation state in Redis.
 
 ## Langfuse Fanout
 

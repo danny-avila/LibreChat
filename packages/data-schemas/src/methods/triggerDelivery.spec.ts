@@ -238,6 +238,122 @@ describe('agent trigger delivery methods', () => {
     expect(claims.filter((claim) => claim != null)).toHaveLength(1);
   });
 
+  it('keeps capability work visible but nonclaimable to pre-capability consumers', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        orderingKey: 'legacy-visible-capability-lane',
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+    );
+    const stored = await Delivery.findById(queued.delivery.id).lean();
+    expect(stored).toMatchObject({
+      status: 'leased',
+      capabilityStatus: 'pending',
+      claimAvailableAt: START,
+      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+    });
+    expect(stored!.availableAt).toEqual(START);
+    expect(stored!.leaseUntil).toBeUndefined();
+
+    /** Exact pre-shield claim semantics: ordinary pending work or an expired
+     * lease. The inert outer lease has no deadline, so it is never claimable. */
+    const oldClaim = await Delivery.findOneAndUpdate(
+      {
+        $or: [
+          { status: 'pending', availableAt: { $lte: START } },
+          {
+            status: 'leased',
+            leaseUntil: { $lte: new Date(START.getTime() - 30_000) },
+          },
+        ],
+      },
+      {
+        $set: {
+          status: 'leased',
+          leaseBy: 'old-worker',
+          leaseUntil: new Date(START.getTime() + 60_000),
+          claimToken: 'old-claim',
+        },
+      },
+      { new: true },
+    ).lean();
+    expect(oldClaim).toBeNull();
+
+    const successor = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        orderingKey: 'legacy-visible-capability-lane',
+        deliveryKey: 'ordinary-after-shielded-capability',
+      }),
+    );
+    const oldSuccessorClaim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'old-worker',
+      claimToken: 'old-successor-claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    expect(oldSuccessorClaim).toMatchObject({ id: successor.delivery.id });
+    /** Exact pre-shield ordering semantics see the inert lease, but its real
+     * due time and missing lease deadline produce a bounded recheck instead of
+     * copying the year-9999 claim fence onto the successor. */
+    const oldEarlier = await Delivery.findOne({
+      orderingKey: 'legacy-visible-capability-lane',
+      laneSequence: { $lt: successor.delivery.laneSequence },
+      status: { $in: ['pending', 'capability_pending', 'leased', 'capability_leased'] },
+    }).lean();
+    expect(oldEarlier).toMatchObject({ status: 'leased', availableAt: START });
+    expect(oldEarlier!.leaseUntil).toBeUndefined();
+    const successorRecheckAt = new Date(START.getTime() + 5_000);
+    await expect(
+      methods.releaseAgentTriggerDelivery({
+        id: oldSuccessorClaim!.id,
+        workerId: 'old-worker',
+        claimToken: 'old-successor-claim',
+        availableAt: successorRecheckAt,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      Delivery.countDocuments({ user, status: 'leased', leaseUntil: { $gt: START } }),
+    ).resolves.toBe(0);
+
+    const capabilityClaim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'capable-worker',
+      claimToken: 'capable-claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    expect(capabilityClaim).toMatchObject({ id: queued.delivery.id });
+    await expect(
+      Delivery.countDocuments({ user, status: 'leased', leaseUntil: { $gt: START } }),
+    ).resolves.toBe(1);
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: capabilityClaim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'capable-claim',
+      now: START,
+    });
+    await methods.deadLetterAgentTriggerDelivery({
+      id: capabilityClaim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'capable-claim',
+      attempt: attempt!,
+      error: transientFailure(),
+      settledAt: START,
+    });
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'new-worker',
+        claimToken: 'successor-after-capability',
+        now: successorRecheckAt,
+        leaseUntil: new Date(successorRecheckAt.getTime() + 60_000),
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+      }),
+    ).resolves.toMatchObject({ id: successor.delivery.id });
+  });
+
   it('keeps capability-fenced work limited to capable workers through lease recovery', async () => {
     const queued = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({
@@ -270,7 +386,7 @@ describe('agent trigger delivery methods', () => {
 
     await Delivery.updateOne(
       { _id: capable!.id },
-      { $set: { leaseUntil: new Date(START.getTime() - 60_000) } },
+      { $set: { capabilityLeaseUntil: new Date(START.getTime() - 60_000) } },
     );
     const recoveryNow = new Date(START.getTime() + 60_000);
     await expect(
@@ -309,6 +425,7 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toBe(true);
     await expect(Delivery.findById(recovered!.id).lean()).resolves.toMatchObject({
       status: 'capability_dead',
+      capabilityStatus: 'dead',
     });
 
     const [deadLetter] = await methods.getAgentTriggerDeadLetters();
@@ -374,6 +491,307 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toMatchObject({ id: ordinary.delivery.id, status: 'leased' });
   });
 
+  it('claims older capability work before newer ordinary work', async () => {
+    const capability = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'capability-older',
+        availableAt: new Date(START.getTime() - 2_000),
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+    );
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'ordinary-newer',
+        availableAt: new Date(START.getTime() - 1_000),
+      }),
+    );
+
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'capable-worker',
+        claimToken: 'claim-oldest-capability',
+        now: START,
+        leaseUntil: new Date(START.getTime() + 60_000),
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+      }),
+    ).resolves.toMatchObject({ id: capability.delivery.id, status: 'capability_leased' });
+  });
+
+  it('adopts capability publication completed by a legacy lane publisher', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'legacy-capability-publication';
+    const capability = await Delivery.create({
+      ...enqueueInput({
+        user,
+        orderingKey,
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+      status: 'staging',
+      capabilityStatus: 'publishing',
+      claimAvailableAt: START,
+      availableAt: new Date('9999-12-31T23:59:59.999Z'),
+      leaseUntil: new Date('9999-12-31T23:59:59.999Z'),
+      laneSequence: 0,
+      attempts: 0,
+      requeueCount: 0,
+      stagingRecoveryAt: START,
+    });
+    await LaneSequence.create({
+      _id: orderingKey,
+      value: 1,
+      user,
+      publisherDeliveryId: capability._id,
+      publisherStartedAt: START,
+    });
+
+    /** Exact pre-capability publication writes: the old replica assigns the
+     * reserved sequence and releases the publisher without touching private fields. */
+    await Delivery.updateOne(
+      { _id: capability._id, orderingKey, status: 'staging' },
+      {
+        $set: { status: 'capability_pending', laneSequence: 1 },
+        $unset: { stagingRecoveryAt: 1 },
+      },
+    );
+    await LaneSequence.updateOne(
+      { _id: orderingKey, value: 1, publisherDeliveryId: capability._id },
+      {
+        $set: { tailDeliveryId: capability._id },
+        $unset: { publisherDeliveryId: 1, publisherStartedAt: 1 },
+      },
+    );
+
+    const later = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ user, orderingKey, deliveryKey: 'ordinary-after-capability' }),
+    );
+
+    await expect(Delivery.findById(capability._id).lean()).resolves.toMatchObject({
+      status: 'leased',
+      capabilityStatus: 'pending',
+      laneSequence: 1,
+    });
+    expect(later.delivery).toMatchObject({ laneSequence: 2 });
+  });
+
+  it('keeps a privately dead capability delivery nonblocking to old and new workers', async () => {
+    const orderingKey = 'dead-capability-lane';
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        orderingKey,
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'capable-worker',
+      claimToken: 'capable-dead-claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'capable-dead-claim',
+      now: START,
+    });
+    await methods.deadLetterAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'capable-dead-claim',
+      attempt: 1,
+      error: transientFailure(),
+      settledAt: START,
+    });
+    const successor = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ orderingKey, deliveryKey: 'successor-after-dead-capability' }),
+    );
+
+    await expect(Delivery.findById(claim!.id).lean()).resolves.toMatchObject({
+      status: 'capability_dead',
+      capabilityStatus: 'dead',
+    });
+    /** Exact pre-shield ordering query. A `pending` shell here would make an
+     * old worker defer the successor until the year-9999 availability fence. */
+    const oldEarlier = await Delivery.findOne({
+      orderingKey,
+      laneSequence: { $lt: successor.delivery.laneSequence },
+      $or: [
+        {
+          status: {
+            $in: ['pending', 'capability_pending', 'leased', 'capability_leased'],
+          },
+        },
+        {
+          status: 'succeeded',
+          batchRootId: { $exists: false },
+          awaitTerminalHandling: true,
+          'handling.status': 'started',
+        },
+      ],
+    }).lean();
+    expect(oldEarlier).toBeNull();
+    await expect(methods.findEarlierAgentTriggerDelivery(successor.delivery)).resolves.toBeNull();
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'new-worker',
+        claimToken: 'new-worker-successor-claim',
+        now: START,
+        leaseUntil: new Date(START.getTime() + 60_000),
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+      }),
+    ).resolves.toMatchObject({ id: successor.delivery.id });
+  });
+
+  it('adopts a private dead delivery explicitly requeued by a pre-shield replica', async () => {
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        orderingKey: 'legacy-requeued-dead-capability',
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'capable-worker',
+      claimToken: 'claim-before-legacy-requeue',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'claim-before-legacy-requeue',
+      now: START,
+    });
+    await methods.deadLetterAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'claim-before-legacy-requeue',
+      attempt: 1,
+      error: transientFailure(),
+      settledAt: START,
+    });
+
+    const requeueAt = new Date(START.getTime() + 1_000);
+    /** Final state produced by the pre-shield requeue implementation: it
+     * recognizes `capability_dead`, republishes `capability_pending`, and does
+     * not know that the private lifecycle field must also be reset. */
+    await Delivery.updateOne(
+      { _id: claim!.id, status: 'capability_dead', capabilityStatus: 'dead' },
+      {
+        $set: { status: 'capability_pending', availableAt: requeueAt },
+        $unset: { settledAt: 1, lastError: 1 },
+        $inc: { requeueCount: 1 },
+      },
+    );
+
+    const reclaimed = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'new-worker',
+      claimToken: 'claim-after-legacy-requeue',
+      now: requeueAt,
+      leaseUntil: new Date(requeueAt.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    expect(reclaimed).toMatchObject({ id: claim!.id, status: 'capability_leased' });
+    await expect(Delivery.findById(claim!.id).lean()).resolves.toMatchObject({
+      status: 'leased',
+      capabilityStatus: 'leased',
+      claimAvailableAt: requeueAt,
+    });
+  });
+
+  it('accepts legacy success as terminal over stale private dead state', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        orderingKey: 'legacy-completed-dead-capability',
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'capable-worker',
+      claimToken: 'claim-before-legacy-success',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'claim-before-legacy-success',
+      now: START,
+    });
+    await methods.deadLetterAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'claim-before-legacy-success',
+      attempt: 1,
+      error: transientFailure(),
+      settledAt: START,
+    });
+
+    const requeueAt = new Date(START.getTime() + 1_000);
+    await Delivery.updateOne(
+      { _id: claim!.id, status: 'capability_dead', capabilityStatus: 'dead' },
+      {
+        $set: { status: 'capability_pending', availableAt: requeueAt },
+        $unset: { settledAt: 1, lastError: 1 },
+        $inc: { requeueCount: 1 },
+      },
+    );
+    const legacyLeaseUntil = new Date(requeueAt.getTime() + 60_000);
+    const legacyClaim = await Delivery.findOneAndUpdate(
+      { _id: claim!.id, status: 'capability_pending', availableAt: { $lte: requeueAt } },
+      {
+        $set: {
+          status: 'capability_leased',
+          leaseBy: 'old-worker',
+          leaseUntil: legacyLeaseUntil,
+          claimToken: 'old-success-claim',
+        },
+      },
+      { new: true },
+    ).lean();
+    expect(legacyClaim).toMatchObject({
+      status: 'capability_leased',
+      capabilityStatus: 'dead',
+    });
+
+    const completedAt = new Date(requeueAt.getTime() + 1_000);
+    /** Exact terminal write left by the pre-shield worker: the outer lifecycle
+     * succeeds while the private lifecycle remains unknown and stale. */
+    await Delivery.updateOne(
+      {
+        _id: claim!.id,
+        status: 'capability_leased',
+        leaseBy: 'old-worker',
+        claimToken: 'old-success-claim',
+      },
+      {
+        $set: {
+          status: 'succeeded',
+          attempts: 2,
+          result: { status: 'legacy-complete' },
+          settledAt: completedAt,
+        },
+        $unset: {
+          leaseBy: 1,
+          leaseUntil: 1,
+          claimToken: 1,
+          lastError: 1,
+        },
+      },
+    );
+
+    await expect(
+      methods.getAgentTriggerDelivery(queued.delivery.deliveryKey),
+    ).resolves.toMatchObject({
+      status: 'succeeded',
+      result: { status: 'legacy-complete' },
+    });
+    await expect(methods.getAgentTriggerDeadLetters()).resolves.not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: claim!.id })]),
+    );
+  });
+
   it('allocates a replica-stable monotonic sequence within an ordering lane', async () => {
     const user = new mongoose.Types.ObjectId();
     const replicas = [
@@ -409,7 +827,10 @@ describe('agent trigger delivery methods', () => {
     const updateSpy = jest
       .spyOn(Delivery.collection, 'updateOne')
       .mockImplementation(async (filter, update, options) => {
-        const status = filter.status as { $in?: string[] } | undefined;
+        const status = (filter.status ??
+          (filter.$or as Array<{ status?: { $in?: string[] } }> | undefined)?.find(
+            (condition) => condition.status != null,
+          )?.status) as { $in?: string[] } | undefined;
         if (
           !paused &&
           filter.orderingKey === orderingKey &&

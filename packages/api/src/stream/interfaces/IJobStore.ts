@@ -12,6 +12,15 @@ import type { RecoveredSteerPayload } from '../SteerRecovery';
 import type { MCPRuntimeRequestBody } from '~/mcp/types';
 
 /**
+ * Detached Event Actor execution guarantee advertised by a generation store.
+ *
+ * `process_local` keeps the lifecycle coherent while this process is alive.
+ * `distributed` additionally permits restart recovery and replica handoff.
+ * Absence means the store cannot host detached Event Actor actions.
+ */
+export type DetachedAgentEventActionStoreMode = 'process_local' | 'distributed';
+
+/**
  * Rewrites string-enum members to their literal values, recursively. The SDK and
  * data-provider declare nominally distinct enums (`ContentTypes`, `StepTypes`, ...)
  * with identical string values; erasing that nominality is what lets the two run-step
@@ -234,6 +243,14 @@ export interface SerializableJobData {
    * no action clears it immediately on its no-op success, so nothing accumulates.
    */
   terminalHostActionPending?: boolean;
+  /** Redis-only durable marker for a detached Event Actor completion hook.
+   * Capable stores expose it through `terminalHostActionPending` as well, but
+   * keep the persisted field distinct so legacy reconciliation cannot index or
+   * claim the completion through the ordinary terminal-action lane. */
+  detachedAgentEventTerminalHostActionPending?: boolean;
+  /** Logical terminal state hidden behind a versioned fail-closed shell while
+   * a detached Event Actor host action remains unacknowledged. */
+  detachedAgentEventTerminalStatus?: Extract<JobStatus, 'complete' | 'aborted' | 'error'>;
   /**
    * Last time a cleanup pass enumerated this pending host action for retry. Retention is
    * measured from this rather than `completedAt`, so evidence survives as long as some
@@ -841,6 +858,8 @@ export interface ResumeState {
  * store at runtime.
  */
 export interface IJobStore {
+  readonly detachedAgentEventActionStoreMode?: DetachedAgentEventActionStoreMode;
+
   initialize(): Promise<void>;
 
   createJob(
@@ -866,6 +885,11 @@ export interface IJobStore {
   ): Promise<IdempotencyClaimResult>;
   releaseIdempotencyKey(key: string): Promise<void>;
 
+  /** Read-only existence probe used to identify a confirmed retry before
+   * request-rate admission. Optional stores keep the conservative behavior
+   * where every request remains subject to the limiter. */
+  hasIdempotencyKey?(key: string): Promise<boolean>;
+
   deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean>;
   hasJob(streamId: string): Promise<boolean>;
   getRunningJobs(): Promise<SerializableJobData[]>;
@@ -877,6 +901,11 @@ export interface IJobStore {
    * retry the host adapter after a restart / on another replica, even though the job is
    * no longer in the requires_action index. */
   getTerminalHostActionJobs?(): Promise<SerializableJobData[]>;
+  /** Enumerates detached Event Actor completion generations from a versioned
+   * retry lane known only to capable consumers. Redis keeps this lane separate
+   * from `getTerminalHostActionJobs` so a rolling-deployment replica that only
+   * understands the legacy job identity can never claim it. */
+  getDetachedAgentEventTerminalHostActionJobs?(): Promise<SerializableJobData[]>;
   /** Clears the pending-host-action marker once the adapter acknowledges success.
    * Identity-fenced on `expectedCreatedAt` so a replacement generation at the same
    * streamId is never cleared through its predecessor. */

@@ -31,7 +31,35 @@ type PendingConnection = {
   oauth: OAuthLifecycleRelay;
 };
 
-type ConnectionCreationGuard = { cancelled: boolean };
+/**
+ * Why a connection is being torn down. A `mutation` teardown follows a committed change to the
+ * server config or its credentials, so whatever an in-flight creation resolved before it may be
+ * stale and that creation cannot be re-established from the same inputs. A `lifecycle` teardown
+ * — an idle sweep, a forced replacement, a dead connection cleaned up — leaves those inputs
+ * exactly as valid as they were, and only the connection object itself goes away.
+ */
+type ConnectionTeardownReason = 'mutation' | 'lifecycle';
+
+type ConnectionTeardownOptions = {
+  /** The creation that requested the teardown; it is fenced by its own replacement. */
+  preservedCreation?: ConnectionCreationGuard;
+  reason?: ConnectionTeardownReason;
+};
+
+type ConnectionCreationGuard = { cancelledBy: ConnectionTeardownReason | null };
+
+/** Signals that a teardown fenced an in-flight creation before it could finish. */
+class ConnectionCreationCancelledError extends Error {
+  constructor(
+    message: string,
+    public readonly reason: ConnectionTeardownReason,
+  ) {
+    super(message);
+  }
+}
+
+/** Bounds re-establishment so back-to-back teardowns cannot spin a caller forever. */
+const MAX_TEARDOWN_RESTARTS = 3;
 
 /**
  * Abstract base class for managing user-specific MCP connections with lifecycle management.
@@ -110,10 +138,29 @@ export abstract class UserConnectionManager {
     }
   }
 
-  private cancelConnectionCreations(key: string, preserved?: ConnectionCreationGuard): void {
+  private assertCreationNotCancelled(
+    guard: ConnectionCreationGuard | undefined,
+    userId: string,
+    serverName: string,
+  ): void {
+    if (!guard?.cancelledBy) {
+      return;
+    }
+    throw new ConnectionCreationCancelledError(
+      `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
+      guard.cancelledBy,
+    );
+  }
+
+  /** A mutation fence outranks a lifecycle one: the stale inputs stay stale either way. */
+  private cancelConnectionCreations(
+    key: string,
+    reason: ConnectionTeardownReason,
+    preserved?: ConnectionCreationGuard,
+  ): void {
     for (const guard of this.activeConnectionCreations.get(key) ?? []) {
-      if (guard !== preserved) {
-        guard.cancelled = true;
+      if (guard !== preserved && guard.cancelledBy !== 'mutation') {
+        guard.cancelledBy = reason;
       }
     }
   }
@@ -194,8 +241,57 @@ export abstract class UserConnectionManager {
     if (!this.lostToolPublicationLeases.has(connection)) {
       return;
     }
-    await this.disconnectUserConnection(userId, serverName, creationGuard);
+    await this.disconnectUserConnection(userId, serverName, { preservedCreation: creationGuard });
     throw new Error(`[MCP][User: ${userId}][${serverName}] Publication lease is no longer current`);
+  }
+
+  /**
+   * A teardown fences every creation in flight for the same user and server, since one of them
+   * may install the connection it is removing, or hand back the one it just disposed. What the
+   * fenced attempt deserves depends on why the teardown ran. After a `lifecycle` teardown it is
+   * next in line rather than stale — nothing its caller resolved changed — so the attempt is
+   * discarded and re-established. After a `mutation` teardown the config and credentials that
+   * caller resolved may be the ones that were just replaced, and only the caller can resolve
+   * them again, so the fence stays fatal. A caller that has since aborted gets neither: there
+   * is nobody left to hand the connection to.
+   *
+   * Re-establishment happens inside the queue slot the attempt already holds, so a replacement
+   * queued behind another one keeps its position instead of moving to the tail and overwriting
+   * a newer connection later.
+   */
+  private async createUserConnectionWithLifecycleRestarts(
+    options: t.UserMCPConnectionOptions,
+    userId: string,
+    clearCooldown: boolean,
+    creationGuard: ConnectionCreationGuard,
+  ): Promise<MCPConnection> {
+    for (let attempt = 0; ; attempt++) {
+      /** A lifecycle fence raised while this attempt waited its turn has nothing left to fence;
+       *  a mutation fence is kept, so the attempt below fails on it immediately. */
+      if (creationGuard.cancelledBy === 'lifecycle') {
+        creationGuard.cancelledBy = null;
+      }
+      try {
+        return await this.createUserConnectionInternal(
+          options,
+          userId,
+          clearCooldown,
+          creationGuard,
+        );
+      } catch (error) {
+        if (
+          !(error instanceof ConnectionCreationCancelledError) ||
+          error.reason !== 'lifecycle' ||
+          attempt >= MAX_TEARDOWN_RESTARTS ||
+          options.signal?.aborted === true
+        ) {
+          throw error;
+        }
+        logger.info(
+          `[MCP][User: ${userId}][${options.serverName}] Connection creation raced a teardown; re-establishing`,
+        );
+      }
+    }
   }
 
   /** Gets or creates a connection for a specific user, coalescing concurrent attempts */
@@ -323,10 +419,10 @@ export abstract class UserConnectionManager {
       oauthEnd: opts.oauthEnd,
       logPrefix: `[MCP][User: ${userId}][${serverName}]`,
     });
-    const creationGuard: ConnectionCreationGuard = { cancelled: false };
+    const creationGuard: ConnectionCreationGuard = { cancelledBy: null };
     this.registerConnectionCreation(lockKey, creationGuard);
     const createConnection = () =>
-      this.createUserConnectionInternal(
+      this.createUserConnectionWithLifecycleRestarts(
         {
           ...opts,
           forceNew: forceNewConnection,
@@ -376,6 +472,8 @@ export abstract class UserConnectionManager {
       oauthEnd,
       oboTokenResolver,
       oboTrustChecker,
+      upstreamTokenProvider,
+      oboIdentityContext,
       signal,
       returnOnOAuth = false,
       connectionTimeout,
@@ -387,11 +485,7 @@ export abstract class UserConnectionManager {
     clearCooldown: boolean,
     creationGuard?: ConnectionCreationGuard,
   ): Promise<MCPConnection> {
-    if (creationGuard?.cancelled) {
-      throw new Error(
-        `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
-      );
-    }
+    this.assertCreationNotCancelled(creationGuard, userId, serverName);
     if (await this.appConnections!.has(serverName)) {
       throw new McpError(
         ErrorCode.InvalidRequest,
@@ -415,7 +509,10 @@ export abstract class UserConnectionManager {
       logger.info(
         `[MCP][User: ${userId}][${serverName}] Disposing existing connection before forced replacement`,
       );
-      await this.disconnectUserConnection(userId, serverName, creationGuard);
+      await this.disconnectUserConnection(userId, serverName, {
+        preservedCreation: creationGuard,
+        reason: 'lifecycle',
+      });
       connection = undefined;
     } else if (forceNew) {
       connection = undefined;
@@ -441,7 +538,9 @@ export abstract class UserConnectionManager {
       logger.info(
         `[MCP][User: ${userId}][${serverName}] Config identity changed, disconnecting stale connection`,
       );
-      await this.disconnectUserConnection(userId, serverName, creationGuard);
+      await this.disconnectUserConnection(userId, serverName, {
+        preservedCreation: creationGuard,
+      });
       connection = undefined;
     }
     if (
@@ -453,7 +552,9 @@ export abstract class UserConnectionManager {
       logger.info(
         `[MCP][User: ${userId}][${serverName}] Cache generation changed, disconnecting stale connection`,
       );
-      await this.disconnectUserConnection(userId, serverName, creationGuard);
+      await this.disconnectUserConnection(userId, serverName, {
+        preservedCreation: creationGuard,
+      });
       connection = undefined;
     }
 
@@ -463,7 +564,10 @@ export abstract class UserConnectionManager {
       logger.info(`[MCP][User: ${userId}] User idle for too long. Disconnecting all connections.`);
       // Disconnect all user connections
       try {
-        await this.disconnectUserConnections(userId, creationGuard);
+        await this.disconnectUserConnections(userId, {
+          preservedCreation: creationGuard,
+          reason: 'lifecycle',
+        });
       } catch {
         logger.error(`[MCP][User: ${userId}] Error disconnecting idle connections`);
       }
@@ -475,7 +579,9 @@ export abstract class UserConnectionManager {
             `[MCP][User: ${userId}] Server configuration updated; disconnecting stale connection`,
           );
         }
-        await this.disconnectUserConnection(userId, serverName, creationGuard);
+        await this.disconnectUserConnection(userId, serverName, {
+          preservedCreation: creationGuard,
+        });
         connection = undefined;
       } else {
         const activeRecovery = this.getActiveConnectionRecovery(connection);
@@ -500,15 +606,14 @@ export abstract class UserConnectionManager {
             serverName,
             creationGuard,
           );
-          if (creationGuard?.cancelled) {
-            throw new Error(
-              `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
-            );
-          }
+          this.assertCreationNotCancelled(creationGuard, userId, serverName);
           return connection;
         }
         logger.warn(`[MCP][User: ${userId}] Found disconnected connection object; cleaning up`);
-        await this.disconnectUserConnection(userId, serverName, creationGuard);
+        await this.disconnectUserConnection(userId, serverName, {
+          preservedCreation: creationGuard,
+          reason: 'lifecycle',
+        });
         connection = undefined;
       }
     }
@@ -576,6 +681,8 @@ export abstract class UserConnectionManager {
           oauthEnd: oauthEnd,
           oboTokenResolver: oboTokenResolver,
           oboTrustChecker: oboTrustChecker,
+          upstreamTokenProvider: upstreamTokenProvider,
+          oboIdentityContext,
           graphTokenResolver,
           returnOnOAuth: returnOnOAuth,
           requestBody: requestBody,
@@ -593,11 +700,7 @@ export abstract class UserConnectionManager {
 
       connection = await MCPConnectionFactory.create(basic, connectionOptions);
 
-      if (creationGuard?.cancelled) {
-        throw new Error(
-          `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
-        );
-      }
+      this.assertCreationNotCancelled(creationGuard, userId, serverName);
 
       if (publicationGeneration) {
         this.toolPublicationGenerations.set(connection, publicationGeneration);
@@ -623,11 +726,7 @@ export abstract class UserConnectionManager {
 
       if (!ephemeralConnection) {
         await connection.refreshToolList();
-        if (creationGuard?.cancelled) {
-          throw new Error(
-            `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
-          );
-        }
+        this.assertCreationNotCancelled(creationGuard, userId, serverName);
         if (!this.userConnections.has(userId)) {
           this.userConnections.set(userId, new Map());
         }
@@ -639,11 +738,7 @@ export abstract class UserConnectionManager {
         await this.updateUserLastActivity(userId);
         await this.assertToolPublicationLeaseCurrent(connection, userId, serverName, creationGuard);
       }
-      if (creationGuard?.cancelled) {
-        throw new Error(
-          `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
-        );
-      }
+      this.assertCreationNotCancelled(creationGuard, userId, serverName);
       return connection;
     } catch (error) {
       logger.error(`[MCP][User: ${userId}] Failed to establish connection`);
@@ -938,41 +1033,54 @@ export abstract class UserConnectionManager {
     }
   }
 
-  /** Disconnects and removes a specific user connection */
+  /**
+   * Disconnects and removes a specific user connection. Teardowns default to `mutation`, the
+   * conservative reading for external callers, which all tear down after committing a change.
+   */
   public async disconnectUserConnection(
     userId: string,
     serverName: string,
-    preservedCreation?: ConnectionCreationGuard,
+    { preservedCreation, reason = 'mutation' }: ConnectionTeardownOptions = {},
   ): Promise<void> {
     const pendingKey = `${userId}:${serverName}`;
     const pending = this.pendingConnections.get(pendingKey);
-    this.cancelConnectionCreations(pendingKey, preservedCreation);
+    this.cancelConnectionCreations(pendingKey, reason, preservedCreation);
     if (pending && preservedCreation == null) {
       this.pendingConnections.delete(pendingKey);
     }
     const userMap = this.userConnections.get(userId);
     const connection = userMap?.get(serverName);
+    const logPrefix = `[MCP][User: ${userId}]`;
+    if (connection) {
+      logger.info(`${logPrefix} Disconnecting server connection`);
+      connection.removeAllListeners?.('toolsChanged');
+      this.removeUserConnection(userId, serverName);
+    }
+    /**
+     * Started in the same synchronous stretch as the fence: `cancelMCPToolsChanged` drops the
+     * pending publication before it awaits, so a creation re-established while this teardown
+     * is still disposing cannot have its own publication and retry timer cancelled by it.
+     */
+    const publicationCancelled = cancelMCPToolsChanged({ userId, serverName });
+    /** Observed here so a rejection cannot surface as unhandled while disposal is awaited. */
+    publicationCancelled.catch(() => undefined);
     try {
       if (connection) {
-        const logPrefix = `[MCP][User: ${userId}]`;
-        logger.info(`${logPrefix} Disconnecting server connection`);
-        connection.removeAllListeners?.('toolsChanged');
-        this.removeUserConnection(userId, serverName);
         await this.disposeEvictedConnection(connection, logPrefix);
       }
     } finally {
-      await cancelMCPToolsChanged({ userId, serverName });
+      await publicationCancelled;
     }
   }
 
   /** Disconnects and removes all connections for a specific user */
   public async disconnectUserConnections(
     userId: string,
-    preservedCreation?: ConnectionCreationGuard,
+    { preservedCreation, reason = 'mutation' }: ConnectionTeardownOptions = {},
   ): Promise<void> {
     for (const key of this.activeConnectionCreations.keys()) {
       if (key.startsWith(`${userId}:`)) {
-        this.cancelConnectionCreations(key, preservedCreation);
+        this.cancelConnectionCreations(key, reason, preservedCreation);
       }
     }
     if (preservedCreation == null) {
@@ -989,22 +1097,28 @@ export abstract class UserConnectionManager {
       const userServers = Array.from(userMap.keys());
       for (const serverName of userServers) {
         disconnectPromises.push(
-          this.disconnectUserConnection(userId, serverName, preservedCreation).catch(() => {
-            logger.error(`[MCP][User: ${userId}] Error during server disconnection`);
-          }),
+          this.disconnectUserConnection(userId, serverName, { preservedCreation, reason }).catch(
+            () => {
+              logger.error(`[MCP][User: ${userId}] Error during server disconnection`);
+            },
+          ),
         );
       }
       await Promise.allSettled(disconnectPromises);
       logger.info(`[MCP][User: ${userId}] All connections processed for disconnection.`);
     }
     /**
-     * Always clear the activity timestamp, even when userMap was missing.
-     * `updateUserLastActivity` can be called before a connection is established
-     * (e.g. in MCPManager.callTool prior to getConnection); if that connection
-     * attempt fails, the activity entry would otherwise leak and trigger the
-     * idle check repeatedly for the same userId.
+     * Clear the activity timestamp whenever nothing is left to track, including when userMap
+     * was missing. `updateUserLastActivity` can be called before a connection is established
+     * (e.g. in MCPManager.callTool prior to getConnection); if that connection attempt fails,
+     * the activity entry would otherwise leak and trigger the idle check repeatedly for the
+     * same userId. A connection installed while this teardown was disposing keeps its own
+     * timestamp: `checkIdleConnections` walks activity rather than connections, so clearing it
+     * would hide that connection from every later idle sweep.
      */
-    this.userLastActivity.delete(userId);
+    if ((this.userConnections.get(userId)?.size ?? 0) === 0) {
+      this.userLastActivity.delete(userId);
+    }
   }
 
   /** Check for and disconnect idle connections */
@@ -1021,7 +1135,7 @@ export abstract class UserConnectionManager {
           `[MCP][User: ${userId}] User idle for too long. Disconnecting all connections...`,
         );
         // Disconnect all user connections asynchronously (fire and forget)
-        this.disconnectUserConnections(userId).catch(() =>
+        this.disconnectUserConnections(userId, { reason: 'lifecycle' }).catch(() =>
           logger.error(`[MCP][User: ${userId}] Error disconnecting idle connections`),
         );
       }

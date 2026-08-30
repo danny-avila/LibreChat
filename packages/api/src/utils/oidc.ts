@@ -1,5 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import type { IUser, OIDCTokens } from '@librechat/data-schemas';
+import { OPENID_EXPIRY_BUFFER_SECONDS } from '~/oauth/expiry';
 
 export interface OpenIDTokenInfo {
   accessToken?: string;
@@ -42,9 +43,6 @@ export const GRAPH_TOKEN_PLACEHOLDER = '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}';
  * Can be overridden via GRAPH_API_SCOPES environment variable.
  */
 export const DEFAULT_GRAPH_SCOPES = 'https://graph.microsoft.com/.default';
-
-/** Shared with AuthController's OpenID session reuse check: a token within the buffer would expire in transit and 401 downstream */
-export const OPENID_EXPIRY_BUFFER_SECONDS = 30;
 
 /** Claims consulted when deciding whether a verified JWT is an access token rather than an ID token. */
 export interface JwtTypeClaims {

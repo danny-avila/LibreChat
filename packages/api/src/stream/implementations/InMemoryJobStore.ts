@@ -141,6 +141,8 @@ interface ContentState {
  * - No chunk persistence needed - same instance handles generation and reconnects
  */
 export class InMemoryJobStore implements IJobStoreV2 {
+  readonly detachedAgentEventActionStoreMode = 'process_local' as const;
+
   private jobs = new Map<string, SerializableJobData>();
   private contentState = new Map<string, ContentState>();
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -888,6 +890,18 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
     this.idempotencyClaims.set(key, { value, expiresAt: now + ttlSeconds * 1000 });
     return { claimed: true, existing: value };
+  }
+
+  async hasIdempotencyKey(key: string): Promise<boolean> {
+    const existing = this.idempotencyClaims.get(key);
+    if (existing == null) {
+      return false;
+    }
+    if (existing.expiresAt > Date.now()) {
+      return true;
+    }
+    this.idempotencyClaims.delete(key);
+    return false;
   }
 
   async takeoverIdempotencyKey(

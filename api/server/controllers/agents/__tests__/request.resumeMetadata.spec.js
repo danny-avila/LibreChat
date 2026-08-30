@@ -9,6 +9,8 @@ const mockLogger = {
 
 const mockGenerationJobManager = {
   isRedis: false,
+  detachedAgentEventActionStoreMode: 'process_local',
+  supportsDetachedAgentEventActions: true,
   createJob: jest.fn(),
   getJob: jest.fn(),
   emitError: jest.fn(),
@@ -76,6 +78,48 @@ const mockIsScheduleLive = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn();
 const mockExecuteAgentEventActor = jest.fn();
 const mockResumeAgentEventActor = jest.fn();
+const mockCreateAgentEventActorTurn = jest.fn((input, dependencies) => {
+  let historyToken;
+  let historyOwner;
+  return {
+    run: async () => {
+      if (input.strategy === 'checkpoint') {
+        const result =
+          input.checkpoint.kind === 'resume'
+            ? await mockResumeAgentEventActor(input.checkpoint.input, dependencies.actor)
+            : await mockExecuteAgentEventActor(input.checkpoint.input, dependencies.actor);
+        return { adapter: 'checkpoint', ...result };
+      }
+      const token = 'event-actor-history-token';
+      const acquired = await dependencies.history.begin({ ...input.history.owner, token });
+      if (!acquired) {
+        throw Object.assign(new Error('The event actor is temporarily unavailable'), {
+          code: 'EVENT_ACTOR_NOT_READY',
+          status: 409,
+        });
+      }
+      historyToken = token;
+      historyOwner = input.history.owner;
+      try {
+        await input.history.persistToken(token);
+      } catch (error) {
+        historyToken = undefined;
+        historyOwner = undefined;
+        await dependencies.history.complete({ ...input.history.owner, token });
+        throw error;
+      }
+      return { adapter: 'history', value: await input.history.invoke() };
+    },
+    historyPersisted: async () => {
+      if (historyToken == null) {
+        return;
+      }
+      const token = historyToken;
+      historyToken = undefined;
+      await dependencies.history.complete({ ...historyOwner, token });
+    },
+  };
+});
 const mockCreateAgentEventActorDetachedActionLifecycle = jest.fn(() => undefined);
 const mockFindAgentEventAppliedAction = jest.fn();
 const mockResolveAgentTurnExecutionPlan = jest.fn((input) => {
@@ -263,11 +307,9 @@ jest.mock('@librechat/api', () => ({
     return messages.length === 0;
   },
   deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
-  executeAgentEventActor: (...args) => mockExecuteAgentEventActor(...args),
-  resumeAgentEventActor: (...args) => mockResumeAgentEventActor(...args),
+  createAgentEventActorTurn: (...args) => mockCreateAgentEventActorTurn(...args),
   createAgentEventActorDetachedActionLifecycle: (...args) =>
     mockCreateAgentEventActorDetachedActionLifecycle(...args),
-  isAgentEventActorDetachedActionProducerEnabled: () => true,
   parseAgentEventActorDetachedCompletion: (value) => (value?.version === 1 ? value : undefined),
   EVENT_ACTOR_DETACHED_COMPLETION_SOURCE: 'librechat-event-actor',
   EVENT_ACTOR_DETACHED_COMPLETION_TYPE: 'librechat.event_actor.detached_completion',
@@ -395,6 +437,8 @@ describe('ResumableAgentController resume metadata', () => {
     mockGenerationJobManager.getJob.mockResolvedValue(undefined);
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.isRedis = false;
+    mockGenerationJobManager.detachedAgentEventActionStoreMode = 'process_local';
+    mockGenerationJobManager.supportsDetachedAgentEventActions = true;
     mockGenerationJobManager.persistAgentEventDetachedTerminalEvidence.mockResolvedValue(true);
     mockGenerationJobManager.emitChunk.mockResolvedValue(undefined);
     mockGenerationJobManager.emitDone.mockResolvedValue(undefined);
@@ -4253,6 +4297,7 @@ describe('ResumableAgentController resume metadata', () => {
 
   it('resumes the original actor suspension from exact detached terminal evidence', async () => {
     mockGenerationJobManager.isRedis = true;
+    mockGenerationJobManager.detachedAgentEventActionStoreMode = 'distributed';
     mockGenerationJobManager.createJob.mockResolvedValue({
       createdAt: 2000,
       metadata: {
@@ -4385,9 +4430,9 @@ describe('ResumableAgentController resume metadata', () => {
     );
     const lifecycleDependencies =
       mockCreateAgentEventActorDetachedActionLifecycle.mock.calls.at(-1)[1];
-    expect(lifecycleDependencies.producerEnabled()).toBe(true);
-    mockGenerationJobManager.isRedis = false;
-    expect(lifecycleDependencies.producerEnabled()).toBe(false);
+    expect(lifecycleDependencies.storeMode()).toBe('distributed');
+    mockGenerationJobManager.detachedAgentEventActionStoreMode = 'process_local';
+    expect(lifecycleDependencies.storeMode()).toBe('process_local');
     expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
       'child-conversation',
       'user-123',
@@ -4660,7 +4705,7 @@ describe('ResumableAgentController resume metadata', () => {
       undefined,
     ],
     [
-      'pre-cutover pause-capable fleet',
+      'pre-capability pause consumer fleet',
       { toolDefinitions: [] },
       { toolApproval: { enabled: true } },
       undefined,
@@ -4702,7 +4747,7 @@ describe('ResumableAgentController resume metadata', () => {
         }),
       };
       const shouldCheckpoint =
-        _label !== 'memory-checkpointer' && _label !== 'pre-cutover pause-capable fleet';
+        _label !== 'memory-checkpointer' && _label !== 'pre-capability pause consumer fleet';
       if (shouldCheckpoint) {
         mockExecuteAgentEventActor.mockImplementationOnce(async (input) => {
           await input.invoke({

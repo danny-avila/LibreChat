@@ -18,6 +18,10 @@ const {
   exemptAgentTriggerFromIpLimiter,
   captureScheduleFireContext,
   exemptFromUserLimiter: exemptScheduleFromUserLimiter,
+  detectGenerationRetry,
+  isConfirmedGenerationRetry,
+  generationRetryProbeLimiter,
+  generationRetryLimiter,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -64,10 +68,7 @@ function hasTenantMismatch(job, user) {
  * validation, not-found, and authorization envelopes; it never leaks an
  * existing job's marker to an unauthorized caller. */
 function negotiateRequestGenerationProtocol(req) {
-  return Math.min(
-    getRequestedGenerationProtocol(req),
-    getServerGenerationProtocol(GenerationJobManager),
-  );
+  return Math.min(getRequestedGenerationProtocol(req), getServerGenerationProtocol());
 }
 
 /** Every generation-control JSON envelope carries the exact numeric protocol
@@ -94,9 +95,7 @@ async function sendJoblessStatus(req, res, conversationId) {
   );
   const generationProtocolVersion = Math.min(
     requestedProtocolVersion,
-    claimed.steers.length > 0
-      ? claimed.generationProtocolVersion
-      : getServerGenerationProtocol(GenerationJobManager),
+    claimed.steers.length > 0 ? claimed.generationProtocolVersion : getServerGenerationProtocol(),
   );
   res.set(GENERATION_PROTOCOL_HEADER, String(generationProtocolVersion));
   return res.json({
@@ -1080,14 +1079,41 @@ router.post(
 router.use('/', v1);
 
 const chatRouter = express.Router();
+const useMessageIpLimiter = isEnabled(LIMIT_MESSAGE_IP);
+const useMessageUserLimiter = isEnabled(LIMIT_MESSAGE_USER);
 chatRouter.use(configMiddleware);
-
-if (isEnabled(LIMIT_MESSAGE_IP)) {
-  chatRouter.use(unless(exemptAgentTriggerFromIpLimiter, messageIpLimiter));
+if (useMessageIpLimiter || useMessageUserLimiter) {
+  chatRouter.use(
+    unless(
+      (req) => exemptAgentTriggerFromIpLimiter(req) || exemptScheduleFromUserLimiter(req),
+      generationRetryProbeLimiter,
+    ),
+  );
+  chatRouter.use(detectGenerationRetry);
+  chatRouter.use(
+    unless(
+      (req) => exemptAgentTriggerFromIpLimiter(req) || exemptScheduleFromUserLimiter(req),
+      generationRetryLimiter,
+    ),
+  );
 }
 
-if (isEnabled(LIMIT_MESSAGE_USER)) {
-  chatRouter.use(unless(exemptScheduleFromUserLimiter, messageUserLimiter));
+if (useMessageIpLimiter) {
+  chatRouter.use(
+    unless(
+      (req) => exemptAgentTriggerFromIpLimiter(req) || isConfirmedGenerationRetry(req),
+      messageIpLimiter,
+    ),
+  );
+}
+
+if (useMessageUserLimiter) {
+  chatRouter.use(
+    unless(
+      (req) => exemptScheduleFromUserLimiter(req) || isConfirmedGenerationRetry(req),
+      messageUserLimiter,
+    ),
+  );
 }
 
 chatRouter.use('/', chat);

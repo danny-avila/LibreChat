@@ -41,9 +41,9 @@ const {
   getSafeErrorMetadata,
   isAgentEventRetentionActive,
   resumeAgentEventActor,
+  settleAgentEventActorHistoryTurn,
   createAgentEventActionRecorder,
   createAgentEventActorDetachedActionLifecycle,
-  isAgentEventActorDetachedActionProducerEnabled,
   findAgentEventAppliedAction,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
@@ -155,12 +155,15 @@ async function sealResumedLegacyEventActorTurn({ userId, conversationId, metadat
     return;
   }
   try {
-    const sealed = await completeAgentEventActorLegacyTurn({
-      user: userId,
-      conversationId,
-      ...(metadata?.tenantId == null ? {} : { tenantId: metadata.tenantId }),
-      token,
-    });
+    const sealed = await settleAgentEventActorHistoryTurn(
+      {
+        user: userId,
+        conversationId,
+        ...(metadata?.tenantId == null ? {} : { tenantId: metadata.tenantId }),
+        token,
+      },
+      completeAgentEventActorLegacyTurn,
+    );
     if (!sealed) {
       logger.error(
         `[event-actor] Resumed legacy turn fence ${token} was not sealed; forks stay blocked until bounded reclaim`,
@@ -692,7 +695,7 @@ async function finalizeResumedTurn({
  */
 const ResumeAgentController = async (req, res, next, initializeClient, addTitle) => {
   const userId = req.user.id;
-  let generationProtocolVersion = negotiateNewGenerationProtocol(req, GenerationJobManager);
+  let generationProtocolVersion = negotiateNewGenerationProtocol(req);
   const { conversationId, actionId, generationCreatedAt } = req.body;
   const streamId = conversationId;
 
@@ -1386,7 +1389,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       if (
         durableEventActorSuspension != null &&
         durableEventActorRequiresDetachedProducer &&
-        (!GenerationJobManager.isRedis || !isAgentEventActorDetachedActionProducerEnabled())
+        !GenerationJobManager.supportsDetachedAgentEventActions
       ) {
         const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
         await rollbackUnconsumedScheduleClaim(currentJob);
@@ -1398,7 +1401,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           503,
           {
             code: 'EVENT_ACTOR_RESUME_CAPABILITY_UNAVAILABLE',
-            error: 'A durable Event Actor resume worker is temporarily unavailable',
+            error: 'A compatible Event Actor resume worker is temporarily unavailable',
           },
           generationProtocolVersion,
         );
@@ -1475,8 +1478,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
               reserveAgentEventActorDetachedAction,
               markAgentEventActorDetachedActionRunning,
               settleAgentEventActorDetachedAction,
-              producerEnabled: () =>
-                GenerationJobManager.isRedis && isAgentEventActorDetachedActionProducerEnabled(),
+              storeMode: () => GenerationJobManager.detachedAgentEventActionStoreMode,
               persistTerminalEvidence: async (evidence) => {
                 const persisted =
                   await GenerationJobManager.persistAgentEventDetachedTerminalEvidence(
