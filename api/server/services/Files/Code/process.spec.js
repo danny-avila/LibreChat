@@ -72,6 +72,10 @@ jest.mock('@librechat/api', () => {
       profile === 'stateful' ? 'https://code-stateful.example.com' : 'https://code-api.example.com',
     ),
     CODE_API_EXPECTED_PROFILE_HEADER: 'X-CodeAPI-Expected-Profile',
+    codeExecutionHeaders: ({ executionProfile, bridgeWorkerId }) => ({
+      'X-CodeAPI-Expected-Profile': executionProfile,
+      ...(bridgeWorkerId ? { 'X-LibreChat-Code-Worker-ID': bridgeWorkerId } : {}),
+    }),
     withTimeout: (...args) => passthroughWithTimeout(...args),
     hasOfficeHtmlPath: (...args) => mockHasOfficeHtmlPath(...args),
     /**
@@ -984,6 +988,7 @@ describe('Code Process', () => {
           ...baseParams,
           codeApiBaseUrl: 'https://code-stateful.example.com',
           executionProfile: 'stateful',
+          bridgeWorkerId: 'personal-worker-1',
           executionRouteKey,
         });
 
@@ -1853,12 +1858,14 @@ describe('Code Process', () => {
           file_path: '/mnt/data/x.txt',
           codeApiBaseUrl: 'https://stateful-code.example.com',
           executionProfile: 'stateful',
+          bridgeWorkerId: 'personal-worker-1',
           runtime_session_hint: 'v1:user',
         });
 
         const call = mockAxios.mock.calls[0][0];
         expect(call.url).toBe('https://stateful-code.example.com/exec');
         expect(call.headers['X-CodeAPI-Expected-Profile']).toBe('stateful');
+        expect(call.headers['X-LibreChat-Code-Worker-ID']).toBe('personal-worker-1');
         expect(call.data.runtime_session_hint).toBe('v1:user');
       });
 

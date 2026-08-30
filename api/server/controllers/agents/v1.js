@@ -457,7 +457,14 @@ const validateStatefulCodeEnvironment = (
   if (environmentId != null) {
     const configuredEnvironments =
       req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments ?? [];
-    if (!configuredEnvironments.some((configured) => configured.id === environmentId)) {
+    const configuredEnvironment = configuredEnvironments.find(
+      (configured) => configured.id === environmentId,
+    );
+    const pairingOnly =
+      configuredEnvironment?.pairing?.allowPrincipalWorkers === true &&
+      configuredEnvironment.pairing.workerId == null &&
+      configuredEnvironment.workerId == null;
+    if (configuredEnvironment == null || pairingOnly) {
       res.status(400).json({
         error: `Stateful code environment is not configured: ${environmentId}`,
       });

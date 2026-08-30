@@ -4430,6 +4430,7 @@ describe('createToolExecuteHandler', () => {
           baseUrl: 'https://stateful-code.example.com',
           codeSessionKey: 'execute_code:stateful:v1:user',
           executionProfile: 'stateful',
+          bridgeWorkerId: 'personal-worker-1',
           runtimeSessionHint: 'v1:user',
           statefulSessions: true,
         },
@@ -4449,6 +4450,7 @@ describe('createToolExecuteHandler', () => {
         expect.objectContaining({
           codeApiBaseUrl: 'https://stateful-code.example.com',
           executionProfile: 'stateful',
+          bridgeWorkerId: 'personal-worker-1',
           runtime_session_hint: 'v1:user',
         }),
       );

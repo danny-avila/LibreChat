@@ -22,6 +22,7 @@ const {
   getStorageMetadata,
   getCodeExecutionBaseUrl,
   buildCodeEnvDownloadQuery,
+  codeExecutionHeaders,
   CODE_API_EXPECTED_PROFILE_HEADER,
 } = require('@librechat/api');
 const {
@@ -1395,6 +1396,7 @@ async function readSandboxFile({
   runtime_session_hint,
   codeApiBaseUrl,
   executionProfile,
+  bridgeWorkerId,
   req,
 }) {
   const baseURL = codeApiBaseUrl ?? getCodeBaseURL();
@@ -1429,7 +1431,7 @@ async function readSandboxFile({
         'Content-Type': 'application/json',
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
-        ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
+        ...(executionProfile ? codeExecutionHeaders({ executionProfile, bridgeWorkerId }) : {}),
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -1480,6 +1482,7 @@ async function readSandboxImage({
   runtime_session_hint,
   codeApiBaseUrl,
   executionProfile,
+  bridgeWorkerId,
   maxBytes,
   req,
 }) {
@@ -1543,6 +1546,7 @@ async function readSandboxImage({
       session_id,
       runtime_session_hint,
       executionProfile,
+      bridgeWorkerId,
       files,
       req,
       chunkBytes,
@@ -1614,6 +1618,7 @@ async function execSandboxImageChunk({
   session_id,
   runtime_session_hint,
   executionProfile,
+  bridgeWorkerId,
   files,
   req,
   chunkBytes,
@@ -1640,7 +1645,7 @@ async function execSandboxImageChunk({
         'Content-Type': 'application/json',
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
-        ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
+        ...(executionProfile ? codeExecutionHeaders({ executionProfile, bridgeWorkerId }) : {}),
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -1708,6 +1713,7 @@ async function writeSandboxFile({
   runtime_session_hint,
   codeApiBaseUrl,
   executionProfile,
+  bridgeWorkerId,
   req,
 }) {
   const baseURL = codeApiBaseUrl ?? getCodeBaseURL();
@@ -1760,7 +1766,7 @@ async function writeSandboxFile({
         'Content-Type': 'application/json',
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
-        ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
+        ...(executionProfile ? codeExecutionHeaders({ executionProfile, bridgeWorkerId }) : {}),
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
