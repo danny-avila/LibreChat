@@ -53,7 +53,7 @@ import SkillsCommand from './SkillsCommand';
 import AudioRecorder from './AudioRecorder';
 import CollapseChat from './CollapseChat';
 import QuoteButton from './QuoteButton';
-import StreamAudio from './StreamAudio';
+import AutoPlayAudio from './AutoPlayAudio';
 import TokenUsage from './TokenUsage';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
@@ -769,7 +769,7 @@ const ChatForm = memo(function ChatForm({
                       )}
                 </div>
               </div>
-              {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
+              {TextToSpeech && automaticPlayback && <AutoPlayAudio index={index} />}
             </div>
           </div>
         </div>
