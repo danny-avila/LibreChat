@@ -371,6 +371,57 @@ describe('createToolExecuteHandler — background tool calls', () => {
     );
   });
 
+  it('persists a terminal receipt when an admitted background task times out', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+    try {
+      const tool = {
+        name: 'search_mcp_docs',
+        description: 'search docs',
+        schema: z.object({ q: z.string() }),
+        invoke: jest.fn(() => new Promise(() => undefined)),
+      } as unknown as StructuredToolInterface;
+      const persist = jest.fn(async () => true);
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({ loadedTools: [tool] }),
+        backgroundToolCompletion: {
+          preregister: jest.fn(async () => ({ retire: jest.fn(async () => true) })),
+          persist,
+          claim: jest.fn(async () => ({ status: 'acquired' as const })),
+        },
+      });
+
+      const [dispatch] = await runBatch(handler, {
+        toolCalls: [
+          {
+            id: 'call-timeout-wakeup',
+            name: tool.name,
+            args: { q: 'hang', run_in_background: true },
+            stepId: 'step-timeout-wakeup',
+          },
+        ],
+        agentId: 'agent_parent_1',
+        configurable: buildConfig([tool.name]),
+        metadata: { thread_id: 'exec_convo', run_id: 'response-timeout' },
+      });
+
+      jest.advanceTimersByTime(31 * 60 * 1000);
+      await flushMicrotasks();
+      await flushMicrotasks();
+
+      expect(persist).toHaveBeenCalledWith(
+        expect.objectContaining({
+          output: 'Error: [search_mcp_docs] tool call failed: Background task timed out',
+          backgroundTask: expect.objectContaining({
+            taskId: JSON.parse(dispatch.content).background_task_id,
+            status: 'error',
+          }),
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('persists an Event Actor launch before invoking and terminal evidence before wakeup', async () => {
     const events: string[] = [];
     let finishTool: ((value: { content: string }) => void) | undefined;
@@ -2462,10 +2513,13 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
       await flushMicrotasks();
 
       expect(JSON.parse(poll[0].content).status).toBe('error');
-      const reapply = persistCalls.find((call) => call.reapply === true);
-      expect(reapply).toBeDefined();
-      expect(String(reapply?.output)).toMatch(/^Error:\s*\[execute_code\]\s*tool call failed:/);
-      expect(String(reapply?.output)).toContain('timed out');
+      const timeoutPersistence = persistCalls.find((call) =>
+        String(call.output).includes('timed out'),
+      );
+      expect(timeoutPersistence).toBeDefined();
+      expect(String(timeoutPersistence?.output)).toMatch(
+        /^Error:\s*\[execute_code\]\s*tool call failed:/,
+      );
     } finally {
       jest.useRealTimers();
     }

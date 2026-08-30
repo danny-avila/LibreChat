@@ -39,6 +39,7 @@ import {
   buildBackgroundHandleContent,
   buildBackgroundCapacityContent,
   stripBackgroundFromToolDefinitions,
+  withBackgroundTaskTimeout,
   BACKGROUND_STATUS_ATTACHMENT_TYPE,
   CHECK_BACKGROUND_TASK_NAME,
   RUN_IN_BACKGROUND_ARG,
@@ -4888,7 +4889,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 };
                 void (async () => {
                   try {
-                    const result = await invokePromise;
+                    const result = await withBackgroundTaskTimeout(invokePromise);
                     if (isCodeCall) {
                       markCodeSandboxWarm();
                     }

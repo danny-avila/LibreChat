@@ -667,12 +667,39 @@ const IDLE_BUCKET_TTL_MS = 6 * 60 * 60 * 1000;
 /** Max wall-clock a task may stay `running` before being reaped as timed-out,
  *  so a detached call that never settles (hung network / lost MCP connection)
  *  can't hold a running slot and exhaust the per-conversation cap forever. */
-const RUNNING_TASK_TTL_MS = 30 * 60 * 1000;
+export const BACKGROUND_TASK_TIMEOUT_MS: number = 30 * 60 * 1000;
 const MAX_RUNNING_PER_BUCKET = 10;
 const MAX_TASKS_PER_BUCKET = 200;
 const MAX_RESULT_CHARS = 100_000;
 const MAX_ARTIFACT_CHARS = 10_000_000;
 const GLOBAL_SWEEP_INTERVAL_MS = 60 * 1000;
+
+/**
+ * Gives the invocation owner the same terminal deadline enforced by the
+ * registry sweeper. A timeout must flow through the ordinary invocation
+ * failure path so admitted completion wakeups receive a durable terminal
+ * receipt; merely changing the process-local registry row would leave the
+ * continuation resolver waiting for evidence that can never arrive.
+ */
+export function withBackgroundTaskTimeout<T>(
+  invocation: Promise<T>,
+  timeoutMs: number = BACKGROUND_TASK_TIMEOUT_MS,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Background task timed out')), timeoutMs);
+    timeout.unref?.();
+    invocation.then(
+      (result) => {
+        clearTimeout(timeout);
+        resolve(result);
+      },
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
 
 let lastDispatchStamp = 0;
 /**
@@ -734,7 +761,7 @@ export class BackgroundTaskRegistryClass {
 
   private sweepBucketTasks(bucket: TaskBucket, now: number): void {
     for (const [taskId, task] of bucket.tasks) {
-      if (task.status === 'running' && now - task.createdAt > RUNNING_TASK_TTL_MS) {
+      if (task.status === 'running' && now - task.createdAt > BACKGROUND_TASK_TIMEOUT_MS) {
         /** Reap a stuck task: freeing the running slot (it no longer counts
          *  toward the cap) and letting the completed-task TTL evict it. */
         task.status = 'error';
