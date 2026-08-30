@@ -266,24 +266,54 @@ describe('initializeAgent — execution context', () => {
 
   it('initializes without Express request or response objects', async () => {
     const { agent, loadTools, db } = createMocks();
-
-    await expect(
-      initializeAgent(
-        {
-          runtime: {
-            user: { id: 'user-1' } as never,
-            appConfig: {} as never,
-            requestBody: { timezone: 'America/New_York' },
+    const previousReqDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'req');
+    Object.defineProperty(globalThis, 'req', {
+      configurable: true,
+      writable: true,
+      value: undefined,
+    });
+    const appConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'request-free-stateful',
+                name: 'Request-free stateful',
+                type: 'attached',
+                baseURL: 'https://stateful.example.com/v1',
+              },
+            ],
           },
-          agent,
-          loadTools,
-          endpointOption: { endpoint: EModelEndpoint.agents },
-          allowedProviders: new Set([Providers.OPENAI]),
-          isInitialAgent: true,
         },
-        db,
-      ),
-    ).resolves.toBeDefined();
+      },
+    };
+
+    try {
+      await expect(
+        initializeAgent(
+          {
+            runtime: {
+              user: { id: 'user-1' } as never,
+              appConfig: appConfig as never,
+              requestBody: { timezone: 'America/New_York' },
+            },
+            agent,
+            loadTools,
+            endpointOption: { endpoint: EModelEndpoint.agents },
+            allowedProviders: new Set([Providers.OPENAI]),
+            isInitialAgent: true,
+          },
+          db,
+        ),
+      ).resolves.toBeDefined();
+    } finally {
+      if (previousReqDescriptor == null) {
+        delete (globalThis as typeof globalThis & { req?: unknown }).req;
+      } else {
+        Object.defineProperty(globalThis, 'req', previousReqDescriptor);
+      }
+    }
 
     expect(loadTools).toHaveBeenCalledWith(expect.not.objectContaining({ req: expect.anything() }));
     expect(loadTools).toHaveBeenCalledWith(expect.not.objectContaining({ res: expect.anything() }));
