@@ -149,6 +149,46 @@ describe('Agent execution enrollment', () => {
     await expect(manager.getCleanupBlockingJobIdsForUser('user-1')).resolves.toEqual([]);
   });
 
+  it('retries terminalization after trailing writes when the first store attempt fails', async () => {
+    const enrollment = await enrollAgentExecution(enrollmentParams('chatcmpl-terminal-retry'), {
+      manager,
+    });
+    await enrollment.beginProviderExecution();
+    const completeJob = jest
+      .spyOn(manager, 'completeJob')
+      .mockRejectedValueOnce(new Error('terminal store unavailable'));
+
+    await expect(enrollment.settle()).resolves.toBeUndefined();
+
+    expect(completeJob).toHaveBeenCalledTimes(2);
+    await expect(manager.getJobStore().getJob('chatcmpl-terminal-retry')).resolves.toMatchObject({
+      status: 'complete',
+      providerDrained: true,
+    });
+    await expect(manager.getCleanupBlockingJobIdsForUser('user-1')).resolves.toEqual([]);
+  });
+
+  it('does not mark the provider drained while terminalization remains unavailable', async () => {
+    const enrollment = await enrollAgentExecution(enrollmentParams('chatcmpl-terminal-outage'), {
+      manager,
+    });
+    await enrollment.beginProviderExecution();
+    jest
+      .spyOn(manager, 'completeJob')
+      .mockRejectedValueOnce(new Error('terminal store unavailable'))
+      .mockRejectedValueOnce(new Error('terminal store still unavailable'));
+
+    await expect(enrollment.settle()).rejects.toThrow('terminal store still unavailable');
+
+    await expect(manager.getJobStore().getJob('chatcmpl-terminal-outage')).resolves.toMatchObject({
+      status: 'running',
+      providerDrained: false,
+    });
+    await expect(manager.getCleanupBlockingJobIdsForUser('user-1')).resolves.toEqual([
+      'chatcmpl-terminal-outage',
+    ]);
+  });
+
   it('lets destructive cleanup abort the canonical signal and wait for trailing writes', async () => {
     const enrollment = await enrollAgentExecution(enrollmentParams('resp-delete'), { manager });
     const tail = deferred<void>();

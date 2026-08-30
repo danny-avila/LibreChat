@@ -124,8 +124,34 @@ export class AgentExecutionEnrollment {
 
     await Promise.allSettled(this.trailingWrites);
 
+    /** A failed terminal write is not allowed to become a drained running job. Retry
+     * after trailing persistence settles; if another terminal owner won meanwhile,
+     * exact-generation readback is the idempotent success receipt. */
+    if (terminalError != null) {
+      try {
+        const completed = await this.manager.completeJob(
+          this.runId,
+          error == null ? undefined : REMOTE_EXECUTION_ERROR,
+          this.createdAt,
+        );
+        if (!completed) {
+          const job = await this.manager.getJob(this.runId);
+          if (
+            job?.createdAt !== this.createdAt ||
+            job.status === 'running' ||
+            job.status === 'requires_action'
+          ) {
+            throw terminalError;
+          }
+        }
+        terminalError = undefined;
+      } catch (retryError) {
+        terminalError = retryError;
+      }
+    }
+
     let drainError: unknown;
-    if (this.providerStarted) {
+    if (this.providerStarted && terminalError == null) {
       try {
         const drained = await this.manager.markProviderExecutionDrained(
           this.runId,

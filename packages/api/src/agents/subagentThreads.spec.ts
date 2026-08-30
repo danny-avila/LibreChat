@@ -4020,10 +4020,17 @@ describe('SubagentThreadTaskStore', () => {
     const deletionBlocked = new Promise<void>((resolve) => {
       releaseDeletion = resolve;
     });
-    const fenced = store.withOwnerDeletionFence(userId, undefined, async () => {
-      await deletionBlocked;
-      return 'deleted';
-    });
+    const fenced = store.withOwnerDeletionFence(
+      userId,
+      undefined,
+      async () => {
+        await deletionBlocked;
+        return 'deleted';
+      },
+      async () => {
+        order.push('remote-drain');
+      },
+    );
     await renewing;
     releaseDeletion();
     await new Promise<void>((resolve) => setTimeout(resolve, 20));
@@ -4033,7 +4040,7 @@ describe('SubagentThreadTaskStore', () => {
     await expect(fenced).resolves.toBe('deleted');
     /** The lost entry is re-taken before the recovery drain and only released after
      * the in-flight renewal and recovery renewal both settle. */
-    expect(order).toEqual(['fence', 'renew', 'fence', 'renew', 'release']);
+    expect(order).toEqual(['fence', 'renew', 'fence', 'renew', 'remote-drain', 'release']);
     expect(fenceOwnerAdmission).toHaveBeenCalledTimes(2);
   });
 

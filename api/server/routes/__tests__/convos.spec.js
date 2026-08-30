@@ -677,6 +677,36 @@ describe('Convos Routes', () => {
         {},
         expect.objectContaining({ beforeDelete: expect.any(Function) }),
       );
+      expect(subagentThreadStore.withOwnerDeletionFence.mock.calls[0][3]).toEqual(
+        expect.any(Function),
+      );
+    });
+
+    it('drains owner remote runs before the empty-filter deletion snapshot', async () => {
+      const createdAt = Date.now();
+      generationJobManager.getCleanupBlockingJobIdsForUser.mockResolvedValue(['resp-new']);
+      generationJobManager.getJob.mockImplementation(async (streamId) =>
+        streamId === 'resp-new'
+          ? { metadata: { userId: 'test-user-123' }, status: 'running', createdAt }
+          : null,
+      );
+      deleteConvos.mockResolvedValue({
+        deletedCount: 1,
+        conversationIds: ['new-conversation'],
+      });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { thread_id: 'thread-abc' } });
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('resp-new', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
+      expect(generationJobManager.abortJob.mock.invocationCallOrder[0]).toBeLessThan(
+        deleteConvos.mock.invocationCallOrder[0],
+      );
     });
 
     it('drains a paused event actor after an empty-filter deletion removes it', async () => {
